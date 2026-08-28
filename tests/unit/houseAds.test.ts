@@ -201,3 +201,82 @@ describe('an ad destination is resolved by the server, never by a template a cli
     expect(TEMPLATE_MIGRATION).toMatch(/the per-surface frequency cap was lost in this rewrite/);
   });
 });
+
+describe('the last two Club Arena slots are wired, and only where they earn it', () => {
+  /* Phase 1 declared five slots and wired one. `empty_state` and
+     `session_summary` had never carried a single placement row: the CHECK
+     permitted them, the resolver served them, and nothing ever named them. A
+     slot with no inventory renders nothing, which is indistinguishable from a
+     slot nobody ever built. */
+  const CARD = read('src/components/ads/HouseAdCard.tsx');
+  const LOBBY_PAGE = read('src/pages/ClubHomePage.tsx');
+  const SESSION = read('src/components/session/SessionSummaryHost.tsx');
+  const SLOTS_MIGRATION = read(
+    'supabase/migrations/20260828040000_house_ads_empty_state_and_session_summary.sql'
+  );
+
+  it('both surfaces actually render the card', () => {
+    // The house bug shape: a component that exists and nothing imports.
+    expect(LOBBY_PAGE).toMatch(/import HouseAdCard from '\.\.\/components\/ads\/HouseAdCard'/);
+    expect(LOBBY_PAGE).toMatch(/<HouseAdCard\s+slot="empty_state"/);
+    expect(SESSION).toMatch(/import HouseAdCard from '\.\.\/ads\/HouseAdCard'/);
+    expect(SESSION).toMatch(/<HouseAdCard slot="session_summary"/);
+  });
+
+  it('empty_state appears only where the player has nothing to tap', () => {
+    /* The lobby has four empty views. Three carry a remedy ("Show All Games"),
+       and an advert beside a fix competes with the fix. Only the branch where
+       the club is genuinely running nothing is dead space. */
+    const emptyBlock = LOBBY_PAGE.slice(
+      LOBBY_PAGE.indexOf("'No Tournaments Yet' : 'No Tables Yet'"),
+      LOBBY_PAGE.indexOf('Nothing On This Tab Right Now')
+    );
+    expect(emptyBlock).toMatch(/<HouseAdCard/);
+    // And nowhere else in the page.
+    expect(LOBBY_PAGE.match(/<HouseAdCard/g)?.length).toBe(1);
+  });
+
+  it('the card logs the click before it navigates', () => {
+    const activate = CARD.slice(CARD.indexOf('const activate'), CARD.indexOf('const inner'));
+    expect(activate.indexOf('AdService.logClick')).toBeGreaterThan(-1);
+    expect(activate.indexOf('AdService.logClick')).toBeLessThan(activate.indexOf('onNavigate?.'));
+  });
+
+  it('the card decides nothing about who is eligible', () => {
+    const code = CARD.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(code).not.toMatch(/is_?[Vv]ip/);
+    expect(code).not.toMatch(/audience/);
+    expect(code).not.toMatch(/profitLoss/);
+  });
+
+  it('is not activatable when there is nowhere to go', () => {
+    /* Without this the card was still focusable, still showed a pointer, and
+       did nothing when tapped - the same defect the lobby strip had. */
+    expect(CARD).toMatch(/const activatable = Boolean\(ad\.targetUrl\) && Boolean\(onNavigate\)/);
+    expect(CARD).toMatch(/house-ad--static/);
+  });
+
+  it('gives session_summary destinations that do not need a club', () => {
+    /* That host lives at the app root and survives the navigate() off the
+       table, so it calls the resolver with NULL. A {clubId} destination there
+       is dropped by the resolver and the slot looks empty for a reason nobody
+       can see. */
+    expect(SLOTS_MIGRATION).toMatch(/'tournaments_daily', 'session_summary'[^\n]*'\/tournaments'/);
+    expect(SLOTS_MIGRATION).toMatch(
+      /session_summary destination\(s\) need a club this surface never has/
+    );
+  });
+
+  it('does not ask a player who just lost to buy chips', () => {
+    /* The one entry that is a judgement rather than a mechanic: roughly half
+       the players seeing Session Complete have just lost, and diamonds_store
+       is the only house campaign that asks somebody to spend money. Placing it
+       there should be Dan's decision, not a side effect of placing everything
+       everywhere. */
+    const inserts = SLOTS_MIGRATION.slice(
+      SLOTS_MIGRATION.indexOf('join (values'),
+      SLOTS_MIGRATION.indexOf('as v(ad_key')
+    );
+    expect(inserts).not.toMatch(/diamonds_store/);
+  });
+});

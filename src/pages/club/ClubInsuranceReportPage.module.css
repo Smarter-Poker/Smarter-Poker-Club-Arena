@@ -1,0 +1,174 @@
+/* CLUB INSURANCE REPORT — mobile-first (375px), staff-facing. 2026-08-28. */
+
+.page {
+  min-height: 100vh;
+  padding: 14px 12px 40px;
+  background: var(--bg-primary, #0d1117);
+  color: var(--text-primary, #e4e6eb);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.header h1 {
+  font-size: 1.05rem;
+  font-weight: 800;
+  margin: 0;
+  flex: 1 1 auto;
+}
+
+.backBtn {
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: var(--text-primary, #e4e6eb);
+  cursor: pointer;
+}
+
+.windows {
+  display: flex;
+  gap: 6px;
+}
+
+.window,
+.windowActive {
+  padding: 7px 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary, #8a8f98);
+  cursor: pointer;
+}
+
+.windowActive {
+  background: rgba(24, 119, 242, 0.2);
+  border-color: #1877f2;
+  color: #1877f2;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.cardValue {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.cardLabel {
+  font-size: 0.7rem;
+  color: var(--text-secondary, #8a8f98);
+  margin-top: 2px;
+}
+
+.tableSection {
+  margin-top: 6px;
+}
+
+.tableHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.tableHeader h2 {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.exportBtn {
+  padding: 7px 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(24, 119, 242, 0.15);
+  border: 1px solid rgba(24, 119, 242, 0.5);
+  border-radius: 8px;
+  color: #1877f2;
+  cursor: pointer;
+}
+
+.tableScroll {
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  min-width: 560px;
+}
+
+.table th,
+.table td {
+  padding: 8px 10px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.table th:first-child,
+.table td:first-child {
+  text-align: left;
+}
+
+.table th {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary, #8a8f98);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.empty {
+  color: var(--text-secondary, #8a8f98);
+  font-size: 0.85rem;
+  padding: 18px 4px;
+}
+
+.deniedCard {
+  max-width: 420px;
+  margin: 60px auto;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 24px 18px;
+}
+
+.deniedCard h1 {
+  font-size: 1rem;
+  margin: 0 0 8px;
+}
+
+.deniedCard p {
+  color: var(--text-secondary, #8a8f98);
+  font-size: 0.85rem;
+  margin: 0 0 16px;
+}

@@ -39,6 +39,7 @@ import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
 import { displayOrderWithDealtIndex } from '../../lib/tableCardDisplay';
 import { seatCardSide, type CardSide } from '../../lib/tableSeatGeometry';
 import './avatarChoreography.css';
+import { formatTableChips } from '../../utils/format';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -426,23 +427,25 @@ export interface SeatSlotProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Dan 2026-08-28: a stack on the felt is never abbreviated. This used to
+// render 117000 as "117K", which is a range 500 chips wide standing in for a
+// number the player is about to act on. One formatter, shared with every
+// other chip surface on the table.
 function formatStack(amount: number): string {
-  if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
-  if (amount >= 100000) return `${(amount / 1000).toFixed(0)}K`;
-  if (amount >= 10000) return `${(amount / 1000).toFixed(1)}K`;
-  // For any amount >= 1, always show as a rounded whole number.
-  // Fractional cents on big stacks are rake/split artifacts that look ugly.
-  if (amount >= 1) return Math.round(amount).toLocaleString();
-  // Sub-dollar amounts (micro-stakes like 0.25/0.50) — show 2 decimals
-  if (amount > 0) return amount.toFixed(2);
-  return '0';
+  // Same reason as ChipAnimation: fractional cents on a big stack are rake
+  // and split artifacts, not chips anyone can bet. Squared off for display
+  // only, and only above 1 so micro-stakes keep their cents.
+  return formatTableChips(amount >= 1 ? Math.round(amount) : amount);
 }
 
+// Dan 2026-08-28: the same rule as chips. A 1,500 BB stack read "1.5K BB",
+// which is the abbreviation complaint wearing a different unit. Deep counts
+// stay whole and separated; shallow ones keep the one decimal that decides
+// whether you are shoving.
 function formatStackAsBB(stack: number, bigBlind: number): string {
   if (bigBlind <= 0) return '0 BB';
   const bb = stack / bigBlind;
-  if (bb >= 1000) return `${(bb / 1000).toFixed(1)}K BB`;
-  if (bb >= 100) return `${Math.round(bb)} BB`;
+  if (bb >= 100) return `${Math.round(bb).toLocaleString('en-US')} BB`;
   return `${bb.toFixed(1)} BB`;
 }
 

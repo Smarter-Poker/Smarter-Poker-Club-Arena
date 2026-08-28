@@ -219,6 +219,76 @@
   color: #b8bcc8;
 }
 
+/* EV CASHOUT STYLING 2026-08-28: these classes were dead code while the tab
+   had no handler; the classNames gate carried them as "unresolved". The tab
+   is LIVE now — the switcher and the cashout hero get real styles, and the
+   info items get their own rule instead of inheriting by accident. */
+.insurance-modal__info-item {
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.02em;
+}
+
+.insurance-modal__tabs {
+  display: flex;
+  gap: 8px;
+  padding: 8px 20px 0;
+}
+
+.insurance-modal__tab {
+  flex: 1;
+  padding: 9px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #8b949e;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.insurance-modal__tab--active {
+  background: rgba(24, 119, 242, 0.2);
+  border-color: #1877f2;
+  color: #1877f2;
+}
+
+.insurance-modal__ev-section {
+  padding: 4px 20px 8px;
+}
+
+.insurance-modal__ev-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 14px 0 10px;
+}
+
+.insurance-modal__ev-amount {
+  font-size: 1.8rem;
+  font-weight: 800;
+  font-family: 'JetBrains Mono', monospace;
+  color: #4dc660;
+  text-shadow: 0 0 18px rgba(77, 198, 96, 0.35);
+}
+
+.insurance-modal__ev-subtitle {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8a8fa3;
+}
+
+.insurance-modal__ev-note {
+  margin: 10px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: #8a8fa3;
+  text-align: center;
+}
+
 .insurance-modal__board-label {
   font-size: 0.75rem;
   font-weight: 700;

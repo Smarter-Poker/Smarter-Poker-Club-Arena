@@ -891,6 +891,26 @@
       "blocked_id",
       "created_at"
     ],
+    "bomb_pot_award_units": [
+      "id",
+      "hand_history_id",
+      "table_id",
+      "hand_number",
+      "pot_index",
+      "board",
+      "side",
+      "user_id",
+      "amount",
+      "hand_name",
+      "created_at"
+    ],
+    "bomb_pot_manual_requests": [
+      "id",
+      "table_id",
+      "club_id",
+      "requested_by",
+      "requested_at"
+    ],
     "bot_profiles": [
       "id",
       "username",
@@ -9197,7 +9217,11 @@
       "bomb_pot_ante_fixed",
       "first_button_seat",
       "bomb_pot_variant",
-      "bomb_pot_next_due_at"
+      "bomb_pot_next_due_at",
+      "bomb_pot_sched_state",
+      "bomb_pot_manual_pending",
+      "bomb_pot_button_policy",
+      "bomb_pot_announce_seconds"
     ],
     "theme_asset_unlocks": [
       "user_id",
@@ -11350,6 +11374,29 @@
       "bets_lost",
       "updated_at"
     ],
+    "v_bomb_pot_daily": [
+      "day",
+      "trigger_reason",
+      "board_count",
+      "variant",
+      "hands",
+      "avg_pot",
+      "total_rake",
+      "avg_ante"
+    ],
+    "v_bomb_pot_outcomes": [
+      "day",
+      "multi_board_hands",
+      "full_scoops",
+      "split_hands",
+      "avg_award_units"
+    ],
+    "v_bomb_pot_vs_normal": [
+      "day",
+      "is_bomb",
+      "hands",
+      "avg_pot"
+    ],
     "v_chip_ledger": [
       "id",
       "source_ledger",
@@ -12075,11 +12122,6 @@
       "first_seen_at",
       "last_seen_at",
       "resolved"
-    ],
-    "ad_event_retention_policy": [
-      "id",
-      "event_retention_days",
-      "updated_at"
     ]
   }
 }

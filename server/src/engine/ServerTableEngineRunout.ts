@@ -1611,7 +1611,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         if (p.eligiblePlayers.includes(leaderId)) eligible += p.amount;
       }
       if (!(total > 0) || !(eligible > 0)) return grossPot;
-      const { rake, bbjFee } = this.handController.computeRakeAndBBJ();
+      // PREFLOP INSURANCE FIX 2026-08-28: an all-in runout always reaches the
+      // flop, so price the deductions as if it is already seen — a preflop
+      // offer on sawFlop=false claimed zero rake and overstated the winnings.
+      const { rake, bbjFee } = this.handController.computeRakeAndBBJ(true);
       const netFrac = Math.max(0, (total - rake - bbjFee) / total);
       return Math.round(eligible * netFrac * 100) / 100;
     } catch {

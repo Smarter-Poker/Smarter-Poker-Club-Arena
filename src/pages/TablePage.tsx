@@ -8982,10 +8982,36 @@ export default function TablePage({
                 // 90-second game to tell the two survivors what they could
                 // already see. An SNG keeps it: there, going from nine to two
                 // is a genuine milestone.
+                /**
+                 * HEADS-UP MUST NOT DEPEND ON ONE EXACT PLACE NUMBER
+                 * (Dan 2026-08-28, bug 8: "NOTHING PLAYED").
+                 *
+                 * This gate was `position === 3`, on the reasoning that the
+                 * player who busts 3rd leaves exactly two behind. True only
+                 * while the finishing ladder is exact — and in Union PKO
+                 * Afternoon 4f42d847 it was not: the ladder was seeded one
+                 * short, so the player who left two behind was stamped place
+                 * TWO, this test was false, and the announcement never fired.
+                 * Bug 8 was bug 9 wearing a different hat.
+                 *
+                 * The ladder is fixed (#1652), but a cosmetic announcement
+                 * must not be the thing that silently reports a bookkeeping
+                 * drift. The AUTHORITY was always the query below — it counts
+                 * the players who are actually still in and announces only on
+                 * exactly two. So this is now just a cheap pre-filter to avoid
+                 * a round-trip on every early bust: wide enough to survive an
+                 * off-by-one in either direction, with the real check
+                 * unchanged underneath it and a one-shot guard so the widening
+                 * cannot announce twice.
+                 */
+                const elimPlace = Number(elimData.position);
                 if (
-                  Number(elimData.position) === 3 &&
+                  Number.isFinite(elimPlace) &&
+                  elimPlace >= 2 &&
+                  elimPlace <= 4 &&
                   tournamentFormatRef.current !== 'spin' &&
-                  tableStateRef.current.tournamentId
+                  tableStateRef.current.tournamentId &&
+                  !headsUpAnnouncedRef.current.has(tableStateRef.current.tournamentId)
                 ) {
                   const tid = tableStateRef.current.tournamentId;
                   (async () => {
@@ -8999,6 +9025,9 @@ export default function TablePage({
                       // Only announce if the field really is two-handed; a
                       // simultaneous double bust would make this a 3-way.
                       if (rows && rows.length === 2) {
+                        // One announcement per tournament, per client.
+                        if (headsUpAnnouncedRef.current.has(tid)) return;
+                        headsUpAnnouncedRef.current.add(tid);
                         const toP = (r: {
                           user_id: string;
                           username?: string;
@@ -10439,6 +10468,13 @@ export default function TablePage({
    * tableStateRef exists two lines up.
    */
   const tournamentFormatRef = useRef(tournamentFormat);
+  /**
+   * Tournaments this client has already announced heads-up for. The gate that
+   * reaches the announcement is deliberately wider than one exact place now
+   * (see the HEADS_UP_SWITCH block), so the ONE-SHOT has to live here rather
+   * than in the arithmetic.
+   */
+  const headsUpAnnouncedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     tournamentFormatRef.current = tournamentFormat;
   }, [tournamentFormat]);

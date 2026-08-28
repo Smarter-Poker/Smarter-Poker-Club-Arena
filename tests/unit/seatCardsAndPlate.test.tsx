@@ -299,7 +299,19 @@ describe('the hero row opens out when the hand is shown, and only then', () => {
       const hits = CSS.match(
         new RegExp(`\\.seat__cards--hero:has\\(> \\*:nth-child\\(${n}\\)\\)`, 'g')
       );
-      expect(hits!.length, `PLO${n} private size guards must still number 4`).toBe(4);
+      /* 2026-08-28: was `toBe(4)`, one per breakpoint. The private row's sizes
+         are ratios of --sp-card2-w now — itself a fraction of the felt's
+         measured width — so there is one guard per hand size and it is correct
+         at every viewport rather than at four of them. What this beat is FOR is
+         unchanged and is the reason it still counts: the revealed guards below
+         are written with a second class in front and without the `*`, and if
+         either of those slipped they would be counted here as an extra tuning
+         of the private row. The number moved; the trap it watches did not. */
+      expect(
+        hits!.length,
+        `PLO${n} private size guards must number exactly 1 — a revealed guard has ` +
+          'been miscounted as a private one, or a per-breakpoint copy came back'
+      ).toBe(1);
     }
     // And the private row's own token rule must still read the shared tokens.
     const heroTokens = rulesFor('.seat__cards--hero')

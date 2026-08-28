@@ -112,7 +112,23 @@ describe('hero hole-card row geometry', () => {
     }
   });
 
-  it('all four breakpoints define the full 4/5/6 set (none silently missing)', () => {
+  /**
+   * REWRITTEN 2026-08-28, and the rewrite is the point. This used to assert
+   * `toBe(4)` — that each PLO guard was restated at all four breakpoints — which
+   * was the right guard for a px ladder: with four independent copies, the way
+   * PLO5 broke was that somebody retuned three of them.
+   *
+   * The ladder is gone (Dan: "my buttons and cards look the same no matter if
+   * I'm on a phone, or a tablet"). The guards are ratios of --sp-card2-w, which
+   * is itself a fraction of the felt's measured width, so there is ONE copy and
+   * it is correct at every viewport rather than at four of them. Four copies is
+   * now the failure this test should catch, not the success.
+   *
+   * What has not changed is what the test is FOR: no hand size may be silently
+   * missing a size, and none may be tuned in a way that leaves the others
+   * behind. Both are still checked, against the mechanism that now delivers it.
+   */
+  it('defines the full 4/5/6 set exactly once, as ratios of the shared card', () => {
     for (const n of [4, 5, 6]) {
       const hits = css.match(
         new RegExp(`\\.seat__cards--hero:has\\(> \\*:nth-child\\(${n}\\)\\)`, 'g')
@@ -120,8 +136,24 @@ describe('hero hole-card row geometry', () => {
       expect(hits, `PLO${n} guard missing entirely`).toBeTruthy();
       expect(
         hits!.length,
-        `PLO${n} must be tuned at every breakpoint that retunes the others`
-      ).toBe(4);
+        `PLO${n} is declared ${hits!.length} times. A per-breakpoint copy is exactly ` +
+          'what the proportional sizing replaced — the surviving copy is correct at ' +
+          'every width, and a second one can only drift from it.'
+      ).toBe(1);
+
+      // ...and that one copy must set all three tokens, or the hand size falls
+      // back to the two-card baseline for whichever it omits.
+      const rule = rulesFor(`.seat__cards--hero:has(> *:nth-child(${n}))`)[0];
+      for (const token of ['w', 'h', 'step']) {
+        expect(rule.body, `PLO${n} does not set --sp-hero-card-${token}`).toMatch(
+          new RegExp(`--sp-hero-card-${token}:`)
+        );
+      }
+      // Every one of them must be derived from the shared card, never a literal:
+      // that is what keeps hold'em, PLO and the felt in the same proportion.
+      expect(rule.body, `PLO${n} must size from --sp-card2-w, not from a px literal`).not.toMatch(
+        /--sp-hero-card-(w|h|step):\s*\d+px/
+      );
     }
   });
 
@@ -179,17 +211,48 @@ describe('hero hole-card row geometry', () => {
     }
   });
 
-  it('retunes the shared two-card size at every breakpoint that retunes the seat', () => {
-    // `.seat` is where the responsive blocks already override --seat-avatar-base,
-    // so the card size retunes in the same place and by the same rule. Four
-    // declarations: the base plus the 640 / 480 / 380 blocks.
+  /**
+   * REWRITTEN 2026-08-28 with the guard above, for the same reason: the four
+   * rungs became one proportional declaration. The invariant that mattered —
+   * width, height and step can never fall out of step with each other — is now
+   * structural instead of clerical, because height and step are CALCULATED from
+   * width rather than typed beside it. So this asserts the derivation, which is
+   * strictly stronger: the old test could only catch a rung somebody forgot,
+   * and this catches a rung somebody adds back.
+   */
+  it('derives the two-card height and step from its width, in one place', () => {
     for (const token of ['w', 'h', 'step']) {
       const hits = cssNoComments.match(new RegExp(`--sp-card2-${token}:`, 'g'));
       expect(hits, `--sp-card2-${token} is missing entirely`).toBeTruthy();
       expect(
         hits!.length,
-        `--sp-card2-${token} must be tuned at every breakpoint that tunes the others`
-      ).toBe(4);
+        `--sp-card2-${token} is declared ${hits!.length} times; it is a fraction of ` +
+          'the felt and needs exactly one declaration'
+      ).toBe(1);
+    }
+
+    const body = RULES.filter((r) => /--sp-card2-w:/.test(r.body))[0].body;
+
+    // Width is the only one allowed to be independent, and it must read the
+    // felt's MEASURED width — not a viewport unit, not a literal. A viewport
+    // unit is what the old ladder effectively was, and it is wrong here: the
+    // felt is derived from the height left over, so a 1280x800 laptop has a
+    // SMALLER table than an iPhone 14 despite being three times as wide.
+    expect(
+      body.match(/--sp-card2-w:\s*([^;]+);/)![1],
+      'the card must be a fraction of --table-w (the measured felt), with a legibility floor'
+    ).toMatch(/clamp\(\s*\d+px\s*,\s*calc\(\s*var\(--table-w/);
+
+    // Height and step must be computed FROM it — never restated.
+    for (const [token, ratio] of [
+      ['h', '1.4'],
+      ['step', '0.72'],
+    ]) {
+      expect(
+        body.match(new RegExp(`--sp-card2-${token}:\\s*([^;]+);`))![1],
+        `--sp-card2-${token} must be calc()'d from --sp-card2-w (x${ratio}), so the ` +
+          'pair cannot drift'
+      ).toMatch(new RegExp(`calc\\(\\s*var\\(--sp-card2-w\\)\\s*\\*\\s*${ratio}`));
     }
   });
 
@@ -213,22 +276,45 @@ describe('hero hole-card row geometry', () => {
    * moves hold'em with it — which is what "globally" has to mean if it is not
    * to drift apart again the next time one of them is touched.
    */
-  it('draws a hold-em card at exactly the PLO4 size, at every breakpoint', () => {
-    const plo4 = rulesFor('.seat__cards--hero:has(> *:nth-child(4))')
-      .map((r) => r.body.match(/--sp-hero-card-(w|h):\s*(\d+)px/g))
-      .filter(Boolean) as RegExpMatchArray[];
+  it('draws a hold-em card at exactly the PLO4 size, at EVERY width', () => {
+    /* REWRITTEN 2026-08-28. The rule is Dan's and is unchanged and binding; only
+       the proof changed, and it got much stronger.
 
-    const holdemW = [...cssNoComments.matchAll(/--sp-card2-w:\s*(\d+)px/g)].map((m) => +m[1]);
-    const holdemH = [...cssNoComments.matchAll(/--sp-card2-h:\s*(\d+)px/g)].map((m) => +m[1]);
+       This used to walk four breakpoints and compare eight literals in pairs. It
+       could only ever say "hold'em equals PLO4 at these four widths", and a
+       fifth width — a tablet, which is where Dan noticed the problem — was
+       outside what it could see.
 
-    expect(plo4.length, 'PLO4 must be tuned at all four breakpoints').toBe(4);
-    expect(holdemW.length, 'the two-card width must be tuned at all four breakpoints').toBe(4);
+       PLO4 now READS --sp-card2-w, the same token the hold'em two-card row
+       reads, with a coefficient of exactly 1. So the two are not equal by
+       arithmetic that has to be rechecked; they are the same value. That holds
+       at every viewport, including the ones nobody enumerated. */
+    const rule = rulesFor('.seat__cards--hero:has(> *:nth-child(4))')[0];
+    expect(rule, 'the PLO4 guard is missing').toBeTruthy();
 
-    for (let i = 0; i < 4; i++) {
-      const w = +plo4[i].find((d) => d.startsWith('--sp-hero-card-w'))!.match(/(\d+)px/)![1];
-      const h = +plo4[i].find((d) => d.startsWith('--sp-hero-card-h'))!.match(/(\d+)px/)![1];
-      expect(holdemW[i], `hold-em card width must equal PLO4's at breakpoint ${i}`).toBe(w);
-      expect(holdemH[i], `hold-em card height must equal PLO4's at breakpoint ${i}`).toBe(h);
+    const w = rule.body.match(/--sp-hero-card-w:\s*([^;]+);/)![1].trim();
+    expect(
+      w,
+      'PLO4 width must BE --sp-card2-w — the token the hold-em row reads — not a ' +
+        'multiple of it and not a literal. Anything else re-opens the 2026-08-19 gap ' +
+        'where a 44px hold-em card sat beside a 60px PLO card on the same felt.'
+    ).toBe('var(--sp-card2-w)');
+
+    // Height follows the same 1.4 the two-card token uses, so the shapes match too.
+    expect(
+      rule.body.match(/--sp-hero-card-h:\s*([^;]+);/)![1],
+      "PLO4 height must be 1.4 x the shared width, matching --sp-card2-h's own derivation"
+    ).toMatch(/calc\(\s*var\(--sp-card2-w\)\s*\*\s*1\.4\s*\)/);
+
+    // And PLO5/PLO6 must step DOWN from it — never up, or the row grows as the
+    // hand grows and runs off the felt.
+    for (const [n, max] of [
+      [5, 1],
+      [6, 1],
+    ]) {
+      const body = rulesFor(`.seat__cards--hero:has(> *:nth-child(${n}))`)[0].body;
+      const factor = +body.match(/--sp-hero-card-w:[^;]*\*\s*([\d.]+)/)![1];
+      expect(factor, `PLO${n} must not be wider than PLO4`).toBeLessThanOrEqual(max);
     }
   });
 
@@ -262,8 +348,29 @@ describe('hero hole-card row geometry', () => {
     expect(hits, '--sp-cardrev-w is missing entirely').toBeTruthy();
     expect(
       hits!.length,
-      '--sp-cardrev-w must be tuned at every breakpoint that tunes --sp-card2-w'
-    ).toBe(4);
+      `--sp-cardrev-w is declared ${hits!.length} times; like --sp-card2-w it is a ` +
+        'fraction of the felt and needs exactly one declaration'
+    ).toBe(1);
+
+    /* 2026-08-28: the four rungs became one proportional declaration, and the
+       SPLIT this test exists to protect is now expressed as a different
+       coefficient rather than a different set of literals. Both are fractions of
+       --table-w; the tabled row takes a visibly smaller one, because it lays out
+       WHOLE cards with a 1px gap (n x w) instead of overlapping them
+       (w + (n-1) x step) and a PLO6 hand has to fit the same strip beside the
+       seat. Asserting the inequality is what stops a later "these look close
+       enough, share the token" from re-creating the 195px-row overflow. */
+    const revBody = RULES.filter((r) => /--sp-cardrev-w:/.test(r.body))[0].body;
+    const coef = (re: RegExp, body: string) => +body.match(re)![1];
+    const revCoef = coef(/--sp-cardrev-w:[^;]*var\(--table-w[^)]*\)\s*\*\s*([\d.]+)/, revBody);
+    const card2Body = RULES.filter((r) => /--sp-card2-w:/.test(r.body))[0].body;
+    const card2Coef = coef(/--sp-card2-w:[^;]*var\(--table-w[^)]*\)\s*\*\s*([\d.]+)/, card2Body);
+
+    expect(
+      revCoef,
+      'the tabled row must take a SMALLER fraction of the felt than the private ' +
+        'row, or a tabled PLO6 hand overflows its strip'
+    ).toBeLessThan(card2Coef);
   });
 
   it('row widths stay within the felt at every hand size', () => {

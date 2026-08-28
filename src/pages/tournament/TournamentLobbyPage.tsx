@@ -83,7 +83,6 @@ export default function TournamentLobbyPage() {
     setTypeFilter(currentType);
   }, [searchParams]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [visibleTournaments, setVisibleTournaments] = useState<Set<string>>(new Set());
   const [isInUnion, setIsInUnion] = useState(false);
 
   const isMounted = useIsMounted();
@@ -118,17 +117,6 @@ export default function TournamentLobbyPage() {
 
   useEffect(() => {
     tournamentsRef.current = tournaments;
-  }, [tournaments]);
-
-  // Stagger animation for tournament cards
-  useEffect(() => {
-    if (tournaments.length === 0) return;
-    setVisibleTournaments(new Set());
-    tournaments.forEach((tourn, index) => {
-      setTimeout(() => {
-        setVisibleTournaments((prev) => new Set(prev).add(tourn.id));
-      }, index * 60);
-    });
   }, [tournaments]);
 
   useEffect(() => {
@@ -835,15 +823,7 @@ export default function TournamentLobbyPage() {
 
               {/* Tournaments in Group */}
               {group.tournaments.map((tournament) => (
-                <div
-                  key={tournament.id}
-                  className={`${visibleTournaments.has(tournament.id) ? styles.fadeInUp : styles.hidden}`}
-                  style={
-                    visibleTournaments.has(tournament.id)
-                      ? undefined
-                      : { opacity: 0, transform: 'translateY(8px)' }
-                  }
-                >
+                <div key={tournament.id} className={styles.fadeInUp}>
                   <TournamentLobbyCard
                     tournament={{
                       id: tournament.id,

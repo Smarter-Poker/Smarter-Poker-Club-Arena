@@ -195,6 +195,25 @@ export interface TableInfo {
    * a deploy no longer restarts the cycle.
    */
   bomb_pot_next_due_at?: string | null;
+  /**
+   * FULL SCHEDULER PERSISTENCE (2026-08-28): the BombPotScheduler's complete
+   * serialized trigger state (every-N counter, orbit anchor, pending token,
+   * timed clock, separate bomb button). Engine-written; read once at boot.
+   */
+  bomb_pot_sched_state?: unknown;
+  /**
+   * MANUAL_NEXT_HAND (spec §2.1): set by fn_request_manual_bomb_pot
+   * (role-gated + audited); the engine consumes and clears it at the next
+   * valid hand boundary. Read fresh each hand on bomb-enabled tables.
+   */
+  bomb_pot_manual_pending?: boolean;
+  /** SEPARATE BOMB BUTTON (spec §5.3): 'regular' (default) | 'separate'. */
+  bomb_pot_button_policy?: string | null;
+  /**
+   * TIMED ANNOUNCE WINDOW (spec §3): show the felt countdown only within this
+   * many seconds of the due time. NULL = always show.
+   */
+  bomb_pot_announce_seconds?: number | null;
   /** Bible V8 §2.1: Minimum players to start a hand */
   min_players?: number;
   /** Bible V8 §2.1: Table display name */
@@ -680,6 +699,13 @@ export type BotDecision = HorseDecision;
 export interface HorseGameState {
   players: SeatPlayer[];
   communityCards: Card[];
+  /**
+   * MULTI-BOARD EQUITY 2026-08-28 (Horses Are Players law): boards 2 and 3
+   * of a multi-board bomb pot, empty otherwise. The brain averages per-board
+   * equity — each board pays an equal share of every pot layer.
+   */
+  communityCards2?: Card[];
+  communityCards3?: Card[];
   pot: number;
   currentBet: number;
   minRaise: number;

@@ -536,12 +536,21 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // ═══════════════════════════════════════════════════════════════════════
     // EQUITY DISPLAY: Calculate and broadcast equity for ALL all-in players
     // This is shown on every table (insurance or not) for all players/observers.
-    // ROUND 3 AUDIT FIX (2026-08-20): suppressed on double-board hands — the
-    // solver runs board 1 only, so the percentages it would show players are
-    // simply wrong for a pot that half-rides on board 2.
+    // ROUND 3 AUDIT FIX (2026-08-20): was suppressed on double-board hands
+    // because the solver ran board 1 only. MULTI-BOARD EQUITY 2026-08-28
+    // (spec §14): the solver now prices EVERY live board and averages —
+    // each board carries an equal share of every pot layer, so the average
+    // per-board equity IS the player's true share of the money. The most
+    // dramatic runouts on the platform get their percentages back.
     // ═══════════════════════════════════════════════════════════════════════
-    if (allInPlayers.length >= 2 && !doubleBoardHand) {
-      void this.broadcastAllInEquity(allInPlayers, board, pot);
+    if (allInPlayers.length >= 2) {
+      const hcState = doubleBoardHand ? this.handController.getState?.() : null;
+      const extraBoards = hcState
+        ? [hcState.communityCards2, hcState.communityCards3].filter(
+            (b): b is import('../types.js').Card[] => Array.isArray(b) && b.length > 0
+          )
+        : undefined;
+      void this.broadcastAllInEquity(allInPlayers, board, pot, extraBoards);
     }
     const insuranceEnabled = this.insuranceEngine.isEnabled(this.tableId) && !doubleBoardHand;
     // SEQUENCING 2026-08-26 (Dan's leader-seat recording): when BOTH features
@@ -1634,7 +1643,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   protected async broadcastAllInEquity(
     allInPlayers: import('../types.js').SeatPlayer[],
     board: import('../types.js').Card[],
-    pot: number
+    pot: number,
+    /**
+     * MULTI-BOARD EQUITY 2026-08-28 (spec §14): boards 2..N of a multi-board
+     * bomb pot. When present, equity is computed per board and AVERAGED —
+     * every board carries an equal share of every pot layer, so the average
+     * is the player's true share of the money. Absent on single-board hands.
+     */
+    extraBoards?: import('../types.js').Card[][]
   ): Promise<void> {
     // PERF FIX (2026-07-24): equity now runs on the EquityWorkerPool (worker
     // threads) instead of a synchronous monteCarloEquity(...,5000) with a crypto
@@ -1643,19 +1659,36 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // hand against the KNOWN others in ONE simulation (the true all-in equity),
     // off the main event loop. Degrades to a synchronous compute only if the pool
     // is unavailable.
-    const isShortDeck = this.tableInfo?.game_variant === 'short_deck';
-    const isOmaha = isOmahaVariant(this.tableInfo?.game_variant || '');
+    // VARIANT OVERRIDE 2026-08-28 (spec §10.1): the LIVE hand's variant — a
+    // PLO bomb hand at an NLH table must be priced with the Omaha evaluator.
+    const equityVariant = this.activeHandVariant() || this.tableInfo?.game_variant || 'nlh';
+    const isShortDeck = equityVariant === 'short_deck';
+    const isOmaha = isOmahaVariant(equityVariant);
     const valid = allInPlayers.filter((p) => (p.cards || []).length >= 2);
     const equities: Array<{ userId: string; username: string; equity: number; seat: number }> = [];
+    // MULTI-BOARD EQUITY 2026-08-28: all live boards, board 1 first.
+    const allBoards = [board, ...(extraBoards ?? [])];
     // ── ADDITIVE observability (#5): time the all-in equity computation ──
     const equityComputeStartMs = Date.now();
 
     try {
       const hands = valid.map((p) => p.cards || []);
-      const fractions = await getEquityPool().estimateEquity(hands, board, [], 1000, {
-        shortDeck: isShortDeck,
-        omaha: isOmaha,
-      });
+      // Per-board fractions, then the equal-share average. The iteration
+      // budget is split across boards so a triple-board hand costs what a
+      // single-board hand always has.
+      const perBoardIters = Math.max(400, Math.ceil(1000 / allBoards.length));
+      const perBoard: number[][] = [];
+      for (const b of allBoards) {
+        perBoard.push(
+          await getEquityPool().estimateEquity(hands, b, [], perBoardIters, {
+            shortDeck: isShortDeck,
+            omaha: isOmaha,
+          })
+        );
+      }
+      const fractions = hands.map(
+        (_, i) => perBoard.reduce((s, f) => s + (f[i] ?? 0), 0) / allBoards.length
+      );
       for (let i = 0; i < valid.length; i++) {
         equities.push({
           userId: valid[i].user_id,
@@ -1671,17 +1704,27 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       // no Omaha branch — its numbers were wrong for PLO and noisy everywhere.
       // insuranceEquity is exact vs the known hands and variant-aware
       // (flop/turn enumerate <=990 boards; preflop samples 6,000 seeded).
-      const variantName = this.tableInfo?.game_variant || 'nlh';
+      const variantName = equityVariant;
       for (const player of valid) {
         try {
           const opponents = valid
             .filter((o) => o.user_id !== player.user_id)
             .map((o) => o.cards || []);
-          const r = insuranceEquity(player.cards || [], opponents, board, variantName, isShortDeck);
+          // MULTI-BOARD 2026-08-28: exact per-board equity, averaged.
+          let sum = 0;
+          for (const b of allBoards) {
+            sum += insuranceEquity(
+              player.cards || [],
+              opponents,
+              b,
+              variantName,
+              isShortDeck
+            ).equity;
+          }
           equities.push({
             userId: player.user_id,
             username: player.username || 'Unknown',
-            equity: Math.round(r.equity * 10) / 10,
+            equity: Math.round((sum / allBoards.length) * 10) / 10,
             seat: player.seat,
           });
         } catch {
@@ -1720,6 +1763,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       table_id: this.tableId,
       hand_number: this.handCount,
       board: board.map((c) => `${c.rank}${c.suit}`),
+      // MULTI-BOARD 2026-08-28: how many boards the percentages average over
+      // (1 on normal hands) — clients may caption "avg across N boards".
+      board_count: allBoards.length,
       pot,
       equities,
     });

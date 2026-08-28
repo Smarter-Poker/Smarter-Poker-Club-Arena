@@ -115,14 +115,10 @@
 /* ── Club identity + wallet, side by side ──────────────────────────────────
    The wallet column is capped rather than fixed at 220px: at 375px a rigid
    220px column left the club card 115px, which truncated the club name to a
-   couple of characters. At compact phone widths the two stack instead. */
+   couple of characters. Below 420px the two stack instead. */
 .lobby-top__main {
   display: grid;
-  /* Keep the BBJ plaque on the same one-third rhythm as the three wallet
-     tiles below it. The plaque has an intrinsic aspect ratio, so the old
-     capped 250px track combined with `align-items: stretch` made the item
-     solve its width from the club-card height and spill outside its track. */
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.731fr) minmax(0, 2.857fr);
   align-items: stretch;
   gap: 10px;
 }
@@ -130,6 +126,12 @@
 .lobby-top__wallet {
   grid-column: 2;
   min-width: 0;
+  align-self: start;
+}
+
+.lobby-top__identity {
+  width: 100%;
+  justify-self: stretch;
   align-self: start;
 }
 
@@ -450,10 +452,6 @@
 }
 
 .wallet-row:hover {
-  transform: translateY(-1px);
-  box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .wallet-row.gold {
@@ -501,8 +499,6 @@
 }
 
 .wallet-add-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 0 15px rgba(16, 185, 129, 0.5);
 }
 /* The .club-home__intro block moved into the header as .lobby-top__notice
    (line-clamped), and the three-row .club-home__filters / .filter-tab stack was
@@ -918,10 +914,6 @@
 
 .table-card:hover {
   border-color: #1877f2;
-  transform: translateY(-2px);
-  box-shadow:
-    0 8px 24px rgba(24, 119, 242, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .table-card__header {
@@ -1010,7 +1002,6 @@
 
 .tournament-card:hover {
   border-color: #3b82f6;
-  transform: translateY(-2px);
 }
 
 .tournament-card.live {
@@ -1153,7 +1144,6 @@
 
 .empty-action:hover {
   filter: brightness(1.08);
-  transform: translateY(-1px);
 }
 
 .empty-action:focus-visible {
@@ -2203,7 +2193,7 @@
     0 0 8px rgba(82, 167, 255, 0.2);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 480px) {
   .lobby-top__main {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2215,5 +2205,15 @@
   .lobby-bbj {
     width: 100%;
     min-height: 0;
+  }
+}
+
+@media (min-width: 481px) and (max-width: 640px) {
+  .lobby-top__main {
+    grid-template-columns: minmax(0, 1.731fr) minmax(0, 2.857fr);
+  }
+
+  .lobby-top__wallet {
+    grid-column: 2;
   }
 }

@@ -120,7 +120,6 @@
 
 .uploadLogoBtn:hover {
   background: rgba(0, 100, 180, 0.1);
-  transform: translateY(-2px);
 }
 
 .logoThumb {
@@ -149,7 +148,6 @@
 
 .createLogoBtn:hover {
   background: rgba(0, 100, 180, 0.1);
-  transform: translateY(-2px);
 }
 
 .plusIcon {
@@ -164,7 +162,6 @@
 
 .createLogoBtn:hover .plusIcon {
   text-shadow: 0 0 24px rgba(100, 200, 255, 1);
-  transform: scale(1.1);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -243,8 +240,6 @@
 
 .createButton:hover:not(:disabled) {
   background: rgba(0, 180, 255, 0.15);
-  transform: translateY(-2px);
-  box-shadow: 0 0 20px rgba(0, 180, 255, 0.3);
 }
 
 .createButton:disabled {
@@ -381,8 +376,6 @@
 
 .submitButton:hover:not(:disabled) {
   background: rgba(0, 180, 255, 0.1);
-  transform: translateY(-2px);
-  box-shadow: 0 0 20px rgba(0, 180, 255, 0.3);
 }
 
 .submitButton:disabled {
@@ -517,7 +510,6 @@
 .templateBtn:hover {
   background: rgba(0, 100, 180, 0.2);
   border-color: rgba(0, 180, 255, 0.6);
-  transform: translateY(-2px);
 }
 
 .templateBtn.selected {
@@ -560,8 +552,6 @@
 }
 
 .generateBtn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(0, 180, 255, 0.4);
 }
 
 .generateBtn:disabled {

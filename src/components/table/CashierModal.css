@@ -111,7 +111,6 @@
 .cashier-modal__close:hover {
   background: rgba(248, 81, 73, 0.3);
   color: #f85149;
-  transform: translateY(-2px);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -172,7 +171,6 @@
 
 .cashier-modal__tab:hover {
   color: #e4e6eb;
-  transform: translateY(-2px);
 }
 
 .cashier-modal__tab--active {
@@ -266,7 +264,6 @@
 .cashier-modal__quick-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.12);
   color: #e4e6eb;
-  transform: translateY(-2px);
 }
 
 .cashier-modal__quick-btn--active {
@@ -339,7 +336,6 @@
 
 .cashier-modal__confirm-btn:hover:not(:disabled) {
   background: linear-gradient(135deg, #4dc660 0%, #3fb950 100%);
-  transform: translateY(-2px);
 }
 
 .cashier-modal__confirm-btn--disabled {

@@ -342,10 +342,6 @@
 .ctrl-btn:hover {
   background: rgba(255, 255, 255, 0.1);
   border-color: var(--fb-blue);
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 8px 16px rgba(255, 255, 255, 0.15);
 }
 
 .ctrl-btn.play {
@@ -674,7 +670,6 @@
 }
 
 .timeline-step:hover {
-  transform: scale(1.5);
   background: rgba(255, 255, 255, 0.8);
 }
 

@@ -46,7 +46,6 @@
 .period-selector button:hover {
   border-color: #4a5a6a;
   color: #8a9aaa;
-  transform: translateY(-2px);
 }
 
 .period-selector button.active {
@@ -180,10 +179,6 @@
 .transaction-row:hover {
   border-color: #00d4ff;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.07) 0%, rgba(100, 100, 100, 0.04) 100%);
-  box-shadow:
-    0 0 12px rgba(0, 212, 255, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  transform: translateX(2px);
 }
 
 .tx-icon {

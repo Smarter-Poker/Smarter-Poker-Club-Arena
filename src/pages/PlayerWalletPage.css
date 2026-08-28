@@ -191,7 +191,6 @@
 }
 
 .hero-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -255,7 +254,6 @@
 }
 
 .wallet-card-premium:hover {
-  transform: translateY(-2px);
 }
 
 /* Business Wallet — Royal Gold */
@@ -568,8 +566,6 @@
 }
 
 .transfer-btn:hover:not(:disabled) {
-  box-shadow: 0 6px 28px rgba(0, 212, 255, 0.5);
-  transform: translateY(-2px);
 }
 
 .transfer-btn:disabled {

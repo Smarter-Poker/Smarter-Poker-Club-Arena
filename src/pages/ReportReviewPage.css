@@ -99,10 +99,6 @@
 
 .report-card:hover {
   border-color: #3a4a5a;
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 8px 24px rgba(0, 212, 255, 0.15);
 }
 
 .report-card.selected {

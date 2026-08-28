@@ -429,7 +429,6 @@
 }
 .ag-apply:hover {
   filter: brightness(1.1);
-  transform: translateY(-1px);
 }
 .ag-apply--disabled {
   opacity: 0.4;

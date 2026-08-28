@@ -64,10 +64,30 @@ describe.each(HOOKS)('%s', (file) => {
     expect(src).toMatch(/event\.payload\?\.origin === originIdRef\.current/);
   });
 
-  it('gives each hook instance a distinct origin id', () => {
-    // Derived per instance, not a module constant — two mounted tables must
-    // not share an id or they would ignore each other's changes.
-    expect(src).toMatch(/originIdRef\s*=\s*useRef<string>\(/);
+  it('derives the origin id at runtime rather than hardcoding one', () => {
+    /* WHAT THIS PINS, and why it is no longer "one id per hook instance"
+       (2026-08-28).
+
+       The original rule was "derived per instance, not a module constant — two
+       mounted tables must not share an id or they would ignore each other's
+       changes." That was correct while each mounted hook kept its OWN copy of
+       the settings: two copies are two receivers, and a shared id would make
+       each ignore the other's echo.
+
+       `useTableSettings` no longer works that way. Its state is a single
+       module-level store that every consumer reads through
+       `useSyncExternalStore`, because eight independent copies each rewriting
+       the whole localStorage blob is what made settings silently revert (Dan:
+       "NEVER REGRESS OR AUTO CHANGE BACK"). With one store there is exactly one
+       receiver in the tab, so one origin id is not merely acceptable, it is the
+       accurate description — and per-instance ids would now be wrong, since two
+       ids would both be talking about the same object.
+
+       `useUserTableSettings` still keeps per-instance state, so it still uses a
+       `useRef`. Both shapes are accepted below; what must never come back is
+       the boolean latch, which the first case in this file pins, or a
+       hardcoded/static string, which `Math.random()` rules out. */
+    expect(src).toMatch(/originIdRef\s*=\s*(useRef<string>\(|\{\s*current:)/);
     expect(src).toMatch(/Math\.random\(\)/);
   });
 });

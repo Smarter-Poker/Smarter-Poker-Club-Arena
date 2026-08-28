@@ -255,8 +255,6 @@
 
 .result-item:hover {
   border-color: #00d4ff;
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
-  transform: translateY(-2px);
 }
 
 .result-avatar {

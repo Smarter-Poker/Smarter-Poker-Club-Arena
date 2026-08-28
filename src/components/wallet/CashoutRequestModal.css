@@ -301,10 +301,6 @@
 .quick-btn:active {
   background: var(--primary, #667eea);
   border-color: var(--primary, #667eea);
-  transform: scale(0.96);
-  box-shadow:
-    0 0 12px rgba(102, 126, 234, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .cashout-form textarea {
@@ -368,10 +364,6 @@
 .submit-btn:hover:not(:disabled),
 .submit-btn:active:not(:disabled) {
   opacity: 0.9;
-  transform: scale(0.97);
-  box-shadow:
-    0 0 24px rgba(102, 126, 234, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .submit-btn:disabled {

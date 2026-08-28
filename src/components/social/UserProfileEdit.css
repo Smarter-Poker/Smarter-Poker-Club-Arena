@@ -126,7 +126,6 @@
 }
 
 .avatar-choice:hover {
-  transform: scale(1.1);
 }
 
 .avatar-choice.selected {

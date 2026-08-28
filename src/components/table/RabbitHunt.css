@@ -123,7 +123,6 @@
 
 .rabbit-hunt__button:hover:not(:disabled) {
   background: rgba(20, 24, 34, 0.85);
-  transform: translateY(-1px);
 }
 
 .rabbit-hunt__button:active:not(:disabled) {

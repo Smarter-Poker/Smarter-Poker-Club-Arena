@@ -156,7 +156,6 @@
 .ssh-close:hover {
   background: rgba(255, 255, 255, 0.13);
   color: #fff;
-  transform: rotate(90deg);
 }
 .ssh-close:focus-visible {
   outline: 2px solid var(--ssh-accent);
@@ -325,7 +324,6 @@
     filter 0.16s ease;
 }
 .ssh-done:hover {
-  transform: translateY(-1px);
   filter: brightness(1.07);
 }
 .ssh-done:focus-visible {

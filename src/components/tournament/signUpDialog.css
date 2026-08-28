@@ -143,7 +143,6 @@
 .signup-modal .modal-close:hover {
   background: rgba(255, 255, 255, 0.14);
   color: #fff;
-  transform: rotate(90deg);
 }
 
 /* THE ROW. `gap` is what puts the space after every colon — see the header. */

@@ -2590,6 +2590,11 @@ export default function TablePage({
   // recovery toast was lost.
   const heartbeatToastRef = useRef(toast);
   heartbeatToastRef.current = toast;
+  /* One removal, one notice. Two paths detect a forced removal — the `seat_left`
+     websocket event (instant, but missable) and the ten-second seat read (slow,
+     but authoritative) — and without this the player who caught both would be
+     told twice. Reset when they take a seat again. */
+  const bootNoticeShownRef = useRef(false);
   /**
    * ── PRE-START SEAT-FIRST TABLES ARE NOT DEAD TABLES (Dan 2026-08-28) ──────
    *
@@ -2798,6 +2803,30 @@ export default function TablePage({
   /** Dan 2026-08-28: the tabbed hub behind the hero's own avatar. */
   const [showHeroHub, setShowHeroHub] = useState(false);
   const [showBuyInModal, setShowBuyInModal] = useState(false);
+  /**
+   * ═══ THE SEAT IS HELD FOR SIXTY SECONDS WHILE YOU BUY IN ═══
+   *
+   * Dan 2026-08-28, binding: "A SEAT IS HELD (WHILE THE PLAYER IS BUYING IN)
+   * FOR 60 SECONDS. IF THEY DO NOT COMPLETE THE BUY IN, IN 60 SECONDS THEY ARE
+   * REMOVED FROM THE TABLE AND SENT BACK TO THE LOBBY."
+   *
+   * WHERE THE HOLD ACTUALLY LIVES, because it is not where you would guess. On
+   * a cash table there is NO database row until the money moves:
+   * `atomic_table_buyin` debits the wallet and INSERTs the seat in the same
+   * transaction, so an unpaid seat cannot exist server-side. The hold is the
+   * client's optimistic paint — `pendingSeat` / `selectedSeat` — which locks
+   * this player out of every other seat at the table while the modal is open
+   * (see the guards on the seat-tap handler). That is the thing that has to
+   * expire, and until now it never did: a player could open the buy-in sheet
+   * and sit on it indefinitely, unable to take any other seat and occupying the
+   * one the felt was painting for them.
+   *
+   * `null` when no window is running. The modal already had a `countdown` prop
+   * documented as "Seconds remaining to buy in" and rendered at the top of the
+   * sheet — it had simply never been passed a value by either call site.
+   */
+  const [buyInSecondsLeft, setBuyInSecondsLeft] = useState<number | null>(null);
+  const BUY_IN_WINDOW_SECONDS = 60;
   // 2026-04-14 per Dan: bust rebuy flow
   const [bustRebuyOpen, setBustRebuyOpen] = useState(false);
   const [bustWalletBalance, setBustWalletBalance] = useState<number | null>(null);
@@ -6384,6 +6413,59 @@ export default function TablePage({
     const clubId = lobbyClubIdRef.current;
     return clubId ? `/clubs/${clubId}` : '/';
   };
+
+  /**
+   * The 60-second buy-in window. See BUY_IN_WINDOW_SECONDS for Dan's rule and
+   * for why the hold being released is a client-side one.
+   *
+   * Runs only while the buy-in sheet is open. Confirming, cancelling, or the
+   * seat being taken by somebody else all unmount the sheet and therefore stop
+   * the clock — there is no path where this fires against a completed buy-in,
+   * because `onConfirmBuyIn` closes the modal before the RPC resolves.
+   */
+  useEffect(() => {
+    if (!showBuyInModal) {
+      setBuyInSecondsLeft(null);
+      return;
+    }
+    setBuyInSecondsLeft(BUY_IN_WINDOW_SECONDS);
+    const startedAt = Date.now();
+    const id = window.setInterval(() => {
+      /* Wall-clock, not a decrement. A background tab throttles setInterval to
+         once a minute, so counting ticks would leave the sheet open long past
+         the window and then jump. Elapsed time is what the rule is about. */
+      const left = BUY_IN_WINDOW_SECONDS - Math.floor((Date.now() - startedAt) / 1000);
+      setBuyInSecondsLeft(left > 0 ? left : 0);
+      if (left > 0) return;
+
+      window.clearInterval(id);
+      setBuyInSecondsLeft(null);
+
+      // Release the sheet and the optimistic seat, exactly as a cancel does.
+      setShowBuyInModal(false);
+      setPendingSeat(null);
+      setSelectedSeat(null);
+      buyInIdempotencyKeyRef.current = null;
+
+      heartbeatToastRef.current?.info?.(
+        'Your Seat Was Released Because The Buy In Was Not Completed In 60 Seconds.'
+      );
+
+      /* "...AND SENT BACK TO THE LOBBY." Close the tab first, then navigate, in
+         that order — the leave path below learned the hard way that firing them
+         together lets three destinations race and the last one silently win.
+         A player who never paid holds no seat and no chips, so there is nothing
+         to settle on the way out. */
+      masterBus.emit('TABLE_MENU_ACTION', {
+        tableId: tableId ?? '',
+        action: 'CLOSE_TABLE_TAB',
+      });
+      navigate(exitDestination());
+    }, 1000);
+
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showBuyInModal, tableId]);
 
   const handleLeaveTable = async () => {
     if (!tableId || !userId) return;
@@ -13197,11 +13279,38 @@ export default function TablePage({
                 'You were away, so we cashed you out after one small blind and one big blind. Your chips are back in your wallet.',
               sit_out_timeout:
                 'You sat out too long and were cashed out. Your chips are back in your wallet.',
+              busted_no_rebuy: 'You ran out of chips and did not rebuy, so your seat was released.',
+              nit_game_vpip:
+                'This table has a minimum VPIP and you were below it, so you were cashed out. Your chips are back in your wallet.',
             };
-            heartbeatToastRef.current?.info?.(
-              EXPLANATIONS[reason] ??
-                `You were removed from the table (${reason.replace(/_/g, ' ')}). Your chips are back in your wallet.`
-            );
+            if (!bootNoticeShownRef.current) {
+              bootNoticeShownRef.current = true;
+              heartbeatToastRef.current?.info?.(
+                EXPLANATIONS[reason] ??
+                  `You were removed from the table (${reason.replace(/_/g, ' ')}). Your chips are back in your wallet.`
+              );
+            }
+
+            /* TELLING THEM IS HALF OF IT — THE SCREEN HAS TO AGREE (2026-08-28).
+             *
+             * This handler used to toast and stop, so the felt went on showing
+             * "You Are Sitting Out", an "I'm Back" button and "Seat Reserved,
+             * You'll Be Dealt In Next Hand" over a seat the player no longer
+             * held. Dan, after being booted from his own table: "I SHOULD GET A
+             * BOOTED NOTIFICATION ON MY SCREEN AND THE SITTING OUT BUTTON
+             * SHOULD DISAPPEAR."
+             *
+             * Clearing the seat claim is what flips the footer back to the
+             * spectator bar, because every one of those controls is gated on
+             * `heroSeat > 0` or on this id being in `sittingOutIdsRef`. The
+             * ten-second seat read does the same thing for anyone who never
+             * received this event; both are needed and they dedupe. */
+            heroSeatRef.current = 0;
+            sittingOutIdsRef.current.delete(String(userId));
+            setShowSitOut(false);
+            setSitOutSince(null);
+            setSitOutNextHand(false);
+            setTableState((prev) => (prev.heroSeat === 0 ? prev : { ...prev, heroSeat: 0 }));
           }
         }
         break;
@@ -13967,6 +14076,8 @@ export default function TablePage({
         const mySeat = res.seat_number ?? seatNumber;
         heroSeatRef.current = mySeat;
         seatAcquiredAtRef.current = Date.now();
+        // A new seat is a clean slate: a later removal must be announced again.
+        bootNoticeShownRef.current = false;
         setPendingSeat(mySeat);
         setTableState((prev) => ({ ...prev, heroSeat: mySeat }));
         setSeatFirstConfirm(null);
@@ -14506,7 +14617,58 @@ export default function TablePage({
           .eq('table_id', tableId)
           .is('left_at', null);
         if (error || cancelled || !data) return;
-        for (const row of data as Array<{ user_id: string; is_sitting_out: boolean | null }>) {
+        const rows = data as Array<{ user_id: string; is_sitting_out: boolean | null }>;
+        const stillSeated = new Set(rows.map((r) => String(r.user_id)).filter(Boolean));
+
+        /* A SEAT THAT IS GONE IS NOT STILL SITTING OUT (2026-08-28, second pass).
+         *
+         * The loop below only ever visited rows that came BACK, so it could set
+         * the flag and clear it for a player who was still there — and never
+         * clear it for one who had left. After the sit-out eviction cashed a
+         * player out, their row is filtered away by `left_at IS NULL`, so their
+         * id stayed in this Set forever and the felt kept a phantom SITTING OUT
+         * tag on an empty seat. Dan hit exactly this on his own boot. */
+        for (const id of Array.from(sittingOutIdsRef.current)) {
+          if (!stillSeated.has(id)) sittingOutIdsRef.current.delete(id);
+        }
+
+        /* AND IF THE SEAT THAT VANISHED WAS MINE, SAY SO (Dan 2026-08-28):
+         * "I WAS BOOTED AFTER 5 MIN, BUT I SHOULD GET A BOOTED NOTIFICATION ON
+         * MY SCREEN AND THE SITTING OUT BUTTON SHOULD DISAPPEAR."
+         *
+         * The engine does emit `seat_left` with a reason and the handler for it
+         * does toast — but that is ONE websocket event, and everything the
+         * player sees afterwards depends on catching it. Miss it (socket blip,
+         * tab asleep, event raced against a resync) and they are stranded in a
+         * seated-and-sitting-out UI over a seat they no longer hold, which is
+         * what the screenshot showed: "You Are Sitting Out", "I'm Back", "Seat
+         * Reserved, You'll Be Dealt In Next Hand" — all of it false.
+         *
+         * This read is the authority and it repeats every ten seconds, so the
+         * recovery cannot be missed. The toast is deduped against the websocket
+         * path by `bootNoticeShownRef` so a player who DID catch the event is
+         * not told twice. */
+        if (userId && heroSeatRef.current > 0 && !stillSeated.has(String(userId))) {
+          const freshJoin =
+            seatAcquiredAtRef.current != null && Date.now() - seatAcquiredAtRef.current < 15_000;
+          // A buy-in that has not landed yet is not an eviction.
+          if (!freshJoin) {
+            heroSeatRef.current = 0;
+            sittingOutIdsRef.current.delete(String(userId));
+            setShowSitOut(false);
+            setSitOutSince(null);
+            setSitOutNextHand(false);
+            setTableState((prev) => (prev.heroSeat === 0 ? prev : { ...prev, heroSeat: 0 }));
+            if (!bootNoticeShownRef.current) {
+              bootNoticeShownRef.current = true;
+              heartbeatToastRef.current?.info?.(
+                'You Were Removed From The Table. Your Chips Are Back In Your Wallet.'
+              );
+            }
+          }
+        }
+
+        for (const row of rows) {
           if (!row.user_id) continue;
           /* The hero's own fresh-join grace, same 15s window and same reason as
              the mount-time seed: a stale `true` on a seat the hero has only
@@ -19112,7 +19274,26 @@ export default function TablePage({
         v8Settings={v8Settings}
         userSettings={userSettings}
         isSoundEnabled={isSoundEnabled}
-        sitOutNextHand={sitOutNextHand}
+        /* THE SWITCH HAS TO KNOW YOU ARE ALREADY SITTING OUT (Dan 2026-08-28):
+           "IF YOU ARE SITTING OUT IT SHOULD BE TURNED ON IN THE HAMBURGER MENU
+           WHEN YOU GO TO IT."
+
+           `sitOutNextHand` is a private useState that only the settings switch
+           itself ever set. The other three ways into a sit-out — the hamburger's
+           Sit Out quick action, the masterBus TABLE_MENU_ACTION, and being
+           force-sat-out by the engine after three action timeouts — none of them
+           touched it, and nothing ever seeded it from the server. So the normal
+           path (tap Sit Out in the menu, then open Table Settings) always showed
+           the switch OFF while the player was demonstrably sitting out, and
+           flipping it ON sent a redundant sit-out.
+
+           `heroIsSittingOut` is the reactive server-derived truth already used
+           for the footer and the sit-out clock, so OR-ing it in makes the switch
+           report the state rather than its own history. `sitOutNextHand` stays in
+           the expression because it is the one thing the server view cannot show
+           yet: a sit-out requested DURING a hand is deferred, so the switch
+           should read ON from the moment it is asked for, not a hand later. */
+        sitOutNextHand={sitOutNextHand || heroIsSittingOut}
         // Player Notes
         showPlayerNotes={showPlayerNotes}
         selectedPlayerForNotes={selectedPlayerForNotes}
@@ -19236,6 +19417,7 @@ export default function TablePage({
            for the panel's own avatar row, so it updates without waiting on
            the bus round trip. */
 
+        buyInSecondsLeft={buyInSecondsLeft}
         onCloseBuyInModal={() => {
           // Releasing the modal must release the optimistic seat too, or the
           // player is locked out of every seat at the table by their own
@@ -19405,6 +19587,8 @@ export default function TablePage({
                 // was even sent. Nothing to do here but confirm the ref.
                 heroSeatRef.current = selectedSeat;
                 seatAcquiredAtRef.current = Date.now();
+                // A new seat is a clean slate: a later removal must be announced again.
+                bootNoticeShownRef.current = false;
                 HydraService.onRealPlayerJoined(tableId, userId);
                 await sendAction('player_seated', {
                   seat: selectedSeat,

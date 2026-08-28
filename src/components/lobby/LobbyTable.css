@@ -1634,9 +1634,13 @@ abbr.lt-variant[title] {
     border-radius: 0 9px 9px 0;
   }
 
-  /* Desktop hover deleted with the rest (Dan 2026-08-28). This one also
-     lifted the row a pixel, so on a trackpad the board twitched line by line
-     as the pointer crossed it. */
+  /* Desktop hover deleted with the rest (Dan 2026-08-28: "REMOVE ANY HOVER
+     EFFECT FROM THE SPINS LOBBY"). This one also lifted the row a pixel, so
+     on a trackpad the board twitched line by line as the pointer crossed it.
+
+     MERGE NOTE: main simplified this rule to a plain background on the same
+     day. Taking the deletion rather than the simplification — the instruction
+     was to remove the effect, not to tone it down. */
 
   .lt-row.is-featured {
     background: #162b50;

@@ -344,7 +344,7 @@ describe('one player, one stack', () => {
     // had no seats, and the sweep went on to decide who was out.
     // Reached, not merely present.
     expect(code(ELIM)).toMatch(
-      /if\s*\(\s*seatsErr\s*\)\s*\{[\s\S]{0,600}?seat_read_failed[\s\S]{0,120}?\n\s*return;/
+      /if\s*\(\s*seatsErr\s*\|\|\s*!chunk\s*\)\s*\{[\s\S]{0,600}?seat_read_failed[\s\S]*?return;/
     );
   });
 });

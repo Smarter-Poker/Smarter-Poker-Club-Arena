@@ -691,3 +691,149 @@ describe('two things the panel had been assuming about the catalog', () => {
     expect(DAILY).toMatch(/those are live and dead at once, fix them before constraining/);
   });
 });
+
+describe('a placement can be managed, not only born', () => {
+  /* POST created the advert plus exactly ONE placement, and PATCH never
+     touched ad_placement at all. So the panel could make a campaign live on
+     one surface and then never move it: no second surface, no cap change, no
+     pausing one surface while another kept running. Every one of the eighteen
+     multi-slot placements in production was written by an agent, in a
+     migration, and the per-placement reporting shipped earlier the same day
+     described a dimension the editor could not manage. */
+  const PLACEMENT_MIGRATION = read(
+    'supabase/migrations/20260828100000_placements_images_experiments_and_retention.sql'
+  );
+
+  it('the panel can open, add, edit, pause and remove a placement', () => {
+    expect(ADMIN).toMatch(/const savePlacement = async/);
+    expect(ADMIN).toMatch(/const togglePlacement = async/);
+    expect(ADMIN).toMatch(/const removePlacement = async/);
+    expect(ADMIN).toMatch(/query: \{ kind: 'placement' \}/);
+    // And it is reachable: a handler nothing calls is the house bug shape.
+    expect(ADMIN).toMatch(/onClick=\{\(\) => openPlacements\(ad\.id\)\}/);
+    expect(ADMIN).toMatch(/onClick=\{\(\) => editPlacement\(p\)\}/);
+    expect(ADMIN).toMatch(/onClick=\{\(\) => togglePlacement\(p\)\}/);
+    expect(ADMIN).toMatch(/onClick=\{\(\) => removePlacement\(p, ad\.headline\)\}/);
+  });
+
+  it('says so when a removal leaves the campaign running nowhere', () => {
+    /* An ad with no placement runs nowhere and looks perfectly healthy in the
+       list - the commonest way to publish something and see nothing happen. */
+    expect(ADMIN).toMatch(/That Ad Now Runs Nowhere/);
+    expect(ADMIN).toMatch(/Not Placed\. This Ad Is Running Nowhere\./);
+  });
+
+  it('a placement club must be a real club', () => {
+    /* club_id has been honoured by the resolver since Phase 1 and is NULL on
+       every row, which is exactly the state in which a typo goes unnoticed.
+       Now the panel can write it, so the database has to mean it. */
+    expect(PLACEMENT_MIGRATION).toMatch(/add constraint ad_placement_club_fk/);
+    expect(PLACEMENT_MIGRATION).toMatch(/references public\.clubs\(id\)/);
+  });
+});
+
+describe('an ad image is a URL every browser fetches without being asked', () => {
+  const PLACEMENT_MIGRATION = read(
+    'supabase/migrations/20260828100000_placements_images_experiments_and_retention.sql'
+  );
+  const CARD = read('src/components/ads/HouseAdCard.tsx');
+
+  it('is checked in the database, and again where it renders', () => {
+    /* A destination is checked before a browser is sent to it; an image is the
+       same question with LESS consent, because the fetch happens on render. An
+       external host hands every player's IP and user agent to a third party
+       chosen by whoever typed the URL into the panel. */
+    expect(PLACEMENT_MIGRATION).toMatch(/add constraint ad_catalog_image_is_same_origin/);
+    expect(PLACEMENT_MIGRATION).toMatch(/image_url like '\/%' and image_url not like '\/\/%'/);
+    expect(SERVICE).toMatch(/export function isSafeAdImage/);
+    expect(CARD).toMatch(/isSafeAdImage\(ad\.imageUrl\)/);
+  });
+
+  it('proves the constraint refuses an external URL rather than trusting it', () => {
+    // Probed inside the migration and rolled back, not asserted by reading.
+    expect(PLACEMENT_MIGRATION).toMatch(/the image origin constraint accepted an external URL/);
+    expect(PLACEMENT_MIGRATION).toMatch(/when check_violation then null/);
+  });
+
+  it('falls back to the glyph when the file is missing', () => {
+    // A broken-image icon in a promotion is worse than no promotion.
+    expect(CARD).toMatch(/onError=\{\(\) => setImageFailed\(true\)\}/);
+    expect(CARD).toMatch(/showImage \? \(/);
+  });
+});
+
+describe('two creatives can be known to be one test', () => {
+  const PLACEMENT_MIGRATION = read(
+    'supabase/migrations/20260828100000_placements_images_experiments_and_retention.sql'
+  );
+
+  it('experiment_key names the relationship the draw already honours', () => {
+    /* Nothing stopped somebody creating two catalog rows, and since the
+       weighted draw landed the traffic would split correctly - but the panel
+       reported them as unrelated campaigns, so nobody could read the result. */
+    expect(PLACEMENT_MIGRATION).toMatch(/add column if not exists experiment_key text/);
+    expect(ADMIN).toMatch(/experiment_key/);
+    expect(ADMIN).toMatch(/Variants Of One Test/i);
+  });
+});
+
+describe('ad_event does not grow forever, and pruning is a policy', () => {
+  const PLACEMENT_MIGRATION = read(
+    'supabase/migrations/20260828100000_placements_images_experiments_and_retention.sql'
+  );
+
+  it('reads its window from a policy row rather than a hardcoded number', () => {
+    /* ad_event is the denominator of every number this panel prints, so
+       pruning it changes history and belongs in a policy somebody set. */
+    expect(PLACEMENT_MIGRATION).toMatch(
+      /create table if not exists public\.ad_event_retention_policy/
+    );
+    expect(PLACEMENT_MIGRATION).toMatch(/create or replace function public\.fn_prune_ad_events/);
+  });
+
+  it('refuses to prune when there is no policy at all', () => {
+    // No policy row is not permission to delete everything.
+    expect(PLACEMENT_MIGRATION).toMatch(/ad_event_retention_policy has no row; refusing to prune/);
+  });
+
+  it('is not scheduled here, and says why', () => {
+    /* Open Claw is the only sanctioned scheduler and a new cron is a governed
+       change; CI also fails on a net-new file in pages/api/cron/. Wiring this
+       to a schedule needs a paper trail, not a side effect of a migration. */
+    expect(PLACEMENT_MIGRATION).toMatch(/IT IS NOT SCHEDULED HERE/);
+    expect(PLACEMENT_MIGRATION).toMatch(/Open Claw the only sanctioned scheduler/);
+  });
+});
+
+describe('a NULL club is a value, not a wildcard', () => {
+  /* ad_placement's unique key was UNIQUE (ad_id, slot, club_id) from Phase 1.
+     Postgres treats NULLs as DISTINCT by default, and club_id is NULL on every
+     one of the eighteen placements in production because NULL is how "every
+     club" is spelled - so the key had never fired for a single real row.
+
+     It did not matter while the only writer was a hand-written migration under
+     review. It mattered the moment the panel could add placements: two clicks
+     of Add Placement on one surface would have rendered the advert twice from
+     one JOIN, split its cap in two, and returned a cheerful success from an
+     API branch that could never fire.
+
+     Found by PROBING the key rather than reading it. Reading it is how it
+     passed review in the first place. */
+  const KEY = read('supabase/migrations/20260828110000_a_null_club_is_a_value_not_a_wildcard.sql');
+
+  it('replaces the key with one that counts NULL as a value', () => {
+    expect(KEY).toMatch(/unique nulls not distinct \(ad_id, slot, club_id\)/);
+    expect(KEY).toMatch(/drop constraint if exists ad_placement_ad_id_slot_club_id_key/);
+  });
+
+  it('proves the new key refuses what the old one accepted', () => {
+    // Asserted by inserting a duplicate and expecting the violation, rolled
+    // back inside the migration.
+    expect(KEY).toMatch(/still accepts a duplicate platform-wide placement/);
+    expect(KEY).toMatch(/when unique_violation then null/);
+  });
+
+  it('refuses to tighten the key over data that would fail it', () => {
+    expect(KEY).toMatch(/resolve them before tightening the key/);
+  });
+});

@@ -37,6 +37,14 @@
 --   Re-create fn_ad_stats from 20260828050000, which is identical but for the
 --   two count(DISTINCT ...) columns.
 
+-- DROP first: this adds two columns to the RETURNS TABLE, and Postgres refuses
+-- to change a function's return type with CREATE OR REPLACE. Dropping and
+-- creating inside one transaction is atomic, so no caller ever finds it
+-- missing. Without this line the file would fail on replay with "cannot change
+-- return type of existing function" - which is what the live database was
+-- given and the committed file was not, until it was checked.
+drop function if exists public.fn_ad_stats();
+
 create or replace function public.fn_ad_stats()
 returns table(
   ad_id uuid,

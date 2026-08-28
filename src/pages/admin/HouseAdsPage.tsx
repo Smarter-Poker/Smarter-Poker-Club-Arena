@@ -27,7 +27,7 @@
  * codebase keeps having to dig out.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { callClubArenaApi } from '../../services/clubArenaApi';
@@ -40,6 +40,13 @@ import '../AdminDashboardPage.css';
 interface AdRow {
   id: string;
   ad_key: string;
+  /* Same-origin paths only. An external image URL hands every viewer's IP and
+     user agent to a third party chosen by whoever typed it in - the database
+     carries the same CHECK, so this field cannot hold anything else. */
+  image_url?: string | null;
+  /* Two campaigns sharing a key are variants of one test. The weighted draw
+     already splits traffic between them; this is what lets a report say so. */
+  experiment_key?: string | null;
   category: string;
   headline: string;
   body: string | null;
@@ -165,6 +172,8 @@ const EMPTY_FORM = {
   target_url: '',
   cta_label: '',
   weight: '100',
+  image_url: '',
+  experiment_key: '',
   slot: 'lobby_strip' as string,
   audience: 'all' as string,
   daily_cap: '',
@@ -193,6 +202,18 @@ export default function HouseAdsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  /* PLACEMENT EDITING (2026-08-28). Until today a placement could be created
+     with the advert and never touched: no second surface, no cap change, no
+     pausing one surface while another kept running. Every multi-slot placement
+     in production had been written by an agent in a migration. */
+  const [placementAdId, setPlacementAdId] = useState<string | null>(null);
+  const [placementDraft, setPlacementDraft] = useState({
+    id: '' as string,
+    slot: 'lobby_strip' as string,
+    audience: 'all' as string,
+    daily_cap: '' as string,
+  });
+  const [placementBusy, setPlacementBusy] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
 
   // ── Access ────────────────────────────────────────────────────────────────
@@ -298,6 +319,8 @@ export default function HouseAdsPage() {
           'house-ads',
           {
             id: editingId,
+            image_url: form.image_url.trim() || null,
+            experiment_key: form.experiment_key.trim() || null,
             category: form.category,
             headline: form.headline,
             body: form.body,
@@ -322,6 +345,8 @@ export default function HouseAdsPage() {
             target_url: form.target_url,
             cta_label: form.cta_label,
             weight: form.weight,
+            image_url: form.image_url.trim() || null,
+            experiment_key: form.experiment_key.trim() || null,
             slot: form.slot,
             audience: form.audience,
             daily_cap: form.daily_cap ? Number(form.daily_cap) : null,
@@ -353,6 +378,117 @@ export default function HouseAdsPage() {
     }
   };
 
+  // ── Placements ────────────────────────────────────────────────────────────
+  const resetPlacementDraft = (slot = 'lobby_strip') =>
+    setPlacementDraft({ id: '', slot, audience: 'all', daily_cap: '' });
+
+  const openPlacements = (adId: string) => {
+    setPlacementAdId((cur) => (cur === adId ? null : adId));
+    resetPlacementDraft();
+    setActionError(null);
+  };
+
+  const editPlacement = (p: PlacementRow) => {
+    setPlacementDraft({
+      id: p.id,
+      slot: p.slot,
+      audience: p.audience || 'all',
+      daily_cap: p.daily_cap == null ? '' : String(p.daily_cap),
+    });
+  };
+
+  const savePlacement = async (adId: string) => {
+    setPlacementBusy(true);
+    setActionError(null);
+    setNotice(null);
+    try {
+      const body: Record<string, unknown> = {
+        slot: placementDraft.slot,
+        audience: placementDraft.audience,
+        daily_cap: placementDraft.daily_cap === '' ? null : Number(placementDraft.daily_cap),
+      };
+      if (placementDraft.id) {
+        await callClubArenaApi(
+          'house-ads',
+          { ...body, id: placementDraft.id },
+          {
+            method: 'PATCH',
+            query: { kind: 'placement' },
+          }
+        );
+      } else {
+        await callClubArenaApi(
+          'house-ads',
+          { ...body, ad_id: adId },
+          {
+            method: 'POST',
+            query: { kind: 'placement' },
+          }
+        );
+      }
+      resetPlacementDraft(placementDraft.slot);
+      setNotice(placementDraft.id ? 'Placement Saved.' : 'Placement Added.');
+      await load();
+    } catch (e) {
+      reportError(e, 'HouseAdsPage.savePlacement');
+      setActionError(safeErrorMessage(e, 'Could not save that placement.'));
+    } finally {
+      setPlacementBusy(false);
+    }
+  };
+
+  const togglePlacement = async (p: PlacementRow) => {
+    setPlacementBusy(true);
+    setActionError(null);
+    try {
+      await callClubArenaApi(
+        'house-ads',
+        { id: p.id, is_active: !p.is_active },
+        {
+          method: 'PATCH',
+          query: { kind: 'placement' },
+        }
+      );
+      await load();
+    } catch (e) {
+      reportError(e, 'HouseAdsPage.togglePlacement');
+      setActionError(safeErrorMessage(e, 'Could not change that placement.'));
+    } finally {
+      setPlacementBusy(false);
+    }
+  };
+
+  const removePlacement = async (p: PlacementRow, adLabel: string) => {
+    const label = SLOTS.find((x) => x.id === p.slot)?.label || p.slot;
+    const ok = await confirmDialog({
+      title: 'Remove This Placement',
+      message: `"${adLabel}" Will Stop Running On ${label}. The Ad Itself Is Kept.`,
+      confirmText: 'Remove',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    setPlacementBusy(true);
+    setActionError(null);
+    try {
+      /* The API tells us when this was the LAST placement, because an ad with
+         none runs nowhere and looks perfectly healthy in the list. */
+      const res = await callClubArenaApi<{ orphaned?: boolean }>(
+        'house-ads',
+        {},
+        { method: 'DELETE', query: { kind: 'placement', id: p.id } }
+      );
+      setNotice(
+        res?.orphaned ? 'Placement Removed. That Ad Now Runs Nowhere.' : 'Placement Removed.'
+      );
+      await load();
+    } catch (e) {
+      reportError(e, 'HouseAdsPage.removePlacement');
+      setActionError(safeErrorMessage(e, 'Could not remove that placement.'));
+    } finally {
+      setPlacementBusy(false);
+    }
+  };
+
   const handleToggle = async (ad: AdRow) => {
     setActionError(null);
     try {
@@ -369,6 +505,8 @@ export default function HouseAdsPage() {
   };
 
   const handleEdit = (ad: AdRow) => {
+    /* image_url and experiment_key are catalog fields, so unlike slot/audience
+       /cap they ARE editable - the form shows them in both modes. */
     setEditingId(ad.id);
     setForm({
       ad_key: ad.ad_key,
@@ -379,6 +517,8 @@ export default function HouseAdsPage() {
       target_url: ad.target_url || '',
       cta_label: ad.cta_label || '',
       weight: String(ad.weight ?? 100),
+      image_url: ad.image_url || '',
+      experiment_key: ad.experiment_key || '',
       slot: 'lobby_strip',
       audience: 'all',
       daily_cap: '',
@@ -609,6 +749,53 @@ export default function HouseAdsPage() {
               </div>
             </div>
 
+            {/* IMAGE AND EXPERIMENT are catalog fields, so they show in BOTH
+                modes - unlike surface, audience and cap below, which belong to
+                a PLACEMENT and are managed in the Placements row of the table.
+                Putting them in the create-only block would have made an
+                existing campaign's image uneditable, which is the same shape as
+                the gap this whole change is fixing. */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: 12,
+              }}
+            >
+              <div>
+                <label className="admin-label" htmlFor="ad-image">
+                  Image Path (Optional)
+                </label>
+                <input
+                  id="ad-image"
+                  className="admin-input"
+                  placeholder="/images/promo.png"
+                  value={form.image_url}
+                  onChange={(e) => setForm((f) => ({ ...f, image_url: e.target.value }))}
+                />
+                <div className="admin-text-secondary" style={{ fontSize: 11, marginTop: 4 }}>
+                  A Path On smarter.poker Only. An Outside Address Hands Every Player&apos;s Device
+                  Details To Somebody Else.
+                </div>
+              </div>
+              <div>
+                <label className="admin-label" htmlFor="ad-experiment">
+                  Experiment Key (Optional)
+                </label>
+                <input
+                  id="ad-experiment"
+                  className="admin-input"
+                  placeholder="spins_headline_test"
+                  value={form.experiment_key}
+                  onChange={(e) => setForm((f) => ({ ...f, experiment_key: e.target.value }))}
+                />
+                <div className="admin-text-secondary" style={{ fontSize: 11, marginTop: 4 }}>
+                  Two Ads Sharing A Key Are Variants Of One Test. Traffic Splits Between Them By
+                  Weight.
+                </div>
+              </div>
+            </div>
+
             {!editingId && (
               <div
                 style={{
@@ -776,26 +963,30 @@ export default function HouseAdsPage() {
                     const s = stats?.[ad.id];
                     const pls = placementsByAd.get(ad.id) || [];
                     return (
-                      <tr key={ad.id}>
-                        <td>
-                          <div style={{ fontWeight: 700 }}>
-                            {ad.glyph ? `${ad.glyph} ` : ''}
-                            {ad.headline}
-                          </div>
-                          <div className="admin-text-secondary admin-mono" style={{ fontSize: 11 }}>
-                            {ad.ad_key} &middot; {ad.category.replace(/_/g, ' ')} &middot; weight{' '}
-                            {ad.weight}
-                          </div>
-                        </td>
-                        <td className="admin-text-secondary" style={{ fontSize: 12 }}>
-                          {pls.length === 0 ? (
-                            /* An ad with no placement runs NOWHERE. That is the
+                      <Fragment key={ad.id}>
+                        <tr>
+                          <td>
+                            <div style={{ fontWeight: 700 }}>
+                              {ad.glyph ? `${ad.glyph} ` : ''}
+                              {ad.headline}
+                            </div>
+                            <div
+                              className="admin-text-secondary admin-mono"
+                              style={{ fontSize: 11 }}
+                            >
+                              {ad.ad_key} &middot; {ad.category.replace(/_/g, ' ')} &middot; weight{' '}
+                              {ad.weight}
+                            </div>
+                          </td>
+                          <td className="admin-text-secondary" style={{ fontSize: 12 }}>
+                            {pls.length === 0 ? (
+                              /* An ad with no placement runs NOWHERE. That is the
                                commonest way to publish something and see
                                nothing happen, so it is called out rather than
                                left as an empty cell. */
-                            <span className="admin-badge-yellow">Not Placed</span>
-                          ) : (
-                            /* PER SURFACE, NOT BLENDED (2026-08-28). Each
+                              <span className="admin-badge-yellow">Not Placed</span>
+                            ) : (
+                              /* PER SURFACE, NOT BLENDED (2026-08-28). Each
                                placement carries its own numbers, because one
                                campaign on four surfaces used to report a
                                single total that could not tell an operator
@@ -806,125 +997,329 @@ export default function HouseAdsPage() {
                                Yet" rather than 0/0, and an unreadable rollup
                                still reads as a dash - a confident zero is the
                                lie this whole panel exists to avoid. */
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                              {pls.map((p) => {
-                                const label = SLOTS.find((x) => x.id === p.slot)?.label || p.slot;
-                                const ss = statsBySlot?.[ad.id]?.[p.slot];
-                                const sup = suppression?.[ad.id]?.[p.slot];
-                                const conv = conversions?.[ad.id]?.[p.slot];
-                                const series = daily?.[ad.id]?.[p.slot];
-                                return (
-                                  <div key={p.id}>
-                                    <span>{label}</span>
-                                    {p.audience && p.audience !== 'all' ? (
-                                      <span className="admin-text-secondary"> ({p.audience})</span>
-                                    ) : null}
-                                    <span className="admin-mono" style={{ marginLeft: 6 }}>
-                                      {statsBySlot === null
-                                        ? '-'
-                                        : ss
-                                          ? `${ss.impressions} Views To ${ss.viewers ?? '?'} ${
-                                              ss.viewers === 1 ? 'Person' : 'People'
-                                            } / ${ss.clicks} (${rate(ss)})`
-                                          : 'No Views Yet'}
-                                    </span>
-                                    {/* Why it might be quiet. Only shown when
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                {pls.map((p) => {
+                                  const label = SLOTS.find((x) => x.id === p.slot)?.label || p.slot;
+                                  const ss = statsBySlot?.[ad.id]?.[p.slot];
+                                  const sup = suppression?.[ad.id]?.[p.slot];
+                                  const conv = conversions?.[ad.id]?.[p.slot];
+                                  const series = daily?.[ad.id]?.[p.slot];
+                                  return (
+                                    <div key={p.id}>
+                                      <span>{label}</span>
+                                      {p.audience && p.audience !== 'all' ? (
+                                        <span className="admin-text-secondary">
+                                          {' '}
+                                          ({p.audience})
+                                        </span>
+                                      ) : null}
+                                      <span className="admin-mono" style={{ marginLeft: 6 }}>
+                                        {statsBySlot === null
+                                          ? '-'
+                                          : ss
+                                            ? `${ss.impressions} Views To ${ss.viewers ?? '?'} ${
+                                                ss.viewers === 1 ? 'Person' : 'People'
+                                              } / ${ss.clicks} (${rate(ss)})`
+                                            : 'No Views Yet'}
+                                      </span>
+                                      {/* Why it might be quiet. Only shown when
                                         somebody is actually capped out: a "0
                                         Capped" on every row would be noise, and
                                         the number only means something next to
                                         the number it is a fraction of. */}
-                                    {/* THE LAST FOURTEEN DAYS, drawn in eighths.
+                                      {/* THE LAST FOURTEEN DAYS, drawn in eighths.
                                         A trend is the one thing a lifetime
                                         total cannot show, and a campaign that
                                         is halving looks healthy right up until
                                         somebody plots it. Only drawn with two
                                         or more days: a single bar is not a
                                         trend, it is a number wearing one. */}
-                                    {series && series.length > 1 ? (
-                                      <span
-                                        className="admin-mono"
-                                        style={{ marginLeft: 6, letterSpacing: '-1px' }}
-                                        title={series
-                                          .map(
-                                            (d) =>
-                                              `${d.day}: ${d.impressions} views, ${d.clicks} clicks`
-                                          )
-                                          .join('\n')}
-                                        aria-label={`Last ${series.length} Days Of Views`}
-                                      >
-                                        {sparkline(series.map((d) => d.impressions))}
-                                      </span>
-                                    ) : null}
-                                    {/* Did it work. Only shown once the
+                                      {series && series.length > 1 ? (
+                                        <span
+                                          className="admin-mono"
+                                          style={{ marginLeft: 6, letterSpacing: '-1px' }}
+                                          title={series
+                                            .map(
+                                              (d) =>
+                                                `${d.day}: ${d.impressions} views, ${d.clicks} clicks`
+                                            )
+                                            .join('\n')}
+                                          aria-label={`Last ${series.length} Days Of Views`}
+                                        >
+                                          {sparkline(series.map((d) => d.impressions))}
+                                        </span>
+                                      ) : null}
+                                      {/* Did it work. Only shown once the
                                         placement has clicks to judge - a
                                         conversion line under a placement with
                                         no clicks is arithmetic on nothing. */}
-                                    {conv && conv.clicks > 0 ? (
-                                      <span
-                                        className="admin-text-secondary"
-                                        style={{ marginLeft: 6, fontSize: 11 }}
-                                        title={
-                                          conv.conversionRule
-                                            ? `${conv.conversionRule}, within 24 hours of the click. Correlation, not proof of cause.`
-                                            : 'No outcome is defined for this campaign, so this is deliberately not counted'
-                                        }
-                                      >
-                                        {conv.clicksFollowedBy === null
-                                          ? 'No Outcome Defined'
-                                          : `${conv.clicksFollowedBy} Followed Through`}
-                                      </span>
-                                    ) : null}
-                                    {sup && sup.cappedUsers24h > 0 ? (
-                                      <span
-                                        className="admin-badge-yellow"
-                                        style={{ marginLeft: 6, fontSize: 10 }}
-                                        title="Players who have already hit this placement's daily cap in the last 24 hours, and so cannot see it again today"
-                                      >
-                                        {sup.cappedUsers24h} Of {sup.servedUsers24h} Capped Out
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                );
-                              })}
+                                      {conv && conv.clicks > 0 ? (
+                                        <span
+                                          className="admin-text-secondary"
+                                          style={{ marginLeft: 6, fontSize: 11 }}
+                                          title={
+                                            conv.conversionRule
+                                              ? `${conv.conversionRule}, within 24 hours of the click. Correlation, not proof of cause.`
+                                              : 'No outcome is defined for this campaign, so this is deliberately not counted'
+                                          }
+                                        >
+                                          {conv.clicksFollowedBy === null
+                                            ? 'No Outcome Defined'
+                                            : `${conv.clicksFollowedBy} Followed Through`}
+                                        </span>
+                                      ) : null}
+                                      {sup && sup.cappedUsers24h > 0 ? (
+                                        <span
+                                          className="admin-badge-yellow"
+                                          style={{ marginLeft: 6, fontSize: 10 }}
+                                          title="Players who have already hit this placement's daily cap in the last 24 hours, and so cannot see it again today"
+                                        >
+                                          {sup.cappedUsers24h} Of {sup.servedUsers24h} Capped Out
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </td>
+                          <td className="admin-mono">
+                            {stats === null ? '-' : (s?.impressions ?? 0)}
+                          </td>
+                          <td className="admin-mono">{stats === null ? '-' : (s?.clicks ?? 0)}</td>
+                          <td className="admin-mono">{stats === null ? '-' : rate(s)}</td>
+                          <td>
+                            <span className={ad.is_active ? 'admin-badge-green' : 'admin-badge'}>
+                              {ad.is_active ? 'Live' : 'Paused'}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button
+                                type="button"
+                                className="admin-btn admin-btn-sm admin-btn-ghost"
+                                onClick={() => handleEdit(ad)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="admin-btn admin-btn-sm admin-btn-ghost"
+                                onClick={() => openPlacements(ad.id)}
+                                aria-expanded={placementAdId === ad.id}
+                              >
+                                {placementAdId === ad.id ? 'Close' : 'Placements'}
+                              </button>
+                              <button
+                                type="button"
+                                className="admin-btn admin-btn-sm admin-btn-ghost"
+                                onClick={() => handleToggle(ad)}
+                              >
+                                {ad.is_active ? 'Pause' : 'Resume'}
+                              </button>
+                              <button
+                                type="button"
+                                className="admin-btn admin-btn-sm admin-btn-danger"
+                                onClick={() => handleDelete(ad)}
+                              >
+                                Delete
+                              </button>
                             </div>
-                          )}
-                        </td>
-                        <td className="admin-mono">
-                          {stats === null ? '-' : (s?.impressions ?? 0)}
-                        </td>
-                        <td className="admin-mono">{stats === null ? '-' : (s?.clicks ?? 0)}</td>
-                        <td className="admin-mono">{stats === null ? '-' : rate(s)}</td>
-                        <td>
-                          <span className={ad.is_active ? 'admin-badge-green' : 'admin-badge'}>
-                            {ad.is_active ? 'Live' : 'Paused'}
-                          </span>
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            <button
-                              type="button"
-                              className="admin-btn admin-btn-sm admin-btn-ghost"
-                              onClick={() => handleEdit(ad)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className="admin-btn admin-btn-sm admin-btn-ghost"
-                              onClick={() => handleToggle(ad)}
-                            >
-                              {ad.is_active ? 'Pause' : 'Resume'}
-                            </button>
-                            <button
-                              type="button"
-                              className="admin-btn admin-btn-sm admin-btn-danger"
-                              onClick={() => handleDelete(ad)}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
+                          </td>
+                        </tr>
+
+                        {/* WHERE A CAMPAIGN RUNS, AND HOW TO MOVE IT
+                          (2026-08-28). This row is the whole point of the
+                          change: before it, a placement was created with the
+                          advert and never touched again, so "run this on the
+                          Hub too" or "lower that cap" meant an agent writing a
+                          migration. */}
+                        {placementAdId === ad.id ? (
+                          <tr>
+                            <td colSpan={7} style={{ background: 'rgba(255,255,255,0.02)' }}>
+                              <div style={{ padding: '6px 2px 10px' }}>
+                                <div
+                                  className="admin-text-secondary"
+                                  style={{ fontSize: 11, marginBottom: 8 }}
+                                >
+                                  Where This Ad Runs. An Ad With No Placement Runs Nowhere.
+                                </div>
+
+                                {pls.length === 0 ? (
+                                  <div className="admin-badge-yellow" style={{ fontSize: 12 }}>
+                                    Not Placed. This Ad Is Running Nowhere.
+                                  </div>
+                                ) : (
+                                  <table className="admin-table" style={{ marginBottom: 10 }}>
+                                    <thead>
+                                      <tr>
+                                        <th>Surface</th>
+                                        <th>Who</th>
+                                        <th>Cap</th>
+                                        <th>State</th>
+                                        <th />
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {pls.map((p) => (
+                                        <tr key={p.id}>
+                                          <td>
+                                            {SLOTS.find((x) => x.id === p.slot)?.label || p.slot}
+                                          </td>
+                                          <td className="admin-text-secondary">
+                                            {AUDIENCES.find((a) => a.id === (p.audience || 'all'))
+                                              ?.label || p.audience}
+                                            {/* A club-scoped placement runs in one
+                                              club only. Nothing had ever used
+                                              this, which is exactly when a typo
+                                              goes unnoticed - so it is labelled
+                                              rather than left blank. */}
+                                            {p.club_id ? ' - One Club Only' : ''}
+                                          </td>
+                                          <td className="admin-mono">
+                                            {p.daily_cap == null
+                                              ? 'Uncapped'
+                                              : `${p.daily_cap}/Day`}
+                                          </td>
+                                          <td>
+                                            <span
+                                              className={
+                                                p.is_active ? 'admin-badge-green' : 'admin-badge'
+                                              }
+                                            >
+                                              {p.is_active ? 'Live' : 'Paused'}
+                                            </span>
+                                          </td>
+                                          <td>
+                                            <div style={{ display: 'flex', gap: 6 }}>
+                                              <button
+                                                type="button"
+                                                className="admin-btn admin-btn-sm admin-btn-ghost"
+                                                disabled={placementBusy}
+                                                onClick={() => editPlacement(p)}
+                                              >
+                                                Edit
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="admin-btn admin-btn-sm admin-btn-ghost"
+                                                disabled={placementBusy}
+                                                onClick={() => togglePlacement(p)}
+                                              >
+                                                {p.is_active ? 'Pause' : 'Resume'}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="admin-btn admin-btn-sm admin-btn-danger"
+                                                disabled={placementBusy}
+                                                onClick={() => removePlacement(p, ad.headline)}
+                                              >
+                                                Remove
+                                              </button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                )}
+
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    gap: 8,
+                                    alignItems: 'flex-end',
+                                    flexWrap: 'wrap',
+                                  }}
+                                >
+                                  <div>
+                                    <label className="admin-label" htmlFor={`pl-slot-${ad.id}`}>
+                                      Surface
+                                    </label>
+                                    <select
+                                      id={`pl-slot-${ad.id}`}
+                                      className="admin-input"
+                                      value={placementDraft.slot}
+                                      onChange={(e) =>
+                                        setPlacementDraft((d) => ({ ...d, slot: e.target.value }))
+                                      }
+                                    >
+                                      {SLOTS.map((x) => (
+                                        <option key={x.id} value={x.id}>
+                                          {x.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="admin-label" htmlFor={`pl-aud-${ad.id}`}>
+                                      Who Sees It
+                                    </label>
+                                    <select
+                                      id={`pl-aud-${ad.id}`}
+                                      className="admin-input"
+                                      value={placementDraft.audience}
+                                      onChange={(e) =>
+                                        setPlacementDraft((d) => ({
+                                          ...d,
+                                          audience: e.target.value,
+                                        }))
+                                      }
+                                    >
+                                      {AUDIENCES.map((a) => (
+                                        <option key={a.id} value={a.id}>
+                                          {a.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="admin-label" htmlFor={`pl-cap-${ad.id}`}>
+                                      Views Per Player Per Day
+                                    </label>
+                                    <input
+                                      id={`pl-cap-${ad.id}`}
+                                      className="admin-input"
+                                      type="number"
+                                      min={1}
+                                      placeholder="Uncapped"
+                                      value={placementDraft.daily_cap}
+                                      onChange={(e) =>
+                                        setPlacementDraft((d) => ({
+                                          ...d,
+                                          daily_cap: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="admin-btn admin-btn-sm"
+                                    disabled={placementBusy}
+                                    onClick={() => savePlacement(ad.id)}
+                                  >
+                                    {placementBusy
+                                      ? 'Saving...'
+                                      : placementDraft.id
+                                        ? 'Save Placement'
+                                        : 'Add Placement'}
+                                  </button>
+                                  {placementDraft.id ? (
+                                    <button
+                                      type="button"
+                                      className="admin-btn admin-btn-sm admin-btn-ghost"
+                                      disabled={placementBusy}
+                                      onClick={() => resetPlacementDraft()}
+                                    >
+                                      Cancel
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
                     );
                   })}
                 </tbody>

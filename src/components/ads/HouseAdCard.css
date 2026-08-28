@@ -118,3 +118,24 @@
     transition: none;
   }
 }
+
+/* An optional image, added 2026-08-28 when ad_catalog learned to carry one.
+   Fixed box so a creative of any shape cannot change the card's height and
+   push the surface around it; object-fit crops rather than distorting. Falls
+   back to the glyph when the file is missing, which is handled in the
+   component - a broken-image icon in a promotion is worse than no promotion. */
+.house-ad__image {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+@media (max-width: 480px) {
+  .house-ad__image {
+    width: 36px;
+    height: 36px;
+  }
+}

@@ -1,0 +1,81 @@
+feat(ads): a placement can be managed, not only born - plus images, experiments and retention
+
+POST created the advert plus exactly ONE placement and PATCH never touched
+ad_placement at all, so the panel could make a campaign live on one surface and
+then never move it: no second surface, no cap change, no pausing one surface
+while another kept running. Every one of the eighteen multi-slot placements in
+production was written by an agent, in a migration.
+
+Worth stating the irony: earlier the same day this system gained per-placement
+reporting, suppression counts and a per-placement trend - a great deal of
+reporting on a dimension the editor could not manage.
+
+WHAT SHIPPED
+
+?kind=placement on POST, PATCH and DELETE, beside the catalog verbs rather than
+in a second file: same authorization, same rate limit, same service-role
+client, and a second route would be a second place for them to drift. The panel
+gains a Placements row per campaign with add, edit, pause and remove.
+
+Every branch says what happened. A duplicate returns 'already has a placement
+on that slot'. A club that does not exist returns so. A placement deleted in
+another tab returns 'no longer exists', because the update asks which row it
+touched rather than trusting PostgREST's { error: null } on a zero-row match.
+Removing the LAST placement says 'That Ad Now Runs Nowhere' - an advert with no
+placement looks perfectly healthy in the list and is the commonest way to
+publish something and see nothing happen.
+
+THE BUG THIS UNCOVERED, BEFORE IT COULD BITE
+
+ad_placement's unique key has been UNIQUE (ad_id, slot, club_id) since Phase 1.
+Postgres treats NULLs as DISTINCT, and club_id is NULL on every placement in
+production because NULL is how 'every club' is spelled - so the key had never
+once fired on a real row.
+
+Found by PROBING it in a rolled-back transaction rather than reading it.
+Reading it is how it passed review in the first place.
+
+It did not matter while the only writer was a migration under review. It
+mattered the instant the panel could add placements: two clicks of Add
+Placement on one surface would have rendered the advert twice from one JOIN,
+given it two independent caps, and returned a cheerful success from an API
+branch that could never fire. Replaced with UNIQUE NULLS NOT DISTINCT, which
+says what was meant - a NULL club is a VALUE, not a wildcard - and the
+migration proves it by inserting the duplicate and expecting the violation.
+
+club_id is a real foreign key now too. Honoured by the resolver since Phase 1,
+used by nothing, which is exactly the state in which a typo goes unnoticed.
+
+THREE SMALLER GAPS, SAME PASS
+
+Images: ad_catalog.image_url, rendered by the card surfaces and the Hub rail,
+falling back to the glyph when the file is missing. Same-origin only, enforced
+in the database, the API and at render - an external host would hand every
+player's IP and user agent to a third party chosen by whoever typed the URL.
+The migration probes the constraint with an external URL and expects rejection.
+
+Experiments: experiment_key. Two campaigns sharing one are variants of a single
+test; the weighted draw has split traffic correctly since it landed, but the
+panel reported them as unrelated so nobody could read the result.
+
+Retention: ad_event_retention_policy (one row, 180 days) and
+fn_prune_ad_events(), which refuses to run when the policy row is absent - no
+policy is not permission to delete everything. Deliberately NOT scheduled:
+CLAUDE.md section 11 makes Open Claw the only sanctioned scheduler and section
+11.3 fails CI on a net-new pages/api/cron file. That needs a paper trail, not a
+side effect of a migration.
+
+AND A DRIFT CHECK THAT CAUGHT TWO FILES
+
+Comparing every applied migration against its committed file by md5 found the
+file is not always what ran. impressions_are_not_people was applied with a
+leading 'drop function if exists public.fn_ad_stats();' - required, because the
+change adds columns to a RETURNS TABLE and Postgres refuses that in a CREATE OR
+REPLACE - and the committed file lacked it, so the file WOULD HAVE FAILED ON
+REPLAY. a_campaign_decays carried a dead loop the applied version did not. Both
+corrected. Same species as the orphan migration found this morning, one step
+subtler: the file existed, and was wrong.
+
+npx tsc --noEmit clean. npx vitest run 504 files, 7993 tests, 0 failures.
+Placement lifecycle probed against production and rolled back: add, edit,
+pause, duplicate-refused, bad-club-refused, club-scoped, delete.

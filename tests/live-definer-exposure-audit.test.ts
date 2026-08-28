@@ -25,6 +25,9 @@ const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 const SCRIPT = read('scripts/ci/audit-live-definer-exposure.mjs');
 const WF = read('.github/workflows/schema-manifest-refresh.yml');
 const MIG = read('supabase/migrations/20260828050000_the_definer_sweep_becomes_a_daily_job.sql');
+const MIG2 = read(
+  'supabase/migrations/20260828070000_the_auditor_learns_the_shape_that_slipped_past_it.sql'
+);
 
 /** Comments quote the very things the code must not do. Strip them first. */
 const code = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
@@ -149,4 +152,61 @@ it('the auditor script is not accidentally left unreferenced', () => {
   expect(existsSync(resolve(__dirname, '..', 'scripts/ci/audit-live-definer-exposure.mjs'))).toBe(
     true
   );
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  THE QUESTION THE FIRST PREDICATE COULD NOT ASK
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * `unauthenticated_writers` finds functions that never reference auth.uid(),
+ * auth.role() or auth.jwt(). process_tournament_rebuy DOES reference auth.uid()
+ * - just uselessly:
+ *
+ *     IF auth.uid() IS NOT NULL AND auth.uid() <> p_user_id THEN ... refuse
+ *
+ * which skips the check for a caller who has no auth.uid() at all. `anon` had
+ * EXECUTE, so an unauthenticated call bought a rebuy for a real seated player
+ * and took the chips out of their balance (#1570).
+ *
+ * Mentioning the request is not the same as being bound by it, and no predicate
+ * about the TEXT of a guard can tell those apart. So the auditor asks a second,
+ * blunter question that needs no reasoning at all.
+ */
+describe('the auditor learns the shape that slipped past it', () => {
+  it('asks whether a logged-out caller can execute a writing function', () => {
+    expect(MIG2).toContain("'anon_writers'");
+    expect(MIG2).toContain("has_function_privilege('anon', p.oid, 'EXECUTE')");
+    // Deliberately says nothing about auth.uid(): the grant IS the finding.
+    const anonBlock = MIG2.slice(MIG2.indexOf("'anon_writers'"));
+    expect(anonBlock).not.toContain('auth\\.uid');
+  });
+
+  it('keeps the original question too, in one auditor', () => {
+    expect(MIG2).toContain("'unauthenticated_writers'");
+    expect(MIG2).toContain('auth\\.uid\\(\\)|auth\\.role\\(\\)|auth\\.jwt\\(\\)');
+  });
+
+  it('gives the anon rule no allowlist at all', () => {
+    // The live answer is zero after #1570, so there is nothing to forgive. A
+    // baseline entry here would be a decision to leave a logged-out caller able
+    // to write, which is never the right decision.
+    expect(SCRIPT).toContain('There is no allowlist for this one');
+    const baseline = JSON.parse(read('scripts/ci/definer-exposure-baseline.json'));
+    expect(baseline.anonWriters).toBeUndefined();
+  });
+
+  it('still reads an older database honestly instead of throwing', () => {
+    // The RPC returned a bare array before it learned the second question. A
+    // manifest-refresh run against a database without this migration must
+    // report, not crash.
+    expect(SCRIPT).toContain('Array.isArray(live) ? live : (live?.unauthenticated_writers ?? [])');
+    expect(SCRIPT).toContain('Array.isArray(live) ? [] : (live?.anon_writers ?? [])');
+  });
+
+  it('fails the run when the count is anything but zero', () => {
+    expect(SCRIPT).toContain('if (anonWriters.length > 0)');
+    expect(SCRIPT).toContain('A LOGGED-OUT CALLER CAN EXECUTE A WRITING FUNCTION');
+    expect(SCRIPT).toContain('(must be 0)');
+  });
 });

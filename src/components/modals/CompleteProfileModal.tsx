@@ -16,6 +16,7 @@ import { safeErrorMessage } from '../../utils/safeErrorMessage';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import { generateAvatarSvg } from '../../utils/avatarGenerator';
 import { avatarService } from '../../services/AvatarService';
+import { masterBus } from '../../core/MasterBus';
 
 const ADJECTIVES = [
   'River',
@@ -128,6 +129,7 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
         }
       }
       const _mountTimer = setTimeout(() => setMounted(true), 50);
+      if (user?.id) masterBus.emit('PROFILE_GATE_METRIC', { userId: user.id, action: 'mounted' });
       return () => clearTimeout(_mountTimer);
     } else {
       setMounted(false);
@@ -266,6 +268,11 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
       });
 
       setIsSuccess(true);
+      masterBus.emit('PROFILE_GATE_METRIC', {
+        userId: user.id,
+        action: 'completed',
+        metadata: { alias: safeAlias },
+      });
       setTimeout(() => {
         onComplete();
       }, 500);

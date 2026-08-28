@@ -33,6 +33,7 @@ import { reportError } from '../utils/errorReporter';
 
 export type BusEventType =
   | 'TABLE_CHAT_INSERT'
+  | 'PROFILE_GATE_METRIC'
   | 'PLAYER_APPEARANCE_CHANGED'
   | 'CUSTOMIZATION_MUTATION_STATE'
   | 'AUTH_STATE_CHANGED'
@@ -417,6 +418,12 @@ export interface BusPayloadMap {
   };
   MISSION_PROGRESS: { userId: string; missionId: string; progress: number; target: number };
   STREAK_UPDATE: { userId: string; streakCount: number; multiplier: number };
+  PROFILE_GATE_METRIC: {
+    userId: string;
+    action: 'mounted' | 'completed' | 'abandoned';
+    metadata?: Record<string, unknown>;
+  };
+
   // Gameplay events — strict payload types (#7)
   HAND_WON: { handId: string; winners: string[]; pot: number };
   /**

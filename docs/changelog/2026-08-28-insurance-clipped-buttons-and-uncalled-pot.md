@@ -50,19 +50,26 @@ across InsuranceEngine, InsuranceRitExclusivity, HandController.stackdeltas,
 HandController.audit, RunItTwice.money, AHandAlwaysHasAWinner; plus the
 client unit suites touching table modals (53/53).
 
-## Open product decision (NOT changed here — needs Dan's ruling)
+## 4. Fee-on-win-only semantics (Dan's ruling 2026-08-28, same PR)
 
-Settlement deducts the premium in BOTH outcomes ("premium deducted like
-rake"), but the dialog's "For Losing" shows the insured pot GROSS of the fee,
-and both presets assume the fee is only borne when you WIN (reference
-semantics). With the current settlement, "Constant Profit" is not constant:
-win nets pot − fee, lose nets insured − fee. Two coherent resolutions:
+Settlement used to deduct the premium in BOTH outcomes, while the dialog's
+"For Losing" showed the insured pot GROSS of the fee — so "Constant Profit"
+was not constant (win netted pot − fee, lose netted insured − fee). Dan ruled
+for full PokerBros parity:
 
-- (a) Keep settlement; display "For Losing: insured − fee" and re-derive the
-  presets. Keeps the 20% house margin exactly as priced.
-- (b) Full reference parity: waive/refund the premium on a loss, and reprice
-  `rate = pWin / (1.2 x pLoss)` so the 20% margin survives. Rates shown to
-  players drop (3.16 → 2.32 in this spot).
+- **`InsuranceEngine.settle()`** — a LOSS pays the insured amount with NO fee
+  (premium reported/charged 0); only a WIN pays the fee; chop still voids.
+- **`InsuranceEngine.createOffers()`** — repriced so the 20% house edge
+  survives the waived-fee branch: `premium = insured × pLoss/pWin ×
+  houseMargin` (probabilities conditional on not-push). House EV per
+  contract is unchanged at 20% of fair cost. Rates shown to players drop
+  (3.16 → 2.32 in the recorded spot).
+- **Uninsurable guard** — when the fee would reach the payout (rate ≤ 1,
+  i.e. lossGivenNotPush ≥ 1/(1+margin) ≈ 45.5%), no offer: nobody can
+  rationally pay more than the most they can get back.
+- The dialog needed no changes — its "For Winning / For Losing" numbers and
+  both presets already assumed exactly these semantics.
 
-Pricing, settlement, and ledger must move together; whichever branch is
-chosen, change them in one commit.
+Tests updated in the same commit (InsuranceEngine.test.ts: new pricing
+formula, fee-waived-on-loss assertions, coinflip spot now asserts no-offer).
+70/70 across the insurance/hand/RIT suites.

@@ -476,8 +476,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           }
         }
 
-        // ALL insured players: premium deducted from their stack at end (like rake)
-        // For losers: payout - premium = net gain. For winners: -premium = net cost.
+        // POKERBROS PARITY 2026-08-28 (Dan's ruling): the fee is charged only
+        // when the insured player WINS — settle() reports premium 0 on a loss,
+        // so a losing leader receives the insured amount whole ("For Losing"
+        // in the dialog is literal) and only a winner pays the fee here.
         if (settlement.premium > 0) {
           // AUDIT M16: the clamps below silently absorb (Math.max(0, ...)) any
           // premium the stack cannot cover. A premium larger than the stack it

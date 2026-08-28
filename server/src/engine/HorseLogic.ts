@@ -551,7 +551,7 @@ function isTournamentMode(gs: HorseGameStateV2): boolean {
  */
 /** PROOF OF RECEIPT: which path the last icmRisk call took. Module-level is
  *  safe for the same reason difficultyHint is: decisions are synchronous. */
-let lastIcmPath: 'real' | 'legacy' | 'none' = 'none';
+let lastIcmPath: 'real' | 'legacy' | 'spin_cev' | 'warming' | 'none' = 'none';
 
 function icmRisk(gs: HorseGameStateV2, stackBB: number, useV16Icm: boolean = true): number {
   lastIcmPath = 'legacy';
@@ -559,7 +559,16 @@ function icmRisk(gs: HorseGameStateV2, stackBB: number, useV16Icm: boolean = tru
   const explicit = gs.tournament;
   if (!isTournamentMode(gs)) return 0;
   // Spins are winner-take-all — pure chip EV, zero survival premium.
-  if (gs.format === 'spin' && (explicit?.spotsPaid ?? 1) <= 1) return 0;
+  // V22 telemetry honesty (2026-08-27): this CORRECT no-ICM answer used to
+  // leave lastIcmPath on whatever the previous call set, so 7,000 spins a day
+  // were counted as "legacy" fallbacks in the proof-of-receipt numbers. Same
+  // for a context that simply has not arrived yet (empty tournament object
+  // during the first fetch): that is "warming", not a degraded model.
+  if (gs.format === 'spin' && (explicit?.spotsPaid ?? 1) <= 1) {
+    lastIcmPath = 'spin_cev';
+    return 0;
+  }
+  if (!explicit || (explicit.playersLeft ?? 0) === 0) lastIcmPath = 'warming';
 
   // ═══ V16 REAL ICM (2026-08-26) ═══
   // When the context carries the live stack distribution and the payout

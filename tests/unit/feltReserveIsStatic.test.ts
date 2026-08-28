@@ -178,7 +178,8 @@ describe("the felt's geometry is declared, never measured", () => {
     // The variable is gone, not merely unused: a live-looking variable is an
     // invitation to read it. Comments recording the history are fine and
     // wanted; a `var()` read or a write is not.
-    expect(ALL_CSS).not.toContain('var(--sp-action-h');
+    // Whitespace-insensitive: Prettier wraps a long var() across lines.
+    expect(ALL_CSS).not.toMatch(/var\(\s*--sp-action-h\b/);
     for (const file of CODE_FILES) {
       expect(
         stripComments(readFileSync(file, 'utf8')),

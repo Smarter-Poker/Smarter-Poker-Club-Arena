@@ -79,9 +79,12 @@ describe('the fixed action bar cannot cover the hero plate or the HUD', () => {
 
   it('reserves space by reading that constant, in every place that reserves', () => {
     for (const [name, css] of RESERVE_RULES) {
-      expect(css, `${name} must read --sp-action-reserve`).toContain('var(--sp-action-reserve');
-      expect(css, `${name} must not read the deleted --sp-action-h`).not.toContain(
-        'var(--sp-action-h'
+      // Whitespace-insensitive on purpose: Prettier wraps a long var() across
+      // lines on commit, and an assertion that a formatter can break is an
+      // assertion that will be deleted rather than understood.
+      expect(css, `${name} must read --sp-action-reserve`).toMatch(/var\(\s*--sp-action-reserve/);
+      expect(css, `${name} must not read the deleted --sp-action-h`).not.toMatch(
+        /var\(\s*--sp-action-h\b/
       );
     }
   });

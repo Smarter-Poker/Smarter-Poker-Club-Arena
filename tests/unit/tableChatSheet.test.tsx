@@ -175,7 +175,7 @@ describe('the collapsed chat button is untouched by the sheet', () => {
     expect(block).toContain('--sp-action-reserve');
     // The deleted variable may still be NAMED in the block's comment — that is
     // the history of why the line moved. It may not be READ.
-    expect(block).not.toContain('var(--sp-action-h');
+    expect(block).not.toMatch(/var\(\s*--sp-action-h\b/);
     expect(block).toContain('--sp-bottom-row-h');
     expect(block).toContain('env(safe-area-inset-bottom, 0px)');
   });

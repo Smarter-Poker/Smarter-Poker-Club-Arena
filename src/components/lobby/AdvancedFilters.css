@@ -8,7 +8,10 @@
 .afx-overlay {
   position: fixed;
   inset: 0;
-  z-index: 2000;
+  /* The global tournament ticker is fixed at 9400. Filters are a modal
+     surface, so their header and controls must sit above it rather than being
+     cut in half by the scrolling announcement. Matches BaseModal's layer. */
+  z-index: 9620;
   display: flex;
   align-items: center;
   justify-content: center;

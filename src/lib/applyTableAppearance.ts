@@ -58,6 +58,48 @@ export interface ApplyAppearanceResult {
   ok: boolean;
   /** Present when the write failed; the caller decides how loudly to say so. */
   error?: unknown;
+  /** The subset that was still current and therefore visibly rolled back. */
+  reverted?: AppearancePatch;
+}
+
+const APPEARANCE_FIELDS = [
+  'theme_id',
+  'table_id',
+  'button_id',
+  'background_id',
+  'cards_id',
+] as const satisfies readonly (keyof AppearancePatch)[];
+
+/* One ordered tail per database row. Two fast taps used to launch two upserts
+   concurrently, allowing the slower FIRST request to finish last and become
+   the durable selection. Partial writes protect unrelated fields; this queue
+   protects the ordering of repeated changes to the same row. */
+const writeTails = new Map<string, Promise<void>>();
+const latestFieldRevision = new Map<string, number>();
+const durableFieldValue = new Map<string, string>();
+const pendingWriteCount = new Map<string, number>();
+let appearanceRevision = 0;
+
+function emitAppearance(
+  gameType: string,
+  patch: AppearancePatch,
+  userId: string | null | undefined,
+  mutationId: string
+): void {
+  if (!Object.keys(patch).length) return;
+  masterBus.emit('UI_THEME_CHANGED', {
+    key: gameType,
+    value: patch,
+    userId: userId || undefined,
+    mutationId,
+  });
+  if (patch.cards_id) {
+    masterBus.emit('SETTINGS_CHANGED', {
+      setting: 'cardBack',
+      value: patch.cards_id,
+      userId: userId || undefined,
+    });
+  }
 }
 
 /**
@@ -78,46 +120,131 @@ export async function applyTableAppearance(
   opts: { userId?: string | null; gameType?: string; previous?: AppearancePatch }
 ): Promise<ApplyAppearanceResult> {
   const gameType = opts.gameType || 'ALL';
-
-  // 1. LIVE FIRST — the felt must move on the same frame as the click, not
-  //    after a network round trip. Every subscriber keys off this event.
-  masterBus.emit('UI_THEME_CHANGED', { key: gameType, value: patch });
-
-  /* The card back additionally drives `useTableSettings.cardBack`, which is
-     what the /settings page and the card-back store display. Keeping the two
-     in step here is what stops that dropdown showing one design while the
-     felt deals another. */
-  if (patch.cards_id) {
-    masterBus.emit('SETTINGS_CHANGED', { setting: 'cardBack', value: patch.cards_id });
+  const cleanPatch: AppearancePatch = {};
+  for (const field of APPEARANCE_FIELDS) {
+    const value = patch[field];
+    if (typeof value === 'string' && value) cleanPatch[field] = value;
   }
+  if (!Object.keys(cleanPatch).length) {
+    return { ok: false, error: new Error('appearance patch is empty') };
+  }
+
+  const scope = `${opts.userId || 'guest'}:${gameType}`;
+  const revision = ++appearanceRevision;
+  const mutationId = `${scope}:${revision}`;
+  for (const field of APPEARANCE_FIELDS) {
+    if (cleanPatch[field]) latestFieldRevision.set(`${scope}:${field}`, revision);
+  }
+
+  // 1. LIVE FIRST — mark the mutation before painting. Every table hook uses
+  // this state to ignore an intermediate database echo from an older queued
+  // write, while still allowing the optimistic event immediately following it.
+  masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+    kind: 'table-appearance',
+    scope,
+    mutationId,
+    state: 'pending',
+  });
+  // The felt must move on the same frame as the click, not
+  //    after a network round trip. Every subscriber keys off this event.
+  emitAppearance(gameType, cleanPatch, opts.userId, mutationId);
 
   if (!opts.userId) {
-    return { ok: false, error: new Error('not signed in') };
+    const reverted: AppearancePatch = {};
+    for (const field of APPEARANCE_FIELDS) {
+      const previous = opts.previous?.[field];
+      if (cleanPatch[field] && previous) reverted[field] = previous;
+    }
+    masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+      kind: 'table-appearance',
+      scope,
+      mutationId,
+      state: 'rolling-back',
+    });
+    emitAppearance(gameType, reverted, opts.userId, mutationId);
+    masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+      kind: 'table-appearance',
+      scope,
+      mutationId,
+      state: 'rolled-back',
+    });
+    return { ok: false, error: new Error('not signed in'), reverted };
   }
 
-  // 2. PERSIST — only the columns being changed, plus the composite key.
-  //    Never a spread of a previously SELECTed row (see the note above).
-  const { error } = await supabase
-    .from('user_theme_settings')
-    .upsert(
-      { user_id: opts.userId, game_type: gameType, ...patch },
-      { onConflict: 'user_id,game_type' }
-    );
+  /* Seed the durable baseline only at the start of a write chain. A later
+     optimistic tap's `previous` may itself never persist; using it as a
+     rollback target leaves phantom artwork behind when two requests fail.
+     Successful queued writes advance this baseline below. */
+  if ((pendingWriteCount.get(scope) ?? 0) === 0) {
+    for (const field of APPEARANCE_FIELDS) {
+      const previous = opts.previous?.[field];
+      if (cleanPatch[field] && previous) durableFieldValue.set(`${scope}:${field}`, previous);
+    }
+  }
+  pendingWriteCount.set(scope, (pendingWriteCount.get(scope) ?? 0) + 1);
+
+  // 2. PERSIST IN TAP ORDER — only the changed columns plus the composite key.
+  const previousTail = writeTails.get(scope) ?? Promise.resolve();
+  const task = previousTail.then(async () => {
+    try {
+      const { error } = await supabase
+        .from('user_theme_settings')
+        .upsert(
+          { user_id: opts.userId, game_type: gameType, ...cleanPatch },
+          { onConflict: 'user_id,game_type' }
+        );
+      return error ?? undefined;
+    } catch (error) {
+      return error;
+    }
+  });
+  const tail = task.then(() => undefined);
+  writeTails.set(scope, tail);
+  const error = await task;
+  if (writeTails.get(scope) === tail) writeTails.delete(scope);
 
   if (error) {
-    // 3. PUT IT BACK. A felt showing a choice the database rejected is worse
-    //    than one that never changed: the player believes it is saved.
-    if (opts.previous) {
-      masterBus.emit('UI_THEME_CHANGED', { key: gameType, value: opts.previous });
-      if (opts.previous.cards_id) {
-        masterBus.emit('SETTINGS_CHANGED', {
-          setting: 'cardBack',
-          value: opts.previous.cards_id,
-        });
+    // 3. PUT BACK ONLY FIELDS THIS MUTATION STILL OWNS. If a later tap is
+    // already visible, an older failed request must never erase it.
+    const reverted: AppearancePatch = {};
+    for (const field of APPEARANCE_FIELDS) {
+      const previous = durableFieldValue.get(`${scope}:${field}`) ?? opts.previous?.[field];
+      if (
+        cleanPatch[field] &&
+        previous &&
+        latestFieldRevision.get(`${scope}:${field}`) === revision
+      ) {
+        reverted[field] = previous;
       }
     }
-    return { ok: false, error };
+    masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+      kind: 'table-appearance',
+      scope,
+      mutationId,
+      state: 'rolling-back',
+    });
+    emitAppearance(gameType, reverted, opts.userId, mutationId);
+    masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+      kind: 'table-appearance',
+      scope,
+      mutationId,
+      state: 'rolled-back',
+    });
+    pendingWriteCount.set(scope, Math.max(0, (pendingWriteCount.get(scope) ?? 1) - 1));
+    return { ok: false, error, reverted };
   }
+
+  for (const field of APPEARANCE_FIELDS) {
+    const value = cleanPatch[field];
+    if (value) durableFieldValue.set(`${scope}:${field}`, value);
+  }
+  pendingWriteCount.set(scope, Math.max(0, (pendingWriteCount.get(scope) ?? 1) - 1));
+  masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+    kind: 'table-appearance',
+    scope,
+    mutationId,
+    state: 'confirmed',
+  });
 
   return { ok: true };
 }

@@ -3,6 +3,38 @@ import { masterBus } from '../core/MasterBus';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { reportError } from '../utils/errorReporter';
 
+const USER_TABLE_SETTING_COLUMNS = [
+  'highlight_active_players',
+  'show_avatars',
+  'show_badges',
+  'cards_pre_sort',
+  'gestures_enabled',
+  'card_slide',
+  'card_squeeze',
+  'show_stack_in_bb',
+  'auto_time_bank',
+  'enhanced_view',
+  'voice_message',
+  'text_message',
+  'emoji_enabled',
+  'blue_buttons_enabled',
+  'skip_animations',
+  'use_alias',
+  'table_alias',
+  'multi_auto_switch',
+  'multi_action_queue',
+  'multi_desktop_alerts',
+  'multi_shared_socket',
+] as const;
+
+const THEME_SETTING_COLUMNS = [
+  'theme_id',
+  'table_id',
+  'button_id',
+  'background_id',
+  'cards_id',
+] as const;
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * POSTGRES SYNC HOOKS (Phase 7: Absolute Sync Perfection + Phase 11 Optimizations)
@@ -117,6 +149,18 @@ class PostgresSyncHooksService {
           console.debug('[PostgresSync] External Profile mutation detected:', payload);
           masterBus.emit('PROFILE_UPDATED', { userId: payload.new.id, updates: payload.new });
 
+          // SettingsPage persists Club Arena light/dark mode in profiles.settings.
+          // Re-broadcast its effective value so a second device changes mode
+          // without a reload; MasterBus handles same-browser tabs immediately.
+          const profileSettings = (payload.new as Record<string, unknown>)?.settings;
+          const savedTheme =
+            profileSettings && typeof profileSettings === 'object'
+              ? (profileSettings as Record<string, unknown>).theme
+              : undefined;
+          if (savedTheme === 'light' || savedTheme === 'dark') {
+            masterBus.emit('UI_THEME_CHANGED', { key: 'theme', value: savedTheme, userId });
+          }
+
           const newDiamonds = (payload.new as any).diamonds;
           const oldDiamonds = (payload.old as any)?.diamonds;
           if (newDiamonds != null && oldDiamonds != null && newDiamonds !== oldDiamonds) {
@@ -135,21 +179,110 @@ class PostgresSyncHooksService {
       //   - `clubs` + `unions` REMOVED 2026-04-19: same global fan-out pattern.
       //     CLUB_UPDATED already emitted by filtered club_members listener below.
       //     Club/union detail pages subscribe directly (page-scoped channel).
-      // 7. User Settings — debounced (settings toggle spam protection)
+      // 7. User table settings — INSERT and UPDATE, applied field-by-field.
+      // The prior SETTINGS_UPDATED payload had no consumer for these snake-
+      // case keys, so another device's toggles never reached an open table.
       .on(
         'postgres_changes',
         {
-          event: 'UPDATE',
+          event: '*',
           schema: 'public',
           table: 'user_table_settings',
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
           console.debug('[PostgresSync] External Settings mutation detected:', payload);
+          if (payload.eventType === 'DELETE') return;
+          const next = payload.new as Record<string, unknown>;
+          const previous = (payload.old || {}) as Record<string, unknown>;
+          for (const setting of USER_TABLE_SETTING_COLUMNS) {
+            const value = next[setting];
+            if (
+              (typeof value === 'string' ||
+                typeof value === 'number' ||
+                typeof value === 'boolean') &&
+              (payload.eventType === 'INSERT' || value !== previous[setting])
+            ) {
+              masterBus.emit('SETTINGS_CHANGED', {
+                setting,
+                value,
+                userId,
+                origin: 'postgres-sync:user-table-settings',
+              });
+            }
+          }
           this.debouncedEmit('settings', 'SETTINGS_UPDATED', { settings: payload.new });
         }
       )
-      // 8. Club Memberships — DEBOUNCED (bulk operations protection)
+      // 8. Table artwork — account-scoped, cross-device, no polling. The
+      // picker already emits optimistically; this is the durable database echo
+      // for changes made in another browser or device.
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'user_theme_settings',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>;
+          const value: Record<string, string> = {};
+          for (const field of THEME_SETTING_COLUMNS) {
+            if (typeof row[field] === 'string' && row[field]) value[field] = row[field] as string;
+          }
+          if (Object.keys(value).length) {
+            masterBus.emit('UI_THEME_CHANGED', {
+              key: typeof row.game_type === 'string' ? row.game_type : 'ALL',
+              value,
+              userId,
+            });
+            if (value.cards_id) {
+              masterBus.emit('SETTINGS_CHANGED', {
+                setting: 'cardBack',
+                value: value.cards_id,
+                userId,
+                origin: 'postgres-sync:user-theme-settings',
+              });
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'user_theme_settings',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>;
+          const previous = (payload.old || {}) as Record<string, unknown>;
+          const value: Record<string, string> = {};
+          for (const field of THEME_SETTING_COLUMNS) {
+            if (typeof row[field] === 'string' && row[field] && row[field] !== previous[field]) {
+              value[field] = row[field] as string;
+            }
+          }
+          if (Object.keys(value).length) {
+            masterBus.emit('UI_THEME_CHANGED', {
+              key: typeof row.game_type === 'string' ? row.game_type : 'ALL',
+              value,
+              userId,
+            });
+            if (value.cards_id) {
+              masterBus.emit('SETTINGS_CHANGED', {
+                setting: 'cardBack',
+                value: value.cards_id,
+                userId,
+                origin: 'postgres-sync:user-theme-settings',
+              });
+            }
+          }
+        }
+      )
+      // 9. Club Memberships — DEBOUNCED (bulk operations protection)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'club_members', filter: `user_id=eq.${userId}` },

@@ -8,10 +8,18 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import ActionPanel from '../src/components/table/ActionPanel';
 import PreActionBar from '../src/components/table/PreActionBar';
 import { ActionErrorToast } from '../src/components/table/ActionErrorToast';
+
+/** Comment-stripped, so a rule quoted in prose cannot satisfy an assertion. */
+const ACTION_CSS = readFileSync(
+  resolve(__dirname, '../src/components/table/ActionPanel.css'),
+  'utf8'
+).replace(/\/\*[\s\S]*?\*\//g, '');
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -32,27 +40,64 @@ const panelBase = {
   isMyTurn: true,
 };
 
-describe('the three action buttons stay on the bottom while the sizing overlay is open', () => {
+describe('the three action buttons keep their DOM contract while the overlay is open', () => {
   /**
-   * Dan 2026-08-25, item 5: "these 3 action buttons should be on the bottom,
-   * and if you click Raise, the action slider and other buttons pop open and
-   * can overlay the Hero and other things when clicked to open."
+   * ─── WHY THIS SUITE HAS BEEN REWRITTEN TWICE ───────────────────────────────
+   * Three instructions, in order, each of which changed what "the row" does:
    *
-   * The JSX had been reverted to `{!isRaiseMode && <div className="action-row">}`
-   * — raise mode replaced the whole panel again — while the stylesheet, the
-   * close branch in handleRaiseClick, the `action-btn--on` held-down state, the
-   * `aria-expanded` and the whole premise of `--sp-bottom-row-h` were all still
-   * written for a row that stays. Five dead things, one live conditional.
+   *  2026-08-25 item 5 — "these 3 action buttons should be on the bottom, and
+   *    if you click Raise, the action slider and other buttons pop open and can
+   *    overlay the Hero." This suite was written for that: the row stays,
+   *    VISIBLE and TAPPABLE, under the overlay. The JSX had meanwhile been
+   *    reverted to `{!isRaiseMode && <div className="action-row">}` while the
+   *    stylesheet, the close branch in handleRaiseClick, the `action-btn--on`
+   *    held-down state, `aria-expanded` and the whole premise of
+   *    `--sp-bottom-row-h` were all still written for a row that stays.
+   *
+   *  2026-08-26 (commit 6a33a7afb7) — "the 3 buttons on the bottom of the
+   *    action tab need to DISAPPEAR when you click Raise." The row was hidden
+   *    with `visibility: hidden; pointer-events: none`. THIS SUITE WAS NOT
+   *    UPDATED, and from that commit onward its third case — "lets a player
+   *    fold straight out of the sizing overlay" — was a FALSE GREEN: it passed
+   *    because happy-dom does not apply the stylesheet, while in a browser
+   *    `pointer-events: none` had made that tap impossible.
+   *
+   *  2026-08-27 — "the action tab should be attached to the footer, that large
+   *    dark padding should never be there (below raise button)." A
+   *    `visibility: hidden` box keeps every pixel of its height, so the row Dan
+   *    had asked to disappear was still holding 46px of dead black under the
+   *    confirm button. It is `display: none` now.
+   *
+   * WHAT SURVIVES, AND WHY IT IS NOT WEAKER. The 2026-08-25 assertions were
+   * really about one thing: the row must stay MOUNTED, because five separate
+   * mechanisms read it. That is still true and still pinned below — the fix
+   * collapses a box, it does not unmount a component. What is dropped is the
+   * one assertion that stopped being true a day after it was written, and it is
+   * replaced by the behaviour that took its place: Back is the way out, and the
+   * row is live again the moment the overlay closes.
    */
-  it('still shows Fold and Call once the sizing overlay is open', () => {
+  it('keeps Fold and Call mounted once the sizing overlay is open', () => {
     render(<ActionPanel {...panelBase} onAction={vi.fn()} />);
     fireEvent.click(screen.getByLabelText('Open raise panel'));
 
     // The overlay is up …
     expect(screen.getByLabelText('Raise amount')).toBeTruthy();
-    // … and the pinned row is still under it.
+    // … and the row is still in the DOM under it, which is what
+    // `aria-expanded`, `action-btn--on` and `--sp-bottom-row-h` all rely on.
     expect(screen.getByLabelText('Fold')).toBeTruthy();
     expect(screen.getByLabelText(/^Call /)).toBeTruthy();
+  });
+
+  it('gives that mounted row no height and no taps', () => {
+    // The half a render cannot see. Asserted against the stylesheet, because
+    // happy-dom lays nothing out — and it is exactly the blind spot that let
+    // the old "fold from the overlay" case pass for a day after it stopped
+    // being true.
+    const at = ACTION_CSS.indexOf('.action-panel--raise .action-row {');
+    expect(at).toBeGreaterThan(-1);
+    const block = ACTION_CSS.slice(at, ACTION_CSS.indexOf('}', at));
+    expect(block).toMatch(/display:\s*none/);
+    expect(block).not.toMatch(/visibility/);
   });
 
   it('makes the raise button a toggle that closes the overlay again', () => {
@@ -67,10 +112,15 @@ describe('the three action buttons stay on the bottom while the sizing overlay i
     expect(screen.getByLabelText('Open raise panel').getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('lets a player fold straight out of the sizing overlay', () => {
+  it('lets a player fold the moment they step back out of the overlay', () => {
+    // The successor to "fold straight out of the sizing overlay". Folding from
+    // UNDER the overlay has not been possible since 2026-08-26; Back is the
+    // documented way out, and the row has to be live again on the other side
+    // of it or the player is trapped in the sizing panel on a shot clock.
     const onAction = vi.fn();
     render(<ActionPanel {...panelBase} onAction={onAction} />);
     fireEvent.click(screen.getByLabelText('Open raise panel'));
+    fireEvent.click(screen.getByLabelText('Back'));
     fireEvent.click(screen.getByLabelText('Fold'));
     expect(onAction).toHaveBeenCalledWith('fold');
   });

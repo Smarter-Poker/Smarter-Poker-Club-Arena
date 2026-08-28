@@ -20,6 +20,7 @@ import BBJAdminAnalytics from '../components/bbj/BBJAdminAnalytics';
 import { BBJRecentHits } from '../components/bbj/BBJRecentHits';
 import { BBJHandDetail } from '../components/bbj/BBJHandDetail';
 import BBJRulesPanel from '../components/bbj/BBJRulesPanel';
+import { ArenaJackpotDisplay } from '../components/club-buttons';
 
 interface JackpotInfo {
   id: string;
@@ -429,10 +430,16 @@ export default function BadBeatJackpotPage() {
   return (
     <div className="bbj-page">
       {/* Current Jackpot — Main Balance */}
-      <div className={`jackpot-display ${justUpdated ? 'just-updated' : ''}`}>
-        <div className="jackpot-glow" />
-        <span className="jackpot-label">Main Jackpot</span>
-        <span className="jackpot-amount">{(jackpot?.main_balance || 0).toLocaleString()}</span>
+      <div className="bbj-clubbuttons-hero-wrap">
+        <ArenaJackpotDisplay
+          className="bbj-clubbuttons-hero"
+          badge="BBJ"
+          eyebrow="Bad Beat Jackpot"
+          value={(jackpot?.main_balance || 0).toLocaleString()}
+          valueLabel={`Bad Beat Jackpot ${(jackpot?.main_balance || 0).toLocaleString()} Chips`}
+          label="Main Jackpot"
+          dataState={justUpdated ? 'updating' : 'loaded'}
+        />
       </div>
 
       {/* 100K Pivot Law Threshold Alert */}

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { masterBus } from '../core/MasterBus';
+import { useUserStore } from '../stores/useUserStore';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -168,6 +169,8 @@ export function useTableSettings() {
     const unsub = masterBus.subscribe('SETTINGS_CHANGED', (event) => {
       // Skip only OUR OWN echo (prevent redundant setSettings).
       if (event.payload?.origin === originIdRef.current) return;
+      const activeUserId = useUserStore.getState().user?.id;
+      if (event.payload.userId && event.payload.userId !== activeUserId) return;
       const { setting, value } = event.payload;
       if (setting && setting in DEFAULT_SETTINGS) {
         setSettings((prev) => ({

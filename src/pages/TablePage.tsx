@@ -256,6 +256,7 @@ import GameServerAPI, {
 import RabbitHunt from '../components/table/RabbitHunt';
 import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
 //monteCarloEquity import removed — server-authoritative
+import '../components/table/ControlThemeTokens.css';
 import './TablePage.css';
 import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
 // Phase 8-9 Premium Components
@@ -1783,6 +1784,31 @@ export default function TablePage({
           ? prev.lastBetAmounts[i]
           : amt
       );
+      /* THE ACTION BAR MUST NOT FLASH BACK AFTER YOU ACT (2026-08-27).
+         See heroActedFenceRef for the full account. A snapshot generated
+         before the engine processed the hero's action still names them as the
+         actor; applying it verbatim put the turn back and the bar reappeared
+         for exactly one round trip. While the fence is live for THIS hand and
+         THIS seat, the turn is not handed back.
+
+         Every other outcome releases it immediately, so the suppression can
+         never outlive its purpose: the engine naming a different actor is the
+         success signal, a new hand invalidates it, and a rejected action
+         clears it in revert(). The time bound is only the last-resort case
+         where none of those arrive. */
+      const fence = heroActedFenceRef.current;
+      const snapHand = mapped.handNumber > 0 ? mapped.handNumber : prev.handNumber;
+      let nextCurrentSeat = mapped.currentPlayerSeat;
+      if (fence) {
+        if (fence.hand !== snapHand || Date.now() >= fence.until) {
+          heroActedFenceRef.current = null; // stale or expired - never sticky
+        } else if (mapped.currentPlayerSeat === fence.seat) {
+          nextCurrentSeat = 0; // the engine has not caught up yet; hold the bar down
+        } else {
+          heroActedFenceRef.current = null; // the engine moved on - job done
+        }
+      }
+
       return {
         ...prev,
         pot: mapped.pot,
@@ -1792,7 +1818,7 @@ export default function TablePage({
         boardStage: nextStage,
         engineStage: mapped.boardStage,
         dealerSeat: mapped.dealerSeat,
-        currentPlayerSeat: mapped.currentPlayerSeat,
+        currentPlayerSeat: nextCurrentSeat,
         // AUDIT FIX 2026-07-19: the authoritative WS merge dropped handNumber, so
         // the on-table hand number never advanced (froze at the connect-time
         // GAME_START value) and the hand-change effect that drives per-hand
@@ -7199,39 +7225,6 @@ export default function TablePage({
     }
   });
 
-  /**
-   * THE HERO'S NEW AVATAR APPEARS ON THE FELT IMMEDIATELY.
-   *
-   * Dan 2026-08-26: "if a user changes their avatar... it needs to change,
-   * save and update in real time on the felt."
-   *
-   * It did not. `AvatarGallery` writes `profiles.avatar_url` and emits
-   * `USER_PROFILE_LOADED`, and THREE surfaces listened — the global header,
-   * the hamburger menu and the funnel tracker. The table was not one of them,
-   * and the table does not subscribe to `profiles` over realtime either. So
-   * the player picked a new avatar, watched their header change, looked back
-   * at their own seat and saw the old picture, for the rest of the session.
-   *
-   * Patching the seat directly rather than re-fetching: the event carries the
-   * new URL, the seat is already in state, and a refetch would race the
-   * engine snapshot that owns every other field on that player. Scoped to the
-   * hero's own id so one player's change can never repaint another's seat —
-   * an opponent's avatar arrives with the snapshot, from the server.
-   */
-  useMasterBusSubscription('USER_PROFILE_LOADED', (payload: any) => {
-    const newUrl = payload?.avatarUrl;
-    const who = payload?.userId;
-    if (!newUrl || !who || who !== userId) return;
-    setTableState((prev) => {
-      const hit = prev.players.some((p) => p && p.id === who && p.avatar !== newUrl);
-      if (!hit) return prev; // nothing to repaint — do not churn nine seats
-      return {
-        ...prev,
-        players: prev.players.map((p) => (p && p.id === who ? { ...p, avatar: newUrl } : p)),
-      };
-    });
-  });
-
   // Fetch Hero profile just once if needed
   useEffect(() => {
     if (userId && userId !== 'guest') {
@@ -9568,8 +9561,11 @@ export default function TablePage({
       if (!existing) return prev;
 
       const nextAvatar = change.avatar ?? existing.avatar;
-      const nextFrame = change.frame ?? undefined;
-      const nextAura = change.aura ?? undefined;
+      // Undefined means the event did not touch that field; null means the
+      // player explicitly removed it. The old `?? undefined` collapsed both
+      // meanings and an avatar-only optimistic event could strip cosmetics.
+      const nextFrame = change.frame === undefined ? existing.frame : (change.frame ?? undefined);
+      const nextAura = change.aura === undefined ? existing.aura : (change.aura ?? undefined);
 
       /* No-op guard. Realtime echoes the hero's own write back to them, and a
          `profiles` UPDATE fires for any column — a chip balance, a last-seen
@@ -11275,8 +11271,7 @@ export default function TablePage({
         // "which pot, which half, whose share" reads these; the flat
         // winners[] stays the source of per-player totals.
         const potAwardsWire = (evt.data as any).pot_awards as
-          | import('../lib/showdownPresentation').PotAwardGroupWire[]
-          | undefined;
+          import('../lib/showdownPresentation').PotAwardGroupWire[] | undefined;
         const boardLabel = boardLabelFromAwards(
           potAwardsWire,
           ((evt.data as any).hand_name as string) ||
@@ -12949,6 +12944,49 @@ export default function TablePage({
     tableState.isHandInProgress;
 
   /**
+   * ═══ ONE SLOT, ONE CONTROL (2026-08-27) ═══
+   *
+   * The bottom-left HUD corner holds the previous-hand card and ONE other
+   * widget beside it. Dan named both of that slot's tenants:
+   *
+   *   "TIME BANK ICON SHOULD ONLY APPEAR WHEN ITS THE USERS TURN TO ACT"
+   *   "THAT ALSO THE EXACT POSITION THAT THE RABBIT HUNT BUTTON SHOULD APPEAR
+   *    WHEN THE HAND IS OVER"
+   *
+   * Until now the two tenants were two INDEPENDENT conditions rendered one
+   * after the other in the JSX, and the only thing keeping them apart was that
+   * `isHeroTurnContext` happens to require `isHandInProgress` while Rabbit Hunt
+   * requires its negation. That is true, and it is an accident of two
+   * expressions written two months apart — nothing declared it, nothing
+   * enforced it, and either expression could be widened by someone who never
+   * knew the other existed. The slot's whole height budget assumes exactly one
+   * tile stands here (see --sp-hero-clear in TablePage.css), so "they happen
+   * not to collide" is not a strong enough guarantee to leave implicit.
+   *
+   * So the choice is made ONCE, here, and it is a choice — not two conditions.
+   * A ternary chain can only ever yield one value, so two controls in this slot
+   * is now unrepresentable rather than merely unlikely, and the precedence is
+   * written down: the time bank WINS. It is the only one of the two that is
+   * time-critical (the hero is on the clock), and Rabbit Hunt's offer survives
+   * being displaced because the server holds it for 90 seconds.
+   *
+   * Rabbit Hunt keeps `!tableState.isHandInProgress` as its own precondition,
+   * and that is deliberate rather than redundant with the branch above it: a
+   * reveal FREEZES the engine snapshot for 3s and paints extra cards onto the
+   * live board (see handleRabbitReveal / rabbitHuntFreezeEnd). Offering that
+   * mid-hand would stall the table, so the gate is a safety rule about the
+   * REVEAL, not just about the slot. Do not drop it to make the button appear
+   * a snapshot earlier.
+   *
+   * Pinned by tests/all-in-cannot-leave-and-the-hud-slot.test.ts.
+   */
+  const hudSlotControl: 'timebank' | 'rabbit' | null = isHeroTurnContext
+    ? 'timebank'
+    : !tableState.isHandInProgress && isRabbitAvailable
+      ? 'rabbit'
+      : null;
+
+  /**
    * Phase 1.3 PR-C+D: thin wrapper around submitAction that routes server-side
    * rejections into the ActionErrorToast. submitAction never throws — it always
    * resolves with `{success, error?, code?, hint?}` — so the old
@@ -13022,6 +13060,39 @@ export default function TablePage({
    * Returns a revert() thunk. Always safe to call: no-op if seat/index is out
    * of range.
    */
+  /**
+   * WHY THE ACTION BAR CAME BACK FOR A SPLIT SECOND (Dan 2026-08-27).
+   *
+   * "You make an action (check, call, raise or fold), the action happens, but
+   * then the action bar reappears for a split second."
+   *
+   * The bar renders on `currentPlayerSeat === heroSeat`. Acting optimistically
+   * sets `currentPlayerSeat: 0`, so it hides at once - correct. But the engine
+   * snapshot merge then applies `currentPlayerSeat: mapped.currentPlayerSeat`
+   * UNCONDITIONALLY, and a snapshot generated BEFORE the server processed the
+   * action still names the hero as the actor. It lands a beat later, puts the
+   * seat back, the bar returns; the next snapshot moves the action on and it
+   * disappears again. One flash, every action, for as long as the round trip
+   * takes.
+   *
+   * This ref is the fence. While it is live, a snapshot may not hand the turn
+   * BACK to the seat that just acted. It is deliberately narrow:
+   *
+   *   - scoped to one hand and one seat, so it cannot leak into the next hand;
+   *   - short-lived (see FENCE_MS) as a failsafe, so a lost action can never
+   *     strand a player with no controls;
+   *   - dropped the instant the engine moves the turn elsewhere (the success
+   *     signal), or the instant an action is REJECTED (revert clears it), so a
+   *     refused action gets its controls straight back.
+   *
+   * The same file already guards two other fields this way - `nextStage` never
+   * goes backwards within a hand, and a bet is held through its collect
+   * animation - so this is the established shape here, not a new idea.
+   */
+  const heroActedFenceRef = useRef<{ hand: number; seat: number; until: number } | null>(null);
+  /** How long the turn may be withheld from a stale snapshot. */
+  const HERO_ACTED_FENCE_MS = 1500;
+
   const applyOptimisticHeroAction = useCallback(
     (action: 'fold' | 'check' | 'call' | 'raise' | 'allin', amount?: number): (() => void) => {
       const heroSeat = tableState.heroSeat;
@@ -13074,6 +13145,16 @@ export default function TablePage({
           players[idx] = { ...hero, status: 'folded' as any };
         }
 
+        if (prev.currentPlayerSeat === heroSeat) {
+          // Arm the fence in the same breath as hiding the bar, so the two can
+          // never disagree about whether this seat has acted.
+          heroActedFenceRef.current = {
+            hand: prev.handNumber ?? 0,
+            seat: heroSeat,
+            until: Date.now() + HERO_ACTED_FENCE_MS,
+          };
+        }
+
         return {
           ...prev,
           lastActions: newActions,
@@ -13084,6 +13165,14 @@ export default function TablePage({
       });
 
       return () => {
+        /* A REFUSED ACTION MUST GIVE THE CONTROLS BACK (2026-08-27).
+           This restored lastActions, lastBetAmounts and status but NOT
+           `currentPlayerSeat` - which the optimistic update had zeroed. So a
+           rejected fold or call left the hero still on the clock with NO
+           ACTION BAR, unable to do anything until the next snapshot happened
+           to arrive. Dropping the fence here too means the very next snapshot
+           is free to hand the turn straight back. */
+        heroActedFenceRef.current = null;
         setTableState((prev) => {
           const newActions = [...prev.lastActions];
           newActions[idx] = prevLastAction;
@@ -13098,6 +13187,8 @@ export default function TablePage({
             lastActions: newActions,
             lastBetAmounts: newBets,
             players,
+            // Only if nobody else has since been given the turn.
+            ...(prev.currentPlayerSeat === 0 ? { currentPlayerSeat: heroSeat } : {}),
           };
         });
       };
@@ -14898,8 +14989,41 @@ export default function TablePage({
                 Dan 2026-08-26 mobile pass, item 6 (round 2): the slot sits
                 BESIDE the previous-hand box, not on top of it - the container
                 is a row (.hud-bl-row, TablePage.css) with the previous-hand
-                box ordered first. */}
-            {isHeroTurnContext && (
+                box ordered first.
+
+                2026-08-27, TWO THINGS FIXED HERE.
+
+                (1) WHICH control stands in the slot is decided ONCE, above, by
+                `hudSlotControl`. It used to be two independent conditions in a
+                row, mutually exclusive only by an accident of how each was
+                written. See the derivation for why that was not good enough.
+
+                (2) The control is now the same SIZE as the tile it replaces.
+                Rabbit Hunt was a hardcoded 64px square (54px under 480px) in a
+                row of 36px tiles, so the corner grew by 28px the moment the
+                hand ended and the button overhung the felt's bottom edge -
+                which is exactly the "not in the same position" Dan reported.
+                Fixed in RabbitHunt.css by reading --sp-hud-tile-size like its
+                two slot-mates do. Do not reintroduce a pixel square there.
+
+                ONE THING DELIBERATELY NOT CHANGED: the Rabbit Hunt branch keeps
+                `!tableState.isHandInProgress`. The 2-second minimum-visible
+                floor (RABBIT_MIN_VISIBLE_MS) defers the STATE, but this gate
+                still hides the button the instant the next hand starts, so on a
+                short inter-hand gap the floor buys less than its full two
+                seconds. That is the safe trade and not an oversight: a reveal
+                freezes the engine snapshot for 3s and paints cards onto the
+                board, so a button that outlives the hand boundary is a button
+                that can stall a live table. Lengthening the window means making
+                the reveal hand-safe first, which is a change to
+                handleRabbitReveal, not to this gate.
+
+                `body.ca-raising` (TablePage.css) hides everything in this
+                corner while the raise overlay is open - checked, and it cannot
+                eat the Rabbit Hunt window: ActionPanel owns that body class and
+                removes it on unmount, and ActionPanel only mounts while the
+                hero is to act in a live hand. No hand, no class. */}
+            {hudSlotControl === 'timebank' && (
               <TimebankCounter
                 /* null = not loaded yet. The tile renders a dash rather
                    than asserting a number, which is what showed a wrong 4. */
@@ -14929,10 +15053,10 @@ export default function TablePage({
                 onClick={() => setShowTimeBankStore(true)}
               />
             )}
-            {/* The same slot, once the hand is over. Mutually exclusive with
-                the tile above by construction: that one needs a hand in
-                progress and the hero on the clock, this one needs no hand. */}
-            {!tableState.isHandInProgress && isRabbitAvailable && (
+            {/* The same slot, same tile, once the hand is over. It cannot
+                render beside the time bank: `hudSlotControl` yields one value,
+                and 'timebank' wins. */}
+            {hudSlotControl === 'rabbit' && (
               <RabbitHunt
                 isAvailable={isRabbitAvailable}
                 cardsAvailable={rabbitCardsAvailable}
@@ -16320,8 +16444,12 @@ export default function TablePage({
                 </div>
               )}
 
-            {/* Rabbit Hunt lives in TableModalsLayer, which renders the
-                <RabbitHunt> component that actually SHOWS the cards.
+            {/* Rabbit Hunt lives in the bottom-left HUD corner, in the slot it
+                shares with the time-bank tile (`hudSlotControl`, above). It has
+                NOT been in TableModalsLayer since 2026-08-26 — that layer has
+                neither the import nor the JSX — and this comment said it did
+                until 2026-08-27.
+
                 A second button used to sit here calling handleRabbitReveal
                 directly and throwing the result away — it spent the reveal (and,
                 now, the player's diamonds) and displayed nothing. Removed
@@ -16412,7 +16540,10 @@ export default function TablePage({
                           serverRabbitCardsRef for free and showed nothing — and
                           the real paid RabbitHunt panel then charged 5 diamonds
                           and revealed an empty board. The RabbitHunt component
-                          in TableModalsLayer is the single entry point. */}
+                          in the bottom-left HUD slot is the single entry point.
+                          (It was in TableModalsLayer when this was written; it
+                          moved on 2026-08-26 and this line was corrected on
+                          2026-08-27.) */}
                       <ActionPanel
                         canFold={true}
                         canCheck={callAmount === 0}

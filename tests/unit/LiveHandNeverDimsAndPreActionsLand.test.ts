@@ -94,3 +94,57 @@ describe('pre-actions reach the engine, and never hide an armed one', () => {
     expect(code).toMatch(/PreAction_clear_threw/);
   });
 });
+
+describe('the action bar does not flash back after you act', () => {
+  /* Dan 2026-08-27: "you make an action (check, call, raise or fold), the
+     action happens, but then the action bar reappears for a split second."
+
+     The bar renders on `currentPlayerSeat === heroSeat`. Acting optimistically
+     sets that to 0 so it hides at once - but the snapshot merge then applied
+     `currentPlayerSeat: mapped.currentPlayerSeat` UNCONDITIONALLY, and a
+     snapshot generated before the engine processed the action still names the
+     hero as the actor. It landed a beat later, handed the turn back, and the
+     bar returned for exactly one round trip. */
+
+  it('the merge no longer assigns the engine seat unconditionally', () => {
+    expect(code).not.toMatch(/currentPlayerSeat: mapped\.currentPlayerSeat,/);
+    expect(code).toMatch(/currentPlayerSeat: nextCurrentSeat,/);
+  });
+
+  it('a stale snapshot cannot hand the turn back to the seat that just acted', () => {
+    expect(code).toMatch(/mapped\.currentPlayerSeat === fence\.seat/);
+    expect(code).toMatch(/nextCurrentSeat = 0/);
+  });
+
+  it('the fence is armed only when the hero actually held the turn', () => {
+    expect(code).toMatch(/if \(prev\.currentPlayerSeat === heroSeat\) \{/);
+    expect(code).toMatch(/heroActedFenceRef\.current = \{/);
+  });
+
+  it('it is scoped to one hand, so it cannot leak into the next', () => {
+    expect(code).toMatch(/fence\.hand !== snapHand/);
+  });
+
+  it('it releases the moment the engine names a different actor', () => {
+    // The success signal. Without this the fence would sit out its full
+    // timeout on every single action.
+    expect(code).toMatch(/heroActedFenceRef\.current = null; /);
+  });
+
+  it('it expires on its own, so a lost action can never strand the player', () => {
+    expect(code).toMatch(/HERO_ACTED_FENCE_MS/);
+    expect(code).toMatch(/Date\.now\(\) >= fence\.until/);
+  });
+
+  it('a REJECTED action clears the fence and gives the turn straight back', () => {
+    /* The other half of the same bug: revert() restored lastActions,
+       lastBetAmounts and status but NOT currentPlayerSeat, which the
+       optimistic update had zeroed - so a refused fold or call left the hero
+       on the clock with no action bar at all until the next snapshot. */
+    const revertIdx = code.indexOf('heroActedFenceRef.current = null;');
+    expect(revertIdx).toBeGreaterThan(-1);
+    expect(code).toMatch(
+      /prev\.currentPlayerSeat === 0 \? \{ currentPlayerSeat: heroSeat \} : \{\}/
+    );
+  });
+});

@@ -142,6 +142,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     loading: tableSettingsLoading,
     toggleSetting: toggleTableSetting,
   } = useUserTableSettings(user?.id);
+  useEffect(() => {
+    setShowBBEnabled(tableSettings.show_stack_in_bb);
+  }, [tableSettings.show_stack_in_bb]);
   const [showTableSettings, setShowTableSettings] = useState(false);
   const [showThemeSettings, setShowThemeSettings] = useState(false);
 
@@ -432,11 +435,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   };
 
   const handleShowBBToggle = () => {
-    const newValue = !showBBEnabled;
+    const newValue = !tableSettings.show_stack_in_bb;
     setShowBBEnabled(newValue);
-    updateSetting(STORAGE_KEYS.SHOW_STACK_BB, 'show_stack_bb', newValue, () =>
-      setShowBBEnabled(!newValue)
-    );
     /* Dan 2026-08-25 (binding): "tournaments and cash games should always be
      * defaulted to actual totals unless the user changes the setting to BB."
      *
@@ -449,15 +449,22 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
      * free to disagree forever. The canonical one is now written here too, so
      * this switch and the in-table switch are the same switch.
      *
-     * The `profiles` write above stays for now — other surfaces still read it —
-     * but user_table_settings is the source of truth for what the table draws. */
-    masterBus.emit('SETTINGS_CHANGED', { setting: 'show_stack_in_bb', value: newValue });
+     * The profiles mirror stays for older surfaces, but the ordered
+     * useUserTableSettings writer is the source of truth for what every open
+     * table draws and broadcasts its rollback if persistence is refused. */
+    try {
+      localStorage.setItem(STORAGE_KEYS.SHOW_STACK_BB, String(newValue));
+    } catch {
+      /* private mode */
+    }
+    void toggleTableSetting('show_stack_in_bb');
     if (user?.id) {
       void supabase
-        .from('user_table_settings')
-        .upsert({ user_id: user.id, show_stack_in_bb: newValue }, { onConflict: 'user_id' })
-        .then(({ error: bbErr }) => {
-          if (bbErr) reportError(bbErr, 'HamburgerMenu.Show_stack_bb_save_failed');
+        .from('profiles')
+        .update({ show_stack_bb: newValue })
+        .eq('id', user.id)
+        .then(({ error: legacyErr }) => {
+          if (legacyErr) reportError(legacyErr, 'HamburgerMenu.Show_stack_bb_legacy_mirror');
         });
     }
   };

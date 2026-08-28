@@ -111,6 +111,7 @@ const WaitlistPage = lazyWithRetry(() => import('./pages/WaitlistPage'));
 const ClubRulesPage = lazyWithRetry(() => import('./pages/ClubRulesPage'));
 const NotificationCenter = lazyWithRetry(() => import('./pages/NotificationCenter'));
 const BusDevToolsPage = lazyWithRetry(() => import('./pages/BusDevToolsPage'));
+const ClubButtonsShowcasePage = lazyWithRetry(() => import('./pages/dev/ClubButtonsShowcasePage'));
 const FinancialAlertsPage = lazyWithRetry(() => import('./pages/FinancialAlertsPage'));
 const DisputeManagementPage = lazyWithRetry(() => import('./pages/DisputeManagementPage'));
 const FinancialHealthPage = lazyWithRetry(() => import('./pages/FinancialHealthPage'));
@@ -1571,6 +1572,16 @@ export default function App() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Bus DevTools">
                         <BusDevToolsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="dev/club-ui"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="ClubButtons UI Laboratory">
+                        <ClubButtonsShowcasePage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

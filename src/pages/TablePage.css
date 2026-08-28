@@ -831,110 +831,6 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   FIX 222: BIBLE V8 §11.2 — Tab 3 (Button Themes)
-   Dealer button color tokens — consumed by .dealer-button component
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='classic-white'] {
-  --dealer-btn-bg: linear-gradient(145deg, #ffffff 0%, #e8e8e8 50%, #d0d0d0 100%);
-  --dealer-btn-color: #111;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='red-d-gear'] {
-  --dealer-btn-bg: linear-gradient(135deg, #c62828, #e53935);
-  --dealer-btn-color: #fff;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='gray-d-gear'] {
-  --dealer-btn-bg: linear-gradient(135deg, #616161, #757575);
-  --dealer-btn-color: #fff;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='blue-crystal'] {
-  --dealer-btn-bg: linear-gradient(135deg, #1565c0, #42a5f5);
-  --dealer-btn-color: #fff;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='gold-star'] {
-  --dealer-btn-bg: linear-gradient(135deg, #f57f17, #fbc02d);
-  --dealer-btn-color: #1a1a1e;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='sports-themed'] {
-  --dealer-btn-bg: linear-gradient(135deg, #33691e, #558b2f);
-  --dealer-btn-color: #fff;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='jade-seal'] {
-  --dealer-btn-bg: radial-gradient(
-    circle at 34% 28%,
-    #d6f7df 0%,
-    #58ad7b 35%,
-    #145039 74%,
-    #09271d 100%
-  );
-  --dealer-btn-color: #f4fff8;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='amethyst-chip'] {
-  --dealer-btn-bg: radial-gradient(
-    circle at 34% 28%,
-    #ecdfff 0%,
-    #9c69d2 34%,
-    #4a2476 72%,
-    #1e0d34 100%
-  );
-  --dealer-btn-color: #fff;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='carbon-ion'] {
-  --dealer-btn-bg: conic-gradient(from 20deg, #12181b, #38464a, #0d1214, #263438, #12181b);
-  --dealer-btn-color: #65ead8;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='ocean-pearl'] {
-  --dealer-btn-bg: radial-gradient(
-    circle at 32% 25%,
-    #ffffff 0%,
-    #dff5fb 30%,
-    #71b8d2 70%,
-    #2c708d 100%
-  );
-  --dealer-btn-color: #092b3d;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
    FIX 222: BIBLE V8 §11.2 — Tab 5 (Card Themes)
    Card face color tokens — consumed by DealAnimation.css (the in-flight card)
    and TableVisualHotfix.css (the settled card back's gradient fallback).
@@ -3332,6 +3228,14 @@
   gap: 8px;
 }
 
+/* EVERY WIDGET IN THIS CORNER IS ONE --sp-hud-tile-size SQUARE (2026-08-27).
+   The corner's height budget — --sp-hero-clear, at the foot of this file — is
+   derived from that one number, so a widget that sizes itself in pixels instead
+   makes the reserve wrong and hangs over the felt. That is exactly what
+   .rabbit-hunt__button did at 64px. Sizes live in TableHUD.css as tokens;
+   TimebankCounter.css, PreviousHandCard.css and RabbitHunt.css all read them
+   and none of them declares a square of its own. */
+
 /* Dan 2026-08-26 mobile pass, item 6: the bottom-left corner is a ROW now —
    previous-hand box at the anchor, time-bank tile BESIDE it (only rendered
    while the action is on the hero). `order` keeps the previous-hand box
@@ -4008,17 +3912,34 @@ body.ca-raising .bankroll-widget {
        they stop crossing the felt is for the felt's bottom edge to sit above
        the top of that stack. That is this number.
 
-       The stack, seated, is exactly:
-           36px  .tbc-widget          (--sp-hud-tile-size, TableHUD.css)
-       +    8px  gap                  (.hud-ul-column--stack, this file)
-       +   36px  .prev-hand-card      (same tile size)
-       =   80px, resting on a line 8px above the bar
-       =   88px from the top of the action bar to the top of the stack.
+       THE BUDGET, and the invariant that keeps it true (2026-08-27).
 
-       88px therefore puts the stack's top edge exactly on the scaler's bottom
-       edge: nothing overlaps, and not one pixel is reserved that a widget does
-       not stand in. The chat button in the opposite corner is a single 36px
-       tile on the same line and is cleared with 44px to spare.
+       When this number was first derived the corner was a COLUMN, and the sum
+       was 36 + 8 + 36 = 80px resting on a line 8px above the bar = 88px. It is
+       a ROW now (.hud-bl-row, above): previous-hand card at the anchor, the
+       shared slot beside it. A row is as tall as its tallest child, so the
+       budget is one tile:
+
+           36px  the tallest widget in the corner (--sp-hud-tile-size,
+                 TableHUD.css) — .prev-hand-card, and beside it EITHER
+                 .tbc-widget while the hero is on the clock OR
+                 .rabbit-hunt__button once the hand is over
+       +    8px  the line the corner rests on (--sp-hud-line, TableHUD.css)
+       =   44px minimum from the top of the action bar to the top of the row.
+
+       THE INVARIANT: every widget that can stand in that slot is
+       --sp-hud-tile-size square. That is not decoration, it is what makes this
+       number a number — until 2026-08-27 .rabbit-hunt__button was a hardcoded
+       64px (54px under 480px), so the corner silently grew to 64px the moment a
+       hand ended and the button overhung the felt's bottom edge. If a widget
+       here ever stops reading the token, this reserve is wrong again and the
+       symptom is a control hanging over the felt, not a crash. Pinned by
+       tests/all-in-cannot-leave-and-the-hud-slot.test.ts.
+
+       The reserve below is comfortably above the 44px the row asks for, because
+       the hero's name plate — not the HUD — is what actually sets it (see the
+       floor note further down). The chat button in the opposite corner is a
+       single 36px tile on the same line and is cleared by the same margin.
 
        IT IS ALSO ABOVE THE HALF-SEAT FLOOR, which is the other thing this
        strip has to satisfy — 49px at 380, 54px at 480, 60px at 640 (base rule)

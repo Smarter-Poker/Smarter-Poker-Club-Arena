@@ -2887,7 +2887,10 @@ export default function TablePage({
   const rebuyPromptDeadlineRef = useRef<number | null>(null);
   const rebuyPromptTokenRef = useRef<string | null>(null);
   const beginRebuyPrompt = useCallback((): string => {
-    const token = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `rebuy-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const token =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `rebuy-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     rebuyPromptTokenRef.current = token;
     return token;
   }, []);
@@ -9902,6 +9905,40 @@ export default function TablePage({
     if (!tableId || horsesLoadedRef.current || _horsesLoadedForTable[tableId]) return;
     // Wait for table info to load first (maxPlayers must be set)
     if (tableState.blinds === '?/?') return;
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  TOURNAMENT TABLES ARE OFF LIMITS TO THE CLIENT HORSE PATH (2026-08-28)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * This whole effect is a pre-migration relic: the SERVER seats, funds and
+     * steers every horse on a tournament table (HorseFleetManager,
+     * fn_seat_horse_in_seat_first_game). Left ungated, it did two separate
+     * kinds of damage on every Spin a player opened, both caught live on
+     * production while chasing Dan's "ALL THE BUTTONS ARE 'EMPTY' /
+     * 'SPECTATING'" report:
+     *
+     * 1. populateHorsePlayers paints a horse whose real stack is 0 with an
+     *    INVENTED `bigBlind * 100` (2,000 on a 10/20 spin). The playHasBegun
+     *    latch reads "a seat bought at zero chips now holds a stack" as THE
+     *    START SIGNAL — one fabricated frame and it latches, D8 tears down
+     *    seatFirstBuyIn, every open seat renders as an inert EMPTY plate and
+     *    the footer says plain "Spectating". The DB overwrite to 0 arrives a
+     *    second later; the latch is deliberately permanent.
+     *
+     * 2. Worse, when it found no horses it called HydraService.seedTable —
+     *    which INSERTS table_seats rows directly from the browser. A spin's
+     *    paid-seat count IS its live table_seats count, so client-seeded
+     *    unpaid seats are indistinguishable from bought ones to the start
+     *    gate. Horses on tournament tables enter through the same paid RPCs
+     *    as humans (section 10.5), never through a spectator's browser.
+     *
+     * The blinds gate above has already run, and the same mount write that
+     * resolves the blinds stamps isTournament/tournamentId (loadTableInfo,
+     * one setTableState), so this check cannot race them. The ref is left
+     * unset on purpose: if a stale cash read later corrects into a
+     * tournament id, the effect re-runs and still refuses.
+     */
+    if (tableState.isTournament || tableState.tournamentId) return;
 
     // Set IMMEDIATELY to prevent duplicate async calls on re-render AND remount
     horsesLoadedRef.current = true;
@@ -9997,7 +10034,11 @@ export default function TablePage({
     };
 
     loadHorses();
-  }, [tableId, tableState.blinds]);
+    // isTournament/tournamentId are in the deps so a table whose tournament
+    // identity resolves after its blinds still re-evaluates the gate; the
+    // loaded-ref keeps a cash table from double-loading.
+     
+  }, [tableId, tableState.blinds, tableState.isTournament, tableState.tournamentId]);
   // ═══════════════════════════════════════════════════════════════════════════
 
   // REALTIME PROFILES — a seated player's avatar or cosmetics changed

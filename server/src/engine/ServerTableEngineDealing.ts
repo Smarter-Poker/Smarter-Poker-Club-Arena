@@ -1126,14 +1126,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         const dueAtIso = dueAt !== null ? new Date(dueAt).toISOString() : null;
         if (dueAtIso !== (this.tableInfo.bomb_pot_next_due_at ?? null)) {
           this.tableInfo.bomb_pot_next_due_at = dueAtIso;
-          void supabase
-            .from('tables')
-            .update({ bomb_pot_next_due_at: dueAtIso })
-            .eq('id', this.tableId)
+          // Promise.resolve turns the PostgrestBuilder thenable into a real
+          // Promise so the house .catch rule (noUnhandledRejections.test.ts)
+          // is satisfiable — a transport throw must never surface as an
+          // unhandled rejection.
+          void Promise.resolve(
+            supabase
+              .from('tables')
+              .update({ bomb_pot_next_due_at: dueAtIso })
+              .eq('id', this.tableId)
+          )
             .then(({ error }) => {
               if (error) {
                 console.warn('[BombPot] timed due-at persistence failed:', error.message);
               }
+            })
+            .catch((err: unknown) => {
+              console.warn('[BombPot] timed due-at persistence threw:', err);
             });
         }
       }

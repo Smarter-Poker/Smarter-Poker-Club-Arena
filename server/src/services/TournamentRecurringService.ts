@@ -3618,7 +3618,20 @@ export class TournamentRecurringService {
           'fn_tournament_primary_table',
           { p_tournament_id: tournamentId }
         );
-        if (primErr) return 0;
+        /* SILENT ZEROES ARE HOW AN OUTAGE LASTS TWENTY HOURS (2026-08-28).
+           Both of these returned 0 with no telemetry, and a 0 from here
+           stops every seat-first fill on the platform. That is the exact
+           shape this file's own post-mortem names as the reason an earlier
+           outage went unnoticed — "nothing on the platform reported it
+           because every refusal on this path returns 0 silently". Every
+           other RPC in this function reports; these did not. */
+        if (primErr) {
+          reportError(
+            new Error(`[TournamentRecurring] primary-table read failed: ${primErr.message}`),
+            'TournamentRecurring.seat_first_primary_table_read_failed'
+          );
+          return 0;
+        }
         if (primaryId) {
           primaryTableId = String(primaryId);
           const { count: seatCount, error: seatErr } = await supabase
@@ -3626,7 +3639,13 @@ export class TournamentRecurringService {
             .select('table_id', { count: 'exact', head: true })
             .eq('table_id', primaryTableId)
             .is('left_at', null);
-          if (seatErr) return 0;
+          if (seatErr) {
+            reportError(
+              new Error(`[TournamentRecurring] seat count read failed: ${seatErr.message}`),
+              'TournamentRecurring.seat_first_seat_count_read_failed'
+            );
+            return 0;
+          }
           liveCount = seatCount || 0;
         }
       } else {

@@ -3341,8 +3341,42 @@ export class GameServer {
           primaryTable.set(tid, { id, seats, createdAt });
         }
       }
+      /**
+       * SEATS SPLIT ACROSS DUPLICATE TABLES STILL COUNT (2026-08-28).
+       *
+       * The election above answers "which table IS the game", and that is the
+       * right question for seating. It was also being used as the paid-seat
+       * COUNT, which is a different question — it takes the max and discards
+       * every seat on a sibling live table. These games are created with two
+       * `waiting` tables about 0.6s apart (see the note above), so a 3-seat
+       * spin can land 2+1 across the pair. That yielded paidSeats = 2, and
+       * then nothing in the platform could see it:
+       *
+       *   - the main start gate needs paid >= max_players: never opens;
+       *   - the fast lane uses the same number: skips it;
+       *   - the fully-paid stall watchdog is gated on `paid < seats`, so it
+       *     stays silent too.
+       *
+       * Three paid seats, no game, no telemetry, indefinitely. The money is
+       * taken either way, so the honest count is every live seat the
+       * tournament holds. The primary table still decides WHERE to seat.
+       */
+      const seatsByTournament = new Map<string, number>();
+      for (const row of liveTables || []) {
+        const tid = String((row as { tournament_id?: string }).tournament_id ?? '');
+        const id = String((row as { id?: string }).id ?? '');
+        if (!tid || !id) continue;
+        seatsByTournament.set(tid, (seatsByTournament.get(tid) ?? 0) + (seatsByTable.get(id) ?? 0));
+      }
       for (const [tid, tbl] of primaryTable) {
-        paidSeatsByTournament.set(tid, tbl.seats);
+        const total = seatsByTournament.get(tid) ?? tbl.seats;
+        if (total > tbl.seats) {
+          console.warn(
+            `[GameServer] Seat-first game ${tid.slice(0, 8)} has ${total} paid seat(s) split across ` +
+              `duplicate live tables (primary ${tbl.id.slice(0, 8)} holds ${tbl.seats}) — counting all of them`
+          );
+        }
+        paidSeatsByTournament.set(tid, total);
       }
     }
     return paidSeatsByTournament;

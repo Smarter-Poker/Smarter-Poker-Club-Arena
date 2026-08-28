@@ -611,6 +611,148 @@ export function omahaNutStatus(hole: Card[], board: Card[]): OmahaNutStatus {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// V21 NLH MADE-HAND NUT STATUS (Dan 2026-08-27, Phase 2)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The Omaha nut status above answered "whose flush is bigger" and it killed the
+// small-flush stack-offs. NLH had NOTHING equivalent, and the review table
+// showed exactly what that costs: a T7 straight four-bet into a three-club
+// board, a sixes-full re-raising on JJ66x into any jack, trips escalating a
+// river war. Category numbers are blind to "hands that beat mine are ON this
+// board". This answers the three questions that decide NLH river wars:
+// is a flush possible over my straight, is a bigger straight live, and is my
+// full house the BOTTOM boat. Cheap (no simulation), computed lazily.
+
+export interface NlhNutStatus {
+  /** made category of hero's best five (0 = unknown) */
+  cat: number;
+  /** the board carries three or more of one suit — a flush is possible */
+  flushPossible: boolean;
+  /** four or more of one suit on the board — every single card of the suit plays */
+  fourFlushBoard: boolean;
+  /** hero makes a flush: rank of hero's best card of the flush suit (0 = none) */
+  heroFlushHigh: number;
+  /** made flush only: LIVE ranks of the flush suit above hero's best. 0 = nut flush. */
+  higherFlushRanks: number;
+  /** hero's straight top rank (0 = no straight) */
+  heroStraightTop: number;
+  /** highest straight top ANY two opponent cards could complete on this board */
+  maxStraightTop: number;
+  /** hero's full house is dominated by a ONE-CARD boat: a board pair of higher
+   *  rank than hero's trips exists, so any single card of that rank beats hero */
+  underfull: boolean;
+}
+
+const NO_NLH_NUT_STATUS: NlhNutStatus = {
+  cat: 0,
+  flushPossible: false,
+  fourFlushBoard: false,
+  heroFlushHigh: 0,
+  higherFlushRanks: 0,
+  heroStraightTop: 0,
+  maxStraightTop: 0,
+  underfull: false,
+};
+
+export function nlhNutStatus(hole: Card[], board: Card[], shortDeck: boolean): NlhNutStatus {
+  if (!hole || hole.length < 2 || !board || board.length < 3) return NO_NLH_NUT_STATUS;
+  try {
+    const all = hole.concat(board);
+    const score = scoreHoldem(all, all.length, shortDeck);
+    const cat = Math.floor(score / 0x100000);
+    const out: NlhNutStatus = { ...NO_NLH_NUT_STATUS, cat };
+
+    // Flush geography.
+    const suitCount = new Map<string, number>();
+    for (const c of board) suitCount.set(c.suit, (suitCount.get(c.suit) || 0) + 1);
+    let flushSuit: string | null = null;
+    let flushSuitN = 0;
+    for (const [s, n] of suitCount) {
+      if (n >= 3 && n > flushSuitN) {
+        flushSuit = s;
+        flushSuitN = n;
+      }
+    }
+    if (flushSuit) {
+      out.flushPossible = true;
+      out.fourFlushBoard = flushSuitN >= 4;
+      const heroSuited = hole.filter((c) => c.suit === flushSuit);
+      // NLH plays any five: board 3 needs two suited hole cards, board 4+ one.
+      const heroMakesFlush = heroSuited.length >= Math.max(1, 5 - flushSuitN);
+      if (heroMakesFlush && heroSuited.length > 0) {
+        let heroTop = 0;
+        for (const c of heroSuited) heroTop = Math.max(heroTop, RANK_VALUES[c.rank]);
+        out.heroFlushHigh = heroTop;
+        const seen = new Set<number>();
+        for (const c of board) if (c.suit === flushSuit) seen.add(RANK_VALUES[c.rank]);
+        for (const c of heroSuited) seen.add(RANK_VALUES[c.rank]);
+        let higher = 0;
+        for (let r = heroTop + 1; r <= 14; r++) if (!seen.has(r)) higher++;
+        // Short deck strips 2-5: those ranks cannot be live.
+        if (shortDeck) {
+          for (let r = heroTop + 1; r <= Math.min(5, 14); r++) {
+            if (!seen.has(r)) higher--;
+          }
+          if (higher < 0) higher = 0;
+        }
+        out.higherFlushRanks = higher;
+      }
+    }
+
+    // Straight geography: hero's top, and the best top any 2 cards complete.
+    let comboMask = 0;
+    let boardMask = 0;
+    for (const c of board) boardMask |= 1 << RANK_VALUES[c.rank];
+    comboMask = boardMask;
+    for (const c of hole) comboMask |= 1 << RANK_VALUES[c.rank];
+    out.heroStraightTop = straightTop(comboMask, shortDeck);
+    const lowRank = shortDeck ? 6 : 2;
+    for (let top = 14; top >= lowRank + 3; top--) {
+      let onBoard = 0;
+      for (let k = 0; k < 5; k++) {
+        let r = top - k;
+        if (r === lowRank - 1) r = 14; // the wheel uses the ace low
+        if (r < lowRank - 1) break;
+        if ((boardMask & (1 << r)) !== 0) onBoard++;
+      }
+      if (onBoard >= 3) {
+        out.maxStraightTop = top;
+        break;
+      }
+    }
+
+    // Underfull: hero boat whose trips rank sits under a board pair.
+    if (cat === 7 || (shortDeck && cat === 6)) {
+      // hero's boat trips rank = top 4 bits of the tiebreak by construction is
+      // fragile across encodings — recompute from counts instead.
+      const count = new Map<number, number>();
+      for (const c of all) {
+        const r = RANK_VALUES[c.rank];
+        count.set(r, (count.get(r) || 0) + 1);
+      }
+      let tripsRank = 0;
+      for (const [r, n] of count) if (n >= 3 && r > tripsRank) tripsRank = r;
+      if (tripsRank > 0) {
+        const boardCount = new Map<number, number>();
+        for (const c of board) {
+          const r = RANK_VALUES[c.rank];
+          boardCount.set(r, (boardCount.get(r) || 0) + 1);
+        }
+        for (const [r, n] of boardCount) {
+          if (n >= 2 && r > tripsRank) {
+            out.underfull = true;
+            break;
+          }
+        }
+      }
+    }
+    return out;
+  } catch {
+    return NO_NLH_NUT_STATUS;
+  }
+}
+
 /**
  * V15: cheap Omaha board-contact test for the MC sampler — no hand scoring.
  * Pair-or-better contact (a hole rank on the board, or a pocket pair), a

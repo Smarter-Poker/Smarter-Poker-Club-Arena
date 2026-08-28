@@ -49,6 +49,24 @@ export interface HouseAd {
   glyph: string | null;
   targetUrl: string | null;
   ctaLabel: string | null;
+  /** Same-origin path or null. See isSafeAdImage for why it is checked twice. */
+  imageUrl: string | null;
+}
+
+/**
+ * AN AD IMAGE IS A URL EVERY VIEWER'S BROWSER FETCHES WITHOUT BEING ASKED.
+ *
+ * A destination is checked before a browser is sent to it; an image is the same
+ * question one step earlier and with less consent, because the fetch happens on
+ * render. An external host would hand every player's IP and user agent to a
+ * third party chosen by whoever typed the URL into the admin panel.
+ *
+ * The database has a CHECK and the API refuses one too. This is the third lock,
+ * at the point of rendering, because that is the one that actually protects the
+ * player if the other two are ever loosened.
+ */
+export function isSafeAdImage(url: string | null | undefined): url is string {
+  return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
 }
 
 type AdEventType = 'impression' | 'click' | 'dismiss';
@@ -93,6 +111,7 @@ export const AdService = {
         glyph: r.glyph == null ? null : String(r.glyph),
         targetUrl: r.target_url == null ? null : String(r.target_url),
         ctaLabel: r.cta_label == null ? null : String(r.cta_label),
+        imageUrl: r.image_url == null ? null : String(r.image_url),
       }));
     } catch (e) {
       reportError(e, 'AdService.resolve', { slot });

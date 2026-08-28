@@ -243,11 +243,23 @@ export default function LobbyAdStrip({
   /* A house ad owns its own destination, so tapping it goes where the campaign
      points rather than to the club's announcements page. The click is recorded
      BEFORE navigating: the alternative is losing the event to the unmount. */
+  const handleDismiss = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (ad.source === 'HOUSE' && ad.adId) {
+      AdService.logDismiss({ adId: ad.adId }, 'lobby_strip', clubId);
+    }
+    const nextAds = ads.filter((a) => a.id !== ad.id);
+    setAds(nextAds);
+    setIndex((prev) => Math.max(0, Math.min(prev, nextAds.length - 1)));
+  };
+
   const handleActivate = () => {
     if (ad.source === 'HOUSE' && ad.adId) {
       AdService.logClick({ adId: ad.adId }, 'lobby_strip', clubId);
       if (ad.targetUrl) {
-        onNavigate?.(ad.targetUrl);
+        let url = ad.targetUrl;
+        if (clubId) url = url.replace(/{clubId}/g, clubId);
+        onNavigate?.(url);
         return;
       }
     }
@@ -293,6 +305,14 @@ export default function LobbyAdStrip({
             {text}
           </span>
         </div>
+        <button
+          type="button"
+          className="lobby-ads__dismiss"
+          onClick={handleDismiss}
+          aria-label="Dismiss announcement"
+        >
+          ✕
+        </button>
         {dots}
       </div>
     );
@@ -316,6 +336,14 @@ export default function LobbyAdStrip({
         <span key={ad.id} className="lobby-ads__text">
           {text}
         </span>
+      </button>
+      <button
+        type="button"
+        className="lobby-ads__dismiss"
+        onClick={handleDismiss}
+        aria-label="Dismiss announcement"
+      >
+        ✕
       </button>
 
       {dots}

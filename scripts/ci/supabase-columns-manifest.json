@@ -90,7 +90,9 @@
       "weight",
       "created_by",
       "created_at",
-      "updated_at"
+      "updated_at",
+      "experiment_key",
+      "image_url"
     ],
     "ad_event": [
       "id",
@@ -101,6 +103,11 @@
       "club_id",
       "created_at"
     ],
+    "ad_event_retention_policy": [
+      "id",
+      "event_retention_days",
+      "updated_at"
+    ],
     "ad_placement": [
       "id",
       "ad_id",
@@ -109,7 +116,8 @@
       "audience",
       "daily_cap",
       "is_active",
-      "created_at"
+      "created_at",
+      "target_url"
     ],
     "admin_audit_log": [
       "id",
@@ -825,6 +833,13 @@
       "description",
       "hand_rank",
       "eligible"
+    ],
+    "bbj_snapshot_alert_collapse_log": [
+      "id",
+      "alert_id",
+      "source",
+      "created_at",
+      "collapsed_at"
     ],
     "bbj_stakes_tiers": [
       "id",
@@ -1797,7 +1812,10 @@
       "bbj_rake_enabled",
       "spins_enabled",
       "spins_preseed_amount",
-      "spins_wallet_funding"
+      "spins_wallet_funding",
+      "ticker_enabled",
+      "guarantee_treasury_floor",
+      "guarantee_enforcement_enabled"
     ],
     "collusion_tracking": [
       "id",
@@ -4492,6 +4510,18 @@
       "expires_at",
       "created_at"
     ],
+    "fee_requeue_log": [
+      "id",
+      "alert_id",
+      "pending_id",
+      "kind",
+      "table_id",
+      "hand_number",
+      "rake",
+      "bbj",
+      "outcome",
+      "requeued_at"
+    ],
     "financial_alerts": [
       "id",
       "severity",
@@ -4826,6 +4856,33 @@
       "street",
       "created_at"
     ],
+    "hand_audit_decisions": [
+      "id",
+      "user_id",
+      "hand_external_id",
+      "decision_key",
+      "question_id",
+      "game_id",
+      "street",
+      "hero_position",
+      "villain_position",
+      "spot_type",
+      "hero_hand",
+      "board_cards",
+      "player_action",
+      "solver_action",
+      "selected_frequency",
+      "optimal_frequency",
+      "classification",
+      "ev_loss",
+      "ev_loss_measured",
+      "solver_verified",
+      "solver_source",
+      "match_tier",
+      "audited_at",
+      "created_at",
+      "updated_at"
+    ],
     "hand_histories": [
       "id",
       "table_id",
@@ -4881,7 +4938,9 @@
       "community_cards2",
       "pots",
       "showdown",
-      "rit_boards"
+      "rit_boards",
+      "community_cards3",
+      "bomb_pot"
     ],
     "hand_history_compaction_policy": [
       "id",
@@ -5423,6 +5482,20 @@
       "idx_scan",
       "index_bytes"
     ],
+    "insurance_offer_events": [
+      "id",
+      "table_id",
+      "club_id",
+      "hand_number",
+      "player_id",
+      "event",
+      "equity_percent",
+      "premium",
+      "insured_amount",
+      "pot",
+      "street",
+      "created_at"
+    ],
     "insurance_transactions": [
       "id",
       "table_id",
@@ -5438,7 +5511,8 @@
       "net_result",
       "bank_type",
       "bank_entity_id",
-      "created_at"
+      "created_at",
+      "kind"
     ],
     "jarvis_conversations": [
       "id",
@@ -6190,6 +6264,24 @@
       "article_title",
       "article_source",
       "created_at"
+    ],
+    "newsletter_campaigns": [
+      "id",
+      "subject",
+      "status",
+      "audience",
+      "lookback_days",
+      "article_limit",
+      "article_ids",
+      "recipient_count",
+      "sent_count",
+      "failed_count",
+      "error_summary",
+      "created_by",
+      "started_at",
+      "completed_at",
+      "created_at",
+      "updated_at"
     ],
     "newsletter_subscribers": [
       "id",
@@ -7074,7 +7166,12 @@
       "year",
       "source",
       "updated_at",
-      "created_at"
+      "created_at",
+      "external_player_id",
+      "source_url",
+      "source_updated_at",
+      "country",
+      "team"
     ],
     "pred_best_bets": [
       "id",
@@ -7254,7 +7351,8 @@
       "arena_avatar_url",
       "equipped_frame",
       "equipped_aura",
-      "use_avatar_as_profile_pic"
+      "use_avatar_as_profile_pic",
+      "status_text"
     ],
     "promo_code_redemptions": [
       "id",
@@ -8683,6 +8781,14 @@
       "start_at",
       "created_at"
     ],
+    "spin_unpaid_backpay_log": [
+      "id",
+      "tournament_id",
+      "user_id",
+      "amount",
+      "verdict",
+      "paid_at"
+    ],
     "sports_clips": [
       "id",
       "video_id",
@@ -9083,7 +9189,15 @@
       "hands_dealt",
       "avg_pot",
       "bomb_pot_double_board",
-      "cap_bb"
+      "cap_bb",
+      "bomb_pot_board_count",
+      "bomb_pot_trigger_mode",
+      "bomb_pot_interval_seconds",
+      "bomb_pot_min_players",
+      "bomb_pot_ante_fixed",
+      "first_button_seat",
+      "bomb_pot_variant",
+      "bomb_pot_next_due_at"
     ],
     "theme_asset_unlocks": [
       "user_id",
@@ -9434,6 +9548,12 @@
       "award_id",
       "created_at"
     ],
+    "tournament_conservation_baseline": [
+      "tournament_id",
+      "amount",
+      "reason",
+      "recorded_at"
+    ],
     "tournament_deal_votes": [
       "tournament_id",
       "user_id",
@@ -9451,6 +9571,14 @@
       "bank_type",
       "bank_entity_id",
       "union_id"
+    ],
+    "tournament_payout_backfill_log": [
+      "id",
+      "tournament_id",
+      "top_up",
+      "delta_before",
+      "delta_after",
+      "applied_at"
     ],
     "tournament_payouts": [
       "id",
@@ -9470,6 +9598,29 @@
       "db_role",
       "application",
       "created_at"
+    ],
+    "tournament_place_overpay_charges": [
+      "id",
+      "tournament_id",
+      "club_id",
+      "user_id",
+      "old_position",
+      "new_position",
+      "prize_paid",
+      "entitled",
+      "overpaid",
+      "charged_at",
+      "created_at"
+    ],
+    "tournament_place_renumbers": [
+      "id",
+      "tournament_id",
+      "user_id",
+      "old_position",
+      "new_position",
+      "prize_paid",
+      "reason",
+      "applied_at"
     ],
     "tournament_players": [
       "id",
@@ -9492,7 +9643,8 @@
       "seat_number",
       "chip_count",
       "club_id",
-      "is_satellite_qualifier"
+      "is_satellite_qualifier",
+      "rebuy_prompt_until"
     ],
     "tournament_rake_settlements": [
       "tournament_id",
@@ -9502,7 +9654,9 @@
       "destination",
       "source",
       "created_at",
-      "settled_at"
+      "settled_at",
+      "attributed_at",
+      "attribution_error"
     ],
     "tournament_registration_approvals": [
       "tournament_id",
@@ -9597,6 +9751,15 @@
       "scrape_confidence",
       "scrape_batch_id",
       "is_suppressed"
+    ],
+    "tournament_survivor_rank_backfill": [
+      "id",
+      "tournament_id",
+      "user_id",
+      "new_position",
+      "new_status",
+      "chips_at_rank",
+      "ranked_at"
     ],
     "tournament_tickets": [
       "id",
@@ -9772,7 +9935,14 @@
       "street",
       "classification",
       "ev_loss",
-      "spot_type"
+      "spot_type",
+      "submission_id",
+      "solver_verified",
+      "solver_source",
+      "selected_frequency",
+      "optimal_frequency",
+      "ev_loss_measured",
+      "evidence_metadata"
     ],
     "training_challenge_definitions": [
       "id",
@@ -10153,6 +10323,24 @@
       "max_amount",
       "note"
     ],
+    "trivia_economy_audit_runs": [
+      "id",
+      "status",
+      "exception_count",
+      "findings",
+      "created_at"
+    ],
+    "trivia_item_transactions": [
+      "id",
+      "user_id",
+      "item_type",
+      "amount",
+      "balance_after",
+      "transaction_type",
+      "reference_id",
+      "metadata",
+      "created_at"
+    ],
     "trivia_prize_wheel_spins": [
       "id",
       "user_id",
@@ -10179,7 +10367,9 @@
       "opponent_id",
       "challenger_score",
       "opponent_score",
-      "category"
+      "category",
+      "settlement_kind",
+      "stats_recorded_at"
     ],
     "trivia_pvp_queue": [
       "id",
@@ -10246,6 +10436,19 @@
       "resolved_at",
       "resolution"
     ],
+    "trivia_question_result_events": [
+      "id",
+      "user_id",
+      "question_id",
+      "mode",
+      "source_type",
+      "source_id",
+      "display_index",
+      "original_index",
+      "was_correct",
+      "was_skipped",
+      "created_at"
+    ],
     "trivia_questions": [
       "id",
       "category",
@@ -10274,7 +10477,8 @@
       "clarity_score",
       "clarity_flesch",
       "skipped_count",
-      "retagged_difficulty"
+      "retagged_difficulty",
+      "question_fingerprint"
     ],
     "trivia_questions_public": [
       "id",
@@ -10310,7 +10514,9 @@
       "time_spent",
       "diamonds_earned",
       "play_date",
-      "created_at"
+      "created_at",
+      "session_id",
+      "server_verified"
     ],
     "trivia_sessions": [
       "id",
@@ -10324,7 +10530,15 @@
       "correct_count",
       "diamonds_awarded",
       "status",
-      "answers"
+      "answers",
+      "parent_session_id",
+      "entry_cost",
+      "entry_state",
+      "expires_at",
+      "survival_run_id",
+      "survival_level",
+      "settlement_result",
+      "stats_recorded_at"
     ],
     "trivia_streaks": [
       "id",
@@ -11069,7 +11283,8 @@
       "multi_action_queue",
       "multi_desktop_alerts",
       "multi_shared_socket",
-      "blue_buttons_enabled"
+      "blue_buttons_enabled",
+      "show_ticker"
     ],
     "user_theme_settings": [
       "id",
@@ -11166,6 +11381,28 @@
       "home_win_prob",
       "home_edge"
     ],
+    "v_insurance_activity": [
+      "club_id",
+      "day",
+      "offers",
+      "accepted",
+      "declined",
+      "timeouts",
+      "cashouts",
+      "avg_offer_equity",
+      "avg_offer_pot"
+    ],
+    "v_insurance_pnl": [
+      "club_id",
+      "union_id",
+      "kind",
+      "day",
+      "contracts",
+      "paid_out",
+      "bank_in",
+      "bank_out",
+      "bank_net"
+    ],
     "v_model_health": [
       "latest_as_of",
       "hours_stale",
@@ -11197,6 +11434,28 @@
     "v_spin_tier_availability": [
       "club_id",
       "can_draw_100x"
+    ],
+    "v_spin_unpaid_settlements": [
+      "tournament_id",
+      "club_id",
+      "name",
+      "tournament_status",
+      "buy_in_amount",
+      "spin_multiplier",
+      "started_at",
+      "ended_at",
+      "drawn_at",
+      "prize_drawn",
+      "prize_credited",
+      "credit_rows",
+      "chips_short",
+      "seat_count",
+      "unranked_seats",
+      "still_playing_seats",
+      "seats_at_first",
+      "sum_seat_prize",
+      "verdict",
+      "seat_shape"
     ],
     "v_system_health_cron": [
       "jobid",
@@ -11615,7 +11874,9 @@
       "progress_seconds",
       "duration_seconds",
       "watch_duration_seconds",
-      "thumbnail_url"
+      "thumbnail_url",
+      "watch_started_at",
+      "last_heartbeat_at"
     ],
     "video_watch_later": [
       "id",
@@ -11750,6 +12011,16 @@
       "upload_date",
       "created_at"
     ],
+    "wallet_audit_backfill_log": [
+      "id",
+      "wallet_transaction_id",
+      "user_id",
+      "amount",
+      "category",
+      "alert_ids",
+      "duplicate_alerts",
+      "reconstructed_at"
+    ],
     "wallet_credit_idempotency": [
       "key",
       "user_id",
@@ -11804,6 +12075,11 @@
       "first_seen_at",
       "last_seen_at",
       "resolved"
+    ],
+    "ad_event_retention_policy": [
+      "id",
+      "event_retention_days",
+      "updated_at"
     ]
   }
 }

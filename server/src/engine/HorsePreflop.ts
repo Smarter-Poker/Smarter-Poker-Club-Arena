@@ -93,6 +93,20 @@ export interface PreflopCtx {
    *  folds 70% to 3-bets gets 3-bet-bluffed relentlessly; one who never
    *  folds gets bluffed at all only with real equity. */
   raiserFoldTo3Bet?: number | null;
+  /** V20 M-ZONES (2026-08-27): per-player ante in BB units (0 = no ante).
+   *  Undefined = layer off — every M computation degrades to legacy
+   *  stackBB-only behavior. */
+  anteBB?: number;
+  /** V20 M-ZONES: players dealt in (for the orbit cost and Harrington's
+   *  effective-M table-size scaling). Undefined = layer off. */
+  tableSize?: number;
+  /** V21 DEEP-STACK DISCIPLINE: scale cash 4-bet/5-bet stack-off thresholds
+   *  with depth past 120bb. Undefined/false = legacy behavior. */
+  deepDiscipline?: boolean;
+  /** V23 BLIND CLOCK: minutes until the next blind level (undefined = unknown). */
+  nextBlindInMin?: number;
+  /** V23 BLIND CLOCK: next level's bb over the current bb (1/undefined = flat). */
+  nextBlindMult?: number;
   /** V18 STRADDLE: the pot is straddled (2xBB posted blind, no
    *  ActionRecord). The unopened test and open sizing key off the straddle
    *  instead of the big blind. */
@@ -256,15 +270,51 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   const openUnit = straddled ? Math.max(currentBet, bb) : bb;
   const unopened = (raises === 0 && currentBet <= bb * 1.05) || straddled;
 
-  // ── Short stacks: push/fold (<=12bb) and reshove stacks (13-20bb) ──
-  if (stackBB <= 12 && !ctx.isOmaha) {
+  // ═══ V20 M-ZONES (2026-08-27) ═══
+  // stackBB is blind-blind arithmetic; the number that decides tournament
+  // life is M — orbits of survival left: stack / (blinds + antes per orbit).
+  // With a full ante a "12bb" stack is an M of ~5, already deep in Harrington
+  // orange, and the old stackBB-only gate treated it like a cash short stack.
+  // Effective M scales by table size over 10 (short tables burn orbits
+  // faster). Layer off (anteBB undefined) = legacy behavior everywhere.
+  const players20 = ctx.tableSize ?? Math.max(2, ctx.oppsLeft + 1);
+  const orbitBB20 = 1.5 + Math.max(0, ctx.anteBB ?? 0) * players20;
+  const mzOn = isTourney && ctx.anteBB !== undefined;
+  let effM = mzOn ? (stackBB / orbitBB20) * Math.min(1, players20 / 10) : Infinity;
+  // ═══ V23 BLIND CLOCK (2026-08-28) ═══ the M that matters is the one the
+  // NEXT level gives you. Within three minutes of a level that raises the
+  // blinds, play the shrunken M now — the fold that "waits for a better
+  // spot" is choosing to jam a 40% shorter stack two hands later.
+  if (
+    mzOn &&
+    effM !== Infinity &&
+    typeof ctx.nextBlindInMin === 'number' &&
+    ctx.nextBlindInMin <= 3 &&
+    (ctx.nextBlindMult ?? 1) > 1.15
+  ) {
+    effM = effM / (ctx.nextBlindMult ?? 1);
+  }
+  const v20Wired = ctx.anteBB !== undefined; // layer on (cash or tournament)
+
+  // ── Short stacks: push/fold and reshove stacks ──
+  // V20: the gate is M-based in tournaments (red zone M<5 and most of
+  // orange enter jam-or-fold even when stackBB reads above 12), and Omaha
+  // short stacks finally HAVE a jam-or-fold posture instead of falling
+  // through to deep-stack pot-limit logic.
+  const pushFoldNlh = !ctx.isOmaha && (stackBB <= 12 || (mzOn && effM < 6));
+  const pushFoldOmaha = ctx.isOmaha && mzOn && (stackBB <= 8 || effM < 4);
+  if (pushFoldNlh || pushFoldOmaha) {
     if (unopened) {
       // V11: tournament jam ranges follow push/fold math — wider from late
       // seats, wider still with antes, and wider as the stack shrinks (a 5bb
       // stack jams far more than a 12bb stack).
+      // V20: Omaha jam-or-fold runs tighter (equities cluster, domination
+      // decides) and the red zone widens NLH jams by how burnt the M is.
       let jamThresh = position === 'late' || position === 'sb' ? 0.5 : 0.6;
+      if (ctx.isOmaha) jamThresh += 0.08;
       if (isTourney) {
         jamThresh -= anteWiden + (stackBB <= 7 ? 0.08 : 0.03);
+        if (mzOn && effM < 5) jamThresh -= effM < 3 ? 0.1 : 0.05;
       }
       if (strength >= t(jamThresh)) return { a: 'jam' };
       if (toCall === 0) return { a: 'check' };
@@ -279,6 +329,14 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     let jamCallThresh = raises >= 2 ? 0.85 : 0.72;
     if (ctx.mode !== undefined && guardOdds <= 0.35) jamCallThresh -= 0.12;
     if (isTourney) jamCallThresh -= anteWiden * 0.5;
+    // V20: every caller already in is another range hero must beat, and a
+    // tournament life is worth more than the chip price — the flat t()
+    // premium underprices a full call-off, so it is paid AGAIN here — but
+    // only while there is a life left to protect: a red-zone stack (M<5) is
+    // already dead money walking and takes its flips.
+    if (v20Wired && callers >= 1) jamCallThresh += Math.min(0.1, callers * 0.05);
+    if (mzOn && effM >= 5) jamCallThresh += ctx.riskAdd;
+    if (ctx.isOmaha) jamCallThresh += 0.03;
     if (strength >= t(jamCallThresh)) return { a: 'jam' };
     if (toCall === 0) return { a: 'check' };
     if (!isTourney && toCall <= bb && strength >= 0.3) return { a: 'call' };
@@ -294,6 +352,23 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   ) {
     // V7 RESHOVE: 13-20bb over a late-position open — jam, don't flat.
     // V11: antes widen the reshove (dead money + first-in fold equity).
+    return { a: 'jam' };
+  }
+  // V20 YELLOW ZONE RESHOVE: at M<12 the reshove is the whole playbook —
+  // flatting an open leaves a stack that can only check-fold. Extend it to
+  // middle-position opens on a stronger band (their range is tighter, so the
+  // reshove needs more hand), capped at 22bb so a big-ante deep stack does
+  // not jam 30 blinds.
+  if (
+    mzOn &&
+    effM < 12 &&
+    stackBB <= 22 &&
+    !ctx.isOmaha &&
+    raises === 1 &&
+    callers === 0 &&
+    raiserPosition === 'middle' &&
+    strength >= t(0.7 - anteWiden)
+  ) {
     return { a: 'jam' };
   }
 
@@ -318,6 +393,12 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     if (bvb) openThresh = t(headsUp ? 0.24 : 0.36) + depthTighten - anteWiden;
 
     if (strength >= openThresh) {
+      // V20 ORANGE ZONE (M 6-10): there is no raise-fold — a standard open
+      // is a third of the stack, and folding it to a reshove afterward is
+      // the worst line short-stack poker offers. The opening range OPEN-JAMS
+      // instead. NLH only, capped at 22bb so a big-ante 30bb stack does not
+      // start jamming its whole opening range.
+      if (mzOn && effM < 10 && stackBB <= 22 && !ctx.isOmaha) return { a: 'jam' };
       // Trap mix with true premiums (cheap to see a flop disguised).
       if (strength > 0.93 && rand() < ctx.slowplayFreq * 0.4 && toCall <= bb) {
         if (toCall === 0) return { a: 'check' };
@@ -448,11 +529,31 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // attacking the CALLER'S capped range, not the opener's. The opener
     // defends wider on both branches.
     const sq = ctx.squeezed === true ? 1 : 0;
-    const fourBetThresh = t(0.93 - (ctx.aggression - 1) * 0.04) - 0.04 * hunted3 - 0.03 * sq;
-    const callThresh = t(ip ? 0.74 : 0.78) - 0.03 * hunted3 - 0.02 * sq;
+    // ═══ V21 DEEP-STACK DISCIPLINE (Dan 2026-08-27, Phase 2) ═══
+    // The review table's preflop stack-offs average -82bb: 150bb+ cash pots
+    // where 4-bet/5-bet thresholds tuned at 100bb put the whole stack in.
+    // Depth scales the bar: at 250bb a 4-bet war demands closer to the top
+    // of the deck, because the hand that stacks off is playing for 2.5x
+    // more than the number the thresholds were calibrated against.
+    // Tournaments are untouched (shallow, and the M-zones own short play).
+    const deepT =
+      ctx.deepDiscipline === true && ctx.mode === 'cash' && stackBB > 120
+        ? Math.min(0.05, (stackBB - 120) / 2600)
+        : 0;
+    const fourBetThresh =
+      t(0.93 - (ctx.aggression - 1) * 0.04) - 0.04 * hunted3 - 0.03 * sq + deepT;
+    const callThresh = t(ip ? 0.74 : 0.78) - 0.03 * hunted3 - 0.02 * sq + deepT * 0.5;
 
     if (strength >= fourBetThresh) {
-      if (raises >= 3 || currentBet * 2.3 >= stack * 0.4) return { a: 'jam' };
+      // V21: deep, a 4-bet is no longer automatically a stack-off — jam only
+      // when the money is already committed on normal sizing, and demand a
+      // premium above the 4-bet floor before jamming 150bb+.
+      if (raises >= 3 || currentBet * 2.3 >= stack * 0.4) {
+        if (deepT > 0 && strength < fourBetThresh + deepT && toCall < stack * 0.5) {
+          return { a: 'call' };
+        }
+        return { a: 'jam' };
+      }
       const mult = 2.2 + rand() * 0.4;
       return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };
     }
@@ -474,9 +575,12 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     }
 
     // 5-bet pots: jam-or-fold on true premiums only.
+    // V21: deeper stacks push the premium bar higher still — a 5-bet pot at
+    // 250bb is QQ+/AK at best, and QQ is already a coin flip against the
+    // range that builds it.
     if (raises >= 3) {
-      if (strength >= t(0.95)) return { a: 'jam' };
-      if (strength >= t(0.88) && toCall <= stack * 0.3) return { a: 'call' };
+      if (strength >= t(Math.min(0.98, 0.95 + deepT))) return { a: 'jam' };
+      if (strength >= t(0.88 + deepT) && toCall <= stack * 0.3) return { a: 'call' };
       if (toCall === 0) return { a: 'check' };
       return { a: 'fold' };
     }

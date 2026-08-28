@@ -24,6 +24,7 @@ import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { computePlacePrize } from './payoutMath.js';
 import {
   resolvePayoutStructure,
+  parsePayoutStructure,
   isSpinTournament,
   remainingPoolAfterAwards,
 } from './payoutStructure.js';
@@ -66,6 +67,53 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * PRESENTATION safe (section 80/33).
    */
   private dispatchedBountyAwards: Set<string> = new Set();
+
+  /**
+   * The size of the field, once it can no longer grow.
+   *
+   * SHORT-FIELD RESIDUAL 2026-08-27. computePlacePrize gives the LAST place in
+   * the structure the leftover, so the paid places sum to the pool exactly.
+   * When fewer players entered than the structure pays, that place has no
+   * finisher and the leftover was never awarded: a 9-place structure with 8
+   * entrants stranded 250.00 of a 10,000.00 pool, and eight events did it in
+   * thirty days. Trimming the structure to the field moves the residual onto
+   * the last place that a player actually reached.
+   *
+   * TWO RULES MAKE THIS SAFE, and both are about the direction that overpays.
+   *
+   *   1. UNDEFINED UNTIL ENTRY IS CLOSED. While late registration is open the
+   *      field can still grow, and a structure trimmed to a field that then
+   *      grows would have promoted an earlier place to residual holder and
+   *      overpaid it. Before prize_pool_finalized this returns undefined and
+   *      every caller keeps today's behaviour exactly. Nothing is lost:
+   *      recalculateEliminatedPrizes re-prices eliminated players through the
+   *      same resolver after finalisation and tops up the difference.
+   *
+   *   2. EVERYONE WHO EVER ENTERED, never a live seat count. tournament_players
+   *      rows are not deleted on elimination, only on an unregistration while
+   *      registration is still open, so count(*) is the entrant count. A
+   *      draining counter like current_players would shrink toward 1 and hand
+   *      the whole pool to whoever busted next; that exact defect is why
+   *      fn_spin_sweep_unbooked under-books its rake.
+   *
+   * Cached once resolved, because after finalisation the answer cannot change.
+   * A failed count returns undefined rather than a guess.
+   */
+  private finalFieldSizeCache: number | undefined;
+
+  protected async finalFieldSize(): Promise<number | undefined> {
+    if (!this.prizePoolFinalized) return undefined;
+    if (this.finalFieldSizeCache !== undefined) return this.finalFieldSizeCache;
+
+    const { count, error } = await supabase
+      .from('tournament_players')
+      .select('id', { count: 'exact', head: true })
+      .eq('tournament_id', this.tournamentId);
+
+    if (error || typeof count !== 'number' || count < 1) return undefined;
+    this.finalFieldSizeCache = count;
+    return count;
+  }
 
   protected startEliminationChecker(): void {
     this.eliminationTimer = setInterval(async () => {
@@ -114,25 +162,79 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
          * by the table-move path in TournamentManager, which this layer does
          * not own. It stops them from moving money here.
          */
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  ONE READ FOR THE TOURNAMENT, NOT ONE PER TABLE (2026-08-28)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * This was a `for (const [tableId] of this.tableEngines)` loop issuing
+         * one AWAITED round-trip per table, and it is why the "5-second"
+         * elimination sweep is not a 5-second sweep on a big field.
+         *
+         * MEASURED. `$100 Freeroll 12:00 AM` on 2026-08-28: 326 entrants
+         * across 37 tables. Thirty-seven sequential round-trips at even 150ms
+         * apiece is 5.5 seconds — the sweep could not finish inside its own
+         * interval, so `isProcessingEliminations` dropped the next tick, and
+         * the next. That is the reported symptom exactly: a horse sitting at
+         * 0 chips, not marked eliminated, for 22 minutes, in an event that had
+         * recorded no eliminations at all. Nothing was stuck. The sweep was
+         * simply arriving minutes late, and the bigger the field the later it
+         * arrives — precisely backwards, because a big field is where busts
+         * come fastest.
+         *
+         * One paged query over `tables.tournament_id` instead. Cost no longer
+         * scales with table count, and the lag it was causing goes with it.
+         *
+         * IT ALSO CLOSES A BLIND SPOT. The old loop read `this.tableEngines`,
+         * an IN-MEMORY map. A table this process holds no engine for — adopted
+         * late, created by the balancer between hydrations, or orphaned by a
+         * restart — was invisible: its players' chips were never synced, so
+         * they could never appear in the bust list below, so they could never
+         * be eliminated. Their seats sat there permanently. Reading by
+         * tournament_id covers every table the tournament actually has,
+         * whether or not this process happens to be dealing it.
+         */
         // null = this player holds seats we cannot rank; skip them, do not guess.
         const bestSeat = new Map<string, { chips: number; joinedAt: number } | null>();
-        for (const [tableId] of this.tableEngines) {
-          const { data: seats, error: seatsErr } = await supabase
-            .from('table_seats')
-            .select('user_id, stack, joined_at')
-            .eq('table_id', tableId)
-            .is('left_at', null);
-
-          if (seatsErr) {
+        const SEAT_PAGE = 1000;
+        const seatRows: Array<{
+          user_id: string;
+          stack: number | null;
+          joined_at: string | null;
+        }> = [];
+        for (let page = 0; ; page++) {
+          if (page > 10_000) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] seat read failed on table ${tableId.slice(0, 8)} (${seatsErr.message}) — skipping the whole sweep rather than busting on a partial chip picture`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] seat paging did not terminate — skipping this sweep`
+              ),
+              'Tournament.seat_paging_runaway'
+            );
+            return; // the finally block clears isProcessingEliminations
+          }
+          const { data: chunk, error: seatsErr } = await supabase
+            .from('table_seats')
+            .select('user_id, stack, joined_at, tables!inner(tournament_id)')
+            .eq('tables.tournament_id', this.tournamentId)
+            .is('left_at', null)
+            .order('user_id', { ascending: true })
+            .range(page * SEAT_PAGE, page * SEAT_PAGE + SEAT_PAGE - 1);
+
+          if (seatsErr || !chunk) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] seat read failed (${seatsErr?.message ?? 'null chunk'}) — skipping the whole sweep rather than busting on a partial chip picture`
               ),
               'Tournament.seat_read_failed'
             );
             return; // the finally block clears isProcessingEliminations
           }
+          seatRows.push(...(chunk as unknown as typeof seatRows));
+          if (chunk.length < SEAT_PAGE) break;
+        }
 
+        {
+          const seats = seatRows;
           for (const seat of seats ?? []) {
             // Guard against corrupted stack values (NaN, negative, undefined).
             const stackValue =
@@ -556,18 +658,42 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               return; // the finally block clears isProcessingEliminations
             }
 
-            let payoutCount = 0;
-            if (this.tournamentCache.payout_structure) {
-              let payouts = this.tournamentCache.payout_structure;
-              if (typeof payouts === 'string') {
-                try {
-                  payouts = JSON.parse(payouts);
-                } catch {
-                  payouts = [];
-                }
+            // PAYOUT-INTEGRITY 2026-08-28: the guard immediately above says a
+            // count we could not read is UNKNOWN and must not read as zero.
+            // This block said the opposite about the payout STRUCTURE, four
+            // lines later: an unparseable column was caught and rewritten to
+            // `[]`, which is payoutCount 0, which is "no paid places" - and it
+            // did it silently, with no log and no alert.
+            //
+            // It is worse than not starting hand-for-hand. If the column
+            // becomes unreadable while the bubble is ALREADY active, the burst
+            // test is `playingNow <= payoutCount` -> `playingNow <= 0`, which a
+            // live field never satisfies. Line 591 is the only exit from
+            // hand-for-hand for a running tournament (the only other reset is
+            // on engine restart), so the event plays every remaining hand in
+            // lock-step, through the money, to the finish.
+            //
+            // It also disagreed with the code that pays. Every other site in
+            // this file resolves the structure through payoutStructure.ts,
+            // which rejects an array with no place 1 or percentages summing to
+            // zero - "valid JSON" and "a usable structure" are different
+            // questions. This counted the length of whatever parsed, so the
+            // bubble could be defended at a place count the payout path would
+            // never honour. One parser now, and it is the strict one.
+            const paidPlaces = parsePayoutStructure(this.tournamentCache.payout_structure);
+            if (this.tournamentCache.payout_structure != null && paidPlaces === null) {
+              if (!this.payoutStructureUnreadableReported) {
+                this.payoutStructureUnreadableReported = true;
+                reportError(
+                  new Error(
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] hand-for-hand: payout_structure is present but unusable - bubble state left unchanged`
+                  ),
+                  'Tournament.payout_structure_unusable'
+                );
               }
-              if (Array.isArray(payouts)) payoutCount = payouts.length;
+              return; // the finally block clears isProcessingEliminations
             }
+            const payoutCount = paidPlaces?.length ?? 0;
 
             if (payoutCount > 0 && playingNow === payoutCount + 1 && !this.handForHandActive) {
               this.handForHandActive = true;
@@ -702,6 +828,66 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * exactly how "the busted player is still sitting there" reaches a player
    * with nothing in the logs to explain it.
    */
+  /**
+   * The table this user is LIVE at inside this tournament, or null.
+   *
+   * BOUNTY-INTEGRITY 2026-08-27. Knockout attribution needs the table the
+   * busted player was sitting at, and the only place that fact exists is the
+   * seat row that `releaseTournamentSeat` is about to stamp `left_at` on. This
+   * is deliberately a separate call made BEFORE the release rather than a
+   * `left_at`-filtered query made after it — the latter is what has been
+   * returning null on every knockout since 2026-08-24.
+   */
+  protected async tournamentTableForUser(userId: string): Promise<string | null> {
+    try {
+      const { data, error } = await supabase
+        .from('table_seats')
+        .select('table_id, tables!inner(tournament_id)')
+        .eq('user_id', userId)
+        .eq('tables.tournament_id', this.tournamentId)
+        .is('left_at', null)
+        .limit(1)
+        .maybeSingle(); // FIX 168: Bible safety rule — maybeSingle over single
+      if (error) {
+        reportError(error, 'Tournament.knockout_table_lookup_failed');
+        return null;
+      }
+      return (data as { table_id?: string } | null)?.table_id ?? null;
+    } catch (err) {
+      reportError(err, 'Tournament.knockout_table_lookup_threw');
+      return null;
+    }
+  }
+
+  /**
+   * Fallback for a player whose seat was already released by some other path
+   * (the recovery watchdog, an admin removal, a raced sweep): the most
+   * recently vacated seat this user held at a table of THIS tournament.
+   *
+   * Scoped to the tournament for the same reason the live lookup is — an
+   * unscoped seat query returns any open cash seat, which is how bounties were
+   * routed to strangers before 2026-08-18.
+   */
+  protected async lastTournamentTableForUser(userId: string): Promise<string | null> {
+    try {
+      const { data, error } = await supabase
+        .from('table_seats')
+        .select('table_id, left_at, tables!inner(tournament_id)')
+        .eq('user_id', userId)
+        .eq('tables.tournament_id', this.tournamentId)
+        .order('left_at', { ascending: false, nullsFirst: true })
+        .limit(1);
+      if (error) {
+        reportError(error, 'Tournament.knockout_table_fallback_failed');
+        return null;
+      }
+      return (data?.[0] as { table_id?: string } | undefined)?.table_id ?? null;
+    } catch (err) {
+      reportError(err, 'Tournament.knockout_table_fallback_threw');
+      return null;
+    }
+  }
+
   protected async releaseTournamentSeat(userId: string): Promise<void> {
     try {
       const { data: tournamentTables, error: tablesErr } = await supabase
@@ -841,7 +1027,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // Places 2..N are paid HERE, minutes before finishTournament reads the
       // same column again — so the two reads must agree, and a Spin that can
       // reconstruct its own split is how they are made to.
-      const payouts = resolvePayoutStructure(tournament as any);
+      // SHORT-FIELD RESIDUAL 2026-08-27: pay by a structure the field can
+      // actually fill, so the leftover lands on a place somebody reached. The
+      // second belt, on top of finalFieldSize's own two: never trim below the
+      // place being priced right now. A field smaller than the position being
+      // paid could only mean the count is wrong, and acting on it would
+      // promote this player to residual holder and overpay them.
+      const field = await this.finalFieldSize();
+      const safeField = field !== undefined && field >= position ? field : undefined;
+      const payouts = resolvePayoutStructure(tournament as any, safeField);
       if (payouts) {
         prize = computePlacePrize(Number(tournament.prize_pool || 0), payouts, position);
       }
@@ -900,7 +1094,23 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
        seated for the duration, and the 5s sweep can already lag the bust by
        hands. The seat is not payment and it is not attribution: it is the one
        thing another player is waiting on. Release it the instant the status
-       write commits. */
+       write commits.
+
+       BOUNTY-INTEGRITY 2026-08-27: but READ THE SEAT FIRST. Moving the release
+       up here (2026-08-23) silently killed every bounty on the platform. The
+       bounty block below finds the knocker by looking up the busted player's
+       table with `.is('left_at', null)` — and this call has just stamped
+       `left_at` on that exact row, so the lookup returned null on every single
+       knockout from 2026-08-24 onward. `knockerId` stayed null, the warn at
+       the bottom of the bounty block fired instead, and 100% of every bounty
+       pool was swept to the champion by fn_finalize_bounty_pool. Production
+       confirms it: `tournament_bounties` has 0 rows since 2026-08-25 and
+       `tournament_bounty_awards` has never had one.
+
+       The seat still gets released here — that part was right. The table id is
+       simply captured before it goes, so attribution survives the release. */
+    const bustedTableId = await this.tournamentTableForUser(userId);
+
     await this.releaseTournamentSeat(userId);
 
     if (prize > 0) {
@@ -959,7 +1169,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       prize <= 0
     ) {
       try {
-        const payouts = resolvePayoutStructure(tournament as any);
+        // The same trimmed structure the prize above was priced from, so the
+        // bubble is the place after the last place that can actually be paid.
+        // In a field smaller than the structure everybody is already in the
+        // money, there is no bubble, and this correctly never fires.
+        const bubbleField = await this.finalFieldSize();
+        const payouts = resolvePayoutStructure(
+          tournament as any,
+          bubbleField !== undefined && bubbleField >= position ? bubbleField : undefined
+        );
         const paidPlaces = Array.isArray(payouts) ? payouts.length : 0;
         const refund = Math.max(0, Number((tournament as any).buy_in_amount || 0));
         if (
@@ -1015,14 +1233,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // was then derived from an unrelated cash hand, so the bounty went to a
         // stranger or (more often) to someone not in the tournament at all, and
         // fn_collect_bounty rejected it and logged bounty_not_collected.
-        const { data: seat } = await supabase
-          .from('table_seats')
-          .select('table_id, tables!inner(tournament_id)')
-          .eq('user_id', userId)
-          .eq('tables.tournament_id', this.tournamentId)
-          .is('left_at', null)
-          .limit(1)
-          .maybeSingle();
+        //
+        // BOUNTY-INTEGRITY 2026-08-27: `bustedTableId` was captured ABOVE, before
+        // releaseTournamentSeat() stamped `left_at`. The inline query that used
+        // to live here filtered on `left_at IS NULL` and therefore always
+        // returned null once the release moved ahead of it. The fallback below
+        // reads the most recently vacated tournament seat, so a player released
+        // by some other path (recovery, admin removal, a raced sweep) still gets
+        // their knockout attributed instead of silently skipped.
+        const knockoutTableId = bustedTableId ?? (await this.lastTournamentTableForUser(userId));
 
         // Find the busted player's LAST HAND at that table to determine the knocker.
         // TOURNEY-AUDIT 2026-07-24: (a) The old query took the most recent hand
@@ -1054,11 +1273,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
          * being selected.
          */
         let knockoutHandId: string | null = null;
-        if (seat?.table_id) {
+        if (knockoutTableId) {
           const { data: recentHands } = await supabase
             .from('hand_history')
             .select('id, winners, players, pots')
-            .eq('table_id', seat.table_id)
+            .eq('table_id', knockoutTableId)
             .order('created_at', { ascending: false })
             .limit(10);
 
@@ -1090,7 +1309,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             tournament,
             userId,
             knockerId,
-            seat?.table_id ?? null,
+            knockoutTableId,
             claimants,
             knockoutHandId
           );
@@ -2044,7 +2263,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // which is the same rule both live payout sites follow — parsing the
     // column here meant a top-up computed from a DIFFERENT structure than the
     // payment it is topping up.
-    const payouts = resolvePayoutStructure(this.tournamentCache as any);
+    const payouts = resolvePayoutStructure(
+      this.tournamentCache as any,
+      await this.finalFieldSize()
+    );
     if (!payouts || payouts.length === 0) return;
 
     for (const player of eliminated) {
@@ -2254,6 +2476,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         .eq('status', 'playing');
       if (aliveErr || !alive) return; // fail closed
       if (alive.length < 2 || alive.length > tableSize) return; // not at final table
+
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  A DEAL NEEDS ONE TABLE, NOT A SHORT HEADCOUNT (2026-08-27, P0)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * The count above is necessary and NOT sufficient. Nine players spread
+       * three-three-three across three felts satisfy it, and unanimity among
+       * those nine would then run `fn_final_table_deal` — an even chip-chop
+       * of the whole undistributed pool — between players sitting at three
+       * separate tables, mid-hand, with two thirds of them unaware the vote
+       * was open. That is the most expensive single write in this file and it
+       * cannot be undone.
+       *
+       * Same gate as the `final_table` announcement in TournamentManager, and
+       * the same UNKNOWN rule: `null` means we could not read the table
+       * layout, and an unreadable layout never authorizes a chop.
+       */
+      const liveTables = await this.countLiveTablesWithPlayers();
+      if (liveTables !== 1) return; // fail closed: not one table, or unknown
 
       const { data: votes, error: votesErr } = await supabase
         .from('tournament_deal_votes')
@@ -2564,7 +2806,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // resolvePayoutStructure returns the stored structure when it is usable
       // and, for a Spin, rebuilds it from spinTier(spin_multiplier) when it is
       // not. So a Spin never reaches the fallback below.
-      const payouts = resolvePayoutStructure(tournament as any);
+      const payouts = resolvePayoutStructure(tournament as any, await this.finalFieldSize());
       if (payouts) {
         // PAYOUT-INTEGRITY 2026-08-20: same residual rule as every other place
         // (see computePlacePrize). For a single-place structure (a 2x-5x Spin)

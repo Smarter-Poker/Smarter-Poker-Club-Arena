@@ -79,17 +79,55 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
     }
   };
 
+  /**
+   * THE REFERRAL LINK, WITH THE REFERRAL IN IT (2026-08-28).
+   *
+   * This used to hand `navigator.share` the bare homepage:
+   *
+   *     text: `... use my referral code ${code} ... https://smarter.poker`
+   *     url:  'https://smarter.poker'
+   *
+   * The code lived ONLY in `text`. A share target is free to ignore `text` and
+   * use `url` alone, and most of them do - every "share to app" sheet that
+   * renders a link preview, and several that post the URL and drop the caption
+   * entirely. So the commonest way to share a referral was also the way that
+   * silently dropped it: the friend arrives at the homepage, signs up
+   * unattributed, and the referrer is never credited for a referral they
+   * actually made.
+   *
+   * The other two referral flows in this app already embed the code in the URL
+   * (`PromotionsPage`, `InvitePage`, both `?ref=`), so this was the one that
+   * leaked, not the pattern.
+   *
+   * `window.location.origin` rather than a hardcoded host: this SPA is served
+   * from smarter.poker in production and from a preview host otherwise, and a
+   * hardcoded link in a preview build sends testers to production.
+   */
+  const referralUrl = () => {
+    const origin =
+      typeof window !== 'undefined' && window.location?.origin
+        ? window.location.origin
+        : 'https://smarter.poker';
+    const base = `${origin}/hub/club-arena/invite`;
+    return stats.code ? `${base}?ref=${encodeURIComponent(stats.code)}` : base;
+  };
+
   const handleShare = async () => {
-    const shareText = `Join me on Club Arena! Use my referral code ${stats.code} to get 250 bonus chips! https://smarter.poker`;
+    const url = referralUrl();
+    const shareText = `Join me on Club Arena! Use my referral code ${stats.code} to get 250 bonus chips!`;
     try {
       if (navigator.share) {
         await navigator.share({
           title: 'Join Club Arena',
           text: shareText,
-          url: 'https://smarter.poker',
+          // The code is in here now, so a target that keeps only the url still
+          // credits the referrer.
+          url,
         });
       } else {
-        await navigator.clipboard.writeText(shareText);
+        // The clipboard fallback gets both, in the order somebody would paste
+        // them: the pitch, then the link that carries the code.
+        await navigator.clipboard.writeText(`${shareText} ${url}`);
         if (isMounted.current) toast.success('Invite link copied!');
       }
     } catch (err) {

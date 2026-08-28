@@ -551,6 +551,27 @@ jobs:
             exit 1
           fi
 
+      # BLOCKING: a SECURITY DEFINER function that writes, and that a browser
+      # role can execute, must consult auth.uid()/auth.role()/auth.jwt(). On
+      # 2026-08-27 nineteen did not. One of them let an ordinary member rewrite
+      # a club's member_count from 592 to 10591; another pays chips. Eighteen
+      # were revoked, and the nineteenth was WRITTEN THE SAME AFTERNOON by an
+      # author who had no way to know the rule existed. That is what this step
+      # is for.
+      - name: Supabase Invariants — Definer Authorization
+        run: |
+          set -o pipefail
+          echo "## SECURITY DEFINER Authorization Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-definer-authorization.mjs 2>&1 | tee /tmp/definerauth.log; then
+            echo "OK — every DEFINER writer a browser can reach consults the request." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "A SECURITY DEFINER function that writes is callable from a browser and never" >> $GITHUB_STEP_SUMMARY
+            echo "asks who is calling. Revoke it from PUBLIC/anon/authenticated, or derive the" >> $GITHUB_STEP_SUMMARY
+            echo "actor from auth.uid() inside it. See the log for the exact remedy." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       - name: Nothing here may deploy to Vercel
         run: |
           # CLAUDE.md 1.3 has said this since March, and until 2026-08-22 two
@@ -560,6 +581,26 @@ jobs:
           # carried a red Production badge for a day. A rule in a document
           # loses to a script with a plausible filename every time.
           node scripts/ci/check-no-vercel-deploy.mjs
+
+      # BLOCKING: the other half of the phantom-column question. That gate asks
+      # whether a written column EXISTS; this asks whether the columns the table
+      # REQUIRES were supplied. Postgres refuses both statements just as
+      # completely and both errors land in a catch. Four were found by hand on
+      # 2026-08-28, and two of them were phantom-column bugs as well - so
+      # repointing the wrong names, the fix that passes review, would have left
+      # the inserts failing exactly as before.
+      - name: Supabase Invariants — Required Columns
+        run: |
+          set -o pipefail
+          echo "## Required-Column Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-required-columns.mjs 2>&1 | tee /tmp/reqcol.log; then
+            echo "OK — every literal insert supplies the columns its table requires." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "An insert omits a NOT NULL column with no default, so the statement cannot" >> $GITHUB_STEP_SUMMARY
+            echo "land and the control it belongs to does nothing. See the log." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
 
       - name: Supabase Invariants — Phantom Columns
         env:

@@ -195,12 +195,14 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
       ;;
   esac
 
-  # 0. Repo-wide invariants. These normally run in CI as blocking checks, but
-  #    branch protection is UNAVAILABLE on a private repo without GitHub Pro —
-  #    making the repos private (correctly, after keys leaked into history) also
-  #    silently disabled required status checks and rulesets. CI still runs and
-  #    still goes red; nothing enforces it server-side any more. Running the two
-  #    fast guards here is the only enforcement left. Both are ~100ms.
+  # 0. Repo-wide invariants. Both are ~100ms.
+  #
+  #    CORRECTED 2026-08-28. This comment used to say branch protection was
+  #    unavailable without GitHub Pro and that "nothing enforces it server-side
+  #    any more". Checked against the API: ruleset `main protection` (21163380)
+  #    is ACTIVE on main with `bypass_actors: []` and six required checks. It
+  #    enforces. These two guards run here because catching them in 100ms beats
+  #    catching them in a three-minute CI cycle, not because nothing else will.
   if [ -f scripts/ci/check-allin-pointer-events.mjs ]; then
     if ! node scripts/ci/check-allin-pointer-events.mjs; then
       echo "[club-arena pre-push] BLOCKED: all-in action panel would lose pointer events"
@@ -211,6 +213,66 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     if ! node scripts/ci/check-monitoring-drift.mjs; then
       echo "[club-arena pre-push] BLOCKED: monitoring wiring is broken"
       FAIL=1
+    fi
+  fi
+  # A SECURITY DEFINER function that writes and that a browser can call must
+  # consult the request. Nineteen did not on 2026-08-27; one let any member
+  # rewrite a club's member_count, another pays chips. Scoped to the migrations
+  # this branch adds, because supabase/migrations/ is intentionally stale.
+  # An insert that omits a NOT NULL column with no default cannot land, and the
+  # error lands in a catch. Whole-tree and currently at zero, so any new one is
+  # this push's doing.
+  if [ -f scripts/ci/check-required-columns.mjs ]; then
+    if ! node scripts/ci/check-required-columns.mjs; then
+      echo "[club-arena pre-push] BLOCKED: an insert omits a column its table requires."
+      FAIL=1
+    fi
+  fi
+  if [ -f scripts/ci/check-definer-authorization.mjs ]; then
+    DEF_BASE=$(git merge-base HEAD origin/main 2>/dev/null || echo "HEAD~1")
+    if ! node scripts/ci/check-definer-authorization.mjs "$DEF_BASE"; then
+      echo "[club-arena pre-push] BLOCKED: a SECURITY DEFINER writer a browser can reach"
+      echo "                      never asks who is calling. See the remedy above."
+      FAIL=1
+    fi
+  fi
+
+  # 0b. TYPE CHECK — added 2026-08-27, re-justified 2026-08-28.
+  #
+  #    THIS IS FAST FEEDBACK, NOT ENFORCEMENT. Be clear about that, because the
+  #    commit that added it was not: it claimed a direct push to main went
+  #    unchecked and that this hook was the only gate left. Both were wrong.
+  #    The `main protection` ruleset requires a pull request and six green
+  #    checks, `TypeScript Check` among them, and nobody bypasses it — so a
+  #    type error has never been able to reach main.
+  #
+  #    What it buys is the three minutes between pushing a branch and CI
+  #    telling you what tsc would have told you in four seconds. That is worth
+  #    a hook; pretending it is the last line of defence is not.
+  #
+  #    COST: about 40s cold, about 4s warm — tsconfig.json already sets
+  #    `incremental` with a tsBuildInfoFile, so only the first run pays. Runs
+  #    at all only when the push touches src/**.ts(x).
+  #
+  #    It SKIPS, loudly, when a worktree has no node_modules — same reasoning
+  #    as the formatter in .husky/pre-commit: a gate people wait on is a gate
+  #    people --no-verify past, and --no-verify also disables the rewind guard
+  #    in check 5, which must never be skipped.
+  if echo "$FILES" | grep -qE '^src/.*\.tsx?$'; then
+    TSC="$(git rev-parse --show-toplevel)/node_modules/.bin/tsc"
+    if [ -x "$TSC" ]; then
+      echo "[club-arena pre-push] type-checking src/ ..."
+      if ! "$TSC" --noEmit; then
+        echo ""
+        echo "[club-arena pre-push] BLOCKED: src/ does not type-check."
+        echo "                      Fix the errors above. CI's TypeScript Check"
+        echo "                      is a required check and would refuse this"
+        echo "                      pull request anyway - this just tells you"
+        echo "                      now instead of in three minutes."
+        FAIL=1
+      fi
+    else
+      echo "[club-arena pre-push] no local node_modules - skipped the type check."
     fi
   fi
 

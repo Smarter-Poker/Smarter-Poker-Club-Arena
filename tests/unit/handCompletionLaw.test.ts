@@ -37,9 +37,26 @@ describe('the spec is mirrored byte-for-byte into the engine', () => {
 });
 
 describe('every beat is inside the hold', () => {
-  it('a fold win still waits for sweep + pot push + muck', () => {
+  it('a fold win still waits for sweep + pot push + muck + the one-second rest', () => {
     const hold = handCompletionHoldMs({ wentToShowdown: false });
     expect(hold).toBe(
+      HAND_COMPLETION.BETS_SWEEP_MS +
+        HAND_COMPLETION.POT_PUSH_MS +
+        HAND_COMPLETION.MUCK_MS +
+        HAND_COMPLETION.POST_PUSH_PAUSE_MS
+    );
+  });
+
+  it("Dan 2026-08-27: the pause is a FULL second, and the button glide is the client's own beat", () => {
+    // "...PUSH POT ANIMATION PLUS THE +XXX TOTAL ANIMATION, PAUSE 1 SECOND,
+    // MOVE THE BUTTON ANIMATION... START DEALING NEXT HAND."
+    expect(HAND_COMPLETION.POST_PUSH_PAUSE_MS).toBe(1000);
+    // The button beat exists and covers the 600ms CSS glide with settle. It
+    // is NOT in the engine hold (the client cannot know the new button seat
+    // until HAND_STARTED arrives) — TablePage delays the deal start by it.
+    expect(HAND_COMPLETION.BUTTON_MOVE_MS).toBeGreaterThanOrEqual(600);
+    const fold = handCompletionHoldMs({ wentToShowdown: false });
+    expect(fold - HAND_COMPLETION.POST_PUSH_PAUSE_MS).toBe(
       HAND_COMPLETION.BETS_SWEEP_MS + HAND_COMPLETION.POT_PUSH_MS + HAND_COMPLETION.MUCK_MS
     );
   });
@@ -66,7 +83,8 @@ describe('every beat is inside the hold', () => {
       HAND_COMPLETION.SHOWDOWN_READ_MAX_MS +
       HAND_COMPLETION.BETS_SWEEP_MS +
       HAND_COMPLETION.POT_PUSH_MS +
-      HAND_COMPLETION.MUCK_MS;
+      HAND_COMPLETION.MUCK_MS +
+      HAND_COMPLETION.POST_PUSH_PAUSE_MS;
     expect(massive).toBe(capped);
   });
 
@@ -105,7 +123,7 @@ describe('every beat is inside the hold', () => {
     // ship → settle — the 3X recording shows the winner phase replays run
     // by run), then the pot-push/muck beats every hand carries.
     const H = HAND_COMPLETION;
-    const push = H.BETS_SWEEP_MS + H.POT_PUSH_MS + H.MUCK_MS;
+    const push = H.BETS_SWEEP_MS + H.POT_PUSH_MS + H.MUCK_MS + H.POST_PUSH_PAUSE_MS;
     const reveal2 = H.RIT_REVEAL_LEAD_MS + 2 * 3 * H.RIT_STREET_MS + 1 * H.RIT_RUN_GAP_MS;
     expect(rit2).toBe(reveal2 + 2 * H.RIT_RESULT_RUN_MS + push);
     expect(rit3).toBeGreaterThan(rit2);

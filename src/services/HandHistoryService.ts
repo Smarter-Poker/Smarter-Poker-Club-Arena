@@ -112,6 +112,8 @@ export interface HandRecord {
   community_cards: Card[];
   /** Round 2 (double board): board 2, empty on single-board hands. */
   community_cards2?: Card[];
+  /** TRIPLE-BOARD BOMB POT 2026-08-27: board 3, empty below three boards. */
+  community_cards3?: Card[];
   /**
    * COMPLETENESS PASS 2026-08-26: Run It Twice boards 2..N in run order
    * (board 1 is community_cards). Read from the first-class
@@ -153,7 +155,7 @@ class HandHistoryServiceClass {
     const { data, error } = await supabase
       .from('hand_history')
       .select(
-        'id, created_at, started_at, table_id, hand_number, pot_size, community_cards, community_cards2, rit_boards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, bbj_amount, button_seat, hole_cards, showdown, pots'
+        'id, created_at, started_at, table_id, hand_number, pot_size, community_cards, community_cards2, community_cards3, rit_boards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, bbj_amount, button_seat, hole_cards, showdown, pots'
       )
       .eq('id', handId)
       .maybeSingle();
@@ -457,6 +459,9 @@ class HandHistoryServiceClass {
       community_cards2: Array.isArray((row as any).community_cards2)
         ? (row as any).community_cards2
         : [],
+      community_cards3: Array.isArray((row as any).community_cards3)
+        ? (row as any).community_cards3
+        : [],
       rit_boards,
       players,
       actions,
@@ -537,7 +542,9 @@ class HandHistoryServiceClass {
         .insert({
           table_id: tableId,
           hand_number: handData.handNumber,
-          pot_size: handData.pot,
+          // `hands` names it `pot`. `hand_history` is the table with `pot_size`,
+          // and the two were crossed, so every save here was rejected.
+          pot: handData.pot,
           community_cards: handData.communityCards,
           created_at: new Date().toISOString(),
         })

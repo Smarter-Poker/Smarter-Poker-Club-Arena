@@ -50,8 +50,13 @@ describe('the rule is still the rule', () => {
     expect(spec).toMatch(/buy_in_fee` MUST be 0 on a Spin|buy_in_fee MUST be 0 on a Spin/);
   });
 
-  it('the rake is a band table, not a surcharge', () => {
-    expect(spec).toMatch(/SPIN_RAKE_BANDS/);
+  it('the rake is the multiplier distribution, not a surcharge', () => {
+    // Was SPIN_RAKE_BANDS. The bands were deleted on 2026-08-27 because one
+    // multiplier table can only ever satisfy one rate; the flat constant and
+    // the assertion below it are what the bands should have been.
+    expect(spec).toMatch(/export const SPIN_RAKE_RATE = 0\.08;/);
+    expect(spec).not.toMatch(/SPIN_RAKE_BANDS/);
+    expect(spec).toMatch(/assertSpinRakeInvariant/);
     expect(spec).toMatch(/E\[multiplier\] = seats × \(1 − rake_rate\)/);
   });
 });

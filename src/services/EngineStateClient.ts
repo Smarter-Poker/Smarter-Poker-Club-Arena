@@ -498,6 +498,50 @@ export class EngineStateClient {
   private lastEventSeq = 0;
 
   private handleMessage(msg: ServerMessage): void {
+    /**
+     * ENGINE RESTART EPOCH RESET — WIRED 2026-08-28.
+     *
+     * `resetInbox()` below carries the cure for the permanent freeze after an
+     * engine rebuild, and its docblock claims "This fires on every dropTable
+     * path". It did not. `resetInbox` is reachable only from `disconnect()`
+     * and `ws.onopen`, and `TableStateHub.dropTable()` deliberately KEEPS the
+     * socket open (it resets `room.lastSeq = 0` and broadcasts this notice
+     * instead of dropping subscribers) — so no socket boundary occurred and
+     * the epoch was never reset. The rebuilt engine's `SNAPSHOT seq:1` was
+     * then discarded by the monotonicity belt, every following DELTA tripped
+     * `msg.prev !== this.seq` into a resync whose reply was dropped the same
+     * way, and because frames kept arriving the staleness watchdog and the
+     * reconnect ladder both stayed asleep. The felt sat dead — no cards, no
+     * clock, no chips — until the player reloaded the page.
+     *
+     * The hub sends the notice for exactly this purpose ("tell the clients
+     * why they are about to see a sequence reset"), and nothing consumed it.
+     * Consume it here, BEFORE the queue: the reset must land ahead of the
+     * fresh snapshot that follows it, and the hub always re-sends a full
+     * snapshot after a drop, so forgetting the old sequence loses nothing.
+     *
+     * This matters more from 2026-08-28 on, not less: the deploy pipeline's
+     * drain-gate deadlock was fixed the same day, so the engine now actually
+     * restarts on deploy instead of running hours-stale code — which means
+     * this path runs often rather than rarely.
+     */
+    if (
+      msg.type === 'EVENT' &&
+      (msg.payload as { type?: string } | undefined)?.type === 'engine_restarting'
+    ) {
+      this.inbox = [];
+      this.lastEventSeq = 0;
+      this.seq = 0;
+      this.snapshot = null;
+      // Still surface it: TablePage can show its reconnect chrome rather than
+      // a silently frozen table while the rebuilt engine publishes.
+      try {
+        this.opts.onEvent(msg.payload);
+      } catch (err) {
+        console.error('[EngineStateClient] onEvent listener threw', err);
+      }
+      return;
+    }
     if (msg.type === 'PING') {
       // Keepalive never queues — answering late defeats its purpose.
       try {
@@ -616,9 +660,13 @@ export class EngineStateClient {
      * reconnect ladder ever escalated. The table sat frozen until the player
      * reloaded the page.
      *
-     * This fires on every dropTable path: the zombie reaper, the watchdog
-     * kill, and tournament table breaks — including the very drill
-     * faultInjection claims verifies that "connected clients keep receiving".
+     * The dropTable paths (zombie reaper, watchdog kill, tournament table
+     * breaks) do NOT pass through here — dropTable keeps the socket open, so
+     * no socket boundary occurs. They are handled by the `engine_restarting`
+     * branch in handleMessage(), which performs the same reset for the same
+     * reason. (Corrected 2026-08-28: this docblock previously claimed those
+     * paths reached this function, and that claim was why the freeze survived
+     * the fix meant to cure it.)
      *
      * Resetting the epoch here is safe: the hub always sends a FULL snapshot
      * on subscribe and on resync, so nothing is lost by forgetting the old

@@ -30,10 +30,56 @@
      in the same place and by the same rule.
 
      Height is round(width x 1.4) — the 2.5:3.5 playing-card ratio, made exact
-     so the card art is never resampled. Keep it exact if these change. */
-  --sp-card2-w: 44px;
-  --sp-card2-h: 62px;
-  --sp-card2-step: 32px;
+     so the card art is never resampled. Keep it exact if these change.
+
+     ── HOLD'EM IS THE SAME CARD AS PLO (Dan 2026-08-27, binding) ────────────
+     "THE CARDS INSIDE OF THE CLUB ARENA FOR HOLDEM GAMES WERE NEVER CHANGED.
+      THEY NEED TO BE THE SAME SIZE CARDS WE USE FOR PLO INSIDE OF HOLDEM ...
+      THE SAME AS PLO GLOBALLY."
+
+     When PLO went up 50% on 2026-08-19 (Dan item 3) the two-card set was left
+     where it was, on the reasoning that the enlargement "did not leak into
+     hold'em" — there was even an e2e test named for it. That was backwards:
+     a hold'em hero has FEWER cards in the row than any PLO hand, so it has
+     MORE room, not less. The result was a 44px hold'em card sitting beside a
+     60px PLO4 card on the same felt, same seat, same breakpoint.
+
+     These now carry the PLO4 numbers at every breakpoint — PLO4 because it is
+     the largest of the three PLO sets (the 5- and 6-card rows step DOWN from
+     it to keep the row width constant, and a 2-card row is narrower still).
+     Per breakpoint: 60 / 57 / 51 / 45, matching the `:has(> *:nth-child(4))`
+     guards below one-for-one.
+
+     Step is 0.72 x width, which is the exposure ratio the two-card row has
+     always had (32/44, 30/42, 26/36, 23/32 — all 0.72). Keeping the RATIO
+     rather than the pixel value means the pair overlaps exactly as it did;
+     only the cards are bigger. Row width is w + step = 103 / 98 / 88 / 77px,
+     comfortably inside the PLO4 row (135 / 129 / 117 / 102px) that already
+     fits the felt at every breakpoint.
+
+     NOT the showdown row: `.seat__cards--revealed` sizes from --sp-cardrev-*
+     below, which keeps the old numbers on purpose. See the note there. */
+  --sp-card2-w: 60px;
+  --sp-card2-h: 84px;
+  --sp-card2-step: 43px;
+
+  /* ── THE TABLED-HAND BASE — deliberately NOT --sp-card2-* ─────────────────
+     `.seat__cards--hero.seat__cards--revealed` lays out WHOLE cards with a 1px
+     gap, so its row is n x w rather than w + (n-1) x step, and a PLO6 hand has
+     to fit the same strip of backdrop beside the seat. Its budget is therefore
+     a completely different number from the private row's, and it was pinned to
+     --sp-card2-w only because the two happened to share a value.
+
+     They no longer do. Carrying the hold'em enlargement into the showdown row
+     would have taken a PLO6 tabled hand on a 375px phone from 137px to 195px,
+     against 151px of room. This token holds the pre-2026-08-27 two-card sizes
+     — the ones the revealed block's own worked example is written against —
+     and is retuned at the same four breakpoints as everything else.
+
+     A tabled hold'em hand is still the largest hand on the felt at showdown
+     (1.00 x this, against PLO4's 0.92 and PLO6's 0.70), so hold'em is not
+     shortchanged here either. */
+  --sp-cardrev-w: 44px;
 
   /* ── EVERY FORMATTED AMOUNT ON THIS SEAT READS ONE FONT ──────────────────
      Dan 2026-08-27: "1,518 looks like it has an extra space or something."
@@ -711,7 +757,8 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
-  animation: stackDeltaFloat 2s ease-out forwards;
+  /* 2026-08-27: honours --animation-speed (JS window scales with it too). */
+  animation: stackDeltaFloat calc(2s * var(--animation-speed, 1)) ease-out forwards;
   z-index: 10;
 }
 
@@ -1038,6 +1085,38 @@
 
 .seat--hero .seat__info {
   border-color: rgba(255, 215, 0, 0.25);
+}
+
+/* ── HERO ACTION BADGE + BET CHIPS SWAP (Dan 2026-08-28) ──────────────────
+   "THE HERO'S ACTION DISPLAY 'ALL IN' NEEDS TO BE DIRECTLY ABOVE HIS HEAD.
+   AND THE CHIPS 200 SHOULD BE IN THE LOCATION WHERE THE 'ALL IN' IS
+   CURRENTLY LOCATED."
+
+   Before this, the hero read top-down as: action badge (top: -26px), bet
+   chips (geometry offset toward the pot), avatar — badge farthest away,
+   chips in between. Dan wants the two swapped: the badge hugs the hero's
+   head and the chip stack takes the badge's old airspace, farther out
+   toward the pot.
+
+   Hero only. Villains keep the shared geometry — their badges already sit
+   directly over their heads because a villain pod has no tall card row
+   between badge and avatar. */
+.seat--hero .seat__action {
+  /* Just clear of the avatar's crown. -26px was the old slot; -8px puts the
+     badge's bottom edge a breath above the head. */
+  top: -8px;
+}
+
+.seat--hero .seat__bet-chips {
+  /* Lift the chip stack ~30px past its geometry rest point — into the band
+     the action badge vacated (its old -26..-3px slot above the seat). The
+     geometry offset still carries the toward-the-pot direction; this only
+     adds the extra climb, so every hand size and breakpoint keeps its
+     existing lateral placement. */
+  transform: translate(
+    calc(-50% + var(--bet-offset-x, 0px)),
+    calc(-50% + var(--bet-offset-y, 0px) - 30px)
+  );
 }
 
 /* Dan 2026-08-15, verbatim: "HERO SHOULD NEVER BE FADED UNTIL THEY FOLD, EVEN
@@ -1497,22 +1576,44 @@
   z-index: 14;
 }
 
-/* THE TOP ROW REVEALS DOWNWARD.
-   A top-cap seat sits under the Bad Beat Jackpot banner with no felt above
-   it, so a reveal anchored beside/above the avatar is drawn straight into
-   the banner — which is exactly the screenshot. These seats drop their
-   revealed hand BELOW the nameplate instead, onto the felt, where there is
-   nothing to collide with. Centred on the pod rather than mirrored, because
-   a centred row under a top seat cannot reach either neighbour.
+/* THE TOP ROW REVEALS UPWARD, LIKE EVERY OTHER SEAT.
+   Dan 2026-08-28, verbatim: "THE SHOW DOWN CARDS MUST ALWAYS BE ON TOP OF THE
+   AVATAR, NEVER BELOW, THE TOP VILLAINS CARDS ARE COVERING THE POT."
+
+   THIS RULE USED TO DO THE OPPOSITE. It read `top: auto; bottom: calc(-1 *
+   var(--vh-card-h) - 6px)`, which dropped a top-cap seat's tabled hand a full
+   card height BELOW its own nameplate, onto the felt. The felt directly under
+   the top seats is where the pot lives (`.pot-display`, top 38%), and
+   `.seat-wrapper--showing` is z-index 30 against the pot's 20, so the hand
+   painted straight over the pot total. That is the screenshot.
+
+   THE REASON IT WAS WRITTEN IS NO LONGER TRUE, which is worth stating so it is
+   not re-introduced. It was added to stop a top-cap reveal being drawn into the
+   Bad Beat Jackpot banner above it. Measure the reveal as it actually is now: a
+   top-cap seat's avatar token is 56px, so a revealed card is
+   max(17px, 56 * 0.346 * 1.6) = 31px tall, and the cluster's bottom edge is
+   pinned 1px above the plate at 56 - 6 - 1 = 49px down the seat. The row's top
+   edge therefore lands 18px BELOW the seat's own top edge — it does not reach
+   the top of the seat, let alone the banner above it. The collision it was
+   guarding against cannot happen at this size; the collision it CAUSED happens
+   every showdown.
+
+   So the vertical anchor is the base one (`top` + translateY(-100%)), which is
+   what makes the hand grow up over the avatar. Only the horizontal centring is
+   kept from the old rule: a centred row under a top seat cannot reach either
+   neighbour, and these seats have no outboard direction worth hugging.
 
    Scoped to `.seat-wrapper--top .seat` (0-3-0 with the class pair below) so
-   it beats the generic left/right anchors without touching any other seat. */
+   it beats the generic left/right anchors without touching any other seat.
+   The transform must restate translateY(-100%) — it is a single property, and
+   a bare translateX here would silently drop the bottom-edge anchoring and put
+   the row back over the plate. */
 .seat-wrapper--top .seat .seat__cards--opponent.seat__cards--revealed {
-  top: auto;
-  bottom: calc(-1 * var(--vh-card-h) - 6px);
+  top: calc(var(--seat-avatar-size, 84px) - var(--sp-wrap-overlap, 6px) - 1px);
+  bottom: auto;
   left: 50%;
   right: auto;
-  transform: translateX(-50%);
+  transform: translate(-50%, -100%);
 }
 
 /* The reveal GROWS instead of snapping: the size/position deltas between the
@@ -1558,11 +1659,16 @@
    felt. It now keeps the same centred anchor and only lifts the z-index so the
    shown hand paints above neighbouring seats.
 
-   The revealed row's own anchor is owned by the showdown rule further down
-   this file (search `bottom: calc(100% - 10px)`), which already centres it on
-   the seat and lifts it over the avatar. Nothing to declare here - two rules
-   of equal specificity fighting over the same anchor is what produced the
-   crooked showdown row in the first place. */
+   The revealed row's own anchor is owned by the reveal rule further UP this
+   file — search `.seat-wrapper--top .seat .seat__cards--opponent` — which
+   centres it on the seat and grows it upward over the avatar. Nothing to
+   declare here: two rules of equal specificity fighting over the same anchor
+   is what produced the crooked showdown row in the first place.
+
+   (This pointer said `search bottom: calc(100% - 10px)` until 2026-08-28. No
+   such declaration existed anywhere in the repo — the anchor had moved twice
+   since the note was written, and a reader following it found nothing and
+   reasonably concluded the row was unowned.) */
 
 /* Hero cards — PokerBros signature: cards sit to the RIGHT of the avatar,
  * 2026-04-17 Dan rewrite: landscape-racetrack layout puts hero at bottom
@@ -2571,7 +2677,9 @@
 }
 
 .seat__cards--folding .seat__card:nth-child(2) {
-  animation-delay: 55ms;
+  /* 2026-08-27: scaled — an unscaled 55ms ate the JS window's whole safety
+     margin at Fast (245ms of animation vs a 250ms removal). */
+  animation-delay: calc(55ms * var(--animation-speed, 1));
   /* Second card rotates the opposite direction for visual variety */
   --fold-spin: -20deg;
 }
@@ -2749,7 +2857,8 @@
 }
 
 .seat__cards--showdown .seat__card:nth-child(2) {
-  animation-delay: 120ms;
+  /* 2026-08-27: scaled — see the folding delay note above. */
+  animation-delay: calc(120ms * var(--animation-speed, 1));
 }
 
 @keyframes cardShowdownFlip {
@@ -2802,10 +2911,15 @@
     --seat-avatar-base: 66px; /* Dan 2026-08-24: avatars were too large on phones */
     width: 88px; /* was 72px -- 1.5x avatars */
     /* The two-card hand at this breakpoint — hero AND every hold'em villain.
-       See the token block on the base `.seat` rule for why they share it. */
-    --sp-card2-w: 42px;
-    --sp-card2-h: 59px;
-    --sp-card2-step: 30px;
+       See the token block on the base `.seat` rule for why they share it.
+       Dan 2026-08-27: these are the tablet PLO4 numbers (57/80), so a hold'em
+       hero draws the same card as a PLO hero. Step is 0.72 x width, the
+       exposure the pair has always had. */
+    --sp-card2-w: 57px;
+    --sp-card2-h: 80px;
+    --sp-card2-step: 41px;
+    /* The showdown row keeps its own budget — see `.seat`. */
+    --sp-cardrev-w: 42px;
   }
 
   .seat__info {
@@ -2880,10 +2994,12 @@
   .seat {
     --seat-avatar-base: 58px; /* see the note in the 640px block */
     width: 80px; /* was 66px -- 1.5x avatars */
-    /* Two-card hand: hero AND every hold'em villain. See the base `.seat`. */
-    --sp-card2-w: 36px;
-    --sp-card2-h: 50px;
-    --sp-card2-step: 26px;
+    /* Two-card hand: hero AND every hold'em villain. See the base `.seat`.
+       Dan 2026-08-27: the phone PLO4 numbers (51/71). */
+    --sp-card2-w: 51px;
+    --sp-card2-h: 71px;
+    --sp-card2-step: 37px;
+    --sp-cardrev-w: 36px;
   }
 
   /* Only the overlap into the name box is tuned per breakpoint now; the slot
@@ -2957,10 +3073,12 @@
   .seat {
     --seat-avatar-base: 52px; /* see the note in the 640px block */
     width: 72px; /* was 58px -- 1.5x avatars */
-    /* Two-card hand: hero AND every hold'em villain. See the base `.seat`. */
-    --sp-card2-w: 32px;
-    --sp-card2-h: 45px;
-    --sp-card2-step: 23px;
+    /* Two-card hand: hero AND every hold'em villain. See the base `.seat`.
+       Dan 2026-08-27: the small-phone PLO4 numbers (45/63). */
+    --sp-card2-w: 45px;
+    --sp-card2-h: 63px;
+    --sp-card2-step: 32px;
+    --sp-cardrev-w: 32px;
   }
 
   .seat {
@@ -3036,7 +3154,9 @@
 
 /* Winner pop — scale bounce triggered by TSX */
 .seat--winner-pop {
-  animation: seatWinnerPop 0.6s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  /* 2026-08-27: honours --animation-speed (JS window scales with it too). */
+  animation: seatWinnerPop calc(0.6s * var(--animation-speed, 1))
+    var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
 @keyframes seatWinnerPop {
@@ -3054,9 +3174,12 @@
   }
 }
 
-/* All-in shake */
+/* All-in shake
+   2026-08-27: now scales with --animation-speed like its JS removal window
+   (SeatSlot.tsx removed the class at 400ms * speed while this ran a fixed
+   0.4s — at Fast the shake was cut at 50% and the seat snapped back). */
 .seat--allin-shake {
-  animation: seatAllinShake 0.4s ease-out;
+  animation: seatAllinShake calc(0.4s * var(--animation-speed, 1)) ease-out;
 }
 
 @keyframes seatAllinShake {
@@ -3083,7 +3206,8 @@
 
 /* Stack change glow pulse */
 .seat--stack-glow {
-  animation: seatStackGlow 0.6s ease-out;
+  /* 2026-08-27: honours --animation-speed (JS window scales with it too). */
+  animation: seatStackGlow calc(0.6s * var(--animation-speed, 1)) ease-out;
 }
 
 @keyframes seatStackGlow {
@@ -3160,11 +3284,12 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .seat__bbj-credit {
-    animation: none;
-  }
-}
+/* 2026-08-27: `animation: none` here left the pill welded above the seat at
+   full opacity forever under Reduce Motion — the float animation is the ONLY
+   thing that fades it out, and the prop that mounts it has no timer. Let the
+   global reducedMotion.css collapse (1ms + forwards) run it instead, which
+   lands on the 100% frame: opacity 0. The pill appears for a frame and is
+   gone — motion removed, meaning kept. */
 
 /* ─────────────────────────────────────────────────────────────────────────
    TOP-RAIL SEATS — Dan 2026-08-19, bug list item 10:
@@ -3592,8 +3717,11 @@
    on screen, so a row anchored inside it cannot leave the screen either -
    while its innermost card still lies squarely on the avatar, which is the
    PokerBros read. Card stacking keeps the outboard card on top, matching the
-   reference close-ups. The top-cap override further down (0-4-0) still wins
-   for the seats under the banner, whose reveal drops below the plate. */
+   reference close-ups. The top-cap override (0-3-0, further UP this file)
+   still wins for the seats under the banner: their row is centred on the pod
+   rather than hugging an outboard edge. Since 2026-08-28 it grows UPWARD over
+   the avatar like every other seat — it used to drop below the plate and onto
+   the pot, which is what Dan reported. */
 .seat--cards-right .seat__cards--opponent.seat__cards--revealed {
   left: auto;
   right: calc(50% - var(--seat-avatar-size, 84px) / 2);
@@ -3641,7 +3769,7 @@
   right: auto;
 }
 
-/* The top-cap seats' revealed row is CENTRED under the pod (see the reveal
+/* The top-cap seats' revealed row is CENTRED on the pod (see the reveal
    rule further up) rather than anchored to the avatar's outboard edge, so it
    would run out of its own container if it were mirrored. Kept as its own
    rule because it must also beat the `.seat--cards-*` pair for a hero-side
@@ -3779,9 +3907,18 @@
    SIZE, so the widest hand still fits the same strip. A row of six whole cards
    needs more width than six cards overlapped by 60%, and the space right of the
    hero seat does not grow, so the card comes down instead. The factors are
-   applied to `--sp-card2-w`, which is already retuned at all four breakpoints
-   on `.seat`, so this scales with everything else and adds no breakpoint block
-   of its own:
+   applied to `--sp-cardrev-w`, which is retuned at all four breakpoints on
+   `.seat`, so this scales with everything else and adds no breakpoint block of
+   its own.
+
+   THAT TOKEN IS NOT `--sp-card2-w`, and the split is deliberate (Dan
+   2026-08-27). It used to be, back when the private two-card row and the
+   tabled row wanted the same number. The private row now carries the PLO4
+   size, and inheriting that here would have taken a tabled PLO6 hand on a
+   375px phone from 137px to 195px against 151px of room — a row that runs off
+   the screen at exactly the moment the hand is being read by other people.
+   `--sp-cardrev-w` holds the sizes the worked example below is measured
+   against, so the example stays true:
 
      cards   factor   375px card   375px row (n*w + gaps)   room available
      2-3     1.00     32px         65px / 98px              151px
@@ -3803,7 +3940,7 @@
    player picked to show lies flat with the rest and keeps only its gold glow).
    ═══════════════════════════════════════════════════════════════════════════ */
 .seat__cards--hero.seat__cards--revealed {
-  --sp-hero-card-w: var(--sp-card2-w, 44px);
+  --sp-hero-card-w: var(--sp-cardrev-w, 44px);
   --sp-hero-card-h: calc(var(--sp-hero-card-w) * 1.4);
   /* step = width + 1px, so `margin-left: calc(step - w)` on the flex child
      resolves to a 1px hairline instead of a negative slice. Zero overlap
@@ -3812,13 +3949,13 @@
 }
 
 .seat__cards--hero.seat__cards--revealed:has(> :nth-child(4)) {
-  --sp-hero-card-w: calc(var(--sp-card2-w, 44px) * 0.92);
+  --sp-hero-card-w: calc(var(--sp-cardrev-w, 44px) * 0.92);
 }
 .seat__cards--hero.seat__cards--revealed:has(> :nth-child(5)) {
-  --sp-hero-card-w: calc(var(--sp-card2-w, 44px) * 0.8);
+  --sp-hero-card-w: calc(var(--sp-cardrev-w, 44px) * 0.8);
 }
 .seat__cards--hero.seat__cards--revealed:has(> :nth-child(6)) {
-  --sp-hero-card-w: calc(var(--sp-card2-w, 44px) * 0.7);
+  --sp-hero-card-w: calc(var(--sp-cardrev-w, 44px) * 0.7);
 }
 
 .seat__cards--hero.seat__cards--revealed:has(> :nth-child(4)) > *,

@@ -13,7 +13,15 @@
  * Legacy URL: /table/:tableId still routes here with a single table
  */
 
-import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  Suspense,
+} from 'react';
 import { matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
 import LiveTablesBar from '../components/table/LiveTablesBar';
@@ -866,9 +874,11 @@ export default function MultiTablePage() {
    * the AUDIT-2 note in TablePage). That left one hole: a background table's
    * clock entering its final seconds made no sound at all. One-shot per turn,
    * on the rising edge of the <=6s window, for non-active tabs only — the
-   * active tab's own warning loop covers itself, and the auto-switch below
-   * yanks focus at <5s anyway. Keyed by the turn's deadline so the same turn
-   * never re-alerts, even across re-renders.
+   * active tab's own warning loop covers itself. (2026-08-28: this bell is
+   * now the player's cue to switch BY THEMSELF — the auto-switch that used
+   * to yank focus at <5s is deleted under the NO AUTO TABLE SWITCHING law
+   * below.) Keyed by the turn's deadline so the same turn never re-alerts,
+   * even across re-renders.
    */
   /**
    * Dan 2026-08-21: "THE TABLE BOX AT THE TOP OF A PAGE SHOULD START FLASHING
@@ -929,57 +939,35 @@ export default function MultiTablePage() {
     }
   }, [tables, activeIndex, hidden]);
 
-  // ─── Action queue (batch 2, GG-style) ─────────────────────────────────
-  // The moment the hero's turn ENDS on the focused table (they acted, or the
-  // clock resolved it), advance to the table that has been waiting on them
-  // the longest — most pressing deadline first. A short beat lets the action
-  // animation land before the view moves.
-  /**
-   * Audit round 3: this edge used to be a bare boolean, so SWITCHING AWAY
-   * from a my-turn table read as "the turn ended" and the queue yanked the
-   * player 400ms after their own deliberate tab choice. The edge is now
-   * keyed by table identity: it only fires when the SAME table that was
-   * focused loses its turn while still focused - i.e. the hero actually
-   * acted (or timed out) there.
-   */
-  const prevActiveTurnRef = useRef<{ id: string; turn: boolean }>({ id: '', turn: false });
-  const queueSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    const active = tables[activeIndex];
-    const activeId = active?.id ?? '';
-    const activeTurn = !!active && !isLobbyTab(active) && active.isMyTurn;
-    if (
-      prevActiveTurnRef.current.turn &&
-      prevActiveTurnRef.current.id === activeId &&
-      !activeTurn &&
-      !hidden &&
-      userSettings.multi_action_queue
-    ) {
-      const next = tables
-        .filter((t, i) => i !== activeIndex && !isLobbyTab(t) && t.isMyTurn)
-        .sort((a, b) => (a.turnDeadlineMs ?? Infinity) - (b.turnDeadlineMs ?? Infinity))[0];
-      if (next) {
-        if (queueSwitchTimerRef.current) clearTimeout(queueSwitchTimerRef.current);
-        queueSwitchTimerRef.current = setTimeout(() => {
-          queueSwitchTimerRef.current = null;
-          const idx = tablesRef.current.findIndex((t) => t.id === next.id);
-          // Only move if that table is still waiting on the hero.
-          if (idx !== -1 && tablesRef.current[idx].isMyTurn) {
-            setIsTransitioning(true);
-            setActiveIndex(idx);
-            trackedTimeout(() => setIsTransitioning(false), 320);
-          }
-        }, 400);
-      }
-    }
-    prevActiveTurnRef.current = { id: activeId, turn: activeTurn };
-  }, [tables, activeIndex, hidden, userSettings.multi_action_queue, trackedTimeout]);
-  useEffect(
-    () => () => {
-      if (queueSwitchTimerRef.current) clearTimeout(queueSwitchTimerRef.current);
-    },
-    []
-  );
+  /* ═══════════════════════════════════════════════════════════════════════
+     NO AUTO TABLE SWITCHING — LAW (Dan 2026-08-28, binding, NO EXCEPTIONS)
+
+     Verbatim: "YOU CAN NEVER EVER AUTO CHANGE TABLES FOR A USER, THEY MUST
+     CHANGE IT BY THEM SELF."
+
+     TWO features used to move `activeIndex` without a user gesture, and both
+     are deleted under this law:
+
+       1. The URGENCY AUTO-SWITCH (setting key multi underscore auto_switch):
+          when any background table's turn clock fell under 5 seconds, the
+          view yanked itself to that table. This is the behaviour Dan
+          reported: "IT AUTO CHANGES TABLES, OR AUTO SWIPES TO THE TABLE
+          RUNNING OUT OF TIME... THAT CAN NOT HAPPEN."
+       2. The ACTION QUEUE (setting key multi underscore action_queue): the
+          moment the hero's turn ended on the focused table, the view
+          advanced itself to the next table waiting on them.
+
+     Both settings' DB columns still exist but are DEAD; the toggles are gone
+     from the settings panel and their keys are tombstoned in
+     useUserTableSettings. DO NOT WIRE THEM BACK. Every SIGNAL survives — the
+     background-urgency bell, the tab flash + haptics at 5s, the browser-tab
+     retitle. Only the MOVE is forbidden: `setActiveIndex` may only ever run
+     from the player's own gesture (tab tap, swipe, Take Seat, opening or
+     closing a tab, restoring their own last-active tab at mount) or the
+     index-bounds repair when the tables array shrinks.
+
+     tests/no-auto-table-switch.law.test.ts pins this file to the rule.
+     ═══════════════════════════════════════════════════════════════════════ */
 
   // ─── Backgrounded-browser alerts (batch 2) ────────────────────────────
   // Everything above assumes the app is visible. When the BROWSER tab is
@@ -1160,13 +1148,20 @@ export default function MultiTablePage() {
   const [showSessionAgg, setShowSessionAgg] = useState(false);
 
   useEffect(() => {
-    if (hidden || tables.length < 2) {
+    /* Dan 2026-08-28: the P&L tracker "should only appear once a user is
+       playing MULTIPLE tables. It should never engage while playing 1 table."
+       The old gate counted `tables.length`, which includes LOBBY tabs — one
+       real table plus the lobby tab read as 2 and the chip appeared during
+       single-table play. Count actual game tables only, here AND inside
+       compute() (a tab closing between ticks must retire the chip too). */
+    const liveTableCount = tables.filter((t) => !isLobbyTab(t)).length;
+    if (hidden || liveTableCount < 2) {
       setSessionAgg(null);
       return;
     }
     const compute = () => {
       const live = tablesRef.current.filter((t) => !isLobbyTab(t));
-      if (live.length === 0) {
+      if (live.length < 2) {
         setSessionAgg(null);
         return;
       }
@@ -1198,7 +1193,9 @@ export default function MultiTablePage() {
     compute();
     const iv = setInterval(compute, 5000);
     return () => clearInterval(iv);
-  }, [hidden, tables.length]);
+    // `tables`, not `tables.length`: a lobby tab converting into a game table
+    // keeps the length constant while the live-table count changes.
+  }, [hidden, tables]);
 
   // ─── Batch 4: playable tile view ──────────────────────────────────────
   // Fold / Check / Call directly from a 2x2 tile - true simultaneous play on
@@ -1259,9 +1256,21 @@ export default function MultiTablePage() {
         setIsTransitioning(true);
         setActiveIndex(idx);
         trackedTimeout(() => setIsTransitioning(false), 320);
+        // Keep the address bar on the table the player is looking at (Dan
+        // 2026-08-28). A tab switch used to leave the URL naming the OLD
+        // table, so the next route arrival at that stale URL painted the
+        // wrong table first, and browser Back yanked the player to a tab
+        // they had already left. `replace` so switching tabs does not pile
+        // history entries. Lobby tabs have no /table route of their own —
+        // navigating to one would mint a phantom table id on reload — so
+        // they keep the current URL, exactly as before.
+        const target = tables[idx];
+        if (target && !isLobbyTab(target)) {
+          navigate(`/table/${target.id}`, { replace: true });
+        }
       }
     },
-    [tables, activeIndex, trackedTimeout]
+    [tables, activeIndex, trackedTimeout, navigate]
   );
 
   // ─── Batch 3: quick-join sheet on "+" ─────────────────────────────────
@@ -1948,54 +1957,9 @@ export default function MultiTablePage() {
       </div>
     );
 
-  // ─── Auto-switch on urgent timer ─────────────────────────────────────
-  // 2026-08-15 fix: this compared against a hardcoded timeRemaining of 15,
-  // so it could never fire. Now derived from the real server deadline.
-  /**
-   * AUDIT 2026-08-25 — TWO URGENT TABLES USED TO PING-PONG ONCE A SECOND.
-   *
-   * This effect re-runs on every tick of the 1s clock. With table A and table B
-   * BOTH inside their final 5 seconds, the sequence was: tick -> A is not
-   * active, switch to A; tick -> B is not active, switch to B; tick -> A again.
-   * A 320ms transition fired on every one of them, and the player could not
-   * read, let alone act on, either table — during the exact five seconds when
-   * acting is the only thing that matters.
-   *
-   * One yank per DEADLINE, per table, keyed the same way the urgency alarm
-   * above is keyed. A genuinely new decision on the other table still pulls
-   * focus, because a new decision carries a new deadline.
-   */
-  const autoSwitchedRef = useRef<Map<string, number>>(new Map());
-  useEffect(() => {
-    // Dan 2026-08-19: only auto-switch the active TAB while the player is
-    // actually on /table/*. When they browse elsewhere the global dock
-    // surfaces the alert instead — yanking the route out from under them
-    // mid-cashier would be hostile.
-    if (hidden) return;
-    // Batch 2: the yank is now the player's choice (defaults on).
-    if (!userSettings.multi_auto_switch) return;
-    const urgentTable = tables.find((t, idx) => {
-      if (idx === activeIndex) return false;
-      if (isLobbyTab(t)) return false;
-      const left = secondsLeft(t);
-      if (left === undefined || left >= 5) return false;
-      return autoSwitchedRef.current.get(t.id) !== t.turnDeadlineMs;
-    });
-    if (urgentTable) {
-      const idx = tables.findIndex((t) => t.id === urgentTable.id);
-      if (idx !== -1) {
-        autoSwitchedRef.current.set(urgentTable.id, urgentTable.turnDeadlineMs ?? 0);
-        setIsTransitioning(true);
-        setActiveIndex(idx);
-        trackedTimeout(() => setIsTransitioning(false), 320);
-      }
-    }
-    const liveIds = new Set(tables.map((t) => t.id));
-    for (const id of autoSwitchedRef.current.keys()) {
-      if (!liveIds.has(id)) autoSwitchedRef.current.delete(id);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tables, activeIndex, secondsLeft, hidden, userSettings.multi_auto_switch]);
+  /* The urgency auto-switch that lived here is DELETED — see the NO AUTO
+     TABLE SWITCHING law above. The urgency ALERT (bell, tab flash, haptics,
+     browser-tab title) lives on; the focus yank does not. */
 
   /**
    * KEEP `activeIndex` INSIDE THE ARRAY (audit 2026-08-25).
@@ -2174,11 +2138,17 @@ export default function MultiTablePage() {
       setIsTransitioning(true);
       setActiveIndex(newIndex);
       trackedTimeout(() => setIsTransitioning(false), 320);
+      // Same URL agreement as handleTabSelect: a swipe is a tab switch by
+      // thumb, and the address bar must follow the felt (Dan 2026-08-28).
+      const target = tables[newIndex];
+      if (target && !isLobbyTab(target)) {
+        navigate(`/table/${target.id}`, { replace: true });
+      }
     }
 
     setSwipeOffset(0);
     touchStartRef.current = null;
-  }, [swipeOffset, activeIndex, tables.length, trackedTimeout]);
+  }, [swipeOffset, activeIndex, tables, trackedTimeout, navigate]);
 
   // ─── Handle route-based table ID changes ─────────────────────────────
   // Dan 2026-08-19: the cash-game cards in the in-tab lobby are plain
@@ -2187,7 +2157,20 @@ export default function MultiTablePage() {
   // append, which stranded the lobby tab the player had just used: it sat
   // there as a dead "Lobby" tab burning one of the four slots. Convert the
   // lobby tab in place, exactly like the TABLE_SEATED handler does.
-  useEffect(() => {
+  //
+  // LAYOUT effect, not a passive one (Dan 2026-08-28, "it shows the previous
+  // table for a split second"). `hidden` is derived SYNCHRONOUSLY from the URL
+  // (line ~224), but `tables`/`activeIndex` used to catch up in a passive
+  // effect — so on the commit where the URL became /table/B, the container
+  // un-hid and PAINTED the previously active, fully-populated table (real
+  // seats, real pot, real cards) for one frame before this effect switched to
+  // B. With two tables open and B focused, arriving at /table/A painted B
+  // first — literally "a different table for a split second". A layout effect
+  // runs before the browser paints, so the tab sync and the visibility flip
+  // now land in the same frame and the stale table can never reach the
+  // screen. The same window also flashed the "No Tables Open" empty state
+  // when the first table of a session arrived by route; that is gone too.
+  useLayoutEffect(() => {
     if (!routeTableId) return;
     const prev = tablesRef.current;
     const existingIdx = prev.findIndex((t) => t.id === routeTableId);

@@ -33,12 +33,41 @@ export class TournamentManager extends TournamentManagerEliminations {
         10,
         Math.max(2, Number(this.tournamentCache?.table_size) || 9)
       );
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  A HEADCOUNT IS NOT A FINAL TABLE (2026-08-27, P0)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * This was `remaining <= finalTableSize` and nothing else, so nine
+       * players sitting three-three-three across three felts were declared a
+       * final table: everyone got the overlay, the deal poll (which shared
+       * the same shape) opened voting, and `fn_final_table_deal` would chop
+       * the pool between nine players who were never at the same table.
+       *
+       * The count stays as the CHEAP first test — it is what keeps this off
+       * the table-count query for the whole life of a big field — but the
+       * declaration now also requires exactly ONE live table still holding
+       * players. Consolidating the field is the balancer's job and happens
+       * further down this same method; this is only the gate, so a field that
+       * is short enough but not yet merged waits one cycle for the balancer
+       * and is declared on the next.
+       *
+       * `countLiveTablesWithPlayers()` returns null for UNKNOWN, which is
+       * treated as "not yet".
+       */
       if ((remainingPlayers || 0) <= finalTableSize) {
-        this.isFinalTable = true;
-        console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] FINAL TABLE reached with ${remainingPlayers} players`
-        );
-        await this.broadcast('final_table', { playerCount: remainingPlayers || 0 });
+        const liveTables = await this.countLiveTablesWithPlayers();
+        if (liveTables === 1) {
+          this.isFinalTable = true;
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] FINAL TABLE reached with ${remainingPlayers} players on one table`
+          );
+          await this.broadcast('final_table', { playerCount: remainingPlayers || 0 });
+        } else if (liveTables !== null && liveTables > 1) {
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] ${remainingPlayers} players left but still spread over ${liveTables} tables — NOT the final table until the balancer consolidates`
+          );
+        }
       }
     }
 
@@ -973,9 +1002,15 @@ export class TournamentManager extends TournamentManagerEliminations {
     );
 
     const blindStructure = this.tournamentCache?.blind_structure || [];
-    const currentLevelData = blindStructure[
-      Math.min(this.currentLevel, blindStructure.length - 1)
-    ] || { smallBlind: 10, bigBlind: 20, ante: 0 };
+    // resolveBlindLevel, not a clamped index: past the end of the structure the
+    // clamp built the new table at the last PERSISTED level while every other
+    // table played an escalated one — a table joining a deep MTT with blinds
+    // several levels behind the field.
+    const currentLevelData = this.resolveBlindLevel(blindStructure, this.currentLevel) || {
+      smallBlind: 10,
+      bigBlind: 20,
+      ante: 0,
+    };
 
     const newTableIds: string[] = [];
     for (let i = 0; i < tablesToCreate; i++) {

@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { RunItTwiceEngine } from '../../server/src/engine/RunItTwiceEngine';
 import type { RunItMode } from '../../server/src/engine/RunItTwiceEngine';
 import type { DeadlineScheduler } from '../../server/src/engine/DeadlineScheduler';
+import { sliceMethod } from '../helpers/sourceWindow';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -388,10 +389,7 @@ describe('the engine host re-reads the config and announces every single run', (
   });
 
   it('it is re-applied before every all-in decides whether to offer', () => {
-    const head = RUNOUT.slice(
-      RUNOUT.indexOf('protected handleAllInRunout('),
-      RUNOUT.indexOf('protected handleAllInRunout(') + 1600
-    );
+    const head = sliceMethod(RUNOUT, 'protected handleAllInRunout(');
     expect(head).toContain('this.applyRunItTwiceConfig();');
     expect(head).toContain('this.wireRunItTwiceEvents();');
   });

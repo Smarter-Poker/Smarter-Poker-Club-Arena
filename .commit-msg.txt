@@ -1,0 +1,44 @@
+feat(ads): a trend, because a lifetime total cannot show a campaign decaying
+
+Every figure this system reports is a lifetime total. fn_ad_stats groups by ad
+and slot and nothing else, so a campaign that worked for three weeks and has
+done nothing since looks identical to one working now - the averages absorb the
+decline, and the longer it runs the more inertia its own history gives it.
+last_event_at catches a surface that stopped completely; it says nothing about
+one that is quietly halving.
+
+fn_ad_daily(days) returns one row per ad, per slot, per day. The panel draws
+fourteen of them as a sparkline in block eighths beside each placement, with
+the day-by-day numbers in the tooltip. Drawn only with two or more days: a
+single bar is not a trend, it is a number wearing one.
+
+Live-computed rather than a rollup table maintained by a cron. At 201 events
+that is not a close call, and a rollup is a second source of truth to keep in
+step - the estate has enough. When ad_event gets large enough to matter the
+answer is a materialised daily table fed by Open Claw (CLAUDE.md section 11:
+Open Claw is the only sanctioned scheduler, and a new cron is a governed
+change), not a bigger limit here. That reasoning is in the migration so nobody
+adds one casually.
+
+The migration checks its own arithmetic: if the daily impressions do not sum to
+ad_event over the same window it aborts. A trend that contradicts the totals
+beside it is worse than no trend, because there is no way to tell which lies.
+
+AND TWO THINGS THE PANEL HAD BEEN ASSUMING.
+
+weight had no CHECK. 20260828070000 made weight the share of voice, and its
+draw guards the exponent with GREATEST(weight, 1) because a 0 would divide by
+zero. That guard is right and stays - but the panel offers a free-text weight
+box and the database should not silently reinterpret what somebody typed. A
+weight of 0 is a mistake, not a share, and the save should say so where it
+happens rather than the resolver fixing it up on every draw forever.
+
+starts_at/ends_at had no ordering rule, so a window that ends before it begins
+saved cleanly. The resolver needs starts_at <= now() AND ends_at > now(), which
+such a row can never satisfy: a campaign live and correct-looking in the editor
+and dead everywhere else. Exactly the silent-nothing this system keeps finding.
+
+Both verified against existing rows first - zero violations - and both abort
+with a count rather than rejecting real data retroactively.
+
+npx tsc --noEmit clean. npx vitest run 504 files, 7980 tests, 0 failures.

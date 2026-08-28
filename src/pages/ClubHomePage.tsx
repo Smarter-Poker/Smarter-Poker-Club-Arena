@@ -16,7 +16,13 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { ClubRole } from '../types/clubRoles';
 import { isClubStaff } from '../types/clubRoles';
 import { MEDIA_BASE } from '../utils/mediaBase';
-import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
+/* Dan 2026-08-28: NOT react-router's useNavigate. This page is also mounted
+   INSIDE a MultiTablePage lobby tab (the in-table "+"), and there a
+   /tournaments/:id destination must render in the tab rather than change the
+   route - a route change hides the container and takes the action bar with it.
+   Outside that tab this IS useNavigate, unchanged. See InTabLobbyContext.tsx. */
+import { useAppNavigate } from '../context/InTabLobbyContext';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
@@ -504,7 +510,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const { clubId: routeClubId } = useParams<{ clubId: string }>();
   const clubId = clubIdOverride || routeClubId;
   useVisibilityRefresh(() => loadClubData());
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
   const isMountedRef = useIsMounted();
   /* THE LATEST loadClubData, ALWAYS.
      `loadClubData` is redefined every render and closes over that render's

@@ -25,6 +25,7 @@ import React, {
 import { matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
 import LiveTablesBar from '../components/table/LiveTablesBar';
+import { InTabLobbyContext, type InTabLobbyNav } from '../context/InTabLobbyContext';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -1908,6 +1909,67 @@ export default function MultiTablePage() {
     });
   }, [tables]);
 
+  /**
+   * Drill into a tournament INSIDE this container, never by navigating to
+   * /tournaments/:id — that route lives outside /table/:tableId, and following
+   * it collapses this whole container to display:none, taking the action bar,
+   * the tab strip and the Take Seat button with it while the player's other
+   * tables are still dealing.
+   *
+   * Three cases, same as OPEN_LOBBY_TAB: reuse a parked lobby tab, else append
+   * one, else say the cap is reached out loud. Returns whether it took the
+   * tournament — false means the caller must fall through to a real
+   * navigation rather than swallowing the tap.
+   */
+  const openTournamentTab = useCallback(
+    (tournamentId: string): boolean => {
+      const prev = tablesRef.current;
+      const lobbyIdx = prev.findIndex(isLobbyTab);
+      if (lobbyIdx !== -1) {
+        setTables(prev.map((t) => (isLobbyTab(t) ? { ...t, lobbyTournamentId: tournamentId } : t)));
+        setActiveIndex(lobbyIdx);
+        return true;
+      }
+      if (prev.length >= MAX_TABLES) {
+        notifyCapReached('add');
+        /* Dan 2026-08-28: returning false is not a failure to handle the tap,
+           it is the honest answer. useAppNavigate falls through to a real
+           navigation so the player still reaches the tournament rather than
+           tapping a row that does nothing; the cap toast has already said
+           why no tab opened. */
+        return false;
+      }
+      setTables([
+        ...prev,
+        {
+          id: `${LOBBY_TAB_PREFIX}${Date.now()}`,
+          name: 'Lobby',
+          stakes: '',
+          isMyTurn: false,
+          pot: 0,
+          kind: 'lobby',
+          lobbyTournamentId: tournamentId,
+        },
+      ]);
+      setActiveIndex(prev.length);
+      return true;
+    },
+    [notifyCapReached]
+  );
+
+  /**
+   * ─── THE CONTEXT THE EMBEDDED LOBBY NAVIGATES THROUGH ────────────────────
+   *
+   * Provided around BOTH lobby-tab branches (the club lobby and the drilled-in
+   * tournament), so a satellite card inside TournamentDetails is intercepted
+   * exactly like a schedule row in ClubHomePage. See InTabLobbyContext.tsx for
+   * why a DOM click-capture could never do this job.
+   */
+  const inTabLobbyNav = useMemo<InTabLobbyNav>(
+    () => ({ openTournament: openTournamentTab }),
+    [openTournamentTab]
+  );
+
   // ─── In-tab lobby rendering (Dan 2026-08-19) ─────────────────────────
   // The lobby tab shows the club's real lobby. Its cash-game cards are
   // <Link to="/table/:id"> — safe, the route effect above converts this tab
@@ -1917,19 +1979,24 @@ export default function MultiTablePage() {
   // tab instead. Everything else (bottom nav, cashier, ...) passes through:
   // leaving is then an explicit user choice, and the server-truth rebuild
   // restores every seat as a tab on the way back.
-  const handleLobbyLinkCapture = useCallback((e: React.MouseEvent) => {
-    const anchor = (e.target as HTMLElement | null)?.closest?.('a');
-    if (!anchor) return;
-    const href = anchor.getAttribute('href') || '';
-    const match = href.match(/^\/tournaments\/([^/?#]+)/);
-    if (!match) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const tournamentId = match[1];
-    setTables((prev) =>
-      prev.map((t) => (isLobbyTab(t) ? { ...t, lobbyTournamentId: tournamentId } : t))
-    );
-  }, []);
+  const handleLobbyLinkCapture = useCallback(
+    (e: React.MouseEvent) => {
+      const anchor = (e.target as HTMLElement | null)?.closest?.('a');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href') || '';
+      const match = href.match(/^\/tournaments\/([^/?#]+)/);
+      if (!match) return;
+      /* Dan 2026-08-28: this used to inline its own setTables and never touch
+         activeIndex, so it and openTournamentTab could drift apart — two ways
+         to do one thing, and only one of them focused the tab it filled. One
+         implementation now. Only swallow the click if the container actually
+         took it; at the table cap the anchor is left to navigate for real. */
+      if (!openTournamentTab(match[1])) return;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    [openTournamentTab]
+  );
 
   const clearLobbyTournament = useCallback((tabId: string) => {
     setTables((prev) =>
@@ -2042,29 +2109,51 @@ export default function MultiTablePage() {
     </div>
   );
 
-  const renderLobbyTab = (table: TableInstance) =>
-    table.lobbyTournamentId ? (
-      // Drilling into a tournament from the in-tab lobby strands the player
-      // exactly as the lobby itself did, so the bar rides along. It renders in
-      // normal flow above the details page; the back-pill is absolute at
-      // top:10px and would otherwise sit on top of it, so that branch offsets
-      // the pill (see .multi-table-page__lobby-tab--tournament in the CSS).
-      <div className="multi-table-page__lobby-tab multi-table-page__lobby-tab--tournament">
-        {renderTakeSeatBar()}
-        <button
-          className="multi-table-page__lobby-back"
-          onClick={() => clearLobbyTournament(table.id)}
+  /**
+   * Dan 2026-08-28: BOTH branches are wrapped in InTabLobbyContext, and both
+   * keep `handleLobbyLinkCapture`.
+   *
+   * The context is the real guard — it catches the imperative `navigate()`
+   * calls that are how the lobby actually moves (see InTabLobbyContext.tsx).
+   * The click-capture stays as a second net for the handful of genuine
+   * `<Link to="/tournaments/:id">` anchors that still exist (GameLobbyPanel's
+   * "Open Full Tournament Lobby" and its "Return To Tournament" plaque CTA),
+   * which no navigate hook can see because react-router handles them itself.
+   * Neither one alone covers the screen; together they cover all of it.
+   *
+   * The TOURNAMENT branch used to have NO capture handler at all, which is why
+   * a satellite card inside the details page — TournamentLobbyCard, three
+   * separate navigate calls — dumped the player off the route every time.
+   */
+  const renderLobbyTab = (table: TableInstance) => (
+    <InTabLobbyContext.Provider value={inTabLobbyNav}>
+      {table.lobbyTournamentId ? (
+        // Drilling into a tournament from the in-tab lobby strands the player
+        // exactly as the lobby itself did, so the bar rides along. It renders in
+        // normal flow above the details page; the back-pill is absolute at
+        // top:10px and would otherwise sit on top of it, so that branch offsets
+        // the pill (see .multi-table-page__lobby-tab--tournament in the CSS).
+        <div
+          className="multi-table-page__lobby-tab multi-table-page__lobby-tab--tournament"
+          onClickCapture={handleLobbyLinkCapture}
         >
-          ← Lobby
-        </button>
-        <TournamentDetails tournamentIdOverride={table.lobbyTournamentId} />
-      </div>
-    ) : (
-      <div className="multi-table-page__lobby-tab" onClickCapture={handleLobbyLinkCapture}>
-        {renderTakeSeatBar()}
-        {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
-      </div>
-    );
+          {renderTakeSeatBar()}
+          <button
+            className="multi-table-page__lobby-back"
+            onClick={() => clearLobbyTournament(table.id)}
+          >
+            ← Lobby
+          </button>
+          <TournamentDetails tournamentIdOverride={table.lobbyTournamentId} />
+        </div>
+      ) : (
+        <div className="multi-table-page__lobby-tab" onClickCapture={handleLobbyLinkCapture}>
+          {renderTakeSeatBar()}
+          {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
+        </div>
+      )}
+    </InTabLobbyContext.Provider>
+  );
 
   /* The urgency auto-switch that lived here is DELETED — see the NO AUTO
      TABLE SWITCHING law above. The urgency ALERT (bell, tab flash, haptics,
@@ -2332,6 +2421,45 @@ export default function MultiTablePage() {
       if (current && !isLobbyTab(current)) navigate(`/table/${current.id}`, { replace: true });
     }
   }, [routeTableId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * ─── THE BACKSTOP: A TOURNAMENT ROUTE CANNOT STRAND OPEN TABLES ──────────
+   *
+   * Dan 2026-08-28: "YOUR ACTION BAR STAYS AT THE TOP 100% OF THE TIME."
+   *
+   * `useAppNavigate` stops this at the source, which is where it should be
+   * stopped — no flash, no history entry, no unmount. But "100%" is a promise
+   * about every call site that exists today AND every one somebody adds next
+   * month, and an inventory of call sites is exactly the kind of thing that
+   * silently goes stale (this bug IS a stale inventory: the click-capture
+   * guard was written against lobby rows that were anchors, and they stopped
+   * being anchors). So the route itself is the last line: land on
+   * /tournaments/:id with tables open, and the container claims it back.
+   *
+   * Deliberately narrow, three ways:
+   * - Only when tabs are actually open. With nothing running, /tournaments/:id
+   *   is an ordinary page and is left completely alone.
+   * - Only when `openTournamentTab` says it took it. At the table cap it
+   *   returns false and the route stands, so a player can always still READ a
+   *   tournament page.
+   * - `replace`, and to the table the player was last looking at, so Back goes
+   *   where they came from rather than bouncing between the two URLs.
+   */
+  useEffect(() => {
+    const match = matchPath('/tournaments/:tournamentId', location.pathname);
+    const tournamentId = match?.params.tournamentId;
+    if (!tournamentId) return;
+    const open = tablesRef.current;
+    if (open.length === 0) return;
+    const returnTo =
+      open.find((t) => t.id === lastActiveTableIdRef.current && !isLobbyTab(t)) ??
+      open.find((t) => !isLobbyTab(t));
+    // Nothing but lobby tabs open: there is no /table URL to put back, and the
+    // container would hide itself again the moment we redirected. Leave it.
+    if (!returnTo) return;
+    if (!openTournamentTab(tournamentId)) return;
+    navigate(`/table/${returnTo.id}`, { replace: true });
+  }, [location.pathname, openTournamentTab, navigate]);
 
   // Remember the last REAL table the player had on screen, so the dock can
   // send them back to it rather than to whichever tab happens to be oldest.

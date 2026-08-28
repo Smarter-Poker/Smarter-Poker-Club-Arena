@@ -6,7 +6,12 @@
  */
 
 import { useState, useEffect, memo } from 'react';
-import { useNavigate } from 'react-router-dom';
+/* Dan 2026-08-28: this card is the SatellitesTab of TournamentDetails, which
+   MultiTablePage renders inside a lobby tab. All three of its navigate calls
+   target /tournaments/:id, and every one of them used to drop a seated player
+   off /table/* - action bar and all. useAppNavigate keeps them in the tab and
+   is plain useNavigate everywhere else. See InTabLobbyContext.tsx. */
+import { useAppNavigate } from '../../context/InTabLobbyContext';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import styles from './TournamentLobbyCard.module.css';
@@ -127,7 +132,7 @@ export function lateRegState(opts: {
 }
 
 function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCardProps) {
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
   const { user } = useAuthUser();
   const [registering, setRegistering] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);

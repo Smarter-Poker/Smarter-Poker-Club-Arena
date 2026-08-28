@@ -37,7 +37,13 @@
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useParams, useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
+import { useParams, useLocation, useSearchParams, Link } from 'react-router-dom';
+/* Dan 2026-08-28: this page renders BOTH as the /tournaments/:id route and
+   inside a MultiTablePage lobby tab (tournamentIdOverride). In the tab, a hop
+   to another tournament must stay in the tab. Its /table/:id navigations are
+   untouched - useAppNavigate deliberately only rewrites /tournaments/:id.
+   See InTabLobbyContext.tsx. */
+import { useAppNavigate } from '../../context/InTabLobbyContext';
 import { tournamentService } from '../../services/TournamentService';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -95,7 +101,7 @@ export default function TournamentDetails({
   const { tournamentId: routeTournamentId } = useParams<{ tournamentId: string }>();
   const [searchParams] = useSearchParams();
   const tournamentId = tournamentIdOverride || routeTournamentId;
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
   const location = useLocation();
   const { user } = useAuthUser();
   const toast = useToast();
@@ -1129,9 +1135,18 @@ export default function TournamentDetails({
     return (
       <div className="tournament-details error">
         <h2>Tournament Not Found</h2>
-        <Link to="/clubs" className="btn btn-primary">
-          Back To Clubs
-        </Link>
+        {/* Dan 2026-08-28: "Back To Clubs" is a real anchor to a route OUTSIDE
+            /table/*, so in the in-tab lobby it did the exact thing this whole
+            change exists to stop - one 404 satellite and the action bar, the
+            tab strip and every running game's container were gone. In the tab
+            the way back is MultiTablePage's own "Lobby" pill, rendered
+            directly above this; offering a second, destructive one is worse
+            than offering none. On the real route the link is unchanged. */}
+        {!tournamentIdOverride && (
+          <Link to="/clubs" className="btn btn-primary">
+            Back To Clubs
+          </Link>
+        )}
       </div>
     );
   }

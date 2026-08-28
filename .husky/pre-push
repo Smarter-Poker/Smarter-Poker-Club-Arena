@@ -219,6 +219,15 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   # consult the request. Nineteen did not on 2026-08-27; one let any member
   # rewrite a club's member_count, another pays chips. Scoped to the migrations
   # this branch adds, because supabase/migrations/ is intentionally stale.
+  # An insert that omits a NOT NULL column with no default cannot land, and the
+  # error lands in a catch. Whole-tree and currently at zero, so any new one is
+  # this push's doing.
+  if [ -f scripts/ci/check-required-columns.mjs ]; then
+    if ! node scripts/ci/check-required-columns.mjs; then
+      echo "[club-arena pre-push] BLOCKED: an insert omits a column its table requires."
+      FAIL=1
+    fi
+  fi
   if [ -f scripts/ci/check-definer-authorization.mjs ]; then
     DEF_BASE=$(git merge-base HEAD origin/main 2>/dev/null || echo "HEAD~1")
     if ! node scripts/ci/check-definer-authorization.mjs "$DEF_BASE"; then

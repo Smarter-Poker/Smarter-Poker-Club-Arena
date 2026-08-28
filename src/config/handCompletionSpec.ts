@@ -98,6 +98,32 @@ export const HAND_COMPLETION = {
   /** The next hand's dealing animation (cardDealIn / heroCardDeal). */
   DEAL_MS: 700,
   /**
+   * ── THE END-OF-HAND CADENCE, COMPLETED (Dan 2026-08-27) ──
+   *
+   * Verbatim: "IDENTIFY WINNING HAND(S), DISPLAY THE NAME OF THE WINNING
+   * HAND(S), PUSH POT ANIMATION PLUS THE +XXX TOTAL ANIMATION, PAUSE 1
+   * SECOND, MOVE THE BUTTON ANIMATION... START DEALING NEXT HAND."
+   *
+   * The first three beats already existed (SHOWDOWN_READ / POT_PUSH with the
+   * riding "+N" float). These two complete the sentence:
+   *
+   * POST_PUSH_PAUSE_MS — one full second of rest after the pot has landed and
+   * the cards are mucked, BEFORE anything about the next hand happens. The
+   * engine's hold includes it, so the next hand physically cannot start
+   * inside the pause.
+   */
+  POST_PUSH_PAUSE_MS: 1000,
+  /**
+   * BUTTON_MOVE_MS — the dealer puck's glide to its new seat is its own beat,
+   * played by the CLIENT at HAND_STARTED (the button's new seat is only known
+   * once the new hand's state arrives): the puck slides (600ms CSS transition
+   * + 100ms settle) and ONLY THEN do the cards fly. TablePage delays the deal
+   * animation start by this much; it is deliberately NOT part of the engine
+   * hold, because adding it there would double-count the beat (the engine
+   * would wait 700ms in which no client can yet know where the button goes).
+   */
+  BUTTON_MOVE_MS: 700,
+  /**
    * ── RUN IT TWICE reveal timeline (PokerBros parity, 2026-08-26) ──
    *
    * A run-it-twice hand settles synchronously on the server, but the CLIENT
@@ -137,6 +163,14 @@ export interface HandCompletionOpts {
   ritRuns?: number;
   /** Run It Twice: streets each board re-dealt (1 = river-only, 3 = full). */
   ritStreetsPerRun?: number;
+  /**
+   * How many award groups the client will animate — one per pot(-half) that
+   * pays somebody: main pot, each side pot, and each half of a hi-lo split.
+   * The client fires them POT_AWARD_STAGGER_MS apart (TablePage's
+   * buildAwardGroups), so a hand paying three groups is animating for
+   * 2 x stagger LONGER than a single-winner hand. Default 1.
+   */
+  potAwardGroups?: number;
 }
 
 /**
@@ -149,8 +183,25 @@ export function handCompletionHoldMs(opts: HandCompletionOpts): number {
   if (opts.bbjHit) return H.BBJ_CELEBRATION_MS;
 
   // Beats 2-4 happen on every hand, showdown or not: the bets sweep in, the
-  // pot travels with its total, the cards are mucked.
-  const push = H.BETS_SWEEP_MS + H.POT_PUSH_MS + H.MUCK_MS;
+  // pot travels with its total, the cards are mucked — and then the table
+  // RESTS for a full second (Dan 2026-08-27) before the next hand may open.
+  // (The button glide is the client's beat at HAND_STARTED — see
+  // BUTTON_MOVE_MS above for why it is not added here.)
+  //
+  // MULTI-POT FIX 2026-08-28. POT_AWARD_STAGGER_MS was defined for this file
+  // and then read ONLY by the client: the engine held a flat 4500ms however
+  // many winners there were, while the client fires each award group 900ms
+  // after the last. Measured from the WINNERS tick, one group's "+N" float
+  // ended at T+7400 inside a T+7500 hold (100ms to spare), TWO groups ended
+  // at T+8300 and THREE at T+9200 — so on any all-in with a side pot, and on
+  // every hi-lo split, the last winner's chip fan and the number telling them
+  // what they won were wiped mid-flight by the board clear. Exactly the
+  // truncation this file's header was written to eliminate, surviving in the
+  // multi-winner case because the arithmetic only ever described one.
+  const groups = Math.max(1, Math.floor(opts.potAwardGroups ?? 1));
+  const staggerTail = (groups - 1) * H.POT_AWARD_STAGGER_MS;
+  const push =
+    H.BETS_SWEEP_MS + H.POT_PUSH_MS + H.MUCK_MS + H.POST_PUSH_PAUSE_MS + staggerTail;
 
   if (!opts.wentToShowdown) return push;
 

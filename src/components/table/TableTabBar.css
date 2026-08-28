@@ -222,51 +222,16 @@
   line-height: 1.2;
 }
 
-/* Turn dot / timer badge */
-.table-tab-bar__turn-dot {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 8px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: 9px;
-  background: #3fb950;
-  color: #ffffff;
-  font-size: 0.625rem;
-  font-weight: 700;
-  animation: turnDotPulse 1s ease-in-out infinite;
-  flex-shrink: 0;
-}
+/* The turn badge and its two keyframes were DELETED 2026-08-28 (Dan, mobile
+   pass item 3: "THE ACTION PILL SHOULD ONLY EVER SHOW THE CARDS (CENTERED IN
+   THE PILL) AND THE DISAPPEARING TIMER BAR... THATS IT, NO COUNTDOWN CLOCK OR
+   ANYTHING ELSE.").
 
-.table-tab-bar__tab--urgent .table-tab-bar__turn-dot {
-  background: #ef4444;
-  animation: turnDotUrgent 0.5s ease-in-out infinite;
-}
-
-@keyframes turnDotPulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.7;
-    transform: scale(0.85);
-  }
-}
-
-@keyframes turnDotUrgent {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.6;
-    transform: scale(0.8);
-  }
-}
+   `.table-tab-bar__turn-dot` was a green "14s" badge that sat in flow beside
+   the mini-cards, which pushed them off the pill's centre for exactly as long
+   as it was the hero's turn. The clock it carried is the `__timer-bar` below,
+   which drains and turns red on its own. Removed here rather than left as dead
+   CSS so nothing can render it back into the row by accident. */
 
 /* ─────────────────────────────────────────────────────────────────────────────
    MINI HOLE-CARD PREVIEW (PokerBros parity — Dan 2026-08-20)
@@ -450,18 +415,18 @@
    ADD TABLE "+" BUTTON
    ───────────────────────────────────────────────────────────────────────────── */
 
+/* Dan 2026-08-28: the + is now the metallic circled-plus artwork (inline SVG
+   in TableTabBar.tsx). The button itself is chromeless — no dashed outline,
+   no background — because the SVG carries the whole ring. */
 .table-tab-bar__add {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 36px;
   height: 36px;
-  border: 1.5px dashed rgba(255, 255, 255, 0.15);
+  border: none;
   border-radius: 50%;
   background: transparent;
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 1.25rem;
-  font-weight: 300;
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
@@ -469,10 +434,15 @@
   padding: 0;
 }
 
-.table-tab-bar__add:hover {
-  border-color: rgba(255, 255, 255, 0.3);
-  color: rgba(255, 255, 255, 0.6);
-  background: rgba(255, 255, 255, 0.05);
+.table-tab-bar__add-icon {
+  width: 100%;
+  height: 100%;
+  display: block;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+}
+
+.table-tab-bar__add:hover .table-tab-bar__add-icon {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55)) brightness(1.15);
 }
 
 .table-tab-bar__add:active {
@@ -681,17 +651,10 @@
   /* The inline × close control was removed 2026-08-26 (Dan: no off-button
      inside the action pills) — its desktop and mobile rules went with it. */
 
-  /* Turn badge and action chip share the pill with the label, so both shrink
-     with it — at their desktop sizes either one ate more than half of a 55px
-     pill and pushed the game code into an ellipsis. */
-  .table-tab-bar__turn-dot {
-    min-width: 6px;
-    height: 14px;
-    padding: 0 3px;
-    font-size: 0.5rem;
-    border-radius: 7px;
-  }
-
+  /* The action chip shares the pill with the label, so it shrinks with it — at
+     its desktop size it ate more than half of a 55px pill and pushed the game
+     code into an ellipsis. (The turn badge that used to be tuned here too was
+     deleted 2026-08-28; see the note where its base rule was.) */
   .table-tab-bar__action-chip {
     height: 13px;
     padding: 0 3px;
@@ -709,22 +672,28 @@
   }
 
   /* ── Dan 2026-08-26 mobile pass, item 1: "the action pills need to be large
-     enough to see ALL cards displayed inside them." Two changes together make
-     that guarantee:
-
-       1. A cards-mode pill is released from the four-way width split
-        (max-width: none). The strip already scrolls when the pills outgrow
-        the viewport — the documented fallback — and a scrolling strip with
-        every card whole beats four fixed pills with the 4th card clipped.
-       2. The ACTIVE cards pill reserves real right padding for the floating
-        X disc, which used to land ON the outermost card. */
+     enough to see ALL cards displayed inside them." A cards-mode pill is
+     released from the four-way width split (max-width: none). The strip
+     already scrolls when the pills outgrow the viewport — the documented
+     fallback — and a scrolling strip with every card whole beats four fixed
+     pills with the 4th card clipped. */
   .table-tab-bar__tab.table-tab-bar__tab--cards {
     max-width: none;
   }
 
+  /* Dan 2026-08-28: "ALL ACTION PILLS SHOULD HAVE THE CARDS CENTERED, THEY
+     SHOULD NEVER BE LEFT JUSTIFIED."
+
+     The active cards pill used to reserve 15px on the right for the floating
+     × disc (`padding-left: 4px; padding-right: 15px`). The × was removed on
+     2026-08-26, but the reserve stayed behind — and an 11px one-sided pad
+     shifts the pill's content box left of its true middle, which is exactly
+     the leftward lean Dan photographed on the "A♠ 6♦" pill. Symmetric padding
+     keeps the content box concentric with the pill, so the pill's own
+     `justify-content: center` lands the cards on its real midpoint. */
   .table-tab-bar__tab--active.table-tab-bar__tab--cards {
     padding-left: 4px;
-    padding-right: 15px;
+    padding-right: 4px;
   }
 
   /* 3-4 cards (PLO4): 4x12 + 3 gaps = 51px; the pill grows to carry it (see

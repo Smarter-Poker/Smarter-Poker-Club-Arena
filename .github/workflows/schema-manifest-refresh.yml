@@ -29,6 +29,8 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # The live DEFINER-exposure audit below raises its alarm as an issue.
+  issues: write
 
 concurrency:
   group: schema-manifest-refresh
@@ -123,3 +125,83 @@ jobs:
       # Push with GITHUB_TOKEN does not trigger workflows, so the PR's CI needs
       # one click on "Approve workflows to run". That is intentional: a manifest
       # refresh loosens a safety gate, so a human should look at it.
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # THE SWEEP THAT FOUND NINETEEN, REPEATED EVERY DAY.
+  #
+  # check-definer-authorization stops a new unauthenticated SECURITY DEFINER
+  # writer arriving through a MIGRATION IN THIS REPOSITORY. It cannot see the
+  # live database, and this estate applies schema straight to production through
+  # the Supabase MCP - which is how all three of the most recent ones arrived,
+  # two of them found by this job's very first run.
+  #
+  # It lives here because this workflow already holds the service-role key and
+  # already runs daily. Its own job, so a schema-manifest problem and a security
+  # finding cannot mask each other.
+  # ───────────────────────────────────────────────────────────────────────────
+  definer-exposure:
+    name: No unaccounted DEFINER writer is reachable from a browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Ask production which DEFINER writers a browser can reach
+        id: audit
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          node scripts/ci/audit-live-definer-exposure.mjs 2>&1 | tee /tmp/definer-exposure.log
+
+      # A red job in a scheduled workflow is a tree nobody hears fall. The
+      # finding has to arrive somewhere a person looks.
+      - name: Raise the alarm
+        if: failure() && steps.audit.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          TITLE="Definer exposure: a SECURITY DEFINER writer is reachable from a browser"
+          # The plain list endpoint, never --search: the search index is
+          # eventually consistent and two sweeps have filed duplicate issues in
+          # this estate that way before.
+          N=$(gh issue list --repo "$REPO" --state open --limit 100 --json number,title \
+                --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty" 2>/dev/null)
+          BODY=$(printf '%s\n' \
+            "The daily live audit found a SECURITY DEFINER function a browser role can execute, that WRITES, and that never consults auth.uid(), auth.role() or auth.jwt()." \
+            "" \
+            "SECURITY DEFINER runs it as an owner with BYPASSRLS, so the table policies are not standing behind it either." \
+            "" \
+            '```' \
+            "$(sed -e 's/\x1b\[[0-9;]*m//g' /tmp/definer-exposure.log | head -60)" \
+            '```' \
+            "" \
+            "Nineteen of these were closed on 2026-08-27 and two more on 2026-08-28. This issue closes itself on the next clean run." \
+            "" \
+            "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          if [ -n "${N:-}" ]; then
+            gh issue comment "$N" --repo "$REPO" --body "$BODY" || echo "::error::could not comment on #$N"
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" --body "$BODY" || echo "::error::could not open the issue"
+          fi
+
+      - name: Close the alarm when production is clean again
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          TITLE="Definer exposure: a SECURITY DEFINER writer is reachable from a browser"
+          N=$(gh issue list --repo "$REPO" --state open --limit 100 --json number,title \
+                --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty" 2>/dev/null)
+          [ -n "${N:-}" ] || exit 0
+          gh issue comment "$N" --repo "$REPO" --body "Recovered. Every DEFINER writer a browser can reach is now accounted for in scripts/ci/definer-exposure-baseline.json. Closing." || true
+          gh issue close "$N" --repo "$REPO" || true

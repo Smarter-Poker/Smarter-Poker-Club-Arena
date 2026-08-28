@@ -25,11 +25,31 @@ import {
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
-import { bombPotSettingsFromTable } from './BombPotScheduler.js';
+import { bombPotSettingsFromTable, resolveBombPotVariant } from './BombPotScheduler.js';
 
 import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { handCompletionHoldMs, boardClearMs } from '../config/handCompletionSpec.js';
+
+/**
+ * The number of award groups the CLIENT will animate for this hand.
+ *
+ * Must stay in step with TablePage's `buildAwardGroups`, which groups the
+ * pot_awards payload by (board, pot index, hi/lo half) and fires one chip fan
+ * plus one "+N" float per group, POT_AWARD_STAGGER_MS apart. The engine needs
+ * the COUNT (not the contents) so its post-hand hold covers the last group.
+ */
+function countAwardGroups(
+  awards: Array<{ potIndex: number; low: boolean; board?: number; amount: number }>
+): number {
+  const keys = new Set<string>();
+  for (const a of awards) {
+    // A zero-amount entry animates nothing, so it must not lengthen the hold.
+    if (!(a.amount > 0)) continue;
+    keys.add(`${a.board ?? 1}:${a.potIndex}:${a.low ? 'lo' : 'hi'}`);
+  }
+  return Math.max(1, keys.size);
+}
 import { collectNitEvictions } from '../services/supabase/nitGame.js';
 
 export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
@@ -197,6 +217,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             if (!this.knownPlayerIds.has(p.user_id)) {
               if (!this.returningFromSitout.has(p.user_id) && !this.isTournamentTable()) {
                 this.registerWaitForBB(p.user_id);
+              } else if (this.isTournamentTable()) {
+                // B2 2026-08-27: a tournament arrival cannot be held out for a
+                // hand, so it is classified instead — see noteTournamentArrival.
+                this.noteTournamentArrival(p.seat_number, p.user_id);
               }
               this.knownPlayerIds.add(p.user_id);
             }
@@ -210,6 +234,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           if (!currentIds.has(id)) {
             this.knownPlayerIds.delete(id);
             this.waitingForBB.delete(id);
+            // B2: a player who has left owes this table nothing. If they come
+            // back they are a fresh arrival and get classified again.
+            this.mustPostBB.delete(id);
           }
         }
         // POST-TO-ENTER RACE FIX 2026-08-27: a queued intent from someone no
@@ -392,6 +419,20 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                 );
               }
             })()
+          );
+        } else {
+          // THE TOURNAMENT COUNTERPART — see releaseDeadTournamentSeats().
+          // A cash table has swept its own dead seats on every idle tick since
+          // 2026-08-15; a tournament table had nothing of its own and relied
+          // entirely on the 5-second sweep in TournamentManager reaching it.
+          //
+          // Placed HERE, above the active-player filter, for the same reason
+          // the add-on sweep is: a chair freed this tick has to be free for
+          // THIS hand, not the next one.
+          await this.withStepBudget(
+            'release_dead_tournament_seats',
+            ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+            this.releaseDeadTournamentSeats()
           );
         }
 
@@ -576,6 +617,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             // Streets each board still deals: flop at 3 cards, turn at 4,
             // river at 5 — count the stops past the shared base board.
             ritStreetsPerRun: [3, 4, 5].filter((n) => n > this.currentHandRitBaseBoardCount).length,
+            // MULTI-POT FIX 2026-08-28: how many award groups the client is
+            // about to animate, counted the SAME way it groups them — one per
+            // (board, pot, hi/lo half) that actually pays. Without this the
+            // hold was flat and the last winner's "+N" float was cut off by
+            // the board clear on every side pot and every hi-lo split.
+            potAwardGroups: countAwardGroups(this.currentHandPerPotAwards),
           });
 
           // Phase 1: the completion sequence actually plays out.
@@ -836,6 +883,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 + bomb metadata are per-hand.
     this.currentHandCommunityCards3 = [];
     this.currentHandBombPot = null;
+    this.currentHandVariant = null;
     this.currentHandWinnersByBoard = [];
     // SHOWDOWN POLISH 2026-08-25: per-pot award breakdown is per-hand.
     this.currentHandPerPotAwards = [];
@@ -847,6 +895,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandPots = [];
     this.currentHandContributions.clear(); // Bible V8 §4.18: Reset equal-share rakeback tracking (FIX 144)
     this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
+    this.currentHandCashoutRedirects = new Map(); // EV CASHOUT 2026-08-28: reset per hand
     this.currentHandShowdownResults = []; // BBJ: Reset showdown results for new hand
     this.currentHandTimerLog = []; // Bible V8 §2.15: Reset timer log
     this.currentHandNotificationLog = []; // Bible V8 §2.16: Reset notification log
@@ -1100,14 +1149,51 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // in. The decision is made HERE, once per hand, at the hand boundary; a
     // hand already in progress can never become a bomb pot (spec §4.1).
     let bombPotConfig: HandConfig['bombPot'];
+    let bombHandVariant: string | null = null;
     {
       const schedulerSettings = bombPotSettingsFromTable(this.tableInfo);
+      // TIMED PERSISTENCE (spec §4.3): resume the persisted clock on the
+      // scheduler's first hand after an engine restart. seedNextDueAt only
+      // fills an EMPTY clock, so this is a no-op every hand thereafter.
+      if (schedulerSettings.enabled && schedulerSettings.triggerMode === 'timed') {
+        const persisted = Date.parse(this.tableInfo.bomb_pot_next_due_at ?? '');
+        if (Number.isFinite(persisted)) this.bombPotScheduler.seedNextDueAt(persisted);
+      }
       const decision = this.bombPotScheduler.noteHandStart(
         schedulerSettings,
         dealerSeat,
         players.length,
         Date.now()
       );
+      // Persist the timed clock whenever it moved — the first sighting sets
+      // it, and a consumed bomb resets it. Fire-and-forget: a failed write
+      // costs at most one interval of drift after the NEXT restart, which is
+      // exactly what it costs today on every restart.
+      if (schedulerSettings.enabled && schedulerSettings.triggerMode === 'timed') {
+        const dueAt = this.bombPotScheduler.nextBombDueAt(schedulerSettings);
+        const dueAtIso = dueAt !== null ? new Date(dueAt).toISOString() : null;
+        if (dueAtIso !== (this.tableInfo.bomb_pot_next_due_at ?? null)) {
+          this.tableInfo.bomb_pot_next_due_at = dueAtIso;
+          // Promise.resolve turns the PostgrestBuilder thenable into a real
+          // Promise so the house .catch rule (noUnhandledRejections.test.ts)
+          // is satisfiable — a transport throw must never surface as an
+          // unhandled rejection.
+          void Promise.resolve(
+            supabase
+              .from('tables')
+              .update({ bomb_pot_next_due_at: dueAtIso })
+              .eq('id', this.tableId)
+          )
+            .then(({ error }) => {
+              if (error) {
+                console.warn('[BombPot] timed due-at persistence failed:', error.message);
+              }
+            })
+            .catch((err: unknown) => {
+              console.warn('[BombPot] timed due-at persistence threw:', err);
+            });
+        }
+      }
       if (decision.isBombPot) {
         // Board count: the canonical 1-3 column wins; the legacy double-board
         // boolean maps to 2. HandController still downgrades stepwise if the
@@ -1127,6 +1213,27 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           anteFixed: anteFixed > 0 ? anteFixed : undefined,
           triggerReason: decision.triggerReason,
         };
+        // VARIANT OVERRIDE (spec §10.1): an NLH table can deal PLO bomb
+        // hands. resolveBombPotVariant whitelists the value — anything
+        // unknown means "same as table", never a half-understood game.
+        const tableVariant = this.dealtGameVariant();
+        const resolved = resolveBombPotVariant(tableVariant, this.tableInfo.bomb_pot_variant);
+        if (resolved !== tableVariant) {
+          // Deck feasibility for the OVERRIDE variant: a 9-handed table
+          // overridden to PLO6 would need 54 hole cards from a 52-card deck.
+          // The multi-board downgrade in HandController assumes hole cards
+          // fit; hole cards that do not fit mean the override — not the
+          // boards — must yield, and the hand deals as the table's own game.
+          const holeNeed = players.length * holeCardCount(resolved) + 5;
+          if (holeNeed <= deckSizeFor(resolved)) {
+            bombHandVariant = resolved;
+          } else {
+            console.warn(
+              `[BombPot] variant override ${resolved} skipped: ${players.length} players need ` +
+                `${holeNeed} cards > ${deckSizeFor(resolved)}-card deck — dealing ${tableVariant}`
+            );
+          }
+        }
       }
     }
 
@@ -1182,10 +1289,32 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       }
     }
 
+    // B2 2026-08-27: the seats posting a live-big-blind-only this hand. Two
+    // sources, one list — cash "post BB to enter", and tournament arrivals that
+    // took a seat the big blind had just passed (see `mustPostBB`). Both are a
+    // single live big blind into the pot, so chips are conserved; HandController
+    // skips anyone who is the small or big blind this hand, which is what makes
+    // "never two big blinds in one orbit" true by construction.
+    const bbOnlyPostSeats: { seat: number }[] = [];
+    if (!this.isTournamentTable() && this.postingBBToEnter.size > 0) {
+      for (const p of players) {
+        if (this.postingBBToEnter.has(p.user_id)) bbOnlyPostSeats.push({ seat: p.seat_number });
+      }
+    }
+    if (this.isTournamentTable() && this.mustPostBB.size > 0) {
+      for (const p of players) {
+        if (this.mustPostBB.has(p.user_id)) bbOnlyPostSeats.push({ seat: p.seat_number });
+      }
+    }
+
     const config: HandConfig = {
       tableId: this.tableId,
       handNumber,
-      gameVariant: this.dealtGameVariant() as GameVariant,
+      // VARIANT OVERRIDE (spec §10.1): a bomb hand may play a different
+      // variant from the table. Everything downstream — evaluator, hole-card
+      // count, betting structure, horse equity, hand history — reads the
+      // HAND's variant, so this one assignment is the entire override.
+      gameVariant: (bombHandVariant ?? this.dealtGameVariant()) as GameVariant,
       smallBlind: this.tableInfo.small_blind,
       bigBlind: this.tableInfo.big_blind,
       /* FIX-219: Bible V8 §4.3 — Respect ante_enabled toggle; if disabled, zero
@@ -1228,12 +1357,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               .map((p) => ({ seat: p.seat_number }))
           : undefined,
       // AUDIT FIX 2026-07-19: "Post BB to enter" players post a live BB only.
-      bbOnlyPosts:
-        !this.isTournamentTable() && this.postingBBToEnter.size > 0
-          ? players
-              .filter((p) => this.postingBBToEnter.has(p.user_id))
-              .map((p) => ({ seat: p.seat_number }))
-          : undefined,
+      // B2 2026-08-27: tournament arrivals that owe a big blind join the same list.
+      bbOnlyPosts: bbOnlyPostSeats.length > 0 ? bbOnlyPostSeats : undefined,
       // RAKE-AUDIT 2026-07-24: tournament pots are NEVER raked and never pay a
       // BBJ fee — the house take for tournaments/SNGs is the 10% entry fee at
       // buy-in. Pre-fix the cash schedule (10% + cap) was deducted from every
@@ -1269,6 +1394,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         minPlayersDealt: fullRakeConfig.rules.minPlayersDealt,
       },
     };
+
+    // VARIANT OVERRIDE (spec §10.1): remember what THIS hand is being played
+    // as — Settlement writes hand_history.game_variant from this, and it must
+    // say plo4 on a PLO4 bomb hand even at an NLH table.
+    this.currentHandVariant = config.gameVariant;
 
     this.handController = new HandController(config, hcPlayers, dealerSeat);
 
@@ -1339,6 +1469,20 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     }
     if (this.postingBBToEnter.size > 0) {
       this.postingBBToEnter.clear();
+    }
+    // B2 2026-08-27: a tournament arrival's big blind is settled the moment it
+    // is actually taken. Anyone sitting in the SMALL blind this hand was skipped
+    // by bbOnlyPosts (charging them would have been a blind on top of a blind),
+    // so they stay on the hook for the next hand — they pay the small blind now
+    // and the big blind then, which is one ordinary blind cycle in reverse
+    // order, not an extra one. Everyone else has either just been charged or is
+    // the big blind and posted it themselves.
+    if (this.mustPostBB.size > 0) {
+      for (const p of players) {
+        if (this.mustPostBB.has(p.user_id) && p.seat_number !== sbSeat) {
+          this.mustPostBB.delete(p.user_id);
+        }
+      }
     }
 
     // Step 4: Record initial chip totals for state verification
@@ -1698,6 +1842,159 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           `[ServerTableEngine:${this.tableId}] Dead-table recovery: Horse ${horse.username} left — insufficient treasury funds`
         );
       }
+    }
+  }
+
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  GHOST SEATS IN TOURNAMENTS (2026-08-28)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * The tournament counterpart of recoverBustedSeatedHorses() above, which a
+   * tournament table has never had. A cash table sweeps its own dead seats
+   * every idle tick; a tournament table had exactly one thing looking after
+   * it — the 5-second elimination sweep in TournamentManager — and when that
+   * sweep is late, or is looking at a table this process has no engine for,
+   * the chair simply stays occupied.
+   *
+   * WHAT A GHOST SEAT COSTS, and why this is not cosmetic. It holds a chair
+   * at a table other players are waiting to fill. It counts toward the
+   * four-table limit, so the account cannot be seated anywhere else. And it
+   * cannot act, so every orbit spends a full turn timer folding a player who
+   * is not there.
+   *
+   * ── THE DIVISION OF LABOUR IS DELIBERATE ──
+   *
+   * This method NEVER eliminates anybody. Eliminating is assigning a
+   * finishing place and paying a prize against it, and the places have to be
+   * handed out from one place that can see the whole field — the sweep does
+   * that, with a lot of hard-won care about distinct positions and
+   * double-pays. An engine that eliminated locally would be a second writer
+   * of finishing places, which is the exact shape of the 206 duplicated
+   * places found on 2026-08-27.
+   *
+   * So this method only does what is unambiguous and local: if the field
+   * already says you are OUT, you do not keep the chair. The status write
+   * happened somewhere else; only the release was lost.
+   *
+   * ── HORSES ARE PLAYERS (CLAUDE.md 10.5) ──
+   *
+   * There is no is_horse test here, and there must not be one. A human whose
+   * seat release failed is sitting in the same ghost chair for the same
+   * reason, and the reported case being a horse (ShoveWhale, 22 minutes) says
+   * nothing about who it happens to. Same rule, same sweep, same everybody.
+   */
+  private ghostSeatFirstSeen: Map<string, number> = new Map();
+
+  /** A bust that the sweep has not resolved within this long is escalated. */
+  private static readonly GHOST_SEAT_ESCALATE_MS = 120_000;
+
+  protected async releaseDeadTournamentSeats(): Promise<void> {
+    const tournamentId = this.tableInfo?.tournament_id;
+    if (!tournamentId || this.seatedPlayers.length === 0) return;
+
+    const seatedIds = this.seatedPlayers.map((p) => p.user_id);
+    const { data: entrants, error } = await supabase
+      .from('tournament_players')
+      .select('user_id, status')
+      .eq('tournament_id', tournamentId)
+      .in('user_id', seatedIds);
+
+    // An unreadable roster is UNKNOWN, not "everybody is fine". Releasing a
+    // chair on a failed read would take a live player off the felt mid-hand,
+    // which is far worse than a ghost that waits one more tick.
+    if (error || !entrants) return;
+
+    const statusById = new Map<string, string>();
+    for (const row of entrants) {
+      const r = row as { user_id?: string; status?: string };
+      if (r.user_id) statusById.set(r.user_id, r.status || '');
+    }
+
+    const now = Date.now();
+    const stillSeated = new Set<string>();
+    const released: string[] = [];
+
+    for (const player of this.seatedPlayers) {
+      const status = statusById.get(player.user_id);
+      stillSeated.add(player.user_id);
+
+      // ── CASE 1: the field says they are out, and the chair proves nobody
+      // told the table. Release it. This is the lost-release case: the status
+      // write committed and releaseTournamentSeat() did not, or the process
+      // died between the two.
+      if (status === 'eliminated' || status === 'winner') {
+        await markSeatAsLeft(this.tableId, player.user_id, player.seat_number);
+        this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
+        this.timeBankEngine.removePlayer(this.tableId, player.user_id);
+        this.straddleEngine.removePlayer(this.tableId, player.user_id);
+        this.preActionEngine.removePlayer(this.tableId, player.user_id);
+        this.ghostSeatFirstSeen.delete(player.user_id);
+        released.push(player.user_id);
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Ghost seat released: ${player.username} is ${status} but was still holding seat ${player.seat_number}`
+        );
+        continue;
+      }
+
+      // ── CASE 2: no roster row at all for a seated player. They are not in
+      // this tournament, so the seat is a leftover from a table this id was
+      // recycled through. Same release, different cause.
+      if (status === undefined) {
+        await markSeatAsLeft(this.tableId, player.user_id, player.seat_number);
+        this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
+        this.timeBankEngine.removePlayer(this.tableId, player.user_id);
+        this.straddleEngine.removePlayer(this.tableId, player.user_id);
+        this.preActionEngine.removePlayer(this.tableId, player.user_id);
+        this.ghostSeatFirstSeen.delete(player.user_id);
+        released.push(player.user_id);
+        reportError(
+          new Error(
+            `[ServerTableEngine:${this.tableId}] seat held by ${player.user_id.slice(0, 8)} who has no row in tournament ${tournamentId.slice(0, 8)} — released`
+          ),
+          'ServerTableEngine.tournament_seat_without_entrant'
+        );
+        continue;
+      }
+
+      // ── CASE 3: busted, still 'playing'. NOT ours to resolve — the sweep
+      // owes them a finishing place and possibly a prize, and it may simply
+      // be a few seconds behind, or they may be inside their rebuy window.
+      // But a bust that nobody has resolved in two minutes is the reported
+      // defect, and it should be loud rather than silent. Escalated once, to
+      // the same watchdog that already catches horse_seat_unactable.
+      if (player.stack <= 0) {
+        const firstSeen = this.ghostSeatFirstSeen.get(player.user_id);
+        if (firstSeen === undefined) {
+          this.ghostSeatFirstSeen.set(player.user_id, now);
+        } else if (
+          now - firstSeen >= ServerTableEngineDealing.GHOST_SEAT_ESCALATE_MS &&
+          now - firstSeen < ServerTableEngineDealing.GHOST_SEAT_ESCALATE_MS + 60_000
+        ) {
+          reportError(
+            new Error(
+              `[ServerTableEngine:${this.tableId}] ${player.username} has held seat ${player.seat_number} at 0 chips for ${Math.round(
+                (now - firstSeen) / 1000
+              )}s in tournament ${tournamentId.slice(0, 8)} and is still 'playing' — the elimination sweep is not reaching this table`
+            ),
+            'ServerTableEngine.tournament_ghost_seat'
+          );
+        }
+      } else {
+        this.ghostSeatFirstSeen.delete(player.user_id);
+      }
+    }
+
+    // A chair freed above has to be free for the hand about to be dealt, not
+    // the one after it — the same reason the add-on sweep runs where it does.
+    if (released.length > 0) {
+      this.seatedPlayers = this.seatedPlayers.filter((sp) => !released.includes(sp.user_id));
+    }
+
+    // Anybody who left the table by any other route stops being tracked, or
+    // this map grows for the life of the process.
+    for (const [userId] of this.ghostSeatFirstSeen) {
+      if (!stillSeated.has(userId)) this.ghostSeatFirstSeen.delete(userId);
     }
   }
 }

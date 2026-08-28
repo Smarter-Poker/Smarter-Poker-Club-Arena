@@ -72,7 +72,6 @@ async function mountTabBar(page: Page) {
       <button class="table-tab-bar__tab table-tab-bar__tab--turn" id="tabTurn">
         <span class="table-tab-bar__tab-label"><span class="table-tab-bar__tab-name">NLH 1/2</span>
         <span class="table-tab-bar__tab-sub">Pot 120</span></span>
-        <span class="table-tab-bar__turn-dot" id="turnDot">12s</span>
       </button>
       <button class="table-tab-bar__tab" id="tabIdle">
         <span class="table-tab-bar__tab-label"><span class="table-tab-bar__tab-name" id="idleCode">PLO5</span>
@@ -109,20 +108,22 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
     await mountTabBar(page);
   });
 
-  test('a background table calling for action pulses, and its badge ticks', async ({ page }) => {
+  /* The `table-tab-bar__turn-dot` countdown badge was DELETED 2026-08-28 (Dan:
+     "THE ACTION PILL SHOULD ONLY EVER SHOW THE CARDS (CENTERED IN THE PILL) AND
+     THE DISAPPEARING TIMER BAR... THATS IT"). The pill's own pulse and the
+     draining bar are what remain, and both are still pinned below. */
+  test('a background table calling for action pulses', async ({ page }) => {
     const b = await beat(page, `void 0;`);
     expect(b.pulseGlow, 'the turn tab must pulse gold').toBe(800);
-    expect(b.turnDotPulse, 'the countdown badge must breathe').toBe(1000);
   });
 
-  test('urgency goes red: tab pulse, badge, and the timer bar itself', async ({ page }) => {
+  test('urgency goes red: the tab pulse and the timer bar itself', async ({ page }) => {
     const b = await beat(
       page,
       `$('tabTurn').classList.add('table-tab-bar__tab--urgent');
        $('timerBar').classList.add('table-tab-bar__timer-bar--urgent');`
     );
     expect(b.tabUrgentPulse, 'an urgent tab must pulse red').toBe(800);
-    expect(b.turnDotUrgent, 'the badge must switch to the urgent cadence').toBe(500);
     expect(b.timerBarUrgent, 'the depleting bar must pulse in the final seconds').toBe(500);
   });
 

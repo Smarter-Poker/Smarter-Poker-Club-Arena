@@ -68,6 +68,7 @@ import type {
   RakeConfig,
 } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { logInsuranceOfferEvent } from '../services/supabase/insuranceOfferLog.js';
 import type { TableStateHub } from '../transport/TableStateHub.js';
 import {
   createTableStateMachine,
@@ -246,6 +247,26 @@ export abstract class ServerTableEngineBase {
 
   // Bible V8 §4.2: Players waiting for BB position before they can play
   protected waitingForBB: Set<string> = new Set();
+
+  // B2 2026-08-27 — TOURNAMENT ARRIVALS OWE A BIG BLIND, AND NOTHING COLLECTED IT.
+  //
+  // Every entry mechanism this engine has was switched off for tournament
+  // tables: registerWaitForBB is a no-op for them, `deadBlinds` and
+  // `bbOnlyPosts` were both gated on `!isTournamentTable()`. So a late
+  // registrant, or a player the balancer moved in, was dealt in wherever they
+  // happened to land and paid NOTHING until the blinds reached them — up to a
+  // full free orbit if they landed on the seat the big blind had just passed,
+  // which the seat-number-order placement in TableBalancer handed out at random.
+  //
+  // This set is the tournament counterpart of `postingBBToEnter`: a live big
+  // blind (chip-conserving — it goes into the pot as a real bet), charged once,
+  // on the arrival's first dealt hand. HandController's bbOnlyPosts handler
+  // skips anyone sitting in the small or big blind that hand, so this can never
+  // produce two big blinds inside one orbit. Membership survives the hand a
+  // player spends in the small blind seat and is settled on the next one, which
+  // is the ordinary blind cycle run backwards (SB then BB) rather than an extra
+  // charge.
+  protected mustPostBB: Set<string> = new Set();
 
   // POST-TO-ENTER RACE FIX 2026-08-27 (Dan: "the post to get dealt in
   // feature in cash games isn't working"): a brand-new joiner is only
@@ -507,7 +528,16 @@ export abstract class ServerTableEngineBase {
     trigger_reason: string;
     ante_amount: number;
     board_count: number;
+    /** VARIANT OVERRIDE 2026-08-28: the variant the bomb hand was dealt as. */
+    variant?: string;
   } | null = null;
+  /**
+   * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant the CURRENT hand
+   * was dealt as, captured at hand start. Settlement writes hand_history from
+   * this rather than from tableInfo.game_variant, which lies on every
+   * variant-override bomb hand. Null between hands.
+   */
+  protected currentHandVariant: string | null = null;
   /**
    * Round 2: per-board winner breakdown from the WINNERS event (double board
    * only). Amounts are PRE-rake shares — clients use board + handName for
@@ -595,6 +625,12 @@ export abstract class ServerTableEngineBase {
   protected currentHandPots: { index: number; amount: number; eligible: string[] }[] = [];
   protected currentHandContributions: Map<string, number> = new Map(); // userId → totalInvested
   protected currentHandInsuranceSettlements: InsuranceSettlement[] = [];
+  /**
+   * EV CASHOUT 2026-08-28: pot winnings clawed back to the bank for each
+   * cashed-out player this hand (what the bank actually collected, post-
+   * clamp). Feeds the insurance ledger's bank-in side.
+   */
+  protected currentHandCashoutRedirects: Map<string, number> = new Map();
   protected currentHandBBJHit: BBJDetectionResult | null = null;
   protected currentHandBBJPayoutConfig: ServerRakeConfigResult | null = null;
   /**
@@ -1048,7 +1084,9 @@ export abstract class ServerTableEngineBase {
       if (
         event.type === 'INSURANCE_ACCEPTED' ||
         event.type === 'INSURANCE_DECLINED' ||
-        event.type === 'INSURANCE_SETTLED'
+        event.type === 'INSURANCE_SETTLED' ||
+        // EV CASHOUT 2026-08-28: the third decision, table-wide like the others.
+        event.type === 'INSURANCE_CASHED_OUT'
       ) {
         try {
           const playerId = String((event as Record<string, unknown>).playerId ?? '');
@@ -1056,12 +1094,44 @@ export abstract class ServerTableEngineBase {
             this.seatedPlayers.find((p) => p.user_id === playerId)?.username || 'Player';
           this.hub?.emitEvent(this.tableId, {
             ...(event as unknown as Record<string, unknown>),
-            type: event.type.toLowerCase(), // insurance_accepted / insurance_declined / insurance_settled
+            type: event.type.toLowerCase(), // insurance_accepted / _declined / _settled / _cashed_out
             username,
             table_id: this.tableId,
           });
         } catch {
           /* broadcast failure is non-fatal */
+        }
+        // OBSERVABILITY 2026-08-28: the decision funnel, durable. 'offered'
+        // rows come from broadcastInsuranceOffers; these are the outcomes.
+        // Fire-and-forget — the log must never touch gameplay.
+        try {
+          const ev = event as unknown as Record<string, unknown>;
+          logInsuranceOfferEvent({
+            tableId: this.tableId,
+            clubId: this.tableInfo?.club_id ?? null,
+            handNumber: this.handCount,
+            playerId: String(ev.playerId ?? ''),
+            event:
+              event.type === 'INSURANCE_ACCEPTED'
+                ? 'accepted'
+                : event.type === 'INSURANCE_DECLINED'
+                  ? (ev.source === 'timeout' ? 'timeout' : 'declined')
+                  : event.type === 'INSURANCE_CASHED_OUT'
+                    ? 'cashed_out'
+                    : 'settled',
+            equityPercent: typeof ev.equity === 'number' ? ev.equity : null,
+            premium: typeof ev.premium === 'number' ? ev.premium : null,
+            insuredAmount:
+              typeof ev.insuredAmount === 'number'
+                ? ev.insuredAmount
+                : typeof ev.cashoutAmount === 'number'
+                  ? ev.cashoutAmount
+                  : null,
+            pot: null,
+            street: null,
+          });
+        } catch {
+          /* observability failure is non-fatal */
         }
       }
     });
@@ -1187,6 +1257,21 @@ export abstract class ServerTableEngineBase {
    * "Pineapple PLO" is not a game and a stray flag must not silently turn a
    * PLO table into one.
    */
+  /**
+   * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant of the hand that is
+   * LIVE right now — the HandController's own config when a hand is running
+   * (which carries the bomb-pot override variant on override hands), the
+   * table's dealt variant otherwise. This is the ONE seam every "what game is
+   * this hand" consumer reads: bettingStructureFields (the snapshot the
+   * client's bet slider obeys), the legal-action clamps in Turns, the horse
+   * evaluator's variant, and the hand-history write. Reading
+   * tableInfo.game_variant directly at any of those sites would deal a PLO
+   * bomb hand and then price it like Hold'em.
+   */
+  protected activeHandVariant(): string {
+    return this.handController?.getGameVariant?.() ?? this.dealtGameVariant();
+  }
+
   protected dealtGameVariant(): string {
     const variant = String(this.tableInfo?.game_variant || 'nlh').toLowerCase();
     if (variant === 'pineapple') return 'pineapple';
@@ -2745,7 +2830,7 @@ export abstract class ServerTableEngineBase {
           // BOMB POT STANDARDIZATION 2026-08-27: the five new canonical
           // columns ride along — board count, trigger mode, timed interval,
           // minimum players and fixed ante.
-          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed'
+          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant'
         )
         .eq('id', this.tableId)
         .maybeSingle();
@@ -2762,6 +2847,7 @@ export abstract class ServerTableEngineBase {
           (tableRow as any).bomb_pot_interval_seconds ?? null;
         this.tableInfo.bomb_pot_min_players = (tableRow as any).bomb_pot_min_players ?? undefined;
         this.tableInfo.bomb_pot_ante_fixed = (tableRow as any).bomb_pot_ante_fixed ?? null;
+        this.tableInfo.bomb_pot_variant = (tableRow as any).bomb_pot_variant ?? null;
       }
       const clubId = this.tableInfo?.club_id;
       if (clubId) {

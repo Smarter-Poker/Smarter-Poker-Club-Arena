@@ -15,6 +15,7 @@ import { monteCarloEquity } from './MonteCarloEquity.js';
 import { getEquityPool } from './equity/EquityWorkerPool.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { insuranceEquity, leaderOuts } from './InsuranceEquity.js';
+import { logInsuranceOfferEvent } from '../services/supabase/insuranceOfferLog.js';
 import {
   evaluateHand,
   evaluateOmahaHand,
@@ -293,7 +294,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    */
   public respondToInsurance(
     userId: string,
-    response: 'accept' | 'decline',
+    response: 'accept' | 'decline' | 'cashout',
     coveragePercent: number = 100,
     // POKERBROS PARITY 2026-08-26 (Dan): "IF A PLAYER DECLINES, THEY DON'T GET
     // OFFERED AGAIN." There is no street-only decline any more. The parameter
@@ -308,6 +309,17 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   } {
     if (!this.insuranceEngine.isEnabled(this.tableId)) {
       return { success: false, error: 'Insurance is not enabled at this table' };
+    }
+
+    // EV CASHOUT 2026-08-28: third answer to the offer — lock pot x equity
+    // (minus the fee) now. The hand still runs out; settlement pays the
+    // locked amount and redirects the player's actual winnings to the bank.
+    if (response === 'cashout') {
+      const r = this.insuranceEngine.acceptEvCashout(this.tableId, userId);
+      if (!r.ok) {
+        return { success: false, error: 'No pending EV cashout offer for this player' };
+      }
+      return { success: true, status: 'cashed_out', insuredAmount: r.amount };
     }
 
     if (response === 'accept') {
@@ -1565,6 +1577,41 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * exact (<=990 boards) and preflop samples 6,000 boards with a seeded
    * PRNG - the CSPRNG syscall storm that motivated the worker is gone.
    */
+  /**
+   * INSURABLE POT 2026-08-28 (Dan's recording follow-up): the number the
+   * dialog calls "Pot" is the amount the LEADER actually collects by winning,
+   * so two corrections on top of the contested pot:
+   *
+   *   1. SIDE POTS — a short-stacked leader is only eligible for the pots
+   *      their chips are in. computeLivePots() gives per-pot eligibility;
+   *      insure only the leader's eligible share.
+   *   2. RAKE + BBJ — the winner is paid pot minus rake minus the jackpot
+   *      drop. Winners are scaled proportionally at settlement
+   *      (scaleWinnerCentsForRake), so the leader's net share is
+   *      eligible x (total - rake - bbj) / total.
+   *
+   * Falls back to the gross pot if the controller cannot answer (never
+   * refuse an offer over a display refinement).
+   */
+  public computeInsurablePot(leaderId: string, grossPot: number): number {
+    try {
+      if (!this.handController || grossPot <= 0) return grossPot;
+      const pots = this.handController.computeLivePots();
+      let total = 0;
+      let eligible = 0;
+      for (const p of pots) {
+        total += p.amount;
+        if (p.eligiblePlayers.includes(leaderId)) eligible += p.amount;
+      }
+      if (!(total > 0) || !(eligible > 0)) return grossPot;
+      const { rake, bbjFee } = this.handController.computeRakeAndBBJ();
+      const netFrac = Math.max(0, (total - rake - bbjFee) / total);
+      return Math.round(eligible * netFrac * 100) / 100;
+    } catch {
+      return grossPot;
+    }
+  }
+
   protected computeInsurancePricing(
     leaderId: string,
     allInForOffer: Array<{
@@ -1804,6 +1851,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       );
     }
 
+    // INSURABLE POT 2026-08-28: the offer prices what the leader can actually
+    // COLLECT — their eligible side-pot share, net of rake + BBJ drop — not
+    // the gross contested pot. "For Winning: pot − fee" is now literal.
+    const insurablePot = bestHandPlayer
+      ? this.computeInsurablePot(bestHandPlayer.playerId, pot)
+      : pot;
+
     // Check if this is the first street of offers or a recalculation
     const existingOffers = this.insuranceEngine.getOffers(this.tableId);
 
@@ -1816,14 +1870,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           bestHandPlayer.playerId, // ONLY the leader is offered; priced vs the rest
           allInForOffer,
           result.board,
-          pot,
+          insurablePot,
           variant,
           isShortDeckInsurance,
           leaderPricing
         );
 
         if (offers.length > 0) {
-          this.broadcastInsuranceOffers(offers, pot, offerTimeout, {
+          this.broadcastInsuranceOffers(offers, insurablePot, offerTimeout, {
             board: result.board,
             allInPlayers,
             outs: leaderOuts(
@@ -1863,14 +1917,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             bestHandPlayer.playerId,
             allInForOffer,
             result.board,
-            pot,
+            insurablePot,
             variant,
             isShortDeckInsurance,
             leaderPricing
           );
 
           if (offers.length > 0) {
-            this.broadcastInsuranceOffers(offers, pot, offerTimeout, {
+            this.broadcastInsuranceOffers(offers, insurablePot, offerTimeout, {
               board: result.board,
               allInPlayers,
               outs: leaderOuts(
@@ -1994,6 +2048,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       const unseen = Math.max(1, deckSize - known);
       outPct = Math.round((context.outs.length / unseen) * 1000) / 10;
     }
+    // COUNTDOWN HONESTY 2026-08-28: the popup used to count down from a
+    // seconds-remaining number that was already stale by the time it rendered
+    // (the recording opened at 23s of a 25s window). An absolute deadline
+    // survives transit and reconnects; timeoutSeconds stays for old clients.
+    const deadlineAt = Date.now() + timeoutSeconds * 1000;
     this.hub?.emitEvent(this.tableId, {
       type: 'insurance_offers',
       table_id: this.tableId,
@@ -2004,6 +2063,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       outs: context?.outs ?? [],
       outCount: context?.outs.length ?? 0,
       outPct,
+      deadlineAt,
       offers: offers.map((o) => ({
         playerId: o.playerId,
         username: nameOf(o.playerId),
@@ -2028,8 +2088,29 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         atRisk: o.atRisk,
         rate: o.fullPremium > 0 ? Math.round((o.fullInsuredAmount / o.fullPremium) * 10) / 10 : 0,
         timeoutSeconds,
+        deadlineAt,
+        // EV CASHOUT 2026-08-28: the third choice, server-priced.
+        evCashoutAmount: o.evCashoutAmount,
       })),
     });
+
+    // OBSERVABILITY 2026-08-28: record the offer itself. Accept/decline/
+    // timeout/cashout/settle are logged from the engine event forwarder in
+    // ServerTableEngineBase; without this row the funnel has no denominator.
+    for (const o of offers) {
+      logInsuranceOfferEvent({
+        tableId: this.tableId,
+        clubId: this.tableInfo?.club_id ?? null,
+        handNumber: this.handCount,
+        playerId: o.playerId,
+        event: 'offered',
+        equityPercent: o.equity,
+        premium: o.fullPremium,
+        insuredAmount: o.fullInsuredAmount,
+        pot,
+        street,
+      });
+    }
   }
 
   /**
@@ -2063,7 +2144,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_insurance_response');
         }
       },
-      900 + (this.handCount % 4) * 150
+      // HORSES ARE PLAYERS 2026-08-28 (section 10.5 — "TIMING IS PART OF THE
+      // TREATMENT"): the old ~1s decline was a TELL. A human leader stops the
+      // table for up to 25s while they read the dialog; a table that rolled on
+      // after one second told every watching player which seat was a horse —
+      // the exact rhythm leak Dan rejected on the rebuy pause. A horse now
+      // "reads the offer" for a humanlike 5-12s before declining. Pace cost is
+      // bounded: a decline is FINAL for the hand (2026-08-26), so a hand pays
+      // this pause once per leader, not once per street.
+      5000 + Math.floor(Math.random() * 7000)
     );
   }
 

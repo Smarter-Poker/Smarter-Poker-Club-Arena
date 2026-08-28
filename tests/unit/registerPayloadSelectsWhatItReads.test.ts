@@ -36,6 +36,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceCall } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -124,7 +125,7 @@ describe('a buy-in payload can only read what its own query selected', () => {
       expect(at, `${file} must build a payload`).toBeGreaterThan(-1);
       // The payload object, generously bounded — long enough to cover the whole
       // argument, short enough not to swallow the rest of the component.
-      const payload = src.slice(at, at + 2000);
+      const payload = sliceCall(src, 'registerMtt(');
 
       const selected = selectedColumns(src);
       expect(selected.size, `${file} must contain at least one .select()`).toBeGreaterThan(0);

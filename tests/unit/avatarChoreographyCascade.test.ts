@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceCssRule } from '../helpers/sourceWindow';
 
 /**
  * Guards the CASCADE of avatarChoreography.css, not its content.
@@ -202,8 +203,7 @@ describe('avatarChoreography.css cascade', () => {
     }
     // It must also switch off the INFINITE idle, which is not a gesture class
     // and so is not covered by SeatSlot declining to apply gesture classes.
-    const block = CSS.slice(CSS.indexOf('.seat__avatar-wrap--rigged {'));
-    expect(block.slice(0, 120)).toContain('animation: none');
+    expect(sliceCssRule(CSS, '.seat__avatar-wrap--rigged {')).toContain('animation: none');
   });
 
   it('gives the rig canvas the same geometry as the bust it replaces', () => {

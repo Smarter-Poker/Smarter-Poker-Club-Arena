@@ -55,6 +55,71 @@ let viewportHolders = 0;
 let viewportOriginal: string | null = null;
 let viewportMetaCreated: HTMLMetaElement | null = null;
 
+/**
+ * THE WAKE LOCK IS ALSO ONE PER DOCUMENT (2026-08-28).
+ *
+ * The header above states the rule — "if the answer involves a document-level
+ * singleton, it belongs behind the refcount" — and the viewport tag obeys it.
+ * The wake lock did not: every mounted table requested its own sentinel and
+ * attached its own `visibilitychange` listener, so four tables meant four
+ * sentinels for one screen and four simultaneous re-requests on every
+ * visibility change. `useTabKeepAlive` refcounts its AudioContext and Worker
+ * for exactly this reason; this is the same shape, and it was the one that
+ * was missed.
+ */
+let wakeLockHolders = 0;
+let wakeLockSentinel: WakeLockSentinel | null = null;
+let wakeLockRequestInFlight: Promise<void> | null = null;
+
+async function requestSharedWakeLock(): Promise<void> {
+  if (!('wakeLock' in navigator)) return;
+  if (wakeLockHolders === 0) return; // released while we were waiting
+  if (wakeLockSentinel && !wakeLockSentinel.released) return;
+  // Collapse concurrent requests (four tables reacting to one
+  // visibilitychange) into a single in-flight request.
+  if (wakeLockRequestInFlight) return wakeLockRequestInFlight;
+  wakeLockRequestInFlight = (async () => {
+    try {
+      const sentinel = await navigator.wakeLock.request('screen');
+      // Nobody left holding it by the time it arrived: release immediately
+      // rather than leaking a sentinel nothing will ever release.
+      if (wakeLockHolders === 0) {
+        await sentinel.release().catch(() => {});
+      } else {
+        wakeLockSentinel = sentinel;
+      }
+    } catch {
+      // Not supported, or denied (a hidden tab always denies) — ignore.
+    } finally {
+      wakeLockRequestInFlight = null;
+    }
+  })();
+  return wakeLockRequestInFlight;
+}
+
+function onWakeLockVisibilityChange(): void {
+  // A hidden tab drops the lock; take it back when the player returns.
+  if (document.visibilityState === 'visible') void requestSharedWakeLock();
+}
+
+function acquireWakeLock(): () => void {
+  wakeLockHolders += 1;
+  if (wakeLockHolders === 1) {
+    document.addEventListener('visibilitychange', onWakeLockVisibilityChange);
+  }
+  void requestSharedWakeLock();
+  return () => {
+    wakeLockHolders = Math.max(0, wakeLockHolders - 1);
+    // LAST TABLE OUT releases. Closing one of four tables must not let the
+    // screen dim on the three still dealing.
+    if (wakeLockHolders > 0) return;
+    document.removeEventListener('visibilitychange', onWakeLockVisibilityChange);
+    const sentinel = wakeLockSentinel;
+    wakeLockSentinel = null;
+    sentinel?.release().catch(() => {});
+  };
+}
+
 export function useTableEnvironment(
   tableId: string | undefined,
   pageRootRef?: RefObject<HTMLElement | null>,
@@ -158,34 +223,10 @@ export function useTableEnvironment(
   }, []);
 
   // ─── SCREEN WAKE LOCK — Prevent screen dimming during active poker play ───
-  useEffect(() => {
-    let wakeLock: WakeLockSentinel | null = null;
-
-    const requestWakeLock = async () => {
-      try {
-        if ('wakeLock' in navigator) {
-          if (wakeLock) await wakeLock.release().catch(() => {});
-          wakeLock = await navigator.wakeLock.request('screen');
-        }
-      } catch {
-        // Wake Lock not supported or denied — ignore
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        requestWakeLock();
-      }
-    };
-
-    requestWakeLock();
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      wakeLock?.release().catch(() => {});
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
+  // Refcounted for the document (see the note beside `wakeLockHolders`):
+  // one sentinel and one visibilitychange listener no matter how many tables
+  // are open, released only when the last one closes.
+  useEffect(() => acquireWakeLock(), []);
 
   // ─── BACKGROUND TAB DETECTION — Pause animations when tab is hidden ───
   useEffect(() => {

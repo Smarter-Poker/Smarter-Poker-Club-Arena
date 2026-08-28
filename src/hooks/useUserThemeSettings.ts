@@ -227,6 +227,60 @@ export function pickThemeRow(rows: ThemeRow[], gameType: CanonicalGameType): The
   return bucketRow ?? allRow;
 }
 
+/* ─── One read per burst, not one per table (perf, 2026-08-28) ──────────────
+ *
+ * Up to FOUR TablePages are mounted at once inside the persistent table
+ * layer, and each one calls this hook. The query below is keyed on `user_id`
+ * ALONE — the bucket is resolved in memory by `pickThemeRow` — so four
+ * mounts issued four byte-identical queries for the same user on every table
+ * open. This is the same amplification #1601 fixed for `user_table_settings`,
+ * in the hook right next door; the remedy is copied from it deliberately,
+ * down to the reasoning.
+ *
+ * THE CACHE IS THE IN-FLIGHT PROMISE, NOT THE RESULT. It is dropped as soon
+ * as it settles, so this can only ever collapse a burst of simultaneous
+ * mounts. A table opened later still reads the database, and a theme write is
+ * never served a stale row. No TTL to tune, no invalidation to forget.
+ */
+const themeRowsQuery = (userId: string) =>
+  supabase
+    .from('user_theme_settings')
+    .select('game_type, theme_id, table_id, button_id, background_id, cards_id, updated_at')
+    .eq('user_id', userId);
+
+type ThemeRowsResult = Awaited<ReturnType<typeof themeRowsQuery>>;
+
+const inFlightThemeReads = new Map<string, Promise<ThemeRowsResult>>();
+
+export function fetchUserThemeRows(userId: string): Promise<ThemeRowsResult> {
+  const existing = inFlightThemeReads.get(userId);
+  if (existing) return existing;
+
+  // `Promise.resolve` because a PostgREST builder is a THENABLE, not a
+  // Promise: it has `.then` but no `.catch`/`.finally`, so it cannot be
+  // stored or awaited as one.
+  const p = Promise.resolve(themeRowsQuery(userId)).then(
+    (res) => {
+      inFlightThemeReads.delete(userId);
+      return res;
+    },
+    (err) => {
+      // Drop on rejection too, or one network blip wedges every future mount
+      // onto a permanently failed promise.
+      inFlightThemeReads.delete(userId);
+      throw err;
+    }
+  );
+
+  inFlightThemeReads.set(userId, p);
+  return p;
+}
+
+/** Test seam: prove the de-duplication rather than assume it. */
+export function __inFlightThemeReadCount(): number {
+  return inFlightThemeReads.size;
+}
+
 /* ─── First-paint cache (2026-08-28) ────────────────────────────────────────
    Rows, not a resolved selection: caching the rows lets a bucket change (the
    game type arriving, or navigating NLH -> PLO without a remount) re-resolve
@@ -339,10 +393,7 @@ export function useUserThemeSettings(
         // game_type) over seven buckets, so this is a handful of rows at most,
         // and resolving in memory is both cheaper than the old two round trips
         // and the only way to see a row stored under a raw variant key.
-        const { data, error: queryError } = await supabase
-          .from('user_theme_settings')
-          .select('game_type, theme_id, table_id, button_id, background_id, cards_id, updated_at')
-          .eq('user_id', userId);
+        const { data, error: queryError } = await fetchUserThemeRows(userId);
 
         if (!mounted) return;
 

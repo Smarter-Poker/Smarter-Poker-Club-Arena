@@ -195,12 +195,14 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
       ;;
   esac
 
-  # 0. Repo-wide invariants. These normally run in CI as blocking checks, but
-  #    branch protection is UNAVAILABLE on a private repo without GitHub Pro —
-  #    making the repos private (correctly, after keys leaked into history) also
-  #    silently disabled required status checks and rulesets. CI still runs and
-  #    still goes red; nothing enforces it server-side any more. Running the two
-  #    fast guards here is the only enforcement left. Both are ~100ms.
+  # 0. Repo-wide invariants. Both are ~100ms.
+  #
+  #    CORRECTED 2026-08-28. This comment used to say branch protection was
+  #    unavailable without GitHub Pro and that "nothing enforces it server-side
+  #    any more". Checked against the API: ruleset `main protection` (21163380)
+  #    is ACTIVE on main with `bypass_actors: []` and six required checks. It
+  #    enforces. These two guards run here because catching them in 100ms beats
+  #    catching them in a three-minute CI cycle, not because nothing else will.
   if [ -f scripts/ci/check-allin-pointer-events.mjs ]; then
     if ! node scripts/ci/check-allin-pointer-events.mjs; then
       echo "[club-arena pre-push] BLOCKED: all-in action panel would lose pointer events"
@@ -214,27 +216,22 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     fi
   fi
 
-  # 0b. TYPE CHECK — added 2026-08-27.
+  # 0b. TYPE CHECK — added 2026-08-27, re-justified 2026-08-28.
   #
-  #    Check 0 above explains why the two fast guards were pulled out of CI and
-  #    run here: making the repos private silently disabled rulesets and
-  #    required status checks, so CI still goes red and nothing server-side
-  #    refuses the merge. This is the third guard that belongs here, and it is
-  #    the one CLAUDE.md has demanded since the repo began — "run
-  #    `npx tsc --noEmit` before EVERY commit" — while nothing anywhere
-  #    enforced it.
+  #    THIS IS FAST FEEDBACK, NOT ENFORCEMENT. Be clear about that, because the
+  #    commit that added it was not: it claimed a direct push to main went
+  #    unchecked and that this hook was the only gate left. Both were wrong.
+  #    The `main protection` ruleset requires a pull request and six green
+  #    checks, `TypeScript Check` among them, and nobody bypasses it — so a
+  #    type error has never been able to reach main.
   #
-  #    ci.yml DOES run it, as the "TypeScript Check" job. But that job is
-  #    `if: github.event_name == 'pull_request'`, deliberately, for cost. So a
-  #    commit that reaches main any other way is type-checked by nothing:
-  #      - a direct push to main runs no typecheck job at all;
-  #      - the GitHub-API push path in CLAUDE.md section 11 skips husky too,
-  #        so it clears neither gate;
-  #      - and with no ruleset, a red PR check cannot block a merge anyway.
+  #    What it buys is the three minutes between pushing a branch and CI
+  #    telling you what tsc would have told you in four seconds. That is worth
+  #    a hook; pretending it is the last line of defence is not.
   #
   #    COST: about 40s cold, about 4s warm — tsconfig.json already sets
-  #    `incremental` with a tsBuildInfoFile, so only the first run pays. It
-  #    runs at all only when the push touches src/**.ts(x).
+  #    `incremental` with a tsBuildInfoFile, so only the first run pays. Runs
+  #    at all only when the push touches src/**.ts(x).
   #
   #    It SKIPS, loudly, when a worktree has no node_modules — same reasoning
   #    as the formatter in .husky/pre-commit: a gate people wait on is a gate
@@ -247,10 +244,10 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
       if ! "$TSC" --noEmit; then
         echo ""
         echo "[club-arena pre-push] BLOCKED: src/ does not type-check."
-        echo "                      Fix the errors above. Do not push past this:"
-        echo "                      CI's TypeScript Check cannot stop a broken"
-        echo "                      tree from landing on main, because no"
-        echo "                      ruleset is active to make it required."
+        echo "                      Fix the errors above. CI's TypeScript Check"
+        echo "                      is a required check and would refuse this"
+        echo "                      pull request anyway - this just tells you"
+        echo "                      now instead of in three minutes."
         FAIL=1
       fi
     else

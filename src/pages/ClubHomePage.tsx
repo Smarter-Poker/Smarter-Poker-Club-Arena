@@ -85,6 +85,7 @@ import {
 import { useUserStore } from '../stores/useUserStore';
 import LobbyAdStrip from '../components/lobby/LobbyAdStrip';
 import HouseAdCard from '../components/ads/HouseAdCard';
+import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import AdvancedFilters, {
   loadFilters,
   saveFilters,
@@ -3653,6 +3654,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 : 'No Pool'
             }`}
           >
+            <ClubBBJShell className="lobby-bbj__shell" />
             <span className="lobby-bbj__label">Bad Beat Jackpot</span>
             <strong className="lobby-bbj__amount">
               {jackpotAmount > 0

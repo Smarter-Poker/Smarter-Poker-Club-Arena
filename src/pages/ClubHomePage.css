@@ -2122,3 +2122,86 @@
     font-size: 0.82rem;
   }
 }
+
+/* Approved Club Arena BBJ plaque. The amount remains dynamic text in the
+   plaque's blank right-hand bay; the title and frame come from the asset. */
+.lobby-bbj {
+  position: relative;
+  container-type: inline-size;
+  min-height: 0;
+  aspect-ratio: 1600 / 560;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.lobby-bbj:hover,
+.lobby-bbj:active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.lobby-bbj:active {
+  transform: scale(0.99);
+}
+
+.lobby-bbj__shell {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.lobby-bbj__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.lobby-bbj__amount {
+  position: absolute;
+  z-index: 1;
+  left: 42%;
+  right: 5%;
+  top: 29%;
+  bottom: 17%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #eef2f7;
+  font-size: clamp(0.72rem, 8cqw, 1.55rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  text-shadow:
+    0 2px 2px #000,
+    0 0 8px rgba(82, 167, 255, 0.2);
+}
+
+@media (max-width: 640px) {
+  .lobby-top__main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lobby-bbj {
+    width: 100%;
+    min-height: 0;
+  }
+}

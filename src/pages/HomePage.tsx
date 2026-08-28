@@ -21,7 +21,10 @@ import {
   type ReactNode,
   type ErrorInfo,
 } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+/* Dan 2026-08-28: HomePage is the in-tab lobby's fallback branch when no home
+   club is resolved, so it inherits the same rule. See InTabLobbyContext.tsx. */
+import { useAppNavigate } from '../context/InTabLobbyContext';
 import { SHARK_CLUB_ID } from '../lib/constants';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { ClubsService } from '../services/ClubsService';
@@ -139,7 +142,7 @@ function HomePageInner() {
     document.title = 'Home | Smarter Poker';
   }, []);
 
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
   const toast = useToast();
 
   // Component-level mount guard — prevents setState after unmount in user-triggered handlers

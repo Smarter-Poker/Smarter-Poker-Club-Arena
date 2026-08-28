@@ -1,5 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+/* Dan 2026-08-28: the two "seat not confirmed yet" fallbacks below navigate to
+   /tournaments/:id up to 3.6s AFTER the tap, from a hook instance that may live
+   inside the in-tab lobby. useAppNavigate keeps that landing in the tab instead
+   of unmounting the container. See InTabLobbyContext.tsx. */
+import { useAppNavigate } from '../context/InTabLobbyContext';
 import { useUserStore } from '../stores/useUserStore';
 import { tournamentService } from '../services/TournamentService';
 import { supabase } from '../lib/supabase';
@@ -71,7 +75,7 @@ export interface RegisterTournamentParams {
 
 export function useTournamentRegistration() {
   const [isRegistering, setIsRegistering] = useState(false);
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
   const toast = useToast();
   /** Flips synchronously, so a second activation cannot slip past an await. */
   const registeringRef = useRef(false);

@@ -1676,6 +1676,7 @@
     "fn_next_player_number",
     "fn_nit_check",
     "fn_nit_evictions",
+    "fn_no_live_seat_on_finished_game",
     "fn_normalize_chart_value",
     "fn_normalize_username",
     "fn_notification_action_url",

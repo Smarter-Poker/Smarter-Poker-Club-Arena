@@ -17164,6 +17164,12 @@ export default function TablePage({
                      holeCards array is empty, so there is nothing there to
                      count. Only the table knows the variant. */
                   holeCardCount={seatHoleCardCount}
+                  /* Dan 2026-08-28: a Spin waiting on its third seat drew the
+                     two seated players holding face-down hands. A villain's
+                     fan belongs to a HAND — see SeatSlot's `handInPlay`. The
+                     hand number is included because it survives the gaps
+                     between streets where isHandInProgress can dip. */
+                  handInPlay={tableState.isHandInProgress || (tableState.handNumber ?? 0) > 0}
                   showStackInBB={v8Settings.show_stack_in_bb}
                   showAvatar={v8Settings.show_avatars}
                   showBadges={v8Settings.show_badges}

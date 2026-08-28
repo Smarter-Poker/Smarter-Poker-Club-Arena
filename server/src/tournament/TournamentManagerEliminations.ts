@@ -162,25 +162,79 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
          * by the table-move path in TournamentManager, which this layer does
          * not own. It stops them from moving money here.
          */
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  ONE READ FOR THE TOURNAMENT, NOT ONE PER TABLE (2026-08-28)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * This was a `for (const [tableId] of this.tableEngines)` loop issuing
+         * one AWAITED round-trip per table, and it is why the "5-second"
+         * elimination sweep is not a 5-second sweep on a big field.
+         *
+         * MEASURED. `$100 Freeroll 12:00 AM` on 2026-08-28: 326 entrants
+         * across 37 tables. Thirty-seven sequential round-trips at even 150ms
+         * apiece is 5.5 seconds — the sweep could not finish inside its own
+         * interval, so `isProcessingEliminations` dropped the next tick, and
+         * the next. That is the reported symptom exactly: a horse sitting at
+         * 0 chips, not marked eliminated, for 22 minutes, in an event that had
+         * recorded no eliminations at all. Nothing was stuck. The sweep was
+         * simply arriving minutes late, and the bigger the field the later it
+         * arrives — precisely backwards, because a big field is where busts
+         * come fastest.
+         *
+         * One paged query over `tables.tournament_id` instead. Cost no longer
+         * scales with table count, and the lag it was causing goes with it.
+         *
+         * IT ALSO CLOSES A BLIND SPOT. The old loop read `this.tableEngines`,
+         * an IN-MEMORY map. A table this process holds no engine for — adopted
+         * late, created by the balancer between hydrations, or orphaned by a
+         * restart — was invisible: its players' chips were never synced, so
+         * they could never appear in the bust list below, so they could never
+         * be eliminated. Their seats sat there permanently. Reading by
+         * tournament_id covers every table the tournament actually has,
+         * whether or not this process happens to be dealing it.
+         */
         // null = this player holds seats we cannot rank; skip them, do not guess.
         const bestSeat = new Map<string, { chips: number; joinedAt: number } | null>();
-        for (const [tableId] of this.tableEngines) {
-          const { data: seats, error: seatsErr } = await supabase
-            .from('table_seats')
-            .select('user_id, stack, joined_at')
-            .eq('table_id', tableId)
-            .is('left_at', null);
-
-          if (seatsErr) {
+        const SEAT_PAGE = 1000;
+        const seatRows: Array<{
+          user_id: string;
+          stack: number | null;
+          joined_at: string | null;
+        }> = [];
+        for (let page = 0; ; page++) {
+          if (page > 10_000) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] seat read failed on table ${tableId.slice(0, 8)} (${seatsErr.message}) — skipping the whole sweep rather than busting on a partial chip picture`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] seat paging did not terminate — skipping this sweep`
+              ),
+              'Tournament.seat_paging_runaway'
+            );
+            return; // the finally block clears isProcessingEliminations
+          }
+          const { data: chunk, error: seatsErr } = await supabase
+            .from('table_seats')
+            .select('user_id, stack, joined_at, tables!inner(tournament_id)')
+            .eq('tables.tournament_id', this.tournamentId)
+            .is('left_at', null)
+            .order('user_id', { ascending: true })
+            .range(page * SEAT_PAGE, page * SEAT_PAGE + SEAT_PAGE - 1);
+
+          if (seatsErr || !chunk) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] seat read failed (${seatsErr?.message ?? 'null chunk'}) — skipping the whole sweep rather than busting on a partial chip picture`
               ),
               'Tournament.seat_read_failed'
             );
             return; // the finally block clears isProcessingEliminations
           }
+          seatRows.push(...(chunk as unknown as typeof seatRows));
+          if (chunk.length < SEAT_PAGE) break;
+        }
 
+        {
+          const seats = seatRows;
           for (const seat of seats ?? []) {
             // Guard against corrupted stack values (NaN, negative, undefined).
             const stackValue =
@@ -2422,6 +2476,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         .eq('status', 'playing');
       if (aliveErr || !alive) return; // fail closed
       if (alive.length < 2 || alive.length > tableSize) return; // not at final table
+
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  A DEAL NEEDS ONE TABLE, NOT A SHORT HEADCOUNT (2026-08-27, P0)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * The count above is necessary and NOT sufficient. Nine players spread
+       * three-three-three across three felts satisfy it, and unanimity among
+       * those nine would then run `fn_final_table_deal` — an even chip-chop
+       * of the whole undistributed pool — between players sitting at three
+       * separate tables, mid-hand, with two thirds of them unaware the vote
+       * was open. That is the most expensive single write in this file and it
+       * cannot be undone.
+       *
+       * Same gate as the `final_table` announcement in TournamentManager, and
+       * the same UNKNOWN rule: `null` means we could not read the table
+       * layout, and an unreadable layout never authorizes a chop.
+       */
+      const liveTables = await this.countLiveTablesWithPlayers();
+      if (liveTables !== 1) return; // fail closed: not one table, or unknown
 
       const { data: votes, error: votesErr } = await supabase
         .from('tournament_deal_votes')

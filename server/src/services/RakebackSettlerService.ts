@@ -826,32 +826,128 @@ export class RakebackSettlerService {
     }
   }
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE SWEEP COULD NEVER REACH ITS OWN BACKLOG
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * This ran with `p_days: 1` — so 169 underpaid tournaments from May through
+   * August sat permanently outside the window. Nothing else looks at them: the
+   * per-event reconciliation happens at the COMPLETED transition, and this
+   * sweep exists precisely because that path is the one that can fail.
+   *
+   * WIDENING THE WINDOW ALONE ACHIEVES NOTHING, and that is the part worth
+   * writing down. `fn_tournament_payout_sweep(p_days, p_apply, p_limit)` applies
+   * `LIMIT GREATEST(p_limit, 1)` to the SCAN, ordered `updated_at DESC` — not to
+   * the report. A 30-day window with a 200-row limit examines the 200 most
+   * recently touched events and stops, which is roughly what a 1-day window
+   * already did. The window also filters on `updated_at`, not `ended_at`.
+   *
+   * So both numbers move together, or neither is worth moving.
+   *
+   * THE COST, AND WHY IT IS NOT PAID EVERY CYCLE. Measured: ~0.29ms per event,
+   * 2,000 events in 1.09s, and the full 30-day population is 35,042 events —
+   * about ten seconds. This RPC carries no client-side timeout and sits behind
+   * PostgREST's statement timeout, which is single-digit seconds unless the
+   * function raises its own; ten seconds is close enough to that edge to be a
+   * coin flip, and a cancelled statement returns an error rather than a partial
+   * repair. Paying it on all 48 cycles a day to re-scan a backlog that is empty
+   * after the first pass would also be pure waste.
+   *
+   * So the sweep runs NARROW every cycle and DEEP occasionally:
+   *
+   *   - narrow (2 days, 6,000 rows) catches yesterday's failures within 30
+   *     minutes, which is what this sweep is for day to day. Two days, not one,
+   *     because a one-day window on a 30-minute cycle has no overlap to spare
+   *     if a cycle is skipped, and 6,000 rather than a round 2,000 because the
+   *     limit binds the SCAN: a limit under the window's population silently
+   *     shrinks the window back down;
+   *   - deep (30 days, 40,000 rows) runs on the FIRST cycle after boot and then
+   *     every 24th cycle — about twice a day — which is what actually reaches
+   *     the 169 stale events;
+   *   - a deep pass that fails (statement timeout included) does NOT lose the
+   *     cycle: it is reported and the narrow pass runs anyway, so the routine
+   *     work still happens and the next deep attempt is 12 hours away rather
+   *     than never.
+   */
+  private payoutSweepCycles = 0;
+
   private async runTournamentPayoutSweep(): Promise<void> {
+    const deepDue = this.payoutSweepCycles % RakebackSettlerService.PAYOUT_SWEEP_DEEP_EVERY === 0;
+    this.payoutSweepCycles++;
+
+    if (deepDue) {
+      // Its return value is the point: a deep pass that fails must fall
+      // through to the narrow one rather than costing the cycle its sweep.
+      const deepOk = await this.payoutSweepPass(
+        RakebackSettlerService.PAYOUT_SWEEP_DEEP_DAYS,
+        RakebackSettlerService.PAYOUT_SWEEP_DEEP_LIMIT,
+        'deep'
+      );
+      // A deep pass covers the narrow window by definition, so skip the second
+      // scan when it succeeded.
+      if (deepOk) return;
+    }
+    await this.payoutSweepPass(
+      RakebackSettlerService.PAYOUT_SWEEP_RECENT_DAYS,
+      RakebackSettlerService.PAYOUT_SWEEP_RECENT_LIMIT,
+      'recent'
+    );
+  }
+
+  /** Days back the every-cycle pass looks. Overlaps a skipped cycle. */
+  private static readonly PAYOUT_SWEEP_RECENT_DAYS = 2;
+  /**
+   * Rows the every-cycle pass will SCAN — and the limit is on the SCAN, so it
+   * has to EXCEED the window's population or the window is decorative.
+   * Measured 2026-08-27: 35,220 COMPLETED events in 30 days, ~1,174/day, so a
+   * 2-day window normally holds ~2,350. Five times that, ~1.7s of scan.
+   */
+  private static readonly PAYOUT_SWEEP_RECENT_LIMIT = 6000;
+  /** Days back the periodic pass looks — far enough to reach the May backlog. */
+  private static readonly PAYOUT_SWEEP_DEEP_DAYS = 30;
+  /** 35,220 events live in a 30-day window; 40,000 covers it with headroom. */
+  private static readonly PAYOUT_SWEEP_DEEP_LIMIT = 40000;
+  /** Cycles between deep passes. 30-minute cycle, so ~twice a day. */
+  private static readonly PAYOUT_SWEEP_DEEP_EVERY = 24;
+
+  /** @returns true when the pass completed; false when the RPC failed. */
+  private async payoutSweepPass(days: number, limit: number, label: string): Promise<boolean> {
     try {
+      const startedAt = Date.now();
       const { data, error } = await supabase.rpc('fn_tournament_payout_sweep', {
-        p_days: 1,
+        p_days: days,
         p_apply: true,
-        p_limit: 200,
+        // MUST be passed explicitly. Omitting it defaults to 50 and silently
+        // turns any window into "the 50 most recently updated events".
+        p_limit: limit,
       });
       if (error) {
         reportError(
-          new Error(`fn_tournament_payout_sweep failed: ${error.message}`),
+          new Error(
+            `fn_tournament_payout_sweep (${label}: ${days}d/${limit}) failed after ` +
+              `${Date.now() - startedAt}ms: ${error.message}`
+          ),
           'RakebackSettler.tournament_payout_sweep_rpc'
         );
-        return;
+        return false;
       }
-      const findings = Number((data as { tournaments_with_findings?: number } | null)?.tournaments_with_findings ?? 0);
+      const findings = Number(
+        (data as { tournaments_with_findings?: number } | null)?.tournaments_with_findings ?? 0
+      );
       if (findings > 0) {
         const payload = data as { total_top_up?: number; findings?: unknown } | null;
         reportError(
           new Error(
-            `TOURNAMENT PAYOUT: ${findings} completed tournament(s) did not reconcile; topped up ${payload?.total_top_up ?? 0}. Details: ${JSON.stringify(payload?.findings ?? []).slice(0, 1500)}`
+            `TOURNAMENT PAYOUT (${label}: ${days}d/${limit}, ${Date.now() - startedAt}ms): ${findings} completed tournament(s) did not reconcile; topped up ${payload?.total_top_up ?? 0}. Details: ${JSON.stringify(payload?.findings ?? []).slice(0, 1500)}`
           ),
           'RakebackSettler.tournament_payout_unreconciled'
         );
       }
+      return true;
     } catch (err) {
       reportError(err, 'RakebackSettler.tournament_payout_sweep_threw');
+      return false;
     }
   }
 
@@ -926,9 +1022,7 @@ export class RakebackSettlerService {
       for (const u of unions) {
         if ((u.failed?.length ?? 0) > 0) {
           reportError(
-            new Error(
-              `union rake rollup failed for ${u.union_id}: ${JSON.stringify(u.failed)}`
-            ),
+            new Error(`union rake rollup failed for ${u.union_id}: ${JSON.stringify(u.failed)}`),
             'RakebackSettler.rake_rollup_catchup_failed'
           );
         }
@@ -1523,7 +1617,10 @@ export class RakebackSettlerService {
       // on the same rows, so the totals are byte-identical; only the transport
       // changed. (Re-deriving the split in SQL would have moved a remainder
       // cent between players, and rake_generated decides the rakeback tier.)
-      const groups = new Map<string, { club_id: string; period_start: string; period_end: string }>();
+      const groups = new Map<
+        string,
+        { club_id: string; period_start: string; period_end: string }
+      >();
       for (const b of buckets.values()) {
         groups.set(`${b.club_id}|${b.period_start}`, {
           club_id: b.club_id,

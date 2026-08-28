@@ -402,7 +402,24 @@ export interface TablePlayer {
   current_visual_state: SeatVisualState; // CSS class driver
   current_highlight_state: SeatHighlightState; // Glow/border style
   action_pending_here: boolean; // True when it's this seat's turn
-  rebuy_prompt_active: boolean; // Rebuy dialog is showing for this player
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  `rebuy_prompt_active` DELETED 2026-08-27 — IT NEVER EXISTED
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * It was declared here as a non-optional `boolean` on the seat row, and no
+   * such column has ever existed on `table_seats` — nor anywhere else in the
+   * schema. Nothing read it, which is the only reason a required field that is
+   * always `undefined` at runtime never became a crash.
+   *
+   * The real state lives on the TOURNAMENT entry, not the seat, and it is not a
+   * boolean: `tournament_players.rebuy_prompt_until timestamptz NULL`. It is
+   * declared as `TournamentRebuyPrompt` below. A boolean cannot express the
+   * thing that matters here, which is HOW LONG the server is still holding the
+   * seat — the elimination sweep must not eliminate while
+   * `now() < rebuy_prompt_until`, and a client reading a boolean would be right
+   * back to inventing its own window.
+   */
 
   // Bible V8 2.8: Per-hand player state
   manual_time_banks_used_this_hand: number;
@@ -712,6 +729,39 @@ export interface Tournament {
   updated_at?: string;
   settings?: TournamentConfig; // Tournament-specific settings
   [key: string]: any; // For flexibility
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  THE REBUY PROMPT IS A DEADLINE THE SERVER OWNS (2026-08-27)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * `public.tournament_players.rebuy_prompt_until timestamptz NULL`, live in
+ * production. It replaces the `rebuy_prompt_active: boolean` that TablePlayer
+ * declared above and that no database has ever had.
+ *
+ * THE CONTRACT:
+ *   - On bust the server sets `rebuy_prompt_until = now() + window`.
+ *   - The elimination sweep MUST NOT eliminate while `now() < rebuy_prompt_until`.
+ *   - Accepting OR declining clears it, so a decline releases the table at once.
+ *   - NULL means no prompt is open.
+ *
+ * A boolean could not carry this. The client used to hold the rebuy modal for a
+ * flat 120,000 ms of its own choosing while the sweep ran on a five-second
+ * clock: a player who took six seconds to read the price was refused with "No
+ * live seat for this rebuy" for a rebuy they were entitled to, and had already
+ * been stamped with a finishing position. The window has to be a number the
+ * server states and the client reads, and the client may only ever shorten it.
+ *
+ * `tournament_players` carries a SELECT policy and nothing else, so the CLIENT
+ * only ever READS this column: a browser UPDATE returns zero rows with no
+ * error, which is a silent no-op. Writing and clearing it belongs to the engine
+ * and to `process_tournament_rebuy`.
+ *
+ * ISO 8601 string, as PostgREST returns it. Parse with `Date.parse`.
+ */
+export interface TournamentRebuyPrompt {
+  rebuy_prompt_until: string | null;
 }
 
 export type TournamentType = 'mtt' | 'sng' | 'spin' | 'satellite';

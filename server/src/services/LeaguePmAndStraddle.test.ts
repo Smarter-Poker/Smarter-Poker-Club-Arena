@@ -51,8 +51,12 @@ describe('fleet straddle table', () => {
     // Whitespace-tolerant: the pre-commit Prettier wraps this line, and an
     // exact-substring pin broke in CI the first time it did (run 33141442420).
     expect(fleetSrc).toMatch(/straddle_enabled !==\s*\(config\.straddleEnabled === true\)/);
-    expect(fleetSrc).toContain(
-      "select('id, status, union_id, game_variant, small_blind, big_blind, straddle_enabled')"
+    // Dan 2026-08-28 (40BB-200BB law): the reuse lookup now also reads
+    // min_buy_in/max_buy_in so a blind bump resyncs the buy-in band instead
+    // of carrying a stale one. Whitespace-tolerant for the same Prettier
+    // reason as the line above — the longer list wraps.
+    expect(fleetSrc).toMatch(
+      /select\(\s*'id, status, union_id, game_variant, small_blind, big_blind, straddle_enabled, min_buy_in, max_buy_in'\s*\)/
     );
   });
 });

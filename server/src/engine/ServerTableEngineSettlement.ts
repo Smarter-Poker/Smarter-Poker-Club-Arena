@@ -463,7 +463,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           : null;
 
         if (settlement.payout > 0) {
-          // LOSER with insurance: credit payout from union/club bank to table stack
+          // LOSER with insurance: credit payout from union/club bank to table
+          // stack. EV CASHOUT 2026-08-28: a cashed-out player's locked amount
+          // rides the same branch — paid from the bank regardless of outcome.
           if (seatedPlayer) {
             seatedPlayer.stack += settlement.payout;
             insuranceDeltas.set(
@@ -471,7 +473,50 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               (insuranceDeltas.get(settlement.playerId) ?? 0) + settlement.payout
             );
             console.log(
-              `[ServerTableEngine:${this.tableId}] Insurance payout: ${settlement.playerId} lost hand → +$${settlement.payout} from bank`
+              `[ServerTableEngine:${this.tableId}] ${settlement.kind === 'ev_cashout' ? 'EV cashout' : 'Insurance payout'}: ${settlement.playerId} → +$${settlement.payout} from bank`
+            );
+          }
+        }
+
+        // EV CASHOUT 2026-08-28: the bank BOUGHT this player's equity — the
+        // pot share the board actually delivered belongs to the bank, not the
+        // player. Distribution already credited it above (their hand stayed
+        // live), so claw exactly what they won back to the bank. Clamped like
+        // the premium below; a clamp means the bank under-collects and the
+        // same critical alert fires.
+        if (settlement.kind === 'ev_cashout') {
+          const wonAmt =
+            Math.round(
+              this.currentHandWinners
+                .filter((w) => w.userId === settlement.playerId)
+                .reduce((s, w) => s + w.amount, 0) * 100
+            ) / 100;
+          this.currentHandCashoutRedirects.set(settlement.playerId, 0);
+          if (wonAmt > 0 && seatedPlayer) {
+            const before = seatedPlayer.stack;
+            if (wonAmt > before) {
+              await raiseFinancialAlert(
+                'critical',
+                'ServerTableEngine.ev_cashout_redirect_exceeds_stack',
+                `EV cashout redirect ${wonAmt} exceeds stack ${before} for ${settlement.playerId}; clamped and under-collected`,
+                {
+                  tableId: this.tableId,
+                  playerId: settlement.playerId,
+                  redirect: wonAmt,
+                  stack: before,
+                  cashout: settlement.payout,
+                }
+              );
+            }
+            seatedPlayer.stack = Math.max(0, before - wonAmt);
+            const applied = before - seatedPlayer.stack;
+            this.currentHandCashoutRedirects.set(settlement.playerId, applied);
+            insuranceDeltas.set(
+              settlement.playerId,
+              (insuranceDeltas.get(settlement.playerId) ?? 0) - applied
+            );
+            console.log(
+              `[ServerTableEngine:${this.tableId}] EV cashout redirect: ${settlement.playerId} won $${wonAmt} → bank`
             );
           }
         }
@@ -1416,16 +1461,25 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         this.currentHandInsuranceSettlements.length > 0
       ) {
         for (const settlement of this.currentHandInsuranceSettlements) {
+          // EV CASHOUT 2026-08-28: the bank's IN side for a cashout is the
+          // redirected pot winnings (what the bank actually collected after
+          // clamps), logged in the premium column; the OUT side is the locked
+          // cashout in payout. bank_delta = premium − payout keeps working.
+          const bankIn =
+            settlement.kind === 'ev_cashout'
+              ? (this.currentHandCashoutRedirects.get(settlement.playerId) ?? 0)
+              : settlement.premium;
           await logInsuranceSettlement({
             tableId: this.tableId,
             clubId: this.tableInfo.club_id,
             handNumber: this.handCount,
             playerId: settlement.playerId,
             equityPercent: settlement.equity, // FIX-A12: real equity the premium was priced on
-            premium: settlement.premium,
+            premium: bankIn,
             insuredAmount: settlement.insuredAmount,
             payout: settlement.payout,
             playerWon: !settlement.won, // settlement.won = insurance paid out = player lost the hand
+            kind: settlement.kind,
           });
         }
       }

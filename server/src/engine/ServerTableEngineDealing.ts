@@ -848,6 +848,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandPots = [];
     this.currentHandContributions.clear(); // Bible V8 §4.18: Reset equal-share rakeback tracking (FIX 144)
     this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
+    this.currentHandCashoutRedirects = new Map(); // EV CASHOUT 2026-08-28: reset per hand
     this.currentHandShowdownResults = []; // BBJ: Reset showdown results for new hand
     this.currentHandTimerLog = []; // Bible V8 §2.15: Reset timer log
     this.currentHandNotificationLog = []; // Bible V8 §2.16: Reset notification log

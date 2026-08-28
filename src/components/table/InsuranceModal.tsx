@@ -48,6 +48,18 @@ export interface InsuranceOffer {
   /** Server-published offer window in seconds (drives the popup countdown). */
   timeoutSeconds?: number;
   /**
+   * COUNTDOWN HONESTY 2026-08-28: the engine's absolute deadline (epoch ms).
+   * When present the countdown derives from it every tick — no transit-lag
+   * drift, and a reconnect resumes at the true remaining time.
+   */
+  deadlineAt?: number;
+  /**
+   * EV CASHOUT 2026-08-28: the server-priced guaranteed payout (insurable pot
+   * x pot-share equity x (1 - fee)). When present it is displayed verbatim —
+   * the client never invents a money number the server didn't quote.
+   */
+  evCashoutAmount?: number;
+  /**
    * REFERENCE PARITY 2026-08-26: payout multiple on the fee (insured = fee x
    * rate). Server-computed; derived from premiumRate when absent.
    */
@@ -109,7 +121,17 @@ export function InsuranceModal({
   // POKERBROS PARITY 2026-08-26: a LIVE countdown. The prop used to be a
   // static number that rendered "15s" for the whole window; the reference
   // popup visibly counts down to its auto-decline.
-  const [secondsLeft, setSecondsLeft] = useState(offer.timeoutSeconds ?? timeRemaining);
+  // COUNTDOWN HONESTY 2026-08-28: when the engine publishes its absolute
+  // deadline, every tick derives from Date.now() against it — the seconds
+  // shown are the seconds the server will actually wait.
+  const remainingNow = useCallback(
+    () =>
+      offer.deadlineAt
+        ? Math.max(0, Math.ceil((offer.deadlineAt - Date.now()) / 1000))
+        : (offer.timeoutSeconds ?? timeRemaining),
+    [offer.deadlineAt, offer.timeoutSeconds, timeRemaining]
+  );
+  const [secondsLeft, setSecondsLeft] = useState(remainingNow);
 
   useEffect(() => {
     if (isOpen) {
@@ -126,12 +148,15 @@ export function InsuranceModal({
   // offer replaces this one (offer identity changes).
   useEffect(() => {
     if (!isOpen) return;
-    setSecondsLeft(offer.timeoutSeconds ?? timeRemaining);
+    setSecondsLeft(remainingNow());
     const iv = setInterval(() => {
-      setSecondsLeft((s) => (s > 0 ? s - 1 : 0));
+      // Deadline-anchored when available (drift-proof); simple decrement
+      // otherwise (legacy offers without deadlineAt).
+      if (offer.deadlineAt) setSecondsLeft(remainingNow());
+      else setSecondsLeft((s) => (s > 0 ? s - 1 : 0));
     }, 1000);
     return () => clearInterval(iv);
-  }, [isOpen, offer, timeRemaining]);
+  }, [isOpen, offer, timeRemaining, remainingNow]);
 
   // ── Insurance calculations — REFERENCE PARITY 2026-08-26 ──
   // The reference dialog is FEE-first: the player slides the Insurance Fee,
@@ -200,10 +225,15 @@ export function InsuranceModal({
     () => Math.round(offer.potAmount * (offer.equityPercent / 100) * 100) / 100,
     [offer.potAmount, offer.equityPercent]
   );
-  const evCashoutAmount = useMemo(
-    () => Math.round(evRaw * (1 - evCashoutRake) * 100) / 100,
-    [evRaw, evCashoutRake]
-  );
+  // EV CASHOUT 2026-08-28: the server's quote wins — the engine computed it
+  // on the same insurable pot and exact equity it will settle with. The
+  // client formula remains only as a fallback for offers without one.
+  const evCashoutAmount = useMemo(() => {
+    if (typeof offer.evCashoutAmount === 'number' && offer.evCashoutAmount > 0) {
+      return offer.evCashoutAmount;
+    }
+    return Math.round(evRaw * (1 - evCashoutRake) * 100) / 100;
+  }, [offer.evCashoutAmount, evRaw, evCashoutRake]);
   const evRakeAmount = useMemo(() => evRaw - evCashoutAmount, [evRaw, evCashoutAmount]);
 
   // FIX 187: Insurance accept is a financial decision — dedicated sound + haptic

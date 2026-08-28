@@ -71,6 +71,21 @@
   flex-shrink: 0;
 }
 
+/* SCROLL AFFORDANCE 2026-08-28: on short viewports the body scrolls — a
+   sticky gradient at its bottom edge says "there is more below" without
+   stealing a single tap (pointer-events: none). It rides the scroll
+   container, so it vanishes visually at the end of the content. */
+.insurance-modal__body::after {
+  content: '';
+  position: sticky;
+  bottom: -1px;
+  display: block;
+  height: 18px;
+  margin-top: -18px;
+  background: linear-gradient(180deg, rgba(22, 27, 34, 0), rgba(22, 27, 34, 0.92));
+  pointer-events: none;
+}
+
 @keyframes insuranceSlideUpModal {
   from {
     opacity: 0;

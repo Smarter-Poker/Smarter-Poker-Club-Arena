@@ -182,6 +182,8 @@ export interface TableModalsLayerProps {
   onInsuranceAccept: (amount?: number) => void;
   onInsuranceDecline: () => void;
   onInsuranceDeclineForHand: () => void;
+  /** EV CASHOUT 2026-08-28: lock pot x equity now instead of insuring. */
+  onInsuranceEvCashout?: (amount?: number) => void;
 
   // Hand Reveal (show/muck)
   showHandRevealModal: boolean;
@@ -479,6 +481,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     onInsuranceAccept,
     onInsuranceDecline,
     onInsuranceDeclineForHand,
+    onInsuranceEvCashout,
     // Hand Reveal
     showHandRevealModal,
     handRevealWinnerId,
@@ -903,6 +906,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           onAccept={onInsuranceAccept}
           onDecline={onInsuranceDecline}
           onDeclineForHand={onInsuranceDeclineForHand}
+          onEvCashout={onInsuranceEvCashout}
           offer={insuranceOffer}
           timeRemaining={15}
         />

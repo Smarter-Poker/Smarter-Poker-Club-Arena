@@ -122,3 +122,21 @@ describe('the spin frequency denominator is derived, not typed', () => {
     }
   });
 });
+
+describe('the round countdown belongs to a game that is running', () => {
+  /* Found by the hostile-state pass: opening a COMPLETED spin through an old
+     bookmark drew "Round Ends In 0:00" over a game that had ended. It was
+     always wrong — `levelHasStarted` is true for a finished game, which has a
+     started_at — and promoting the clock to its own masthead line is what
+     made it visible. Both the mount read and the live status change now drop
+     the clock when the game is over. */
+  const table = readSrc('pages/TablePage.tsx');
+  it('the mount read refuses to start a clock on a finished game', () => {
+    expect(table).toContain('const gameIsOver =');
+    expect(table).toContain('if (durSec > 0 && levelHasStarted && !gameIsOver) {');
+  });
+  it('a game ending live clears the clock instead of freezing it at 0:00', () => {
+    expect(table).toContain("['COMPLETED', 'CANCELLED', 'FINISHED'].includes(status)");
+    expect(table).toContain('setLevelClock(null);');
+  });
+});

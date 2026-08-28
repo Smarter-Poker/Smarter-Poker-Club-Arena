@@ -103,6 +103,20 @@ export interface PreflopCtx {
   /** V21 DEEP-STACK DISCIPLINE: scale cash 4-bet/5-bet stack-off thresholds
    *  with depth past 120bb. Undefined/false = legacy behavior. */
   deepDiscipline?: boolean;
+  /** V24: enable the Omaha price defense + risk-scaled survival premium.
+   *  Undefined/false keeps the exact pre-V24 arithmetic (ablation). */
+  ploPriceDefense?: boolean;
+  /** V24 BOUNTY (PKO / mystery): share of the prize pool sitting in bounties
+   *  (0 = not a bounty event). A bounty is equity you collect by ELIMINATING
+   *  someone, so it pays to play pots against players you cover. */
+  bountyFactor?: number;
+  /** V24 BOUNTY: hero covers the current raiser, so busting them collects
+   *  their bounty and risks none of hero's own. Undefined = unknown. */
+  coversRaiser?: boolean;
+  /** V24 BOUNTY: the raiser is short enough that this pot can eliminate them
+   *  outright (their stack is inside what is already committed + hero's
+   *  call). The bounty is not just possible, it is LIVE this hand. */
+  raiserBustable?: boolean;
   /** V23 BLIND CLOCK: minutes until the next blind level (undefined = unknown). */
   nextBlindInMin?: number;
   /** V23 BLIND CLOCK: next level's bb over the current bb (1/undefined = flat). */
@@ -218,8 +232,28 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     rand,
   } = ctx;
 
-  // Tournament survival premium tightens everything a notch.
+  // ═══ V24 ICM IS ABOUT RISKING A LIFE, NOT A BLIND (Dan 2026-08-28) ═══════
+  // "I full potted 8 hands in a row and never got called once."
+  //
+  // riskAdd is the survival premium, and it was added to EVERY threshold at
+  // full strength no matter how little the decision risked. Near the money it
+  // reaches 0.12, which pushed the PLO call bar to t(0.54)+0.12 ~= 0.70: a
+  // horse folded 70% of hands rather than call 3.5bb of a 100bb stack getting
+  // better than 3:1. That is not ICM, it is a bug wearing ICM's name.
+  //
+  // ICM prices the chance of BUSTING. A call worth 3% of a stack cannot bust
+  // anybody, so it earns almost none of the premium; a call that puts the
+  // stack in earns all of it. Scaling by the fraction at risk is the whole
+  // fix, and it leaves every jam/stack-off threshold exactly where it was
+  // (those risk everything, so the multiplier is 1).
+  const atRisk = stack > 0 ? Math.min(1, Math.max(0, toCall) / stack) : 1;
+  // Square-root so meaningful-but-not-fatal prices still carry real weight:
+  // 4% of stack -> 20% of the premium, 25% -> 50%, all-in -> 100%.
+  const riskScaled = ctx.ploPriceDefense === true ? ctx.riskAdd * Math.sqrt(atRisk) : ctx.riskAdd;
+  // Thresholds that decide whether to COMMIT keep the full premium; the
+  // price-scaled one is for calls that merely continue.
   const t = (x: number) => clamp01(x * ctx.tightness + ctx.riskAdd);
+  const tCall = (x: number) => clamp01(x * ctx.tightness + riskScaled);
   const strength = raw;
   const bluffBudget = ctx.bluffFreq * ctx.aggression * Math.max(0.4, 1 - 4 * ctx.riskAdd);
 
@@ -425,7 +459,10 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   if (raises === 1) {
     const vs = raiserPosition ?? 'middle';
     let threeBetThresh = t(THREEBET_VS[vs] - (ctx.aggression - 1) * 0.08);
-    let callThresh = t(CALL_VS[vs]) + callers * 0.025 + depthTighten - depthLoosen;
+    // V24: a CALL of a single raise continues the hand, it does not commit
+    // the stack - so it carries the price-scaled survival premium (tCall),
+    // not the full one. See the note on riskScaled above.
+    let callThresh = tCall(CALL_VS[vs]) + callers * 0.025 + depthTighten - depthLoosen;
 
     // Blinds facing a LATE steal prefer 3-bet-or-fold over cold-calling
     // out of position: shift part of the call band into the 3-bet.
@@ -515,7 +552,49 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };
     }
 
-    if (strength >= callThresh - bbDiscount && priceOK) return { a: 'call' };
+    // ═══ V24 OMAHA PRICE DEFENSE (Dan 2026-08-28) ═══════════════════════
+    // PLO equities are COMPRESSED: the worst four cards hold roughly 30%
+    // against the best, where the worst two hold about 12% in holdem. A bar
+    // tuned in NLH percentile space therefore folds hands that are getting a
+    // fine price.
+    //
+    // THE ARITHMETIC, STATED HONESTLY (the first cut of this comment got it
+    // wrong and the test caught it). A pot-sized PLO open to 3.5bb builds a
+    // 5bb pot, so:
+    //   - a COLD CALLER puts in 3.5 to win 8.5  -> 0.41, needs 41% equity.
+    //     Folding a lot there is CORRECT; pot-raise pots are not cheap.
+    //   - the BIG BLIND already has 1bb in, so it puts in 2.5 to win 7.5
+    //     -> 0.33, and folding 70% of hands to that price is a real leak.
+    // The relief below therefore scales with how far the price sits below
+    // even money: the blind gets a lot of it, a cold caller gets a little.
+    // Nothing in NLH changes - there the equity spread is real, and a fixed
+    // percentile means what it says.
+    let callBar = callThresh - bbDiscount;
+    if (ctx.isOmaha && ctx.ploPriceDefense === true) {
+      const odds = toCall / Math.max(1e-9, pot + toCall);
+      const priceRelief = Math.max(0, 0.5 - odds); // BB ~0.17, cold call ~0.09
+      callBar -= priceRelief;
+    }
+
+    // ═══ V24 BOUNTY PULL (PKO / mystery) ════════════════════════════════
+    // A bounty is prize money attached to a PLAYER, and it is collected by
+    // busting them. That makes pots against a covered opponent worth more
+    // than their chips - the exact reason PKO play is looser than a
+    // freezeout - and the brain had NO preflop bounty adjustment at all.
+    const bf = Math.max(0, Math.min(1, ctx.bountyFactor ?? 0));
+    if (bf > 0 && ctx.coversRaiser === true) {
+      // Covering means hero's own bounty is never at risk in this pot.
+      callBar -= Math.min(0.06, bf * 0.14);
+      // If the raiser can actually be eliminated here, the bounty is live
+      // this hand rather than theoretical.
+      if (ctx.raiserBustable === true) callBar -= Math.min(0.05, bf * 0.12);
+    }
+
+    // A floor, applied after every discount: hands that flop nothing are a
+    // fold at any price, and a bounty is not a licence to play four napkins.
+    if (ctx.isOmaha && ctx.ploPriceDefense === true) callBar = Math.max(0.28, callBar);
+
+    if (strength >= callBar && priceOK) return { a: 'call' };
     if (position === 'bb' && toCall <= bb * 2.5 && strength >= 0.3) return { a: 'call' };
     return { a: 'fold' };
   }

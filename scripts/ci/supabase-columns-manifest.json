@@ -103,6 +103,11 @@
       "club_id",
       "created_at"
     ],
+    "ad_event_retention_policy": [
+      "id",
+      "event_retention_days",
+      "updated_at"
+    ],
     "ad_placement": [
       "id",
       "ad_id",
@@ -828,6 +833,13 @@
       "description",
       "hand_rank",
       "eligible"
+    ],
+    "bbj_snapshot_alert_collapse_log": [
+      "id",
+      "alert_id",
+      "source",
+      "created_at",
+      "collapsed_at"
     ],
     "bbj_stakes_tiers": [
       "id",
@@ -4498,6 +4510,18 @@
       "expires_at",
       "created_at"
     ],
+    "fee_requeue_log": [
+      "id",
+      "alert_id",
+      "pending_id",
+      "kind",
+      "table_id",
+      "hand_number",
+      "rake",
+      "bbj",
+      "outcome",
+      "requeued_at"
+    ],
     "financial_alerts": [
       "id",
       "severity",
@@ -5458,6 +5482,20 @@
       "idx_scan",
       "index_bytes"
     ],
+    "insurance_offer_events": [
+      "id",
+      "table_id",
+      "club_id",
+      "hand_number",
+      "player_id",
+      "event",
+      "equity_percent",
+      "premium",
+      "insured_amount",
+      "pot",
+      "street",
+      "created_at"
+    ],
     "insurance_transactions": [
       "id",
       "table_id",
@@ -5473,7 +5511,8 @@
       "net_result",
       "bank_type",
       "bank_entity_id",
-      "created_at"
+      "created_at",
+      "kind"
     ],
     "jarvis_conversations": [
       "id",
@@ -8742,6 +8781,14 @@
       "start_at",
       "created_at"
     ],
+    "spin_unpaid_backpay_log": [
+      "id",
+      "tournament_id",
+      "user_id",
+      "amount",
+      "verdict",
+      "paid_at"
+    ],
     "sports_clips": [
       "id",
       "video_id",
@@ -9148,6 +9195,7 @@
       "bomb_pot_interval_seconds",
       "bomb_pot_min_players",
       "bomb_pot_ante_fixed",
+      "first_button_seat",
       "bomb_pot_variant",
       "bomb_pot_next_due_at"
     ],
@@ -9499,6 +9547,12 @@
       "status",
       "award_id",
       "created_at"
+    ],
+    "tournament_conservation_baseline": [
+      "tournament_id",
+      "amount",
+      "reason",
+      "recorded_at"
     ],
     "tournament_deal_votes": [
       "tournament_id",
@@ -11327,6 +11381,28 @@
       "home_win_prob",
       "home_edge"
     ],
+    "v_insurance_activity": [
+      "club_id",
+      "day",
+      "offers",
+      "accepted",
+      "declined",
+      "timeouts",
+      "cashouts",
+      "avg_offer_equity",
+      "avg_offer_pot"
+    ],
+    "v_insurance_pnl": [
+      "club_id",
+      "union_id",
+      "kind",
+      "day",
+      "contracts",
+      "paid_out",
+      "bank_in",
+      "bank_out",
+      "bank_net"
+    ],
     "v_model_health": [
       "latest_as_of",
       "hours_stale",
@@ -11934,6 +12010,16 @@
       "withholding_amount",
       "upload_date",
       "created_at"
+    ],
+    "wallet_audit_backfill_log": [
+      "id",
+      "wallet_transaction_id",
+      "user_id",
+      "amount",
+      "category",
+      "alert_ids",
+      "duplicate_alerts",
+      "reconstructed_at"
     ],
     "wallet_credit_idempotency": [
       "key",

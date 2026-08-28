@@ -4206,6 +4206,20 @@ export default function TablePage({
     await handleInsuranceDeclineForHand();
   };
 
+  // EV CASHOUT 2026-08-28: the third answer — lock pot x equity (minus the
+  // 1% fee) now. Server-authoritative: the amount shown rode the offer from
+  // the engine and the engine recomputes it on accept; the client sends only
+  // the decision.
+  const handleInsuranceEvCashout = async () => {
+    setShowInsurance(false);
+    if (tableId) {
+      const result = await respondToInsurance(tableId, 'cashout');
+      if (!result.success) {
+        reportError(result.error, 'TablePage.Ev_cashout_failed');
+      }
+    }
+  };
+
   // A decline is final: never re-offered on later streets. Per-street pacing
   // continues for any OTHER all-in player who has not declined - if they take
   // the lead on a later street, the offer goes to them.
@@ -4226,9 +4240,12 @@ export default function TablePage({
   const insuranceTimeoutRef = useRef<number | null>(null);
   useEffect(() => {
     if (showInsurance) {
-      // Auto-decline when the SERVER'S offer window ends (the engine sends
-      // timeoutSeconds with the offer; 15s only as a fallback).
-      const windowMs = (insuranceOffer?.timeoutSeconds || 15) * 1000;
+      // Auto-decline when the SERVER'S offer window ends. COUNTDOWN HONESTY
+      // 2026-08-28: prefer the engine's absolute deadline (survives transit
+      // delay and reconnects); timeoutSeconds only as a fallback.
+      const windowMs = insuranceOffer?.deadlineAt
+        ? Math.max(0, insuranceOffer.deadlineAt - Date.now())
+        : (insuranceOffer?.timeoutSeconds || 15) * 1000;
       insuranceTimeoutRef.current = workerTimeout(() => {
         if (!isMounted.current) return;
         console.debug('[Insurance] Auto-declined after offer window elapsed');
@@ -6620,6 +6637,11 @@ export default function TablePage({
             outs: mapCards(handState.outs),
             outPct: Number(handState.outPct) || undefined,
             timeoutSeconds: insSecs,
+            // COUNTDOWN HONESTY 2026-08-28: absolute deadline from the engine;
+            // the popup counts down to THIS instead of a stale seconds figure.
+            deadlineAt: Number(heroOffer.deadlineAt) || Number(handState.deadlineAt) || undefined,
+            // EV CASHOUT 2026-08-28: server-priced third choice.
+            evCashoutAmount: Number(heroOffer.evCashoutAmount) || undefined,
             // REFERENCE PARITY 2026-08-26: the dialog's Rate readout and the
             // Break Even preset ride the offer.
             rate: Number(heroOffer.rate) || undefined,
@@ -6661,6 +6683,22 @@ export default function TablePage({
               : `${who} Has Declined Insurance`,
             3000
           );
+        }
+        return;
+      }
+
+      // EV CASHOUT 2026-08-28: the third decision, announced table-wide like
+      // accept/decline. The waiting bar drops; the payout itself lands with
+      // insurance_settled at the end of the hand.
+      if (eventType === 'insurance_cashed_out') {
+        setInsuranceWaitingOn(null);
+        const who = String((handState as Record<string, unknown>).username || 'Player');
+        const actorId = String((handState as Record<string, unknown>).playerId || '');
+        const amount = Number((handState as Record<string, unknown>).cashoutAmount || 0);
+        if (actorId === userId) {
+          if (amount > 0) toast.success(`Cashout Locked: $${amount.toLocaleString()}`, 4000);
+        } else {
+          toast.info(`${who} Has Cashed Out`, 3000);
         }
         return;
       }
@@ -17903,6 +17941,7 @@ export default function TablePage({
         onInsuranceAccept={handleInsuranceAccept}
         onInsuranceDecline={handleInsuranceDecline}
         onInsuranceDeclineForHand={handleInsuranceDeclineForHand}
+        onInsuranceEvCashout={handleInsuranceEvCashout}
         // Hand Reveal
         showHandRevealModal={showHandRevealModal}
         handRevealWinnerId={handRevealWinnerId}

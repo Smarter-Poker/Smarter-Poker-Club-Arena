@@ -107,7 +107,7 @@ import { normalizeCardBack } from '../components/table/CardImage';
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import { useButtonImage } from '../hooks/useButtonImage';
 
-import { cashBuyInRange } from '../lib/cashBuyIn';
+import { cashBuyInRange, cashBuyInRefusalText } from '../lib/cashBuyIn';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { parseBlindStructure } from '../utils/parseBlindStructure';
@@ -13425,7 +13425,7 @@ export default function TablePage({
       }
     }
     return strength;
-     
+
     // are read through heroCardsRef; these keys change exactly when they do.
   }, [heroHoleKey, heroBoardKey, heroHandVariant]);
 
@@ -13609,7 +13609,7 @@ export default function TablePage({
              reason now reaches error reporting, so the next unknown refusal
              is a searchable event instead of a dead end. */
           const mappedReason =
-            /seat_taken|insufficient|already_started|game_already_started|tournament_full|not_a_seat_first_game/.test(
+            /seat_taken|insufficient|already_started|game_already_started|tournament_full|not_a_seat_first_game|table_limit_reached|FOUR TABLE LIMIT/.test(
               reason
             );
           if (!mappedReason) {
@@ -13630,7 +13630,9 @@ export default function TablePage({
                     ? 'This Game Is Full'
                     : /not_a_seat_first_game/.test(reason)
                       ? 'Seats Are Not For Sale At This Table'
-                      : 'Could Not Take That Seat, Please Try Again'
+                      : /table_limit_reached|FOUR TABLE LIMIT/.test(reason)
+                        ? 'You Are Already In Four Games, Leave One To Join Another'
+                        : 'Could Not Take That Seat, Please Try Again'
           );
           return;
         }
@@ -18763,7 +18765,15 @@ export default function TablePage({
               } catch (error) {
                 reportError(error, 'TablePage.Buyin_FAILED');
                 revertSeat();
-                toast.error('Buy-in failed. Please try again or check your balance.');
+                /* NAME THE RULE THAT FIRED (2026-08-28). atomic_table_buyin
+                   refuses for sixteen distinct reasons and this branch used to
+                   answer all of them with "check your balance" - the one thing
+                   that is usually NOT the problem. cashBuyInRefusalText returns
+                   null for anything it does not recognise, so an unknown
+                   refusal keeps the old text and the reportError above still
+                   carries the raw message. */
+                const refusal = cashBuyInRefusalText(error);
+                toast.error(refusal ?? 'Buy-in failed. Please try again or check your balance.');
               }
             } else {
               reportError(

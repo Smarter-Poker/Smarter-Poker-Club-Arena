@@ -46,6 +46,8 @@ const REGISTER_REASON_TEXT: Record<string, string> = {
   not_authorized_to_register: 'This event needs registration approval from the club',
   vip_only: 'This event is for VIP players only',
   misconfigured_bounty: 'This event is misconfigured, please tell the club owner',
+  // The four-table cap, surfaced as a rule rather than a raw trigger message.
+  table_limit_reached: 'You are already in four games. Leave one to join another.',
 };
 
 /**

@@ -1174,6 +1174,46 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           return;
         }
 
+        // ── HOP TO THE SIBLING (Dan 2026-08-28: "THIS TABLE IS NO LONGER
+        // OPEN" dead ends) ────────────────────────────────────────────────
+        // The fleet recycles these games continuously: when one completes,
+        // its REPLACEMENT is a brand-new tournament id under the same name
+        // and buy-in, and the tile the player tapped still holds the old id.
+        // The header comment above always promised the hop to an open
+        // sibling; this is it. Identity is name + buy-in + variant, which is
+        // exactly what the tile showed the player, so the game they land in
+        // is the game they chose — just the running edition of it.
+        const { data: sibs, error: sibErr } = await supabase
+          .from('tournaments')
+          .select('id')
+          .eq('status', 'REGISTERING')
+          .eq('variant', variant === 'sng' ? 'sng' : 'spin')
+          .eq('name', t.name)
+          .eq('buy_in_amount', t.buy_in_amount)
+          .neq('id', t.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (sibErr) {
+          reportError?.(sibErr, 'ClubHomePage.spinQuickJoin_sibling_lookup');
+        }
+        const sibId = (sibs || [])[0]?.id as string | undefined;
+        if (sibId && !spinJoinCancelRef.current) {
+          const { data: sibTbls } = await supabase
+            .from('tables')
+            .select('id, created_at')
+            .eq('tournament_id', sibId)
+            .neq('status', 'closed')
+            .order('created_at', { ascending: false })
+            .limit(1);
+          if (spinJoinCancelRef.current) return;
+          const sibTableId = (sibTbls || [])[0]?.id as string | undefined;
+          if (sibTableId) {
+            setSpinJoin(null);
+            navigate(`/table/${sibTableId}`);
+            return;
+          }
+        }
+
         // Still nothing open: this game has finished or is being rebuilt. Say
         // so plainly instead of sending the player at a table that is not there.
         return fail(

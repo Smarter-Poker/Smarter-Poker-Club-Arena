@@ -2447,6 +2447,25 @@ export default function TablePage({
   // recovery toast was lost.
   const heartbeatToastRef = useRef(toast);
   heartbeatToastRef.current = toast;
+  /**
+   * ── PRE-START SEAT-FIRST TABLES ARE NOT DEAD TABLES (Dan 2026-08-28) ──────
+   *
+   * "I'M ALSO GETTING MESSAGES ON THE BOTTOM THAT 'THIS TABLE IS NO LONGER
+   * OPEN'." Reproduced live: a Spin or Heads-Up table before its game starts
+   * has NO engine game at all — the engine only creates one when every seat
+   * is paid — so the engine WS answers 4404 and the heartbeat answers 404 the
+   * whole time the table is legitimately open and selling seats. The
+   * dead-table machinery below (the 4404 toast, the Heartbeat_lost report,
+   * the WS auto-reload failsafe) read that as a closed table and told the
+   * player so, then reloaded the page under them mid-fill.
+   *
+   * True while this table is a seat-first game whose seats are still for
+   * sale (mirrors `seatFirstBuyIn`, which is declared further down with the
+   * other seat-first state — a ref so the early effects here can read it
+   * without a TDZ or a dependency churn). While true, engine absence is the
+   * EXPECTED state and none of the dead-table alarms may speak.
+   */
+  const seatFirstOpenRef = useRef(false);
   useEffect(() => {
     if (!tableId || !userId) return;
     // 2026-08-20: both `.catch`es here were dead — `sendHeartbeat` resolves
@@ -2469,6 +2488,10 @@ export default function TablePage({
         consecutiveMisses = 0;
         return;
       }
+      // A pre-start seat-first table has no engine game to heartbeat AT — the
+      // 404 is the expected answer until every seat is paid, not a miss. See
+      // seatFirstOpenRef above.
+      if (seatFirstOpenRef.current) return;
       consecutiveMisses += 1;
       // Dan 2026-08-23: this used to raise its OWN "Connection lost" toast at
       // 3 misses, which is why one outage produced two separate alarms - this
@@ -2573,6 +2596,11 @@ export default function TablePage({
   useEffect(() => {
     if (!engineLastError) return;
     if (engineLastError.code === 4404) {
+      /* A pre-start seat-first table legitimately has no engine game yet, so
+         4404 is its normal answer while the seats are selling — not a closed
+         table, and absolutely not the moment to tell a player mid-buy-in
+         "This Table Is No Longer Running" (Dan 2026-08-28). */
+      if (seatFirstOpenRef.current) return;
       notFoundCountRef.current += 1;
       if (notFoundCountRef.current >= 3 && !tableClosedToastShownRef.current) {
         tableClosedToastShownRef.current = true;
@@ -2597,6 +2625,10 @@ export default function TablePage({
       // A repeatedly-404ing table is closed, not wedged — a reload cannot
       // help and used to loop the browser every 2 minutes indefinitely.
       if (notFoundCountRef.current >= 3) return;
+      // A pre-start seat-first table has no engine WS to restore. Reloading
+      // it every ~30s yanked the page out from under players choosing a seat
+      // (observed live 2026-08-28). The socket connects when the game starts.
+      if (seatFirstOpenRef.current) return;
       const KEY = 'ca_ws_autoreload_at';
       const last = Number(sessionStorage.getItem(KEY) || 0);
       if (Date.now() - last < 120_000) return;
@@ -3076,6 +3108,11 @@ export default function TablePage({
     seats: number;
     label: string;
   } | null>(null);
+  /* Mirror for the early dead-table effects — see seatFirstOpenRef where it
+     is declared, next to the heartbeat machinery it silences. Render-time
+     assignment on purpose, same pattern as heartbeatToastRef: the effects
+     that read it must see the current value without depending on it. */
+  seatFirstOpenRef.current = seatFirstBuyIn !== null;
   const [seatFirstPending, setSeatFirstPending] = useState(false);
   /**
    * ═══════════════════════════════════════════════════════════════════════════
@@ -13210,6 +13247,154 @@ export default function TablePage({
     seatFirstPending,
     navigate,
   ]);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  PRE-START SEAT-FIRST ROSTER IS LIVE, NOT A MOUNT SNAPSHOT (Dan 2026-08-28)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * "INSIDE THE SPIN, ALL THE BUTTONS ARE 'EMPTY' ... AND [NOT] ABLE TO SIT
+   * DOWN TO PLAY."
+   *
+   * Reproduced live against production: a Spin table's seats are read from
+   * table_seats exactly ONCE, in the mount effect. Every update after that
+   * comes from the engine WebSocket — and a seat-first game has NO engine
+   * game until every seat is paid, so between mount and start the page is
+   * blind. A horse bought seat 3 in the database while the page kept
+   * offering "+ SIT" on it; the reverse (a vacated seat still painted
+   * occupied) is the same blindness. The player then taps a seat the
+   * database calls taken and eats "That Seat Was Just Taken" on a chair
+   * that reads empty — or waits at a table that filled and started without
+   * ever telling them.
+   *
+   * While the seats are for sale, the DATABASE is the only truth there is,
+   * so listen to it: a realtime subscription on this table's seat rows plus
+   * a slow poll as the belt for realtime's braces (a dropped channel is
+   * silent). Both stop the moment play begins — from then on the engine is
+   * authoritative again and this effect unmounts itself.
+   *
+   * The tournament row rides the same channel: the instant the game flips
+   * out of REGISTERING the sheet must come down (playHasBegun), or the page
+   * would keep selling seats in a game that started — the exact D8 failure,
+   * previously only latched off engine signals a spectator might never get.
+   *
+   * heroSeat is deliberately NOT written here. The rebuild only replaces the
+   * players array; the HERO SEAT INVARIANT effect adopts the hero's seat
+   * from it, and the paths that clear a hero demand proof of eviction. A
+   * roster read racing the hero's own in-flight buy-in therefore cannot
+   * un-seat them.
+   */
+  useEffect(() => {
+    const tournId = tableState.tournamentId;
+    if (!tableId || !seatFirstBuyIn || playHasBegun) return;
+
+    let cancelled = false;
+    let reloadTimer = 0;
+
+    const reloadRoster = async () => {
+      const { data: seats, error } = await supabase
+        .from('table_seats')
+        .select('seat_number, user_id, stack, is_sitting_out, horse_id')
+        .eq('table_id', tableId)
+        .is('left_at', null);
+      if (cancelled) return;
+      if (error) {
+        // A failed read is "we could not ask", never "the table is empty".
+        reportError(error, 'TablePage.seat_first_roster_reload', { tableId });
+        return;
+      }
+      const seatRows = seats || [];
+      const userIds = seatRows.map((s) => s.user_id).filter(Boolean);
+      let profileMap = new Map<string, Record<string, unknown>>();
+      if (userIds.length > 0) {
+        const { data: profiles, error: profErr } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url:arena_avatar_url, is_horse')
+          .in('id', userIds);
+        if (profErr) {
+          reportError(profErr, 'TablePage.seat_first_roster_profiles', { tableId });
+        }
+        profileMap = new Map((profiles || []).map((p) => [p.id as string, p]));
+      }
+      if (cancelled) return;
+
+      setTableState((prev) => {
+        const rebuilt: (typeof prev.players)[number][] = Array(prev.players.length).fill(
+          null
+        ) as (typeof prev.players)[number][];
+        for (const seat of seatRows) {
+          const idx = (seat.seat_number ?? 0) - 1;
+          if (idx < 0 || idx >= rebuilt.length) continue;
+          const profile = profileMap.get(seat.user_id) as
+            | {
+                username?: string;
+                display_name?: string;
+                avatar_url?: string;
+                is_horse?: boolean;
+              }
+            | undefined;
+          const isHero = seat.user_id === userId;
+          rebuilt[idx] = {
+            id: seat.user_id,
+            name: profile?.display_name || profile?.username || `Player ${seat.seat_number}`,
+            avatar: profile?.avatar_url || '',
+            stack: Number(seat.stack || 0),
+            status: 'active' as const,
+            isHero,
+            showCards: isHero,
+            isHorse: Boolean(profile?.is_horse) || !!seat.horse_id,
+            horseProfile: undefined,
+          } as unknown as (typeof prev.players)[number];
+        }
+        return { ...prev, players: rebuilt as typeof prev.players };
+      });
+    };
+
+    const scheduleReload = () => {
+      // Coalesce a burst (a horse squad seating together fires one event per
+      // row) into one read a beat later.
+      if (reloadTimer) window.clearTimeout(reloadTimer);
+      reloadTimer = window.setTimeout(() => void reloadRoster(), 250);
+    };
+
+    const channel = supabase
+      .channel(`seat-first-roster-${tableId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'table_seats', filter: `table_id=eq.${tableId}` },
+        scheduleReload
+      );
+    if (tournId) {
+      channel.on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'tournaments', filter: `id=eq.${tournId}` },
+        (payload) => {
+          const status = String(
+            (payload.new as { status?: string } | null)?.status ?? ''
+          ).toUpperCase();
+          if (status && status !== 'REGISTERING' && status !== 'ANNOUNCED') {
+            // The game left the selling state under us. Take the sheet down
+            // now — the D8 effect clears seatFirstBuyIn off this latch.
+            setPlayHasBegun(true);
+          }
+        }
+      );
+    }
+    channel.subscribe();
+
+    // Belt for the braces: realtime drops silently, so re-read on a slow
+    // cadence regardless. 10s keeps a dead channel's staleness bounded at a
+    // fraction of a fill cycle without meaningfully loading the database.
+    void reloadRoster();
+    const pollId = window.setInterval(() => void reloadRoster(), 10_000);
+
+    return () => {
+      cancelled = true;
+      if (reloadTimer) window.clearTimeout(reloadTimer);
+      window.clearInterval(pollId);
+      void supabase.removeChannel(channel);
+    };
+  }, [tableId, seatFirstBuyIn, playHasBegun, tableState.tournamentId, userId]);
 
   //broadcastLocalHandState removed — server broadcasts state authoritatively
 

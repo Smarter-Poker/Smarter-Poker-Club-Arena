@@ -266,14 +266,24 @@ describe('audit: engine muck rules cover the cases the review found', () => {
     expect(CONTROLLER).toMatch(/if \(liveCanStillBet <= 1\) return;/);
   });
 
-  it('four of a kind or better can never be mucked', () => {
-    expect(CONTROLLER).toMatch(/r\.hand\.ranking >= 8 \|\| \(r\.hand2 && r\.hand2\.ranking >= 8\)/);
+  it('four of a kind or better can never be mucked — on any board', () => {
+    // TRIPLE-BOARD 2026-08-27: the condition is multi-line now and covers
+    // hand3 as well, so the pattern tolerates whitespace between the clauses.
+    expect(CONTROLLER).toMatch(
+      /r\.hand\.ranking >= 8 \|\|\s*\(r\.hand2 && r\.hand2\.ranking >= 8\) \|\|\s*\(r\.hand3 && r\.hand3\.ranking >= 8\)/
+    );
   });
 
   it("double-board hi-lo tracks board 2's low half", () => {
     expect(CONTROLLER).toMatch(/bestShownLo2/);
     expect(CONTROLLER).toMatch(/lowByUser2/);
     expect(CONTROLLER).toMatch(/evaluateOmahaLowHand\(r\.cards, this\.state\.communityCards2\)/);
+  });
+
+  it("triple-board hi-lo tracks board 3's low half too", () => {
+    expect(CONTROLLER).toMatch(/bestShownLo3/);
+    expect(CONTROLLER).toMatch(/lowByUser3/);
+    expect(CONTROLLER).toMatch(/evaluateOmahaLowHand\(r\.cards, this\.state\.communityCards3\)/);
   });
 });
 

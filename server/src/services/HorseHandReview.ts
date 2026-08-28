@@ -144,6 +144,43 @@ export function detectLeaks(row: {
   // surrendered — a blown-off bluff or a bet-fold line that cost a stack.
   if (folded && investedBB >= FLAG_BB) {
     tags.push('big_bet_fold');
+
+    // V23 DETECTOR SPLIT (2026-08-28): big_bet_fold has two OPPOSITE fixes.
+    // "Got bluffed off the best hand on the river" wants looser catches;
+    // "built a huge pot on early streets and then had to let it go" wants
+    // tighter pot-building. One tag cannot steer the self-tuner both ways.
+    const foldStage = [...row.heroActions].reverse().find((a) => a.action === 'fold')?.stage;
+    tags.push(foldStage === 'river' ? 'big_fold_river' : 'big_fold_early');
+    // The bet-fold LINE: hero bet or raised the very street it then folded
+    // on — it put chips in with a hand it could not defend at that price.
+    if (foldStage && raisedOrBet(foldStage)) {
+      tags.push('bet_fold_line');
+    }
+  }
+
+  // ═══ V23 PREFLOP-ENTRY DETECTORS (2026-08-28) ═══ how the horse ENTERED
+  // the pot it lost big. detectLeaks only sees hero's own actions, so both
+  // reads are from the hero side: the amounts say whether the entry was a
+  // limp or a cold-call of a raise.
+  const heroPre = row.heroActions.filter((a) => a.stage === 'preflop');
+  const heroPreRaised = heroPre.some(
+    (a) => a.action === 'bet' || a.action === 'raise' || a.action === 'all_in'
+  );
+  const bb = row.bigBlind || 1;
+  if (!heroPreRaised && heroPre.some((a) => a.action === 'call') && investedBB >= 2 * FLAG_BB) {
+    const maxPreCall = Math.max(
+      0,
+      ...heroPre.filter((a) => a.action === 'call').map((a) => a.amount ?? 0)
+    );
+    if (maxPreCall <= bb * 1.05) {
+      // Entered for one big blind and lost 40bb+ — limped pots are supposed
+      // to stay SMALL; a stack went in behind a passive entry.
+      tags.push('limped_pot_bloat');
+    } else if (maxPreCall >= bb * 3) {
+      // Cold-called a raise (never took the initiative) and lost 40bb+ —
+      // the classic dominated-flat: crushed by the range it called.
+      tags.push('coldcall_stackoff');
+    }
   }
 
   // Omaha nut discipline: the horse lost a 20bb+ pot at showdown holding a
@@ -186,6 +223,17 @@ export function detectLeaks(row: {
     ).length;
     if (riverAggrCount >= 2) {
       tags.push('river_raise_war');
+    }
+    // V23 (2026-08-28): hero bet the river, then CALLED on the river — the
+    // only way that sequence exists is a raise arrived and hero paid it off.
+    // The V21 war tag needs two aggressive actions; this catches the
+    // bet-then-call shape that pays a raise without escalating.
+    const acts = row.heroActions.filter((a) => a.stage === 'river');
+    const betIdx = acts.findIndex(
+      (a) => a.action === 'bet' || a.action === 'raise' || a.action === 'all_in'
+    );
+    if (betIdx >= 0 && acts.slice(betIdx + 1).some((a) => a.action === 'call')) {
+      tags.push('river_raise_paidoff');
     }
   }
 

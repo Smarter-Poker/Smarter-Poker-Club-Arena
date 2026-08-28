@@ -40,6 +40,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import UserProfileEdit from '../components/social/UserProfileEdit';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useTableSettings } from '../hooks/useTableSettings';
+import { soundService } from '../services/SoundService';
 import {
   CARD_BACKS,
   DEFAULT_SETTINGS,
@@ -643,6 +644,19 @@ export default function SettingsPage() {
       // table already on screen picks these up without a reload.
       updateTableSettings(toTableSettings(settings));
 
+      /* Dan 2026-08-28: the Sound Effects switch on this page never reached
+         the sound engine. It persisted soundEnabled into
+         club-arena-table-settings, but the gate that actually silences
+         playback (utils/soundGate, consulted by SoundService.shouldPlay)
+         reads 'club_arena_sounds' / 'ca_sound_enabled' — neither of which
+         this page wrote. So muting here said "Settings saved!", the felt
+         kept playing, and the in-table switch still read ON: two switches
+         permanently disagreeing. setEnabled() updates the live engine AND
+         persists BOTH gate keys (the HamburgerMenu path); volume is applied
+         live for the same reason rather than waiting for a table mount. */
+      soundService.setEnabled(settings.soundEnabled);
+      soundService.setMasterVolume(Math.max(0, Math.min(100, settings.soundVolume)) / 100);
+
       /* Sync theme to Zustand store so Shell.tsx applies it immediately.
          2026-08-26: "Auto (System)" was offered in the dropdown, accepted by
          validation, saved, and then DROPPED here by an
@@ -913,16 +927,12 @@ export default function SettingsPage() {
         >
           <h2>Gameplay</h2>
 
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Confirm All-In</span>
-              <span className={styles.settingDesc}>Require Confirmation Before Going All-In</span>
-            </div>
-            <Toggle
-              checked={settings.confirmAllIn}
-              onChange={(v) => updateSetting('confirmAllIn', v)}
-            />
-          </div>
+          {/* Confirm All-In toggle REMOVED 2026-08-28: it saved and synced,
+              but ActionPanel destructures the prop to _confirmAllInDeprecated
+              and never reads it — the in-table SettingsPanel removed its copy
+              for the same documented reason ("accept the action"). A toggle
+              that does nothing is worse than no toggle. The stored field
+              stays for compatibility with old saves. */}
 
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>

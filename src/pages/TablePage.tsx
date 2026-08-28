@@ -7576,11 +7576,15 @@ export default function TablePage({
       // registration and stopped responding after the first press.
       setIsAutoRebuyEnabled((prev) => !prev);
     } else if (event.action === 'TOGGLE_SOUNDS') {
-      // Toggle sound
-      const muted = localStorage.getItem('table_sound_muted') === 'true';
-      localStorage.setItem('table_sound_muted', muted ? 'false' : 'true');
-      // trigger re-render by emitting settings change or forcing state update
-      masterBus.emit('SETTINGS_CHANGED', { setting: 'sound_muted', value: !muted });
+      /* Fixed 2026-08-28: this wrote 'table_sound_muted' — a key NOTHING
+         reads (soundGate documents it as outside the contract) — and emitted
+         a 'sound_muted' bus field no settings store accepts, so the tab-bar
+         Sounds item did nothing at all: no mute, no badge change, no error.
+         Route through the real path instead: soundService.isEnabled() is the
+         live truth (engine flag AND both persisted gate keys), and
+         setIsSoundEnabled updates state, the engine, and both keys — exactly
+         what the in-table sound switch does. */
+      setIsSoundEnabled(!soundService.isEnabled());
     } else if (event.action === 'TOGGLE_VIBRATIONS') {
       const enabled = isVibrationAllowed();
       if (enabled) {

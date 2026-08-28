@@ -30,6 +30,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceYamlBlock, sliceYamlEntry } from '../helpers/sourceWindow';
 
 const wf = (n: string) => readFileSync(resolve(__dirname, `../../.github/workflows/${n}`), 'utf8');
 
@@ -101,11 +102,9 @@ describe('the publish path cannot be left waiting on a push that never comes', (
     expect(SYNC).toMatch(/publish-needed:\s*\n\s*runs-on:/);
     expect(SYNC).toMatch(/outputs:\s*\n\s*skip: \$\{\{ steps\.dedupe\.outputs\.skip \}\}/);
     for (const job of ['client-tests', 'build-and-store']) {
-      const block = SYNC.slice(SYNC.indexOf(`  ${job}:`));
-      expect(block.slice(0, 260), `${job} must wait on publish-needed`).toMatch(
-        /needs: publish-needed/
-      );
-      expect(block.slice(0, 260), `${job} must skip with it`).toMatch(
+      const block = sliceYamlBlock(SYNC, `  ${job}:`);
+      expect(block, `${job} must wait on publish-needed`).toMatch(/needs: publish-needed/);
+      expect(block, `${job} must skip with it`).toMatch(
         /if: needs\.publish-needed\.outputs\.skip != 'true'/
       );
     }
@@ -115,8 +114,8 @@ describe('the publish path cannot be left waiting on a push that never comes', (
     // A push is by definition new work; a human dispatching this is usually
     // forcing a republish of something that looks stuck. Deduping either would
     // be the publish bug this is meant to prevent.
-    const dedupe = SYNC.slice(SYNC.indexOf('id: dedupe'));
-    expect(dedupe.slice(0, 200)).toMatch(/if: github\.event_name == 'schedule'/);
+    const dedupe = sliceYamlEntry(SYNC, 'id: dedupe');
+    expect(dedupe).toMatch(/if: github\.event_name == 'schedule'/);
   });
 
   it('an unreadable build-info publishes rather than assuming it is current', () => {
@@ -132,7 +131,7 @@ describe('the publish path cannot be left waiting on a push that never comes', (
        what stops it failing on a dist that was never built - no `always()`
        anywhere near it. */
     expect(SYNC).toMatch(/needs: \[build-and-store, client-tests\]/);
-    const sync = SYNC.slice(SYNC.indexOf('  sync-to-world-hub:'));
-    expect(sync.slice(0, 400)).not.toMatch(/if: always\(\)/);
+    const sync = sliceYamlBlock(SYNC, '  sync-to-world-hub:');
+    expect(sync).not.toMatch(/if: always\(\)/);
   });
 });

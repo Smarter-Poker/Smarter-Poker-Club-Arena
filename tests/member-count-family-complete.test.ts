@@ -18,6 +18,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceStatement } from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 const HORSE = read('src/services/HorseOrchestrator.ts');
@@ -86,8 +87,8 @@ describe('the union total is the union, not the viewer', () => {
 
 describe('the admin dashboard stops paying for counts it discards', () => {
   it('asks for no exact count on either query', () => {
-    const block = ADMIN.slice(ADMIN.indexOf('const [{ data: members }'));
-    expect(block.slice(0, 700)).not.toMatch(/count: 'exact'/);
+    const block = sliceStatement(ADMIN, 'const [{ data: members }');
+    expect(block).not.toMatch(/count: 'exact'/);
   });
 
   it('reads lengths, which is what it always actually used', () => {

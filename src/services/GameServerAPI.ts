@@ -662,7 +662,8 @@ export async function respondToRIT(
  */
 export async function respondToInsurance(
   tableId: string,
-  response: 'accept' | 'decline',
+  // EV CASHOUT 2026-08-28: 'cashout' locks pot x equity (minus fee) now.
+  response: 'accept' | 'decline' | 'cashout',
   coveragePercent: number = 100,
   declineForHand: boolean = false
 ): Promise<ActionResult & { status?: string; premium?: number; insuredAmount?: number }> {

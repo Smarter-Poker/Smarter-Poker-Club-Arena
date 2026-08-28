@@ -489,6 +489,7 @@
       "idx_scan",
       "index_bytes"
     ],
+    "insurance_offer_events": ["table_id", "hand_number", "event"],
     "insurance_transactions": [
       "table_id",
       "club_id",
@@ -914,6 +915,7 @@
       "op_id"
     ],
     "tournament_bounty_chests": ["tournament_id", "seq", "tier", "amount_cents"],
+    "tournament_conservation_baseline": ["tournament_id", "amount", "reason"],
     "tournament_deal_votes": ["tournament_id", "user_id"],
     "tournament_guarantee_overlays": ["tournament_id", "amount", "pool_before", "pool_after"],
     "tournament_payout_backfill_log": ["tournament_id", "top_up"],

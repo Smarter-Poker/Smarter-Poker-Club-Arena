@@ -415,18 +415,18 @@
    ADD TABLE "+" BUTTON
    ───────────────────────────────────────────────────────────────────────────── */
 
+/* Dan 2026-08-28: the + is now the metallic circled-plus artwork (inline SVG
+   in TableTabBar.tsx). The button itself is chromeless — no dashed outline,
+   no background — because the SVG carries the whole ring. */
 .table-tab-bar__add {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 36px;
   height: 36px;
-  border: 1.5px dashed rgba(255, 255, 255, 0.15);
+  border: none;
   border-radius: 50%;
   background: transparent;
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 1.25rem;
-  font-weight: 300;
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
@@ -434,10 +434,19 @@
   padding: 0;
 }
 
-.table-tab-bar__add:hover {
-  border-color: rgba(255, 255, 255, 0.3);
-  color: rgba(255, 255, 255, 0.6);
-  background: rgba(255, 255, 255, 0.05);
+.table-tab-bar__add-icon {
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* The icon is usually the icon-addscreen webp (exact artwork from Dan's
+     reference, alpha canvas); contain keeps the circle round if the button
+     ever goes non-square. The SVG fallback ignores object-fit harmlessly. */
+  object-fit: contain;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+}
+
+.table-tab-bar__add:hover .table-tab-bar__add-icon {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55)) brightness(1.15);
 }
 
 .table-tab-bar__add:active {
@@ -667,22 +676,28 @@
   }
 
   /* ── Dan 2026-08-26 mobile pass, item 1: "the action pills need to be large
-     enough to see ALL cards displayed inside them." Two changes together make
-     that guarantee:
-
-       1. A cards-mode pill is released from the four-way width split
-        (max-width: none). The strip already scrolls when the pills outgrow
-        the viewport — the documented fallback — and a scrolling strip with
-        every card whole beats four fixed pills with the 4th card clipped.
-       2. The ACTIVE cards pill reserves real right padding for the floating
-        X disc, which used to land ON the outermost card. */
+     enough to see ALL cards displayed inside them." A cards-mode pill is
+     released from the four-way width split (max-width: none). The strip
+     already scrolls when the pills outgrow the viewport — the documented
+     fallback — and a scrolling strip with every card whole beats four fixed
+     pills with the 4th card clipped. */
   .table-tab-bar__tab.table-tab-bar__tab--cards {
     max-width: none;
   }
 
+  /* Dan 2026-08-28: "ALL ACTION PILLS SHOULD HAVE THE CARDS CENTERED, THEY
+     SHOULD NEVER BE LEFT JUSTIFIED."
+
+     The active cards pill used to reserve 15px on the right for the floating
+     × disc (`padding-left: 4px; padding-right: 15px`). The × was removed on
+     2026-08-26, but the reserve stayed behind — and an 11px one-sided pad
+     shifts the pill's content box left of its true middle, which is exactly
+     the leftward lean Dan photographed on the "A♠ 6♦" pill. Symmetric padding
+     keeps the content box concentric with the pill, so the pill's own
+     `justify-content: center` lands the cards on its real midpoint. */
   .table-tab-bar__tab--active.table-tab-bar__tab--cards {
     padding-left: 4px;
-    padding-right: 15px;
+    padding-right: 4px;
   }
 
   /* 3-4 cards (PLO4): 4x12 + 3 gaps = 51px; the pill grows to carry it (see

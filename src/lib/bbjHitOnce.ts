@@ -109,6 +109,16 @@ export interface BbjAnnounceInput {
   handNumber?: number;
   /** `emitted_at` from the engine event. Absent on a pre-2026-08-26 engine. */
   emittedAt?: number;
+  /**
+   * Dan 2026-08-28: "You shouldn't get a banner hours, minutes or days
+   * later." When true, an event with NO timestamp is refused outright
+   * instead of falling back to identity-only de-duplication. For the global
+   * login-path banner, an unstamped event cannot be proven live, and a
+   * banner that might be days old is worse than no banner — the celebration
+   * on the table where it actually happened is unaffected (that path always
+   * carries the engine's stamp, and does not set this flag).
+   */
+  requireStamp?: boolean;
   /** Injectable for tests. */
   now?: number;
 }
@@ -136,6 +146,12 @@ export function shouldAnnounceBbjHit(input: BbjAnnounceInput): boolean {
        refusing those would suppress the real thing on exactly the devices
        least able to report why. Only genuine staleness is rejected. */
     if (age > BBJ_FRESH_MS) return false;
+  } else if (input.requireStamp) {
+    /* No timestamp and the caller demands one: cannot be proven live, so it
+       is not announced (Dan 2026-08-28 — no banners minutes/hours/days
+       late). Identity is deliberately NOT marked seen here: if a stamped
+       copy of the same hit arrives moments later, it may still announce. */
+    return false;
   }
 
   const key = bbjHitKey(input.tableId, input.handNumber);

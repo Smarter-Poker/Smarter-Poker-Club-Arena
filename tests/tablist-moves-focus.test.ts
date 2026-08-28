@@ -17,6 +17,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceEnclosingBlock } from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 const STATS = read('src/pages/PlayerStatsPage.tsx');
@@ -37,11 +38,10 @@ describe.each([
   });
 
   it('changes selection AND focus together, never one alone', () => {
-    const i = src.indexOf(selector);
-    expect(i, 'selection call must exist').toBeGreaterThan(-1);
-    // focus() must appear within a few lines of the selection change, i.e. in
-    // the same handler, not somewhere unrelated.
-    expect(src.slice(i, i + 200)).toMatch(/\.focus\(\)/);
+    expect(src.indexOf(selector), 'selection call must exist').toBeGreaterThan(-1);
+    // focus() must live in the SAME handler as the selection change, not
+    // somewhere unrelated - so bound it by that block, not by a byte count.
+    expect(sliceEnclosingBlock(src, selector)).toMatch(/\.focus\(\)/);
   });
 
   it('supports Home and End, per the tablist pattern', () => {
@@ -73,8 +73,8 @@ describe('the guard would have caught the old code', () => {
 describe('Marketplace End respects the admin filter', () => {
   it('derives the key list from the admin-filtered tabs, not all tabs', () => {
     // Otherwise End would jump a non-admin to a tab that is not rendered.
-    const i = MARKET.indexOf('const keys = TABS.filter((t) => !t.adminOnly || isAdmin)');
-    expect(i).toBeGreaterThan(-1);
-    expect(MARKET.slice(i, i + 420)).toMatch(/keys\[keys\.length - 1\]/);
+    const keys = 'const keys = TABS.filter((t) => !t.adminOnly || isAdmin)';
+    expect(MARKET.indexOf(keys)).toBeGreaterThan(-1);
+    expect(sliceEnclosingBlock(MARKET, keys)).toMatch(/keys\[keys\.length - 1\]/);
   });
 });

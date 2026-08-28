@@ -13,7 +13,15 @@
  * Legacy URL: /table/:tableId still routes here with a single table
  */
 
-import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  Suspense,
+} from 'react';
 import { matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
 import LiveTablesBar from '../components/table/LiveTablesBar';
@@ -1140,13 +1148,20 @@ export default function MultiTablePage() {
   const [showSessionAgg, setShowSessionAgg] = useState(false);
 
   useEffect(() => {
-    if (hidden || tables.length < 2) {
+    /* Dan 2026-08-28: the P&L tracker "should only appear once a user is
+       playing MULTIPLE tables. It should never engage while playing 1 table."
+       The old gate counted `tables.length`, which includes LOBBY tabs — one
+       real table plus the lobby tab read as 2 and the chip appeared during
+       single-table play. Count actual game tables only, here AND inside
+       compute() (a tab closing between ticks must retire the chip too). */
+    const liveTableCount = tables.filter((t) => !isLobbyTab(t)).length;
+    if (hidden || liveTableCount < 2) {
       setSessionAgg(null);
       return;
     }
     const compute = () => {
       const live = tablesRef.current.filter((t) => !isLobbyTab(t));
-      if (live.length === 0) {
+      if (live.length < 2) {
         setSessionAgg(null);
         return;
       }
@@ -1178,7 +1193,9 @@ export default function MultiTablePage() {
     compute();
     const iv = setInterval(compute, 5000);
     return () => clearInterval(iv);
-  }, [hidden, tables.length]);
+    // `tables`, not `tables.length`: a lobby tab converting into a game table
+    // keeps the length constant while the live-table count changes.
+  }, [hidden, tables]);
 
   // ─── Batch 4: playable tile view ──────────────────────────────────────
   // Fold / Check / Call directly from a 2x2 tile - true simultaneous play on
@@ -1239,9 +1256,21 @@ export default function MultiTablePage() {
         setIsTransitioning(true);
         setActiveIndex(idx);
         trackedTimeout(() => setIsTransitioning(false), 320);
+        // Keep the address bar on the table the player is looking at (Dan
+        // 2026-08-28). A tab switch used to leave the URL naming the OLD
+        // table, so the next route arrival at that stale URL painted the
+        // wrong table first, and browser Back yanked the player to a tab
+        // they had already left. `replace` so switching tabs does not pile
+        // history entries. Lobby tabs have no /table route of their own —
+        // navigating to one would mint a phantom table id on reload — so
+        // they keep the current URL, exactly as before.
+        const target = tables[idx];
+        if (target && !isLobbyTab(target)) {
+          navigate(`/table/${target.id}`, { replace: true });
+        }
       }
     },
-    [tables, activeIndex, trackedTimeout]
+    [tables, activeIndex, trackedTimeout, navigate]
   );
 
   // ─── Batch 3: quick-join sheet on "+" ─────────────────────────────────
@@ -2109,11 +2138,17 @@ export default function MultiTablePage() {
       setIsTransitioning(true);
       setActiveIndex(newIndex);
       trackedTimeout(() => setIsTransitioning(false), 320);
+      // Same URL agreement as handleTabSelect: a swipe is a tab switch by
+      // thumb, and the address bar must follow the felt (Dan 2026-08-28).
+      const target = tables[newIndex];
+      if (target && !isLobbyTab(target)) {
+        navigate(`/table/${target.id}`, { replace: true });
+      }
     }
 
     setSwipeOffset(0);
     touchStartRef.current = null;
-  }, [swipeOffset, activeIndex, tables.length, trackedTimeout]);
+  }, [swipeOffset, activeIndex, tables, trackedTimeout, navigate]);
 
   // ─── Handle route-based table ID changes ─────────────────────────────
   // Dan 2026-08-19: the cash-game cards in the in-tab lobby are plain
@@ -2122,7 +2157,20 @@ export default function MultiTablePage() {
   // append, which stranded the lobby tab the player had just used: it sat
   // there as a dead "Lobby" tab burning one of the four slots. Convert the
   // lobby tab in place, exactly like the TABLE_SEATED handler does.
-  useEffect(() => {
+  //
+  // LAYOUT effect, not a passive one (Dan 2026-08-28, "it shows the previous
+  // table for a split second"). `hidden` is derived SYNCHRONOUSLY from the URL
+  // (line ~224), but `tables`/`activeIndex` used to catch up in a passive
+  // effect — so on the commit where the URL became /table/B, the container
+  // un-hid and PAINTED the previously active, fully-populated table (real
+  // seats, real pot, real cards) for one frame before this effect switched to
+  // B. With two tables open and B focused, arriving at /table/A painted B
+  // first — literally "a different table for a split second". A layout effect
+  // runs before the browser paints, so the tab sync and the visibility flip
+  // now land in the same frame and the stale table can never reach the
+  // screen. The same window also flashed the "No Tables Open" empty state
+  // when the first table of a session arrived by route; that is gone too.
+  useLayoutEffect(() => {
     if (!routeTableId) return;
     const prev = tablesRef.current;
     const existingIdx = prev.findIndex((t) => t.id === routeTableId);

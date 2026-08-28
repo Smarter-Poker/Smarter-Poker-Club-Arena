@@ -100,6 +100,15 @@ describe('deriveBlindClock', () => {
     expect(clock.nextBlindMult).toBeCloseTo(2);
   });
 
+  it('a stalled clock reads unknown, not zero-forever', () => {
+    // The writer stopped advancing current_level (paused event): after three
+    // level-lengths of "elapsed", the clock must stop claiming the next
+    // level is imminent, or the M-zones play a shrunken M permanently.
+    const started = new Date('2026-08-28T00:00:00Z').toISOString();
+    const now = Date.parse('2026-08-28T00:30:00Z'); // 30 min into a 3-min level
+    expect(deriveBlindClock(structure, 1, started, now).nextBlindInMin).toBeNull();
+  });
+
   it('degrades to unknown on missing inputs — never guesses', () => {
     expect(deriveBlindClock(null, 1, 'x', Date.now()).nextBlindInMin).toBeNull();
     expect(deriveBlindClock(structure, null, 'x', Date.now()).nextBlindInMin).toBeNull();

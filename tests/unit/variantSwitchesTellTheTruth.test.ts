@@ -18,6 +18,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceMethod, sliceStatement } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const BASE = read('server/src/engine/ServerTableEngineBase.ts');
@@ -32,15 +33,15 @@ describe('Pineapple Hold’em', () => {
   });
 
   it('deals a Hold’em table as pineapple when the host asks', () => {
-    const fn = BASE.slice(BASE.indexOf('protected dealtGameVariant()'));
-    expect(fn.slice(0, 700)).toContain('pineapple_holdem');
-    expect(fn.slice(0, 700)).toMatch(/variant === 'nlh' \|\| variant === 'nlhe'/);
+    const fn = sliceMethod(BASE, 'protected dealtGameVariant()');
+    expect(fn).toContain('pineapple_holdem');
+    expect(fn).toMatch(/variant === 'nlh' \|\| variant === 'nlhe'/);
   });
 
   it('refuses to turn a PLO table into one', () => {
     // "Pineapple PLO" is not a game, and a stray flag must not invent it.
-    const fn = BASE.slice(BASE.indexOf('protected dealtGameVariant()'));
-    expect(fn.slice(0, 700)).toContain('return variant;');
+    const fn = sliceMethod(BASE, 'protected dealtGameVariant()');
+    expect(fn).toContain('return variant;');
   });
 
   it('is used by BOTH HandController builders, not one', () => {
@@ -66,10 +67,10 @@ describe('Seven-Deuce', () => {
 
   it('is not offered on a variant that can never pay it', () => {
     expect(PAGE).toContain('SEVEN_DEUCE_VARIANTS');
-    const set = PAGE.slice(PAGE.indexOf('const SEVEN_DEUCE_VARIANTS'));
-    expect(set.slice(0, 160)).toContain("'nlh'");
-    expect(set.slice(0, 160)).not.toContain("'plo");
-    expect(set.slice(0, 160)).not.toContain('short_deck');
+    const set = sliceStatement(PAGE, 'const SEVEN_DEUCE_VARIANTS');
+    expect(set).toContain("'nlh'");
+    expect(set).not.toContain("'plo");
+    expect(set).not.toContain('short_deck');
   });
 
   it('forces the column false rather than leaving a stale true behind', () => {

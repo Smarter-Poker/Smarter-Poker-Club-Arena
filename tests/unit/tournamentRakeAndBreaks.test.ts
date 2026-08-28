@@ -26,6 +26,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { sliceMethod } from '../helpers/sourceWindow';
+import { isShortFormat } from '../../server/src/tournament/breakEligibility';
 
 const GAME_SERVER = readFileSync(resolve(__dirname, '../../server/src/GameServer.ts'), 'utf8');
 const BASE = readFileSync(
@@ -86,8 +87,7 @@ describe('synchronized breaks run :55 -> :00', () => {
   });
 
   it('the liveness sweep does not rebuild engines during a break', () => {
-    const start = BASE.indexOf('protected async reviveDeadTableEngines');
-    const revive = BASE.slice(start, start + 1800);
+    const revive = sliceMethod(BASE, 'protected async reviveDeadTableEngines');
     // Paused is not dead: the sweep must bail out before the dead check.
     expect(revive).toMatch(/if \(this\.onBreak\) return;/);
     const guardAt = revive.indexOf('this.onBreak');
@@ -439,9 +439,37 @@ describe('the :55 break covers every format, not only the MTTs', () => {
   });
 
   it('isMttOrXmtt still exists but normalises case', () => {
-    const fn = BASE.slice(BASE.indexOf('isMttOrXmtt(): boolean'));
-    expect(fn.slice(0, 400)).toMatch(/toUpperCase\(\)/);
-    expect(fn.slice(0, 400)).toMatch(/toLowerCase\(\)/);
+    /* UPDATED 2026-08-27, house rule 8 — the behaviour this pinned moved, it
+       was not removed.
+
+       The `toUpperCase()` / `toLowerCase()` literals left this method when the
+       format rule was lifted into `isShortFormat` in breakEligibility.ts, so
+       that ONE predicate could serve both `isMttOrXmtt()` and
+       `mayTakeSynchronizedBreak()` (the reason is in that file's docstring: a
+       rule stated twice is one forgotten edit away from disagreeing with
+       itself). Grepping this method for a literal it no longer contains says
+       nothing about whether case is still normalised.
+
+       So the INTENT is asserted instead, in two halves: this method still
+       delegates rather than growing a second copy of the rule, and the rule it
+       delegates to is genuinely case-insensitive. The second half is now a
+       BEHAVIOURAL assertion, which is strictly stronger than the regex it
+       replaces — a `toUpperCase()` compared against a lowercase literal would
+       have passed the old pin and matched nothing in production. */
+    const fn = sliceMethod(BASE, 'isMttOrXmtt(): boolean');
+    expect(fn).toMatch(/isShortFormat\(/);
+
+    // Either column identifies the format, in any casing. See the docstring on
+    // isShortFormat for why both are read: the two disagree in the wild.
+    for (const format of ['SPIN', 'spin', 'Spin', 'SNG', 'sng', 'Sng']) {
+      expect(isShortFormat(format, null)).toBe(true);
+      expect(isShortFormat(null, format)).toBe(true);
+    }
+    // And an MTT is an MTT whatever case it arrives in.
+    for (const format of ['MTT', 'mtt', 'XMTT', 'xmtt']) {
+      expect(isShortFormat(format, null)).toBe(false);
+      expect(isShortFormat(null, format)).toBe(false);
+    }
   });
 });
 
@@ -548,8 +576,8 @@ describe('a paused table parks whatever it was doing', () => {
   });
 
   it('resuming clears the hold, so the next pause is judged on its own terms', () => {
-    const resume = ENGINE_BASE.slice(ENGINE_BASE.indexOf('resumeDealing()'));
-    expect(resume.slice(0, 800)).toMatch(/this\.holdBeforeNextHand = false/);
+    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing()');
+    expect(resume).toMatch(/this\.holdBeforeNextHand = false/);
   });
 
   it('the park is what areAllTablesParked reads, so an idle table counts', () => {

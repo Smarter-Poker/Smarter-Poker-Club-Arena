@@ -1203,9 +1203,14 @@
 }
 
 /* PokerBros premium slider — 2026-04-14 polish.
- * Track: 14px chunky rail with inner-shadow depth + dark-base + gold fill.
- * Thumb: 48px metallic gold disc with rim, 3D shadow stack, subtle glow halo.
- * Active state: thumb pulses with stronger glow so the player feels their drag. */
+ * Track: 14px chunky rail with inner-shadow depth + dark-base + SILVER fill.
+ * Thumb: 48px blue disc with white rim, 3D shadow stack, subtle glow halo.
+ * Active state: thumb pulses with stronger glow so the player feels their drag.
+ *
+ * Dan 2026-08-28: "THE BET SLIDER SHOULD BE SILVER AND NOT YELLOW." The fill
+ * used to read var(--color-raise), which design-tokens.css sets to amber
+ * (#f59e0b) — that token also paints the RAISE button, so it stays amber and
+ * the slider hardcodes brushed silver instead of borrowing it. */
 .raise-slider {
   width: 100%;
   height: 14px;
@@ -1215,9 +1220,9 @@
   appearance: none;
   background: linear-gradient(
     90deg,
-    #9ecbff 0%,
-    var(--color-raise, #2f80ed) calc(var(--slider-progress, 50%) - 12%),
-    var(--color-raise-dark, #1b5fc4) var(--slider-progress, 50%),
+    #f2f4f7 0%,
+    #c3c9d1 calc(var(--slider-progress, 50%) - 12%),
+    #868e99 var(--slider-progress, 50%),
     rgba(0, 0, 0, 0.45) var(--slider-progress, 50%),
     rgba(0, 0, 0, 0.55) 100%
   );
@@ -1249,7 +1254,7 @@
     0 6px 16px rgba(0, 0, 0, 0.6),
     0 2px 4px rgba(0, 0, 0, 0.5),
     0 0 0 2px rgba(255, 255, 255, 0.18),
-    0 0 22px var(--color-raise-glow, rgba(47, 128, 237, 0.55)),
+    0 0 22px rgba(47, 128, 237, 0.55),
     inset 0 2px 3px rgba(255, 255, 255, 0.4),
     inset 0 -3px 6px rgba(10, 40, 90, 0.45);
   transition:
@@ -1267,15 +1272,15 @@
   box-shadow:
     0 4px 12px rgba(0, 0, 0, 0.5),
     0 0 0 3px rgba(255, 255, 255, 0.25),
-    0 0 24px var(--color-raise-glow, rgba(47, 128, 237, 0.6));
+    0 0 24px rgba(47, 128, 237, 0.6);
 }
 
 .raise-slider:active::-webkit-slider-thumb {
   transform: scale(1.1);
   box-shadow:
     0 2px 6px rgba(0, 0, 0, 0.6),
-    0 0 0 4px var(--color-raise-glow, rgba(47, 128, 237, 0.5)),
-    0 0 32px var(--color-raise-glow, rgba(47, 128, 237, 0.5));
+    0 0 0 4px rgba(47, 128, 237, 0.5),
+    0 0 32px rgba(47, 128, 237, 0.5);
 }
 
 .raise-slider::-moz-range-thumb {
@@ -1293,7 +1298,7 @@
   border: 2px solid #ffffff;
   box-shadow:
     0 6px 16px rgba(0, 0, 0, 0.6),
-    0 0 22px var(--color-raise-glow, rgba(47, 128, 237, 0.55)),
+    0 0 22px rgba(47, 128, 237, 0.55),
     inset 0 2px 3px rgba(255, 255, 255, 0.4),
     inset 0 -3px 6px rgba(10, 40, 90, 0.45);
 }
@@ -1309,12 +1314,8 @@
 .raise-slider::-moz-range-progress {
   height: 14px;
   border-radius: 8px;
-  background: linear-gradient(
-    90deg,
-    #9ecbff 0%,
-    var(--color-raise, #2f80ed) 60%,
-    var(--color-raise-dark, #1b5fc4) 100%
-  );
+  /* Silver, matching the webkit fill above (Dan 2026-08-28). */
+  background: linear-gradient(90deg, #f2f4f7 0%, #c3c9d1 60%, #868e99 100%);
 }
 
 .raise-slider::-moz-range-thumb:hover {

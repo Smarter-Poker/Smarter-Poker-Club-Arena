@@ -68,6 +68,7 @@ import type {
   RakeConfig,
 } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { logInsuranceOfferEvent } from '../services/supabase/insuranceOfferLog.js';
 import type { TableStateHub } from '../transport/TableStateHub.js';
 import {
   createTableStateMachine,
@@ -246,6 +247,26 @@ export abstract class ServerTableEngineBase {
 
   // Bible V8 §4.2: Players waiting for BB position before they can play
   protected waitingForBB: Set<string> = new Set();
+
+  // B2 2026-08-27 — TOURNAMENT ARRIVALS OWE A BIG BLIND, AND NOTHING COLLECTED IT.
+  //
+  // Every entry mechanism this engine has was switched off for tournament
+  // tables: registerWaitForBB is a no-op for them, `deadBlinds` and
+  // `bbOnlyPosts` were both gated on `!isTournamentTable()`. So a late
+  // registrant, or a player the balancer moved in, was dealt in wherever they
+  // happened to land and paid NOTHING until the blinds reached them — up to a
+  // full free orbit if they landed on the seat the big blind had just passed,
+  // which the seat-number-order placement in TableBalancer handed out at random.
+  //
+  // This set is the tournament counterpart of `postingBBToEnter`: a live big
+  // blind (chip-conserving — it goes into the pot as a real bet), charged once,
+  // on the arrival's first dealt hand. HandController's bbOnlyPosts handler
+  // skips anyone sitting in the small or big blind that hand, so this can never
+  // produce two big blinds inside one orbit. Membership survives the hand a
+  // player spends in the small blind seat and is settled on the next one, which
+  // is the ordinary blind cycle run backwards (SB then BB) rather than an extra
+  // charge.
+  protected mustPostBB: Set<string> = new Set();
 
   // POST-TO-ENTER RACE FIX 2026-08-27 (Dan: "the post to get dealt in
   // feature in cash games isn't working"): a brand-new joiner is only
@@ -604,6 +625,12 @@ export abstract class ServerTableEngineBase {
   protected currentHandPots: { index: number; amount: number; eligible: string[] }[] = [];
   protected currentHandContributions: Map<string, number> = new Map(); // userId → totalInvested
   protected currentHandInsuranceSettlements: InsuranceSettlement[] = [];
+  /**
+   * EV CASHOUT 2026-08-28: pot winnings clawed back to the bank for each
+   * cashed-out player this hand (what the bank actually collected, post-
+   * clamp). Feeds the insurance ledger's bank-in side.
+   */
+  protected currentHandCashoutRedirects: Map<string, number> = new Map();
   protected currentHandBBJHit: BBJDetectionResult | null = null;
   protected currentHandBBJPayoutConfig: ServerRakeConfigResult | null = null;
   /**
@@ -1057,7 +1084,9 @@ export abstract class ServerTableEngineBase {
       if (
         event.type === 'INSURANCE_ACCEPTED' ||
         event.type === 'INSURANCE_DECLINED' ||
-        event.type === 'INSURANCE_SETTLED'
+        event.type === 'INSURANCE_SETTLED' ||
+        // EV CASHOUT 2026-08-28: the third decision, table-wide like the others.
+        event.type === 'INSURANCE_CASHED_OUT'
       ) {
         try {
           const playerId = String((event as Record<string, unknown>).playerId ?? '');
@@ -1065,12 +1094,46 @@ export abstract class ServerTableEngineBase {
             this.seatedPlayers.find((p) => p.user_id === playerId)?.username || 'Player';
           this.hub?.emitEvent(this.tableId, {
             ...(event as unknown as Record<string, unknown>),
-            type: event.type.toLowerCase(), // insurance_accepted / insurance_declined / insurance_settled
+            type: event.type.toLowerCase(), // insurance_accepted / _declined / _settled / _cashed_out
             username,
             table_id: this.tableId,
           });
         } catch {
           /* broadcast failure is non-fatal */
+        }
+        // OBSERVABILITY 2026-08-28: the decision funnel, durable. 'offered'
+        // rows come from broadcastInsuranceOffers; these are the outcomes.
+        // Fire-and-forget — the log must never touch gameplay.
+        try {
+          const ev = event as unknown as Record<string, unknown>;
+          logInsuranceOfferEvent({
+            tableId: this.tableId,
+            clubId: this.tableInfo?.club_id ?? null,
+            handNumber: this.handCount,
+            playerId: String(ev.playerId ?? ''),
+            event:
+              event.type === 'INSURANCE_ACCEPTED'
+                ? 'accepted'
+                : event.type === 'INSURANCE_DECLINED'
+                  ? ev.source === 'timeout'
+                    ? 'timeout'
+                    : 'declined'
+                  : event.type === 'INSURANCE_CASHED_OUT'
+                    ? 'cashed_out'
+                    : 'settled',
+            equityPercent: typeof ev.equity === 'number' ? ev.equity : null,
+            premium: typeof ev.premium === 'number' ? ev.premium : null,
+            insuredAmount:
+              typeof ev.insuredAmount === 'number'
+                ? ev.insuredAmount
+                : typeof ev.cashoutAmount === 'number'
+                  ? ev.cashoutAmount
+                  : null,
+            pot: null,
+            street: null,
+          });
+        } catch {
+          /* observability failure is non-fatal */
         }
       }
     });

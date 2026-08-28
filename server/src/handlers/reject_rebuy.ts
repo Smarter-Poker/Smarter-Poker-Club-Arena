@@ -11,7 +11,17 @@ import { reportError } from '../services/errorReporter.js';
 
 export interface RejectRebuyDeps {
   gameServer: {
-    getTableEngine(tableId: string): { rejectRebuy(userId: string): void } | undefined;
+    /**
+     * ROUTING FIX 2026-08-28: widened from `{ rejectRebuy(...) } | undefined`.
+     * That shape is why this handler sat imported-but-unrouted for so long —
+     * the real `GameServer.getTableEngine` returns `ActionEngine | null |
+     * undefined`, so wiring the route failed to typecheck and the branch was
+     * quietly never added (the 404 then hid behind two fire-and-forget client
+     * calls). The handler already guards BOTH facts at runtime — it checks the
+     * engine exists and that `rejectRebuy` is callable — so the type now says
+     * what the code already does instead of what we wished were true.
+     */
+    getTableEngine(tableId: string): { rejectRebuy?: (userId: string) => void } | null | undefined;
   };
 }
 

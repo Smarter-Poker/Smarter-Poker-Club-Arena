@@ -1087,6 +1087,38 @@
   border-color: rgba(255, 215, 0, 0.25);
 }
 
+/* ── HERO ACTION BADGE + BET CHIPS SWAP (Dan 2026-08-28) ──────────────────
+   "THE HERO'S ACTION DISPLAY 'ALL IN' NEEDS TO BE DIRECTLY ABOVE HIS HEAD.
+   AND THE CHIPS 200 SHOULD BE IN THE LOCATION WHERE THE 'ALL IN' IS
+   CURRENTLY LOCATED."
+
+   Before this, the hero read top-down as: action badge (top: -26px), bet
+   chips (geometry offset toward the pot), avatar — badge farthest away,
+   chips in between. Dan wants the two swapped: the badge hugs the hero's
+   head and the chip stack takes the badge's old airspace, farther out
+   toward the pot.
+
+   Hero only. Villains keep the shared geometry — their badges already sit
+   directly over their heads because a villain pod has no tall card row
+   between badge and avatar. */
+.seat--hero .seat__action {
+  /* Just clear of the avatar's crown. -26px was the old slot; -8px puts the
+     badge's bottom edge a breath above the head. */
+  top: -8px;
+}
+
+.seat--hero .seat__bet-chips {
+  /* Lift the chip stack ~30px past its geometry rest point — into the band
+     the action badge vacated (its old -26..-3px slot above the seat). The
+     geometry offset still carries the toward-the-pot direction; this only
+     adds the extra climb, so every hand size and breakpoint keeps its
+     existing lateral placement. */
+  transform: translate(
+    calc(-50% + var(--bet-offset-x, 0px)),
+    calc(-50% + var(--bet-offset-y, 0px) - 30px)
+  );
+}
+
 /* Dan 2026-08-15, verbatim: "HERO SHOULD NEVER BE FADED UNTIL THEY FOLD, EVEN
    WHEN ACTION ISN'T ON THEM. They should never be faded while they have a
    live hand." seat--in-hand is present exactly while status is active/all_in
@@ -3452,15 +3484,11 @@
        50%: percentages here resolve against the seat's height, which is the
        one measurement CSS can read without anyone writing the plate's height
        down a second time;
-     - `.table-container` reserves exactly `--sp-action-reserve +
-       --sp-hero-clear` under the scaler. --sp-action-reserve is the height the
-       action bar is entitled to at this breakpoint (TablePage.css) — a declared
-       constant, so the strip left between the scaler and the top of the bar is
-       always the remaining --sp-hero-clear, in every state of every hand. It
-       was a live ResizeObserver measurement of the bar until 2026-08-27, which
-       is the same sentence with "always" quietly deleted: the reserve moved
-       whenever the bar did, and the whole felt rescaled with it twice a hand.
-       Reading --sp-hero-clear is
+     - `.table-container` reserves exactly `--sp-action-h + --sp-hero-clear`
+       under the scaler. --sp-action-h is the action bar's OWN measured height,
+       republished by a ResizeObserver every time the raise slider opens or
+       closes, so the strip left between the scaler and the top of the bar is
+       always the remaining --sp-hero-clear. Reading --sp-hero-clear is
        therefore how you read "the top of the action bar" from in here: hard-
        coding a pixel gap instead would be correct only while the bar happened
        to be collapsed, which is the exact bug that put the hero's stack behind

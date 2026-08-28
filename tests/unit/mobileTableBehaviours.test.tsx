@@ -20,6 +20,7 @@ import { render, act } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import TournamentAnnouncementOverlay from '../../src/components/table/TournamentAnnouncementOverlay';
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const TABLE_PAGE = read('src/pages/TablePage.tsx');
@@ -166,14 +167,11 @@ describe('data-hero-action is published on the table root', () => {
     );
     expect(memo).toContain("heroStatus !== 'all_in'");
     // PreActionBar must agree, or the attribute and the render contradict.
-    const preAction = TABLE_PAGE.slice(
-      TABLE_PAGE.indexOf(
-        '{tableState.isHandInProgress &&\n              tableState.heroSeat > 0 &&'
-      )
+    const preAction = sliceEnclosingBlock(
+      TABLE_PAGE,
+      '{tableState.isHandInProgress &&\n              tableState.heroSeat > 0 &&'
     );
-    expect(preAction.slice(0, 1600)).toContain(
-      "getPlayerAtSeat(tableState.heroSeat)?.status !== 'all_in'"
-    );
+    expect(preAction).toContain("getPlayerAtSeat(tableState.heroSeat)?.status !== 'all_in'");
   });
 });
 
@@ -280,10 +278,11 @@ describe('every awarded pot plays its animation', () => {
 
   it('dates the safety sweep from when a fan actually started', () => {
     expect(TABLE_PAGE).toContain('chipAnimStartedAtRef');
-    const sweep = TABLE_PAGE.slice(
-      TABLE_PAGE.indexOf('// Safety cleanup: remove chip animations older than 5 seconds')
+    const sweep = sliceEnclosingBlock(
+      TABLE_PAGE,
+      '// Safety cleanup: remove chip animations older than 5 seconds'
     );
-    expect(sweep.slice(0, 2200)).toContain('chipAnimStartedAtRef.current.get(a.id)');
+    expect(sweep).toContain('chipAnimStartedAtRef.current.get(a.id)');
   });
 });
 
@@ -325,7 +324,7 @@ describe('the Rabbit Hunt button is clickable in practice', () => {
   });
 
   it('never outlives the server TTL — expiry forces the drop', () => {
-    const expiry = TABLE_PAGE.slice(TABLE_PAGE.indexOf('const msLeft = Math.max(0, Math.min('));
-    expect(expiry.slice(0, 500)).toContain('clearRabbitOffer(true)');
+    const expiry = sliceEnclosingBlock(TABLE_PAGE, 'const msLeft = Math.max(0, Math.min(');
+    expect(expiry).toContain('clearRabbitOffer(true)');
   });
 });

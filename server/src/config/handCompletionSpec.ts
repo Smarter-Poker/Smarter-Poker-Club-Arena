@@ -163,6 +163,14 @@ export interface HandCompletionOpts {
   ritRuns?: number;
   /** Run It Twice: streets each board re-dealt (1 = river-only, 3 = full). */
   ritStreetsPerRun?: number;
+  /**
+   * How many award groups the client will animate — one per pot(-half) that
+   * pays somebody: main pot, each side pot, and each half of a hi-lo split.
+   * The client fires them POT_AWARD_STAGGER_MS apart (TablePage's
+   * buildAwardGroups), so a hand paying three groups is animating for
+   * 2 x stagger LONGER than a single-winner hand. Default 1.
+   */
+  potAwardGroups?: number;
 }
 
 /**
@@ -179,7 +187,20 @@ export function handCompletionHoldMs(opts: HandCompletionOpts): number {
   // RESTS for a full second (Dan 2026-08-27) before the next hand may open.
   // (The button glide is the client's beat at HAND_STARTED — see
   // BUTTON_MOVE_MS above for why it is not added here.)
-  const push = H.BETS_SWEEP_MS + H.POT_PUSH_MS + H.MUCK_MS + H.POST_PUSH_PAUSE_MS;
+  //
+  // MULTI-POT FIX 2026-08-28. POT_AWARD_STAGGER_MS was defined for this file
+  // and then read ONLY by the client: the engine held a flat 4500ms however
+  // many winners there were, while the client fires each award group 900ms
+  // after the last. Measured from the WINNERS tick, one group's "+N" float
+  // ended at T+7400 inside a T+7500 hold (100ms to spare), TWO groups ended
+  // at T+8300 and THREE at T+9200 — so on any all-in with a side pot, and on
+  // every hi-lo split, the last winner's chip fan and the number telling them
+  // what they won were wiped mid-flight by the board clear. Exactly the
+  // truncation this file's header was written to eliminate, surviving in the
+  // multi-winner case because the arithmetic only ever described one.
+  const groups = Math.max(1, Math.floor(opts.potAwardGroups ?? 1));
+  const staggerTail = (groups - 1) * H.POT_AWARD_STAGGER_MS;
+  const push = H.BETS_SWEEP_MS + H.POT_PUSH_MS + H.MUCK_MS + H.POST_PUSH_PAUSE_MS + staggerTail;
 
   if (!opts.wentToShowdown) return push;
 

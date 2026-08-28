@@ -41,6 +41,8 @@ import {
   FELT_MARKER_MARGIN_WIDTH_PCT,
   FELT_WINDOW,
   MARKER_MIN_GAP_WIDTH_PCT,
+  isHeroSeat,
+  HERO_CHIP_LIFT_WIDTH_PCT,
   overlapsTopSeatBox,
   TOP_CAP_SEAT_Y_MAX,
   type Pos,
@@ -230,21 +232,42 @@ describe('item 8 - the button stands clear of the rail, not against it', () => {
     );
   });
 
-  it('CONTROL - the chips still ride the edge, so "inside the felt" really was satisfied by touching it', () => {
+  it('CONTROL - the chips are placed by the projection, not by the rail', () => {
     /* The hero's ring position (y=100) is 10.8% of the table's height below the
-       felt, so both of its markers are placed by the projection. The chips are
-       still put exactly on the boundary - the plain marker margin, to floating
-       point - and that is precisely where the button was standing when Dan
-       raised this. Same seat, same projection, one now carries the daylight and
-       the other does not, which is the whole of item 8. */
+       felt, so both of its markers are placed by the projection rather than by
+       the rail. That was the point of this control: the chips landed exactly on
+       the boundary - the plain marker margin, to floating point - which is
+       precisely where the button was standing when Dan raised item 8. Same
+       seat, same projection, one carries the daylight and the other did not.
+
+       UPDATED 2026-08-27. The hero's chips are no longer ON the boundary: Dan
+       ruled that this one seat comes off the oval ("all chips in all other
+       positions and seats should sit in the same position except for the hero,
+       they need to be raised up more"), so they are lifted
+       HERO_CHIP_LIFT_WIDTH_PCT further in. The control still measures the same
+       thing — that the projection, not the rail, is what decides where the
+       hero's markers sit — and now pins the lift as an exact figure so it
+       cannot drift or be applied twice. */
     const hero = RINGS[9][0];
+    expect(isHeroSeat(hero), 'RINGS[9][0] is the hero seat').toBe(true);
     for (const [label, table] of Object.entries(TABLES)) {
       const chips = feltEdgeClearanceWidthPct(chipRestPosition(hero, table), table);
-      expect(chips, `${label}: hero chips`).toBeCloseTo(FELT_MARKER_MARGIN_WIDTH_PCT, 6);
+      /* 4dp, where the boundary case above uses 6. `clampIntoFelt` finds the
+         stadium's edge by bisection and stops around 1e-6, and the lifted point
+         is clamped a second time, so the two approximations compound. 1e-4 of
+         the table's width is 0.03px on a phone — the assertion is still that
+         this is the lift and not some other number, not that a bisection is
+         exact. */
+      expect(chips, `${label}: hero chips`).toBeCloseTo(
+        FELT_MARKER_MARGIN_WIDTH_PCT + HERO_CHIP_LIFT_WIDTH_PCT,
+        4
+      );
       expect(
-        feltEdgeClearanceWidthPct(dealerButtonPosition(hero, table), table) - chips,
-        `${label}: hero button, further in than its own chips by`
-      ).toBeGreaterThanOrEqual(BUTTON_FELT_DAYLIGHT_WIDTH_PCT - 1e-6);
+        feltEdgeClearanceWidthPct(dealerButtonPosition(hero, table), table),
+        `${label}: hero button, clear of the rail by`
+      ).toBeGreaterThanOrEqual(
+        FELT_MARKER_MARGIN_WIDTH_PCT + BUTTON_FELT_DAYLIGHT_WIDTH_PCT - 1e-6
+      );
     }
   });
 
@@ -300,7 +323,44 @@ describe('item 13 - one rail, equal for every seat', () => {
           const rest = chipRestPosition(seat, table);
           const walked = mag(chips);
 
-          if (feltRadialFraction(rest, table) < 0.999) {
+          if (isHeroSeat(seat)) {
+            /* ── THE ONE SEAT OFF THE OVAL (Dan 2026-08-27) ──────────────────
+               This suite exists for Dan's round-2 item 13 — "all chips must
+               appear equally on that line for all players at all tables" — and
+               that rule now has exactly one exception, which he made himself
+               after the conflict was put to him:
+
+                 "All chips in all other positions and seats should sit in the
+                  same position except for the hero, they need to be raised up
+                  more."
+
+               So the rail assertion does not apply to the hero, and the
+               exception is pinned instead of merely skipped. Three things have
+               to hold, and together they say "raised, by a stated amount, and
+               only here":
+
+                 1. it walks FURTHER than the rail — otherwise the lift is not
+                    happening at all;
+                 2. it lands INSIDE the felt, not on the boundary the other
+                    projected seats sit on;
+                 3. its clearance from the felt's edge is exactly the marker
+                    margin PLUS HERO_CHIP_LIFT_WIDTH_PCT — so the exception
+                    cannot quietly grow, shrink, or be applied twice.
+
+               Every other seat still goes through the branches below unchanged,
+               which is what keeps this a one-seat exception rather than the
+               beginning of per-seat placement. */
+            expect(
+              walked,
+              `hero walked ${walked.toFixed(2)} of a ${rail.toFixed(2)} rail`
+            ).toBeGreaterThan(rail);
+            expect(isInsideFelt(rest, table)).toBe(true);
+            // 4dp: two compounded bisections, see the CONTROL above.
+            expect(
+              feltEdgeClearanceWidthPct(rest, table),
+              `${size}-max ${label}: the hero's lift`
+            ).toBeCloseTo(FELT_MARKER_MARGIN_WIDTH_PCT + HERO_CHIP_LIFT_WIDTH_PCT, 4);
+          } else if (feltRadialFraction(rest, table) < 0.999) {
             /* The common rail, to the pixel. Each axis is rounded on its own,
                so the magnitude can land up to ~0.71px either side.
 
@@ -326,12 +386,12 @@ describe('item 13 - one rail, equal for every seat', () => {
               `seat ${JSON.stringify(seat)} walked ${walked.toFixed(2)} of ${rail.toFixed(2)}`
             ).toBe(true);
           } else {
-            /* The ONLY thing that lengthens a walk: this seat's own ring
-               position is outside the painted felt, so the first part of its
-               walk is spent crossing the rail it is standing on. The hero at
-               y=100 is 10.8% of the table's height below the felt; the bottom
-               and top caps are outside it too. Nothing here is a per-seat
-               preference - the same rule moves all of them and no other seat. */
+            /* The ONLY thing that lengthens a NON-HERO walk: this seat's own
+               ring position is outside the painted felt, so the first part of
+               its walk is spent crossing the rail it is standing on. The bottom
+               and top caps are outside it. Nothing in THIS branch is a per-seat
+               preference - the same rule moves all of them and no other seat.
+               (The hero's lift, above, is the one that is, by Dan's ruling.) */
             expect(walked).toBeGreaterThan(rail);
             expect(isInsideFelt(rest, table)).toBe(true);
           }

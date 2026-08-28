@@ -152,3 +152,38 @@ corrected in the same file; that cutoff was the thing that expired.
    and the other 70% never emitted. Bigger than everything in this document.
 3. **`clubs.chip_treasury` vs `club_wallets.chip_balance`** - see C.
 4. **Midway Union at -4,346.80**, plus 126.82 queued behind it.
+
+## Concurrent session, same hour: the amnesty came off
+
+While this work was in flight another agent applied
+`watchdog_remove_conservation_delta_amnesty` (02:20:06),
+`watchdog_conservation_scan_full_window` (02:21:04) and
+`watchdog_schedule_tournament_money_jobs` (02:24:29). The first strips the
+grandfather term out of `fn_tournament_conservation_delta` - the clause that
+forgave pre-2026-08-27 pool inflation - and the third put the sweep on pg_cron,
+which fired at 02:24:50.
+
+**Open `fn_tournament_money_conservation` alerts went from 1 to 1,007** in that
+pass: 1,006 events, delta -258,156.73. This is not a new leak and not a
+regression. Every one of them ended before 2026-08-27 06:35, 923 of them carry a
+guarantee, and none has a row in `tournament_guarantee_overlays`. It is the
+historical unfunded-guarantee backlog, now measured without the amnesty.
+
+Worst single event, Sunday Midway Major (2026-08-23): guaranteed 10,000,
+collected 800, raked 80, paid 9,750. The club funded a 9,030 overlay and nothing
+recorded it.
+
+Zeroing these means writing the overlay rows retroactively for money the clubs
+already paid. That is a decision about ~258k chips and it belongs to whoever
+took the amnesty off, together with Dan - it is deliberately not touched here.
+
+Nothing in this document was computed under the old definition and left stale:
+the Heads-Up figures were re-verified after the amnesty was removed and still
+read 0 owing. Those events were never grandfathered anyway - their pools were
+smaller than what they collected, so the term was already zero.
+
+**No double-scheduling.** The new pg_cron entries cover the conservation and
+payout sweeps. `fn_charge_place_overpays` and
+`fn_repair_tournament_rake_attribution` run only from their own GameServer
+timers, and `fn_backpay_hu_winner_shortfalls` still runs only from its. All
+three are idempotent regardless.

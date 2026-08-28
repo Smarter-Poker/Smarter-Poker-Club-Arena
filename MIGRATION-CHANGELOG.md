@@ -2,6 +2,54 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-08-28 — MULTI-BOARD EQUITY, PLO8 HI-LO, LEDGER SCOPE
+
+Dan asked for the all-in equity to appear only AFTER a street lands, and for a
+full second before each next street. **Another agent shipped that same fix
+while this work was in flight** (`allInStreetRevealMs`, a shared
+`ALL_IN_STREET_REVEAL_MS` spec constant, applied to both the paced runout and
+the per-street insurance flow). Their implementation is correct and covers
+both requirements, so it stands as written — a competing second constant for
+one rule would be worse than either version alone. What is added here is what
+their change does not cover, plus pins so the rule cannot be silently undone:
+
+1. **Guard pins for the reveal gate.** The failure mode is silent: move the
+   equity broadcast back above the sleep and nothing errors, the numbers just
+   start moving over cards still in the air again. Both dealing paths are
+   pinned for ORDER (deal -> reveal gate -> equity -> inter-street gap), the
+   gate is pinned at >= 1250ms (the client's own flop landing time) and the
+   inter-street pause at >= 1000ms ("one full second, every time").
+2. **Per-board equity priced in PARALLEL.** It was one `await` per board
+   inside a loop, so a triple-board all-in paid three times the latency — and
+   that latency sits between the reveal gate and the percentages appearing,
+   which is precisely the window Dan's rule is measured in. `Promise.all`; the
+   worker pool was already concurrent.
+3. **PLO8 multi-board hi-lo, fixed.** The multi-board branch passed
+   `undefined` for the hi-lo accumulator, so it stayed all zeros and the
+   strategy below it (`scoopy`, the quarter check, the V23 low-only branch)
+   read "no hi, no lo" on every multi-board PLO8 hand. Now averaged per board,
+   with a FRESH accumulator per board so four probabilities cannot sum past 1.
+4. **Award ledger covers every bomb hand**, not just multi-board ones — a
+   single-board bomb with side pots is exactly as hard to rebuild from the
+   merged winners list, and a partial ledger could not tell one from a hand
+   that never happened.
+
+### PROVEN ON LIVE HANDS, not only tests
+
+Until today every bomb pot ever dealt was one configuration (every_n_hands /
+2 boards / no override). The horse-only `E2E TEST TABLE` was configured to
+exercise five never-run paths at once, and did:
+
+    hand 3329569  21:43:59  plo4  boards 3  trigger timed  ante 3.00 fixed
+      pot 21.00 - rake 2.10 - bbj 0.50 = 18.40 = paid = ledger (3 rows)
+      15/15 distinct board cards - 4 hole cards per player (PLO4 override)
+
+Three such hands, each reconciling exactly (18.40 / 69.50 / 16.20, the last a
+chop across 4 award units), all 15/15 distinct cards. The separate bomb button
+behaved to spec 5.3 across them — normal btn 3, BOMB 4, normal 4, BOMB 5,
+normal 5, BOMB 7 — the regular rotation blind to bomb hands, dead-button skip
+intact. The table is left configured so this coverage keeps running.
+
 ## Cowork session 2026-08-28 — BOMB POT ROUND 5: a clone must not inherit a bomb
 
 Post-ship audit of my own round-4 work. One real bug, found by asking "what

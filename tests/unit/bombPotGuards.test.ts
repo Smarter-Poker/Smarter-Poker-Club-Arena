@@ -123,11 +123,17 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
     expect(TURNS).toMatch(/communityCards2: fullState\?\.communityCards2 \?\? \[\]/);
   });
 
-  it('the award-unit ledger writes only settled multi-board bomb hands, idempotently', () => {
-    // The multi-board gate and the write are siblings in one `if` block, so
-    // that block is the window — bounded by structure, never a byte count.
+  it('the award-unit ledger covers EVERY bomb hand, idempotently', () => {
+    // The gate and the write are siblings in one `if` block, so that block is
+    // the window — bounded by structure, never a byte count.
     const window = sliceEnclosingBlock(SETTLEMENT, "from('bomb_pot_award_units')", 0, 2);
-    expect(window).toMatch(/board_count \?\? 1\) >= 2/);
+    // Gated on the hand being a BOMB, and on there being awards to record —
+    // never on the board count (2026-08-28: a single-board bomb with side
+    // pots is exactly as hard to rebuild, and a partial ledger cannot tell a
+    // single-board bomb from a hand that never happened).
+    expect(window).toMatch(/this\.currentHandBombPot/);
+    expect(window).toMatch(/currentHandPerPotAwards\.length > 0/);
+    expect(window).not.toMatch(/board_count \?\? 1\) >= 2/);
     expect(window).toMatch(/onConflict: 'hand_history_id,pot_index,board,side,user_id'/);
     expect(window).toMatch(/ignoreDuplicates: true/);
   });
@@ -168,6 +174,71 @@ describe('ROUND 5 (2026-08-28) — clone hygiene and manual-trigger ordering', (
     // template, which is the entire point of a template.
     expect(sql).not.toMatch(/'bomb_pot_board_count',\s*NULL/);
     expect(sql).not.toMatch(/'bomb_pot_trigger_mode',\s*NULL/);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE ALL-IN RUNOUT IS READ, NOT RACED (Dan 2026-08-28, BINDING)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * "ONLY SHOW THE EQUITY AFTER THE FLOP TURN OR RIVER IS DISPLAYED, NOT
+ *  BEFORE, NOT DURING ONLY AFTER IT LANDS. AND THAT YOU WAIT ONE FULL SECOND
+ *  BEFORE PUTTING OUT THE NEXT STREET EACH TIME. (AND EVERY TIME)"
+ *
+ * The reveal gate itself (allInStreetRevealMs) shipped separately the same
+ * day. These pins exist so it cannot be quietly undone: the failure mode is
+ * SILENT — move the equity broadcast back above the sleep and nothing errors,
+ * the numbers simply start moving over cards still in the air again. Both
+ * dealing paths are pinned, because both deal streets.
+ */
+describe('all-in equity lands AFTER the street, and every street gets its second', () => {
+  const RUNOUT = read('server/src/engine/ServerTableEngineRunout.ts');
+  const SPEC = read('server/src/config/handCompletionSpec.ts');
+
+  it('the reveal gate is a shared spec constant, long enough to see a flop', () => {
+    const reveal = Number(SPEC.match(/ALL_IN_STREET_REVEAL_MS:\s*(\d+)/)![1]);
+    // The flop is the slowest street to land on the client (ccFlopLand 0.3s
+    // then ccFlopFanOpen 0.5s at a 0.75s delay => ~1.25s).
+    expect(reveal).toBeGreaterThanOrEqual(1250);
+    expect(RUNOUT).toMatch(/allInStreetRevealMs = HAND_COMPLETION\.ALL_IN_STREET_REVEAL_MS/);
+  });
+
+  it('the paced runout waits for the card to be SEEN before broadcasting equity', () => {
+    const loop = sliceEnclosingBlock(RUNOUT, 'const result = controller.dealNextStreet()');
+    const deal = loop.indexOf('dealNextStreet()');
+    const gate = loop.indexOf('allInStreetRevealMs');
+    const equity = loop.indexOf('broadcastAllInEquity(');
+    expect(deal).toBeGreaterThan(-1);
+    expect(gate).toBeGreaterThan(deal);
+    expect(equity).toBeGreaterThan(gate);
+  });
+
+  it('the insurance per-street flow obeys the same order', () => {
+    const fn = sliceMethod(RUNOUT, 'protected async dealNextInsuranceStreet');
+    const deal = fn.indexOf('dealNextStreet()');
+    const gate = fn.indexOf('allInStreetRevealMs');
+    const equity = fn.indexOf('broadcastAllInEquity(');
+    expect(gate).toBeGreaterThan(deal);
+    expect(equity).toBeGreaterThan(gate);
+  });
+
+  it('a full second at least separates the streets, after the numbers are readable', () => {
+    const pause = Number(RUNOUT.match(/allInStreetPauseMs = (\d+)/)![1]);
+    expect(pause).toBeGreaterThanOrEqual(1000); // "ONE FULL SECOND ... EVERY TIME"
+    const loop = sliceEnclosingBlock(RUNOUT, 'const result = controller.dealNextStreet()');
+    // The gap is taken AFTER the equity broadcast, not instead of it.
+    expect(loop.indexOf('allInStreetPauseMs')).toBeGreaterThan(
+      loop.indexOf('broadcastAllInEquity(')
+    );
+  });
+
+  it('per-board equity is priced in parallel, not one await at a time', () => {
+    // This computation sits between the reveal gate and the percentages
+    // appearing, so a serial loop pushes the numbers further from the card.
+    const fn = sliceMethod(RUNOUT, 'protected async broadcastAllInEquity');
+    expect(fn).toMatch(/await Promise\.all\(/);
+    expect(fn).not.toMatch(/for \(const b of allBoards\) \{\s*perBoard\.push\(\s*await/);
   });
 });
 

@@ -127,10 +127,48 @@ where the old one could only be counted:
   keep their ratio. The floor case is the tight one and is already what the
   phone assertions measure.
 
+## The E2E spec caught two things the unit tests could not
+
+`tests/e2e/hero-card-row.spec.ts` renders real pixels, and it went red on the
+first push with 38 failures. Both causes were in the test, and both were worth
+finding.
+
+**1. It read a custom property as text.** `parseFloat(getComputedStyle(row)
+.getPropertyValue('--sp-hero-card-step'))` worked only while the token was a px
+literal. An unregistered custom property computes to its token stream with
+`var()`s substituted, not to a length — so the moment step became
+`calc(var(--sp-card2-w) * 0.72)` that returned **NaN**, and `toBeCloseTo(NaN)`
+fails against every real number. The row itself measured perfectly the whole
+time. (My own harness hit this too, and printed a confident `0` for every card
+before I noticed.) It resolves the token through a real property now.
+
+**2. The fixture faked a felt without publishing `--table-w`.** The harness
+pinned `.table-scaler` to a flat 320px at every breakpoint, which was fine while
+cards were viewport-keyed and meaningless once they are felt-keyed: the cards
+sized themselves from a number with no relationship to the box they had to fit
+inside. It now sets a felt width per breakpoint — **measured** with
+`measure-felt.mjs` at each of the spec's own viewports (383 / 419 / 426 / 351;
+note tablet and phone come out wider than desktop, because the mobile blocks
+reserve far less height) — and publishes it as `--table-w` exactly as
+TablePage.tsx does.
+
+**And then my fix for (1) introduced a third, which is the good part.** Appending
+the measurement probe to the row made it one more direct child, so
+`:has(> *:nth-child(4|5|6))` shifted by one: a 4-card row resolved PLO5's tokens
+and a 5-card row PLO6's. It failed the 4- and 5-card beats at every breakpoint
+while 2 and 6 passed — 2 is below the first guard and 6 above the last, so
+neither has a rule an extra child can reach. That signature is what identified
+it. The probe goes inside the first card now, where it inherits every token and
+is invisible to `> *:nth-child()`.
+
+It is the same `:nth-child` trap this spec's own header was written about (the
+`.seat__card-pick` wrapper), arriving in the test instead of the stylesheet.
+
 ## Verification
 
 - `npx tsc --noEmit` — clean.
 - `npx vitest run tests/` — **538 files, 8332 tests, 0 failures.**
+- `npx playwright test hero-card-row multi-table` — **52 passed.**
 - `node scripts/dev/measure-felt.mjs --calibrate` — reproduces the recorded
   production figure exactly.
 - Every number in this document is harness output, not arithmetic.

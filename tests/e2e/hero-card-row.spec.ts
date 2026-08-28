@@ -59,25 +59,60 @@ const seatHtml = (n: number, markup: Markup) => `
 const harnessCss = `
   * { box-sizing: border-box; animation: none !important; }
   body { margin: 0; }
-  .table-scaler { position: relative; width: min(320px, 100vw); height: 560px; margin: 0 auto; }
+  /* ── 2026-08-28: THE FELT IS A PARAMETER, AND IT PUBLISHES --table-w ───────
+     This was a flat "width: min(320px, 100vw); height: 560px" at every
+     breakpoint, which was fine while cards were sized by a px ladder keyed on
+     the VIEWPORT: the fixture's own felt was irrelevant to the answer.
+     (Quoted with " and not with a backtick on purpose - this comment lives
+     inside a JS template literal, and a backtick here ends the string.)
+
+     It is not fine now. Cards are a fraction of --table-w, the felt's measured
+     width, which TablePage.tsx publishes from a ResizeObserver on the real
+     scaler. A fixture that fakes a felt and does NOT publish --table-w makes
+     the cards size themselves from something with no relationship to the box
+     they have to fit inside — so every "inside the felt" beat below would be
+     measuring a coincidence. That is exactly how this file failed on the first
+     run of the proportional change, and it was right to.
+
+     So the harness does what the app does: it sets a felt width per breakpoint
+     and publishes that same number as --table-w. The widths are not invented —
+     they are what scripts/dev/measure-felt.mjs reports the real cascade
+     produces at each of these viewports at this file's 900px height. Note that
+     tablet and phone come out WIDER than desktop: the felt is derived from
+     leftover height, and the mobile blocks reserve far less of it at the top. */
+  .table-scaler { position: relative; width: var(--harness-felt-w); height: 560px; margin: 0 auto; --table-w: var(--harness-felt-w); }
   .seat { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); }
   .seat__avatar { width: var(--seat-avatar-size, 84px); height: var(--seat-avatar-size, 84px); border-radius: 50%; }
   .seat__info { width: 100%; height: 34px; }
 `;
 
+/** `feltW` is measured, not chosen: `node scripts/dev/measure-felt.mjs` at each
+ *  of these viewports with this file's 900px height. Re-run it if the height
+ *  budget in TablePage.css changes, rather than nudging these by hand. */
 const BREAKPOINTS = [
-  { label: 'desktop', width: 1280 },
-  { label: 'tablet', width: 640 },
-  { label: 'phone', width: 480 },
-  { label: 'small phone', width: 375 },
+  { label: 'desktop', width: 1280, feltW: 383 },
+  { label: 'tablet', width: 640, feltW: 419 },
+  { label: 'phone', width: 480, feltW: 426 },
+  { label: 'small phone', width: 375, feltW: 351 },
 ];
+
+/** The card's share of the felt, and the floor below which legibility wins over
+ *  proportion. Both are declared once on `.seat` in SeatSlot.css; restated here
+ *  so a change to either fails against this file's own arithmetic rather than
+ *  silently re-baselining it. */
+const CARD_FRACTION_OF_FELT = 0.139;
+const CARD_FLOOR_PX = 44;
+const expectedCardW = (feltW: number) => Math.max(CARD_FLOOR_PX, feltW * CARD_FRACTION_OF_FELT);
 
 async function measure(
   page: import('@playwright/test').Page,
   n: number,
-  markup: Markup = 'wrapped'
+  markup: Markup = 'wrapped',
+  feltW = 351
 ) {
-  await page.setContent(`<style>${css}\n${harnessCss}</style>${seatHtml(n, markup)}`);
+  await page.setContent(
+    `<style>${css}\n${harnessCss}\n:root{--harness-felt-w:${feltW}px}</style>${seatHtml(n, markup)}`
+  );
   return page.evaluate(() => {
     const q = (s: string) => document.querySelector(s)!.getBoundingClientRect();
     const scaler = q('.table-scaler');
@@ -106,11 +141,46 @@ async function measure(
       rowBottom: row.bottom,
       cardW: cardEl.offsetWidth,
       cardH: cardEl.offsetHeight,
-      step: parseFloat(
-        getComputedStyle(document.querySelector('.seat__cards--hero')!).getPropertyValue(
-          '--sp-hero-card-step'
-        )
-      ),
+      feltW: scaler.width,
+      /* RESOLVED THROUGH A REAL PROPERTY, NEVER READ AS TEXT (2026-08-28).
+         This was
+           parseFloat(getComputedStyle(row).getPropertyValue('--sp-hero-card-step'))
+         which worked only while the token was a px literal. An unregistered
+         custom property computes to its token stream with var()s substituted,
+         NOT to a length, so the moment step became `calc(var(--sp-card2-w) *
+         0.72)` that parseFloat returned NaN — and `toBeCloseTo(NaN)` fails
+         against every real number, which is why 38 beats in this file went red
+         at once while the row itself measured perfectly.
+         Assigning the token to `width` on a throwaway element and reading the
+         used value is the only honest way to get a number out of it. */
+      step: (() => {
+        const probe = document.createElement('div');
+        probe.style.cssText = 'position:absolute;visibility:hidden';
+        probe.style.width = 'var(--sp-hero-card-step)';
+
+        /* THE PROBE GOES INSIDE THE FIRST CARD, NOT INSIDE THE ROW, and this
+           is not fussiness — putting it in the row silently changes the answer.
+
+           The PLO guards are `.seat__cards--hero:has(> *:nth-child(4|5|6))`,
+           which count the row's DIRECT children. A probe appended to the row is
+           one more direct child, so a 4-card row starts matching the 5-card
+           guard and a 5-card row the 6-card guard: measuring the step is what
+           gives it the wrong step. The first version of this fix did exactly
+           that, and it failed the 4- and 5-card beats at every breakpoint while
+           2 and 6 passed (2 is below the first guard, 6 is above the last, so
+           neither has a rule an extra child can reach).
+
+           A GRANDCHILD is invisible to `> *:nth-child()` and still inherits
+           every custom property, so it reads the same tokens the cards read
+           without being counted as one. This is the same `:nth-child` trap the
+           header of this file is about — the `.seat__card-pick` wrapper — and
+           it bit the test rather than the stylesheet this time. */
+        const host = document.querySelector('.seat__cards--hero')!.firstElementChild!;
+        host.appendChild(probe);
+        const px = parseFloat(getComputedStyle(probe).width);
+        probe.remove();
+        return px;
+      })(),
     };
   });
 }
@@ -122,7 +192,7 @@ for (const bp of BREAKPOINTS) {
     for (const n of [2, 4, 5, 6]) {
       for (const markup of ['wrapped', 'bare'] as const) {
         test(`${n} cards (${markup}): beside the plate, inside the viewport`, async ({ page }) => {
-          const m = await measure(page, n, markup);
+          const m = await measure(page, n, markup, bp.feltW);
 
           /* Dan 2026-08-22, mobile audit item 2, verbatim: "THE HERO CARDS
              NEED TO BE NEXT TO THE HERO, NOT ON TOP OF THE TABLE."
@@ -177,22 +247,53 @@ for (const bp of BREAKPOINTS) {
       }
     }
 
-    test('PLO cards are 50% larger than a hold-em card row was sized for', async ({ page }) => {
-      // The pre-2026-08-19 PLO token sets, per breakpoint, as [w, h].
-      const BEFORE: Record<string, Record<number, [number, number]>> = {
-        desktop: { 4: [40, 56], 5: [38, 53], 6: [36, 50] },
-        tablet: { 4: [38, 53], 5: [36, 50], 6: [34, 47] },
-        phone: { 4: [34, 47], 5: [32, 45], 6: [30, 42] },
-        'small phone': { 4: [30, 42], 5: [28, 39], 6: [26, 36] },
+    test('PLO cards stay big, and are a fixed fraction of the felt', async ({ page }) => {
+      /* RETARGETED 2026-08-28. This used to divide the rendered card by the
+         pre-2026-08-19 PLO literals and require the ratio to be ~1.5 at each
+         breakpoint. That comparison is no longer expressible: those literals
+         were viewport-keyed and the card is felt-keyed now, so the two sides
+         are not measuring the same axis and the ratio drifts with the height
+         budget rather than with anything anyone decided.
+
+         What the beat was FOR survives in two halves, and both are stronger
+         than the ratio was:
+
+           1. PLO must not quietly shrink back to the pre-enlargement set.
+           2. The card must be the SAME fraction of the felt at every hand size
+              and every breakpoint — which is the rule Dan actually asked for
+              ("my buttons and cards look the same no matter if I'm on a phone,
+              or a tablet") and which the old per-breakpoint ratio could not
+              state at all. */
+      const BEFORE: Record<string, Record<number, number>> = {
+        desktop: { 4: 40, 5: 38, 6: 36 },
+        tablet: { 4: 38, 5: 36, 6: 34 },
+        phone: { 4: 34, 5: 32, 6: 30 },
+        'small phone': { 4: 30, 5: 28, 6: 26 },
       };
+      /* PLO5 and PLO6 step DOWN from PLO4 to hold the row width roughly
+         constant — 0.95 and 0.90 of the shared card, declared in SeatSlot.css. */
+      const HAND_FACTOR: Record<number, number> = { 4: 1, 5: 0.95, 6: 0.9 };
+
       for (const n of [4, 5, 6]) {
-        const m = await measure(page, n);
-        const [beforeW, beforeH] = BEFORE[bp.label][n];
-        // "~50% larger" - the token values are whole pixels, so the ratio
-        // lands within a pixel of 1.5 rather than exactly on it (e.g. PLO5 at
-        // desktop is 53 -> 80, a ratio of 1.509).
-        expect(m.cardW / beforeW).toBeCloseTo(1.5, 1);
-        expect(m.cardH / beforeH).toBeCloseTo(1.5, 1);
+        const m = await measure(page, n, 'wrapped', bp.feltW);
+
+        expect(
+          m.cardW,
+          `PLO${n} at ${bp.label} shrank back towards the pre-2026-08-19 size`
+        ).toBeGreaterThan(BEFORE[bp.label][n]);
+
+        const want = expectedCardW(m.feltW) * HAND_FACTOR[n];
+        expect(
+          m.cardW,
+          `PLO${n} at ${bp.label}: card is ${m.cardW}px on a ${m.feltW}px felt ` +
+            `(${((m.cardW / m.feltW) * 100).toFixed(1)}%), expected ~${want.toFixed(1)}px`
+        ).toBeCloseTo(want, 0);
+
+        // The 2.5:3.5 playing-card ratio, exact so the art is never resampled.
+        expect(m.cardH / m.cardW, `PLO${n} at ${bp.label} is not the 2.5:3.5 card`).toBeCloseTo(
+          1.4,
+          1
+        );
       }
     });
 
@@ -215,29 +316,33 @@ for (const bp of BREAKPOINTS) {
          The 2px tolerance is inherited and still right — it lets the art be
          nudged a pixel without four phantom failures a run, and is nowhere near
          wide enough to hide a real divergence, which would be 15px or more. */
-      const HOLDEM: Record<string, [number, number]> = {
-        desktop: [60, 84],
-        tablet: [57, 80],
-        phone: [51, 71],
-        'small phone': [45, 63],
-      };
-      /* Every height here is round(width x 1.4), the 2.5:3.5 playing-card ratio
-         made exact in 833a34d9a to kill the blur: 60->84, 57->79.8->80,
-         51->71.4->71, 45->63. Recompute rather than read off a browser if these
-         ever change again; this loop makes a copied value fail here, next to
-         the map, instead of downstream as a phantom resize. */
-      for (const [label, [mapW, mapH]] of Object.entries(HOLDEM)) {
-        expect(Math.round(mapW * 1.4), `${label} height is not the 2.5:3.5 ratio`).toBe(mapH);
-      }
+      /* THE MAP OF LITERALS THAT WAS HERE IS GONE (2026-08-28), and its absence
+         is the improvement. It was `{ desktop: [60, 84], tablet: [57, 80], ... }`
+         — the four rungs of the px ladder, restated in a test file, which meant
+         the beat could only ever speak about four widths. A tablet at 768px is
+         not one of them, and a tablet is where Dan noticed the bug this whole
+         pass is about.
 
-      const [w, h] = HOLDEM[bp.label];
-      const m = await measure(page, 2);
-      expect(Math.abs(m.cardW - w), `hold-em card width at ${bp.label}`).toBeLessThanOrEqual(2);
-      expect(Math.abs(m.cardH - h), `hold-em card height at ${bp.label}`).toBeLessThanOrEqual(2);
+         The card is a fraction of the felt now, so the expectation is computed
+         from the felt this fixture is actually rendering rather than looked up,
+         and it holds at any width including the ones nobody enumerated. */
+      const m = await measure(page, 2, 'wrapped', bp.feltW);
+
+      const want = expectedCardW(m.feltW);
+      expect(
+        m.cardW,
+        `hold-em card at ${bp.label}: ${m.cardW}px on a ${m.feltW}px felt ` +
+          `(${((m.cardW / m.feltW) * 100).toFixed(1)}%), expected ~${want.toFixed(1)}px`
+      ).toBeCloseTo(want, 0);
+      // 2.5:3.5, exact, so the card art is never resampled.
+      expect(m.cardH / m.cardW, `hold-em card at ${bp.label} is not the 2.5:3.5 card`).toBeCloseTo(
+        1.4,
+        1
+      );
 
       /* The invariant itself, measured rather than asserted from a map: a
          hold-em card and a PLO4 card are the same rectangle on the same felt. */
-      const plo4 = await measure(page, 4);
+      const plo4 = await measure(page, 4, 'wrapped', bp.feltW);
       expect(
         Math.abs(m.cardW - plo4.cardW),
         `hold-em vs PLO4 width at ${bp.label}`

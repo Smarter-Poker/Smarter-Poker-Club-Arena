@@ -411,6 +411,37 @@ export const HydraService = {
     bigBlind: number = 2,
     isTournament: boolean = false
   ): Promise<HorsePlayer[]> {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  TOURNAMENT TABLES ARE OFF LIMITS (2026-08-28) — SERVICE-LEVEL GUARD
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * This is a browser-side seat writer: seatHorse below INSERTs table_seats
+     * rows (and deletes departed ones) with no money movement behind them.
+     * On a tournament table that is not "seeding", it is counterfeiting: a
+     * seat-first game's paid-seat count IS its live seat-row count, so a
+     * client-planted horse seat reads as a bought seat to the engine's start
+     * gate, and the deleted departed rows trip the ca_seat_stack_exits
+     * ledger watch. Horses enter tournaments through the paid server RPCs
+     * (fn_register_horse_for_tournament / fn_seat_horse_in_seat_first_game)
+     * and nowhere else — see CLAUDE.md section 10.5.
+     *
+     * Checked HERE, not only at the callers (TablePage gates its horse
+     * loader, but HorseOrchestrator also calls this, and callers regrow).
+     * The `isTournament` parameter is a legacy lie — it changed the horse
+     * CAP, it never refused — so the table row is asked directly. Unreadable
+     * row = refuse: "could not verify it is safe" is not "safe".
+     */
+    const { data: seedTbl, error: seedTblErr } = await supabase
+      .from('tables')
+      .select('tournament_id, game_type')
+      .eq('id', tableId)
+      .maybeSingle();
+    if (seedTblErr || !seedTbl || seedTbl.tournament_id || seedTbl.game_type === 'tournament') {
+      if (seedTblErr) reportError(seedTblErr, 'HydraService.seedTable_table_check_failed');
+      return [];
+    }
+
     const status = await this.getTableLiquidityStatus(tableId);
     // Cash games: hard cap of 4 horses. Tournaments: no limit.
     const maxHorses = isTournament ? 9 : Math.min(this.config.maxHorsesPerTable, 4);

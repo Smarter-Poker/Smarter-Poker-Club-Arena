@@ -8133,7 +8133,21 @@ export default function TablePage({
               ? Number(levelEntry.duration) ||
                 (Number(levelEntry.duration_minutes ?? levelEntry.durationMinutes) || 0) * 60
               : 0;
-            if (durSec > 0) {
+            /* NO PHANTOM CLOCK BEFORE THE GAME EXISTS (Dan 2026-08-28). A
+               REGISTERING seat-first table used to fall into the
+               `?: Date.now()` arm — level_started_at is NULL until the game
+               starts — so every spectator watched a "LEVEL 1 · 2:57" clock
+               counting down toward nothing, restarting from 3:00 on every
+               reload. A level clock exists once a level has actually started:
+               the row says so (level_started_at / started_at), or the game is
+               out of the selling states. Pre-start, no clock — the seats and
+               the footer carry the story. The engine's level_up broadcasts
+               still drive the clock live once play begins. */
+            const levelHasStarted =
+              Boolean(tournData.level_started_at) ||
+              Boolean(tournData.started_at) ||
+              !['REGISTERING', 'ANNOUNCED'].includes(String(tournData.status ?? ''));
+            if (durSec > 0 && levelHasStarted) {
               const startedAtMs = tournData.level_started_at
                 ? Date.parse(tournData.level_started_at as string)
                 : Date.now();
@@ -13539,22 +13553,14 @@ export default function TablePage({
               reason
             );
           if (stale && tableState.tournamentId) {
-            /* AUDIT 2026-08-25: `data` only. A failed lookup read as "there is
-               no live table" and dropped through to the generic error toast,
-               hiding a recycled table the player could have been sent to. */
-            const { data: live, error: liveError } = await supabase
-              .from('tables')
-              .select('id, created_at')
-              .eq('tournament_id', tableState.tournamentId)
-              .neq('status', 'closed')
-              .order('created_at', { ascending: false })
-              .limit(1);
-            if (liveError) {
-              reportError(liveError, 'TablePage.seat_first_live_table_lookup', {
-                tournamentId: tableState.tournamentId,
-              });
-            }
-            const liveId = (live || [])[0]?.id as string | undefined;
+            /* 2026-08-28: through the DATABASE's own primary-table election
+               (fn_tournament_primary_table via resolveTournamentLiveTable —
+               occupancy first, oldest tie-break, same choice the engine
+               makes), not "newest non-closed": a duplicate's empty newer
+               table used to outrank the one holding every player. Errors are
+               reported inside the resolver; a null answer falls through to
+               the toast below, same as before. */
+            const liveId = await tableService.resolveTournamentLiveTable(tableState.tournamentId);
             if (liveId && liveId !== tableId) {
               toast?.info?.('This Table Was Recycled, Opening The Live One');
               navigate(`/table/${liveId}`);
@@ -13761,23 +13767,12 @@ export default function TablePage({
 
     let cancelled = false;
     const check = async () => {
-      /* AUDIT 2026-08-25: `data` only. A failed poll was indistinguishable
-         from "this table is still the live one", so a genuinely recycled table
-         was followed only if the very next poll happened to succeed - and the
-         failure itself was invisible. Log it and treat it as "we could not
-         ask", never as an answer. */
-      const { data, error } = await supabase
-        .from('tables')
-        .select('id, created_at')
-        .eq('tournament_id', tournId)
-        .neq('status', 'closed')
-        .order('created_at', { ascending: false })
-        .limit(1);
-      if (error) {
-        reportError(error, 'TablePage.recycled_table_watch', { tournamentId: tournId });
-        return;
-      }
-      const liveId = (data || [])[0]?.id as string | undefined;
+      /* 2026-08-28: the DATABASE's own primary-table election (see
+         resolveTournamentLiveTable), so this watch can never follow a
+         duplicate's empty newer table away from the one the players are on.
+         A null answer means "could not resolve OR nothing live" — either
+         way, not proof this table was recycled, so stay put. */
+      const liveId = await tableService.resolveTournamentLiveTable(tournId);
       if (cancelled || !liveId || liveId === tableId) return;
       console.debug('[Seat] Table recycled - following tournament to', liveId);
       navigate(`/table/${liveId}`, { replace: true });
@@ -13919,13 +13914,40 @@ export default function TablePage({
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'tournaments', filter: `id=eq.${tournId}` },
         (payload) => {
-          const status = String(
-            (payload.new as { status?: string } | null)?.status ?? ''
-          ).toUpperCase();
+          const row = payload.new as {
+            status?: string;
+            current_level?: number;
+            level_started_at?: string;
+          } | null;
+          const status = String(row?.status ?? '').toUpperCase();
           if (status && status !== 'REGISTERING' && status !== 'ANNOUNCED') {
             // The game left the selling state under us. Take the sheet down
             // now — the D8 effect clears seatFirstBuyIn off this latch.
             setPlayHasBegun(true);
+            /* START THE LEVEL CLOCK WITH THE GAME (2026-08-28). The mount
+               effect no longer fabricates a countdown for a REGISTERING
+               table (that was the phantom "LEVEL 1 · 2:57" every spectator
+               watched restart on every reload), and the engine's level_up
+               broadcast only fires from level 2. This transition IS level
+               1 starting, and the row on the wire carries its own stamp. */
+            const struct = blindStructRef.current;
+            const lvlIdx = Number(row?.current_level ?? 0);
+            const entry =
+              struct[Math.min(Math.max(lvlIdx, 0), Math.max(struct.length - 1, 0))] ||
+              struct.find((bl) => bl.level === lvlIdx + 1);
+            const durSec = entry
+              ? Number(entry.duration) ||
+                (Number(entry.duration_minutes ?? entry.durationMinutes) || 0) * 60
+              : 0;
+            if (durSec > 0) {
+              const startedAtMs = row?.level_started_at
+                ? Date.parse(row.level_started_at)
+                : Date.now();
+              setLevelClock({
+                startedAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
+                durationSec: durSec,
+              });
+            }
           }
         }
       );
@@ -17401,7 +17423,14 @@ export default function TablePage({
                   the invitation. */}
               {tableState.isTournament && !seatFirstBuyIn
                 ? 'Spectating'
-                : 'Spectating, Tap An Open Seat To Join'}
+                : /* Seat-first: carry the live fill state so a spectator can
+                     see how close the game is to firing without counting
+                     avatars (Dan 2026-08-28 polish pass). The roster
+                     live-sync keeps players[] current pre-start, so this
+                     number moves the moment a seat sells. */
+                  seatFirstBuyIn
+                  ? `Spectating, Tap An Open Seat To Join · ${tableState.players.filter(Boolean).length} Of ${seatFirstBuyIn.seats} Seats Taken`
+                  : 'Spectating, Tap An Open Seat To Join'}
             </span>
           </div>
         ) : !tableState.players.some((p) => p?.isHero) ? (
@@ -17421,7 +17450,22 @@ export default function TablePage({
              chips exist yet and no hand is running. Say so, and offer the way
              out — "IF THEY LEAVE THE SEAT THEY ARE FULLY REFUNDED." */
           <div className="spectator-footer-bar" data-state="reserved">
-            <span className="spectator-footer-bar__label">Seat Reserved, Waiting For Players</span>
+            <span className="spectator-footer-bar__label">
+              {(() => {
+                /* Live countdown to the deal: the buy-in toast says this once,
+                   the footer keeps saying it as seats fill (roster live-sync
+                   updates players[] pre-start). */
+                const left = Math.max(
+                  0,
+                  seatFirstBuyIn.seats - tableState.players.filter(Boolean).length
+                );
+                return left === 1
+                  ? 'Seat Reserved, Waiting For 1 More Player'
+                  : left > 1
+                    ? `Seat Reserved, Waiting For ${left} More Players`
+                    : 'Seat Reserved, Game Starting';
+              })()}
+            </span>
             <button
               type="button"
               className="spectator-footer-bar__cta spectator-footer-bar__cta--leave"

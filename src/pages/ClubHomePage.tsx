@@ -44,6 +44,7 @@ import {
   withClubLabel,
 } from '../components/lobby/lobbyEntries';
 import { tournamentService } from '../services/TournamentService';
+import { tableService } from '../services/TableService';
 import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
 import { useToast } from '../components/common/Toast';
 import { applyClubScope, inClubScope, type ClubScope } from '../utils/clubScope';
@@ -1148,23 +1149,17 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         for (let attempt = 0; attempt < 4 && !tableId; attempt++) {
           if (spinJoinCancelRef.current) return;
           if (attempt > 0) await new Promise((r) => setTimeout(r, 700));
-          const { data: tbls } = await supabase
-            .from('tables')
-            .select('id, status, created_at')
-            .eq('tournament_id', t.id)
-            .neq('status', 'closed')
-            // Newest first: the recycler leaves the freshest table live, and
-            // an older sibling not yet stamped closed is a corpse whose seats
-            // are already full — landing there is the "That Seat Was Just
-            // Taken" dead end on a seat that looks empty.
-            .order('created_at', { ascending: false })
-            .limit(3);
+          /* The DATABASE's own primary-table election (occupancy first,
+             oldest to break the tie — identical to the engine's choice), so
+             a duplicate's empty NEWER table can never outrank the one the
+             players are sitting on. See resolveTournamentLiveTable. */
+          const resolved = await tableService.resolveTournamentLiveTable(t.id);
           /* Cancel is checked AFTER the await as well as before it. Checking
              only at the top of the iteration meant a Cancel pressed while a
              lookup was in flight closed the overlay and then navigated anyway
              — the player was dropped at a table they had just backed out of. */
           if (spinJoinCancelRef.current) return;
-          tableId = (tbls || [])[0]?.id ?? null;
+          tableId = resolved;
         }
 
         if (tableId) {
@@ -1198,15 +1193,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         }
         const sibId = (sibs || [])[0]?.id as string | undefined;
         if (sibId && !spinJoinCancelRef.current) {
-          const { data: sibTbls } = await supabase
-            .from('tables')
-            .select('id, created_at')
-            .eq('tournament_id', sibId)
-            .neq('status', 'closed')
-            .order('created_at', { ascending: false })
-            .limit(1);
+          const sibTableId = await tableService.resolveTournamentLiveTable(sibId);
           if (spinJoinCancelRef.current) return;
-          const sibTableId = (sibTbls || [])[0]?.id as string | undefined;
           if (sibTableId) {
             setSpinJoin(null);
             navigate(`/table/${sibTableId}`);
@@ -2974,6 +2962,26 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
   const handleRegister = useCallback(
     (t: LobbyTournamentRow) => {
+      /* THE LAST DOOR A SEAT-FIRST GAME COULD SNEAK THROUGH (Dan 2026-08-28).
+         A Spin or Heads-Up must never reach the Sign Up dialog: it charges
+         the buy-in with no seat attached, and Dan's binding rule is the seat
+         IS the entry ("A PLAYER SITS DOWN AT A TABLE AND BUYS INTO THE SPIN
+         OR HEADS UP, LIKE A CASH GAME"). Every surface routes these through
+         spinQuickJoin now, but register paths have re-grown before — this
+         gate makes the wrong wiring land on the right flow instead of on a
+         charge. Same definition as fn_take_seat_and_buy_in: variant spin,
+         or a 2-seat sng. */
+      const variantWord = String((t as { variant?: unknown }).variant ?? '').toLowerCase();
+      const seatFirst =
+        variantWord === 'spin' ||
+        (variantWord === 'sng' && Number(t.max_players) > 0 && Number(t.max_players) <= 2);
+      if (seatFirst) {
+        spinQuickJoin(
+          { id: t.id, name: t.name, buy_in_amount: Number(t.buy_in_amount) || 0 },
+          variantWord === 'sng' ? 'sng' : 'spin'
+        );
+        return;
+      }
       registerMtt(
         {
           id: t.id,
@@ -3008,7 +3016,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       );
     },
     // `navigate` is not used in this callback; `openTournamentLobby` is.
-    [registerMtt, openTournamentLobby]
+    [registerMtt, openTournamentLobby, spinQuickJoin]
   );
 
   const handleUnregister = useCallback(
@@ -3225,6 +3233,25 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         if (row) handleRegister(row);
         else openEntry(e);
       },
+      /* SEAT-FIRST (Dan 2026-08-21, binding): a Spin or Heads-Up card's Sit
+         Down opens the TABLE — the seat is bought there, by the tap that
+         picks it. Same flow the game-lobby panel already runs; the card was
+         the one surface still routing these to the MTT Sign Up dialog, which
+         charged the buy-in with no seat attached. buy_in_amount comes from
+         the row when the board still has it — the sibling hop inside
+         spinQuickJoin matches on it — and falls back to the entry's own
+         sort value, which is the same number. */
+      onSpinJoin: (e, variant) => {
+        const row = filteredTournamentsRef.current.find((t) => t.id === e.id);
+        spinQuickJoin(
+          {
+            id: e.id,
+            name: e.name,
+            buy_in_amount: Number(row?.buy_in_amount ?? e.buyInValue ?? 0),
+          },
+          variant
+        );
+      },
       onJoinTable: (e) => handleJoinTable(e.id),
       /* A full table's primary action is the waitlist, not a join that cannot
          succeed. The page already owns this flow for the panel; the card runs
@@ -3242,7 +3269,29 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                "THE DETAILS BUTTON SHOULD TAKE YOU TO THE TOURNAMENT LOBBY
                SCREEN" — unconditionally, not only once it is running. */
       onViewTable: (e) =>
-        e.kind === 'cash' ? navigate(`/table/${e.id}`) : openTournamentLobby(e.id),
+        e.kind === 'cash'
+          ? navigate(`/table/${e.id}`)
+          : /* Dan 2026-08-20: "there is 'no lobby' for a spin, you just start
+               on a table." Watch and Return To Game on a spin therefore open
+               the game's live TABLE (spinQuickJoin resolves the current one,
+               stale ids and recycled siblings included) — an MTT keeps its
+               own lobby screen. Heads-up SNGs ride the same table route for
+               the same reason; multi-seat SNGs are registration games and
+               keep the lobby. */
+            e.kind === 'spin' || (e.kind === 'sng' && e.capacity > 0 && e.capacity <= 2)
+            ? spinQuickJoin(
+                {
+                  id: e.id,
+                  name: e.name,
+                  buy_in_amount: Number(
+                    filteredTournamentsRef.current.find((t) => t.id === e.id)?.buy_in_amount ??
+                      e.buyInValue ??
+                      0
+                  ),
+                },
+                e.kind === 'sng' ? 'sng' : 'spin'
+              )
+            : openTournamentLobby(e.id),
     }),
     [
       waitlistedTableIds,
@@ -3257,6 +3306,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       navigate,
       handleWaitlistToggle,
       openTournamentLobby,
+      spinQuickJoin,
     ]
   );
 

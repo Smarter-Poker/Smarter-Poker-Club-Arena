@@ -27,6 +27,7 @@ import { ThemeSettingsModal } from '../table/ThemeSettingsModal';
 import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
+import { soundService } from '../../services/SoundService';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { isCardBackUnlocked } from '../table/CardImage';
@@ -142,6 +143,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     loading: tableSettingsLoading,
     toggleSetting: toggleTableSetting,
   } = useUserTableSettings(user?.id);
+  useEffect(() => {
+    setShowBBEnabled(tableSettings.show_stack_in_bb);
+  }, [tableSettings.show_stack_in_bb]);
   const [showTableSettings, setShowTableSettings] = useState(false);
   const [showThemeSettings, setShowThemeSettings] = useState(false);
 
@@ -413,6 +417,12 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     updateSetting(STORAGE_KEYS.SOUNDS, 'sounds_enabled', newValue, () =>
       setSoundsEnabled(!newValue)
     );
+    // SOUND AUDIT 2026-08-27: this toggle wrote only STORAGE_KEYS.SOUNDS.
+    // The shared gate fails closed on EITHER key, so a player who had muted
+    // in-table ('ca_sound_enabled'='false') and then flipped this switch ON
+    // got a switch reading ON with a still-silent app. setEnabled() persists
+    // the choice to BOTH gate keys so the switches always agree.
+    soundService.setEnabled(newValue);
     masterBus.emit('SETTINGS_CHANGED', { setting: 'isSoundEnabled', value: newValue });
   };
 
@@ -432,11 +442,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   };
 
   const handleShowBBToggle = () => {
-    const newValue = !showBBEnabled;
+    const newValue = !tableSettings.show_stack_in_bb;
     setShowBBEnabled(newValue);
-    updateSetting(STORAGE_KEYS.SHOW_STACK_BB, 'show_stack_bb', newValue, () =>
-      setShowBBEnabled(!newValue)
-    );
     /* Dan 2026-08-25 (binding): "tournaments and cash games should always be
      * defaulted to actual totals unless the user changes the setting to BB."
      *
@@ -449,15 +456,22 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
      * free to disagree forever. The canonical one is now written here too, so
      * this switch and the in-table switch are the same switch.
      *
-     * The `profiles` write above stays for now — other surfaces still read it —
-     * but user_table_settings is the source of truth for what the table draws. */
-    masterBus.emit('SETTINGS_CHANGED', { setting: 'show_stack_in_bb', value: newValue });
+     * The profiles mirror stays for older surfaces, but the ordered
+     * useUserTableSettings writer is the source of truth for what every open
+     * table draws and broadcasts its rollback if persistence is refused. */
+    try {
+      localStorage.setItem(STORAGE_KEYS.SHOW_STACK_BB, String(newValue));
+    } catch {
+      /* private mode */
+    }
+    void toggleTableSetting('show_stack_in_bb');
     if (user?.id) {
       void supabase
-        .from('user_table_settings')
-        .upsert({ user_id: user.id, show_stack_in_bb: newValue }, { onConflict: 'user_id' })
-        .then(({ error: bbErr }) => {
-          if (bbErr) reportError(bbErr, 'HamburgerMenu.Show_stack_bb_save_failed');
+        .from('profiles')
+        .update({ show_stack_bb: newValue })
+        .eq('id', user.id)
+        .then(({ error: legacyErr }) => {
+          if (legacyErr) reportError(legacyErr, 'HamburgerMenu.Show_stack_bb_legacy_mirror');
         });
     }
   };
@@ -465,17 +479,15 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const handleResetTutorial = async () => {
     localStorage.removeItem(STORAGE_KEYS.INTRO_SHOWN);
     localStorage.removeItem(STORAGE_KEYS.TUTORIAL_COMPLETED);
-    if (user?.id) {
-      try {
-        const { error: resetErr } = await supabase
-          .from('profiles')
-          .update({ tutorial_completed: false })
-          .eq('id', user.id);
-        if (resetErr) reportError(resetErr, 'HamburgerMenu.Tutorial_reset_save_failed');
-      } catch (error) {
-        reportError(error, 'HamburgerMenu.Error_resetting_tutorial');
-      }
-    }
+    /**
+     * There is no `profiles.tutorial_completed` column and nothing anywhere
+     * reads one. This used to write it, which was rejected on every reset and
+     * reported as a failure the user never saw - and had the column existed,
+     * the reset would still have worked exactly as it does now, because
+     * localStorage above is the only thing the intro gate consults. Removing
+     * the write loses no behaviour; it removes a control that was never wired
+     * to anything. Making it a real cross-device flag needs a reader first.
+     */
     toast.info('Tutorial reset! Refresh the page to see the intro again.');
     onClose();
   };

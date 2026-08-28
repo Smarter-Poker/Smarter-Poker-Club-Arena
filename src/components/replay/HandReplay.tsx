@@ -70,6 +70,8 @@ export interface HandData {
   community_cards: Card[];
   /** Round 2 (double board): board 2, absent on single-board hands. */
   community_cards2?: Card[];
+  /** TRIPLE-BOARD BOMB POT 2026-08-27: board 3, absent below three boards. */
+  community_cards3?: Card[];
   /**
    * COMPLETENESS PASS 2026-08-26: Run It Twice boards 2..N in run order
    * (board 1 is community_cards). Dealt AFTER the all-in locked, so they
@@ -231,6 +233,7 @@ export default function HandReplay({
             main_pot: data.main_pot,
             community_cards: data.community_cards,
             community_cards2: data.community_cards2 ?? [],
+            community_cards3: data.community_cards3 ?? [],
             // COMPLETENESS PASS 2026-08-26: Run It Twice boards 2..N (board
             // 1 is community_cards) — rendered as RUN rows at showdown.
             rit_boards: data.rit_boards ?? [],
@@ -534,6 +537,16 @@ export default function HandReplay({
                   <div className="community-cards-row">
                     {sliceForStep(handData.community_cards2!).map((card, idx) => (
                       <div key={`b2-${idx}`} className="card small">
+                        <CardImage card={toCardImage(card)} size="xs" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* TRIPLE-BOARD BOMB POT 2026-08-27: board 3, same slice. */}
+                {(handData.community_cards3?.length ?? 0) > 0 && (
+                  <div className="community-cards-row">
+                    {sliceForStep(handData.community_cards3!).map((card, idx) => (
+                      <div key={`b3-${idx}`} className="card small">
                         <CardImage card={toCardImage(card)} size="xs" />
                       </div>
                     ))}

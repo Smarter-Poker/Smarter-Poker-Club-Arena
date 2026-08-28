@@ -41,11 +41,31 @@
  *    DEFAULT_THEME with `loading: false` and no signal at all. "We could not
  *    reach the database" and "you have never picked a theme" produced the exact
  *    same screen. `error` is now returned so callers can tell them apart.
+ *
+ * ───────────────────────────────────────────────────────────────────────────────
+ * FIX 2026-08-28 — THE FIRST FRAMES SHOWED SOMEBODY ELSE'S TABLE.
+ * ───────────────────────────────────────────────────────────────────────────────
+ * State began at DEFAULT_THEME on every mount and the saved theme arrived only
+ * after a network round trip, so EVERY table open flashed the default felt,
+ * background, buttons and deck for a split second before snapping to the
+ * player's choice. A second flash source: the bucket re-resolves when the
+ * table's game type arrives from the server, repainting again mid-open.
+ *
+ * Fixed by caching the user's theme ROWS (the same shape the query returns) in
+ * localStorage, keyed per user. The first render resolves synchronously from
+ * that cache through the SAME pickThemeRow precedence the network path uses,
+ * so the first frame already wears the saved theme — across navigation, page
+ * changes and refreshes. The database remains the source of truth: every
+ * successful load overwrites the cache, and every live UI_THEME_CHANGED
+ * application is merged into it so a refresh immediately after a change still
+ * first-paints the new selection. A cold cache (first visit on a device) shows
+ * the defaults exactly once, then never again.
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { getLocalStorage, setLocalStorage } from '../lib/storage';
 
 export interface UserThemeSelection {
   theme_id: string;
@@ -65,9 +85,10 @@ export const THEME_FIELDS = [
 
 const DEFAULT_THEME: UserThemeSelection = {
   theme_id: 'default-dark',
-  // Dan 2026-08-17: default table skin is the Neon City composite ('dark-felt'
-  // still resolves to it via the TABLE_SKINS legacy alias in TablePage).
-  table_id: 'neon_city',
+  // Must match the database default. A first partial upsert fills untouched
+  // columns from schema defaults; disagreement here made a card-back-only
+  // change swap the felt underneath a brand-new player on the database echo.
+  table_id: 'classic_green',
   button_id: 'classic-white',
   background_id: 'midnight',
   cards_id: 'classic_red',
@@ -148,7 +169,12 @@ export function resolveThemeBucket(
   return getThemeGameType(gameVariant, isTournament, tournamentType);
 }
 
-type ThemeRow = Partial<UserThemeSelection> & { game_type?: string | null };
+type ThemeRow = Partial<UserThemeSelection> & {
+  game_type?: string | null;
+  /** Row timestamp — lets a NEWER 'Apply To: ALL' save beat an older
+   *  per-variant row (Dan 2026-08-28, see pickThemeRow). */
+  updated_at?: string | null;
+};
 
 /** Fill every field, so a row with a NULL column cannot blank the felt. */
 function toSelection(row: ThemeRow): UserThemeSelection {
@@ -162,27 +188,99 @@ function toSelection(row: ThemeRow): UserThemeSelection {
 }
 
 /**
- * exact bucket  >  a row that canonicalises INTO the bucket  >  the 'ALL' row.
+ * exact bucket  >  a row that canonicalises INTO the bucket  >  the 'ALL' row
+ * — EXCEPT that a strictly NEWER 'ALL' row beats a stale bucket row.
+ *
+ * Dan 2026-08-28 ("settings need to update and refresh in real time"): the
+ * Theme Studio's Apply-To selector defaults to 'ALL', and the live listener
+ * applies an ALL save to every mounted table — but this resolver used to
+ * prefer any per-variant row unconditionally, so a player who once saved an
+ * NLH row watched their new everywhere-theme take effect and then VANISH on
+ * the next rejoin. Last write wins now: whichever of the bucket row and the
+ * ALL row was saved most recently is the player's current intent. A bucket
+ * row still wins ties and rows with no timestamp, which is exactly the old
+ * precedence — the fixtures that pin it carry no updated_at.
  *
  * Exported for the test that pins the 'plo4' recovery, and because the same
  * precedence has to hold anywhere else this table is read.
  */
 export function pickThemeRow(rows: ThemeRow[], gameType: CanonicalGameType): ThemeRow | null {
   if (!rows.length) return null;
-  const exact = rows.find((r) => (r.game_type || '') === gameType);
-  if (exact) return exact;
+  const allRow = rows.find((r) => (r.game_type || '') === 'ALL') ?? null;
   // The alias step is deliberately NOT applied to 'ALL'. canonicalGameType
   // answers 'ALL' for anything it does not recognise, so allowing it here
   // would let a row keyed on junk ('', 'not_a_variant', a typo) become the
   // player's global default — the everywhere-bucket must be claimed by a
   // literal 'ALL' row and nothing else.
-  if (gameType !== 'ALL') {
-    const canonical = rows.find(
-      (r) => (r.game_type || '') !== 'ALL' && canonicalGameType(r.game_type) === gameType
-    );
-    if (canonical) return canonical;
+  const bucketRow =
+    rows.find((r) => (r.game_type || '') === gameType) ??
+    (gameType !== 'ALL'
+      ? (rows.find(
+          (r) => (r.game_type || '') !== 'ALL' && canonicalGameType(r.game_type) === gameType
+        ) ?? null)
+      : null);
+  if (bucketRow && allRow && bucketRow !== allRow) {
+    const bucketTs = Date.parse(bucketRow.updated_at || '') || 0;
+    const allTs = Date.parse(allRow.updated_at || '') || 0;
+    return allTs > bucketTs ? allRow : bucketRow;
   }
-  return rows.find((r) => (r.game_type || '') === 'ALL') ?? null;
+  return bucketRow ?? allRow;
+}
+
+/* ─── First-paint cache (2026-08-28) ────────────────────────────────────────
+   Rows, not a resolved selection: caching the rows lets a bucket change (the
+   game type arriving, or navigating NLH -> PLO without a remount) re-resolve
+   synchronously through pickThemeRow instead of waiting on the network. */
+
+const THEME_ROWS_CACHE_PREFIX = 'ca_user_theme_rows:';
+
+function themeRowsCacheKey(userId: string): string {
+  return `${THEME_ROWS_CACHE_PREFIX}${userId}`;
+}
+
+function readCachedThemeRows(userId: string | null | undefined): ThemeRow[] {
+  if (!userId) return [];
+  const rows = getLocalStorage<ThemeRow[]>(themeRowsCacheKey(userId), []);
+  return Array.isArray(rows) ? rows.filter((r) => r && typeof r === 'object') : [];
+}
+
+function writeCachedThemeRows(userId: string | null | undefined, rows: ThemeRow[]): void {
+  if (!userId) return;
+  setLocalStorage(themeRowsCacheKey(userId), rows);
+}
+
+/**
+ * The theme the first frame should wear, or null when nothing is cached yet.
+ * Exported for the regression test that pins the no-flash first paint.
+ */
+export function resolveCachedTheme(
+  userId: string | null | undefined,
+  gameType: CanonicalGameType | null
+): UserThemeSelection | null {
+  if (!userId || !gameType) return null;
+  const row = pickThemeRow(readCachedThemeRows(userId), gameType);
+  return row ? toSelection(row) : null;
+}
+
+/** Merge a live appearance patch into the cached row for its bucket. */
+function mergeCachedThemeRow(
+  userId: string | null | undefined,
+  bucket: CanonicalGameType,
+  patch: Partial<UserThemeSelection>
+): void {
+  if (!userId || !Object.keys(patch).length) return;
+  const rows = readCachedThemeRows(userId);
+  const index = rows.findIndex((r) => (r.game_type || '') === bucket);
+  if (index >= 0) {
+    rows[index] = { ...rows[index], ...patch };
+  } else {
+    rows.push({ game_type: bucket, ...patch });
+  }
+  writeCachedThemeRows(userId, rows);
+}
+
+function sameSelection(a: UserThemeSelection, b: UserThemeSelection): boolean {
+  return THEME_FIELDS.every((f) => a[f] === b[f]);
 }
 
 export function useUserThemeSettings(
@@ -191,7 +289,13 @@ export function useUserThemeSettings(
   isTournament?: boolean,
   tournamentType?: string
 ) {
-  const [theme, setTheme] = useState<UserThemeSelection>({ ...DEFAULT_THEME });
+  const [theme, setTheme] = useState<UserThemeSelection>(() => {
+    // FIRST PAINT (2026-08-28): resolve synchronously from the cache so the
+    // opening frame already wears the saved theme instead of flashing the
+    // defaults for the length of a network round trip.
+    const bucket = resolveThemeBucket(gameVariant, isTournament, tournamentType);
+    return resolveCachedTheme(userId, bucket) ?? { ...DEFAULT_THEME };
+  });
   const [loading, setLoading] = useState(true);
   /**
    * Non-null when the LOAD failed. `theme` still holds the defaults so the felt
@@ -199,6 +303,7 @@ export function useUserThemeSettings(
    * see defect 3 in the header.
    */
   const [error, setError] = useState<string | null>(null);
+  const pendingMutationsRef = useRef(new Map<CanonicalGameType, Set<string>>());
 
   /**
    * null while a tournament's format is unresolved: the bucket is not yet
@@ -219,6 +324,13 @@ export function useUserThemeSettings(
     // guess — see resolveThemeBucket for why.
     if (!gameType) return;
 
+    // The bucket or account just changed (game type arrived, navigation
+    // without a remount, login). Re-resolve from the cache SYNCHRONOUSLY so
+    // the swap — if the buckets differ at all — happens this frame, not after
+    // the round trip below.
+    const cached = resolveCachedTheme(userId, gameType);
+    if (cached) setTheme((prev) => (sameSelection(prev, cached) ? prev : cached));
+
     let mounted = true;
 
     const load = async () => {
@@ -229,7 +341,7 @@ export function useUserThemeSettings(
         // and the only way to see a row stored under a raw variant key.
         const { data, error: queryError } = await supabase
           .from('user_theme_settings')
-          .select('game_type, theme_id, table_id, button_id, background_id, cards_id')
+          .select('game_type, theme_id, table_id, button_id, background_id, cards_id, updated_at')
           .eq('user_id', userId);
 
         if (!mounted) return;
@@ -243,8 +355,18 @@ export function useUserThemeSettings(
         }
 
         setError(null);
+        // The database answered: it is the truth, and the cache follows it.
+        // (Only a real array is cached — some test doubles resolve to nothing.)
+        if (Array.isArray(data)) writeCachedThemeRows(userId, data as ThemeRow[]);
         const row = pickThemeRow((data as ThemeRow[]) || [], gameType);
-        if (row) setTheme(toSelection(row));
+        if (row) {
+          const selection = toSelection(row);
+          setTheme((prev) => (sameSelection(prev, selection) ? prev : selection));
+        } else if (Array.isArray(data)) {
+          // No row at all for this user: the seeded cache (possibly stale, a
+          // row deleted from another device) must not outlive the truth.
+          setTheme((prev) => (sameSelection(prev, DEFAULT_THEME) ? prev : { ...DEFAULT_THEME }));
+        }
       } catch (err) {
         if (!mounted) return;
         console.warn('[useUserThemeSettings] Failed:', err);
@@ -259,6 +381,13 @@ export function useUserThemeSettings(
       mounted = false;
     };
   }, [userId, gameType]);
+
+  useEffect(() => {
+    // A persisted hook can survive logout/login in the same shell. Pending
+    // writes belong to the old account and must never suppress the new
+    // account's first realtime row.
+    pendingMutationsRef.current.clear();
+  }, [userId]);
 
   /**
    * Dan 2026-08-19: apply theme changes LIVE. The modal broadcasts the
@@ -275,6 +404,25 @@ export function useUserThemeSettings(
   useEffect(() => {
     let mounted = true;
 
+    const mutationOff = masterBus.subscribe('CUSTOMIZATION_MUTATION_STATE', (event) => {
+      if (event.payload.kind !== 'table-appearance') return;
+      const separator = event.payload.scope.lastIndexOf(':');
+      if (separator < 0) return;
+      const scopedUser = event.payload.scope.slice(0, separator);
+      if (scopedUser !== (userId || 'guest')) return;
+      const savedBucket = canonicalGameType(event.payload.scope.slice(separator + 1));
+      if (savedBucket !== 'ALL' && (!gameType || savedBucket !== gameType)) return;
+      if (event.payload.state === 'pending') {
+        const pending = pendingMutationsRef.current.get(savedBucket) ?? new Set<string>();
+        pending.add(event.payload.mutationId);
+        pendingMutationsRef.current.set(savedBucket, pending);
+      } else if (event.payload.state !== 'rolling-back') {
+        const pending = pendingMutationsRef.current.get(savedBucket);
+        pending?.delete(event.payload.mutationId);
+        if (pending?.size === 0) pendingMutationsRef.current.delete(savedBucket);
+      }
+    });
+
     const off = masterBus.subscribe('UI_THEME_CHANGED', (event) => {
       // AUDIT 2026-08-19 (P0): masterBus hands subscribers the EVENT WRAPPER
       // ({ type, payload, timestamp }), not the raw payload. Reading .key/.value
@@ -283,7 +431,10 @@ export function useUserThemeSettings(
       const body = (event as { payload?: unknown })?.payload ?? event;
       const savedFor = (body as { key?: string })?.key;
       const selection = (body as { value?: Partial<UserThemeSelection> })?.value;
+      const eventUserId = (body as { userId?: string })?.userId;
+      const mutationId = (body as { mutationId?: string })?.mutationId;
       if (!mounted || !selection) return;
+      if (eventUserId && eventUserId !== userId) return;
       // AUDIT 2026-08-19: UI_THEME_CHANGED is a SHARED event — useSettingsStore
       // emits it as { key: 'theme', value: '<theme name string>' }. The gameType
       // guard below already rejects that, but spreading a string into the
@@ -301,6 +452,16 @@ export function useUserThemeSettings(
         if (!gameType || savedBucket !== gameType) return;
       }
 
+      /* Optimistic paints and rollbacks carry their mutation id and are always
+         legitimate. A database echo carries none; suppress it while ANY write
+         for that bucket is pending. Tracking a set (not only the newest id)
+         also lets an older failed table-field mutation roll back while a newer
+         button-field mutation is still saving. */
+      if (savedBucket) {
+        const pending = pendingMutationsRef.current.get(savedBucket);
+        if (!mutationId && pending?.size) return;
+      }
+
       // Only the five theme fields, never whatever else rode along on the bus.
       const clean: Partial<UserThemeSelection> = {};
       for (const field of THEME_FIELDS) {
@@ -310,17 +471,21 @@ export function useUserThemeSettings(
       if (!Object.keys(clean).length) return;
 
       setTheme((prev) => ({ ...prev, ...clean }));
+      // Keep the first-paint cache current, so a page change or refresh
+      // immediately after a change still opens wearing it — no flash back.
+      mergeCachedThemeRow(userId, canonicalGameType(savedFor), clean);
     });
 
     return () => {
       mounted = false;
+      mutationOff();
       try {
         off?.();
       } catch {
         /* listener already detached */
       }
     };
-  }, [gameType]);
+  }, [gameType, userId]);
 
   return { theme, loading, error };
 }

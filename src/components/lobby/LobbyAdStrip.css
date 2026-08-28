@@ -206,3 +206,33 @@
     animation: none;
   }
 }
+
+/* ── Dismiss Button ───────────────────────────────────────────────────────── */
+.lobby-ads__dismiss {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #8892a4;
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: 50%;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.lobby-ads__dismiss:hover {
+  color: #c3cbd8;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.lobby-ads__dismiss:focus-visible {
+  outline: 2px solid rgba(0, 200, 255, 0.6);
+  outline-offset: 2px;
+}

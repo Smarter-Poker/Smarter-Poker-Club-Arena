@@ -36,7 +36,7 @@ import RiveAvatar from './RiveAvatar';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { startMotionBudget } from '../../utils/motionBudget';
 import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
-import { sortCardsByRank } from '../../lib/tableCardDisplay';
+import { displayOrderWithDealtIndex } from '../../lib/tableCardDisplay';
 import { seatCardSide, type CardSide } from '../../lib/tableSeatGeometry';
 import './avatarChoreography.css';
 
@@ -826,13 +826,29 @@ export const SeatSlot = memo(
      * card, it is the per-card show picker saying "this one stays face down"
      * (2026-08-18) - so a slot's POSITION carries meaning there, and sorting
      * would move a face-down card away from the card it belongs beside.
+     *
+     * ── EACH CARD CARRIES ITS OWN INDEX, AND THAT IS NOT COSMETIC ───────────
+     * Dan 2026-08-27 asked that shown hands be "highlighted at showdown". They
+     * were - on the wrong cards, whenever the sort moved anything.
+     *
+     * This used to return a bare `Card[]` and the row rendered it with
+     * `.map((card, i) =>  ... winningHoleCardIndexes.includes(i))`. But `i` is
+     * the position in the SORTED row, while `winningHoleCardIndexes` arrives
+     * from the engine (`hole_card_indices` on the pot_win event) indexed
+     * against the DEALT order - the array this function is about to reorder. A
+     * villain dealt `6h As 9c Ad` renders as `As Ad 9c 6h`, so a winning index
+     * of 1 lit the ace of diamonds when the engine meant the ace of spades, and
+     * `--dimmed` darkened the wrong card in the same beat. The sort landed on
+     * 2026-08-23 and the highlight on 2026-08-25; each was right on its own.
+     *
+     * Pairing the card with the index it had BEFORE the sort makes the two
+     * orders explicit, so the row can be drawn in reading order while every
+     * per-card flag is still asked about the right card.
      */
-    const displayHoleCards = useMemo(() => {
-      const cards = player?.holeCards;
-      if (!cards || cards.length === 0) return cards ?? [];
-      if (cards.some((c) => c == null)) return cards;
-      return sortCardsByRank(cards as Card[]);
-    }, [player?.holeCards]);
+    const displayHoleCards = useMemo(
+      () => displayOrderWithDealtIndex(player?.holeCards),
+      [player?.holeCards]
+    );
 
     /**
      * WHICH SIDE THIS SEAT'S CARDS HANG OFF — see `seatCardSide` in
@@ -928,7 +944,20 @@ export const SeatSlot = memo(
       // Only animate for a player who was already sitting here.
       if (diff !== 0 && sameOccupant) {
         setStackDelta(diff);
-        const t = setTimeout(() => setStackDelta(0), 2000);
+        /* 2026-08-28: scaled, because the keyframe is. `stackDeltaFloat` became
+           `calc(2s * var(--animation-speed, 1))` in SeatSlot.css and this window
+           stayed at a flat 2000ms, so the two disagreed the moment a player
+           changed animation speed — and --animation-speed is a DURATION
+           multiplier that runs up to 3 (see utils/animationSpeed.ts), so on the
+           "slow" setting the float ran six seconds while React unmounted the
+           node after two. The +/- indicator simply vanished a third of the way
+           through its own animation, on the setting chosen by the players most
+           likely to want to read it.
+
+           Same +50ms cushion as the all-in shake below: an exact tie races the
+           final frame at speed 1. Overshooting is harmless — the keyframe ends
+           at opacity 0 with `forwards`, so the extra moments are invisible. */
+        const t = setTimeout(() => setStackDelta(0), 2000 * getAnimationSpeed() + 50);
         return () => clearTimeout(t);
       }
       // A new occupant must not inherit the last one's floating delta.
@@ -1007,7 +1036,10 @@ export const SeatSlot = memo(
       // --animation-speed, the same multiplier the keyframes use.
       if (lastAction === 'all_in' && prevActionRef.current !== 'all_in') {
         setAllinShake(true);
-        const timer = setTimeout(() => setAllinShake(false), 400 * getAnimationSpeed());
+        // 2026-08-27: +50ms cushion — the keyframe now scales with
+        // --animation-speed (SeatSlot.css), and an exact tie races the last
+        // frame at speed 1.
+        const timer = setTimeout(() => setAllinShake(false), 400 * getAnimationSpeed() + 50);
         prevActionRef.current = lastAction;
         return () => clearTimeout(timer);
       }
@@ -1195,35 +1227,69 @@ export const SeatSlot = memo(
     // stagger), then the flip plays exactly as before.
     const [revealHeld, setRevealHeld] = useState(false);
     const prevShowCardsRef = React.useRef<boolean>(player?.showCards ?? false);
+    // ANIMATION AUDIT 2026-08-27: the old effect kept its timers in effect
+    // scope and CANCELLED them in cleanup — but showdownRevealDelayMs is
+    // recomputed when SHOWDOWN_CARDS_REVEALED reconciles the reveal order
+    // mid-hold, and that dep change re-ran the effect: cleanup killed the
+    // hold timer, and because prevShowCardsRef was already latched true the
+    // rising-edge guard refused to reschedule — NO flip played and the cards
+    // snapped face-up. Timers now live in component-scope refs, survive dep
+    // changes, and are torn down only on unmount or when the cards go back
+    // face-down (new hand). Once a hold is pending it is never cancelled by
+    // a reorder — the first-scheduled stagger plays out.
+    const flipPlayedRef = React.useRef(false);
+    const flipHoldTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const flipEndTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(
+      () => () => {
+        if (flipHoldTimerRef.current) clearTimeout(flipHoldTimerRef.current);
+        if (flipEndTimerRef.current) clearTimeout(flipEndTimerRef.current);
+      },
+      []
+    );
     useEffect(() => {
       if (!player) return;
-      // Trigger 3D flip when showCards transitions false → true
-      if (player.showCards && !prevShowCardsRef.current) {
-        prevShowCardsRef.current = player.showCards;
-        let flipEndTimer: ReturnType<typeof setTimeout> | null = null;
-        const beginFlip = () => {
-          setRevealHeld(false);
-          setIsShowdownFlip(true);
-          // ANIMATION AUDIT 2026-08-19: was 400ms, but card 2 runs 120ms delay
-          // + 350ms flip = 470ms — it snapped face-up at 85%. 600ms covers it.
-          flipEndTimer = setTimeout(() => setIsShowdownFlip(false), 600 * getAnimationSpeed());
-        };
-        const holdMs = Math.max(0, showdownRevealDelayMs) * getAnimationSpeed();
-        if (holdMs > 0) {
-          setRevealHeld(true);
-          const holdTimer = setTimeout(beginFlip, holdMs);
-          return () => {
-            clearTimeout(holdTimer);
-            if (flipEndTimer) clearTimeout(flipEndTimer);
-            setRevealHeld(false);
-          };
+      const showing = !!player.showCards;
+      if (!showing) {
+        // Cards hidden again (new hand) — re-arm for the next reveal.
+        prevShowCardsRef.current = false;
+        flipPlayedRef.current = false;
+        if (flipHoldTimerRef.current) {
+          clearTimeout(flipHoldTimerRef.current);
+          flipHoldTimerRef.current = null;
         }
-        beginFlip();
-        return () => {
-          if (flipEndTimer) clearTimeout(flipEndTimer);
-        };
+        if (flipEndTimerRef.current) {
+          clearTimeout(flipEndTimerRef.current);
+          flipEndTimerRef.current = null;
+        }
+        setRevealHeld(false);
+        return;
       }
-      prevShowCardsRef.current = player.showCards ?? false;
+      // Already played, or a hold is pending — let it run.
+      if (flipPlayedRef.current || flipHoldTimerRef.current) {
+        prevShowCardsRef.current = true;
+        return;
+      }
+      prevShowCardsRef.current = true;
+      const beginFlip = () => {
+        flipHoldTimerRef.current = null;
+        flipPlayedRef.current = true;
+        setRevealHeld(false);
+        setIsShowdownFlip(true);
+        // ANIMATION AUDIT 2026-08-19: was 400ms, but card 2 runs 120ms delay
+        // + 350ms flip = 470ms — it snapped face-up at 85%. 600ms covers it.
+        flipEndTimerRef.current = setTimeout(() => {
+          setIsShowdownFlip(false);
+          flipEndTimerRef.current = null;
+        }, 600 * getAnimationSpeed());
+      };
+      const holdMs = Math.max(0, showdownRevealDelayMs) * getAnimationSpeed();
+      if (holdMs > 0) {
+        setRevealHeld(true);
+        flipHoldTimerRef.current = setTimeout(beginFlip, holdMs);
+      } else {
+        beginFlip();
+      }
     }, [player?.showCards, showdownRevealDelayMs]);
 
     // ── COMPETITOR-PARITY 2026-08-19: Card Squeeze ─────────────────────────
@@ -1560,6 +1626,49 @@ export const SeatSlot = memo(
       !isMucking;
 
     /**
+     * IS THE HERO'S HAND BEING SHOWN TO THE TABLE?
+     *
+     * Dan 2026-08-27: "cards ... need to be displayed left to right. These are
+     * the ONLY WAY they should be displayed at showdown, or when shown by the
+     * player. Clearly showing every single card in the hand."
+     *
+     * The hero's row is the one row on the table with two audiences, and it has
+     * only ever been drawn for the first. PRIVATELY it is the hero's own hand:
+     * overlapped and arced, because that is what a held hand looks like and
+     * because the compact row is what lets a PLO6 hand live in the strip of
+     * backdrop right of the seat on a 375px phone. The hero loses nothing to a
+     * covered card - they already know what they hold.
+     *
+     * TABLED it is being read by everybody else, and every one of those reasons
+     * evaporates. So the class below opens the row out and flattens it (see the
+     * `--revealed` block at the end of SeatSlot.css) - the same treatment a
+     * villain's shown hand gets, which is the point: Dan's rule is that a shown
+     * hand looks the same wherever it is sitting.
+     *
+     * DERIVED HERE RATHER THAN PASSED IN. `player.showCards` cannot answer this
+     * for the hero: TablePage sets it to `isHero` on every deal, because the
+     * hero can always see their own cards. The honest signal is a prop
+     * (`isShowdown`) from TablePage, which several other workstreams are inside
+     * right now, so this reads the three states the seat can already see:
+     *
+     *   isWinner            the hand was tabled and won - it is on display now
+     *   status === all_in   an all-in runout turns the hand face up to the table
+     *   winnerDisplayActive a showdown is being presented at this table
+     *
+     * and requires the hand to still be LIVE. A hero who folded keeps their
+     * cards on screen on purpose (TablePage substitutes the last-delivered
+     * array back in so the player can see what they mucked, Dan 2026-04-14),
+     * and that muck view is private - it must not fan itself open every time
+     * somebody else wins. Same for a hand the engine ruled muckable.
+     */
+    const heroHandIsTabled =
+      !!player.isHero &&
+      player.status !== 'folded' &&
+      lastAction !== 'fold' &&
+      !isMuckedShowdown &&
+      (isWinner || player.status === 'all_in' || !!winnerDisplayActive);
+
+    /**
      * How many cards a VILLAIN's fan is about to draw.
      *
      * Dan 2026-08-26 rebuild: this number is the ONLY thing game type changes
@@ -1841,9 +1950,18 @@ export const SeatSlot = memo(
               }
             >
               {player.holeCards && player.holeCards.length > 0
-                ? displayHoleCards.map((card, i) => (
+                ? /* TWO ORDERS, NEVER CONFLATED (Dan 2026-08-27, showdown
+                     highlighting). `row` is the position in the row as it is
+                     DRAWN - left to right, high card first - and drives the
+                     React key and `--vh-i`, which is what lays the card out.
+                     `dealtIndex` is the position the ENGINE numbers the card
+                     by, and is the only thing `winningHoleCardIndexes` may be
+                     asked about. They are equal only when the sort was a no-op;
+                     see `displayOrderWithDealtIndex` for the hand that proved
+                     they are not the same number. */
+                  displayHoleCards.map(({ card, dealtIndex }, row) => (
                     <HoleCard
-                      key={i}
+                      key={dealtIndex}
                       card={card}
                       /* Dan 2026-08-18: null = this specific card was not among
                        the ones the player chose to show, so it stays down even
@@ -1853,7 +1971,9 @@ export const SeatSlot = memo(
                       hidden={!player.showCards || card == null || revealHeld}
                       isWinner={
                         isWinner &&
-                        (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
+                        (winningHoleCardIndexes
+                          ? winningHoleCardIndexes.includes(dealtIndex)
+                          : true)
                       }
                       /* POKERBROS PARITY 2026-08-26: while a winner is on
                          display, every face-up card outside the winning five
@@ -1863,7 +1983,9 @@ export const SeatSlot = memo(
                         winnerDisplayActive &&
                         !(
                           isWinner &&
-                          (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
+                          (winningHoleCardIndexes
+                            ? winningHoleCardIndexes.includes(dealtIndex)
+                            : true)
                         )
                       }
                       deckStyle={deckStyle}
@@ -1872,7 +1994,7 @@ export const SeatSlot = memo(
                          showdown is the one moment a card face has to be on
                          screen the instant it flips. */
                       eager={player.showCards}
-                      fanIndex={i}
+                      fanIndex={row}
                     />
                   ))
                 : /* Dan 2026-08-23: this used to be exactly two hard-coded backs,
@@ -2100,7 +2222,14 @@ export const SeatSlot = memo(
         {/* Info Box — name + stack, with neon timer border when active.
             The React `key` forces a fresh mount per turn so the CSS
             @property animation restarts from 100%. */}
-        <div className="seat__info" style={timerStyle} key={`info-${timerKey}`}>
+        {/* ANIMATION AUDIT 2026-08-27: data-motion="keep" — the countdown ring
+            IS duration-carrying CSS animation (spTimerRingShrink runs the whole
+            turn; its length is the information). reducedMotion.css collapses
+            every unmarked animation to 1ms, which made the ring finish
+            instantly on every turn for reduced-motion players — the exact case
+            the escape hatch was built for. The ring is informational, not
+            vestibular motion (it shrinks in place). */}
+        <div className="seat__info" style={timerStyle} key={`info-${timerKey}`} data-motion="keep">
           {/* Neon border overlay (rendered via CSS ::before when --active) */}
           <span className="seat__name">{player.name}</span>
           <span
@@ -2186,6 +2315,12 @@ export const SeatSlot = memo(
           <div
             className={
               'seat__cards seat__cards--hero' +
+              /* Dan 2026-08-27: a hand that is being SHOWN opens out flat and
+                 left to right, hero and villain alike. `heroHandIsTabled`
+                 above says when that is; the geometry is the `--revealed`
+                 block at the end of SeatSlot.css. Never while the cards are
+                 still face down in the squeeze - there is nothing to show. */
+              (heroHandIsTabled && !squeezeDown ? ' seat__cards--revealed' : '') +
               (isDealing ? ' seat__cards--dealing' : '') +
               (isFolding ? ' seat__cards--folding' : '') +
               (lastAction === 'fold' || player.status === 'folded' ? ' seat__cards--folded' : '') +

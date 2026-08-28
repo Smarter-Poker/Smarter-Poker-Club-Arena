@@ -17,10 +17,14 @@
    `position: fixed; bottom: 0`, so they are out of flow and their container,
    `.action-panel-wrapper`, has no content to get its height from while either
    of them is up. The wrapper therefore carries a min-height FLOOR, and that
-   floor is what `--sp-action-h` publishes to the rest of the page: the felt's
-   bottom reserve, the hero lift, the HUD stack and the chat button all size
-   themselves from it. A floor that does not match the row it stands in for is
-   a lie that every one of them repeats — and it did not match. The floor was
+   floor is also what the rest of the page reserves against — the felt's bottom
+   reserve, the hero lift, the HUD stack and the chat button all size themselves
+   from `--sp-action-reserve` in TablePage.css, which restates this sum. (Until
+   2026-08-27 they read a ResizeObserver measurement of the wrapper instead;
+   that is what made the whole table zoom in and out through every hand. See the
+   note on --sp-action-reserve.) A floor that does not match the row it stands
+   in for is a lie that every one of them repeats — and it did not match. The
+   floor was
    96px, a figure inherited from a three-button bar with 72px buttons, and it is
    the strip of dead black Dan measured at roughly a fifth of the phone.
 
@@ -52,6 +56,23 @@
   }
 }
 
+/* The OTHER height this wrapper can stand at, and the only other one, declared
+   beside the first for the same reason: something outside this file has to
+   reserve room for it and must not restate the sum.
+
+   A spectator never gets an action bar. What the wrapper carries instead is one
+   line of text — `.table-page[data-hero='false'] .spectator-footer-bar` further
+   down this file pins it to `padding: 3px 12px 4px` around a 15px line box, and
+   3 + 15 + 4 = 22. The wrapper's own env(safe-area-inset-bottom) sits under it,
+   exactly as it does under `--sp-bottom-row-h`.
+
+   If you change that padding or that font-size, change this and re-do the sum.
+   `tests/unit/bottomBarReserve.test.ts` checks that both numbers are still
+   declared and still read; it cannot check that 3 + 15 + 4 is still 22. */
+:root {
+  --sp-spectator-line-h: 22px;
+}
+
 /* The floor itself. `.action-panel-wrapper` is declared in TablePage.css, which
    is owned elsewhere; this rule is scoped `.table-page .action-panel-wrapper`
    (0,2,0) so it wins on specificity rather than on which stylesheet the bundler
@@ -65,6 +86,48 @@
    rows this file owns. */
 .table-page .action-panel-wrapper {
   min-height: calc(var(--sp-bottom-row-h, 96px) + env(safe-area-inset-bottom, 0px));
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   THE FELT CANNOT MOVE WHILE A BET IS BEING SIZED
+   ═══════════════════════════════════════════════════════════════
+
+   The felt's bottom reserve, the hero lift, the HUD stack and the chat button
+   all size themselves from the wrapper's floor. If that number moved while the
+   player was dragging the bet rail, the whole table would resize under their
+   thumb at the one moment nothing on screen should move.
+
+   SINCE 2026-08-27 THAT IS TRUE BY DECLARATION, not by argument: they read
+   `--sp-action-reserve`, a constant in TablePage.css, and no measurement of
+   this wrapper reaches CSS at all. The rest of this note is the older, weaker
+   guarantee, kept because the pin below still enforces it and because it
+   explains what the pin is for.
+
+   Both rows that live in this wrapper are `position: fixed`,
+   so they are out of its flow and contribute nothing to its height, and the
+   height is therefore just the `min-height` floor above. Opening the sizing
+   overlay, and collapsing the button row underneath it, are both invisible to
+   the measurement.
+
+   That is a fact about the current markup, not a guarantee. `ca-raising` is set
+   by ActionPanel for exactly as long as the sizing overlay is open, so pin the
+   height to the same figure the floor already resolves to for exactly that
+   long. It changes nothing that renders today, and it means a future change
+   that puts a row back in flow — or adds one — still cannot resize the table
+   mid-drag. It can only fail loudly, in the panel, where whoever made the
+   change will see it.
+
+   `height`, not `max-height`: the point is that it can move neither way.
+   Border-box everywhere (globals.css), so this is the identical computation to
+   the floor and the env() inset is inside it, not on top of it.
+
+   2026-08-28: the selector was `body.ca-raising .table-page …` and the class was
+   on `document.body`, so with four tables mounted one panel's flag pinned every
+   table's wrapper and one panel's close released them all. ActionPanel writes it
+   on its own `.table-page` ancestor now. 0,3,0 still beats the 0,2,0 floor rule
+   above, which is the comparison that has to hold. */
+.table-page.ca-raising .action-panel-wrapper {
+  height: calc(var(--sp-bottom-row-h, 96px) + env(safe-area-inset-bottom, 0px));
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -90,14 +153,20 @@
    clears the home indicator, and the footer's own safe-area pad is dropped here
    so the strip is not counted twice.
 
-   HOW --sp-action-h STAYS TRUE (the whole point of the change): the wrapper is
-   still measured by the ResizeObserver in TablePage.tsx, so it publishes what
-   the chrome now actually occupies — 22px plus the safe-area inset, against
-   52px plus the inset when seated. It cannot collapse to zero and strand the
-   `h > 0` guard in that observer, because the line's own text box is always
-   there, and the wrapper's safe-area pad is under it besides. The
-   felt, the HUD stack and the chat button all follow it down without knowing
-   anything about spectating.
+   HOW THE RESERVE STAYS TRUE (the whole point of the change): 3px above and
+   4px below a 15px line box is 22px, and that number is declared once as
+   `--sp-spectator-line-h` at the top of this file. `.table-page[data-hero=
+   'false']` in TablePage.css reserves exactly that plus the safe-area inset,
+   against `--sp-bottom-row-h` plus the inset when seated. The felt, the HUD
+   stack and the chat button all follow it down without knowing anything about
+   spectating.
+
+   IT USED TO BE MEASURED, by a ResizeObserver on this wrapper, and that is the
+   bug fixed on 2026-08-27: the same measurement that correctly followed the bar
+   down for a spectator also followed it down and back up several times in every
+   hand for a seated player, and resized the felt each time. A number that is
+   right for a state change is wrong for a state that changes constantly. It is
+   declared now, and both states are still exact.
 
    KEYED ON [data-hero], NOT ON A NEW CLASS. TablePage.tsx already publishes
    `data-hero={players.some(p => p?.isHero) ? 'true' : 'false'}` on the page
@@ -161,15 +230,27 @@
    dropped and the bar behaves exactly as it did before this change — the safe
    direction for a progressive enhancement.
 
-   ONE PIXEL, NOT ZERO. `--sp-action-h` is published by a ResizeObserver in
-   TablePage.tsx that ignores a height of 0 on purpose ("a zero here would
-   strand every consumer on a reserve of nothing"), so a wrapper that collapsed
-   to nothing would freeze that variable at the height of the bar that just
-   went away and the felt would never take the space back. 1px keeps it
-   measurable; with the safe-area padding below it the wrapper reports the
-   home-indicator strip and nothing more, and `--sp-table-bottom` in
-   TablePage.css drops from ~86px to ~34px on a notched phone. The table grows
-   into it, which is the second half of what Dan asked for.
+   THIS COLLAPSE NO LONGER MOVES THE FELT, AND MUST NOT BE MADE TO AGAIN.
+   ══════════════════════════════════════════════════════════════════════════
+   As written on 2026-08-27 this rule also claimed the space: `--sp-action-h`
+   was the wrapper's measured height, so collapsing the box dropped
+   `--sp-table-bottom` from ~86px to ~34px on a notched phone and "the table
+   grows into it, which is the second half of what Dan asked for."
+
+   It did grow into it — and then shrank back out of it the moment the hero's
+   turn came round, and grew again when they folded, twice a hand, on every
+   table. That is Dan's report the same day: "the screen is moving in and out
+   constantly ... that should never be happening." The felt's reserve is a
+   declared constant now (`--sp-action-reserve`, TablePage.css) and nothing
+   measures this box, so what is left here is the part that was always right:
+   the DARK VOID is gone, because the background, the border and the
+   pointer-events are gone. The bar stops being seen; it does not stop being
+   reserved for, because the hero's name plate is standing on that reserve.
+
+   1px rather than 0 costs nothing now and is kept for one reason: this box is
+   `position: fixed` and spans the width of the screen, so every pixel of height
+   it keeps is a pixel of felt that cannot be tapped. `pointer-events: none`
+   below is the belt; this is the braces.
 
    THE SAFE-AREA PADDING STAYS. It is the home-indicator strip, not chrome; the
    felt has no business under it.
@@ -271,10 +352,12 @@
 
    The panel is `position: fixed; bottom: 0`, so adding the sizing block ABOVE
    the button row grows it UPWARD over the hero and the bottom of the felt.
-   Nothing reflows, because a fixed element is out of flow — and `--sp-action-h`,
-   which every other stylesheet reserves against, is measured on the in-flow
-   `.action-panel-wrapper` that this panel is not part of, so it cannot grow
-   either. Only the TOP padding opens up: the bottom stays at the base rule's
+   Nothing reflows, because a fixed element is out of flow — and
+   `--sp-action-reserve`, which every other stylesheet reserves against, is a
+   declared constant, so it cannot grow either. (Before 2026-08-27 it was a
+   measurement of `.action-panel-wrapper`, which this panel is not part of;
+   the conclusion held, for a weaker reason.) Only the TOP padding opens up:
+   the bottom stays at the base rule's
    safe-area-only value so the three buttons do not lift off the screen edge
    when the overlay appears, and do not drop back when it closes.
 
@@ -291,11 +374,18 @@
   padding-top: 14px;
 }
 
-/* The gap between the overlay and the row it floats above. Overrides
-   `.raise-layout`'s own `margin: 0 auto`, so the horizontal centring
-   (DEAD-CENTER RULE) has to be restated here or it is lost. */
+/* NO BOTTOM MARGIN. This was `margin: 0 auto 10px` — "the gap between the
+   overlay and the row it floats above". There is no row underneath it any
+   more (see `.action-panel--raise .action-row` below), so those 10px were a
+   gap to nothing: dead ground between the confirm button and the bottom of the
+   screen, and part of what Dan measured on 2026-08-27 as "that large dark
+   padding" below the raise button.
+
+   The horizontal centring (DEAD-CENTER RULE) still has to be restated here,
+   because this declaration overrides `.raise-layout`'s own `margin: 0 auto`
+   wholesale. */
 .action-panel--raise .raise-layout {
-  margin: 0 auto 10px;
+  margin: 0 auto;
   animation: raiseOverlayPop 0.18s var(--ease-spring, ease-out) both;
 }
 
@@ -380,32 +470,58 @@
 }
 
 /* ═══ THE THREE BUTTONS STAND DOWN WHILE THE SLIDER IS OPEN ════════════════
-   Dan 2026-08-26: "the 3 buttons on the bottom of the action tab need to
-   DISAPPEAR when you click Raise. Only the new action bar with the slider
-   should be there."
 
-   This reverses his 2026-08-25 item 5, which asked for the opposite (the row
-   staying put while the overlay floats above it). Latest instruction wins.
+   THE INSTRUCTION HISTORY, because this rule has now been written three ways
+   and each one was right on the day:
 
-   HIDDEN, NOT REMOVED, and the distinction is load-bearing. `--sp-action-h`
-   is MEASURED from this panel's real height by a ResizeObserver in
-   TablePage, and every other stylesheet reserves felt against it. `display:
-   none` would shrink the panel mid-raise, the reserve would shrink with it,
-   and the whole table would resize and reflow underneath the player while
-   they are dragging a bet — the one moment nothing on screen should move.
-   `visibility: hidden` keeps the box exactly as tall as it was, so the felt
-   does not budge and the slider stays where the thumb already is.
+     2026-08-25 item 5 — "these 3 action buttons should be on the bottom, and
+       if you click Raise, the action slider and other buttons pop open and can
+       overlay the Hero." The row stayed, visible, under the overlay.
+     2026-08-26 — "the 3 buttons on the bottom of the action tab need to
+       DISAPPEAR when you click Raise. Only the new action bar with the slider
+       should be there." The row was hidden with `visibility: hidden;
+       pointer-events: none`.
+     2026-08-27 — "the action tab should be attached to the footer, that large
+       dark padding should never be there (below raise button)." A
+       `visibility: hidden` box still occupies every pixel of its height, so
+       the row Dan had just asked to disappear was still holding 46px of dead
+       black under the confirm button, plus this rule's own 10px gap and the
+       home-indicator strip: about 90px on a notched phone. Latest instruction
+       wins, and this is the one that closes it.
 
-   `pointer-events: none` matters too: an invisible button that still takes
-   taps is worse than a visible one. The overlay's own Back button remains
-   the way out, so nothing depends on tapping through this row.
+   ─── WHY `display: none` CANNOT REFLOW THE FELT ────────────────────────────
+   The version of this comment written on 2026-08-26 refused `display: none`
+   on the grounds that "`--sp-action-h` is MEASURED from this panel's real
+   height by a ResizeObserver in TablePage", so collapsing the row would shrink
+   the reserve and resize the table under a player mid-drag.
 
-   The five things the 2026-08-25 note lists as depending on the row still
-   work: it is in the DOM, it still has its measured height, `aria-expanded`
-   still reports honestly, and the close branch is reachable via Back. */
+   That was not what the observer measured, and the ref's NAME is what made it
+   look as though it were: `actionPanelRef` was attached to
+   `<div className="action-panel-wrapper">` (TablePage.tsx), not to
+   `.action-panel`. (There is no observer at all since 2026-08-27 — the reserve
+   is declared. The reasoning below is unchanged and still load-bearing.)
+   `.action-panel` is `position: fixed` — it is OUT OF
+   FLOW, so it contributes exactly zero to the wrapper's content height,
+   whatever it contains. The wrapper's height is
+   `min-height: calc(var(--sp-bottom-row-h) + env(safe-area-inset-bottom))`
+   (declared at the top of this file) and nothing else. No content of this
+   panel — this row, the overlay, the rail — can move it in either direction.
+   That is the same fact the raise overlay already relies on to grow UPWARD
+   over the felt without the felt noticing.
+
+   The pin below (`body.ca-raising ...`) makes that structural rather than
+   incidental, so a future change that put a panel back in flow still could not
+   resize the table mid-drag.
+
+   ─── WHAT THE ROW STILL DOES ──────────────────────────────────────────────
+   It is still RENDERED — `display: none` hides a box, it does not unmount a
+   component — so `aria-expanded` still reports honestly and nothing that reads
+   the DOM contract breaks. What it is not is visible, tappable or tabbable,
+   and it takes up no height. `pointer-events: none` had already made it
+   untappable on 2026-08-26; the way out of the overlay is the Back button, and
+   has been since then. */
 .action-panel--raise .action-row {
-  visibility: hidden;
-  pointer-events: none;
+  display: none;
 }
 
 .action-panel .action-btn {
@@ -416,8 +532,8 @@
   justify-content: center;
   height: 72px;
   min-height: 64px;
-  border: none;
-  border-radius: 14px;
+  border: var(--action-control-border, none);
+  border-radius: var(--action-control-radius, 14px);
   cursor: pointer;
   transition:
     transform 0.12s var(--ease-spring),
@@ -428,6 +544,24 @@
   -webkit-tap-highlight-color: transparent;
   position: relative;
   overflow: hidden;
+}
+
+/* Material layer supplied by the selected Controls theme. It deliberately
+   sits over the semantic red / blue / green paint without replacing it. */
+.action-panel .action-btn::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--action-control-overlay, transparent);
+  box-shadow: var(--action-control-inset, none);
+  pointer-events: none;
+}
+
+.action-panel .action-btn > *:not(.action-btn__shortcut) {
+  position: relative;
+  z-index: 2;
 }
 
 /* Shimmer sweep on buttons */
@@ -468,7 +602,7 @@
   font-size: 1.125rem;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 1.2px;
+  letter-spacing: var(--action-control-letter-spacing, 1.2px);
   color: white;
   line-height: 1.1;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
@@ -748,15 +882,31 @@
    Phase 2 T1-02 — vertical bet slider on the right (spec §5.2)
    ═══════════════════════════════════════════════════════════════ */
 
-.action-panel--raise-vertical {
-  /* Give the slider rail room to sit on the right edge without pushing
-     the existing 3-button-wide content to overflow.
-     Dan 2026-08-15 — DEAD-CENTER RULE: this reservation used to be
-     right-only, which pushed the whole raise UI visually left of the
-     resting 3-button row's center on desktop. Mirror it on the left so the
-     content box stays centered on the table; the rail still lives in the
-     right gutter via `right: -56px`. Reset in the <=1023px block below,
-     where the rail moves inline and needs no gutter at all. */
+/* COMPOUND, AND IT HAS TO BE (fixed 2026-08-27).
+   This was `.action-panel--raise-vertical` — a single class, 0,1,0, exactly
+   the same weight as `.action-panel`. The breakpoints at the bottom of this
+   file write `.action-panel { padding: 5px 10px }` as a SHORTHAND, and they
+   come later in the source, so on every phone that shorthand reset this
+   reservation to 10px and the rail — which is positioned in the gutter this
+   rule is supposed to be reserving — landed straight on top of the preset row
+   and the confirm button. Dan 2026-08-25: "the slider needs to be moved over
+   to the right and not overlap the rest of the action buttons." It was moved;
+   the gutter it was moved into was being deleted underneath it.
+
+   This is the third rule in this file to be caught by the same trap (see the
+   SPECIFICITY note in the <=640px block, and `.action-panel.action-panel--raise`
+   above). If you add a rule here that a breakpoint's `padding` shorthand could
+   overrule, scope it compound like this one or it will silently do nothing.
+
+   WHAT IT RESERVES: room for the rail to sit on the right edge without pushing
+   the 3-button-wide content into overflow.
+   Dan 2026-08-15 — DEAD-CENTER RULE: the reservation used to be right-only,
+   which pushed the whole raise UI visually left of the resting 3-button row's
+   centre on desktop. It is mirrored on the left so the content box stays
+   centred on the table; the rail still lives in the right gutter alone, via
+   the negative `right` on `.raise-slider-vertical`. Both sides are re-cut for
+   a phone in the <=1023px block below. */
+.action-panel.action-panel--raise-vertical {
   padding-right: calc(84px + 16px);
   padding-left: calc(84px + 16px);
 }
@@ -818,31 +968,48 @@
   pointer-events: auto;
 }
 
-/* Cross-browser vertical slider:
-   - Firefox: orient="vertical" attribute (set in JSX)
-   - WebKit/Blink: rotate(-90deg) on the horizontal range input. We size the
-     element as if horizontal then rotate so the thumb runs bottom→top. */
+/* ═══ ONE VERTICAL GEOMETRY, ON EVERY ENGINE ═══════════════════════════════
+   Dan 2026-08-27: "there should be a slider located on the right, that slides
+   up and down (NEVER SIDE TO SIDE)."
+
+   This used to be TWO geometries. The rotation lived inside
+   `@supports (-webkit-appearance: none) and (not (-moz-appearance: none))`,
+   and the JSX set `orient="vertical"` so Firefox — excluded by that query —
+   would go vertical natively instead.
+
+   That query is a guess about which engine is running, phrased as a question
+   about a vendor-prefixed ALIAS. Aliases are exactly what engines add for web
+   compatibility without announcing it, and the failure mode is not subtle: an
+   engine that answers "yes" to BOTH halves gets no rotation and no native
+   orient either, so the rail renders as a horizontal range input crushed into
+   a 28px-wide column — side to side, in the gutter, on a phone. That is the
+   gesture that fights the table-switch swipe.
+
+   So: rotate unconditionally, and set no `orient`. The input's own axis is
+   horizontal on every engine, the transform turns it, and the transform is
+   also what makes a sideways drag inert — the browser maps the pointer through
+   the inverse transform, so screen-X becomes the input's local Y and moves the
+   value by nothing. Arrow keys are untouched (Up and Right both increase a
+   range input everywhere), so Up still means "bet more".
+
+   `width` is the PRE-ROTATION length, i.e. what you see as the rail's height.
+   It was a hard 240px, which overran short panels and fell short of tall ones;
+   `--raise-rail-length` is the rail's measured height, published from the
+   ResizeObserver in ActionPanel.tsx.
+
+   THE DRAG BELONGS TO THE SLIDER. `touch-action: none` hands the whole
+   gesture to the range input on every axis, so a bet drag can never scroll,
+   swipe tables, or rubber-band the page. On the rail's input only: the rest of
+   the panel keeps normal touch behaviour. */
 .raise-slider-vertical__rail .raise-slider {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 100%;
-  height: 100%;
-  transform: translate(-50%, -50%);
-}
-
-@supports (-webkit-appearance: none) and (not (-moz-appearance: none)) {
-  /* WebKit-only fallback: rotate the rail. Firefox uses native orient. */
-  .raise-slider-vertical__rail .raise-slider {
-    /* Pre-rotation length. Was a hard 240px, which overran short panels and
-       fell short of tall ones; the rail's own height is the correct figure. */
-    width: var(--raise-rail-length, 240px);
-    height: 32px;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%) rotate(-90deg);
-    transform-origin: center;
-  }
+  width: var(--raise-rail-length, 240px);
+  height: 32px;
+  transform: translate(-50%, -50%) rotate(-90deg);
+  transform-origin: center;
+  touch-action: none;
 }
 
 .raise-slider-vertical__ticks {
@@ -898,54 +1065,111 @@
    side to side. When it's on its side, it auto slides to the next page. Place
    the slider on the right side of the action box when it opens."
 
-   This block used to flatten the rail back into a horizontal strip — the
-   exact gesture that collides with the table-switch swipe. It now only
-   COMPACTS the right-hand gutter for a phone: a 56px rail column instead of
-   the desktop 76px, smaller tick labels laid to the LEFT of the rail line so
-   nothing can clip at the viewport edge, and the floor cap hidden (the thumb
-   starts on the floor, and the amount box above already prints it). The
-   content column keeps a slim left pad, so the action box reads left with
-   the slider on its right — the layout Dan described. */
+   This block used to flatten the rail back into a horizontal strip — the exact
+   gesture that collides with the table-switch swipe. It now only COMPACTS the
+   right-hand gutter for a phone: a narrower rail column than the desktop 76px,
+   tick labels laid to the LEFT of the rail line, and the floor cap hidden (the
+   thumb starts on the floor, and the amount box above already prints it).
+
+   ─── THE ARITHMETIC, AT 375px. Get this wrong and the thumb hangs off the
+   screen, which is what the previous numbers did (56px column at right:-60px
+   inside a 64px gutter put the 48px thumb's right edge 5px PAST the viewport,
+   so a fifth of the grab target was unreachable).
+
+   Everything is measured leftwards from the viewport's right edge W. Let
+     G = the gutter reserved on the panel  (padding-right)
+     R = |right| on .raise-slider-vertical
+     C = that column's own width
+     r = the rail's width
+   The column's right edge sits at W - G + R. With `justify-content: flex-end`
+   the rail hugs that edge, so the rail line's CENTRE is at
+
+     centre = W - G + R - r/2
+
+   and three things hang off that centre and must all stay on screen and out of
+   the content column, whose right edge is at W - G:
+
+     thumb    centre +/- 24    (48px disc; 36px here, so +/- 18)
+     tick     centre +/- 5     (10px mark, centred)
+     label    from centre - 5 - 4 leftwards, ~34px at 9px type
+
+   With G = 76, R = 68, C = 64, r = 28:
+     centre       = W - 76 + 68 - 14 = W - 22
+     thumb right  = W - 22 + 18 = W - 4      -> 4px of air at the edge
+     thumb left   = W - 40                   -> 36px clear of the content column
+     label span   = [W - 65, W - 31]         -> 11px clear of the content column
+
+   Nothing crosses W and nothing crosses W - 76. If you change ANY of the four
+   numbers, redo this sum; `tests/unit/actionBarSliderAndFooter.test.tsx` reads
+   them straight out of this block and re-does it for you. */
 @media (max-width: 1023px) {
-  .action-panel--raise-vertical {
+  /* Compound, for the reason spelled out on the base rule: the `padding`
+     shorthands in the <=640px and <=380px blocks are LATER in this file and
+     carry the same 0,1,0 weight, so a single-class selector here reserves a
+     gutter that is then thrown away on exactly the screens it was written
+     for. */
+  .action-panel.action-panel--raise-vertical {
     padding-left: 12px;
-    padding-right: calc(56px + 8px);
+    padding-right: calc(64px + 12px);
   }
   .raise-slider-vertical {
-    right: -60px;
-    width: 56px;
+    right: -68px;
+    width: 64px;
     justify-content: flex-end;
   }
   .raise-slider-vertical__rail {
-    width: 30px;
+    width: 28px;
     margin: 6px 0;
+  }
+  /* The pre-rotation HEIGHT is the rail's visual width, so it tracks the rail
+     rather than keeping the desktop 32px and overhanging it by 2px a side. */
+  .raise-slider-vertical__rail .raise-slider {
+    height: 28px;
+  }
+  /* A 48px disc on a 28px rail is most of the gutter, and it is the single
+     thing here that decides whether anything clips. 36px is still half again
+     the 24px minimum a thumb needs to be grabbable and keeps the whole
+     control, tick labels included, inside the 76px reserved for it. */
+  .raise-slider-vertical__rail .raise-slider::-webkit-slider-thumb {
+    width: 36px;
+    height: 36px;
+  }
+  .raise-slider-vertical__rail .raise-slider::-moz-range-thumb {
+    width: 36px;
+    height: 36px;
   }
   .raise-slider-vertical__tick {
     width: 10px;
   }
   /* Labels swing to the LEFT of the rail: the rail hugs the viewport's right
-     edge, so a right-hand label is the one thing here that could clip. */
+     edge, so a right-hand label is the one thing here that could clip.
+     9px, not 8px — 8px is below the point where a four-figure chip count is
+     legible on a phone, and these labels are the only thing naming what the
+     thumb is about to bet. The shadow buys contrast against the felt showing
+     through the panel's translucent ground. */
   .raise-slider-vertical__tick-label {
     left: auto;
     right: calc(100% + 4px);
-    font-size: 8px;
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.66);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
   }
   .raise-slider-vertical__caps {
     display: none;
   }
 }
 
-/* THE DRAG BELONGS TO THE SLIDER (Dan 2026-08-26). The phone was treating a
-   drag on the thumb as a page gesture — touch-action: none hands the whole
-   gesture to the range input, on every axis, so a bet drag can never scroll,
-   swipe tables, or rubber-band the page. On the rail's input only: the rest
-   of the panel keeps normal touch behaviour. */
-.raise-slider-vertical__rail .raise-slider {
-  touch-action: none;
-}
+/* ═══ THE HORIZONTAL SLIDER IS NOT RENDERED BY ANYTHING ════════════════════
+   No component emits `.raise-slider-wrap` any more — the branch that used to
+   was deleted from ActionPanel.tsx on 2026-08-27, because a control that can
+   still be reached by a prop is a control that will eventually be reached, and
+   on a phone this one's gesture IS the table-switch swipe.
 
-/* Legacy horizontal slider — Dan 2026-04-17: used on mobile now since the
-   vertical layout was collapsing into a broken strip below 768px. */
+   The rules below are kept for one reason only:
+   `tests/e2e/raise-panel-covers-chat.spec.ts` hand-writes a raise panel in
+   this exact shape and measures its geometry against the real stylesheet, so
+   deleting them would change what that spec measures without changing anything
+   a player can see. Do NOT wire a component back to them. */
 .raise-slider-wrap {
   padding: 14px 8px 8px;
   margin-bottom: 10px;
@@ -979,9 +1203,14 @@
 }
 
 /* PokerBros premium slider — 2026-04-14 polish.
- * Track: 14px chunky rail with inner-shadow depth + dark-base + gold fill.
- * Thumb: 48px metallic gold disc with rim, 3D shadow stack, subtle glow halo.
- * Active state: thumb pulses with stronger glow so the player feels their drag. */
+ * Track: 14px chunky rail with inner-shadow depth + dark-base + SILVER fill.
+ * Thumb: 48px blue disc with white rim, 3D shadow stack, subtle glow halo.
+ * Active state: thumb pulses with stronger glow so the player feels their drag.
+ *
+ * Dan 2026-08-28: "THE BET SLIDER SHOULD BE SILVER AND NOT YELLOW." The fill
+ * used to read var(--color-raise), which design-tokens.css sets to amber
+ * (#f59e0b) — that token also paints the RAISE button, so it stays amber and
+ * the slider hardcodes brushed silver instead of borrowing it. */
 .raise-slider {
   width: 100%;
   height: 14px;
@@ -991,9 +1220,9 @@
   appearance: none;
   background: linear-gradient(
     90deg,
-    #9ecbff 0%,
-    var(--color-raise, #2f80ed) calc(var(--slider-progress, 50%) - 12%),
-    var(--color-raise-dark, #1b5fc4) var(--slider-progress, 50%),
+    #f2f4f7 0%,
+    #c3c9d1 calc(var(--slider-progress, 50%) - 12%),
+    #868e99 var(--slider-progress, 50%),
     rgba(0, 0, 0, 0.45) var(--slider-progress, 50%),
     rgba(0, 0, 0, 0.55) 100%
   );
@@ -1025,7 +1254,7 @@
     0 6px 16px rgba(0, 0, 0, 0.6),
     0 2px 4px rgba(0, 0, 0, 0.5),
     0 0 0 2px rgba(255, 255, 255, 0.18),
-    0 0 22px var(--color-raise-glow, rgba(47, 128, 237, 0.55)),
+    0 0 22px rgba(47, 128, 237, 0.55),
     inset 0 2px 3px rgba(255, 255, 255, 0.4),
     inset 0 -3px 6px rgba(10, 40, 90, 0.45);
   transition:
@@ -1043,15 +1272,15 @@
   box-shadow:
     0 4px 12px rgba(0, 0, 0, 0.5),
     0 0 0 3px rgba(255, 255, 255, 0.25),
-    0 0 24px var(--color-raise-glow, rgba(47, 128, 237, 0.6));
+    0 0 24px rgba(47, 128, 237, 0.6);
 }
 
 .raise-slider:active::-webkit-slider-thumb {
   transform: scale(1.1);
   box-shadow:
     0 2px 6px rgba(0, 0, 0, 0.6),
-    0 0 0 4px var(--color-raise-glow, rgba(47, 128, 237, 0.5)),
-    0 0 32px var(--color-raise-glow, rgba(47, 128, 237, 0.5));
+    0 0 0 4px rgba(47, 128, 237, 0.5),
+    0 0 32px rgba(47, 128, 237, 0.5);
 }
 
 .raise-slider::-moz-range-thumb {
@@ -1069,7 +1298,7 @@
   border: 2px solid #ffffff;
   box-shadow:
     0 6px 16px rgba(0, 0, 0, 0.6),
-    0 0 22px var(--color-raise-glow, rgba(47, 128, 237, 0.55)),
+    0 0 22px rgba(47, 128, 237, 0.55),
     inset 0 2px 3px rgba(255, 255, 255, 0.4),
     inset 0 -3px 6px rgba(10, 40, 90, 0.45);
 }
@@ -1085,12 +1314,8 @@
 .raise-slider::-moz-range-progress {
   height: 14px;
   border-radius: 8px;
-  background: linear-gradient(
-    90deg,
-    #9ecbff 0%,
-    var(--color-raise, #2f80ed) 60%,
-    var(--color-raise-dark, #1b5fc4) 100%
-  );
+  /* Silver, matching the webkit fill above (Dan 2026-08-28). */
+  background: linear-gradient(90deg, #f2f4f7 0%, #c3c9d1 60%, #868e99 100%);
 }
 
 .raise-slider::-moz-range-thumb:hover {
@@ -1102,8 +1327,11 @@
   display: flex;
   gap: 6px;
   margin-bottom: 12px;
-  /* Dan 2026-08-23 (item 9) added 2.5X, so the widest row is now SEVEN
-     buttons: 2X 2.5X 3X 4X 5X POT ALL IN (no-limit, facing a bet postflop).
+  /* Dan 2026-08-28 (mobile pass item 1) took the row from seven buttons to
+     SIX: 2.5X 3X 3.5X 4X POT ALL IN (no-limit, facing a bet). It was
+     2X 2.5X 3X 4X 5X POT ALL IN, and at seven across a 375px phone ALL IN was
+     clipped at the right edge — which is the screenshot he sent.
+
      Wrapping would push a second row up into the table felt, so the row must
      SHRINK instead - see min-width on the button below, without which a flex
      item refuses to go under its own text width and the row overflows the
@@ -1114,7 +1342,7 @@
 .raise-preset {
   /* `flex: 1` leaves min-width at its `auto` default, which pins each button
      to its label width - that is the overflow. Basis 0 + min-width 0 lets all
-     seven share the row evenly. */
+     six share the row evenly. */
   flex: 1 1 0;
   min-width: 0;
   padding: 0 2px;
@@ -1355,17 +1583,21 @@
     gap: 4px;
   }
 
-  /* Seven buttons across a 390px phone: (390 - 24 padding - 24 gaps) / 7 is
-     about 49px each, and "ALL IN" at 0.6875rem needs roughly 41px of that.
-     Dropping a step keeps a comfortable margin instead of a hairline one. */
-  /* AUDIT 2026-08-25 — the HEIGHT is back to 44px.
+  /* SIX buttons across a 390px phone since 2026-08-28: (390 - 24 padding - 20
+     gaps) / 6 is about 57px each, against 49px when the row was seven. "ALL IN"
+     is the longest label and needs roughly 41px at 0.6875rem, so the label size
+     goes back UP a step — the drop to 0.625rem existed only to make seven fit,
+     and dropping a button is a better way to buy the room than shrinking the
+     text a player is reading on a 15-second clock.
+
+     AUDIT 2026-08-25 — the HEIGHT is 44px and stays there.
      It had been dropped to 40px in the same edit that made the labels smaller,
-     but the constraint the comment above describes is entirely HORIZONTAL:
-     seven buttons have to share the width. Height was never what made them fit,
-     and 40px puts a control the player presses inside a 15-second shot clock
-     under the 44px minimum touch target. The four pixels come out of the
-     overlay, which is `position: fixed` and simply grows upward over the felt —
-     nothing below it moves and the published --sp-bottom-row-h is untouched.
+     but the constraint above is entirely HORIZONTAL: the buttons share the
+     WIDTH. Height was never what made them fit, and 40px puts a control the
+     player presses inside a shot clock under the 44px minimum touch target. The
+     four pixels come out of the overlay, which is `position: fixed` and simply
+     grows upward over the felt — nothing below it moves and the published
+     --sp-bottom-row-h is untouched.
 
      The hit area cannot be grown with a pseudo-element here: `.raise-preset`
      is `overflow: hidden` (it clips the ::after sheen to the rounded corner),
@@ -1375,7 +1607,7 @@
      different bet. */
   .raise-preset {
     height: 44px;
-    font-size: 0.625rem;
+    font-size: 0.6875rem;
     letter-spacing: 0.3px;
   }
 
@@ -1523,6 +1755,8 @@
 
 /* Keyboard shortcut hints */
 .action-panel .action-btn__shortcut {
+  position: relative;
+  z-index: 2;
   font-size: 0.5625rem;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.25);

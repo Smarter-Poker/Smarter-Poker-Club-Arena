@@ -44,10 +44,11 @@
  *  SHAPE
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * One channel per table, filtered to the ids currently seated, resubscribed
- * only when that set genuinely changes. Nine `id=eq.` channels would also work
- * and would cost nine subscriptions per table per player — on MultiTablePage,
- * with four tables mounted, that is thirty-six.
+ * One channel per table, with one `id=eq.` binding for each player currently
+ * seated, resubscribed only when that set genuinely changes. This replaces the
+ * old TableWebSocket listener that subscribed to ALL profile updates on the
+ * platform once for every open table. Four-table mode now receives at most the
+ * rows for its own rosters, while still using only one channel per table.
  *
  * Realtime delivers RAW COLUMN NAMES. `arena_avatar_url` does not arrive as
  * `avatar_url` here, however many `select('avatar_url:arena_avatar_url')` calls
@@ -58,15 +59,40 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { reportError } from '../utils/errorReporter';
 import { masterBus } from '../core/MasterBus';
+import { supabase } from '../lib/supabase';
 
 export interface SeatedProfileChange {
   userId: string;
   /** `profiles.arena_avatar_url`. Undefined when the payload did not carry it. */
   avatar?: string;
   /** `profiles.equipped_frame`, normalised: null means "explicitly none". */
-  frame: string | null;
+  frame?: string | null;
   /** `profiles.equipped_aura`, normalised: null means "explicitly none". */
-  aura: string | null;
+  aura?: string | null;
+}
+
+function toProfileChange(row: Record<string, unknown>): SeatedProfileChange | null {
+  const userId = typeof row.id === 'string' ? row.id : '';
+  if (!userId) return null;
+  const rawAvatar = row.arena_avatar_url;
+  const rawFrame = row.equipped_frame;
+  const rawAura = row.equipped_aura;
+  return {
+    userId,
+    avatar: typeof rawAvatar === 'string' && rawAvatar ? rawAvatar : undefined,
+    frame: typeof rawFrame === 'string' && rawFrame ? rawFrame : null,
+    aura: typeof rawAura === 'string' && rawAura ? rawAura : null,
+  };
+}
+
+/** Short deterministic suffix so Realtime topics stay well below name limits. */
+function hashRoster(value: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
 }
 
 /**
@@ -87,6 +113,7 @@ export function useSeatedProfileSync(
      down and rebuild a realtime subscription sixty times a second. */
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const pendingMutationsRef = useRef(new Map<string, Set<string>>());
 
   /* A stable identity for the id SET. Sorted and joined so [a,b] and [b,a] are
      the same dependency, and deduped so a table mid-seat-change does not churn
@@ -111,32 +138,71 @@ export function useSeatedProfileSync(
     const safeIds = ids.filter((id) => UUID.test(id));
     if (safeIds.length === 0) return undefined;
 
-    const unsub = masterBus.subscribe('TABLE_PROFILES_UPDATE', (event) => {
-      const row = event.payload.newRow;
-      const userId = typeof row?.['id'] === 'string' ? (row['id'] as string) : '';
-      if (!userId || !safeIds.includes(userId)) return;
-
-      const rawAvatar = row?.['arena_avatar_url'];
-      const rawFrame = row?.['equipped_frame'];
-      const rawAura = row?.['equipped_aura'];
-
+    const deliver = (change: SeatedProfileChange | null) => {
+      if (!change || !safeIds.includes(change.userId)) return;
       try {
-        onChangeRef.current({
-          userId,
-          /* Undefined, not '', when the column is absent or empty. The
-             merge treats undefined as "no news" and keeps whatever the
-             snapshot already put on the seat; '' would blank a face. */
-          avatar: typeof rawAvatar === 'string' && rawAvatar ? rawAvatar : undefined,
-          frame: typeof rawFrame === 'string' && rawFrame ? rawFrame : null,
-          aura: typeof rawAura === 'string' && rawAura ? rawAura : null,
-        });
+        onChangeRef.current(change);
       } catch (err) {
         reportError(err, 'useSeatedProfileSync.onChange');
+      }
+    };
+
+    // Picker events are zero-latency and BroadcastChannel-backed, so the
+    // current user's every open table (and every Club Arena tab) repaints in
+    // the same frame as the choice.
+    const mutationOff = masterBus.subscribe('CUSTOMIZATION_MUTATION_STATE', (event) => {
+      if (event.payload.kind !== 'player-appearance') return;
+      const playerId = event.payload.scope;
+      if (!safeIds.includes(playerId)) return;
+      if (event.payload.state === 'pending') {
+        const pending = pendingMutationsRef.current.get(playerId) ?? new Set<string>();
+        pending.add(event.payload.mutationId);
+        pendingMutationsRef.current.set(playerId, pending);
+      } else if (event.payload.state !== 'rolling-back') {
+        const pending = pendingMutationsRef.current.get(playerId);
+        pending?.delete(event.payload.mutationId);
+        if (pending?.size === 0) pendingMutationsRef.current.delete(playerId);
+      }
+    });
+
+    const appearanceOff = masterBus.subscribe('PLAYER_APPEARANCE_CHANGED', (event) => {
+      const { userId, avatar, frame, aura } = event.payload;
+      deliver({ userId, avatar, frame, aura });
+    });
+
+    // Database realtime is the durable cross-device reconciliation path for
+    // this table's seated roster. Each binding is user-filtered; no global
+    // profiles fan-out is allowed here.
+    const channel = supabase.channel(`seated-profiles:${tableId}:${hashRoster(idKey)}`);
+    for (const id of safeIds) {
+      channel.on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${id}`,
+        },
+        (payload) => {
+          const change = toProfileChange(payload.new as Record<string, unknown>);
+          if (change && pendingMutationsRef.current.get(change.userId)?.size) return;
+          deliver(change);
+        }
+      );
+    }
+    channel.subscribe((status, error) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        reportError(
+          error || new Error(`Seated profile channel ${status}`),
+          'useSeatedProfileSync.channel'
+        );
       }
     });
 
     return () => {
-      unsub();
+      mutationOff();
+      appearanceOff();
+      void supabase.removeChannel(channel);
     };
   }, [tableId, idKey]);
 }

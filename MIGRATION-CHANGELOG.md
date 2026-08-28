@@ -2,6 +2,93 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-08-28 — BOMB POT VARIANT OVERRIDE + TIMED PERSISTENCE
+
+Round 3 of the bomb pot spec work (rounds 1-2 below). Two features, both to
+Dan's spec, migration `bomb_pot_variant_and_timed_persistence` APPLIED to
+production before merge.
+
+1. **Variant override (spec §10.1).** An NLH table can now deal PLO bomb
+   hands (`tables.bomb_pot_variant`, whitelisted nlh/plo4/plo5/plo6, DB CHECK
+   mirrored). The whole override is one assignment — HandConfig.gameVariant —
+   plus ONE new seam, `ServerTableEngineBase.activeHandVariant()`, now read by
+   the four places that used to ask the TABLE what game a HAND was: the
+   snapshot's betting structure (client slider goes pot-limit on the bomb
+   hand), the legal-action pot-limit clamps, the horses' evaluator variant,
+   and the hand-history write (records plo4, not the table label). The
+   snapshot ships `hand_variant`; the client sizes villain card-backs and
+   winner-highlight evaluation from it, the intro badges "PLO4 DOUBLE BOARD",
+   the lobby tip says "played as PLO4", the rules modal shows "Played As".
+   Guard: an override the deck cannot cover for the seated count (9-handed
+   PLO6 = 54 hole cards) yields to the table's own game, logged.
+2. **Timed clock survives restarts (spec §4.3).** The timed mode's due
+   timestamp now persists to `tables.bomb_pot_next_due_at` (engine-written,
+   fire-and-forget) and seeds the scheduler at boot — a deploy no longer
+   restarts the 30-minute cycle; a due time that passed during the deploy
+   detonates at the first hand boundary.
+
+Pins: bombPotGuards grew a six-pin suite locking every activeHandVariant
+consumer; scheduler tests cover the whitelist and the seed (never overwrites
+a running clock). 38 server + 165 client tests green, tsc clean both.
+
+## Cowork session 2026-08-27 — BOMB POTS, AUDITED AND STANDARDIZED TO DAN'S SPEC
+
+Full audit of the bomb pot feature against the Bomb Pot Rules + Architecture
+Specification, then the gaps closed. Audit record with the spec-by-spec
+compliance table: `.agent/audits/2026-08-27-bomb-pot-standardization.md`.
+
+What the audit found already correct (built 2026-08-20/25): server-authoritative
+double board with per-pot integer-cent splits, odd cent to Board 1; board-major
+award sequencing; odd chips clockwise from the button; short-ante all-in side
+pots; RIT/insurance/BBJ suppression on multi-board hands; deck-feasibility
+downgrade; the cinematic intro with reduced-motion fallback; per-board hi/lo
+muck integrity.
+
+What was missing, now built:
+
+1. **Trigger modes (spec §2.1/§4).** Only every-N-hands existed. New
+   `BombPotScheduler` (server/src/engine/BombPotScheduler.ts, pure state
+   machine, 16 unit tests) adds `once_per_orbit` (button-crossing orbit
+   tracker — seats joining/leaving cannot double or skip a bomb, T01/T02),
+   `timed` (server clock, due at next hand boundary, one pending token no
+   matter how long a pause, T03/T04) and `bomb_pot_only`. Single
+   pending-token semantics and a minimum-players floor (default 3): a due
+   bomb stays pending until enough players are dealt in.
+2. **Triple board (spec §9).** HandController generalized from a double-board
+   boolean to `activeBoardCount` 1-3: lockstep dealing on all paths (normal
+   streets, insurance-paced runout, full runout), N-way per-pot integer split
+   with remainders to Board 1 then Board 2, per-board winners/labels, `hand3`
+   at showdown, board-3 muck eligibility (hi and lo), stepwise 3→2→1 deck
+   downgrade. Client renders board 3 under board 2 (existing `data-boards='3'`
+   CSS), with its own winning-five highlight.
+3. **Config standardization (spec §3).** Migration
+   `20260827_bomb_pot_standardization` (APPLIED to production, verified:
+   5 tables columns + 2 hand_history columns, 1 double-board row backfilled):
+   `bomb_pot_board_count` (1-3, supersedes the boolean, kept in lockstep),
+   `bomb_pot_trigger_mode`, `bomb_pot_interval_seconds`,
+   `bomb_pot_min_players`, `bomb_pot_ante_fixed` (FIXED ante mode overriding
+   the BB multiple). Wired through loadTable select (engineSelectIsTheContract
+   guard extended), the throttled re-read, TableConfigPage (schedule + boards
+   radio groups — Triple Board is a real switch again, this time with an
+   engine behind it), lobby medallions per mode, GameRulesModal, felt pill.
+4. **Bomb antes on the hand record (spec §20).** postBombPotAntes never ran
+   postBlinds' forced-money recorder (#1477), so every bomb hand's persisted
+   `actions` log was short by the entire starting pot. Bomb antes now emit
+   FORCED_BETS_POSTED as `bomb_ante`, dead money.
+5. **Hand history (spec §20).** `community_cards3` plus a `bomb_pot` jsonb
+   {trigger_reason, ante_amount, board_count} frozen at trigger time — a bomb
+   hand's why/how is now reconstructable from the row.
+
+Deliberately deferred (documented in the audit): variant override
+(NLH table dealing PLO bombs — the config snapshot now carries the fields it
+needs), separate bomb button, admin manual next-hand trigger, per-award-unit
+settlement ledger table. Scheduler state is in-memory per engine (restart =
+worst case one cycle's delay), same trade-off the old counter made.
+
+Tests: 30 server (scheduler 16, triple board 9, double board 5 — all green),
+183 client tests in the touched areas green, `tsc --noEmit` clean on both
+tsconfigs.
+
 ## Cowork session 2026-08-27 — THE CASHIER, AUDITED TO THE MONEY STANDARD
 
 The table cashier and the wallet paths behind it, hunted for the six defect
@@ -15934,3 +16021,81 @@ mutation-tested - and strengthened after a first mutation slipped past a pin
 that only required one of the two restore paths).
 Verified: client 7,516/7,516, server 1,991/1,991, both tsc clean, ui-text gate
 green.
+
+### Same day, deeper pass — the action bar reappearing for a split second
+
+Dan: "you make an action (check, call, raise or fold), the action happens, but
+then the action bar reappears for a split second."
+
+Root cause, and it is a race, not a rendering quirk. The bar renders on
+`currentPlayerSeat === heroSeat`. Acting optimistically sets that to 0, so it
+hides immediately - correct. But the engine snapshot merge then applied
+`currentPlayerSeat: mapped.currentPlayerSeat` UNCONDITIONALLY, and a snapshot
+generated BEFORE the server processed the action still names the hero as the
+actor. It lands a beat later, hands the turn back, the bar returns; the next
+snapshot moves the action on and it vanishes again. One flash per action, for
+as long as the round trip takes.
+
+Fixed with a narrow fence (heroActedFenceRef): while it is live for THIS hand
+and THIS seat, a snapshot may not hand the turn back to the seat that just
+acted. It releases on every other outcome so it can never outlive its purpose -
+the engine naming a different actor is the success signal, a new hand
+invalidates it, a rejected action clears it, and a 1.5s bound covers the case
+where none of those arrive. The same file already guards two fields this way
+(boardStage never goes backwards, a bet is held through its collect), so this
+is the established shape here.
+
+SECOND DEFECT FOUND IN THE SAME PATH: revert() restored lastActions,
+lastBetAmounts and player status but NOT `currentPlayerSeat`, which the
+optimistic update had zeroed. So a REJECTED fold or call left the hero still on
+the clock with NO ACTION BAR, unable to do anything until the next snapshot
+happened to arrive. It now clears the fence and gives the turn back.
+
+Checked and found correct, not changed: the PreActionBar requires
+`currentPlayerSeat > 0`, so it does not appear during the fence window either -
+the fence reuses the quiet state the code already relies on to stop the two
+bars flickering against each other.
+
+Guard: 7 more specs in LiveHandNeverDimsAndPreActionsLand.test.ts (16 total),
+mutation-tested. Verified: client 7,523/7,523, server 1,991/1,991, tsc clean
+both sides, ui-text gate green.
+
+## Change #146 — Table Studio Never Edits Unknown Or Stale Customization State
+
+**File:** `src/components/table/ThemeSettingsModal.tsx`, `src/components/table/ThemeSettingsModal.css`, `src/lib/persistInterfaceTheme.ts`
+**Lines:** Before: modal component 585-1326, saved-theme read 718-775, asset writer 857-895, interface selector 1054-1063, VIP prompt 1297-1324
+**What existed:** The picker displayed writable defaults while the saved row was still loading or had failed, briefly marked purchased card backs as VIP-locked before ownership resolved, kept an open editor stale after another surface changed the same bucket, applied light/dark mode only to local Zustand state, and treated the VIP prompt as part of the parent focus trap.
+**What changed:** Added explicit loading/error/retry state with mutation locks, ownership verification state, exact-account/exact-bucket `UI_THEME_CHANGED` synchronization, ordered profile persistence with rollback for interface mode, a truthful device-only loadout note, and an independently labelled/focus-trapped VIP dialog. Guest sessions now reset to defaults instead of inheriting a prior account's in-memory selection.
+**Why:** A customization control must never overwrite a row it failed to read or claim an unsaved value is equipped. The live editor and live felt must consume the same discrete customization event.
+**Verified:** YES — re-read after formatting; component tests cover loading, ownership success/failure, dialog keyboard flow, mode rollback, and live editor synchronization.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #147 — All Ten Controls Designs Reach Real Mobile Action Buttons
+
+**File:** `src/components/table/ControlThemeTokens.css`, `src/components/table/ActionPanel.css`, `src/components/table/TableStudioGameplayPreview.tsx`, `src/components/table/TableStudioGameplayPreview.css`, `src/components/table/ThemeSettingsModal.tsx`, `src/components/table/ThemeSettingsModal.css`, `src/pages/TablePage.tsx`, `src/pages/TablePage.css`
+**Lines:** Before: TablePage.css 834-937 held dealer-only tokens; ActionPanel.css 473-552 ignored the selected design; the studio preview action row 185-201 used one generic finish
+**What existed:** The ten items labelled "Button" changed only the dealer marker. Fold, Check/Call, and Raise looked identical across all ten choices, and previews opened from non-table routes depended on a stylesheet that might not be loaded.
+**What changed:** Renamed the surface "Controls", extracted a shared route-safe token sheet, gave every design a distinct material/edge/radius/type treatment, wired those tokens into production ActionPanel and both studio previews, and retained the approved red/blue/green semantic action palette.
+**Why:** The user requested ten actual button/control designs that work mobile-first in previews and real gameplay, not ten dealer-puck aliases.
+**Verified:** YES — Chromium at 390x844 produced ten unique computed-style fingerprints, preserved Fold/Check/Raise semantic colors, and had no horizontal overflow.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #148 — Failed Card-Back And Cross-Device Mode Writes Stay Honest
+
+**File:** `src/pages/SettingsPage.tsx`, `src/lib/settingsBridge.ts`, `src/stores/useSettingsStore.ts`, `src/core/MasterBus.ts`
+**Lines:** Before: SettingsPage save path 533-628, settings store mode writer 29-40, MasterBus theme handler 1475-1494
+**What existed:** SettingsPage announced unconditional success and persisted the requested card back into local/profile settings even when the canonical appearance write failed. Its rollback read a ref after the optimistic table-store update, allowing the "previous" value to become the same failed value. Table Studio mode changes did not update the full Settings-page cache, and remote profile mode events repainted the DOM while leaving that cache stale.
+**What changed:** Captured the durable card back before optimistic mutation, rolls failed writes back across UI/local/profile state, reports partial failure explicitly, mirrors local mode changes into the full settings cache, and mirrors discrete cross-device `UI_THEME_CHANGED` events there before notifying mounted settings consumers.
+**Why:** No picker may claim a design saved when the durable writer rejected it, and a stale cache must not overwrite a valid realtime account preference later.
+**Verified:** YES — rollback, local-cache preservation, account isolation, and cross-device mode propagation are pinned by unit/integration tests.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #149 — Customization Wiring Regression Gate
+
+**File:** `tests/unit/ThemeSettingsModalHardening.test.tsx`, `tests/unit/persistInterfaceTheme.test.ts`, `tests/unit/SettingsPageBridge.test.ts`, `tests/unit/useSettingsStore.test.ts`, `tests/unit/liveCustomizationBus.test.ts`, `tests/unit/visualCustomizationContracts.test.ts`, `tests/config/tableAppearanceModesAndMobileBackgrounds.test.ts`, `tests/e2e/customization-controls.spec.ts`
+**Lines:** New coverage plus updated contracts for the implemented persistence path
+**What existed:** Catalog-count and static CSS checks existed, but no browser proof that ten control choices rendered distinctly on a phone, and no component-level hostile-state coverage for delayed/failed reads, ownership, mode rollback, or an already-open editor receiving a live event.
+**What changed:** Added behavior-level component, ordered-writer, cache, live-bus, rollback, shared-token, and mobile Chromium contracts.
+**Why:** Static inventory counts cannot prove a user tap reaches the live table or remains durable under delayed and failed requests.
+**Verified:** YES — 498 test files / 7,860 tests pass; focused mobile Playwright 1/1; production build passes; ESLint reports 0 errors (711 pre-existing warnings).
+**TypeScript:** PASS — `npx tsc --noEmit`.

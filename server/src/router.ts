@@ -45,6 +45,7 @@ import { handlePostBB } from './handlers/postbb.js';
 import { handleInjectFault } from './handlers/faultInjection.js';
 import { handleGetActions, handleGetState } from './handlers/state.js';
 import { handleAssistantLeaksDetect } from './handlers/assistant.js';
+import { handleVoiceIce } from './handlers/voice.js';
 import type { ChannelHub } from './hub/ChannelHub.js';
 
 // ─── Internal API key (set in Hetzner env, same secret used by World Hub) ─────
@@ -61,6 +62,7 @@ const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
  */
 type AnyGameServer = Parameters<typeof handleAction>[2]['gameServer'] &
   Parameters<typeof handleTimebank>[2]['gameServer'] &
+  Parameters<typeof handleRejectRebuy>[2]['gameServer'] &
   Parameters<typeof handleRabbitHunt>[2]['gameServer'] &
   Parameters<typeof handleHeartbeat>[2]['gameServer'] &
   Parameters<typeof handleAway>[2]['gameServer'] &
@@ -175,6 +177,19 @@ export function createRouter(
     // ─────────────────────────────────────────────────────────────────────────
     if (method === 'POST' && url === '/action') return handleAction(req, res, { gameServer });
     if (method === 'POST' && url === '/timebank') return handleTimebank(req, res, { gameServer });
+    /**
+     * ROUTED 2026-08-28. `handleRejectRebuy` was imported at the top of this
+     * file and never given a branch, so every POST fell through to the 404 at
+     * the bottom. Both client call sites fire-and-forget with a swallowing
+     * catch, so nothing ever surfaced it — and `engine.rejectRebuy()` had no
+     * reachable caller, which left `rejectedRebuys` the write-only set that
+     * the 2026-08-27 SNAP-CONTINUE work (waitForRebuyDecisions) exists to
+     * read. Effect on the felt: the table sat out the full 5-second rebuy
+     * pause after every bust even when the player pressed No, so Dan's rule
+     * ("...OR SNAP CONTINUES IF THEY CLICK NO TO THE REBUY") never worked.
+     */
+    if (method === 'POST' && url === '/reject_rebuy')
+      return handleRejectRebuy(req, res, { gameServer });
     // The rabbit-hunt paywall. The cards are not in any broadcast; this is the
     // only way they leave the server, and it charges before it answers.
     if (method === 'POST' && url === '/rabbit-hunt')
@@ -204,6 +219,13 @@ export function createRouter(
     if (method === 'POST' && url === '/post-bb') return handlePostBB(req, res, { gameServer });
     if (method === 'POST' && url === '/assistant/leaks/detect')
       return handleAssistantLeaksDetect(req, res);
+
+    // The table voice mesh asks for its ICE servers here, once per join. It
+    // MINTS a short-lived TURN credential, so it is authenticated like any other
+    // player request — an open credential mint is an open relay. It answers the
+    // STUN-only list (never a 500) while no relay is configured, which is the
+    // state of every engine until one is deployed. See handlers/voice.ts.
+    if (method === 'GET' && url === '/voice/ice') return handleVoiceIce(req, res);
 
     // Fault injection for freeze drills. 404s unless FAULT_INJECTION_TOKEN is
     // set, requires that token, and refuses any table with a human seated.

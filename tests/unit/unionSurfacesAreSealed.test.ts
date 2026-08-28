@@ -28,6 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceMethod } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../..', p), 'utf8');
 
@@ -111,7 +112,7 @@ describe('table exits land in a club, never a union', () => {
        assertion passed against nothing. */
     const at = TABLE_PAGE.indexOf('const exitDestination = () => {');
     expect(at).toBeGreaterThan(-1);
-    const fn = TABLE_PAGE.slice(at, at + 200);
+    const fn = sliceMethod(TABLE_PAGE, 'const exitDestination = () => {');
     expect(fn).toContain('lobbyClubIdRef.current');
     // actualClubIdRef is the table's OWNER club — right for rake, wrong for a
     // destination, and the union hub on any union game.

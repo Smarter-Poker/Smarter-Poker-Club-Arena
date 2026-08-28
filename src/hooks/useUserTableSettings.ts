@@ -88,6 +88,9 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   skip_animations: false,
   use_alias: false,
   table_alias: '',
+  // DEAD under the NO AUTO TABLE SWITCHING law (Dan 2026-08-28) — kept only
+  // so the pinned client-default/DB-default equality holds and existing rows
+  // parse. No code reads these; none may again.
   multi_auto_switch: true,
   multi_action_queue: true,
   // ── THESE TWO MUST MATCH THE DATABASE ──
@@ -210,16 +213,13 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
     label: 'Use Club Alias',
     description: 'Display Your Club Alias Instead Of Your Smarter.Poker Name At The Table',
   },
-  {
-    key: 'multi_auto_switch',
-    label: 'Multi-Table Auto-Switch',
-    description: 'Jump To A Table Automatically When Its Turn Clock Is Nearly Out',
-  },
-  {
-    key: 'multi_action_queue',
-    label: 'Multi-Table Action Queue',
-    description: 'After You Act, Advance To The Next Table Already Waiting On You',
-  },
+  /* NO AUTO TABLE SWITCHING — LAW (Dan 2026-08-28): the Multi-Table
+     Auto-Switch and Action Queue toggles were REMOVED from this panel and
+     their consuming effects deleted from MultiTablePage. "YOU CAN NEVER EVER
+     AUTO CHANGE TABLES FOR A USER, THEY MUST CHANGE IT BY THEM SELF." The DB
+     columns and the keys below survive only so existing rows keep parsing;
+     nothing may ever read them to move the active table again. Pinned by
+     tests/no-auto-table-switch.law.test.ts. */
   {
     key: 'multi_desktop_alerts',
     label: 'Desktop Turn Alerts',
@@ -233,35 +233,129 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
   },
 ];
 
-const LOCAL_CACHE_KEY = 'user_table_settings_cache';
+const LOCAL_CACHE_PREFIX = 'user_table_settings_cache:';
+
+const cacheKeyForUser = (userId: string) => `${LOCAL_CACHE_PREFIX}${userId}`;
+
+function readCachedSettings(userId: string | null | undefined): UserTableSettings {
+  if (!userId) return { ...DEFAULT_USER_TABLE_SETTINGS };
+  try {
+    const cached = localStorage.getItem(cacheKeyForUser(userId));
+    if (cached) return { ...DEFAULT_USER_TABLE_SETTINGS, ...JSON.parse(cached) };
+  } catch {
+    /* stale or unavailable localStorage falls through to canonical defaults */
+  }
+  return { ...DEFAULT_USER_TABLE_SETTINGS };
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HOOK
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function useUserTableSettings(userId: string | null | undefined) {
-  const [settings, setSettings] = useState<UserTableSettings>(() => {
-    // Instant load from localStorage cache
-    try {
-      const cached = localStorage.getItem(LOCAL_CACHE_KEY);
-      if (cached) return { ...DEFAULT_USER_TABLE_SETTINGS, ...JSON.parse(cached) };
-    } catch {
-      /* ignore */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  ONE NETWORK READ PER USER, NOT ONE PER COMPONENT (2026-08-28)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * This hook is called from far more places than it looks. Counted on main:
+ *
+ *   TablePage (direct)                                            1
+ *   useButtonImage — which calls this hook — from TableMenu,
+ *     PreviousHandCard, MiniStatsCard, RabbitHunt, TableChat,
+ *     TimebankCounter, and twice more inside TablePage itself      8
+ *   MultiTablePage, HamburgerMenu, SettingsPanel                   3
+ *
+ * Nine of those live INSIDE a TablePage, and MultiTablePage keeps up to four
+ * TablePages mounted — so opening four tables fired roughly **37 identical
+ * `select('*') on user_table_settings`**, all for the same user, all within a
+ * second of each other, every one of them a round trip to Supabase before the
+ * felt could paint.
+ *
+ * Nothing was wrong with any single call. The hook is simply used the way a
+ * cheap selector is used, while doing the work of a fetch.
+ *
+ * WHAT THIS DOES, AND WHAT IT DELIBERATELY DOES NOT DO. It de-duplicates the
+ * READ and nothing else: concurrent callers for the same user share one
+ * in-flight promise, so N mounts cost one query. Every hook instance still
+ * keeps its own state, its own MasterBus subscriptions and its own write
+ * machinery (`writeTailsRef`, `durableValueRef`, `pendingEchoRef` and the
+ * rest), untouched.
+ *
+ * That restraint is the point. Sharing the STATE as well would be the bigger
+ * win and the bigger risk: this hook's write path is a documented minefield of
+ * echo suppression and revision counters — the notes above describe a latch
+ * that "swallows the next genuine cross-component change" — and collapsing N
+ * writers onto one store is a change that deserves its own commit and its own
+ * tests, not a line in a performance pass.
+ *
+ * THE CACHE IS THE IN-FLIGHT PROMISE, NOT THE RESULT. It is dropped as soon as
+ * it settles, so this can only ever collapse a burst of simultaneous mounts.
+ * A component that mounts later still reads the database, and a settings write
+ * is never served a stale row. There is no TTL to tune and no invalidation to
+ * forget, because nothing is retained.
+ */
+const settingsRowQuery = (userId: string) =>
+  supabase.from('user_table_settings').select('*').eq('user_id', userId).maybeSingle();
+
+type SettingsRowResult = Awaited<ReturnType<typeof settingsRowQuery>>;
+
+const inFlightSettingsReads = new Map<string, Promise<SettingsRowResult>>();
+
+export function fetchUserTableSettingsRow(userId: string): Promise<SettingsRowResult> {
+  const existing = inFlightSettingsReads.get(userId);
+  if (existing) return existing;
+
+  // `Promise.resolve` because a PostgREST builder is a THENABLE, not a Promise:
+  // it has `.then` but no `.catch`/`.finally`, so it cannot be stored or awaited
+  // as one. Resolving it once gives a real Promise that many callers can await.
+  const p = Promise.resolve(settingsRowQuery(userId)).then(
+    (res) => {
+      inFlightSettingsReads.delete(userId);
+      return res;
+    },
+    (err) => {
+      // Drop the entry on rejection too, or one network blip would wedge every
+      // future mount onto a permanently failed promise.
+      inFlightSettingsReads.delete(userId);
+      throw err;
     }
-    return { ...DEFAULT_USER_TABLE_SETTINGS };
-  });
+  );
+
+  inFlightSettingsReads.set(userId, p);
+  return p;
+}
+
+/** Test seam: prove the de-duplication rather than assume it. */
+export function __inFlightSettingsReadCount(): number {
+  return inFlightSettingsReads.size;
+}
+
+export function useUserTableSettings(userId: string | null | undefined) {
+  const [settings, setSettings] = useState<UserTableSettings>(() => readCachedSettings(userId));
   const [loading, setLoading] = useState(true);
   /* An identity, not a latch — see the long note in useTableSettings. A
      boolean set-before-emit gets permanently stuck the moment MasterBus
      suppresses a duplicate emit, and then swallows the next genuine
      cross-component change. 2026-08-26. */
   const originIdRef = useRef<string>(`uts-${Math.random().toString(36).slice(2)}`);
+  const activeUserIdRef = useRef(userId);
+  activeUserIdRef.current = userId;
   // Keep a ref to the latest settings to avoid stale closure in toggleSetting
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  const mutationRevisionRef = useRef(new Map<string, number>());
+  const writeTailsRef = useRef(new Map<string, Promise<void>>());
+  const durableValueRef = useRef(new Map<string, UserTableSettings[keyof UserTableSettings]>());
+  const pendingWriteCountRef = useRef(new Map<string, number>());
+  const pendingEchoRef = useRef(new Map<string, string>());
 
   // ── Load from Supabase on mount ──
   useEffect(() => {
+    const cached = readCachedSettings(userId);
+    settingsRef.current = cached;
+    setSettings(cached);
+    setLoading(Boolean(userId));
+
     if (!userId) {
       setLoading(false);
       return;
@@ -270,11 +364,7 @@ export function useUserTableSettings(userId: string | null | undefined) {
     let mounted = true;
     const load = async () => {
       try {
-        const { data, error } = await supabase
-          .from('user_table_settings')
-          .select('*')
-          .eq('user_id', userId)
-          .maybeSingle();
+        const { data, error } = await fetchUserTableSettingsRow(userId);
 
         if (error) {
           console.warn('[useUserTableSettings] Load failed, using cache:', error.message);
@@ -282,7 +372,7 @@ export function useUserTableSettings(userId: string | null | undefined) {
           return;
         }
 
-        if (data && mounted) {
+        if (data && mounted && activeUserIdRef.current === userId) {
           const loaded: UserTableSettings = {
             highlight_active_players:
               data.highlight_active_players ?? DEFAULT_USER_TABLE_SETTINGS.highlight_active_players,
@@ -315,7 +405,7 @@ export function useUserTableSettings(userId: string | null | undefined) {
           setSettings(loaded);
           // Cache locally for instant loads
           try {
-            localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(loaded));
+            localStorage.setItem(cacheKeyForUser(userId), JSON.stringify(loaded));
           } catch {
             /* */
           }
@@ -332,7 +422,7 @@ export function useUserTableSettings(userId: string | null | undefined) {
       } catch (err) {
         console.warn('[useUserTableSettings] Unexpected error:', err);
       }
-      if (mounted) setLoading(false);
+      if (mounted && activeUserIdRef.current === userId) setLoading(false);
     };
 
     load();
@@ -343,14 +433,34 @@ export function useUserTableSettings(userId: string | null | undefined) {
 
   // ── Listen for cross-component SETTINGS_CHANGED events ──
   useEffect(() => {
+    const mutationUnsub = masterBus.subscribe('CUSTOMIZATION_MUTATION_STATE', (event) => {
+      if (event.payload.kind !== 'user-table-setting') return;
+      const prefix = `${userId || ''}:`;
+      if (!event.payload.scope.startsWith(prefix)) return;
+      const setting = event.payload.scope.slice(prefix.length) as keyof UserTableSettings;
+      if (!(setting in DEFAULT_USER_TABLE_SETTINGS)) return;
+      if (event.payload.state === 'pending') {
+        pendingEchoRef.current.set(event.payload.scope, event.payload.mutationId);
+      } else if (pendingEchoRef.current.get(event.payload.scope) === event.payload.mutationId) {
+        pendingEchoRef.current.delete(event.payload.scope);
+      }
+    });
     const unsub = masterBus.subscribe('SETTINGS_CHANGED', (event) => {
       if (event.payload?.origin === originIdRef.current) return;
+      if (event.payload.userId && event.payload.userId !== userId) return;
       const { setting, value } = event.payload;
+      if (
+        event.payload?.origin?.startsWith('postgres-sync:') &&
+        pendingEchoRef.current.has(`${userId || ''}:${setting}`)
+      ) {
+        return;
+      }
       if (setting && setting in DEFAULT_USER_TABLE_SETTINGS) {
         setSettings((prev) => {
           const updated = { ...prev, [setting]: value };
+          settingsRef.current = updated;
           try {
-            localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(updated));
+            if (userId) localStorage.setItem(cacheKeyForUser(userId), JSON.stringify(updated));
           } catch {
             /* */
           }
@@ -358,32 +468,56 @@ export function useUserTableSettings(userId: string | null | undefined) {
         });
       }
     });
-    return unsub;
-  }, []);
+    return () => {
+      mutationUnsub();
+      unsub();
+    };
+  }, [userId]);
 
   // ── Toggle a single setting ──
   const toggleSetting = useCallback(
     async (key: keyof UserTableSettings) => {
       if (!userId) return;
 
-      // Read from ref to avoid stale closure on rapid toggles
-      const newValue = !settingsRef.current[key];
+      // Advance the ref synchronously. React state may not commit between two
+      // fast taps; reading a render-stale ref made both taps calculate the same
+      // value instead of toggling twice.
+      const previousValue = Boolean(settingsRef.current[key]);
+      const newValue = !previousValue;
+      const mutationScope = `${userId}:${String(key)}`;
+      const revision = (mutationRevisionRef.current.get(mutationScope) ?? 0) + 1;
+      const mutationId = `${mutationScope}:${revision}`;
+      mutationRevisionRef.current.set(mutationScope, revision);
+      if ((pendingWriteCountRef.current.get(mutationScope) ?? 0) === 0) {
+        durableValueRef.current.set(mutationScope, previousValue);
+      }
+      pendingWriteCountRef.current.set(
+        mutationScope,
+        (pendingWriteCountRef.current.get(mutationScope) ?? 0) + 1
+      );
 
       // Optimistic update
-      setSettings((prev) => {
-        const updated = { ...prev, [key]: newValue };
-        try {
-          localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(updated));
-        } catch {
-          /* */
-        }
-        return updated;
+      const optimistic = { ...settingsRef.current, [key]: newValue };
+      settingsRef.current = optimistic;
+      setSettings(optimistic);
+      try {
+        localStorage.setItem(cacheKeyForUser(userId), JSON.stringify(optimistic));
+      } catch {
+        /* */
+      }
+
+      masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'user-table-setting',
+        scope: mutationScope,
+        mutationId,
+        state: 'pending',
       });
 
       // Broadcast for cross-component sync
       masterBus.emit('SETTINGS_CHANGED', {
         setting: key,
         value: newValue,
+        userId,
         origin: originIdRef.current,
       });
 
@@ -421,42 +555,83 @@ export function useUserTableSettings(userId: string | null | undefined) {
         }
       }
 
-      // Persist to Supabase
-      try {
-        const { error } = await supabase.from('user_table_settings').upsert(
-          {
-            user_id: userId,
-            [key]: newValue,
-          },
-          { onConflict: 'user_id' }
-        );
+      // Persist in tap order. A slower first request must not finish after the
+      // second and become the durable value.
+      const previousTail = writeTailsRef.current.get(mutationScope) ?? Promise.resolve();
+      const task = previousTail.then(async () => {
+        try {
+          const { error } = await supabase.from('user_table_settings').upsert(
+            {
+              user_id: userId,
+              [key]: newValue,
+            },
+            { onConflict: 'user_id' }
+          );
+          return error ?? undefined;
+        } catch (error) {
+          return error;
+        }
+      });
+      const tail = task.then(() => undefined);
+      writeTailsRef.current.set(mutationScope, tail);
+      const error = await task;
+      if (writeTailsRef.current.get(mutationScope) === tail) {
+        writeTailsRef.current.delete(mutationScope);
+      }
 
-        if (error) {
-          reportError(error, 'useUserTableSettings.Save_failed');
-          // Rollback on failure
-          setSettings((prev) => {
-            const reverted = { ...prev, [key]: !newValue };
-            try {
-              localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(reverted));
-            } catch {
-              /* */
-            }
-            return reverted;
+      if (error) {
+        reportError(error, 'useUserTableSettings.Save_failed');
+        // Only the latest mutation may roll this field back. Broadcast that
+        // rollback too, or the source panel and the other open tables disagree.
+        if (
+          activeUserIdRef.current === userId &&
+          mutationRevisionRef.current.get(mutationScope) === revision &&
+          settingsRef.current[key] === newValue
+        ) {
+          const rollbackValue = Boolean(
+            durableValueRef.current.get(mutationScope) ?? previousValue
+          );
+          const reverted = { ...settingsRef.current, [key]: rollbackValue };
+          settingsRef.current = reverted;
+          setSettings(reverted);
+          try {
+            localStorage.setItem(cacheKeyForUser(userId), JSON.stringify(reverted));
+          } catch {
+            /* */
+          }
+          masterBus.emit('SETTINGS_CHANGED', {
+            setting: key,
+            value: rollbackValue,
+            userId,
+            origin: originIdRef.current,
           });
-          // Audit round 4: the ca_ws_mux mirror was written optimistically
-          // above; a failed save rolled the SETTING back but left the mirror
-          // pointing the other way until the next load. Re-mirror the revert.
           if (key === 'multi_shared_socket') {
             try {
-              localStorage.setItem('ca_ws_mux', !newValue ? '1' : '0');
+              localStorage.setItem('ca_ws_mux', rollbackValue ? '1' : '0');
             } catch {
               /* private mode */
             }
           }
         }
-      } catch (err) {
-        reportError(err, 'useUserTableSettings.Unexpected_save_error');
+        masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+          kind: 'user-table-setting',
+          scope: mutationScope,
+          mutationId,
+          state: 'rolled-back',
+        });
+      } else {
+        durableValueRef.current.set(mutationScope, newValue);
+        masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+          kind: 'user-table-setting',
+          scope: mutationScope,
+          mutationId,
+          state: 'confirmed',
+        });
       }
+      pendingWriteCountRef.current.set(
+        mutationScope,
+        Math.max(0, (pendingWriteCountRef.current.get(mutationScope) ?? 1) - 1)
+      );
     },
     [userId]
   );
@@ -466,40 +641,109 @@ export function useUserTableSettings(userId: string | null | undefined) {
     async (alias: string) => {
       if (!userId) return;
 
-      // Optimistic update
-      setSettings((prev) => {
-        const updated = { ...prev, table_alias: alias };
-        try {
-          localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(updated));
-        } catch {
-          /* */
-        }
-        return updated;
+      const previousAlias = settingsRef.current.table_alias;
+      const mutationScope = `${userId}:table_alias`;
+      const revision = (mutationRevisionRef.current.get(mutationScope) ?? 0) + 1;
+      const mutationId = `${mutationScope}:${revision}`;
+      mutationRevisionRef.current.set(mutationScope, revision);
+      if ((pendingWriteCountRef.current.get(mutationScope) ?? 0) === 0) {
+        durableValueRef.current.set(mutationScope, previousAlias);
+      }
+
+      masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'user-table-setting',
+        scope: mutationScope,
+        mutationId,
+        state: 'pending',
       });
+      pendingWriteCountRef.current.set(
+        mutationScope,
+        (pendingWriteCountRef.current.get(mutationScope) ?? 0) + 1
+      );
+
+      // Optimistic update
+      const optimistic = { ...settingsRef.current, table_alias: alias };
+      settingsRef.current = optimistic;
+      setSettings(optimistic);
+      try {
+        localStorage.setItem(cacheKeyForUser(userId), JSON.stringify(optimistic));
+      } catch {
+        /* */
+      }
 
       // Broadcast for cross-component sync
       masterBus.emit('SETTINGS_CHANGED', {
         setting: 'table_alias',
         value: alias,
+        userId,
         origin: originIdRef.current,
       });
 
-      // Persist to Supabase
-      try {
-        const { error } = await supabase.from('user_table_settings').upsert(
-          {
-            user_id: userId,
-            table_alias: alias,
-          },
-          { onConflict: 'user_id' }
-        );
-
-        if (error) {
-          reportError(error, 'useUserTableSettings.Alias_save_failed');
+      const previousTail = writeTailsRef.current.get(mutationScope) ?? Promise.resolve();
+      const task = previousTail.then(async () => {
+        try {
+          const { error } = await supabase.from('user_table_settings').upsert(
+            {
+              user_id: userId,
+              table_alias: alias,
+            },
+            { onConflict: 'user_id' }
+          );
+          return error ?? undefined;
+        } catch (error) {
+          return error;
         }
-      } catch (err) {
-        reportError(err, 'useUserTableSettings.Alias_save_error');
+      });
+      const tail = task.then(() => undefined);
+      writeTailsRef.current.set(mutationScope, tail);
+      const error = await task;
+      if (writeTailsRef.current.get(mutationScope) === tail) {
+        writeTailsRef.current.delete(mutationScope);
       }
+
+      if (error) {
+        reportError(error, 'useUserTableSettings.Alias_save_failed');
+        if (
+          activeUserIdRef.current === userId &&
+          mutationRevisionRef.current.get(mutationScope) === revision &&
+          settingsRef.current.table_alias === alias
+        ) {
+          const rollbackAlias =
+            (durableValueRef.current.get(mutationScope) as string | undefined) ?? previousAlias;
+          const reverted = { ...settingsRef.current, table_alias: rollbackAlias };
+          settingsRef.current = reverted;
+          setSettings(reverted);
+          try {
+            localStorage.setItem(cacheKeyForUser(userId), JSON.stringify(reverted));
+          } catch {
+            /* */
+          }
+          masterBus.emit('SETTINGS_CHANGED', {
+            setting: 'table_alias',
+            value: rollbackAlias,
+            userId,
+            origin: originIdRef.current,
+          });
+        }
+        masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+          kind: 'user-table-setting',
+          scope: mutationScope,
+          mutationId,
+          state: 'rolled-back',
+        });
+      } else if (!error) {
+        durableValueRef.current.set(mutationScope, alias);
+        masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+          kind: 'user-table-setting',
+          scope: mutationScope,
+          mutationId,
+          state: 'confirmed',
+        });
+      }
+      pendingWriteCountRef.current.set(
+        mutationScope,
+        Math.max(0, (pendingWriteCountRef.current.get(mutationScope) ?? 1) - 1)
+      );
     },
     [userId]
   );

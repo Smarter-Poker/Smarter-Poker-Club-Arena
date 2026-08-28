@@ -244,3 +244,101 @@
   background: var(--surface-600, #4b5563);
   border-color: var(--primary-400, #60a5fa);
 }
+
+@keyframes pulseGlow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  }
+}
+
+.avatarPreviewNeedsAvatar {
+  animation: pulseGlow 2s infinite;
+  border-color: var(--primary-500, #3b82f6);
+  border-style: solid;
+}
+
+.labelRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.randomizeBtn {
+  background: none;
+  border: none;
+  color: var(--primary-400, #60a5fa);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  transition: opacity 0.2s;
+}
+
+.randomizeBtn:hover {
+  opacity: 0.8;
+}
+
+.availabilityIndicator {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.spinner {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+  color: var(--text-muted, #9ca3af);
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.iconAvailable {
+  color: var(--success-500, #10b981);
+}
+
+.iconTaken {
+  color: var(--error-500, #ef4444);
+}
+
+.inputInvalid {
+  border-color: var(--error-500, #ef4444) !important;
+}
+
+.inputValid {
+  border-color: var(--success-500, #10b981) !important;
+}
+
+.localErrorText {
+  color: var(--error-500, #ef4444);
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+  font-weight: 500;
+}
+
+.submitSuccess {
+  background: linear-gradient(
+    135deg,
+    var(--success-500, #10b981) 0%,
+    var(--success-700, #047857) 100%
+  ) !important;
+  pointer-events: none;
+}

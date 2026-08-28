@@ -94,11 +94,19 @@ interface ActionPanelProps {
    */
   raiseIntent?: { nonce: number; open: boolean; amount?: number };
   /**
-   * Phase 2 T1-02: render the slider vertically on the right side per spec §5.2
-   * "Vertical or angled slider on the RIGHT side of the screen". When false,
-   * the legacy horizontal slider sits between amount-row and preset-row.
-   * Defaults to true (this is the spec-compliant behavior); explicit prop lets
-   * the parent fall back to horizontal during the visual rollout if needed.
+   * @deprecated Dan 2026-08-27: "there should be a slider located on the right,
+   * that slides up and down (NEVER SIDE TO SIDE)."
+   *
+   * There is no horizontal slider any more, so there is nothing for this to
+   * switch between. It is accepted and IGNORED so that a caller still passing
+   * it does not break — exactly as `confirmAllIn` above.
+   *
+   * WHY THE SWITCH HAD TO GO RATHER THAN JUST DEFAULT TO TRUE. A horizontal
+   * drag on a phone is the same gesture as the table-switch swipe, so the two
+   * fight and the swipe usually wins — Dan 2026-08-26: "when it's on its side,
+   * it auto slides to the next page." A prop that can still produce that
+   * control is a prop that will eventually produce it. The rail is now the
+   * only sizing control the panel has, at every width.
    */
   verticalSlider?: boolean;
   /**
@@ -398,13 +406,47 @@ export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
     return { label, raw, value: exact, cappedByMax: false };
   };
 
+  /**
+   * ── THE MULTIPLIER ROW (Dan 2026-08-28, mobile pass item 1) ───────────────
+   *
+   * Verbatim: "WE DON'T NEED ALL OF THOSE MULTIPLIERS. 2.5X 3X 3.5X 4X POT AND
+   * ALL IN ARE FINE. (REMOVE 2X AND 5X)"
+   *
+   * So the row is `MULTIPLES` + POT, and ALL IN is appended by the renderer.
+   * Seven buttons became six, and on a 375px phone that is the difference
+   * between a comfortable hit area and a row of slivers — the previous set had
+   * ALL IN clipped at the right edge in Dan's screenshot.
+   *
+   * WHY THESE FOUR. 2X was never a raise anyone makes: preflop it is a min-open
+   * and postflop it is a min-raise, both of which the slider already reaches and
+   * neither of which wants a dedicated button. 5X is past the point where a
+   * player sizes by multiple rather than by pot. What is left is the band people
+   * actually open and 3-bet into, and 3.5X — which the row never had — is the
+   * gap between the 3X and 4X it sat between.
+   *
+   * NO POT BUTTON PREFLOP IN NO-LIMIT, and this is deliberate rather than an
+   * omission — I added one while making the row uniform and had to take it back
+   * out. Preflop unopened the pot is just the blinds, so a pot-sized raise at
+   * 1/2 is a raise TO 4: SMALLER than the 2.5X button sitting to its left. The
+   * row is read left to right as ascending sizes, and a POT that undercuts every
+   * multiple beside it breaks that reading. Pot-limit keeps its preflop POT
+   * because that sizing is the game.
+   */
+  const MULTIPLES = [2.5, 3, 3.5, 4];
+
+  /**
+   * Pot-limit truncates the row, and this is not a style choice: `maxRaise` is
+   * pinned to the pot cap, so every multiple above it clamps onto that same
+   * number. Left alone, PLO would draw three or four buttons that all bet the
+   * identical amount. Preflop the cap is far enough out that all four are
+   * distinct; facing a bet postflop it bites at 3X.
+   */
+  const potLimited = (all: number[], cap: number) => all.filter((n) => n <= cap);
+
   if (isPreflop) {
     // The bet being faced. Unopened pot -> the big blind.
     const base = Math.max(currentBet, bigBlind) || bigBlind || 1;
-    // Dan 2026-08-23 (item 9): "2.5X should be an option." It sits between 2X
-    // and 3X because the row is read left to right as ascending sizes, and a
-    // 2.5X open is the modern default the row had no button for at all.
-    const multiples = isPotLimit ? [2, 2.5, 3, 4] : [2, 2.5, 3, 4, 5];
+    const multiples = isPotLimit ? potLimited(MULTIPLES, 4) : MULTIPLES;
     const presets = multiples.map((n) => finalizeExact(`${n}X`, base * n));
     if (isPotLimit) {
       presets.push(finalize('POT', potSizedRaiseTo(currentBet, pot, callAmount)));
@@ -416,13 +458,8 @@ export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
   // clickable options." Postflop FACING A BET mirrors the preflop grammar —
   // exact multiples of the bet being faced (rule 7: base = the last bet) —
   // plus POT. Fractions only make sense when nobody has bet yet.
-  //
-  // 5X joins the row in no-limit (Dan 2026-08-21 named 3X/4X/5X explicitly).
-  // Pot-limit still stops at 3X: with maxRaise pinned to the pot cap, every
-  // higher multiple clamps onto that same number and you get a row of buttons
-  // that all do the same thing.
   if (currentBet > 0) {
-    const multiples = isPotLimit ? [2, 2.5, 3] : [2, 2.5, 3, 4, 5];
+    const multiples = isPotLimit ? potLimited(MULTIPLES, 3) : MULTIPLES;
     const presets = multiples.map((n) => finalizeExact(`${n}X`, currentBet * n));
     presets.push(finalize('POT', potSizedRaiseTo(currentBet, pot, callAmount)));
     return presets;
@@ -468,7 +505,7 @@ export default function ActionPanel({
 
   raiseIntent,
   isTournament = false,
-  verticalSlider = true,
+  verticalSlider: _verticalSliderDeprecated,
   // Chips is the default and the rule — see the prop's docstring.
   showStackInBB = false,
 }: ActionPanelProps) {
@@ -551,9 +588,35 @@ export default function ActionPanel({
    * TablePage.css). Body class, not React state, because those overlays are
    * siblings mounted far away in the tree.
    */
+  /* ─── THIS TABLE'S ROOT, NOT `document.body` (fixed 2026-08-28) ───────────
+   *
+   * The flag used to be `document.body.classList.toggle('ca-raising', …)` and
+   * every rule that read it was `body.ca-raising …`. One body, four tables:
+   *
+   *   - in TILE VIEW all four tables are painted at once, so opening the raise
+   *     slider on one hid the timebank pill, previous-hand card, bankroll widget
+   *     and chat button on ALL FOUR;
+   *   - in either view the panels raced each other. Table two closing its
+   *     slider ran `toggle(..., false)` — or its unmount ran the cleanup's
+   *     unconditional `remove` — and stripped the class while table one's
+   *     overlay was still open, putting the timebank pill straight back on top
+   *     of table one's slider handle. That is the exact z-order defect this
+   *     flag was added to fix, reappearing whenever a second table was open.
+   *
+   * The class goes on this panel's own `.table-page` ancestor instead, and the
+   * five selectors are `.table-page.ca-raising …`. `.action-panel` is
+   * `position: fixed`, but fixed positioning does not change where an element
+   * sits in the DOM, so `closest()` still finds the right root.
+   *
+   * Falls back to `document.body` only when there is no `.table-page` above the
+   * panel — a harness or a Storybook-style mount. Losing the flag entirely there
+   * would silently drop the behaviour under test.
+   */
+  const panelRootRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    document.body.classList.toggle('ca-raising', isRaiseMode);
-    return () => document.body.classList.remove('ca-raising');
+    const host = panelRootRef.current?.closest('.table-page') ?? document.body;
+    host.classList.toggle('ca-raising', isRaiseMode);
+    return () => host.classList.remove('ca-raising');
   }, [isRaiseMode]);
   // Phase 2 T1-03: spec §5.2 — tapping the amount opens a numeric keyboard.
   // amountTyping toggles the inline input; amountDraft holds the raw text
@@ -569,30 +632,33 @@ export default function ActionPanel({
   const prevTurnRef = useRef(isMyTurn);
 
   /**
-   * The vertical rail is a horizontal <input type="range"> rotated -90deg on
-   * WebKit, so its pre-rotation WIDTH is what you see as height. That was a
-   * hard-coded 240px: on a short panel the rail overran the panel, and on a
-   * tall one the thumb could not reach the top of its own track - which is
-   * where the all-in cap sits. Measured instead, and kept measured.
+   * The vertical rail is a horizontal <input type="range"> rotated -90deg, so
+   * its pre-rotation WIDTH is what you see as height. That was a hard-coded
+   * 240px: on a short panel the rail overran the panel, and on a tall one the
+   * thumb could not reach the top of its own track - which is where the all-in
+   * cap sits. Measured instead, and kept measured, and published to the
+   * stylesheet as `--raise-rail-length`.
    */
   /**
    * A CALLBACK REF, NOT A `useRef` + A DEPENDENCY GUESS (changed 2026-08-26).
    *
    * This measured through `railRef.current` inside an effect keyed on
-   * `[isRaiseMode]`. But the rail only EXISTS when `effectiveVerticalSlider` is
-   * true (`windowWidth >= 1024`), which that dependency list never mentioned:
-   * widening a window from 900px to 1200px with the raise overlay open mounted
-   * the rail with nothing observing it, and `railLength` stayed at the 240px
-   * default. On WebKit that is the pre-rotation width of the range input, so
-   * the track stopped spanning the rail and the thumb could not reach the top —
-   * the all-in cap, i.e. exactly the failure the comment above says this was
-   * added to fix.
+   * `[isRaiseMode]`. The rail did not exist at every width back then — it was
+   * gated on `windowWidth >= 1024`, which that dependency list never mentioned
+   * — so widening a window from 900px to 1200px with the raise overlay open
+   * mounted the rail with nothing observing it, and `railLength` stayed at the
+   * 240px default. That is the pre-rotation width of the range input, so the
+   * track stopped spanning the rail and the thumb could not reach the top: the
+   * all-in cap, i.e. exactly the failure the comment above says this was added
+   * to fix.
    *
-   * Adding the missing dependency also does not work here: the flag is declared
-   * ~80 lines further down, so referencing it is a TDZ error (TypeScript
-   * refused it). A callback ref sidesteps the question — React calls it with
-   * the node on mount and with null on unmount, whatever caused either — so the
-   * observation can no longer disagree with the element's real lifetime.
+   * The width gate is gone (2026-08-27 — the rail is the only sizing control at
+   * every width now), so that particular trigger cannot fire again. The
+   * callback ref stays anyway, and deliberately: it keys the measurement on the
+   * NODE rather than on a dependency list somebody has to keep true. React
+   * calls it with the node on mount and with null on unmount, whatever caused
+   * either, so the observation can no longer disagree with the element's real
+   * lifetime.
    */
   const railRef = useRef<HTMLDivElement | null>(null);
   const [railEl, setRailEl] = useState<HTMLDivElement | null>(null);
@@ -675,19 +741,6 @@ export default function ActionPanel({
   }, []);
 
   const isDesktop = windowWidth >= 1024;
-
-  /* Dan 2026-08-26 (mobile): "the bet slider bar needs to go up and down, not
-     side to side. When it's on its side, it auto slides to the next page."
-     A horizontal drag on a phone is the same gesture as the table-switch
-     swipe, so the two fought and the swipe usually won. The slider is now
-     VERTICAL everywhere — on phones it docks to the right side of the action
-     box (see the <=1023px block in ActionPanel.css, which used to flatten it
-     back to horizontal and now only compacts it). The 2026-04-17 phone
-     breakage that forced the horizontal fallback (piled ticks, overlapping
-     labels) is addressed in that same CSS block: fewer, smaller labels in a
-     narrower gutter, and the rail's length is MEASURED (see railLength), not
-     hard-coded, which was the actual cause of the empty-fill symptom. */
-  const effectiveVerticalSlider = verticalSlider;
 
   // Preset sizing lives in `computeRaisePresets` above - a pure function so the
   // rules Dan set (multiples of the bet being faced; whole numbers; never past
@@ -941,16 +994,49 @@ export default function ActionPanel({
    * `position: fixed; bottom: 0` panel, so the panel grows UPWARD over the hero
    * and the bottom of the felt and the row underneath never moves a pixel.
    *
-   * That also settles `--sp-action-h`, the reserve every other stylesheet reads:
-   * it is measured on `.action-panel-wrapper`, and this panel is `position:
-   * fixed`, so it is not part of that wrapper's flow. Opening the overlay
-   * cannot grow the published height, which is the whole point — the table must
-   * not reflow when the slider appears.
+   * The reserve every other stylesheet reads is `--sp-action-reserve`, and it
+   * is now a constant declared in TablePage.css rather than a measurement of
+   * `.action-panel-wrapper`, so opening the overlay cannot change it by any
+   * route at all. (It could not before either — this panel is `position: fixed`
+   * and not part of that wrapper's flow — but "cannot, because of where the
+   * markup happens to sit" is a fact somebody can edit away, and on 2026-08-27
+   * a different collapse of that same wrapper did resize the table twice a
+   * hand.) The table must not reflow when the slider appears.
    */
   const raiseOverlay = (() => {
     if (!isRaiseMode) return null;
-    // Phase 2 T1-02: shared slider markup so the vertical and horizontal
-    // variants stay in lockstep for accessibility (same min/max/step/aria-*).
+    /**
+     * THE ONE SIZING CONTROL — a vertical rail, at every width.
+     *
+     * Dan 2026-08-27: "there should be a slider located on the right, that
+     * slides up and down (NEVER SIDE TO SIDE) that moves the bets up in small
+     * increments."
+     *
+     * It is still a native `<input type="range">` — that is what gives it a
+     * real thumb, arrow-key and Home/End support, and the whole
+     * aria-valuemin/max/now/text contract for free — and the stylesheet turns
+     * it on its side with `rotate(-90deg)` (see
+     * `.raise-slider-vertical__rail .raise-slider` in ActionPanel.css).
+     *
+     * WHY `orient="vertical"` IS GONE. It was set here so Firefox would render
+     * the input natively vertical, and the CSS rotation was gated behind
+     * `@supports (-webkit-appearance: none) and (not (-moz-appearance: none))`
+     * so it applied to WebKit and not to Firefox. That is two geometries, and
+     * the gate has to guess correctly which engine it is standing in — a query
+     * about a vendor-prefixed ALIAS, which is precisely the kind of thing an
+     * engine adds for web compatibility without telling anyone. Guess wrong and
+     * the rotation is skipped, at which point a phone gets a horizontal range
+     * input squeezed into a 28px-wide column: side to side, in the one place
+     * Dan has now said twice it must never be.
+     *
+     * Rotation with no `orient` is ONE geometry on every engine, and it is the
+     * safe one: the element's own axis is horizontal, so a browser that ignores
+     * the transform entirely still shows a working slider rather than a
+     * zero-length one. Drag mapping falls out of the same transform — screen-Y
+     * becomes the input's local X, so a purely SIDEWAYS drag moves the value by
+     * nothing at all. Arrow keys are unaffected: Up and Right both increase a
+     * range input on every engine, so Up still means "bet more".
+     */
     const sliderEl = (
       <input
         type="range"
@@ -967,16 +1053,11 @@ export default function ActionPanel({
         aria-valuemax={maxRaise}
         aria-valuenow={raiseAmount}
         aria-valuetext={`${wagerVerb} ${formatChips(raiseAmount)}`}
-        // Firefox-specific: native vertical orientation.
-        // WebKit/Blink rotate the horizontal slider via CSS in the
-        // .raise-slider--vertical wrapper.
-        {...(effectiveVerticalSlider ? { orient: 'vertical' as const } : {})}
       />
     );
 
-    /* Phase 2 T1-02: vertical layout splits the panel — main column on the
-       left holds amount + presets + confirm; slider sits on the right edge per
-       spec §5.2. Horizontal fallback retains the legacy stack. */
+    /* The main column on the left holds amount + presets + confirm; the rail
+       sits in the reserved right-hand gutter (spec §5.2). */
     return (
       <div className="raise-layout">
         <div className="raise-main">
@@ -1046,18 +1127,11 @@ export default function ActionPanel({
             </button>
           </div>
 
-          {/* Horizontal slider — only rendered in legacy mode. */}
-          {!effectiveVerticalSlider && (
-            <div className="raise-slider-wrap">
-              {sliderEl}
-              <div className="raise-slider-ticks">
-                <div className="raise-slider-tick" style={{ left: '25%' }} />
-                <div className="raise-slider-tick" style={{ left: '50%' }} />
-                <div className="raise-slider-tick" style={{ left: '75%' }} />
-                <div className="raise-slider-tick" style={{ left: '100%' }} />
-              </div>
-            </div>
-          )}
+          {/* THERE IS NO HORIZONTAL SLIDER HERE ANY MORE, and the absence is
+              the feature — see the `verticalSlider` prop docstring. The rail
+              below is the only sizing control, at every width. Do not
+              reintroduce a `.raise-slider-wrap` branch: on a phone that gesture
+              is the table-switch swipe. */}
 
           {/* Preset Row */}
           {showBetSizePresets && (
@@ -1124,47 +1198,48 @@ export default function ActionPanel({
           </div>
         </div>
 
-        {/* Phase 2 T1-02: vertical slider rail on the right per spec §5.2.
-              Uses a CSS-rotated <input type="range"> wrapped in a fixed-height
-              column. Tick marks correspond to 25/50/75/100% of the legal range.
-              Hidden when verticalSlider is false. */}
-        {effectiveVerticalSlider && (
-          <div className="raise-slider-vertical">
-            <div
-              className="raise-slider-vertical__rail"
-              ref={setRailNode}
-              style={{ ['--raise-rail-length' as string]: `${railLength}px` }}
-            >
-              {sliderEl}
-              <div className="raise-slider-vertical__ticks" aria-hidden="true">
-                {/* BB labels at 25/50/75/100% of the raise range */}
-                {[100, 75, 50, 25].map((pct) => {
-                  // Evenly spaced across the LEGAL range, which already ends
-                  // at the hero's stack - so the top tick is the all-in.
-                  // Snapped onto the slider's own grid: a tick that names an
-                  // amount the thumb cannot land on is a target you cannot
-                  // hit. `Math.round` used to do this job, which also erased
-                  // the label entirely at 0.25/0.50 stakes, where four ticks
-                  // across a 10-chip range all rounded to the same integer.
-                  const val = snapToSliderGrid(minRaise + (maxRaise - minRaise) * (pct / 100));
-                  const isTop = pct === 100;
-                  return (
-                    <div
-                      key={pct}
-                      className={`raise-slider-vertical__tick${
-                        isTop ? ' raise-slider-vertical__tick--max' : ''
-                      }`}
-                      style={{ bottom: `${pct}%` }}
-                    >
-                      <span className="raise-slider-vertical__tick-label">
-                        {isTop ? 'ALL IN' : formatChips(val)}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
+        {/* The vertical rail, in the gutter reserved on the right (spec §5.2).
+              A CSS-rotated <input type="range"> inside a column that stretches
+              to the panel's full height, so the thumb travels the whole of it.
+              Tick marks are 25/50/75/100% of the legal range; the top one is
+              the all-in by construction. Rendered unconditionally — there is no
+              other sizing control. */}
+        <div className="raise-slider-vertical">
+          <div
+            className="raise-slider-vertical__rail"
+            ref={setRailNode}
+            style={{ ['--raise-rail-length' as string]: `${railLength}px` }}
+          >
+            {sliderEl}
+            <div className="raise-slider-vertical__ticks" aria-hidden="true">
+              {/* BB labels at 25/50/75/100% of the raise range */}
+              {[100, 75, 50, 25].map((pct) => {
+                // Evenly spaced across the LEGAL range, which already ends
+                // at the hero's stack - so the top tick is the all-in.
+                // Snapped onto the slider's own grid: a tick that names an
+                // amount the thumb cannot land on is a target you cannot
+                // hit. `Math.round` used to do this job, which also erased
+                // the label entirely at 0.25/0.50 stakes, where four ticks
+                // across a 10-chip range all rounded to the same integer.
+                const val = snapToSliderGrid(minRaise + (maxRaise - minRaise) * (pct / 100));
+                const isTop = pct === 100;
+                return (
+                  <div
+                    key={pct}
+                    className={`raise-slider-vertical__tick${
+                      isTop ? ' raise-slider-vertical__tick--max' : ''
+                    }`}
+                    style={{ bottom: `${pct}%` }}
+                  >
+                    <span className="raise-slider-vertical__tick-label">
+                      {isTop ? 'ALL IN' : formatChips(val)}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-            {/* Dan 2026-08-25: the max cap sat at the top of this column at
+          </div>
+          {/* Dan 2026-08-25: the max cap sat at the top of this column at
                 exactly the height of the 100% tick label, so "26BB" and
                 "ALL IN" printed on top of each other (visible in his
                 screenshot as "A26BB"). They named the same number anyway —
@@ -1173,15 +1248,14 @@ export default function ActionPanel({
                 tick label out of its way first.
                 And the floor prints CHIPS unless the player switched to BB;
                 every other number on the felt already did. */}
-            <div className="raise-slider-vertical__caps" aria-hidden="true">
-              <span className="raise-slider-vertical__cap raise-slider-vertical__cap--min">
-                {showStackInBB && bigBlind > 0
-                  ? `${Math.round(minRaise / bigBlind)}BB`
-                  : formatChips(minRaise)}
-              </span>
-            </div>
+          <div className="raise-slider-vertical__caps" aria-hidden="true">
+            <span className="raise-slider-vertical__cap raise-slider-vertical__cap--min">
+              {showStackInBB && bigBlind > 0
+                ? `${Math.round(minRaise / bigBlind)}BB`
+                : formatChips(minRaise)}
+            </span>
           </div>
-        )}
+        </div>
       </div>
     );
   })();
@@ -1191,11 +1265,10 @@ export default function ActionPanel({
   // The sizing overlay above it is a sibling, not a replacement.
   return (
     <div
+      ref={panelRootRef}
       className={`action-panel${isMyTurn ? ' action-panel--active' : ''}${
         turnPulse ? ' action-panel--attention' : ''
-      }${isRaiseMode ? ' action-panel--raise' : ''}${
-        isRaiseMode && effectiveVerticalSlider ? ' action-panel--raise-vertical' : ''
-      }`}
+      }${isRaiseMode ? ' action-panel--raise action-panel--raise-vertical' : ''}`}
     >
       {raiseOverlay}
       {/* ═══ THE ROW IS NOT CONDITIONAL. ═══════════════════════════════════

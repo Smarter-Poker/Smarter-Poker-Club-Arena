@@ -192,10 +192,22 @@
 
 .multi-table-page__tab-bar-wrapper {
   display: flex;
-  align-items: center;
+  /* Dan 2026-08-28: "the profit tracker and the 4 screen box need to be
+     lowered down so the 4 screen box is touching the top of where the table
+     meets." `center` floated both chips in the middle of the bar's full
+     height (safe-area inset included), leaving a gap between them and the
+     felt below. `flex-end` seats them on the wrapper's bottom edge — the
+     exact line where the table starts. The tab strip itself is unaffected:
+     it sizes to its own content and carries its own safe-area padding. */
+  align-items: flex-end;
   gap: 0;
   padding: 0;
-  background: rgba(0, 0, 0, 0.75);
+  /* Dan 2026-08-28: the strip either side of the P&L chip / tile toggle
+     showed this wrapper's own rgba(0,0,0,0.75) while the tab strip painted
+     its darker gradient over the rest — "a slightly different black". One
+     ground, same gradient as .table-tab-bar, so the whole bar reads as one
+     surface. */
+  background: linear-gradient(180deg, rgba(8, 10, 16, 0.96) 0%, rgba(14, 17, 24, 0.93) 100%);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   z-index: 350;
   backdrop-filter: blur(8px);

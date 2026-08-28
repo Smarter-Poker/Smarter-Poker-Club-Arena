@@ -37,6 +37,7 @@ import { ThrowEvent } from '../../services/ThrowableService';
 import type { ThrowPhysics } from '../../services/ThrowableService';
 import { throwableSoundService } from '../../services/ThrowableSoundService';
 import { throwableVoice } from '../../services/ThrowableVoice';
+import { reportError } from '../../utils/errorReporter';
 import { ThrowableImage } from './ThrowableImage';
 import './ThrowAnimation.css';
 // Per-item signature FX -- MUST load after ThrowAnimation.css so its
@@ -296,6 +297,29 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
+  // ANIMATION AUDIT 2026-08-27: flinch/shake used document.querySelector, so
+  // in multi-table mode (up to 4 mounted TablePages, hidden not unmounted)
+  // both landed on the FIRST matching element in DOM order — often another
+  // table's seat. Scope every lookup to THIS throw's own table via the root.
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // ANIMATION LAW TELEMETRY 2026-08-28: a throw with no resolvable target
+  // position renders NOTHING — the item was paid for and broadcast, and the
+  // failure used to be invisible. One report per event.
+  useEffect(() => {
+    if (!toPos) {
+      try {
+        reportError(
+          new Error(`ThrowAnimation: no position for target seat ${event.toSeat}`),
+          'AnimationLaw.throw_target_unresolved'
+        );
+      } catch {
+        /* telemetry must never break the table */
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event.id]);
+
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
     const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
@@ -325,9 +349,11 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
         /* audio is best-effort */
       }
 
-      // Target seat flinches (SeatSlot exposes data-seat-num)
+      // Target seat flinches (SeatSlot exposes data-seat-num) — scoped to
+      // this table (see rootRef note above).
       try {
-        const seatEl = document.querySelector(`[data-seat-num="${event.toSeat}"]`);
+        const scope = rootRef.current?.closest('.table-page') ?? document;
+        const seatEl = scope.querySelector(`[data-seat-num="${event.toSeat}"]`);
         if (seatEl) {
           seatEl.classList.add('seat--throw-flinch');
           setTimeout(() => seatEl.classList.remove('seat--throw-flinch'), 500);
@@ -341,12 +367,15 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
         // [data-table]) matched NOTHING in the real DOM -- heavy impacts
         // never shook the screen. The animation container mounts inside
         // .table-scaler, which is the element the seats render in.
-        const table = document.querySelector(
-          '.table-scaler, .poker-table, .table-layout, [data-table]'
-        );
+        // 2026-08-27: resolved via closest() so multi-table shakes hit THIS
+        // table, and the removal window gets a 70ms cushion over the 450ms
+        // keyframe (an exact tie races the last frame).
+        const table =
+          rootRef.current?.closest('.table-scaler') ??
+          document.querySelector('.table-scaler, .poker-table, .table-layout, [data-table]');
         if (table) {
           table.classList.add('throw-animation--shake');
-          setTimeout(() => table.classList.remove('throw-animation--shake'), 450);
+          setTimeout(() => table.classList.remove('throw-animation--shake'), 520);
         }
       }
     });
@@ -379,6 +408,8 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
   if (!fromPos || !toPos || phase === 'done') {
     return null;
   }
+  // (An unresolvable TARGET seat renders nothing — reported from the effect
+  // below so a paid throw can never vanish silently again.)
 
   const colorVars = {
     '--c1': t.color,
@@ -386,7 +417,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
   } as React.CSSProperties;
 
   return (
-    <div className="throw-animation" data-throwable={t.id} style={colorVars}>
+    <div ref={rootRef} className="throw-animation" data-throwable={t.id} style={colorVars}>
       {/* WINDUP -- pop at the thrower's seat */}
       {phase === 'windup' && (
         <div className="throw-animation__windup" style={{ left: fromPos.x, top: fromPos.y }}>

@@ -204,3 +204,19 @@ export function fromTableSettings(t: TableUserSettings, base: UserSettings): Use
     autoMuckWinners: t.autoMuckWinners,
   };
 }
+
+/**
+ * Restore the card-back control to the last table value after the canonical
+ * appearance write rejects a change. The Settings page persists the returned
+ * object locally and to profiles.settings, so no surface can claim a failed
+ * design is equipped.
+ */
+export function rollbackFailedCardBack(
+  settings: UserSettings,
+  previousCardBack: string
+): UserSettings {
+  return {
+    ...settings,
+    cardBack: normalizeCardBack(previousCardBack),
+  };
+}

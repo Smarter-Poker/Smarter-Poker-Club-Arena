@@ -82,6 +82,7 @@ import {
   type TournamentTabProps,
 } from './types';
 import type { TournamentEntry } from './types';
+import SatelliteSeatBadge from './SatelliteSeatBadge';
 import '../../../styles/tournament-lobby-3d.css';
 import './RankingTab.css';
 
@@ -230,11 +231,7 @@ const RankRow = React.memo(function RankRow({
       <span className="rk-main">
         <span className="rk-nameline">
           <span className="tl-name">{entry.username}</span>
-          {entry.is_satellite_qualifier && (
-            <span className="tl-badge tl-badge--sat" title="Satellite Qualifier" style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', borderColor: 'rgba(59, 130, 246, 0.4)' }}>
-              SAT
-            </span>
-          )}
+          {entry.is_satellite_qualifier && <SatelliteSeatBadge />}
           {isHero && <span className="tl-badge tl-badge--action">You</span>}
           {isDownline && !isHero && <span className="tl-badge">Yours</span>}
         </span>

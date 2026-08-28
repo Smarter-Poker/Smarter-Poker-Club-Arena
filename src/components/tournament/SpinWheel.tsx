@@ -39,7 +39,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { soundService } from '../../services/SoundService';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import { fireVibration } from '../../utils/vibrationGate';
-import { SPIN_TIERS, spinTier, SPIN_REVEAL } from '../../config/spinSpec';
+import {
+  SPIN_TIERS,
+  spinTier,
+  SPIN_REVEAL,
+  spinRevealTotalMs,
+  spinPostRevealMs,
+} from '../../config/spinSpec';
 import './SpinWheel.css';
 
 export interface SpinTier {
@@ -68,6 +74,41 @@ export interface SpinWheelData {
    * Omitted (older rows, tests) = start from the top, the previous behaviour.
    */
   revealAtMs?: number;
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  THE SERVER'S HOLD, AS AN ABSOLUTE INSTANT (2026-08-27)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Wall-clock ms at which the engine will allow the first CARD to be dealt.
+   * The engine already computes it — `TournamentManagerBase`:
+   *
+   *     const holdUntil = revealAt + spinRevealToDealMs();
+   *     engine.holdDealingUntil(holdUntil);
+   *
+   * and puts it on the `spin_reveal` packet as `hold_until` (`replay_until`
+   * carries the same value on older broadcasts). It is the ONE fact that makes
+   * the reveal shared: the moment the table stops waiting, whoever is watching
+   * and whatever their settings say.
+   *
+   * WHY THIS EXISTS. Every phase below used to be multiplied by
+   * `getAnimationSpeed()` — a per-client preference clamped to 0.25..3.0 and
+   * read from a CSS variable — against a hold that is fixed. At speed 3 the
+   * sequence ran 44,400 ms against a 16,600 ms hold, so cards were dealt about
+   * twenty-eight seconds before the wheel landed: the player watched a wheel
+   * decide what they were playing for while already playing for it. Three
+   * players with three different speed settings watched three different
+   * animations, which is exactly the fault the shared clock was introduced to
+   * end.
+   *
+   * A player's speed preference is a preference about ANIMATION, not a licence
+   * to reschedule a table-wide moment. So it is clamped against this: the
+   * sequence may finish early, it may never finish late.
+   *
+   * Omitted (older rows, the DB fallback path, tests) = the spec default,
+   * `revealAtMs + spinRevealTotalMs()`, which is derived from the same file the
+   * engine derives its hold from.
+   */
+  revealDeadlineMs?: number;
   currency?: string;
   /** Names of the three players, shown while the chase decides. */
   playerNames?: string[];
@@ -355,9 +396,47 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
       return;
     }
 
-    const speed = getAnimationSpeed();
     const reduced = prefersReducedMotion();
     const timers: ReturnType<typeof setTimeout>[] = [];
+
+    /**
+     * ───────────────────────────────────────────────────────────────────────
+     *  SPEED IS CLAMPED TO THE SERVER'S HOLD (2026-08-27)
+     * ───────────────────────────────────────────────────────────────────────
+     *
+     * `getAnimationSpeed()` is a DURATION MULTIPLIER between 0.25 and 3.0, and
+     * every phase below was multiplied by it against a hold the engine keeps
+     * fixed. At 3.0 the sequence ran 44,400 ms against 16,600 ms of hold, so
+     * the first cards landed roughly 28 seconds before the wheel did.
+     *
+     * `revealDeadlineMs` is when the engine will deal (its own `holdUntil`).
+     * The wheel itself must land before the post-reveal beats that precede the
+     * deal — chip drop, then button draw — so the budget for THIS sequence is
+     * the hold minus `spinPostRevealMs()`.
+     *
+     * The cap is one-sided on purpose. Faster than the budget is allowed: that
+     * player's wheel lands early and the felt simply waits with everyone else,
+     * which is a preference honoured without moving a shared moment. Slower is
+     * not allowed at all, because slower means being dealt into a hand while
+     * the wheel is still asking the question.
+     */
+    const revealAt = Number(data.revealAtMs);
+    const sharedClock = Number.isFinite(revealAt);
+    const speed = (() => {
+      /* No shared clock at all (a legacy row, a unit test): there is no moment
+         to be in step with, so the player's own preference is all there is. */
+      if (!sharedClock) return getAnimationSpeed();
+      const deadline = Number(data.revealDeadlineMs);
+      /* The engine's hold covers the wheel AND the two beats after it — chip
+         drop, then button draw. Only the first part belongs to this component. */
+      const budgetMs = Number.isFinite(deadline)
+        ? Math.max(0, deadline - revealAt - spinPostRevealMs())
+        : spinRevealTotalMs();
+      const factor = budgetMs > 0 ? budgetMs / spinRevealTotalMs() : 1;
+      /* Never stretch past the designed pace even when the server holds longer:
+         an over-long hold is dead air the engine owns, not slow motion. */
+      return Math.min(factor, 1);
+    })();
 
     /**
      * How far into the shared sequence this client already is. A player whose
@@ -393,17 +472,20 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
       // it cannot double up when React re-renders for another reason.
       for (let k = 0; k < COUNTDOWN_FROM; k++) {
         timers.push(
-          setTimeout(() => {
-            setTreeLit(k + 1);
-            if (k > 0) setCount(COUNTDOWN_FROM - k);
-            if (playSounds) {
-              try {
-                soundService.playSpinCountdownLight(k);
-              } catch {
-                /* audio is best-effort */
+          setTimeout(
+            () => {
+              setTreeLit(k + 1);
+              if (k > 0) setCount(COUNTDOWN_FROM - k);
+              if (playSounds) {
+                try {
+                  soundService.playSpinCountdownLight(k);
+                } catch {
+                  /* audio is best-effort */
+                }
               }
-            }
-          }, at(leadInMs + k * COUNTDOWN_STEP_MS * speed))
+            },
+            at(leadInMs + k * COUNTDOWN_STEP_MS * speed)
+          )
         );
       }
     } else {
@@ -413,69 +495,75 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
     // ── 2. The chase ────────────────────────────────────────────────────────
     const chaseMs = (reduced ? 400 : CHASE_MS) * speed;
     timers.push(
-      setTimeout(() => {
-        setPhase('chase');
-        if (playSounds) {
-          try {
-            // Dan: "CLICKING SOUNDS AS IT PASSES." Handing the sound the
-            // light's OWN schedule is what makes that literally true — one
-            // peg strike per segment crossed, on the same millisecond,
-            // because it is the same array. Passing only a duration left the
-            // two to drift apart on any easing change.
-            soundService.playSpinTicking(
-              chaseMs,
-              reduced ? [] : chaseSchedule(order.length, targetIndex, chaseMs)
-            );
-          } catch {
-            /* best effort */
+      setTimeout(
+        () => {
+          setPhase('chase');
+          if (playSounds) {
+            try {
+              // Dan: "CLICKING SOUNDS AS IT PASSES." Handing the sound the
+              // light's OWN schedule is what makes that literally true — one
+              // peg strike per segment crossed, on the same millisecond,
+              // because it is the same array. Passing only a duration left the
+              // two to drift apart on any easing change.
+              soundService.playSpinTicking(
+                chaseMs,
+                reduced ? [] : chaseSchedule(order.length, targetIndex, chaseMs)
+              );
+            } catch {
+              /* best effort */
+            }
           }
-        }
-        if (reduced) {
-          setLitIndex(targetIndex);
-        } else {
-          const schedule = chaseSchedule(order.length, targetIndex, chaseMs);
-          schedule.forEach((offset, stepIdx) => {
-            timers.push(setTimeout(() => setLitIndex(stepIdx % order.length), offset));
-          });
-        }
-      }, at(leadInMs + countdownMs))
+          if (reduced) {
+            setLitIndex(targetIndex);
+          } else {
+            const schedule = chaseSchedule(order.length, targetIndex, chaseMs);
+            schedule.forEach((offset, stepIdx) => {
+              timers.push(setTimeout(() => setLitIndex(stepIdx % order.length), offset));
+            });
+          }
+        },
+        at(leadInMs + countdownMs)
+      )
     );
 
     // ── 3. Result ───────────────────────────────────────────────────────────
     timers.push(
-      setTimeout(() => {
-        setPhase('result');
-        setLitIndex(targetIndex);
-        if (playSounds) {
-          try {
-            soundService.playSpinMultiplierResult(data.multiplier);
-          } catch {
-            /* best effort */
-          }
-        }
-        fireVibration(data.multiplier >= 25 ? [50, 30, 80] : [25, 20, 40]);
-
-        // Count the PRIZE up, not the multiplier. "You are playing for $30"
-        // is the fact that matters; the multiple is how it was arrived at.
-        if (reduced) {
-          setDisplayPrize(prize);
-        } else {
-          const started = performance.now();
-          const durationMs = 900 * speed;
-          const step = (now: number) => {
-            const t = Math.min(1, (now - started) / durationMs);
-            const eased = 1 - Math.pow(1 - t, 3);
-            setDisplayPrize(Math.round(prize * eased * 100) / 100);
-            if (t < 1) {
-              rafRef.current = requestAnimationFrame(step);
-            } else {
-              rafRef.current = null;
-              setDisplayPrize(prize);
+      setTimeout(
+        () => {
+          setPhase('result');
+          setLitIndex(targetIndex);
+          if (playSounds) {
+            try {
+              soundService.playSpinMultiplierResult(data.multiplier);
+            } catch {
+              /* best effort */
             }
-          };
-          rafRef.current = requestAnimationFrame(step);
-        }
-      }, at(leadInMs + countdownMs + chaseMs))
+          }
+          fireVibration(data.multiplier >= 25 ? [50, 30, 80] : [25, 20, 40]);
+
+          // Count the PRIZE up, not the multiplier. "You are playing for $30"
+          // is the fact that matters; the multiple is how it was arrived at.
+          if (reduced) {
+            setDisplayPrize(prize);
+          } else {
+            const started = performance.now();
+            const durationMs = 900 * speed;
+            const step = (now: number) => {
+              const t = Math.min(1, (now - started) / durationMs);
+              const eased = 1 - Math.pow(1 - t, 3);
+              setDisplayPrize(Math.round(prize * eased * 100) / 100);
+              if (t < 1) {
+                rafRef.current = requestAnimationFrame(step);
+              } else {
+                rafRef.current = null;
+                setDisplayPrize(prize);
+              }
+            };
+            rafRef.current = requestAnimationFrame(step);
+          }
+        },
+        at(leadInMs + countdownMs + chaseMs)
+      )
     );
 
     // ── 4. Fade out, hand the felt back ────────────────────────────────────
@@ -531,11 +619,7 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
                 />
               ))}
             </div>
-            <div
-              className={`sw__count sw__count--${count}`}
-              key={count}
-              aria-hidden="true"
-            >
+            <div className={`sw__count sw__count--${count}`} key={count} aria-hidden="true">
               {count}
             </div>
           </>

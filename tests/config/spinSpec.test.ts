@@ -21,7 +21,10 @@ import {
   SPIN_BLINDS,
   SPIN_FREQ_DENOMINATOR,
   SPIN_GAME_TYPES,
+  SPIN_RAKE_RATE,
   spinRakeRate,
+  spinRakeInvariant,
+  assertSpinRakeInvariant,
   spinTier,
   spinBlindsForLevel,
   expectedMultiplier,
@@ -79,20 +82,64 @@ describe('THE central invariant: the table implies the advertised rake', () => {
   });
 });
 
-describe('rake bands', () => {
-  it('scales down with stake, exactly as published', () => {
-    expect(spinRakeRate(0.5)).toBe(0.08);
-    expect(spinRakeRate(5)).toBe(0.08);
-    expect(spinRakeRate(10)).toBe(0.07);
-    expect(spinRakeRate(25)).toBe(0.06);
-    expect(spinRakeRate(50)).toBe(0.06);
-    expect(spinRakeRate(100)).toBe(0.05);
-    expect(spinRakeRate(1000)).toBe(0.05);
+describe('the rake is flat, and the invariant is what enforces it', () => {
+  // There used to be four buy-in bands here booking 8 / 7 / 6 / 5%. They never
+  // changed a single frequency, so the player was charged 7.87% at every stake
+  // while the ledger recorded less, and 36,723.84 chips accumulated in
+  // spin_bonus_pools owned by nobody. These four tests are the guard: the
+  // equality holds at 8%, it REJECTS each rate the bands used to book, it
+  // rejects a tampered frequency table, and it says all three numbers when it
+  // fails so the next reader does not have to reconstruct the arithmetic.
+
+  it('books one rate at every stake, and the table satisfies it', () => {
+    expect(SPIN_RAKE_RATE).toBe(0.08);
+    for (const buyIn of [0.5, 5, 10, 25, 50, 100, 1000, -1]) {
+      expect(spinRakeRate(buyIn), `stake ${buyIn}`).toBe(0.08);
+    }
+
+    // E[multiplier] = seats x (1 - rake). To the cent, which is the finest
+    // difference numeric(15,2) can ever carry into a ledger row.
+    const inv = spinRakeInvariant();
+    expect(inv.driftPerBuyIn).toBe(0);
+    expect(Math.round(inv.expected * 100) / 100).toBe(Math.round(inv.implied * 100) / 100);
+    expect(() => assertSpinRakeInvariant()).not.toThrow();
   });
 
-  it('defaults an unknown stake to the HIGHEST rake, never the lowest', () => {
-    // A misconfigured buy-in must not silently hand away margin.
-    expect(spinRakeRate(-1)).toBe(0.08);
+  it('REJECTS every rate the deleted bands used to book', () => {
+    // 7, 6 and 5% are the three the ladder booked above 5, 10 and 50 stake.
+    // Each one implies a different expected multiplier than the ONE table pays.
+    for (const rejected of [0.07, 0.06, 0.05]) {
+      expect(
+        () => assertSpinRakeInvariant(SPIN_TIERS, SPIN_SEATS, rejected),
+        `${rejected * 100}% must not pass — the frequencies were never regenerated for it`
+      ).toThrow(/SPIN RAKE INVARIANT BROKEN/);
+      expect(spinRakeInvariant(SPIN_TIERS, SPIN_SEATS, rejected).driftPerBuyIn).not.toBe(0);
+    }
+  });
+
+  it('rejects a tampered frequency table at the booked rate', () => {
+    // Moving weight onto the top multiplier without touching the rate is the
+    // other half of the same mistake, arriving from the opposite direction.
+    const tampered = SPIN_TIERS.map((t) =>
+      t.multiplier === 100 ? { ...t, freq: t.freq + 500_000 } : t
+    );
+    expect(() => assertSpinRakeInvariant(tampered)).toThrow(/SPIN RAKE INVARIANT BROKEN/);
+    expect(() => assertSpinRakeInvariant(SPIN_TIERS)).not.toThrow();
+  });
+
+  it('names all three numbers when it fails', () => {
+    let message = '';
+    try {
+      assertSpinRakeInvariant(SPIN_TIERS, SPIN_SEATS, 0.05);
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    // What the table expects, what the booked rate implies, what is actually
+    // charged. Without all three the reader cannot tell which side moved.
+    expect(message).toContain(expectedMultiplier().toFixed(6));
+    expect(message).toContain((SPIN_SEATS * (1 - 0.05)).toFixed(6));
+    expect(message).toContain((impliedHouseEdge() * 100).toFixed(2));
+    expect(message).toContain('5.00%');
   });
 });
 

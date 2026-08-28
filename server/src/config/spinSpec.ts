@@ -21,8 +21,8 @@
  * ADDITIONAL RAKE IS ADDED."
  *
  * The frequency table below is arithmetic proof of that pricing. Its
- * expectation is 2.7638, and (3 − 2.7638) / 3 = 7.87% — the advertised 8% at
- * the stakes it applies to. Had the player been charged buy-in PLUS 8% on top,
+ * expectation is 2.7638, and (3 − 2.7638) / 3 = 7.87% — the advertised 8%, at
+ * every stake. Had the player been charged buy-in PLUS 8% on top,
  * the true edge would have been 14.7%, which is not what any room advertises.
  * So the buy-in is the whole charge, and `buy_in_fee` MUST be 0 on a Spin.
  *
@@ -67,31 +67,48 @@
 export const SPIN_SEATS = 3;
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// RAKE — scales down with stake
+// RAKE — ONE RATE, because the multiplier table is what actually charges it
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export interface RakeBand {
-  /** Inclusive lower bound of the buy-in band. */
-  minBuyIn: number;
-  /** Inclusive upper bound. Infinity for the top band. */
-  maxBuyIn: number;
-  /** Fraction of total collected taken by the house. */
-  rate: number;
-}
+/**
+ * ─── THE BANDS ARE GONE (Dan 2026-08-27, ruling) ────────────────────────────
+ *
+ * There used to be four buy-in bands here, booking 8 / 7 / 6 / 5% as the stake
+ * rose. They were fiction, and expensive fiction, for the reason stated at the
+ * top of this file: on a Spin the rake IS the multiplier distribution. There is
+ * exactly ONE `SPIN_TIERS` table, its expectation is 2.7638, and the invariant
+ *
+ *     E[multiplier] = seats × (1 − rake_rate)
+ *
+ * is an EQUALITY. At three seats it is satisfied at 8% and at no other rate.
+ * Lowering the booked rate to 7, 6 or 5% never changed a single frequency, so
+ * the player's expected return stayed 92.13% at every stake while the ledger
+ * recorded a smaller cut. Measured on 2026-08-27, booked against actually
+ * charged: 8.00%/8.74%, 7%/8.50%, 6%/8.04%, 5%/8.03%. A player at a 100 stake
+ * was told 5% and charged 8.03%.
+ *
+ * The gap did not go to the house either — it accumulated in `spin_bonus_pools`
+ * as 36,723.84 chips belonging to nobody, reconciling exactly with the pool
+ * balance minus the operator seed.
+ *
+ * A banded product is still possible, but it costs a multiplier table PER BAND.
+ * One table means one rate, and `assertSpinRakeInvariant` below is what makes
+ * the next attempt to split them fail loudly instead of quietly.
+ *
+ * (The chips already in the pool are a separate remediation decision and were
+ * deliberately NOT touched by the change that deleted the bands.)
+ */
+export const SPIN_RAKE_RATE = 0.08;
 
-export const SPIN_RAKE_BANDS: RakeBand[] = [
-  { minBuyIn: 0, maxBuyIn: 5, rate: 0.08 },
-  { minBuyIn: 5.01, maxBuyIn: 10, rate: 0.07 },
-  { minBuyIn: 10.01, maxBuyIn: 50, rate: 0.06 },
-  { minBuyIn: 50.01, maxBuyIn: Infinity, rate: 0.05 },
-];
-
-/** The house rake rate for a given buy-in. */
-export function spinRakeRate(buyIn: number): number {
-  const band = SPIN_RAKE_BANDS.find((b) => buyIn >= b.minBuyIn && buyIn <= b.maxBuyIn);
-  // Unknown stake defaults to the HIGHEST rake, never the lowest: a
-  // misconfigured buy-in must not silently hand away margin.
-  return band ? band.rate : SPIN_RAKE_BANDS[0].rate;
+/**
+ * The house rake rate for a Spin. Flat at every stake — see above.
+ *
+ * The buy-in parameter is kept so every existing call site still reads as a
+ * question about THIS game, and so a genuine future banding has one function to
+ * change rather than a dozen. It is deliberately unused today.
+ */
+export function spinRakeRate(_buyIn?: number): number {
+  return SPIN_RAKE_RATE;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -314,6 +331,78 @@ export function impliedHouseEdge(
   seats: number = SPIN_SEATS
 ): number {
   return (seats - expectedMultiplier(tiers)) / seats;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE INVARIANT, AS AN ASSERTION
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The rule at the top of this file is an equality:
+ *
+ *     E[multiplier] = seats × (1 − rake_rate)
+ *
+ * For three years of this file's life it was prose. Prose does not fail a
+ * build, so on 2026-08-20 the rake was banded down to 5% at the top of the
+ * ladder without anyone regenerating a frequency — the two halves of the
+ * equality drifted apart in silence and 36,723.84 chips ended up unowned.
+ *
+ * This is that sentence, executable. It compares the two sides TO THE CENT,
+ * which is the finest money numeric(15,2) can store and therefore the finest
+ * difference that can ever reach a ledger row. Anything coarser would have let
+ * the 5% band through (2.85 vs 2.76 is nine cents, but 8.04% vs 7.87% is only
+ * 0.0017 of edge — a tolerance loose enough to be "close" is loose enough to
+ * be wrong).
+ *
+ * It THROWS rather than returning a boolean so it cannot be called and ignored,
+ * and it is deliberately NOT invoked at module load: a config that refuses to
+ * import takes production down, where a red test only stops a deploy. Stopping
+ * the deploy is the outcome we want. tests/config/spinSpec.test.ts calls it.
+ */
+export interface SpinRakeInvariant {
+  /** Σ multiplier × freq / Σ freq over the full ladder. */
+  expected: number;
+  /** seats × (1 − SPIN_RAKE_RATE) — what the booked rate claims to charge. */
+  implied: number;
+  /** expected − implied, in chips per chip of buy-in. */
+  driftPerBuyIn: number;
+  /** The edge the table actually charges, whatever the booked rate says. */
+  actualEdge: number;
+}
+
+export function spinRakeInvariant(
+  tiers: SpinTierSpec[] = SPIN_TIERS,
+  seats: number = SPIN_SEATS,
+  rakeRate: number = SPIN_RAKE_RATE
+): SpinRakeInvariant {
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const expected = expectedMultiplier(tiers);
+  const implied = seats * (1 - rakeRate);
+  return {
+    expected,
+    implied,
+    driftPerBuyIn: round2(expected) - round2(implied),
+    actualEdge: impliedHouseEdge(tiers, seats),
+  };
+}
+
+/** Throws with the arithmetic if the table and the booked rate disagree. */
+export function assertSpinRakeInvariant(
+  tiers: SpinTierSpec[] = SPIN_TIERS,
+  seats: number = SPIN_SEATS,
+  rakeRate: number = SPIN_RAKE_RATE
+): void {
+  const inv = spinRakeInvariant(tiers, seats, rakeRate);
+  if (inv.driftPerBuyIn !== 0) {
+    throw new Error(
+      `SPIN RAKE INVARIANT BROKEN: the multiplier table expects ${inv.expected.toFixed(6)}x ` +
+        `but a ${(rakeRate * 100).toFixed(2)}% rake over ${seats} seats implies ` +
+        `${inv.implied.toFixed(6)}x. The table actually charges ` +
+        `${(inv.actualEdge * 100).toFixed(2)}%. Changing SPIN_RAKE_RATE requires ` +
+        `regenerating SPIN_TIERS so the frequencies pay the new rate - the rate ` +
+        `alone is a booking entry, the table is what the player is charged.`
+    );
+  }
 }
 
 /**

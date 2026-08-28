@@ -774,8 +774,8 @@ export default function HouseAdsPage() {
                   onChange={(e) => setForm((f) => ({ ...f, image_url: e.target.value }))}
                 />
                 <div className="admin-text-secondary" style={{ fontSize: 11, marginTop: 4 }}>
-                  A Path On smarter.poker Only. An Outside Address Hands Every Player&apos;s Device
-                  Details To Somebody Else.
+                  A Path On This Site Only. An Outside Address Sends Player Device Details To
+                  Somebody Else.
                 </div>
               </div>
               <div>

@@ -214,9 +214,16 @@ export class InsuranceEngine {
 
     const existing = this.activeOffers.get(tableId) ?? [];
     // If the leader already locked coverage on an earlier street, don't re-offer.
+    // EV CASHOUT RE-OFFER GUARD 2026-08-28: 'cashed_out' belongs here too —
+    // without it a leader who cashed out on the flop was offered AGAIN on the
+    // turn and could double-dip (cash out twice, or cash out AND insure) on
+    // equity the bank had already bought. Found in line-by-line review, pinned
+    // by InsuranceEvCashout.test.ts before any real chips could hit it.
     if (
       existing.some(
-        (o) => o.playerId === leader.playerId && (o.status === 'accepted' || o.status === 'settled')
+        (o) =>
+          o.playerId === leader.playerId &&
+          (o.status === 'accepted' || o.status === 'settled' || o.status === 'cashed_out')
       )
     ) {
       return [];

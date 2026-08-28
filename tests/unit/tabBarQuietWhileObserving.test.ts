@@ -29,6 +29,10 @@ const SRC = readFileSync(resolve(__dirname, '../../src/components/table/TableTab
 
 /** The per-tab render body. */
 const TAB = SRC.slice(SRC.indexOf('const isActive = tab.id === activeTabId;'));
+const CSS_TAB_BAR = readFileSync(
+  resolve(__dirname, '../../src/components/table/TableTabBar.css'),
+  'utf8'
+);
 
 describe('what makes a tab count as observed', () => {
   it('requires every signal of involvement to be absent', () => {
@@ -71,11 +75,26 @@ describe('an observed tab shows the game and the stakes, and nothing that moves'
     expect(TAB).toMatch(/const result = observing \? undefined : resultFlash\[tab\.id\]/);
   });
 
-  it('does not run the five-second flash, the turn dot or the timer bar', () => {
+  it('does not run the five-second flash or the timer bar', () => {
     expect(TAB).toMatch(/const anySecondsLeft = observing\s*\n?\s*\? undefined/);
     expect(TAB).toMatch(/const isMyTurn = !observing && tab\.isMyTurn/);
-    expect(TAB).toMatch(/\{!isActive && isMyTurn && \(/);
     expect(TAB).toMatch(/\{isMyTurn && tab\.turnProgress !== undefined && \(/);
+  });
+
+  /* The turn dot this beat used to pin (`{!isActive && isMyTurn && (`) was
+     DELETED on 2026-08-28 — Dan: the pill shows the cards and the timer bar and
+     nothing else. Asserting its absence is what keeps it deleted; observing is
+     no longer a special case for it, because there is no case. */
+  it('has no countdown badge left to silence', () => {
+    /* Matched on the RENDERED className, not on any mention of the string: the
+       comment that records why the badge was deleted names the class, and an
+       assertion that forbids the name outright would forbid explaining itself. */
+    expect(TAB, 'the turn badge must not be rendered').not.toMatch(
+      /className=["'{`][^"'}`]*table-tab-bar__turn-dot/
+    );
+    expect(CSS_TAB_BAR, 'the badge CSS must go with the markup').not.toMatch(
+      /^\.table-tab-bar__turn-dot\s*\{/m
+    );
   });
 
   it('does not take the decision, time bank, folded or mini-card branches', () => {

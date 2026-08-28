@@ -2,6 +2,64 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-08-27 — BOMB POTS, AUDITED AND STANDARDIZED TO DAN'S SPEC
+
+Full audit of the bomb pot feature against the Bomb Pot Rules + Architecture
+Specification, then the gaps closed. Audit record with the spec-by-spec
+compliance table: `.agent/audits/2026-08-27-bomb-pot-standardization.md`.
+
+What the audit found already correct (built 2026-08-20/25): server-authoritative
+double board with per-pot integer-cent splits, odd cent to Board 1; board-major
+award sequencing; odd chips clockwise from the button; short-ante all-in side
+pots; RIT/insurance/BBJ suppression on multi-board hands; deck-feasibility
+downgrade; the cinematic intro with reduced-motion fallback; per-board hi/lo
+muck integrity.
+
+What was missing, now built:
+
+1. **Trigger modes (spec §2.1/§4).** Only every-N-hands existed. New
+   `BombPotScheduler` (server/src/engine/BombPotScheduler.ts, pure state
+   machine, 16 unit tests) adds `once_per_orbit` (button-crossing orbit
+   tracker — seats joining/leaving cannot double or skip a bomb, T01/T02),
+   `timed` (server clock, due at next hand boundary, one pending token no
+   matter how long a pause, T03/T04) and `bomb_pot_only`. Single
+   pending-token semantics and a minimum-players floor (default 3): a due
+   bomb stays pending until enough players are dealt in.
+2. **Triple board (spec §9).** HandController generalized from a double-board
+   boolean to `activeBoardCount` 1-3: lockstep dealing on all paths (normal
+   streets, insurance-paced runout, full runout), N-way per-pot integer split
+   with remainders to Board 1 then Board 2, per-board winners/labels, `hand3`
+   at showdown, board-3 muck eligibility (hi and lo), stepwise 3→2→1 deck
+   downgrade. Client renders board 3 under board 2 (existing `data-boards='3'`
+   CSS), with its own winning-five highlight.
+3. **Config standardization (spec §3).** Migration
+   `20260827_bomb_pot_standardization` (APPLIED to production, verified:
+   5 tables columns + 2 hand_history columns, 1 double-board row backfilled):
+   `bomb_pot_board_count` (1-3, supersedes the boolean, kept in lockstep),
+   `bomb_pot_trigger_mode`, `bomb_pot_interval_seconds`,
+   `bomb_pot_min_players`, `bomb_pot_ante_fixed` (FIXED ante mode overriding
+   the BB multiple). Wired through loadTable select (engineSelectIsTheContract
+   guard extended), the throttled re-read, TableConfigPage (schedule + boards
+   radio groups — Triple Board is a real switch again, this time with an
+   engine behind it), lobby medallions per mode, GameRulesModal, felt pill.
+4. **Bomb antes on the hand record (spec §20).** postBombPotAntes never ran
+   postBlinds' forced-money recorder (#1477), so every bomb hand's persisted
+   `actions` log was short by the entire starting pot. Bomb antes now emit
+   FORCED_BETS_POSTED as `bomb_ante`, dead money.
+5. **Hand history (spec §20).** `community_cards3` plus a `bomb_pot` jsonb
+   {trigger_reason, ante_amount, board_count} frozen at trigger time — a bomb
+   hand's why/how is now reconstructable from the row.
+
+Deliberately deferred (documented in the audit): variant override
+(NLH table dealing PLO bombs — the config snapshot now carries the fields it
+needs), separate bomb button, admin manual next-hand trigger, per-award-unit
+settlement ledger table. Scheduler state is in-memory per engine (restart =
+worst case one cycle's delay), same trade-off the old counter made.
+
+Tests: 30 server (scheduler 16, triple board 9, double board 5 — all green),
+183 client tests in the touched areas green, `tsc --noEmit` clean on both
+tsconfigs.
+
 ## Cowork session 2026-08-27 — THE CASHIER, AUDITED TO THE MONEY STANDARD
 
 The table cashier and the wallet paths behind it, hunted for the six defect

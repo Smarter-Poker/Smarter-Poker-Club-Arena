@@ -470,8 +470,12 @@ interface TableState {
   communityCards: Card[];
   /** DOUBLE-BOARD BOMB POT 2026-08-20: board 2, empty unless active. */
   communityCards2: Card[];
+  /** TRIPLE-BOARD BOMB POT 2026-08-27: board 3, empty unless active. */
+  communityCards3: Card[];
   /** ROUND 3: hands until the next bomb pot (1 = next hand); null = off. */
   bombPotIn: number | null;
+  /** BOMB POT STANDARDIZATION 2026-08-27: timed mode — epoch ms of next due bomb. */
+  bombPotNextAt: number | null;
   boardStage: BoardStage;
   /**
    * The engine's OWN stage string, unnormalised.
@@ -1526,7 +1530,9 @@ export default function TablePage({
       sidePots: [],
       communityCards: [],
       communityCards2: [],
+      communityCards3: [],
       bombPotIn: null,
+      bombPotNextAt: null,
       boardStage: 'preflop',
       engineStage: 'preflop',
       dealerSeat: 0,
@@ -1766,6 +1772,11 @@ export default function TablePage({
       if (sameHand && nextCards2.length < prev.communityCards2.length) {
         nextCards2 = prev.communityCards2;
       }
+      // TRIPLE-BOARD BOMB POT 2026-08-27: board 3, same never-shrink rule.
+      let nextCards3 = (mapped.communityCards3 ?? []) as Card[];
+      if (sameHand && nextCards3.length < prev.communityCards3.length) {
+        nextCards3 = prev.communityCards3;
+      }
       let nextStage = mapped.boardStage as BoardStage;
       const n = nextCards.length;
       const derivedStage = n >= 5 ? 'river' : n === 4 ? 'turn' : n >= 3 ? 'flop' : null;
@@ -1814,7 +1825,9 @@ export default function TablePage({
         pot: mapped.pot,
         communityCards: nextCards,
         communityCards2: nextCards2,
+        communityCards3: nextCards3,
         bombPotIn: mapped.bombPotIn,
+        bombPotNextAt: mapped.bombPotNextAt,
         boardStage: nextStage,
         engineStage: mapped.boardStage,
         dealerSeat: mapped.dealerSeat,
@@ -3598,8 +3611,11 @@ export default function TablePage({
      */
     handNames: Record<string, string>;
     amounts: Record<string, number>;
-    /** Round 2 (double board): winning hand name per board — [top, bottom]. */
-    boardHandNames?: [string, string] | null;
+    /**
+     * Round 2 (double board): winning hand name per board — [top, bottom].
+     * TRIPLE-BOARD 2026-08-27: an optional third entry for board 3.
+     */
+    boardHandNames?: [string, string] | [string, string, string] | null;
     /**
      * WHICH HAND THESE WINNERS BELONG TO (Dan 2026-08-27: "cards dim like you
      * folded even though you are live in a hand").
@@ -3768,6 +3784,24 @@ export default function TablePage({
     }
     return [];
   }, [tableState.communityCards2, winnerInfo.playerIds, tableState.players, tableState.gameType]);
+
+  // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 highlights, same derivation.
+  const board3HighlightedIndices = useMemo(() => {
+    if (tableState.communityCards3.length < 5 || winnerInfo.playerIds.length === 0) return [];
+    for (const wid of winnerInfo.playerIds) {
+      const winnerPlayer = tableState.players.find((p) => p?.id === wid);
+      const hole = (winnerPlayer?.holeCards ?? []).filter((c): c is Card => c != null);
+      if (hole.length === 0) continue;
+      const evalResult = bestFive(hole, tableState.communityCards3, tableState.gameType);
+      if (evalResult) {
+        const playedKeySet = new Set(evalResult.cards.map(cardKey));
+        return tableState.communityCards3
+          .map((c, idx) => (playedKeySet.has(cardKey(c)) ? idx : -1))
+          .filter((idx) => idx >= 0);
+      }
+    }
+    return [];
+  }, [tableState.communityCards3, winnerInfo.playerIds, tableState.players, tableState.gameType]);
 
   // ─── Multi-table info reporting ─────────────────────────────────────
   // When embedded in MultiTablePage, report table name/pot/turn status
@@ -4347,6 +4381,10 @@ export default function TablePage({
     frequency: number;
     anteBB: number;
     doubleBoard: boolean;
+    /** BOMB POT STANDARDIZATION 2026-08-27: boards per bomb hand (1-3). */
+    boardCount: number;
+    /** 'every_n_hands' | 'once_per_orbit' | 'timed' | 'bomb_pot_only' */
+    triggerMode: string;
   } | null>(null);
 
   // Straddle state
@@ -7402,7 +7440,18 @@ export default function TablePage({
                 enabled: true,
                 frequency: Number(settings.bomb_pot_frequency) || 0,
                 anteBB: Number(settings.bomb_pot_ante_bb || settings.bomb_pot_ante_multiplier) || 0,
-                doubleBoard: settings.bomb_pot_double_board === true,
+                doubleBoard:
+                  settings.bomb_pot_double_board === true ||
+                  Number(settings.bomb_pot_board_count) >= 2,
+                // BOMB POT STANDARDIZATION 2026-08-27: canonical board count
+                // (1-3) and trigger mode, defaulting to the legacy shapes.
+                boardCount:
+                  Number(settings.bomb_pot_board_count) ||
+                  (settings.bomb_pot_double_board === true ? 2 : 1),
+                triggerMode:
+                  typeof settings.bomb_pot_trigger_mode === 'string'
+                    ? settings.bomb_pot_trigger_mode
+                    : 'every_n_hands',
               }
             : null
         );
@@ -10001,6 +10050,7 @@ export default function TablePage({
             pot: syncData.pot || 0,
             communityCards: normalizeCards(syncData.community_cards) as Card[],
             communityCards2: normalizeCards(syncData.community_cards2 || []) as Card[],
+            communityCards3: normalizeCards((syncData as any).community_cards3 || []) as Card[],
             // P2-5 FIX: TableState uses `boardStage` (typed BoardStage), not
             // `stage`. The old `stage` write was dead, leaving the board stuck
             // in a stale stage after mid-hand reconnect. Map to boardStage.
@@ -10354,6 +10404,7 @@ export default function TablePage({
             lastBetAmounts: prev.lastBetAmounts.map(() => 0),
             communityCards: [],
             communityCards2: [],
+            communityCards3: [],
             boardStage: 'preflop',
             engineStage: 'preflop',
           };
@@ -10448,6 +10499,8 @@ export default function TablePage({
               // two boards), so pass it through instead of hardcoding false.
               doubleBoard: Boolean(d?.double_board),
               bbMultiplier: Number(d?.bb_multiplier) || 0,
+              // TRIPLE-BOARD 2026-08-27: actual boards dealt (post-downgrade).
+              boardCount: Number(d?.board_count) || (d?.double_board ? 2 : 1),
             });
           } catch {
             /* bus publish is best-effort */
@@ -10586,6 +10639,8 @@ export default function TablePage({
         const board = normalizeCards((evt.data as any).board) as Card[];
         // DOUBLE-BOARD BOMB POT 2026-08-20: board 2 rides the same event.
         const board2 = normalizeCards((evt.data as any).board2 || []) as Card[];
+        // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 rides it too.
+        const board3 = normalizeCards((evt.data as any).board3 || []) as Card[];
         const stage = ((evt.data as any).stage as string) || 'preflop';
 
         // Bible V8 §1.16 — chip-to-pot collection animation. Before updating
@@ -10648,6 +10703,7 @@ export default function TablePage({
           ...prev,
           communityCards: board,
           communityCards2: board2.length > 0 ? board2 : prev.communityCards2,
+          communityCards3: board3.length > 0 ? board3 : prev.communityCards3,
           boardStage: stage as BoardStage,
         }));
         // ANIMATION/SOUND AUDIT 2026-08-19: the community-card sound here
@@ -11048,6 +11104,7 @@ export default function TablePage({
             ...prev,
             communityCards: [],
             communityCards2: [],
+            communityCards3: [],
             boardStage: 'preflop',
             engineStage: 'preflop',
             pot: 0,
@@ -11271,7 +11328,8 @@ export default function TablePage({
         // "which pot, which half, whose share" reads these; the flat
         // winners[] stays the source of per-player totals.
         const potAwardsWire = (evt.data as any).pot_awards as
-          import('../lib/showdownPresentation').PotAwardGroupWire[] | undefined;
+          | import('../lib/showdownPresentation').PotAwardGroupWire[]
+          | undefined;
         const boardLabel = boardLabelFromAwards(
           potAwardsWire,
           ((evt.data as any).hand_name as string) ||
@@ -11318,16 +11376,18 @@ export default function TablePage({
         // labels — who won the top board with what, who won the bottom.
         const winnersByBoard =
           ((evt.data as any).winners_by_board as Array<{
-            board: 1 | 2;
+            board: 1 | 2 | 3;
             user_id: string;
             amount: number;
             hand_name?: string;
           }>) || [];
-        const boardHandNames: [string, string] | null =
+        const boardHandNames: [string, string, string] | null =
           winnersByBoard.length > 0
             ? [
                 winnersByBoard.find((w) => w.board === 1)?.hand_name || '',
                 winnersByBoard.find((w) => w.board === 2)?.hand_name || '',
+                // TRIPLE-BOARD 2026-08-27: board 3's label ('' below 3 boards).
+                winnersByBoard.find((w) => w.board === 3)?.hand_name || '',
               ]
             : null;
 
@@ -14495,11 +14555,13 @@ export default function TablePage({
       data-boards={
         (ritResult?.boards?.length ?? 1) > 1
           ? ritResult!.boards.length
-          : // DOUBLE-BOARD BOMB POT 2026-08-20: the live second board shifts
-            // the felt masthead exactly like a second RIT run does.
-            tableState.communityCards2.length > 0
-            ? 2
-            : undefined
+          : // DOUBLE/TRIPLE-BOARD BOMB POT: each live extra board shifts the
+            // felt masthead exactly like an extra RIT run does.
+            tableState.communityCards3.length > 0
+            ? 3
+            : tableState.communityCards2.length > 0
+              ? 2
+              : undefined
       }
       style={{
         // Dan 2026-08-18: the blurred-skin backdrop is GONE ("remove the
@@ -15412,6 +15474,27 @@ export default function TablePage({
                           />
                         </div>
                       )}
+                      {/* TRIPLE-BOARD BOMB POT 2026-08-27: board 3, stacked
+                          under board 2, same lockstep stage and silence. */}
+                      {tableState.communityCards3.length > 0 && (
+                        <div className="community-area__board2 community-area__board3">
+                          <CommunityCards
+                            cards={tableState.communityCards3}
+                            rabbitCards={rabbitRevealedCards}
+                            stage={
+                              bombPotHoldFlop && tableState.boardStage === 'flop'
+                                ? 'preflop'
+                                : tableState.boardStage
+                            }
+                            winningHandName={winnerInfo.boardHandNames?.[2] || undefined}
+                            highlightedIndices={board3HighlightedIndices}
+                            deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
+                            cardBack={activeCardBack}
+                            playSounds={false}
+                            slowReveal={allInEquities.length > 0}
+                          />
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -15429,9 +15512,14 @@ export default function TablePage({
                     className={`bomb-pot-eta ${tableState.bombPotIn === 1 ? 'bomb-pot-eta--next' : ''}`}
                   >
                     <span className="bomb-pot-eta__dot" />
-                    {tableState.bombPotIn === 1
-                      ? `${bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
-                      : `BOMB POT IN ${tableState.bombPotIn}`}
+                    {/* BOMB POT STANDARDIZATION 2026-08-27: badge names the
+                        board count (spec §15.2); bomb-only tables show a
+                        permanent identity pill rather than a countdown. */}
+                    {bombPotRules?.triggerMode === 'bomb_pot_only'
+                      ? `${bombPotRules.boardCount >= 3 ? 'TRIPLE BOARD ' : bombPotRules.boardCount === 2 ? 'DOUBLE BOARD ' : ''}BOMB POT ONLY`
+                      : tableState.bombPotIn === 1
+                        ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
+                        : `BOMB POT IN ${tableState.bombPotIn}`}
                   </div>
                 )}
 

@@ -136,15 +136,20 @@ export class HandController {
   /** FIX 120: Crazy Pineapple — tracks seats that still need to discard after flop */
   private pineappleDiscardsRemaining: Set<number> = new Set();
   /**
-   * DOUBLE-BOARD BOMB POT 2026-08-20: set in postBombPotAntes() when the
-   * table config asks for a double board AND the deck can cover
-   * players × holeCards + 10 board cards. Every dealing/showdown path
-   * consults this, never the raw config flag.
+   * DOUBLE-BOARD BOMB POT 2026-08-20 / TRIPLE-BOARD 2026-08-27: how many
+   * boards THIS hand actually deals — 1, 2 or 3 — set in postBombPotAntes()
+   * from the configured board count, downgraded stepwise (3 → 2 → 1) until
+   * the deck can cover players × holeCards + 5 × boards cards. Every
+   * dealing/showdown path consults this, never the raw config.
    */
-  private doubleBoardActive = false;
-  /** Round 2: per-board winner breakdown for the next WINNERS emit (double board only). */
+  private activeBoardCount: 1 | 2 | 3 = 1;
+  /** Convenience: at least two boards are live this hand. */
+  private get multiBoardActive(): boolean {
+    return this.activeBoardCount >= 2;
+  }
+  /** Round 2: per-board winner breakdown for the next WINNERS emit (multi-board only). */
   private pendingWinnersByBoard:
-    | Array<{ board: 1 | 2; userId: string; amount: number; handName?: string }>
+    | Array<{ board: 1 | 2 | 3; userId: string; amount: number; handName?: string }>
     | undefined;
   /**
    * SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 8): set the moment an all-in
@@ -176,6 +181,7 @@ export class HandController {
       deck: deck as any, // Internal only
       communityCards: [],
       communityCards2: [],
+      communityCards3: [],
       pot: 0,
       currentBet: 0,
       lastRaise: config.bigBlind,
@@ -585,25 +591,40 @@ export class HandController {
   private postBombPotAntes(): void {
     const { bigBlind, bombPot } = this.config;
     if (!bombPot) return;
-    const anteAmount = bigBlind * bombPot.anteMultiplier;
+    // BOMB POT STANDARDIZATION 2026-08-27 (spec §3): FIXED ante mode — a
+    // positive anteFixed overrides the BB multiple. Both resolve to the same
+    // equal forced contribution from every locked participant (BP-ANTE-01).
+    const anteAmount =
+      bombPot.anteFixed && bombPot.anteFixed > 0
+        ? bombPot.anteFixed
+        : bigBlind * bombPot.anteMultiplier;
 
     const dealtIn = this.state.players.filter((p) => !p.is_sitting_out);
 
-    // DOUBLE-BOARD BOMB POT 2026-08-20: activate the second board only when
-    // the deck can cover it — every player's hole cards plus TEN board cards.
-    // A 9-handed PLO5 table (45 hole cards) quietly downgrades to a single
-    // board rather than exhausting the deck mid-hand. The short-deck 36-card
-    // deck is covered by the same arithmetic.
-    if (bombPot.doubleBoard) {
+    // DOUBLE-BOARD BOMB POT 2026-08-20 / TRIPLE-BOARD 2026-08-27: activate as
+    // many boards as the deck can cover — every player's hole cards plus FIVE
+    // board cards per board. Downgrade stepwise (3 → 2 → 1) rather than
+    // exhausting the deck mid-hand: a 9-handed PLO5 table (45 hole cards)
+    // quietly plays a single board; a 7-handed PLO6 table (42 hole cards)
+    // plays two of a requested three. The short-deck 36-card deck is covered
+    // by the same arithmetic.
+    const requestedBoards: 1 | 2 | 3 = bombPot.boardCount ?? (bombPot.doubleBoard ? 2 : 1);
+    if (requestedBoards >= 2) {
       const deckSize = this.config.gameVariant === 'short_deck' ? 36 : 52;
       const holeCardsNeeded = dealtIn.length * this.getCardsPerPlayer();
-      this.doubleBoardActive = holeCardsNeeded + 10 <= deckSize;
-      if (!this.doubleBoardActive) {
+      let boards = requestedBoards;
+      while (boards > 1 && holeCardsNeeded + 5 * boards > deckSize) {
+        boards = (boards - 1) as 1 | 2 | 3;
+      }
+      this.activeBoardCount = boards;
+      if (boards < requestedBoards) {
         console.warn(
-          `[HandController] double-board bomb pot downgraded to single board: ` +
-            `${dealtIn.length} players × ${this.getCardsPerPlayer()} cards + 10 board > ${deckSize}`
+          `[HandController] ${requestedBoards}-board bomb pot downgraded to ${boards} board(s): ` +
+            `${dealtIn.length} players × ${this.getCardsPerPlayer()} cards + ${5 * requestedBoards} board > ${deckSize}`
         );
       }
+    } else {
+      this.activeBoardCount = 1;
     }
 
     // Per-seat postings for the client's ante-chip presentation. Built as we
@@ -611,6 +632,9 @@ export class HandController {
     const postings: Array<{ seat: number; userId: string; amount: number }> = [];
 
     for (const player of dealtIn) {
+      // BP-ANTE-03 (spec §5.2): a stack shorter than the bomb ante posts
+      // everything it has and is all-in — side pots come from the normal
+      // contribution-layer algorithm, never a bespoke "partial participation".
       const actualAnte = Math.min(anteAmount, player.stack);
       player.totalInvested += actualAnte;
       player.stack -= actualAnte;
@@ -631,9 +655,29 @@ export class HandController {
       type: 'BOMB_POT_TRIGGERED',
       anteAmount,
       bbMultiplier: bombPot.anteMultiplier,
-      doubleBoard: this.doubleBoardActive,
+      doubleBoard: this.multiBoardActive,
+      boardCount: this.activeBoardCount,
+      triggerReason: bombPot.triggerReason,
       postings,
     });
+    // FORCED MONEY ON THE RECORD (2026-08-27, extends #1477): bomb antes are
+    // forced money like any blind or ante, and postBlinds' snapshot-diff
+    // recorder never runs on a bomb hand — without this emit every bomb hand's
+    // persisted `actions` log was short by the entire starting pot. Dead
+    // money: a bomb ante is in the pot but there is no preflop bet level for
+    // it to count toward.
+    if (postings.length > 0) {
+      this.emit({
+        type: 'FORCED_BETS_POSTED',
+        postings: postings.map((p) => ({
+          seat: p.seat,
+          userId: p.userId,
+          kind: 'bomb_ante',
+          amount: p.amount,
+          dead: true,
+        })),
+      } as never);
+    }
     this.emit({ type: 'POT_UPDATE', pot: this.state.pot, pots: this.state.pots });
   }
 
@@ -1057,7 +1101,8 @@ export class HandController {
         this.emit({
           type: 'ALL_IN_RUNOUT',
           board: [...this.state.communityCards],
-          board2: this.doubleBoardActive ? [...this.state.communityCards2] : undefined,
+          board2: this.multiBoardActive ? [...this.state.communityCards2] : undefined,
+          board3: this.activeBoardCount >= 3 ? [...this.state.communityCards3] : undefined,
           pot: this.state.pot,
           players: this.getActivePlayers().map((p) => ({ ...p })),
         });
@@ -1071,13 +1116,25 @@ export class HandController {
         this.state.sawFlop = true;
         const flop = deck.deal(3);
         this.state.communityCards.push(...flop);
-        // DOUBLE-BOARD BOMB POT 2026-08-20: board 2 gets its own flop.
+        // DOUBLE/TRIPLE-BOARD BOMB POT: each extra board gets its own flop,
+        // dealt in stable board order (spec §7.2 — 1, then 2, then 3).
         let flop2: Card[] | undefined;
-        if (this.doubleBoardActive) {
+        let flop3: Card[] | undefined;
+        if (this.multiBoardActive) {
           flop2 = deck.deal(3);
           this.state.communityCards2.push(...flop2);
         }
-        this.emit({ type: 'COMMUNITY_CARDS', stage: 'flop', cards: flop, cards2: flop2 });
+        if (this.activeBoardCount >= 3) {
+          flop3 = deck.deal(3);
+          this.state.communityCards3.push(...flop3);
+        }
+        this.emit({
+          type: 'COMMUNITY_CARDS',
+          stage: 'flop',
+          cards: flop,
+          cards2: flop2,
+          cards3: flop3,
+        });
 
         // FIX 120: Crazy Pineapple — after dealing flop, enter discard phase
         if (this.config.gameVariant === 'pineapple') {
@@ -1103,11 +1160,22 @@ export class HandController {
         const turn = deck.deal(1);
         this.state.communityCards.push(...turn);
         let turn2: Card[] | undefined;
-        if (this.doubleBoardActive) {
+        let turn3: Card[] | undefined;
+        if (this.multiBoardActive) {
           turn2 = deck.deal(1);
           this.state.communityCards2.push(...turn2);
         }
-        this.emit({ type: 'COMMUNITY_CARDS', stage: 'turn', cards: turn, cards2: turn2 });
+        if (this.activeBoardCount >= 3) {
+          turn3 = deck.deal(1);
+          this.state.communityCards3.push(...turn3);
+        }
+        this.emit({
+          type: 'COMMUNITY_CARDS',
+          stage: 'turn',
+          cards: turn,
+          cards2: turn2,
+          cards3: turn3,
+        });
         break;
       }
       case 'turn': {
@@ -1115,11 +1183,22 @@ export class HandController {
         const river = deck.deal(1);
         this.state.communityCards.push(...river);
         let river2: Card[] | undefined;
-        if (this.doubleBoardActive) {
+        let river3: Card[] | undefined;
+        if (this.multiBoardActive) {
           river2 = deck.deal(1);
           this.state.communityCards2.push(...river2);
         }
-        this.emit({ type: 'COMMUNITY_CARDS', stage: 'river', cards: river, cards2: river2 });
+        if (this.activeBoardCount >= 3) {
+          river3 = deck.deal(1);
+          this.state.communityCards3.push(...river3);
+        }
+        this.emit({
+          type: 'COMMUNITY_CARDS',
+          stage: 'river',
+          cards: river,
+          cards2: river2,
+          cards3: river3,
+        });
         break;
       }
       case 'river':
@@ -1193,17 +1272,25 @@ export class HandController {
     // whole runout. Advance the stage with the street.
     this.transitionStage(stage as HandStage);
     this.state.communityCards.push(...cards);
-    // DOUBLE-BOARD BOMB POT 2026-08-20: board 2 tracks board 1 street for
+    // DOUBLE/TRIPLE-BOARD BOMB POT: boards 2 and 3 track board 1 street for
     // street through the per-street (insurance-paced) runout as well.
     let cards2: Card[] | undefined;
-    if (this.doubleBoardActive) {
+    let cards3: Card[] | undefined;
+    if (this.multiBoardActive) {
       const count2 = stage === 'flop' ? 3 - this.state.communityCards2.length : 1;
       if (count2 > 0) {
         cards2 = deck.deal(count2);
         this.state.communityCards2.push(...cards2);
       }
     }
-    this.emit({ type: 'COMMUNITY_CARDS', stage: stage as HandStage, cards, cards2 });
+    if (this.activeBoardCount >= 3) {
+      const count3 = stage === 'flop' ? 3 - this.state.communityCards3.length : 1;
+      if (count3 > 0) {
+        cards3 = deck.deal(count3);
+        this.state.communityCards3.push(...cards3);
+      }
+    }
+    this.emit({ type: 'COMMUNITY_CARDS', stage: stage as HandStage, cards, cards2, cards3 });
 
     const complete = this.state.communityCards.length >= 5;
     return { board: [...this.state.communityCards], stage, complete };
@@ -1350,17 +1437,25 @@ export class HandController {
       // the hand ENDS preflop - a runout that deals the flop IS a flop.
       if (stage === 'flop') this.state.sawFlop = true;
       this.state.communityCards.push(...cards);
-      // DOUBLE-BOARD BOMB POT 2026-08-20: fill board 2 in lockstep during a
-      // full runout. Feasibility was checked at ante time, so the deck holds.
+      // DOUBLE/TRIPLE-BOARD BOMB POT: fill boards 2 and 3 in lockstep during
+      // a full runout. Feasibility was checked at ante time, so the deck holds.
       let cards2: Card[] | undefined;
-      if (this.doubleBoardActive && this.state.communityCards2.length < 5) {
+      let cards3: Card[] | undefined;
+      if (this.multiBoardActive && this.state.communityCards2.length < 5) {
         const count2 = stage === 'flop' ? Math.max(0, 3 - this.state.communityCards2.length) : 1;
         if (count2 > 0) {
           cards2 = deck.deal(count2);
           this.state.communityCards2.push(...cards2);
         }
       }
-      this.emit({ type: 'COMMUNITY_CARDS', stage: stage as HandStage, cards, cards2 });
+      if (this.activeBoardCount >= 3 && this.state.communityCards3.length < 5) {
+        const count3 = stage === 'flop' ? Math.max(0, 3 - this.state.communityCards3.length) : 1;
+        if (count3 > 0) {
+          cards3 = deck.deal(count3);
+          this.state.communityCards3.push(...cards3);
+        }
+      }
+      this.emit({ type: 'COMMUNITY_CARDS', stage: stage as HandStage, cards, cards2, cards3 });
       // AUDIT V2 (2026-07-23): Crazy Pineapple all-in runout — the discard
       // phase is skipped when everyone is all-in, so players still held THREE
       // hole cards at showdown and evaluateHand scored best-5-of-8, an illegal
@@ -1520,15 +1615,17 @@ export class HandController {
         ? evaluateOmahaHand
         : (h: Card[], c: Card[]) => evaluateHand(h, c, isShortDeck);
       const playersWithCards = activePlayers.filter((p) => p.cards && p.cards.length > 0);
-      // DOUBLE-BOARD BOMB POT 2026-08-20: each shown hand also carries its
-      // board-2 evaluation so clients can label both halves.
-      const showBoard2 = this.doubleBoardActive && this.state.communityCards2.length === 5;
+      // DOUBLE/TRIPLE-BOARD BOMB POT: each shown hand also carries its
+      // board-2 (and board-3) evaluation so clients can label every board.
+      const showBoard2 = this.multiBoardActive && this.state.communityCards2.length === 5;
+      const showBoard3 = this.activeBoardCount >= 3 && this.state.communityCards3.length === 5;
       const showdownResults: ShowdownResult[] = playersWithCards.map((p) => ({
         seat: p.seat,
         userId: p.user_id,
         cards: p.cards,
         hand: evaluator(p.cards, this.state.communityCards),
         hand2: showBoard2 ? evaluator(p.cards, this.state.communityCards2) : undefined,
+        hand3: showBoard3 ? evaluator(p.cards, this.state.communityCards3) : undefined,
       }));
 
       // Bible V8 §4.21 + Dan spec sections 3/6/7: sort showdown results — the
@@ -1561,58 +1658,69 @@ export class HandController {
 
     // FIX 226: Pass dealerSeat so odd chip allocation is clockwise from dealer
     //
-    // DOUBLE-BOARD BOMB POT 2026-08-20: with a full second board, every pot
-    // is split in integer cents — the odd cent goes to the TOP board's half —
-    // and each half is awarded independently on its own board. The merged
-    // winner list sums to exactly the original pot cents, so rake scaling and
-    // chip conservation downstream are untouched.
+    // DOUBLE-BOARD BOMB POT 2026-08-20 / TRIPLE-BOARD 2026-08-27 (spec §8/§9):
+    // with N full boards, EVERY pot layer (main and each side pot) is split in
+    // integer cents into N board shares — indivisible remainder cents go to
+    // the lowest board numbers first (Board 1, then Board 2, then Board 3;
+    // spec's LOWEST_BOARD_NUMBER policy) — and each share is awarded
+    // independently on its own board among that pot layer's eligible players.
+    // The merged winner list sums to exactly the original pot cents, so rake
+    // scaling and chip conservation downstream are untouched.
     let winners: Winner[];
-    if (this.doubleBoardActive && this.state.communityCards2.length === 5) {
-      const potsBoard1: Pot[] = [];
-      const potsBoard2: Pot[] = [];
+    const settlementBoards: Card[][] = [this.state.communityCards];
+    if (this.multiBoardActive && this.state.communityCards2.length === 5) {
+      settlementBoards.push(this.state.communityCards2);
+    }
+    if (this.activeBoardCount >= 3 && this.state.communityCards3.length === 5) {
+      settlementBoards.push(this.state.communityCards3);
+    }
+    if (settlementBoards.length >= 2) {
+      const boardCount = settlementBoards.length;
+      // Per-board pot arrays: potsByBoard[b][p] is pot layer p's share on
+      // board b. splitAcrossBoards (spec §18.1): floor division, remainder
+      // cents to ascending board order.
+      const potsByBoard: Pot[][] = Array.from({ length: boardCount }, () => []);
       for (const pot of pots) {
         const cents = Math.round(pot.amount * 100);
-        const cents1 = Math.ceil(cents / 2);
-        potsBoard1.push({ amount: cents1 / 100, eligiblePlayers: [...pot.eligiblePlayers] });
-        potsBoard2.push({
-          amount: (cents - cents1) / 100,
-          eligiblePlayers: [...pot.eligiblePlayers],
-        });
+        const base = Math.floor(cents / boardCount);
+        const remainder = cents % boardCount;
+        for (let b = 0; b < boardCount; b++) {
+          const shareCents = base + (b < remainder ? 1 : 0);
+          potsByBoard[b].push({
+            amount: shareCents / 100,
+            eligiblePlayers: [...pot.eligiblePlayers],
+          });
+        }
       }
-      // SHOWDOWN POLISH 2026-08-25: collect the unmerged per-pot(-half)
-      // breakdown for each board so the award sequence can play board 1's
-      // pots and then board 2's, each with its exact share.
-      const perPot1: PerPotAward[] = [];
-      const perPot2: PerPotAward[] = [];
-      const winners1 = determineWinners(
-        this.state.players,
-        this.state.communityCards,
-        potsBoard1,
-        this.config.gameVariant,
-        this.state.dealerSeat,
-        perPot1
-      );
-      const winners2 = determineWinners(
-        this.state.players,
-        this.state.communityCards2,
-        potsBoard2,
-        this.config.gameVariant,
-        this.state.dealerSeat,
-        perPot2
-      );
-      this.pendingPerPotAwards = [
-        ...perPot1.map((a) => ({ ...a, board: 1 as const })),
-        ...perPot2.map((a) => ({ ...a, board: 2 as const })),
-      ];
+      // SHOWDOWN POLISH 2026-08-25: collect the unmerged per-pot(-share)
+      // breakdown for each board so the award sequence can play the boards in
+      // board-major order (spec §11.2), each pot with its exact share.
+      const winnersPerBoard: Winner[][] = [];
+      this.pendingPerPotAwards = [];
+      for (let b = 0; b < boardCount; b++) {
+        const perPot: PerPotAward[] = [];
+        const boardWinners = determineWinners(
+          this.state.players,
+          settlementBoards[b],
+          potsByBoard[b],
+          this.config.gameVariant,
+          this.state.dealerSeat,
+          perPot
+        );
+        winnersPerBoard.push(boardWinners);
+        this.pendingPerPotAwards.push(
+          ...perPot.map((a) => ({ ...a, board: (b + 1) as 1 | 2 | 3 }))
+        );
+      }
       // Merge by user, integer cents throughout so the sum stays exact.
       const byUser = new Map<string, number>();
       // Keep the evaluated hand alongside the money. Rebuilding these entries as
-      // { userId, amount } alone dropped `hand`, so on every double board the
-      // merged winners carried no hand name and no cards — the board could
+      // { userId, amount } alone dropped `hand`, so on every multi-board hand
+      // the merged winners carried no hand name and no cards — the board could
       // neither name the winning hand nor light the cards that made it. Where a
-      // user won both boards, the higher-ranking hand is the one shown.
-      const handByUser = new Map<string, (typeof winners1)[number]['hand']>();
-      for (const w of [...winners1, ...winners2]) {
+      // user won several boards, the higher-ranking hand is the one shown.
+      const handByUser = new Map<string, Winner['hand']>();
+      for (const w of winnersPerBoard.flat()) {
         byUser.set(w.userId, (byUser.get(w.userId) ?? 0) + Math.round(w.amount * 100));
         const held = handByUser.get(w.userId);
         if (w.hand && (!held || (w.hand.ranking ?? 0) > (held.ranking ?? 0))) {
@@ -1627,18 +1735,14 @@ export class HandController {
       // Round 2: keep the per-board story for the WINNERS emit below —
       // clients label each board with its own winner + hand name.
       this.pendingWinnersByBoard = [
-        ...winners1.map((w) => ({
-          board: 1 as const,
-          userId: w.userId,
-          amount: w.amount,
-          handName: w.hand?.name,
-        })),
-        ...winners2.map((w) => ({
-          board: 2 as const,
-          userId: w.userId,
-          amount: w.amount,
-          handName: w.hand?.name,
-        })),
+        ...winnersPerBoard.flatMap((boardWinners, b) =>
+          boardWinners.map((w) => ({
+            board: (b + 1) as 1 | 2 | 3,
+            userId: w.userId,
+            amount: w.amount,
+            handName: w.hand?.name,
+          }))
+        ),
       ];
     } else {
       const perPot: PerPotAward[] = [];
@@ -1962,7 +2066,12 @@ export class HandController {
     // ruled muckable and then paid, breaking the mucked-hands-never-win
     // invariant.
     const board2Live = results.some((r) => r.hand2 !== undefined);
+    // TRIPLE-BOARD 2026-08-27: board 3's hi and lo halves compete for muck
+    // eligibility exactly like board 2's — a hand winning ONLY a board-3
+    // share must never be ruled muckable and then paid.
+    const board3Live = results.some((r) => r.hand3 !== undefined);
     const lowByUser2 = new Map<string, number[] | null>();
+    const lowByUser3 = new Map<string, number[] | null>();
     if (isHiLo) {
       for (const r of results) {
         const low = evaluateOmahaLowHand(r.cards, this.state.communityCards);
@@ -1970,6 +2079,10 @@ export class HandController {
         if (board2Live) {
           const low2 = evaluateOmahaLowHand(r.cards, this.state.communityCards2);
           lowByUser2.set(r.userId, low2 ? low2.kickers : null);
+        }
+        if (board3Live) {
+          const low3 = evaluateOmahaLowHand(r.cards, this.state.communityCards3);
+          lowByUser3.set(r.userId, low3 ? low3.kickers : null);
         }
       }
     }
@@ -1984,6 +2097,8 @@ export class HandController {
     const bestShownLo: (number[] | null)[] = pots.map(() => null);
     const bestShownHi2: (EvaluatedHand | null)[] = pots.map(() => null);
     const bestShownLo2: (number[] | null)[] = pots.map(() => null);
+    const bestShownHi3: (EvaluatedHand | null)[] = pots.map(() => null);
+    const bestShownLo3: (number[] | null)[] = pots.map(() => null);
 
     for (const r of results) {
       let eligibleAnywhere = false;
@@ -1994,7 +2109,11 @@ export class HandController {
       // identity — a jackpot paid on a hand the table never saw is a
       // contradiction, and every cardroom tables jackpot hands. Ranking 8 is
       // FOUR_OF_A_KIND in both standard and short-deck orderings.
-      if (r.hand.ranking >= 8 || (r.hand2 && r.hand2.ranking >= 8)) {
+      if (
+        r.hand.ranking >= 8 ||
+        (r.hand2 && r.hand2.ranking >= 8) ||
+        (r.hand3 && r.hand3.ranking >= 8)
+      ) {
         mustShow = true;
       }
       for (let potIdx = 0; !mustShow && potIdx < pots.length; potIdx++) {
@@ -2008,6 +2127,13 @@ export class HandController {
         if (r.hand2) {
           const hi2 = bestShownHi2[potIdx];
           if (hi2 === null || compareHands(r.hand2, hi2) >= 0) {
+            mustShow = true;
+            break;
+          }
+        }
+        if (r.hand3) {
+          const hi3 = bestShownHi3[potIdx];
+          if (hi3 === null || compareHands(r.hand3, hi3) >= 0) {
             mustShow = true;
             break;
           }
@@ -2026,6 +2152,14 @@ export class HandController {
           if (myLow2) {
             const lo2 = bestShownLo2[potIdx];
             if (lo2 === null || compareLowKickers(myLow2, lo2) <= 0) {
+              mustShow = true;
+              break;
+            }
+          }
+          const myLow3 = board3Live ? (lowByUser3.get(r.userId) ?? null) : null;
+          if (myLow3) {
+            const lo3 = bestShownLo3[potIdx];
+            if (lo3 === null || compareLowKickers(myLow3, lo3) <= 0) {
               mustShow = true;
               break;
             }
@@ -2050,6 +2184,10 @@ export class HandController {
           const hi2 = bestShownHi2[potIdx];
           if (hi2 === null || compareHands(r.hand2, hi2) > 0) bestShownHi2[potIdx] = r.hand2;
         }
+        if (r.hand3) {
+          const hi3 = bestShownHi3[potIdx];
+          if (hi3 === null || compareHands(r.hand3, hi3) > 0) bestShownHi3[potIdx] = r.hand3;
+        }
         if (isHiLo) {
           const myLow = lowByUser.get(r.userId) ?? null;
           if (myLow) {
@@ -2060,6 +2198,11 @@ export class HandController {
           if (myLow2) {
             const lo2 = bestShownLo2[potIdx];
             if (lo2 === null || compareLowKickers(myLow2, lo2) < 0) bestShownLo2[potIdx] = myLow2;
+          }
+          const myLow3 = board3Live ? (lowByUser3.get(r.userId) ?? null) : null;
+          if (myLow3) {
+            const lo3 = bestShownLo3[potIdx];
+            if (lo3 === null || compareLowKickers(myLow3, lo3) < 0) bestShownLo3[potIdx] = myLow3;
           }
         }
       }
@@ -2074,9 +2217,18 @@ export class HandController {
    * DOUBLE-BOARD BOMB POT 2026-08-20: exposed so ServerTableEngine can skip
    * RIT and insurance offers — a hand that already runs two boards neither
    * needs a second runout nor has a single-board equity to insure.
+   *
+   * TRIPLE-BOARD 2026-08-27: true for ANY multi-board hand (2 or 3 boards) —
+   * every caller uses this as "is this a multi-board hand", and the RIT and
+   * insurance suppressions apply equally to three boards (spec §19).
    */
   public isDoubleBoardActive(): boolean {
-    return this.doubleBoardActive;
+    return this.multiBoardActive;
+  }
+
+  /** TRIPLE-BOARD 2026-08-27: how many boards this hand actually deals (1-3). */
+  public getActiveBoardCount(): number {
+    return this.activeBoardCount;
   }
 
   private getActivePlayers(): SeatPlayer[] {

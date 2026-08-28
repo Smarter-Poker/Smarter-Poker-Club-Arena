@@ -133,6 +133,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
       case 'BOMB_POT_TRIGGERED' as any: {
         // Fan the engine's bomb-pot announcement out to the table so
         // BombPotOverlay can explain the forced ante before the flop lands.
+        const bpBoardCount = (event as any).boardCount ?? ((event as any).doubleBoard ? 2 : 1);
         this.hub?.emitEvent(this.tableId, {
           type: 'bomb_pot_triggered',
           table_id: this.tableId,
@@ -142,9 +143,20 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // DOUBLE-BOARD BOMB POT 2026-08-20: whether this hand runs two
           // boards, plus per-seat postings for the ante-chip presentation.
           double_board: (event as any).doubleBoard ?? false,
+          // TRIPLE-BOARD 2026-08-27: the actual board count (1-3, after any
+          // deck-feasibility downgrade) — the overlay badges from this.
+          board_count: bpBoardCount,
           postings: (event as any).postings ?? [],
           timestamp: Date.now(),
         });
+        // BOMB POT STANDARDIZATION 2026-08-27 (spec §20): freeze the bomb
+        // facts for hand_history.bomb_pot — trigger reason, the equal forced
+        // ante, and the boards actually dealt.
+        this.currentHandBombPot = {
+          trigger_reason: (event as any).triggerReason ?? 'every_n_hands',
+          ante_amount: (event as any).anteAmount ?? 0,
+          board_count: bpBoardCount,
+        };
         break;
       }
 
@@ -589,6 +601,18 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
               this.currentHandCommunityCards2 = [...this.currentHandCommunityCards2, ...newCards2];
             }
           }
+          // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 accumulates the same way.
+          const evCards3 = (event as { cards3?: import('../types.js').Card[] }).cards3;
+          if (evCards3 && evCards3.length > 0) {
+            const newCards3 = evCards3.map((c: any) =>
+              typeof c === 'string' ? c : `${c.rank}${c.suit}`
+            );
+            if (event.stage === 'flop') {
+              this.currentHandCommunityCards3 = newCards3;
+            } else {
+              this.currentHandCommunityCards3 = [...this.currentHandCommunityCards3, ...newCards3];
+            }
+          }
           // Bible V8 §1.16 (Real-Time Law): emit discrete community_cards_dealt
           // so the client slides the flop/turn/river cards onto the board with
           // the spec animation (§6 community cards dealing) the millisecond the
@@ -608,6 +632,9 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             // and the fields absent mean "single board" to the client).
             new_cards2: evCards2 ?? [],
             board2: this.currentHandCommunityCards2,
+            // TRIPLE-BOARD BOMB POT 2026-08-27: board 3, same contract.
+            new_cards3: evCards3 ?? [],
+            board3: this.currentHandCommunityCards3,
             timestamp: Date.now(),
           });
           // ── ADDITIVE event-sourcing shadow (#1): record StreetAdvanced ──

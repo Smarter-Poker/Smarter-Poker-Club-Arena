@@ -17,6 +17,7 @@ import { DisconnectEngine } from './DisconnectEngine.js';
 import { PreActionEngine } from './PreActionEngine.js';
 import { AtomicStackService } from './AtomicStackService.js';
 import { StraddleEngine } from './StraddleEngine.js';
+import { BombPotScheduler, bombPotSettingsFromTable } from './BombPotScheduler.js';
 import { RunItTwiceEngine } from './RunItTwiceEngine.js';
 import { InsuranceEngine, type InsuranceSettlement } from './InsuranceEngine.js';
 import { ShadowRecorder } from './eventlog/ShadowRecorder.js';
@@ -494,6 +495,18 @@ export abstract class ServerTableEngineBase {
   protected currentHandCommunityCards: string[] = [];
   /** DOUBLE-BOARD BOMB POT 2026-08-20: board 2 accumulator (empty unless active). */
   protected currentHandCommunityCards2: string[] = [];
+  /** TRIPLE-BOARD BOMB POT 2026-08-27: board 3 accumulator (empty unless active). */
+  protected currentHandCommunityCards3: string[] = [];
+  /**
+   * BOMB POT STANDARDIZATION 2026-08-27 (spec §20): the bomb-pot facts of the
+   * current hand, frozen at trigger time for hand_history.bomb_pot. Null on
+   * normal hands. Reset per hand alongside the accumulators above.
+   */
+  protected currentHandBombPot: {
+    trigger_reason: string;
+    ante_amount: number;
+    board_count: number;
+  } | null = null;
   /**
    * Round 2: per-board winner breakdown from the WINNERS event (double board
    * only). Amounts are PRE-rake shares — clients use board + handName for
@@ -2661,18 +2674,36 @@ export abstract class ServerTableEngineBase {
   protected lastRakeRefreshAtMs = 0;
 
   /**
-   * ROUND 3 AUDIT FIX (2026-08-20): hands dealt at THIS table since the last
-   * bomb pot. The trigger used to be `handCount % frequency === 0`, but
-   * handCount is the GLOBAL hand-number allocator shared by every table —
-   * consecutive hands at one table draw numbers spaced by however many hands
-   * the whole fleet dealt in between, so divisibility was a ~1/N coin flip
-   * per hand. "Every 3 hands" produced back-to-back bomb pots and 15-hand
-   * droughts (observed live on the demo table). This counter makes the
-   * cadence exactly what the setting promises. Resets on engine restart —
-   * deterministic, no DB write, worst case the first bomb arrives N hands
-   * after a deploy.
+   * BOMB POT STANDARDIZATION 2026-08-27 (Dan's spec §4): the per-table trigger
+   * scheduler — every_n_hands, once_per_orbit, timed and bomb_pot_only modes,
+   * single pending-token semantics, and the minimum-players gate. Replaces the
+   * raw `handsSinceBombPot` counter (ROUND 3 AUDIT FIX 2026-08-20), whose
+   * history matters: the trigger before it was `handCount % frequency === 0`
+   * on the GLOBAL hand-number allocator, which made cadence a coin flip. The
+   * scheduler keeps the per-table counter as internal state. Same restart
+   * caveat as before: in-memory, resets on deploy, worst case the first bomb
+   * after a restart arrives one full cycle later.
    */
-  protected handsSinceBombPot = 0;
+  protected bombPotScheduler = new BombPotScheduler();
+
+  /**
+   * Snapshot fields for the felt's bomb-pot indicators, shared by every
+   * broadcast payload in ServerTableEngine. `bomb_pot_in` keeps its legacy
+   * contract (hands until the bomb, 1 = next hand, null = no countdown);
+   * `bomb_pot_next_at` is the timed mode's due timestamp (epoch ms) so the
+   * client can render a clock instead of a hand counter (spec §15.2).
+   */
+  protected bombPotSnapshotFields(): {
+    bomb_pot_in: number | null;
+    bomb_pot_next_at: number | null;
+  } {
+    if (!this.tableInfo) return { bomb_pot_in: null, bomb_pot_next_at: null };
+    const s = bombPotSettingsFromTable(this.tableInfo);
+    return {
+      bomb_pot_in: this.bombPotScheduler.handsUntilDue(s),
+      bomb_pot_next_at: this.bombPotScheduler.nextBombDueAt(s),
+    };
+  }
 
   /**
    * Re-read the table's and club's rake settings so an owner's change takes
@@ -2696,7 +2727,10 @@ export abstract class ServerTableEngineBase {
           // re-read — an owner toggling bomb pots (or double board) no longer
           // waits for an engine restart, same reason rake got this in
           // 2026-08-18.
-          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board'
+          // BOMB POT STANDARDIZATION 2026-08-27: the five new canonical
+          // columns ride along — board count, trigger mode, timed interval,
+          // minimum players and fixed ante.
+          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed'
         )
         .eq('id', this.tableId)
         .maybeSingle();
@@ -2707,6 +2741,12 @@ export abstract class ServerTableEngineBase {
         this.tableInfo.bomb_pot_frequency = (tableRow as any).bomb_pot_frequency ?? 0;
         this.tableInfo.bomb_pot_ante_multiplier = (tableRow as any).bomb_pot_ante_multiplier ?? 2;
         this.tableInfo.bomb_pot_double_board = (tableRow as any).bomb_pot_double_board ?? false;
+        this.tableInfo.bomb_pot_board_count = (tableRow as any).bomb_pot_board_count ?? undefined;
+        this.tableInfo.bomb_pot_trigger_mode = (tableRow as any).bomb_pot_trigger_mode ?? null;
+        this.tableInfo.bomb_pot_interval_seconds =
+          (tableRow as any).bomb_pot_interval_seconds ?? null;
+        this.tableInfo.bomb_pot_min_players = (tableRow as any).bomb_pot_min_players ?? undefined;
+        this.tableInfo.bomb_pot_ante_fixed = (tableRow as any).bomb_pot_ante_fixed ?? null;
       }
       const clubId = this.tableInfo?.club_id;
       if (clubId) {

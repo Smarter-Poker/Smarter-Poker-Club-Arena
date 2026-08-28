@@ -577,6 +577,8 @@ export interface BusPayloadMap {
     anteAmount: number;
     doubleBoard: boolean;
     bbMultiplier: number;
+    /** TRIPLE-BOARD 2026-08-27: boards actually dealt (1-3); optional for old emitters. */
+    boardCount?: number;
   };
   BOMB_POT_COMPLETED: { tableId: string };
   // Disconnect protection events

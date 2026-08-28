@@ -3250,9 +3250,17 @@
      as long as this rule existed. The height term of --sp-action-btn-h does the
      job it was written for, continuously and without a specificity race. */
 
-  /* Landscape pre-action — compact */
+  /* Landscape pre-action — compact type only.
+     `min-height: 40px` DELETED 2026-08-28. It was the shortest tappable row in
+     the product and the only one BELOW the 44px minimum touch target, on the
+     orientation where a thumb has least room to be accurate. It also
+     contradicted `.pre-action-btn`'s own token, which floors at 46px, and it
+     was live rather than dead — both selectors are (0,1,0), so this one won on
+     cascade order alone.
+     Nothing replaces it: --sp-action-btn-h already answers landscape through
+     its height term (min() of a vw and a vh curve), which is why the sibling
+     `.action-btn` rule in this same block could be deleted outright. */
   .pre-action-btn {
-    min-height: 40px;
     font-size: 0.6875rem;
   }
 }

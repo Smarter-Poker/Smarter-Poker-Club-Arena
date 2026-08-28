@@ -83,18 +83,27 @@ export default function PortraitLock({ active }: { active: boolean }) {
     <div className="portrait-lock" role="alertdialog" aria-modal="true" aria-live="assertive">
       <div className="portrait-lock__inner">
         {/* A phone that turns upright and stays there, so the instruction is
-            legible before the text is read. data-motion="keep" marks it as
-            duration-carrying for the reduced-motion rules in the stylesheet:
-            the turn collapses, the upright phone remains. */}
+            legible before the text is read.
+
+            NO data-motion="keep" HERE, and that is deliberate (corrected
+            2026-08-28). That attribute is the reduced-motion ESCAPE HATCH —
+            it means "this animation must survive because its DURATION is the
+            information", like a countdown ring. This turn is emphasis, not
+            duration: the meaning is the phone's upright END STATE, not how long
+            it took to get there. So reduced motion should and does collapse it,
+            which is exactly what the rule at the foot of PortraitLock.css does.
+            Marking it "keep" claimed the opposite and was a no-op besides, since
+            that same rule out-specifies the global kill either way. */}
         <svg
           className="portrait-lock__icon"
-          data-motion="keep"
           viewBox="0 0 120 120"
           aria-hidden="true"
           focusable="false"
         >
+          {/* No className: nothing styles it. The rect is painted entirely by
+              its own presentation attributes and inherits `color` from the svg,
+              so a hook that no rule uses is just a name to grep for later. */}
           <rect
-            className="portrait-lock__phone"
             x="38"
             y="18"
             width="44"

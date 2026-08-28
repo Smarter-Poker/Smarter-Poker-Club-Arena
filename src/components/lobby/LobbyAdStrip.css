@@ -33,11 +33,6 @@
     border-color 0.2s ease,
     background 0.2s ease;
 }
-
-.lobby-ads__strip:hover {
-  border-color: rgba(255, 255, 255, 0.18);
-}
-
 .lobby-ads__strip:focus-visible {
   outline: 2px solid rgba(0, 200, 255, 0.6);
   outline-offset: 2px;
@@ -146,10 +141,6 @@
 .lobby-ads__strip--static {
   cursor: default;
 }
-.lobby-ads__strip--static:hover {
-  border-color: inherit;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .lobby-ads__text {
     animation: none;
@@ -179,12 +170,6 @@
     color 0.15s ease,
     background 0.15s ease;
 }
-
-.lobby-ads__dismiss:hover {
-  color: #c3cbd8;
-  background: rgba(255, 255, 255, 0.12);
-}
-
 .lobby-ads__dismiss:focus-visible {
   outline: 2px solid rgba(0, 200, 255, 0.6);
   outline-offset: 2px;

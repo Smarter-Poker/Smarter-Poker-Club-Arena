@@ -61,9 +61,6 @@
 .lobby-table thead th.is-sortable {
   cursor: pointer;
 }
-/* Header hover removed with the rest (Dan 2026-08-28: no hover in this
-   lobby). `.is-sorted` below still marks the column actually in use, which is
-   the state worth showing. */
 .lobby-table thead th.is-sorted {
   color: var(--club-blue-light, #5b83e8);
 }
@@ -109,13 +106,6 @@
 .lobby-table td.lt-col-name {
   text-align: left;
 }
-/* NO HOVER ON A LOBBY ROW (Dan 2026-08-28, binding): "REMOVE ANY HOVER
-   EFFECT FROM THE SPINS LOBBY." The board is a touch surface first — on a
-   phone a hover state is either dead weight or, worse, sticks after a tap
-   because the browser leaves the row in :hover until you touch elsewhere, so
-   a row you have already left goes on looking live. Selection (.is-selected)
-   and the "yours" rail (.is-mine) still say everything the player needs, and
-   both are real state rather than where a mouse happens to rest. */
 .lt-row.is-selected {
   background: linear-gradient(90deg, rgba(65, 105, 225, 0.22), rgba(65, 105, 225, 0.08));
   box-shadow: inset 3px 0 0 var(--club-blue, #4169e1);
@@ -252,9 +242,10 @@
 .lt-row.is-mine {
   box-shadow: inset 3px 0 0 #2ed573;
 }
-/* The specificity note that used to live here described a hover rule that no
-   longer exists (Dan 2026-08-28: no hover on the lobby). The green rail is
-   the whole treatment for a row that is yours. */
+2,
+0) {
+  background: rgba(65, 105, 225, 0.07);
+}
 .lt-row.is-mine.is-selected {
   box-shadow: inset 3px 0 0 #2ed573;
 }
@@ -528,8 +519,6 @@ abbr.lt-variant[title] {
   color: var(--text-disabled, #565a63);
   cursor: pointer;
 }
-/* Favourite-star hover removed with the rest. `.is-on` below is the real
-   state and it is gold, which is the only thing this control has to say. */
 .lt-fav.is-on {
   color: var(--warning-gold, #ffd700);
 }
@@ -1633,15 +1622,6 @@ abbr.lt-variant[title] {
   .lt-row td:last-child {
     border-radius: 0 9px 9px 0;
   }
-
-  /* Desktop hover deleted with the rest (Dan 2026-08-28: "REMOVE ANY HOVER
-     EFFECT FROM THE SPINS LOBBY"). This one also lifted the row a pixel, so
-     on a trackpad the board twitched line by line as the pointer crossed it.
-
-     MERGE NOTE: main simplified this rule to a plain background on the same
-     day. Taking the deletion rather than the simplification — the instruction
-     was to remove the effect, not to tone it down. */
-
   .lt-row.is-featured {
     background: #162b50;
     box-shadow:

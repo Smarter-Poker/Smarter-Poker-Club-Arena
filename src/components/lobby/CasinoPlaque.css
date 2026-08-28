@@ -341,9 +341,6 @@
     filter 0.12s ease,
     transform 0.08s ease;
 }
-.cplaque__cta:hover:not(:disabled) {
-  filter: brightness(1.1);
-}
 .cplaque__cta:active:not(:disabled) {
   transform: translateY(1px);
 }

@@ -131,6 +131,8 @@ export interface TableModalsLayerProps {
     /* Dan 2026-08-28: read back into the settings panel instead of the old
        hardcoded `true` that snapped the toggle ON every render. */
     showBetSizePresets: boolean;
+    /** Dan 2026-08-28: scrolling announcement ticker on/off. */
+    showTicker: boolean;
     theme: string;
   };
   isSoundEnabled: boolean;
@@ -360,6 +362,8 @@ export interface TableModalsLayerProps {
       sitOutNextHand: boolean;
       tableTheme: string;
       hapticEnabled: boolean;
+      /** Dan 2026-08-28: announcement ticker on/off. */
+      showTicker: boolean;
     }>
   ) => void;
 
@@ -1221,6 +1225,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           /* Was hardcoded `true`, so the toggle snapped back ON on every
              render even though the table honoured the stored value. */
           showBetSizePresets: userSettings.showBetSizePresets,
+          showTicker: userSettings.showTicker,
           confirmAllIn: userSettings.confirmAllIn,
           sitOutNextHand,
           tableTheme: userSettings.theme,

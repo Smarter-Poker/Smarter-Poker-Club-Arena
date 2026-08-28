@@ -229,7 +229,9 @@ describe('the bottom-left HUD slot', () => {
  */
 describe('every widget in the bottom-left HUD corner is the same tile', () => {
   it('the size is declared once, on .table-hud, as a token', () => {
-    expect(strip(HUD_CSS)).toMatch(/--sp-hud-tile-size:\s*36px/);
+    // 44px since 2026-08-28 (Dan: same size as the chat button, which is
+    // 44px at every breakpoint in TableChat.css).
+    expect(strip(HUD_CSS)).toMatch(/--sp-hud-tile-size:\s*44px/);
   });
 
   it('all three read that token for width and height', () => {
@@ -281,7 +283,7 @@ describe('every widget in the bottom-left HUD corner is the same tile', () => {
       Number(m[1])
     );
     expect(declared.length, '--sp-hero-clear is never declared').toBeGreaterThan(0);
-    const TILE = 36;
+    const TILE = 44; // 2026-08-28: chat-button parity (was 36)
     const LINE = 8;
     for (const px of declared) {
       if (px <= LINE) continue; // the data-hero='false' collapse

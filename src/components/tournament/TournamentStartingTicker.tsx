@@ -39,6 +39,7 @@ import { formatPopupText } from '../../utils/popupStyle';
 import { reportError } from '../../utils/errorReporter';
 import { busToast } from '../../core/MasterBus';
 import { measureTopChromeBottom, TOP_CHROME_SELECTORS } from './topChrome';
+import { useTableSettings } from '../../hooks/useTableSettings';
 import {
   rankOverlayAnnouncements,
   overlayMessage,
@@ -96,6 +97,14 @@ function countdown(ms: number): string {
 export function TournamentStartingTicker() {
   const navigate = useNavigate();
   const location = useLocation();
+  /* Dan 2026-08-28: "add a toggle in the table settings, and in the Club
+     Arena settings, to turn the ticker on or off." useTableSettings is the
+     shared store both settings surfaces write (localStorage +
+     SETTINGS_CHANGED bus), so flipping the toggle anywhere kills or revives
+     this bar live, no reload. Hook called unconditionally, above every
+     early return — hook order must stay stable (same rule as insideClub
+     below). */
+  const { settings: tickerSettings } = useTableSettings();
   /* Dan 2026-08-21: "THE BANNER ONLY PLAYS WHILE YOUR INSIDE THE CLUB."
      A table is inside a club, so both count; the home page, the global
      tournament list and everything else do not. Computed here rather than at
@@ -485,6 +494,10 @@ export function TournamentStartingTicker() {
 
   // Outside a club there is nothing to announce: /clubs and /table only.
   if (!insideClub) return null;
+
+  // Dan 2026-08-28: the player turned the ticker off (table settings or
+  // Club Arena settings — one shared store).
+  if (tickerSettings.showTicker === false) return null;
 
   /* ONE BAR, AND THE OVERLAY WINS IT.
      Dan 2026-08-26 asked for overlay announcements "to jump in and play", and

@@ -46,6 +46,14 @@ export interface TableUserSettings {
   cardBack: string; // Card back design ID
   showStackInBB: boolean;
   autoRebuy: boolean; // Auto-rebuy when stack drops below threshold
+  /**
+   * Dan 2026-08-28: "add a toggle in the table settings, and in the Club
+   * Arena settings, to turn the ticker on or off." The scrolling
+   * tournament/announcement marquee (TournamentStartingTicker's .mtt-ticker)
+   * reads this; default ON. The BBJ banner is a different element and is NOT
+   * governed by this.
+   */
+  showTicker: boolean;
 }
 
 const DEFAULT_SETTINGS: TableUserSettings = {
@@ -79,6 +87,7 @@ const DEFAULT_SETTINGS: TableUserSettings = {
   cardBack: 'classic_blue',
   showStackInBB: false,
   autoRebuy: false,
+  showTicker: true,
 };
 
 import { STORAGE_KEYS } from '../lib/storage';

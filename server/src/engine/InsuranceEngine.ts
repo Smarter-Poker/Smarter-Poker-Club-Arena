@@ -6,7 +6,12 @@
  * Manages insurance offers when players go all-in:
  * - Triggered when 2+ players are all-in before the river
  * - Uses MonteCarloEquity to calculate real equity percentages
- * - Premium = (1 - equity%) × insuredAmount × houseMargin (20% edge)
+ * - POKERBROS PARITY 2026-08-28 (Dan's ruling): the fee is charged ONLY when
+ *   the insured leader WINS. A loss pays the insured amount with NO fee, so
+ *   the dialog's "For Losing: <insured pot>" is literally what lands, and
+ *   Constant Profit is actually constant. Premium = insured × pLoss/pWin ×
+ *   houseMargin (all probabilities conditional on not-push; 20% edge intact:
+ *   EV_house = fee×pWin − insured×pLoss = 0.2 × fair cost)
  * - Offer/accept/decline flow with configurable timeout
  * - Partial coverage: player can insure 1-100% via slider (default 100%)
  * - Per-street recalculation: equity changes as board cards are dealt
@@ -235,12 +240,25 @@ export class InsuranceEngine {
     // the offer as `atRisk` - the Break Even preset needs them.
     const maxInsurable = pot * (config.maxInsurablePercent / 100);
     const fullInsuredAmount = Math.round(maxInsurable * 100) / 100;
-    // Premium = fair cost x houseMargin. houseMargin 1.20 => a 20% edge banked by
-    // the club/union. Player EV = payout*pLoss - premium = -(margin-1)*fair < 0.
+    // POKERBROS PARITY 2026-08-28 (Dan's ruling): the fee is only ever
+    // COLLECTED when the leader wins (loss pays the insured amount fee-free,
+    // push voids). Fair fee therefore satisfies fee×pWin = insured×pLoss, and
+    // the 20% margin rides on top: fee = insured × pLoss/pWin × houseMargin.
+    // House EV per contract = fee×pWin − insured×pLoss = (margin−1) × fair
+    // cost — the same 20% edge the old always-charged pricing banked.
+    const winGivenNotPush = 1 - lossGivenNotPush;
+    if (winGivenNotPush <= 0) return [];
     const fullPremium =
-      Math.round(fullInsuredAmount * lossGivenNotPush * config.houseMargin * 100) / 100;
+      Math.round(
+        ((fullInsuredAmount * lossGivenNotPush * config.houseMargin) / winGivenNotPush) * 100
+      ) / 100;
 
     if (fullInsuredAmount <= 0) return [];
+    // UNINSURABLE 2026-08-28: if the fee reaches the payout (rate <= 1 — the
+    // "leader" loses too often, lossGivenNotPush >= 1/(1+margin)), the
+    // contract cannot be rational for anyone: you would pay >= the most you
+    // can ever get back. No offer.
+    if (fullPremium >= fullInsuredAmount) return [];
     // FINAL AUDIT 2026-08-26: at dust stakes the cents-rounded premium can hit
     // 0.00 while the insured amount is positive - a FREE payout contract the
     // union bank would fund. Uninsurable at this granularity: no offer.
@@ -455,11 +473,16 @@ export class InsuranceEngine {
 
       const playerLost = !playerIsWinner;
       const payout = playerLost ? offer.insuredAmount : 0;
+      // POKERBROS PARITY 2026-08-28 (Dan's ruling): the fee is charged ONLY
+      // when the insured leader WINS. On a loss the insured amount is paid
+      // out whole — "For Losing: <insured pot>" in the dialog is literal.
+      // Pricing in createOffers builds the waived-fee branch into the rate.
+      const premiumCharged = playerLost ? 0 : offer.premium;
 
       const settlement: InsuranceSettlement = {
         playerId: offer.playerId,
         insuredAmount: offer.insuredAmount,
-        premium: offer.premium,
+        premium: premiumCharged,
         payout,
         equity: offer.equity,
         won: playerLost,
@@ -474,7 +497,7 @@ export class InsuranceEngine {
         handId: offer.handId,
         playerId: offer.playerId,
         payout,
-        premium: offer.premium,
+        premium: premiumCharged,
         insuredAmount: offer.insuredAmount,
         coveragePercent: offer.coveragePercent,
         won: playerLost,

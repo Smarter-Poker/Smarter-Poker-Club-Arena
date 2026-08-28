@@ -44,25 +44,36 @@ imported the file. Anyone following its own usage docstring with one of those
 names would have written a subscription that could never fire. Deleted;
 `BusEventType` already gives compile-time safety at every real call site.
 
-## Deferred item closed: the sound-category hydrate
+## Sound is one switch (Dan, binding)
 
-`SoundService.restoreStoredConfig` reads `sp_sound_settings`, and its comment
-named `SoundSettings.tsx` as the writer. That file was deleted THE DAY BEFORE
-this function was written (#1316, "delete the unreachable settings UI"), so
-the read was born pointing at a key nothing writes.
+Dan, verbatim: **"a simple switch, sounds on / off is all thats needed."**
 
-KEPT, deliberately, and now documented as what it is: the category GATE is
-live and correct (all 50 categorised `shouldPlay` sites consult it), the
-shape is the contract any future UI must write, and a hydrate of an unwritten
-key costs one boot-time read and cannot misbehave. What is missing is a UI —
-today the app offers a master on/off and a master volume in three places, and
-nothing for the five categories or the effects volume. Which of those are
-worth exposing, and where, is a product decision, not something to invent in
-a service.
+That settles the item this sweep had left open, and the answer is DELETE, not
+document. `SoundService.restoreStoredConfig` hydrated five per-category gates
+and an effects volume from `sp_sound_settings` — a key whose only writer,
+`SoundSettings.tsx`, was deleted in #1316 ("delete the unreachable settings
+UI") THE DAY BEFORE that read was added. It could only ever return null.
+
+Removed: the hydrate and its constructor call, the `categoryEnabled` map, the
+category gate inside `shouldPlay`, the stray `categoryEnabled['win']` check on
+the pot sweep, and the two setters (`setCategoryEnabled`, `setCategoryStates`)
+that had zero callers. Five gates that can only ever be `true` are five ways
+for a later change to silence something by accident, for a feature nobody
+asked for. It also removes a boot-time localStorage read and the last caller
+of `setEffectsVolume`, so the effects gain simply IS its default of 1.0 — the
+exact value the dead hydrate always left it at, so nothing a player hears
+changes.
+
+`SoundCategory` itself stays: 50 call sites pass it and it still names what a
+cue is. What remains is the whole feature — one master switch owned by
+`soundGate` (`club_arena_sounds` + `ca_sound_enabled`, either one off silences
+everything), consulted by `shouldPlay` on every call, plus the master volume
+slider. Earlier today that switch was also made to actually work from
+/settings (#1622); before that it saved and lied.
 
 ## Pinned by
 
 `tests/unit/theAppDoesNotLieToPlayers.test.ts` (7) — the FAQ claim against the
 MFA implementation that backs it, the absent member count, the settlement
 feedback branch (and that the real success path survives), the deleted module,
-and the sound contract.
+and — replacing the assertions that guarded the old "kept, pending a UI decision" stance — that the dead read, the gates and the zero-caller setters are gone while the one master switch still gates every cue on both keys.

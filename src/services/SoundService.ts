@@ -254,14 +254,29 @@ class SoundService {
   // rather than competing with it) and dedupes itself with this stamp instead.
   private lastPotCollectMs = 0;
 
-  // Category-level gates (driven by SoundSettings sub-toggles)
-  private categoryEnabled: Record<SoundCategory, boolean> = {
-    action: true,
-    chat: true,
-    turn_alert: true,
-    win: true,
-    event: true,
-  };
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * SOUND IS ONE SWITCH (Dan, 2026-08-28, binding)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Dan, verbatim: "a simple switch, sounds on / off is all thats needed."
+   *
+   * So the per-category gates are GONE, along with the storage hydrate that
+   * fed them. They were never reachable anyway: the panel that wrote
+   * `sp_sound_settings` was deleted in #1316 as unreachable UI, and the read
+   * for it was added the day after — pointing at a key with no writer, so
+   * every category sat at `true` forever, `setCategoryEnabled` and
+   * `setCategoryStates` had zero callers, and `setEffectsVolume` was called
+   * from nowhere but that dead hydrate. Keeping five gates that can only ever
+   * be `true` means five ways for a future change to silence something by
+   * accident, for a feature nobody asked for.
+   *
+   * WHAT REMAINS IS THE WHOLE FEATURE: one master switch, owned by
+   * `soundGate` (`club_arena_sounds` + `ca_sound_enabled`, either one off
+   * silences everything) and consulted by `shouldPlay` on every call, plus a
+   * master volume. `SoundCategory` itself stays: 50 call sites pass it, and
+   * it still documents WHAT a cue is even though nothing gates on it now.
+   */
 
   constructor() {
     try {
@@ -294,43 +309,29 @@ class SoundService {
   }
 
   /**
-   * SOUND AUDIT 2026-08-27: category sub-toggles and volume sliders were
-   * in-memory only — the ONLY writer was the Settings → Sound panel's mount
-   * effect, so a player who disabled "Chat Message Sounds" got it back on
-   * every reload (and the panel's checkboxes disagreed with the running
-   * engine for the whole session). Restore the saved config at boot.
+   * ═══════════════════════════════════════════════════════════════════════
+   * `restoreStoredConfig` DELETED 2026-08-28 — it read a key nobody wrote.
+   * ═══════════════════════════════════════════════════════════════════════
    *
-   * ───────────────────────────────────────────────────────────────────────
-   * 2026-08-28 — THE WRITER THIS READ WAS WRITTEN FOR NO LONGER EXISTS.
-   * ───────────────────────────────────────────────────────────────────────
+   * It hydrated five per-category gates and an effects volume from
+   * `sp_sound_settings`. Its own comment named `SoundSettings.tsx` as the
+   * writer of that key — a file DELETED THE DAY BEFORE this function was
+   * added, in #1316 ("delete the unreachable settings UI"), after the whole
+   * `src/components/settings/` folder was verified to be a closed loop
+   * nothing imported. So the read was born dead:
+   * `localStorage.getItem('sp_sound_settings')` could only ever return null.
    *
-   * The note above named `SoundSettings.tsx` as the owner of this key. That
-   * file was DELETED THE DAY BEFORE this function was written, in "delete the
-   * unreachable settings UI and its orphaned styles" (#1316) — the whole
-   * `src/components/settings/` folder was verified to be a closed loop that
-   * nothing imported. So this read was born pointing at a key with no writer:
-   * `localStorage.getItem('sp_sound_settings')` can only ever return null,
-   * `setCategoryEnabled` and `setCategoryStates` have zero callers, and
-   * `setEffectsVolume` is called from nowhere but here.
+   * Dan settled the question it was waiting on: "a simple switch, sounds on
+   * / off is all thats needed." There is no category UI coming, so there is
+   * nothing for this to restore. Removing it also removes a boot-time
+   * localStorage read and the last caller of `setEffectsVolume`, which means
+   * the effects gain now simply IS its default (1.0) — the same value the
+   * dead hydrate always left it at.
    *
-   * KEPT, NOT DELETED, and deliberately:
-   *
-   *  - the category GATE itself is live and correct — `shouldPlay` consults
-   *    `categoryEnabled` on all 50 categorised call sites, so the mechanism
-   *    works; only its input is missing;
-   *  - the shape below is the contract any future sound-category UI must
-   *    write, and deleting it would mean rediscovering it;
-   *  - a hydrate that reads a key nothing writes costs one localStorage read
-   *    at boot and cannot misbehave — the defaults stand.
-   *
-   * WHAT IS ACTUALLY MISSING is a UI. Today the app offers exactly two sound
-   * controls in three places (SettingsPage Audio, HamburgerMenu, the in-table
-   * SettingsPanel): a master on/off and a master volume. The five per-category
-   * switches and the effects volume are unreachable, so they sit at their
-   * constructor defaults. That is a product decision — which categories are
-   * worth exposing, and where — not something to invent here. Until it is
-   * made, this stays a no-op hydrate rather than a promise the UI does not
-   * keep.
+   * The master switch is unaffected and is the whole feature: `soundGate`
+   * owns it (`club_arena_sounds` + `ca_sound_enabled`; either one off
+   * silences everything) and `shouldPlay` consults it on every call. The
+   * master VOLUME is applied by the surfaces that own the slider.
    */
   /* ── `restoreStoredConfig` REMOVED 2026-08-29 ──────────────────────────
      It read `localStorage['sp_sound_settings']`, a key that appeared EXACTLY
@@ -537,8 +538,9 @@ class SoundService {
     // because the Settings switch writes storage and never calls setEnabled().
     // Consult the shared gate so either switch genuinely silences the engine.
     if (!this.enabled || !isSoundAllowed()) return false;
-    // Category gate — user can silence a whole category via SoundSettings
-    if (category && !this.categoryEnabled[category]) return false;
+    // No category gate (2026-08-28): sound is one switch. `category` is kept
+    // in the signature because it names what the cue IS at 50 call sites.
+    void category;
     const rank = SOUND_PRIORITY_RANK[priority] ?? 0;
     if (rank <= this.currentFramePriority) return false;
     this.currentFramePriority = rank;
@@ -1348,7 +1350,6 @@ class SoundService {
     // competitor — bypass the rank window entirely and dedupe with its own
     // short throttle instead, so it plays every time the pot ships.
     if (!this.enabled || !isSoundAllowed()) return;
-    if (!this.categoryEnabled['win']) return;
     const nowMs = Date.now();
     if (nowMs - this.lastPotCollectMs < 250) return;
     this.lastPotCollectMs = nowMs;

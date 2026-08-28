@@ -26,6 +26,17 @@ import { resolve } from 'path';
 const srcPath = (p: string) => resolve(__dirname, '../../src', p);
 const read = (p: string) => readFileSync(srcPath(p), 'utf8');
 
+/**
+ * Source with comments stripped. Every deletion here leaves a note saying
+ * WHAT was removed and why, so a negative assertion against raw text would
+ * match the explanation and fail on correct code.
+ */
+const readCode = (p: string) =>
+  read(p)
+    .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+
 describe('the Help FAQ describes the app that shipped', () => {
   const help = read('pages/HelpPage.tsx');
   const settings = read('pages/SettingsPage.tsx');
@@ -78,23 +89,48 @@ describe('the phantom bus-constants module is gone', () => {
   });
 });
 
-describe('the sound-category hydrate keeps its contract documented', () => {
+/**
+ * SOUND IS ONE SWITCH (Dan, 2026-08-28, binding): "a simple switch, sounds on
+ * / off is all thats needed."
+ *
+ * An earlier revision of this file pinned the opposite — that the dead
+ * `sp_sound_settings` hydrate was KEPT as a documented contract for a future
+ * category UI. Dan settled that question: there is no category UI, so the
+ * hydrate, the five gates and their two zero-caller setters are deleted, and
+ * these assertions replace the ones that guarded them.
+ */
+describe('sound is one switch', () => {
   const src = read('services/SoundService.ts');
+  const code = readCode('services/SoundService.ts');
 
-  it('still parses every category the gate consults', () => {
-    for (const key of [
-      'enableActionSounds',
-      'enableChatSounds',
-      'enableTurnAlert',
-      'enableWinSound',
-      'enableEventSounds',
-    ]) {
-      expect(src).toContain(key);
-    }
+  it('no longer reads a storage key nothing writes', () => {
+    // The panel that wrote it was deleted in #1316, the day before the read
+    // was added — it could only ever return null.
+    expect(code).not.toMatch(/getItem\('sp_sound_settings'\)/);
+    expect(code).not.toMatch(/private restoreStoredConfig\(\)/);
+    expect(code).not.toContain('this.restoreStoredConfig()');
   });
 
-  it('records that the writer is missing rather than implying one exists', () => {
-    // The old note named a file deleted the day before the read was written.
-    expect(src).toContain('THE WRITER THIS READ WAS WRITTEN FOR NO LONGER EXISTS');
+  it('has no per-category gate left to silence anything by accident', () => {
+    expect(code).not.toMatch(/private categoryEnabled/);
+    expect(code).not.toMatch(/this\.categoryEnabled\[/);
+    expect(code).not.toMatch(/^\s*setCategoryEnabled\(/m);
+    expect(code).not.toMatch(/^\s*setCategoryStates\(/m);
+  });
+
+  it('still gates every cue on the ONE master switch, both keys', () => {
+    // soundGate owns club_arena_sounds + ca_sound_enabled; either off is off.
+    expect(src).toMatch(/if \(!this\.enabled \|\| !isSoundAllowed\(\)\) return false;/);
+    // setEnabled persists to both keys so the two switches cannot drift.
+    expect(src).toMatch(
+      /setEnabled\(enabled: boolean\) \{[\s\S]*?persistSoundPreference\(enabled\)/
+    );
+    expect(src).toMatch(/isEnabled\(\): boolean \{\s*return this\.enabled && isSoundAllowed\(\);/);
+  });
+
+  it('keeps SoundCategory as description, since 50 call sites name their cue', () => {
+    expect(src).toContain(
+      "export type SoundCategory = 'action' | 'chat' | 'turn_alert' | 'win' | 'event';"
+    );
   });
 });

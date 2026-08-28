@@ -96,6 +96,21 @@ GITHUB_BASE_REF=main node scripts/ci/check-migrations-applied.mjs   exit 0
 node scripts/ci/check-phantom-tables.mjs             0 phantoms
 ```
 
-The schema manifest needed no change: it records table and function names, and
-both `ad_placement` and `fn_resolve_ads` were already in it. This migration adds
-a column to one and replaces the body of the other.
+There are two manifests, and only one of them needed anything.
+`supabase-schema-manifest.json` records table and function NAMES, and both
+`ad_placement` and `fn_resolve_ads` were already in it. The column gate reads a
+separate file, `supabase-columns-manifest.json`, and that is where
+`ad_placement.target_url` was missing. CI said so precisely, which is the gate
+working:
+
+```
+A MIGRATION IN THIS BRANCH DECLARES SOMETHING THE LIVE SCHEMA DOES NOT HAVE:
+  supabase/migrations/20260828021842_house_ads_hub_promotions.sql
+    column ad_placement.target_url
+```
+
+The one key was refreshed from `fn_columns_manifest()` — the same RPC the
+generator calls — rather than regenerating all 867 tables. A wholesale
+regeneration would have swept every other agent's un-manifested drift into this
+pull request, which is not this change's to carry and not this reviewer's to
+read.

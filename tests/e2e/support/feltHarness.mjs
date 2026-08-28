@@ -59,9 +59,20 @@ export const buildHtml = (css) => `<!doctype html><html><head><style>${css}</sty
              --vh-card-h, so a blind spot here is a blind spot over most of the
              felt. (No backticks in this comment: it lives inside a JS template
              literal, and a backtick here ends the string.) -->
-        <div class="seat seat--hero seat--in-hand">
-          <div class="seat__avatar-wrap"><div class="seat__avatar"></div></div>
-          <div class="seat__cards seat__cards--hero"></div>
+        <!-- Positioned the way the ring positions it: hero sits at y:100 in
+             every ring (tableSeatGeometry.ts), i.e. AVATAR CENTRE ON THE
+             SCALER'S BOTTOM EDGE, with the wrapper's own
+             translate(-50%,-50%) and --hero-lift retired to 0
+             (SeatSlot.css, "Zero, not some smaller lift"). Half the hero
+             block therefore hangs BELOW the felt, into the strip
+             --sp-hero-clear reserves before the action bar - which is the
+             dependency that file calls out by name. -->
+        <div class="seat-wrapper seat-wrapper--hero" style="position:absolute;left:50%;top:100%;transform:translate(-50%,-50%) translateY(calc(-1 * var(--hero-lift, 0px)))">
+          <div class="seat seat--hero seat--in-hand">
+            <div class="seat__avatar-wrap"><div class="seat__avatar"></div></div>
+            <div class="seat__info"><span class="seat__name">HERO</span><span class="seat__stack">1,000</span></div>
+            <div class="seat__cards seat__cards--hero"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -168,6 +179,18 @@ export const PROBE = () => {
        !important rungs survived a conversion that claimed to delete them. */
     heroAvatar: +parseFloat(getComputedStyle(heroAvatarEl).width).toFixed(1),
     heroSeatW: +parseFloat(getComputedStyle(heroSeat).width).toFixed(1),
+    /* Is the hero's name-and-stack plate covered by the fixed action bar?
+       This is the failure `--sp-hero-clear` exists to prevent and the one
+       SeatSlot.css names as the lift's single dependency. Reading it as two
+       rects rather than as arithmetic is the point: the plate's height, the
+       avatar's, the reserve and the bar's own height are now four different
+       proportional expressions, and only layout knows where they land. */
+    heroPlateBottom: +heroSeat.getBoundingClientRect().bottom.toFixed(1),
+    heroOverhang: +(
+      heroSeat.getBoundingClientRect().bottom - scaler.getBoundingClientRect().bottom
+    ).toFixed(1),
+    barTop: +btn.closest('.action-panel').getBoundingClientRect().top.toFixed(1),
+    heroClear: resolve_('var(--sp-hero-clear)'),
     // PLO4 is the widest private row: w + 3 x step.
     plo4Row: resolve_('calc(var(--sp-card2-w) + 3 * var(--sp-card2-w) * 0.4167)'),
   };

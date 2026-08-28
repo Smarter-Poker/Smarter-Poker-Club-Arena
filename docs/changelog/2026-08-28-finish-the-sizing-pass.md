@@ -214,6 +214,48 @@ felt and is still on a rung, so the gap steps while the cards it separates are
 fluid. Left alone deliberately — a 2-8px gap is not worth the churn, and saying
 so is more useful than a large refactor justified by a claim that does not hold.
 
+## 8. The hero-clearance question, answered
+
+I had flagged this as "needs a logged-in look" twice. It did not — the seat is
+positioned by a rule I could read: hero sits at `y:100` in every ring
+(`tableSeatGeometry.ts`), the wrapper is `translate(-50%,-50%)`, and
+`--hero-lift` is retired to `0px` ("Zero, not some smaller lift"). That is
+reproducible in a fixture, and `SeatSlot.css` states the dependency itself:
+
+> **THE ONE THING IT DEPENDS ON:** half the hero block now hangs below the
+> scaler, so `--sp-hero-clear` … has to be at least that half … Below that the
+> plate carrying the stack goes back under the bar.
+
+**Measured on all thirteen devices: the plate is clear everywhere.** The worry
+was unfounded.
+
+But the margin is not what that note assumes. On five devices the block hangs
+**further below the felt than the reserve states**:
+
+| Device                  | Overhang   | `--sp-hero-clear` |
+| ----------------------- | ---------- | ----------------- |
+| iPad mini portrait      | 75.2px     | 68px              |
+| iPad Pro 11 portrait    | 76.4px     | 60px              |
+| iPad Pro 12.9 portrait  | **86.8px** | 60px              |
+| iPad Pro 12.9 landscape | 66.0px     | 60px              |
+| large desktop           | 69.2px     | 60px              |
+
+It clears on **spare vertical space, not on the reserve** — and every term in
+that sentence is now a different kind of expression (the avatar a fraction of the
+felt, the bar a clamp on the viewport, the reserve a constant), so they can drift
+apart without anyone typing a new number.
+
+Enlarging the reserve was the obvious move and is the wrong one: it feeds
+`--sp-table-bottom`, so it would shrink the felt on every device to buy margin
+against a failure that is not occurring. What the situation actually needs is
+**notice**, so the spec now measures the plate against the bar as two rectangles
+and fails if one covers the other. Mutation-tested with
+`--sp-hero-clear: 0px !important` — 1 failed, 7 passed.
+
+Also corrected along the way: that note reads "against the 34px it reserves
+today". The declared values are 60px and 68px; 34px was the stale **fallback**
+fixed in §5. The note was reasoning from a number the cascade never used.
+
 ## Verification
 
 - `npx tsc --noEmit` — clean.

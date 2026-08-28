@@ -73,13 +73,35 @@ const SIZES = [2, 3, 4, 5, 6, 7, 8, 9] as const;
  * exact for a pair side by side, which is the direction the top cap is tight
  * in.
  */
-const SEAT_BOX_W_PX = 96;
+/**
+ * ─── 2026-08-28: THIS IS A FUNCTION NOW, BECAUSE THE BOX IS NOT FIXED ────────
+ *
+ * It was `const SEAT_BOX_W_PX = 96`, and the paragraph above said the box "is a
+ * FIXED pixel width at every breakpoint". That stopped being true when the seat
+ * stopped being drawn from a px ladder: `.seat` is
+ * `max(<text floor>, var(--seat-avatar-full) * 1.143)` and --seat-avatar-full is
+ * 15.8% of the felt's measured width, so a bigger table now draws a bigger box.
+ *
+ * THE COLLISION MATHS SURVIVES THAT, and it is worth writing down why rather
+ * than trusting it. Seat separations are percentages of the felt, so they scale
+ * linearly with it. The box's proportional term is 0.158 x 1.143 = 18.06% of the
+ * felt, which is also linear. Two quantities that scale linearly with the same
+ * number keep their ratio, so a table that clears at one size clears at every
+ * size. The only regime where the ratio moves is where the FLOOR binds — small
+ * felts — and there the floor is a constant against a shrinking separation,
+ * which is the tight case this file already measures at the phone size.
+ *
+ * 96 is kept as the floor here even though a real phone renders 72-88px (the
+ * 380 / 480 / 640 rungs), because over-stating the box only ever makes these
+ * assertions stricter.
+ */
+const seatBoxWPx = (feltW: number) => Math.max(96, feltW * 0.158 * 1.143);
 
 const SEAT_CSS = readFileSync(resolve(__dirname, '../src/components/table/SeatSlot.css'), 'utf8');
 
 describe('the seat box this file measures against is the one the stylesheet draws', () => {
-  it('SeatSlot.css still gives a villain seat a fixed 96px box', () => {
-    // If this fails, `.seat`'s width changed and SEAT_BOX_W_PX above is stale -
+  it('SeatSlot.css still draws the villain box seatBoxWPx() models', () => {
+    // If this fails, `.seat`'s width changed and seatBoxWPx above is stale -
     // which would make every separation assertion below quietly wrong rather
     // than red. Fix the constant, then re-read the failures.
     //
@@ -97,7 +119,21 @@ describe('the seat box this file measures against is the one the stylesheet draw
     const cssNoComments = SEAT_CSS.replace(/\/\*[\s\S]*?\*\//g, '');
     const seatRule = cssNoComments.match(/\n\.seat\s*\{([^{}]*)\}/);
     expect(seatRule, 'the base `.seat` rule went missing entirely').toBeTruthy();
-    expect(seatRule![1]).toMatch(/\n\s*width:\s*96px;/);
+
+    /* 2026-08-28: was `/\n\s*width:\s*96px;/`. The box is
+       `max(96px, var(--seat-avatar-full) * 1.143)` now — 96 is still the floor,
+       and the floor is what the separation assertions below are conservative
+       against, so what has to be pinned is BOTH halves: the literal floor this
+       file's arithmetic assumes, and the 1.143 coefficient seatBoxWPx() models.
+       Pinning only the floor would let the coefficient drift and leave every
+       assertion below quietly wrong on a large table rather than red. */
+    const width = seatRule![1].match(/\n\s*width:\s*([^;]+);/);
+    expect(width, 'the base `.seat` rule no longer declares a width').toBeTruthy();
+    expect(
+      width![1].replace(/\s+/g, ' '),
+      'seatBoxWPx() above models max(96px, --seat-avatar-full * 1.143); if this ' +
+        'changed, update that function and re-read the failures'
+    ).toBe('max(96px, calc(var(--seat-avatar-full) * 1.143))');
   });
 });
 
@@ -127,7 +163,7 @@ describe('no two seats collide, at any table size', () => {
           pxGap(ring[i], ring[j]),
           `${n}-max: seats ${JSON.stringify(ring[i])} and ${JSON.stringify(ring[j])} are ` +
             `${pxGap(ring[i], ring[j]).toFixed(0)}px apart on a ${phone.w}px table`
-        ).toBeGreaterThanOrEqual(SEAT_BOX_W_PX);
+        ).toBeGreaterThanOrEqual(seatBoxWPx(phone.w));
       }
     }
   });
@@ -144,7 +180,7 @@ describe('no two seats collide, at any table size', () => {
         expect(
           ((xs[i] - xs[i - 1]) * phone.w) / 100,
           `${n}-max top cap: x ${xs[i - 1]} and ${xs[i]}`
-        ).toBeGreaterThanOrEqual(SEAT_BOX_W_PX);
+        ).toBeGreaterThanOrEqual(seatBoxWPx(phone.w));
       }
     }
   });
@@ -238,8 +274,8 @@ describe('the seat BOXES stand clear of the cards, not just the markers', () => 
       const halfH = (cardW * (92 / 64) * (table.w / table.h)) / 2;
       const centreX = FELT_WINDOW.left + FELT_WINDOW.width / 2;
       const centreY = FELT_WINDOW.top + (BOARD_TOP_FELT_PCT / 100) * FELT_WINDOW.height;
-      const seatHalfX = (SEAT_BOX_W_PX / 2 / table.w) * 100;
-      const seatHalfY = (SEAT_BOX_W_PX / 2 / table.h) * 100;
+      const seatHalfX = (seatBoxWPx(table.w) / 2 / table.w) * 100;
+      const seatHalfY = (seatBoxWPx(table.w) / 2 / table.h) * 100;
 
       for (const n of SIZES) {
         for (const seat of SEAT_LAYOUTS[n]) {

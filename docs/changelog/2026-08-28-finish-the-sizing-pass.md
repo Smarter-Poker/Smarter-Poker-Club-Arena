@@ -167,6 +167,53 @@ it. Now 60px.
 
 ---
 
+## 7. The last three felt-internal ladders
+
+- **`--sp-wrap-overlap` had no base declaration at all.** Declared in exactly two
+  media blocks (5px at ≤480, 4px at ≤380) and read in three places, every one as
+  `var(--sp-wrap-overlap, 6px)`. Above 480px the token was fiction: all three
+  readers silently used the literal in their own fallback slot, and it could not
+  be changed in one place because there was no place. It is the avatar/name-box
+  overlap, so it now derives from the seat's **own** avatar slot — which means
+  the hero overlaps its own larger art correctly, something a viewport rung could
+  never express.
+- **Position chip** — a 22/18/16/14px ladder whose four rungs encoded a
+  remarkably steady ratio to the avatar (0.262 / 0.273 / 0.276 / 0.269), so one
+  coefficient reproduces all of them. The dealer **puck** on the felt was made
+  proportional on 2026-08-25; this chip was not, so the two markers that both
+  mean "who is on the button" disagreed about how big that idea is. Its radius is
+  a pill now rather than a fixed 10px that squared off as it shrank.
+- **Empty-seat art** — 64/52/48/44px, now 0.76 of the avatar with a **44px touch
+  floor**. It is the "+ SIT" button and the only thing rendered at six of nine
+  positions on an idle table, so the floor is a tap target rather than a
+  legibility one.
+
+## A finding I checked and rejected
+
+The audit reported `CommunityCards.css` as "the largest surviving ladder — the
+board is sized entirely by breakpoint while everything around it is a fraction of
+the felt", and recommended it as the top priority.
+
+**On the felt, that is not true.** `TablePage.css:1784` overrides the board with
+`.table-surface .community-cards__card` at `(0,2,0)`:
+
+```css
+width: auto;
+height: auto;
+flex: 0 1 calc((100% - 4 * var(--cc-card-gap, 6px)) / 5);
+aspect-ratio: 64 / 92;
+```
+
+So the on-felt board is already fluid — a percentage of `.community-area`, which
+is a percentage of the felt. The `--cc-card-w` rungs apply only to boards drawn
+**off** the felt (replays, the previous-hand sheet, share pages), where there is
+no `--table-w` and a viewport ladder is the correct reference.
+
+What is genuinely inconsistent is smaller: `--cc-card-gap` **is** read on the
+felt and is still on a rung, so the gap steps while the cards it separates are
+fluid. Left alone deliberately — a 2-8px gap is not worth the churn, and saying
+so is more useful than a large refactor justified by a claim that does not hold.
+
 ## Verification
 
 - `npx tsc --noEmit` — clean.

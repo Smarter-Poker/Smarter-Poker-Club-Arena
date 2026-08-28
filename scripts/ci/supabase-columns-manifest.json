@@ -1798,7 +1798,10 @@
       "bbj_rake_enabled",
       "spins_enabled",
       "spins_preseed_amount",
-      "spins_wallet_funding"
+      "spins_wallet_funding",
+      "ticker_enabled",
+      "guarantee_treasury_floor",
+      "guarantee_enforcement_enabled"
     ],
     "collusion_tracking": [
       "id",
@@ -4827,6 +4830,33 @@
       "street",
       "created_at"
     ],
+    "hand_audit_decisions": [
+      "id",
+      "user_id",
+      "hand_external_id",
+      "decision_key",
+      "question_id",
+      "game_id",
+      "street",
+      "hero_position",
+      "villain_position",
+      "spot_type",
+      "hero_hand",
+      "board_cards",
+      "player_action",
+      "solver_action",
+      "selected_frequency",
+      "optimal_frequency",
+      "classification",
+      "ev_loss",
+      "ev_loss_measured",
+      "solver_verified",
+      "solver_source",
+      "match_tier",
+      "audited_at",
+      "created_at",
+      "updated_at"
+    ],
     "hand_histories": [
       "id",
       "table_id",
@@ -6192,6 +6222,24 @@
       "article_source",
       "created_at"
     ],
+    "newsletter_campaigns": [
+      "id",
+      "subject",
+      "status",
+      "audience",
+      "lookback_days",
+      "article_limit",
+      "article_ids",
+      "recipient_count",
+      "sent_count",
+      "failed_count",
+      "error_summary",
+      "created_by",
+      "started_at",
+      "completed_at",
+      "created_at",
+      "updated_at"
+    ],
     "newsletter_subscribers": [
       "id",
       "email",
@@ -7075,7 +7123,12 @@
       "year",
       "source",
       "updated_at",
-      "created_at"
+      "created_at",
+      "external_player_id",
+      "source_url",
+      "source_updated_at",
+      "country",
+      "team"
     ],
     "pred_best_bets": [
       "id",
@@ -9472,6 +9525,29 @@
       "application",
       "created_at"
     ],
+    "tournament_place_overpay_charges": [
+      "id",
+      "tournament_id",
+      "club_id",
+      "user_id",
+      "old_position",
+      "new_position",
+      "prize_paid",
+      "entitled",
+      "overpaid",
+      "charged_at",
+      "created_at"
+    ],
+    "tournament_place_renumbers": [
+      "id",
+      "tournament_id",
+      "user_id",
+      "old_position",
+      "new_position",
+      "prize_paid",
+      "reason",
+      "applied_at"
+    ],
     "tournament_players": [
       "id",
       "tournament_id",
@@ -9503,7 +9579,9 @@
       "destination",
       "source",
       "created_at",
-      "settled_at"
+      "settled_at",
+      "attributed_at",
+      "attribution_error"
     ],
     "tournament_registration_approvals": [
       "tournament_id",
@@ -9773,7 +9851,14 @@
       "street",
       "classification",
       "ev_loss",
-      "spot_type"
+      "spot_type",
+      "submission_id",
+      "solver_verified",
+      "solver_source",
+      "selected_frequency",
+      "optimal_frequency",
+      "ev_loss_measured",
+      "evidence_metadata"
     ],
     "training_challenge_definitions": [
       "id",
@@ -10154,6 +10239,24 @@
       "max_amount",
       "note"
     ],
+    "trivia_economy_audit_runs": [
+      "id",
+      "status",
+      "exception_count",
+      "findings",
+      "created_at"
+    ],
+    "trivia_item_transactions": [
+      "id",
+      "user_id",
+      "item_type",
+      "amount",
+      "balance_after",
+      "transaction_type",
+      "reference_id",
+      "metadata",
+      "created_at"
+    ],
     "trivia_prize_wheel_spins": [
       "id",
       "user_id",
@@ -10180,7 +10283,9 @@
       "opponent_id",
       "challenger_score",
       "opponent_score",
-      "category"
+      "category",
+      "settlement_kind",
+      "stats_recorded_at"
     ],
     "trivia_pvp_queue": [
       "id",
@@ -10247,6 +10352,19 @@
       "resolved_at",
       "resolution"
     ],
+    "trivia_question_result_events": [
+      "id",
+      "user_id",
+      "question_id",
+      "mode",
+      "source_type",
+      "source_id",
+      "display_index",
+      "original_index",
+      "was_correct",
+      "was_skipped",
+      "created_at"
+    ],
     "trivia_questions": [
       "id",
       "category",
@@ -10275,7 +10393,8 @@
       "clarity_score",
       "clarity_flesch",
       "skipped_count",
-      "retagged_difficulty"
+      "retagged_difficulty",
+      "question_fingerprint"
     ],
     "trivia_questions_public": [
       "id",
@@ -10311,7 +10430,9 @@
       "time_spent",
       "diamonds_earned",
       "play_date",
-      "created_at"
+      "created_at",
+      "session_id",
+      "server_verified"
     ],
     "trivia_sessions": [
       "id",
@@ -10325,7 +10446,15 @@
       "correct_count",
       "diamonds_awarded",
       "status",
-      "answers"
+      "answers",
+      "parent_session_id",
+      "entry_cost",
+      "entry_state",
+      "expires_at",
+      "survival_run_id",
+      "survival_level",
+      "settlement_result",
+      "stats_recorded_at"
     ],
     "trivia_streaks": [
       "id",
@@ -11070,7 +11199,8 @@
       "multi_action_queue",
       "multi_desktop_alerts",
       "multi_shared_socket",
-      "blue_buttons_enabled"
+      "blue_buttons_enabled",
+      "show_ticker"
     ],
     "user_theme_settings": [
       "id",
@@ -11198,6 +11328,28 @@
     "v_spin_tier_availability": [
       "club_id",
       "can_draw_100x"
+    ],
+    "v_spin_unpaid_settlements": [
+      "tournament_id",
+      "club_id",
+      "name",
+      "tournament_status",
+      "buy_in_amount",
+      "spin_multiplier",
+      "started_at",
+      "ended_at",
+      "drawn_at",
+      "prize_drawn",
+      "prize_credited",
+      "credit_rows",
+      "chips_short",
+      "seat_count",
+      "unranked_seats",
+      "still_playing_seats",
+      "seats_at_first",
+      "sum_seat_prize",
+      "verdict",
+      "seat_shape"
     ],
     "v_system_health_cron": [
       "jobid",
@@ -11616,7 +11768,9 @@
       "progress_seconds",
       "duration_seconds",
       "watch_duration_seconds",
-      "thumbnail_url"
+      "thumbnail_url",
+      "watch_started_at",
+      "last_heartbeat_at"
     ],
     "video_watch_later": [
       "id",

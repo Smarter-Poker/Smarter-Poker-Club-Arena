@@ -164,6 +164,53 @@ is invisible to `> *:nth-child()`.
 It is the same `:nth-child` trap this spec's own header was written about (the
 `.seat__card-pick` wrapper), arriving in the test instead of the stylesheet.
 
+## Two things that harden this rather than extend it
+
+**`--table-w` is a registered `<length>` now** (`@property`, `TableVisualHotfix.css`).
+An unregistered custom property computes to its token stream, not a value, and
+that cost real time twice in one day: `getPropertyValue` returned the literal
+string `"clamp(44px, calc(...), 100px)"`, so `parseFloat` gave **NaN** in both
+`measure-felt.mjs` (which printed a confident 0px card for every device) and in
+38 beats of `hero-card-row.spec.ts`. Registering the source is that fix one level
+up, and it makes the felt width interpolable — which matters now that every card,
+avatar and chip is a fraction of it.
+
+The trap is `initial-value`, and it is load-bearing: a registered property
+_always_ has a value, so the fallback in `var(--table-w, 360px)` becomes
+unreachable. `initial-value: 360px` carries that number instead, so a `.seat`
+rendered outside a scaler lands exactly where it did before. Verified
+behaviour-neutral: every measurement below is identical to the run before
+registration, and the calibration still reproduces 606.2 x 1002 exactly.
+
+**The measurements are a CI guard now, not a script I ran once.**
+`tests/e2e/table-proportions.spec.ts` measures all thirteen devices on every pull
+request and asserts the property that was actually broken — **the fraction is
+flat** — rather than any particular pixel count, which would make it a chore
+rather than a guard. It also pins the ordering directly: two devices whose felts
+differ by more than 40px may not draw the same card, which is the original bug
+stated as an assertion.
+
+Both it and `measure-felt.mjs` drive the same
+`tests/e2e/support/feltHarness.mjs`. One harness, because this whole pass was
+about deleting duplicated numbers and a second copy of the thing that _measures_
+them would be a poor joke.
+
+**Mutation-tested, because a guard that cannot fail is a claim.** Appending
+`@media (min-width: 768px) { .seat { --sp-card2-w: 60px } }` turns 3 of the 6
+beats red, and the message names the devices and the percentages:
+
+```
+iPad portrait (768x1024): card is 60px on a 491.1px felt = 12.2%, expected 13.9%
+iPad Pro 12.9 portrait (1024x1366): card is 60px on a 669.9px felt = 9.0%, expected 13.9%
+```
+
+Those are the exact numbers this document opens with. The guard reproduces the
+original bug on demand.
+
+It is named explicitly in `ci.yml`'s `css-beats-e2e` command — see the note there
+about `hero-card-row.spec.ts`, which sat in **no job at all** for 39 commits. A
+spec that is not listed cannot fail anything.
+
 ## Verification
 
 - `npx tsc --noEmit` — clean.

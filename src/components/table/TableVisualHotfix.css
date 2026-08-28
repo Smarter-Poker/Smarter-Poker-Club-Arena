@@ -132,6 +132,46 @@
    custom property's var()s are substituted where it is DECLARED. Redefining the
    two inputs here without redefining the overlap leaves the stack spaced for a
    24px chip while drawing a 12px one. */
+/* ═══════════════════════════════════════════════════════════════════════════
+   --table-w IS A REGISTERED <length>, NOT AN UNTYPED TOKEN (2026-08-28)
+   ═══════════════════════════════════════════════════════════════════════════
+
+   An unregistered custom property computes to its TOKEN STREAM with var()s
+   substituted, not to a value. Nothing on screen cares, but two things do:
+
+   1. ANYTHING THAT READS IT BACK. `getComputedStyle(el).getPropertyValue(
+      '--sp-card2-w')` on an unregistered property returns the literal string
+      "clamp(44px, calc(...), 100px)", and parseFloat of that is NaN. That is
+      not hypothetical: on the day the card tokens became proportional it broke
+      the measurement in `scripts/dev/measure-felt.mjs` (which printed a
+      confident 0px card for every device) AND 38 beats in
+      `tests/e2e/hero-card-row.spec.ts`, whose step probe had read the token as
+      text since it was written. Both were fixed by resolving through a real
+      property; registering the source is the fix one level up.
+
+   2. INTERPOLATION. A registered <length> animates; a token stream jumps. The
+      felt's width changes on rotation and on a window resize, and every card,
+      avatar and chip on the felt is now a fraction of it, so this is the one
+      property whose smoothness the whole table rides on.
+
+   INITIAL-VALUE IS LOAD-BEARING, AND IT IS THE TRAP HERE. A registered
+   property ALWAYS has a value, so the fallback in `var(--table-w, 360px)`
+   becomes unreachable — it only applies to a guaranteed-invalid property, and
+   a registered one never is. Every one of those fallbacks in SeatSlot.css
+   would silently stop meaning anything. 360px is therefore declared here
+   instead: it is the same number those fallbacks carry, so a `.seat` rendered
+   outside a scaler (a preview, a replay, a test harness) lands exactly where it
+   landed before. If you change it, change them together — or better, delete
+   them, because they are now decorative.
+
+   `inherits: true` because `.seat` reads it from `.table-scaler`, which is its
+   ancestor and not itself. */
+@property --table-w {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 360px;
+}
+
 .table-page .table-scaler {
   /* THE TABLE'S OWN WIDTH, and the only place a marker size may come from.
      `.table-scaler` is `min(100% - 8px, 360px)` inside a container padded 10px

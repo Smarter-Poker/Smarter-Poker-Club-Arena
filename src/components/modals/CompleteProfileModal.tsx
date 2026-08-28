@@ -11,7 +11,6 @@ import { supabase } from '../../lib/supabase';
 import { useUserStore } from '../../stores/useUserStore';
 import { sanitizeInput } from '../../utils/sanitizeInput';
 import { reportError } from '../../utils/errorReporter';
-import { masterBus } from '../../core/MasterBus';
 import styles from './CompleteProfileModal.module.css';
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
 import { AvatarGallery } from '../customization/AvatarGallery';
@@ -29,8 +28,72 @@ const ADJECTIVES = [
   'Straight',
   'Lucky',
   'Iron',
+  'Golden',
+  'Silver',
+  'Bronze',
+  'Diamond',
+  'Platinum',
+  'Tilt',
+  'Bluff',
+  'Raise',
+  'Call',
+  'Fold',
+  'Check',
+  'Split',
+  'Pot',
+  'Blind',
+  'Straddle',
+  'Nit',
+  'Aggro',
+  'Loose',
+  'Tight',
+  'Crazy',
+  'Wild',
+  'Sneaky',
+  'Silent',
+  'Loud',
+  'Fast',
+  'Slow',
+  'Hot',
+  'Cold',
+  'Big',
+  'Small',
 ];
-const NOUNS = ['Shark', 'Pro', 'Master', 'Crusher', 'Grinder', 'Hero', 'Ace', 'King', 'Queen'];
+
+const NOUNS = [
+  'Shark',
+  'Pro',
+  'Master',
+  'Crusher',
+  'Grinder',
+  'Hero',
+  'Ace',
+  'King',
+  'Queen',
+  'Jack',
+  'Joker',
+  'Spade',
+  'Heart',
+  'Club',
+  'Diamond',
+  'Chip',
+  'Stack',
+  'Blind',
+  'Dealer',
+  'Player',
+  'Roller',
+  'Whale',
+  'Fish',
+  'Donk',
+  'Legend',
+  'Boss',
+  'Champ',
+  'Winner',
+  'Runner',
+  'Chaser',
+  'Bluffer',
+  'Caller',
+];
 
 interface CompleteProfileModalProps {
   isOpen: boolean;
@@ -43,9 +106,11 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
   const [realName, setRealName] = useState('');
   const [mounted, setMounted] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [aliasAvailable, setAliasAvailable] = useState<boolean | null>(null);
+  const [aliasLocalError, setAliasLocalError] = useState<string | null>(null);
   const [isCheckingAlias, setIsCheckingAlias] = useState(false);
 
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
@@ -62,13 +127,12 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
           setGeneratedFallbackUrl(generateAvatarSvg(user.username || 'P', user.username || 'P'));
         }
       }
-      // Track analytics drop-off
-
       const _mountTimer = setTimeout(() => setMounted(true), 50);
       return () => clearTimeout(_mountTimer);
     } else {
       setMounted(false);
       setGeneratedFallbackUrl(null);
+      setIsSuccess(false);
     }
   }, [isOpen, user]);
 
@@ -77,6 +141,7 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
     if (!isOpen || !alias.trim()) {
       setAliasAvailable(null);
       setIsCheckingAlias(false);
+      setAliasLocalError(null);
       return;
     }
 
@@ -84,8 +149,25 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
     if (!safeAlias || safeAlias === user?.username) {
       setAliasAvailable(safeAlias === user?.username ? true : null);
       setIsCheckingAlias(false);
+      setAliasLocalError(null);
       return;
     }
+
+    if (safeAlias.length < 3) {
+      setAliasAvailable(false);
+      setIsCheckingAlias(false);
+      setAliasLocalError('Alias must be at least 3 characters.');
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_]+$/.test(safeAlias)) {
+      setAliasAvailable(false);
+      setIsCheckingAlias(false);
+      setAliasLocalError('Only letters, numbers, and underscores allowed.');
+      return;
+    }
+
+    setAliasLocalError(null);
 
     if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current);
 
@@ -148,8 +230,8 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
       return;
     }
 
-    if (aliasAvailable === false) {
-      setError('This Poker Alias is already taken.');
+    if (aliasAvailable === false || aliasLocalError) {
+      setError(aliasLocalError || 'This Poker Alias is already taken.');
       setIsSaving(false);
       return;
     }
@@ -183,11 +265,13 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
         avatar_url: currentAvatar,
       });
 
-      onComplete();
+      setIsSuccess(true);
+      setTimeout(() => {
+        onComplete();
+      }, 500);
     } catch (err: any) {
       reportError(err, 'CompleteProfileModal.SaveFailed');
       setError(safeErrorMessage(err, 'Failed to save profile. Try again.'));
-    } finally {
       setIsSaving(false);
     }
   };
@@ -243,7 +327,7 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
                 <div className={styles.labelRow}>
                   <label>Poker Alias (Required)</label>
                   <button type="button" className={styles.randomizeBtn} onClick={handleRandomize}>
-                    Randomize
+                    ⚄ Randomize
                   </button>
                 </div>
                 <div
@@ -255,6 +339,7 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
                     placeholder="E.g. SharkPro99"
                     value={alias}
                     onChange={(e) => setAlias(e.target.value)}
+                    minLength={3}
                     maxLength={16}
                     required
                   />
@@ -263,11 +348,12 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
                     {!isCheckingAlias && aliasAvailable === true && (
                       <span className={styles.iconAvailable}>✓</span>
                     )}
-                    {!isCheckingAlias && aliasAvailable === false && (
+                    {!isCheckingAlias && aliasAvailable === false && !aliasLocalError && (
                       <span className={styles.iconTaken}>✗</span>
                     )}
                   </div>
                 </div>
+                {aliasLocalError && <div className={styles.localErrorText}>{aliasLocalError}</div>}
               </div>
 
               <div className={styles.formGroup} style={{ marginTop: '0.5rem' }}>
@@ -296,10 +382,12 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
             <button
               type="submit"
               form="complete-profile-form"
-              className={styles.submitButton}
-              disabled={isSaving || !alias.trim() || !hasAvatar || aliasAvailable === false}
+              className={`${styles.submitButton} ${isSuccess ? styles.submitSuccess : ''}`}
+              disabled={
+                isSaving || isSuccess || !alias.trim() || !hasAvatar || aliasAvailable === false
+              }
             >
-              {isSaving ? 'Saving...' : 'Enter Arena'}
+              {isSuccess ? '✓ Welcome!' : isSaving ? 'Saving...' : 'Enter Arena'}
             </button>
           </footer>
         </div>

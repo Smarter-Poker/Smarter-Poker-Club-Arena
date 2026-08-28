@@ -157,12 +157,6 @@
       inset 0 -3px 7px rgba(0, 0, 0, 0.45);
   }
 }
-
-/* Lifting the plate lengthens its cast shadow — the hover reads as the plate
-   rising off the felt rather than merely glowing harder. */
-.bbj-widget:hover {
-}
-
 .bbj-widget__label {
   font-size: 0.5rem;
   font-weight: 700;
@@ -644,12 +638,6 @@
   .bbj-widget__amount {
     font-size: 0.75rem;
     line-height: 1.1;
-  }
-
-  /* The hover lift raises the plate off the felt on desktop. Against the bar
-     it would open a gap along the seam instead, so the phone plate glows
-     rather than moves. */
-  .bbj-widget:hover {
   }
 }
 

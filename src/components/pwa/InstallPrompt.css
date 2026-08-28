@@ -130,10 +130,6 @@
   cursor: pointer;
   transition: all var(--transition-base);
 }
-
-.btn-install:hover {
-}
-
 .btn-later {
   flex: 1;
   padding: var(--space-3) var(--space-4);

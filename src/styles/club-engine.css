@@ -287,28 +287,16 @@ pre {
   background: var(--gradient-club);
   color: var(--pure-white);
 }
-
-.btn-primary:hover:not(:disabled) {
-}
-
 /* Success - Green */
 .btn-success {
   background: var(--gradient-success);
   color: var(--pure-white);
 }
-
-.btn-success:hover:not(:disabled) {
-}
-
 /* Danger - Red */
 .btn-danger {
   background: var(--gradient-danger);
   color: var(--pure-white);
 }
-
-.btn-danger:hover:not(:disabled) {
-}
-
 /* Ghost */
 .btn-ghost {
   background: transparent;
@@ -399,10 +387,6 @@ pre {
   position: relative;
   transition: transform var(--duration-normal) var(--ease-out-expo);
 }
-
-.poker-card:hover {
-}
-
 .poker-card.red {
   color: var(--suit-hearts);
 }

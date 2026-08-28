@@ -362,10 +362,6 @@
   color: white;
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.6);
 }
-
-.accept-btn:hover {
-}
-
 .decline-btn {
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
   border-color: #3a4a5a;

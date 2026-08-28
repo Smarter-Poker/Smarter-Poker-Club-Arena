@@ -9,10 +9,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.2s;
 }
-
-.image-viewer-thumb:hover {
-}
-
 .image-viewer-thumb.ratio-1-1 {
   aspect-ratio: 1/1;
 }
@@ -31,10 +27,6 @@
   object-fit: cover;
   transition: transform 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.image-viewer-thumb:hover img {
-}
-
 .image-error {
   display: flex;
   align-items: center;

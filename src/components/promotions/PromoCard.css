@@ -29,10 +29,6 @@
   object-fit: cover;
   transition: transform 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.promo-card:hover .promo-image img {
-}
-
 .promo-content {
   padding: 20px;
   position: relative;
@@ -105,7 +101,4 @@
   box-shadow:
     0 0 12px rgba(255, 215, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.promo-cta:hover {
 }

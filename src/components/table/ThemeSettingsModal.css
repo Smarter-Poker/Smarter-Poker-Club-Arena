@@ -340,10 +340,6 @@
   cursor: pointer;
   transition: transform 0.15s ease;
 }
-
-.theme-asset:hover {
-}
-
 .theme-asset--locked {
   opacity: 0.6;
 }

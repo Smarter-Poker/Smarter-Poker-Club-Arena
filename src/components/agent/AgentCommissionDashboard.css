@@ -54,10 +54,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-
-.summary-card:hover {
-}
-
 .summary-card.total {
   grid-column: 1 / -1;
   background: linear-gradient(135deg, rgba(74, 222, 128, 0.1), rgba(34, 197, 94, 0.05));
@@ -147,10 +143,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-
-.subagent-card:hover {
-}
-
 .subagent-card .avatar {
   font-size: 24px;
 }

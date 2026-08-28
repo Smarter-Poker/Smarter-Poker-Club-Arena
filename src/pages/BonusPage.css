@@ -113,10 +113,6 @@
 .claim-btn {
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.claim-btn:hover:not(:disabled) {
-}
-
 .claim-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -203,10 +199,6 @@
 .btn-sm {
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.btn-sm:hover {
-}
-
 .loading-state {
   display: flex;
   justify-content: center;

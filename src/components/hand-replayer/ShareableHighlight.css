@@ -159,10 +159,6 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-
-.highlight-card:hover {
-}
-
 .highlight-card.red {
   color: #e74c3c;
 }

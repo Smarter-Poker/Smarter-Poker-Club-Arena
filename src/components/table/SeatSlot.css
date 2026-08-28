@@ -246,8 +246,6 @@
 .seat--empty:hover .seat__empty-img--sit {
   filter: brightness(1.15);
 }
-.seat--empty:hover {
-}
 .seat--empty:active {
   transform: scale(0.94);
 }
@@ -673,10 +671,6 @@
     transform 0.2s var(--ease-spring),
     box-shadow 0.2s ease;
 }
-
-.seat__position-chip:hover {
-}
-
 @keyframes dealerButtonAppear {
   0% {
     opacity: 0;
@@ -3537,8 +3531,6 @@
   transition:
     transform 0.16s ease,
     filter 0.16s ease;
-}
-.seat__card-pick:hover {
 }
 .seat__card-pick:focus-visible {
   outline: 2px solid #4a9eff;

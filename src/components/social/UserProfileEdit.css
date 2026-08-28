@@ -124,10 +124,6 @@
   border: 2px solid transparent;
   transition: all 0.2s;
 }
-
-.avatar-choice:hover {
-}
-
 .avatar-choice.selected {
   border-color: #3fb950;
   box-shadow: 0 0 10px rgba(63, 185, 80, 0.3);

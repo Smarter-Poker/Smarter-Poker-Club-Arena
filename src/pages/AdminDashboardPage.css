@@ -246,10 +246,6 @@
   background: linear-gradient(135deg, #4599ff, #2374e1);
   color: #fff;
 }
-
-.admin-btn-primary:hover:not(:disabled) {
-}
-
 .admin-btn-success {
   background: #31a24c;
   color: #fff;
@@ -284,10 +280,6 @@
   padding: 4px;
   transition: transform 0.15s ease;
 }
-
-.admin-icon-btn:hover {
-}
-
 /* ── Inputs ── */
 .admin-input {
   width: 100%;

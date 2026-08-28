@@ -58,10 +58,6 @@
   cursor: pointer;
   transition: all 0.2s ease;
 }
-
-.createClubBtn:hover {
-}
-
 .header {
   display: flex;
   align-items: center;
@@ -514,14 +510,6 @@
   border: none;
   color: #fff;
 }
-
-.backBtn:hover {
-}
-
-.nextBtn:hover,
-.createBtn:hover:not(:disabled) {
-}
-
 .backBtn,
 .nextBtn,
 .createBtn {

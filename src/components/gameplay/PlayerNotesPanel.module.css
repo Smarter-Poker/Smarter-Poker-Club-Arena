@@ -137,10 +137,6 @@
   cursor: pointer;
   transition: transform 0.2s ease;
 }
-
-.colorBtn:hover {
-}
-
 .colorBtn.selected {
   border-color: white;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);

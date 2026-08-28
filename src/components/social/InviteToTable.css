@@ -206,10 +206,6 @@
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.send-btn:not(:disabled):hover {
-}
-
 .send-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;

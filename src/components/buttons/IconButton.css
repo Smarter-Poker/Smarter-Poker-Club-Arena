@@ -58,10 +58,6 @@
   background: linear-gradient(135deg, #ffd700, #ff8c00);
   color: #000;
 }
-
-.icon-button.variant-primary:hover:not(:disabled) {
-}
-
 .icon-button.variant-danger {
   background: rgba(248, 113, 113, 0.15);
   color: #f87171;

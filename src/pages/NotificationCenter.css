@@ -39,10 +39,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 0 10px rgba(0, 212, 255, 0.2);
 }
-
-.mark-all-btn:hover {
-}
-
 .notif-filters {
   display: flex;
   gap: 6px;

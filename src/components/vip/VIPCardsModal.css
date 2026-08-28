@@ -267,10 +267,6 @@
   text-transform: uppercase;
   letter-spacing: 1px;
 }
-
-.vip-modal__purchase:hover:not(:disabled) {
-}
-
 .vip-modal__purchase:disabled {
   opacity: 0.5;
   cursor: not-allowed;

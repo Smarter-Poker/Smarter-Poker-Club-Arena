@@ -485,11 +485,6 @@
     background-position: -100% 0;
   }
 }
-
-/* Hover lift */
-.carouselCardFeatured:hover {
-}
-
 /* Tap/active feedback */
 .carouselCardFeatured:active {
   transform: scale(0.97);
@@ -2144,10 +2139,6 @@
   cursor: pointer;
   transition: all 0.3s ease;
 }
-
-.errorBoundaryRetry:hover {
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    PHASE 4 ENHANCEMENTS
    ═══════════════════════════════════════════════════════════════════════════════ */

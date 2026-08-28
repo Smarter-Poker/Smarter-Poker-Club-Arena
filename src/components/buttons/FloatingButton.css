@@ -17,10 +17,6 @@
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
 }
-
-.floating-button:hover {
-}
-
 .floating-button:active {
   transform: scale(0.98);
 }
@@ -41,10 +37,6 @@
   left: 50%;
   transform: translateX(-50%);
 }
-
-.floating-button.position-bottom-center:hover {
-}
-
 /* Sizes */
 .floating-button.size-medium {
   width: 56px;

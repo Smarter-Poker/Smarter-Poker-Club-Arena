@@ -337,10 +337,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.2);
 }
-
-.throwable-selector__tab--active:hover {
-}
-
 .throwable-selector__tab--active::after {
   display: none;
 }
@@ -485,10 +481,6 @@
   transition: transform 0.25s var(--ts-ease-spring);
   box-shadow: 0 0 8px var(--ts-gold-glow);
 }
-
-.throwable-selector__item:hover::before {
-}
-
 /* Focus ring for keyboard nav */
 .throwable-selector__item:focus-visible {
   outline: 2px solid rgba(212, 168, 75, 0.6);
@@ -826,11 +818,6 @@
   height: 40px;
   transition: transform 0.18s var(--ts-ease-spring);
 }
-
-.throwable-selector__item:hover .throwable-selector__icon--img .throwable-img,
-.throwable-selector__item:focus-visible .throwable-selector__icon--img .throwable-img {
-}
-
 .throwable-selector__item:active .throwable-selector__icon--img .throwable-img {
   transform: scale(0.92);
 }

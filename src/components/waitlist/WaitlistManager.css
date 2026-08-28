@@ -59,10 +59,6 @@
   margin-bottom: 8px;
   transition: transform var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
 }
-
-.waitlist-entry:hover {
-}
-
 .position {
   font-size: 0.85rem;
   font-weight: 700;
@@ -119,10 +115,6 @@
   cursor: pointer;
   transition: transform var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
 }
-
-.seat-btn:hover {
-}
-
 .remove-btn {
   width: 28px;
   height: 28px;
@@ -161,10 +153,6 @@
     transform var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s,
     box-shadow 0.3s;
 }
-
-.join-waitlist-btn:hover:not(:disabled) {
-}
-
 .join-waitlist-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;

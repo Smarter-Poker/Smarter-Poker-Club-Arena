@@ -1676,11 +1676,6 @@
   position: relative;
   z-index: 1;
 }
-
-/* Slow parallax float gives the scene physical depth on hover. */
-.itemCard:hover .itemArt {
-}
-
 .itemArt {
   transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -1710,10 +1705,6 @@
     0 10px 24px rgba(0, 0, 0, 0.5);
   transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-
-.pkgCard:hover .pkgArt {
-}
-
 /* VIP plan shield art */
 .planArt {
   width: 100%;

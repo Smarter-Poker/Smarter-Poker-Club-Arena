@@ -644,3 +644,215 @@
     letter-spacing: 0;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   APPROVED CLUB ARENA WALLET + BBJ ART
+   ---------------------------------------------------------------------------
+   The artwork owns each icon, title and frame. Values remain live DOM text in
+   the intentionally blank value bays. This file is imported by DynamicWallet
+   only, so no global or poker-table button can inherit these rules.
+═══════════════════════════════════════════════════════════════════════════ */
+.dw__row--wallet-art {
+  position: relative;
+  container-type: inline-size;
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: 1088 / 548;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  isolation: isolate;
+}
+
+.dw__row--wallet-art:hover,
+.dw__row--wallet-art.dw__row--actionable,
+.dw__row--wallet-art.dw__row--actionable:hover {
+  min-height: 0;
+  border: 0;
+  background: transparent;
+}
+
+.dw__row--wallet-art .dw__row-shell {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.dw__row--wallet-art .dw__row-icon,
+.dw__row--wallet-art .dw__row-label,
+.dw__row--wallet-art .dw__row-hint,
+.dw__row--wallet-art .dw__row-chevron {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.dw__row--wallet-art .dw__row-value {
+  position: absolute;
+  z-index: 1;
+  left: 11%;
+  right: 11%;
+  top: 60%;
+  bottom: 10%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #eef2f7;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  font-size: clamp(0.72rem, 8cqw, 1.45rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.025em;
+  line-height: 1;
+  text-align: center;
+  text-shadow:
+    0 2px 2px #000,
+    0 0 8px rgba(82, 167, 255, 0.22);
+}
+
+.dw__row--wallet-art.dw__row--diamond .dw__row-value {
+  color: #edf6ff;
+}
+
+.dw__row--wallet-art .dw__plus {
+  position: absolute;
+  z-index: 2;
+  right: 8%;
+  bottom: 15%;
+}
+
+.dw--lobby-board .dw__rows {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.dw--lobby-board .dw__row--wallet-art,
+.dw--lobby-board .dw__row--wallet-art.dw__row--actionable {
+  min-height: 0;
+  aspect-ratio: 1088 / 548;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.dw--lobby-board .dw__row--wallet-art:hover,
+.dw--lobby-board .dw__row--wallet-art.dw__row--actionable:hover {
+  border: 0;
+  background: transparent;
+}
+
+.dw--lobby-board .dw__row--wallet-art.dw__row--actionable:active {
+  transform: scale(0.985);
+  box-shadow: none;
+}
+
+.dw--lobby-board .dw__row--wallet-art .dw__row-value {
+  color: #eef2f7;
+  font-size: clamp(0.58rem, 9cqw, 0.95rem);
+  text-shadow:
+    0 1px 2px #000,
+    0 0 6px rgba(82, 167, 255, 0.2);
+}
+
+@media (max-width: 390px) {
+  .dw--lobby-board .dw__rows,
+  .dw--lobby-board .dw__rows--count-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+  }
+}
+
+.dw__bbj {
+  position: relative;
+  container-type: inline-size;
+  min-height: 0;
+  aspect-ratio: 1600 / 560;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.dw__bbj[role='button'] {
+  min-height: 0;
+}
+
+.dw__bbj::after {
+  display: none;
+}
+
+.dw__bbj-shell {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.dw__bbj-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.dw__bbj-amount {
+  position: absolute;
+  z-index: 1;
+  left: 42%;
+  right: 5%;
+  top: 29%;
+  bottom: 17%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #eef2f7;
+  font-size: clamp(0.78rem, 8cqw, 1.8rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 2px 2px #000,
+    0 0 8px rgba(82, 167, 255, 0.2);
+}

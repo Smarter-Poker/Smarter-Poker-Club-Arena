@@ -8,6 +8,7 @@ const page = read('src/pages/ClubHomePage.tsx');
 const pageCss = read('src/pages/ClubHomePage.css');
 const wallet = read('src/components/wallet/DynamicWallet.tsx');
 const walletCss = read('src/components/wallet/DynamicWallet.css');
+const walletArtwork = read('src/components/wallet/ClubWalletArtwork.tsx');
 const layout = read('src/components/layouts/AppLayout.tsx');
 const filters = read('src/components/lobby/AdvancedFilters.tsx');
 const filtersCss = read('src/components/lobby/AdvancedFilters.css');
@@ -27,22 +28,31 @@ describe('Club Arena Tournament Board lobby design', () => {
     expect(page).toContain('showBBJ={false}');
   });
 
-  it('uses the compact live wallet with icon-and-label above each balance', () => {
+  it('uses the approved compact wallet art with live balances in the empty value bays', () => {
     expect(page).toContain('compactLobby');
     expect(wallet).toContain('clubLobbyWalletRows(rowRole)');
     expect(wallet).toContain("row.key === 'union_bank' || row.key === 'union_rake'");
-    expect(wallet).toContain("icon: 'bank'");
-    expect(wallet).toContain("compactLobby ? 'Diamond Wallet' : 'Diamonds'");
-    expect(wallet).toContain("row.key === 'club_bank' ? 'Club Balance'");
+    expect(wallet).toContain('ClubWalletShell');
+    expect(walletArtwork).toContain('CLUB_WALLET_ARTWORK');
+    expect(walletArtwork).toContain('wallet-diamonds-square-v1.webp');
+    expect(walletArtwork).toContain('wallet-backup-bbj-wallet-square-v1.webp');
 
-    const lobbyWalletCss = walletCss.slice(walletCss.indexOf('CLUB LOBBY TOURNAMENT BOARD'));
+    const lobbyWalletCss = walletCss.slice(
+      walletCss.indexOf('APPROVED CLUB ARENA WALLET + BBJ ART')
+    );
     expect(lobbyWalletCss).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
-    expect(lobbyWalletCss).toContain('grid-row: 1');
-    expect(lobbyWalletCss).toContain('grid-row: 2');
-    expect(lobbyWalletCss).toContain('@media (max-width: 480px)');
-    expect(lobbyWalletCss).toContain('grid-template-columns: 11px minmax(0, auto)');
-    expect(lobbyWalletCss).toContain('font-size: 0.48rem');
+    expect(lobbyWalletCss).toContain('@media (max-width: 390px)');
+    expect(lobbyWalletCss).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(lobbyWalletCss).toContain('aspect-ratio: 1088 / 548');
+    expect(lobbyWalletCss).toContain('font-variant-numeric: tabular-nums');
     expect(lobbyWalletCss).not.toContain('linear-gradient');
+  });
+
+  it('uses the approved BBJ plaque without baking the live jackpot amount into the image', () => {
+    expect(page).toContain('<ClubBBJShell className="lobby-bbj__shell" />');
+    expect(walletArtwork).toContain('bbj-dynamic-plaque-v1.webp');
+    expect(page).toContain('className="lobby-bbj__amount"');
+    expect(pageCss).toContain('aspect-ratio: 1600 / 560');
   });
 
   it('removes the redundant result-count strip and cashier prompt', () => {

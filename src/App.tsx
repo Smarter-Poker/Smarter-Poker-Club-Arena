@@ -118,6 +118,8 @@ const ClubRulesPage = lazyWithRetry(() => import('./pages/ClubRulesPage'));
 const NotificationCenter = lazyWithRetry(() => import('./pages/NotificationCenter'));
 const BusDevToolsPage = lazyWithRetry(() => import('./pages/BusDevToolsPage'));
 const ClubButtonsShowcasePage = lazyWithRetry(() => import('./pages/dev/ClubButtonsShowcasePage'));
+const ClubWalletPreviewPage = lazyWithRetry(() => import('./pages/dev/ClubWalletPreviewPage'));
+const clubButtonsPreviewEnabled = import.meta.env.VITE_CLUB_BUTTONS_PREVIEW === 'true';
 const FinancialAlertsPage = lazyWithRetry(() => import('./pages/FinancialAlertsPage'));
 const DisputeManagementPage = lazyWithRetry(() => import('./pages/DisputeManagementPage'));
 const FinancialHealthPage = lazyWithRetry(() => import('./pages/FinancialHealthPage'));
@@ -1608,11 +1610,17 @@ export default function App() {
                 <Route
                   path="dev/club-ui"
                   element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="ClubButtons UI Laboratory">
-                        <ClubButtonsShowcasePage />
+                    clubButtonsPreviewEnabled ? (
+                      <PageErrorBoundary pageName="Club Wallet Preview">
+                        <ClubWalletPreviewPage />
                       </PageErrorBoundary>
-                    </AuthGuard>
+                    ) : (
+                      <AuthGuard>
+                        <PageErrorBoundary pageName="ClubButtons UI Laboratory">
+                          <ClubButtonsShowcasePage />
+                        </PageErrorBoundary>
+                      </AuthGuard>
+                    )
                   }
                 />
 

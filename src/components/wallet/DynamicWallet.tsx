@@ -69,6 +69,7 @@ import { clubLobbyWalletRows, clubWalletRows, type WalletRowKey } from './wallet
 import { useSpinsWallet } from '../../hooks/useSpinsWallet';
 import './DynamicWallet.css';
 import { reportError } from '../../utils/errorReporter';
+import { ClubBBJShell, ClubWalletShell, type ClubWalletArtworkKind } from './ClubWalletArtwork';
 
 // All bus events that should trigger a wallet refresh
 const WALLET_BUS_EVENTS = [
@@ -1504,6 +1505,7 @@ export default function DynamicWallet({
              the label announced something that was never true. */
           aria-label={`Bad Beat Jackpot: ${data.bbjPool === 0 ? 'no pool' : formatBalance(data.bbjPool)}`}
         >
+          <ClubBBJShell />
           <span className="dw__bbj-label">BAD BEAT JACKPOT</span>
           <span className="dw__bbj-amount">
             {data.bbjPool === 0 ? '-' : formatBalance(animBBJ)}
@@ -1529,7 +1531,7 @@ export default function DynamicWallet({
       <div className={`dw__rows dw__rows--count-${rows.length + 1}`}>
         {/* Diamond Balance */}
         <div
-          className={`dw__row dw__row--diamond${compactLobby && onBuyDiamonds ? ' dw__row--actionable' : ''}`}
+          className={`dw__row dw__row--diamond dw__row--wallet-art${compactLobby && onBuyDiamonds ? ' dw__row--actionable' : ''}`}
           onClick={compactLobby ? onBuyDiamonds : undefined}
           onKeyDown={
             compactLobby && onBuyDiamonds
@@ -1545,6 +1547,7 @@ export default function DynamicWallet({
           tabIndex={compactLobby && onBuyDiamonds ? 0 : undefined}
           aria-label={compactLobby && onBuyDiamonds ? 'Open Diamond Wallet' : undefined}
         >
+          <ClubWalletShell kind="diamonds" />
           <span className="dw__row-icon" aria-hidden="true">
             <WalletIcon name="diamond" />
           </span>
@@ -1573,7 +1576,7 @@ export default function DynamicWallet({
           <div
             key={row.key}
             className={
-              `dw__row dw__row--wallet` +
+              `dw__row dw__row--wallet dw__row--wallet-art` +
               (idx === 0 ? ' dw__row--primary' : '') +
               (row.onOpen ? ' dw__row--actionable' : '')
             }
@@ -1592,6 +1595,7 @@ export default function DynamicWallet({
             tabIndex={row.onOpen ? 0 : undefined}
             aria-label={row.onOpen ? `Open ${row.label}` : undefined}
           >
+            <ClubWalletShell kind={row.key as ClubWalletArtworkKind} />
             <span className="dw__row-icon" aria-hidden="true">
               <WalletIcon name={row.icon} />
             </span>
@@ -1628,7 +1632,8 @@ export default function DynamicWallet({
             the duplication the BBJ banner's own showBBJ opt-out exists to
             prevent. The union panel keeps its row; this one is the club's. */}
         {effectiveVariant === 'club' && !isClubInUnion && data.backupBBJ > 0 && (
-          <div className="dw__row dw__row--backup-bbj">
+          <div className="dw__row dw__row--backup-bbj dw__row--wallet-art">
+            <ClubWalletShell kind="backup_bbj" />
             <span className="dw__row-icon" aria-hidden="true">
               <WalletIcon name="reserve" />
             </span>

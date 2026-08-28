@@ -491,10 +491,7 @@ export default function RakebackDashboard() {
                       }}
                       itemStyle={{ color: '#10b981', fontWeight: 700 }}
                       labelStyle={{ color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}
-                      formatter={(val: number | undefined) => [
-                        `${(val || 0).toLocaleString()} chips`,
-                        'Payout',
-                      ]}
+                      formatter={(val) => [`${Number(val || 0).toLocaleString()} chips`, 'Payout']}
                     />
                     <Area
                       type="monotone"

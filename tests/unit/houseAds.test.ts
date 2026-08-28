@@ -469,3 +469,42 @@ describe('a click is attention, not a result', () => {
     expect(ADMIN).toMatch(/conv && conv\.clicks > 0/);
   });
 });
+
+describe('the referral funnel the ads point at does not drop the referral', () => {
+  /* referral_invite is one of the six house campaigns, and it points players
+     at a share flow that was losing the thing being shared.
+
+     ReferralDashboard handed navigator.share the BARE HOMEPAGE, with the code
+     only in `text`. A share target is free to ignore `text` and use `url`
+     alone, and most do - every sheet that renders a link preview, and several
+     that post the URL and drop the caption. So the commonest way to share a
+     referral was also the way that silently dropped it: the friend arrives
+     unattributed and the referrer is never credited.
+
+     The other two referral flows already embed the code in the URL, so this
+     was the one that leaked, not the pattern. Flagged in the Phase 2 handoff
+     on 2026-08-27 and still live a day later. */
+  const DASH = read('src/components/social/ReferralDashboard.tsx');
+
+  it('shares a url that carries the code', () => {
+    expect(DASH).toMatch(/\?ref=\$\{encodeURIComponent\(stats\.code\)\}/);
+    const share = DASH.slice(DASH.indexOf('const handleShare'), DASH.indexOf('if (loading)'));
+    expect(share).toMatch(/const url = referralUrl\(\)/);
+    expect(share).toMatch(/^\s*url,$/m);
+  });
+
+  it('never shares the bare homepage as the destination', () => {
+    const code = DASH.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(code).not.toMatch(/url:\s*'https:\/\/smarter\.poker'/);
+  });
+
+  it('does not hardcode the host, so a preview build shares itself', () => {
+    // A hardcoded link in a preview build sends testers to production.
+    expect(DASH).toMatch(/window\.location\?\.origin/);
+  });
+
+  it('the clipboard fallback carries the link too', () => {
+    const share = DASH.slice(DASH.indexOf('const handleShare'), DASH.indexOf('if (loading)'));
+    expect(share).toMatch(/writeText\(`\$\{shareText\} \$\{url\}`\)/);
+  });
+});

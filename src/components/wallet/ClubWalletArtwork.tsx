@@ -15,28 +15,46 @@ export type ClubWalletArtworkKind =
 
 const CLUB_BUTTONS_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons`;
 
-/** Canonical Club Arena wallet-art mapping. Dynamic values stay out of the images. */
-export const CLUB_WALLET_ARTWORK: Record<ClubWalletArtworkKind, string> = {
-  diamonds: `${CLUB_BUTTONS_ASSET_ROOT}/wallets/square/wallet-diamonds-square-v1.webp`,
-  club_bank: `${CLUB_BUTTONS_ASSET_ROOT}/wallets/square/wallet-club-bank-square-v1.webp`,
-  promo_wallet: `${CLUB_BUTTONS_ASSET_ROOT}/wallets/square/wallet-promo-wallet-square-v1.webp`,
-  union_promo: `${CLUB_BUTTONS_ASSET_ROOT}/wallets/square/wallet-promo-wallet-square-v1.webp`,
-  agent_wallet: `${CLUB_BUTTONS_ASSET_ROOT}/wallets/square/wallet-agent-wallet-square-v1.webp`,
-  player_wallet: `${CLUB_BUTTONS_ASSET_ROOT}/wallets/square/wallet-player-wallet-square-v1.webp`,
-  union_bank: `${CLUB_BUTTONS_ASSET_ROOT}/wallets/square/wallet-union-bank-square-v1.webp`,
-  rake_treasury: `${CLUB_BUTTONS_ASSET_ROOT}/wallets/square/wallet-rake-treasury-square-v1.webp`,
-  union_rake: `${CLUB_BUTTONS_ASSET_ROOT}/wallets/square/wallet-rake-treasury-square-v1.webp`,
-  backup_bbj: `${CLUB_BUTTONS_ASSET_ROOT}/wallets/square/wallet-backup-bbj-wallet-square-v1.webp`,
-  union_backup_bbj: `${CLUB_BUTTONS_ASSET_ROOT}/wallets/square/wallet-backup-bbj-wallet-square-v1.webp`,
-  spins_wallet: `${CLUB_BUTTONS_ASSET_ROOT}/wallets/square/wallet-spins-treasury-square-v1.webp`,
-  union_spins: `${CLUB_BUTTONS_ASSET_ROOT}/wallets/square/wallet-spins-treasury-square-v1.webp`,
+type ClubWalletArtworkSources = {
+  desktop: string;
+  mobile: string;
+};
+
+const walletSources = (filename: string): ClubWalletArtworkSources => ({
+  desktop: `${CLUB_BUTTONS_ASSET_ROOT}/wallets/desktop/${filename}-v1.webp`,
+  mobile: `${CLUB_BUTTONS_ASSET_ROOT}/wallets/mobile/${filename}-v1.webp`,
+});
+
+/**
+ * Canonical Club Arena wallet-art mapping. The artwork supplies only the
+ * icon, title and frame; every balance remains live DOM text in the empty bay.
+ */
+export const CLUB_WALLET_ARTWORK: Record<ClubWalletArtworkKind, ClubWalletArtworkSources> = {
+  diamonds: walletSources('wallet-diamonds'),
+  club_bank: walletSources('wallet-club-bank'),
+  promo_wallet: walletSources('wallet-promo-wallet'),
+  union_promo: walletSources('wallet-promo-wallet'),
+  agent_wallet: walletSources('wallet-agent-wallet'),
+  player_wallet: walletSources('wallet-player-wallet'),
+  union_bank: walletSources('wallet-union-bank'),
+  rake_treasury: walletSources('wallet-rake-treasury'),
+  union_rake: walletSources('wallet-rake-treasury'),
+  backup_bbj: walletSources('wallet-backup-bbj-wallet'),
+  union_backup_bbj: walletSources('wallet-backup-bbj-wallet'),
+  spins_wallet: walletSources('wallet-spins-treasury'),
+  union_spins: walletSources('wallet-spins-treasury'),
 };
 
 export const CLUB_BBJ_ARTWORK = `${CLUB_BUTTONS_ASSET_ROOT}/bbj/bbj-dynamic-plaque-v1.webp`;
 
 export function ClubWalletShell({ kind }: { kind: ClubWalletArtworkKind }) {
+  const artwork = CLUB_WALLET_ARTWORK[kind];
+
   return (
-    <img className="dw__row-shell" src={CLUB_WALLET_ARTWORK[kind]} alt="" aria-hidden="true" />
+    <picture className="dw__row-picture" aria-hidden="true">
+      <source media="(max-width: 640px)" srcSet={artwork.mobile} />
+      <img className="dw__row-shell" src={artwork.desktop} alt="" />
+    </picture>
   );
 }
 

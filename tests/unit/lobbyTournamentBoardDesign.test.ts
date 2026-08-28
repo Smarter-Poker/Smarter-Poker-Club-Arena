@@ -28,22 +28,23 @@ describe('Club Arena Tournament Board lobby design', () => {
     expect(page).toContain('showBBJ={false}');
   });
 
-  it('uses the approved compact wallet art with live balances in the empty value bays', () => {
+  it('stacks the approved long wallet art beneath the BBJ with live values', () => {
     expect(page).toContain('compactLobby');
     expect(wallet).toContain('clubLobbyWalletRows(rowRole)');
     expect(wallet).toContain("row.key === 'union_bank' || row.key === 'union_rake'");
     expect(wallet).toContain('ClubWalletShell');
     expect(walletArtwork).toContain('CLUB_WALLET_ARTWORK');
-    expect(walletArtwork).toContain('wallet-diamonds-square-v1.webp');
-    expect(walletArtwork).toContain('wallet-backup-bbj-wallet-square-v1.webp');
+    expect(walletArtwork).toContain('wallets/desktop/${filename}-v1.webp');
+    expect(walletArtwork).toContain('wallets/mobile/${filename}-v1.webp');
+    expect(pageCss).toContain('grid-column: 2');
 
     const lobbyWalletCss = walletCss.slice(
       walletCss.indexOf('APPROVED CLUB ARENA WALLET + BBJ ART')
     );
-    expect(lobbyWalletCss).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
-    expect(lobbyWalletCss).toContain('@media (max-width: 390px)');
-    expect(lobbyWalletCss).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
-    expect(lobbyWalletCss).toContain('aspect-ratio: 1088 / 548');
+    expect(lobbyWalletCss).toContain('flex-direction: column');
+    expect(lobbyWalletCss).toContain('aspect-ratio: 1800 / 380');
+    expect(lobbyWalletCss).toContain('@media (min-width: 641px)');
+    expect(lobbyWalletCss).toContain('aspect-ratio: 1800 / 273');
     expect(lobbyWalletCss).toContain('font-variant-numeric: tabular-nums');
     expect(lobbyWalletCss).not.toContain('linear-gradient');
   });

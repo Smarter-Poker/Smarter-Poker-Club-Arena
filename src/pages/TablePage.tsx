@@ -18765,7 +18765,26 @@ export default function TablePage({
         v8Settings={v8Settings}
         userSettings={userSettings}
         isSoundEnabled={isSoundEnabled}
-        sitOutNextHand={sitOutNextHand}
+        /* THE SWITCH HAS TO KNOW YOU ARE ALREADY SITTING OUT (Dan 2026-08-28):
+           "IF YOU ARE SITTING OUT IT SHOULD BE TURNED ON IN THE HAMBURGER MENU
+           WHEN YOU GO TO IT."
+
+           `sitOutNextHand` is a private useState that only the settings switch
+           itself ever set. The other three ways into a sit-out — the hamburger's
+           Sit Out quick action, the masterBus TABLE_MENU_ACTION, and being
+           force-sat-out by the engine after three action timeouts — none of them
+           touched it, and nothing ever seeded it from the server. So the normal
+           path (tap Sit Out in the menu, then open Table Settings) always showed
+           the switch OFF while the player was demonstrably sitting out, and
+           flipping it ON sent a redundant sit-out.
+
+           `heroIsSittingOut` is the reactive server-derived truth already used
+           for the footer and the sit-out clock, so OR-ing it in makes the switch
+           report the state rather than its own history. `sitOutNextHand` stays in
+           the expression because it is the one thing the server view cannot show
+           yet: a sit-out requested DURING a hand is deferred, so the switch
+           should read ON from the moment it is asked for, not a hand later. */
+        sitOutNextHand={sitOutNextHand || heroIsSittingOut}
         // Player Notes
         showPlayerNotes={showPlayerNotes}
         selectedPlayerForNotes={selectedPlayerForNotes}

@@ -366,7 +366,7 @@ export async function recoverStuckCompletingTournaments(
         ) => {
           if (amount <= 0) return;
           // P1 FIX (2026-07-24): idempotency key in the SAME format the main
-          // elimination-prize path uses (`tourney:{id}:prize:{user}:{position}`)
+          // elimination-prize path uses (`tourney:{id}:prize:place:{position}`)
           // so this recovery path and the main path dedupe against each other and
           // repeated recovery scans of a COMPLETING tournament cannot double-pay.
           // LEDGER-INTEGRITY 2026-08-22: this is the path that produced the
@@ -435,7 +435,7 @@ export async function recoverStuckCompletingTournaments(
             alive[i].user_id,
             prize,
             `Tournament prize (recovery): position ${place} — ${t.name || 'tournament'}`,
-            `tourney:${t.id}:prize:${alive[i].user_id}:${place}`
+            `tourney:${t.id}:prize:place:${place}`
           );
           // PAYOUT-INTEGRITY 2026-08-25: the credit is only half of it. When
           // this UPDATE was discarded, a paid survivor kept status='playing'
@@ -471,7 +471,7 @@ export async function recoverStuckCompletingTournaments(
               r.user_id,
               diff,
               `Tournament prize top-up (recovery): position ${r.position} — ${t.name || 'tournament'}`,
-              `tourney:${t.id}:prize:${r.user_id}:${r.position}`
+              `tourney:${t.id}:prize:place:${r.position}`
             );
             // Same rule as the survivor stamp above: a top-up that is paid but
             // not recorded leaves prize < owed, so every later pass recomputes

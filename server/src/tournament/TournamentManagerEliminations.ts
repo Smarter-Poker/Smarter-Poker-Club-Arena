@@ -1128,8 +1128,21 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // P1 FIX (2026-07-24): idempotency key so a committed-but-timed-out
           // credit is a no-op on the next retry attempt (no double prize mint),
           // and so the recovery path dedupes against this main path — SAME format
-          // (`tourney:{id}:prize:{user}:{position}`).
-          p_idempotency_key: `tourney:${this.tournamentId}:prize:${userId}:${position}`,
+          // (`tourney:{id}:prize:place:{position}`).
+          //
+          // PLACE-SCOPED, NOT USER-SCOPED (2026-08-28). This key used to be
+          // `...:prize:{user}:{position}`, so it deduped a repeated USER and
+          // not a repeated PLACE — two different players stamped the same
+          // place produced two different keys and BOTH were paid. Observed
+          // live the same day: Union PKO Afternoon (PLO4) 4f42d847 paid
+          // `position 2` twice, an hour apart, to two players, and disbursed
+          // 720.00 against a 600.00 pool — 120% of the prize pool, the extra
+          // being exactly one place-2 prize. The engine had priced each
+          // payment correctly for the position it believed at the time; a
+          // later arrival shifted the field and the real 2nd place was then
+          // paid again. Keying on the PLACE makes a second payment for a
+          // place a no-op no matter who holds it or which path pays it.
+          p_idempotency_key: `tourney:${this.tournamentId}:prize:place:${position}`,
           p_category: 'prize',
           p_description: `Tournament prize: position ${position}`,
           p_related_entity_id: this.tournamentId,
@@ -2884,7 +2897,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // under exactly `tourney:{id}:prize:{user}:1` - a key this path never
           // wrote, so the winner could be paid twice across the two paths.
           // Using the identical format makes them dedupe against each other.
-          p_idempotency_key: `tourney:${this.tournamentId}:prize:${winnerId}:1`,
+          p_idempotency_key: `tourney:${this.tournamentId}:prize:place:1`,
           p_category: 'prize',
           p_description: `Tournament winner prize: 1st place`,
           p_related_entity_id: this.tournamentId,

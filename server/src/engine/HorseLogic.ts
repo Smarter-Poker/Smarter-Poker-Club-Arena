@@ -2049,7 +2049,29 @@ export class HorseLogic {
     // V11: tournaments rake the buy-in, not the pot — pot odds are honest.
     const rakeMarg = useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind) : 0;
     const potOdds = toCall / (pot * (1 - rakeMarg) + toCall);
+    // ═══ THE BET-RATIO SCALE, STATED ONCE AND FOR ALL (2026-08-27) ═══
+    // `gs.pot` INCLUDES the bet hero is facing (HandController adds to
+    // state.pot the moment the wager is posted). So `toCall / pot` is
+    // bet/(pot+bet) — it approaches 0.5 for a POT-SIZED bet and can only
+    // exceed 0.75 when the bet is THREE TIMES the pot. Every threshold in
+    // this file written as if it were bet/pot has therefore been either far
+    // looser than intended or literally unreachable. The 2026-08-23 handoff
+    // already recorded one casualty ("the overbet-polarity branch had never
+    // executed once"); telemetry now proves three more, at zero fires each
+    // across 700,000 live decisions: v16_reads_tell, v17_catch_block and the
+    // >1.2 overbet respect line.
+    //
+    // Both scales now exist explicitly, so nothing has to be inferred again:
+    //   betRatio — legacy bet/(pot+bet). Untouched, because five older
+    //              thresholds are calibrated against it and rescaling them is
+    //              a STRATEGY change (that is what the v16Ratio experiment is
+    //              for). Their behaviour is unchanged by this commit.
+    //   potFrac  — the honest "fraction of the pot" a poker player means:
+    //              bet / (pot before the bet). A pot-sized bet is 1.0, a
+    //              half-pot 0.5, a 1.5x overbet 1.5.
     const betRatio = pot > 0 ? toCall / pot : 1;
+    const potBeforeBet = Math.max(pot - toCall, 1e-9);
+    const potFrac = toCall > 0 ? toCall / potBeforeBet : 0;
 
     // ═══ V11 BOARD DOMINATION DISCIPLINE (the "QQ on AKx" leak) ═══
     // The MC prices opponents by their PREFLOP range only — it cannot see
@@ -2067,7 +2089,7 @@ export class HorseLogic {
           if ((RANK_VALUES[r] ?? 0) > pr) over++;
         }
         if (over > 0) {
-          dominationPenalty = 0.07 * Math.min(2, over) * (betRatio >= 0.8 ? 1.4 : 1);
+          dominationPenalty = 0.07 * Math.min(2, over) * (potFrac >= 0.8 ? 1.4 : 1);
         }
       }
     }
@@ -2111,11 +2133,12 @@ export class HorseLogic {
       if (raisedAfterAggr) {
         if (cat === 6) cap = hf >= 4 ? 0.25 : hf >= 2 ? 0.35 : 0.55;
         else cap = 0.4; // dominated straight, raised
-      } else if (isRiver && betRatio >= 0.8) {
+      } else if (isRiver && potFrac >= 0.8) {
         // Big river bet into us: "check-calling, or check-folding to big
         // bets" — the bigger the bet, the more nutted the range.
-        if (cat === 6 && hf >= 2) cap = betRatio >= 1.2 ? 0.32 : 0.42;
-        else if (cat === 5) cap = betRatio >= 1.2 ? 0.38 : 0.48;
+        if (tele15 && isRiver && potFrac >= 0.8) noteFire('v19_river_bigbet_cap');
+        if (cat === 6 && hf >= 2) cap = potFrac >= 1.2 ? 0.32 : 0.42;
+        else if (cat === 5) cap = potFrac >= 1.2 ? 0.38 : 0.48;
       }
       if (cap !== Infinity) {
         if (!isRiver) cap += 0.1; // redraws + protection before the river
@@ -2210,7 +2233,12 @@ export class HorseLogic {
       equity < 0.52 &&
       (cat <= 2 || !useIQ) &&
       oppCount <= 2 &&
-      betRatio <= 0.85 &&
+      // Was `betRatio <= 0.85` — ALWAYS TRUE on the legacy scale (it maxes
+      // near 0.5), so this gate never once stopped a semi-bluff raise, not
+      // even into a three-times-pot bet. On the honest scale it means what
+      // it says: do not raise as a semi-bluff into a bet bigger than 0.85x
+      // the pot.
+      potFrac <= 0.85 &&
       fastRandom() < params.bluffFreq * params.aggression * bluffScale * 0.5 * omahaDrawMod()
     ) {
       // V13: register the barrel plan. planBarrel was called on all three BET
@@ -2251,7 +2279,9 @@ export class HorseLogic {
       oppCount === 1 &&
       blocker &&
       equity < 0.3 &&
-      betRatio <= 0.75 &&
+      // Was `betRatio <= 0.75` — also always true, so river blocker
+      // raise-bluffs fired into any sizing at all.
+      potFrac <= 0.75 &&
       fastRandom() < params.bluffFreq * 0.35 * Math.min(1.2, bluffScale)
     ) {
       const raiseToAmt = currentBet + (pot + toCall) * (1.0 + fastRandom() * 0.3);
@@ -2292,7 +2322,7 @@ export class HorseLogic {
           // have SHOWN DOWN as value gets real respect; one who bombs with
           // air gets called down. Only on the river, only on big sizings —
           // exactly where the tell was observed.
-          if (opts.v16Reads !== false && isRiver && betRatio >= 0.75) {
+          if (opts.v16Reads !== false && isRiver && potFrac >= 0.75) {
             const tell = HorseMind.bigBetValueTendency(bettorId);
             if (tell !== null) {
               if (tell >= 0.75) respect += 0.12;
@@ -2307,7 +2337,13 @@ export class HorseLogic {
     }
     // V7 overbet polarity: an overbet is nuts-or-bluffs. Medium hands without
     // a nut blocker fold more; holding the blocker shifts toward the catch.
-    if (useSizeReads && betRatio > 1.2) respect += blocker ? -0.05 : 0.08;
+    // Was `betRatio > 1.2` — unreachable, and the handoff's documented
+    // never-executed branch. On the honest scale 1.2 means a 1.2x-pot
+    // overbet, which is exactly what the comment above always described.
+    if (useSizeReads && potFrac > 1.2) {
+      respect += blocker ? -0.05 : 0.08;
+      if (tele15) noteFire('v19_overbet_polarity');
+    }
     // ═══ V17 CALL-SIDE BLOCKER ═══ facing a big river bet on a board whose
     // front-door flush draw MISSED, a hero holding two-plus cards of that
     // suit holds the bluffs himself — the bettor's range just lost most of
@@ -2315,7 +2351,7 @@ export class HorseLogic {
     if (
       (opts.v17CatchBlock ?? true) !== false &&
       isRiver &&
-      betRatio >= 0.75 &&
+      potFrac >= 0.75 &&
       gs.communityCards.length >= 5
     ) {
       const suitN17 = new Map<string, number>();
@@ -2331,7 +2367,10 @@ export class HorseLogic {
     // V12 (G): the same blocker logic extends into the big-bet band (0.8-1.2
     // pot) on the river — large river bets are already polarized enough that
     // the blocker meaningfully changes the catch.
-    if ((opts.v12River ?? opts.v12) !== false && isRiver && betRatio >= 0.8 && betRatio <= 1.2) {
+    // Was betRatio 0.8..1.2: the top of that band is unreachable and the
+    // bottom needed a 4x-pot bet. On the honest scale this is the big-bet
+    // band the comment describes.
+    if ((opts.v12River ?? opts.v12) !== false && isRiver && potFrac >= 0.8 && potFrac <= 1.6) {
       respect += blocker ? -0.04 : 0.04;
     }
     // (V10 explored a river blocker-aware bluff-catch adjustment here; the

@@ -197,6 +197,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
    */
   loadOnce: (userId: string) => {
     const state = get();
+    const pendingPlayerAppearance = new Set<string>();
 
     // Already loaded for this user — skip
     if (state._loaded && state._userId === userId) return;
@@ -269,7 +270,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         // A FAILED avatar read must not overwrite the cached one with null.
         // Only a query that actually came back gets to say the player has no
         // avatar; anything else keeps the face already on screen.
-        if (!profileResult.error) {
+        if (!profileResult.error && pendingPlayerAppearance.size === 0) {
           const avatarUrl = profileResult.data?.avatar_url || null;
           set({ avatarUrl });
           persistAvatar(userId, avatarUrl);
@@ -312,7 +313,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
             if (nR.error)
               reportError(nR.error, 'useHeaderDataStore.notification_count_fetch_retry');
             if (mR.error) reportError(mR.error, 'useHeaderDataStore.message_count_fetch_retry');
-            if (!pR.error) {
+            if (!pR.error && pendingPlayerAppearance.size === 0) {
               const retriedAvatar = pR.data?.avatar_url || null;
               set({ avatarUrl: retriedAvatar });
               persistAvatar(userId, retriedAvatar);
@@ -432,6 +433,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
              apply to a replication payload. */
           const row = payload?.new;
           if (!row) return;
+          if (pendingPlayerAppearance.size > 0) return;
           const nextAvatar = row['arena_avatar_url'];
           if (typeof nextAvatar === 'string' && nextAvatar) {
             get().setAvatarUrl(nextAvatar);
@@ -496,15 +498,46 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       }
     });
 
-    // ── Sync avatar changes from AvatarGallery (instant, no realtime delay) ──
+    const unsubAppearanceMutation = masterBus.subscribe('CUSTOMIZATION_MUTATION_STATE', (event) => {
+      if (event.payload.kind !== 'player-appearance' || event.payload.scope !== userId) return;
+      if (event.payload.state === 'pending') {
+        pendingPlayerAppearance.add(event.payload.mutationId);
+      } else if (event.payload.state !== 'rolling-back') {
+        pendingPlayerAppearance.delete(event.payload.mutationId);
+      }
+    });
+
+    const unsubPlayerAppearance = masterBus.subscribe('PLAYER_APPEARANCE_CHANGED', (event) => {
+      if (event.payload.userId !== userId) return;
+      if (typeof event.payload.avatar === 'string' && event.payload.avatar) {
+        get().setAvatarUrl(event.payload.avatar);
+      }
+      if (event.payload.frame !== undefined || event.payload.aura !== undefined) {
+        get().setCosmetics(
+          event.payload.frame !== undefined ? event.payload.frame : get().equippedFrame,
+          event.payload.aura !== undefined ? event.payload.aura : get().equippedAura
+        );
+      }
+    });
+
+    // ── Backward-compatible avatar events from older in-app surfaces ──
     const unsubProfileLoaded = masterBus.subscribe('USER_PROFILE_LOADED', (event) => {
+      if (event.payload.userId && event.payload.userId !== userId) return;
       const avatarUrl = event.payload?.avatarUrl;
       if (avatarUrl && typeof avatarUrl === 'string') {
         get().setAvatarUrl(avatarUrl);
       }
     });
 
-    set({ _busUnsubscribers: [unsubNotifRead, unsubDmCount, unsubProfileLoaded] });
+    set({
+      _busUnsubscribers: [
+        unsubNotifRead,
+        unsubDmCount,
+        unsubAppearanceMutation,
+        unsubPlayerAppearance,
+        unsubProfileLoaded,
+      ],
+    });
   },
 
   teardown: () => {

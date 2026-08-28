@@ -1,0 +1,155 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  AD SERVICE — house ads, and the first impression tracking this app has had
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan 2026-08-27: "SINCE WE HAVE ZERO PAID ADS WE SHOULD BE PROMOTING OUR OWN
+ * FEATURES AND CONTENTS IN THE AD SPACE."
+ *
+ * ── WHY THE RESOLVER IS AN RPC AND NOT A QUERY HERE ────────────────────────
+ * Targeting is an entitlement question: who is eligible to see what, and how
+ * often. Every rule lives in `fn_resolve_ads` so the client cannot disagree
+ * with the database about eligibility, and so a future paid advertiser cannot
+ * be billed for impressions a browser decided to serve itself. The client's
+ * whole job is to render what it is handed and report what happened.
+ *
+ * ── VIP MEMBERS SEE ADS ────────────────────────────────────────────────────
+ * Dan, same day, explicitly: "even vips will see ads remove that for now."
+ * There is therefore NO VIP suppression anywhere in this file or in the
+ * resolver, and the "Ad-Free Experience" line has been removed from every VIP
+ * surface it was still sold on (the Geeves knowledge base was the live one).
+ * If that ever reverses it changes in `fn_resolve_ads`, not here.
+ *
+ * ── TRACKING IS THE POINT, NOT A NICETY ────────────────────────────────────
+ * This product ships eleven promotional surfaces and, before today, not one
+ * of them recorded an impression or a click. We have been advertising for
+ * months with no idea whether anybody looked. Logging is therefore
+ * best-effort but never silent: a failed write is reported, because a
+ * tracking system that quietly stops is worse than none — it produces
+ * confident zeroes.
+ */
+
+import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
+
+/** The surfaces an ad can occupy. Mirrors the CHECK on `ad_placement.slot`. */
+export type AdSlot =
+  | 'lobby_strip'
+  | 'session_summary'
+  | 'empty_state'
+  | 'hub_promotions'
+  | 'table_between_hands';
+
+export interface HouseAd {
+  adId: string;
+  adKey: string;
+  category: string;
+  headline: string;
+  body: string | null;
+  glyph: string | null;
+  targetUrl: string | null;
+  ctaLabel: string | null;
+}
+
+type AdEventType = 'impression' | 'click' | 'dismiss';
+
+/**
+ * Impressions already logged this page-load, keyed `adId:slot`.
+ *
+ * The lobby strip rotates every seven seconds and React re-renders for
+ * unrelated reasons constantly; without this, one player idling in the lobby
+ * would log an "impression" every few seconds and the click-through rate of
+ * every campaign would be divided by a number that means nothing. One view
+ * per ad per slot per page-load is the honest unit.
+ */
+const seenThisLoad = new Set<string>();
+
+export const AdService = {
+  /**
+   * What should this player see in this slot right now?
+   *
+   * Returns [] on any failure. An advert is the one thing that must never
+   * break a page or render an error in its place — but the failure is
+   * reported, so an ad system that has quietly stopped serving is visible to
+   * us rather than looking like "no campaigns are running".
+   */
+  async resolve(slot: AdSlot, clubId?: string | null, limit = 3): Promise<HouseAd[]> {
+    try {
+      const { data, error } = await supabase.rpc('fn_resolve_ads', {
+        p_slot: slot,
+        p_club_id: clubId ?? null,
+        p_limit: limit,
+      });
+      if (error) {
+        reportError(error, 'AdService.resolve', { slot });
+        return [];
+      }
+      return (data || []).map((r: Record<string, unknown>) => ({
+        adId: String(r.ad_id),
+        adKey: String(r.ad_key),
+        category: String(r.category),
+        headline: String(r.headline ?? ''),
+        body: r.body == null ? null : String(r.body),
+        glyph: r.glyph == null ? null : String(r.glyph),
+        targetUrl: r.target_url == null ? null : String(r.target_url),
+        ctaLabel: r.cta_label == null ? null : String(r.cta_label),
+      }));
+    } catch (e) {
+      reportError(e, 'AdService.resolve', { slot });
+      return [];
+    }
+  },
+
+  /**
+   * Record that an ad was actually shown. De-duplicated per page-load.
+   *
+   * Fire-and-forget by design: nothing in the render path waits on this, and
+   * a tracking failure must never delay or block the thing being tracked.
+   */
+  logImpression(ad: Pick<HouseAd, 'adId'>, slot: AdSlot, clubId?: string | null): void {
+    const key = `${ad.adId}:${slot}`;
+    if (seenThisLoad.has(key)) return;
+    seenThisLoad.add(key);
+    void AdService.logEvent(ad.adId, slot, 'impression', clubId);
+  },
+
+  /** A tap. Not de-duplicated — a player clicking twice really did click twice. */
+  logClick(ad: Pick<HouseAd, 'adId'>, slot: AdSlot, clubId?: string | null): void {
+    void AdService.logEvent(ad.adId, slot, 'click', clubId);
+  },
+
+  logDismiss(ad: Pick<HouseAd, 'adId'>, slot: AdSlot, clubId?: string | null): void {
+    void AdService.logEvent(ad.adId, slot, 'dismiss', clubId);
+  },
+
+  /**
+   * The write. `user_id` comes from the session because RLS demands it match
+   * `auth.uid()` — a signed-out viewer simply does not log, which is correct:
+   * we cannot frequency-cap somebody we cannot identify, and an anonymous
+   * impression row would only inflate the denominator.
+   */
+  async logEvent(
+    adId: string,
+    slot: AdSlot,
+    eventType: AdEventType,
+    clubId?: string | null
+  ): Promise<void> {
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const userId = auth?.session?.user?.id;
+      if (!userId) return;
+      const { error } = await supabase.from('ad_event').insert({
+        ad_id: adId,
+        user_id: userId,
+        slot,
+        event_type: eventType,
+        club_id: clubId ?? null,
+      });
+      if (error) reportError(error, 'AdService.logEvent', { slot, eventType });
+    } catch (e) {
+      reportError(e, 'AdService.logEvent', { slot, eventType });
+    }
+  },
+};
+
+export default AdService;

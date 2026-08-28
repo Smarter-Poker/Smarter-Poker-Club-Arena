@@ -57,9 +57,24 @@ const BUBBLE_MAX_AGE_MS = CHAT_BUBBLE_LIFETIME_MS;
  */
 const ENCODED_MSG_REGEX = /^\[(REACTION|THROW):.+:\d+\]$/;
 
+/** Stable identity, so the default for `speakingPlayerIds` is not a new array
+    on every render (which would restart every memo that depends on it). */
+const EMPTY_SPEAKERS: ReadonlyArray<string> = [];
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * What kind of bubble this is.
+ *
+ * Dan's request was "a bubble with the chat above the player who has MESSAGED
+ * OR TALKED on the table". A typed line and a live microphone are the same
+ * affordance in the same place, and they are not the same picture: text has
+ * words and a 5s life, voice has neither - it is on while the player holds the
+ * button and off the instant they let go.
+ */
+export type SeatChatBubbleVariant = 'message' | 'speaking';
 
 export interface SeatChatBubble {
   /** Source chat message id, so React keys stay stable across re-renders. */
@@ -71,6 +86,8 @@ export interface SeatChatBubble {
   content: string;
   /** Epoch ms the bubble was raised; used only for expiry. */
   shownAt: number;
+  /** 'message' unless voice raised it. Absent means 'message'. */
+  variant?: SeatChatBubbleVariant;
 }
 
 export interface ChatBubbleProps {
@@ -86,6 +103,13 @@ export interface ChatBubbleProps {
    * above them (the BBJ banner), so their bubble points DOWN instead of up.
    */
   placement?: 'above' | 'below';
+  /**
+   * 'speaking' draws the voice indicator instead of text: three pulsing dots,
+   * a green rim, and no 5s life - it stays for exactly as long as the caller
+   * keeps saying the player is talking. `text` is ignored in that variant, so
+   * the voice agent does not have to invent a string.
+   */
+  variant?: SeatChatBubbleVariant;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -103,15 +127,31 @@ export function ChatBubble({
   playerName,
   isOwn = false,
   placement = 'above',
+  variant = 'message',
 }: ChatBubbleProps) {
+  const isSpeaking = variant === 'speaking';
   return (
     <div
-      className={`chat-bubble chat-bubble--${placement}${isOwn ? ' chat-bubble--own' : ''}`}
+      className={`chat-bubble chat-bubble--${placement}${isOwn ? ' chat-bubble--own' : ''}${
+        isSpeaking ? ' chat-bubble--speaking' : ''
+      }`}
       role="status"
       aria-live="polite"
+      aria-label={isSpeaking ? `${playerName || 'Player'} is speaking` : undefined}
     >
       {playerName ? <span className="chat-bubble__name">{playerName}</span> : null}
-      <span className="chat-bubble__text">{text}</span>
+      {isSpeaking ? (
+        /* Three dots, not the word "Speaking": the bubble is 132px wide at
+           375px and sits over a seat plate during a live hand. `aria-hidden`
+           because the label above already says it in words. */
+        <span className="chat-bubble__voice" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+      ) : (
+        <span className="chat-bubble__text">{text}</span>
+      )}
       <span className="chat-bubble__tail" aria-hidden="true" />
     </div>
   );
@@ -154,6 +194,23 @@ export interface UseSeatChatBubblesOptions {
   lifetimeMs?: number;
   /** Chat can be switched off per table (Bible V8 text_message); bubbles follow. */
   enabled?: boolean;
+  /**
+   * ═══ THE VOICE INTEGRATION ═══
+   *
+   * Player ids that are talking RIGHT NOW. Each one that maps to a seat gets a
+   * `variant: 'speaking'` bubble for exactly as long as its id stays in this
+   * array - no timer, no lifetime, because the caller already knows when the
+   * microphone opened and closed and a second opinion here could only disagree
+   * with it.
+   *
+   * This is the whole API the voice agent needs. Pass the ids; the table shows
+   * it. Default empty, so nothing changes for a table with no voice.
+   *
+   * A seat that is BOTH talking and has a live message bubble shows the
+   * MESSAGE: the words are the more informative of the two, and stacking both
+   * over one seat plate is how you cover the seat above.
+   */
+  speakingPlayerIds?: ReadonlyArray<string>;
 }
 
 /**
@@ -167,7 +224,11 @@ export function useSeatChatBubbles(
   seatOwnerIds: ReadonlyArray<string | null | undefined>,
   options: UseSeatChatBubblesOptions = {}
 ): SeatChatBubble[] {
-  const { lifetimeMs = CHAT_BUBBLE_LIFETIME_MS, enabled = true } = options;
+  const {
+    lifetimeMs = CHAT_BUBBLE_LIFETIME_MS,
+    enabled = true,
+    speakingPlayerIds = EMPTY_SPEAKERS,
+  } = options;
 
   const [bubbles, setBubbles] = useState<SeatChatBubble[]>([]);
   /** Message ids already turned into a bubble (or deliberately skipped). */
@@ -252,7 +313,44 @@ export function useSeatChatBubbles(
   // Prune bubbles whose seat emptied out while the bubble was still up: the
   // player left, so the box would hover over an EMPTY seat plate.
   const activeSeats = new Set(seatOwnerIds.map((id, i) => (id ? i + 1 : 0)).filter((n) => n > 0));
-  return bubbles.filter((b) => activeSeats.has(b.seatNumber));
+  const messageBubbles = bubbles.filter((b) => activeSeats.has(b.seatNumber));
+
+  if (!enabled || speakingPlayerIds.length === 0) return messageBubbles;
+
+  /* Voice, derived on the spot rather than held in state: whether a player is
+     talking is not this hook's fact, it is the caller's, and copying it into
+     state here would only create a version of it that can go stale. */
+  const takenSeats = new Set(messageBubbles.map((b) => b.seatNumber));
+  const speaking: SeatChatBubble[] = [];
+  for (const playerId of speakingPlayerIds) {
+    const seatNumber = seatOfSender(playerId, seatOwnerIds);
+    if (seatNumber <= 0) continue; // Not seated: nothing to sit over.
+    if (takenSeats.has(seatNumber)) continue; // A message is already up there.
+    takenSeats.add(seatNumber);
+    speaking.push({
+      // Not a message id, and deliberately prefixed so it can never collide
+      // with one — this bubble has no row behind it.
+      id: `speaking-${playerId}`,
+      seatNumber,
+      playerId,
+      // The last thing they said carries their display name; the hook is never
+      // given the roster, and a wrong name over a seat is worse than none.
+      playerName: nameFromMessages(messages, playerId),
+      content: '',
+      shownAt: 0,
+      variant: 'speaking',
+    });
+  }
+  return speaking.length ? [...messageBubbles, ...speaking] : messageBubbles;
+}
+
+/** Most recent display name this feed has for a player, or '' if it has none. */
+function nameFromMessages(messages: ReadonlyArray<ChatMessage>, playerId: string): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.playerId === playerId && m.playerName) return m.playerName;
+  }
+  return '';
 }
 
 /**

@@ -133,7 +133,8 @@ describe('no site credits and then logs as a separate, ungated step', () => {
 
         // Permitted only when the credit reports back and the write is gated.
         expect(
-          rpc === 'fn_credit_player_wallet_once' && /didCredit|=== false|if \(!\w*[Cc]redit/.test(window),
+          rpc === 'fn_credit_player_wallet_once' &&
+            /didCredit|=== false|if \(!\w*[Cc]redit/.test(window),
           `${file}:${i + 1} credits via ${rpc} and then writes a ledger row that is not gated ` +
             `on whether the credit actually happened — the phantom-row shape`
         ).toBe(true);
@@ -143,19 +144,38 @@ describe('no site credits and then logs as a separate, ungated step', () => {
 });
 
 describe('the two table cash-out paths cannot diverge again', () => {
-  const seats = stripComments(readFileSync(join(ROOT, 'server/src/services/supabase/seats.ts'), 'utf8'));
+  const seats = stripComments(
+    readFileSync(join(ROOT, 'server/src/services/supabase/seats.ts'), 'utf8')
+  );
 
+  /* 2026-08-27: these two assertions still guard "the two paths cannot
+     diverge", but the mechanism they guard changed, so they had to change with
+     it (they are updated in the same commit that moved the behaviour, per the
+     never-push-a-red-test rule).
+
+     Both paths used to credit via `atomic_credit_wallet_and_log` here in
+     TypeScript, keyed with `cashoutKey(seat)`. That shape was the bug: the
+     stack was read in a SEPARATE transaction from the credit, with no lock, so
+     an add-on could commit in the gap and its chips were destroyed. Read,
+     credit and vacate now happen inside `atomic_seat_cashout_locked` under
+     FOR UPDATE, and the key is derived from the locked row.
+
+     The invariant is stronger than before rather than weaker: there is now
+     exactly ONE implementation of "cash a seat out", so the two paths cannot
+     drift apart at all - which is what this describe block has always been
+     about. */
   it('markSeatAsLeft and atomicCashout call the SAME rpc', () => {
     const calls = [...seats.matchAll(/rpc\(\s*'([a-z_]+)'/g)].map((m) => m[1]);
-    const credits = calls.filter((c) => (CREDIT_RPCS as readonly string[]).includes(c));
-    expect(credits.length, 'both cash-out paths should credit').toBe(2);
-    expect(new Set(credits).size, 'the two paths must use one RPC — they share a key').toBe(1);
-    expect(credits[0]).toBe('atomic_credit_wallet_and_log');
+    const cashouts = calls.filter((c) => c === 'atomic_seat_cashout_locked');
+    expect(cashouts.length, 'both cash-out paths should cash out').toBe(2);
+    expect(new Set(cashouts).size, 'the two paths must use one RPC').toBe(1);
   });
 
-  it('both derive their key from cashoutKey(seat)', () => {
-    const uses = [...seats.matchAll(/p_idempotency_key:\s*cashoutKey\(seat\)/g)];
-    expect(uses.length).toBe(2);
+  it('neither path credits or vacates outside that rpc', () => {
+    /* A credit or a left_at stamp out here is a second transaction, and a
+       second transaction is the race. */
+    expect(seats).not.toMatch(/atomic_credit_wallet_and_log/);
+    expect(seats).not.toMatch(/left_at:\s*new Date\(\)\.toISOString\(\)/);
   });
 
   it('atomicCashout no longer hand-writes its own wallet_transactions row', () => {

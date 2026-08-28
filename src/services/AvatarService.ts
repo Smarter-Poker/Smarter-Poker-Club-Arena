@@ -214,6 +214,34 @@ class AvatarServiceClass {
   private _presetCache: Avatar[] | null = null;
   private _presetCacheTs = 0;
   private static readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  private _avatarWriteTails = new Map<string, Promise<void>>();
+  private _cosmeticWriteTails = new Map<string, Promise<void>>();
+
+  /**
+   * Preserve the user's tap order for writes to the same profile row. Without
+   * this, a slower first avatar request can finish after a faster second one
+   * and silently become the durable selection even though the UI shows the
+   * second. The tail always resolves so one failed mutation cannot block the
+   * next correction.
+   */
+  private async _runOrdered<T>(
+    tails: Map<string, Promise<void>>,
+    userId: string,
+    work: () => Promise<T>
+  ): Promise<T> {
+    const previous = tails.get(userId) ?? Promise.resolve();
+    const task = previous.then(work);
+    const tail = task.then(
+      () => undefined,
+      () => undefined
+    );
+    tails.set(userId, tail);
+    try {
+      return await task;
+    } finally {
+      if (tails.get(userId) === tail) tails.delete(userId);
+    }
+  }
 
   /**
    * Get the Hub avatar page URL for embedding or navigation
@@ -460,73 +488,75 @@ class AvatarServiceClass {
    * Update user's avatar in both profiles and user_avatars tables.
    */
   async setUserAvatar(userId: string, avatarUrl: string): Promise<boolean> {
-    try {
-      avatarUrl = normalizeAvatarUrl(avatarUrl);
+    return this._runOrdered(this._avatarWriteTails, userId, async () => {
+      try {
+        avatarUrl = normalizeAvatarUrl(avatarUrl);
 
-      /**
-       * Reported and refused, not thrown. A caller holding a photo URL should
-       * leave the player's existing avatar alone rather than crash the screen
-       * they are standing on — and the report is what tells us a write path was
-       * missed, which is the only way we would ever find one.
-       */
-      if (!isLibraryAvatarUrl(avatarUrl)) {
-        reportWarning(
-          'Refused a non-library avatar URL - profile pictures are no longer supported',
-          'AvatarService.setUserAvatar',
-          { userId, avatarUrl: avatarUrl.slice(0, 120) }
-        );
-        return false;
-      }
+        /**
+         * Reported and refused, not thrown. A caller holding a photo URL should
+         * leave the player's existing avatar alone rather than crash the screen
+         * they are standing on — and the report is what tells us a write path was
+         * missed, which is the only way we would ever find one.
+         */
+        if (!isLibraryAvatarUrl(avatarUrl)) {
+          reportWarning(
+            'Refused a non-library avatar URL - profile pictures are no longer supported',
+            'AvatarService.setUserAvatar',
+            { userId, avatarUrl: avatarUrl.slice(0, 120) }
+          );
+          return false;
+        }
 
-      /* Dan 2026-08-21: writes go to arena_avatar_url, NEVER avatar_url.
+        /* Dan 2026-08-21: writes go to arena_avatar_url, NEVER avatar_url.
          avatar_url is the player's social media profile picture. This picker
          lives in Club Arena and chooses the Club Arena avatar; writing the old
          column is what silently changed 17 people's social pictures earlier
          today. The two columns are now separate precisely so that cannot
          recur - and tests/unit/arenaAvatarSeparation.test.ts fails the build
          if any write in this app names avatar_url again. */
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ arena_avatar_url: avatarUrl })
-        .eq('id', userId);
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ arena_avatar_url: avatarUrl })
+          .eq('id', userId);
 
-      if (profileError) {
-        reportError(profileError, 'AvatarService.Profile_update_failed');
+        if (profileError) {
+          reportError(profileError, 'AvatarService.Profile_update_failed');
+          return false;
+        }
+
+        // Also upsert into user_avatars for history tracking.
+        // Previously gated on the URL containing a known bucket name, which
+        // meant uploads and OAuth profile photos were silently never recorded.
+        // Every avatar the user actually picks now gets a history row.
+        const avatarType = avatarUrl.includes(CUSTOM_AVATARS_BUCKET)
+          ? 'custom'
+          : avatarUrl.includes(SOCIAL_AVATARS_BUCKET)
+            ? 'preset'
+            : 'custom';
+
+        const { error: historyError } = await supabase.from('user_avatars').upsert(
+          {
+            user_id: userId,
+            avatar_type: avatarType,
+            custom_image_url: avatarUrl,
+            is_active: true,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' }
+        );
+
+        // History is best-effort: the profile write above is the source of
+        // truth, so a history failure must not report the change as failed.
+        if (historyError) {
+          console.warn('[AvatarService] Avatar history write failed:', historyError.message);
+        }
+
+        return true;
+      } catch (err) {
+        reportError(err, 'AvatarService.Error');
         return false;
       }
-
-      // Also upsert into user_avatars for history tracking.
-      // Previously gated on the URL containing a known bucket name, which
-      // meant uploads and OAuth profile photos were silently never recorded.
-      // Every avatar the user actually picks now gets a history row.
-      const avatarType = avatarUrl.includes(CUSTOM_AVATARS_BUCKET)
-        ? 'custom'
-        : avatarUrl.includes(SOCIAL_AVATARS_BUCKET)
-          ? 'preset'
-          : 'custom';
-
-      const { error: historyError } = await supabase.from('user_avatars').upsert(
-        {
-          user_id: userId,
-          avatar_type: avatarType,
-          custom_image_url: avatarUrl,
-          is_active: true,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id' }
-      );
-
-      // History is best-effort: the profile write above is the source of
-      // truth, so a history failure must not report the change as failed.
-      if (historyError) {
-        console.warn('[AvatarService] Avatar history write failed:', historyError.message);
-      }
-
-      return true;
-    } catch (err) {
-      reportError(err, 'AvatarService.Error');
-      return false;
-    }
+    });
   }
 
   /**
@@ -636,7 +666,14 @@ class AvatarServiceClass {
     userId: string
   ): Promise<{ cosmetics: (AvatarCosmetic & { isOwned: boolean })[]; ok: boolean }> {
     if (!userId) {
-      return { cosmetics: ALL_COSMETICS.map((c) => ({ ...c, isOwned: false })), ok: false };
+      /* A free cosmetic is owned even by nobody (2026-08-27, the three-free
+         rule): it consults neither VIP status nor the ledger, so a signed-out
+         or unresolved account still sees the free tier as available rather
+         than as six locked tiles it can never explain. */
+      return {
+        cosmetics: ALL_COSMETICS.map((c) => ({ ...c, isOwned: c.tier === 'free' })),
+        ok: false,
+      };
     }
 
     /* TWO INDEPENDENT SOURCES, TRACKED SEPARATELY.
@@ -726,66 +763,68 @@ class AvatarServiceClass {
   ): Promise<{ ok: boolean; reason?: 'not-owned' | 'unknown-cosmetic' | 'write-failed' }> {
     if (!userId) return { ok: false, reason: 'write-failed' };
 
-    const resolvedFrame = frame ? resolveCosmetic(frame, 'frame') : null;
-    const resolvedAura = aura ? resolveCosmetic(aura, 'aura') : null;
-    if ((frame && !resolvedFrame) || (aura && !resolvedAura)) {
-      return { ok: false, reason: 'unknown-cosmetic' };
-    }
+    return this._runOrdered(this._cosmeticWriteTails, userId, async () => {
+      const resolvedFrame = frame ? resolveCosmetic(frame, 'frame') : null;
+      const resolvedAura = aura ? resolveCosmetic(aura, 'aura') : null;
+      if ((frame && !resolvedFrame) || (aura && !resolvedAura)) {
+        return { ok: false, reason: 'unknown-cosmetic' };
+      }
 
-    if (resolvedFrame || resolvedAura) {
-      /* `ok` is deliberately NOT consulted here. Ownership is decided per
+      if (resolvedFrame || resolvedAura) {
+        /* `ok` is deliberately NOT consulted here. Ownership is decided per
          cosmetic, and a cosmetic that is not in `ownedIds` is refused whether
          that is because the player does not own it or because the source that
          would have proved it did not answer. Bailing on `!ok` instead would
          refuse a VIP their own frame whenever the unrelated unlock-ledger query
          happened to fail. */
-      const { cosmetics } = await this.getCosmeticCatalog(userId);
-      const ownedIds = new Set(cosmetics.filter((c) => c.isOwned).map((c) => c.id));
-      if (resolvedFrame && !ownedIds.has(resolvedFrame.id)) {
-        return { ok: false, reason: 'not-owned' };
+        const { cosmetics } = await this.getCosmeticCatalog(userId);
+        const ownedIds = new Set(cosmetics.filter((c) => c.isOwned).map((c) => c.id));
+        if (resolvedFrame && !ownedIds.has(resolvedFrame.id)) {
+          return { ok: false, reason: 'not-owned' };
+        }
+        if (resolvedAura && !ownedIds.has(resolvedAura.id)) {
+          return { ok: false, reason: 'not-owned' };
+        }
       }
-      if (resolvedAura && !ownedIds.has(resolvedAura.id)) {
-        return { ok: false, reason: 'not-owned' };
-      }
-    }
 
-    const payload = {
-      equipped_frame: resolvedFrame?.id ?? null,
-      equipped_aura: resolvedAura?.id ?? null,
-    };
+      const payload = {
+        equipped_frame: resolvedFrame?.id ?? null,
+        equipped_aura: resolvedAura?.id ?? null,
+      };
 
-    try {
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update(payload)
-        .eq('id', userId);
+      try {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update(payload)
+          .eq('id', userId);
 
-      if (profileError) {
-        reportError(profileError, 'AvatarService.setCosmetics_profile');
-        /* 23514 is the ownership trigger firing. It reaches here only when the
+        if (profileError) {
+          reportError(profileError, 'AvatarService.setCosmetics_profile');
+          /* 23514 is the ownership trigger firing. It reaches here only when the
            client-side check above passed and the database disagreed, which
            means the entitlement changed underneath us — report it as
            not-owned so the player reads the true reason. */
-        return {
-          ok: false,
-          reason: profileError.code === '23514' ? 'not-owned' : 'write-failed',
-        };
+          return {
+            ok: false,
+            reason: profileError.code === '23514' ? 'not-owned' : 'write-failed',
+          };
+        }
+
+        const { error: mirrorError } = await supabase
+          .from('user_avatars')
+          .update(payload)
+          .eq('user_id', userId);
+
+        if (mirrorError) {
+          console.warn('[AvatarService] Cosmetics mirror write failed:', mirrorError.message);
+        }
+
+        return { ok: true };
+      } catch (err) {
+        reportError(err, 'AvatarService.setCosmetics');
+        return { ok: false, reason: 'write-failed' };
       }
-
-      const { error: mirrorError } = await supabase
-        .from('user_avatars')
-        .update(payload)
-        .eq('user_id', userId);
-
-      if (mirrorError) {
-        console.warn('[AvatarService] Cosmetics mirror write failed:', mirrorError.message);
-      }
-
-      return { ok: true };
-    } catch (err) {
-      reportError(err, 'AvatarService.setCosmetics');
-      return { ok: false, reason: 'write-failed' };
-    }
+    });
   }
 }
 

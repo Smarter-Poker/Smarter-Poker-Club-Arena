@@ -57,299 +57,6 @@
   color: rgba(255, 255, 255, 0.4);
 }
 
-.bbjhd__colkey {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 8px;
-  padding: 0 10px;
-  font-size: 9px;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.32);
-}
-
-.bbjhd__colkey span:nth-child(2) {
-  justify-self: center;
-}
-
-.bbjhd__streets {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.bbjhd__street {
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  overflow: hidden;
-}
-
-.bbjhd__street-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  background: rgba(255, 255, 255, 0.06);
-  font-size: 12px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.bbjhd__street-name {
-  flex-shrink: 0;
-}
-
-.bbjhd__street-board {
-  display: flex;
-  gap: 3px;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.bbjhd__street-pot {
-  margin-left: auto;
-  flex-shrink: 0;
-  color: #d5dae2;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Action row: position | name | action chip | amount | running pot */
-.bbjhd__row {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto 52px 58px;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  font-size: 11.5px;
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.bbjhd__row + .bbjhd__row {
-  border-top: 1px solid rgba(255, 255, 255, 0.045);
-}
-
-.bbjhd__pos {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 30px;
-  height: 17px;
-  padding: 0 4px;
-  border-radius: 4px;
-  background: rgba(170, 179, 192, 0.16);
-  color: #aab3c0;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.3px;
-}
-
-.bbjhd__pos:empty {
-  background: transparent;
-}
-
-.bbjhd__name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.bbjhd__name.is-you {
-  color: #34c759;
-  font-weight: 700;
-}
-
-.bbjhd__act {
-  padding: 2px 7px;
-  border-radius: 4px;
-  font-size: 9.5px;
-  font-weight: 700;
-  /* NO text-transform. Dan's house rule is the first letter of every word,
-     and a CSS lowercase here silently overrode every label the component
-     sets. Removed once on 2026-08-21 and reintroduced by a stale-tree
-     commit the same day; if it comes back a third time, the chip labels
-     stop obeying the rule again. */
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.65);
-  white-space: nowrap;
-}
-
-.bbjhd__act--fold {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.38);
-}
-
-.bbjhd__act--check {
-  background: rgba(120, 160, 255, 0.14);
-  color: #86a9ff;
-}
-
-.bbjhd__act--call {
-  background: rgba(52, 199, 89, 0.14);
-  color: #34c759;
-}
-
-.bbjhd__act--bet,
-.bbjhd__act--raise {
-  background: rgba(255, 149, 0, 0.16);
-  color: #ff9500;
-}
-
-.bbjhd__act--all_in,
-.bbjhd__act--allin {
-  background: rgba(255, 59, 48, 0.18);
-  color: #ff453a;
-}
-
-.bbjhd__act--post {
-  background: rgba(213, 218, 226, 0.14);
-  color: #d5dae2;
-}
-
-.bbjhd__amt,
-.bbjhd__pot {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.bbjhd__amt {
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.bbjhd__pot {
-  color: rgba(213, 218, 226, 0.75);
-  font-size: 10.5px;
-}
-
-.bbjhd__potline {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(213, 218, 226, 0.07);
-  border: 1px solid rgba(213, 218, 226, 0.2);
-  font-size: 12px;
-  font-weight: 700;
-  color: #d5dae2;
-  font-variant-numeric: tabular-nums;
-}
-
-.bbjhd__section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 7px 10px;
-  background: rgba(255, 255, 255, 0.06);
-  font-size: 12px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.bbjhd__showdown,
-.bbjhd__jackpot {
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  overflow: hidden;
-}
-
-.bbjhd__sd {
-  padding: 8px;
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.bbjhd__sd + .bbjhd__sd {
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.bbjhd__sd-top {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
-  font-size: 11.5px;
-}
-
-.bbjhd__sd-hand {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: right;
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 10.5px;
-}
-
-.bbjhd__sd-net {
-  flex-shrink: 0;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-.bbjhd__sd-net.is-up {
-  color: #34c759;
-}
-
-.bbjhd__sd-net.is-down {
-  color: #ff6b6b;
-}
-
-.bbjhd__sd-cards {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  flex-wrap: wrap;
-}
-
-.bbjhd__sd-sep {
-  width: 1px;
-  align-self: stretch;
-  margin: 0 4px;
-  background: rgba(255, 255, 255, 0.14);
-}
-
-.bbjhd__jackpot-total {
-  color: #d5dae2;
-  font-variant-numeric: tabular-nums;
-}
-
-.bbjhd__pay {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  font-size: 11.5px;
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.bbjhd__pay + .bbjhd__pay {
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.bbjhd__pay-role {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.45);
-  white-space: nowrap;
-}
-
-.bbjhd__pay-amt {
-  color: #34c759;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.bbjhd__pay--bad_beat {
-  background: rgba(213, 218, 226, 0.07);
-}
-
-.bbjhd__pay--bad_beat .bbjhd__pay-amt {
-  color: #d5dae2;
-}
-
 .bbjhd__empty {
   padding: 28px 16px;
   text-align: center;
@@ -380,6 +87,7 @@
   from {
     background-position: 200% 0;
   }
+
   to {
     background-position: -200% 0;
   }
@@ -391,59 +99,136 @@
   }
 }
 
-/* Rake / jackpot fee taken out of the pot. */
-.bbjhd__drop {
-  display: flex;
+/* ── The jackpot payout box ───────────────────────────────────────────────
+   Lives here, not in HandDetailView.css, because BBJHandDetail is the only
+   thing that renders it and Vite splits CSS per chunk: a class defined in
+   another component's stylesheet is present only if that component happens
+   to land in the same chunk, which is luck rather than a contract.
+   tests/unit/classNamesResolve.test.ts enforces exactly that, and caught
+   this. */
+/* ── The jackpot payout box, drawn the way the reference frames it ────────── */
+.hdv__bbjp {
+  border-radius: 10px;
+  border: 1px solid rgba(240, 185, 11, 0.55);
+  overflow: hidden;
+}
+
+.hdv__bbjp-head {
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  color: #f0b90b;
+  background: rgba(240, 185, 11, 0.08);
+}
+
+.hdv__bbjp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  padding: 6px 10px;
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.5);
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.hdv__bbjp-row + .hdv__bbjp-row {
+  border-top: 1px solid rgba(240, 185, 11, 0.12);
+}
+
+.hdv__bbjp-id {
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.38);
+  white-space: nowrap;
+}
+
+.hdv__bbjp-amt {
+  color: #f0b90b;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── The summary card, for a jackpot whose hand was pruned ──────────────────
+   24 of the 29 real jackpots on this platform are in that state. The payout
+   ledger survives in full, so this shows what is real rather than one grey
+   sentence. */
+.bbjhd__summary {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.bbjhd__summary-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 10px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.bbjhd__summary-row + .bbjhd__summary-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.bbjhd__summary-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #f0b90b;
+  white-space: nowrap;
+}
+
+.bbjhd__summary-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fff;
+}
+
+.bbjhd__summary-hand {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bbjhd__retention {
+  margin: 0;
+  padding: 4px 10px 2px;
+  text-align: center;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* Applied by the meta row since it was written and defined nowhere, so the
+   timestamp silently inherited the parent's colour instead of its own. */
+.bbjhd__meta-when {
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+}
+
+/* The BBJP box lists shares; this is what they are shares OF. `jackpot.total`
+   has been in the payload from the start and nothing rendered it. */
+.hdv__bbjp-total {
+  float: right;
+  color: #f0b90b;
   font-variant-numeric: tabular-nums;
 }
 
-.bbjhd__drop strong {
-  color: rgba(255, 255, 255, 0.8);
-  font-weight: 700;
-}
-
-.bbjhd__drop-note {
-  margin-left: auto;
-  opacity: 0.65;
-}
-
-/* Showdown: the bad-beat hand leads, and the five that played are lit. */
-.bbjhd__sd.is-badbeat {
-  background: rgba(213, 218, 226, 0.06);
-  box-shadow: inset 3px 0 0 #d5dae2;
-}
-
-.bbjhd__sd-tag {
-  flex-shrink: 0;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(213, 218, 226, 0.2);
-  color: #d5dae2;
-  font-size: 8px;
+/* THE ONE ROW A PLAYER LOOKS FOR IN THIS BOX IS THEIR OWN.
+   `hdv__bbjp-name` carried `is-you` from the start and no stylesheet ever
+   defined the pair, so the highlight that BBJHandDetail threads
+   currentUserId/currentUserName all the way down to compute rendered with zero
+   visual difference. Same green as the winners list uses for `is-you`, so the
+   two surfaces agree on what "this is you" looks like. */
+.hdv__bbjp-name.is-you {
+  color: #34c759;
   font-weight: 800;
-  letter-spacing: 0.5px;
 }
 
-/* Cards that do not play recede. Opacity only, so nothing depends on hue. */
-.bbjhd__sd-cards .bbjhd-idle {
-  opacity: 0.34;
-  filter: grayscale(0.55);
-}
-
-.bbjhd__sd-cards .bbjhd-plays {
-  opacity: 1;
-  filter: drop-shadow(0 0 5px rgba(213, 218, 226, 0.5));
-}
-
-.bbjhd__sd-legend {
-  margin: 0;
-  padding: 6px 10px 8px;
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.38);
+.hdv__bbjp-row:has(.hdv__bbjp-name.is-you) {
+  background: rgba(52, 199, 89, 0.08);
+  border-radius: 6px;
 }

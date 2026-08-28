@@ -39,8 +39,17 @@ export interface NitEviction {
  * more tight orbit, and the cost of a wrong one is a player thrown out of a
  * hand they were entitled to play.
  *
- * Horses are excluded inside the function, and both rules fail open below
- * their sample floor — a player with no history has a VPIP of 0/0, not 0%.
+ * HORSES ARE PLAYERS (Dan 2026-08-27). This comment used to read "horses are
+ * excluded inside the function", and by then that was already false: the
+ * horse-only predicate had been removed from fn_nit_evictions the same day.
+ * What was still true, and worse, is that the fix could not bite - fn_nit_check
+ * judges VPIP from ca_hand_facts, and handFacts.ts wrote humans only, so a
+ * horse's sample was permanently zero and every horse cleared the floor for
+ * ever. Horses get fact rows at NIT tables now, so the rule and its evidence
+ * cover the same seats.
+ *
+ * Both rules still fail open below their sample floor - a player with no
+ * history has a VPIP of 0/0, not 0%.
  */
 export async function collectNitEvictions(tableId: string): Promise<NitEviction[]> {
   try {

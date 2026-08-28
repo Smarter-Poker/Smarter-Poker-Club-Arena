@@ -43,8 +43,12 @@ export interface ClubArenaApiOptions {
    * retrying, which only the caller knows.
    */
   idempotencyKey?: string;
-  /** Override the HTTP method. Defaults to POST (all mutating routes are POST). */
-  method?: 'POST' | 'GET';
+  /** Override the HTTP method. Defaults to POST (most mutating routes are POST).
+   *  PATCH/DELETE added 2026-08-27 for the house-ads admin route, which is a
+   *  real CRUD surface rather than a single action. */
+  method?: 'POST' | 'GET' | 'PATCH' | 'DELETE';
+  /** Query-string parameters. DELETE carries its target in the URL, not a body. */
+  query?: Record<string, string | number | undefined | null>;
 }
 
 /**
@@ -76,10 +80,24 @@ export async function callClubArenaApi<T = Record<string, unknown>>(
     headers['X-Idempotency-Key'] = opts.idempotencyKey || uuid();
   }
 
-  const response = await fetch(`/api/club-arena/${endpoint}`, {
-    method: opts.method || 'POST',
+  const method = opts.method || 'POST';
+  let url = `/api/club-arena/${endpoint}`;
+  if (opts.query) {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(opts.query)) {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+    }
+    const q = qs.toString();
+    if (q) url += `?${q}`;
+  }
+
+  const response = await fetch(url, {
+    method,
     headers,
-    body: JSON.stringify(body),
+    /* GET and DELETE carry no body. Sending one is a spec violation that some
+       runtimes reject outright, and a GET with a body silently breaks caching
+       proxies. */
+    ...(method === 'GET' || method === 'DELETE' ? {} : { body: JSON.stringify(body) }),
   });
 
   const data = await response

@@ -12,6 +12,29 @@
  * exists so the translucent tints below never repeat the literal hex.
  */
 
+/* The backdrop the panel never had.
+ *
+ * It rendered as a lone fixed div with no overlay behind it, so there was
+ * nothing to tap: the only way out was a 32px X in the corner, and in the
+ * installed app that X can sit under the status bar. It sits one layer under
+ * the panel so a tap anywhere off the sheet closes it. */
+.hh-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 499;
+  background: rgba(0, 0, 0, 0.45);
+  animation: hhBackdropIn 0.2s ease;
+}
+
+@keyframes hhBackdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .hh-panel {
   --hh-accent: #1877f2;
   --hh-accent-rgb: 24, 119, 242;
@@ -42,13 +65,28 @@
   }
 }
 
+/* Grab handle — visible only where the panel is a bottom sheet. */
+.hh-panel__grab {
+  display: none;
+  justify-content: center;
+  padding: 8px 0 2px;
+  flex-shrink: 0;
+}
+
+.hh-panel__grab span {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
 /* Header */
 .hh-panel__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  padding-top: calc(12px + env(safe-area-inset-top, 0));
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(0, 0, 0, 0.3);
   backdrop-filter: blur(10px) saturate(1.2);
@@ -364,13 +402,148 @@
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
 }
 
+/* ── Run It Twice ───────────────────────────────────────────────────────────
+   Production hand #3046089 ran three boards and this panel showed one. Every
+   board now gets a row and a run badge, in the same visual language the replay
+   already uses (HandReplay's RUN n badge). */
+.hh-runs {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(var(--hh-accent-rgb), 0.07);
+  border-left: 3px solid var(--hh-accent);
+}
+
+.hh-runs__count {
+  margin-left: auto;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hh-accent);
+}
+
+.hh-run {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.hh-run__badge {
+  min-width: 42px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--hh-accent);
+  color: var(--pure-white, #ffffff);
+  font-size: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.hh-run__cards {
+  display: inline-flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+
+/* The cards every run shares — dealt before the players agreed to run again.
+   Dimmed so the eye lands on the part that actually differs between boards. */
+.hh-card--shared {
+  opacity: 0.42;
+}
+
+.hh-runs__note {
+  margin-top: 4px;
+  font-size: 0.5625rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.45);
+}
+
 /* Responsive */
 @media (max-width: 380px) {
-  .hh-panel {
-    width: 100vw;
-  }
   .hh-entry__summary {
     padding: 8px 12px;
     gap: 6px;
+  }
+}
+
+/* ── Phones: a 3/4-height bottom sheet, not a cramped drawer ────────────────
+   At 381-640px the panel was a min(340px, 85vw) drawer pinned to the right
+   edge: too narrow to read, and with the backdrop above it there was still a
+   full-width strip of real estate doing nothing. As a bottom sheet the top
+   quarter of the screen is backdrop you can tap, which is the gesture people
+   reach for first. */
+@media (max-width: 640px) {
+  .hh-panel {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 75vh;
+    height: 75dvh;
+    border-left: none;
+    border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+    border-radius: 18px 18px 0 0;
+    box-shadow:
+      0 -8px 32px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    animation: hhSlideUp 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  }
+
+  .hh-panel__grab {
+    display: flex;
+  }
+
+  /* Dan 2026-08-24, from an iPhone: "there is no padding at the top, so you
+     can't even X off the page." Same rule the lobby sheet carries — the header
+     pays back the top inset, so the close button is always reachable. */
+  .hh-panel__header {
+    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  }
+}
+
+@keyframes hhSlideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* Multi-table only: the tab strip is a real element the drawer used to paint
+   over. --sp-tabbar-h is TableTabBar.css's published height (it already
+   includes the top inset). Scoped to .multi-table-page on purpose: the
+   variable is declared on :root as soon as that stylesheet loads, so an
+   unscoped read would push the single-table drawer down by a bar that is not
+   on screen. */
+@media (min-width: 641px) {
+  .multi-table-page .hh-panel {
+    top: var(--sp-tabbar-h, 0px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hh-panel,
+  .hh-backdrop {
+    animation: none;
+  }
+}
+
+/* PWA GUARANTEE. In an installed app the page draws under the status bar and
+   on some devices env(safe-area-inset-top) resolves to 0, so the env() padding
+   above silently vanishes and the X goes back under the clock. The floor makes
+   that impossible.
+
+   LAST IN THE FILE ON PURPOSE: the header's own rule sets a `padding`
+   shorthand, and a shorthand RESETS padding-top. Equal specificity means
+   source order decides. Nothing that touches .hh-panel__header padding may be
+   added below this block. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .hh-panel__header {
+    padding-top: calc(12px + max(env(safe-area-inset-top, 0px), 24px));
   }
 }

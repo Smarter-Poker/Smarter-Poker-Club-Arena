@@ -103,8 +103,56 @@
    restrained stage wash; gameplay remains the strongest layer on a phone. */
 .table-page[data-final-table='true'] {
   box-shadow:
-    inset 0 0 90px rgba(18, 104, 180, 0.14),
-    inset 0 0 0 1px rgba(210, 169, 86, 0.2);
+    inset 0 0 110px rgba(8, 32, 65, 0.3),
+    inset 0 0 0 1px rgba(210, 169, 86, 0.34);
+}
+
+.final-table-broadcast-hud {
+  position: absolute;
+  z-index: 45;
+  top: max(6px, env(safe-area-inset-top));
+  left: 50%;
+  display: grid;
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100% - 84px);
+  padding: 5px 9px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(218, 172, 82, 0.5);
+  border-radius: 4px;
+  color: #d9aa4e;
+  background: linear-gradient(180deg, rgba(7, 13, 23, 0.96), rgba(2, 6, 12, 0.94));
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.55),
+    inset 0 1px rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+  white-space: nowrap;
+  font:
+    700 7px/1 'JetBrains Mono',
+    ui-monospace,
+    monospace;
+  letter-spacing: 0.08em;
+}
+.final-table-broadcast-hud strong {
+  padding-inline: 7px;
+  border-inline: 1px solid rgba(218, 172, 82, 0.25);
+  color: #fff;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+}
+.final-table-broadcast-hud b {
+  color: #d9aa4e;
+  font: inherit;
+}
+
+@media (max-width: 390px) {
+  .final-table-broadcast-hud span {
+    display: none;
+  }
+  .final-table-broadcast-hud {
+    max-width: calc(100% - 104px);
+  }
 }
 
 /* Dan 2026-08-18: the blurred-skin .table-backdrop layer is GONE ("remove
@@ -783,110 +831,6 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   FIX 222: BIBLE V8 §11.2 — Tab 3 (Button Themes)
-   Dealer button color tokens — consumed by .dealer-button component
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='classic-white'] {
-  --dealer-btn-bg: linear-gradient(145deg, #ffffff 0%, #e8e8e8 50%, #d0d0d0 100%);
-  --dealer-btn-color: #111;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='red-d-gear'] {
-  --dealer-btn-bg: linear-gradient(135deg, #c62828, #e53935);
-  --dealer-btn-color: #fff;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='gray-d-gear'] {
-  --dealer-btn-bg: linear-gradient(135deg, #616161, #757575);
-  --dealer-btn-color: #fff;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='blue-crystal'] {
-  --dealer-btn-bg: linear-gradient(135deg, #1565c0, #42a5f5);
-  --dealer-btn-color: #fff;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='gold-star'] {
-  --dealer-btn-bg: linear-gradient(135deg, #f57f17, #fbc02d);
-  --dealer-btn-color: #1a1a1e;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='sports-themed'] {
-  --dealer-btn-bg: linear-gradient(135deg, #33691e, #558b2f);
-  --dealer-btn-color: #fff;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='jade-seal'] {
-  --dealer-btn-bg: radial-gradient(
-    circle at 34% 28%,
-    #d6f7df 0%,
-    #58ad7b 35%,
-    #145039 74%,
-    #09271d 100%
-  );
-  --dealer-btn-color: #f4fff8;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='amethyst-chip'] {
-  --dealer-btn-bg: radial-gradient(
-    circle at 34% 28%,
-    #ecdfff 0%,
-    #9c69d2 34%,
-    #4a2476 72%,
-    #1e0d34 100%
-  );
-  --dealer-btn-color: #fff;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='carbon-ion'] {
-  --dealer-btn-bg: conic-gradient(from 20deg, #12181b, #38464a, #0d1214, #263438, #12181b);
-  --dealer-btn-color: #65ead8;
-}
-:where(
-  .table-page,
-  .theme-asset__btnstage,
-  .theme-modal__live-button
-)[data-button-theme='ocean-pearl'] {
-  --dealer-btn-bg: radial-gradient(
-    circle at 32% 25%,
-    #ffffff 0%,
-    #dff5fb 30%,
-    #71b8d2 70%,
-    #2c708d 100%
-  );
-  --dealer-btn-color: #092b3d;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
    FIX 222: BIBLE V8 §11.2 — Tab 5 (Card Themes)
    Card face color tokens — consumed by DealAnimation.css (the in-flight card)
    and TableVisualHotfix.css (the settled card back's gradient fallback).
@@ -1309,10 +1253,25 @@
    The percentage is proportional, so desktop gets the same relief without a
    breakpoint of its own. The [data-boards] overrides below (40% / 36%) are
    untouched — a multi-board stack already sits higher and moves the masthead
-   to 72% / 84% to get out of its way. */
+   to 72% / 84% to get out of its way.
+
+   ── 43.5% -> 42.5% (2026-08-27, with the 95% board) ────────────────────────
+   The board is now 41% wider and therefore 41% TALLER: on a 375px phone the
+   cards went from 32.9 x 47.4px to 46.7 x 67.1px, so the row grew ~10px at
+   each edge. Two things had to keep clearing it — `.table-game-info` at 54% of
+   the felt below, and the side seats' 96px nameplate boxes, which now have to
+   stand entirely above or entirely below the cards (see THE BOARD'S BAND in
+   src/lib/tableSeatGeometry.ts). One point of the felt is 4.6px here and it is
+   spent buying margin on BOTH: the board's underside moves from 285px to 280px
+   against a game-info strip at 300px, and the lower seat's box gains the same
+   5px against a band it now clears by 4.4px on the conservative 96px model.
+
+   Up is the direction with the room, and the note above already said so: the
+   pot is pinned at 19% of the SCALER (109px here) while the board's new top
+   edge is at 213px. The wordmark below gains rather than loses. */
 .community-area {
   position: absolute;
-  top: 43.5%;
+  top: 42.5%;
   left: 50%;
   transform: translate(-50%, -50%);
 }
@@ -1329,6 +1288,27 @@
   flex-direction: column;
   align-items: center;
   gap: 6px;
+
+  /* ── A STACKED BOARD KEEPS THE OLD WIDTH (2026-08-27, with the 95% board) ──
+     The single board may be 95% of the felt because the seats were moved out of
+     its band: it occupies y 37.2..48.9% of the scaler and nothing else is in
+     there. A stack cannot make that promise. Two runs plus their headers are
+     ~190px tall on a 375px phone and three are ~284px, so the stack spans
+     roughly y 20..70% — straight through both rows of side seats, whatever
+     their y.
+
+     A stack therefore has to clear the seats on X instead, and that is the
+     constraint the felt board used to live under: a seat box at x 10.5% reaches
+     x 24.3%, so the row's left edge must stay at or right of it, which caps the
+     stack at 69.9% of the felt. 68% is that cap with margin, and it is exactly
+     what shipped before today — a run-it-twice stack is pixel-for-pixel what it
+     always was.
+
+     Specificity, not order, is what makes this win: this selector is (0,3,0)
+     against `.table-surface .community-area`'s (0,2,0), so it holds even though
+     that rule is declared 200 lines further down. `[data-boards]` is set by
+     TablePage.tsx only when there is more than one board on the felt. */
+  width: 68%;
 }
 .table-page[data-boards='3'] .community-area {
   top: 36%;
@@ -1501,14 +1481,59 @@
 /* ── BOARD SIZING ON THE PORTRAIT TABLE (Dan 2026-07-28) ────────────────────
    The artwork's painted felt window is only 63.3% of the table's width, so the
    viewport-breakpoint card sizes in CommunityCards.css (40-64px) overflow onto
-   the rail. Size the board off the FELT instead of the viewport: the row is
-   92% of the felt and every card takes an equal share of it, so five cards fit
-   exactly at any screen size. aspect-ratio keeps the 64x92 card proportion. */
+   the rail. Size the board off the FELT instead of the viewport: the row is a
+   PERCENTAGE of the felt and every card takes an equal share of it, so five
+   cards fit exactly at any screen size, and no breakpoint needs a copy of the
+   number. aspect-ratio keeps the 64x92 card proportion. (That percentage has
+   been 92, then 68, and is 95 today — see the rule below for why each time.) */
 .table-surface .community-area {
   /* Dan 2026-08-17 (audit round 2): 92% ran the board edge-to-edge across
      the felt — the river card sat ON the right rail and under the SB seat.
-     Commercial rooms hold the board to ~60-70% of felt width. */
-  width: 68%;
+     Commercial rooms hold the board to ~60-70% of felt width.
+
+     ── 2026-08-27, Dan item 2: "the board cards need to be increased in size
+        ... the card size equals the entire width of the table ... LIKE FELT
+        WINDOW 95%." ─────────────────────────────────────────────────────────
+
+     68% -> 95%. THE SEATS MOVED; that is the whole change, and it happened in
+     src/lib/tableSeatGeometry.ts, not here. Read THE BOARD'S BAND in that file
+     before touching this number.
+
+     Why 68% used to be a ceiling: a side seat sat level with the board — 4-max
+     at (10.5, 45), 6/7-max at 33, 8-max at 52, 9-max at 30 — and three separate
+     things then collided with a wider row. The seat's bet chips walked the one
+     12.5%-of-width rail straight at the cards and rested at x 22.8%. The seat's
+     dealer button was projected onto the felt beside them. And the seat BOX,
+     a fixed 96px of avatar and nameplate that never shrinks with the phone,
+     reached x 24.3% on a 375px screen. That last one is why no stylesheet
+     change could ever have reached 95%: this row's left edge lands at x 15.1%
+     of the scaler, 32px INSIDE that box, whatever the chips do.
+
+     So the rail's middle became the board's, and every side seat now sits above
+     y 26 or below y 58. What that buys, measured on a 375px phone:
+
+       felt window        254.0px wide (x 13.3 .. 86.5% of the scaler)
+       row                0.95 x 254.0 = 241.3px
+       four 2px gaps      8.0px
+       card               46.7 x 67.1px   (was 32.9 x 47.4px at 68%)
+
+     — 42% bigger on each edge and just over twice the card area, on the same
+     felt. The remaining 5% is deliberate: it is 6.3px of felt at each end
+     between the outer cards and the painted rail, which is what stops the board
+     reading as if it had been cropped by the table.
+
+     THE GUARDS. tests/unit/mobileBoardAndActionBar.test.ts recomputes the true
+     ceiling from the shipped seat rings on every run — chips, dealer buttons
+     AND seat boxes, at all three table sizes — and fails both ways: if this
+     width climbs above what the seats allow, and if a future seat move leaves
+     width sitting unclaimed. tests/table-geometry-chips.test.ts and
+     tests/table-seat-ring-integrity.test.ts measure the same board rectangle
+     against the two markers.
+
+     NOT THE MULTI-BOARD STACK. `.table-page[data-boards] .community-area` above
+     holds a run-it-twice stack at 68%, because a stack is tall enough to reach
+     the seat rows and so has to clear them on X the way this row used to. */
+  width: 95%;
 }
 
 .table-surface .community-cards,
@@ -1518,6 +1543,50 @@
 
 .table-surface .community-cards__container {
   justify-content: center;
+
+  /* WHERE THE EXTRA CARD SIZE COMES FROM (Dan 2026-08-27, item 2).
+
+     This gap was the FIRST half of item 2, taken while the row was still pinned
+     at 68% by a seat sitting level with the board. Four gaps at the inherited
+     8px were eating 32px of a 173px row — a fifth of the board — leaving
+     28.1 x 40.5px cards; at 2px they eat 8px and the same row drew 33.0 x 47.4,
+     17% bigger on each edge for no extra width at all.
+
+     It still earns its keep now that the row is 95% and 241px wide: the four
+     gaps would be 32px of it, and at 2px the cards are 46.7px rather than
+     41.9px wide. Keep it small.
+
+     DECLARED ON THIS ELEMENT, NOT ON :root. CommunityCards.css sets
+     --cc-card-gap on :root inside four viewport breakpoints (768/640/480/380),
+     and a custom property set directly on the element that reads it beats any
+     value inherited from :root regardless of which stylesheet the bundler
+     emits last. Those breakpoints still own the OFF-felt board (hand replays,
+     the previous-hand sheet), which is sized in pixels and wants the larger
+     gap; only the felt is overridden here.
+
+     The two separators below are unaffected: their positions are fractions of
+     the row, and that fraction depends on the card-to-gap RATIO, not on the
+     row's width. Flop divider = (3w + 2.5g) / (5w + 4g) — 60.5% at the old
+     8px gap, 60.1% at 2px, and 60.1% again once the row went to 95% (a wider
+     row makes the cards wider and the gap relatively SMALLER, which moves this
+     by hundredths). Turn divider = (4w + 3.5g) / (5w + 4g) — 81.4%, 80.3%,
+     80.3%. 60% / 80% are right in all three cases and neither moves. */
+  --cc-card-gap: 2px;
+}
+
+@media (min-width: 481px) {
+  .table-surface .community-cards__container {
+    /* A tablet or desktop felt is 2-3x wider, so the same proportion of the
+       row is a bigger number of pixels. 4px at 481-1024 and 6px above keeps
+       the divider between two cards readable without giving back the size. */
+    --cc-card-gap: 4px;
+  }
+}
+
+@media (min-width: 1025px) {
+  .table-surface .community-cards__container {
+    --cc-card-gap: 6px;
+  }
 }
 
 /* `.community-cards__placeholder` was removed from this selector 2026-08-26
@@ -2932,8 +3001,16 @@
     /* aspect-ratio on .table-scaler now holds by construction */
   }
 
-  /* Smaller community cards in landscape */
-  .community-cards__card {
+  /* Smaller community cards in landscape.
+
+     SCOPED OFF THE FELT (2026-08-27). This rule is 0,1,0 and the felt's own
+     `.table-surface .community-cards__card` is 0,2,0, so it never reached the
+     board on the table even inside this media query — it only ever applied to
+     the OFF-felt boards (replays, the previous-hand sheet). The `:not()` says
+     that out loud so the next person sizing the board in landscape does not
+     spend an afternoon editing a rule that cannot fire, and so raising this
+     rule's specificity later cannot silently un-flex the felt row. */
+  .community-cards__card:not(.table-surface *) {
     width: 48px;
     height: 70px;
   }
@@ -3150,6 +3227,14 @@
   align-items: flex-start;
   gap: 8px;
 }
+
+/* EVERY WIDGET IN THIS CORNER IS ONE --sp-hud-tile-size SQUARE (2026-08-27).
+   The corner's height budget — --sp-hero-clear, at the foot of this file — is
+   derived from that one number, so a widget that sizes itself in pixels instead
+   makes the reserve wrong and hangs over the felt. That is exactly what
+   .rabbit-hunt__button did at 64px. Sizes live in TableHUD.css as tokens;
+   TimebankCounter.css, PreviousHandCard.css and RabbitHunt.css all read them
+   and none of them declares a square of its own. */
 
 /* Dan 2026-08-26 mobile pass, item 6: the bottom-left corner is a ROW now —
    previous-hand box at the anchor, time-bank tile BESIDE it (only rendered
@@ -3827,17 +3912,34 @@ body.ca-raising .bankroll-widget {
        they stop crossing the felt is for the felt's bottom edge to sit above
        the top of that stack. That is this number.
 
-       The stack, seated, is exactly:
-           36px  .tbc-widget          (--sp-hud-tile-size, TableHUD.css)
-       +    8px  gap                  (.hud-ul-column--stack, this file)
-       +   36px  .prev-hand-card      (same tile size)
-       =   80px, resting on a line 8px above the bar
-       =   88px from the top of the action bar to the top of the stack.
+       THE BUDGET, and the invariant that keeps it true (2026-08-27).
 
-       88px therefore puts the stack's top edge exactly on the scaler's bottom
-       edge: nothing overlaps, and not one pixel is reserved that a widget does
-       not stand in. The chat button in the opposite corner is a single 36px
-       tile on the same line and is cleared with 44px to spare.
+       When this number was first derived the corner was a COLUMN, and the sum
+       was 36 + 8 + 36 = 80px resting on a line 8px above the bar = 88px. It is
+       a ROW now (.hud-bl-row, above): previous-hand card at the anchor, the
+       shared slot beside it. A row is as tall as its tallest child, so the
+       budget is one tile:
+
+           36px  the tallest widget in the corner (--sp-hud-tile-size,
+                 TableHUD.css) — .prev-hand-card, and beside it EITHER
+                 .tbc-widget while the hero is on the clock OR
+                 .rabbit-hunt__button once the hand is over
+       +    8px  the line the corner rests on (--sp-hud-line, TableHUD.css)
+       =   44px minimum from the top of the action bar to the top of the row.
+
+       THE INVARIANT: every widget that can stand in that slot is
+       --sp-hud-tile-size square. That is not decoration, it is what makes this
+       number a number — until 2026-08-27 .rabbit-hunt__button was a hardcoded
+       64px (54px under 480px), so the corner silently grew to 64px the moment a
+       hand ended and the button overhung the felt's bottom edge. If a widget
+       here ever stops reading the token, this reserve is wrong again and the
+       symptom is a control hanging over the felt, not a crash. Pinned by
+       tests/all-in-cannot-leave-and-the-hud-slot.test.ts.
+
+       The reserve below is comfortably above the 44px the row asks for, because
+       the hero's name plate — not the HUD — is what actually sets it (see the
+       floor note further down). The chat button in the opposite corner is a
+       single 36px tile on the same line and is cleared by the same margin.
 
        IT IS ALSO ABOVE THE HALF-SEAT FLOOR, which is the other thing this
        strip has to satisfy — 49px at 380, 54px at 480, 60px at 640 (base rule)

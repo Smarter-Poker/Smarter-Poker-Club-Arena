@@ -14,6 +14,7 @@ import { useSettingsStore } from '../../src/stores/useSettingsStore';
 
 describe('useSettingsStore', () => {
   beforeEach(() => {
+    localStorage.clear();
     useSettingsStore.setState({
       theme: 'dark',
       soundEnabled: true,
@@ -45,6 +46,21 @@ describe('useSettingsStore', () => {
     useSettingsStore.getState().setTheme('light');
     useSettingsStore.getState().setTheme('dark');
     expect(useSettingsStore.getState().theme).toBe('dark');
+  });
+
+  it('keeps the full Settings page cache synchronized without replacing other preferences', () => {
+    localStorage.setItem(
+      'club-arena-user-settings',
+      JSON.stringify({ theme: 'dark', soundVolume: 42, cardBack: 'classic_red' })
+    );
+
+    useSettingsStore.getState().setTheme('light', 'user-1');
+
+    expect(JSON.parse(localStorage.getItem('club-arena-user-settings') || '{}')).toEqual({
+      theme: 'light',
+      soundVolume: 42,
+      cardBack: 'classic_red',
+    });
   });
 
   it('should toggle sound', () => {

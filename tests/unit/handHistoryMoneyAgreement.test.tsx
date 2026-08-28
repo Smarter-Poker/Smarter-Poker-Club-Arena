@@ -35,6 +35,7 @@ import { adaptServiceHandToPanel } from '@/lib/handHistoryAdapter';
 import HandHistoryPanel from '@/components/table/HandHistoryPanel';
 import { HandDetailModal } from '@/components/table/HandDetailModal';
 import type { HandRecord as ServiceHandRecord } from '@/services/HandHistoryService';
+import { buildReplay } from '@/utils/handReplay';
 
 const HERO = 'hero-1';
 const VILLAIN = 'villain-1';
@@ -136,20 +137,40 @@ describe('Hand Detail and Hand History agree about one hand', () => {
       r.textContent?.includes('Hero')
     );
 
+  /**
+   * 2026-08-27: the per-player money block now lives on HAND SUMMARY.
+   *
+   * The Hand Detail tab renders the shared `HandDetailView` off the raw
+   * hand_history row, so it needs a network read that jsdom has no reason to
+   * satisfy — and it carries its OWN showdown. Keeping a second one in the
+   * detail tab was the duplication that let the two figures drift in the first
+   * place. Every assertion below is unchanged; they simply open the tab that
+   * owns Collected and Net.
+   *
+   * The two surfaces cannot disagree any more for a stronger reason than this
+   * test: `HandHistoryService.buildResult` and `HandDetailView` both derive net
+   * from `buildReplay`, so they are one computation over two shapes of the same
+   * row. See tests/unit/handHistoryPositions.test.ts.
+   */
+  const openSummary = () => fireEvent.click(screen.getByRole('tab', { name: 'Hand Summary' }));
+
   it('Hand Detail shows +12, the figure Hand History has always shown', () => {
     render(<HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
+    openSummary();
     expect(heroDetailRow()).toBeTruthy();
     expect(heroDetailRow()?.querySelector('.hdm-net')?.textContent).toBe('Net +12');
   });
 
   it('Hand Detail no longer prints the double-subtracted 0', () => {
     render(<HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
+    openSummary();
     // 24 - 12 - 12 = 0 was the old answer, and the exact shape of the bug.
     expect(heroDetailRow()?.querySelector('.hdm-net')?.textContent).not.toBe('Net 0');
   });
 
   it('Hand Detail names the gross separately, so 24 and 12 cannot be confused', () => {
     render(<HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
+    openSummary();
     expect(heroDetailRow()?.querySelector('.hdm-collected')?.textContent).toBe('Collected 24');
   });
 
@@ -166,6 +187,7 @@ describe('Hand Detail and Hand History agree about one hand', () => {
       streets: hand.streets.map((s) => ({ ...s, actions: [] })),
     };
     render(<HandDetailModal isOpen onClose={() => {}} hands={[stripped]} heroId={HERO} />);
+    openSummary();
     expect(heroDetailRow()?.querySelector('.hdm-net')?.textContent).toBe('Net +12');
     expect(heroDetailRow()?.querySelector('.hdm-net')?.textContent).not.toBe('Net +24');
   });
@@ -233,13 +255,49 @@ describe('Hand Detail names the discard street instead of leaking the enum', () 
     expect(pineapple.streets.map((s) => s.name)).toContain('pineapple_discard');
   });
 
+  /**
+   * 2026-08-27: the street LABEL now lives in the shared reconstruction, which
+   * is the point — there were three street-label tables in this feature and
+   * two spellings of the same street. Asserting it here tests the thing that
+   * actually decides the word, rather than one of the surfaces that used to
+   * carry its own copy.
+   *
+   * It also pins something the old assertion could not: `pineapple_discard` is
+   * a STREET of its own. It was being folded into preflop by the shared model,
+   * so 74,631 discard actions would have appeared under a heading they did not
+   * happen on.
+   */
   it('prints "Discard", the same word Hand History prints', () => {
-    render(<HandDetailModal isOpen onClose={() => {}} hands={[pineapple]} heroId={HERO} />);
-    const names = Array.from(document.querySelectorAll('.hdm-street__name')).map(
-      (n) => n.textContent
-    );
-    expect(names).toContain('Discard');
-    expect(names).not.toContain('pineapple_discard');
+    const model = buildReplay({
+      handNumber: 1,
+      playedAt: null,
+      gameVariant: 'pineapple',
+      smallBlind: 1,
+      bigBlind: 2,
+      potSize: 27,
+      buttonSeat: 1,
+      board: [],
+      players: [
+        { seat: 1, userId: HERO, username: 'Hero', stack: 0 },
+        { seat: 2, userId: VILLAIN, username: 'Villain', stack: 0 },
+      ],
+      actions: [
+        { seat: 1, userId: HERO, action: 'bet', amount: 2, stage: 'preflop' },
+        { seat: 2, userId: VILLAIN, action: 'raise', amount: 12, stage: 'preflop' },
+        { seat: 1, userId: HERO, action: 'call', amount: 10, stage: 'preflop' },
+        { seat: 1, userId: HERO, action: 'discard', amount: 0, stage: 'pineapple_discard' },
+      ],
+      winners: [],
+      holeCards: {},
+    } as never);
+
+    const labels = model.streets.map((st) => st.label);
+    expect(labels).toContain('Discard');
+    expect(labels).not.toContain('pineapple_discard');
+    // Its own street, with its own row - not swept under PreFlop.
+    const discard = model.streets.find((st) => st.key === 'pineapple_discard')!;
+    expect(discard.rows).toHaveLength(1);
+    expect(discard.rows[0].label).toBe('Discard');
   });
 });
 

@@ -17,7 +17,7 @@ import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
 import { DEFAULT_RAKE_RATE, SNG_RAKE_RATE, buyInFor, wholeChips } from '../config/buyIn.js';
-import { gameLaneFor, horseHash } from './HorseBehavior.js';
+import { gameLaneFor, horseHash, isActiveNow } from './HorseBehavior.js';
 
 /**
  * Derive the two buy-in columns from ONE whole-dollar total.
@@ -669,16 +669,94 @@ function openingHorsesForSeatFirst(seats: number): number {
  *
  * A board where every Spin already has two horses in it never offers a player
  * the experience of STARTING a game. So a deterministic share of seat-first
- * games — hashed on the tournament id, so every code path agrees forever —
- * opens with ZERO horses and stays empty until a human buys a seat. The
+ * games opens with ZERO horses and stays empty until a human buys a seat. The
  * moment one does, topUpWithHorses fills the remaining seats and the game
- * starts on the normal start-when-full rule. Because the flag rides the id,
- * the fraction holds across the whole rolling board: each freshly created
- * instance re-rolls it.
+ * starts on the normal start-when-full rule.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE HOLD ROTATES. IT IS NOT A LIFE SENTENCE. (2026-08-27)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * This originally hashed the tournament id ALONE, so a board that rolled
+ * held-empty was held empty FOREVER. On its own that is only a stalled game;
+ * combined with how the board decides what to open, it killed the entire
+ * seat-first product in under two hours:
+ *
+ *   1. ensureBoardOpen treats ANY joinable REGISTERING instance as covering
+ *      its price point, so it opens no replacement while one exists.
+ *   2. A held-empty instance never fills, so it never starts, so it never
+ *      leaves REGISTERING.
+ *   3. Its price point is therefore covered by a husk, permanently.
+ *   4. A NOT-held instance fills, starts, completes, and is replaced by a
+ *      fresh instance that re-rolls the hold.
+ *
+ * That is an absorbing Markov chain: every price point keeps re-rolling until
+ * it draws "held", and then it is stuck there. With ~300 Spins completing an
+ * hour, all 48 price points absorbed within about two hours of the rule
+ * shipping at 00:56 UTC on 2026-08-27.
+ *
+ * MEASURED ON PRODUCTION 2026-08-27, ~20 hours later. The 49 surviving
+ * REGISTERING boards were 90% under the 33 threshold and 100% under 50 — the
+ * board had become a sieve that retains precisely the held-empty rolls. The
+ * hash itself is fine (2,000 random uuids gave 33%/50%, and the last 1,000
+ * COMPLETED seat-first games gave 30%/47%); it was survivorship, not skew.
+ * Spins fell from ~300 starts/hour to 1, Heads-Up from ~150/hour to ZERO, and
+ * nothing on the platform reported it because every refusal on this path
+ * returns 0 silently.
+ *
+ * So the hold is now bucketed in time, exactly like its sibling
+ * cashTableHeldEmpty, which was written correctly and rotates every 2h. A
+ * board held empty in one bucket is fillable in the next, so a price point
+ * cannot ossify, while at any given INSTANT the requested share of the board
+ * is still genuinely empty and waiting for a human. That is what Dan asked
+ * for; a permanently dead board is not.
+ *
+ * The bucket is SHORTER than the cash room's 2h on purpose. A cash table is
+ * long-lived, so a 2h hold is a fraction of its life. A Spin instance lives
+ * minutes, so a 2h hold outlives many whole games and is what let one roll
+ * ossify a price point for a day.
  */
-export function seatFirstHeldEmpty(tournamentId: string, seats: number): boolean {
+export const SEAT_FIRST_EMPTY_BUCKET_MS = 30 * 60_000;
+
+/**
+ * A REAL AVALANCHE, BECAUSE THE ROTATION DEPENDS ON IT.
+ *
+ * `horseHash` is a weak multiply-add (`h * 31 + c`), and this file and
+ * HorseBehavior both already record that a LOW-BIT modulo of it clusters on
+ * structured ids. Rotation makes that worse, not better: consecutive bucket
+ * numbers are the most structured input there is, so folding the bucket into
+ * the same weak hash leaves neighbouring buckets CORRELATED — and a board
+ * whose buckets correlate stays held for hours at a time, which is the bug
+ * being fixed here wearing a smaller hat. Caught by
+ * seatFirstHoldRotates.test.ts, which found a board held for 8 straight
+ * buckets (four hours) with the naive `${id}:hold-empty:${bucket}` string.
+ *
+ * This is the murmur3 finalizer. It is not cryptography; it is the standard
+ * cheap way to make every output bit depend on every input bit, which is
+ * exactly the property "does this board rotate" needs and the property
+ * `horseHash` does not have.
+ */
+function mix32(x: number): number {
+  let h = x >>> 0;
+  h = (h ^ (h >>> 16)) >>> 0;
+  h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h = (h ^ (h >>> 13)) >>> 0;
+  h = Math.imul(h, 0xc2b2ae35) >>> 0;
+  h = (h ^ (h >>> 16)) >>> 0;
+  return h;
+}
+
+export function seatFirstHeldEmpty(
+  tournamentId: string,
+  seats: number,
+  nowMs: number = Date.now()
+): boolean {
   const frac = seats <= 2 ? 0.5 : 0.33;
-  return horseHash(`${tournamentId}:hold-empty`) % 100 < frac * 100;
+  const bucket = Math.floor(nowMs / SEAT_FIRST_EMPTY_BUCKET_MS);
+  // Golden-ratio odd constant so the bucket spreads across the whole word
+  // before the finalizer mixes it into the id's hash.
+  const seed = (horseHash(`${tournamentId}:hold-empty`) ^ Math.imul(bucket, 0x9e3779b1)) >>> 0;
+  return mix32(seed) % 100 < frac * 100;
 }
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -1400,6 +1478,43 @@ export class TournamentRecurringService {
   private tournamentInterval: ReturnType<typeof setInterval> | null = null;
   private sngInterval: ReturnType<typeof setInterval> | null = null;
   private spinInterval: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A BOARD THAT IS NOT FILLING MUST SAY SO (2026-08-27)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * The held-empty ratchet ran for twenty hours with 49 dead boards, Spins
+   * down from ~300 starts an hour to 1 and Heads-Up to zero, and NOTHING on
+   * the platform said a word. Every refusal on the seat-first fill path
+   * returns 0: the held-empty gate returned 0 silently, and pickFreeHorses
+   * returns [] silently whenever the candidate list is empty. `Filled "..."`
+   * only logs when something was actually added, so a board that adds nobody
+   * forever is exactly as quiet as a board with nothing to do.
+   *
+   * A count of distinct boards skipped, reported once a cycle rather than per
+   * board per pass, turns that silence into one line. It is deliberately a
+   * SET of ids and not a counter: the number that matters is how much of the
+   * board is held at once, and the same board skipped 720 times an hour must
+   * not read as 720 boards.
+   */
+  private seatFirstHeldIds = new Set<string>();
+  private lastHeldReportAt = 0;
+  private static readonly HELD_REPORT_EVERY_MS = 10 * 60_000;
+
+  private noteSeatFirstHeld(tournamentId: string): void {
+    this.seatFirstHeldIds.add(tournamentId);
+    const now = Date.now();
+    if (now - this.lastHeldReportAt < TournamentRecurringService.HELD_REPORT_EVERY_MS) return;
+    this.lastHeldReportAt = now;
+    const n = this.seatFirstHeldIds.size;
+    this.seatFirstHeldIds.clear();
+    console.log(
+      `[TournamentRecurring] held-empty: ${n} seat-first board(s) skipped in the last ` +
+        `${TournamentRecurringService.HELD_REPORT_EVERY_MS / 60000}m — they open for a human and ` +
+        `rotate out on the next ${SEAT_FIRST_EMPTY_BUCKET_MS / 60000}m bucket`
+    );
+  }
   /**
    * One board tick at a time, per board. setInterval does NOT wait for the
    * previous callback to finish, and a tick that has to fill a drained board
@@ -2765,20 +2880,40 @@ export class TournamentRecurringService {
    */
   private async horseLoadMap(): Promise<Map<string, number> | null> {
     // One live seat = one game. Cash and tournament tables alike.
-    const { data: seatRows, error: seatErr } = await supabase
-      .from('table_seats')
-      .select('user_id')
-      .is('left_at', null)
-      // A TRUNCATED SET UNDERSTATES LOAD, which hands out a horse that is
-      // already at four tables - so this ceiling sits far above any plausible
-      // live count, not just above today's.
-      .limit(20000);
-    if (seatErr) {
-      reportError(
-        new Error(`[TournamentRecurring] horse seat-load read failed: ${seatErr.message}`),
-        'TournamentRecurring.horse_load_seats_failed'
-      );
-      return null;
+    /* NO CEILING (Dan 2026-08-27: "there should never be a cap ... anywhere
+       else"). This read carried `.limit(20000)` with a comment explaining
+       that a truncated set understates load and hands out a horse already at
+       four tables - the ceiling was picked to make that implausible, and
+       nothing checked whether it had been hit, so saturation would have
+       passed as a complete answer. It pages instead: no number to outgrow,
+       and an incomplete read is reported as UNKNOWN, which is this
+       function's documented contract. */
+    const PAGE = 1000;
+    const seatRows: Array<{ user_id?: string }> = [];
+    for (let page = 0; ; page++) {
+      if (page > 10_000) {
+        reportError(
+          new Error('[TournamentRecurring] horse seat-load paging did not terminate'),
+          'TournamentRecurring.horse_load_seats_runaway'
+        );
+        return null;
+      }
+      const { data: chunk, error: seatErr } = await supabase
+        .from('table_seats')
+        .select('user_id')
+        .is('left_at', null)
+        .order('user_id', { ascending: true })
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (seatErr) {
+        reportError(
+          new Error(`[TournamentRecurring] horse seat-load read failed: ${seatErr.message}`),
+          'TournamentRecurring.horse_load_seats_failed'
+        );
+        return null;
+      }
+      if (!chunk) return null;
+      seatRows.push(...chunk);
+      if (chunk.length < PAGE) break;
     }
 
     // A registration is a game only until the tournament STARTS. Once it is
@@ -2786,18 +2921,32 @@ export class TournamentRecurringService {
     // has already counted it; counting both would put every tournament
     // regular at an instant 2. That is why RUNNING is absent from this list
     // and must stay absent.
-    const { data: regRows, error: regErr } = await supabase
-      .from('tournament_players')
-      .select('user_id, tournaments!inner(status)')
-      .in('status', ['registered', 'playing'])
-      .in('tournaments.status', ['ANNOUNCED', 'REGISTERING'])
-      .limit(20000);
-    if (regErr) {
-      reportError(
-        new Error(`[TournamentRecurring] horse registration-load read failed: ${regErr.message}`),
-        'TournamentRecurring.horse_load_registrations_failed'
-      );
-      return null;
+    const regRows: Array<{ user_id?: string }> = [];
+    for (let page = 0; ; page++) {
+      if (page > 10_000) {
+        reportError(
+          new Error('[TournamentRecurring] horse registration-load paging did not terminate'),
+          'TournamentRecurring.horse_load_registrations_runaway'
+        );
+        return null;
+      }
+      const { data: chunk, error: regErr } = await supabase
+        .from('tournament_players')
+        .select('user_id, tournaments!inner(status)')
+        .in('status', ['registered', 'playing'])
+        .in('tournaments.status', ['ANNOUNCED', 'REGISTERING'])
+        .order('user_id', { ascending: true })
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (regErr) {
+        reportError(
+          new Error(`[TournamentRecurring] horse registration-load read failed: ${regErr.message}`),
+          'TournamentRecurring.horse_load_registrations_failed'
+        );
+        return null;
+      }
+      if (!chunk) return null;
+      regRows.push(...chunk);
+      if (chunk.length < PAGE) break;
     }
 
     return buildHorseLoadMap(
@@ -2811,7 +2960,7 @@ export class TournamentRecurringService {
     return horseAtCapacity(load.get(id) ?? 0);
   }
 
-  private async pickFreeHorses(count: number): Promise<string[]> {
+  private async pickFreeHorses(count: number, allLanes = false): Promise<string[]> {
     if (count <= 0) return [];
     try {
       // Dan 2026-08-23: a horse is unavailable at FOUR concurrent games, not
@@ -2868,7 +3017,13 @@ export class TournamentRecurringService {
         .map((h) => (h as { id: string }).id)
         // Game lanes (Dan 2026-08-26): cash-only horses never enter events —
         // tournaments, spins and heads-up draw from the events/both lanes.
-        .filter((id) => id && !busy.has(id) && gameLaneFor(id) !== 'cash');
+        .filter((id) => {
+          if (!id || busy.has(id)) return false;
+          // Freeroll override: every horse that is currently PLAYING is
+          // eligible, cash lane included. See topUpWithHorses opts.allLanes.
+          if (allLanes) return isActiveNow(id, new Date().getUTCHours());
+          return gameLaneFor(id) !== 'cash';
+        });
 
       /**
        * ═══════════════════════════════════════════════════════════════════
@@ -3227,7 +3382,21 @@ export class TournamentRecurringService {
    * incremented guess, which drifts if a real player registers in the same
    * window. Returns how many horses were actually added.
    */
-  async topUpWithHorses(tournamentId: string, targetPlayers: number): Promise<number> {
+  /**
+   * @param opts.allLanes  FREEROLLS ONLY (Dan 2026-08-27): "all horses, if
+   *   they are playing, should play the freeroll - all real players would."
+   *   The lane split exists so the fleet does not look like one homogeneous
+   *   crowd across cash and events. A freeroll is the one event where that
+   *   distinction is FALSE TO LIFE: nobody skips free money because they
+   *   consider themselves a cash specialist. With this set, cash-lane horses
+   *   are eligible too, and the pool is filtered by whether the horse is
+   *   INSIDE ITS ACTIVITY WINDOW instead - "if they are playing".
+   */
+  async topUpWithHorses(
+    tournamentId: string,
+    targetPlayers: number,
+    opts: { allLanes?: boolean } = {}
+  ): Promise<number> {
     try {
       /**
        * A seat-first game needs BODIES IN SEATS, not names on a list.
@@ -3320,37 +3489,44 @@ export class TournamentRecurringService {
        * 50% of Heads-Up boards stay genuinely open for a human to start.
        * The instant a human sits, the hold releases and this same function
        * fills the remaining seats so the game can start.
+       *
+       * EMPTY MEANS EMPTY (2026-08-27). The gate now only applies to a board
+       * that actually HAS no players. It used to apply at any occupancy, which
+       * created a second class of permanently stuck game: a board that opened
+       * NOT held (two horses seated, one seat left) and then had the hold roll
+       * on later was refused its final horse forever, sitting at 2/3 — visibly
+       * alive, impossible to start, and counting as coverage for its price
+       * point the whole time.
+       *
+       * The rule is "leave some boards EMPTY for a human to start", not "strand
+       * boards half-full". Once a seat is sold the board is committed and the
+       * only right move is to finish filling it so it can deal.
        */
       if (
         seatFirst &&
+        liveCount === 0 &&
         seatFirstHeldEmpty(
           tournamentId,
           Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
         )
       ) {
-        let humanSeated = false;
-        if (primaryTableId && liveCount > 0) {
-          const { data: seatRows } = await supabase
-            .from('table_seats')
-            .select('user_id')
-            .eq('table_id', primaryTableId)
-            .is('left_at', null);
-          const seatIds = (seatRows ?? []).map((r) => String((r as { user_id: string }).user_id));
-          if (seatIds.length > 0) {
-            const { data: horseRows } = await supabase
-              .from('profiles')
-              .select('id')
-              .in('id', seatIds)
-              .eq('is_horse', true);
-            humanSeated = (horseRows ?? []).length < seatIds.length;
-          }
-        }
-        if (!humanSeated) {
-          await supabase.rpc('fn_sync_seat_first_player_count', {
-            p_tournament_id: tournamentId,
-          });
-          return 0;
-        }
+        /**
+         * liveCount === 0 above, so there is nobody seated at all — human or
+         * horse — and the board is genuinely open for a human to start. The
+         * seat-count reconciliation still runs, because a board advertising a
+         * stale count is the other way a seat-first game gets stuck.
+         *
+         * The `humanSeated` probe that used to live here (two queries per
+         * skipped board, every 5 seconds, on every held board) is gone: it was
+         * guarded on `liveCount > 0`, which this branch now excludes, so it
+         * could never once return true. A human who sits makes liveCount 1 and
+         * never reaches this branch at all.
+         */
+        await supabase.rpc('fn_sync_seat_first_player_count', {
+          p_tournament_id: tournamentId,
+        });
+        this.noteSeatFirstHeld(tournamentId);
+        return 0;
       }
 
       const shortfall = targetPlayers - liveCount;
@@ -3417,7 +3593,7 @@ export class TournamentRecurringService {
           );
         }
       } else {
-        added = await this.registerHorses(tournamentId, shortfall);
+        added = await this.registerHorses(tournamentId, shortfall, opts.allLanes === true);
       }
 
       /**
@@ -3482,7 +3658,11 @@ export class TournamentRecurringService {
     }
   }
 
-  private async registerHorses(tournamentId: string, count: number): Promise<number> {
+  private async registerHorses(
+    tournamentId: string,
+    count: number,
+    allLanes = false
+  ): Promise<number> {
     try {
       // TOURNEY-AUDIT 2026-07-24: exclude horses already registered/playing in
       // another active tournament. The old query only checked horse_status
@@ -3504,15 +3684,36 @@ export class TournamentRecurringService {
       // Still never twice into the SAME tournament. This is the booking bug
       // the concurrency limit was standing in for, and it is the one that
       // actually matters - it survives the change intact.
-      const { data: alreadyIn } = await supabase
-        .from('tournament_players')
-        .select('user_id')
-        .eq('tournament_id', tournamentId)
-        .in('status', ['registered', 'playing'])
-        .limit(20000);
-      for (const r of alreadyIn ?? []) {
-        const id = (r as { user_id?: string }).user_id;
-        if (id) busyIds.add(id);
+      /* NO CEILING (Dan 2026-08-27). This carried `.limit(20000)`, and a
+         truncated read here is the one failure this block exists to prevent:
+         a missing id is a horse that does not look registered, so it gets
+         registered into the SAME tournament twice - the bug the comment above
+         calls "the one that actually matters". Pages instead, so the guard
+         cannot be defeated by a big enough field. */
+      const ENTRANT_PAGE = 1000;
+      for (let page = 0; ; page++) {
+        if (page > 10_000) {
+          reportError(
+            new Error('[TournamentRecurring] entrant paging did not terminate'),
+            'TournamentRecurring.entrant_paging_runaway'
+          );
+          return 0;
+        }
+        const { data: alreadyIn, error: entrantErr } = await supabase
+          .from('tournament_players')
+          .select('user_id')
+          .eq('tournament_id', tournamentId)
+          .in('status', ['registered', 'playing'])
+          .order('user_id', { ascending: true })
+          .range(page * ENTRANT_PAGE, page * ENTRANT_PAGE + ENTRANT_PAGE - 1);
+        // An incomplete entrant list would let a double-registration through,
+        // so a failed page declines the pass rather than guessing.
+        if (entrantErr || !alreadyIn) return 0;
+        for (const r of alreadyIn) {
+          const id = (r as { user_id?: string }).user_id;
+          if (id) busyIds.add(id);
+        }
+        if (alreadyIn.length < ENTRANT_PAGE) break;
       }
 
       /**
@@ -3537,8 +3738,15 @@ export class TournamentRecurringService {
         .eq('horse_status', 'available')
         .limit(count + busyIds.size);
       const horses = (horsePool ?? [])
-        // Game lanes (Dan 2026-08-26): cash-only horses never register for events.
-        .filter((h) => !busyIds.has(h.id) && gameLaneFor(h.id) !== 'cash')
+        .filter((h) => {
+          if (busyIds.has(h.id)) return false;
+          // Freeroll override (Dan 2026-08-27): free money is not a lane
+          // decision - every horse currently playing enters. Otherwise the
+          // 2026-08-26 rule stands: cash-only horses never register for
+          // events.
+          if (allLanes) return isActiveNow(h.id, new Date().getUTCHours());
+          return gameLaneFor(h.id) !== 'cash';
+        })
         .slice(0, count);
 
       if (!horses || horses.length === 0) return 0;

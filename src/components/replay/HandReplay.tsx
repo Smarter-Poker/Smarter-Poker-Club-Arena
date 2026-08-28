@@ -24,6 +24,22 @@ export interface PlayerAction {
   timestamp: number;
 }
 
+/**
+ * The verbs a player CHOOSES. `hand_history.actions` also carries forced money
+ * — sb, bb, ante, straddle, post — and the returned uncalled bet, all recorded
+ * since 2026-08-27 so a hand can be rebuilt. None of them is a decision, so
+ * none of them belongs in a replay's action timeline.
+ */
+const VOLUNTARY_ACTIONS = new Set<string>([
+  'fold',
+  'check',
+  'call',
+  'bet',
+  'raise',
+  'all_in',
+  'discard',
+]);
+
 interface HandPlayer {
   seat: number;
   user_id: string;
@@ -223,20 +239,30 @@ export default function HandReplay({
               user_id: p.user_id,
               username: p.username,
               avatar_url: p.avatar_url,
-              position: p.position as any,
+              position: p.position as HandPlayer['position'],
               hole_cards: p.hole_cards,
               final_hand: p.final_hand,
               result: p.result,
               is_winner: p.is_winner,
               showdown_reveal: p.showdown_reveal,
             })),
-            actions: data.actions.map((a) => ({
-              player_id: a.player_id,
-              action: a.action,
-              amount: a.amount,
-              street: (a as any).street,
-              timestamp: a.timestamp,
-            })),
+            /* FORCED MONEY IS NOT A REPLAYED ACTION (2026-08-27).
+               The engine now records the blinds, antes, straddles and the
+               returned uncalled bet in `actions`, which is what makes a hand
+               rebuildable — see server/src/engine/HandController.ts postBlinds.
+               The replay animates a player DECIDING something, and nobody
+               decides to post a blind, so those rows are filtered here rather
+               than widened into PlayerAction. The hand rundown, which does
+               want them, reads the row directly. */
+            actions: data.actions
+              .filter((a) => VOLUNTARY_ACTIONS.has(a.action))
+              .map((a) => ({
+                player_id: a.player_id,
+                action: a.action as PlayerAction['action'],
+                amount: a.amount,
+                street: (a as { street?: string }).street as 'PREFLOP' | 'FLOP' | 'TURN' | 'RIVER',
+                timestamp: a.timestamp,
+              })),
           });
         } else {
           /* NOT FOUND. It used to render `getFallbackHandData()` here — a

@@ -97,9 +97,14 @@ export default function ChipTransferModal({
   const loadSenderInfo = async () => {
     if (!user?.id) return;
     try {
-      // Get sender's PLAYER wallet balance
-      const balance = await WalletService.getPlayerBalance(user.id);
-      setSenderBalance(balance);
+      /* Get sender's balance - and do NOT let a failed read read as zero.
+         `senderBalance` gates the send (see the "Insufficient balance" guard
+         below), so a collapsed failure BLOCKS AN AGENT FROM SENDING CHIPS THEY
+         ACTUALLY HAVE. That is the same defect the 2026-08-25 audit removed
+         from the tournament sign-up gate; it survived here. On unknown we keep
+         whatever we last knew rather than writing a confident 0. */
+      const r = await WalletService.readPlayerBalance(user.id);
+      if (r.balance !== null) setSenderBalance(r.balance);
 
       // Get sender's role in this club
       const resolvedId = await resolveClubUUID(clubId);
@@ -343,7 +348,8 @@ export default function ChipTransferModal({
       }, 1500);
     } catch (err: any) {
       reportError(err, 'ChipTransferModal.Transfer_error');
-      if (isMounted.current) setError(safeErrorMessage(err, 'Transfer failed. Please try again.'));
+      const msg = err instanceof Error ? err.message : err?.message || String(err);
+      if (isMounted.current) setError(msg);
     }
     setIsLoading(false);
     transferInFlightRef.current = false;

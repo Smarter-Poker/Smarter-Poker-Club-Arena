@@ -55,7 +55,18 @@
  */
 
 export type CosmeticKind = 'frame' | 'aura';
-export type CosmeticTier = 'vip';
+/**
+ * Dan 2026-08-27: "CHOSE 3 THAT ARE FREE TO INTERCHANGE AND USE, AND THE REST
+ * ARE VIP LOCKED FOR ALL CUSTOMIZABLE FUNCTIONS AND FEATURES."
+ *
+ * Frames and auras had NO free tier at all — every one of the six was VIP — so
+ * applying the rule by demoting existing ones would have GIVEN AWAY three of
+ * four VIP frames rather than locking anything. Dan's instruction was to author
+ * three new free ones instead, which is what the `free` tier below is: three
+ * deliberately plain CSS frames and three quiet auras, enough to make the
+ * feature discoverable without touching a single thing a member pays for.
+ */
+export type CosmeticTier = 'free' | 'vip';
 
 export interface AvatarCosmetic {
   /** Canonical token. Stored verbatim in equipped_frame / equipped_aura. */
@@ -73,6 +84,17 @@ export interface AvatarCosmetic {
 }
 
 export const AVATAR_FRAMES: readonly AvatarCosmetic[] = [
+  /* ── THE THREE FREE FRAMES (Dan 2026-08-27) ─────────────────────────────
+     Plain by design: a single solid ring each, no glow, no animation. They
+     exist so every player can find and use the feature; the paid frames keep
+     every effect that distinguishes them. Their CSS lives beside the VIP
+     frames in BOTH repos — see the byte-identical note at the top of this
+     file. `unlockToken` is still populated so a free cosmetic can be
+     represented in the ledger exactly like a paid one if that is ever
+     wanted; nothing requires a row to equip them. */
+  { id: 'frame-slate', kind: 'frame', label: 'Slate', tier: 'free', unlockToken: 'frame_slate' },
+  { id: 'frame-ivory', kind: 'frame', label: 'Ivory', tier: 'free', unlockToken: 'frame_ivory' },
+  { id: 'frame-copper', kind: 'frame', label: 'Copper', tier: 'free', unlockToken: 'frame_copper' },
   { id: 'frame-gold', kind: 'frame', label: 'Gold', tier: 'vip', unlockToken: 'frame_gold' },
   {
     id: 'frame-diamond',
@@ -92,6 +114,11 @@ export const AVATAR_FRAMES: readonly AvatarCosmetic[] = [
 ] as const;
 
 export const AVATAR_AURAS: readonly AvatarCosmetic[] = [
+  /* The three free auras: a soft static halo each, no pulse, no animation.
+     Same reasoning as the free frames above. */
+  { id: 'aura-mist', kind: 'aura', label: 'Mist', tier: 'free', unlockToken: 'aura_mist' },
+  { id: 'aura-dusk', kind: 'aura', label: 'Dusk', tier: 'free', unlockToken: 'aura_dusk' },
+  { id: 'aura-moss', kind: 'aura', label: 'Moss', tier: 'free', unlockToken: 'aura_moss' },
   { id: 'aura-fire', kind: 'aura', label: 'Fire', tier: 'vip', unlockToken: 'aura_fire' },
   { id: 'aura-glitch', kind: 'aura', label: 'Glitch', tier: 'vip', unlockToken: 'aura_glitch' },
 ] as const;
@@ -158,6 +185,9 @@ export function isCosmeticOwned(
   cosmetic: AvatarCosmetic,
   opts: { isVip: boolean; unlockedTokens: ReadonlySet<string> }
 ): boolean {
+  // A free cosmetic is owned by everyone, always — no ledger row required
+  // (Dan 2026-08-27, the three-free rule).
+  if (cosmetic.tier === 'free') return true;
   if (opts.isVip && cosmetic.tier === 'vip') return true;
   return opts.unlockedTokens.has(cosmetic.unlockToken);
 }

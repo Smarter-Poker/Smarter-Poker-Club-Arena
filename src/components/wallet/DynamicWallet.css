@@ -492,3 +492,155 @@
 .dw__row--backup-bbj .dw__row-hint {
   color: #7a8398;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLUB LOBBY TOURNAMENT BOARD — three glanceable, tactile wallet modules
+   ---------------------------------------------------------------------------
+   Scoped to compactLobby so Cashier and financial-detail surfaces retain the
+   fuller ledger layout. Each tile is label-first and balance-second; the icon
+   is intentionally small so it identifies the account without competing with
+   the number.
+═══════════════════════════════════════════════════════════════════════════ */
+.dw--lobby-board {
+  gap: 0;
+}
+
+.dw--lobby-board .dw__bbj {
+  display: none;
+}
+
+.dw--lobby-board .dw__rows {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dw--lobby-board .dw__rows--count-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dw--lobby-board .dw__row {
+  min-width: 0;
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: 14px minmax(0, auto);
+  grid-template-rows: auto auto;
+  align-content: center;
+  justify-content: center;
+  column-gap: 5px;
+  row-gap: 7px;
+  padding: 9px 7px 8px;
+  border: 1px solid #274d78;
+  border-bottom-color: #030a13;
+  border-radius: 7px;
+  background: #0b1727;
+  box-shadow:
+    0 4px 0 #010409,
+    inset 0 1px 0 rgba(167, 217, 255, 0.24),
+    inset 0 -2px 0 #06101c;
+  transition:
+    transform 0.12s ease,
+    border-color 0.15s ease;
+}
+
+.dw--lobby-board .dw__row:hover {
+  border-color: #438ed3;
+  background: #10223a;
+}
+
+.dw--lobby-board .dw__row--actionable {
+  min-height: 72px;
+  border-color: #2876bb;
+  background: #0d1d31;
+}
+
+.dw--lobby-board .dw__row--actionable:active {
+  transform: translateY(3px);
+  box-shadow:
+    0 1px 0 #010409,
+    inset 0 2px 0 #02070d;
+}
+
+.dw--lobby-board .dw__row-icon {
+  grid-column: 1;
+  grid-row: 1;
+  width: 14px;
+  height: 14px;
+  align-self: center;
+  color: #45b8ff;
+}
+
+.dw--lobby-board .dw__row-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.dw--lobby-board .dw__row-label {
+  grid-column: 2;
+  grid-row: 1;
+  max-width: 100%;
+  align-self: center;
+  color: #c6d3e4;
+  font-size: 0.61rem;
+  font-weight: 800;
+  letter-spacing: 0.035em;
+  line-height: 1.1;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.dw--lobby-board .dw__row-hint,
+.dw--lobby-board .dw__row-chevron,
+.dw--lobby-board .dw__plus {
+  display: none;
+}
+
+.dw--lobby-board .dw__row-value {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: 100%;
+  color: #2e96ff;
+  font-size: clamp(0.75rem, 2.4vw, 1rem);
+  font-weight: 850;
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 1px 0 #000;
+}
+
+.dw--lobby-board .dw__error-badge {
+  margin-bottom: 8px;
+}
+
+@media (max-width: 480px) {
+  .dw--lobby-board .dw__row {
+    grid-template-columns: 11px minmax(0, auto);
+    column-gap: 3px;
+  }
+
+  .dw--lobby-board .dw__row-icon,
+  .dw--lobby-board .dw__row-icon svg {
+    width: 11px;
+    height: 11px;
+  }
+
+  .dw--lobby-board .dw__row-label {
+    font-size: 0.48rem;
+    letter-spacing: 0.005em;
+  }
+}
+
+@media (max-width: 380px) {
+  .dw--lobby-board .dw__rows {
+    gap: 5px;
+  }
+
+  .dw--lobby-board .dw__row {
+    min-height: 68px;
+    padding-inline: 4px;
+  }
+
+  .dw--lobby-board .dw__row-label {
+    font-size: 0.44rem;
+    letter-spacing: 0;
+  }
+}

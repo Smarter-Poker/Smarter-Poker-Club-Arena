@@ -104,6 +104,26 @@ export function clubWalletRows(
 }
 
 /**
+ * The club lobby is a glance surface, not the cashier.
+ *
+ * It deliberately shows at most two club-scoped rows beside the always-on
+ * Diamond Wallet tile. Every omitted ledger remains available through the
+ * Cashier; this only keeps the lobby header from growing into a financial
+ * dashboard on a phone.
+ *
+ * The visibility law still applies: this function may hide a row that the
+ * fuller wallet panel shows, but it must never add one that `clubWalletRows`
+ * would withhold from the viewer.
+ */
+export function clubLobbyWalletRows(role: unknown): WalletRowKey[] {
+  const r = normaliseRole(role);
+
+  if (canSeeClubBank(r)) return ['club_bank', 'agent_wallet'];
+  if (isAgentRole(r)) return ['agent_wallet', 'player_wallet'];
+  return ['player_wallet'];
+}
+
+/**
  * Chip minting law (Dan 2026-08-21, restated 2026-08-23):
  * "THE ABILITY TO MINT CHIPS MUST DISAPPEAR ONCE THEY ARE A PART OF A UNION.
  *  IF IT IS A STAND ALONE CLUB, CHIP MINTING EXISTS INSIDE THEIR CLUB BANK."

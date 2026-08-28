@@ -41,6 +41,8 @@ import { sweepIncompleteHorses } from './services/HorseOnboarding.js';
 import { startHorseLeague } from './benchmark/HorseLeague.js';
 import { startHorseDailyAudit } from './services/HorseDailyAudit.js';
 import { startBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
+import { startHorseLaneLoader } from './services/HorseLaneLoader.js';
+import { startHorseOverlayGuard } from './services/HorseOverlayGuard.js';
 import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -291,6 +293,12 @@ httpServer.listen(PORT, () => {
   // Proof of receipt (Dan 2026-08-26): live layer-fire counters, flushed to
   // horse_brain_telemetry every minute for the daily audit + admin panel.
   startBrainTelemetryFlush();
+  // Game lanes (Dan 2026-08-27): the exact 33/33/34 split lives in the
+  // database; this hydrates it and re-balances when the fleet grows.
+  startHorseLaneLoader();
+  // Overlay guard (Dan 2026-08-27): Midway Union guaranteed events get topped
+  // up with horses that are not already in them, so no overlay occurs.
+  startHorseOverlayGuard();
   // V7 (2026-07-24): humanlike session rhythms — horses stand up after real
   // sessions via the SAME hand-boundary-safe leaveTable() path humans use;
   // the fleet manager reseeds fresh horses within its 30s cycle.
@@ -318,9 +326,27 @@ const shutdown = async () => {
   // cannot schedule another batch while we are shutting down.
   stopMemberFeeRollup();
   await Promise.race([
-    // V12: final horse-memory flush rides the same drain window — learned
-    // reads from the last few minutes survive the restart.
-    Promise.allSettled([gameServer.stop(), channelWs.close(), stopHorseMindPersistence()]),
+    (async () => {
+      // FINISH THE HANDS FIRST (2026-08-27). Stopping an engine mid-hand voids
+      // that hand. Until now the only thing standing between a restart and a
+      // voided hand was the deploy workflow's drain gate, which counted
+      // HUMANS — so a horse's hand was voided without a second thought, and
+      // the gate only ran for deploys anyway (a healthcheck kill or a
+      // supervisor bounce went straight through).
+      //
+      // Draining here fixes both: it protects the HAND rather than the
+      // species of whoever is holding it, and it runs on every restart path.
+      // Bounded at 8s and still inside the 20s cap below, so a table stuck
+      // mid-hand cannot hold the process open and get us SIGKILLed mid-flush.
+      try {
+        await gameServer.drainHands(8000);
+      } catch (err) {
+        console.error('[GameServer] drain failed, stopping anyway:', err);
+      }
+      // V12: final horse-memory flush rides the same drain window — learned
+      // reads from the last few minutes survive the restart.
+      await Promise.allSettled([gameServer.stop(), channelWs.close(), stopHorseMindPersistence()]);
+    })(),
     new Promise((r) => setTimeout(r, 20_000)),
   ]);
   process.exit(0);

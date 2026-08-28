@@ -9,9 +9,14 @@
  * a promotion that does not run. This strip sits directly beneath the game
  * action bar — the last thing a player passes before choosing a table.
  *
- * Two sources, always LABELLED, never merged into an anonymous feed:
+ * Three sources, always LABELLED, never merged into an anonymous feed:
  *   CLUB   — club_announcements for this club
  *   UNION  — union_announcements for the union this club belongs to
+ *   HOUSE  — smarter.poker's own promotions, from the house-ad catalog
+ *            (Dan 2026-08-27: with no paid advertisers, the ad space promotes
+ *            our own features). House ads sort LAST: a club that wrote a
+ *            notice to its own players outranks us advertising ourselves in
+ *            their lobby, always.
  *
  * The label matters. Content from the two levels may be shown together, but a
  * player must always be able to tell who is speaking — the club they joined, or
@@ -27,14 +32,19 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { IconMegaphone } from '../icons/LobbyIcons';
 import { reportError } from '../../utils/errorReporter';
+import { AdService } from '../../services/AdService';
 import './LobbyAdStrip.css';
 
 export interface LobbyAd {
   id: string;
-  source: 'CLUB' | 'UNION';
+  source: 'CLUB' | 'UNION' | 'HOUSE';
   title: string | null;
   body: string;
   pinned: boolean;
+  /** House ads only: catalog id for impression/click tracking. */
+  adId?: string;
+  /** House ads only: where a tap should go. */
+  targetUrl?: string | null;
 }
 
 interface LobbyAdStripProps {
@@ -46,6 +56,9 @@ interface LobbyAdStripProps {
   intervalMs?: number;
   /** Tapping the strip — usually navigates to the announcements page. */
   onOpen?: () => void;
+  /** Where a HOUSE ad's own target_url should take the player. Without it a
+   *  house ad falls back to `onOpen`, so the strip never becomes a dead tap. */
+  onNavigate?: (path: string) => void;
 }
 
 const MAX_ADS = 6;
@@ -68,6 +81,7 @@ export default function LobbyAdStrip({
   unionId = null,
   intervalMs = 7000,
   onOpen,
+  onNavigate,
 }: LobbyAdStripProps) {
   const [ads, setAds] = useState<LobbyAd[]>([]);
   const [index, setIndex] = useState(0);
@@ -85,7 +99,7 @@ export default function LobbyAdStrip({
       try {
         const nowIso = new Date().toISOString();
 
-        const [clubRes, unionRes] = await Promise.all([
+        const [clubRes, unionRes, houseAds] = await Promise.all([
           supabase
             .from('club_announcements')
             .select('id, title, message, content, is_pinned, is_active, expires_at, created_at')
@@ -105,6 +119,12 @@ export default function LobbyAdStrip({
                 .order('created_at', { ascending: false })
                 .limit(MAX_ADS)
             : Promise.resolve({ data: [], error: null } as { data: any[]; error: null }),
+          /* HOUSE ADS (2026-08-27). Resolved server-side: every targeting and
+             frequency-cap rule lives in fn_resolve_ads so the client cannot
+             disagree with the database about who was eligible. Returns [] on
+             any failure, so the strip degrades to club + union notices rather
+             than breaking. */
+          AdService.resolve('lobby_strip', clubId, MAX_ADS),
         ]);
 
         if (cancelled) return;
@@ -137,12 +157,27 @@ export default function LobbyAdStrip({
           }))
           .filter((a: LobbyAd) => a.body.length > 0);
 
-        // Pinned club notices lead — a club pins something because it wants it
-        // seen first — then union notices, then the rest of the club's.
+        const houseLobbyAds: LobbyAd[] = (houseAds || []).map((h) => ({
+          id: `house:${h.adId}`,
+          source: 'HOUSE' as const,
+          title: h.headline ? String(h.headline).trim() : null,
+          body: firstLine(h.body),
+          pinned: false,
+          adId: h.adId,
+          targetUrl: h.targetUrl,
+        }));
+
+        /* Pinned club notices lead — a club pins something because it wants it
+           seen first — then union notices, then the rest of the club's, and
+           HOUSE ads last. That order is deliberate and is the rule: a club
+           that wrote a notice to its own players outranks smarter.poker
+           advertising itself in that club's lobby. House ads fill the space
+           that would otherwise be empty; they never displace a club's voice. */
         const merged = [
           ...clubAds.filter((a) => a.pinned),
           ...unionAds,
           ...clubAds.filter((a) => !a.pinned),
+          ...houseLobbyAds,
         ].slice(0, MAX_ADS);
 
         setAds(merged);
@@ -187,9 +222,37 @@ export default function LobbyAdStrip({
     };
   }, [ads.length, intervalMs]);
 
+  /* IMPRESSION LOGGING (2026-08-27). Fires for the ad currently on screen,
+     de-duplicated per page-load inside AdService — this strip rotates every
+     seven seconds and re-renders for unrelated reasons, so counting every
+     render would divide every campaign's click-through rate by a number that
+     means nothing. Only HOUSE ads are tracked: club and union notices are
+     somebody else's message, not our inventory, and logging a club's
+     announcement into our ad analytics would be measuring the wrong thing. */
+  const visibleAd = ads.length > 0 ? ads[Math.min(index, ads.length - 1)] : null;
+  const visibleHouseAdId = visibleAd?.source === 'HOUSE' ? visibleAd.adId : undefined;
+  useEffect(() => {
+    if (!visibleHouseAdId) return;
+    AdService.logImpression({ adId: visibleHouseAdId }, 'lobby_strip', clubId);
+  }, [visibleHouseAdId, clubId]);
+
   if (ads.length === 0) return null;
 
   const ad = ads[Math.min(index, ads.length - 1)];
+
+  /* A house ad owns its own destination, so tapping it goes where the campaign
+     points rather than to the club's announcements page. The click is recorded
+     BEFORE navigating: the alternative is losing the event to the unmount. */
+  const handleActivate = () => {
+    if (ad.source === 'HOUSE' && ad.adId) {
+      AdService.logClick({ adId: ad.adId }, 'lobby_strip', clubId);
+      if (ad.targetUrl) {
+        onNavigate?.(ad.targetUrl);
+        return;
+      }
+    }
+    onOpen?.();
+  };
   const text = ad.title ? (ad.body ? `${ad.title} - ${ad.body}` : ad.title) : ad.body;
 
   /* Not a tablist: there are no tabpanels, no aria-controls and no roving
@@ -217,7 +280,8 @@ export default function LobbyAdStrip({
      without it the strip was still focusable, still showed a pointer cursor
      and a focus ring, and did nothing when clicked. */
   const stripClass = `lobby-ads__strip lobby-ads__strip--${ad.source.toLowerCase()}`;
-  if (!onOpen) {
+  const isActivatable = Boolean(onOpen) || (ad.source === 'HOUSE' && Boolean(ad.targetUrl));
+  if (!isActivatable) {
     return (
       <div className="lobby-ads">
         <div className={`${stripClass} lobby-ads__strip--static`}>
@@ -239,7 +303,7 @@ export default function LobbyAdStrip({
       <button
         type="button"
         className={stripClass}
-        onClick={onOpen}
+        onClick={handleActivate}
         // Not aria-live: this rotates on a timer, and announcing every 7s
         // interrupts a screen-reader user mid-task. The strip is reachable and
         // readable on demand instead.

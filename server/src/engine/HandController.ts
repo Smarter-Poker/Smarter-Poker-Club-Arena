@@ -405,6 +405,41 @@ export class HandController {
       }
     }
 
+    /**
+     * FORCED MONEY, SNAPSHOT ONE OF THREE (2026-08-27).
+     *
+     * Everything posted above — small blind, big blind, dead blinds, "post BB
+     * to enter" — went into the pot and into `totalInvested` and into NO
+     * action record. Neither did the antes and straddles below. `actions` is
+     * the only per-hand log that is persisted, so every consumer that tries to
+     * rebuild a pot, an investment or a stack from `hand_history` is short by
+     * exactly the forced money, on every hand that has any.
+     *
+     * That is not theoretical: reconstructing the 4,000 most recent live hands
+     * lands on the stored `pot_size` on 99.18%, and every miss is a hand with
+     * an ante or a straddle. Those are the hands where the rundown has to drop
+     * its stack column rather than draw one that is wrong.
+     *
+     * Rather than instrument six separate posting branches — and miss the
+     * seventh someone adds later — the totals are SNAPSHOT at three points and
+     * differenced. `totalInvested` is zero at the top of the hand and nobody
+     * has acted voluntarily yet, so at this line it is precisely the blind
+     * money, after the ante block it is blinds + antes, and after the straddle
+     * block it is all three. A new posting path lands in whichever bucket it
+     * sits between and is recorded whether or not anyone remembered to.
+     */
+    const investedSnapshot = (): Map<number, { total: number; dead: number }> =>
+      new Map(
+        this.state.players.map((p) => [
+          p.seat,
+          {
+            total: Math.round((p.totalInvested ?? 0) * 100) / 100,
+            dead: Math.round((p.deadInvested ?? 0) * 100) / 100,
+          },
+        ])
+      );
+    const afterBlinds = investedSnapshot();
+
     if (this.config.ante) {
       if (this.config.bigBlindAnte && bbPlayer) {
         // Bible V8 §4.3: BBA — Big blind posts ante for entire table
@@ -430,6 +465,9 @@ export class HandController {
         }
       }
     }
+
+    /** FORCED MONEY, SNAPSHOT TWO OF THREE: blinds + antes. */
+    const afterAntes = investedSnapshot();
 
     // Bible V8 §4.4: Post straddles after blinds/antes
     if (this.config.straddles && this.config.straddles.length > 0) {
@@ -482,6 +520,62 @@ export class HandController {
     }
     if (blindsPostings.length > 0) {
       this.emit({ type: 'BLINDS_POSTED', postings: blindsPostings } as any);
+    }
+
+    /**
+     * FORCED MONEY, SNAPSHOT THREE OF THREE, and the event that records it.
+     *
+     * Separate from BLINDS_POSTED on purpose. That event drives the client's
+     * chip-to-pot animation and carries only the SB and BB; adding nine ante
+     * postings to it would change what every table animates. This one is for
+     * the hand record and nothing else — ServerTableEngineHandEvents turns it
+     * into `actions` entries and does not re-emit it to the hub.
+     */
+    const afterStraddles = investedSnapshot();
+    const forced: Array<{
+      seat: number;
+      userId: string;
+      kind: string;
+      amount: number;
+      /**
+       * DEAD money is in the pot but is NOT part of the live bet level, so it
+       * never counts toward a call and must never be differenced against a
+       * raise-TO level. An ante is always dead; so is the small blind half of
+       * a dead blind. Getting this wrong understates every raise made by a
+       * player who posted an ante, which is every player in a tournament.
+       */
+      dead: boolean;
+    }> = [];
+    const straddleSeats = new Set((this.config.straddles ?? []).map((s) => s.seat));
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const zero = { total: 0, dead: 0 };
+
+    for (const p of this.state.players) {
+      const b = afterBlinds.get(p.seat) ?? zero;
+      const a = afterAntes.get(p.seat) ?? zero;
+      const s = afterStraddles.get(p.seat) ?? zero;
+
+      const push = (kind: string, amount: number, dead: boolean) => {
+        if (amount > 0) forced.push({ seat: p.seat, userId: p.user_id, kind, amount, dead });
+      };
+
+      // Blind bucket. `post` covers a dead blind and a "post BB to enter" —
+      // forced, but neither of the two named blinds.
+      const blindKind = p.seat === sbSeat ? 'sb' : p.seat === bbSeat ? 'bb' : 'post';
+      push(blindKind, round2(b.total - b.dead), false);
+      push('post', b.dead, true);
+
+      // Ante bucket. Dead by definition, live only if some future path puts
+      // non-dead money here — in which case it is recorded rather than lost.
+      push('ante', round2(a.dead - b.dead), true);
+      push('ante', round2(a.total - b.total - (a.dead - b.dead)), false);
+
+      // Straddle bucket. A straddle is a live blind: it raises the bet level.
+      push(straddleSeats.has(p.seat) ? 'straddle' : 'post', round2(s.total - a.total), false);
+    }
+
+    if (forced.length > 0) {
+      this.emit({ type: 'FORCED_BETS_POSTED', postings: forced } as never);
     }
 
     // AUDIT V6: snap chips after all posting (blinds/dead blinds/straddles)

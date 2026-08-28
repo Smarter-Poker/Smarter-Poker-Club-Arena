@@ -13,7 +13,7 @@ const rpc = vi.fn();
 // chain stub keeps that path alive without a real client.
 const fromChain = () => {
   const chain: Record<string, unknown> = {};
-  for (const m of ['select', 'eq', 'in', 'order', 'limit']) {
+  for (const m of ['select', 'eq', 'in', 'order', 'limit', 'contains']) {
     chain[m] = () => chain;
   }
   chain.then = (resolve: (v: { data: unknown[] }) => void) => resolve({ data: [] });

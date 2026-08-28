@@ -5,43 +5,30 @@
  *
  * Dan (2026-08-20): "inside the winners page you should be able to click on any
  * of the recent winners and see a run down of the winning hand."
+ * Dan (2026-08-27): "you need to fill in all the hand details and payouts, like
+ * all the data that we see and use inside of previous hands."
  *
- * Street by street: who acted, what they did, for how much, and what the pot was
- * after it. Then showdown: every hand that was actually shown, with the five
- * cards that played lit up, the made hand, and what that player was up or down on
- * the pot. Then who got paid what out of the jackpot.
+ * This component is now only three things: fetch, the BBJP Winners box, and the
+ * back button. The rundown itself is `HandDetailView`, rendered off the model
+ * `buildReplay()` produces — the same component and the same reconstruction the
+ * table's Previous Hand uses, so the two cannot drift apart again. Everything
+ * that used to live here (street walking, blind synthesis, the running pot, the
+ * showdown evaluation) moved into `src/utils/handReplay.ts`, where it is
+ * covered by tests against real production rows.
  *
  * Data comes from fn_bbj_hand_detail, which is SECURITY DEFINER and keyed by a
  * bbj_payouts id, because hand_history RLS only lets a player read hands they
  * were dealt into and a public jackpot board has to be readable by everyone.
- *
- * FOUR THINGS THE STORED DATA DOES NOT CONTAIN, handled honestly here:
- *
- * 1. Stack after each action. Only the post-settlement stack is stored, so the
- *    right-hand column is the RUNNING POT, labelled as such. Inventing a stack
- *    curve from the numbers we do have would be fiction.
- * 2. Blind posts. The engine writes them into the pot but not into the action
- *    log, so the two "post" rows at the top of preflop are synthesised from
- *    small_blind / big_blind and the derived blind seats. Without them the
- *    running pot would be short by exactly the blinds.
- *    That reconstruction is then CHECKED against the stored pot_size, and if it
- *    does not reconcile the running-pot column is withdrawn rather than shown
- *    wrong. A number that is quietly off by a blind is worse than no number.
- * 3. Mucked hole cards. They are deliberately never persisted, so a player who
- *    did not show gets no cards, never a guess.
- * 4. Which five cards made each hand. Reconstructed by bestFive() under the
- *    variant's own rules, which also declines to guess on incomplete data.
  */
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import CardImage from '../table/CardImage';
-import { toDeckCards } from '../../utils/deckCards';
-import { bestFive, cardKey } from '../../utils/handEvaluator';
-import { derivePositions, smallBlindSeat, bigBlindSeat } from '../../utils/pokerPositions';
+import HandDetailView from '../handdetail/HandDetailView';
+import { buildReplay, titleCase } from '../../utils/handReplay';
+import type { StoredCard } from '../../utils/deckCards';
 import { reportError } from '../../utils/errorReporter';
-import { formatPopupText } from '../../utils/popupStyle';
 import './BBJHandDetail.css';
+import { gameTypeLabel, money, stamp } from '../../utils/handFormat';
 
 export interface BBJHandDetailProps {
   /** bbj_payouts id — the jackpot hit whose hand this is. */
@@ -54,11 +41,6 @@ export interface BBJHandDetailProps {
   currentUserId?: string | null;
 }
 
-interface RawCard {
-  rank?: string;
-  suit?: string;
-}
-
 interface DetailPlayer {
   userId: string;
   username: string;
@@ -66,34 +48,38 @@ interface DetailPlayer {
   avatarUrl: string | null;
   seat: number;
   stack: number | null;
-  cards: RawCard[] | null;
-}
-
-interface DetailAction {
-  seat: number;
-  userId: string;
-  action: string;
-  amount?: number;
-  stage: string;
-}
-
-interface DetailWinner {
-  userId: string;
-  amount: number;
-  potIndex?: number;
-  hand?: { name?: string; ranking?: number } | null;
+  cards: StoredCard[] | null;
 }
 
 interface DetailRecipient {
   userId: string;
   name: string;
+  playerNumber?: string | null;
   amount: number;
   role: 'bad_beat' | 'hand_winner' | 'table';
 }
 
 interface HandDetail {
+  /**
+   * False when the hand itself is gone and only the payout ledger survives.
+   *
+   * 24 of the 29 real jackpots on this platform are in that state: the pruner
+   * deleted their hands before `20260827d_jackpot_hands_are_never_pruned`
+   * stopped it, and `bbj_payouts.hand_id` was NULL so nothing can rebuild
+   * them. They used to render a dead end — "The Full Hand For This Jackpot Is
+   * No Longer Available." — even though we still know both hands, both names,
+   * the pool at the moment it hit, and every player who was paid.
+   */
+  handAvailable?: boolean;
   handNumber: number;
   playedAt: string;
+  /** Summary-only fields, present when handAvailable is false. */
+  badBeatName?: string | null;
+  badBeatHand?: string | null;
+  handWinnerName?: string | null;
+  handWinnerHand?: string | null;
+  poolAtHit?: number | null;
+  tablePlayerCount?: number | null;
   gameVariant: string | null;
   smallBlind: number;
   bigBlind: number;
@@ -101,10 +87,19 @@ interface HandDetail {
   rakeAmount: number | null;
   bbjAmount: number | null;
   buttonSeat: number | null;
-  board: RawCard[];
+  board: StoredCard[];
+  extraBoards?: StoredCard[][] | null;
   players: DetailPlayer[];
-  actions: DetailAction[];
-  winners: DetailWinner[];
+  actions: Array<{ seat: number; userId: string; action: string; amount?: number; stage: string }>;
+  winners: Array<{ userId: string; amount: number; potIndex?: number; hand?: { name?: string } }>;
+  showdown?: Array<{
+    user_id: string;
+    seat: number;
+    mucked: boolean;
+    hand_name?: string;
+    reveal_order?: number;
+  }> | null;
+  pots?: Array<{ index?: number; amount?: number }> | null;
   jackpot: {
     payoutId: string;
     total: number;
@@ -112,71 +107,6 @@ interface HandDetail {
     handWinnerUserId: string | null;
     recipients: DetailRecipient[];
   };
-}
-
-/**
- * Streets in dealing order, with how much board is face up by the end of each.
- * `pineapple_discard` rides with preflop; `showdown` gets its own bucket so a
- * `show` action can never fall between two streets and vanish.
- */
-const STREETS: Array<{ key: string; label: string; boardTo: number }> = [
-  { key: 'preflop', label: 'PreFlop', boardTo: 0 },
-  { key: 'flop', label: 'Flop', boardTo: 3 },
-  { key: 'turn', label: 'Turn', boardTo: 4 },
-  { key: 'river', label: 'River', boardTo: 5 },
-  { key: 'showdown', label: 'Showdown', boardTo: 5 },
-];
-
-const ACTION_LABEL: Record<string, string> = {
-  fold: 'Fold',
-  check: 'Check',
-  call: 'Call',
-  bet: 'Bet',
-  raise: 'Raise',
-  all_in: 'All In',
-  allin: 'All In',
-  'all-in': 'All In',
-  post: 'Post',
-  show: 'Show',
-  muck: 'Muck',
-  discard: 'Discard',
-  ante: 'Ante',
-  straddle: 'Straddle',
-};
-
-const ROLE_LABEL: Record<DetailRecipient['role'], string> = {
-  bad_beat: 'Bad Beat',
-  hand_winner: 'Won The Hand',
-  table: 'At The Table',
-};
-
-/** Anything the engine did not name gets its own bucket, never dropped. */
-function normalizeStage(stage: string | null | undefined): string {
-  const s = String(stage || 'preflop').toLowerCase();
-  if (s === 'pineapple_discard') return 'preflop';
-  return STREETS.some((x) => x.key === s) ? s : 'preflop';
-}
-
-function money(n: number | null | undefined, dp = 2): string {
-  return Number(n || 0).toLocaleString('en-US', {
-    minimumFractionDigits: dp,
-    maximumFractionDigits: dp,
-  });
-}
-
-function stamp(iso: string): string {
-  const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-  );
-}
-
-/** Stakes print as typed: 0.05/0.1, not 0.05/0.10. */
-function blindLabel(n: number): string {
-  return (Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
 function Header({ onBack }: { onBack: () => void }) {
@@ -233,107 +163,40 @@ export function BBJHandDetail({
     };
   }, [payoutId]);
 
-  /**
-   * Everything derived from the hand, in one pass, memoised so scrolling and
-   * re-renders do not re-walk the action log or re-run the evaluator.
-   */
   const model = useMemo(() => {
-    if (!detail) return null;
-
-    const players = Array.isArray(detail.players) ? detail.players : [];
-    const byUser = new Map(players.map((p) => [p.userId, p]));
-    const bySeat = new Map(players.map((p) => [p.seat, p]));
-    const seats = players.map((p) => p.seat);
-    const positions = derivePositions(seats, detail.buttonSeat);
-    const sbSeat = smallBlindSeat(seats, detail.buttonSeat);
-    const bbSeat = bigBlindSeat(seats, detail.buttonSeat);
-    const board = toDeckCards(detail.board);
-
-    // Blind posts are not in the action log; synthesise them so the running pot
-    // and every player's contribution are the real numbers.
-    const posts: Array<{ seat: number; amount: number; label: string; potAfter: number }> = [];
-    const contributed = new Map<string, number>();
-    const add = (userId: string | undefined, amount: number) => {
-      if (!userId) return;
-      contributed.set(userId, (contributed.get(userId) || 0) + amount);
-    };
-
-    let pot = 0;
-    if (sbSeat !== null && Number(detail.smallBlind) > 0) {
-      pot += Number(detail.smallBlind);
-      posts.push({ seat: sbSeat, amount: Number(detail.smallBlind), label: 'SB', potAfter: pot });
-      add(bySeat.get(sbSeat)?.userId, Number(detail.smallBlind));
-    }
-    if (bbSeat !== null && Number(detail.bigBlind) > 0) {
-      pot += Number(detail.bigBlind);
-      posts.push({ seat: bbSeat, amount: Number(detail.bigBlind), label: 'BB', potAfter: pot });
-      add(bySeat.get(bbSeat)?.userId, Number(detail.bigBlind));
-    }
-
-    const rawActions = (Array.isArray(detail.actions) ? detail.actions : []).filter(
-      (a) => a && a.userId !== 'system'
-    );
-    const actions = rawActions.map((a) => {
-      const amt = Number(a.amount) || 0;
-      pot += amt;
-      add(a.userId, amt);
-      return { a, amount: amt, potAfter: pot, stage: normalizeStage(a.stage) };
+    if (!detail || detail.handAvailable === false) return null;
+    return buildReplay({
+      handNumber: detail.handNumber,
+      playedAt: detail.playedAt,
+      gameVariant: detail.gameVariant,
+      smallBlind: detail.smallBlind,
+      bigBlind: detail.bigBlind,
+      potSize: detail.potSize,
+      rakeAmount: detail.rakeAmount,
+      bbjAmount: detail.bbjAmount,
+      buttonSeat: detail.buttonSeat,
+      board: detail.board,
+      extraBoards: detail.extraBoards ?? null,
+      players: detail.players,
+      actions: detail.actions,
+      winners: detail.winners,
+      // fn_bbj_hand_detail already resolves each player's revealed holding onto
+      // players[].cards, so the map is rebuilt here rather than fetched twice.
+      holeCards: Object.fromEntries(
+        (detail.players || [])
+          .filter((p) => Array.isArray(p.cards) && p.cards.length > 0)
+          .map((p) => [p.userId, p.cards as StoredCard[]])
+      ),
+      showdown: detail.showdown ?? null,
+      pots: detail.pots ?? null,
     });
+  }, [detail]);
 
-    // Does the reconstruction agree with what the engine banked? If not, the
-    // per-row pot is not trustworthy and is withdrawn rather than shown wrong.
-    const storedPot = Number(detail.potSize) || 0;
-    const potReconciles = storedPot > 0 && Math.abs(pot - storedPot) < 0.02;
-
-    const wonByUser = new Map<string, number>();
-    const engineHandName = new Map<string, string>();
-    (Array.isArray(detail.winners) ? detail.winners : []).forEach((w) => {
-      if (!w?.userId) return;
-      wonByUser.set(w.userId, (wonByUser.get(w.userId) || 0) + (Number(w.amount) || 0));
-      if (w.hand?.name) engineHandName.set(w.userId, w.hand.name);
-    });
-
-    const showdown = players
-      .filter((p) => Array.isArray(p.cards) && p.cards.length > 0)
-      .map((p) => {
-        const hole = toDeckCards(p.cards);
-        const made = bestFive(hole, board, detail.gameVariant);
-        const playing = new Set((made?.cards || []).map(cardKey));
-        return {
-          player: p,
-          hole,
-          playing,
-          handName: engineHandName.get(p.userId) || made?.name || '',
-          net: (wonByUser.get(p.userId) || 0) - (contributed.get(p.userId) || 0),
-        };
-      })
-      // The bad-beat hand is the story - lead with it.
-      .sort((x, y) => {
-        const bb = detail.jackpot?.badBeatUserId;
-        if (x.player.userId === bb) return -1;
-        if (y.player.userId === bb) return 1;
-        return y.net - x.net;
-      });
-
-    const streets = STREETS.map((street, i) => ({
-      ...street,
-      actions: actions.filter((x) => x.stage === street.key),
-      posts: street.key === 'preflop' ? posts : [],
-      cards: board.slice(i === 0 ? 0 : STREETS[i - 1].boardTo, street.boardTo),
-    })).filter((s) => s.actions.length > 0 || s.posts.length > 0 || s.cards.length > 0);
-
-    return {
-      players,
-      byUser,
-      bySeat,
-      positions,
-      board,
-      streets,
-      showdown,
-      potReconciles,
-      storedPot,
-      recipients: Array.isArray(detail.jackpot?.recipients) ? detail.jackpot.recipients : [],
-    };
+  /** Player numbers, so the payout box can print (ID:xxxxxx) like the reference. */
+  const numberOf = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of detail?.players || []) if (p.playerNumber) m.set(p.userId, p.playerNumber);
+    return m;
   }, [detail]);
 
   if (state === 'loading') {
@@ -349,195 +212,113 @@ export function BBJHandDetail({
     );
   }
 
-  if (state !== 'ready' || !detail || !model) {
+  if (state !== 'ready' || !detail) {
     return (
       <div className="bbjhd">
         <Header onBack={onBack} />
         <div className="bbjhd__empty">
           {state === 'missing'
-            ? 'The Full Hand For This Jackpot Is No Longer Available.'
+            ? 'This Jackpot Could Not Be Found.'
             : 'Could Not Load This Hand. Try Again Shortly.'}
         </div>
       </div>
     );
   }
 
-  // Id first where we have one - display names are not unique.
-  const isYou = (name: string, userId?: string | null) => {
-    if (currentUserId && userId) return userId === currentUserId;
-    return !!currentUserName && name.toLowerCase() === currentUserName.toLowerCase();
-  };
+  const recipients = Array.isArray(detail.jackpot?.recipients) ? detail.jackpot.recipients : [];
 
-  const rake = Number(detail.rakeAmount) || 0;
-  const bbjFee = Number(detail.bbjAmount) || 0;
+  const payoutBox = (
+    <section className="hdv__bbjp">
+      <header className="hdv__bbjp-head">
+        BBJP Winners
+        {/* The box lists shares and never showed what they are shares OF.
+            `jackpot.total` has been in the payload the whole time. */}
+        <span className="hdv__bbjp-total">{money(detail.jackpot?.total)}</span>
+      </header>
+      {recipients.map((r, i) => {
+        const you = currentUserId
+          ? r.userId === currentUserId
+          : !!currentUserName &&
+            String(r.name || '').toLowerCase() === currentUserName.toLowerCase();
+        const id = numberOf.get(r.userId) || r.playerNumber || '';
+        return (
+          <div className="hdv__bbjp-row" key={`${r.userId}-${i}`}>
+            <span className={`hdv__bbjp-name${you ? ' is-you' : ''}`}>{r.name}</span>
+            <span className="hdv__bbjp-id">{id ? `(ID:${id})` : ''}</span>
+            <span className="hdv__bbjp-amt">+{money(r.amount)}</span>
+          </div>
+        );
+      })}
+    </section>
+  );
+
+  /**
+   * THE HAND IS GONE, BUT THE JACKPOT IS NOT.
+   *
+   * This used to be a dead end — one grey sentence and nothing else — and it
+   * is what 24 of the 29 real jackpots on this platform show, because the
+   * pruner deleted their hands before `20260827d` stopped it and
+   * `bbj_payouts.hand_id` was NULL so nothing can rebuild them.
+   *
+   * Everything below is real, stored, and was being withheld for no reason:
+   * both hands, both names, the pool at the moment it hit, and every player
+   * who was paid and how much. The one thing missing is the street-by-street
+   * action, and this says exactly that rather than implying the whole record
+   * is gone.
+   */
+  if (!model) {
+    return (
+      <div className="bbjhd">
+        <Header onBack={onBack} />
+
+        <div className="bbjhd__meta">
+          <span className="bbjhd__meta-when">{stamp(detail.playedAt)}</span>
+          {detail.tablePlayerCount ? (
+            <span className="bbjhd__meta-stakes">{detail.tablePlayerCount} Dealt In</span>
+          ) : null}
+          <span className="bbjhd__meta-sn">SN: {detail.handNumber}</span>
+        </div>
+
+        <section className="bbjhd__summary">
+          <div className="bbjhd__summary-row">
+            <span className="bbjhd__summary-label">Bad Beat</span>
+            <span className="bbjhd__summary-name">{detail.badBeatName || 'Player'}</span>
+            <span className="bbjhd__summary-hand">{titleCase(detail.badBeatHand || '')}</span>
+          </div>
+          <div className="bbjhd__summary-row">
+            <span className="bbjhd__summary-label">Beaten By</span>
+            <span className="bbjhd__summary-name">{detail.handWinnerName || 'Player'}</span>
+            <span className="bbjhd__summary-hand">{titleCase(detail.handWinnerHand || '')}</span>
+          </div>
+          {detail.poolAtHit ? (
+            <div className="bbjhd__summary-row">
+              <span className="bbjhd__summary-label">Jackpot</span>
+              <span className="bbjhd__summary-name">Pool At The Hit</span>
+              <span className="bbjhd__summary-hand">{money(detail.poolAtHit)}</span>
+            </div>
+          ) : null}
+        </section>
+
+        {recipients.length > 0 ? payoutBox : null}
+
+        <p className="bbjhd__retention">
+          The Hand Itself Was Not Kept. Jackpot Hands Are Retained From 2026-08-27 Onward.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="bbjhd">
       <Header onBack={onBack} />
-
-      <div className="bbjhd__meta">
-        <span className="bbjhd__meta-when">{stamp(detail.playedAt)}</span>
-        <span className="bbjhd__meta-stakes">
-          {blindLabel(detail.smallBlind)} / {blindLabel(detail.bigBlind)}
-        </span>
-        <span className="bbjhd__meta-sn">SN: {detail.handNumber}</span>
-      </div>
-
-      <div className="bbjhd__colkey">
-        <span>Player</span>
-        <span>Action</span>
-        <span>{model.potReconciles ? 'Pot After' : ''}</span>
-      </div>
-
-      <div className="bbjhd__streets">
-        {model.streets.map((street) => {
-          const streetPot =
-            street.actions.length > 0
-              ? street.actions[street.actions.length - 1].potAfter
-              : street.posts.length > 0
-                ? street.posts[street.posts.length - 1].potAfter
-                : 0;
-
-          return (
-            <section className="bbjhd__street" key={street.key}>
-              <header className="bbjhd__street-head">
-                <span className="bbjhd__street-name">{street.label}</span>
-                {street.cards.length > 0 && (
-                  <span className="bbjhd__street-board">
-                    {street.cards.map((card, i) => (
-                      <CardImage key={`${street.key}-${i}`} card={card} size="xs" />
-                    ))}
-                  </span>
-                )}
-                {model.potReconciles && streetPot > 0 && (
-                  <span className="bbjhd__street-pot">{money(streetPot)}</span>
-                )}
-              </header>
-
-              {street.posts.map((p, i) => {
-                const player = model.bySeat.get(p.seat);
-                return (
-                  <div className="bbjhd__row" key={`post-${p.label}-${i}`}>
-                    <span className="bbjhd__pos">{p.label}</span>
-                    <span className={`bbjhd__name${isYou(player?.username || '', player?.userId) ? ' is-you' : ''}`}>
-                      {player?.username || 'Player'}
-                    </span>
-                    <span className="bbjhd__act bbjhd__act--post">{p.label}</span>
-                    <span className="bbjhd__amt">{money(p.amount)}</span>
-                    <span className="bbjhd__pot">
-                      {model.potReconciles ? money(p.potAfter) : ''}
-                    </span>
-                  </div>
-                );
-              })}
-
-              {street.actions.map(({ a, amount, potAfter }, i) => {
-                const player = model.byUser.get(a.userId) || model.bySeat.get(a.seat);
-                const verb = String(a.action || '').toLowerCase();
-                return (
-                  <div className="bbjhd__row" key={`${street.key}-a-${i}`}>
-                    <span className="bbjhd__pos">{model.positions[a.seat] || ''}</span>
-                    <span className={`bbjhd__name${isYou(player?.username || '', player?.userId) ? ' is-you' : ''}`}>
-                      {player?.username || 'Player'}
-                    </span>
-                    <span className={`bbjhd__act bbjhd__act--${verb.replace(/[^a-z_]/g, '')}`}>
-                      {ACTION_LABEL[verb] || formatPopupText(verb)}
-                    </span>
-                    <span className="bbjhd__amt">{amount > 0 ? money(amount) : ''}</span>
-                    <span className="bbjhd__pot">
-                      {model.potReconciles ? money(potAfter) : ''}
-                    </span>
-                  </div>
-                );
-              })}
-            </section>
-          );
-        })}
-      </div>
-
-      <div className="bbjhd__potline">
-        <span>Pot</span>
-        <span>Main ({money(model.storedPot)})</span>
-      </div>
-
-      {(rake > 0 || bbjFee > 0) && (
-        <div className="bbjhd__drop">
-          {rake > 0 && (
-            <span>
-              Rake <strong>{money(rake)}</strong>
-            </span>
-          )}
-          {bbjFee > 0 && (
-            <span>
-              Jackpot Fee <strong>{money(bbjFee)}</strong>
-            </span>
-          )}
-          <span className="bbjhd__drop-note">Taken From The Pot</span>
-        </div>
-      )}
-
-      {model.showdown.length > 0 && (
-        <section className="bbjhd__showdown">
-          <header className="bbjhd__section-head">Showdown</header>
-          {model.showdown.map(({ player, hole, playing, handName, net }) => {
-            const isBadBeat = player.userId === detail.jackpot?.badBeatUserId;
-            return (
-              <div className={`bbjhd__sd${isBadBeat ? ' is-badbeat' : ''}`} key={player.userId}>
-                <div className="bbjhd__sd-top">
-                  <span className="bbjhd__pos">{model.positions[player.seat] || ''}</span>
-                  <span className={`bbjhd__name${isYou(player.username, player.userId) ? ' is-you' : ''}`}>
-                    {player.username}
-                  </span>
-                  {isBadBeat && <span className="bbjhd__sd-tag">BAD BEAT</span>}
-                  <span className="bbjhd__sd-hand">{formatPopupText(handName)}</span>
-                  <span className={`bbjhd__sd-net${net >= 0 ? ' is-up' : ' is-down'}`}>
-                    {net >= 0 ? '+' : '-'}
-                    {money(Math.abs(net))}
-                  </span>
-                </div>
-                <div className="bbjhd__sd-cards">
-                  {hole.map((card, i) => (
-                    <CardImage
-                      key={`h-${player.userId}-${i}`}
-                      card={card}
-                      size="sm"
-                      className={playing.has(cardKey(card)) ? 'bbjhd-plays' : 'bbjhd-idle'}
-                    />
-                  ))}
-                  {model.board.length > 0 && <span className="bbjhd__sd-sep" aria-hidden="true" />}
-                  {model.board.map((card, i) => (
-                    <CardImage
-                      key={`b-${player.userId}-${i}`}
-                      card={card}
-                      size="sm"
-                      className={playing.has(cardKey(card)) ? 'bbjhd-plays' : 'bbjhd-idle'}
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-          {model.showdown.some((s) => s.playing.size > 0) && (
-            <p className="bbjhd__sd-legend">The Five Cards That Played Are Lit.</p>
-          )}
-        </section>
-      )}
-
-      {model.recipients.length > 0 && (
-        <section className="bbjhd__jackpot">
-          <header className="bbjhd__section-head">
-            Jackpot Paid
-            <span className="bbjhd__jackpot-total">{money(detail.jackpot.total)}</span>
-          </header>
-          {model.recipients.map((r, i) => (
-            <div className={`bbjhd__pay bbjhd__pay--${r.role}`} key={`${r.userId}-${i}`}>
-              <span className={`bbjhd__name${isYou(r.name, r.userId) ? ' is-you' : ''}`}>{r.name}</span>
-              <span className="bbjhd__pay-role">{ROLE_LABEL[r.role]}</span>
-              <span className="bbjhd__pay-amt">+{money(r.amount)}</span>
-            </div>
-          ))}
-        </section>
-      )}
+      <HandDetailView
+        model={model}
+        currentUserId={currentUserId}
+        currentUserName={currentUserName}
+        badge={gameTypeLabel(detail.gameVariant)}
+        badBeatUserId={detail.jackpot?.badBeatUserId ?? null}
+        footer={recipients.length > 0 ? payoutBox : null}
+      />
     </div>
   );
 }

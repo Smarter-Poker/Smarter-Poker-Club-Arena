@@ -128,6 +128,70 @@
   border-color: rgba(255, 255, 255, 0.35);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   SPEAKING (Dan 2026-08-27: "the player who has messaged OR TALKED")
+   ═══════════════════════════════════════════════════════════════════════════
+   A live microphone, not a message. Green rather than the chat white/blue so
+   the two are never confused at a glance, narrower because it carries three
+   dots instead of words, and it does NOT expire on a timer — the voice layer
+   takes it away by dropping the player out of `speakingPlayerIds`. */
+
+.chat-bubble--speaking {
+  min-width: 0;
+  background: linear-gradient(180deg, rgba(77, 198, 96, 0.96) 0%, rgba(46, 160, 67, 0.96) 100%);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.4);
+  align-items: center;
+}
+
+.chat-bubble--speaking .chat-bubble__name {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.chat-bubble--speaking .chat-bubble__tail {
+  background: rgba(46, 160, 67, 0.96);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.chat-bubble--speaking.chat-bubble--below .chat-bubble__tail {
+  background: rgba(77, 198, 96, 0.96);
+}
+
+.chat-bubble__voice {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 12px;
+}
+
+.chat-bubble__voice i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  animation: chatVoicePulse 1s ease-in-out infinite;
+}
+
+.chat-bubble__voice i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.chat-bubble__voice i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes chatVoicePulse {
+  0%,
+  100% {
+    transform: scale(0.7);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 1;
+  }
+}
+
 @keyframes chatBubblePop {
   0% {
     opacity: 0;
@@ -157,5 +221,14 @@
 @media (prefers-reduced-motion: reduce) {
   .chat-bubble {
     animation: none;
+  }
+
+  /* The dots stop moving but must stay VISIBLE — they are the only thing in a
+     speaking bubble, so `animation: none` on a keyframe that starts at 0.55
+     opacity is the right outcome only if the resting state is legible. */
+  .chat-bubble__voice i {
+    animation: none;
+    opacity: 1;
+    transform: scale(1);
   }
 }

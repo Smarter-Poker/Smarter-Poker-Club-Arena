@@ -214,17 +214,6 @@ export class TableWebSocket {
               })
               .catch(() => {});
           }
-        )
-        .on(
-          'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'profiles' },
-          (payload) => {
-            import('../core/MasterBus')
-              .then(({ masterBus }) => {
-                masterBus.emit('TABLE_PROFILES_UPDATE', { newRow: payload.new });
-              })
-              .catch(() => {});
-          }
         );
 
       // Subscribe to channel - returns the channel, callback receives status

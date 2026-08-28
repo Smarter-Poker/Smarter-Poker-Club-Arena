@@ -31,6 +31,13 @@ const supabaseMock = vi.hoisted(() => ({
 }));
 
 const reported = vi.hoisted(() => ({ calls: [] as Array<[unknown, string]> }));
+const busMock = vi.hoisted(() => ({
+  handlers: new Map<string, Array<(event: { payload: any }) => void>>(),
+}));
+
+function emitBus(event: string, payload: unknown) {
+  for (const handler of busMock.handlers.get(event) ?? []) handler({ payload });
+}
 
 vi.mock('@/lib/supabase', () => {
   const builder = (table: string) => {
@@ -62,7 +69,15 @@ vi.mock('@/utils/errorReporter', () => ({
 vi.mock('@/core/MasterBus', () => ({
   masterBus: {
     emit: vi.fn(),
-    subscribe: vi.fn(() => () => {}),
+    subscribe: vi.fn((event: string, handler: (event: { payload: any }) => void) => {
+      const handlers = busMock.handlers.get(event) ?? [];
+      handlers.push(handler);
+      busMock.handlers.set(event, handlers);
+      return () => {
+        const index = handlers.indexOf(handler);
+        if (index >= 0) handlers.splice(index, 1);
+      };
+    }),
     getOrCreateChannel: vi.fn(() => ({
       on: vi.fn(function (this: unknown) {
         return this;
@@ -92,6 +107,7 @@ function seedCache(userId: string, url: string) {
 describe('header avatar resilience', () => {
   beforeEach(() => {
     localStorage.clear();
+    busMock.handlers.clear();
     supabaseMock.profileResult = { data: null, error: null };
   });
 
@@ -108,7 +124,9 @@ describe('header avatar resilience', () => {
 
     useHeaderDataStore.getState().loadOnce(USER);
     await vi.waitFor(() => {
-      expect(reported.calls.some(([, ctx]) => ctx === 'useHeaderDataStore.avatar_fetch')).toBe(true);
+      expect(reported.calls.some(([, ctx]) => ctx === 'useHeaderDataStore.avatar_fetch')).toBe(
+        true
+      );
     });
   });
 
@@ -167,6 +185,43 @@ describe('header avatar resilience', () => {
     useHeaderDataStore.getState().teardown();
 
     expect(localStorage.getItem('ca-avatar-cache')).toBeNull();
+    expect(useHeaderDataStore.getState().avatarUrl).toBeNull();
+  });
+
+  it('keeps an optimistic avatar visible when the initial read returns an older value', async () => {
+    const useHeaderDataStore = await freshStore();
+    supabaseMock.profileResult = {
+      data: { avatar_url: '/avatars/table/old.webp' },
+      error: null,
+    };
+
+    useHeaderDataStore.getState().loadOnce(USER);
+    emitBus('CUSTOMIZATION_MUTATION_STATE', {
+      kind: 'player-appearance',
+      scope: USER,
+      mutationId: 'avatar-2',
+      state: 'pending',
+    });
+    emitBus('PLAYER_APPEARANCE_CHANGED', {
+      userId: USER,
+      avatar: '/avatars/table/new.webp',
+      mutationId: 'avatar-2',
+      source: 'avatar-picker',
+    });
+
+    await vi.waitFor(() => {
+      expect(useHeaderDataStore.getState().avatarUrl).toBe('/avatars/table/new.webp');
+    });
+  });
+
+  it('does not apply an avatar event from another signed-in account', async () => {
+    const useHeaderDataStore = await freshStore();
+    useHeaderDataStore.getState().loadOnce(USER);
+    emitBus('PLAYER_APPEARANCE_CHANGED', {
+      userId: OTHER_USER,
+      avatar: AVATAR,
+      source: 'avatar-picker',
+    });
     expect(useHeaderDataStore.getState().avatarUrl).toBeNull();
   });
 });

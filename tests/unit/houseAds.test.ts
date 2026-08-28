@@ -16,6 +16,9 @@ const SERVICE = read('src/services/AdService.ts');
 const STRIP = read('src/components/lobby/LobbyAdStrip.tsx');
 const ADMIN = read('src/pages/admin/HouseAdsPage.tsx');
 const CAP_MIGRATION = read('supabase/migrations/20260828032000_ad_cap_is_per_surface.sql');
+const SUPPRESSION_MIGRATION = read(
+  'supabase/migrations/20260828055000_suppression_countable_by_an_operator.sql'
+);
 
 describe('VIP members see house ads (Dan 2026-08-27)', () => {
   /* "even vips will see ads remove that for now." The ad-free promise had been
@@ -142,12 +145,18 @@ describe('the frequency cap belongs to one surface, and its refusals are countab
   it('ships a way to tell "capped" apart from "nothing is running"', () => {
     /* Dan 2026-08-28: "if you add a cap or a hold, make it rotate, and make a
        suppressed ad countable." The rolling 24h window is the rotating half.
-       This is the countable half, and it was the part that was missing. */
-    expect(CAP_MIGRATION).toMatch(/create or replace function public\.fn_ad_cap_status/);
-    expect(CAP_MIGRATION).toMatch(/suppressed_by_cap/);
-    expect(CAP_MIGRATION).toMatch(
-      /grant execute on function public\.fn_ad_cap_status\(text\) to anon, authenticated/
-    );
+       This is the countable half, and it was the part that was missing.
+
+       The first attempt (fn_ad_cap_status) counted the CALLER'S own
+       impressions, which is the right unit for a player debugging their own
+       screen and useless to the only person who asks - this panel is
+       staff-only. It was never wired, and 20260828055000 replaced it with
+       fn_ad_suppression, which counts people. The pin follows the answer, not
+       the first attempt at it. */
+    expect(CAP_MIGRATION).toMatch(/suppressed ad countable/);
+    expect(SUPPRESSION_MIGRATION).toMatch(/create or replace function public\.fn_ad_suppression/);
+    expect(SUPPRESSION_MIGRATION).toMatch(/served_users_24h/);
+    expect(SUPPRESSION_MIGRATION).toMatch(/capped_users_24h/);
   });
 
   it('asserts the regression itself rather than describing it', () => {
@@ -343,5 +352,56 @@ describe('the panel can finally say WHICH surface works', () => {
        confident zero wearing a new hat. */
     expect(ADMIN).toMatch(/statsBySlot\?: StatsBySlot \| null/);
     expect(ADMIN).toMatch(/setStatsBySlot\(res\.statsBySlot \?\? null\)/);
+  });
+});
+
+describe('an operator can see WHY a surface is quiet', () => {
+  /* Views and clicks say what happened. They cannot say what did not, and a
+     silent placement has three completely different causes: no placement, no
+     audience match, or everybody already capped out for the day.
+
+     This corrects my own work from earlier the same day. fn_ad_cap_status
+     counted the CALLER'S impressions - the right unit for a player debugging
+     their own screen, useless in a staff-only panel, and I reported it as
+     "now consumed" when nothing called it at all. */
+  const SUP = read('supabase/migrations/20260828055000_suppression_countable_by_an_operator.sql');
+
+  it('counts people, not one caller', () => {
+    expect(SUP).toMatch(/served_users_24h/);
+    expect(SUP).toMatch(/capped_users_24h/);
+    expect(SUP).toMatch(/pu\.impressions >= pl\.daily_cap/);
+  });
+
+  it('replaces the wrong-unit function rather than leaving both', () => {
+    expect(SUP).toMatch(/drop function if exists public\.fn_ad_cap_status\(text\)/);
+    expect(SUP).toMatch(/it was meant to be replaced, not duplicated/);
+  });
+
+  it('is staff-only, like every other aggregate over ad_event', () => {
+    expect(SUP).toMatch(
+      /revoke all on function public\.fn_ad_suppression\(\) from public, anon, authenticated/
+    );
+    expect(SUP).toMatch(/grant execute on function public\.fn_ad_suppression\(\) to service_role/);
+  });
+
+  it('returns a row for every active placement, so none is silently skipped', () => {
+    expect(SUP).toMatch(/fn_ad_suppression returned % rows for % active placements/);
+  });
+
+  it('rebuilds the cap index to match the cap predicate', () => {
+    /* idx_ad_event_cap was (user_id, ad_id, created_at). The per-surface fix
+       added `AND e.slot = pl.slot` and left the index behind, so slot and
+       event_type were filtered after the fetch - on every candidate advert on
+       every page load. */
+    expect(SUP).toMatch(
+      /create index idx_ad_event_cap\s*\n?\s*on public\.ad_event \(user_id, ad_id, slot, event_type, created_at desc\)/
+    );
+    expect(SUP).toMatch(/idx_ad_event_cap does not cover the cap predicate/);
+  });
+
+  it('the panel shows it, and only when somebody is actually capped', () => {
+    expect(ADMIN).toMatch(/suppression\?\.\[ad\.id\]\?\.\[p\.slot\]/);
+    expect(ADMIN).toMatch(/Capped Out/);
+    expect(ADMIN).toMatch(/sup && sup\.cappedUsers24h > 0/);
   });
 });

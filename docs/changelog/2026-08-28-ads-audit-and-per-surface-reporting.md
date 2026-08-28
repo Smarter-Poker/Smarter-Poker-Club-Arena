@@ -11,7 +11,7 @@ spot.
 | #   | Finding                                               | Verdict                                                                                                                                                                       |
 | --- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | CI red on the ads PR                                  | **Not the ads.** `main` itself was red — `tournamentRakeAndBreaks` pinned a method that had moved. Another agent fixed it in #1551; this branch just needed `main` merged in. |
-| 2   | `fn_ad_cap_status` called by nothing                  | **Real, mine.** Dead code the same day it shipped. Now consumed.                                                                                                              |
+| 2   | `fn_ad_cap_status` called by nothing                  | **Real, mine.** Dead code the same day it shipped. **This row first said "now consumed", which was false** — see the correction below.                                        |
 | 3   | Admin rollup is slot-blind                            | **Real.** Fixed here. See below.                                                                                                                                              |
 | 4   | `ad_event` rollup capped at 50,000 rows               | **Real.** Fixed here. See below.                                                                                                                                              |
 | 5   | `ad_event.slot` had no CHECK                          | **Real.** Fixed here.                                                                                                                                                         |
@@ -91,14 +91,58 @@ constraint, and aborts with a count if any is not: a constraint that would
 retroactively reject real data is a question to answer, not a thing to widen
 until it fits.
 
-## Why `fn_ad_stats` is staff-only and `fn_ad_cap_status` is not
+## Correction: `fn_ad_cap_status` was NOT consumed, and never should have been
+
+The audit row above originally read "now consumed". It was not. I wired
+`fn_ad_stats` and reported both as done, which is the same confident-claim
+failure the whole system exists to end — worse here, because it was a claim
+about a fix for exactly that class of bug.
+
+Chasing it down showed the function was the wrong shape anyway. It reports on
+**the caller's own** impressions: right for a player debugging their own
+screen, useless in a staff-only panel, where it would have answered "is this
+one staff member capped". So it was never going to be wired, and the honest
+correction is not to force a caller on it.
+
+`20260828055000` replaces it with `fn_ad_suppression()`, which counts **people**
+per placement over the rolling 24h window:
+
+```
+ad                slot             cap   served  capped
+diamonds_store    lobby_strip       3      5       2
+spins_jackpot     hub_promotions    3      2       1
+referral_invite   session_summary   1      1       1
+```
+
+That last row is the point: a placement with a cap of 1 has already gone silent
+for the only person who ever saw it. The panel now shows "N Of M Capped Out"
+beside a placement, and only when N is above zero — a "0 Capped" on every row
+would be noise.
+
+A silent surface finally has three distinguishable causes instead of one
+silence: no placement (already shown as "Not Placed"), no audience match
+(served and capped both zero while the campaign is live), or everyone capped
+(capped high, served flat).
+
+## The cap index no longer matched the cap query
+
+`idx_ad_event_cap` was `(user_id, ad_id, created_at DESC)` — built for the
+Phase 1 predicate. The per-surface fix added `AND e.slot = pl.slot` and left
+the index behind, so `slot` and `event_type` were filtered after the fetch, on
+every candidate advert on every page load of every surface.
+
+Rebuilt as `(user_id, ad_id, slot, event_type, created_at DESC)`, which is the
+predicate exactly. Trivial at 160 rows; the cheapest possible moment to fix it
+is before the table is large enough for anyone to notice.
+
+## Why `fn_ad_stats` and `fn_ad_suppression` are staff-only
 
 `ad_event` deliberately has no SELECT policy — one player must never be able to
 enumerate another's viewing history. A `SECURITY DEFINER` function granted to
-`authenticated` hands back exactly that in aggregate, so `fn_ad_stats` is
-granted to `service_role` alone and the migration asserts it. `fn_ad_cap_status`
-stays player-callable because it only ever reports on the caller's own
-impressions.
+`authenticated` hands back exactly that in aggregate, so both functions are
+granted to `service_role` alone and both migrations assert it. The admin API is
+the only caller, and it authorises itself against
+`profiles.role IN ('admin','super_admin')` before it ever runs one.
 
 ## Verification
 

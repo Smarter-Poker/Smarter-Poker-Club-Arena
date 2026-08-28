@@ -256,6 +256,7 @@ import GameServerAPI, {
 import RabbitHunt from '../components/table/RabbitHunt';
 import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
 //monteCarloEquity import removed — server-authoritative
+import '../components/table/ControlThemeTokens.css';
 import './TablePage.css';
 import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
 // Phase 8-9 Premium Components

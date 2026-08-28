@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { masterBus } from '../core/MasterBus';
+import { STORAGE_KEYS } from '../lib/storage';
 
 interface SettingsState {
   soundEnabled: boolean;
@@ -28,6 +29,23 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) => ({ notificationsEnabled: !state.notificationsEnabled })),
       setTheme: (theme, userId) => {
         set({ theme });
+        /* Keep the full Settings page's separate, deliberately namespaced
+           local cache in step with Table Studio. Without this mirror, the
+           interface changed immediately but /settings reopened with the old
+           mode and could save it back over the new account preference. */
+        if (typeof localStorage !== 'undefined') {
+          try {
+            const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+            const parsed = raw ? JSON.parse(raw) : {};
+            const current =
+              parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+            const next = { ...current, theme };
+            localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(next));
+            masterBus.emit('SETTINGS_UPDATED', { settings: next });
+          } catch (error) {
+            console.warn('[SettingsStore] Could Not Mirror Interface Mode:', error);
+          }
+        }
         // Apply immediately even on direct /table routes where Shell may not
         // be the component that initiated the change. The persisted store is
         // still the source of truth; this keeps the visible chrome and the

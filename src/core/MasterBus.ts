@@ -26,6 +26,7 @@ import { realtimeChannelService } from '../services/RealtimeChannelService';
 import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { reportError } from '../utils/errorReporter';
+import { STORAGE_KEYS } from '../lib/storage';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // EVENT TYPES
@@ -1484,6 +1485,27 @@ class MasterBusCore {
       if (theme !== 'light' && theme !== 'dark') return;
       if (useSettingsStore.getState().theme !== theme) {
         useSettingsStore.setState({ theme });
+      }
+      /* Keep the full /settings cache coherent too. A profile realtime event
+         used to repaint the app and update Zustand while leaving this separate
+         cache on the old mode; opening Settings then saved that stale value
+         back over the cross-device choice. The source tab has already mirrored
+         this cache before it emits, so only remote/stale events rebroadcast a
+         SETTINGS_UPDATED notification here. */
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+          const parsed = raw ? JSON.parse(raw) : {};
+          const current =
+            parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+          if ((current as Record<string, unknown>).theme !== theme) {
+            const next = { ...(current as Record<string, unknown>), theme };
+            localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(next));
+            this.emit('SETTINGS_UPDATED', { settings: next });
+          }
+        } catch (error) {
+          reportError(error, 'MasterBus.Interface_theme_cache_sync_failed');
+        }
       }
       if (typeof document !== 'undefined') {
         document.documentElement.setAttribute('data-theme', theme);

@@ -5143,6 +5143,15 @@
       "net_bb",
       "updated_at"
     ],
+    "horse_decision_latency": [
+      "day",
+      "scope",
+      "samples",
+      "total_ms",
+      "max_ms",
+      "buckets",
+      "updated_at"
+    ],
     "horse_error_log": [
       "id",
       "horse_id",
@@ -7372,7 +7381,8 @@
       "equipped_frame",
       "equipped_aura",
       "use_avatar_as_profile_pic",
-      "status_text"
+      "status_text",
+      "player_tags"
     ],
     "promo_code_redemptions": [
       "id",
@@ -11325,7 +11335,8 @@
       "auto_muck_winners",
       "auto_post_blinds",
       "confirm_all_in",
-      "card_back"
+      "card_back",
+      "settings_touched"
     ],
     "user_theme_settings": [
       "id",

@@ -46,8 +46,8 @@ export default function ClubOperationsPage() {
           <p className={styles.eyebrow}>Club Command Network</p>
           <h1>Club Operations</h1>
           <p className={styles.lede}>
-            One controlled entry point for the people, money, safety, and house systems you are
-            authorized to operate.
+            One Controlled Entry Point For The People, Money, Safety, And House Systems You Are
+            Authorized To Operate.
           </p>
           <div className={styles.heroActions}>
             <Link className={styles.primaryAction} to={`/clubs/${clubId}`}>

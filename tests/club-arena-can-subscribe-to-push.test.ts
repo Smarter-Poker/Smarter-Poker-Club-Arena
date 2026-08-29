@@ -284,6 +284,50 @@ describe('the enrolment path is actually reachable', () => {
     expect(PROMPT).toMatch(/result\.ok \|\| notificationPermission\(\) === 'denied'/);
   });
 
+  it('does not load a third-party push SDK', () => {
+    // OneSignal was retired on 2026-08-19 and replaced with self-hosted VAPID.
+    // The loader in index.html was left behind, so for ten days EVERY Club
+    // Arena session still fetched OneSignalSDK.page.js from a third-party CDN,
+    // initialised it, and hit api.onesignal.com/sync/<app-id>/web - announcing
+    // the visit to a vendor the platform no longer uses, for a feature it no
+    // longer provided. Confirmed live on production 2026-08-29: `typeof
+    // window.OneSignal` was "function", with two cdn.onesignal.com script tags
+    // in the document.
+    //
+    // It also forced three allowances to stay in the hub's CSP that would
+    // otherwise have been carried into an enforced policy.
+    //
+    // Matched against CODE, not prose: the tombstone comments left in both
+    // files deliberately name what was removed, and a test that cannot tell a
+    // warning from the thing it warns about would fail on its own explanation.
+    const html = read('index.html').replace(/<!--[\s\S]*?-->/g, '');
+    expect(html).not.toMatch(/onesignal/i);
+    expect(html).not.toMatch(/OneSignalDeferred/);
+  });
+
+  it('the retired send path reports instead of returning a quiet false', () => {
+    // sendToUsers() has delivered nothing since 2026-08-19 while eight call
+    // sites (cashout, credit requests, disputes, settlements, tournament
+    // auto-seat) believe they notify people. It used to warn ONCE per session
+    // at console.warn and run a preference query first - a DB round trip to
+    // decide who to send nothing to.
+    const SERVICE = read('src/services/PushNotificationService.ts');
+    expect(SERVICE).toMatch(/reportError\(/);
+    expect(SERVICE).toMatch(/Retired_send_dropped/);
+
+    // Code only — the file's header documents what was removed by name, and a
+    // test that cannot tell the warning from the thing it warns about would
+    // fail on its own explanation.
+    const code = SERVICE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    // No OneSignal SDK surface survives.
+    expect(code).not.toMatch(/window\.OneSignal/);
+    expect(code).not.toMatch(/ONESIGNAL_APP_ID/);
+    // The old edge-function call sat AFTER an unconditional `return false` —
+    // unreachable code that reads like a working transport.
+    expect(code).not.toMatch(/send-push-notification/);
+    expect(code).not.toMatch(/functions\.invoke/);
+  });
+
   it('keeps the first-run key in step with the World Hub', () => {
     const PROMPT = read('src/components/notifications/FirstRunPushPrompt.tsx');
     // Same origin, same device, ONE subscription behind both apps. If the two

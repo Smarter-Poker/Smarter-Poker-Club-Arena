@@ -4868,6 +4868,13 @@
       "created_at",
       "updated_at"
     ],
+    "gto_agg_progress": [
+      "street",
+      "rows_done",
+      "done",
+      "updated_at",
+      "last_id"
+    ],
     "gto_postflop_compact": [
       "street",
       "game_family",

@@ -134,10 +134,16 @@ method)` (SQL) and `server/src/services/rakeAllocation.ts` (TS mirror,
    tournament path). Historical points are untouched. If Dan wants the old
    wagered-chip economy back, it is one trigger function to revert —
    flagged loudly in the handoff.
-2. `RakebackDashboard.tsx` derives an independent rakeback estimate from
-   `chip_transactions` categories, not from `rake_records` — it predates this
-   migration, disagrees with `rakeback_periods` either way, and was left
-   as-is (flagged for a follow-up).
-3. World Hub `pages/api/club-arena/rakeback.js` performs no splitting (safe);
-   its header comment still describes the equal-share era and should be
-   refreshed in a World Hub PR.
+2. **CLOSED in the residue sweep (same PR):** `RakebackDashboard.tsx` used to
+   derive an independent rakeback estimate from `wallet_transactions`
+   category 'rake' debits (a category cash players never receive) with its
+   own 10-30% ladder. It now reads `rakeback_periods` (authoritative weighted
+   pipeline), real rakeback wallet credits, and `player_stats.hands_played`,
+   with the server's 5/10/15/20/30 weekly ladder mirrored for display.
+3. **CLOSED in the residue sweep (same PR):** `server/src/engine/
+RakebackEngine.ts` (the FIX 144 equal-share accumulator, inert since
+   RAKE-AUDIT 2026-07-24) is DELETED, along with its instantiation, configure
+   and dispose wiring in `ServerTableEngineBase.ts`.
+4. World Hub `pages/api/club-arena/rakeback.js` performs no splitting (safe);
+   its header comment describing the equal-share era is refreshed in a
+   companion World Hub PR.

@@ -1,4 +1,4 @@
-# The throwable system had opted out of Animation Speed entirely
+# Throwables obey Animation Speed, and the impact caption is a struck badge
 
 2026-08-29. Found while wiring the boxing-glove throwable to the knockout
 flurry, by counting rather than by looking.
@@ -60,3 +60,53 @@ hyphen is a word boundary. It strips comments first now and refuses a property
 preceded by a hyphen. The shipped transform had the same loose pattern but
 wrote nothing into a comment; that was luck, and the strict re-run is what
 proved it rather than assumed it.
+
+---
+
+# The impact caption, rebuilt as a badge
+
+Same pass, same file, same complaint. Dan, on the PokerBros captures:
+
+> THE DESIGN GRAPHICS ETC NEEDS TO BE REPLICATED INSIDE OF EVERY SINGLE
+> THROWABLE ANIMATION.
+
+Their caption is a **struck plate** — dark leather, gold rim, a starburst blown
+out behind it — that slams in over the landing and holds. Ours was 22px of
+white Rajdhani with a glow, floating in space. Next to theirs it read as a
+debug label.
+
+It is a badge now: dark plate, gradient gold rim, a top shine, and the item's
+own `--c1` as the accent so GOOD LUCK on a horseshoe and PEE-YEW on a poop stay
+as different as their items are, while the plate keeps the Club Arena
+gold-on-dark the rest of the product uses. The burst blows out on the slam and
+is gone well before the plate is — it is the strike, not the label.
+
+**Still one element.** The plate is the element, the starburst is its
+`::before` and the shine its `::after`, so a caption costs exactly what it cost
+before on a table that can be running four throws at once.
+
+## Two traps avoided
+
+**The starburst is irregular by construction.** A `repeating-conic-gradient` at
+even intervals reads as a cartoon sun — the exact mistake the knockout's first
+star made, documented at length in `SeatKnockout.css`. The stops are
+hand-spaced and the mask fades them before the edge, so no two spokes are the
+same width and there is no rotational symmetry to catch.
+
+**Every property that uses `color-mix()` is declared twice.** A browser that
+does not understand `color-mix` discards the _whole declaration_, not just the
+offending colour — so a single `box-shadow` list using it would have taken the
+bevel and the drop shadow down with the glow, on precisely the older mobile
+browsers least able to afford a missing bevel. A plain-colour floor is declared
+first and the enhanced version second; where `color-mix` is unsupported the
+second is ignored and the plate still reads.
+
+`font-size` moved to `clamp(15px, 4.4vw, 23px)`: at 375px a flat 22px ran the
+longer shouts (ASK AGAIN LATER, YOU'RE THE BEST) past the edge of the felt.
+
+## And the ship script grew a build gate
+
+`tsc` does not read stylesheets and neither does `vitest`, so a malformed rule
+would have sailed through both gates and surfaced in CI — or in the browser.
+This pass rewrites two stylesheets wholesale, so it runs `npm run build`, the
+real CSS parser, before it pushes.

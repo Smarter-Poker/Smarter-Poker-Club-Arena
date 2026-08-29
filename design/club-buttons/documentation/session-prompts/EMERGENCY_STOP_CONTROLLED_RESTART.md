@@ -50,8 +50,7 @@ The objective is NOT to erase the project.
 The objective is to STOP the bad visual implementation and restart
 the Button Builder factory correctly.
 
-================================================== 2. FREEZE ALL PRODUCT APPLICATIONS
----
+## ================================================== 2. FREEZE ALL PRODUCT APPLICATIONS
 
 Button Builder is now FACTORY ONLY.
 
@@ -76,8 +75,7 @@ The only UI environment you may actively build is:
 
 or the equivalent private Button Builder visual laboratory.
 
-================================================== 3. PRESERVE THE GOOD FOUNDATION
----
+## ================================================== 3. PRESERVE THE GOOD FOUNDATION
 
 Keep and reuse where appropriate:
 
@@ -104,8 +102,7 @@ These are foundation pieces.
 
 They do NOT authorize reuse of the rejected generic visual shells.
 
-================================================== 4. REJECT THE CURRENT VISUAL SYSTEM
----
+## ================================================== 4. REJECT THE CURRENT VISUAL SYSTEM
 
 The following visual approach is REJECTED:
 
@@ -133,8 +130,7 @@ Do not spend time polishing these rejected designs.
 
 They must be replaced.
 
-================================================== 5. NEW ABSOLUTE ARCHITECTURE: ASSET-FIRST
----
+## ================================================== 5. NEW ABSOLUTE ARCHITECTURE: ASSET-FIRST
 
 #ClubButtons is now an ASSET-FIRST production system.
 
@@ -151,8 +147,7 @@ Permanent content belongs in the artwork.
 
 Dynamic content belongs in the DOM.
 
-================================================== 6. WHAT MUST BE BAKED INTO THE ART
----
+## ================================================== 6. WHAT MUST BE BAKED INTO THE ART
 
 Bake ALL permanent visual information into each production asset.
 
@@ -188,8 +183,7 @@ This includes where applicable:
 If it does not change at runtime, it should normally be baked into
 the artwork.
 
-================================================== 7. WHAT MAY REMAIN LIVE
----
+## ================================================== 7. WHAT MAY REMAIN LIVE
 
 Only content that genuinely changes at runtime should be placed over
 the finished asset.
@@ -213,8 +207,7 @@ Examples:
 Do NOT overlay permanent headings or labels just because HTML makes
 them easier to code.
 
-================================================== 8. BUTTON LABELS MUST BE BAKED IN
----
+## ================================================== 8. BUTTON LABELS MUST BE BAKED IN
 
 For fixed-purpose controls, bake the label directly into the asset.
 
@@ -240,8 +233,7 @@ Do not render these labels using generic browser fonts over a shell.
 
 Each control is its own finished manufactured part.
 
-================================================== 9. ICONS MUST BE PURPOSE-BUILT
----
+## ================================================== 9. ICONS MUST BE PURPOSE-BUILT
 
 For permanently associated controls, bake the icon into the artwork.
 
@@ -265,8 +257,7 @@ Same factory.
 
 Different parts.
 
-================================================== 10. MATERIAL QUALITY AUTHORITY
----
+## ================================================== 10. MATERIAL QUALITY AUTHORITY
 
 The quality authority is:
 
@@ -293,8 +284,7 @@ Overview charts are architecture references ONLY.
 
 They do not define final rendering quality.
 
-================================================== 11. DYNAMIC FONT SYSTEM
----
+## ================================================== 11. DYNAMIC FONT SYSTEM
 
 Do NOT use generic white Inter text for live values.
 
@@ -325,8 +315,7 @@ font-variant-numeric: tabular-nums;
 Do not substitute generic system fonts unless the required font is
 genuinely unavailable.
 
-================================================== 12. DYNAMIC TEXT COLOR
----
+## ================================================== 12. DYNAMIC TEXT COLOR
 
 Dynamic text is NOT generic white.
 
@@ -359,8 +348,7 @@ master design.
 
 Do not make all dynamic information blue.
 
-================================================== 13. COMPONENTS MUST HAVE UNIQUE PURPOSE-BUILT ASSETS
----
+## ================================================== 13. COMPONENTS MUST HAVE UNIQUE PURPOSE-BUILT ASSETS
 
 Do not rely on a few generic shells.
 
@@ -411,8 +399,7 @@ The number of assets is NOT a problem.
 
 Quality and consistency matter more than minimizing file count.
 
-================================================== 14. TOURNAMENT INFO EXAMPLE
----
+## ================================================== 14. TOURNAMENT INFO EXAMPLE
 
 Tournament Info artwork must already visually contain:
 
@@ -442,8 +429,7 @@ Level 8
 The component should look almost finished even if all live values
 are temporarily hidden.
 
-================================================== 15. PLAYER NAME CONTROLS EXAMPLE
----
+## ================================================== 15. PLAYER NAME CONTROLS EXAMPLE
 
 Player Name Controls artwork should already contain:
 
@@ -472,8 +458,7 @@ other genuinely changing values
 
 Do NOT assemble the visual panel from CSS.
 
-================================================== 16. INPUT ARCHITECTURE
----
+## ================================================== 16. INPUT ARCHITECTURE
 
 Create the full input visual as artwork.
 
@@ -496,8 +481,7 @@ mobile keyboard
 accessibility
 validation
 
-================================================== 17. SELECT ARCHITECTURE
----
+## ================================================== 17. SELECT ARCHITECTURE
 
 Prebuild the complete select artwork.
 
@@ -513,8 +497,7 @@ Only the currently selected option renders live.
 
 Keep a real accessible select or equivalent semantic interaction.
 
-================================================== 18. TOGGLE ARCHITECTURE
----
+## ================================================== 18. TOGGLE ARCHITECTURE
 
 Use finished rendered states:
 
@@ -526,8 +509,7 @@ Do not construct the toggle hardware using generic CSS.
 The semantic checkbox/switch remains functional underneath or over
 the artwork.
 
-================================================== 19. SLIDER ARCHITECTURE
----
+## ================================================== 19. SLIDER ARCHITECTURE
 
 Use:
 
@@ -541,8 +523,7 @@ Only the knob position changes dynamically.
 
 Do not draw premium slider hardware using CSS.
 
-================================================== 20. INTERACTION STATES
----
+## ================================================== 20. INTERACTION STATES
 
 For premium controls, create actual visual states where necessary:
 
@@ -561,8 +542,7 @@ primary visual state system if it reduces realism.
 Lightweight overlays may be used only when visually indistinguishable
 from high-quality rendered artwork.
 
-================================================== 21. MOBILE FIRST
----
+## ================================================== 21. MOBILE FIRST
 
 Every component must be designed for mobile.
 
@@ -586,8 +566,7 @@ wallet-club-bank-mobile.webp
 
 Do not compress desktop art into unreadable mobile geometry.
 
-================================================== 22. BUILD ONLY THREE PROOF COMPONENTS FIRST
----
+## ================================================== 22. BUILD ONLY THREE PROOF COMPONENTS FIRST
 
 DO NOT rebuild the entire library yet.
 
@@ -607,8 +586,7 @@ These three prove:
 
 Nothing else should be produced until these three are approved.
 
-================================================== 23. PROOF REQUIREMENTS
----
+## ================================================== 23. PROOF REQUIREMENTS
 
 For JOIN TABLE provide:
 
@@ -642,8 +620,7 @@ For CLUB BANK provide:
 - stack-safe mobile
 - extreme-value test
 
-================================================== 24. /DEV/CLUB-UI IS THE ONLY ACTIVE UI TARGET
----
+## ================================================== 24. /DEV/CLUB-UI IS THE ONLY ACTIVE UI TARGET
 
 Build these proof components ONLY in:
 
@@ -659,8 +636,7 @@ Do not migrate Club Arena production pages.
 
 Do not modify the live poker table.
 
-================================================== 25. ROLLBACK / PREVIOUS MIGRATION WORK
----
+## ================================================== 25. ROLLBACK / PREVIOUS MIGRATION WORK
 
 Do NOT attempt another application migration during this restart.
 
@@ -671,8 +647,7 @@ remain handled by their dedicated rollback agents.
 
 Button Builder does not own those rollbacks.
 
-================================================== 26. CLEAN RESTART INSIDE THE FACTORY
----
+## ================================================== 26. CLEAN RESTART INSIDE THE FACTORY
 
 Archive/reject the old generic shells for production use.
 
@@ -690,8 +665,7 @@ generic runtime-assembled panel approach
 
 Do not let future developers accidentally reuse them.
 
-================================================== 27. VISUAL REVIEW GATE
----
+## ================================================== 27. VISUAL REVIEW GATE
 
 Do not declare success based on code or tests alone.
 
@@ -701,8 +675,7 @@ The three proof components must be visually inspected.
 
 Do not proceed beyond them until approved.
 
-================================================== 28. STOP CONDITION
----
+## ================================================== 28. STOP CONDITION
 
 After building:
 
@@ -732,8 +705,7 @@ Also provide:
 
 ---
 
-FINAL COMMAND
----
+## FINAL COMMAND
 
 STOP THE CURRENT VISUAL IMPLEMENTATION.
 

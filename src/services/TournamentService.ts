@@ -90,7 +90,13 @@ export interface PayoutStructure {
  * - progressive_bounty: Half bounty to knocker, half added to their head
  */
 export type TournamentType =
-  'sng' | 'mtt' | 'satellite' | 'spin' | 'bounty' | 'mystery_bounty' | 'progressive_bounty';
+  | 'sng'
+  | 'mtt'
+  | 'satellite'
+  | 'spin'
+  | 'bounty'
+  | 'mystery_bounty'
+  | 'progressive_bounty';
 
 export interface BountyConfig {
   bountyType: 'fixed' | 'mystery' | 'progressive';

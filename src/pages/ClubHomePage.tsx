@@ -1053,7 +1053,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const handleBBJChange = (payload: any) => {
         if (!isMounted) return;
         const row = (payload?.new ?? payload?.old) as
-          { main_balance?: number | string } | undefined;
+          | { main_balance?: number | string }
+          | undefined;
         // main_balance is numeric(14,2), and PostgREST/Realtime deliver
         // numerics as STRINGS ("350.40"). The old guard was
         // `typeof row.main_balance === 'number'`, which is therefore NEVER

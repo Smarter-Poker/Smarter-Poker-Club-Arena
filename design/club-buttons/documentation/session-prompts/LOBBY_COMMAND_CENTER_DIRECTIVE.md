@@ -41,8 +41,7 @@ The finished page must visually read as ONE MACHINE.
 
 Do not make it look like several unrelated cards stacked vertically.
 
-================================================== 2. ABSOLUTE VISUAL RULES
----
+## ================================================== 2. ABSOLUTE VISUAL RULES
 
 The style is:
 
@@ -76,8 +75,7 @@ If it looks like a premium physical control panel removed from a high-end casino
 
 If it looks like a dark-mode web application with blue borders, FAIL.
 
-================================================== 3. DO NOT CHANGE FUNCTIONAL BEHAVIOR
----
+## ================================================== 3. DO NOT CHANGE FUNCTIONAL BEHAVIOR
 
 Before modifying the screen, inspect and preserve all existing:
 
@@ -115,8 +113,7 @@ NEW APPROVED VISUAL PRESENTATION
 
 FINAL RESULT
 
-================================================== 4. PROTECTED LIVE GAMEPLAY
----
+## ================================================== 4. PROTECTED LIVE GAMEPLAY
 
 DO NOT modify actual poker playing screens.
 
@@ -143,8 +140,7 @@ Do not change:
 
 This task is limited to the lobby/schedule presentation shown in the reference.
 
-================================================== 5. SINGLE MASTER FRAME
----
+## ================================================== 5. SINGLE MASTER FRAME
 
 The entire Shark Club lobby must be surrounded by ONE master hardware frame.
 
@@ -173,8 +169,7 @@ The master chassis should use:
 
 The outer frame must remain visually dominant over internal separators.
 
-================================================== 6. OUTER FRAME CONSTRUCTION
----
+## ================================================== 6. OUTER FRAME CONSTRUCTION
 
 The master frame should visually contain multiple layers.
 
@@ -218,8 +213,7 @@ Avoid redundant interior borders.
 
 The frame should look substantial but clean.
 
-================================================== 7. HEADER SECTION
----
+## ================================================== 7. HEADER SECTION
 
 The top of the master frame contains the club welcome header.
 
@@ -273,8 +267,7 @@ The header background should be:
 
 Do NOT put a large image or mascot beside Shark Club.
 
-================================================== 8. HEADER TYPOGRAPHY
----
+## ================================================== 8. HEADER TYPOGRAPHY
 
 Use:
 
@@ -314,8 +307,7 @@ table content
 400-500:
 supporting information
 
-================================================== 9. FIND YOUR GAME SECTION
----
+## ================================================== 9. FIND YOUR GAME SECTION
 
 Immediately below the welcome header:
 
@@ -350,8 +342,7 @@ The game count remains dynamic.
 
 Do not bake "154" permanently into artwork if it is server-fed.
 
-================================================== 10. GAME-TYPE FILTER CONTROLS
----
+## ================================================== 10. GAME-TYPE FILTER CONTROLS
 
 Maintain the existing options:
 
@@ -390,8 +381,7 @@ Blue is an accent.
 
 LIMIT in the approved screenshot is the active example.
 
-================================================== 11. SECONDARY FILTER ROW
----
+## ================================================== 11. SECONDARY FILTER ROW
 
 Maintain existing filters such as:
 
@@ -413,8 +403,7 @@ Use:
 
 Avoid giant buttons.
 
-================================================== 12. FILTERS CONTROL
----
+## ================================================== 12. FILTERS CONTROL
 
 The Filters control should be slightly distinct from category navigation.
 
@@ -430,8 +419,7 @@ Do not use a generic browser icon button.
 
 Use the existing icon if appropriate or an approved icon asset.
 
-================================================== 13. ADVERTISEMENT SECTION
----
+## ================================================== 13. ADVERTISEMENT SECTION
 
 Between Find Your Game and the tournament list, create a dedicated horizontal advertisement bay.
 
@@ -472,8 +460,7 @@ Learn More
 
 Treat those as design examples, not permanent fake data.
 
-================================================== 14. ADVERTISEMENT VISUAL DESIGN
----
+## ================================================== 14. ADVERTISEMENT VISUAL DESIGN
 
 Advertisement bay:
 
@@ -496,8 +483,7 @@ Learn More or campaign CTA.
 
 The CTA must remain a real semantic clickable control.
 
-================================================== 15. TOURNAMENT DISPLAY
----
+## ================================================== 15. TOURNAMENT DISPLAY
 
 Below the advertisement is the large tournament/game display.
 
@@ -516,8 +502,7 @@ React components
 
 but the presentation must look like a premium electronic tournament board.
 
-================================================== 16. TOURNAMENT TABLE HEADER
----
+## ================================================== 16. TOURNAMENT TABLE HEADER
 
 Maintain the existing columns, conceptually:
 
@@ -544,8 +529,7 @@ Header styling:
 
 Avoid bright heavy borders.
 
-================================================== 17. TOURNAMENT ROWS
----
+## ================================================== 17. TOURNAMENT ROWS
 
 Each tournament row should look like a shallow recessed data tray.
 
@@ -564,8 +548,7 @@ The master table frame provides most of the hardware.
 
 Row styling should remain sleek and information-dense.
 
-================================================== 18. FEATURED / SELECTED ROW
----
+## ================================================== 18. FEATURED / SELECTED ROW
 
 The featured first row receives enhanced presentation.
 
@@ -586,8 +569,7 @@ must remain readable and premium.
 
 They should use small casino-status badges, not generic web pills.
 
-================================================== 19. ROW STATUS INDICATORS
----
+## ================================================== 19. ROW STATUS INDICATORS
 
 Use status-specific premium mini-controls.
 
@@ -612,8 +594,7 @@ Status treatment:
 
 Do not fill entire status buttons with saturated color.
 
-================================================== 20. GAME TYPE BADGES
----
+## ================================================== 20. GAME TYPE BADGES
 
 Short labels such as:
 
@@ -632,8 +613,7 @@ Use:
 
 These are informational labels, not large action buttons.
 
-================================================== 21. ROW LEFT INDICATOR
----
+## ================================================== 21. ROW LEFT INDICATOR
 
 Use a small glowing blue activity dot at the start of each row as shown in the approved reference.
 
@@ -641,8 +621,7 @@ This should be subtle.
 
 Featured / special rows may use an enhanced indicator.
 
-================================================== 22. TABLE DATA COLOR HIERARCHY
----
+## ================================================== 22. TABLE DATA COLOR HIERARCHY
 
 Primary tournament name:
 off-white / silver.
@@ -664,8 +643,7 @@ muted gray.
 
 Do not overuse bright white.
 
-================================================== 23. BOTTOM FRAME AND POKER CHIP
----
+## ================================================== 23. BOTTOM FRAME AND POKER CHIP
 
 At the center of the master frame's bottom edge, integrate a premium poker-chip medallion.
 
@@ -695,8 +673,7 @@ The chip should slightly overlap or interrupt the lower frame rail.
 
 It should feel mounted, not floating.
 
-================================================== 24. REMOVE THE OLD SEPARATE WELCOME BANNER
----
+## ================================================== 24. REMOVE THE OLD SEPARATE WELCOME BANNER
 
 The old separate bottom:
 
@@ -718,8 +695,7 @@ GAME DISPLAY
 ↓
 POKER CHIP / LOWER FRAME
 
-================================================== 25. TEXTURE SYSTEM
----
+## ================================================== 25. TEXTURE SYSTEM
 
 Do not use flat CSS fills wherever visible.
 
@@ -750,8 +726,7 @@ Do not make textures noisy.
 
 They should be perceived rather than distracting.
 
-================================================== 26. BLUE ENERGY LANGUAGE
----
+## ================================================== 26. BLUE ENERGY LANGUAGE
 
 Electric blue is an energy accent only.
 
@@ -775,8 +750,7 @@ Do NOT:
 
 The screen remains predominantly BLACK and GUNMETAL.
 
-================================================== 27. DEPTH AND LIGHTING
----
+## ================================================== 27. DEPTH AND LIGHTING
 
 Use multiple depth cues:
 
@@ -802,8 +776,7 @@ controlled energy seam strengthens.
 
 Avoid exaggerated movement.
 
-================================================== 28. TYPOGRAPHY TOKENS
----
+## ================================================== 28. TYPOGRAPHY TOKENS
 
 Create or reuse centralized design tokens.
 
@@ -837,8 +810,7 @@ Use existing project variables when equivalent.
 
 Do not create uncontrolled hardcoded colors throughout the screen.
 
-================================================== 29. RESPONSIVE / MOBILE-FIRST REQUIREMENTS
----
+## ================================================== 29. RESPONSIVE / MOBILE-FIRST REQUIREMENTS
 
 The approved reference is a desktop presentation, but implementation must remain mobile capable.
 
@@ -866,8 +838,7 @@ Tournament list may switch into a mobile row/card representation if the existing
 
 Do not destroy existing mobile behavior merely to imitate the desktop reference.
 
-================================================== 30. ACCESSIBILITY
----
+## ================================================== 30. ACCESSIBILITY
 
 Preserve semantic controls.
 
@@ -894,8 +865,7 @@ Maintain:
 
 Do not bake dynamic text into inaccessible images.
 
-================================================== 31. DYNAMIC CONTENT
----
+## ================================================== 31. DYNAMIC CONTENT
 
 Keep dynamic:
 
@@ -914,8 +884,7 @@ Active filters
 
 Do not rasterize these values.
 
-================================================== 32. PERFORMANCE
----
+## ================================================== 32. PERFORMANCE
 
 Optimize decorative assets.
 
@@ -929,8 +898,7 @@ Prefer:
 
 Avoid dozens of giant transparent PNGs if smaller optimized assets or reusable frame components can preserve visual quality.
 
-================================================== 33. BUILD ORDER
----
+## ================================================== 33. BUILD ORDER
 
 Perform implementation in this order:
 
@@ -973,8 +941,7 @@ Functional regression test.
 PHASE 13
 Rendered visual comparison to attached reference.
 
-================================================== 34. VISUAL QA
----
+## ================================================== 34. VISUAL QA
 
 Do not approve based solely on source code.
 
@@ -1003,8 +970,7 @@ Check:
 
 The result should clearly look like the attached reference.
 
-================================================== 35. FUNCTIONAL QA
----
+## ================================================== 35. FUNCTIONAL QA
 
 Verify:
 
@@ -1022,8 +988,7 @@ Verify:
 - Error states work
 - Existing routes remain intact
 
-================================================== 36. IMPORTANT RESTRICTIONS
----
+## ================================================== 36. IMPORTANT RESTRICTIONS
 
 DO NOT:
 
@@ -1039,8 +1004,7 @@ DO NOT:
 - duplicate the Welcome To The Shark Club banner at the bottom
 - create multiple disconnected exterior frames
 
-================================================== 37. DEFINITION OF DONE
----
+## ================================================== 37. DEFINITION OF DONE
 
 This assignment is complete only when:
 
@@ -1076,8 +1040,7 @@ This assignment is complete only when:
 
 ---
 
-FINAL COMMAND
----
+## FINAL COMMAND
 
 Begin by auditing the existing Shark Club tournament/schedule page and identify the minimum safe component boundaries necessary to recreate the approved reference.
 

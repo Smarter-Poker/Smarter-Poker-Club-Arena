@@ -15,7 +15,12 @@
 
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
-import { setHorseLanes, assignedLaneCount } from './HorseBehavior.js';
+import {
+  setHorseLanes,
+  assignedLaneCount,
+  setHorseStakeBands,
+  assignedStakeBandCount,
+} from './HorseBehavior.js';
 
 const REFRESH_MS = 30 * 60_000;
 const BOOT_DELAY_MS = 20_000;
@@ -28,7 +33,12 @@ let bootTimer: NodeJS.Timeout | null = null;
 export async function loadHorseLanes(): Promise<number> {
   try {
     const rows: Array<{ id: string; lane: string | null }> = [];
+    // Stake bands ride along on the SAME page scan. They are stored in the same
+    // jsonb column and needed at the same moment, so a second loader would be a
+    // second full pass over every horse for no reason.
+    const bandRows: Array<{ id: string; stakeBand: string | null }> = [];
     let missing = 0;
+    let missingBand = 0;
     for (let offset = 0; ; offset += 1000) {
       const { data, error } = await supabase
         .from('profiles')
@@ -40,12 +50,30 @@ export async function loadHorseLanes(): Promise<number> {
       if (!data || data.length === 0) break;
       for (const row of data as Array<{ id: string; horse_profile: unknown }>) {
         const hp = row.horse_profile;
-        const lane =
-          hp && typeof hp === 'object' ? ((hp as Record<string, unknown>).lane as string) : null;
+        const obj = hp && typeof hp === 'object' ? (hp as Record<string, unknown>) : null;
+        const lane = obj ? (obj.lane as string) : null;
+        const stakeBand = obj ? (obj.stakeBand as string) : null;
         if (!lane) missing++;
+        if (!stakeBand) missingBand++;
         rows.push({ id: row.id, lane: lane ?? null });
+        bandRows.push({ id: row.id, stakeBand: stakeBand ?? null });
       }
       if (data.length < 1000) break;
+    }
+
+    // Same argument as lanes, with more at stake: a band that comes out short
+    // is a stake level with too few horses to fill its tables, so the exact
+    // assignment is re-run rather than left drifting toward the hash's skew.
+    if (missingBand >= REASSIGN_THRESHOLD) {
+      const { error: bandErr } = await supabase.rpc('fn_assign_horse_stake_bands');
+      if (bandErr) {
+        reportError(new Error(bandErr.message), 'HorseLaneLoader.reassign_stake_bands');
+      } else {
+        console.log(
+          `[HorseLaneLoader] ${missingBand} horses had no stake band - re-ran the exact assignment`
+        );
+        return loadHorseLanes();
+      }
     }
 
     // Enough horses without a lane means the fleet grew: re-balance so the
@@ -63,8 +91,10 @@ export async function loadHorseLanes(): Promise<number> {
     }
 
     const applied = setHorseLanes(rows);
+    const bandsApplied = setHorseStakeBands(bandRows);
     console.log(
-      `[HorseLaneLoader] ${applied} assigned lanes loaded (${missing} on the hash fallback)`
+      `[HorseLaneLoader] ${applied} assigned lanes loaded (${missing} on the hash fallback), ` +
+        `${bandsApplied} assigned stake bands (${missingBand} on the hash fallback)`
     );
     return applied;
   } catch (err) {
@@ -72,7 +102,7 @@ export async function loadHorseLanes(): Promise<number> {
     // but the fleet keeps playing. Say so rather than failing silently.
     reportError(err, 'HorseLaneLoader.load');
     console.warn(
-      `[HorseLaneLoader] lane load FAILED - running on the hash fallback (${assignedLaneCount()} cached)`
+      `[HorseLaneLoader] lane/band load FAILED - running on the hash fallback (${assignedLaneCount()} lanes, ${assignedStakeBandCount()} bands cached)`
     );
     return 0;
   }

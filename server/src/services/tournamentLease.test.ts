@@ -105,11 +105,39 @@ describe('heartbeatTournaments — "could not ask" is not "lost everything"', ()
     await expect(heartbeatTournaments([T])).resolves.toEqual([]);
   });
 
-  it('reports the ones another instance took, when enforcing', async () => {
+  it('reports the ones another LIVE instance took, when enforcing', async () => {
     process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE = 'on';
-    rpc.mockResolvedValue({ data: [{ tournament_id: T }], error: null });
+    rpc.mockResolvedValue({
+      data: [
+        { tournament_id: T, state: 'kept' },
+        { tournament_id: 'lost-one', state: 'taken' },
+      ],
+      error: null,
+    });
     const { heartbeatTournaments } = await load();
     await expect(heartbeatTournaments([T, 'lost-one'])).resolves.toEqual(['lost-one']);
+  });
+
+  /**
+   * This side is the one that was actually hurting players.
+   * ENGINE_TOURNAMENT_LEASE_ENFORCE is ON in production, so every false
+   * "taken" STOPPED A RUNNING TOURNAMENT MANAGER. On 2026-08-29 that path
+   * fired 101 times in an hour against 19 running tournaments.
+   */
+  it('does NOT stop a tournament whose lease is merely missing or stale', async () => {
+    process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE = 'on';
+    rpc.mockResolvedValue({
+      data: [
+        { tournament_id: 'no-row', state: 'missing' },
+        { tournament_id: 'quiet', state: 'stale' },
+        { tournament_id: 'really-taken', state: 'taken' },
+      ],
+      error: null,
+    });
+    const { heartbeatTournaments } = await load();
+    await expect(heartbeatTournaments(['no-row', 'quiet', 'really-taken'])).resolves.toEqual([
+      'really-taken',
+    ]);
   });
 
   it('reports nothing lost while enforcement is off', async () => {

@@ -105,18 +105,68 @@ describe('claimTable', () => {
 });
 
 describe('heartbeatTables', () => {
-  it('reports the tables that were taken away', async () => {
+  it('reports the tables that were genuinely taken by another LIVE instance', async () => {
     const { heartbeatTables } = await loadLease(true);
-    rpc.mockResolvedValue({ data: [{ table_id: 'keep-1' }], error: null });
+    rpc.mockResolvedValue({
+      data: [
+        { table_id: 'keep-1', state: 'kept' },
+        { table_id: 'lost-1', state: 'taken' },
+        { table_id: 'lost-2', state: 'taken' },
+      ],
+      error: null,
+    });
     await expect(heartbeatTables(['keep-1', 'lost-1', 'lost-2'])).resolves.toEqual([
       'lost-1',
       'lost-2',
     ]);
   });
 
-  it('reports nothing lost while enforcement is off, even when the leases are gone', async () => {
+  /**
+   * THE 2026-08-29 BUG, PINNED. The old shape could only say "kept", so the
+   * caller subtracted and called the whole remainder a takeover. Production
+   * logged 204 teardowns in one hour — "another engine instance has taken it
+   * over. Stopping it here." — while eight of those table ids were held in the
+   * database by THAT VERY INSTANCE with a 2.8-second-old heartbeat.
+   *
+   * A missing row means claimTable's fail-open path started the table without
+   * writing one (596 supabase_timeouts in that same hour). A stale row means
+   * the holder went quiet. Neither is a takeover, and tearing a live table
+   * down for one is the false alarm, not the safety measure.
+   */
+  it('does NOT stop a table whose lease is merely missing or stale — nobody took it', async () => {
+    const { heartbeatTables, recentLeaseConflicts, reclaimableLeaseCount } = await loadLease(true);
+    rpc.mockResolvedValue({
+      data: [
+        { table_id: 'no-row', state: 'missing' },
+        { table_id: 'quiet-holder', state: 'stale' },
+        { table_id: 'really-taken', state: 'taken' },
+      ],
+      error: null,
+    });
+    await expect(heartbeatTables(['no-row', 'quiet-holder', 'really-taken'])).resolves.toEqual([
+      'really-taken',
+    ]);
+    // Only the genuine takeover is a conflict worth showing on /health.
+    expect(recentLeaseConflicts().map((c) => c.tableId)).toEqual(['really-taken']);
+    expect(reclaimableLeaseCount()).toBe(2);
+  });
+
+  it('treats an id the function did not answer for as reclaimable, never as taken', async () => {
+    const { heartbeatTables } = await loadLease(true);
+    rpc.mockResolvedValue({ data: [{ table_id: 'answered', state: 'kept' }], error: null });
+    // 'silent' is absent from the result entirely. Silence is not evidence.
+    await expect(heartbeatTables(['answered', 'silent'])).resolves.toEqual([]);
+  });
+
+  it('reports nothing lost while enforcement is off, even when a lease is genuinely taken', async () => {
     const { heartbeatTables, recentLeaseConflicts } = await loadLease(false);
-    rpc.mockResolvedValue({ data: [], error: null });
+    rpc.mockResolvedValue({
+      data: [
+        { table_id: 'a', state: 'taken' },
+        { table_id: 'b', state: 'taken' },
+      ],
+      error: null,
+    });
     await expect(heartbeatTables(['a', 'b'])).resolves.toEqual([]);
     // Still recorded, so /health shows the split-brain before we act on it.
     expect(

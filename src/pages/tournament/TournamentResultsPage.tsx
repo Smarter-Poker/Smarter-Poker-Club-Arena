@@ -20,7 +20,6 @@ import {
   totalPayout,
   type ResultSort,
 } from '../../utils/tournamentPayout';
-import { fetchAllRows } from '../../utils/fetchAllRows';
 import {
   MysteryBountyService,
   formatCents,
@@ -162,14 +161,25 @@ export default function TournamentResultsPage() {
   const loadTournaments = async () => {
     setIsLoading(true);
     try {
+      /* MINE IS A JOIN, NOT A CLIENT SCAN (2026-08-29, round 12).
+         The old shape fetched EVERY tournament_players row the player ever
+         had - fetchAllRows, paged, thousands of rows for a regular - to
+         intersect against a 100-row list in the browser. Worse than slow, it
+         was WRONG for exactly the player it cost the most: the list is the
+         newest 100 completed events overall, so a spin regular whose games
+         age out of the top 100 saw their own history shrink toward empty.
+         The inner join pushes both problems into one query: the newest 100
+         completed events THE PLAYER WAS IN. */
+      const cols =
+        'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier';
+      const mine = filter === 'mine' && user?.id;
       let query = supabase
         .from('tournaments')
-        .select(
-          'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier'
-        )
+        .select(mine ? `${cols}, tournament_players!inner(user_id)` : cols)
         .eq('status', 'COMPLETED')
         .order('ended_at', { ascending: false })
         .limit(100);
+      if (mine) query = query.eq('tournament_players.user_id', user.id);
 
       if (typeFilter !== 'all') {
         if (typeFilter === 'xmtt') {
@@ -187,28 +197,12 @@ export default function TournamentResultsPage() {
       if (listErr) throw listErr;
       if (!isMounted.current) return;
       if (!data) return;
-      let completedList = data as CompletedTournament[];
-
-      // If "mine" filter, only show tournaments user participated in
-      if (filter === 'mine' && user?.id) {
-        /* "Tournaments I played" is a complete set - a player past 5,000
-           entries would have silently lost the oldest of their own history
-           (2026-08-27). */
-        const myEntries = await fetchAllRows<{ tournament_id: string }>(
-          (from, to) =>
-            supabase
-              .from('tournament_players')
-              .select('tournament_id')
-              .eq('user_id', user.id)
-              .order('tournament_id', { ascending: true })
-              .range(from, to),
-          { label: 'TournamentResults.myEntries' }
-        );
-
-        if (!isMounted.current) return;
-        const myTournamentIds = new Set((myEntries || []).map((e) => e.tournament_id));
-        completedList = completedList.filter((t) => myTournamentIds.has(t.id));
-      }
+      /* Strip the join column so the rest of the page keeps its exact shape.
+         The `unknown` hop is because supabase-js cannot statically parse a
+         ternary select string; the columns are the same literal both ways. */
+      const completedList = (
+        data as unknown as Array<CompletedTournament & { tournament_players?: unknown }>
+      ).map(({ tournament_players: _tp, ...t }) => t as CompletedTournament);
 
       setTournaments(completedList);
     } catch (err) {

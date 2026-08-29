@@ -65,3 +65,29 @@ describe('round 10: the results page reads bind their errors', () => {
     expect(RESULTS).toContain('if (handsErr) throw handsErr');
   });
 });
+
+describe('round 11: the Biggest Hits strip', () => {
+  it('loads only on the Spin view, 10x and up, both reads error-bound', () => {
+    // Level 2: the async IIFE body that holds both the try and its catch.
+    const loader = sliceEnclosingBlock(RESULTS, 'biggest_hits_load_failed', 0, 2);
+    expect(loader).toContain(".gte('spin_multiplier', 10)");
+    expect(loader).toContain('if (hitsErr) throw hitsErr');
+    expect(loader).toContain('if (winnersErr) throw winnersErr');
+    // The gate: anything but the spin filter clears the strip.
+    expect(RESULTS).toContain("if (typeFilter !== 'spin')");
+  });
+
+  it('the prize comes from the stamped column, ladder arithmetic as fallback', () => {
+    const loader = sliceEnclosingBlock(RESULTS, 'biggest_hits_load_failed', 0, 2);
+    expect(loader).toContain('Number(w?.prize)');
+  });
+
+  it('HORSES ARE PLAYERS: no is_horse filter anywhere in the strip', () => {
+    const loader = sliceEnclosingBlock(RESULTS, 'biggest_hits_load_failed', 0, 2);
+    expect(loader).not.toContain('is_horse');
+  });
+
+  it('renders only when the spin filter is active and there are hits', () => {
+    expect(RESULTS).toContain("typeFilter === 'spin' && biggestHits.length > 0");
+  });
+});

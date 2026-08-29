@@ -291,6 +291,46 @@ test.describe('every device gets the same proportions', () => {
     expect(offenders, 'two different-sized tables drew the same card — that is a rung').toEqual([]);
   });
 
+  test('the felt is edge-to-edge on portrait phones (Dan 2026-08-26, restored 2026-08-29)', async ({ page }) => {
+    /* SHIPPED BUG, twice. #950 removed the 4px side gutters "per Dan --
+       edge-to-edge felt" and wrote 375x619.8 into the comment -- but deleting
+       an override resurrects the base rule, and the base `.table-container`
+       shorthand pays 12px gutters. So the "widening" narrowed every
+       width-bound phone (390x844 rendered a 364px felt on production,
+       measured 2026-08-29) and nothing noticed for three days, because no
+       spec asserted what the comment claimed. Dan, 2026-08-29: "the table
+       width and length has shrunk and need to be put back to how it was."
+
+       The two devices named here are the width-bound portrait phones in
+       DEVICES: their height budget allows a wider oval than the screen, so
+       the screen is the limit and the felt must reach both edges of it. If
+       this fails with a felt a few px short, a side gutter came back --
+       check the `.table-container` padding longhands at <=768px in
+       TablePage.css before anything else. If it fails because the felt is
+       far narrower, the height budget shrank and the device stopped being
+       width-bound; that is a real felt-size change and belongs in front of
+       Dan, not silently under this beat. */
+    const WIDTH_BOUND_PHONES = ['iPhone 12/13/14', 'iPhone 14 Pro Max'];
+    const rows = await measureAll(page, css);
+    const offenders: string[] = [];
+    for (const r of rows) {
+      if (!WIDTH_BOUND_PHONES.includes(r.device)) continue;
+      const vpW = Number(r.vp.split('x')[0]);
+      if (Math.abs(r.feltW - vpW) > 0.5) {
+        offenders.push(
+          `${r.device} (${r.vp}): felt is ${r.feltW}px on a ${vpW}px screen -- ` +
+            `${(vpW - r.feltW).toFixed(1)}px of gutter came back`
+        );
+      }
+    }
+    expect(
+      offenders,
+      'a width-bound phone is no longer edge-to-edge. The likely cause is a padding ' +
+        'longhand on .table-container reappearing (or being deleted -- deletion ' +
+        'resurrects the base 12px, which is how this shipped the first time).'
+    ).toEqual([]);
+  });
+
   test('every card stays legible and every touch target stays tappable', async ({ page }) => {
     /* The floors are px and not proportions for a reason a ratio cannot express:
        a thumb is the same size on every device. Pure proportional scaling is the

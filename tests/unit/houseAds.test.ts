@@ -258,10 +258,20 @@ describe('the last two Club Arena slots are wired, and only where they earn it',
     expect(code).not.toMatch(/profitLoss/);
   });
 
-  it('is not activatable when there is nowhere to go', () => {
+  it('is not activatable when there is nowhere SAFE to go', () => {
     /* Without this the card was still focusable, still showed a pointer, and
-       did nothing when tapped - the same defect the lobby strip had. */
-    expect(CARD).toMatch(/const activatable = Boolean\(ad\.targetUrl\) && Boolean\(onNavigate\)/);
+       did nothing when tapped - the same defect the lobby strip had.
+
+       2026-08-28: the condition was `Boolean(ad.targetUrl)`, i.e. "there is a
+       string in the column". `target_url` is free text typed into the admin
+       panel, so that made the whole card a link to wherever it pointed -
+       including off-site. The rule is now "there is a string AND it is a
+       rooted same-origin path" (isSafeAdTarget), which is strictly stronger:
+       every destination that used to be activatable and is still safe still
+       is. The pin follows the intent rather than the old expression. */
+    expect(CARD).toMatch(
+      /const activatable = isSafeAdTarget\(ad\.targetUrl\) && Boolean\(onNavigate\)/
+    );
     expect(CARD).toMatch(/house-ad--static/);
   });
 

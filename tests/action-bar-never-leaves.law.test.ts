@@ -90,8 +90,11 @@ describe('a page reached through the + button keeps its action bar', () => {
     // openTournamentTab returns false at the table cap. Both consumers must
     // fall through to a real navigation rather than leaving a dead tap: a
     // player who cannot open a tab must still be able to READ the tournament.
-    expect(CONTEXT).toContain('inTab.openTournament(tournamentId)) return');
-    expect(MULTI).toContain('if (!openTournamentTab(match[1])) return;');
+    // Round 2 passes a {tournamentId, search} target rather than a bare id, so
+    // the query survives (see the WATCH pin below). The YIELD is what matters
+    // here and it is unchanged.
+    expect(CONTEXT).toContain('inTab.openTournament(target)) return');
+    expect(MULTI).toContain('if (!openTournamentTab(target)) return;');
   });
 
   it('BOTH lobby-tab branches are inside the provider and keep the click capture', () => {
@@ -130,5 +133,148 @@ describe('a page reached through the + button keeps its action bar', () => {
 
   it('the law is written where the next agent will read it', () => {
     expect(CONTEXT).toContain('STAYS AT THE TOP 100% OF THE TIME');
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  ROUND 2 — what the first pass got wrong, and what it never covered
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Round 1 generalised the MECHANISM (a context beats a DOM click-capture) but
+ * kept the old guard's SCOPE, and lost data on the way through. Every pin below
+ * is a defect that shipped in it, or a hole it left open.
+ */
+describe('the drill-in carries everything the route carried', () => {
+  it('the query string survives — the WATCH button regression', () => {
+    /**
+     * `/tournaments/:id?watch=1` is how TournamentLobbyCard opens a running
+     * event's table. Round 1 passed only `match[1]` / the bare id, so in the
+     * tab the parameter never arrived and a button labelled "Watch" opened a
+     * details page and stopped. It still worked on the real route, which is
+     * how a bug like this survives a demo.
+     */
+    expect(CONTEXT).toContain('search: string');
+    expect(CONTEXT).toContain('tournamentTargetFromTo');
+    // Both entry points must parse through the SAME function, or an anchor and
+    // an imperative navigate can disagree about one destination.
+    expect(MULTI).toContain('tournamentTargetFromTo(href)');
+    expect(MULTI).not.toContain('openTournamentTab(match[1])');
+    // And the details page has to be able to RECEIVE it.
+    expect(DETAILS).toContain('searchOverride');
+  });
+
+  it('embedded, the watch intent never rewrites the table URL', () => {
+    // navigate({ search }) resolves its missing pathname from the CURRENT
+    // location. In-tab that is /table/:tableId, so consuming ?watch=1 there
+    // would wipe ?name=&stakes=&code= — the params MultiTablePage reads to
+    // name a tab it has not built yet.
+    expect(DETAILS).toContain('if (searchOverride === undefined) {');
+  });
+
+  it('the drill-in is a stack, so satellite -> back returns to the parent', () => {
+    for (const tok of ['lobbyTournamentStack', 'pushLobbyTournament', 'popLobbyTournament']) {
+      expect(MULTI, `${tok} missing`).toContain(tok);
+    }
+    // The back pill must pop ONE level, never blank the whole history.
+    expect(MULTI).toContain('popLobbyTournamentTab(table.id)');
+    expect(MULTI).not.toContain('clearLobbyTournament(table.id)');
+  });
+
+  it('the + button returns to the lobby, not to a stale tournament', () => {
+    // OPEN_LOBBY_TAB used to focus the tab and leave lobbyTournamentId set, so
+    // "+" reopened whatever tournament the tab was parked on — or, if that tab
+    // was already active, did nothing visible at all.
+    expect(MULTI).toContain('cur.map((t) => (isLobbyTab(t) ? clearLobbyTournaments(t) : t))');
+  });
+
+  it('drill-ins use a functional updater, so two in one tick cannot lose one', () => {
+    expect(MULTI).toContain('setTables((cur) =>');
+    expect(MULTI).not.toContain('setTables(prev.map((t) => (isLobbyTab(t)');
+  });
+
+  it('the whole container is inside the provider, not just the lobby tab', () => {
+    // TournamentLobbyModal renders TournamentDetails (and its SatellitesTab)
+    // from inside TablePage. With the provider wrapping only renderLobbyTab,
+    // a satellite tap on the felt did a real route change.
+    const providerAt = MULTI.indexOf('<InTabLobbyContext.Provider');
+    const dockAt = MULTI.indexOf('<LiveTablesBar');
+    expect(providerAt).toBeGreaterThan(-1);
+    expect(dockAt).toBeGreaterThan(providerAt);
+    // Exactly one provider — a nested second copy is how two guards drift.
+    expect(MULTI.split('<InTabLobbyContext.Provider').length - 1).toBe(1);
+  });
+
+  it('the bare /tournaments list is covered too', () => {
+    // matchPath('/tournaments/:tournamentId') does not match '/tournaments',
+    // and TournamentStartingTicker — an app-root marquee over every table —
+    // falls back to exactly that when it cannot resolve an id.
+    expect(MULTI).toContain("matchPath('/tournaments', location.pathname)");
+  });
+});
+
+describe('nothing throws a seated player off their table without a gesture', () => {
+  const SUPABASE_LIB = read('src/lib/supabase.ts');
+  const AD_SERVICE = read('src/services/AdService.ts');
+  const AD_STRIP = read('src/components/lobby/LobbyAdStrip.tsx');
+  const AD_CARD = read('src/components/ads/HouseAdCard.tsx');
+
+  it('a failed auth read is not evidence that there is no user', () => {
+    // getAuthUser returns { user: null } both when signed out AND when its
+    // 5s getUser() times out. ClubHomePage navigated to /invite on that null,
+    // from a LOAD EFFECT — so one slow network call mid-hand collapsed the
+    // container with nobody having clicked anything.
+    expect(SUPABASE_LIB).toContain('failed: true as const');
+    expect(CLUB_HOME).toContain('?.failed');
+  });
+
+  it('a failed membership read is not evidence of non-membership', () => {
+    // PostgREST returns data:null for a 500, a statement timeout or an RLS
+    // hiccup. `error` was never inspected, so all of them read as "not a
+    // member" and bounced. The union cascade in this same file already had
+    // the right rule: downgrade only on POSITIVE evidence of absence.
+    /**
+     * Both membership reads — the `get_club_home` fast path and the full
+     * `loadClubData` — must inspect `error` before concluding anything.
+     *
+     * Asserted by SHAPE rather than by variable name: PR #1702 fixed the same
+     * defect independently while this was in flight, and its names won the
+     * merge. Pinning `memStatError` would have made this test a claim about
+     * whose branch landed first, which is not what anyone needs it to say.
+     */
+    const destructures = CLUB_HOME.match(/\{\s*data:\s*\w+,\s*error:\s*\w+\s*\}\s*=\s*await/g) ?? [];
+    expect(destructures.length).toBeGreaterThanOrEqual(1);
+    expect(CLUB_HOME).toContain('if (memberResult.error) {');
+    // Every membership read's error must reach the reporter rather than a bounce.
+    expect(CLUB_HOME).toMatch(/membership_unreadable/);
+  });
+
+  it('every /invite redirect goes through the embedded-aware helper', () => {
+    expect(CLUB_HOME).toContain('const bounceToInvite = useCallback');
+    /**
+     * EXACTLY ONE navigate to /invite may exist in this file, and it is the one
+     * INSIDE `bounceToInvite`. Every other site calls the helper, which renders
+     * an in-tab panel when embedded instead of routing away. Counting is the
+     * honest assertion here: a second raw call is precisely the regression, and
+     * it does not matter which line it is on.
+     */
+    expect(CLUB_HOME.match(/navigate\(`\/invite\//g) ?? []).toHaveLength(1);
+    expect(CLUB_HOME.match(/bounceToInvite\(\)/g) ?? []).not.toHaveLength(0);
+  });
+
+  it("the club error panel's exit is hidden in the tab", () => {
+    expect(CLUB_HOME).toContain('{!clubIdOverride && (');
+  });
+
+  it('an ad row cannot choose where the router goes', () => {
+    // target_url is unvalidated admin-entered text handed straight to
+    // navigate(). isSafeAdImage existed; its destination twin did not.
+    expect(AD_SERVICE).toContain('export function isSafeAdTarget');
+    expect(AD_STRIP).toContain('isSafeAdTarget(url)');
+    expect(AD_CARD).toContain('isSafeAdTarget(ad.targetUrl)');
+    // Protocol-relative and backslash forms must be rejected, not just
+    // "starts with a slash".
+    expect(AD_SERVICE).toContain("!url.startsWith('//')");
+    expect(AD_SERVICE).toContain("url.includes('\\\\')");
   });
 });

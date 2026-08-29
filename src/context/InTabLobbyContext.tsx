@@ -48,6 +48,25 @@ import {
   type To,
 } from 'react-router-dom';
 
+/** A tournament destination, split the way the in-tab renderer needs it. */
+export interface InTabTournamentTarget {
+  tournamentId: string;
+  /**
+   * The query string that rode along, INCLUDING the leading "?" ('' when there
+   * was none).
+   *
+   * Dan 2026-08-28 round 2 — THIS FIELD IS A BUG FIX, NOT A CONVENIENCE.
+   * Round 1 passed the id alone and dropped everything after it, which broke
+   * the one control that depends on the query: TournamentLobbyCard's WATCH
+   * button navigates to `/tournaments/<id>?watch=1`, and TournamentDetails
+   * consumes `watch=1` to open the featured table. In the tab the parameter
+   * never arrived, so the button opened the details page and stopped — a
+   * control labelled "Watch" that did not watch. Outside the tab it worked,
+   * which is exactly the kind of split behaviour nobody reports as one bug.
+   */
+  search: string;
+}
+
 export interface InTabLobbyNav {
   /**
    * Render this tournament INSIDE the current lobby tab instead of navigating
@@ -55,7 +74,7 @@ export interface InTabLobbyNav {
    * it could not (no room), and the caller must fall through to a real
    * navigation rather than swallowing the click.
    */
-  openTournament: (tournamentId: string) => boolean;
+  openTournament: (target: InTabTournamentTarget) => boolean;
 }
 
 export const InTabLobbyContext = createContext<InTabLobbyNav | null>(null);
@@ -69,18 +88,31 @@ export function useInTabLobby(): InTabLobbyNav | null {
 const TOURNAMENT_PATH = /^\/tournaments\/([^/?#]+)/;
 
 /**
- * The tournament id in a react-router `To`, or null.
+ * The tournament destination in a react-router `To`, or null.
  *
  * Handles both shapes call sites actually use: a string path, and a partial
- * `{ pathname }` object. A search-only navigate (`{ search: '?x' }`, which
- * TournamentDetails uses to strip `?watch=1`) has no pathname and correctly
- * falls through to the real navigate — it is editing the current URL, not
- * leaving for a tournament.
+ * `{ pathname, search }` object. A search-only navigate (`{ search: '?x' }`,
+ * which TournamentDetails uses to strip `?watch=1`) has no pathname and
+ * correctly falls through to the real navigate — it is editing the current
+ * URL, not leaving for a tournament.
  */
-export function tournamentIdFromTo(to: To): string | null {
+export function tournamentTargetFromTo(to: To): InTabTournamentTarget | null {
   const pathname = typeof to === 'string' ? to : (to.pathname ?? '');
   if (!pathname) return null;
-  return pathname.match(TOURNAMENT_PATH)?.[1] ?? null;
+  const id = pathname.match(TOURNAMENT_PATH)?.[1];
+  if (!id) return null;
+
+  // The search can arrive either inside the string ("/tournaments/x?watch=1")
+  // or as its own field on a To object. Read whichever is present, and
+  // normalise to a leading "?" so the consumer never has to care which.
+  let search = '';
+  if (typeof to === 'string') {
+    const q = to.indexOf('?');
+    if (q !== -1) search = to.slice(q);
+  } else if (to.search) {
+    search = to.search.startsWith('?') ? to.search : `?${to.search}`;
+  }
+  return { tournamentId: id, search };
 }
 
 /**
@@ -106,12 +138,12 @@ export function useAppNavigate(): NavigateFunction {
         navigate(to);
         return;
       }
-      const tournamentId = tournamentIdFromTo(to);
+      const target = tournamentTargetFromTo(to);
       // `openTournament` returning false means the container had no room for
       // it. Falling through to a real navigate is the honest outcome: the
       // player still reaches the tournament, and the cap toast has already
       // told them why the tab did not open.
-      if (tournamentId && inTab.openTournament(tournamentId)) return;
+      if (target && inTab.openTournament(target)) return;
       navigate(to, options);
     };
 

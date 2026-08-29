@@ -529,6 +529,28 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   useVisibilityRefresh(() => loadClubData());
   const navigate = useAppNavigate();
   const isMountedRef = useIsMounted();
+  /**
+   * ─── NOT A MEMBER, WITHOUT LEAVING THE TABLE (Dan 2026-08-28 round 2) ─────
+   *
+   * `/invite/:clubId` is a route outside /table/:tableId, so navigating to it
+   * from the in-tab lobby collapses MultiTablePage — action bar, tab strip,
+   * Take Seat button, all of it — while the player's other tables keep
+   * dealing. That is the exact failure this whole body of work exists to stop,
+   * and it fires from a LOAD EFFECT rather than a click, so the player cannot
+   * even connect it to something they did.
+   *
+   * Embedded, the honest answer is to say so IN THE TAB and leave the felt
+   * alone; the player can then decide to go and join. On its own route the
+   * redirect is unchanged.
+   */
+  const [notAMember, setNotAMember] = useState(false);
+  const bounceToInvite = useCallback(() => {
+    if (clubIdOverride) {
+      setNotAMember(true);
+      return;
+    }
+    navigate(`/invite/${clubId}`);
+  }, [clubIdOverride, clubId, navigate]);
   /* THE LATEST loadClubData, ALWAYS.
      `loadClubData` is redefined every render and closes over that render's
      clubId. The bus effect below and the realtime member handler both have []
@@ -1702,17 +1724,28 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                  Eviction now requires PROOF: a successful read that says the
                  viewer is not active/approved. An unreadable answer leaves
                  them where they are — the club's own RLS is the real gate,
-                 so a genuine non-member still sees nothing. */
+                 so a genuine non-member still sees nothing.
+
+                 The EVICTION ITSELF goes through `bounceToInvite` (in-tab
+                 lobby round 2): on the club's own route that is the same
+                 redirect as before, but embedded in a table tab it renders a
+                 panel instead of navigating, because a route change there
+                 collapses MultiTablePage and takes the action bar with it
+                 while the player's other tables are still dealing. */
               if (memErr) {
                 reportError(memErr, 'ClubHomePage.fastPath.membership_unreadable', {
                   clubId: home.club.id,
                 });
               } else if (!memStat || !['active', 'approved'].includes(memStat.status)) {
-                navigate(`/invite/${clubId}`);
+                bounceToInvite();
                 return;
               }
             } else {
-              navigate(`/invite/${clubId}`);
+              /* No local session AND the auth read did not produce a user. On
+                 the fast path that is genuinely "signed out" — `readLocalSession`
+                 is a synchronous localStorage read, so there is no timeout to
+                 confuse it with. */
+              bounceToInvite();
               return;
             }
 
@@ -1812,7 +1845,24 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const authUser = authRes?.data?.user ?? null;
       if (!authUser) {
         if (getIsMounted && !getIsMounted()) return;
-        navigate(`/invite/${clubId}`);
+        /**
+         * ONLY ON POSITIVE EVIDENCE (Dan 2026-08-28 round 2) — the same rule
+         * the union cascade below already follows, applied to the two checks
+         * that were still bouncing on failure.
+         *
+         * `failed` means the auth read TIMED OUT or threw; it does not mean
+         * there is no user. `loadClubData` re-runs on tab refocus, on a
+         * realtime resubscribe and on a 90-second interval, and this page
+         * stays mounted in a parked lobby tab for the whole session — so a
+         * single blip while the player was heads-up in a hand navigated the
+         * whole app to /invite, collapsed MultiTablePage to display:none, and
+         * left them staring at a "Join This Club" page while their tables
+         * dealt on invisibly behind it. Nobody clicked anything.
+         *
+         * Do nothing and let the next scheduled load answer the question.
+         */
+        if ((authRes as { failed?: boolean } | null)?.failed) return;
+        bounceToInvite();
         return;
       }
       if (authUser) {
@@ -1835,7 +1885,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         /* Same rule as the fast path above: eviction requires PROOF, never a
            failed read. `memberResult.error` was discarded here, so any
            query-level failure read as "not a member" and bounced a real
-           member to the invite screen mid-session (2026-08-28 audit). */
+           member to the invite screen mid-session (2026-08-28 audit).
+
+           This load is not mount-only — it re-runs on tab refocus, on a
+           realtime resubscribe and on a 90-second interval, and in the in-tab
+           lobby this page never unmounts. So the failure window was the whole
+           session, including while the player was seated: one blip and the
+           app navigated to /invite, collapsing the table container mid-hand.
+           `bounceToInvite` is the embedded-aware exit; see its definition. */
         if (memberResult.error) {
           reportError(memberResult.error, 'ClubHomePage.membership_unreadable', {
             clubId: resolvedId,
@@ -1845,7 +1902,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           !['active', 'approved'].includes((memberResult.data as any).status)
         ) {
           if (getIsMounted && !getIsMounted()) return;
-          navigate(`/invite/${clubId}`);
+          bounceToInvite();
           return;
         }
 
@@ -3569,6 +3626,64 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     );
   }
 
+  /**
+   * NOT A MEMBER, SAID IN THE TAB (Dan 2026-08-28 round 2).
+   *
+   * Only reachable when `clubIdOverride` is set — `bounceToInvite` still
+   * redirects on the club's own route. This is the embedded half: the player
+   * is told plainly, their tables keep dealing above this panel, and joining
+   * is a deliberate tap rather than something that happened to them mid-hand.
+   */
+  if (notAMember) {
+    return (
+      <div className="club-home error">
+        <h2>You Are Not In This Club</h2>
+        <p style={{ color: '#888', fontSize: '0.9rem', margin: '0 0 1rem' }}>
+          Your Games Are Still Running. Join The Club To Browse Its Lobby.
+        </p>
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              setNotAMember(false);
+              loadingRef.current = false;
+              loadClubData();
+            }}
+            style={{
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              color: 'white',
+              padding: '0.6rem 1.2rem',
+              borderRadius: 8,
+              cursor: 'pointer',
+              fontWeight: 600,
+            }}
+          >
+            Retry
+          </button>
+          {/* The ONE deliberate exit. Joining genuinely lives on another
+              route, so this is the player choosing to leave the felt — not a
+              load effect choosing for them. */}
+          <Link
+            to={`/invite/${clubId}`}
+            className="btn btn-primary"
+            style={{
+              background: '#1877f2',
+              border: 'none',
+              color: 'white',
+              padding: '0.6rem 1.2rem',
+              borderRadius: 8,
+              textDecoration: 'none',
+              fontWeight: 600,
+            }}
+          >
+            Join This Club
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (!club) {
     /**
      * Dan 2026-08-20: distinguish "we asked and the club is not there" from
@@ -3624,21 +3739,30 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           >
             Retry
           </button>
-          <Link
-            to="/clubs"
-            className="btn btn-primary"
-            style={{
-              background: 'rgba(255,255,255,0.1)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              color: 'white',
-              padding: '0.6rem 1.2rem',
-              borderRadius: 8,
-              textDecoration: 'none',
-              fontWeight: 600,
-            }}
-          >
-            Back To Clubs
-          </Link>
+          {/* Dan 2026-08-28 round 2: "Back To Clubs" is a real anchor to a
+              route OUTSIDE /table/*, and this panel is reachable in the in-tab
+              lobby precisely when the club load is flaky — so the one obvious
+              button on a failure screen was an exit that took the action bar
+              and every running table's container with it. Retry is the right
+              action in the tab anyway; the tab's own back pill is the way out.
+              TournamentDetails already guards its identical link this way. */}
+          {!clubIdOverride && (
+            <Link
+              to="/clubs"
+              className="btn btn-primary"
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                color: 'white',
+                padding: '0.6rem 1.2rem',
+                borderRadius: 8,
+                textDecoration: 'none',
+                fontWeight: 600,
+              }}
+            >
+              Back To Clubs
+            </Link>
+          )}
         </div>
       </div>
     );

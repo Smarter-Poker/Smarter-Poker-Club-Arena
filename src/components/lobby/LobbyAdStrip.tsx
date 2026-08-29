@@ -32,7 +32,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { IconMegaphone } from '../icons/LobbyIcons';
 import { reportError } from '../../utils/errorReporter';
-import { AdService } from '../../services/AdService';
+import { AdService, isSafeAdTarget } from '../../services/AdService';
 import './LobbyAdStrip.css';
 
 export interface LobbyAd {
@@ -259,8 +259,16 @@ export default function LobbyAdStrip({
       if (ad.targetUrl) {
         let url = ad.targetUrl;
         if (clubId) url = url.replace(/{clubId}/g, clubId);
-        onNavigate?.(url);
-        return;
+        /* Validated AFTER the {clubId} substitution, never before: the check
+           has to see the string the router will actually receive, or a
+           template could smuggle a destination past it. An unsafe target
+           falls through to `onOpen` rather than navigating — a promo that
+           opens the wrong thing is a bug; one that leaves the site is a
+           different and worse problem. See isSafeAdTarget. */
+        if (isSafeAdTarget(url)) {
+          onNavigate?.(url);
+          return;
+        }
       }
     }
     onOpen?.();

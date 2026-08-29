@@ -25,7 +25,12 @@ import React, {
 import { matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
 import LiveTablesBar from '../components/table/LiveTablesBar';
-import { InTabLobbyContext, type InTabLobbyNav } from '../context/InTabLobbyContext';
+import {
+  InTabLobbyContext,
+  tournamentTargetFromTo,
+  type InTabLobbyNav,
+  type InTabTournamentTarget,
+} from '../context/InTabLobbyContext';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -147,9 +152,67 @@ interface TableInstance {
    * TournamentDetails instead of the club lobby so the running tables never
    * unmount. Cleared by the tab's own "back to lobby" affordance, or wholesale
    * when TABLE_SEATED / the route effect converts the lobby tab into a table.
+   *
+   * Dan 2026-08-28 round 2: this is now the TOP OF `lobbyTournamentStack`,
+   * kept as its own field so every existing reader still works unchanged.
+   * Treat the stack as the source of truth when pushing or popping.
    */
   lobbyTournamentId?: string;
+  /**
+   * The drill-in history for this lobby tab, oldest first; the last entry is
+   * what is on screen and mirrors `lobbyTournamentId`.
+   *
+   * WHY A STACK. A tournament page lists its SATELLITES, and tapping one is a
+   * drill-in from a page that was itself a drill-in. Round 1 stored one scalar
+   * and overwrote it, so the parent event was simply gone: "← Lobby" jumped
+   * all the way out to the club lobby, and browser Back was dead too because
+   * an in-tab drill-in pushes no history entry. A player comparing a $200 Main
+   * with its $10 satellite could not get back to the Main without starting
+   * over from the schedule. On the real /tournaments/:id route Back did this
+   * correctly, so the in-tab version was a downgrade in exactly the flow it
+   * exists to serve.
+   */
+  lobbyTournamentStack?: InTabTournamentTarget[];
 }
+
+/**
+ * ─── THE DRILL-IN STACK (Dan 2026-08-28 round 2) ────────────────────────────
+ *
+ * `lobbyTournamentId` is the TOP of `lobbyTournamentStack`. These three helpers
+ * are the only writers, so the pair can never disagree — the round 1 bug was
+ * two writers keeping one scalar, and the second one silently winning.
+ */
+
+/** Push a tournament onto a lobby tab's drill-in history. */
+const pushLobbyTournament = (t: TableInstance, target: InTabTournamentTarget): TableInstance => {
+  const stack = t.lobbyTournamentStack ?? [];
+  // Re-opening the event already on screen is a no-op, not a second entry.
+  // Without this, a double tap on the same row would need two "back" presses
+  // to leave one page.
+  const top = stack[stack.length - 1];
+  if (top && top.tournamentId === target.tournamentId && top.search === target.search) return t;
+  const next = [...stack, target];
+  return { ...t, lobbyTournamentStack: next, lobbyTournamentId: target.tournamentId };
+};
+
+/** Pop one level. Returns the tab showing the club lobby when the stack empties. */
+const popLobbyTournament = (t: TableInstance): TableInstance => {
+  const stack = t.lobbyTournamentStack ?? [];
+  const next = stack.slice(0, -1);
+  const top = next[next.length - 1];
+  return {
+    ...t,
+    lobbyTournamentStack: next.length > 0 ? next : undefined,
+    lobbyTournamentId: top?.tournamentId,
+  };
+};
+
+/** Drop the whole drill-in history — the tab shows the club lobby again. */
+const clearLobbyTournaments = (t: TableInstance): TableInstance => ({
+  ...t,
+  lobbyTournamentStack: undefined,
+  lobbyTournamentId: undefined,
+});
 
 /** Lobby tabs carry a synthetic id so they can share the tabs array. */
 const LOBBY_TAB_PREFIX = 'lobby:';
@@ -744,7 +807,18 @@ export default function MultiTablePage() {
     const prev = tablesRef.current;
     const existingLobby = prev.findIndex(isLobbyTab);
     if (existingLobby !== -1) {
-      // Already have one — just focus it rather than stacking duplicates.
+      /**
+       * Already have one — focus it rather than stacking duplicates, AND put
+       * it back on the lobby (Dan 2026-08-28 round 2).
+       *
+       * It used to focus the tab and leave `lobbyTournamentId` alone, so "+"
+       * — a button whose entire meaning is "show me the games" — reopened
+       * whatever tournament page the tab happened to be parked on. If that tab
+       * was already active it did nothing visible at all, which reads as the
+       * button being broken. Pressing "+" is a request for the lobby; give
+       * them the lobby.
+       */
+      setTables((cur) => cur.map((t) => (isLobbyTab(t) ? clearLobbyTournaments(t) : t)));
       setActiveIndex(existingLobby);
       return;
     }
@@ -1922,11 +1996,17 @@ export default function MultiTablePage() {
    * navigation rather than swallowing the tap.
    */
   const openTournamentTab = useCallback(
-    (tournamentId: string): boolean => {
+    (target: InTabTournamentTarget): boolean => {
       const prev = tablesRef.current;
       const lobbyIdx = prev.findIndex(isLobbyTab);
       if (lobbyIdx !== -1) {
-        setTables(prev.map((t) => (isLobbyTab(t) ? { ...t, lobbyTournamentId: tournamentId } : t)));
+        /* FUNCTIONAL UPDATER, not `prev.map` (round 2). `prev` is a snapshot
+           read at call time, so two drill-ins landing in the same tick — a
+           double tap, or the click-capture and the route backstop both firing
+           for one navigation — meant the second overwrote the first's result
+           with stale data. `setActiveIndex` below is already an index into an
+           array whose identity cannot change here, so it stays direct. */
+        setTables((cur) => cur.map((t) => (isLobbyTab(t) ? pushLobbyTournament(t, target) : t)));
         setActiveIndex(lobbyIdx);
         return true;
       }
@@ -1939,8 +2019,8 @@ export default function MultiTablePage() {
            why no tab opened. */
         return false;
       }
-      setTables([
-        ...prev,
+      setTables((cur) => [
+        ...cur,
         {
           id: `${LOBBY_TAB_PREFIX}${Date.now()}`,
           name: 'Lobby',
@@ -1948,7 +2028,8 @@ export default function MultiTablePage() {
           isMyTurn: false,
           pot: 0,
           kind: 'lobby',
-          lobbyTournamentId: tournamentId,
+          lobbyTournamentId: target.tournamentId,
+          lobbyTournamentStack: [target],
         },
       ]);
       setActiveIndex(prev.length);
@@ -1984,24 +2065,35 @@ export default function MultiTablePage() {
       const anchor = (e.target as HTMLElement | null)?.closest?.('a');
       if (!anchor) return;
       const href = anchor.getAttribute('href') || '';
-      const match = href.match(/^\/tournaments\/([^/?#]+)/);
-      if (!match) return;
+      /* Round 2: parse through the SAME function useAppNavigate uses, so an
+         anchor and an imperative navigate cannot disagree about a destination.
+         It carries the query string too — this handler used to take `match[1]`
+         and drop everything after it, which is how href="/tournaments/x?watch=1"
+         arrived as a bare id and the Watch button stopped watching. */
+      const target = tournamentTargetFromTo(href);
+      if (!target) return;
       /* Dan 2026-08-28: this used to inline its own setTables and never touch
          activeIndex, so it and openTournamentTab could drift apart — two ways
          to do one thing, and only one of them focused the tab it filled. One
          implementation now. Only swallow the click if the container actually
          took it; at the table cap the anchor is left to navigate for real. */
-      if (!openTournamentTab(match[1])) return;
+      if (!openTournamentTab(target)) return;
       e.preventDefault();
       e.stopPropagation();
     },
     [openTournamentTab]
   );
 
-  const clearLobbyTournament = useCallback((tabId: string) => {
-    setTables((prev) =>
-      prev.map((t) => (t.id === tabId ? { ...t, lobbyTournamentId: undefined } : t))
-    );
+  /**
+   * The tab's back affordance: ONE level, not all the way out (round 2).
+   *
+   * This used to blank `lobbyTournamentId` outright, so a player who went
+   * Main -> Satellite and pressed back landed in the club schedule rather than
+   * on the Main, with no way to the Main except finding it again. Browser Back
+   * could not help either: an in-tab drill-in pushes no history entry.
+   */
+  const popLobbyTournamentTab = useCallback((tabId: string) => {
+    setTables((prev) => prev.map((t) => (t.id === tabId ? popLobbyTournament(t) : t)));
   }, []);
 
   /**
@@ -2125,35 +2217,59 @@ export default function MultiTablePage() {
    * a satellite card inside the details page — TournamentLobbyCard, three
    * separate navigate calls — dumped the player off the route every time.
    */
-  const renderLobbyTab = (table: TableInstance) => (
-    <InTabLobbyContext.Provider value={inTabLobbyNav}>
-      {table.lobbyTournamentId ? (
-        // Drilling into a tournament from the in-tab lobby strands the player
-        // exactly as the lobby itself did, so the bar rides along. It renders in
-        // normal flow above the details page; the back-pill is absolute at
-        // top:10px and would otherwise sit on top of it, so that branch offsets
-        // the pill (see .multi-table-page__lobby-tab--tournament in the CSS).
-        <div
-          className="multi-table-page__lobby-tab multi-table-page__lobby-tab--tournament"
-          onClickCapture={handleLobbyLinkCapture}
-        >
-          {renderTakeSeatBar()}
-          <button
-            className="multi-table-page__lobby-back"
-            onClick={() => clearLobbyTournament(table.id)}
+  const renderLobbyTab = (table: TableInstance) => {
+    const stack = table.lobbyTournamentStack ?? [];
+    const top = stack[stack.length - 1];
+    /* The back pill says where it actually goes. At depth 1 that is the club
+       lobby; deeper, it is the event you drilled in FROM, and calling that
+       "Lobby" was a lie that cost the player the page they wanted. */
+    const backLabel = stack.length > 1 ? '← Back' : '← Lobby';
+    /* No provider here any more — the whole container is inside one now (see
+       the top-level return). A second, identical provider nested inside the
+       first only invites the two to drift apart later. */
+    return (
+      <>
+        {top ? (
+          // Drilling into a tournament from the in-tab lobby strands the player
+          // exactly as the lobby itself did, so the bar rides along. It renders in
+          // normal flow above the details page; the back-pill is absolute at
+          // top:10px and would otherwise sit on top of it, so that branch offsets
+          // the pill (see .multi-table-page__lobby-tab--tournament in the CSS).
+          <div
+            className="multi-table-page__lobby-tab multi-table-page__lobby-tab--tournament"
+            onClickCapture={handleLobbyLinkCapture}
           >
-            ← Lobby
-          </button>
-          <TournamentDetails tournamentIdOverride={table.lobbyTournamentId} />
-        </div>
-      ) : (
-        <div className="multi-table-page__lobby-tab" onClickCapture={handleLobbyLinkCapture}>
-          {renderTakeSeatBar()}
-          {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
-        </div>
-      )}
-    </InTabLobbyContext.Provider>
-  );
+            {renderTakeSeatBar()}
+            <button
+              className="multi-table-page__lobby-back"
+              onClick={() => popLobbyTournamentTab(table.id)}
+              aria-label={
+                stack.length > 1 ? 'Back To The Previous Tournament' : 'Back To The Lobby'
+              }
+            >
+              {backLabel}
+            </button>
+            {/* `key` on the id so switching events REMOUNTS the details page.
+                Without it React reuses the instance and TournamentDetails'
+                load effect (keyed on the id) races its own previous fetch —
+                the old event's data can land last and paint over the new one.
+                `searchOverride` carries ?watch=1 in, which is the whole reason
+                the WATCH button works in the tab again. */}
+            <TournamentDetails
+              key={top.tournamentId}
+              tournamentIdOverride={top.tournamentId}
+              searchOverride={top.search}
+            />
+          </div>
+        ) : (
+          <div className="multi-table-page__lobby-tab" onClickCapture={handleLobbyLinkCapture}>
+            {renderTakeSeatBar()}
+            {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
+          </div>
+        )}
+      </>
+    );
+  };
 
   /* The urgency auto-switch that lived here is DELETED — see the NO AUTO
      TABLE SWITCHING law above. The urgency ALERT (bell, tab flash, haptics,
@@ -2457,9 +2573,42 @@ export default function MultiTablePage() {
     // Nothing but lobby tabs open: there is no /table URL to put back, and the
     // container would hide itself again the moment we redirected. Leave it.
     if (!returnTo) return;
-    if (!openTournamentTab(tournamentId)) return;
+    /* Carry the query across the recovery too (round 2). Arriving here from a
+       "/tournaments/:id?watch=1" link that escaped the hook — the ticker, a
+       deep link, anything outside the provider — must still watch, or the
+       backstop would "rescue" the player by quietly discarding their intent. */
+    if (!openTournamentTab({ tournamentId, search: location.search })) return;
     navigate(`/table/${returnTo.id}`, { replace: true });
-  }, [location.pathname, openTournamentTab, navigate]);
+  }, [location.pathname, location.search, openTournamentTab, navigate]);
+
+  /**
+   * ─── THE SAME BACKSTOP FOR THE TOURNAMENT *LIST* (round 2) ───────────────
+   *
+   * `matchPath('/tournaments/:tournamentId')` does not match a bare
+   * `/tournaments`, and TournamentStartingTicker — a marquee mounted at the app
+   * root, on screen over every table — falls back to exactly that when it
+   * cannot resolve an id: `if (targetId) navigate('/tournaments/'+targetId);
+   * else navigate('/tournaments')`. It uses plain `useNavigate` and lives
+   * outside the provider, so the else branch was a full-size, always-present
+   * tap target that dropped a seated player straight off /table/*.
+   *
+   * The list has no in-tab renderer of its own, so the honest recovery is the
+   * lobby tab, which is where a player looking for a tournament wanted to be.
+   * Same three narrowings as above: only with tables open, only when there is
+   * a real table to put back in the URL, and never when a lobby tab is already
+   * showing (that would fight OPEN_LOBBY_TAB).
+   */
+  useEffect(() => {
+    if (!matchPath('/tournaments', location.pathname)) return;
+    const open = tablesRef.current;
+    if (open.length === 0) return;
+    const returnTo =
+      open.find((t) => t.id === lastActiveTableIdRef.current && !isLobbyTab(t)) ??
+      open.find((t) => !isLobbyTab(t));
+    if (!returnTo) return;
+    masterBus.emit('OPEN_LOBBY_TAB', {});
+    navigate(`/table/${returnTo.id}`, { replace: true });
+  }, [location.pathname, navigate]);
 
   // Remember the last REAL table the player had on screen, so the dock can
   // send them back to it rather than to whichever tab happens to be oldest.
@@ -2516,7 +2665,25 @@ export default function MultiTablePage() {
     : 'none';
 
   return (
-    <>
+    /**
+     * THE PROVIDER WRAPS THE WHOLE CONTAINER, not just the lobby tab
+     * (Dan 2026-08-28 round 2).
+     *
+     * Round 1 wrapped only `renderLobbyTab`, which left the felt itself
+     * outside it — and the felt has its own tournament surface:
+     * `TournamentLobbyModal`, opened from the upper-right button on a
+     * tournament table (TablePage), which renders TournamentDetails with its
+     * SatellitesTab. A satellite tap there went through plain `useNavigate`
+     * and did a real route change, so the container hid, the action bar went
+     * with it, and only the route backstop dragged the player back — after the
+     * flash, and by yanking them off the felt they were sitting at.
+     *
+     * Inside the provider the same tap is handled in place, with no route
+     * change at all. Nothing else changes: `useAppNavigate` is only consulted
+     * by components that opted into it, and it still rewrites nothing but
+     * /tournaments/:id.
+     */
+    <InTabLobbyContext.Provider value={inTabLobbyNav}>
       {hidden && dock.kind !== 'none' && (
         <LiveTablesBar
           tables={tables.filter((t) => !isLobbyTab(t)).map((t) => ({ id: t.id, name: t.name }))}
@@ -2969,6 +3136,6 @@ export default function MultiTablePage() {
           </div>
         )}
       </div>
-    </>
+    </InTabLobbyContext.Provider>
   );
 }

@@ -20,7 +20,40 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
+
+/**
+ * The innermost `{ ... }` block containing `needle` — the same structural
+ * window as tests/helpers/sourceWindow.ts's sliceEnclosingBlock. Inlined
+ * rather than imported: the server tree's ESM guard (every relative import
+ * carries .js) and its tsc rootDir both refuse a reach across trees, and a
+ * ten-line brace walk is cheaper than loosening either guard.
+ */
+const sliceEnclosingBlock = (src: string, needle: string): string => {
+  const at = src.indexOf(needle);
+  if (at < 0) throw new Error(`sliceEnclosingBlock: "${needle}" not found`);
+  let depth = 0;
+  let open = -1;
+  for (let i = at; i >= 0; i--) {
+    if (src[i] === '}') depth++;
+    else if (src[i] === '{') {
+      if (depth === 0) {
+        open = i;
+        break;
+      }
+      depth--;
+    }
+  }
+  if (open < 0) throw new Error(`sliceEnclosingBlock: no enclosing block for "${needle}"`);
+  let d = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') d++;
+    else if (src[i] === '}') {
+      d--;
+      if (d === 0) return src.slice(open, i + 1);
+    }
+  }
+  return src.slice(open);
+};
 
 const svc = readFileSync(
   new URL('./ScheduledTournamentService.ts', import.meta.url).pathname,
@@ -40,11 +73,12 @@ describe('the pop-up wiring — a guarantee refusal must notify the owners', () 
   });
 
   it('the restart path notifies too — a manual club event deserves the same pop-up', () => {
-    // Bounded by the insert-failure branch the tag lives in, not by a byte
-    // count -- a fixed window can be pushed off the code it guards by a
-    // comment (see tests/helpers/sourceWindow.ts, and the meta-test
-    // tests/unit/noFixedSizeSourceWindows.test.ts that refuses magic numbers).
-    const branch = sliceEnclosingBlock(svc, "'ScheduledTournaments.restart_insert_failed'");
+    /* ROUND 10 (2026-08-29): this was `svc.slice(restartAt, restartAt +
+       1500)` — the exact fixed-byte window noFixedSizeSourceWindows.test.ts
+       forbids, and it went red on main the moment that scanner saw it. The
+       failure branch that reports restart_insert_failed is the structure the
+       pin is about: the notify call must live INSIDE it. */
+    const branch = sliceEnclosingBlock(svc, 'ScheduledTournaments.restart_insert_failed');
     expect(branch).toContain('fn_notify_guarantee_bank_short');
   });
 

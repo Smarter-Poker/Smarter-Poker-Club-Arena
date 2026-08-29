@@ -461,6 +461,7 @@
     "horse_bug_reports": ["id", "title"],
     "horse_daily_audit": ["day"],
     "horse_daily_nets": ["horse_user_id", "day", "game_variant"],
+    "horse_decision_latency": ["day", "scope"],
     "horse_error_log": ["error_type"],
     "horse_hand_reviews": [
       "hand_id",

@@ -42,6 +42,7 @@ import { startHorseLeague } from './benchmark/HorseLeague.js';
 import { startHorseDailyAudit } from './services/HorseDailyAudit.js';
 import { startBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
 import { startHorseLaneLoader } from './services/HorseLaneLoader.js';
+import { startGtoChartLoader } from './services/GtoChartLoader.js';
 import { startHorseOverlayGuard } from './services/HorseOverlayGuard.js';
 import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 
@@ -296,6 +297,11 @@ httpServer.listen(PORT, () => {
   // Game lanes (Dan 2026-08-27): the exact 33/33/34 split lives in the
   // database; this hydrates it and re-balances when the fleet grows.
   startHorseLaneLoader();
+  // V27 solver charts (Dan 2026-08-29): the PioSolver push/fold charts,
+  // hydrated so the synchronous decision reads them at zero I/O. Without
+  // this call the layer is inert and heuristics decide — which is the
+  // fallback, not the plan.
+  startGtoChartLoader();
   // Overlay guard (Dan 2026-08-27): Midway Union guaranteed events get topped
   // up with horses that are not already in them, so no overlay occurs.
   startHorseOverlayGuard();

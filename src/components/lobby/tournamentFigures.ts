@@ -18,16 +18,20 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 import type { BlindLevel } from '../../types/database.types';
+import { parseJsonCached } from '../../utils/parseJsonCached';
 
-/** Parse the TEXT column. Returns null for absent, malformed or non-array. */
+/**
+ * Parse the TEXT column. Returns null for absent, malformed or non-array.
+ *
+ * Memoised on the string. The lobby calls this from `tournamentBlinds`,
+ * `blindLevelMinutes`, `levelRemainingMs` and `lateRegEndMs` — four readers,
+ * each once per card, on a board that re-renders on a timer. The row does not
+ * change between them, so neither does the string, so neither does the parse.
+ */
 export function parseBlindStructure(raw: string | null | undefined): BlindLevel[] | null {
   if (!raw) return null;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as BlindLevel[]) : null;
-  } catch {
-    return null;
-  }
+  const parsed = parseJsonCached(raw);
+  return Array.isArray(parsed) ? (parsed as BlindLevel[]) : null;
 }
 
 /** The row for a level: matched by its own `level` field, else by position. */

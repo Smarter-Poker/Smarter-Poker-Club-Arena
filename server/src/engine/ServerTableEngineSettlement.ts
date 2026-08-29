@@ -913,7 +913,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     this.runItTwiceEngine.endHand(this.tableId);
     this.insuranceEngine.endHand(this.tableId);
     // Note: straddleEngine persists (auto-straddle enrollment persists)
-    // Note: rakebackEngine persists (accumulates across hands)
+    // (RakebackEngine deleted 2026-08-29 — weighted contributed rake law;
+    // per-player rake credit is allocated at banking time and by the settler.)
 
     // SETTLEMENT STEP 12: Calculate rakeback (done in postHandTasks)
     // SETTLEMENT STEP 9-11: Leaderboards, achievements, VIP points (done in postHandTasks)

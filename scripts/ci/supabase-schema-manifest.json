@@ -1696,6 +1696,7 @@
     "fn_notify_friend_accepted",
     "fn_notify_friend_request",
     "fn_notify_friends_of_home_join",
+    "fn_notify_guarantee_bank_short",
     "fn_notify_home_game_cancelled",
     "fn_notify_home_game_created",
     "fn_notify_home_member_status",

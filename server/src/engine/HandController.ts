@@ -258,6 +258,7 @@ export class HandController {
       ...p,
       bet: 0,
       totalInvested: 0,
+      returnedUncalled: 0,
       deadInvested: 0,
       cards: [],
       is_folded: false,
@@ -1599,6 +1600,12 @@ export class HandController {
 
     top.p.stack += uncalled;
     top.p.totalInvested = Math.round(((top.p.totalInvested ?? 0) - uncalled) * 100) / 100;
+    // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): keep the returned amount as
+    // first-class state — it is excluded from eligible contribution (the
+    // decrement above) and persisted for audit (rake_records.returned_uncalled,
+    // rake_attributions.returned_uncalled). Accumulate: this function can run
+    // on both the fast-fold path and completeHand, and only refunds once.
+    top.p.returnedUncalled = Math.round(((top.p.returnedUncalled ?? 0) + uncalled) * 100) / 100;
     top.p.bet = Math.max(0, Math.round((top.p.bet - uncalled) * 100) / 100);
     this.state.pot = Math.max(0, Math.round((this.state.pot - uncalled) * 100) / 100);
     this.emit({

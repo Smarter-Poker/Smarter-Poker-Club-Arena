@@ -1405,6 +1405,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         for (const [uid, amt] of this.currentHandContributions.entries()) {
           contribsObj[uid] = amt;
         }
+        // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): pass the returned-
+        // uncalled audit map and stamp the methodology. contribsObj is already
+        // ELIGIBLE contribution (net of returned uncalled bets), so the RPC's
+        // weighted per-player attribution needs no further adjustment.
+        const returnedObj: Record<string, number> = {};
+        for (const [uid, amt] of this.currentHandReturnedUncalled.entries()) {
+          returnedObj[uid] = amt;
+        }
         let rakeDistributed = false;
         for (let attempt = 0; attempt < 3 && !rakeDistributed; attempt++) {
           const { error: rdErr } = await supabase.rpc('atomic_distribute_rake', {
@@ -1418,6 +1426,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             p_num_players: this.currentHandContributions.size,
             p_contributions: contribsObj,
             p_tournament_id: this.tableInfo.tournament_id || null,
+            p_returned_uncalled: returnedObj,
+            p_rake_method: 'WEIGHTED_CONTRIBUTED',
           });
           if (!rdErr) {
             rakeDistributed = true;
@@ -1443,6 +1453,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               pot: this.currentHandPotSize,
               numPlayers: this.currentHandContributions.size,
               contributions: contribsObj,
+              returnedUncalled: returnedObj,
+              rakeMethod: 'WEIGHTED_CONTRIBUTED',
               tournamentId: this.tableInfo?.tournament_id || null,
               bigBlind: this.tableInfo?.big_blind ?? null,
               lastError: rdErr.message,

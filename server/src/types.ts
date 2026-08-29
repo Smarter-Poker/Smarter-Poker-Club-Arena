@@ -67,6 +67,14 @@ export interface SeatPlayer {
   bet: number;
   totalInvested: number;
   /**
+   * WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): cumulative uncalled amount
+   * returned to this player this hand. returnUncalledBet() already decrements
+   * totalInvested when it refunds the uncalled portion, so totalInvested is
+   * the player's ELIGIBLE contribution; this field preserves the returned
+   * amount as first-class audit state (gross = totalInvested + returnedUncalled).
+   */
+  returnedUncalled?: number;
+  /**
    * Dead money portion of totalInvested — antes, a Big Blind Ante posted by the
    * BB on behalf of the whole table, and dead small blinds. Dead money sits in
    * the pot but must NOT count as a live bet: it is excluded from uncalled-bet

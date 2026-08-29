@@ -13,10 +13,18 @@
  *
  * FIX:
  *   This daemon runs every 30 minutes. For each completed hand in rake_records
- *   that hasn't been settled yet, it derives the equal-share per-player rake
- *   credit (FIX 144) and upserts rakeback_periods rows by (user_id, club_id,
- *   period_start_week). Idempotent: re-running over already-settled hands has
- *   no effect.
+ *   that hasn't been settled yet, it derives the per-player rake credit under
+ *   the methodology the hand was SETTLED with (rake_records.rake_method) and
+ *   upserts rakeback_periods rows by (user_id, club_id, period_start_week).
+ *   Idempotent: re-running over already-settled hands has no effect.
+ *
+ * ATTRIBUTION (Dan 2026-08-29, BINDING — supersedes DECISION D-001 / FIX 144):
+ *   New cash hands use WEIGHTED CONTRIBUTED rake — a player's credit is
+ *   proportional to their eligible contribution to the rakeable pot. Rows
+ *   stamped DEALT_EQUAL (historical, plus any settled by a pre-deploy engine)
+ *   keep reproducing their historical equal split. The single source of the
+ *   share math is services/rakeAllocation.ts (SQL twin:
+ *   fn_allocate_rake_credits) — never re-derive shares here.
  *
  * SAFETY:
  *   - Reads only from rake_records (durable per-hand audit log)
@@ -25,13 +33,15 @@
  *   - 30-minute interval; can be tuned per traffic
  *
  * RELATED:
- *   - DECISION D-001: rake is EQUAL SHARE, never weighted (FIX 144)
+ *   - Dan 2026-08-29: weighted contributed rake law (this file's split logic)
+ *   - .memory/decisions/001-rake-equal-share.md (SUPERSEDED, kept as history)
  *   - .memory/problems/008-rakeback-settler-missing.md
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
+import { sharesForRakeRecord } from './rakeAllocation.js';
 
 const SETTLEMENT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 /**
@@ -195,32 +205,14 @@ const RAKEBACK_TIERS = [
 ];
 
 /**
- * RAKE-AUDIT 2026-07-24: exact integer-cents equal split of a hand's rake.
- * Returns a per-user share map whose values sum EXACTLY to totalRake.
- * The previous per-site `Math.round(rake / N * 100) / 100` rounded each
- * player's share independently, so the credited sum drifted from the actual
- * rake by up to N × $0.005 per hand — a systematic leak across thousands of
- * hands that also trips the equal-share verification harness
- * (scripts/verification-harness/02-equal-share-rake.sql). Remainder cents go
- * to the earliest users in iteration order (deterministic per hand).
+ * WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): the per-hand share math lives in
+ * services/rakeAllocation.ts and is method-aware — sharesForRakeRecord(row)
+ * allocates proportionally to eligible contribution for rows stamped
+ * WEIGHTED_CONTRIBUTED and reproduces the historical exact integer-cents equal
+ * split for legacy DEALT_EQUAL rows. Values always sum EXACTLY to the row's
+ * rake_amount (verified by scripts/verification-harness/
+ * 02-weighted-contributed-rake.sql and rakeAllocation.test.ts).
  */
-function equalShareCents(totalRake: number, userIds: string[]): Map<string, number> {
-  const map = new Map<string, number>();
-  const n = userIds.length;
-  if (n === 0) return map;
-  const totalCents = Math.round(totalRake * 100);
-  const base = Math.floor(totalCents / n);
-  let remainder = totalCents - base * n;
-  for (const uid of userIds) {
-    let cents = base;
-    if (remainder > 0) {
-      cents += 1;
-      remainder -= 1;
-    }
-    map.set(uid, cents / 100);
-  }
-  return map;
-}
 
 function tierFor(rakeContributed: number): { rate: number; name: string } {
   let chosen = RAKEBACK_TIERS[0];
@@ -253,6 +245,8 @@ interface RakeRecordRow {
   club_id: string;
   rake_amount: number;
   player_contributions: Record<string, number> | null;
+  /** 'WEIGHTED_CONTRIBUTED' for post-migration cash hands; 'DEALT_EQUAL' legacy. */
+  rake_method?: string | null;
   created_at: string;
 }
 
@@ -1320,7 +1314,9 @@ export class RakebackSettlerService {
     // idempotency on rake_records.id for those rows instead of skipping them.
     const base = supabase
       .from('rake_records')
-      .select('id, is_tournament, hand_id, club_id, rake_amount, player_contributions, created_at');
+      .select(
+        'id, is_tournament, hand_id, club_id, rake_amount, player_contributions, rake_method, created_at'
+      );
     // ── 2026-08-17: the OR keyset predicate WAS the timeout ──
     //
     // `or=(created_at.gt."X",and(created_at.eq."X",id.gt."Y"))` is the textbook
@@ -1428,32 +1424,27 @@ export class RakebackSettlerService {
 
     for (const row of rows as RakeRecordRow[]) {
       if (!row.player_contributions) continue;
-      const dealtIn = Object.entries(row.player_contributions).filter(([, amt]) => Number(amt) > 0);
-      if (dealtIn.length === 0) continue;
-
-      // FIX 144 EQUAL SHARE — each dealt-in player gets totalRake / N
-      // RAKE-AUDIT 2026-07-24: exact integer-cents split (shares sum to rake)
-      const shares = equalShareCents(
-        Number(row.rake_amount),
-        dealtIn.map(([uid]) => uid)
-      );
+      // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): method-aware, canonical
+      // allocator. Weighted for new cash hands; historical DEALT_EQUAL rows
+      // reproduce their historical equal split. Shares sum exactly to rake.
+      const shares = sharesForRakeRecord(row);
+      if (shares.size === 0) continue;
       const created = new Date(row.created_at);
       const ws = weekStart(created);
       const we = weekEnd(created);
 
-      for (const [userId] of dealtIn) {
-        const equalShare = shares.get(userId) ?? 0;
+      for (const [userId, credit] of shares.entries()) {
         const key = `${userId}:${row.club_id}:${ws}`;
         const cur = buckets.get(key);
         if (cur) {
-          cur.rake_generated = Math.round((cur.rake_generated + equalShare) * 100) / 100;
+          cur.rake_generated = Math.round((cur.rake_generated + credit) * 100) / 100;
         } else {
           buckets.set(key, {
             user_id: userId,
             club_id: row.club_id,
             period_start: ws,
             period_end: we,
-            rake_generated: equalShare,
+            rake_generated: credit,
           });
         }
       }
@@ -1496,19 +1487,17 @@ export class RakebackSettlerService {
         agentCreditsSkippedNoHand++;
         continue;
       }
-      const dealtIn = Object.entries(row.player_contributions).filter(([, amt]) => Number(amt) > 0);
-      if (dealtIn.length === 0) continue;
-      // RAKE-AUDIT 2026-07-24: exact integer-cents split (shares sum to rake)
-      const shares = equalShareCents(
-        Number(row.rake_amount),
-        dealtIn.map(([uid]) => uid)
-      );
-      for (const [userId] of dealtIn) {
+      // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): method-aware shares — the
+      // commission basis is the player's credited rake under the hand's own
+      // methodology. Shares sum exactly to the rake collected.
+      const shares = sharesForRakeRecord(row);
+      if (shares.size === 0) continue;
+      for (const [userId, credit] of shares.entries()) {
         agentCreditsAttempted++;
         commissionItems.push({
           user_id: userId,
           club_id: row.club_id,
-          rake_credit: shares.get(userId) ?? 0,
+          rake_credit: credit,
           source_type: sourceType,
           // Round 43: link the commission audit row + club_wallet_transactions
           // commission_out audit row back to the originating hand for
@@ -1576,20 +1565,16 @@ export class RakebackSettlerService {
       if (!row.player_contributions) continue;
       const rrId = (row as { id?: string }).id;
       if (!rrId) continue; // no durable id -> cannot key idempotency; skip (safe)
-      const dealtIn = Object.entries(row.player_contributions).filter(([, a]) => Number(a) > 0);
-      if (dealtIn.length === 0) continue;
-      // RAKE-AUDIT 2026-07-24: exact integer-cents split (shares sum to rake)
-      const psShares = equalShareCents(
-        Number(row.rake_amount),
-        dealtIn.map(([uid]) => uid)
-      );
-      for (const [userId] of dealtIn) {
+      // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): method-aware shares.
+      const psShares = sharesForRakeRecord(row);
+      if (psShares.size === 0) continue;
+      for (const [userId, credit] of psShares.entries()) {
         statsItems.push({
           rake_record_id: rrId,
           user_id: userId,
           club_id: row.club_id,
           hands: 1,
-          rake: psShares.get(userId) ?? 0,
+          rake: credit,
         });
       }
     }
@@ -1651,10 +1636,11 @@ export class RakebackSettlerService {
       //
       // Now: each (club, week) window is fetched ONCE and every bucket in it is
       // computed from that single dataset, then all rows are persisted in one
-      // call. The arithmetic is untouched — the same equalShareCents split runs
-      // on the same rows, so the totals are byte-identical; only the transport
-      // changed. (Re-deriving the split in SQL would have moved a remainder
-      // cent between players, and rake_generated decides the rakeback tier.)
+      // call. The share arithmetic is the canonical method-aware allocator
+      // (sharesForRakeRecord here, fn_allocate_rake_credits in SQL), so the
+      // totals agree between the two by construction; only the transport
+      // changed. (rake_generated decides the rakeback tier, so JS/SQL parity
+      // is pinned by shared test vectors, not assumed.)
       const groups = new Map<
         string,
         { club_id: string; period_start: string; period_end: string }
@@ -1682,11 +1668,12 @@ export class RakebackSettlerService {
       //
       // The row cap cannot be lifted from the client, so the computation moved
       // into the database, which has no such ceiling.
-      // fn_rakeback_recompute_periods reproduces equalShareCents EXACTLY (same
-      // integer-cents base, same remainder-to-the-first-keys rule — jsonb sorts
-      // equal-length UUID keys lexicographically, which is the order this engine
-      // sees) and the same tier ladder, then upserts while leaving paid weeks
-      // immutable. One call per (club, week) instead of a truncated download.
+      // fn_rakeback_recompute_periods allocates per record with the canonical
+      // fn_allocate_rake_credits — weighted for WEIGHTED_CONTRIBUTED rows,
+      // the historical exact equal split for DEALT_EQUAL rows (jsonb sorts
+      // equal-length UUID keys lexicographically, which matches the TS
+      // tie-break) — then upserts while leaving paid weeks immutable. One call
+      // per (club, week) instead of a truncated download.
       for (const g of groups.values()) {
         const userIds = [...buckets.values()]
           .filter((b) => b.club_id === g.club_id && b.period_start === g.period_start)

@@ -54,6 +54,10 @@ const DIR_RULES = [
   { prefix: 'images/club-footer/', maxDim: 0 },
   { prefix: 'game-card-icons/', maxDim: 512 },
   { prefix: 'club-logos/', maxDim: 512 },
+  // The approved global-header artwork is a locked, lossless release asset.
+  // Resizing it changes both its definition and its byte identity, so it must
+  // bypass the generic images/ optimizer and ship exactly as committed.
+  { prefix: 'images/global-header/', maxDim: 0 },
   { prefix: 'cards/backs/table/', maxDim: 0 }, // already hand-optimized — skip
   { prefix: 'cards/backs/', maxDim: 512 },
   { prefix: 'cards/', maxDim: 512 }, // full-size card faces (root + 2color/4color PNGs)

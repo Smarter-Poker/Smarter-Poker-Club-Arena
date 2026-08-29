@@ -1381,6 +1381,7 @@
     "fn_club_bank_reverse",
     "fn_club_bank_role",
     "fn_club_bank_send",
+    "fn_club_bomb_pot_report",
     "fn_club_cashier_can_transact",
     "fn_club_cashier_members",
     "fn_club_cashier_scope",

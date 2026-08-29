@@ -27,9 +27,47 @@
  * Usage:  node scripts/ci/gen-schema-manifest.mjs
  */
 
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { writeFileSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import process from 'node:process';
+
+/**
+ * Write a manifest, and refuse to do it unless the file is exempt from Prettier.
+ *
+ * Prettier collapses short arrays onto one line and `JSON.stringify(x, null, 2)`
+ * expands them, so the two formatters can never agree: lint-staged rewrites the
+ * file on commit, the next regeneration writes it back, and the file oscillates
+ * between two byte states with identical content. `detect-silent-revert.mjs`
+ * reads the second of those as a wholesale revert, correctly, and blocks CI.
+ *
+ * This has now happened twice -- PR #360 for the columns manifest, and again
+ * for the required-columns manifest, which was added on 2026-08-28 without an
+ * entry in .prettierignore and churned 3,965 lines for no content change. The
+ * fix both times was one line in .prettierignore, and both times the omission
+ * was invisible until someone regenerated and read the diff.
+ *
+ * So the generator checks for itself. A fourth manifest added without the
+ * exemption fails here, immediately, with the line to add -- rather than months
+ * later as an unexplained CI failure on somebody else's pull request.
+ */
+function writeManifest(path, value) {
+  const rel = relative(process.cwd(), path);
+  const ignore = readFileSync(join(process.cwd(), '.prettierignore'), 'utf8')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#'));
+  if (!ignore.includes(rel)) {
+    console.error(
+      `ERROR: ${rel} is not listed in .prettierignore.\n` +
+        'Prettier and JSON.stringify format JSON arrays differently, so this file\n' +
+        'would oscillate between two byte states on every commit and trip\n' +
+        'scripts/ci/detect-silent-revert.mjs. Add this line to .prettierignore:\n\n' +
+        `  ${rel}\n`
+    );
+    process.exit(1);
+  }
+  writeFileSync(path, JSON.stringify(value, null, 2) + '\n');
+}
 
 const URL = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -65,7 +103,7 @@ const manifest = {
   tables: [...new Set(data.tables || [])].sort(),
   functions: [...new Set(data.functions || [])].sort(),
 };
-writeFileSync(OUT, JSON.stringify(manifest, null, 2) + '\n');
+writeManifest(OUT, manifest);
 console.log(
   `Wrote ${OUT}: ${manifest.tables.length} tables, ${manifest.functions.length} functions`
 );
@@ -87,7 +125,7 @@ const colsManifest = {
 // correctly flagged that as a silent revert (PR #360, 2026-08-23) even though the
 // 9,791 column keys were identical every time. Keep this at 2 so the generator is
 // idempotent under Prettier.
-writeFileSync(COLS_OUT, JSON.stringify(colsManifest, null, 2) + '\n');
+writeManifest(COLS_OUT, colsManifest);
 console.log(`Wrote ${COLS_OUT}: ${Object.keys(sortedCols).length} tables' columns`);
 
 // 3) REQUIRED-column manifest (required-column write gate)
@@ -116,5 +154,5 @@ const reqManifest = {
 // 2-space for the same reason as the columns manifest above: lint-staged runs
 // prettier on *.json, and a compact write here would oscillate the file between
 // two forms and trip detect-silent-revert.
-writeFileSync(REQ_OUT, JSON.stringify(reqManifest, null, 2) + '\n');
+writeManifest(REQ_OUT, reqManifest);
 console.log(`Wrote ${REQ_OUT}: ${Object.keys(sortedReq).length} tables with required columns`);

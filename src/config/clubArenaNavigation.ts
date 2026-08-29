@@ -131,6 +131,11 @@ export function getClubArenaNavigation({
       label: 'Wallet & Rewards',
       items: [
         {
+          label: 'Rewards Center',
+          path: '/rewards',
+          description: 'All balances, benefits, offers, and milestones',
+        },
+        {
           label: 'Wallet',
           path: '/wallet',
           description: 'Balances, transfers, and ledger',
@@ -221,6 +226,11 @@ export const CLUB_ARENA_SUPPORT_NAV: ClubArenaNavItem[] = [
     label: 'Help Center',
     path: '/help',
     description: 'Answers, support, and account help',
+  },
+  {
+    label: 'Legal Center',
+    path: '/legal',
+    description: 'All platform rules and privacy commitments',
   },
   {
     label: 'Fair Gaming',

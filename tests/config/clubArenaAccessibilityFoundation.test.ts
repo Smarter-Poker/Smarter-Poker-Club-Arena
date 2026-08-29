@@ -60,7 +60,13 @@ describe('Club Arena accessibility foundation', () => {
 
   it('keeps the approved fixed club footer semantic, complete, and canonically routed', () => {
     const source = read('src/components/club/ClubBottomNav.tsx');
+    const accessSource = read('src/hooks/useClubNavigationAccess.ts');
+    const workspaceSource = read('src/contexts/ClubWorkspaceContext.tsx');
 
+    expect(accessSource).toContain('getClubNavigationCapabilities');
+    expect(accessSource).toContain('useClubWorkspace');
+    expect(workspaceSource).toContain("masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED'");
+    expect(workspaceSource).toContain('resolveClubUUIDStrict');
     expect(source).toContain("label: 'Settings'");
     expect(source).toContain("label: 'Stats'");
     expect(source).toContain("clubRoot ? `${clubRoot}/data` : '/data'");

@@ -1,13 +1,13 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * HAMBURGER MENU — Facebook Dark Theme
+ * HAMBURGER MENU — Smarter Casino Realism Command Drawer
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Clean, classy navigation with complete page coverage
  * No emojis - professional Facebook-style design
  */
 
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { identityDNA } from '../../core/IdentityDNA';
@@ -33,6 +33,9 @@ import { isVibrationPreferred, setVibrationAllowed } from '../../utils/vibration
 import { AvatarGallery } from '../customization/AvatarGallery';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { CLUB_ARENA_SUPPORT_NAV, getClubArenaNavigation } from '../../config/clubArenaNavigation';
+import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
+import { capture } from '../../lib/analytics';
+import { fetchQuickLinkClubs, type QuickLinkClub } from '../../utils/clubQuickLink';
 import styles from './HamburgerMenu.module.css';
 
 interface HamburgerMenuProps {
@@ -107,7 +110,6 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
   const [isVIP, setIsVIP] = useState(false);
   const [isPlatformStaff, setIsPlatformStaff] = useState(false);
-  const [clubRole, setClubRole] = useState<string | null>(null);
   const { diamonds: diamondBalance } = useWalletStore();
   // Bible V8 §11.1: User table settings (12 toggles) from Supabase
   const {
@@ -136,11 +138,70 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [showThemeSettings, setShowThemeSettings] = useState(false);
 
   const location = useLocation();
+  const workspace = useClubWorkspace();
   const [clubLevelInfo, setClubLevelInfo] = useState<ClubLevelInfo | null>(null);
+  const [clubChoices, setClubChoices] = useState<QuickLinkClub[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [attentionCount, setAttentionCount] = useState(0);
+  const recentStorageKey = `club_arena_nav_recents_v1:${user?.id || 'signed-out'}`;
+  const pinStorageKey = `club_arena_nav_pins_v1:${user?.id || 'signed-out'}`;
+  const [recentPaths, setRecentPaths] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(recentStorageKey) || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [pinnedPaths, setPinnedPaths] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(pinStorageKey) || '[]');
+    } catch {
+      return [];
+    }
+  });
 
   const match = location.pathname.match(/^\/clubs\/([a-zA-Z0-9-]+)/);
   const clubId = match ? match[1] : null;
-  const navigationGroups = getClubArenaNavigation({ clubId, clubRole, isPlatformStaff });
+  const clubRole = clubId === workspace.routeClubId ? workspace.clubRole : null;
+  const effectivePlatformStaff = clubId ? workspace.isPlatformStaff : isPlatformStaff;
+  const navigationGroups = getClubArenaNavigation({
+    clubId,
+    clubRole,
+    isPlatformStaff: effectivePlatformStaff,
+  });
+  const allNavigationItems = useMemo(
+    () => navigationGroups.flatMap((group) => group.items),
+    [navigationGroups]
+  );
+  const filteredNavigationGroups = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return navigationGroups;
+    return navigationGroups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) =>
+          `${item.label} ${item.description}`.toLowerCase().includes(query)
+        ),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [navigationGroups, searchQuery]);
+  const recentItems = recentPaths
+    .map((path) => allNavigationItems.find((item) => item.path === path))
+    .filter((item): item is (typeof allNavigationItems)[number] => Boolean(item))
+    .slice(0, 3);
+  const pinnedItems = pinnedPaths
+    .map((path) => allNavigationItems.find((item) => item.path === path))
+    .filter((item): item is (typeof allNavigationItems)[number] => Boolean(item));
+
+  useEffect(() => {
+    try {
+      setRecentPaths(JSON.parse(localStorage.getItem(recentStorageKey) || '[]'));
+      setPinnedPaths(JSON.parse(localStorage.getItem(pinStorageKey) || '[]'));
+    } catch {
+      setRecentPaths([]);
+      setPinnedPaths([]);
+    }
+  }, [pinStorageKey, recentStorageKey]);
 
   const isActivePath = (path: string) => {
     const current = location.pathname.replace(/\/+$/, '') || '/';
@@ -154,14 +215,12 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     if (!isOpen || !clubId) {
       if (!clubId) {
         setClubLevelInfo(null);
-        setClubRole(null);
       }
       return;
     }
     let isMounted = true;
     const fetchClubLevel = async () => {
       try {
-        setClubRole(null);
         const resolvedId = await resolveClubUUID(clubId!);
         if (!isMounted) return;
         const { data } = await supabase
@@ -185,18 +244,6 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             })
           );
         }
-        if (user?.id) {
-          const { data: membership, error: membershipError } = await supabase
-            .from('club_members')
-            .select('role')
-            .eq('club_id', resolvedId)
-            .eq('user_id', user.id)
-            .maybeSingle();
-          if (membershipError) {
-            reportError(membershipError, 'HamburgerMenu.Club_membership_load_failed');
-          }
-          if (isMounted) setClubRole(membership?.role || null);
-        }
       } catch {
         /* club-level fetch is best-effort; silent fallback to defaults above */
       }
@@ -206,6 +253,44 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       isMounted = false;
     };
   }, [isOpen, clubId, user?.id]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    capture('club_arena_menu_opened', {
+      route: location.pathname,
+      club_id: workspace.clubUUID,
+      club_role: clubRole,
+      offline: workspace.isOffline,
+    });
+  }, [clubRole, isOpen, location.pathname, workspace.clubUUID, workspace.isOffline]);
+
+  useEffect(() => {
+    if (!isOpen || !user?.id) return;
+    void fetchQuickLinkClubs(user.id).then(setClubChoices);
+  }, [isOpen, user?.id]);
+
+  useEffect(() => {
+    if (!isOpen || !workspace.clubUUID || !workspace.isClubStaff) {
+      setAttentionCount(0);
+      return;
+    }
+    let cancelled = false;
+    void supabase
+      .from('disputes')
+      .select('id', { count: 'exact', head: true })
+      .eq('club_id', workspace.clubUUID)
+      .in('status', ['open', 'under_review', 'escalated'])
+      .then(({ count, error }) => {
+        if (error) {
+          reportError(error, 'HamburgerMenu.Attention_count_failed');
+          return;
+        }
+        if (!cancelled) setAttentionCount(count || 0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, workspace.clubUUID, workspace.isClubStaff]);
 
   const drawerRef = useRef<HTMLDivElement>(null);
 
@@ -391,9 +476,34 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   // Navigate and close
   const handleNavigate = (path: string) => {
+    const nextRecentPaths = [path, ...recentPaths.filter((item) => item !== path)].slice(0, 5);
+    setRecentPaths(nextRecentPaths);
+    try {
+      localStorage.setItem(recentStorageKey, JSON.stringify(nextRecentPaths));
+    } catch {
+      /* private mode */
+    }
+    capture('club_arena_navigation_selected', {
+      route: path,
+      from_route: location.pathname,
+      club_id: workspace.clubUUID,
+      source: 'hamburger',
+    });
     navigatingRef.current = true;
     navigate(path);
     onClose();
+  };
+
+  const togglePinnedPath = (path: string) => {
+    const nextPinnedPaths = pinnedPaths.includes(path)
+      ? pinnedPaths.filter((item) => item !== path)
+      : [...pinnedPaths, path].slice(-6);
+    setPinnedPaths(nextPinnedPaths);
+    try {
+      localStorage.setItem(pinStorageKey, JSON.stringify(nextPinnedPaths));
+    } catch {
+      /* private mode */
+    }
   };
 
   // Prefetch page chunk on hover — so page loads instantly when clicked
@@ -672,6 +782,58 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
         <div style={dividerStyle} />
 
+        <section className={styles.contextDeck} aria-label="Current arena context">
+          <div className={styles.contextStatus}>
+            <span
+              className={`${styles.statusLamp} ${workspace.isOffline ? styles.statusLampOffline : ''}`}
+              aria-hidden="true"
+            />
+            <span>
+              {workspace.isOffline
+                ? 'Offline - queued actions remain protected'
+                : workspace.isStale
+                  ? 'Live circuit - refreshing context'
+                  : 'Live circuit connected'}
+            </span>
+            {clubRole && <strong>{clubRole.replace(/_/g, ' ')}</strong>}
+          </div>
+          {clubId && clubChoices.length > 1 && (
+            <label className={styles.contextSwitcher}>
+              <span>Club Context</span>
+              <select
+                value={workspace.clubUUID || ''}
+                onChange={(event) => handleNavigate(`/clubs/${event.target.value}`)}
+              >
+                {clubChoices.map((club) => (
+                  <option key={club.id} value={club.id}>
+                    {club.name || club.club_id || 'Club'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <form
+            className={styles.menuSearch}
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const query = searchQuery.trim();
+              if (query) handleNavigate(`/search?q=${encodeURIComponent(query)}`);
+            }}
+          >
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search destinations or the arena"
+              aria-label="Search destinations or the arena"
+            />
+            <button type="submit" aria-label="Search all players and clubs">
+              Search
+            </button>
+          </form>
+        </section>
+
         {/* ═══════════════════════════════════════════════════════════════
                     CLUB LEVEL & PROGRESSION
                 ═══════════════════════════════════════════════════════════════ */}
@@ -742,47 +904,125 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           </>
         )}
 
-        <div className={styles.quickActions}>
-          <button
-            type="button"
-            className={styles.quickAction}
-            onClick={() => handleNavigate('/?create=club')}
-          >
-            Create Club
-          </button>
-          <button
-            type="button"
-            className={styles.quickAction}
-            onClick={() => handleNavigate('/unions/create')}
-          >
-            Create Union
-          </button>
+        <div className={styles.quickActions} aria-label="Context actions">
+          {clubId && workspace.isClubStaff ? (
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => handleNavigate(`/clubs/${clubId}/create-table`)}
+            >
+              Create Table
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => handleNavigate('/?create=club')}
+            >
+              Create Club
+            </button>
+          )}
+          {clubId && workspace.canControlClub ? (
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => handleNavigate(`/invite/${clubId}`)}
+            >
+              Invite Players
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => handleNavigate('/unions/create')}
+            >
+              Create Union
+            </button>
+          )}
+          {clubId && workspace.canViewFinance && (
+            <button
+              type="button"
+              className={`${styles.quickAction} ${styles.quickActionWide}`}
+              onClick={() => handleNavigate(`/clubs/${clubId}/finance`)}
+            >
+              Open Finance & Risk
+            </button>
+          )}
         </div>
 
-        {navigationGroups.map((group) => (
+        {(pinnedItems.length > 0 || recentItems.length > 0) && !searchQuery && (
+          <section className={styles.memoryRail} aria-label="Pinned and recent destinations">
+            {pinnedItems.length > 0 && (
+              <div>
+                <h2 className={styles.sectionHeader}>Pinned</h2>
+                <div className={styles.memoryLinks}>
+                  {pinnedItems.map((item) => (
+                    <button key={item.path} type="button" onClick={() => handleNavigate(item.path)}>
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {recentItems.length > 0 && (
+              <div>
+                <h2 className={styles.sectionHeader}>Recent</h2>
+                <div className={styles.memoryLinks}>
+                  {recentItems.map((item) => (
+                    <button key={item.path} type="button" onClick={() => handleNavigate(item.path)}>
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {filteredNavigationGroups.map((group) => (
           <section className={styles.navGroup} key={group.label} aria-label={group.label}>
             <h2 className={styles.sectionHeader}>{group.label}</h2>
             {group.items.map((item) => {
               const active = isActivePath(item.path);
               return (
-                <button
-                  type="button"
-                  key={item.path}
-                  className={`${styles.navItem} ${active ? styles.navItemActive : ''}`}
-                  onClick={() => handleNavigate(item.path)}
-                  onMouseEnter={() => handleItemHover(item.path)}
-                  aria-current={active ? 'page' : undefined}
-                >
-                  <span>
-                    <span className={styles.navLabel}>{item.label}</span>
-                    <span className={styles.navDescription}>{item.description}</span>
-                  </span>
-                  <span className={styles.navArrow}>{item.external ? '↗' : '›'}</span>
-                </button>
+                <div className={styles.navItemRow} key={item.path}>
+                  <button
+                    type="button"
+                    className={`${styles.navItem} ${active ? styles.navItemActive : ''}`}
+                    onClick={() => handleNavigate(item.path)}
+                    onMouseEnter={() => handleItemHover(item.path)}
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    <span>
+                      <span className={styles.navLabel}>{item.label}</span>
+                      <span className={styles.navDescription}>{item.description}</span>
+                    </span>
+                    {attentionCount > 0 && item.path.endsWith('/disputes') && (
+                      <span className={styles.attentionBadge}>{attentionCount}</span>
+                    )}
+                    <span className={styles.navArrow}>{item.external ? '↗' : '›'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.pinButton} ${pinnedPaths.includes(item.path) ? styles.pinButtonActive : ''}`}
+                    onClick={() => togglePinnedPath(item.path)}
+                    aria-label={`${pinnedPaths.includes(item.path) ? 'Unpin' : 'Pin'} ${item.label}`}
+                    aria-pressed={pinnedPaths.includes(item.path)}
+                  >
+                    <span aria-hidden="true">◇</span>
+                  </button>
+                </div>
               );
             })}
           </section>
         ))}
+
+        {searchQuery && filteredNavigationGroups.length === 0 && (
+          <div className={styles.noResults} role="status">
+            <strong>No Menu Destination Matches.</strong>
+            <span>Press Search To Look Across Players And Clubs.</span>
+          </div>
+        )}
 
         <button
           type="button"

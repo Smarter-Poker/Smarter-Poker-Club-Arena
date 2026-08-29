@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { masterBus } from '../core/MasterBus';
+import { useClubWorkspace } from '../contexts/ClubWorkspaceContext';
 import {
   getClubNavigationCapabilities,
   type ClubNavigationCapabilities,
 } from '../config/clubArenaNavigation';
+import { masterBus } from '../core/MasterBus';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
-import { resolveClubUUID } from '../utils/clubIdResolver';
+import { resolveClubUUIDStrict } from '../utils/clubIdResolver';
 import { useAuthUser } from './useAuthUser';
 
 export interface ClubNavigationAccess extends ClubNavigationCapabilities {
@@ -25,33 +26,30 @@ const CLOSED_CAPABILITIES = getClubNavigationCapabilities(null, false);
  * this hook makes every navigation surface advertise the same tools.
  */
 export function useClubNavigationAccess(clubId: string | null | undefined): ClubNavigationAccess {
+  const workspace = useClubWorkspace();
   const { user } = useAuthUser();
-  const [clubRole, setClubRole] = useState<string | null>(null);
-  const [isPlatformStaff, setIsPlatformStaff] = useState(false);
-  const [loading, setLoading] = useState(Boolean(clubId));
-  const [error, setError] = useState<string | null>(null);
+  const matchesWorkspace = Boolean(
+    clubId && (clubId === workspace.routeClubId || clubId === workspace.clubUUID)
+  );
+  const [fallbackRole, setFallbackRole] = useState<string | null>(null);
+  const [fallbackPlatformStaff, setFallbackPlatformStaff] = useState(false);
+  const [fallbackLoading, setFallbackLoading] = useState(Boolean(clubId && !matchesWorkspace));
+  const [fallbackError, setFallbackError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
-
-  const reload = useCallback(() => setRevision((value) => value + 1), []);
+  const reloadFallback = useCallback(() => setRevision((value) => value + 1), []);
 
   useEffect(() => {
+    if (!clubId || matchesWorkspace || !user?.id) {
+      setFallbackLoading(false);
+      setFallbackError(null);
+      return;
+    }
     let cancelled = false;
-
-    const loadAccess = async () => {
-      if (!clubId || !user?.id) {
-        if (!cancelled) {
-          setClubRole(null);
-          setIsPlatformStaff(false);
-          setLoading(false);
-          setError(null);
-        }
-        return;
-      }
-
-      setLoading(true);
-      setError(null);
+    const load = async () => {
+      setFallbackLoading(true);
+      setFallbackError(null);
       try {
-        const resolvedId = await resolveClubUUID(clubId);
+        const resolvedId = await resolveClubUUIDStrict(clubId);
         const [membershipResult, profileResult] = await Promise.all([
           supabase
             .from('club_members')
@@ -66,45 +64,56 @@ export function useClubNavigationAccess(clubId: string | null | undefined): Club
         if (profileResult.error) {
           reportError(profileResult.error, 'ClubNavigationAccess.Platform_role_lookup_failed');
         }
-        setClubRole(membershipResult.data?.role || null);
-        setIsPlatformStaff(
+        setFallbackRole(membershipResult.data?.role || null);
+        setFallbackPlatformStaff(
           !profileResult.error &&
             (profileResult.data?.role === 'admin' || profileResult.data?.role === 'super_admin')
         );
       } catch (loadError) {
-        reportError(loadError, 'ClubNavigationAccess.Load_failed');
+        reportError(loadError, 'ClubNavigationAccess.Fallback_load_failed');
         if (!cancelled) {
-          setClubRole(null);
-          setIsPlatformStaff(false);
-          setError('Club permissions could not be confirmed.');
+          setFallbackRole(null);
+          setFallbackPlatformStaff(false);
+          setFallbackError('Club permissions could not be confirmed.');
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setFallbackLoading(false);
       }
     };
-
-    void loadAccess();
-    const refreshAccess = () => void loadAccess();
-    const unsubClub = masterBus.subscribeDebounced('CLUB_UPDATED', refreshAccess, 300);
-    const unsubRole = masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED', refreshAccess, 150);
-
+    void load();
+    const refresh = () => void load();
+    const unsubClub = masterBus.subscribeDebounced('CLUB_UPDATED', refresh, 300);
+    const unsubRole = masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED', refresh, 150);
     return () => {
       cancelled = true;
       unsubClub();
       unsubRole();
     };
-  }, [clubId, user?.id, revision]);
+  }, [clubId, matchesWorkspace, revision, user?.id]);
 
-  const capabilities = error
-    ? CLOSED_CAPABILITIES
-    : getClubNavigationCapabilities(clubRole, isPlatformStaff);
+  if (!clubId) {
+    return {
+      ...CLOSED_CAPABILITIES,
+      clubRole: null,
+      isPlatformStaff: false,
+      loading: false,
+      error: null,
+      reload: workspace.reload,
+    };
+  }
+
+  const capabilities = matchesWorkspace
+    ? getClubNavigationCapabilities(workspace.clubRole, workspace.isPlatformStaff)
+    : fallbackError
+      ? CLOSED_CAPABILITIES
+      : getClubNavigationCapabilities(fallbackRole, fallbackPlatformStaff);
 
   return {
     ...capabilities,
-    clubRole,
-    isPlatformStaff,
-    loading,
-    error,
-    reload,
+    clubRole: matchesWorkspace ? workspace.clubRole : fallbackRole,
+    isPlatformStaff: matchesWorkspace ? workspace.isPlatformStaff : fallbackPlatformStaff,
+    loading: matchesWorkspace ? workspace.loading : fallbackLoading,
+    error: matchesWorkspace ? workspace.error : fallbackError,
+    reload: matchesWorkspace ? workspace.reload : reloadFallback,
   };
 }

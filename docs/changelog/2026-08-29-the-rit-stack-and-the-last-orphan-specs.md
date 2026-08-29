@@ -76,3 +76,26 @@ ROOM the grid guarantees (`minmax(124px, 1fr)`) instead of the rendering of a
 font that never loaded. Both specs are in the gate.
 
 Result: 20 of 20 e2e spec files run in a job. Before today, 4 did.
+
+## 3. The post-deploy job's first run cancelled itself, and that was a design flaw
+
+The workflow above fired on its own merge and was CANCELLED — in the wait step,
+by the next deploy. Working as written, and wrong as designed.
+
+The first version waited up to ten minutes for production to serve its OWN
+commit's sha before testing anything. On a repo where merges land every few
+minutes, `cancel-in-progress` then kills each run mid-wait when the next one
+starts, so a run could spend its entire life waiting and never reach a single
+spec. A job that always cancels is a job that never runs, which is exactly the
+"a guard with nowhere to run is a comment" failure this workflow exists to end.
+It would have shipped looking green and guarding nothing.
+
+The fix is to stop pinning to a sha. The question this job answers is "is
+PRODUCTION healthy right now", not "is commit abc123 healthy": the specs check
+routes, layout and touch targets on the live site, and any deploy that reaches
+production is a fair subject — in fact the newest one is the MORE useful
+subject, because it is what players actually have. So it now confirms
+production is serving, records which sha it is about to test (and says plainly
+in the summary whether that is this run's commit or a newer one that overtook
+it), and runs. About three minutes instead of thirteen, and cancellation only
+dedupes a burst instead of starving the job.

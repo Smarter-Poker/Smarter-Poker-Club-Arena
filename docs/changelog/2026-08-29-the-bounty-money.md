@@ -142,3 +142,40 @@ commit — the test working exactly as intended.
 - **A split pot shares the mystery chest but not the regular/PKO bounty.**
   Carried over from the previous pass — splitting a PKO head is a rule, not
   arithmetic, and is Dan's to make. It is no longer silent.
+
+---
+
+## Two more, found by finishing the sweep
+
+**The guard caught the next asset, from a different author, one day later.**
+The final table art was redrawn on main today and it fixes the seat-plate
+misalignment properly — `sideRailStep` 113 → 20.7, better than my own
+machine-cleaned attempt, so main's version is the one kept and mine was
+dropped. But the new export arrived carrying the white matte Dan said must
+never be there: **83.2 against a limit of 20**. Run through
+`scripts/dev/table-skin-defringe.py`: 83.2 → 0.3, alpha untouched, dimensions
+unchanged. This is exactly what the guard was written for.
+
+**A failed rakeback recompute no longer advances the watermark.**
+`_runSettlementInner` counted `failures` from `fn_rakeback_recompute_periods`,
+logged the number, and then moved the durable cursor past those `rake_records`
+anyway, returning `'idle'`/`'more'` — although this same file defines
+`'halted'` as _"a read failed: the cursor did NOT advance"_ and already uses it
+for precisely that, twice.
+
+It does not self-heal. Recompute rebuilds a (club, week) period from source, so
+a failed batch only repairs itself if another rake record lands in the same
+club and the same ISO week before that week closes. A failure on a week's last
+batch is permanent — and it compounds, because `rake_generated` selects the
+tier band (5/10/15/20/30%), so a period built from partial data can pay a
+player a whole band low. That is the failure mode this service's own notes
+record as having understated one player 16× and dropped them a tier.
+
+Retrying is safe: recompute rebuilds from source and the `player_stats` applies
+are keyed, so holding the cursor costs a re-read, never a double-credit.
+
+Worth recording: there are **two** cursor advances in that method and only one
+was wrong. The first sits in the `buckets.size === 0` branch — no eligible
+credits, nothing to recompute, nothing that can fail — and advancing there is
+correct. My first guard test matched that one and failed; the fix was to make
+the test precise, not to widen the code.

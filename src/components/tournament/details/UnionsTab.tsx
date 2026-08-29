@@ -54,10 +54,10 @@
  * re-selects them can print a different answer than the tab beside it.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useIsMounted } from '../../../hooks/useIsMounted';
-import { reportError } from '../../../utils/errorReporter';
+import { reportError, reportWarning } from '../../../utils/errorReporter';
 import { getClubLevel, getTierForLevel, MAX_CLUB_LEVEL } from '../../../utils/clubLevels';
 import type { ClubTier } from '../../../utils/clubLevels';
 import { chips, initials, ordinal, type TournamentTabProps } from './types';
@@ -104,6 +104,37 @@ interface LoadedData {
 }
 
 type LoadState = 'loading' | 'ready' | 'error';
+
+/**
+ * WHAT THIS LOAD HAS TO FETCH, decided in one pure function.
+ *
+ * Extracted so it can be TESTED. The first attempt at guarding this behaviour
+ * asserted source strings — `const userIds = isTopUp ? ...` and friends — and
+ * passed happily when the logic was disabled underneath them, because the
+ * strings were all still there. A test that passes either way pins nothing.
+ * This takes real inputs and returns a real decision, so a test can break it.
+ *
+ *   cold   nothing resolved yet: read the whole field
+ *   topup  some entrants are new: read only those
+ *   noop   every entrant is already resolved: read nothing at all
+ *
+ * `noop` is the common case. A re-render, a chip tick, or a player LEAVING all
+ * land here — `groups` buckets from `entries`, so a departure needs no query.
+ */
+export type UnionLoadPlan =
+  | { mode: 'cold'; userIds: string[] }
+  | { mode: 'topup'; userIds: string[] }
+  | { mode: 'noop'; userIds: [] };
+
+export function planUnionLoad(
+  prior: Pick<LoadedData, 'clubByUser'> | null,
+  allEntrantIds: string[]
+): UnionLoadPlan {
+  if (!prior) return { mode: 'cold', userIds: allEntrantIds };
+  const missing = allEntrantIds.filter((id) => !prior.clubByUser.has(id));
+  if (missing.length === 0) return { mode: 'noop', userIds: [] };
+  return { mode: 'topup', userIds: missing };
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  CLUB LEVEL — validated before it is ever drawn
@@ -371,6 +402,40 @@ export default function UnionsTab({ tournament, entries, currentUserId }: Tourna
   // A stable primitive so the effect below does not re-run on every chip tick.
   const entrantKey = useMemo(() => entryUserIds.slice().sort().join(','), [entryUserIds]);
 
+  /**
+   * WHAT WE HAVE ALREADY RESOLVED, so a new entrant costs one small query
+   * instead of the whole sweep (2026-08-29).
+   *
+   * `entrantKey` is deliberately stable against a chip tick, which was the bug
+   * it was written to fix. But it changes on every REGISTRATION, and the effect
+   * below re-ran the entire load on it: one paged `tournament_players` read,
+   * one chunked `club_members` read, one chunked `clubs` read and the union
+   * name. On a 500-runner event with late reg open, that is a full 4-to-16
+   * query sweep for each new player who joins — during exactly the window when
+   * players are joining fastest.
+   *
+   * A club assignment does not change once resolved: it comes from the
+   * `tournament_players` row a player entered on, or from their membership.
+   * So the resolved map is cumulative, and an entrant-set change only has to
+   * ask about the ids that are NOT in it. A player LEAVING needs no query at
+   * all — `groups` below buckets from `entries`, so they simply stop being
+   * rendered.
+   *
+   * Held in a ref rather than state because writing it must not itself trigger
+   * the effect that fills it.
+   */
+  const resolvedRef = useRef<LoadedData | null>(null);
+  /**
+   * What the cache is FOR. A different tournament, or an explicit retry, must
+   * start over rather than top up the very data it is retrying because of.
+   *
+   * Checked inside the load effect rather than reset by a second effect,
+   * because two effects sharing dependencies run in declaration order and the
+   * loader would read a stale cache before the resetter cleared it. One
+   * effect, no ordering to get wrong.
+   */
+  const resolvedForRef = useRef<string>('');
+
   const retry = useCallback(() => {
     setState('loading');
     setAttempt((n) => n + 1);
@@ -394,7 +459,37 @@ export default function UnionsTab({ tournament, entries, currentUserId }: Tourna
     }
 
     let cancelled = false;
-    const userIds = entrantKey ? entrantKey.split(',') : [];
+    const allEntrantIds = entrantKey ? entrantKey.split(',') : [];
+
+    /**
+     * A FULL SWEEP, OR A TOP-UP.
+     *
+     * `prior` is what previous runs resolved for THIS tournament. When it
+     * exists, the only ids worth asking about are the ones missing from it, and
+     * when none are missing there is nothing to ask at all — the effect
+     * re-publishes what it already holds and issues ZERO queries.
+     *
+     * A retry (`attempt`) or a change of tournament clears it, so "Try Again"
+     * really does start over rather than replaying a bad partial result.
+     */
+    const identity = `${tournamentId}|${unionId ?? ''}|${hostClubId ?? ''}|${attempt}`;
+    if (resolvedForRef.current !== identity) {
+      resolvedRef.current = null;
+      resolvedForRef.current = identity;
+    }
+
+    const prior = resolvedRef.current;
+    const plan = planUnionLoad(prior, allEntrantIds);
+    const isTopUp = plan.mode === 'topup';
+
+    if (plan.mode === 'noop') {
+      /* Nothing new to resolve. `groups` below re-buckets from `entries`, so a
+         departure or a chip change is already handled without a round trip. */
+      setState('ready');
+      return;
+    }
+
+    const userIds = plan.userIds;
 
     /** Batched `.in()` that survives a large field. Never one call per row. */
     async function inChunks<T>(
@@ -439,18 +534,30 @@ export default function UnionsTab({ tournament, entries, currentUserId }: Tourna
 
     (async () => {
       try {
-        // 1. The club each player ENTERED FROM. One paged query for the field.
-        const tpRows = await fetchAllPages<{ user_id: string; club_id: string | null }>(
-          (from, to) =>
-            supabase
-              .from('tournament_players')
-              .select('user_id, club_id')
-              .eq('tournament_id', tournamentId)
-              .range(from, to)
-        );
+        /* 1. The club each player ENTERED FROM.
+              A cold load pages the whole field. A top-up asks only about the
+              newcomers, which is a chunked `.in()` rather than a walk through
+              every row of a 500-runner event. */
+        const tpRows = isTopUp
+          ? await inChunks<{ user_id: string; club_id: string | null }>(userIds, (chunk) =>
+              supabase
+                .from('tournament_players')
+                .select('user_id, club_id')
+                .eq('tournament_id', tournamentId)
+                .in('user_id', chunk)
+            )
+          : await fetchAllPages<{ user_id: string; club_id: string | null }>((from, to) =>
+              supabase
+                .from('tournament_players')
+                .select('user_id, club_id')
+                .eq('tournament_id', tournamentId)
+                .range(from, to)
+            );
 
-        const clubByUser = new Map<string, string>();
-        const sourceByUser = new Map<string, ClubSource>();
+        /* Seeded from what previous runs resolved, so a top-up ADDS to the
+           picture rather than replacing it with only the newcomers. */
+        const clubByUser = new Map<string, string>(prior?.clubByUser ?? []);
+        const sourceByUser = new Map<string, ClubSource>(prior?.sourceByUser ?? []);
         /* Only players who are actually in `entries`. A re-entry event keeps a
            `tournament_players` row per bust, so seeding from every row made
            step 3 fetch clubs for players this tab will never render — and on a
@@ -479,14 +586,18 @@ export default function UnionsTab({ tournament, entries, currentUserId }: Tourna
               )
             : [];
 
-        // 3. Every club referenced by either pass, in one query.
+        /* 3. Every club referenced by either pass — MINUS the ones already
+              loaded. A newcomer from a club that is already on screen adds no
+              club query at all; usually the top-up costs one small
+              `tournament_players` read and nothing else. */
+        const clubsById = new Map<string, ClubRow>(prior?.clubsById ?? []);
         const candidateClubIds = new Set<string>(clubByUser.values());
         for (const m of memberships) if (m.club_id) candidateClubIds.add(m.club_id);
         if (hostClubId) candidateClubIds.add(hostClubId);
+        const unknownClubIds = Array.from(candidateClubIds).filter((id) => !clubsById.has(id));
 
-        const clubsById = new Map<string, ClubRow>();
-        if (candidateClubIds.size > 0) {
-          const clubRows = await inChunks<ClubRow>(Array.from(candidateClubIds), (chunk) =>
+        if (unknownClubIds.length > 0) {
+          const clubRows = await inChunks<ClubRow>(unknownClubIds, (chunk) =>
             supabase.from('clubs').select('id, name, logo_url, level, union_id').in('id', chunk)
           );
           for (const c of clubRows) if (c?.id) clubsById.set(c.id, c);
@@ -519,9 +630,10 @@ export default function UnionsTab({ tournament, entries, currentUserId }: Tourna
           }
         }
 
-        // 4. The union's name, for the header.
-        let unionName: string | null = null;
-        if (unionId) {
+        /* 4. The union's name, for the header. Fetched once — a union does not
+              rename itself because somebody registered. */
+        let unionName: string | null = prior?.unionName ?? null;
+        if (unionId && unionName === null) {
           const { data: unionRow, error: unionErr } = await supabase
             .from('unions')
             .select('name')
@@ -538,12 +650,28 @@ export default function UnionsTab({ tournament, entries, currentUserId }: Tourna
         }
 
         if (cancelled || !isMounted.current) return;
-        setData({ clubsById, clubByUser, sourceByUser, unionName });
+        const next = { clubsById, clubByUser, sourceByUser, unionName };
+        /* Cache BEFORE publishing, so the next entrant-set change tops this up
+           instead of starting again. */
+        resolvedRef.current = next;
+        setData(next);
         setState('ready');
       } catch (err) {
         reportError(err, 'UnionsTab.load_participating_clubs');
         if (cancelled || !isMounted.current) return;
-        setState('error');
+        /* A failed TOP-UP must not throw away a roster that is already on
+           screen and still correct for everyone but the newcomers. Only a cold
+           load has nothing to fall back to. */
+        if (isTopUp) {
+          reportWarning(
+            'Union roster top-up failed; keeping the roster already loaded',
+            'UnionsTab.top_up_failed',
+            { tournamentId }
+          );
+          setState('ready');
+        } else {
+          setState('error');
+        }
       }
     })();
 

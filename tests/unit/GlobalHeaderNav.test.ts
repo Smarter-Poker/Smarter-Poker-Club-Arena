@@ -26,15 +26,19 @@
  * nothing else in CI would notice.
  */
 import { describe, it, expect } from 'vitest';
+import { createHash } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
+const readBytes = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)));
 const exists = (rel: string) => existsSync(fileURLToPath(new URL(rel, import.meta.url)));
 
 const TSX = read('../../src/components/navigation/GlobalHeader.tsx');
 const CSS = read('../../src/components/navigation/GlobalHeader.module.css');
 const LAYOUT = read('../../src/components/layouts/AppLayout.tsx');
+const OPTIMIZER = read('../../scripts/optimize-dist-media.mjs');
+const APPROVED_DESKTOP = readBytes('../../public/images/global-header/global-header-desktop.png');
 
 /**
  * Comments explain the bugs by name, so "the word is gone" is the wrong
@@ -172,6 +176,13 @@ describe('mobile uses the identical desktop header', () => {
     ]) {
       expect(TSX).toContain(`APPROVED_HEADER_ASSET}${file}`);
     }
+  });
+
+  it('locks the approved desktop bytes and excludes global-header art from resizing', () => {
+    expect(createHash('sha256').update(APPROVED_DESKTOP).digest('hex')).toBe(
+      '7c5613a84a395abd6b9527785b46c99fb28b6264e2258bee366a04cac5500c7f'
+    );
+    expect(OPTIMIZER).toContain("{ prefix: 'images/global-header/', maxDim: 0 }");
   });
 });
 

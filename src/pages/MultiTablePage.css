@@ -212,6 +212,54 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
+   THE PINNED BAR — off /table/*, the strip outlives the container
+   Dan 2026-08-28 round 3: "YOUR ACTION BAR STAYS AT THE TOP 100% OF THE TIME."
+
+   On /table/* the wrapper above is in normal flow, directly over the felt.
+   Everywhere else MultiTablePage is display:none, so the strip is hoisted out
+   of it and fixed to the top of the viewport over whatever page the player
+   navigated to — the cashier, the marketplace, their stats. Same component,
+   same gradient, same tap targets; only the positioning differs, which is why
+   this is a modifier rather than a second bar to keep in sync.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.multi-table-page__tab-bar-wrapper--pinned {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* Above the app's own headers and bottom nav, below the table's modals and
+     the urgent dock (400/401) — a countdown the player is about to lose money
+     to must never be covered by a navigation control. */
+  z-index: 380;
+  /* The notch. On /table/* the strip inherits the felt's inset; pinned it is
+     the topmost element on the page and owns that inset itself. */
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/**
+ * Push the page down by exactly the strip's height so it covers nothing.
+ *
+ * A fixed element is out of flow, so without this the first thing on every
+ * page — a heading, a back button, the cashier's balance — sits underneath the
+ * bar and cannot be read or tapped. Set as a variable on <body> by
+ * MultiTablePage so a single number drives both the offset and any page that
+ * wants to know. 48px is the strip's own height (--table-tab-bar-height);
+ * the safe-area inset is added on top for the notch.
+ */
+body[data-ca-pinned-bar='1'] {
+  padding-top: calc(48px + env(safe-area-inset-top, 0px));
+}
+
+/* Full-screen surfaces that already position themselves from the viewport
+   must not be pushed twice — they are fixed, so the body padding does not
+   move them, but their own `top: 0` would slide under the bar. */
+body[data-ca-pinned-bar='1'] .modal-overlay,
+body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
+  top: calc(48px + env(safe-area-inset-top, 0px));
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
    TILE VIEW GRID
    ───────────────────────────────────────────────────────────────────────────── */
 

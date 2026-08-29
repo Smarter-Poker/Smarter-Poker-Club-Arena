@@ -242,7 +242,8 @@ describe('nothing throws a seated player off their table without a gesture', () 
      * merge. Pinning `memStatError` would have made this test a claim about
      * whose branch landed first, which is not what anyone needs it to say.
      */
-    const destructures = CLUB_HOME.match(/\{\s*data:\s*\w+,\s*error:\s*\w+\s*\}\s*=\s*await/g) ?? [];
+    const destructures =
+      CLUB_HOME.match(/\{\s*data:\s*\w+,\s*error:\s*\w+\s*\}\s*=\s*await/g) ?? [];
     expect(destructures.length).toBeGreaterThanOrEqual(1);
     expect(CLUB_HOME).toContain('if (memberResult.error) {');
     // Every membership read's error must reach the reporter rather than a bounce.
@@ -266,6 +267,16 @@ describe('nothing throws a seated player off their table without a gesture', () 
     expect(CLUB_HOME).toContain('{!clubIdOverride && (');
   });
 
+  it('GameLobbyPanel asks the context, not a coincidence of props', () => {
+    const PANEL = read('src/components/lobby/GameLobbyPanel.tsx');
+    // Its "Back To All Games" link leaves /table/*. It was safe only because
+    // ClubHomePage happens to pass embedded={Boolean(clubIdOverride)} — two
+    // unrelated flags agreeing, not an invariant. The context knows.
+    expect(PANEL).toContain('useInTabLobby');
+    expect(PANEL).toContain('const isEmbedded =');
+    expect(PANEL).toContain('{isEmbedded ? (');
+  });
+
   it('an ad row cannot choose where the router goes', () => {
     // target_url is unvalidated admin-entered text handed straight to
     // navigate(). isSafeAdImage existed; its destination twin did not.
@@ -276,5 +287,138 @@ describe('nothing throws a seated player off their table without a gesture', () 
     // "starts with a slash".
     expect(AD_SERVICE).toContain("!url.startsWith('//')");
     expect(AD_SERVICE).toContain("url.includes('\\\\')");
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  ROUND 3 — the bar stops depending on the route at all
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Rounds 1 and 2 keep the bar by never LEAVING /table/*, which works for
+ * destinations the tab can render and cannot work for the ones it cannot: the
+ * club bottom nav's six links, create-table, buy-diamonds, a house ad pointing
+ * at /marketplace. Refusing to navigate would be worse than the bug — the
+ * player asked to go to the cashier.
+ *
+ * So off-route the strip is hoisted out of the hidden container and fixed to
+ * the top of the viewport. "100% of the time" stops being a list of
+ * destinations somebody has to remember to extend.
+ */
+describe('the bar outlives the route', () => {
+  const CSS = read('src/pages/MultiTablePage.css');
+
+  it('renders the strip while the container is hidden', () => {
+    expect(MULTI).toContain('{hidden && tables.length >= 1 && (');
+    expect(MULTI).toContain('multi-table-page__tab-bar-wrapper--pinned');
+    // One TableTabBar per state, both fed the SAME props — a second strip that
+    // drifts from the first is worse than no second strip.
+    expect(MULTI.split('<TableTabBar').length - 1).toBe(2);
+  });
+
+  it('is pinned, above the page, and clears the notch', () => {
+    const block = CSS.slice(
+      CSS.indexOf('.multi-table-page__tab-bar-wrapper--pinned'),
+      CSS.indexOf('body[data-ca-pinned-bar')
+    );
+    expect(block).toMatch(/position:\s*fixed/);
+    expect(block).toMatch(/top:\s*0/);
+    expect(block).toMatch(/env\(safe-area-inset-top/);
+  });
+
+  it('makes room for itself so it covers nothing', () => {
+    // A fixed bar is out of flow; without the body padding the first heading
+    // or back button on every page sits underneath it, unreadable.
+    expect(CSS).toContain("body[data-ca-pinned-bar='1']");
+    expect(MULTI).toContain("body.setAttribute('data-ca-pinned-bar', '1')");
+    expect(MULTI).toContain("body.removeAttribute('data-ca-pinned-bar')");
+  });
+
+  it('the urgent dock survives, and only for urgency', () => {
+    // The strip supersedes "Return to game". A countdown the player is about
+    // to lose money to is a different job, and sits at the bottom in thumb
+    // reach rather than at the top.
+    expect(MULTI).toContain("hidden && dock.kind === 'urgent'");
+    expect(MULTI).not.toContain("hidden && dock.kind !== 'none'");
+  });
+
+  it('a lobby tab is reachable from off-route', () => {
+    // A lobby tab has no /table URL, and the container only un-hides for one.
+    // It borrows a real open table's URL and overrides the index that route
+    // would otherwise select.
+    expect(MULTI).toContain('pendingTabIndexRef');
+    expect(MULTI).toContain('pendingTabIndexRef.current = idx;');
+    // Consumed once and cleared unconditionally, so a stale intent can never
+    // redirect a later unrelated arrival.
+    expect(MULTI).toContain('pendingTabIndexRef.current = null;');
+  });
+
+  it('pressing the tab you are already on still takes you back', () => {
+    // Off-route that press is not a no-op: it means "return to my table". The
+    // old `idx !== activeIndex` gate made the likeliest tab dead.
+    const sel = MULTI.slice(
+      MULTI.indexOf('const handleTabSelect'),
+      MULTI.indexOf('// ─── Batch 3: quick-join sheet')
+    );
+    expect(sel).toContain('if (idx === -1) return;');
+    // The navigation must sit OUTSIDE the animation gate.
+    const gate = sel.indexOf('if (idx !== activeIndex) {');
+    const nav = sel.indexOf('navigate(`/table/${target.id}');
+    expect(gate).toBeGreaterThan(-1);
+    expect(nav).toBeGreaterThan(gate);
+    expect(sel.slice(gate, nav)).toContain('}');
+  });
+});
+
+describe('a /table url never says less than the tab already knew', () => {
+  it('every navigation carries name, stakes and code', () => {
+    // The route effect reads those three to label a tab it has not built yet,
+    // falling back to "Table 1" with blank stakes. Three call sites sent a
+    // bare id, so a reload downgraded a labelled tab.
+    expect(MULTI).toContain('const tableQuery = (t: TableInstance): string =>');
+    /* Comments stripped first: this file DISCUSSES the bare form in several
+       block comments (it is describing the bug), and a pin that cannot tell
+       prose from code would either fail forever or force the explanations
+       out. Only real call sites count. */
+    const code = MULTI.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const bare = code.match(/navigate\(`\/table\/\$\{[^}]+\}`/g) ?? [];
+    expect(bare, `bare /table navigations: ${bare.join(', ')}`).toHaveLength(0);
+  });
+
+  it('does not write a placeholder name into the url', () => {
+    // "Table 3" is the ABSENCE of a name; persisting it would make the
+    // fallback permanent.
+    expect(MULTI).toContain('!/^Table \\d+$/.test(t.name)');
+  });
+});
+
+describe('the drill-in survives a reload, without resurrecting a seat', () => {
+  it('persists the stack under its own key, with a TTL', () => {
+    expect(MULTI).toContain("const DRILL_IN_KEY = 'ca_lobby_drill_in'");
+    expect(MULTI).toContain('DRILL_IN_TTL_MS');
+    // NOT the key that was deleted for resurrecting tables.
+    expect(MULTI).toContain("sessionStorage.removeItem('multi_table_session')");
+  });
+
+  it('validates what it reads back rather than trusting the blob', () => {
+    const read_ = MULTI.slice(
+      MULTI.indexOf('const readDrillIn'),
+      MULTI.indexOf('/** Lobby tabs carry')
+    );
+    expect(read_).toContain('Array.isArray');
+    expect(read_).toMatch(/typeof \(e as InTabTournamentTarget\)\.tournamentId === 'string'/);
+  });
+
+  it('waits for server truth, and yields to it', () => {
+    // A seat is worth more than a page you were reading: the restored lobby
+    // tab must never win the last slot from a real seat.
+    expect(MULTI).toContain('if (!tablesReady) return;');
+    expect(MULTI).toContain('if (!openTournamentTab(saved[saved.length - 1])) return;');
+  });
+
+  it('never overwrites a live drill-in', () => {
+    expect(MULTI).toContain(
+      'if (tablesRef.current.some((t) => isLobbyTab(t) && t.lobbyTournamentId)) return;'
+    );
   });
 });

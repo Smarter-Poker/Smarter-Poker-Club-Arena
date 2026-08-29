@@ -141,6 +141,12 @@ begin
 end;
 $function$;
 
+-- Engine-only surface (the hand-history retry queue calls it with the service
+-- role); no browser has any business relinking rake rows. PUBLIC named
+-- alongside the roles deliberately (check-definer-authorization).
+REVOKE ALL ON FUNCTION public.fn_relink_rake_record_to_hand(uuid, bigint, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_relink_rake_record_to_hand(uuid, bigint, uuid) TO service_role;
+
 -- One-shot repair + proof (ledger went live 2026-08-29 ~13:26 UTC).
 DO $$
 DECLARE v_backfilled int; v_drift int;

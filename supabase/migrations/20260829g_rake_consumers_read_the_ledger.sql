@@ -1,0 +1,27 @@
+-- 20260829g_rake_consumers_read_the_ledger.sql
+-- APPLIED TO PRODUCTION 2026-08-29 via Supabase MCP (two migrations:
+-- rake_consumers_read_the_ledger, downline_reads_the_ledger). Full bodies in
+-- the Supabase migration history.
+--
+-- ONE WRITE, MANY READS. The per-player allocation is persisted once per hand
+-- in rake_attributions (by atomic_distribute_rake / the relink / the
+-- backfill). Every SQL consumer now READS that ledger instead of recomputing,
+-- through one helper:
+--
+--   fn_rake_shares_for_record(hand_id, rake, contributions, method)
+--     -> stored per-player credits when the hand has ledger rows;
+--     -> fn_allocate_rake_credits fallback when it does not (historical
+--        hands, pruned horse-only hands, tournament fee rows, null-hand rows).
+--
+-- Swapped consumers: fn_rakeback_recompute_periods,
+-- fn_close_settlement_period, fn_club_rake_rollup_day,
+-- fn_agent_downline_rake (edge window). fn_bbj_rollup_day keeps the allocator
+-- (its three banks are split per-bank; the ledger stores only the BBJ total).
+--
+-- PROVEN AT APPLY TIME, or the migration aborts:
+--   * live parity: over a 3,000-record sample of the last 6 hours, the
+--     ledger-backed helper produced the SAME per-player cents and row counts
+--     as a fresh allocator run, record for record;
+--   * functional smoke: yesterday's rollup for the busiest club was rewritten
+--     through the new path and wrote rows.
+SELECT 'applied via MCP as rake_consumers_read_the_ledger + downline_reads_the_ledger — see migration history' AS notice;

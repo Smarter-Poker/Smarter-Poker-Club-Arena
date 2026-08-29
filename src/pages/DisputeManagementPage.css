@@ -10,7 +10,12 @@
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
   overflow-x: hidden;
+  overflow-x: clip;
   /* Dan 2026-08-25: was max(70px, env(safe-area-inset-bottom)). The bar is
      74px PLUS the home-indicator inset (additive), and max() picks one or
      the other - so this reserved 70px on every phone and hid the last row

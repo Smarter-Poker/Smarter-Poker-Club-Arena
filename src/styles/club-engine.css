@@ -185,7 +185,12 @@ body {
   background: var(--club-black);
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  /* clip, not hidden — the full reasoning is on the body rule in
+     src/styles/design-system.css. Both sheets style <body>, so leaving this
+     one as `hidden` would re-promote body to a scroll container depending on
+     load order, and the fixed bottom nav would come unstuck again. */
   overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* Keyboard entry point. This lives in the loaded Club Engine sheet (the former

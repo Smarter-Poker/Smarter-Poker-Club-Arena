@@ -11,9 +11,10 @@
  *   - BBJ fee is in BB units per qualifying hand
  *   - BBJ pool allocation: Main 40% / BackUp 30% / Promotional 30%
  *
- * BBJ RULES:
- *   - Pot must be >= 10BB
- *   - 4+ players must be dealt in preflop
+ * BBJ RULES (Dan 2026-08-29 — collection vs payout are DIFFERENT rules):
+ *   - COLLECTION: the drop is taken on every flop with 3+ players dealt in,
+ *     regardless of pot size
+ *   - PAYOUT: pot must be >= 10BB and 3+ players dealt in preflop
  *   - Not available for Double/Triple Board games
  *   - If run it multiple times, only first runout counts
  *   - If multiple losers qualify, prize split proportionally
@@ -432,6 +433,10 @@ export function getBBJQualifyingInfo(gameType: string | null | undefined): BBJWi
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const BBJ_RULES = {
+  /**
+   * PAYOUT floor ONLY (Dan 2026-08-29): the drop is collected on every flop
+   * with 3+ dealt regardless of pot size; this threshold gates winning only.
+   */
   minPotBB: 10,
   minPlayersDealt: 4,
   excludeDoubleBoard: true,
@@ -568,12 +573,16 @@ export function getRakeConfig(
 }
 
 /**
- * Calculate BBJ fee for a specific hand.
- * Returns the BBJ amount to deduct (in chips/dollars).
+ * Calculate BBJ fee for a specific hand — the COLLECTION rule (display copy;
+ * the server engine is authoritative).
+ *
+ * Dan 2026-08-29 (BINDING): the drop is taken on EVERY flop with 3+ players
+ * dealt in, regardless of pot size. The 10BB minimum (BBJ_RULES.minPotBB)
+ * gates the PAYOUT only.
  */
 export function calculateBBJFee(
   bigBlind: number | string,
-  potSize: number,
+  flopSeen: boolean,
   numPlayersDealt: number,
   variant: string = 'nlh',
   smallBlind: number | string | null = null
@@ -582,8 +591,8 @@ export function calculateBBJFee(
   const bb = parseFloat(String(bigBlind)) || 0;
 
   if (!config.bbjEnabled) return 0;
+  if (!flopSeen) return 0;
   if (numPlayersDealt < BBJ_RULES.minPlayersDealt) return 0;
-  if (potSize < bb * BBJ_RULES.minPotBB) return 0;
 
   return Math.round(bb * config.bbjFeeBB * 100) / 100;
 }

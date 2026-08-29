@@ -343,6 +343,11 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const BBJ_RULES = {
+  /**
+   * PAYOUT floor ONLY (Dan 2026-08-29): a bad beat pays out only when the pot
+   * held more than this many big blinds. The FEE is collected on every flop
+   * with 3+ dealt regardless of pot size — do not re-add this to a fee gate.
+   */
   minPotBB: 10,
   minPlayersDealt: 3, // FIX 145: BBJ requires 3+ players dealt in (not 4) per Dan's rule
   excludeDoubleBoard: true,
@@ -507,22 +512,30 @@ export function getFullRakeConfig(
 }
 
 /**
- * Calculate BBJ fee for a specific hand.
- * Returns the BBJ amount to deduct (in chips/dollars).
- * Returns 0 if BBJ conditions are not met.
+ * Calculate BBJ fee for a specific hand — the COLLECTION rule.
+ *
+ * Dan 2026-08-29 (BINDING): "POT DOESN'T NEED TO BE 10 BB FOR THE BBJ TO BE
+ * TAKEN OUT... IF THERE IS A FLOP, BBJ SHOULD BE RAKED (3 OR MORE PLAYERS
+ * DEALT INTO THE HAND). BAD BEAT JACKPOT IS ONLY PAID OUT IF THERE IS MORE
+ * THAN 10 BB IN THE POT... BIG DIFFERENCE."
+ *
+ * Collection gates: eligible variant, flop seen, 3+ players dealt in.
+ * BBJ_RULES.minPotBB gates the PAYOUT only (detectBBJHit).
+ * The live engine paths (HandController completeHand / finalizeRunout /
+ * computeRakeAndBBJ) implement this same rule inline.
  */
 export function calculateBBJFee(
   smallBlind: number,
   bigBlind: number,
-  potSize: number,
+  flopSeen: boolean,
   numPlayersDealt: number,
   variant: string = 'nlh'
 ): number {
   const config = getFullRakeConfig(smallBlind, bigBlind, variant);
 
   if (!config.bbjEnabled) return 0;
+  if (!flopSeen) return 0;
   if (numPlayersDealt < BBJ_RULES.minPlayersDealt) return 0;
-  if (potSize < bigBlind * BBJ_RULES.minPotBB) return 0;
 
   // BBJ fee = BB × bbjFeeBB, rounded to nearest cent
   return Math.round(bigBlind * config.bbjFeeBB * 100) / 100;

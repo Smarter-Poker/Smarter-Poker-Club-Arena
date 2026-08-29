@@ -981,7 +981,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // knockout to the previous hand's side pots, so it is cleared with the
     // winners it belongs to and never independently of them.
     this.currentHandPots = [];
-    this.currentHandContributions.clear(); // Bible V8 §4.18: Reset equal-share rakeback tracking (FIX 144)
+    this.currentHandContributions.clear(); // Weighted contributed rake (Dan 2026-08-29): reset per-hand eligible contributions
+    this.currentHandReturnedUncalled.clear(); // ... and the returned-uncalled audit map
     this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
     this.currentHandCashoutRedirects = new Map(); // EV CASHOUT 2026-08-28: reset per hand
     this.currentHandShowdownResults = []; // BBJ: Reset showdown results for new hand

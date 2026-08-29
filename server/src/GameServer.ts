@@ -48,6 +48,7 @@ import {
   reconcilePendingFees,
   auditBBJDrift,
   repairUnbankedBBJFees,
+  auditRakeAttributionDrift,
 } from './services/FeeReconciler.js';
 import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
 import { fetchAllRows } from './services/supabase/pagination.js';
@@ -1159,6 +1160,11 @@ export class GameServer {
             );
           }
           await auditBBJDrift(1);
+          // Weighted contributed rake (Dan 2026-08-29): invariant 4/9 watchdog
+          // — every WEIGHTED_CONTRIBUTED hand's per-player rake_attributions
+          // must sum exactly to the rake collected. Files a critical
+          // financial_alert per drift window; never silently repairs.
+          await auditRakeAttributionDrift(24);
         } catch (err) {
           reportError(err, 'GameServer.bbj_drift_audit_failed');
         }

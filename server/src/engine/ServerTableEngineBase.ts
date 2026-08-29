@@ -623,7 +623,18 @@ export abstract class ServerTableEngineBase {
    * against a large side pot paid its bounty to the side-pot winner.
    */
   protected currentHandPots: { index: number; amount: number; eligible: string[] }[] = [];
-  protected currentHandContributions: Map<string, number> = new Map(); // userId → totalInvested
+  /**
+   * userId → ELIGIBLE contribution (engine totalInvested, which is net of any
+   * returned uncalled bet). This is the authoritative basis for WEIGHTED
+   * CONTRIBUTED rake attribution (Dan 2026-08-29).
+   */
+  protected currentHandContributions: Map<string, number> = new Map();
+  /**
+   * userId → uncalled amount returned to the player this hand. Persisted for
+   * audit alongside contributions (gross = eligible + returned). Zero-entry
+   * players are omitted.
+   */
+  protected currentHandReturnedUncalled: Map<string, number> = new Map();
   protected currentHandInsuranceSettlements: InsuranceSettlement[] = [];
   /**
    * EV CASHOUT 2026-08-28: pot winnings clawed back to the bank for each

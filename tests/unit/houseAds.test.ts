@@ -962,3 +962,50 @@ describe('the destructive dialog reads like every other dialog on the page', () 
     expect(ADMIN).not.toMatch(/and its performance history will be removed/);
   });
 });
+
+describe('the panel can edit the destination the surface is actually serving', () => {
+  /* fn_resolve_ads serves COALESCE(pl.target_url, c.target_url). Eight live
+     placements carried an override - every hub_promotions row and both
+     session_summary rows - and this panel neither read the column nor wrote
+     it. So editing "Links To" on the campaign reported "Saved." and changed
+     nothing on those surfaces: a control that lies about what it did, which is
+     the failure shape readSlot and the Silent Write Guard both exist to end. */
+  it('the placement row carries the override', () => {
+    const rowType = ADMIN.slice(
+      ADMIN.indexOf('interface PlacementRow'),
+      ADMIN.indexOf('type StatRow')
+    );
+    expect(rowType).toMatch(/target_url: string \| null;/);
+  });
+
+  it('shows it in the table, and says what blank means', () => {
+    expect(ADMIN).toMatch(/<th>Links To<\/th>/);
+    expect(ADMIN).toMatch(/Inherited From The Ad/);
+  });
+
+  it('loads the current value into the draft when editing', () => {
+    const edit = ADMIN.slice(
+      ADMIN.indexOf('const editPlacement'),
+      ADMIN.indexOf('const savePlacement')
+    );
+    expect(edit).toMatch(/target_url: p\.target_url \|\| '',/);
+  });
+
+  it('sends the field even when empty, because empty is an instruction', () => {
+    /* The server keys on `!== undefined`: omitting it means "leave it alone",
+       an empty string means "clear the override and fall back to the ad's own
+       destination". An operator who empties the box means the second. */
+    const save = ADMIN.slice(
+      ADMIN.indexOf('const savePlacement'),
+      ADMIN.indexOf('const togglePlacement')
+    );
+    expect(save).toMatch(/target_url: placementDraft\.target_url,/);
+    expect(save).not.toMatch(/target_url: placementDraft\.target_url \|\|/);
+  });
+
+  it('the actions column header is named rather than empty', () => {
+    // A header cell with no text is a column a screen reader announces as
+    // nothing at all.
+    expect(ADMIN).toMatch(/<th aria-label="Actions" \/>/);
+  });
+});

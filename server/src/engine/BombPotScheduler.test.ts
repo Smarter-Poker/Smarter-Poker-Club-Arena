@@ -105,14 +105,33 @@ describe('once_per_orbit (spec §4.2, T01/T02)', () => {
     const sch = new BombPotScheduler();
     const s = base({ triggerMode: 'once_per_orbit' });
     const fires: number[] = [];
+    const seatsOfFires: number[] = [];
     // Button walks 1→2→3→1→2→3→1 …
     const seats = [1, 2, 3, 1, 2, 3, 1, 2, 3, 1];
     seats.forEach((d, i) => {
-      if (sch.noteHandStart(s, d, 3, 0).isBombPot) fires.push(i);
+      if (sch.noteHandStart(s, d, 3, 0).isBombPot) {
+        fires.push(i);
+        seatsOfFires.push(d);
+      }
     });
-    // Anchor at hand 0 (dealer 1). Orbit completes when the button crosses
-    // seat 1 again: hands 3, 6, 9.
-    expect(fires).toEqual([3, 6, 9]);
+    /**
+     * 2026-08-29: this expected [3, 6, 9] — every third hand, and DEALER SEAT
+     * 1 every single time. That second half was the bug, and this test was
+     * pinning it: the anchor was re-set to the bomb hand's own seat, so the
+     * bomb landed on the same player for the life of the table. A bomb pot
+     * posts no blinds, so the button is the only positional variable in it —
+     * one seat acted last on every street of every bomb pot, at a table where
+     * everyone had been forced to ante.
+     *
+     * The anchor now advances to the seat the button reaches AFTER the bomb,
+     * so the bomb walks the table. The cost is stated plainly: an orbit on an
+     * N-handed table is N hands and the bomb now arrives every N+1. It is
+     * still never twice in an orbit, which is what the mode promises, and one
+     * extra hand is a far smaller price than one seat owning position on every
+     * bomb pot the table ever deals.
+     */
+    expect(fires).toEqual([3, 7]);
+    expect(seatsOfFires).toEqual([1, 2]);
   });
 
   it('T01: a seat leaving mid-orbit neither doubles nor skips the bomb', () => {
@@ -141,14 +160,25 @@ describe('once_per_orbit (spec §4.2, T01/T02)', () => {
     expect(sch.noteHandStart(s, 2, 3, 0).isBombPot).toBe(false);
   });
 
-  it('heads-up: one bomb every two hands', () => {
+  it('heads-up: one bomb per orbit, alternating which seat has the button', () => {
     const sch = new BombPotScheduler();
     const s = base({ triggerMode: 'once_per_orbit' });
     const fires: number[] = [];
-    [1, 2, 1, 2, 1].forEach((d, i) => {
-      if (sch.noteHandStart(s, d, 2, 0).isBombPot) fires.push(i);
+    const seatsOfFires: number[] = [];
+    [1, 2, 1, 2, 1, 2, 1].forEach((d, i) => {
+      if (sch.noteHandStart(s, d, 2, 0).isBombPot) {
+        fires.push(i);
+        seatsOfFires.push(d);
+      }
     });
-    expect(fires).toEqual([2, 4]);
+    // 2026-08-29: was [2, 4] — every second hand, always dealer seat 1. Heads
+    // up that is the starkest form of the parked-button bug: ONE of the two
+    // players had the button on every bomb pot, permanently. The anchor now
+    // advances, so the bomb alternates between them. Same trade as the
+    // three-handed case: an orbit is two hands and the bomb arrives every
+    // third, never twice inside an orbit.
+    expect(fires).toEqual([2, 5]);
+    expect(seatsOfFires).toEqual([1, 2]);
   });
 });
 
@@ -313,5 +343,107 @@ describe('disable mid-session', () => {
     // Re-enabled: the old token must NOT detonate — a fresh cycle starts.
     expect(sch.noteHandStart(s, 1, 4, 0).isBombPot).toBe(false);
     expect(sch.noteHandStart(s, 2, 4, 0).isBombPot).toBe(true);
+  });
+});
+
+/**
+ * ROUND 8 (2026-08-29): the two once_per_orbit defects, driven rather than
+ * pinned. Both were found by reading, and both are the kind that a source pin
+ * can only describe — these run the state machine and watch what it does.
+ */
+describe('once_per_orbit — the button must not stand still', () => {
+  const orbit = (over: Partial<BombPotSchedulerSettings> = {}) =>
+    base({ triggerMode: 'once_per_orbit', frequency: 0, minPlayers: 2, ...over });
+
+  /** Deal `hands` hands over a `seats`-handed table, returning the bomb hands. */
+  function run(sch: BombPotScheduler, s: BombPotSchedulerSettings, seats: number, hands: number) {
+    const bombs: Array<{ hand: number; seat: number }> = [];
+    let seat = 1;
+    for (let i = 1; i <= hands; i++) {
+      const d = sch.noteHandStart(s, seat, seats, i * 1000);
+      if (d.isBombPot) bombs.push({ hand: i, seat });
+      seat = (seat % seats) + 1;
+    }
+    return bombs;
+  }
+
+  it('THE RUNAWAY: a button that did not move has not completed an orbit', () => {
+    // The separate-bomb-button policy rewinds the regular rotation on a bomb
+    // hand, so the NEXT hand deals the same dealer seat. buttonCrossedAnchor
+    // read that repeat as a completed orbit, armed the token, dealt another
+    // bomb, and rewound again — a forced ante on every hand, for ever, with
+    // the regular button frozen. once_per_orbit is the first host preset.
+    const sch = new BombPotScheduler();
+    const s = orbit();
+    // Hand 1 anchors on seat 1. Hands 2..6 walk the button back round to it.
+    for (let i = 1; i <= 6; i++) sch.noteHandStart(s, ((i - 1) % 6) + 1, 6, i * 1000);
+    // Now simulate the rewind: the same dealer seat twice running.
+    const first = sch.noteHandStart(s, 3, 6, 7000);
+    const repeat = sch.noteHandStart(s, 3, 6, 8000);
+    expect(repeat.isBombPot).toBe(false);
+    // And it is not merely deferred by one — a stationary button never fires.
+    expect(sch.noteHandStart(s, 3, 6, 9000).isBombPot).toBe(false);
+    expect(sch.noteHandStart(s, 3, 6, 10000).isBombPot).toBe(false);
+    void first;
+  });
+
+  it('the bomb WALKS the table: no seat holds the button twice running', () => {
+    // The anchor used to be re-set to the bomb hand's OWN seat, so the bomb
+    // landed on the same player every orbit for the life of the table. In a
+    // bomb pot nobody posts a blind, so the button is the only positional
+    // variable: that seat acted last on every street of every bomb pot.
+    const sch = new BombPotScheduler();
+    const bombs = run(sch, orbit(), 6, 60);
+    expect(bombs.length).toBeGreaterThanOrEqual(6);
+    const seats = bombs.map((b) => b.seat);
+    // Consecutive bombs never repeat a seat...
+    for (let i = 1; i < seats.length; i++) {
+      expect(seats[i], `bomb ${i} repeated seat ${seats[i]}`).not.toBe(seats[i - 1]);
+    }
+    // ...and over enough orbits every seat gets a turn.
+    expect(new Set(seats).size).toBeGreaterThanOrEqual(5);
+  });
+
+  it('still never fires twice inside one orbit', () => {
+    // The rotation fix must not buy fairness with extra bombs. Six seats over
+    // 60 hands is ten orbits; one bomb per orbit means it can never exceed
+    // that, whatever the anchor does.
+    const bombs = run(new BombPotScheduler(), orbit(), 6, 60);
+    expect(bombs.length).toBeLessThanOrEqual(10);
+    for (let i = 1; i < bombs.length; i++) {
+      expect(bombs[i].hand - bombs[i - 1].hand).toBeGreaterThanOrEqual(6);
+    }
+  });
+
+  it('counts down on the felt, and the countdown survives a restart', () => {
+    // handsUntilDue returned null for every mode but every_n_hands, and the
+    // token is set and consumed in one call — so the pill never rendered and
+    // an orbit table ambushed its players with a forced ante.
+    const sch = new BombPotScheduler();
+    const s = orbit();
+    sch.noteHandStart(s, 1, 6, 1000);
+    const due = sch.handsUntilDue(s);
+    expect(due).not.toBeNull();
+    expect(due!).toBeGreaterThan(0);
+    expect(due!).toBeLessThanOrEqual(6);
+
+    // A deploy must not blank the pill for a whole orbit.
+    const revived = new BombPotScheduler();
+    revived.restoreState(sch.exportState());
+    expect(revived.handsUntilDue(s)).toBe(due);
+  });
+
+  it('the pending anchor advance survives a restart too', () => {
+    // Lost across a deploy, the anchor would park the bomb button on one seat
+    // for one extra orbit. It is one boolean; the point of it is that it lasts.
+    const sch = new BombPotScheduler();
+    const s = orbit();
+    const bombs = run(sch, s, 4, 20);
+    expect(bombs.length).toBeGreaterThan(0);
+    expect(sch.exportState()).toHaveProperty('x');
+
+    const revived = new BombPotScheduler();
+    revived.restoreState(sch.exportState());
+    expect(revived.exportState().x).toBe(sch.exportState().x);
   });
 });

@@ -1602,6 +1602,13 @@ export abstract class ServerTableEngineBase {
       // Bible V8 §3.1: Table FSM — empty → waiting (engine started, waiting for players)
       this.tableFSM.transition('waiting');
 
+      // 2026-08-29: open the manual-bomb listener once the table row is loaded
+      // (bomb_pot_enabled is known by now) and before any hand is dealt, so a
+      // host clicking during the wait-for-players phase is not missed. Only
+      // bomb-enabled tables pay for a subscription; the throttled refresh
+      // opens it later if the owner enables bomb pots mid-session.
+      if (this.tableInfo?.bomb_pot_enabled === true) this.subscribeManualBomb();
+
       // Wait for the host's AutoStart figure (2 unless they raised it)
       this.setLoopPhase('start_wait_for_players');
       while (this.running) {
@@ -1714,6 +1721,11 @@ export abstract class ServerTableEngineBase {
     // instances drop in-memory state only.
     this.clearHandSafetyTimer();
     this.clearLooseHandTimers();
+    // 2026-08-29: drop the manual-bomb listener with the engine that opened
+    // it. Local state only, so this is safe on a superseded instance too — a
+    // channel belongs to one instance and closing ours cannot disturb the
+    // successor's, which is the trap the guard below exists for.
+    this.unsubscribeManualBomb();
     if (ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)) {
       this.clearTurnTimer();
       // C15: flush any coalesced snapshot BEFORE dropping the controller — after
@@ -2784,6 +2796,60 @@ export abstract class ServerTableEngineBase {
   protected bombButtonSeat: number | null = null;
 
   /**
+   * MANUAL BOMB: PUSHED, NOT POLLED (2026-08-29).
+   *
+   * MANUAL_NEXT_HAND must reach the engine before the next hand is dealt, and
+   * the only mechanism it had was the engine ASKING — one round trip at the
+   * top of every hand, on every bomb-enabled table, forever, for a flag that
+   * is false essentially always, sitting on the hand-start critical path.
+   *
+   * `fn_request_manual_bomb_pot` now broadcasts on the `table:<id>` topic this
+   * engine already opens for its own sends. This flag is what the broadcast
+   * sets. The claim it triggers is unchanged and still atomic, so hearing the
+   * broadcast twice — or hearing it in the same hand the throttled column read
+   * also reports it — still fires exactly one bomb.
+   *
+   * A broadcast is best-effort by nature: an engine that restarted between the
+   * click and the hand never hears it. That is what the throttled read is for
+   * (see refreshRakeConfig, which now carries the column). The poll is demoted
+   * from once per hand to once per refresh that was already happening; it is
+   * not deleted, because a request must never be lost.
+   */
+  protected manualBombPushed = false;
+  private manualBombChannel: { unsubscribe: () => void } | null = null;
+
+  /**
+   * Open the manual-bomb listener. Idempotent, and a failure to subscribe is
+   * survivable — the throttled column read still finds the request.
+   */
+  protected subscribeManualBomb(): void {
+    if (this.manualBombChannel) return;
+    try {
+      const ch = supabase
+        .channel(`table:${this.tableId}`)
+        .on('broadcast', { event: 'bomb_pot_manual_requested' }, () => {
+          this.manualBombPushed = true;
+        });
+      void ch.subscribe();
+      this.manualBombChannel = ch as unknown as { unsubscribe: () => void };
+    } catch (err) {
+      // Never fatal: the table deals fine, the manual bomb just arrives on the
+      // throttled read instead of instantly.
+      console.warn(`[BombPot] manual-bomb subscribe failed on ${this.tableId}:`, err);
+    }
+  }
+
+  /** Close it. Called from stop(); safe to call when never opened. */
+  protected unsubscribeManualBomb(): void {
+    try {
+      this.manualBombChannel?.unsubscribe();
+    } catch {
+      /* a channel that will not close cannot hold up a table shutdown */
+    }
+    this.manualBombChannel = null;
+  }
+
+  /**
    * Snapshot fields for the felt's bomb-pot indicators, shared by every
    * broadcast payload in ServerTableEngine. `bomb_pot_in` keeps its legacy
    * contract (hands until the bomb, 1 = next hand, null = no countdown);
@@ -2793,8 +2859,22 @@ export abstract class ServerTableEngineBase {
   protected bombPotSnapshotFields(): {
     bomb_pot_in: number | null;
     bomb_pot_next_at: number | null;
+    /**
+     * WHY THE PROMISED BOMB HAS NOT ARRIVED (2026-08-29).
+     *
+     * A due bomb waits for `minPlayers` and the engine said nothing about it —
+     * `isPending()` existed and had no production caller, so the felt showed
+     * "BOMB POT NEXT HAND" and then dealt a normal hand, and another, and
+     * another, with no way for anyone at the table to find out why.
+     *
+     * Null unless a bomb is genuinely waiting on the count; when it is, this
+     * is how many players it is waiting for, so the pill can say so.
+     */
+    bomb_pot_waiting_for: number | null;
   } {
-    if (!this.tableInfo) return { bomb_pot_in: null, bomb_pot_next_at: null };
+    if (!this.tableInfo) {
+      return { bomb_pot_in: null, bomb_pot_next_at: null, bomb_pot_waiting_for: null };
+    }
     const s = bombPotSettingsFromTable(this.tableInfo);
     const dueAt = this.bombPotScheduler.nextBombDueAt(s);
     /**
@@ -2819,9 +2899,17 @@ export abstract class ServerTableEngineBase {
      */
     const announceSec = Number(this.tableInfo.bomb_pot_announce_seconds ?? 0);
     const withheld = dueAt !== null && announceSec > 0 && dueAt - Date.now() > announceSec * 1000;
+    // Seats dealt into the CURRENT hand is the number the scheduler gates on.
+    // Falling back to the seated roster keeps the pill honest between hands.
+    const dealtIn = this.seatedPlayers.filter((p) => !p.is_sitting_out).length;
+    const waitingFor =
+      s.enabled && this.bombPotScheduler.isPending() && dealtIn < s.minPlayers
+        ? s.minPlayers
+        : null;
     return {
       bomb_pot_in: this.bombPotScheduler.handsUntilDue(s),
       bomb_pot_next_at: withheld ? null : dueAt,
+      bomb_pot_waiting_for: waitingFor,
     };
   }
 
@@ -2850,7 +2938,7 @@ export abstract class ServerTableEngineBase {
           // BOMB POT STANDARDIZATION 2026-08-27: the five new canonical
           // columns ride along — board count, trigger mode, timed interval,
           // minimum players and fixed ante.
-          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds'
+          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds, bomb_pot_manual_pending'
         )
         .eq('id', this.tableId)
         .maybeSingle();
@@ -2871,6 +2959,21 @@ export abstract class ServerTableEngineBase {
         this.tableInfo.bomb_pot_button_policy = (tableRow as any).bomb_pot_button_policy ?? null;
         this.tableInfo.bomb_pot_announce_seconds =
           (tableRow as any).bomb_pot_announce_seconds ?? null;
+        // 2026-08-29: THE BACKSTOP FOR THE PUSH. fn_request_manual_bomb_pot
+        // broadcasts, and manualBombPushed is normally how the engine hears
+        // about a request. A broadcast is best-effort, so an engine that
+        // restarted between the click and the hand would never hear it — this
+        // read, which was already happening on its own throttle, catches that.
+        // Latching rather than assigning: the flag is cleared only by a
+        // successful claim, so a stale `false` here cannot un-arm a push that
+        // arrived a moment ago.
+        if ((tableRow as any).bomb_pot_manual_pending === true) {
+          this.manualBombPushed = true;
+        }
+        // An owner who turns bomb pots ON mid-session gets the listener here,
+        // rather than having to wait for an engine restart to be able to fire
+        // a manual bomb at all.
+        if (this.tableInfo.bomb_pot_enabled === true) this.subscribeManualBomb();
       }
       const clubId = this.tableInfo?.club_id;
       if (clubId) {

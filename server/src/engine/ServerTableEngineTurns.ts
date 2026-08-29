@@ -35,6 +35,21 @@ import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineSeating } from './ServerTableEngineSeating.js';
 // Static watchdog thresholds live on the Base class (single source of truth).
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
+import { noteDecisionMs } from './BrainTelemetry.js';
+
+/**
+ * A monotonic millisecond clock that cannot throw.
+ *
+ * `performance` is global in every Node this runs on, but the measurement must
+ * never be able to break a hand — a horse failing to act because a timer was
+ * unavailable would be an absurd way to lose a table. Date.now() is the
+ * fallback and is accurate enough for a millisecond-scale budget.
+ */
+function perfNow(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
 
 export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   /**
@@ -1952,6 +1967,18 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // Get decision — SYNCHRONOUS (budgeted <15ms incl. Monte Carlo equity)
     // PROOF OF RECEIPT: telemetry is set HERE and only here — this is the
     // one call site that is a real horse at a real table.
+    //
+    // AND NOW MEASURED (Dan 2026-08-29). That "<15ms" was a comment, not a
+    // fact: nothing in the engine had ever timed a decision. The whole read —
+    // hand strength, board texture, the opponent model, blockers, ICM, the
+    // Monte Carlo equity run, every version layer and the final sizing —
+    // happens inside this one synchronous call, so one clock around it is the
+    // complete answer to how long a horse takes to think.
+    //
+    // The clock is deliberately OUTSIDE HorseLogic: this is the only call site
+    // that is a live horse, and the league and the nightly self-tuner must not
+    // pollute the number with self-play bursts on an idle box.
+    const decideStartedAt = perfNow();
     const decision = HorseLogic.decide(
       enginePlayer as any,
       gameState as any,
@@ -1959,6 +1986,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       horseMods,
       { telemetry: true }
     );
+    // Scoped by variant family, because a 6-card PLO decision runs the most
+    // expensive equity simulation on the platform and averaging it into a
+    // heads-up NLH decision would hide both.
+    noteDecisionMs(String((gameState as any)?.variant ?? 'nlh'), perfNow() - decideStartedAt);
 
     // Humanlike think time comes from the decision engine itself (style- and
     // situation-aware, 0.7-8s). Clamp inside the table's action timer window.

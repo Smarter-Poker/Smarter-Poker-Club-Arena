@@ -853,6 +853,22 @@ class TableService {
     });
     if (!error && typeof data === 'string' && data.length > 0) return data;
     if (error) reportError(error, 'TableService.resolveTournamentLiveTable_rpc');
+    else
+      /* THE SILENT CASE, WHICH IS THE DANGEROUS ONE (2026-08-28 audit).
+         An RPC that SUCCEEDS and returns nothing is not the outage this
+         fallback was written for — it means the election found no eligible
+         table, and every caller then takes the newest-non-closed answer
+         while believing it holds the occupancy-elected one. That is the
+         precise disagreement with the engine this function exists to make
+         impossible, and it was reaching production with no signal at all.
+         Still fall through (a degraded answer beats a dead end for the
+         player in front of us), but never quietly. */
+      reportError(
+        new Error(
+          `fn_tournament_primary_table elected no table for tournament ${tournamentId}; falling back to newest-non-closed`
+        ),
+        'TableService.resolveTournamentLiveTable_rpc_empty'
+      );
 
     const { data: tbls, error: qErr } = await supabase
       .from('tables')

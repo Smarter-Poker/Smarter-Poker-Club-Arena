@@ -11,6 +11,7 @@ import { reportError } from '../../utils/errorReporter';
 import { fmt, timeAgo } from '../../utils/format';
 import { useMemo, useRef, useState } from 'react';
 import { callClubArenaApi } from '../../services/clubArenaApi';
+import { masterBus } from '../../core/MasterBus';
 import styles from '../MarketplacePage.module.css';
 import ItemArt from './ItemArt';
 import {
@@ -134,7 +135,15 @@ export default function MyItemsTab({
         throw new Error(data?.error || error?.message || 'Redeem failed');
       }
       // fn_redeem_shop_item now grants a real entitlement and reports it back.
-      const g = data?.granted as { type?: string; uses?: number; seconds?: number } | undefined;
+      const g = data?.granted as
+        | {
+            type?: string;
+            uses?: number;
+            seconds?: number;
+            theme_id?: string;
+            avatar_id?: string;
+          }
+        | undefined;
       if (g?.type === 'time_bank' && g.seconds) {
         toast.success(`Redeemed - +${fmt(g.seconds)}s Of Table Time Added`);
       } else if (g?.type === 'throwable' && g.uses) {
@@ -148,21 +157,32 @@ export default function MyItemsTab({
       } else {
         toast.success('Redeemed - Your Club Will Fulfil This Perk');
       }
+      if (g?.type === 'table_skin' || g?.type === 'avatar') {
+        masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
+          // The function only redeems inventory owned by auth.uid(); the user id
+          // is returned by the grant response in the new contract.
+          userId: String(data.user_id || ''),
+          category: g.type === 'avatar' ? 'avatar' : 'theme_id',
+          assetId: g.avatar_id || g.theme_id,
+          source: 'club-redemption',
+        });
+      }
       onRedeemed();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Redeem failed');
       reportError(err, 'MyItemsTab.handleRedeem');
     } finally {
+      redeemingRef.current = false;
       setRedeeming(null);
     }
   };
 
   const ent = entitlements;
   /**
-   * Counts, not vague claims. "Table Theme" was printed off the generic
-   * `feature_purchases.theme_unlock` flag, so a member who had bought and
-   * redeemed four skins was told the same thing as one who had bought one.
-   * `theme_unlocks` knows which, so say how many.
+   * Counts, not vague claims. "Table Theme" was printed off a retired generic
+   * receipt, so a member who had bought and redeemed four skins was told the
+   * same thing as one who had bought one.
+   * `theme_asset_unlocks` knows which, so say how many.
    */
   const themeCount = ent.themes.length || (ent.themeUnlock ? 1 : 0);
   const entitlementChips = ent.loaded
@@ -173,6 +193,9 @@ export default function MyItemsTab({
         themeCount > 0 ? `${fmt(themeCount)} Table Theme${themeCount > 1 ? 's' : ''}` : null,
         ent.avatars.length > 0
           ? `${fmt(ent.avatars.length)} Avatar${ent.avatars.length > 1 ? 's' : ''}`
+          : null,
+        ent.avatarCosmetics.length > 0
+          ? `${fmt(ent.avatarCosmetics.length)} Avatar Style${ent.avatarCosmetics.length > 1 ? 's' : ''}`
           : null,
       ].filter(Boolean)
     : [];

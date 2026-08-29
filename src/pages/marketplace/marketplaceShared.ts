@@ -17,6 +17,8 @@
 
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
+import { normalizeThemePresetId } from '../../lib/tableTheme';
+import { ALL_COSMETICS, normalizeCosmeticToken } from '../../cosmetics/avatarCosmetics';
 
 /* ═══ Types ═══ */
 
@@ -394,14 +396,16 @@ export interface Entitlements {
   emotePack: boolean;
   themeUnlock: boolean;
   avatars: string[];
+  /** Frames and auras share avatar_unlocks, but are not avatar artwork. */
+  avatarCosmetics: string[];
   /**
-   * The SPECIFIC themes the player owns, from `theme_unlocks`.
+   * The SPECIFIC themes the player owns, from `theme_asset_unlocks`.
    *
-   * `themeUnlock` above is the generic `feature_purchases.theme_unlock` flag
-   * that fn_redeem_shop_item also writes. It cannot say WHICH theme, and it
-   * accumulates one row per redemption, so "you own a table theme" was the most
-   * the strip could ever claim no matter how many were bought. `theme_unlocks`
-   * carries the theme_id, which is what any selector would have to gate on.
+   * `themeUnlock` above preserves the retired generic
+   * `feature_purchases.theme_unlock` receipt. It cannot say WHICH theme, so
+   * "you own a table theme" was the most the strip could ever claim. The modern
+   * category ledger carries the exact preset and each bundled asset, which is
+   * what Table Studio and the database guard both gate on.
    */
   themes: string[];
   loaded: boolean;
@@ -414,12 +418,13 @@ export const EMPTY_ENTITLEMENTS: Entitlements = Object.freeze({
   emotePack: false,
   themeUnlock: false,
   avatars: [],
+  avatarCosmetics: [],
   themes: [],
   loaded: false,
 });
 
 /**
- * Read the player's live entitlement balances. All three tables are RLS-scoped
+ * Read the player's live entitlement balances. Every table is RLS-scoped
  * to the caller (feature_purchases_select_own / "Users can view their own
  * unlocks"), so this is a safe direct read.
  *
@@ -433,17 +438,19 @@ export async function loadEntitlements(
   secondsPerUse = DEFAULT_SECONDS_PER_TIME_BANK_USE
 ): Promise<Entitlements> {
   const nowIso = new Date().toISOString();
-  const [fp, av, th] = await Promise.all([
+  const [fp, av, th, themeAssets] = await Promise.all([
     supabase
       .from('feature_purchases')
       .select('feature, uses_remaining, expires_at')
       .eq('user_id', userId),
     supabase.from('avatar_unlocks').select('avatar_id').eq('user_id', userId),
     supabase.from('theme_unlocks').select('theme_id').eq('user_id', userId),
+    supabase.from('theme_asset_unlocks').select('category, asset_id').eq('user_id', userId),
   ]);
   if (fp.error) throw fp.error;
   if (av.error) throw av.error;
   if (th.error) throw th.error;
+  if (themeAssets.error) throw themeAssets.error;
 
   const live = (fp.data || []).filter((r) => !r.expires_at || r.expires_at > nowIso);
   const sumUses = (feature: string) =>
@@ -454,17 +461,48 @@ export async function loadEntitlements(
     live.some((r) => r.feature === feature && r.uses_remaining == null);
 
   const timeBankUses = sumUses('time_bank_seconds');
-  // Deduped: fn_redeem_shop_item ON CONFLICT DO NOTHINGs the unlock but still
-  // writes a fresh generic feature_purchases row, so counting rows would
-  // over-report ownership on a re-redeem.
-  const themes = Array.from(new Set((th.data || []).map((r) => String(r.theme_id))));
+  const styleTokens = new Set(ALL_COSMETICS.map((cosmetic) => cosmetic.unlockToken));
+  const legacyStyleAliases: Record<string, string> = {
+    gold_frame: 'frame_gold',
+    royal_crown: 'frame_hellfire',
+    diamond_halo: 'frame_diamond',
+  };
+  const avatarLedger = Array.from(new Set((av.data || []).map((row) => String(row.avatar_id))));
+  const normalizedAvatarLedger = avatarLedger.map((raw) => {
+    const normalized = normalizeCosmeticToken(raw);
+    return { raw, styleToken: legacyStyleAliases[normalized] || normalized };
+  });
+
+  // Composite theme receipts are deduped across the modern ledger and rolling-
+  // deployment compatibility rows.
+  const themes = Array.from(
+    new Set(
+      [
+        ...(themeAssets.data || [])
+          .filter((row) => row.category === 'theme_id')
+          .map((row) => String(row.asset_id)),
+        // Legacy rows remain readable during rolling deployment and preserve the
+        // receipt trail; the migration backfills every recognised one above.
+        ...(th.data || []).map((row) => normalizeThemePresetId(String(row.theme_id))),
+      ].filter((themeId): themeId is string => !!themeId)
+    )
+  );
   return {
     timeBankUses,
     timeBankSeconds: timeBankUses * secondsPerUse,
     throwables: sumUses('throwable'),
     emotePack: hasPermanent('emoji_pack'),
     themeUnlock: hasPermanent('theme_unlock') || themes.length > 0,
-    avatars: Array.from(new Set((av.data || []).map((r) => String(r.avatar_id)))),
+    avatars: normalizedAvatarLedger
+      .filter(({ styleToken }) => !styleTokens.has(styleToken))
+      .map(({ raw }) => raw),
+    avatarCosmetics: Array.from(
+      new Set(
+        normalizedAvatarLedger
+          .map(({ styleToken }) => styleToken)
+          .filter((styleToken) => styleTokens.has(styleToken))
+      )
+    ),
     themes,
     loaded: true,
   };

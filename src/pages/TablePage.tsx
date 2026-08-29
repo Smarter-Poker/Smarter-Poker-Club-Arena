@@ -153,7 +153,6 @@ import { ChatBubble, bubbleForSeat, useSeatChatBubbles } from '../components/tab
 import { useTableVoice } from '../hooks/useTableVoice';
 import { holeCardCountFor } from '../lib/holeCardCount';
 import { shouldAnnounceBbjHit } from '../lib/bbjHitOnce';
-import { applyTableAppearance } from '../lib/applyTableAppearance';
 import BBJHitNotification from '../components/bbj/BBJHitNotification';
 import { type InsuranceOffer } from '../components/table/InsuranceModal';
 import { ThrowAnimationContainer } from '../components/table/ThrowAnimation';
@@ -20006,28 +20005,6 @@ export default function TablePage({
         }}
       />
       <TableModalsLayer
-        currentCardBack={activeCardBack}
-        /* 2026-08-25: this used to end `.then(() => {})`, which discards the
-           PostgREST error object. A card back the player had just paid for
-           could fail to save and the store would still report success, because
-           nothing on this path could tell it otherwise. The handler is async
-           now and THROWS on failure, so CardBackSelector reverts its tick and
-           says what happened instead of congratulating the player. */
-        onCardBackChanged={async (id) => {
-          /* 2026-08-26: routed through the one canonical writer so this
-             surface, the hamburger tiles and /settings cannot drift apart
-             again. It still THROWS on failure, which is what makes
-             CardBackSelector revert its tick instead of congratulating the
-             player on a save that did not happen. */
-          const result = await applyTableAppearance(
-            { cards_id: id },
-            { userId, previous: { cards_id: activeCardBack } }
-          );
-          if (!result.ok && userId) {
-            reportError(result.error, 'TablePage.cardBackSaveFailed');
-            throw result.error;
-          }
-        }}
         tableId={tableId}
         userId={userId}
         username={username}
@@ -20559,8 +20536,6 @@ export default function TablePage({
             updateSetting('autoPostBlinds', settingsUpdate.autoPostBlinds);
           if (settingsUpdate.hapticEnabled !== undefined)
             updateSetting('isHapticEnabled', settingsUpdate.hapticEnabled);
-          if (settingsUpdate.tableTheme !== undefined)
-            updateSetting('theme', settingsUpdate.tableTheme);
           if (settingsUpdate.soundVolume !== undefined) {
             updateSetting('soundVolume', settingsUpdate.soundVolume);
             soundService.setMasterVolume(settingsUpdate.soundVolume / 100);

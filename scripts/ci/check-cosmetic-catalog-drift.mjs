@@ -62,7 +62,10 @@ function parseMetaMap(src, marker, endMarker, kind) {
       ? /(\w+): \{[\s\S]{0,200}?tier: '(standard|vip)'/g
       : /(\w+): \{ name: '[^']*', vipOnly: (true|false) \}/g;
   for (const m of block.matchAll(re)) {
-    out.set(m[1], kind === 'tier' ? (m[2] === 'vip' ? 'vip' : 'free') : m[2] === 'true' ? 'vip' : 'free');
+    out.set(
+      m[1],
+      kind === 'tier' ? (m[2] === 'vip' ? 'vip' : 'free') : m[2] === 'true' ? 'vip' : 'free'
+    );
   }
   return out;
 }
@@ -72,9 +75,24 @@ const themeLib = read('src/lib/tableTheme.ts');
 const cardImg = read('src/components/table/CardImage.tsx');
 
 const code = {
-  theme_id: parseVipOnlyList(modal, 'THEME_PRESETS'),
+  theme_id: (() => {
+    const start = themeLib.indexOf('THEME_PRESET_CATALOG');
+    const end = themeLib.indexOf('];', start);
+    if (start === -1 || end === -1) throw new Error('THEME_PRESET_CATALOG not found');
+    const block = themeLib.slice(start, end);
+    const out = new Map();
+    for (const m of block.matchAll(/id: '([^']+)'[\s\S]{0,260}?tier: '(free|vip)'/g)) {
+      out.set(m[1], m[2]);
+    }
+    return out;
+  })(),
   button_id: parseVipOnlyList(modal, 'BUTTON_ASSETS'),
-  background_id: parseMetaMap(modal, 'const BACKGROUND_META', 'const BACKGROUND_FALLBACK', 'vipOnly'),
+  background_id: parseMetaMap(
+    modal,
+    'const BACKGROUND_META',
+    'const BACKGROUND_FALLBACK',
+    'vipOnly'
+  ),
   table_id: parseMetaMap(themeLib, 'const FELT_META', '/** Display order', 'tier'),
   cards_id: (() => {
     // CARD_BACK_CATALOG entries carry `tier: 'standard' | 'premium' | 'exclusive'`.
@@ -82,16 +100,21 @@ const code = {
     const end = cardImg.indexOf('];', start);
     const block = cardImg.slice(start, end);
     const out = new Map();
-    for (const m of block.matchAll(/id: '([^']+)'[\s\S]{0,240}?tier: '(standard|premium|exclusive)'/g)) {
+    for (const m of block.matchAll(
+      /id: '([^']+)'[\s\S]{0,240}?tier: '(standard|premium|exclusive)'/g
+    )) {
       out.set(m[1], m[2] === 'standard' ? 'free' : 'vip');
     }
     return out;
   })(),
 };
 
-const res = await fetch(`${url.replace(/\/+$/, '')}/rest/v1/cosmetic_catalog?select=category,asset_id,tier`, {
-  headers: { apikey: key, Authorization: `Bearer ${key}` },
-});
+const res = await fetch(
+  `${url.replace(/\/+$/, '')}/rest/v1/cosmetic_catalog?select=category,asset_id,tier`,
+  {
+    headers: { apikey: key, Authorization: `Bearer ${key}` },
+  }
+);
 if (!res.ok) {
   console.error(`check-cosmetic-catalog-drift: cannot read cosmetic_catalog (${res.status})`);
   process.exit(2);

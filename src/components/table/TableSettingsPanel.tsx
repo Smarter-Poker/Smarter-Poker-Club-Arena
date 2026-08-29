@@ -28,8 +28,6 @@ export interface TableSettingsPanelProps {
   mode?: 'overlay' | 'inline';
   /** Show close button (overlay mode only) */
   onClose?: () => void;
-  /** Optional: open theme settings modal */
-  onOpenThemeSettings?: () => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -42,7 +40,6 @@ export function TableSettingsPanel({
   onToggle,
   mode = 'overlay',
   onClose,
-  onOpenThemeSettings,
 }: TableSettingsPanelProps) {
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
 
@@ -134,16 +131,6 @@ export function TableSettingsPanel({
           }
         )}
       </div>
-
-      {/* Theme Settings Link */}
-      {onOpenThemeSettings && (
-        <button type="button" className="tsp-theme-link" onClick={onOpenThemeSettings}>
-          <span className="tsp-theme-link__label">Theme Settings</span>
-          <span className="tsp-theme-link__arrow" aria-hidden="true">
-            ›
-          </span>
-        </button>
-      )}
     </div>
   );
 }

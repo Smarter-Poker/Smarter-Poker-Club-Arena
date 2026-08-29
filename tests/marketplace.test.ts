@@ -237,5 +237,6 @@ describe('empty states', () => {
     expect(EMPTY_ENTITLEMENTS.timeBankSeconds).toBe(0);
     expect(EMPTY_ENTITLEMENTS.throwables).toBe(0);
     expect(EMPTY_ENTITLEMENTS.avatars).toEqual([]);
+    expect(EMPTY_ENTITLEMENTS.avatarCosmetics).toEqual([]);
   });
 });

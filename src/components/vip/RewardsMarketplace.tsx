@@ -19,8 +19,8 @@
  * table theme bought a ledger line and no theme.
  *
  * Now: `vip_reward_catalog` prices every reward server-side and
- * fn_redeem_vip_points grants the cosmetic into theme_unlocks / avatar_unlocks
- * (migration 20260825_vip_reward_catalog). The list below survives only as the
+ * fn_redeem_vip_points grants themes into the category-specific Table Studio
+ * ledger and avatar art/styles into avatar_unlocks. The list below survives only as the
  * offline fallback, and the outcome toast belongs to whoever actually performed
  * the redemption.
  */
@@ -63,7 +63,7 @@ const FALLBACK_REWARDS: Reward[] = [
   },
   {
     id: 'avatar-gold-frame',
-    name: 'Gold Frame Badge',
+    name: 'Gold Avatar Frame',
     description: 'Exclusive gold avatar frame',
     category: 'avatar',
     pointsCost: 1500,
@@ -96,8 +96,8 @@ const FALLBACK_REWARDS: Reward[] = [
   },
   {
     id: 'avatar-royal-crown',
-    name: 'Royal Crown Badge',
-    description: 'Premium royal crown avatar badge',
+    name: 'Hellfire Avatar Frame',
+    description: 'Animated premium hellfire avatar frame',
     category: 'avatar',
     pointsCost: 2500,
     icon: '♛',
@@ -128,8 +128,8 @@ const FALLBACK_REWARDS: Reward[] = [
   },
   {
     id: 'avatar-diamond-halo',
-    name: 'Diamond Halo Effect',
-    description: 'Animated diamond halo around avatar',
+    name: 'Diamond Avatar Frame',
+    description: 'Premium faceted diamond avatar frame',
     category: 'avatar',
     pointsCost: 3000,
     icon: '◆',

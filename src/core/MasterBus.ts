@@ -78,8 +78,6 @@ export type BusEventType =
   | 'PREFLOP_WIN'
   | 'FLUSH_WIN'
   | 'PLAY_MINUTES'
-  // Phase 5: Card color customization
-  | 'CARD_COLOR_CHANGED'
   // Phase 8: Diamond economy bus event
   | 'DIAMOND_BALANCE_CHANGED'
   // Social & Messaging events
@@ -199,6 +197,7 @@ export type BusEventType =
   // Phase 6: Card Back Store events
   | 'SETTINGS_CHANGED'
   | 'DIAMOND_SPENT'
+  | 'COSMETIC_OWNERSHIP_CHANGED'
   // Gamification engagement events (Session Build)
   | 'SETTLEMENT_RECEIPT_COPIED'
   | 'CHALLENGE_PROGRESS_UPDATED'
@@ -448,8 +447,6 @@ export interface BusPayloadMap {
   PREFLOP_WIN: { handId: string; playerId: string };
   FLUSH_WIN: { handId: string; playerId: string };
   PLAY_MINUTES: { minutes: number };
-  // UI customization
-  CARD_COLOR_CHANGED: { preset: string };
   // Phase 8: Diamond economy
   DIAMOND_BALANCE_CHANGED: { newBalance: number; delta: number; source: string };
   // Social & Messaging
@@ -829,6 +826,12 @@ export interface BusPayloadMap {
     origin?: string;
   };
   DIAMOND_SPENT: { amount: number; item: string; category: string };
+  COSMETIC_OWNERSHIP_CHANGED: {
+    userId: string;
+    category: 'theme_id' | 'table_id' | 'button_id' | 'background_id' | 'cards_id' | 'avatar';
+    assetId?: string;
+    source: 'diamond-purchase' | 'club-redemption' | 'vip-reward' | 'ownership-reconciled';
+  };
   // Gamification engagement events (Session Build)
   SETTLEMENT_RECEIPT_COPIED: { receiptId: string };
   CHALLENGE_PROGRESS_UPDATED: Record<string, unknown>;
@@ -1282,6 +1285,9 @@ class MasterBusCore {
     'SETTINGS_CHANGED',
     'USER_PROFILE_LOADED',
     'CUSTOMIZATION_MUTATION_STATE',
+    // A receipt must unlock every mounted picker, even when two rewards grant
+    // the same bundle inside the fingerprint window.
+    'COSMETIC_OWNERSHIP_CHANGED',
     // ANIMATION AUDIT 2026-08-27: gameplay-animation events added. These are
     // engine-fact relays whose payloads can legitimately repeat within 500ms
     // (two identical antes, an engine re-emit after reconnect, back-to-back

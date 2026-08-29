@@ -494,6 +494,16 @@
       "new_avatar_url",
       "migrated_at"
     ],
+    "avatar_shop_aliases": [
+      "alias",
+      "avatar_id"
+    ],
+    "avatar_shop_catalog": [
+      "avatar_id"
+    ],
+    "avatar_style_catalog": [
+      "unlock_token"
+    ],
     "avatar_unlocks": [
       "id",
       "user_id",
@@ -9272,6 +9282,19 @@
       "category",
       "asset_id",
       "unlock_method",
+      "created_at"
+    ],
+    "theme_preset_aliases": [
+      "alias",
+      "theme_id"
+    ],
+    "theme_preset_catalog": [
+      "theme_id",
+      "display_name",
+      "table_id",
+      "button_id",
+      "background_id",
+      "cards_id",
       "created_at"
     ],
     "theme_unlocks": [

@@ -16,7 +16,7 @@ describe('Club Arena accessibility foundation', () => {
     expect(source).toContain('aria-modal="true"');
   });
 
-  it('gives switches, disclosures, and card choices semantic keyboard controls', () => {
+  it('gives switches, disclosures, and the Table Studio launcher semantic controls', () => {
     const source = read('src/components/navigation/HamburgerMenu.tsx');
     const tableSettingsSource = read('src/components/table/TableSettingsPanel.tsx');
 
@@ -25,10 +25,12 @@ describe('Club Arena accessibility foundation', () => {
     expect(source).toContain('role="switch"');
     expect(source).toContain('aria-expanded={showTableSettings}');
     expect(source).toContain('aria-controls={tableSettingsId}');
-    expect(source).toContain('aria-pressed={isSelected}');
+    expect(source).toContain('aria-label="Open Table Studio"');
+    expect(source).not.toContain('aria-pressed={isSelected}');
+    expect(source).not.toContain('Card Colors');
     expect(tableSettingsSource).toContain('role="switch"');
     expect(tableSettingsSource).toContain('aria-labelledby={labelId}');
-    expect(tableSettingsSource).toContain('<button type="button" className="tsp-theme-link"');
+    expect(tableSettingsSource).not.toContain('tsp-theme-link');
   });
 
   it('provides skip navigation and moves focus to routed page content', () => {

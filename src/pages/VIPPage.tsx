@@ -246,11 +246,15 @@ export default function VIPPage() {
         <RewardsMarketplace
           currentPoints={vipPoints.current}
           onRedeem={async (reward: Reward) => {
+            if (!user?.id) {
+              toast.error('Please Sign In To Redeem Rewards.');
+              return;
+            }
             // Real spend AND a real grant. `p_reward_id` is what makes this
             // honest: without it the RPC charged whatever `p_cost` the browser
             // sent (so a 5,000-point pass cost one point) and granted nothing
             // at all. With it, vip_reward_catalog prices the reward and the
-            // cosmetic lands in theme_unlocks / avatar_unlocks. p_cost is still
+            // cosmetic lands in the live entitlement ledgers. p_cost is still
             // sent for the audit trail; the server ignores it for catalog
             // rewards. Migration 20260825_vip_reward_catalog.
             const { data, error } = await supabase.rpc('fn_redeem_vip_points', {
@@ -273,6 +277,17 @@ export default function VIPPage() {
               return;
             }
             setVipPoints((prev) => ({ ...prev, current: Number(data.balance ?? prev.current) }));
+            if (data.status === 'granted') {
+              const granted = data.granted as
+                | { type?: string; theme_id?: string; avatar_id?: string }
+                | undefined;
+              masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
+                userId: user.id,
+                category: granted?.type === 'avatar' ? 'avatar' : 'theme_id',
+                assetId: granted?.avatar_id || granted?.theme_id,
+                source: 'vip-reward',
+              });
+            }
             // Say what actually happened: a cosmetic is yours now, a physical
             // or tournament reward still needs somebody to fulfil it.
             toast.success(
@@ -440,7 +455,11 @@ export default function VIPPage() {
 
           <div className="purchase-grid">
             {Object.entries(FEATURE_PRICING)
-              .filter(([, pricing]) => pricing.cost > 0)
+              // A generic "theme_unlock" does not identify a theme and cannot
+              // issue a usable entitlement. Themes are bought/redeemed from
+              // Table Studio and the rewards catalog, where the exact preset
+              // bundle is part of the server-side SKU.
+              .filter(([feature, pricing]) => feature !== 'theme_unlock' && pricing.cost > 0)
               .map(([feature, pricing]) => (
                 <div key={feature} className="purchase-card">
                   <div className="purchase-info">

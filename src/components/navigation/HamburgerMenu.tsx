@@ -18,7 +18,6 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { STORAGE_KEYS } from '../../lib/storage';
-import { applyTableAppearance } from '../../lib/applyTableAppearance';
 import { persistIdentity } from '../../lib/cachedIdentity';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { preloadRoute } from '../../utils/ChunkPreloader';
@@ -31,7 +30,6 @@ import { reportError } from '../../utils/errorReporter';
 import { soundService } from '../../services/SoundService';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
-import { isCardBackUnlocked } from '../table/CardImage';
 import { CLUB_ARENA_SUPPORT_NAV, getClubArenaNavigation } from '../../config/clubArenaNavigation';
 import styles from './HamburgerMenu.module.css';
 
@@ -70,7 +68,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
    * toggles began at hard-coded defaults and read localStorage one tick
    * later in the load effect — so an open drawer could flash the wrong
    * switch positions. The read is synchronous; do it before the first
-   * paint, exactly as selectedCardColor below already does. The load
+   * paint, before any asynchronous profile refinement. The load
    * effect's async profile fetch still refines them afterwards.
    */
   const readStoredBool = (key: string, fallback: boolean): boolean => {
@@ -105,21 +103,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [isVIP, setIsVIP] = useState(false);
   const [isPlatformStaff, setIsPlatformStaff] = useState(false);
   const [clubRole, setClubRole] = useState<string | null>(null);
-  /** Paid card backs this player has actually bought (feature_purchases). */
-  const [ownedCardBacks, setOwnedCardBacks] = useState<string[]>([]);
   const { diamonds: diamondBalance } = useWalletStore();
-  const [selectedCardColor, setSelectedCardColor] = useState(() => {
-    try {
-      // 'default' was never one of the ids this menu offers, so a player who
-      // had not picked before saw NO tile highlighted at all - the same defect
-      // FIX-D7 fixed for the dealer button. classic_blue is the app default.
-      return localStorage.getItem(STORAGE_KEYS.CARD_COLOR) || 'classic_blue';
-    } catch (err) {
-      reportError(err, 'HamburgerMenu.Error');
-      return 'classic_blue';
-    }
-  });
-
   // Bible V8 §11.1: User table settings (12 toggles) from Supabase
   const {
     settings: tableSettings,
@@ -360,23 +344,6 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
        * comment claimed it was "still WRITTEN ... for older surfaces". It was
        * not. `user_table_settings.show_stack_in_bb` is the only copy.
        */
-
-      // Card backs bought with diamonds. Needed because this menu decides
-      // whether a paid design is selectable — see the gate on the swatches.
-      supabase
-        .from('feature_purchases')
-        .select('feature')
-        .eq('user_id', user.id)
-        .like('feature', 'card_back_%')
-        .then(({ data, error }) => {
-          if (error) {
-            reportError(error, 'HamburgerMenu.Owned_card_backs_load_failed');
-            return;
-          }
-          setOwnedCardBacks(
-            (data || []).map((r: { feature: string }) => r.feature.replace('card_back_', ''))
-          );
-        });
     }
   }, [user?.id]);
 
@@ -563,16 +530,6 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   };
 
   // Shared styles
-  const sectionHeaderStyle: React.CSSProperties = {
-    fontSize: 12,
-    fontWeight: 600,
-    color: colors.textSecondary,
-    margin: 0,
-    padding: '16px 16px 8px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-  };
-
   const dividerStyle: React.CSSProperties = {
     height: 1,
     background: colors.divider,
@@ -865,6 +822,23 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             </button>
           </div>
 
+          <button
+            type="button"
+            className={styles.navItem}
+            onClick={() => setShowThemeSettings(true)}
+            aria-label="Open Table Studio"
+          >
+            <span>
+              <span className={styles.navLabel}>Table Studio</span>
+              <span className={styles.navDescription}>
+                Themes, Tables, Buttons, Backgrounds, And Card Backs
+              </span>
+            </span>
+            <span className={styles.navArrow} aria-hidden="true">
+              ›
+            </span>
+          </button>
+
           {/* Bible V8 §11.1: Table Settings — 12 toggles (expandable) */}
           <button
             type="button"
@@ -893,254 +867,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 loading={tableSettingsLoading}
                 onToggle={toggleTableSetting}
                 mode="inline"
-                onOpenThemeSettings={() => setShowThemeSettings(true)}
               />
             </div>
           )}
-
-          {/* #6: Card Color Customization */}
-          <div style={sectionHeaderStyle}>Card Colors</div>
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 10,
-              padding: '8px 16px 12px',
-            }}
-          >
-            {/*
-            THE ONLY IDS THAT ARE REAL CARD BACKS.
-
-            This list used to read default / emerald / crimson / royal / gold /
-            midnight / obsidian / neon. Six of those eight match NOTHING - not
-            CARD_BACK_IDS in CardImage.tsx, not CARD_BACK_ALIASES - so
-            normalizeCardBack sent every one of them to classic_blue. Every tile
-            painted the same navy back and picking any of them changed nothing
-            on the felt.
-
-            That is the identical defect Dan recorded in ThemeSettingsModal on
-            2026-08-20 (standard-red / premium-gold / premium-platinum, same
-            outcome). It was fixed there and left standing here, because the two
-            menus keep their own copy of the catalogue.
-
-            Every id here is in CARD_BACK_IDS and has artwork on disk under
-            public/cards/backs/table/. neon, diamond, dragon and galaxy are real
-            designs this menu was never offering at all.
-            vipOnly mirrors it too, so this menu and the shop agree on what is
-            paid rather than offering a premium back as if it were free.
-          */}
-            {[
-              {
-                id: 'classic_blue',
-                name: 'Classic Blue',
-                bg: 'linear-gradient(135deg, #1e3a5f, #0d2137)',
-                vipOnly: false,
-              },
-              {
-                id: 'classic_red',
-                name: 'Classic Red',
-                bg: 'linear-gradient(135deg, #8b0000, #4a0000)',
-                vipOnly: false,
-              },
-              {
-                id: 'royal',
-                name: 'Royal',
-                bg: 'linear-gradient(135deg, #4a0080, #1a0030)',
-                vipOnly: false,
-              },
-              {
-                id: 'gold',
-                name: 'Premium Gold',
-                bg: 'linear-gradient(135deg, #ffd700, #b8860b)',
-                vipOnly: true,
-              },
-              {
-                id: 'holographic',
-                name: 'Holographic',
-                bg: 'linear-gradient(135deg, #d3d3d3, #a9a9a9)',
-                vipOnly: true,
-              },
-              {
-                id: 'carbon',
-                name: 'Carbon Fiber',
-                bg: 'linear-gradient(135deg, #434343, #000000)',
-                vipOnly: true,
-              },
-              {
-                id: 'neon',
-                name: 'Neon',
-                bg: 'linear-gradient(135deg, #00f0ff, #0066ff)',
-                vipOnly: true,
-              },
-              {
-                id: 'diamond',
-                name: 'Diamond',
-                bg: 'linear-gradient(135deg, #b9f2ff, #4aa3c7)',
-                vipOnly: true,
-              },
-              {
-                id: 'dragon',
-                name: 'Dragon',
-                bg: 'linear-gradient(135deg, #7a1f1f, #2b0808)',
-                vipOnly: true,
-              },
-              {
-                id: 'galaxy',
-                name: 'Galaxy',
-                bg: 'linear-gradient(135deg, #2b1055, #7597de)',
-                vipOnly: true,
-              },
-            ].map((preset) => {
-              const isSelected = selectedCardColor === preset.id;
-              /**
-               * vipOnly WAS DECLARED ON EVERY PRESET AND READ BY NOTHING.
-               *
-               * 2026-08-25. Seven of these ten designs are paid: the diamond
-               * store charges 75 to 300 for them and Theme Settings padlocks them
-               * behind VIP. This menu handed every one of them to every player
-               * for free, in one tap, with no lock and no check. Same rule here
-               * as everywhere else now: free, or VIP, or bought.
-               */
-              const locked = !isCardBackUnlocked(preset.id, {
-                isVip: isVIP,
-                owned: ownedCardBacks,
-              });
-              return (
-                <button
-                  type="button"
-                  key={preset.id}
-                  className={`${styles.cardBackOption} ${locked ? styles.cardBackOptionLocked : ''}`}
-                  aria-label={`${preset.name}${locked ? ', premium design, locked' : ''}`}
-                  aria-pressed={isSelected}
-                  aria-disabled={locked || undefined}
-                  onClick={async () => {
-                    if (locked) {
-                      toast.info('That Card Back Is A Premium Design. Unlock It In The Shop.');
-                      return;
-                    }
-                    /* Remembered so a rejected save can put the highlight back
-                     where it was, rather than leaving the menu ticking a
-                     design the felt is not dealing. */
-                    const previousCardId = selectedCardColor;
-                    setSelectedCardColor(preset.id);
-                    /* 2026-08-26: the highlight is persisted HERE now. Its only
-                     writer used to be a `CARD_COLOR_CHANGED` listener on
-                     HomePage, which is unmounted whenever you are at a table —
-                     precisely where this menu lives. So changing a card back
-                     from the felt never wrote the key, and the next time the
-                     menu opened it highlighted the previous design. */
-                    try {
-                      localStorage.setItem(STORAGE_KEYS.CARD_COLOR, preset.id);
-                    } catch {
-                      /* private mode — the highlight is cosmetic, never fatal */
-                    }
-                    /**
-                     * THE TRANSLATION TABLE OUTLIVED THE IDS IT TRANSLATED.
-                     *
-                     * 2026-08-25. The list above was corrected two days ago from
-                     * the invented ids (default / emerald / crimson / midnight /
-                     * obsidian) to the REAL designs — and this map, which existed
-                     * only to translate those invented ids, was left in place. It
-                     * has no entry for any of the new ids, so `|| 'black'` caught
-                     * them, and 'black' aliases to classic_blue:
-                     *
-                     *   classic_red  -> classic_blue      dragon  -> classic_blue
-                     *   royal        -> classic_blue      galaxy  -> classic_blue
-                     *   holographic  -> classic_blue      diamond -> classic_blue
-                     *   carbon       -> classic_blue      neon    -> royal
-                     *
-                     * Eight of the ten tiles saved a design other than the one
-                     * they showed. The fix made the menu offer real designs and
-                     * left it saving the wrong one, which is worse than before,
-                     * because it now looks right in the picker.
-                     *
-                     * These ids ARE the canonical ids. Nothing needs translating.
-                     */
-                    const realCardId = preset.id;
-
-                    masterBus.emit('CARD_COLOR_CHANGED', { preset: preset.id });
-
-                    /* 2026-08-26: this used to SELECT '*' and spread the whole
-                     row back into the upsert, re-sending `id`, `created_at`,
-                     `updated_at`, `user_id` and `game_type` to PostgREST —
-                     one generated or immutable column away from failing every
-                     save and reverting the tile for no visible reason. It now
-                     goes through the one canonical writer (lib/
-                     applyTableAppearance), which emits live first, writes ONLY
-                     the column being changed, and puts the felt back if the
-                     write is rejected. */
-                    const result = await applyTableAppearance(
-                      { cards_id: realCardId },
-                      { userId: user?.id, previous: { cards_id: previousCardId } }
-                    );
-
-                    if (result.ok) {
-                      toast.success('Card Back Applied');
-                    } else if (!user?.id) {
-                      toast.error('Please Sign In To Save That Card Back.');
-                      setSelectedCardColor(previousCardId);
-                    } else {
-                      reportError(result.error, 'HamburgerMenu.Card_color_save_failed');
-                      toast.error('Could Not Save That Card Back. Please Try Again.');
-                      setSelectedCardColor(previousCardId);
-                    }
-                  }}
-                >
-                  <div
-                    title={locked ? `${preset.name} (Premium)` : preset.name}
-                    style={{
-                      position: 'relative',
-                      width: 36,
-                      height: 36,
-                      borderRadius: '50%',
-                      background: preset.bg,
-                      border: isSelected
-                        ? '2px solid rgba(0, 212, 255, 0.8)'
-                        : '2px solid rgba(255, 255, 255, 0.1)',
-                      boxShadow: isSelected
-                        ? '0 0 8px rgba(0, 212, 255, 0.4)'
-                        : '0 2px 4px rgba(0,0,0,0.3)',
-                      transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    {/* Text, not an emoji padlock. Without it the tile looked
-                      free and simply refused to work when tapped. */}
-                    {locked && (
-                      <span
-                        style={{
-                          fontSize: 8,
-                          fontWeight: 800,
-                          letterSpacing: '0.04em',
-                          color: '#0b0b0b',
-                          background: 'linear-gradient(135deg, #ffd700, #d4a017)',
-                          borderRadius: 5,
-                          padding: '1px 3px',
-                        }}
-                      >
-                        VIP
-                      </span>
-                    )}
-                  </div>
-                  <span
-                    style={{
-                      fontSize: 9,
-                      fontWeight: isSelected ? 700 : 500,
-                      color: isSelected ? colors.accent : colors.textSecondary,
-                      textAlign: 'center',
-                      lineHeight: 1.1,
-                      maxWidth: 50,
-                      transition: 'color 0.2s ease',
-                    }}
-                  >
-                    {preset.name}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
 
           {[
             {

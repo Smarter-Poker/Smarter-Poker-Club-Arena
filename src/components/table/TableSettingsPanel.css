@@ -289,37 +289,10 @@
   transform: translateX(20px);
 }
 
-.tsp-theme-link {
-  width: calc(100% - 16px);
-  min-height: 52px;
-  margin: 7px 8px 12px;
-  padding: 11px 13px;
-  background: linear-gradient(135deg, rgba(72, 191, 255, 0.13), rgba(72, 191, 255, 0.035));
-  border-color: rgba(72, 191, 255, 0.22);
-  border-radius: 3px;
-  color: inherit;
-  text-align: left;
-  font: inherit;
-}
-.tsp-theme-link:focus-visible {
-  background: linear-gradient(135deg, rgba(72, 191, 255, 0.2), rgba(72, 191, 255, 0.07));
-  border-color: rgba(72, 191, 255, 0.42);
-  outline: none;
-}
-.tsp-theme-link__label {
-  color: #79d5ff;
-  font-size: 13px;
-  font-weight: 700;
-}
-.tsp-theme-link__arrow {
-  color: #79d5ff;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .tsp-item,
   .tsp-toggle__track,
-  .tsp-toggle__thumb,
-  .tsp-theme-link {
+  .tsp-toggle__thumb {
     transition: none !important;
   }
 }

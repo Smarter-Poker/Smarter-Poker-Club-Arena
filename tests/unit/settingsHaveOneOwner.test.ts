@@ -55,10 +55,12 @@ describe('sound and haptics have one owner: the gates', () => {
        other so the FIRST press muted something already muted. Two presses to
        get sound back, with the switch lying throughout. */
     expect(TABLE_SOUND).toMatch(/useState<boolean>\(\(\) => isSoundAllowed\(\)\)/);
-    // Haptics must consider BOTH keys for the same reason.
-    expect(TABLE_SOUND).toMatch(
-      /readBool\(STORAGE_VIBRATION, true\) && readBool\(SETTINGS_VIBRATION, true\)/
-    );
+    /* Haptics must consider BOTH keys for the same reason. UPDATED 2026-08-29
+       (second pass): this used to pin the two hand-rolled `readBool` calls that
+       did it here. They were a third copy of the gate's own rule and are gone —
+       `isVibrationPreferred` is that rule, living in the gate beside the fail-
+       closed logic it belongs to. Same property, one owner. */
+    expect(TABLE_SOUND).toMatch(/isVibrationPreferred\(\)/);
   });
 
   it('the in-table haptic switch persists through the gate, which writes both keys', () => {
@@ -257,5 +259,84 @@ describe('the second hook cannot be undone by its own stale read', () => {
     const other = strip(readRaw('src/hooks/useUserTableSettings.ts'));
     expect(other).toMatch(/reportError\(error, 'useUserTableSettings\.Load_failed'\)/);
     expect(other).toMatch(/reportError\(err, 'useUserTableSettings\.Load_threw'\)/);
+  });
+});
+
+describe('the boot hole, closed 2026-08-29 (second pass)', () => {
+  it('the blob adopts the gates on first read, rather than nothing reconciling them', () => {
+    /* `applyGateChanges` runs only from `commit`, and deliberately NOT from
+       `applySideEffects` — writing the blob over the gate keys on every table
+       mount is the second-writer bug that silently un-muted people. But that
+       left the opposite hole: at boot NOTHING reconciled the two.
+
+       Cold load, blob says sound ON (synced from another device last session),
+       gate keys say muted because the player muted from the hamburger menu.
+       The blob is what the switches RENDER, so they read ON while the app is
+       silent — and `hydrateFromServer` only commits when something CHANGED, so
+       if the server agrees with the blob nothing ever corrects it.
+
+       The gates win, because they are what `SoundService.shouldPlay` and every
+       haptic call site actually consult. */
+    expect(TABLE_SETTINGS).toMatch(/function reconcileWithGates/);
+    expect(TABLE_SETTINGS).toMatch(/sharedSettings = reconcileWithGates\(loadFromStorage\(\)\)/);
+    const fn = sliceMethod(TABLE_SETTINGS, 'function reconcileWithGates');
+    expect(fn).toMatch(/isSoundAllowed\(\)/);
+    expect(fn).toMatch(/isVibrationPreferred\(\)/);
+  });
+
+  it('the haptics switch reads the PREFERENCE, not "can this device buzz"', () => {
+    /* `isVibrationAllowed` returns false on a desktop with no vibrate API,
+       which is correct for firing a buzz and wrong for painting a switch — it
+       tells a desktop player they turned something off that they did not. */
+    const gate = strip(readRaw('src/utils/vibrationGate.ts'));
+    expect(gate).toMatch(/export function isVibrationPreferred/);
+    expect(TABLE_SOUND).toMatch(/isVibrationPreferred\(\)\s*\)?;?/);
+  });
+
+  it('useTableSound keeps no private copy of the gate rule', () => {
+    /* Two hand-rolled `readBool` calls here were a THIRD copy of the two-key
+       rule, and a copy is exactly how the haptic switch got left behind by the
+       2026-08-27 sound fix. `readBool` was also fail-OPEN (`raw !== 'false'`
+       treats '0' and 'off' as ON) against both gates' fail-CLOSED convention. */
+    expect(TABLE_SOUND).not.toMatch(/function readBool/);
+    expect(TABLE_SOUND).not.toMatch(/const SETTINGS_VIBRATION/);
+  });
+
+  it('the touched-mark RPC cannot wedge the ordered write queue', () => {
+    /* `useUserTableSettings` awaits it INSIDE its write queue, so the promise it
+       returns is what the next tap of the same switch chains behind. A
+       `supabase.rpc` on a hung connection never settles — without a ceiling one
+       stalled call blocks that switch from ever reaching the server again,
+       silently, because the optimistic UI has already flipped. */
+    const fn = sliceMethod(TABLE_SETTINGS, 'export async function markSettingsTouched');
+    expect(fn).toMatch(/Promise\.race/);
+    expect(fn).toMatch(/TOUCH_MARK_TIMEOUT_MS/);
+  });
+});
+
+describe('nothing left claiming to be wired that is not', () => {
+  it('SoundService no longer calls an empty method at boot', () => {
+    expect(SOUND_SERVICE).not.toMatch(/this\.restoreStoredConfig\(\)/);
+    expect(SOUND_SERVICE).not.toMatch(/private restoreStoredConfig/);
+  });
+
+  it('the hamburger menu does not keep a dead BB toggle or write-only state', () => {
+    /* `handleShowBBToggle` never had a caller — no onClick, and the switch a
+       player sees lives in the expandable TableSettingsPanel. It was left in
+       place beside a comment claiming it still wrote the legacy column "for
+       older surfaces", which was false in both halves: it wrote nothing because
+       nothing called it, and the same commit had deleted the reads. */
+    const menu = strip(readRaw('src/components/navigation/HamburgerMenu.tsx'));
+    expect(menu).not.toMatch(/const handleShowBBToggle/);
+    expect(menu).not.toMatch(/setShowBBEnabled/);
+    // The canonical column is still mirrored to the first-paint seed.
+    expect(menu).toMatch(/STORAGE_KEYS\.SHOW_STACK_BB, String\(tableSettings\.show_stack_in_bb\)/);
+  });
+
+  it('TablePage has no branch for a settings key the panel cannot emit', () => {
+    /* `settingsUpdate` comes only from SettingsPanel: three single-key controls
+       plus resetPayload(). There is no autoMuckWinners control and the key is
+       not in RESETTABLE_KEYS, so the branch could never run. */
+    expect(TABLE_PAGE).not.toMatch(/settingsUpdate\.autoMuckWinners/);
   });
 });

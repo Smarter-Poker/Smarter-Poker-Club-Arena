@@ -51,9 +51,13 @@ export interface SitOutModalProps {
    */
   sitOutSince: number | null;
   /**
-   * False for cash. Tournaments, spins and heads-up may sit out indefinitely
-   * (they are blinded off instead), so they get no countdown at all — not a
-   * countdown that never fires.
+   * False for cash. Tournaments (spins included — a spin is a tournament) may
+   * sit out indefinitely and are blinded off instead, so they get no countdown
+   * at all rather than one that never fires.
+   *
+   * NOT heads-up cash: there is no heads-up table type, and both client and
+   * server give a heads-up cash table the ordinary five-minute clock. See the
+   * note in src/lib/sitOutDeadline.ts.
    */
   isTournament?: boolean;
   tableName?: string;
@@ -67,7 +71,7 @@ export interface SitOutModalProps {
  * Milliseconds left on the sit-out clock, re-read once a second.
  *
  * Returns `null` whenever no deadline applies — closed modal, tournament/spin/
- * heads-up, or an unknown start time — and starts no interval in those cases,
+ * a tournament table, or an unknown start time — and starts no interval then,
  * so the common tournament path costs exactly one comparison.
  *
  * Recomputed from `Date.now()` on every tick rather than decremented, so a
@@ -193,8 +197,8 @@ export function SitOutModal({
             or 5 minutes, whichever comes FIRST", and the orbit half is engine
             state no client can see — so a player evicted early must never be
             able to point at a countdown here that promised them longer.
-            Tournaments, spins and heads-up get no line at all rather than a
-            countdown that never fires. */}
+            A tournament table (a spin is one) gets no line at all rather than
+            a countdown that never fires. */}
         {msRemaining !== null && (
           <span
             className={`sitout-modal__deadline${

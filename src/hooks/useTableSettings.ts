@@ -4,7 +4,8 @@ import { useUserStore } from '../stores/useUserStore';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
 import { soundService } from '../services/SoundService';
-import { setVibrationAllowed } from '../utils/vibrationGate';
+import { setVibrationAllowed, isVibrationPreferred } from '../utils/vibrationGate';
+import { isSoundAllowed } from '../utils/soundGate';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -220,6 +221,13 @@ const KEY_FOR_COLUMN: Record<string, keyof TableUserSettings> = Object.fromEntri
  */
 export const TOUCHED_COLUMN = 'settings_touched';
 
+/**
+ * Ceiling on the touched-mark RPC. Generous — this is not a latency budget, it
+ * is a guard against a call that never settles taking the ordered write queue
+ * in `useUserTableSettings` with it. See `markSettingsTouched`.
+ */
+const TOUCH_MARK_TIMEOUT_MS = 8000;
+
 /** OWN keys only. See the note at the bus subscriber for why `in` is unsafe. */
 function isSettingKey(name: string): name is keyof TableUserSettings {
   return Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, name);
@@ -354,10 +362,51 @@ function applySideEffects(next: TableUserSettings): void {
  * together — see `updateSetting`.
  */
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  AT BOOT, THE GATES ARE RIGHT AND THIS BLOB FOLLOWS
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * 2026-08-29, second pass. `applyGateChanges` runs only from `commit`, and
+ * deliberately not from `applySideEffects` — writing the blob's value over the
+ * gate keys on the first render of any table is the second-writer bug that
+ * silently un-muted people. But that left the opposite hole at boot: nothing
+ * reconciled the two at all.
+ *
+ * Cold load, blob says sound ON (say, a value synced from another device last
+ * session), gate keys say muted because the player muted from the hamburger
+ * menu. The blob is what /settings and the table switches RENDER, so the
+ * switches read ON while the app is silent — and `hydrateFromServer` only
+ * commits when something `changed`, so if the server agrees with the blob
+ * nothing ever corrects it.
+ *
+ * Which side wins is not arbitrary. `utils/soundGate` and `utils/vibrationGate`
+ * are the owners: they are what `SoundService.shouldPlay` and every haptic call
+ * site consult, they are written by the hamburger menu and the in-table
+ * switches, and they fail closed on either of their two keys. So at boot the
+ * blob adopts them — locally, with no push and no bus emit, because this is not
+ * a change the user made, it is this copy catching up with the truth.
+ *
+ * A genuine cross-device change still arrives the other way, through
+ * `hydrateFromServer` -> `commit` -> `applyGateChanges`, which writes the gates.
+ * The two directions do not fight: one runs once at boot, the other only on a
+ * value the account actually chose.
+ */
+function reconcileWithGates(loaded: TableUserSettings): TableUserSettings {
+  const soundOn = isSoundAllowed();
+  const hapticOn = isVibrationPreferred();
+  if (loaded.isSoundEnabled === soundOn && loaded.isHapticEnabled === hapticOn) return loaded;
+  return { ...loaded, isSoundEnabled: soundOn, isHapticEnabled: hapticOn };
+}
+
 function getSnapshot(): TableUserSettings {
   if (sharedSettings === null) {
-    sharedSettings = loadFromStorage();
+    sharedSettings = reconcileWithGates(loadFromStorage());
     applySideEffects(sharedSettings);
+    /* And push the volume, which has no gate of its own — the engine's default
+       is 0.7 and the store's may be anything. Sound and haptics are already
+       correct by construction one line above. */
+    soundService.setMasterVolume(Math.max(0, Math.min(100, sharedSettings.soundVolume)) / 100);
   }
   return sharedSettings;
 }
@@ -516,10 +565,24 @@ function pushKeyToServer(key: keyof TableUserSettings, value: unknown): void {
 export async function markSettingsTouched(columns: string[]): Promise<void> {
   if (columns.length === 0) return;
   try {
-    const { error } = await supabase.rpc('fn_mark_table_setting_touched', {
-      p_columns: columns,
-    });
-    if (error) reportError(error, 'useTableSettings.Touch_mark_failed');
+    /* BOUNDED, because `useUserTableSettings` awaits this INSIDE its ordered
+       write queue: the promise it returns is what the next tap of the same
+       switch chains behind. A `supabase.rpc` on a hung connection never
+       settles, so without a ceiling one stalled call would block that switch
+       from ever reaching the server again — silently, because the optimistic
+       UI has already flipped and the player sees nothing until they reload.
+       Losing the mark costs that one column the pre-2026-08-29 inference until
+       the next write; losing the queue costs the setting. */
+    const result = await Promise.race([
+      supabase.rpc('fn_mark_table_setting_touched', { p_columns: columns }),
+      new Promise<{ error: unknown }>((resolve) =>
+        setTimeout(
+          () => resolve({ error: new Error('fn_mark_table_setting_touched timed out') }),
+          TOUCH_MARK_TIMEOUT_MS
+        )
+      ),
+    ]);
+    if (result.error) reportError(result.error, 'useTableSettings.Touch_mark_failed');
   } catch (error) {
     reportError(error, 'useTableSettings.Touch_mark_failed');
   }

@@ -98,13 +98,21 @@ describe('1. a failed save holds the value instead of undoing it', () => {
 });
 
 describe('2. the BB switch has one reader and one writer', () => {
-  it('does not read the legacy profiles column', () => {
-    /* `profiles.show_stack_bb` is still WRITTEN as a mirror for older
-       surfaces. Reading it here is what made the two answers race. */
-    const load = sliceMethod(HAMBURGER, 'const handleShowBBToggle');
-    expect(load, 'the mirror write must survive').toContain('show_stack_bb');
-    // …and nowhere else in the component may select it back out.
+  it('does not touch the legacy profiles column at all', () => {
+    /* CORRECTED 2026-08-29 (second pass). This used to assert that
+       `handleShowBBToggle` still WROTE `profiles.show_stack_bb` "as a mirror
+       for older surfaces" — and it did contain the string, so the test passed.
+       The function had no caller. `git log -S` puts that back to the commit
+       that added it: no `onClick`, and the switch a player sees lives in the
+       expandable TableSettingsPanel, which writes through its own hook.
+
+       So the mirror was never being written, and the commit that removed the
+       READS had already made the column dead in both directions. Asserting a
+       write EXISTS in a function nobody calls is the shape of test that keeps
+       a corpse warm. The column is now untouched, and that is what is pinned. */
     expect(HAMBURGER).not.toMatch(/select\([^)]*show_stack_bb/);
+    expect(HAMBURGER).not.toMatch(/show_stack_bb:/);
+    expect(HAMBURGER).not.toMatch(/const handleShowBBToggle/);
   });
 
   it('does not query user_table_settings behind the hook that already has it', () => {

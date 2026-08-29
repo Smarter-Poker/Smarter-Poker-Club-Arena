@@ -2916,17 +2916,32 @@ export default function TablePage({
   // instead and report elapsed time.
   const [sitOutSince, setSitOutSince] = useState<number | null>(null);
   /**
+   * `table_seats.sit_out_at` per seated user, epoch ms. The AUTHORITATIVE
+   * sit-out clock: stamped by a database trigger, survives an engine restart,
+   * and identical for every client looking at this table. Filled by the
+   * table_seats poll below, which already runs every ten seconds and on every
+   * realtime change; read by the hero's footer countdown and by every seat's
+   * SITTING OUT badge.
+   */
+  const sitOutAtRef = useRef<Map<string, number>>(new Map());
+  /**
    * A 1 Hz clock, and ONLY while a cash sit-out deadline is actually running.
    *
-   * The spectator footer prints how long the seat is held for. That number has
-   * to move, and the cheapest honest way is a tick that the render reads —
-   * rather than a per-second `setState` of the countdown itself, which would
-   * re-render this very large page once a second for the whole sit-out.
+   * The spectator footer prints how long the seat is held for, and that number
+   * has to move. This IS a per-second `setState` on TablePage and it does
+   * re-render the page — an earlier version of this comment claimed storing a
+   * timestamp instead of the derived number avoided that, which was wrong:
+   * `setState` is `setState` whatever you put in it. What the timestamp buys is
+   * correctness under a throttled tab, not renders.
+   *
+   * The renders are bounded instead: the interval exists only while a cash
+   * deadline is actually running, and it clears itself at 0:00 (below). The
+   * per-SEAT badges do not use this at all — each owns its own interval in a
+   * memoised child, so ten seats do not re-render the page ten times a second.
    *
    * It costs nothing in the common cases: no interval at all when the hero is
    * not sitting out, when the start time is unknown, or on a tournament, spin
-   * or heads-up table, where Dan's rule is that a player may sit out as long as
-   * they want.
+   * table, where a player may sit out as long as they want.
    *
    * `Date.now()` is re-read each tick rather than the value being decremented,
    * so a backgrounded tab — where browsers throttle timers to once a minute —
@@ -2946,15 +2961,41 @@ export default function TablePage({
   // local button press — a player can be put into sit-out by the engine
   // (repeated action timeouts) without ever touching the menu, and the
   // reconnect path re-derives it from the snapshot too.
+  /**
+   * BOTH conditions the footer bar uses, not just the first one.
+   *
+   * The footer renders its sitting-out state on
+   * `seat.status === 'sitting_out' || sittingOutIdsRef.has(userId)`, and this
+   * checked only the seat status — so in the window where the ref knows and
+   * the snapshot does not (which the ref exists precisely to cover: the engine's
+   * per-hand flag is deliberately false for a sat-out tournament player, so the
+   * next snapshot would otherwise repaint the seat active), `sitOutSince`
+   * stayed null and the deadline silently vanished from the bar. The player
+   * under the clock was the one who could not see it.
+   */
   const heroIsSittingOut =
     tableState.heroSeat > 0 &&
-    tableState.players[tableState.heroSeat - 1]?.status === 'sitting_out';
+    (tableState.players[tableState.heroSeat - 1]?.status === 'sitting_out' ||
+      sittingOutIdsRef.current.has(String(userId ?? '')));
+  /**
+   * A PROVISIONAL stamp, replaced by the server's the moment the seat read
+   * comes back (see `sitOutAtRef` in the table_seats poll).
+   *
+   * `Date.now()` here used to be the ONLY source, which meant the clock
+   * restarted at 5:00 on every reload, reconnect and second tab — a player at
+   * 4:30 was shown a full five minutes and evicted thirty seconds later. It
+   * survives only to cover the seconds between the tap and the trigger firing
+   * (a sit-out deferred to the end of the hand is stamped at settlement), so
+   * the countdown is never blank; `sit_out_at` overwrites it, and can only
+   * move the deadline earlier.
+   */
   useEffect(() => {
     setSitOutSince((prev) => {
-      if (heroIsSittingOut) return prev ?? Date.now();
-      return null;
+      if (!heroIsSittingOut) return null;
+      if (prev !== null) return prev;
+      return sitOutAtRef.current.get(String(userId ?? '')) ?? Date.now();
     });
-  }, [heroIsSittingOut]);
+  }, [heroIsSittingOut, userId]);
 
   /* Drive the footer countdown. Starts only when there is genuinely a deadline
      to count — see the note on sitOutTick — and stops the moment there is not,
@@ -2964,9 +3005,25 @@ export default function TablePage({
   useEffect(() => {
     if (!sitOutDeadlineIsLive) return;
     setSitOutTick(Date.now());
-    const id = setInterval(() => setSitOutTick(Date.now()), 1000);
+    const id = setInterval(() => {
+      setSitOutTick(Date.now());
+      /* STOP AT ZERO. `sitOutMsRemaining` floors at 0 rather than returning
+         null, so `sitOutDeadlineIsLive` stays true forever once expired — this
+         interval used to keep re-rendering the whole of TablePage once a second
+         for however long the eviction sweep took to land. Past 0:00 the label
+         reads "Your Seat May Be Taken At Any Moment" and cannot get any more
+         urgent, so there is nothing left to tick towards. */
+      if (
+        sitOutMsRemaining({
+          sitOutSince,
+          isTournament: tableState.isTournament,
+        }) === 0
+      ) {
+        clearInterval(id);
+      }
+    }, 1000);
     return () => clearInterval(id);
-  }, [sitOutDeadlineIsLive, sitOutSince]);
+  }, [sitOutDeadlineIsLive, sitOutSince, tableState.isTournament]);
 
   // showSessionSummary REMOVED (Phase 2 2026-08-22): it was never set true —
   // the Session Complete card is published to SessionSummaryHost at the app
@@ -14931,18 +14988,35 @@ export default function TablePage({
       if (cancelled) return;
       setTableState((prev) => {
         let changed = false;
+        /* THE STAMP IS WITHHELD WHERE THERE IS NO DEADLINE. Dan 2026-08-28: a
+           tournament player (a spin is one) sits out "as long as they want"
+           and is blinded off instead. Deciding it here rather than inside
+           SeatSlot honours that component's standing rule that nothing in it
+           may branch a visual on tournament-ness. */
+        const deadlinesApply = !prev.isTournament;
         const players = prev.players.map((p) => {
           if (!p || !p.id) return p;
           const shouldBeOut = sittingOut.has(p.id);
+          const stamp = deadlinesApply ? (sitOutAtRef.current.get(p.id) ?? null) : null;
           /* Never repaint a seat whose status is telling a more urgent story.
              An all-in seat is all-in first; a folded seat has already acted
              this hand. Sitting out is the resting state underneath both, and
              the snapshot mapper applies the same precedence. */
-          if (p.status === 'all_in' || p.status === 'folded') return p;
+          if (p.status === 'all_in' || p.status === 'folded') {
+            if (p.sitOutAt === stamp) return p;
+            changed = true;
+            return { ...p, sitOutAt: stamp };
+          }
           const next = shouldBeOut ? 'sitting_out' : p.status === 'sitting_out' ? 'active' : null;
-          if (next === null || next === p.status) return p;
+          const statusChanges = next !== null && next !== p.status;
+          const stampChanges = p.sitOutAt !== stamp;
+          if (!statusChanges && !stampChanges) return p;
           changed = true;
-          return { ...p, status: next as typeof p.status };
+          return {
+            ...p,
+            ...(statusChanges ? { status: next as typeof p.status } : {}),
+            sitOutAt: stamp,
+          };
         });
         return changed ? { ...prev, players } : prev;
       });
@@ -14952,12 +15026,46 @@ export default function TablePage({
       try {
         const { data, error } = await supabase
           .from('table_seats')
-          .select('user_id, is_sitting_out')
+          .select('user_id, is_sitting_out, sit_out_at')
           .eq('table_id', tableId)
           .is('left_at', null);
         if (error || cancelled || !data) return;
-        const rows = data as Array<{ user_id: string; is_sitting_out: boolean | null }>;
+        const rows = data as Array<{
+          user_id: string;
+          is_sitting_out: boolean | null;
+          sit_out_at: string | null;
+        }>;
         const stillSeated = new Set(rows.map((r) => String(r.user_id)).filter(Boolean));
+
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  THE CLOCK IS THE SERVER'S. IT WAS THIS BROWSER'S.
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * `sitOutSince` used to be stamped `Date.now()` the moment THIS tab
+         * first noticed the sit-out. So a cash player who sat out, then
+         * reloaded, reconnected, or opened the table in a second tab at 4:30
+         * elapsed was shown a fresh "held for up to 5:00" — and evicted thirty
+         * seconds later.
+         *
+         * That is the same defect as the hardcoded 300 that was deleted on
+         * 2026-08-16, with the sign reversed: it UNDER-warns instead of
+         * over-warning, on the screen where the player's stack is about to be
+         * cashed out. `table_seats.sit_out_at` is stamped by a database
+         * trigger and was built precisely so the clock survives a restart
+         * (migration 20260828210000); the engine reads it back and this poll
+         * was already one column away from it.
+         *
+         * Kept per USER rather than per seat, because that is the key every
+         * consumer here already has.
+         */
+        const stamps = new Map<string, number>();
+        for (const row of rows) {
+          if (!row.user_id || !row.sit_out_at) continue;
+          const at = Date.parse(row.sit_out_at);
+          if (Number.isFinite(at)) stamps.set(String(row.user_id), at);
+        }
+        sitOutAtRef.current = stamps;
 
         /* A SEAT THAT IS GONE IS NOT STILL SITTING OUT (2026-08-28, second pass).
          *
@@ -15021,6 +15129,23 @@ export default function TablePage({
           if (row.is_sitting_out && !heroFreshJoin) sittingOutIdsRef.current.add(row.user_id);
           else sittingOutIdsRef.current.delete(row.user_id);
         }
+
+        /* Adopt the server's clock for the hero. A LOCAL stamp is kept only
+           while the trigger has not fired yet — a sit-out deferred to the end
+           of the current hand is stamped when settlement drains it, which is
+           after the tap — so the countdown starts immediately and then
+           CORRECTS to the authoritative value rather than starting at nothing.
+           It can only ever move the deadline EARLIER, never later, which is
+           the safe direction on a seat that is about to be reclaimed. */
+        if (userId) {
+          const serverStamp = stamps.get(String(userId));
+          if (serverStamp !== undefined) {
+            setSitOutSince((prev) => (prev === serverStamp ? prev : serverStamp));
+          } else if (!sittingOutIdsRef.current.has(String(userId))) {
+            setSitOutSince(null);
+          }
+        }
+
         paint(new Set(sittingOutIdsRef.current));
       } catch {
         /* A failed read leaves the last known state alone. Never guess someone
@@ -20177,8 +20302,13 @@ export default function TablePage({
               });
             }
           }
-          if (settingsUpdate.autoMuckWinners !== undefined)
-            updateSetting('autoMuckWinners', settingsUpdate.autoMuckWinners);
+          /* The `autoMuckWinners` branch that was here is gone (2026-08-29).
+             `settingsUpdate` comes only from SettingsPanel, whose four emit
+             sites are three single-key controls plus `resetPayload()` — and
+             there is no autoMuckWinners control on the panel, nor is the key in
+             RESETTABLE_KEYS. So it was always `undefined` and this line could
+             never run. It was made unreachable earlier the same day by the
+             commit that removed the control and left the consumer behind. */
           if (settingsUpdate.autoPostBlinds !== undefined)
             updateSetting('autoPostBlinds', settingsUpdate.autoPostBlinds);
           if (settingsUpdate.hapticEnabled !== undefined)

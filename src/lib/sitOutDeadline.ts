@@ -7,6 +7,17 @@
  * GETTING BOOTED IN A CASH GAME... AND AS LONG AS THEY WANT IN A MTT, SPIN OR
  * HEADS UP (BUT THEY WILL BE BLINDED OFF)."
  *
+ * WHAT IS ACTUALLY IMPLEMENTED, stated plainly because an earlier version of
+ * this file repeated Dan's three categories as though all three were wired:
+ * the ONLY discriminator on either side of the wire is tournament-ness
+ * (`tournament_id` set, or `game_type === 'tournament'`). MTTs are exempt.
+ * SPINS are exempt because a spin IS a tournament. A HEADS-UP CASH table is
+ * not exempt and gets the five-minute clock like any other cash table — there
+ * is no heads-up table type in this codebase, only a heads-up blind rule
+ * inside HandController. Client and server agree with each other, so nothing
+ * is broken; the gap is between the product rule and both of them, and it is
+ * Dan's to close.
+ *
  * The rule has been enforced server-side since the sit-out clock was made to
  * survive a restart (`table_seats.sit_out_at`, migration 20260828210000), and
  * until 2026-08-29 NOTHING on any client showed it. The three surfaces that know
@@ -44,7 +55,7 @@ export const SITOUT_MAX_ORBITS = 2;
  * deadline applies.
  *
  * `null` — not zero, and not a large number — for every case where the player is
- * NOT on a clock: tournaments, spins and heads-up (Dan: "as long as they want"),
+ * NOT on a clock: tournament tables (spins included),
  * an unknown start time, and a table type we cannot identify. A caller that
  * renders a countdown must skip it on `null` rather than substituting a
  * fallback; inventing a deadline is the bug this file's history is made of.
@@ -52,7 +63,7 @@ export const SITOUT_MAX_ORBITS = 2;
 export function sitOutMsRemaining(params: {
   /** Epoch ms when sit-out began. `table_seats.sit_out_at`, or null if unknown. */
   sitOutSince: number | null | undefined;
-  /** False for cash. Tournaments, spins and heads-up sit out indefinitely. */
+  /** False for cash. A tournament table (a spin is one) sits out indefinitely. */
   isTournament: boolean;
   /** Defaults to now; injectable so a test does not need fake timers. */
   now?: number;

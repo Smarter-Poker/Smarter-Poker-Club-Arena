@@ -22,6 +22,7 @@ import { serverNow } from '../../utils/serverClock';
 import './SeatSlot.css';
 import { CardImage, CardBack } from './CardImage';
 import MiniHUD, { type MiniHUDStats } from './MiniHUD';
+import { SitOutBadge } from './SitOutBadge';
 import type { PlayerStyleResult } from '../../services/PlayerStyleClassifier';
 import { ChipPhysics } from './ChipPhysics';
 import { getAvatarWithFallback } from '../../utils/avatarGenerator';
@@ -195,6 +196,15 @@ export interface SeatPlayer {
    * event — still renders the MUCKED label.
    */
   isMucked?: boolean;
+  /**
+   * `table_seats.sit_out_at` in epoch ms, and ONLY when a deadline applies.
+   *
+   * The parent withholds it on tournament, spin and heads-up tables, where a
+   * player may sit out as long as they like — which keeps this component's
+   * standing rule intact: nothing in here may branch a visual on
+   * tournament-ness. A stamp means a clock; no stamp means the plain tag.
+   */
+  sitOutAt?: number | null;
 }
 
 export interface SeatSlotProps {
@@ -2243,9 +2253,11 @@ export const SeatSlot = memo(
               precedence over neither: a dropped player reads DISCONNECTED until
               the engine formally sits them out, and SITTING OUT after. */}
           {player.status === 'sitting_out' && (
-            <div className="seat__sitout-badge" title="This player is sitting out">
-              SITTING OUT
-            </div>
+            /* The clock lives in a memoised child that owns its own interval —
+               passing a per-second number through here would defeat this
+               component's comparator sixty times a minute per sat-out seat.
+               See SitOutBadge for the full reasoning. */
+            <SitOutBadge sitOutAt={player.sitOutAt} />
           )}
           {/* FIX 186: Disconnected overlay — shows DISCONNECTED label + countdown */}
           {player.status === 'disconnected' && (

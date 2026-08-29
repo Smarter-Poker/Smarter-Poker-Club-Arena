@@ -78,12 +78,6 @@
   width: fit-content;
 }
 
-.toast-hint-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.3);
-  color: #fff;
-}
-
 .toast-hint-btn:active {
   transform: scale(0.97);
 }
@@ -116,11 +110,6 @@
   position: absolute;
   /* (44 - 24) / 2 = 10px of invisible margin on every side. */
   inset: -10px;
-}
-
-.toast-close:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
 }
 
 @keyframes slide-up-fade {

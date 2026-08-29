@@ -1,0 +1,61 @@
+/* -------------------------------------------------------------------------
+   SATELLITE WINNER BADGE — the words, then the dish
+   -------------------------------------------------------------------------
+   Dan, 2026-08-28: "ADD 'SATELLITE WINNER' BEFORE EACH SATELITTE ICON."
+
+   The icon alone was a rebus: a small blue dish that you had to already know
+   the meaning of, or hover to find out, and hover is exactly what he has
+   just had removed from these surfaces. The words carry the meaning now and
+   the dish decorates it, which is the right way round.
+
+   `white-space: nowrap` is not cosmetic. This sits in `.et-marks`, a
+   nowrap flex row that also holds RE / RB / ADD-ON pills; letting the label
+   break puts "Satellite" above "Winner" and doubles the row height for one
+   entry in a list where every other row is 52px.
+   ------------------------------------------------------------------------- */
+.sw-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.sw-badge__text {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  /* The dish is the only blue thing on the row; the words borrow its colour
+     so the two read as one mark rather than a label that wandered in. */
+  color: #60a5fa;
+}
+
+.sw-badge__icon {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
+/* 375px is the design target. The words stay - Dan asked for words, and a
+   label that disappears exactly where the icon is hardest to read would be
+   the wrong half to drop - but they tighten. The matching widening of
+   `.et-marks` lives in EntriesTab.css, which OWNS that selector: setting it
+   from here too would leave two files writing one selector at equal
+   specificity, and the winner would depend on CSS import order. */
+@media (max-width: 420px) {
+  .sw-badge {
+    gap: 4px;
+  }
+
+  .sw-badge__text {
+    font-size: 9px;
+    letter-spacing: 0.4px;
+  }
+
+  .sw-badge__icon {
+    width: 26px;
+    height: 26px;
+  }
+}

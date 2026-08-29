@@ -113,11 +113,6 @@
   cursor: pointer;
 }
 
-.tlm-close:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: var(--tlm-accent);
-}
-
 /* The embedded page owns its own scrolling — it is a full page with its own
    tab strip and footer. This is only the frame. */
 .tlm-body {

@@ -135,7 +135,6 @@
     transform 0.18s var(--tl-ease);
 }
 
-.un-card__head:hover,
 .un-card__head:focus-visible {
   background: rgba(111, 220, 255, 0.06);
 }
@@ -151,9 +150,6 @@
 .un-card__head:disabled {
   cursor: default;
   opacity: 0.75;
-}
-.un-card__head:disabled:hover {
-  background: none;
 }
 
 .un-logo {
@@ -390,8 +386,6 @@
     0 4px 12px rgba(0, 0, 0, 0.45);
   transition: transform 0.16s var(--tl-ease);
 }
-.un-retry:hover {
-}
 .un-retry:active {
   transform: translateY(1px);
 }
@@ -444,7 +438,6 @@
     transition: none;
   }
   .un-card__head:active,
-  .un-retry:hover,
   .un-retry:active {
     transform: none;
   }

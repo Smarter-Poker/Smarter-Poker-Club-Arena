@@ -240,11 +240,14 @@ export default function CarouselSection({
              move on desktop. The saved order is still honoured on load (see
              STORAGE_KEYS.CLUB_ORDER above) and pinning still floats a club to
              the front; only reordering BY DRAGGING is retired. */
-          onMouseMove={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            e.currentTarget.style.setProperty('--x', `${e.clientX - rect.left}px`);
-            e.currentTarget.style.setProperty('--y', `${e.clientY - rect.top}px`);
-          }}
+          /* The cursor-follow handler that lived here is GONE (2026-08-28).
+             It ran getBoundingClientRect() - a forced layout read - and two
+             setProperty calls on EVERY mousemove across every club card, to
+             publish `--x` and `--y`. Nothing in the entire codebase reads
+             either variable: `grep -rn "var(--x)" src/` returns nothing. The
+             spotlight those coordinates once fed was removed at some point and
+             the feeder was left running, so this was pure cost - a reflow per
+             pointer move, per card - buying a value no stylesheet consumes. */
           role="button"
           aria-label={`${club.name || 'Club'} - Click to enter lobby`}
           tabIndex={0}

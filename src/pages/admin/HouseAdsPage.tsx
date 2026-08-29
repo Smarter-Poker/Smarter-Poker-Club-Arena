@@ -67,6 +67,13 @@ interface PlacementRow {
   club_id: string | null;
   audience: string | null;
   daily_cap: number | null;
+  /* The per-surface destination override. fn_resolve_ads serves
+     COALESCE(pl.target_url, c.target_url), so when this is set it is what the
+     player's browser is handed - and eight live placements set it. It was
+     never read into this panel and never written from it, which made "Links
+     To" on the campaign a control that answered "Saved." and changed nothing
+     on the surface actually serving. */
+  target_url: string | null;
   is_active: boolean;
 }
 
@@ -233,6 +240,7 @@ export default function HouseAdsPage() {
     slot: 'lobby_strip' as string,
     audience: 'all' as string,
     daily_cap: '' as string,
+    target_url: '' as string,
   });
   const [placementBusy, setPlacementBusy] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
@@ -403,7 +411,7 @@ export default function HouseAdsPage() {
 
   // ── Placements ────────────────────────────────────────────────────────────
   const resetPlacementDraft = (slot = 'lobby_strip') =>
-    setPlacementDraft({ id: '', slot, audience: 'all', daily_cap: '' });
+    setPlacementDraft({ id: '', slot, audience: 'all', daily_cap: '', target_url: '' });
 
   const openPlacements = (adId: string) => {
     setPlacementAdId((cur) => (cur === adId ? null : adId));
@@ -417,6 +425,7 @@ export default function HouseAdsPage() {
       slot: p.slot,
       audience: p.audience || 'all',
       daily_cap: p.daily_cap == null ? '' : String(p.daily_cap),
+      target_url: p.target_url || '',
     });
   };
 
@@ -429,6 +438,12 @@ export default function HouseAdsPage() {
         slot: placementDraft.slot,
         audience: placementDraft.audience,
         daily_cap: placementDraft.daily_cap === '' ? null : Number(placementDraft.daily_cap),
+        /* Always sent, including as an empty string. The server keys on
+           `!== undefined`, so omitting the field means "leave it alone" and an
+           empty string means "clear the override and fall back to the
+           campaign's own destination". Those are different instructions and an
+           operator emptying the box means the second one. */
+        target_url: placementDraft.target_url,
       };
       if (placementDraft.id) {
         await callClubArenaApi(
@@ -603,7 +618,7 @@ export default function HouseAdsPage() {
   const handleDelete = async (ad: AdRow) => {
     const ok = await confirmDialog({
       title: 'Delete This Ad?',
-      message: `"${ad.headline}" and its performance history will be removed. This cannot be undone.`,
+      message: `"${ad.headline}" And Its Performance History Will Be Removed. This Cannot Be Undone.`,
       confirmText: 'Delete',
       variant: 'danger',
     });
@@ -775,8 +790,12 @@ export default function HouseAdsPage() {
                 <input
                   id="ad-weight"
                   className="admin-input"
+                  /* min={1}, not 0: the database refuses a zero weight
+                     (ad_catalog_weight_positive), so a 0 here was a save that
+                     came back "Could not create that ad" without ever naming
+                     the field that caused it. */
                   type="number"
-                  min={0}
+                  min={1}
                   max={1000}
                   value={form.weight}
                   onChange={(e) => setForm((f) => ({ ...f, weight: e.target.value }))}
@@ -1302,8 +1321,12 @@ export default function HouseAdsPage() {
                                         <th>Surface</th>
                                         <th>Who</th>
                                         <th>Cap</th>
+                                        <th>Links To</th>
                                         <th>State</th>
-                                        <th />
+                                        {/* Named, not empty: a header cell with
+                                          no text is a column a screen reader
+                                          announces as nothing at all. */}
+                                        <th aria-label="Actions" />
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -1326,6 +1349,24 @@ export default function HouseAdsPage() {
                                             {p.daily_cap == null
                                               ? 'Uncapped'
                                               : `${p.daily_cap}/Day`}
+                                          </td>
+                                          {/* WHERE THIS SURFACE ACTUALLY SENDS
+                                            THE PLAYER. fn_resolve_ads serves
+                                            COALESCE(pl.target_url,
+                                            c.target_url), so an override here
+                                            beats the campaign's own Links To -
+                                            and eight live placements had one
+                                            that this panel neither showed nor
+                                            could change. Blank is not empty, it
+                                            inherited, and it says so. */}
+                                          <td className="admin-mono">
+                                            {p.target_url ? (
+                                              p.target_url
+                                            ) : (
+                                              <span className="admin-text-secondary">
+                                                Inherited From The Ad
+                                              </span>
+                                            )}
                                           </td>
                                           <td>
                                             <span
@@ -1434,6 +1475,30 @@ export default function HouseAdsPage() {
                                         setPlacementDraft((d) => ({
                                           ...d,
                                           daily_cap: e.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                  {/* THE OVERRIDE, EDITABLE AT LAST. Left empty
+                                    the placement inherits the campaign's own
+                                    Links To, which is what the placeholder says.
+                                    Emptying a box that had a value is a real
+                                    edit and clears the override - savePlacement
+                                    sends the empty string for exactly that. */}
+                                  <div style={{ minWidth: 180 }}>
+                                    <label className="admin-label" htmlFor={`pl-target-${ad.id}`}>
+                                      Links To On This Surface
+                                    </label>
+                                    <input
+                                      id={`pl-target-${ad.id}`}
+                                      className="admin-input"
+                                      type="text"
+                                      placeholder="Inherited From The Ad"
+                                      value={placementDraft.target_url}
+                                      onChange={(e) =>
+                                        setPlacementDraft((d) => ({
+                                          ...d,
+                                          target_url: e.target.value,
                                         }))
                                       }
                                     />

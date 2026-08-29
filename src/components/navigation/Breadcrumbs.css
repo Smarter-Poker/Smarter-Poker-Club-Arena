@@ -22,11 +22,6 @@
   border-radius: 4px;
 }
 
-.breadcrumb-link:hover {
-  color: #ffd700;
-  background: rgba(255, 215, 0, 0.08);
-}
-
 .separator {
   color: rgba(255, 255, 255, 0.3);
   font-size: 0.8rem;

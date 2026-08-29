@@ -17,7 +17,14 @@ import { supabase } from './supabase.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
-import { buyInBBFor, gameLaneFor, isActiveNow, occupancyTargetFor } from './HorseBehavior.js';
+import {
+  buyInBBFor,
+  gameLaneFor,
+  isActiveNow,
+  occupancyTargetFor,
+  stakeBandAllows,
+  stakeBandForBigBlind,
+} from './HorseBehavior.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -769,6 +776,12 @@ export class HorseFleetManager {
             // Dan 2026-08-26 game lanes: a third of the stable plays events
             // only (tournaments / spins / heads-up) and never sits at cash.
             if (gameLaneFor(h.id) === 'events') return false;
+            // Dan 2026-08-29 stake bands: a horse plays ONE stake level. This
+            // is the only place blinds have ever influenced WHICH horse is
+            // picked - before it, they were read solely to size a buy-in, and
+            // 64 of 210 horses were sitting across multiple stakes in 48
+            // hours, one of them at 0.10/0.20 and 25.00/50.00 both.
+            if (!stakeBandAllows(h.id, table.big_blind)) return false;
             const tablesForHorse = horseTables.get(h.id);
             if (!tablesForHorse) return true;
             if (tablesForHorse.size >= MAX_TABLES_PER_HORSE) return false;
@@ -779,6 +792,13 @@ export class HorseFleetManager {
           // V8 ACTIVITY WINDOWS: only horses inside their daily window sit
           // down (falls back to the full pool if a human needs a game NOW and
           // the active pool ran dry).
+          //
+          // THE RESCUE FALLBACK WIDENS THE HOUR, NEVER THE BAND. candidateHorses
+          // is already band-filtered, so a human waiting at 0.50/1 can pull an
+          // off-hours low-stakes horse out of bed - which is believable - but
+          // can never summon the 25/50 regular, which is not. A quiet
+          // high-stakes table is ordinary; the wrong name in a micro game is
+          // the tell Dan is describing.
           let pool = candidateHorses.filter((h) => isActiveNow(h.id, hourUTC));
           if (pool.length < emptySeats.length && humanNeedsRescue) pool = candidateHorses;
 
@@ -796,8 +816,11 @@ export class HorseFleetManager {
 
           if (selectedHorses.length === 0) {
             if (emptySeats.length > 0) {
+              // Name the band. A strict band means a stake level CAN run out of
+              // horses, and when that happens it must be legible in the logs
+              // rather than looking like the fleet is broken.
               console.log(
-                `[HorseFleet] No available horses for "${table.name}" (need ${emptySeats.length})`
+                `[HorseFleet] No available horses for "${table.name}" (need ${emptySeats.length}, band ${stakeBandForBigBlind(table.big_blind)})`
               );
             }
             continue;

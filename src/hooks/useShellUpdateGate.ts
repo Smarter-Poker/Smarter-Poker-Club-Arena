@@ -95,6 +95,56 @@ export function mayReloadForShell(opts: {
   return true;
 }
 
+/** How often the resume-path staleness probe may touch the network. */
+export const STALE_CHECK_MIN_INTERVAL_MS = 60 * 1000;
+
+/**
+ * The entry chunk named by a shell document. Vite writes exactly one
+ * `assets/index-<hash>.js` module script into index.html per build, so the
+ * name IS the build identity — two shells naming different entries are two
+ * different deploys, with no build-info fetch or baked-in sha required.
+ */
+export function extractEntryScript(html: string): string | null {
+  const m = html.match(/assets\/index-[A-Za-z0-9_-]+\.js/);
+  return m ? m[0] : null;
+}
+
+/**
+ * ── THE RESUME PATH, WHICH NOTHING ELSE COVERS (2026-08-29) ────────────────
+ *
+ * Every mechanism above this line is driven by a NAVIGATION: the SW
+ * revalidates the shell when one happens, the browser re-checks sw-bus.js
+ * when one happens, and `reg.update()` runs once at app start. An installed
+ * PWA brought back from the app switcher performs none of those — the old
+ * JS simply resumes — so a device that lives in the switcher can run a
+ * bundle for DAYS after it was replaced, and no message ever arrives to set
+ * `pending`.
+ *
+ * That is not a hypothetical. It is the mechanism behind every "this
+ * regressed" report where the code had not changed: Dan's phone showing the
+ * pre-#950 felt on 2026-08-29 hours after the fix was verified live, the
+ * 2026-08-28 card-size report, the session observed executing
+ * TablePage-CUTgsJU_ chunks while build-info reported a sha four deploys
+ * newer. The phone was not seeing regressions — it was time-travelling
+ * between bundles on its own schedule.
+ *
+ * So on every return to visibility this hook now does the two things a
+ * navigation would have done, throttled to once a minute:
+ *
+ *   1. asks the SW registration to update, so a rotated sw-bus.js installs
+ *      (→ controllerchange → the gate's existing path);
+ *   2. fetches the live shell itself (`cache: 'no-cache'` — and a plain
+ *      fetch is NOT intercepted by sw-bus.js's navigation branch, so this
+ *      reads the server, not the cache) and compares its entry chunk name
+ *      to the one this session is executing. A mismatch means the running
+ *      bundle is not the deployed bundle → `pending`, and the same gate
+ *      that has always decided WHEN applies: never at a table, never
+ *      hidden, cooldown respected.
+ *
+ * The reload rules do not change here. A player seated at a table keeps
+ * their bundle until they leave — this only makes sure the app KNOWS it is
+ * stale, which is the half that was missing.
+ */
 export function useShellUpdateGate(): void {
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
@@ -166,7 +216,49 @@ export function useShellUpdateGate(): void {
       attempt();
     };
 
-    const onVisibility = () => attempt();
+    /* The resume-path probe. See the block comment above the hook. */
+    let lastStaleCheckAt = 0;
+    const checkStaleness = () => {
+      if (!armed) return;
+      const now = Date.now();
+      if (now - lastStaleCheckAt < STALE_CHECK_MIN_INTERVAL_MS) return;
+      lastStaleCheckAt = now;
+
+      // 1. Let the browser discover a rotated sw-bus.js without a navigation.
+      navigator.serviceWorker
+        .getRegistration()
+        .then((reg) => reg?.update())
+        .catch(() => {});
+
+      // 2. Compare the deployed shell's entry chunk against the one running.
+      const running = extractEntryScript(document.documentElement.outerHTML);
+      if (!running) return; // dev server or a shell shape we do not recognise
+      const base =
+        import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
+          ? import.meta.env.BASE_URL
+          : '/';
+      fetch(`${base}index.html`, { cache: 'no-cache' })
+        .then((res) => (res.ok ? res.text() : null))
+        .then((html) => {
+          if (!html) return;
+          const deployed = extractEntryScript(html);
+          if (deployed && deployed !== running) {
+            pending = true;
+            attempt();
+          }
+        })
+        .catch(() => {
+          /* offline or blocked: nothing to adopt, nothing to do */
+        });
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') checkStaleness();
+      attempt();
+    };
+    /* pageshow fires when a PWA or bfcache page resumes without a real
+       navigation — the exact case the probe exists for. */
+    const onPageShow = () => checkStaleness();
     /* Leaving a table is the single most likely moment for this to become
        safe, and it produces no event of its own — the router replaces the
        path without touching the SW. Poll cheaply instead of reaching into
@@ -176,11 +268,13 @@ export function useShellUpdateGate(): void {
     navigator.serviceWorker.addEventListener('message', onMessage);
     navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
     document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pageshow', onPageShow);
 
     return () => {
       navigator.serviceWorker.removeEventListener('message', onMessage);
       navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
       document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pageshow', onPageShow);
       window.clearInterval(poll);
       window.clearTimeout(timer);
     };

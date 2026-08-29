@@ -330,24 +330,87 @@ class AchievementTriggerServiceClass {
   /**
    * Process login (for login streak achievements)
    */
+  /**
+   * ─────────────────────────────────────────────────────────────────────────
+   * LOGIN STREAKS — once a DAY, not once a PAGE LOAD
+   * ─────────────────────────────────────────────────────────────────────────
+   * This used to loop three streak ids and call `incrementProgress` on each,
+   * serially, EVERY time Supabase raised an auth event. Supabase raises one
+   * on INITIAL_SESSION, on SIGNED_IN and on TOKEN_REFRESHED, so a player
+   * reloading the page advanced "Log in 7 days in a row" seven times in an
+   * afternoon and collected its reward. `streak_30` pays 100 chips and
+   * `streak_100` pays 500, through `add_to_promo_wallet`. Production showed
+   * the tell plainly: 3 of 5 `streak_7` unlocks and 1 of 2 `streak_30`
+   * unlocks carried `unlocked_at` on the SAME DAY the row was created, which
+   * a consecutive-day achievement cannot legitimately do.
+   *
+   * The streak is now a real streak, computed once per UTC day from columns
+   * that already existed and that nothing had ever maintained:
+   *
+   *   profiles.last_login_date  the day we last counted   (all 1,023 stale)
+   *   profiles.login_streak     the run length            (0 on all 1,023)
+   *
+   * Same day  -> nothing happens at all, and that is the whole fix: one
+   *              SELECT and no writes, however many times the page reloads.
+   * Yesterday -> the run continues, streak + 1.
+   * Older     -> the run is broken, back to 1.
+   *
+   * The three achievements are then SET to the real streak rather than
+   * incremented, so they say what their description says. They are written in
+   * parallel — three independent rows, no ordering between them — where the
+   * old loop awaited each in turn.
+   */
   async onLogin(userId: string): Promise<TriggerResult> {
-    const result: TriggerResult = {
-      triggeredAchievements: [],
-      chipsAwarded: 0,
-    };
+    const result: TriggerResult = { triggeredAchievements: [], chipsAwarded: 0 };
 
-    // Login streak achievements
+    const today = new Date().toISOString().slice(0, 10); // UTC calendar day
+
+    const { data: profile, error: readErr } = await supabase
+      .from('profiles')
+      .select('login_streak, last_login_date')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (readErr) {
+      reportError(readErr, 'AchievementTriggerService.onLogin.read');
+      return result;
+    }
+
+    // Already counted today. Nothing to write, nothing to award.
+    if (profile?.last_login_date === today) return result;
+
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    const continuing = profile?.last_login_date === yesterday;
+    const streak = continuing ? Number(profile?.login_streak || 0) + 1 : 1;
+
+    // Claim the day FIRST. If the achievement writes below fail, the worst
+    // outcome is a streak that did not advance — not a day counted twice.
+    const { error: writeErr } = await supabase
+      .from('profiles')
+      .update({ login_streak: streak, last_login_date: today })
+      .eq('id', userId);
+
+    if (writeErr) {
+      reportError(writeErr, 'AchievementTriggerService.onLogin.claimDay');
+      return result;
+    }
+
     const streakIds = ['streak_7', 'streak_30', 'streak_100'];
-    for (const streakId of streakIds) {
-      try {
-        const streakResult = await achievementService.incrementProgress(userId, streakId);
-        if (streakResult.unlocked && streakResult.achievement) {
-          result.triggeredAchievements.push(streakResult.achievement);
-          result.chipsAwarded += streakResult.achievement.chipReward || 0;
+    const outcomes = await Promise.all(
+      streakIds.map(async (id) => {
+        try {
+          return await achievementService.incrementProgressTo(userId, id, streak);
+        } catch (e) {
+          reportError(e, 'AchievementTriggerService.onLogin');
+          return { unlocked: false } as { unlocked: boolean; achievement?: Achievement };
         }
-      } catch (e) {
-        reportError(e, 'AchievementTriggerService.onLogin');
-        // Achievement not found or already unlocked — skip
+      })
+    );
+
+    for (const outcome of outcomes) {
+      if (outcome.unlocked && outcome.achievement) {
+        result.triggeredAchievements.push(outcome.achievement);
+        result.chipsAwarded += outcome.achievement.chipReward || 0;
       }
     }
 

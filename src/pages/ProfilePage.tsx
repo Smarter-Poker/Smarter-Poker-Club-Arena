@@ -60,6 +60,8 @@ interface UserProfile {
   avatarUrl: string;
   vipLevel: 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
   memberSince: string;
+  bio?: string;
+  player_tags?: string[];
 }
 
 interface PokerStats {
@@ -387,18 +389,20 @@ export default function ProfilePage() {
         ]);
 
         // Fetch basic profile and stats
-        const { data: profile } = await retryFetch(
+        const { data: profile, error: profileError } = await retryFetch(
           () =>
             supabase
               .from('profiles')
               .select(
-                'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak'
+                'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak, bio, player_tags'
               )
               .eq('id', authUser.id)
               .maybeSingle()
               .then((r) => r),
           { maxRetries: 2, isMountedRef: isMountedRef }
         );
+
+        if (profileError) throw profileError;
 
         if (profile && isMounted) {
           setUser({
@@ -409,6 +413,8 @@ export default function ProfilePage() {
             avatarUrl: profile.avatar_url || '',
             vipLevel: profile.tier || 'bronze',
             memberSince: profile.created_at,
+            bio: profile.bio || '',
+            player_tags: profile.player_tags || [],
           });
 
           setDiamonds(profile.diamonds || 0);
@@ -527,7 +533,7 @@ export default function ProfilePage() {
               supabase
                 .from('profiles')
                 .select(
-                  'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak'
+                  'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak, bio, player_tags'
                 )
                 .eq('id', authUser.id)
                 .maybeSingle()
@@ -541,6 +547,8 @@ export default function ProfilePage() {
                       avatarUrl: profile.avatar_url || '',
                       vipLevel: profile.tier || 'bronze',
                       memberSince: profile.created_at,
+                      bio: profile.bio || '',
+                      player_tags: profile.player_tags || [],
                     });
                     setDiamonds(profile.diamonds || 0);
                     setIsVIP(profile.is_vip || false);
@@ -758,7 +766,7 @@ export default function ProfilePage() {
           {user.avatarUrl ? (
             <img
               src={user.avatarUrl}
-              alt={user.displayName}
+              alt={user.username}
               className={styles.avatar}
               loading="lazy"
               onError={(e) => {
@@ -766,14 +774,14 @@ export default function ProfilePage() {
               }}
             />
           ) : (
-            <div className={styles.avatarDefault}>{user.displayName.charAt(0).toUpperCase()}</div>
+            <div className={styles.avatarDefault}>{user.username.charAt(0).toUpperCase()}</div>
           )}
           <VIPBadge level={user.vipLevel} />
         </div>
 
         <div className={styles.userInfo}>
           <h1 className={styles.displayName}>
-            {user.displayName}
+            {user.username}
             {dailyStreak > 0 && <StreakFire streakCount={dailyStreak} size="sm" showLabel />}
             {dailyStreak > 0 && (
               <StreakMultiplier streak={dailyStreak} multiplier={1 + dailyStreak * 0.1} size="sm" />
@@ -788,6 +796,16 @@ export default function ProfilePage() {
               number rather than something untrue. */}
           {user.playerNumber > 0 && (
             <p className={styles.playerNumber}>Player #{user.playerNumber}</p>
+          )}
+          {user.bio && <p className={styles.bio}>{user.bio}</p>}
+          {user.player_tags && user.player_tags.length > 0 && (
+            <div className={styles.tagsContainer}>
+              {user.player_tags.map((tag) => (
+                <span key={tag} className={styles.playerTag}>
+                  {tag}
+                </span>
+              ))}
+            </div>
           )}
           <div className={styles.statChipsContainer}>
             <div className={styles.statChip}>
@@ -1374,10 +1392,10 @@ export default function ProfilePage() {
           initialData={{
             id: user.id || '',
             username: user.username || '',
-            displayName: user.displayName || '',
+            displayName: '',
             avatarUrl: user.avatarUrl || '',
             bio: (user as any).bio || '',
-            tags: [],
+            tags: (user as any).player_tags || [],
           }}
           onSave={async (data: UserProfileData) => {
             try {
@@ -1385,8 +1403,8 @@ export default function ProfilePage() {
                 .from('profiles')
                 .update({
                   username: data.username,
-                  display_name: data.displayName,
                   bio: data.bio,
+                  player_tags: data.tags,
                 })
                 .eq('id', user.id);
 
@@ -1402,7 +1420,8 @@ export default function ProfilePage() {
               setUser({
                 ...user,
                 username: data.username,
-                displayName: data.displayName,
+                bio: data.bio,
+                player_tags: data.tags,
               });
               setShowProfileEdit(false);
             } catch (err) {

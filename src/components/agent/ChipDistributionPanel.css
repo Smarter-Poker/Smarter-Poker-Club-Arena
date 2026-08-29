@@ -55,10 +55,6 @@
   transition: all 0.2s;
 }
 
-.action-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
 .action-btn.clear {
   background: rgba(239, 68, 68, 0.1);
   border-color: rgba(239, 68, 68, 0.2);
@@ -85,10 +81,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-
-.target-row:hover {
-}
-
 .target-avatar {
   width: 40px;
   height: 40px;
@@ -184,10 +176,6 @@
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.distribute-btn:hover:not(:disabled) {
-  filter: brightness(1.1);
 }
 
 .distribute-btn:disabled {

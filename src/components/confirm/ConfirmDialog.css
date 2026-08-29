@@ -74,10 +74,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.btn-cancel:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
 .btn-confirm {
   padding: 10px 20px;
   border: none;
@@ -93,15 +89,7 @@
   color: #000;
 }
 
-.btn-confirm.variant-default:hover {
-  filter: brightness(1.1);
-}
-
 .btn-confirm.variant-danger {
   background: linear-gradient(135deg, #ef4444, #dc2626);
   color: #fff;
-}
-
-.btn-confirm.variant-danger:hover {
-  filter: brightness(1.1);
 }

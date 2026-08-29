@@ -347,14 +347,38 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
       document.getElementById('mbc')!.className = 'mbc mbc--locked';
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
       document.getElementById('mbc')!.className = 'mbc mbc--opening';
-      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-      const t = el
-        .getAnimations()
-        .find(
-          (a) =>
-            (a as unknown as { transitionProperty?: string }).transitionProperty === 'transform'
-        );
-      const d = t?.effect?.getTiming().duration;
+      /* FLAKE FIX (2026-08-29): two rAFs was a guess at when the browser
+         lists the CSSTransition, and on a loaded CI runner it guessed wrong
+         once - getAnimations() came back empty, ms read -1, and a correct
+         lid failed the pin (blocking a publish for code that never touched
+         CSS). Poll for the live transition across up to 20 frames instead;
+         if it was genuinely missed (already finished on a fast machine),
+         fall back to the computed transition-duration, which carries the
+         SAME 900ms the pin is about. The transform assertion below still
+         proves the lid actually swings. */
+      let d: number | string | CSSNumericValue | undefined;
+      for (let frame = 0; frame < 20 && d === undefined; frame++) {
+        const t = el
+          .getAnimations()
+          .find(
+            (a) =>
+              (a as unknown as { transitionProperty?: string }).transitionProperty === 'transform'
+          );
+        d = t?.effect?.getTiming().duration as number | undefined;
+        if (d === undefined) {
+          await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        }
+      }
+      if (typeof d !== 'number') {
+        const style = getComputedStyle(el);
+        const props = style.transitionProperty.split(',').map((s) => s.trim());
+        const durs = style.transitionDuration.split(',').map((s) => s.trim());
+        const at = props.findIndex((p) => p === 'transform' || p === 'all');
+        if (at >= 0) {
+          const raw = durs[at] ?? durs[0];
+          d = Math.round(parseFloat(raw) * (raw.endsWith('ms') ? 1 : 1000));
+        }
+      }
       return {
         ms: typeof d === 'number' ? Math.round(d) : -1,
         transform: getComputedStyle(el).transform,

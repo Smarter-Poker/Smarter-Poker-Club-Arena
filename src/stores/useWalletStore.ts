@@ -172,6 +172,57 @@ const initialState = {
  */
 const BALANCE_FRESH_MS = 30_000;
 
+/**
+ * ───────────────────────────────────────────────────────────────────────────
+ * IN-FLIGHT COALESCING — one network round trip per (action, user), not N
+ * ───────────────────────────────────────────────────────────────────────────
+ * BALANCE_FRESH_MS above is a freshness check on a stamp that is only written
+ * AFTER the request comes back. That makes it useless in the case that
+ * actually hurts: several components mounting in the same tick. Every one of
+ * them reads the same stale stamp, every one decides it must fetch, and they
+ * all fetch. The guard only ever caught the SECOND page view.
+ *
+ * Measured on production 2026-08-28, opening one tournament page:
+ *
+ *     wallet_transactions   20 calls   slowest 2,879 ms
+ *     profiles              11 calls   slowest 1,976 ms
+ *     club_members           8 calls   slowest 2,298 ms
+ *     agents                 6 calls   slowest 2,607 ms
+ *     /auth/v1/user          7 calls
+ *     ------------------------------------------------
+ *     85 Supabase round trips, last one landing at 8.6 s
+ *
+ * The wallet numbers are this bug almost exactly: `DiamondService.getBalance`
+ * issues one `profiles` read and TWO `wallet_transactions` reads per call, so
+ * seven concurrent callers produce 7 profiles + 14 wallet_transactions, and
+ * `loadTransactions` — which had no freshness guard at all — adds the rest.
+ * The per-request timings say the same thing from the other side: each group
+ * ran `130, 129, 1680, 1773, 1872, 1988` ms, a fast pair and then a ladder
+ * climbing ~100 ms a step, which is queueing behind saturation rather than
+ * slow SQL. Nothing was polling: ten idle seconds afterwards fired zero
+ * requests. It is all mount cost.
+ *
+ * So the fix is not caching harder, it is not starting the duplicate request.
+ * The first caller runs; everyone arriving while it is still in the air gets
+ * the SAME promise and the same answer.
+ *
+ * `finally` clears the entry on both paths deliberately. Leaving a rejected
+ * promise in the map would cache the failure and every later caller would
+ * inherit it — the wallet would then stay broken for the whole session
+ * instead of retrying on the next mount.
+ */
+const _inFlight = new Map<string, Promise<void>>();
+
+function coalesce(key: string, run: () => Promise<void>): Promise<void> {
+  const existing = _inFlight.get(key);
+  if (existing) return existing;
+  const started = run().finally(() => {
+    _inFlight.delete(key);
+  });
+  _inFlight.set(key, started);
+  return started;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // 🏪 STORE IMPLEMENTATION
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -191,43 +242,46 @@ export const useWalletStore = create<WalletState>()(
         ) {
           return;
         }
-        // Only show the loading state when there is NOTHING to show. Flipping
-        // this on while a good balance is already on screen is what made the
-        // wallet flash a skeleton on every navigation.
-        const haveBalancesForThisUser = st._balancesUserId === userId && st._balancesAt > 0;
-        if (!haveBalancesForThisUser) set({ isLoadingWallet: true });
-        try {
-          const walletBalances = await WalletService.getBalances(userId);
-          const balances = {
-            BUSINESS: createEmptyBalance('BUSINESS'),
-            PLAYER: createEmptyBalance('PLAYER'),
-            PROMO: createEmptyBalance('PROMO'),
-          };
 
-          for (const wallet of walletBalances) {
-            const type = wallet.walletType as WalletType;
-            if (type in balances) {
-              balances[type] = {
-                type,
-                available: wallet.availableBalance,
-                locked: wallet.lockedBalance,
-                pending: 0,
-                total: wallet.balance,
-              };
+        return coalesce(`balances:${userId}`, async () => {
+          // Only show the loading state when there is NOTHING to show. Flipping
+          // this on while a good balance is already on screen is what made the
+          // wallet flash a skeleton on every navigation.
+          const haveBalancesForThisUser = st._balancesUserId === userId && st._balancesAt > 0;
+          if (!haveBalancesForThisUser) set({ isLoadingWallet: true });
+          try {
+            const walletBalances = await WalletService.getBalances(userId);
+            const balances = {
+              BUSINESS: createEmptyBalance('BUSINESS'),
+              PLAYER: createEmptyBalance('PLAYER'),
+              PROMO: createEmptyBalance('PROMO'),
+            };
+
+            for (const wallet of walletBalances) {
+              const type = wallet.walletType as WalletType;
+              if (type in balances) {
+                balances[type] = {
+                  type,
+                  available: wallet.availableBalance,
+                  locked: wallet.lockedBalance,
+                  pending: 0,
+                  total: wallet.balance,
+                };
+              }
             }
-          }
 
-          set({ balances, _balancesUserId: userId, _balancesAt: Date.now() });
-        } catch (error) {
-          if (!_balanceBreaker.isOpen()) {
-            _balanceBreaker.trip();
-            reportError(error, 'useWalletStore.Load_balances_failed');
+            set({ balances, _balancesUserId: userId, _balancesAt: Date.now() });
+          } catch (error) {
+            if (!_balanceBreaker.isOpen()) {
+              _balanceBreaker.trip();
+              reportError(error, 'useWalletStore.Load_balances_failed');
+            }
+            // Deliberately NOT clearing `balances` here. A transient network
+            // failure must not replace a good number with zeros on screen.
+          } finally {
+            set({ isLoadingWallet: false });
           }
-          // Deliberately NOT clearing `balances` here. A transient network
-          // failure must not replace a good number with zeros on screen.
-        } finally {
-          set({ isLoadingWallet: false });
-        }
+        });
       },
 
       loadDiamonds: async (userId: string, opts?: { force?: boolean }) => {
@@ -241,51 +295,60 @@ export const useWalletStore = create<WalletState>()(
         ) {
           return;
         }
-        if (!(st._diamondsUserId === userId && st._diamondsAt > 0)) {
-          set({ isLoadingDiamonds: true });
-        }
-        try {
-          // Load diamonds via centralized DiamondService (profiles.diamonds source-of-truth)
-          const wallet = await DiamondService.getBalance(userId);
-          set({ diamonds: wallet.balance || 0, _diamondsUserId: userId, _diamondsAt: Date.now() });
-        } catch (error) {
-          if (!_diamondBreaker.isOpen()) {
-            _diamondBreaker.trip();
-            reportError(error, 'useWalletStore.Load_diamonds_failed');
+
+        return coalesce(`diamonds:${userId}`, async () => {
+          if (!(st._diamondsUserId === userId && st._diamondsAt > 0)) {
+            set({ isLoadingDiamonds: true });
           }
-          // 2026-08-24: this used to `set({ diamonds: 0 })`. A failed fetch is
-          // not evidence the player has no diamonds - it wiped a perfectly good
-          // cached value and showed zero, which reads as "your diamonds are
-          // gone". Keep the last known value; the next successful load or a
-          // BALANCE_UPDATED will correct it.
-        } finally {
-          set({ isLoadingDiamonds: false });
-        }
+          try {
+            // Load diamonds via centralized DiamondService (profiles.diamonds source-of-truth)
+            const wallet = await DiamondService.getBalance(userId);
+            set({
+              diamonds: wallet.balance || 0,
+              _diamondsUserId: userId,
+              _diamondsAt: Date.now(),
+            });
+          } catch (error) {
+            if (!_diamondBreaker.isOpen()) {
+              _diamondBreaker.trip();
+              reportError(error, 'useWalletStore.Load_diamonds_failed');
+            }
+            // 2026-08-24: this used to `set({ diamonds: 0 })`. A failed fetch is
+            // not evidence the player has no diamonds - it wiped a perfectly good
+            // cached value and showed zero, which reads as "your diamonds are
+            // gone". Keep the last known value; the next successful load or a
+            // BALANCE_UPDATED will correct it.
+          } finally {
+            set({ isLoadingDiamonds: false });
+          }
+        });
       },
 
       loadTransactions: async (userId: string, limit = 25) => {
-        set({ isLoadingTransactions: true });
-        try {
-          const txHistory = await WalletService.getTransactionHistory(userId, { limit });
-          const transactions: WalletTransaction[] = txHistory.map((tx) => ({
-            id: tx.id,
-            walletType: tx.walletType as WalletType,
-            amount: tx.amount,
-            direction: tx.type as 'credit' | 'debit',
-            category: tx.category as WalletTransaction['category'],
-            description: tx.description,
-            timestamp: tx.createdAt,
-            reference: tx.relatedEntityId,
-          }));
-          set({ transactions });
-        } catch (error) {
-          if (!_txBreaker.isOpen()) {
-            _txBreaker.trip();
-            reportError(error, 'useWalletStore.Load_transactions_failed');
+        return coalesce(`transactions:${userId}:${limit}`, async () => {
+          set({ isLoadingTransactions: true });
+          try {
+            const txHistory = await WalletService.getTransactionHistory(userId, { limit });
+            const transactions: WalletTransaction[] = txHistory.map((tx) => ({
+              id: tx.id,
+              walletType: tx.walletType as WalletType,
+              amount: tx.amount,
+              direction: tx.type as 'credit' | 'debit',
+              category: tx.category as WalletTransaction['category'],
+              description: tx.description,
+              timestamp: tx.createdAt,
+              reference: tx.relatedEntityId,
+            }));
+            set({ transactions });
+          } catch (error) {
+            if (!_txBreaker.isOpen()) {
+              _txBreaker.trip();
+              reportError(error, 'useWalletStore.Load_transactions_failed');
+            }
+          } finally {
+            set({ isLoadingTransactions: false });
           }
-        } finally {
-          set({ isLoadingTransactions: false });
-        }
+        });
       },
 
       refreshAll: async (userId: string) => {

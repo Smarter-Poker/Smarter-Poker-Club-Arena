@@ -124,11 +124,6 @@
   text-decoration: none;
 }
 
-.supportCard:hover {
-  border-color: var(--neon-cyan);
-  background: linear-gradient(180deg, var(--neon-cyan-dim) 0%, var(--metal-mid) 100%);
-}
-
 .supportIcon {
   font-size: 2.5rem;
   color: var(--neon-cyan);
@@ -246,10 +241,6 @@
   cursor: pointer;
   touch-action: manipulation;
   transition: all 0.2s ease;
-}
-
-.faqQuestion:hover {
-  color: var(--neon-cyan);
 }
 
 .faqToggle {

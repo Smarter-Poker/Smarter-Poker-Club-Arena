@@ -257,6 +257,91 @@ describe('hero hole-card row geometry', () => {
   });
 
   /**
+   * Dan 2026-08-28, on a phone, the evening of the day the proportional rule
+   * landed: "THE SIZE OF THE CARDS IN NLH HAVE REGRESSED BACK TO THE SMALLER
+   * SIZED HERO CARDS AND BOARD CARDS. MAKE THEM THE SAME SIZE AS THE PLO CARDS,
+   * THEN PREVENT THEM FROM REGRESSING AGAIN."
+   *
+   * The test above proves hold'em and PLO4 read the SAME token, and it was true
+   * and passing when he wrote that. What it could not see is that the token has
+   * a FLOOR, and the floor was 44px — the exact hold'em card he had rejected
+   * that morning, the one that "sat beside a 60px PLO4 card for nine days". So
+   * hold'em and PLO were equal and BOTH were back at the rejected size wherever
+   * the floor bound:
+   *
+   *     iPhone SE 375x667    felt 286.7  -> floor (fraction asks 39.8)
+   *     iPhone landscape     felt  96.0  -> floor (fraction asks 13.3)
+   *     iPad landscape       felt 308.1  -> floor (fraction asks 42.8)
+   *     laptop 1280x800      felt 323.9  -> 45px, one pixel clear of it
+   *
+   * and, worse, on EVERY device for the first frame of every table: `scalerSize`
+   * in TablePage.tsx initialises to 320px and a ResizeObserver cannot report
+   * before layout, so 320 x 0.139 = 44.5px is what a hand starts at everywhere.
+   *
+   * "Prevent them from regressing again" is this test. A floor is not a neutral
+   * safety net — it is a SIZE, and it silently outranks whatever the fraction
+   * was tuned to produce. It may therefore never sit below the size Dan signed
+   * off, which is 51px: his approved phone rung in #1571, and also exactly what
+   * the fraction itself yields on the canonical iPhone 12/13/14 felt
+   * (366 x 0.139 = 50.9). Above the floor the proportion is free; below it, the
+   * only direction available is bigger.
+   */
+  it('never draws a card smaller than the size Dan approved, on any felt', () => {
+    const body = RULES.filter((r) => /--sp-card2-w:/.test(r.body))[0].body;
+    const decl = body.match(/--sp-card2-w:\s*([^;]+);/)![1].trim();
+
+    const clamp = decl.match(
+      /clamp\(\s*([\d.]+)px\s*,\s*calc\(\s*var\(--table-w\s*,\s*([\d.]+)px\s*\)\s*\*\s*([\d.]+)\s*\)\s*,\s*([\d.]+)px\s*\)/
+    );
+    expect(
+      clamp,
+      'the card must stay clamp(floor, fraction of the MEASURED felt, ceiling) — the ' +
+        'shape is what lets this file reason about the floor at all'
+    ).toBeTruthy();
+
+    const [floorPx, fallbackW, fraction, ceilingPx] = clamp!.slice(1).map(Number);
+
+    expect(
+      floorPx,
+      `the floor is ${floorPx}px. 44px is the pre-#1571 hold'em card Dan rejected on ` +
+        '2026-08-27; anything at or below it reinstates that card on an iPhone SE, ' +
+        'both landscapes, a 1280x800 laptop, and on the first frame of every table'
+    ).toBeGreaterThanOrEqual(50);
+
+    /* THE FLOOR MUST STAY UNDER THE CANONICAL DEVICE'S OWN ANSWER, and this is
+       the half that is easy to get wrong in the "helpful" direction.
+
+       The canonical felt is the iPhone 12/13/14's 366px, so the fraction gives
+       366 x 0.139 = 50.87px there. A floor at 51 would bind on that device — by
+       0.13px, invisibly on screen — and `floorBinds` in
+       tests/e2e/table-proportions.spec.ts excuses any floor-bound device from
+       every flatness assertion in that file, because a floor is by definition
+       what stops a proportion. Raising the floor past this line therefore buys
+       nothing a player can see and costs the estate's most-reviewed device its
+       coverage. If the card needs to be bigger, raise the FRACTION. */
+    const CANONICAL_FELT_W = 366;
+    expect(
+      floorPx,
+      `the floor (${floorPx}px) has reached the canonical iPhone 12/13/14 card ` +
+        `(${CANONICAL_FELT_W} x ${fraction} = ${(CANONICAL_FELT_W * fraction).toFixed(2)}px). ` +
+        'That device is now governed by the floor rather than by the proportion, and ' +
+        'table-proportions.spec.ts will silently stop measuring it. Raise the fraction ' +
+        'instead.'
+    ).toBeLessThan(CANONICAL_FELT_W * fraction);
+
+    // A `.seat` rendered before the ResizeObserver reports, or outside the
+    // scaler entirely, must land ON the fraction rather than on top of the
+    // floor — otherwise the fallback is silently the rejected size again.
+    expect(
+      fallbackW * fraction,
+      `the --table-w fallback (${fallbackW}px) yields ${(fallbackW * fraction).toFixed(1)}px, ` +
+        'below the floor — first paint would draw the rejected card on every device'
+    ).toBeGreaterThanOrEqual(floorPx);
+
+    expect(ceilingPx, 'the ceiling must still leave room above the floor').toBeGreaterThan(floorPx);
+  });
+
+  /**
    * Dan 2026-08-27, verbatim: "THE CARDS INSIDE OF THE CLUB ARENA FOR HOLDEM
    * GAMES WERE NEVER CHANGED. THEY NEED TO BE THE SAME SIZE CARDS WE USE FOR
    * PLO INSIDE OF HOLDEM. MAKE SURE THAT THE HOLDEM CARDS (HERO CARDS AND

@@ -27,6 +27,12 @@ import { cashMinBuyIn } from '../config/cashBuyIn.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
+// The VARIANT'S OWN seat ceiling, which is a house rule and not deck
+// arithmetic — PLO6 is 6-max and PLO5 is 7-max by Dan's ruling, both tighter
+// than the deck alone allows. maxSeatsFor above answers "what fits"; this
+// answers "what is permitted", and a bomb-pot variant override must satisfy
+// both. See the override block below.
+import { maxSeatsForVariant } from '../config/tableSeating.js';
 import {
   bombPotSettingsFromTable,
   resolveBombPotVariant,
@@ -981,7 +987,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // knockout to the previous hand's side pots, so it is cleared with the
     // winners it belongs to and never independently of them.
     this.currentHandPots = [];
-    this.currentHandContributions.clear(); // Bible V8 §4.18: Reset equal-share rakeback tracking (FIX 144)
+    this.currentHandContributions.clear(); // Weighted contributed rake (Dan 2026-08-29): reset per-hand eligible contributions
+    this.currentHandReturnedUncalled.clear(); // ... and the returned-uncalled audit map
     this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
     this.currentHandCashoutRedirects = new Map(); // EV CASHOUT 2026-08-28: reset per hand
     this.currentHandShowdownResults = []; // BBJ: Reset showdown results for new hand
@@ -1147,28 +1154,58 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     for (const p of players) {
       this.dealtInUserIds.add(p.user_id);
     }
-    // AN ORBIT IS A HAND, NOT A LOOP ITERATION. The sit-out counter used to be
-    // bumped by the dealing loop's own tick, which fires once per hand while
-    // dealing and once per 3-second idle tick while not — so "removed after the
-    // button passes them twice" silently became "after about nine seconds" on a
-    // quiet table. It is counted HERE, at the deal, which is the only place an
-    // orbit actually advances. The five-minute half is evaluated on every tick
-    // regardless, so a table that stops dealing still evicts on the clock.
-    if (!this.isTournamentTable()) {
-      this.disconnectEngine.tickSitOutsAndCollectEvictions(
-        this.tableId,
-        this.seatedPlayers.map((p) => p.user_id),
-        { countOrbit: true }
-      );
-    }
     // Keep the legacy index roughly in sync for any remaining reads (defensive).
     this.dealerSeatIndex = Math.max(0, sortedSeats.indexOf(dealerSeat)) + 1;
 
     // Bible V8 §6: Orbit complete (button wrapped past the top seat) → refill
     // time banks. With seat-based rotation, a wrap means the new button seat is
     // not strictly greater than the previous one.
-    if (prevButtonSeat > 0 && dealerSeat <= prevButtonSeat) {
+    const orbitComplete = prevButtonSeat > 0 && dealerSeat <= prevButtonSeat;
+    if (orbitComplete) {
       this.timeBankEngine.onOrbitComplete(this.tableId);
+    }
+
+    /**
+     * ── AN ORBIT IS A BUTTON ROTATION, NOT A HAND (Dan, 2026-08-29) ─────────
+     *
+     * The rule is "removed after the button passes them TWICE, or after 5
+     * minutes, whichever happens first". This counter has been wrong twice, in
+     * the same direction, each fix moving it closer without arriving:
+     *
+     *   originally  bumped by the dealing loop's own tick — once per hand while
+     *               dealing and once per 3-SECOND IDLE TICK while not, so on a
+     *               quiet table "two orbits" became about nine seconds;
+     *   2026-08-28  moved here, to the deal, and the comment said "an orbit is
+     *               a hand". It is not. At a 6-max table a real orbit is about
+     *               six hands, so "2 orbits" was being enforced as 3 hands —
+     *               a player booted roughly four times sooner than the rule
+     *               they were told.
+     *
+     * The correct signal was already being computed one line above for time
+     * banks: `orbitComplete` is a genuine button wrap. Counted there now, so
+     * the two halves of the rule finally mean what they say, and the
+     * five-minute half is usually the one that fires — which is the rule as
+     * Dan states it.
+     *
+     * The five-minute half is still evaluated on EVERY tick, deal or not. That
+     * is the half that has to work when the table has gone quiet, which is
+     * exactly when a seat would otherwise be held forever.
+     */
+    if (orbitComplete && !this.isTournamentTable()) {
+      /* THE RETURN IS DELIBERATELY DISCARDED. This call's job is to ADVANCE the
+         orbit counter, not to act on it: a hand is being dealt right now, and
+         standing a player up between the button moving and the cards going out
+         is the mid-hand removal that `evictExpiredSitOuts` and `leaveTable`
+         both refuse. Whoever this increment just pushed over the limit is
+         collected on the next pass of `evictExpiredSitOuts({ countOrbit:
+         false })` at the top of the loop, which runs between hands and takes
+         the seat lock. Said out loud because a bare discarded `string[]` of
+         evictable players reads like a dropped result. */
+      void this.disconnectEngine.tickSitOutsAndCollectEvictions(
+        this.tableId,
+        this.seatedPlayers.map((p) => p.user_id),
+        { countOrbit: true }
+      );
     }
 
     // Who posts the blinds this hand. ONE computation, used by the straddle
@@ -1290,69 +1327,52 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // Fail closed: if the flag cannot be cleared the bomb does not fire,
       // because a bomb that fires twice is worse than one that arrives a hand
       // late.
-      if (!decision.isBombPot && this.tableInfo.bomb_pot_enabled === true) {
+      if (
+        !decision.isBombPot &&
+        this.tableInfo.bomb_pot_enabled === true &&
+        // Below the floor the request simply stays pending (spec §3.1), so
+        // there is nothing to claim and no reason to touch the database.
+        players.length >= schedulerSettings.minPlayers
+      ) {
         try {
-          const { data: manualRow } = await supabase
+          /**
+           * ONE ROUND TRIP, AND THE CLAIM IS ATOMIC (2026-08-29).
+           *
+           * This was SELECT-then-UPDATE: two sequential awaits on the
+           * hand-start critical path of every bomb-enabled table, on every
+           * hand that was not already a bomb. It was also a check-then-act
+           * with no predicate on the write, so two engines overlapping during
+           * a shard handoff or a restart could both read `true` and both fire
+           * — precisely the "a bomb that fires twice" outcome the fail-closed
+           * comment above says it exists to prevent.
+           *
+           * A conditional UPDATE ... WHERE bomb_pot_manual_pending = true is
+           * both halves at once: exactly one caller gets a row back, and that
+           * caller owns the bomb. No row back means somebody else claimed it
+           * or it was never set. Still fails closed — an error claims nothing.
+           *
+           * The minPlayers gate moved OUT of this block and into the condition
+           * above, because with an atomic claim the order matters: claiming
+           * first and then discovering the table is short would consume the
+           * host's request and fire nothing.
+           */
+          const { data: claimed, error: claimErr } = await supabase
             .from('tables')
-            .select('bomb_pot_manual_pending')
+            .update({ bomb_pot_manual_pending: false })
             .eq('id', this.tableId)
+            .eq('bomb_pot_manual_pending', true)
+            .select('id')
             .maybeSingle();
-          if (
-            (manualRow as { bomb_pot_manual_pending?: boolean } | null)?.bomb_pot_manual_pending ===
-            true
-          ) {
-            const minP = Math.max(2, Math.floor(this.tableInfo.bomb_pot_min_players ?? 3));
-            if (players.length >= minP) {
-              const { error: clearErr } = await supabase
-                .from('tables')
-                .update({ bomb_pot_manual_pending: false })
-                .eq('id', this.tableId);
-              if (clearErr) {
-                console.warn('[BombPot] manual flag clear failed — deferring:', clearErr.message);
-              } else {
-                decision = { isBombPot: true, triggerReason: 'manual_next_hand' };
-              }
-            }
-            // Below the floor the request simply stays pending (spec §3.1).
+          if (claimErr) {
+            console.warn('[BombPot] manual claim failed — deferring:', claimErr.message);
+          } else if (claimed) {
+            decision = { isBombPot: true, triggerReason: 'manual_next_hand' };
           }
         } catch (err) {
-          console.warn('[BombPot] manual-pending read failed:', err);
+          console.warn('[BombPot] manual claim threw:', err);
         }
       }
 
-      // Persist the scheduler whenever its serialized state moved (counter
-      // ticks, token set/consumed, clock reset, bomb button advanced). One
-      // small row write per hand, bomb-enabled tables only. Fire-and-forget:
-      // a lost write costs one cycle of drift after the NEXT restart — the
-      // exact cost every restart carried before persistence existed.
-      if (schedulerSettings.enabled) {
-        const dueAt = this.bombPotScheduler.nextBombDueAt(schedulerSettings);
-        const dueAtIso = dueAt !== null ? new Date(dueAt).toISOString() : null;
-        const snapObj = { ...this.bombPotScheduler.exportState(), b: this.bombButtonSeat ?? null };
-        const snap = JSON.stringify(snapObj);
-        if (snap !== this.bombPotSchedPersistedJson) {
-          this.bombPotSchedPersistedJson = snap;
-          this.tableInfo.bomb_pot_sched_state = snapObj;
-          this.tableInfo.bomb_pot_next_due_at = dueAtIso;
-          // Promise.resolve turns the PostgrestBuilder thenable into a real
-          // Promise so the house .catch rule (noUnhandledRejections.test.ts)
-          // is satisfiable.
-          void Promise.resolve(
-            supabase
-              .from('tables')
-              .update({ bomb_pot_sched_state: snapObj, bomb_pot_next_due_at: dueAtIso })
-              .eq('id', this.tableId)
-          )
-            .then(({ error }) => {
-              if (error) {
-                console.warn('[BombPot] scheduler persistence failed:', error.message);
-              }
-            })
-            .catch((err: unknown) => {
-              console.warn('[BombPot] scheduler persistence threw:', err);
-            });
-        }
-      }
       if (decision.isBombPot) {
         // SEPARATE BOMB BUTTON (spec §5.3, buttonPolicy SEPARATE_BOMB_BUTTON):
         // bomb hands keep their own button rotation and the REGULAR button
@@ -1364,9 +1384,18 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // each bomb hand (getNextSeat skips vacated seats — dead-button
         // behaviour matches the regular rotation's own).
         if ((this.tableInfo.bomb_pot_button_policy ?? 'regular') === 'separate') {
+          // 2026-08-29: rotate over buttonRoster, not the raw seat list.
+          // buttonRoster is this.buttonEligible(players), built above for the
+          // regular rotation precisely to honour Dan's binding rule — "NEW
+          // PLAYERS NEVER GET THE BUTTON WHEN SITTING DOWN. It skips over them
+          // and moves to the correct person." Rotating the BOMB button over
+          // `players` let a player who had never been dealt a hand here
+          // receive the button on their very first one, which sets postflop
+          // action order and odd-chip allocation for that hand. The rule is
+          // about the button, not about which kind of hand it is.
           const bombSeat =
             this.bombButtonSeat != null
-              ? this.getNextSeat(this.bombButtonSeat, players)
+              ? this.getNextSeat(this.bombButtonSeat, buttonRoster)
               : dealerSeat;
           this.bombButtonSeat = bombSeat;
           // Rewind the regular rotation: it advanced above for what is now a
@@ -1405,14 +1434,97 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // fit; hole cards that do not fit mean the override — not the
           // boards — must yield, and the hand deals as the table's own game.
           const holeNeed = players.length * holeCardCount(resolved) + 5;
-          if (holeNeed <= deckSizeFor(resolved)) {
+          /**
+           * 2026-08-29: the deck test alone is not the seat law.
+           *
+           * maxSeatsFor('plo5') is (52-5)/5 = 9, so nine players passed this
+           * check and were dealt a NINE-HANDED PLO5 bomb hand — a table this
+           * same file (and ServerTableEngineRunout) states is illegal: "PLO6
+           * is 6-max and PLO5 is 7-max (Dan)". maxSeatsForVariant is where
+           * that rule lives, and it was not being asked.
+           *
+           * It was not only a rules violation. Nine PLO5 hands is 45 hole
+           * cards, so 15 more for three boards does not fit and
+           * postBombPotAntes silently downgraded the host's three boards to
+           * one — the host lost the whole feature to a console.warn nobody
+           * reads, on a hand that should not have used the override at all.
+           *
+           * Both tests must pass. Failing either means the OVERRIDE yields
+           * and the hand deals the table's own game, which is exactly the
+           * fallback the surrounding comment already describes.
+           */
+          const seatMax = maxSeatsForVariant(resolved);
+          if (holeNeed <= deckSizeFor(resolved) && players.length <= seatMax) {
             bombHandVariant = resolved;
+          } else if (players.length > seatMax) {
+            console.warn(
+              `[BombPot] variant override ${resolved} skipped: ${players.length} players exceeds ` +
+                `its ${seatMax}-seat limit — dealing ${tableVariant}`
+            );
           } else {
             console.warn(
               `[BombPot] variant override ${resolved} skipped: ${players.length} players need ` +
                 `${holeNeed} cards > ${deckSizeFor(resolved)}-card deck — dealing ${tableVariant}`
             );
           }
+        }
+      }
+
+      /**
+       * PERSIST THE SCHEDULER — AFTER THE DECISION, NOT BEFORE (2026-08-29).
+       *
+       * Counter ticks, token set/consumed, clock reset, bomb button advanced.
+       * One small row write per hand, bomb-enabled tables only.
+       * Fire-and-forget: a lost write costs one cycle of drift after the NEXT
+       * restart, the exact cost every restart carried before persistence
+       * existed.
+       *
+       * Two changes here.
+       *
+       * ORDER. This block used to run BEFORE `if (decision.isBombPot)`, so on
+       * a bomb hand the `b` it wrote was the PREVIOUS bomb hand's button seat
+       * — the seat this hand is using had not been chosen yet. It self-healed
+       * on the next hand in modes that write every hand, but a restart in that
+       * window replayed a stale bomb button.
+       *
+       * THE OFF SWITCH. The write was gated on `schedulerSettings.enabled`,
+       * while noteHandStart calls reset() when the schedule is disabled. So
+       * turning bomb pots off dropped the in-memory token and left the
+       * PERSISTED one — `{p: true}` — sitting in the row. Re-enable, restart,
+       * and restoreState loaded that stale token and detonated a bomb on the
+       * first valid hand, which is precisely what "re-enabling starts a fresh
+       * schedule" exists to prevent. A disabled schedule now clears the row,
+       * once, and the JSON-diff guard keeps it to a single write.
+       */
+      {
+        const enabled = schedulerSettings.enabled;
+        const dueAt = enabled ? this.bombPotScheduler.nextBombDueAt(schedulerSettings) : null;
+        const dueAtIso = dueAt !== null ? new Date(dueAt).toISOString() : null;
+        const snapObj = enabled
+          ? { ...this.bombPotScheduler.exportState(), b: this.bombButtonSeat ?? null }
+          : null;
+        const snap = JSON.stringify(snapObj);
+        if (snap !== this.bombPotSchedPersistedJson) {
+          this.bombPotSchedPersistedJson = snap;
+          this.tableInfo.bomb_pot_sched_state = snapObj;
+          this.tableInfo.bomb_pot_next_due_at = dueAtIso;
+          // Promise.resolve turns the PostgrestBuilder thenable into a real
+          // Promise so the house .catch rule (noUnhandledRejections.test.ts)
+          // is satisfiable.
+          void Promise.resolve(
+            supabase
+              .from('tables')
+              .update({ bomb_pot_sched_state: snapObj, bomb_pot_next_due_at: dueAtIso })
+              .eq('id', this.tableId)
+          )
+            .then(({ error }) => {
+              if (error) {
+                console.warn('[BombPot] scheduler persistence failed:', error.message);
+              }
+            })
+            .catch((err: unknown) => {
+              console.warn('[BombPot] scheduler persistence threw:', err);
+            });
         }
       }
     }
@@ -1490,6 +1602,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const config: HandConfig = {
       tableId: this.tableId,
       handNumber,
+      /* Dan 2026-08-28, binding: a tournament showdown is always face up, so
+         applyShowdownRevealRules skips the cash-game muck courtesy entirely.
+         Same predicate every other tournament branch in this file uses. */
+      isTournament: this.isTournamentTable(),
       // VARIANT OVERRIDE (spec §10.1): a bomb hand may play a different
       // variant from the table. Everything downstream — evaluator, hole-card
       // count, betting structure, horse equity, hand history — reads the
@@ -1528,7 +1644,22 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // 2026-08-22 parity: AoF tables restrict preflop to fold / all-in.
       allInOrFold: this.tableInfo.all_in_or_fold ?? false,
       bombPot: bombPotConfig,
-      straddles: straddleResults.length > 0 ? straddleResults : undefined,
+      /**
+       * A BOMB HAND HAS NO STRADDLE (2026-08-29).
+       *
+       * The straddle block runs above, BEFORE the bomb decision, so on a
+       * straddle-enabled table straddleResults was populated on every bomb
+       * hand and handed straight into HandConfig. HandController reads
+       * config.straddles in exactly two places — postBlinds, and the
+       * preflop-first-action branch of setNextPlayer — and a bomb hand reaches
+       * neither, because everyone antes and the hand opens on the flop.
+       *
+       * So no money moved and nothing was visibly wrong. What existed was a
+       * HandConfig asserting straddles that were never posted: a loaded gun
+       * for whoever next touches either of those branches, or adds a third
+       * reader. Say plainly that a bomb hand has none.
+       */
+      straddles: bombPotConfig || straddleResults.length === 0 ? undefined : straddleResults,
       // Bible V8 §4.2: Dead blinds for players returning from sit-out
       deadBlinds:
         !this.isTournamentTable() && this.returningFromSitout.size > 0
@@ -1802,6 +1933,33 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         unsub();
         this.preciseTimer.clearTable(this.tableId);
         this.actionValidator.clearTable(this.tableId);
+        /**
+         * THE BOMB OVERLAY MUST BE DISMISSED ON THIS PATH TOO (2026-08-29).
+         *
+         * BOMB_POT_COMPLETED is what tells the client's BombPotOverlay the
+         * hand is over. HandController emits it after every HAND_COMPLETE —
+         * the normal settlement, the skip-distribution path, the no-winner
+         * path and the catch block, four places, all covered. This is the
+         * fifth exit and it is the only one that does not go through
+         * HandController at all: the safety timer tears the hand down from
+         * outside, so nothing ever emits it.
+         *
+         * A voided bomb hand therefore left the overlay on screen with no
+         * dismissal signal, on top of a table that had just started dealing
+         * the next hand. Ten minutes is rare, but "rare" is exactly when a
+         * player is already looking at a table that has misbehaved.
+         *
+         * Emitted through handleHandEvent so it takes the same route to the
+         * hub as the four that already work.
+         */
+        if (this.currentHandBombPot) {
+          void this.handleHandEvent(
+            { type: 'BOMB_POT_COMPLETED', handNumber } as HandEvent,
+            players
+          ).catch((err) =>
+            reportError(err, 'ServerTableEngine.' + this.tableId + '.bomb_completed_on_void')
+          );
+        }
         this.handController = null;
         this.runoutRevealActive = false;
         resolve();
@@ -2130,7 +2288,15 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         );
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.busted_standup_cashout');
-        await markSeatAsLeft(this.tableId, player.user_id, player.seat_number).catch(() => {});
+        /* If the FALLBACK also fails, say so. Swallowing it left the worst
+           outcome invisible: `seat_left` has already been broadcast above, so
+           every client has cleared the seat while the row is still occupied —
+           a ghost seat that blocks a paying player and that nothing anywhere
+           reports. A cleanup that cannot complete is exactly the case worth
+           knowing about. */
+        await markSeatAsLeft(this.tableId, player.user_id, player.seat_number).catch((err2) =>
+          reportError(err2, 'ServerTableEngine.' + this.tableId + '.busted_standup_mark_left')
+        );
       }
     }
 
@@ -2154,6 +2320,29 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // Stop-Loss Bankroll logic (same rule as Settlement step 5): after two
       // rebuys (3 buy-ins lost) the horse leaves instead of rebuying again.
       if (currentRebuys >= 2) {
+        /* ── HORSES ARE PLAYERS (CLAUDE.md 10.5) ────────────────────────────
+           This branch used to release the seat SILENTLY: no `seat_left` event,
+           where the human path immediately above emits one. Both stand a busted
+           player up for the same reason — out of chips, not coming back — but a
+           busted human's seat cleared on every client the instant the event
+           arrived, and a busted horse's seat cleared only when a client next
+           happened to diff a snapshot.
+
+           That is a TELL, and it is the one this file's own comment warns
+           about in the other direction: "a felt that clears a busted horse's
+           seat promptly and leaves a busted human's sitting there is a tell
+           either way round." Timing is part of the treatment (Dan 2026-08-27) —
+           the rhythm of the table is what gives the fleet away, not any one
+           hand. Same event, same reason, same moment. */
+        this.hub?.emitEvent(this.tableId, {
+          type: 'seat_left',
+          table_id: this.tableId,
+          seat: horse.seat_number,
+          user_id: horse.user_id,
+          mid_hand: false,
+          reason: 'busted_no_rebuy',
+          timestamp: Date.now(),
+        });
         await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
         this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
         this.timeBankEngine.removePlayer(this.tableId, horse.user_id);

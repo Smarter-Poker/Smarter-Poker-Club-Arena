@@ -180,10 +180,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.control-btn:hover {
-  background: var(--bg-tertiary);
-}
-
 .control-btn.play {
   width: 56px;
   height: 56px;
@@ -239,10 +235,6 @@
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.action-item:hover {
-  background: var(--bg-tertiary);
 }
 
 .action-item.passed {

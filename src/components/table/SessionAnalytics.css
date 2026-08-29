@@ -61,11 +61,6 @@
   cursor: pointer;
 }
 
-.sa-header__close:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-}
-
 /* ─── Tabs ─── */
 .sa-tabs {
   display: flex;
@@ -84,11 +79,6 @@
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s;
-}
-
-.sa-tab:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.7);
 }
 
 .sa-tab--active {

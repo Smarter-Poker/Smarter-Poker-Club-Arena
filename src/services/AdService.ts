@@ -69,6 +69,38 @@ export function isSafeAdImage(url: string | null | undefined): url is string {
   return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
 }
 
+/**
+ * The DESTINATION half of the check the docstring above already promised.
+ *
+ * Dan 2026-08-28 round 2: that comment says "a destination is checked before a
+ * browser is sent to it" — and it was not. `target_url` came off the row as
+ * unvalidated text (`String(r.target_url)`), was typed `string | null`, was
+ * entered through a bare text input on the admin page with no allowlist, and
+ * was handed straight to `navigate(path)`. A database row therefore decided
+ * where a seated player's router went. Two consequences, in order of severity:
+ *
+ *  1. `https://…` or `//evil.example` in that column sends players off-site,
+ *     from a control they trust because it sits inside the club lobby. The
+ *     lobby strip also rotates every seven seconds, so the destination under
+ *     a player's thumb changes while they are reading it.
+ *  2. Any in-app path that is not a tournament leaves /table/*, which
+ *     collapses MultiTablePage and takes the action bar with it mid-hand.
+ *
+ * Same rule as the image, for the same reason: a rooted, same-origin path.
+ * `//host` is rejected explicitly — it starts with `/` but is protocol-
+ * relative, i.e. a different site. A backslash is rejected because browsers
+ * normalise `/\evil.example` toward `//evil.example`.
+ */
+export function isSafeAdTarget(url: string | null | undefined): url is string {
+  return (
+    typeof url === 'string' &&
+    url.startsWith('/') &&
+    !url.startsWith('//') &&
+    !url.startsWith('/\\') &&
+    !url.includes('\\')
+  );
+}
+
 type AdEventType = 'impression' | 'click' | 'dismiss';
 
 /**

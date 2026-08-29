@@ -31,6 +31,23 @@ const DEPLOY_TS = '20260822000000';
 //   not changed. Media staleness is handled by stale-while-revalidate below.
 const CACHE_NAME = `club-arena-${DEPLOY_TS}`;
 const MEDIA_CACHE = 'club-arena-media-v1';
+// How stale a cached media entry may be before it is REALLY revalidated.
+// See the media branch of the fetch handler for why this number has to exist.
+const MEDIA_REVALIDATE_AFTER_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+/**
+ * Age of a cached response, from the origin's own Date header.
+ *
+ * Returns Infinity when there is no usable Date, which makes an unknown age
+ * behave as "revalidate now". That is the safe direction: the failure this
+ * whole mechanism exists to prevent is serving something old forever, so an
+ * entry we cannot date should be checked, not trusted.
+ */
+function cachedAgeMs(response) {
+  const raw = response && response.headers.get('date');
+  const parsed = raw ? Date.parse(raw) : NaN;
+  return Number.isFinite(parsed) ? Date.now() - parsed : Infinity;
+}
 const MAX_CACHE_ENTRIES = 400; // Evict oldest chunk entries beyond this (a full
 // deploy emits ~330 hashed chunks, so 300 could evict live code mid-session)
 const MAX_MEDIA_ENTRIES = 600; // Cards (104/deck-style) + tiles + icons + logos fit comfortably
@@ -265,29 +282,83 @@ sw.addEventListener('fetch', (event) => {
       )
     );
   } else if (isImage) {
-    // Stale-while-revalidate: show cached media instantly, update in background.
-    // With the long-lived Cache-Control headers on these paths, the background
-    // revalidation is answered by the browser's HTTP cache — no network cost.
+    // ─────────────────────────────────────────────────────────────────────
+    // STALE-WHILE-REVALIDATE, AND THIS TIME THE REVALIDATE HALF RUNS
+    // ─────────────────────────────────────────────────────────────────────
+    // The previous version called plain `fetch(event.request)` here and the
+    // comment above it claimed the revalidation was "answered by the
+    // browser's HTTP cache — no network cost". That was true, and it was the
+    // bug. A default fetch for a response still inside its freshness window
+    // never reaches the server, and these paths are served
+    // `Cache-Control: public, max-age=2592000`. So the background half was a
+    // no-op for THIRTY DAYS, and MEDIA_CACHE is not versioned, so a file
+    // replaced at the same path was invisible to every returning player,
+    // indefinitely.
+    //
+    // Measured on production 2026-08-28: the satellite icon had been
+    // replaced twice and shipped correctly both times. A `fetch` from inside
+    // the page with `cache: 'reload'` still returned the ORIGINAL 19,441-byte
+    // artwork, because `cache: 'reload'` bypasses the HTTP cache but not this
+    // service worker. curl, which has neither, got the new bytes. Two clients
+    // on one machine seeing different images is what sent us looking here.
+    //
+    // THE FIX IS TWO PARTS, AND BOTH ARE LOAD-BEARING:
+    //
+    // 1. `cache: 'no-cache'` on the background request. That forces a
+    //    CONDITIONAL request — the browser sends If-None-Match with the
+    //    stored ETag — so the server actually gets asked. Unchanged media
+    //    answers 304 with no body, which is a few hundred bytes, not the
+    //    image. This is the line that makes the word "revalidate" true.
+    //
+    // 2. A 6-hour floor before we bother. Without it, part 1 would put a
+    //    conditional request on the wire for EVERY image on EVERY page view —
+    //    roughly 120 of them on a table, on a phone, on cellular — to
+    //    discover that ~all of them are unchanged. Below the floor we return
+    //    the cached copy and touch the network zero times, exactly as before.
+    //
+    // So a media file replaced at a stable path now reaches everyone within
+    // one revalidation window instead of never. That is a repair, not a
+    // licence: version the FILENAME when you replace artwork you need people
+    // to see immediately (`satellite-winner-v3.png`, `btn-hamburger-v4.png`),
+    // because a new URL is correct on the very first paint and this is only
+    // correct on the next one.
+    //
+    // `event.waitUntil` keeps the worker alive for the background half. We
+    // have already handed the page a response by then, and without it the
+    // browser is free to kill the worker mid-write and the cache never
+    // updates — which would leave this looking fixed while behaving exactly
+    // as it did before.
     event.respondWith(
       caches.open(MEDIA_CACHE).then((cache) =>
         cache.match(event.request).then((cached) => {
-          const fetchPromise = fetch(event.request).then((response) => {
+          if (cached && cachedAgeMs(cached) < MEDIA_REVALIDATE_AFTER_MS) {
+            return cached;
+          }
+
+          const revalidate = fetch(
+            new Request(event.request, { cache: 'no-cache' })
+          ).then((response) => {
             if (response.ok) {
               cache.put(event.request, response.clone());
               trimCache(MEDIA_CACHE, MAX_MEDIA_ENTRIES);
             }
             return response;
           }).catch(() => {
-            // Offline: return cached version, or a transparent 1x1 PNG if nothing cached
+            // Offline: the cached copy, however old, beats a broken image.
             if (cached) return cached;
-            // No cache + no network = return empty transparent image to prevent crash
+            // No cache and no network. An empty PNG keeps the layout intact
+            // rather than surfacing a browser error glyph mid-hand.
             return new Response(new Uint8Array(0), {
               status: 200,
               headers: { 'Content-Type': 'image/png' },
             });
           });
 
-          return cached || fetchPromise;
+          if (cached) {
+            event.waitUntil(revalidate);
+            return cached;
+          }
+          return revalidate;
         })
       )
     );

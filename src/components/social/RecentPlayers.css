@@ -37,10 +37,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.player-row:hover {
-  background: var(--bg-tertiary);
-}
-
 .player-row.skeleton {
   height: 72px;
   animation: shimmer 1.5s infinite;
@@ -133,17 +129,6 @@
   cursor: pointer;
   font-size: 14px;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.action-btn:hover {
-}
-
-.action-btn.add:hover {
-  background: rgba(46, 204, 113, 0.2);
-}
-
-.action-btn.invite:hover {
-  background: rgba(24, 119, 242, 0.2);
 }
 
 .empty-state {

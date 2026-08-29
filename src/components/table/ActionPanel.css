@@ -645,10 +645,6 @@
   z-index: 1;
 }
 
-.action-panel .action-btn:hover:not(:disabled)::before {
-  left: 100%;
-}
-
 .action-panel .action-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
@@ -703,10 +699,6 @@
     inset 0 -2px 0 rgba(0, 0, 0, 0.2);
 }
 
-.action-panel .action-btn--fold:hover:not(:disabled) {
-  filter: brightness(1.15);
-}
-
 /* ─── CHECK ────────────────────────────────────────────────── */
 .action-panel .action-btn--check {
   background: linear-gradient(180deg, #1587f8 0%, #0078ff 40%, #003a9e 100%);
@@ -717,10 +709,6 @@
     inset 0 -2px 0 rgba(0, 0, 0, 0.2);
 }
 
-.action-panel .action-btn--check:hover:not(:disabled) {
-  filter: brightness(1.15);
-}
-
 /* ─── CALL ─────────────────────────────────────────────────── */
 .action-panel .action-btn--call {
   background: linear-gradient(180deg, #1587f8 0%, #0078ff 40%, #003a9e 100%);
@@ -729,10 +717,6 @@
     0 6px 20px rgba(21, 135, 248, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
     inset 0 -2px 0 rgba(0, 0, 0, 0.2);
-}
-
-.action-panel .action-btn--call:hover:not(:disabled) {
-  filter: brightness(1.15);
 }
 
 /* ─── RAISE / BET (Green — item 8) ───────────────────────────
@@ -748,10 +732,6 @@
     0 6px 20px rgba(63, 185, 80, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
     inset 0 -2px 0 rgba(0, 0, 0, 0.2);
-}
-
-.action-panel .action-btn--raise:hover:not(:disabled) {
-  filter: brightness(1.15);
 }
 
 /* The raise button while its sizing overlay is open. It stays on the row now
@@ -776,10 +756,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
     inset 0 -2px 0 rgba(0, 0, 0, 0.2);
   animation: allinPulse 1.8s ease-in-out infinite;
-}
-
-.action-panel .action-btn--allin:hover:not(:disabled) {
-  filter: brightness(1.15);
 }
 
 @keyframes allinPulse {
@@ -831,10 +807,6 @@
   touch-action: manipulation;
 }
 
-.raise-adjust:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.18);
-}
-
 .raise-adjust:active:not(:disabled) {
   transform: scale(0.95);
 }
@@ -880,10 +852,6 @@
      editable" cue and costs no extra copy on a panel with no room for any. */
   border-bottom: 1px dashed rgba(255, 255, 255, 0.45);
   padding-bottom: 1px;
-}
-
-.raise-value__amount:hover {
-  border-bottom-color: rgba(255, 255, 255, 0.85);
 }
 
 .raise-value__amount:focus-visible {
@@ -1311,10 +1279,6 @@
 .raise-slider:active {
   cursor: grabbing;
 }
-
-.raise-slider::-webkit-slider-thumb:hover {
-}
-
 .raise-slider:active::-webkit-slider-thumb {
   transform: scale(1.1);
   box-shadow:
@@ -1357,10 +1321,6 @@
   /* Silver, matching the webkit fill above (Dan 2026-08-28). */
   background: linear-gradient(90deg, #f2f4f7 0%, #c3c9d1 60%, #868e99 100%);
 }
-
-.raise-slider::-moz-range-thumb:hover {
-}
-
 /* Preset Buttons Row */
 .raise-presets {
   display: flex;
@@ -1410,11 +1370,6 @@
   pointer-events: none;
 }
 
-.raise-preset:hover:not(:disabled) {
-  background: linear-gradient(180deg, rgba(21, 135, 248, 0.45) 0%, rgba(0, 58, 158, 0.45) 100%);
-  border-color: rgba(21, 135, 248, 0.65);
-}
-
 .raise-preset:active:not(:disabled) {
   transform: scale(0.95) translateY(0);
   background: linear-gradient(180deg, rgba(21, 135, 248, 0.55) 0%, rgba(0, 58, 158, 0.55) 100%);
@@ -1432,11 +1387,6 @@
   color: #fca5a5;
   font-weight: 800;
   letter-spacing: 0.5px;
-}
-
-.raise-preset--allin:hover:not(:disabled) {
-  background: linear-gradient(180deg, rgba(239, 68, 68, 0.45) 0%, rgba(185, 28, 28, 0.45) 100%);
-  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.35);
 }
 
 /* Confirm / Cancel Row */
@@ -1458,10 +1408,6 @@
   cursor: pointer;
   transition: all 0.12s ease;
   touch-action: manipulation;
-}
-
-.raise-cancel:hover {
-  background: rgba(255, 255, 255, 0.12);
 }
 
 .raise-confirm {
@@ -1508,10 +1454,6 @@
   100% {
     left: 120%;
   }
-}
-
-.raise-confirm:hover {
-  filter: brightness(1.1);
 }
 
 .raise-confirm:active {
@@ -1785,10 +1727,6 @@
   margin-top: 2px;
   letter-spacing: 0.5px;
   transition: color 0.15s ease;
-}
-
-.action-panel .action-btn:hover .action-btn__shortcut {
-  color: rgba(255, 255, 255, 0.4);
 }
 
 /* Raise slider tick marks */

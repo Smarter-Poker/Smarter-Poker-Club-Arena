@@ -48,6 +48,7 @@ import {
   reconcilePendingFees,
   auditBBJDrift,
   repairUnbankedBBJFees,
+  auditRakeAttributionDrift,
 } from './services/FeeReconciler.js';
 import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
 import { fetchAllRows } from './services/supabase/pagination.js';
@@ -79,6 +80,14 @@ export { TournamentManager };
 
 const TABLE_DISCOVERY_INTERVAL = 5000; // Check for new tables every 5 seconds
 const TOURNAMENT_DISCOVERY_INTERVAL = 5000; // Check for tournaments every 5 seconds
+
+/**
+ * Lease reaping. An hour is 120x the 30-second staleness window, so a row this
+ * old has already lost every claim it could ever win and deleting it cannot
+ * race a live engine. The server-side function refuses anything under 600s.
+ */
+const LEASE_REAP_STALE_SECONDS = 3600;
+const LEASE_REAP_INTERVAL_MS = 60 * 60 * 1000;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GAME SERVER — Main Orchestrator
@@ -230,6 +239,7 @@ export class GameServer {
    * whose banking RPC failed — and runs the independent BBJ ledger-drift alarm.
    */
   private feeReconcileTimer: NodeJS.Timeout | null = null;
+  private leaseReapTimer: NodeJS.Timeout | null = null;
   private breakResumeTimer: NodeJS.Timeout | null = null;
   /**
    * When the platform-wide break is expected to end, as epoch ms; 0 when no
@@ -432,6 +442,7 @@ export class GameServer {
       // failure the engine never noticed would otherwise stay invisible (it did,
       // for a week).
       this.startFeeReconciler();
+      this.startLeaseReaper();
 
       // Step 8b (2026-08-20): drain the hand_history retry queue. hand_history
       // writes go to zero platform-wide for 30-120s at a time under load (see
@@ -509,6 +520,10 @@ export class GameServer {
     if (this.feeReconcileTimer) {
       clearInterval(this.feeReconcileTimer);
       this.feeReconcileTimer = null;
+    }
+    if (this.leaseReapTimer) {
+      clearInterval(this.leaseReapTimer);
+      this.leaseReapTimer = null;
     }
 
     if (this.breakResumeTimer) {
@@ -1159,6 +1174,11 @@ export class GameServer {
             );
           }
           await auditBBJDrift(1);
+          // Weighted contributed rake (Dan 2026-08-29): invariant 4/9 watchdog
+          // — every WEIGHTED_CONTRIBUTED hand's per-player rake_attributions
+          // must sum exactly to the rake collected. Files a critical
+          // financial_alert per drift window; never silently repairs.
+          await auditRakeAttributionDrift(24);
         } catch (err) {
           reportError(err, 'GameServer.bbj_drift_audit_failed');
         }
@@ -1171,6 +1191,49 @@ export class GameServer {
       void tick();
     }, FEE_RECONCILE_INTERVAL_MS);
     console.log('[GameServer] Fee reconciler started (5-min cycle, hourly BBJ drift audit)');
+  }
+
+  /**
+   * Delete lease rows nobody has renewed for an hour.
+   *
+   * BEST-EFFORT BY CONSTRUCTION. Housekeeping must never be the reason a boot
+   * fails or a sweep stops, so every failure path here is a warn and a return.
+   *
+   * The cutoff is the server's, not ours: reap_dead_engine_leases refuses
+   * anything under ten minutes, so a caller cannot delete the leases of a
+   * briefly-stalled engine out from under it by passing a small number.
+   */
+  private async reapDeadLeases(): Promise<void> {
+    try {
+      const { data, error } = await supabase.rpc('reap_dead_engine_leases', {
+        p_stale_seconds: LEASE_REAP_STALE_SECONDS,
+      });
+      if (error) {
+        console.warn(`[GameServer] lease reap skipped: ${error.message}`);
+        return;
+      }
+      const row = (Array.isArray(data) ? data[0] : data) as
+        | { table_leases_deleted?: number; tournament_leases_deleted?: number }
+        | undefined;
+      const tables = row?.table_leases_deleted ?? 0;
+      const tourneys = row?.tournament_leases_deleted ?? 0;
+      if (tables > 0 || tourneys > 0) {
+        console.log(
+          `[GameServer] Reaped dead leases: ${tables} table, ${tourneys} tournament (unrenewed for ${LEASE_REAP_STALE_SECONDS}s)`
+        );
+      }
+    } catch (err) {
+      console.warn('[GameServer] lease reap threw:', (err as Error)?.message);
+    }
+  }
+
+  /** Hourly reaper. Paired with the boot-time sweep, not a replacement for it. */
+  private startLeaseReaper(): void {
+    if (this.leaseReapTimer) return;
+    this.leaseReapTimer = setInterval(() => {
+      void this.reapDeadLeases();
+    }, LEASE_REAP_INTERVAL_MS);
+    console.log('[GameServer] Lease reaper started (hourly)');
   }
 
   private async triggerSynchronizedBreak(): Promise<void> {
@@ -1663,20 +1726,15 @@ export class GameServer {
        * race a running engine. Best-effort — housekeeping must never be the
        * reason a boot fails.
        */
-      const leaseCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      for (const leaseTable of ['engine_table_leases', 'engine_tournament_leases']) {
-        try {
-          const { error: pruneErr } = await supabase
-            .from(leaseTable)
-            .delete()
-            .lt('heartbeat_at', leaseCutoff);
-          if (pruneErr) {
-            console.warn(`[GameServer] ${leaseTable} prune skipped: ${pruneErr.message}`);
-          }
-        } catch (pruneThrew) {
-          console.warn(`[GameServer] ${leaseTable} prune threw:`, (pruneThrew as Error)?.message);
-        }
-      }
+      // 2026-08-29: SEVEN DAYS AT BOOT COULD NOT KEEP UP. Deploys land many
+      // times a day and each hard-killed container abandons a full set of rows,
+      // so the tables grew faster than a weekly cutoff shed them. Measured this
+      // morning: 263 live table leases against 1,987 dead, and 39 live
+      // tournament leases against 3,015 dead — 95% garbage on a table read on
+      // every discovery sweep. The reaper now runs on a timer as well (see
+      // startLeaseReaper) and the cutoff is an hour, which is still 120x the
+      // 30-second staleness window and so cannot race a live engine.
+      await this.reapDeadLeases();
 
       // 4. Cancel stale REGISTERING/ANNOUNCED tournaments whose start time is
       //    well past — with REFUNDS.

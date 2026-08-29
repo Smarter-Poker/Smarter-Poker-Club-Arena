@@ -63,10 +63,6 @@
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.sheet-action:hover {
-}
-
 .sheet-action:last-child {
   border-bottom: none;
 }
@@ -95,8 +91,4 @@
   font-weight: 600;
   cursor: pointer;
   margin-bottom: 8px;
-}
-
-.sheet-cancel:hover {
-  background: rgba(50, 50, 70, 0.95);
 }

@@ -120,11 +120,6 @@
   touch-action: manipulation;
 }
 
-.hero-hub__item:hover {
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.18);
-}
-
 .hero-hub__item-label {
   font-size: 0.9rem;
   font-weight: 800;

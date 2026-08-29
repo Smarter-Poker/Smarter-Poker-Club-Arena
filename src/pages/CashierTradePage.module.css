@@ -111,10 +111,6 @@
   text-align: left;
 }
 
-.pickerRow:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
 .pickerRowActive {
   background: rgba(90, 130, 255, 0.12);
 }
@@ -633,10 +629,6 @@
   flex-shrink: 0;
 }
 
-.reqBtn:hover {
-  border-color: rgba(255, 184, 0, 0.5);
-}
-
 .reqBtnGo {
   background: linear-gradient(180deg, #00d4ff 0%, #0099ff 100%);
   border: none;
@@ -674,11 +666,6 @@
   transition:
     background 0.2s ease,
     color 0.2s ease;
-}
-
-.retryBtn:hover {
-  background: rgba(24, 119, 242, 0.3);
-  color: #fff;
 }
 
 .retryBtn:focus-visible {

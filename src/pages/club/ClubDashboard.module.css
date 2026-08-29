@@ -115,10 +115,6 @@
   transition: all 0.2s;
 }
 
-.actionBtn:hover {
-  background: rgba(139, 92, 246, 0.4);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    FILTER BAR
 ═══════════════════════════════════════════════════════════════════════════════ */
@@ -153,10 +149,6 @@
   transition: all 0.2s;
 }
 
-.filterBtn:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
 .filterBtn.active {
   background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
   border-color: transparent;
@@ -186,11 +178,6 @@
   font-size: 0.9rem;
   white-space: nowrap;
   transition: all 0.2s;
-}
-
-.tab:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
 }
 
 .tab.active {
@@ -254,10 +241,6 @@
   background: rgba(255, 255, 255, 0.03);
   border-radius: 8px;
   transition: background 0.2s;
-}
-
-.playerRow:hover {
-  background: rgba(255, 255, 255, 0.06);
 }
 
 .rank {
@@ -327,12 +310,6 @@
   transition: all 0.2s;
 }
 
-.viewAllLink:hover,
-.manageLink:hover,
-.lobbyLink:hover {
-  background: rgba(139, 92, 246, 0.2);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    SECTIONS
 ═══════════════════════════════════════════════════════════════════════════════ */
@@ -353,10 +330,6 @@
   font-size: 0.875rem;
   transition: transform 0.2s;
 }
-
-.createBtn:hover {
-}
-
 .playersSection,
 .tablesSection,
 .activityFull {
@@ -380,10 +353,6 @@
   background: rgba(255, 255, 255, 0.03);
   border-radius: 10px;
   transition: background 0.2s;
-}
-
-.playerCard:hover {
-  background: rgba(255, 255, 255, 0.06);
 }
 
 .playerInfo {

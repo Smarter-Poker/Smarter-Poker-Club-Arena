@@ -62,10 +62,6 @@
   z-index: 10;
 }
 
-.closeButton:hover {
-  opacity: 0.8;
-}
-
 /* ─────────────────────────────────────────────────────────────────────────────
    CLUB NAME INPUT — Positioned over the input field area
    ───────────────────────────────────────────────────────────────────────────── */
@@ -118,10 +114,6 @@
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
 }
 
-.uploadLogoBtn:hover {
-  background: rgba(0, 100, 180, 0.1);
-}
-
 .logoThumb {
   width: 80%;
   height: 80%;
@@ -146,10 +138,6 @@
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
 }
 
-.createLogoBtn:hover {
-  background: rgba(0, 100, 180, 0.1);
-}
-
 .plusIcon {
   font-size: clamp(36px, 10vw, 56px);
   font-weight: 200;
@@ -158,10 +146,6 @@
   pointer-events: none;
   line-height: 1;
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
-}
-
-.createLogoBtn:hover .plusIcon {
-  text-shadow: 0 0 24px rgba(100, 200, 255, 1);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -191,10 +175,6 @@
 /* Custom checkbox visual - hidden since frame already has checkbox */
 .checkboxVisual {
   display: none;
-}
-
-.termsLabel:hover .checkboxVisual {
-  border-color: rgba(0, 212, 255, 0.7);
 }
 
 /* Checkmark icon - hidden by default */
@@ -236,10 +216,6 @@
   align-items: center;
   justify-content: center;
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
-}
-
-.createButton:hover:not(:disabled) {
-  background: rgba(0, 180, 255, 0.15);
 }
 
 .createButton:disabled {
@@ -319,10 +295,6 @@
   z-index: 20000;
 }
 
-.closeButton:hover {
-  opacity: 0.8;
-}
-
 /* Textarea shrunk 10% from calibrated size for breathing room */
 .descriptionTextarea {
   position: absolute;
@@ -372,10 +344,6 @@
   align-items: center;
   justify-content: center;
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
-}
-
-.submitButton:hover:not(:disabled) {
-  background: rgba(0, 180, 255, 0.1);
 }
 
 .submitButton:disabled {
@@ -464,11 +432,6 @@
   outline: none;
 }
 
-.themeDropdown:hover:not(:disabled) {
-  border-color: rgba(0, 180, 255, 0.6);
-  background: rgba(0, 40, 80, 0.8);
-}
-
 .themeDropdown:focus {
   border-color: #00d4ff;
   box-shadow: 0 0 15px rgba(0, 180, 255, 0.3);
@@ -505,11 +468,6 @@
   flex-direction: column;
   align-items: center;
   gap: 6px;
-}
-
-.templateBtn:hover {
-  background: rgba(0, 100, 180, 0.2);
-  border-color: rgba(0, 180, 255, 0.6);
 }
 
 .templateBtn.selected {
@@ -550,10 +508,6 @@
   text-transform: uppercase;
   letter-spacing: 1px;
 }
-
-.generateBtn:hover:not(:disabled) {
-}
-
 .generateBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -570,11 +524,6 @@
   color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
   transition: all 0.2s ease;
-}
-
-.cancelBtn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #ffffff;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

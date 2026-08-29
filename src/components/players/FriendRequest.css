@@ -78,10 +78,6 @@
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.accept-btn:hover {
-}
-
 .decline-btn,
 .cancel-btn {
   padding: 8px 16px;
@@ -92,8 +88,4 @@
   font-size: 0.85rem;
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.decline-btn:hover,
-.cancel-btn:hover {
 }

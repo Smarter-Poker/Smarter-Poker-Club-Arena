@@ -40,9 +40,6 @@
   font-size: 24px;
   cursor: pointer;
 }
-.identity-modal-close:hover {
-  color: #fff;
-}
 .identity-modal-body {
   padding: 16px;
   display: flex;
@@ -107,9 +104,6 @@
   border-radius: 6px;
   font-weight: bold;
   cursor: pointer;
-}
-.identity-save-btn:hover {
-  background: #4dc660;
 }
 
 /* ── ALIAS TOGGLE ────────────────────────────────────────────────────────────

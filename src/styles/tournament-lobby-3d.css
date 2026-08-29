@@ -258,7 +258,6 @@
   font: inherit;
 }
 
-.tl-row--interactive:hover,
 /* HOVER is allowed to be subtle. FOCUS is not: it is the only thing telling a
    keyboard user where they are.
 
@@ -580,7 +579,6 @@
     animation: none;
   }
   .tl-row,
-  .tl-row--interactive:hover,
   .tl-row--interactive:focus-visible,
   .tl-row--interactive:active {
     transform: none;

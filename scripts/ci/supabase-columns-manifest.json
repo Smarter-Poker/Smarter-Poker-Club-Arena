@@ -5143,6 +5143,15 @@
       "net_bb",
       "updated_at"
     ],
+    "horse_decision_latency": [
+      "day",
+      "scope",
+      "samples",
+      "total_ms",
+      "max_ms",
+      "buckets",
+      "updated_at"
+    ],
     "horse_error_log": [
       "id",
       "horse_id",
@@ -6546,7 +6555,9 @@
       "attempts",
       "last_attempt_at",
       "last_error",
-      "resolved_at"
+      "resolved_at",
+      "rake_method",
+      "returned_uncalled"
     ],
     "personas": [
       "id",
@@ -7372,7 +7383,8 @@
       "equipped_frame",
       "equipped_aura",
       "use_avatar_as_profile_pic",
-      "status_text"
+      "status_text",
+      "player_tags"
     ],
     "promo_code_redemptions": [
       "id",
@@ -7590,7 +7602,17 @@
       "player_id",
       "rake_amount",
       "agent_id",
-      "created_at"
+      "created_at",
+      "rake_record_id",
+      "table_id",
+      "club_id",
+      "gross_contribution",
+      "returned_uncalled",
+      "eligible_contribution",
+      "contribution_weight",
+      "weighted_rake_credit",
+      "bbj_attributed_contribution",
+      "rake_method"
     ],
     "rake_distribution_legs": [
       "leg_key",
@@ -7637,7 +7659,9 @@
       "is_tournament",
       "tournament_id",
       "source",
-      "metadata"
+      "metadata",
+      "rake_method",
+      "returned_uncalled"
     ],
     "rakeback_distributions": [
       "id",
@@ -11325,7 +11349,8 @@
       "auto_muck_winners",
       "auto_post_blinds",
       "confirm_all_in",
-      "card_back"
+      "card_back",
+      "settings_touched"
     ],
     "user_theme_settings": [
       "id",

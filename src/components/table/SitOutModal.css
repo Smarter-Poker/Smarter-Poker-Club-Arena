@@ -68,6 +68,38 @@
   padding: 0 4px;
 }
 
+/* ─── THE DEADLINE ────────────────────────────────────────────────────────
+   Added 2026-08-29, and it should have shipped with the element: the markup
+   landed with NO rule at all, so the line inherited nothing — default size,
+   no wrapping, no colour — and wedged itself between a green pill and a red
+   one inside a `display:flex` row. On a 375px phone "Your Seat Is Held For Up
+   To 4:37" was the widest child in a bar that has 12px of gap and 6px of
+   padding to give. Worse, `--urgent` had no rule either, so `isSitOutUrgent`
+   was computed, applied and INVISIBLE: the whole "shout in the last minute"
+   design was a no-op.
+
+   Secondary to the buttons on purpose. The player's decision is Back or
+   Leave; this is the fact that informs it, not a third thing to press.
+   No gold/amber/orange, per .agent/workflows/design-guidelines.md. */
+.sitout-modal__deadline {
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.15;
+  color: rgba(255, 255, 255, 0.62);
+  letter-spacing: 0.01em;
+  /* It may wrap; it may not push the buttons off a narrow phone. */
+  max-width: 15ch;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* Under a minute. Red, and the only colour change on the bar — the seat is
+   about to be taken and this is the last thing that will say so. */
+.sitout-modal__deadline--urgent {
+  color: #f85149;
+  font-weight: 700;
+}
+
 .sitout-modal__im-back-btn {
   padding: 10px 20px;
   font-size: 0.9375rem;
@@ -79,10 +111,6 @@
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-.sitout-modal__im-back-btn:hover {
-  background: linear-gradient(135deg, #4dc660 0%, #3fb950 100%);
 }
 
 /* Leave Table, alongside "I'm Back". Added 2026-08-25 with the button itself —
@@ -103,10 +131,6 @@
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   white-space: nowrap;
-}
-
-.sitout-modal__leave-btn:hover {
-  background: rgba(248, 81, 73, 0.12);
 }
 
 /* =================================================================================

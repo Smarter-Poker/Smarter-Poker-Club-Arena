@@ -64,11 +64,6 @@
   font-size: 0.8125rem;
   cursor: pointer;
 }
-.glp__close:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
 .glp__scroll {
   flex: 1;
   overflow-y: auto;
@@ -255,10 +250,6 @@
   text-decoration: none;
   background: rgba(65, 105, 225, 0.07);
 }
-.glp__fulllink:hover {
-  background: rgba(65, 105, 225, 0.14);
-}
-
 .glp__foot {
   display: flex;
   align-items: center;
@@ -276,9 +267,6 @@
   font-weight: 600;
   cursor: pointer;
 }
-.glp__deletebtn:hover {
-  background: rgba(255, 71, 87, 0.15);
-}
 .glp__backlink {
   font-size: 0.75rem;
   color: var(--text-tertiary, #8b8f98);
@@ -290,10 +278,6 @@
   cursor: pointer;
   font-family: inherit;
 }
-.glp__backlink:hover {
-  color: var(--text-secondary, #c8ccd4);
-}
-
 /* Small screens: full-width sheet */
 @media (max-width: 640px) {
   .glp {

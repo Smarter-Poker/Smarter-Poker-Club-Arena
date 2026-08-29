@@ -57,6 +57,9 @@ describe('premium single-frame club lobby', () => {
     expect(CSS).toMatch(
       /@media \(max-width: 900px\)[\s\S]*?club-lobby-command-top__welcome--approved-universal \{[^}]*aspect-ratio: 734 \/ 150[^}]*background: var\(--machine-header-frame\)/s
     );
+    expect(CSS).toMatch(
+      /club-lobby-command-top__welcome--approved-universal::before \{[^}]*inset: 0 auto 0 0[^}]*width: 2px[^}]*background: #000/s
+    );
     expect(CSS).not.toMatch(/approved-universal[^}]*opacity:\s*0/s);
   });
 

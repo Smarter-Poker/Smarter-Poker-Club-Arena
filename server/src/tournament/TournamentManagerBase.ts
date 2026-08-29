@@ -1861,7 +1861,48 @@ export abstract class TournamentManagerBase {
       // for hours with 'playing' players holding chips but no active seat.
       if (this.tournamentCache) this.tournamentCache.status = 'RUNNING';
 
-      // Validate payout structure sums to 100% (or close enough to prevent chip leak)
+      /**
+       * ═══════════════════════════════════════════════════════════════════════
+       *  THE STRUCTURE IS NOT REWRITTEN AT START ANY MORE (2026-08-29)
+       * ═══════════════════════════════════════════════════════════════════════
+       *
+       * What used to be here: if the configured percentages did not sum to
+       * 100, it normalised them and PERMANENTLY OVERWROTE
+       * `tournaments.payout_structure` with the result. Three things were
+       * wrong with that, and the fourth is that it is no longer needed at all.
+       *
+       *   1. IT TRUNCATED IN BINARY FLOATS.
+       *      `Math.trunc((p.percentage / totalPct) * 100 * 100) / 100` -- the
+       *      same class of arithmetic that had the engine and the database
+       *      disagreeing by a cent, except this one wrote its lossy answer
+       *      back to the column every other payout site then reads.
+       *
+       *   2. IT DUMPED THE REMAINDER ON `payouts[0]`.
+       *      That is the first ARRAY element, not place 1 -- a structure
+       *      stored out of order landed the remainder on an arbitrary place.
+       *      And on a well-ordered structure it landed on the HEADLINE prize,
+       *      which is the exact opposite of the payout law: the adjustment
+       *      goes on the smallest prize, never a first-place figure a player
+       *      has been reading in the lobby all week.
+       *
+       *   3. THE WRITE ERROR WAS DISCARDED.
+       *      On failure the in-memory cache held the normalised structure
+       *      while the database column held the original, so
+       *      recalculateEliminatedPrizes priced against one and
+       *      eliminatePlayer/finishTournament (which re-read the row) priced
+       *      against the other. A fifth independent structure, created by a
+       *      failure nobody logged.
+       *
+       *   4. IT IS REDUNDANT. `computePlacePrize` divides by the structure's
+       *      OWN total in integer basis points, so a structure summing to 95
+       *      or 105 is already spread proportionally and exactly, by every
+       *      payout site at once -- engine, client and SQL. Normalising the
+       *      stored column buys nothing and costs the three problems above.
+       *
+       * The operator's configured structure is now left exactly as they wrote
+       * it. A structure that does not sum to 100 is still worth saying out
+       * loud, so the warning stays.
+       */
       if (this.tournamentCache?.payout_structure) {
         let payouts = this.tournamentCache.payout_structure;
         if (typeof payouts === 'string') {
@@ -1875,31 +1916,8 @@ export abstract class TournamentManagerBase {
           const totalPct = payouts.reduce((sum: number, p: any) => sum + (p.percentage || 0), 0);
           if (totalPct > 0 && Math.abs(totalPct - 100) > 0.01) {
             console.warn(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] WARNING: Payout percentages sum to ${totalPct}% (expected 100%). Normalizing.`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] payout percentages sum to ${totalPct}% (expected 100%). Every payout site normalises by the structure's own total, so the places still sum to the pool exactly - the structure itself is left as configured.`
             );
-            // Normalize percentages proportionally using exact truncation
-            // Distribute remainder to 1st place to ensure sum = exactly 100
-            let sumNormalized = 0;
-            payouts = payouts.map((p: any, idx: number) => {
-              const normalized = Math.trunc((p.percentage / totalPct) * 100 * 100) / 100;
-              sumNormalized += normalized;
-              return { ...p, percentage: normalized };
-            });
-            // Fix rounding remainder — assign to 1st place
-            const remainder = 100 - sumNormalized;
-            if (Math.abs(remainder) > 0.01 && payouts.length > 0) {
-              payouts[0].percentage = Math.trunc((payouts[0].percentage + remainder) * 100) / 100;
-            }
-            await supabase
-              .from('tournaments')
-              .update({ payout_structure: payouts })
-              .eq('id', this.tournamentId);
-            // TOURNEY-AUDIT 2026-07-24: refresh the in-memory cache too —
-            // recalculateEliminatedPrizes reads tournamentCache.payout_structure,
-            // and before this line it kept the UN-normalized version, so
-            // late-reg prize top-ups were computed off inflated percentages
-            // (overpayment) whenever the configured structure didn't sum to 100.
-            if (this.tournamentCache) this.tournamentCache.payout_structure = payouts;
           }
         }
       }
@@ -3595,8 +3613,45 @@ export abstract class TournamentManagerBase {
             await this.broadcast('late_reg_closed', {
               prizePool: finalPool ?? (Number(this.tournamentCache?.prize_pool) || 0),
             });
-            if (finalPool !== null) {
-              await this.recalculateEliminatedPrizes(finalPool);
+            /**
+             * ═══════════════════════════════════════════════════════════════
+             *  THE REPRICE MUST HAPPEN EVEN WHEN THE GUARANTEE COULD NOT BE
+             *  FUNDED (2026-08-29)
+             * ═══════════════════════════════════════════════════════════════
+             *
+             * `prizePoolFinalized` was set at the top of this block, three
+             * statements before funding was even attempted, and this reprice
+             * only ran when funding SUCCEEDED. So a funding failure left the
+             * flag true and the prices untouched — which is not a no-op, it is
+             * a silent change of structure.
+             *
+             * `finalFieldSize()` gates on exactly this flag
+             * (TournamentManagerEliminations), and once it returns a number
+             * the payout structure is TRIMMED to the size of the field so the
+             * residual lands on a place somebody reached. Places paid before
+             * this line were priced against the untrimmed structure; places
+             * paid after are priced against the trimmed one; the residual
+             * holder moves between them and nothing reconciles the two.
+             *
+             * That is the short-field residual defect the trimming was
+             * introduced to fix, reachable again through the funding-failure
+             * branch.
+             *
+             * The pool has genuinely stopped moving whether or not the
+             * guarantee landed, so the reprice is owed either way. On failure
+             * it runs against the last known accrued pool — the same number
+             * the broadcast above sends, and never an invented one.
+             */
+            const poolToPriceBy = finalPool ?? (Number(this.tournamentCache?.prize_pool) || 0);
+            if (poolToPriceBy > 0) {
+              await this.recalculateEliminatedPrizes(poolToPriceBy);
+            } else {
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] late reg closed but no pool to price by (guarantee funding returned ${finalPool}, cached pool ${this.tournamentCache?.prize_pool}) — eliminated prizes NOT repriced against the now-trimmed structure`
+                ),
+                'Tournament.late_reg_close_no_pool_to_reprice'
+              );
             }
           }
         }

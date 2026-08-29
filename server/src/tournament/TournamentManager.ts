@@ -547,11 +547,41 @@ export class TournamentManager extends TournamentManagerEliminations {
     }
     let target: SatelliteTarget | null = null;
     if (targetId) {
-      const { data } = await supabase
+      const { data, error: targetErr } = await supabase
         .from('tournaments')
         .select('id, name, buy_in_amount, buy_in_fee, status, max_players, current_players')
         .eq('id', targetId)
         .maybeSingle();
+
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  AN UNREADABLE TARGET IS NOT A MISSING TARGET (2026-08-29)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * The error was discarded, and the consequences of that are not
+       * subtle. `target === null` drives `ticketCost` to 0, which drives
+       * `seats` to 0, which sends the WHOLE PRIZE POOL down the cash path
+       * below and pays it to `ranked[0]`.
+       *
+       * So a 200ms blip reading one row turns an N-seat satellite into
+       * winner-take-all cash. On the Sunday Major Satellite that is five
+       * promised seats collapsing into one cash payment to one player, and
+       * the event then completes, so there is nothing left to retry.
+       *
+       * A row that is genuinely absent (`targetId` set, no error, no data) is
+       * a different thing and still falls through to cash on purpose:
+       * advertised seats into a vanished target would otherwise pay nothing
+       * at all. What must never happen is DECIDING on a read that failed.
+       */
+      if (targetErr) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] satellite target ${targetId.slice(0, 8)} unreadable (${targetErr.message}) — awarding nothing this pass rather than paying the pool out as cash`
+          ),
+          'Tournament.satellite_target_unreadable'
+        );
+        return;
+      }
       target = (data as SatelliteTarget | null) ?? null;
     }
     const targetOpen =
@@ -561,12 +591,31 @@ export class TournamentManager extends TournamentManagerEliminations {
       : 0;
 
     // Finishers ordered best-first
-    const { data: finishers } = await supabase
+    const { data: finishers, error: finishersErr } = await supabase
       .from('tournament_players')
       .select('user_id, username, position, status')
       .eq('tournament_id', this.tournamentId)
       .not('position', 'is', null)
       .order('position', { ascending: true });
+
+    /**
+     * The same rule, the other way up (2026-08-29). This read's error was
+     * discarded too, and an unreadable list became an EMPTY list -- which
+     * returns here and leaves the entire satellite pool undistributed, with
+     * the event completing anyway. Nobody is paid at all.
+     *
+     * An empty list with no error is a real answer (nobody reached a paid
+     * place) and still returns. A failed read is UNKNOWN and says so.
+     */
+    if (finishersErr) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] satellite finishers unreadable (${finishersErr.message}) — awarding nothing this pass rather than treating it as an empty field`
+        ),
+        'Tournament.satellite_finishers_unreadable'
+      );
+      return;
+    }
     const ranked = finishers ?? [];
     if (ranked.length === 0) return;
 

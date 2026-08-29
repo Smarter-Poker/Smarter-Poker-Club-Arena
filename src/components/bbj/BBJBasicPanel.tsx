@@ -281,8 +281,10 @@ export function BBJBasicPanel({ poolAmount = 0, highlightBB = null }: BBJBasicPa
   return (
     <div className="bbj-basic">
       <p className="bbj-basic__rules">
-        The Pot Must Be At Least {BBJ_RULES.minPotBB} Big Blinds And {BBJ_RULES.minPlayersDealt}{' '}
-        Players Must Be Dealt In Preflop.
+        The Jackpot Drop Is Collected On Every Hand That Sees A Flop With{' '}
+        {BBJ_RULES.minPlayersDealt} Or More Players Dealt In. To Win The Jackpot, The Pot Must Be At
+        Least {BBJ_RULES.minPotBB} Big Blinds And {BBJ_RULES.minPlayersDealt} Players Must Be Dealt
+        In Preflop.
         {BBJ_RULES.requireBothHoleCards
           ? ' Both Hole Cards Must Play, For The Losing Hand And The Winning Hand.'
           : ''}

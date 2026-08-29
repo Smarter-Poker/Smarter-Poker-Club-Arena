@@ -1378,10 +1378,14 @@ export class HandController {
       );
       let bbjFee = 0;
       const bbjCfg = this.config.bbjConfig;
+      // Dan 2026-08-29 (BINDING): "POT DOESN'T NEED TO BE 10 BB FOR THE BBJ TO
+      // BE TAKEN OUT... IF THERE IS A FLOP, BBJ SHOULD BE RAKED (3 OR MORE
+      // PLAYERS DEALT INTO THE HAND). BAD BEAT JACKPOT IS ONLY PAID OUT IF
+      // THERE IS MORE THAN 10 BB IN THE POT." COLLECTION = flop + 3+ dealt;
+      // the 10BB minimum gates the PAYOUT only (detectBBJHit, unchanged).
       if (bbjCfg && bbjCfg.enabled && this.state.sawFlop) {
         const playersDealt = this.state.players.filter((p) => !p.is_sitting_out).length;
-        const potInBB = this.state.pot / this.config.bigBlind;
-        if (playersDealt >= bbjCfg.minPlayersDealt && potInBB >= bbjCfg.minPotBB) {
+        if (playersDealt >= bbjCfg.minPlayersDealt) {
           bbjFee = Math.round(this.config.bigBlind * bbjCfg.feeBB * 100) / 100;
         }
       }
@@ -1947,15 +1951,16 @@ export class HandController {
       playerCount
     );
 
-    // Bible V8 §1.9 / Appendix A: BBJ fee deducted SIMULTANEOUSLY with rake before distribution
-    // BBJ eligibility: must be enabled, hand saw flop (no flop = no BBJ, same as rake),
-    // pot >= minPotBB × BB, players dealt >= minPlayersDealt
+    // Bible V8 §1.9 / Appendix A: BBJ fee deducted SIMULTANEOUSLY with rake before distribution.
+    // Dan 2026-08-29 (BINDING): COLLECTION requires only a flop and 3+ players
+    // dealt in — "POT DOESN'T NEED TO BE 10 BB FOR THE BBJ TO BE TAKEN OUT...
+    // IF THERE IS A FLOP, BBJ SHOULD BE RAKED." The 10BB minimum is a PAYOUT
+    // qualification only (detectBBJHit keeps it). Big difference.
     let bbjFee = 0;
     const bbjCfg = this.config.bbjConfig;
     if (bbjCfg && bbjCfg.enabled && this.state.sawFlop) {
       const playersDealt = this.state.players.filter((p) => !p.is_sitting_out).length;
-      const potInBB = this.state.pot / this.config.bigBlind;
-      if (playersDealt >= bbjCfg.minPlayersDealt && potInBB >= bbjCfg.minPotBB) {
+      if (playersDealt >= bbjCfg.minPlayersDealt) {
         // BBJ fee = BB × feeBB, rounded to nearest cent
         bbjFee = Math.round(this.config.bigBlind * bbjCfg.feeBB * 100) / 100;
       }
@@ -2793,10 +2798,10 @@ export class HandController {
     const rake = calculateRake(this.state.pot, flopSeen, this.config.rakeConfig, playerCount);
     let bbjFee = 0;
     const bbjCfg = this.config.bbjConfig;
+    // Dan 2026-08-29: collection = flop + 3+ dealt; 10BB gates payout only.
     if (bbjCfg && bbjCfg.enabled && flopSeen) {
       const playersDealt = this.state.players.filter((p) => !p.is_sitting_out).length;
-      const potInBB = this.state.pot / this.config.bigBlind;
-      if (playersDealt >= bbjCfg.minPlayersDealt && potInBB >= bbjCfg.minPotBB) {
+      if (playersDealt >= bbjCfg.minPlayersDealt) {
         bbjFee = Math.round(this.config.bigBlind * bbjCfg.feeBB * 100) / 100;
       }
     }

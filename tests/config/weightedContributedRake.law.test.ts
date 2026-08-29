@@ -95,3 +95,32 @@ describe('reconciliation watchdog is wired', () => {
     expect(gameServer).toMatch(/auditRakeAttributionDrift\(/);
   });
 });
+
+describe('hardening sweep (2026-08-29) stays swept', () => {
+  const migrations = readdirSync(resolve(__dirname, '../../supabase/migrations'));
+
+  it('the hardening + retention and ledger-read migrations are recorded', () => {
+    expect(migrations.some((f) => f.includes('rake_hardening_and_retention'))).toBe(true);
+    expect(migrations.some((f) => f.includes('rake_consumers_read_the_ledger'))).toBe(true);
+  });
+
+  it('the dead client persistence layer stays dead', () => {
+    // HandPersistenceService wrote to the retired hands/hand_players tables
+    // (0 rows ever) and had zero callers. Deleted 2026-08-29.
+    expect(() => read('src/services/HandPersistenceService.ts')).toThrow();
+    const barrel = read('src/services/index.ts');
+    expect(barrel).not.toMatch(/from '\.\/HandPersistenceService'/);
+  });
+
+  it('the browser no longer schedules weekly rakeback settlement', () => {
+    const cron = stripComments(read('src/services/FinancialCronService.ts'));
+    // The method may remain callable for an explicit admin action, but no
+    // timer in a random player's tab may own a money schedule.
+    expect(cron).not.toMatch(/setInterval\(\s*\(\)\s*=>\s*this\.settleAllClubRakebacks/);
+  });
+
+  it('the admin drill-down consumes the authorised breakdown RPC', () => {
+    const reports = stripComments(read('src/components/admin/RakeReports.tsx'));
+    expect(reports).toMatch(/fn_hand_rake_breakdown/);
+  });
+});

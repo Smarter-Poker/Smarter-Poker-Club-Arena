@@ -84,7 +84,7 @@ function notifyChallengesCompleted(
 class AchievementTriggerServiceClass {
   /**
    * Process a completed hand and check for achievements
-   * Called by HandPersistenceService or HandController after HAND_COMPLETE
+   * Called after HAND_COMPLETE (HandPersistenceService was deleted 2026-08-29; the engine owns hand persistence)
    */
   async onHandComplete(
     userId: string,

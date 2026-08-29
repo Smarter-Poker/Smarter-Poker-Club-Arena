@@ -18,7 +18,12 @@ import SitOutModal from './SitOutModal';
 import WaitListModal from './WaitListModal';
 import { waitlistService } from '../../services/WaitlistService';
 import InsuranceModal, { type InsuranceOffer } from './InsuranceModal';
-import { RunItTwicePrompt, type RitResultData } from './RunItTwice';
+import {
+  RunItTwicePrompt,
+  type RitResultData,
+  type RitPanelPlayer,
+  type Card as RitPanelCard,
+} from './RunItTwice';
 import BadBeatJackpot from './BadBeatJackpot';
 import { getBBJQualifyingInfo, getBBJPayoutPercentForBB } from '../../config/RakeConfig';
 import BBJInfoModal from '../bbj/BBJInfoModal';
@@ -216,9 +221,25 @@ export interface TableModalsLayerProps {
   ritIsChooser: boolean;
   ritOpponent: string;
   ritTimer: number;
-  ritChosenRuns: 2 | 3;
+  /** undefined until the chooser answers — that is the state that draws the
+   *  Run Once / Twice / 3 Times buttons. Never default it to a number. */
+  ritChosenRuns: 2 | 3 | undefined;
   ritMaxRuns: 2 | 3;
   ritPlayerCount: number;
+  /* ─── THE CONSENT SHEET'S OWN CONTENT (2026-08-28) ────────────────────────
+   * The six props below existed on RunItTwicePrompt and were never forwarded
+   * through this layer, so every one of them fell to its default: the board row
+   * drew five face-down slots over a flop that was already on the felt, the pot
+   * line did not render, and the per-player consent rows — the whole point of
+   * the 2026-08-26 parity pass — never appeared at all. `ritPanelPlayers` and
+   * `ritPanelBoardCards` are computed in TablePage on every render and were
+   * thrown away here. */
+  ritBoardCards: RitPanelCard[];
+  ritPanelPlayers: RitPanelPlayer[];
+  ritPotAmount: number | null;
+  ritTotalSeconds: number;
+  ritHeroAccepted: boolean;
+  ritCurrency: string;
   onRITChooserDecide: (runs: 1 | 2 | 3) => Promise<void>;
   onRITAccept: () => Promise<void>;
   onRITDecline: () => Promise<void>;
@@ -528,6 +549,12 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     ritChosenRuns,
     ritMaxRuns,
     ritPlayerCount,
+    ritBoardCards,
+    ritPanelPlayers,
+    ritPotAmount,
+    ritTotalSeconds,
+    ritHeroAccepted,
+    ritCurrency,
     onRITChooserDecide,
     onRITAccept,
     onRITDecline,
@@ -981,6 +1008,12 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         maxRuns={ritMaxRuns}
         playerCount={ritPlayerCount}
         opponentName={_ritOpponent}
+        boardCards={ritBoardCards}
+        players={ritPanelPlayers}
+        potAmount={ritPotAmount ?? undefined}
+        totalSeconds={ritTotalSeconds}
+        heroAccepted={ritHeroAccepted}
+        currency={ritCurrency}
       />
 
       {/* Bad Beat Jackpot Display — per-variant qualifying rule (2026-08-18).

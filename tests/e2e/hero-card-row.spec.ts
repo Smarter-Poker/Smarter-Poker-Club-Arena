@@ -101,7 +101,13 @@ const BREAKPOINTS = [
  *  so a change to either fails against this file's own arithmetic rather than
  *  silently re-baselining it. */
 const CARD_FRACTION_OF_FELT = 0.139;
-const CARD_FLOOR_PX = 44;
+/* 2026-08-28: 44 -> 51. 44px was the pre-#1571 hold'em card Dan had rejected
+   that morning, so wherever the floor bound it silently reinstated the exact
+   size he had just had fixed — on an iPhone SE, both landscapes, a 1280x800
+   laptop, and on the first frame of EVERY table (scalerSize starts at 320px).
+   51px is the size he approved, and is what the fraction itself yields on the
+   canonical iPhone 12/13/14 felt. See the note on --sp-card2-w. */
+const CARD_FLOOR_PX = 51;
 const expectedCardW = (feltW: number) => Math.max(CARD_FLOOR_PX, feltW * CARD_FRACTION_OF_FELT);
 
 async function measure(

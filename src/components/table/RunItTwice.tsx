@@ -47,7 +47,11 @@ export interface RunItTwicePromptProps {
   onAccept: () => void;
   onDecline: () => void;
   timeRemaining: number; // seconds
-  /** FIX 96: number of runs chosen (2 or 3) */
+  /** FIX 96: number of runs chosen (2 or 3).
+   *  UNDEFINED MEANS "NOT ANSWERED YET" and is what puts the chooser in front
+   *  of the Run Once / Twice / 3 Times buttons. TablePage held this in a
+   *  `useState<2 | 3>(2)` until 2026-08-28, so it was never undefined and the
+   *  chooser's own question was unreachable. Do not give it a default. */
   chosenRuns?: 2 | 3;
   /** FIX 96: max runs allowed (2 or 3) */
   maxRuns?: 2 | 3;
@@ -203,14 +207,26 @@ export function RunItTwicePrompt({
 
         {/* HOUSE RULE (Dan 2026-08-26): First Letter Of Every Word — the
             panel bypasses the Toast layer, so the same central transform
-            applies here. Player names keep their interior capitals. */}
+            applies here. Player names keep their interior capitals.
+
+            NEVER ADDRESS THE HERO IN THE THIRD PERSON (Dan 2026-08-28). This
+            read `${opponentName} Requests To Run It Twice.` for everyone, and
+            `opponentName` is the CHOOSER's name — so a chooser was told, by
+            name, that he had requested something. Dan, from a live all-in:
+            "this card says 'kingfish offers to run it twice'. I didn't offer
+            anything yet." The stale `chosenRuns` initialiser is what made him
+            see it before he had answered, and that is fixed in TablePage; this
+            line is the other half, because the sentence would still have been
+            wrong the moment he DID answer. */}
         <p className="rit-panel__message">
           {formatPopupText(
             isChooserPhase
               ? 'You Have The Best Hand. Choose How Many Times To Run It.'
-              : chosenRuns
-                ? `${opponentName} Requests To Run It ${runsLabel}.`
-                : `${opponentName} Is Choosing How Many Times To Run It.`
+              : isChooser && chosenRuns
+                ? `You Asked To Run It ${runsLabel}.`
+                : chosenRuns
+                  ? `${opponentName} Requests To Run It ${runsLabel}.`
+                  : `${opponentName} Is Choosing How Many Times To Run It.`
           )}
         </p>
 

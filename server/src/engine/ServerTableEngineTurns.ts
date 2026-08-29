@@ -2001,7 +2001,18 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // Scoped by variant family, because a 6-card PLO decision runs the most
     // expensive equity simulation on the platform and averaging it into a
     // heads-up NLH decision would hide both.
-    noteDecisionMs(String((gameState as any)?.variant ?? 'nlh'), perfNow() - decideStartedAt);
+    //
+    // FOUND IN PRODUCTION 2026-08-29, first hour of the measurement: every one
+    // of the 14,326 samples landed in scope 'nlh' while 58 of 91 running
+    // tables were dealing PLO variants. The horse snapshot built above carries
+    // no `variant` field, so `(gameState as any)?.variant` was undefined on
+    // EVERY decision and the ?? fallback relabelled them all — the exact
+    // averaging-plo6-into-nlh failure this scope exists to prevent, with the
+    // 15ms plo6 budget unverifiable in production as the result. Read
+    // `activeHandVariant()` instead: it is the accessor the 2026-08-28 variant
+    // override work introduced for precisely "read the live hand, not a guess",
+    // and the same one the pot-limit clamp above already uses.
+    noteDecisionMs(this.activeHandVariant() || 'nlh', perfNow() - decideStartedAt);
 
     // Humanlike think time comes from the decision engine itself (style- and
     // situation-aware, 0.7-8s). Clamp inside the table's action timer window.

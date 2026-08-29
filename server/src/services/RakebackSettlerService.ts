@@ -838,12 +838,29 @@ export class RakebackSettlerService {
    *
    * WIDENING THE WINDOW ALONE ACHIEVES NOTHING, and that is the part worth
    * writing down. `fn_tournament_payout_sweep(p_days, p_apply, p_limit)` applies
-   * `LIMIT GREATEST(p_limit, 1)` to the SCAN, ordered `updated_at DESC` — not to
-   * the report. A 30-day window with a 200-row limit examines the 200 most
-   * recently touched events and stops, which is roughly what a 1-day window
-   * already did. The window also filters on `updated_at`, not `ended_at`.
+   * `LIMIT GREATEST(p_limit, 1)` to the SCAN — not to the report. A 30-day
+   * window with a 200-row limit examines the 200 most recent events and stops,
+   * which is roughly what a 1-day window already did.
    *
    * So both numbers move together, or neither is worth moving.
+   *
+   * THE WINDOW COLUMN WAS ALSO WRONG, and was fixed on 2026-08-29 in
+   * `20260829125035_payout_sweep_window_means_finished_not_created`. The scan
+   * filtered and ordered on `tournaments.updated_at`, which NOTHING
+   * maintains — no trigger, no engine write — so it holds row-creation time.
+   * For a scheduled recurring event that is when it went on the calendar, so
+   * "the last 30 days" meant "scheduled in the last 30 days" and an event
+   * scheduled 31 days ago and finished yesterday was invisible. Measured
+   * across all 39,338 COMPLETED events: `updated_at >= ended_at` on ZERO of
+   * them. The 38 events carrying 11,238.80 of unpaid prize money, repaired
+   * that same morning, were every one of them outside a 30-day `updated_at`
+   * window and had never been asked. The window is measured on
+   * `coalesce(ended_at, started_at, updated_at)` now.
+   *
+   * And the RPC reports its own truncation (`candidates_matched`,
+   * `candidates_scanned`, `truncated`), so a limit that has quietly shrunk the
+   * window back down is visible below instead of being folklore in this
+   * comment.
    *
    * THE COST, AND WHY IT IS NOT PAID EVERY CYCLE. Measured: ~0.29ms per event,
    * 2,000 events in 1.09s, and the full 30-day population is 35,042 events —
@@ -932,6 +949,27 @@ export class RakebackSettlerService {
         );
         return false;
       }
+      /**
+       * A TRUNCATED PASS IS NOT A CLEAN PASS (2026-08-29). The limit binds the
+       * scan, so a limit below the window's population silently turns "look at
+       * 30 days" into "look at the N most recent events" — and reports zero
+       * findings for the events it never examined. That is the failure mode
+       * this whole sweep exists to prevent, one level up. Say it out loud.
+       */
+      const truncated = (data as { truncated?: boolean } | null)?.truncated === true;
+      if (truncated) {
+        const t = data as { candidates_matched?: number; candidates_scanned?: number } | null;
+        reportError(
+          new Error(
+            `fn_tournament_payout_sweep (${label}: ${days}d/${limit}) was TRUNCATED — ` +
+              `${t?.candidates_matched ?? '?'} completed event(s) in the window, only ` +
+              `${t?.candidates_scanned ?? '?'} examined. The rest were not checked and their ` +
+              `findings are not in this result. Raise the limit.`
+          ),
+          'RakebackSettler.tournament_payout_sweep_truncated'
+        );
+      }
+
       const findings = Number(
         (data as { tournaments_with_findings?: number } | null)?.tournaments_with_findings ?? 0
       );

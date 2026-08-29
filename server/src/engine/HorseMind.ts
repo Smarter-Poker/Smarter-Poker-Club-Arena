@@ -85,6 +85,11 @@ export interface OpponentStats {
   rFacedAggr: number;
   rAggr: number;
   rPassive: number;
+  /** V28: checks, lifetime + recent — the missing denominator of the V18
+   *  self-image (aggression / actions the table SAW, not aggr / (aggr+calls),
+   *  which inverted the read for both the nit and the station). */
+  checks: number;
+  rChecks: number;
 }
 
 const freshStats = (): OpponentStats => ({
@@ -109,6 +114,8 @@ const freshStats = (): OpponentStats => ({
   rFacedAggr: 0,
   rAggr: 0,
   rPassive: 0,
+  checks: 0,
+  rChecks: 0,
 });
 
 /** Exploit multipliers derived from a specific opponent's tendencies. */
@@ -275,10 +282,29 @@ export class HorseMind {
 
     for (const a of history) {
       const preflop = a.stage === 'preflop';
+      // V28: the street change must be observed BEFORE the stat update reads
+      // streetBettor, or the first action of a new street is judged against
+      // the previous street's bettor. Moving the reset here is semantically
+      // identical for the attribution block below (which used to do it).
+      if (a.stage !== curStage) {
+        curStage = a.stage;
+        streetBettor = null;
+      }
       const isAggr =
         a.action === 'bet' ||
         a.action === 'raise' ||
         (a.action === 'all_in' && a.isFullRaise === true);
+      // V28 AUDIT FIX: "faced aggression" now means FACED AGGRESSION. The old
+      // counters incremented facedAggr on every call and every fold — a limp
+      // of the big blind counted as "faced aggression and did not fold", and
+      // a raise-OVER a bet (the most aggressive answer there is) was excluded
+      // from the denominator entirely. A player who folded 5, called 3 and
+      // raised-over 10 read as a 62.5% folder and was classified a nit. Both
+      // error directions fed exploit() and through tableExploit every
+      // postflop bluff decision on the platform.
+      const facingAggr = preflop
+        ? preflopRaises >= 1
+        : streetBettor != null && streetBettor !== a.userId;
       const actKey = `${a.timestamp}:${a.userId}:${a.action}:${a.amount}`;
       const isNew = !this.seenActions.has(actKey);
       if (isNew) this.seenActions.add(actKey);
@@ -307,6 +333,7 @@ export class HorseMind {
             s.rFacedAggr /= 2;
             s.rAggr /= 2;
             s.rPassive /= 2;
+            s.rChecks /= 2;
           }
         }
 
@@ -330,29 +357,42 @@ export class HorseMind {
           }
         }
 
-        // Aggression factor + fold-vs-aggression, all streets
+        // Aggression factor + fold-vs-aggression, all streets (V28: faced-
+        // aggression counters gated on facingAggr, raises-over included in
+        // the denominator, and checks counted for the V18 self-image).
         if (isAggr) {
           s.aggr++;
           s.rAggr++;
+          if (facingAggr) {
+            s.facedAggr++;
+            s.rFacedAggr++;
+          }
         } else if (a.action === 'call') {
           s.passive++;
-          s.facedAggr++;
           s.rPassive++;
-          s.rFacedAggr++;
+          if (facingAggr) {
+            s.facedAggr++;
+            s.rFacedAggr++;
+          }
+        } else if (a.action === 'check') {
+          s.checks++;
+          s.rChecks++;
         } else if (a.action === 'fold') {
-          s.folds++;
-          s.facedAggr++;
-          s.rFolds++;
-          s.rFacedAggr++;
+          // A fold with no aggression to face is a blind surrender (SB fold
+          // to limps, and the like) — it says nothing about fold-vs-
+          // aggression, so it stays out of BOTH sides of that ratio.
+          if (facingAggr) {
+            s.folds++;
+            s.facedAggr++;
+            s.rFolds++;
+            s.rFacedAggr++;
+          }
         }
       }
 
       // V12 ANTI-EXPLOIT ATTRIBUTION — who attacks whom. isNew-gated so a
-      // replayed history never double-counts a pair event.
-      if (a.stage !== curStage) {
-        curStage = a.stage;
-        streetBettor = null;
-      }
+      // replayed history never double-counts a pair event. (Street reset
+      // moved to the top of the loop — V28.)
       if (preflop) {
         if (isNew && openerId && a.userId !== openerId && preflopRaises === 1) {
           if (isAggr) {
@@ -501,6 +541,13 @@ export class HorseMind {
       if (existing && existing.hands >= incomingHands) continue;
       if (this.stats.size >= MAX_TRACKED_PLAYERS && !existing) continue;
       const num = (v: unknown): number => (typeof v === 'number' && isFinite(v) && v >= 0 ? v : 0);
+      // V28 AUDIT FIX: the import REPLACED the whole object, and the fields
+      // that are deliberately unpersisted (riverBet*, checks, the recency
+      // window) came in as 0 — any live sample accumulated before the hydrate
+      // was destroyed. Unpersisted fields now keep the larger of live and
+      // incoming, so a hydrate can only add information.
+      const keep = (live: number | undefined, incoming: number): number =>
+        Math.max(existing ? (live ?? 0) : 0, incoming);
       this.stats.set(r.user_id, {
         hands: num(r.hands),
         vpip: num(r.vpip),
@@ -516,13 +563,15 @@ export class HorseMind {
         f3bFolds: num(r.f3bFolds),
         bigBetSD: num(r.bigBetSD),
         bigBetSDStrong: num(r.bigBetSDStrong),
-        riverBetOpps: num(r.riverBetOpps),
-        riverBetFolds: num(r.riverBetFolds),
-        rHands: num(r.rHands),
-        rFolds: num(r.rFolds),
-        rFacedAggr: num(r.rFacedAggr),
-        rAggr: num(r.rAggr),
-        rPassive: num(r.rPassive),
+        riverBetOpps: keep(existing?.riverBetOpps, num(r.riverBetOpps)),
+        riverBetFolds: keep(existing?.riverBetFolds, num(r.riverBetFolds)),
+        rHands: keep(existing?.rHands, num(r.rHands)),
+        rFolds: keep(existing?.rFolds, num(r.rFolds)),
+        rFacedAggr: keep(existing?.rFacedAggr, num(r.rFacedAggr)),
+        rAggr: keep(existing?.rAggr, num(r.rAggr)),
+        rPassive: keep(existing?.rPassive, num(r.rPassive)),
+        checks: keep(existing?.checks, num(r.checks)),
+        rChecks: keep(existing?.rChecks, num(r.rChecks)),
       });
       applied++;
     }
@@ -712,7 +761,7 @@ export class HorseMind {
     const postStagesActed = new Set<string>();
 
     let raisesBefore = 0;
-    let line: 'none' | 'limp' | 'call' | 'open' | 'threebet' | 'check' = 'none';
+    let line: 'none' | 'limp' | 'call' | 'open' | 'threebet' | 'fourbet' | 'check' = 'none';
     // V5 (2026-07-24): dynamic hand reading — postflop actions keep narrowing
     // the band. V7: the narrowing is BET-SIZE AWARE via an exact pot replay —
     // a pot-sized turn barrel narrows far more than a min-bet. Per-street the
@@ -741,7 +790,15 @@ export class HorseMind {
       if (a.stage !== 'preflop') {
         if (a.userId === userId) {
           if (a.action === 'fold') return null;
-          postStagesActed.add(a.stage); // V12: they acted on this street
+          // V28 AUDIT FIX: this used to add on ANY action, including CALL —
+          // and readOut.checked below counts "acted with no aggression
+          // weight" as a checked street. A player who CALLED two barrels —
+          // the strongest passive range in poker — read as checked=2, and
+          // the sampler then discarded their trips-or-better at 79%. Hero's
+          // equity against a two-street caller was inflated by exactly the
+          // top of their range, driving thin value and river bluffs into a
+          // range that is calling. A CHECK is capped; a CALL is not.
+          if (a.action === 'check') postStagesActed.add(a.stage);
           if (isAggr) {
             const potBefore = Math.max(bigBlind || 1, pot);
             const frac = increment / potBefore;
@@ -784,7 +841,12 @@ export class HorseMind {
       }
       if (a.userId === userId) {
         if (isAggr) {
-          line = raisesBefore >= 1 ? 'threebet' : 'open';
+          // V28 AUDIT FIX: there was no 4-bet tier — any raise with a raise
+          // in front read as 'threebet' [0.62, 1.0], the top ~11%. Real
+          // 4-bet ranges are the top 2-3%, and this priced hero's hand
+          // against a range four times too wide in the BIGGEST preflop pots
+          // on the site. raisesBefore >= 2 is a 4-bet (or worse).
+          line = raisesBefore >= 2 ? 'fourbet' : raisesBefore >= 1 ? 'threebet' : 'open';
         } else if (a.action === 'call') {
           // Only upgrade a limp to call-of-raise; never downgrade a raise line
           if (line === 'none' || line === 'limp' || line === 'check') {
@@ -821,6 +883,11 @@ export class HorseMind {
         lo = 0.62;
         hi = 1.0;
         break;
+      case 'fourbet':
+        // V28: the 4-bet/5-bet tier — premiums plus the occasional bluff.
+        lo = 0.86;
+        hi = 1.0;
+        break;
       case 'check':
       default:
         lo = 0.0;
@@ -833,7 +900,7 @@ export class HorseMind {
     if (s && s.hands >= 8) {
       const conf = Math.min(1, s.hands / 25);
       const pfrRate = s.pfr / s.hands;
-      if (line === 'open' || line === 'threebet') {
+      if (line === 'open' || line === 'threebet' || line === 'fourbet') {
         if (pfrRate < 0.1)
           lo += 0.12 * conf; // a nit raised: tighten the read
         else if (pfrRate > 0.3) lo -= 0.1 * conf; // a maniac raised: widen it
@@ -947,8 +1014,15 @@ export class HorseMind {
           foldRate = (1 - wr) * lifetime + wr * recent;
         }
       }
-      if (foldRate > 0.62) bluffMod = blend(1.45);
-      else if (foldRate < 0.35) {
+      if (foldRate > 0.62) {
+        bluffMod = blend(1.45);
+        // V28 AUDIT FIX: valueThinMod was only ever RAISED (stations), so the
+        // documented "a nit calls only what a smaller bet asks" half of V18
+        // exploit sizing was dead — the consumer multiplies by
+        // (valueThinMod - 1) and the term could never be negative. A folder
+        // now thins the value bar downward too.
+        valueThinMod = blend(0.85);
+      } else if (foldRate < 0.35) {
         bluffMod = blend(0.55);
         valueThinMod = blend(1.25);
       }
@@ -989,7 +1063,8 @@ export class HorseMind {
 
   static notePlan(handKey: string | null, userId: string, barrelIntent: boolean): void {
     if (!handKey) return;
-    if (this.plans.size > this.MAX_PLANS) this.plans.clear();
+    // V28: evict the oldest quarter, never .clear() — see noteRaisePlan.
+    if (this.plans.size > this.MAX_PLANS) evictOldest(this.plans, this.MAX_PLANS);
     this.plans.set(`${handKey}|${userId}`, barrelIntent);
   }
 
@@ -1016,7 +1091,15 @@ export class HorseMind {
     plan: RaiseResponsePlan
   ): void {
     if (!handKey) return;
-    if (this.raisePlans.size > this.MAX_PLANS) this.raisePlans.clear();
+    // V28 AUDIT FIX: .clear() wiped EVERY hand in flight when the cap
+    // tripped — the exact wholesale-clear failure mode the V12.3 doctrine at
+    // the top of this file forbids for every other container. A cleared plan
+    // meant the answer to a check-raise reverted to an independent dice roll:
+    // the bet_fold_line reviews this feature exists to eliminate. Evict the
+    // oldest quarter instead, like everything else here.
+    if (this.raisePlans.size > this.MAX_PLANS) {
+      evictOldest(this.raisePlans, this.MAX_PLANS);
+    }
     this.raisePlans.set(`${handKey}|${userId}|${street}`, plan);
   }
 
@@ -1118,14 +1201,27 @@ export class HorseMind {
 
     // Top-straight blockers: hero holds a rank that completes the highest
     // straight the board allows.
+    //
+    // V28 AUDIT FIX: two provable misses. (1) No ace-low mapping — on
+    // 2-3-4-9-K the nut straight is A-5 and a hero holding the ACE computed
+    // |14-2| = 12, so the single best blocker on the board was invisible
+    // (texture() next door handles the wheel; the two disagreed). (2) The
+    // hr >= 10 floor — on 5-6-7-K-2 the nut straight is 9-8 and a hero
+    // holding the NINE was rejected by rank. Blockers below the ten block
+    // real straights. The consumer boosts blocker bluffs 1.5x on scare
+    // cards, so each miss was a straight loss of bluff frequency exactly
+    // where blockers matter most.
     const boardRanks = [...new Set(board.map((c) => RANK_VALUES[c.rank]))].sort((a, b) => b - a);
+    const hasWheelWindow = boardRanks.filter((r) => r >= 2 && r <= 5).length >= 3;
     for (const hc of hole) {
       const hr = RANK_VALUES[hc.rank];
+      // The ace blocks the wheel when the board carries the low window.
+      if (hr === 14 && hasWheelWindow) return true;
       let within = 0;
       for (const br of boardRanks) {
         if (Math.abs(hr - br) <= 4 && hr !== br) within++;
       }
-      if (within >= 3 && hr >= 10) return true;
+      if (within >= 3 && hr >= 6) return true;
     }
     return false;
   }
@@ -1291,7 +1387,14 @@ export class HorseMind {
   static selfImageOf(id: string): number | null {
     const s = this.stats.get(id);
     if (!s || s.rHands < 8) return null;
-    const acts = s.rAggr + s.rPassive;
+    // V28 AUDIT FIX: the denominator was rAggr + rPassive — bets and CALLS
+    // only. Checks were counted nowhere, so a tight horse that bet 12 times
+    // and checked 40 read as 0.86 "aggressive image" and had its bluffs
+    // THROTTLED, while a station's many calls diluted it below 0.35 and got a
+    // bluff BOOST — the V18 adjustment fired with the wrong sign for exactly
+    // the two profiles it exists to separate. The image the table sees is
+    // aggression over every action it watched.
+    const acts = s.rAggr + s.rPassive + (s.rChecks ?? 0);
     if (acts < 10) return null;
     return s.rAggr / acts;
   }
@@ -1328,7 +1431,13 @@ export class HorseMind {
     if (opps.length === 0) return NEUTRAL_EXPLOIT;
     if (opps.length === 1) return this.exploit(opps[0].user_id, recencyBlend);
 
-    let bluffMod = 1;
+    // V28 AUDIT FIX: bluffMod was seeded at the NEUTRAL 1 and only ever
+    // min'd down — three 70% folders each returning 1.45 produced
+    // min(1, 1.45, ...) = 1, so the upward half of the exploit was
+    // unreachable in every multiway pot. "Weakest link gates bluffs" means
+    // the min of the PROFILES, not the min of the profiles and an arbitrary
+    // constant.
+    let bluffMod = Infinity;
     let callDownMod = 0;
     let valueThinMod = 0;
     for (const o of opps) {
@@ -1337,6 +1446,7 @@ export class HorseMind {
       callDownMod += e.callDownMod;
       valueThinMod += e.valueThinMod;
     }
+    if (!isFinite(bluffMod)) bluffMod = 1;
     return {
       bluffMod,
       callDownMod: callDownMod / opps.length,

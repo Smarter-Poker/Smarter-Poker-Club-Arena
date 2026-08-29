@@ -134,8 +134,21 @@ export function variantInfo(gameVariant: string): VariantInfo {
     isHiLo: isHiLoVariant(v),
     isShortDeck: isShortDeckVariant(v),
     isPotLimit: isPotLimitVariant(v),
-    iterations:
-      v === 'plo6' ? 120 : v === 'plo5' ? 170 : isHiLoVariant(v) ? 140 : isOmaha ? 220 : 450,
+    // V28 AUDIT FIX (2026-08-29): hi-lo tested AFTER the plo5/plo6 literals
+    // (so a future plo5/plo6 hi-lo string takes the right branch), and raised
+    // from 140 to 220 — each hi-lo iteration returns hi*0.5 + lo*0.5 with
+    // quarter/scoop atoms, the WIDEST per-iteration variance in the engine,
+    // and it had the second-smallest sample while scoop/quarter frequencies
+    // were read as discrete strategy triggers at ~4pp standard error.
+    iterations: isHiLoVariant(v)
+      ? 220
+      : v === 'plo6'
+        ? 120
+        : v === 'plo5'
+          ? 170
+          : isOmaha
+            ? 220
+            : 450,
   };
 }
 
@@ -680,7 +693,27 @@ export function nlhNutStatus(hole: Card[], board: Card[], shortDeck: boolean): N
       const heroSuited = hole.filter((c) => c.suit === flushSuit);
       // NLH plays any five: board 3 needs two suited hole cards, board 4+ one.
       const heroMakesFlush = heroSuited.length >= Math.max(1, 5 - flushSuitN);
-      if (heroMakesFlush && heroSuited.length > 0) {
+      // V28 AUDIT FIX (2026-08-29): on a MONOTONE FIVE-CARD board a hero with
+      // ZERO cards of the suit plays the board flush — scoreHoldem says cat 6,
+      // but this block skipped him, leaving higherFlushRanks at its default 0,
+      // which every consumer reads as "NUT flush". A hand that can do no
+      // better than chop was classified undominated and left the stack-off
+      // path open. Playing the board means EVERY live rank above the board's
+      // lowest flush card beats hero.
+      if (flushSuitN === 5 && heroSuited.length === 0) {
+        const boardRanks = board
+          .filter((c) => c.suit === flushSuit)
+          .map((c) => RANK_VALUES[c.rank]);
+        const boardLow = Math.min(...boardRanks);
+        const seen = new Set<number>(boardRanks);
+        let higher = 0;
+        const floor = shortDeck ? 6 : 2;
+        for (let r = floor; r <= 14; r++) {
+          if (!seen.has(r) && r > boardLow) higher++;
+        }
+        out.heroFlushHigh = boardLow;
+        out.higherFlushRanks = Math.max(1, higher);
+      } else if (heroMakesFlush && heroSuited.length > 0) {
         let heroTop = 0;
         for (const c of heroSuited) heroTop = Math.max(heroTop, RANK_VALUES[c.rank]);
         out.heroFlushHigh = heroTop;
@@ -689,13 +722,12 @@ export function nlhNutStatus(hole: Card[], board: Card[], shortDeck: boolean): N
         for (const c of heroSuited) seen.add(RANK_VALUES[c.rank]);
         let higher = 0;
         for (let r = heroTop + 1; r <= 14; r++) if (!seen.has(r)) higher++;
-        // Short deck strips 2-5: those ranks cannot be live.
-        if (shortDeck) {
-          for (let r = heroTop + 1; r <= Math.min(5, 14); r++) {
-            if (!seen.has(r)) higher--;
-          }
-          if (higher < 0) higher = 0;
-        }
+        // V28: a dead short-deck "correction" deleted here. It looped
+        // r = heroTop+1 .. min(5,14), but in short deck heroTop >= 6 always,
+        // so the body never executed — and the counting loop above starts at
+        // heroTop+1 walking UP, so ranks 2-5 could never be counted anyway.
+        // A correction that looks live and is not is a trap for the next
+        // editor; the upward walk is already short-deck-safe by construction.
         out.higherFlushRanks = higher;
       }
     }
@@ -846,7 +878,16 @@ export function connectsBoard(hole: Card[], board: Card[], shortDeck: boolean): 
     // still bets sometimes; treat pocket pairs as contact.
     return cat;
   }
-  if (board.length >= 5) return cat; // river: no draws left
+  // V28 AUDIT FIX (2026-08-29): the two fall-throughs below returned `cat` —
+  // the very board-derived value the V13 guard above just REJECTED. 32o on
+  // K-K-7 still "connected" with the board's kings via the terminal return,
+  // so the V12/V16 aggressor conditioning was a no-op on every paired board
+  // (~17% of flops, and every board once it pairs) — the exact pre-V13
+  // behaviour the guard's own comment says it fixed. When the hole cards add
+  // nothing to what the board already makes, the honest contact value is the
+  // high-card floor, not the board's category.
+  const noContact = cat <= boardCat && !isPocketPair ? 1 : cat;
+  if (board.length >= 5) return noContact; // river: no draws left
   // Flush draw: 4 to a flush with at least one hole card of the suit.
   const suitCount = new Map<string, number>();
   for (const c of all) suitCount.set(c.suit, (suitCount.get(c.suit) || 0) + 1);
@@ -867,7 +908,9 @@ export function connectsBoard(hole: Card[], board: Card[], shortDeck: boolean): 
       }
     }
   }
-  return cat;
+  // V28: same fall-through as the river shortcut above — no made improvement,
+  // no draw found. Report no-contact rather than echoing the board's hand.
+  return noContact;
 }
 
 /**
@@ -1345,14 +1388,29 @@ export function simulateEquity(
           for (let t = 0; t < 2; t++) {
             if (omahaConnectsBoard(oppCards, boardCards)) break;
             if (fastRandom() >= pConnect) break; // some of the range IS air
-            for (let i = 0; i < oppHole; i++) {
-              const slot = windowStart + i;
-              const j = slot + Math.floor(fastRandom() * (n - slot));
-              const tmp = deck[slot];
-              deck[slot] = deck[j];
-              deck[j] = tmp;
-              oppCards[i] = deck[slot];
+            // V28 AUDIT FIX (2026-08-29): this redraw drew UNIFORMLY from the
+            // whole remaining deck and never re-tested the band — the exact
+            // V13 collapse the NLH branch below fixed, still live on the
+            // Omaha side. A [0.4, 1] "open" read redrew into the bottom 40%
+            // of the combo space, so a raiser's range acquired the trash the
+            // read excluded. placeOmahaBandCombo is the in-band sampler the
+            // V16 work built for precisely this; use it, falling back to the
+            // uniform swap only when the band sampler cannot place a combo
+            // (degenerate band / exhausted deck).
+            const placed =
+              band != null
+                ? placeOmahaBandCombo(deck, windowStart, n, band, oppHole, vi.isHiLo)
+                : false;
+            if (!placed) {
+              for (let i = 0; i < oppHole; i++) {
+                const slot = windowStart + i;
+                const j = slot + Math.floor(fastRandom() * (n - slot));
+                const tmp = deck[slot];
+                deck[slot] = deck[j];
+                deck[j] = tmp;
+              }
             }
+            for (let i = 0; i < oppHole; i++) oppCards[i] = deck[windowStart + i];
           }
         }
       }

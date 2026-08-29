@@ -966,7 +966,13 @@ let pendingRaisePlan: import('./HorseMind.js').RaiseResponsePlan | null = null;
  *  through untouched. */
 const SIZE_FAMILIES = [0.33, 0.5, 0.66, 0.8, 1.0, 1.3];
 function snapFraction(frac: number, familyBias: number = 0.5): number {
-  if (frac < 0.25 || frac > 1.4) return frac;
+  // V28 AUDIT FIX: the passthrough floor was 0.25, so the river BLOCK BET
+  // (0.27-0.33) and the V10 range-advantage small c-bet (0.28-0.34) all
+  // snapped up into the 0.33 family — two deliberately distinct small sizes
+  // were unobservable in production, and a pin on "block bet <= 0.45 pot"
+  // stayed green while the documented quarter-pot bet did not exist. Sizes
+  // under 0.31 now pass through untouched.
+  if (frac < 0.31 || frac > 1.4) return frac;
   let best = SIZE_FAMILIES[0];
   for (const f of SIZE_FAMILIES) if (Math.abs(frac - f) < Math.abs(frac - best)) best = f;
   // V18 FAMILY PERSONALITY: a stable per-horse shift inside the family
@@ -1721,13 +1727,38 @@ export class HorseLogic {
     const useSpr10 = (opts.v10Spr ?? opts.v10) !== false;
     const useRake10 = (opts.v10Rake ?? opts.v10) !== false;
     const useThin10 = (opts.v10ThinValue ?? opts.v10) !== false;
-    const { currentBet, pot } = gs;
+    const { currentBet } = gs;
     // PROOF OF RECEIPT: declared once, up front — several stamped blocks run
     // before the equity/risk section.
     const tele15 = telemetryOn(opts);
     /** V17: live non-all-in players acting AFTER hero this street (-1 = unknown). */
     let playersBehind17 = -1;
-    const toCall = Math.max(0, currentBet - player.bet);
+    /**
+     * ═══ V28 AUDIT FIX — EFFECTIVE-STACK PRICING (2026-08-29) ═══
+     *
+     * THE LARGEST SINGLE LEAK THE POSTFLOP AUDIT FOUND. `toCall` was the
+     * villain's FULL wager even when it dwarfed hero's stack. Facing a 500
+     * jam with 50 behind and 100 in the middle, hero can only ever put in 50
+     * and the excess comes back uncalled — the truth is "risk 50 to win 200",
+     * required equity 25%. The code computed potOdds = 500/1100 = 45% and
+     * then added commit premiums on top: horses folded CORRECT calls against
+     * any opponent who covered them, worst on short stacks and tournament
+     * bubbles. Every big-bet read (potFrac tells, overbet polarity, V16 tell,
+     * catch-block, the V20 cap) misfired off the same inflated number, and
+     * spr collapsed BECAUSE the opponent overbet, declaring hero committed on
+     * the wrong premise.
+     *
+     * The preflop engine already did this right (HorsePreflop effCall);
+     * postflop simply never did. `toCall` below is the EFFECTIVE call —
+     * capped by stack — and `pot` has the uncallable excess stripped, so
+     * every ratio downstream (potOdds, betRatio, potFrac, spr) prices the
+     * money that can actually change hands. `legalize()` receives the raw
+     * game state separately and is unaffected.
+     */
+    const rawToCall = Math.max(0, currentBet - player.bet);
+    const toCall = Math.min(rawToCall, player.stack);
+    const uncallableExcess = rawToCall - toCall;
+    const pot = Math.max(0.01, gs.pot - uncallableExcess);
     const stack = player.stack;
     const facingBet = toCall > 0;
     const street: HandStage = gs.stage;
@@ -2069,7 +2100,12 @@ export class HorseLogic {
     // Did hero bet/raise THIS street and then get raised? The strongest
     // possible "they have it" signal, and the exact line Dan flagged.
     let raisedAfterAggr = false;
-    if (useV15 && facingBet && gs.actionHistory) {
+    // V28 AUDIT FIX: this was gated on useV15, so `v15: false` silently
+    // disabled parts of V20 and V21 and ALL of the V23 raise-response plans —
+    // every league ablation of "V15 discipline" was measuring four layers at
+    // once. The read is a fact about the action, not a V15 feature; it is
+    // computed whenever the brain is facing a bet.
+    if (facingBet && gs.actionHistory) {
       const hist = gs.actionHistory;
       let heroAggrIdx = -1;
       for (let i = 0; i < hist.length; i++) {
@@ -2109,7 +2145,13 @@ export class HorseLogic {
           // A short call-off says nothing; a full-raise jam (or one worth at
           // least a quarter of the pot / half the price) says everything.
           const serious =
-            a.isFullRaise !== false || (a.amount ?? 0) >= Math.max(potNow20 * 0.25, toCall * 0.5);
+            // V28 AUDIT FIX: was `!== false`, which counted the UNDEFINED
+            // flag — HandController leaves it undefined precisely for the
+            // short call-off this comment excludes — as serious. One short
+            // stack calling all-in in front of the horse set the pressure
+            // caps, the commit premium and the scare cap, and the horse
+            // over-folded because somebody was priced in, not aggressive.
+            a.isFullRaise === true || (a.amount ?? 0) >= Math.max(potNow20 * 0.25, toCall * 0.5);
           if (serious) {
             oppAggr20++;
             seriousAllIns20++;
@@ -2332,6 +2374,12 @@ export class HorseLogic {
           isRiver &&
           oppCount === 1 &&
           cat >= 6 &&
+          // V28 AUDIT FIX: `cat >= 6` is "any flush or better" — the V21 nut
+          // discipline (which flush? whose boat?) was consulted only on the
+          // CALLING side, so a nine-high flush on a four-flush river still
+          // fired a 1.3-1.6x pot OVERBET here. A board-dominated hand is a
+          // bluff-catcher whatever its category number; it does not overbet.
+          !dominated21 &&
           !vi.isPotLimit &&
           fastRandom() < 0.35
         ) {
@@ -2345,6 +2393,10 @@ export class HorseLogic {
         // flush multiway reads over 0.8 more often than it should) sizes
         // down in plo5/plo6 — small ball until the hand really is the nuts.
         if (!nutClass15 && vi.isOmaha) monsterFrac *= ploDamp;
+        // V28: the NLH mirror. A board-dominated hand (V21) that still reads
+        // as a monster by MC sizes down instead of bombing — the calling side
+        // already knew this; the betting side did not.
+        if (useV21 && dominated21) monsterFrac = Math.min(monsterFrac, 0.5);
         return this.betSize(pot, monsterFrac, player, gs, vi, params, useSizing);
       }
       // Strong value. V4: a vulnerable made hand sizes UP and never checks
@@ -2526,10 +2578,11 @@ export class HorseLogic {
         equity >= 0.3 &&
         equity < 0.52 &&
         (cat <= 2 || !useIQ) &&
+        // V28: the other unclamped bluff site — see the pure-bluff clamp.
         fastRandom() <
           params.bluffFreq *
             params.aggression *
-            bluffScale *
+            Math.min(1.3, bluffScale) *
             (oppCount === 1 ? 1.4 : 0.7) *
             omahaDrawMod()
       ) {
@@ -2564,10 +2617,21 @@ export class HorseLogic {
         }
       }
       const scareBluffBoost = (useIQ && scare.any && blocker ? 1.5 : 1.0) * unblock16;
+      // V28 AUDIT FIX: this was one of two bluff sites with NO clamp on the
+      // multiplier product. bluffScale alone reaches ~4.6 (exploit x blocker
+      // x position x HU x river-read x spin x image x behind), and with the
+      // scare boost the roll probability exceeded 1 — a DETERMINISTIC river
+      // bluff, in exactly the spot (scare card + blocker) where the
+      // opponent's range is strongest against air.
+      // The clamp binds bluffScale alone so the scare/unblocker boost keeps
+      // its RELATIVE effect (clamping the product collapsed the V16
+      // unblocker distinction — both sides hit the ceiling). The product is
+      // still bounded: bluffFreq <= ~0.3 x 1.3 x 1.725 x 0.55 < 0.86.
       if (
         equity < 0.3 &&
         oppCount === 1 &&
-        fastRandom() < params.bluffFreq * bluffScale * scareBluffBoost * (isRiver ? 0.55 : 0.8)
+        fastRandom() <
+          params.bluffFreq * Math.min(1.3, bluffScale) * scareBluffBoost * (isRiver ? 0.55 : 0.8)
       ) {
         planBarrel(equity);
         // V12 (G): river bluffs holding a nut blocker occasionally use the
@@ -2598,7 +2662,13 @@ export class HorseLogic {
     // (large pots) the drag is zero and this reduces to honest pot odds.
     // V11: tournaments rake the buy-in, not the pot — pot odds are honest.
     const rakeMarg = useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind) : 0;
-    const potOdds = toCall / (pot * (1 - rakeMarg) + toCall);
+    // V28 AUDIT FIX: rake is a percentage of the WHOLE pot including hero's
+    // call, so break-even equity is toCall / ((pot + toCall) * (1 - r)). The
+    // old denominator pot*(1-r) + toCall applied the drag at ~60% of its true
+    // size — horses called marginally too wide in small raked cash pots, the
+    // opposite of the layer's stated intent. (gs.pot already includes the
+    // outstanding bet; `pot` here is that minus any uncallable excess.)
+    const potOdds = toCall / ((pot + toCall) * (1 - rakeMarg));
     // ═══ THE BET-RATIO SCALE, STATED ONCE AND FOR ALL (2026-08-27) ═══
     // `gs.pot` INCLUDES the bet hero is facing (HandController adds to
     // state.pot the moment the wager is posted). So `toCall / pot` is
@@ -2812,7 +2882,16 @@ export class HorseLogic {
         player.user_id,
         street
       );
-      if (plan23 === 'foldToRaise' && potOdds >= 0.15) {
+      // V28: the postflop mirror of the V25 commitment law — a stack that
+      // already put ~30% of itself in this hand does not raise-FOLD at any
+      // reasonable price. investedShare is hero's total commitment this hand
+      // over what he started it with.
+      const invested28 = Math.max(
+        0,
+        Number((player as { totalInvested?: number }).totalInvested ?? 0)
+      );
+      const investedShare28 = invested28 > 0 ? invested28 / (stack + invested28) : 0;
+      if (plan23 === 'foldToRaise' && potOdds >= 0.15 && investedShare28 < 0.3) {
         if (tele15) noteFire('v23_plan_fold');
         return { action: 'fold', thinkTime: 0 };
       }
@@ -2823,7 +2902,18 @@ export class HorseLogic {
     }
 
     // Low-SPR commitment: with the money effectively in, play equity directly.
-    const committed = spr < 1.2 || toCall >= stack;
+    // V28: money hero already put in THIS HAND commits him too — a horse that
+    // raised 30% of its stack on the turn was previously judged by SPR alone
+    // and could still raise-fold. (spr itself is now computed off the
+    // effective pot, so a covering overbet no longer manufactures commitment.)
+    const investedNow = Math.max(
+      0,
+      Number((player as { totalInvested?: number }).totalInvested ?? 0)
+    );
+    const committed =
+      spr < 1.2 ||
+      toCall >= stack ||
+      (investedNow > 0 && investedNow / (stack + investedNow) >= 0.3);
     if (committed) {
       // V20: the flat-call bar here was potOdds + 0.02 regardless of how many
       // players were in or how many of them were ALL IN — the exact door the
@@ -2871,8 +2961,14 @@ export class HorseLogic {
         // keep the jam.
         // V21: a board-dominated NLH hand that still clears the bar CALLS
         // rather than jams — the same zero-fold-equity logic as Omaha's.
+        // V28 AUDIT FIX: the committed branch ran BEFORE every plan consult
+        // consumer and could jam over a `callOnce` plan — a bet that declared
+        // "if raised, call once and never escalate" answered the raise with a
+        // shove. The plan the bet made is honored here too.
         const preferFlat15 =
-          (useV15 && vi.isOmaha && nuts15 != null && !nutClass15) || (useV21 && dominated21);
+          (useV15 && vi.isOmaha && nuts15 != null && !nutClass15) ||
+          (useV21 && dominated21) ||
+          planCallOnly23;
         return toCall >= stack || preferFlat15
           ? { action: 'call', amount: toCall, thinkTime: 0 }
           : { action: 'all_in', thinkTime: 0 };
@@ -3015,6 +3111,12 @@ export class HorseLogic {
     // blocks the nuts. Low frequency; makes the value raises unexploitable.
     if (
       !planCallOnly23 &&
+      // V28 AUDIT FIX: this branch could RE-RAISE a river raise with air —
+      // the V21 war gate ("once hero's river aggression is raised, only the
+      // effective nuts keeps raising") lives inside the value branch and
+      // never reached here, so the 500bb river bluff wars came from THIS
+      // side. Hero's raised river aggression closes the bluff-raise too.
+      !raisedAfterAggr &&
       useNlhX &&
       isRiver &&
       oppCount === 1 &&

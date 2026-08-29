@@ -8,6 +8,30 @@
    OVERLAY
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* ── THE PANEL MUST NOT BE CUT OFF ON A PHONE (Dan 2026-08-28) ──────────────
+   Dan, from a live all-in: "the run it twice pop up is blocked and you can't
+   click run it once, twice or 3 times. It's cut off."
+
+   The buttons being MISSING was a state bug in TablePage (see the note on
+   `ritChosenRuns`). This block is the other half — the geometry that decides
+   whether they are reachable once they render — and it had three faults:
+
+   1. `vh` ON IOS IS THE LARGE VIEWPORT. Safari resolves `vh` against the
+      viewport with the URL bar RETRACTED, so `max-height: 86vh` is ~86% of a
+      screen the player cannot currently see all of. With the bar showing, the
+      bottom of a full-height panel — which is exactly where the actions are —
+      sits under it. `dvh` is the dynamic one, and it is what this needed.
+   2. A CENTERED FLEX ITEM TALLER THAN ITS CONTAINER OVERFLOWS BOTH ENDS, and
+      the top overflow is unreachable: `align-items: center` computes a negative
+      offset that scrolling cannot recover. `margin: auto` on the child inside a
+      SCROLLABLE overlay centers it while it fits and pins it to the top when it
+      does not, which is the behaviour people assume centering already has.
+   3. NOTHING KEPT THE ACTIONS IN VIEW. The panel scrolls internally, so on a
+      short screen the player could be looking at the board preview with the
+      decision below the fold and a countdown running. They are sticky now.
+
+   All three are time-critical: this panel has a 25-second engine deadline on
+   it, and a decision you cannot reach is a decision you lose by default. */
 .rit-overlay {
   position: fixed;
   inset: 0;
@@ -15,6 +39,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Scroll the OVERLAY, so a panel taller than the screen is reachable at both
+     ends, and keep it clear of the notch and the home indicator. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: max(8px, env(safe-area-inset-top, 0px)) 8px max(8px, env(safe-area-inset-bottom, 0px));
   z-index: 600;
   animation: fadeIn 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   backdrop-filter: blur(4px) saturate(1.1);
@@ -442,7 +471,14 @@
 
 .rit-panel {
   width: min(340px, 92vw);
+  /* `vh` first as the fallback for anything without dvh; dvh is the one that
+     is right on a phone. See the note on .rit-overlay. */
   max-height: 86vh;
+  max-height: 86dvh;
+  /* Centered while it fits, top-aligned and fully scrollable when it does not —
+     `align-items: center` alone puts the top of an oversized panel out of
+     reach. */
+  margin: auto;
   overflow-y: auto;
   background: linear-gradient(180deg, #1c2128 0%, #161b22 100%);
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -618,24 +654,64 @@
   line-height: 1.45;
 }
 
+/* THE DECISION IS ALWAYS ON SCREEN. The panel scrolls internally when the
+   consent rows make it tall, and without this the three buttons scroll away
+   under a running countdown. Sticky keeps them on the bottom edge of the panel
+   whatever is above them. */
 .rit-panel__actions {
+  position: sticky;
+  bottom: -16px;
+  z-index: 1;
   display: flex;
   gap: 10px;
   justify-content: center;
   flex-wrap: wrap;
+  padding: 6px 0 2px;
+  margin-bottom: -2px;
+  background: linear-gradient(180deg, rgba(22, 27, 34, 0) 0%, #161b22 28%);
 }
 
 .rit-panel__btn {
-  min-width: 108px;
-  padding: 9px 16px;
+  /* THREE BUTTONS, ONE ROW, 375px (Dan 2026-08-28: "you can't click run it
+     once, twice or 3 times ... it's cut off").
+     The chooser gets Run Once / Run It Twice / Run It 3 Times. At the old flat
+     `min-width: 108px` those need 3 x 108 + 2 x 10 = 344px against the 312px a
+     340px panel has inside its padding, so the third one wrapped to a line of
+     its own — and that extra line is what pushed the row past the bottom of a
+     panel already mis-sized by `vh`. They share the row now: grow and shrink
+     from a 0 basis, with a floor that is a real touch target rather than a
+     label width. 44px tall is the minimum comfortable target. */
+  flex: 1 1 0;
+  min-width: 88px;
+  min-height: 44px;
+  padding: 9px 10px;
   border: none;
   border-radius: 999px;
   font-size: 13px;
   font-weight: 800;
+  line-height: 1.15;
   cursor: pointer;
   transition:
     transform 0.12s ease,
     filter 0.12s ease;
+}
+
+/* Two-button states (Decline / Accept) do not need the full width each — cap
+   them so they read as a pair rather than as a stretched bar. */
+.rit-panel__actions:not(:has(.rit-panel__btn--triple)) .rit-panel__btn {
+  max-width: 148px;
+}
+
+@media (max-width: 360px) {
+  .rit-panel__actions {
+    gap: 6px;
+  }
+
+  .rit-panel__btn {
+    min-width: 78px;
+    padding: 9px 6px;
+    font-size: 12px;
+  }
 }
 
 .rit-panel__btn:active {

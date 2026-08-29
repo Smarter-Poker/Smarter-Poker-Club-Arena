@@ -3737,7 +3737,32 @@ export default function TablePage({
   const [ritTimer, setRitTimer] = useState(10);
   const [ritOpponent, setRitOpponent] = useState('Opponent');
   const [ritIsChooser, setRitIsChooser] = useState(false);
-  const [ritChosenRuns, setRitChosenRuns] = useState<2 | 3>(2);
+  /* ─── undefined IS A STATE, AND IT WAS MISSING (Dan 2026-08-28) ────────────
+   *
+   * This was `useState<2 | 3>(2)`, and that one default is why the chooser has
+   * NEVER seen the Run Once / Run It Twice / Run It 3 Times buttons.
+   *
+   * RunItTwicePrompt decides which face to draw with
+   * `isChooserPhase = isChooser && !chosenRuns` — "I am the chooser and nothing
+   * has been chosen yet". A `2` that is really "no answer yet" makes that false
+   * on the very first render, so the chooser's panel skipped its own question
+   * and went straight to the branch below it, `isChooser && !!chosenRuns`, which
+   * is the WAITING state. The buttons were unreachable code.
+   *
+   * Dan, from a live all-in: "the run it twice pop up is blocked and you can't
+   * click run it once, twice or 3 times ... this card says 'kingfish offers to
+   * run it twice'. I didn't offer anything yet." Both halves are this line. The
+   * message reads `${opponentName} Requests To Run It ${runsLabel}`, and
+   * `ritOpponent` is set to the CHOOSER's display name — so when the hero was
+   * the chooser, the panel announced the hero's own name back to him, quoting a
+   * decision that was this initialiser rather than anything he had done.
+   *
+   * The type now carries the third state, and it is cleared in both places that
+   * begin a RIT question: `resetRitPanelState` (hand boundary) and the
+   * `rit_offer` handler (which resets every other panel field and missed only
+   * this one). A stale 2 or 3 surviving into the next hand's offer would put the
+   * next chooser straight back into the waiting state. */
+  const [ritChosenRuns, setRitChosenRuns] = useState<2 | 3 | undefined>(undefined);
   const [ritMaxRuns, setRitMaxRuns] = useState<2 | 3>(2);
   const [ritPlayerCount, setRitPlayerCount] = useState(2);
   // ── POKERBROS PARITY 2026-08-26: consent-panel state ──
@@ -3893,6 +3918,11 @@ export default function TablePage({
     setRitOpponent('Opponent');
     setRitAllPlayerIds([]);
     setRitAcceptedIds([]);
+    /* No answer yet — NOT 2. See the note on the useState. A number surviving
+       the hand boundary makes the next chooser's panel open in its waiting
+       state with no buttons on it. */
+    setRitChosenRuns(undefined);
+    setRitIsChooser(false);
     setRitChooserId(null);
     setRitPotAmount(null);
     setRitHeroAccepted(false);
@@ -7284,6 +7314,12 @@ export default function TablePage({
         setRitAcceptedIds([chooserId]);
         setRitChooserId(chooserId);
         setRitChooserHasDecided(false);
+        /* A NEW OFFER HAS NO ANSWER IN IT. This reset was the one field the
+           handler missed, and with the old `useState<2|3>(2)` it never even had
+           to be missed to bite — see the note on the state itself. Explicit here
+           regardless, because this handler resets every other panel field and a
+           reader must not have to know the initialiser to trust it. */
+        setRitChosenRuns(undefined);
         setRitHeroAccepted(false);
         setRitPotAmount(typeof handState.pot === 'number' ? handState.pot : null);
         setRitTotalSeconds(timeoutSeconds);
@@ -19462,6 +19498,16 @@ export default function TablePage({
         ritChosenRuns={ritChosenRuns}
         ritMaxRuns={ritMaxRuns}
         ritPlayerCount={ritPlayerCount}
+        /* 2026-08-28: these six were computed here and never forwarded, so the
+           consent sheet drew five face-down slots over a live flop, no pot line
+           and no player rows. `ritPanelPlayers` / `ritPanelBoardCards` were
+           dead memos. Chips have no currency symbol on this felt. */
+        ritBoardCards={ritPanelBoardCards}
+        ritPanelPlayers={ritPanelPlayers}
+        ritPotAmount={ritPotAmount}
+        ritTotalSeconds={ritTotalSeconds}
+        ritHeroAccepted={ritHeroAccepted}
+        ritCurrency=""
         onRITChooserDecide={handleRITChooserDecide}
         onRITAccept={handleRITAccept}
         onRITDecline={handleRITDecline}

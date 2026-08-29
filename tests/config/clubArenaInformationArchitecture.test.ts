@@ -10,6 +10,12 @@ import {
   getActiveArenaSectionPath,
   getArenaSectionNavigation,
 } from '../../src/config/arenaSectionNavigation';
+import {
+  getActiveClubOperationPath,
+  getClubOperationContext,
+  getClubOperationGroups,
+  getClubOperationRailItems,
+} from '../../src/config/clubOperationsNavigation';
 
 describe('Club Arena information architecture', () => {
   it('keeps the global menu concise and free of retired aliases', () => {
@@ -28,18 +34,23 @@ describe('Club Arena information architecture', () => {
     expect(paths.length).toBeLessThanOrEqual(24);
   });
 
-  it('uses club-scoped operation routes when a club is active', () => {
+  it('consolidates club tools behind one club-scoped operations entrance', () => {
     const items = getClubArenaNavigation({ clubId: 'shark-club', clubRole: 'owner' }).flatMap(
       (group) => group.items
     );
     const paths = items.map((item) => item.path);
 
-    expect(paths).toContain('/clubs/shark-club/members');
-    expect(paths).toContain('/clubs/shark-club/data');
-    expect(paths).toContain('/clubs/shark-club/settings');
-    expect(paths).toContain('/clubs/shark-club/agents');
+    expect(paths).toContain('/clubs/shark-club/operations');
+    expect(paths).not.toContain('/clubs/shark-club/members');
+    expect(paths).not.toContain('/clubs/shark-club/data');
+    expect(paths).not.toContain('/clubs/shark-club/settings');
+    expect(paths).not.toContain('/clubs/shark-club/agents');
     expect(paths).not.toContain('/agent-management');
     expect(paths).not.toContain('/data');
+
+    const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+    expect(appSource).toContain('path="clubs/:clubId/operations"');
+    expect(appSource).toContain('<ClubOperationsPage />');
   });
 
   it('shows platform-only controls only to platform staff', () => {
@@ -63,6 +74,7 @@ describe('Club Arena information architecture', () => {
     );
 
     expect(paths).toContain('/clubs/shark-club');
+    expect(paths).not.toContain('/clubs/shark-club/operations');
     expect(paths).not.toContain('/clubs/shark-club/members');
     expect(paths).not.toContain('/clubs/shark-club/data');
     expect(paths).not.toContain('/clubs/shark-club/settings');
@@ -148,6 +160,57 @@ describe('Club Arena information architecture', () => {
     expect(unionGames?.items.map((item) => item.path)).not.toContain('/unions/union-1/statements');
     expect(getActiveArenaSectionPath('/unions/union-1/games', unionGames?.items || [])).toBe(
       '/unions/union-1/games'
+    );
+  });
+
+  it('builds one permission-aware club operations workspace without changing deep links', () => {
+    const ownerAccess = getClubNavigationCapabilities('owner');
+    const ownerGroups = getClubOperationGroups('shark-club', ownerAccess);
+    const ownerPaths = ownerGroups.flatMap((group) => group.items.map((item) => item.path));
+
+    expect(ownerGroups.map((group) => group.label)).toEqual([
+      'People & Safety',
+      'Finance & Risk',
+      'Club Control',
+    ]);
+    expect(ownerPaths).toEqual(
+      expect.arrayContaining([
+        '/clubs/shark-club/dashboard-full',
+        '/clubs/shark-club/members',
+        '/clubs/shark-club/reports',
+        '/clubs/shark-club/disputes',
+        '/clubs/shark-club/data',
+        '/clubs/shark-club/financials',
+        '/clubs/shark-club/settlement',
+        '/clubs/shark-club/insurance-report',
+        '/clubs/shark-club/announcements',
+        '/clubs/shark-club/rules',
+        '/clubs/shark-club/settings',
+      ])
+    );
+    expect(new Set(ownerPaths).size).toBe(ownerPaths.length);
+
+    const agentGroups = getClubOperationGroups(
+      'shark-club',
+      getClubNavigationCapabilities('agent')
+    );
+    const agentPaths = agentGroups.flatMap((group) => group.items.map((item) => item.path));
+    expect(agentPaths).toContain('/clubs/shark-club/reports');
+    expect(agentPaths).toContain('/clubs/shark-club/announcements');
+    expect(agentPaths).not.toContain('/clubs/shark-club/data');
+    expect(agentPaths).not.toContain('/clubs/shark-club/settings');
+  });
+
+  it('recognizes nested club operation routes and selects one current rail item', () => {
+    const items = getClubOperationRailItems('shark-club', getClubNavigationCapabilities('owner'));
+
+    expect(getClubOperationContext('/clubs/shark-club/members/player-1/statistics')).toBe(
+      'shark-club'
+    );
+    expect(getClubOperationContext('/clubs/shark-club/lobby')).toBeNull();
+    expect(getClubOperationContext('/clubs/shark-club/create-table')).toBeNull();
+    expect(getActiveClubOperationPath('/clubs/shark-club/members/player-1', items)).toBe(
+      '/clubs/shark-club/members'
     );
   });
 

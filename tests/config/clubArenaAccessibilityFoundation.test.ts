@@ -58,9 +58,11 @@ describe('Club Arena accessibility foundation', () => {
 
   it('keeps the fixed club rail semantic, permission-aware, and canonically routed', () => {
     const source = read('src/components/club/ClubBottomNav.tsx');
+    const accessSource = read('src/hooks/useClubNavigationAccess.ts');
 
-    expect(source).toContain('getClubNavigationCapabilities');
-    expect(source).toContain("masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED'");
+    expect(source).toContain('useClubNavigationAccess');
+    expect(accessSource).toContain('getClubNavigationCapabilities');
+    expect(accessSource).toContain("masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED'");
     expect(source).toContain("label: 'Settings'");
     expect(source).toContain('club ? `/clubs/${club}/data` : null');
     expect(source).toContain('aria-label="Club Sections"');
@@ -84,5 +86,18 @@ describe('Club Arena accessibility foundation', () => {
     expect(source).toContain("aria-current={isActive ? 'page' : undefined}");
     expect(source).toContain('<ul className={styles.items}>');
     expect(layoutSource).toContain('{showGlobalHeader && <ArenaSectionRail />}');
+  });
+
+  it('gives the club operations workspace semantic groups and a current-page rail', () => {
+    const pageSource = read('src/pages/club/ClubOperationsPage.tsx');
+    const railSource = read('src/components/navigation/ClubOperationsRail.tsx');
+    const layoutSource = read('src/components/layouts/AppLayout.tsx');
+
+    expect(pageSource).toContain('aria-labelledby={`ops-${group.id}`}');
+    expect(pageSource).toContain('<ul className={styles.toolGrid}>');
+    expect(pageSource).toContain('aria-describedby={descriptionId}');
+    expect(railSource).toContain('aria-label="Club Operations sections"');
+    expect(railSource).toContain("aria-current={isActive ? 'page' : undefined}");
+    expect(layoutSource).toContain('{showGlobalHeader && <ClubOperationsRail />}');
   });
 });

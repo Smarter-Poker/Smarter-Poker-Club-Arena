@@ -30,17 +30,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useClubNavigationAccess } from '../../hooks/useClubNavigationAccess';
 import { useStaggerAnimation } from '../../hooks/useStaggerAnimation';
-import { supabase } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
-import { getClubNavigationCapabilities } from '../../config/clubArenaNavigation';
 import {
   readCachedQuickLinkClubs,
   fetchQuickLinkClubs,
   resolveTargetClub,
 } from '../../utils/clubQuickLink';
-import { resolveClubUUID } from '../../utils/clubIdResolver';
-import { reportError } from '../../utils/errorReporter';
 import { activeTabForPath, type TabKey } from './clubBottomNavTabs';
 import styles from './ClubBottomNav.module.css';
 
@@ -93,69 +89,6 @@ function useResolvedClubId(explicit?: string): string | null {
   return explicit || resolved;
 }
 
-/**
- * Fail-closed presentation permissions for the resolved club.
- *
- * Route and API guards still enforce the real permission boundary. This hook
- * only prevents the fixed rail from advertising tools a member cannot use.
- * CLUB_UPDATED and MEMBER_ROLE_CHANGED are emitted by the existing membership
- * sync layer, so a promotion/demotion refreshes the rail without a reload.
- */
-function useClubRailCapabilities(clubId: string | null) {
-  const { user } = useAuthUser();
-  const [clubRole, setClubRole] = useState<string | null>(null);
-  const [isPlatformStaff, setIsPlatformStaff] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadAccess = async () => {
-      if (!clubId || !user?.id) {
-        if (!cancelled) {
-          setClubRole(null);
-          setIsPlatformStaff(false);
-        }
-        return;
-      }
-
-      try {
-        const resolvedId = await resolveClubUUID(clubId);
-        const [{ data: membership }, { data: profile }] = await Promise.all([
-          supabase
-            .from('club_members')
-            .select('role')
-            .eq('club_id', resolvedId)
-            .eq('user_id', user.id)
-            .maybeSingle(),
-          supabase.from('profiles').select('role').eq('id', user.id).maybeSingle(),
-        ]);
-        if (cancelled) return;
-        setClubRole(membership?.role || null);
-        setIsPlatformStaff(profile?.role === 'admin' || profile?.role === 'super_admin');
-      } catch (error) {
-        reportError(error, 'ClubBottomNav.Access_load_failed');
-        if (!cancelled) {
-          setClubRole(null);
-          setIsPlatformStaff(false);
-        }
-      }
-    };
-
-    void loadAccess();
-    const refreshAccess = () => void loadAccess();
-    const unsubClub = masterBus.subscribeDebounced('CLUB_UPDATED', refreshAccess, 300);
-    const unsubRole = masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED', refreshAccess, 150);
-
-    return () => {
-      cancelled = true;
-      unsubClub();
-      unsubRole();
-    };
-  }, [clubId, user?.id]);
-
-  return getClubNavigationCapabilities(clubRole, isPlatformStaff);
-}
-
 const ICONS: Record<TabKey, ReactNode> = {
   profile: (
     <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
@@ -178,7 +111,7 @@ const ICONS: Record<TabKey, ReactNode> = {
 export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
   const location = useLocation();
   const resolvedClubId = useResolvedClubId(clubId);
-  const capabilities = useClubRailCapabilities(resolvedClubId);
+  const capabilities = useClubNavigationAccess(resolvedClubId);
   const activeTab = useMemo(() => activeTabForPath(location.pathname), [location.pathname]);
 
   /**

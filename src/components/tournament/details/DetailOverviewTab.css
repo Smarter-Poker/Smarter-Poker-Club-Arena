@@ -239,7 +239,6 @@
     box-shadow 0.16s var(--tl-ease);
 }
 
-.dov-deal__btn:hover:not(:disabled),
 .dov-deal__btn:focus-visible:not(:disabled) {
   outline: none;
 }
@@ -494,7 +493,6 @@
    ───────────────────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .dov-deal__btn,
-  .dov-deal__btn:hover,
   .dov-deal__btn:focus-visible,
   .dov-deal__btn:active {
     transform: none;
@@ -525,12 +523,6 @@
   cursor: pointer;
   touch-action: manipulation;
   transition: all 0.2s;
-}
-
-.dov-ladder-link:hover {
-  border-color: #6fdcff;
-  background: linear-gradient(180deg, #223046 0%, #1a2436 100%);
-  color: #e8eaf0;
 }
 
 .dov-ladder-link:focus-visible {

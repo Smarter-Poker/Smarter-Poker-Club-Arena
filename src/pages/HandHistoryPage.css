@@ -92,11 +92,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.hh-header .back-btn:hover {
-  border-color: #00d4ff;
-  color: #00d4ff;
-}
-
 .hh-header h1 {
   font-size: 1.5rem;
   margin: 0 0 0 12px;
@@ -132,11 +127,6 @@
   white-space: nowrap;
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.filter-btn:hover {
-  border-color: #3a4a5a;
-  color: #8a9aaa;
 }
 
 .filter-btn.active {
@@ -187,10 +177,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.1),
     0 4px 20px rgba(0, 0, 0, 0.5);
   transition: all 0.3s ease;
-}
-
-.hand-card:hover {
-  border-color: #00d4ff;
 }
 
 .hand-header {
@@ -324,12 +310,6 @@
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
 }
 
-.replay-btn:hover,
-.analyze-btn:hover,
-.share-btn:hover {
-  filter: brightness(1.2);
-}
-
 /* ─────────────────────────────────────────────────────────────────────────────
    REPLAY MODAL
    ───────────────────────────────────────────────────────────────────────────── */
@@ -379,11 +359,6 @@
   z-index: 10;
   color: #8a9aaa;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.modal-close:hover {
-  border-color: #ef4444;
-  color: #ef4444;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -462,12 +437,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.export-btn:hover {
-  border-color: #00d4ff;
-  color: #00d4ff;
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
-}
-
 /* ─────────────────────────────────────────────────────────────────────────────
    LOAD MORE
    ───────────────────────────────────────────────────────────────────────────── */
@@ -490,11 +459,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.1),
     0 4px 10px rgba(0, 0, 0, 0.5);
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.load-more-btn:hover:not(:disabled) {
-  border-color: #00d4ff;
-  color: #00d4ff;
 }
 
 .load-more-btn:disabled {
@@ -598,12 +562,6 @@
   cursor: pointer;
   transition: all 0.25s ease;
   white-space: nowrap;
-}
-
-.hh-filter-chip:hover {
-  border-color: rgba(0, 212, 255, 0.4);
-  color: #00d4ff;
-  background: rgba(0, 212, 255, 0.08);
 }
 
 .hh-filter-chip.active {

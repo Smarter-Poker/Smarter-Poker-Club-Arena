@@ -438,10 +438,6 @@
   transition: box-shadow 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.hover-glow:hover {
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.4);
-}
-
 .hover-scale {
   transition: transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }

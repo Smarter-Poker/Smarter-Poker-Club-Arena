@@ -93,10 +93,6 @@
     background 0.15s ease,
     border-color 0.15s ease;
 }
-.pre-action-bar__armed-clear:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.45);
-}
 .pre-action-bar__armed-clear:active {
   transform: scale(0.96);
 }
@@ -315,12 +311,6 @@
   border-color: rgba(239, 68, 68, 0.2);
 }
 
-.pre-action-btn.fold:hover {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.4);
-  color: rgba(255, 255, 255, 0.8);
-}
-
 .pre-action-btn.fold.active {
   background: linear-gradient(180deg, rgba(239, 68, 68, 0.3) 0%, rgba(185, 28, 28, 0.3) 100%);
   border-color: #ef4444;
@@ -342,12 +332,6 @@
 
 .pre-action-btn.check {
   border-color: rgba(63, 185, 80, 0.2);
-}
-
-.pre-action-btn.check:hover {
-  background: rgba(63, 185, 80, 0.1);
-  border-color: rgba(63, 185, 80, 0.4);
-  color: rgba(255, 255, 255, 0.8);
 }
 
 .pre-action-btn.check.active {
@@ -373,12 +357,6 @@
   border-color: rgba(245, 158, 11, 0.2);
 }
 
-.pre-action-btn.call:hover {
-  background: rgba(245, 158, 11, 0.1);
-  border-color: rgba(245, 158, 11, 0.4);
-  color: rgba(255, 255, 255, 0.8);
-}
-
 .pre-action-btn.call.active {
   background: linear-gradient(180deg, rgba(245, 158, 11, 0.3) 0%, rgba(217, 119, 6, 0.3) 100%);
   border-color: #f59e0b;
@@ -400,12 +378,6 @@
 
 .pre-action-btn.call-any {
   border-color: rgba(245, 158, 11, 0.2);
-}
-
-.pre-action-btn.call-any:hover {
-  background: rgba(245, 158, 11, 0.1);
-  border-color: rgba(245, 158, 11, 0.4);
-  color: rgba(255, 255, 255, 0.8);
 }
 
 .pre-action-btn.call-any.active {

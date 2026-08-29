@@ -79,10 +79,6 @@
   }
 }
 
-.actionBtn:hover {
-  background: var(--action-color, rgba(255, 255, 255, 0.1));
-}
-
 .icon {
   font-size: 20px;
 }

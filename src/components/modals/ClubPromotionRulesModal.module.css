@@ -124,10 +124,6 @@
   text-decoration: none;
 }
 
-.content a:hover {
-  text-decoration: underline;
-}
-
 .preamble {
   font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.7);

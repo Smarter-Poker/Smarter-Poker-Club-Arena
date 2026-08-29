@@ -41,10 +41,6 @@
   transition: color 0.2s;
 }
 
-.backButton:hover {
-  color: #fff;
-}
-
 .headerContent {
   flex: 1;
 }
@@ -187,11 +183,6 @@
   white-space: nowrap;
   flex-shrink: 0;
   transition: all 0.2s;
-}
-
-.tabButton:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
 }
 
 .tabButton.active {
@@ -526,10 +517,6 @@
   padding: 1.25rem;
   cursor: pointer;
   transition: all 0.2s;
-}
-
-.periodCard:hover {
-  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .periodCard.selected {

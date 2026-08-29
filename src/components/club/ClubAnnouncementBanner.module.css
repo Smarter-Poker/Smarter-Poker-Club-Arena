@@ -128,11 +128,6 @@
   transition: all 0.2s ease;
 }
 
-.dismissBtn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: white;
-}
-
 /* Mobile */
 @media (max-width: 600px) {
   .banner {

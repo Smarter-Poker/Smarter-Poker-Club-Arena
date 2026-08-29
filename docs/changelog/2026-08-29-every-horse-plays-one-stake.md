@@ -62,26 +62,80 @@ high-stakes table is ordinary. The wrong name in a micro game is the tell.**
 When a band genuinely runs out, the log says so by name rather than looking
 like the fleet is broken.
 
-### Assigned, not hashed
+### The band is EARNED
+
+Dan, on reading the first version: _"THEY CAN PLAY MORE THAN ONE STAKE, BUT YOU
+SHOULD CLASSIFY THEM... A MICRO PLAYER ONLY PLAYS MICRO STAKES (WORST
+PERFORMING HORSES). SMALL STAKES IS FOR SMALL PLAYERS (2ND WORST). MED WOULD BE
+GOOD WINNING HORSES, AND HIGH FOR THE BEST HORSES."_
+
+The mechanism was right; the **assignment** was arbitrary. It took contiguous
+slices of the fleet ordered by uuid — reproducible, exactly balanced, and
+meaningless. A horse bleeding 80 big blinds per hundred could hold a seat in the
+25/50 game because its id sorted late.
+
+A real card room sorts itself by results, and that is what makes a stake ladder
+legible to anyone watching it. `fn_assign_horse_stake_bands` now ranks on
+**bb/100** — winnings over the big blinds actually faced, the only measure
+comparable across a ladder where 500 chips is a career at 0.05/0.10 and a
+rounding error at 25/50.
+
+The fleet had real signal to rank on: 584 horses, average 9,273 hands each,
+576 of them past 2,000 hands. Spread from **-80.71 to +68.29 bb/100**, median
+-12.60, 146 winners against 438 losers.
+
+After the first merit run:
+
+| band  | horses | avg bb/100 | winners |
+| ----- | ------ | ---------- | ------- |
+| micro | 127    | **-35.62** | 13      |
+| low   | 336    | **-11.96** | 35      |
+| mid   | 73     | **+1.65**  | 59      |
+| high  | 48     | **+22.86** | 39      |
+
+Monotonic, which the migration asserts rather than assumes: if the high band
+does not out-earn the micro band, the migration aborts, because bands that are
+not merit-ordered make the whole feature decorative.
+
+Two guards that are not optional:
+
+**A hands floor.** A winrate over a few hundred hands is noise, and promoting
+noise to the 25/50 game is how a losing horse arrives there by luck. Below
+1,000 hands a horse is unproven and starts at `micro` — a new player begins in
+the smallest game and earns his way up. There is deliberately **no hash
+fallback** for an unranked horse: a band is a claim about results, and hashing
+a brand-new horse into `high` would seat an unproven player in the biggest game
+on the strength of its uuid, which is the arbitrary assignment this replaced.
+
+**Hysteresis.** The ranking re-runs. Without a margin, a horse on a band
+boundary flips every time its winrate wobbles — and a regular who plays 10/25
+today, 0.10/0.20 tomorrow and 10/25 on Sunday is _exactly the tell the bands
+exist to remove_. A horse moves only when it is more than five percentile
+points past the boundary it would cross. That is why the counts above are
+127/336/73/48 rather than the exact 128/304/88/64: the first merit run held
+near-boundary horses where they were, and it converges over subsequent runs.
+
+The proportions stay demand-based, so **merit decides who is in a band and
+demand decides how many** — no stake level is left without enough horses to
+fill it. The two constraints are independent and both hold.
+
+### Why the band lives in the database and not in a hash
 
 Same reason lanes are assigned: `horseHash` is a weak multiply-add and a
 low-bit modulo of it clusters on UUIDs — the lane hash aimed at 33/33/34 and
 measured 32.0/39.0/28.9 across the real fleet. Here a skew is worse than
 cosmetic, because a short band is a stake level with too few horses to fill its
-tables, and the band is strict.
+tables, and the band is strict. The merit ranking needs the database anyway:
+`player_stats` is where the winrates are.
 
-`fn_assign_horse_stake_bands()` takes contiguous slices of the id-ordered fleet,
-so the split is exact at any size. `ORDER BY id`, never `random()` — a re-run
-must not let a horse be a micro grinder on Tuesday.
-
-Weights follow live seat demand (micro 83 seats, low 220, mid 36, high 26):
+Band sizes follow live seat demand (micro 83 seats, low 220, mid 36, high 26):
 **22 / 52 / 15 / 11**. A third of the roster is events-only, but each horse may
 hold four tables, so every band clears its seats several times over.
 
-Applied to production. Measured after: 21.9 / 52.1 / 14.9 / 11.1, and
-cash-eligible horses per band 79 / 211 / 57 / 45 against 83 / 220 / 36 / 26
-seats. The `lane` assignment survived the jsonb merge on all 584 horses, which
-the migration asserts rather than assumes.
+Applied to production, and the `lane` assignment survived the jsonb merge on
+all 584 horses — the migration asserts that rather than assuming it, because
+the merge writes into the same column a third of the fleet's behaviour depends
+on.
 
 ## What this does not do
 
@@ -96,6 +150,7 @@ band. The visible mixed-stakes names should be gone within a session cycle.
 The pins include the headline rule (a 10/25 horse refused at 0.50/1), the exact
 `yankee` case (no horse may be allowed at both 0.10/0.20 and 25.00/50.00),
 exactly-one-band-per-table, garbage band values falling back rather than being
-stored, the fallback hash populating all four bands, and three wiring pins that
+stored, an unproven horse starting at `micro` and never reaching `high` by luck
+of its uuid, and three wiring pins that
 fail if the filter is moved after the pick or if the rescue path is ever
 widened past the band.

@@ -253,23 +253,32 @@ export default function LobbyAdStrip({
     setIndex((prev) => Math.max(0, Math.min(prev, nextAds.length - 1)));
   };
 
+  /* The destination this strip would actually route to, resolved and checked
+     once, so that everything downstream agrees about it.
+
+     Validated AFTER the {clubId} substitution, never before: the check has to
+     see the string the router will actually receive, or a template could
+     smuggle a destination past it. See isSafeAdTarget. */
+  const houseTarget = (() => {
+    if (ad.source !== 'HOUSE' || !ad.adId || !ad.targetUrl) return null;
+    const url = clubId ? ad.targetUrl.replace(/{clubId}/g, clubId) : ad.targetUrl;
+    return isSafeAdTarget(url) ? url : null;
+  })();
+
   const handleActivate = () => {
-    if (ad.source === 'HOUSE' && ad.adId) {
+    /* THE CLICK IS LOGGED ONLY WHERE ONE HAPPENED. It used to be logged the
+       moment a house strip was activated, before the target had been checked,
+       so an ad whose destination the client refuses recorded a click and then
+       went nowhere. Those are the worst events we can hold: they are
+       indistinguishable in the panel from a campaign that is working, and the
+       click-through rate they inflate is the number an operator uses to decide
+       what to run next. An unsafe target falls through to `onOpen` - a promo
+       that opens the wrong thing is a bug; one that leaves the site is a
+       different and worse problem. */
+    if (houseTarget && ad.adId) {
       AdService.logClick({ adId: ad.adId }, 'lobby_strip', clubId);
-      if (ad.targetUrl) {
-        let url = ad.targetUrl;
-        if (clubId) url = url.replace(/{clubId}/g, clubId);
-        /* Validated AFTER the {clubId} substitution, never before: the check
-           has to see the string the router will actually receive, or a
-           template could smuggle a destination past it. An unsafe target
-           falls through to `onOpen` rather than navigating — a promo that
-           opens the wrong thing is a bug; one that leaves the site is a
-           different and worse problem. See isSafeAdTarget. */
-        if (isSafeAdTarget(url)) {
-          onNavigate?.(url);
-          return;
-        }
-      }
+      onNavigate?.(houseTarget);
+      return;
     }
     onOpen?.();
   };
@@ -279,7 +288,10 @@ export default function LobbyAdStrip({
      without it the strip was still focusable, still showed a pointer cursor
      and a focus ring, and did nothing when clicked. */
   const stripClass = `lobby-ads__strip lobby-ads__strip--${ad.source.toLowerCase()}`;
-  const isActivatable = Boolean(onOpen) || (ad.source === 'HOUSE' && Boolean(ad.targetUrl));
+  /* houseTarget, not Boolean(ad.targetUrl): a house ad whose destination the
+     client refuses has nowhere to go, and rendering it as a button offered a
+     pointer cursor, a focus ring and a tap that did nothing. */
+  const isActivatable = Boolean(onOpen) || Boolean(houseTarget);
   if (!isActivatable) {
     return (
       <div className="lobby-ads">

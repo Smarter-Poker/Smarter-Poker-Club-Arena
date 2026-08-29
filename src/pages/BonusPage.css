@@ -143,11 +143,6 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.special-card:hover {
-  border-color: #3a4a5a;
-  border-left-color: #f59e0b;
-}
-
 .special-card.claimed {
   opacity: 0.5;
   border-left-color: #10b981;

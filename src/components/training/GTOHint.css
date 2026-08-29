@@ -11,10 +11,6 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
-.gto-hint:hover {
-  border-color: rgba(255, 215, 0, 0.5);
-}
-
 .gto-hint.expanded {
   max-width: 280px;
 }

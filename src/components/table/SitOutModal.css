@@ -81,10 +81,6 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
-.sitout-modal__im-back-btn:hover {
-  background: linear-gradient(135deg, #4dc660 0%, #3fb950 100%);
-}
-
 /* Leave Table, alongside "I'm Back". Added 2026-08-25 with the button itself —
    the component had built a handleLeave for a prop it was given and then never
    rendered anything to call it.
@@ -103,10 +99,6 @@
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   white-space: nowrap;
-}
-
-.sitout-modal__leave-btn:hover {
-  background: rgba(248, 81, 73, 0.12);
 }
 
 /* =================================================================================

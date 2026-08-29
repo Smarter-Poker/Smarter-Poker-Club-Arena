@@ -69,11 +69,6 @@
   transition: all 0.2s ease;
 }
 
-.admin-tab:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-primary, #e4e6eb);
-}
-
 .admin-tab.active {
   background: rgba(69, 153, 255, 0.15);
   color: #4599ff;
@@ -262,11 +257,6 @@
   color: var(--text-secondary, #b0b3b8);
 }
 
-.admin-btn-ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-primary, #e4e6eb);
-}
-
 .admin-btn-sm {
   padding: 4px 12px;
   font-size: 12px;
@@ -347,10 +337,6 @@
 .admin-data-table td {
   padding: 10px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-}
-
-.admin-data-table tr:hover td {
-  background: rgba(255, 255, 255, 0.02);
 }
 
 /* ── Badges ── */

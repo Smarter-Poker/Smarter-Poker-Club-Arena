@@ -47,17 +47,9 @@
   color: #ffd700;
 }
 
-.primary-button.variant-outline:hover:not(:disabled) {
-  background: rgba(255, 215, 0, 0.1);
-}
-
 .primary-button.variant-ghost {
   background: transparent;
   color: #ffd700;
-}
-
-.primary-button.variant-ghost:hover:not(:disabled) {
-  background: rgba(255, 215, 0, 0.1);
 }
 
 .btn-icon {

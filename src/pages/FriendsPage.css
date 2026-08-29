@@ -125,10 +125,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.friends-tabs button:hover {
-  color: #8a9aaa;
-}
-
 .friends-tabs button.active {
   color: #00d4ff;
   border-bottom-color: #00d4ff;
@@ -249,11 +245,6 @@
   margin-bottom: 0;
 }
 
-.friend-row:hover,
-.request-row:hover {
-  border-color: #00d4ff;
-}
-
 .friend-avatar,
 .request-avatar {
   width: 44px;
@@ -332,10 +323,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.action-btn:hover {
-  color: #00d4ff;
-}
-
 /* ─────────────────────────────────────────────────────────────────────────────
    REQUEST ACTIONS
    ───────────────────────────────────────────────────────────────────────────── */
@@ -366,11 +353,6 @@
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
   border-color: #3a4a5a;
   color: #8a9aaa;
-}
-
-.decline-btn:hover {
-  border-color: #ef4444;
-  color: #ef4444;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -578,12 +560,6 @@
   flex: unset;
   border-bottom: none;
   touch-action: manipulation;
-}
-
-.friends-tabs .fr-filter-chip:hover {
-  border-color: rgba(0, 212, 255, 0.4);
-  color: #00d4ff;
-  background: rgba(0, 212, 255, 0.08);
 }
 
 .friends-tabs .fr-filter-chip.active {

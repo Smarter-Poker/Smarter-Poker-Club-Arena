@@ -86,7 +86,6 @@
   cursor: pointer;
 }
 
-.cpm-close:hover,
 .cpm-close:focus-visible {
   color: var(--text-primary, #f3f4f6);
 }
@@ -240,7 +239,6 @@
   cursor: pointer;
 }
 
-.cpm-confirm-btn:hover,
 .cpm-confirm-btn:focus-visible {
   filter: brightness(1.1);
 }

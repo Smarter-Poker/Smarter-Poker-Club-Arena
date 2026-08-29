@@ -70,11 +70,6 @@
   transition: all 0.2s;
 }
 
-.share-card-close:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
-}
-
 /* ── Preview Card ───────────────────────────────────────────────────────────── */
 .share-card-preview {
   background: #0a0a14;

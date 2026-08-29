@@ -45,6 +45,11 @@ import {
 } from './mysteryBountyActivation.js';
 import { mayTakeSeat } from './seatClaim.js';
 import type { GameServer } from '../GameServer.js';
+import {
+  ELIMINATION_SWEEP_STUCK_MS,
+  ELIMINATION_SWEEP_FORCE_RELEASE_MS,
+  eliminationLockVerdict,
+} from './eliminationLock.js';
 
 /** How many places this payout structure pays, whichever shape it arrived in. */
 function countPaidPlaces(structure: unknown): number {
@@ -3934,7 +3939,55 @@ export abstract class TournamentManagerBase {
     await this.broadcast('ADDON_PERIOD_END', {});
   }
 
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  THE SWEEP LOCK HAD NO WAY OUT (2026-08-29)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * `isProcessingEliminations` is a re-entrancy lock, and it was taken with
+   * no bound on how long it could be held. The `finally` that releases it is
+   * not the safety net it looks like: `finally` runs when the try block
+   * SETTLES, and an await that never settles never settles. One PostgREST
+   * request that hangs rather than erroring — a dead socket the runtime has
+   * not noticed, a gateway holding the connection open — therefore takes this
+   * lock permanently.
+   *
+   * What that costs: every subsequent tick returns at the first line, so
+   * nothing is eliminated, `remainingCount` never falls to 1, finishTournament
+   * is unreachable, and the whole field's prize money is stranded. Exactly the
+   * deadlock of 2026-08-28 (Union PKO Afternoon 4f42d847) arrived at by a
+   * different road. There was no timeout and no alert: the failure was
+   * SILENT, which is the part that makes it expensive — 4f42d847 sat for over
+   * an hour and was found by a player, not by us.
+   *
+   * Three fields make the lock recoverable, and they are all read in
+   * startEliminationChecker:
+   *
+   *   `eliminationSweepStartedAt`  when the current holder took it (0 = free)
+   *   `eliminationSweepGeneration` bumped every time it is taken
+   *   `eliminationSweepStuckReportedAt` rate-limits the alert to one per
+   *                                     episode instead of one per 5s tick
+   *
+   * The generation is what makes forcing the lock safe. A sweep declared dead
+   * and then resurrected must not write a finishing place that the sweep which
+   * replaced it has already handed to somebody else — the ladder takes places
+   * from the set that is FREE at the moment it reads, so two live sweeps are a
+   * collision generator. So each sweep carries the generation it was born with
+   * and stands down the moment it is superseded, before it writes anything.
+   */
   protected isProcessingEliminations = false;
+  protected eliminationSweepStartedAt = 0;
+  protected eliminationSweepGeneration = 0;
+  protected eliminationSweepStuckReportedAt = 0;
+
+  /**
+   * Thresholds and the verdict itself live in the import-free
+   * `eliminationLock` module so they can be unit-tested directly. They are
+   * re-exposed here because every caller already holds a manager.
+   */
+  static readonly ELIMINATION_SWEEP_STUCK_MS = ELIMINATION_SWEEP_STUCK_MS;
+  static readonly ELIMINATION_SWEEP_FORCE_RELEASE_MS = ELIMINATION_SWEEP_FORCE_RELEASE_MS;
+  static readonly eliminationLockVerdict = eliminationLockVerdict;
 
   // ── Implemented by TournamentManagerEliminations (layer 2/3) ──
   protected abstract startEliminationChecker(): void;

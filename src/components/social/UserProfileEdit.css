@@ -183,11 +183,6 @@
   transition: all 0.2s;
 }
 
-.tag-choice:hover {
-  border-color: #1877f2;
-  color: #e4e6eb;
-}
-
 .tag-choice.active {
   background: rgba(24, 119, 242, 0.2);
   border-color: #1877f2;
@@ -220,8 +215,4 @@
   color: #fff;
   cursor: pointer;
   font-weight: 600;
-}
-
-.save-btn-blue:hover {
-  background: #0077b3;
 }

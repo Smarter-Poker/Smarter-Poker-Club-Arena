@@ -92,11 +92,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.leaderboard-header .back-btn:hover {
-  border-color: #00d4ff;
-  color: #00d4ff;
-}
-
 .leaderboard-header h1 {
   font-size: 1.5rem;
   margin: 0 0 0 12px;
@@ -216,10 +211,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.scope-toggle button:hover {
-  color: #8a9aaa;
-}
-
 .scope-toggle button.active {
   background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
   color: #fff;
@@ -277,10 +268,6 @@
   box-shadow:
     0 4px 20px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.podium-place:hover {
-  border-color: #4a5a6a;
 }
 
 .podium-1st {
@@ -692,10 +679,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.1),
     0 4px 20px rgba(0, 0, 0, 0.5);
   transition: all 0.3s ease;
-}
-
-.leaderboard-entry:hover {
-  border-color: #3a5a6a;
 }
 
 .leaderboard-entry.current-user {
@@ -1110,11 +1093,6 @@
   position: relative;
 }
 
-.tab-btn:hover {
-  color: #aabbcc;
-  border-bottom-color: #4a5a6a;
-}
-
 .tab-btn.active {
   color: #00d4ff;
   border-bottom-color: #00d4ff;
@@ -1179,10 +1157,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
-}
-
-.tournament-stats-entry:hover {
-  border-color: #3a4a5a;
 }
 
 .tournament-stats-entry.current-user {
@@ -1460,12 +1434,6 @@
   touch-action: manipulation;
 }
 
-.lb-filter-chip:hover {
-  border-color: rgba(0, 212, 255, 0.4);
-  color: #00d4ff;
-  background: rgba(0, 212, 255, 0.08);
-}
-
 .lb-filter-chip.active {
   border-color: #00d4ff;
   color: #fff;
@@ -1685,10 +1653,6 @@
   z-index: 0;
 }
 
-.leaderboard-entry:hover::before {
-  animation: entryScanSweep 0.8s ease-out;
-}
-
 @keyframes entryScanSweep {
   0% {
     left: -100%;
@@ -1763,10 +1727,6 @@
   transition:
     color 0.3s ease,
     text-shadow 0.3s ease;
-}
-
-.entry-value:hover {
-  text-shadow: 0 0 14px rgba(0, 212, 255, 0.6);
 }
 
 /* P4-6: Header Premium Bottom Gradient Accent */
@@ -1868,10 +1828,6 @@
   pointer-events: none;
 }
 
-.tournament-stats-entry:hover::before {
-  animation: entryScanSweep 0.8s ease-out;
-}
-
 /* P4-10: Podium Avatar Ring Glow */
 .podium-avatar.gold {
   animation: goldAvatarGlow 3s ease-in-out infinite;
@@ -1970,14 +1926,6 @@
     animation: none !important;
   }
 
-  .podium-place:hover {
-    transform: none;
-  }
-
-  .leaderboard-entry:hover {
-    transform: none;
-  }
-
   .user-rank-card.sticky-bottom {
     animation: none !important;
     opacity: 1;
@@ -2051,10 +1999,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.1),
     0 4px 10px rgba(0, 0, 0, 0.5);
   transition: all 0.25s ease;
-}
-.lb-load-more:hover:not(:disabled) {
-  border-color: #00d4ff;
-  color: #00d4ff;
 }
 .lb-load-more:disabled {
   opacity: 0.6;

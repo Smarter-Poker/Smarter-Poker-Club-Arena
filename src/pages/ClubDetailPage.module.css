@@ -52,10 +52,6 @@
   transition: color 0.2s;
 }
 
-.backLink:hover {
-  text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    HERO BANNER — Premium Club Identity
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -211,11 +207,6 @@
   -webkit-backdrop-filter: blur(4px);
 }
 
-.heroActionBtn:hover {
-  background: rgba(0, 212, 255, 0.15);
-  border-color: rgba(0, 212, 255, 0.3);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    HEADER — Brushed Metal Panel (legacy fallback)
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -322,11 +313,6 @@
   color: #00d4ff;
 }
 
-.inviteButton:hover {
-  background: rgba(0, 212, 255, 0.15);
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
-}
-
 .createTableButton {
   background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
   border: none;
@@ -339,31 +325,16 @@
   color: #00ff88;
 }
 
-.financialsButton:hover {
-  background: rgba(0, 255, 136, 0.15);
-  box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
-}
-
 .announcementsButton {
   background: transparent;
   border: 2px solid #ffd700;
   color: #ffd700;
 }
 
-.announcementsButton:hover {
-  background: rgba(255, 215, 0, 0.15);
-  box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
-}
-
 .settingsButton {
   background: transparent;
   border: 2px solid #6a7a8a;
   color: #8899aa;
-}
-
-.settingsButton:hover {
-  border-color: #00d4ff;
-  color: #00d4ff;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -474,11 +445,6 @@
   letter-spacing: 0.5px;
 }
 
-.tab:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.05);
-}
-
 .activeTab {
   background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
   border-color: #00d4ff;
@@ -560,11 +526,6 @@
   text-align: center;
 }
 
-.loadMoreBtn:hover {
-  background: rgba(0, 212, 255, 0.15);
-  border-color: #00d4ff;
-}
-
 .loadMoreBtn:disabled {
   opacity: 0.5;
   cursor: default;
@@ -591,10 +552,6 @@
   cursor: pointer;
   font-size: 0.8rem;
   transition: background 0.2s;
-}
-
-.cardErrorFallback button:hover {
-  background: rgba(0, 212, 255, 0.15);
 }
 
 .card {
@@ -646,11 +603,6 @@
   transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
-}
-
-.tableRow:hover {
-  background: rgba(0, 212, 255, 0.1);
-  border-color: #00d4ff;
 }
 
 .tableName {
@@ -774,10 +726,6 @@
   transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-}
-
-.tableCard:hover {
-  border-color: #00d4ff;
 }
 
 .tableCardHeader {
@@ -916,10 +864,6 @@
   cursor: pointer;
   font-size: 1.25rem;
   transition: color 0.2s;
-}
-
-.actionBtn:hover {
-  color: #00d4ff;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -1072,10 +1016,6 @@
   transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-}
-
-.agentCard:hover {
-  border-color: #8b5cf6;
 }
 
 .agentAvatar {
@@ -1244,11 +1184,6 @@
   font-size: 0.85rem;
 }
 
-.memberMenu button:hover {
-  background: rgba(0, 212, 255, 0.15);
-  color: #00d4ff;
-}
-
 /* Rules */
 .rulesList {
   list-style: none;
@@ -1277,11 +1212,6 @@
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
-}
-
-.deleteTableBtn:hover {
-  background: rgba(255, 59, 48, 0.25);
-  border-color: rgba(255, 59, 48, 0.5);
 }
 
 .deleteTableBtn:disabled {

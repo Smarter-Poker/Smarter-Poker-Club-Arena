@@ -121,11 +121,6 @@
   transition: all 0.2s ease;
 }
 
-.buy-in-modal__close:hover {
-  background: #f85149;
-  color: #ffffff;
-}
-
 .buy-in-modal__restriction-notice {
   background: rgba(255, 165, 0, 0.15);
   border: 1px solid rgba(255, 165, 0, 0.4);
@@ -296,11 +291,6 @@
   transition: all 0.2s ease;
 }
 
-.buy-in-modal__quick-btn:hover {
-  background: rgba(111, 220, 255, 0.2);
-  border-color: rgba(111, 220, 255, 0.4);
-}
-
 .buy-in-modal__quick-btn--active {
   background: linear-gradient(135deg, #6fdcff, #0a5dc2);
   border-color: rgba(111, 220, 255, 0.5);
@@ -312,10 +302,6 @@
   background: linear-gradient(135deg, #6fdcff, #0a5dc2);
   border-color: rgba(111, 220, 255, 0.5);
   color: #ffffff;
-}
-
-.buy-in-modal__quick-btn--max:hover {
-  background: linear-gradient(135deg, #81e2ff, #0b6ad9);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -453,19 +439,10 @@
   }
 }
 
-.buy-in-modal__confirm:hover {
-  background: linear-gradient(135deg, #81e2ff, #0b6ad9);
-}
-
 .buy-in-modal__confirm--disabled {
   background: #6e7681;
   color: #e4e6eb;
   cursor: not-allowed;
-}
-
-.buy-in-modal__confirm--disabled:hover {
-  transform: none;
-  box-shadow: none;
 }
 
 .buy-in-modal__confirm--processing {
@@ -501,11 +478,6 @@
   color: #6fdcff;
   cursor: pointer;
   transition: all 0.15s ease;
-}
-
-.buy-in-modal__top-up:hover {
-  background: rgba(111, 220, 255, 0.3);
-  border-color: #6fdcff;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

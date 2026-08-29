@@ -66,13 +66,36 @@ class TableService {
     // this club's OWN private tables. Sibling clubs' private games never show.
     let unionId: string | null = null;
     try {
-      const { data: ucRow } = await supabase
+      const { data: ucRow, error: ucErr } = await supabase
         .from('union_clubs')
         .select('union_id')
         .eq('club_id', resolvedId)
         .limit(1)
         .maybeSingle();
       unionId = ucRow?.union_id ?? null;
+      /* ROUND 9 (2026-08-29): the discarded error here demoted a union club
+         to standalone on a transient failure - the union's whole cash-game
+         board vanished, the exact "games disappear" symptom this sweep has
+         chased twice. TournamentService caches the resolved union scope in
+         sessionStorage under this same key for the same reason; a failed
+         read consults it, and only a SUCCESSFUL empty read concludes
+         standalone. */
+      const unionCacheKey = `ca_union_of_${resolvedId}`;
+      if (!unionId && ucErr) {
+        reportError(ucErr, 'TableService.getClubTables_union_read_failed', {
+          clubId: resolvedId,
+        });
+        try {
+          unionId = sessionStorage.getItem(unionCacheKey);
+        } catch {
+          /* storage unavailable */
+        }
+      }
+      try {
+        if (unionId) sessionStorage.setItem(unionCacheKey, unionId);
+      } catch {
+        /* storage unavailable */
+      }
     } catch {
       /* fail-open: standalone club behavior */
     }
@@ -389,11 +412,24 @@ class TableService {
       const chipsToReturn = seat.stack || 0;
 
       // Get table context (needed for tournament leave + transaction log)
-      const { data: tableData } = await supabase
+      const { data: tableData, error: tableCtxErr } = await supabase
         .from('tables')
         .select('club_id, union_id, tournament_id, name')
         .eq('id', tableId)
         .maybeSingle();
+
+      // ROUND 9 (2026-08-29): this read decides WHICH money path the leave
+      // takes - `!tableData?.tournament_id` selects the CASH cash-out RPC. A
+      // discarded error made a FAILED read indistinguishable from "this is a
+      // cash table", so a transient timeout routed a tournament seat down the
+      // cash path. The RPC would refuse it, but a money-path fork must never
+      // be decided by a guess: refuse the leave and let the player retry.
+      if (tableCtxErr) {
+        reportError(tableCtxErr, 'TableService.leaveTable_table_context_read_failed', {
+          tableId,
+        });
+        return { success: false, chipsReturned: 0 };
+      }
 
       const clubId = tableData?.club_id;
       // Union tables may have club_id=NULL — that's OK for cash games
@@ -733,16 +769,30 @@ class TableService {
         });
         if (rpcErr) {
           // Fallback: manual decrement
-          const { data: club } = await supabase
+          // ROUND 9 (2026-08-29): both fallback legs discarded their errors,
+          // so when the RPC AND the fallback failed the club's table_count
+          // silently over-reported forever. Behaviour unchanged; the failure
+          // now leaves a trace.
+          const { data: club, error: countReadErr } = await supabase
             .from('clubs')
             .select('table_count')
             .eq('id', clubId)
             .maybeSingle();
+          if (countReadErr) {
+            reportError(countReadErr, 'TableService.deleteTable_count_fallback_read_failed', {
+              clubId,
+            });
+          }
           if (club) {
-            await supabase
+            const { error: countUpdErr } = await supabase
               .from('clubs')
               .update({ table_count: Math.max(0, (club.table_count || 1) - 1) })
               .eq('id', clubId);
+            if (countUpdErr) {
+              reportError(countUpdErr, 'TableService.deleteTable_count_fallback_update_failed', {
+                clubId,
+              });
+            }
           }
         }
       } catch (e: unknown) {

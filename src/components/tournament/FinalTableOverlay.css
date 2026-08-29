@@ -154,10 +154,6 @@
   transition: background 0.2s;
 }
 
-.ft-player:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
 .ft-player:first-child {
   background: rgba(111, 220, 255, 0.06);
   border-color: rgba(111, 220, 255, 0.15);

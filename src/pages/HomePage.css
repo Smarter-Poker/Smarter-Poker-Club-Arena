@@ -130,14 +130,6 @@
   transition: box-shadow 0.3s ease;
 }
 
-.poker-card:hover {
-  box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.5),
-    0 4px 12px rgba(0, 0, 0, 0.3),
-    0 0 20px rgba(24, 119, 242, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-}
-
 .card-1 {
   top: 0;
   left: 50%;
@@ -216,10 +208,6 @@
   );
 }
 
-.feature-card:hover {
-  border-color: rgba(24, 119, 242, 0.4);
-}
-
 .feature-icon {
   display: inline-block;
   font-size: 40px;
@@ -279,10 +267,6 @@
   50% {
     left: 150%;
   }
-}
-
-.stat-card:hover {
-  border-color: rgba(24, 119, 242, 0.3);
 }
 
 .stat-value {

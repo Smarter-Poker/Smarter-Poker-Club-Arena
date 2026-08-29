@@ -93,10 +93,6 @@
   transition: background 0.15s ease;
 }
 
-.ca-notif__markall:hover {
-  background: rgba(24, 119, 242, 0.1);
-}
-
 /* ── List ────────────────────────────────────────────────────────────── */
 
 .ca-notif__list {
@@ -140,14 +136,6 @@
 
 .ca-notif__tap--clickable {
   cursor: pointer;
-}
-
-.ca-notif__tap--clickable:hover {
-  background: rgba(0, 0, 0, 0.04);
-}
-
-.ca-notif__row--unread .ca-notif__tap--clickable:hover {
-  background: rgba(24, 119, 242, 0.14);
 }
 
 /* ── Avatar + category badge ─────────────────────────────────────────── */
@@ -240,7 +228,6 @@
   transition: opacity 0.2s ease;
 }
 
-.ca-notif__delete:hover,
 .ca-notif__delete:focus-visible {
   opacity: 1;
 }

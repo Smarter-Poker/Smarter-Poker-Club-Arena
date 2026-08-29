@@ -15,11 +15,6 @@
   overflow: hidden;
 }
 
-.nav-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #fff;
-}
-
 .nav-item.active {
   background: rgba(255, 215, 0, 0.12);
   color: #ffd700;

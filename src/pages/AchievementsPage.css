@@ -41,11 +41,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.achievements-header .back-btn:hover {
-  border-color: #00d4ff;
-  color: #00d4ff;
-}
-
 .achievements-header h1 {
   font-size: 1.25rem;
   margin: 0;
@@ -121,11 +116,6 @@
   transition: all 0.2s;
 }
 
-.category-filter button:hover {
-  border-color: #3a4a5a;
-  color: #8a9aaa;
-}
-
 .category-filter button.active {
   background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
   border-color: #00d4ff;
@@ -168,11 +158,6 @@
   position: relative;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.achievement-card:hover {
-  border-color: #3a4a5a;
-  border-left-color: var(--rarity-color, #6a7a8a);
 }
 
 .achievement-card.locked {
@@ -404,9 +389,6 @@
   transition: all 0.2s ease;
 }
 
-.unlock-dismiss:hover {
-  background: rgba(0, 0, 0, 0.3);
-}
 /* ─────────────────────────────────────────────────────────────────────────────
    MOBILE RESPONSIVE
    ───────────────────────────────────────────────────────────────────────────── */
@@ -604,12 +586,6 @@
   cursor: pointer;
   transition: all 0.25s ease;
   white-space: nowrap;
-}
-
-.category-filter .ach-filter-chip:hover {
-  border-color: rgba(0, 212, 255, 0.4);
-  color: #00d4ff;
-  background: rgba(0, 212, 255, 0.08);
 }
 
 .category-filter .ach-filter-chip.active {

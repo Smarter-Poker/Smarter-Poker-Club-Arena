@@ -168,9 +168,24 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     loading: tableSettingsLoading,
     toggleSetting: toggleTableSetting,
   } = useUserTableSettings(user?.id);
+  /* THE ONLY WRITER of this switch's state and of its localStorage key.
+     `useUserTableSettings` is the single reader of the canonical column, so
+     mirroring here — rather than in a query of this component's own — is what
+     removed the two-callback race described further down. The localStorage key
+     is a first-paint seed for the next cold open; keeping it in step here
+     means it can never disagree with the row for a whole session. */
   useEffect(() => {
+    /* Wait for the row. Until it lands the hook is serving defaults, and
+       writing those over the localStorage seed would show a cold-open user
+       chips for a moment and then persist that as their answer. */
+    if (tableSettingsLoading) return;
     setShowBBEnabled(tableSettings.show_stack_in_bb);
-  }, [tableSettings.show_stack_in_bb]);
+    try {
+      localStorage.setItem(STORAGE_KEYS.SHOW_STACK_BB, String(tableSettings.show_stack_in_bb));
+    } catch {
+      /* private mode */
+    }
+  }, [tableSettings.show_stack_in_bb, tableSettingsLoading]);
   const [showTableSettings, setShowTableSettings] = useState(false);
   const [showThemeSettings, setShowThemeSettings] = useState(false);
 
@@ -287,7 +302,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       supabase
         .from('profiles')
         .select(
-          'avatar_url:arena_avatar_url, username, display_name, sounds_enabled, vibrations_enabled, show_stack_bb, is_vip, tier'
+          'avatar_url:arena_avatar_url, username, display_name, sounds_enabled, vibrations_enabled, is_vip, tier'
         )
         .eq('id', user.id)
         .maybeSingle()
@@ -323,35 +338,34 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               setVibrationsEnabled(data.vibrations_enabled);
               localStorage.setItem(STORAGE_KEYS.VIBRATIONS, String(data.vibrations_enabled));
             }
-            if (data.show_stack_bb !== undefined && data.show_stack_bb !== null) {
-              setShowBBEnabled(data.show_stack_bb);
-              localStorage.setItem(STORAGE_KEYS.SHOW_STACK_BB, String(data.show_stack_bb));
-            }
+            /* `profiles.show_stack_bb` is NOT read here any more — see the note
+               where the second query used to be. */
             setIsVIP(data.is_vip || data.tier === 'vip' || false);
           }
         });
 
-      /* Dan 2026-08-25: `profiles.show_stack_bb` above is the LEGACY copy of
-       * this preference. The felt reads `user_table_settings.show_stack_in_bb`,
-       * and before today only this menu wrote the legacy column — so an account
-       * carrying an old `true` there showed this switch ON while every table
-       * drew chips. Whatever the table is actually obeying is what this switch
-       * must display, so the canonical row wins when it exists. No row means
-       * the user never chose, which is chips, which is the default. */
-      supabase
-        .from('user_table_settings')
-        .select('show_stack_in_bb')
-        .eq('user_id', user.id)
-        .maybeSingle()
-        .then(({ data: uts, error: utsErr }) => {
-          if (utsErr || !uts || uts.show_stack_in_bb === null) return;
-          setShowBBEnabled(uts.show_stack_in_bb);
-          try {
-            localStorage.setItem(STORAGE_KEYS.SHOW_STACK_BB, String(uts.show_stack_in_bb));
-          } catch {
-            /* private mode */
-          }
-        });
+      /* ── WHY THERE IS NO show_stack_bb QUERY HERE ANY MORE (2026-08-29) ──
+       *
+       * Dan 2026-08-25 established the rule this still obeys: the felt reads
+       * `user_table_settings.show_stack_in_bb`, `profiles.show_stack_bb` is a
+       * legacy mirror, and whatever the table is actually obeying is what this
+       * switch must display. No row means the user never chose, which is
+       * chips, which is the default.
+       *
+       * The fix at the time added a SECOND query beside the profiles one, and
+       * both wrote `setShowBBEnabled` and the same localStorage key from
+       * unordered `.then()` callbacks. Whichever resolved last won, so the
+       * legacy value could still land on top of the canonical one — the exact
+       * disagreement the fix was written to end, now decided by network
+       * timing rather than by a rule.
+       *
+       * Both queries are gone. `useUserTableSettings` is already mounted above
+       * and already reads this column, on a request that is de-duplicated
+       * across every consumer in the tab; the effect beside it mirrors its
+       * value into state and into localStorage. One reader, one writer, no
+       * race. The legacy column is still WRITTEN by handleShowBBToggle for
+       * older surfaces, which is a mirror rather than a second opinion.
+       */
 
       // Card backs bought with diamonds. Needed because this menu decides
       // whether a paid design is selectable — see the gate on the swatches.
@@ -856,10 +870,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 30}ms both`
                 : 'none',
             }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
+            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
+                since 2026-08-29 no hover VISUALS anywhere either -- this
+                handler paints nothing, it warms the route chunk so the tap
+                that follows is instant. Touch and focus fire it too. */
+            onMouseEnter={() => handleItemHover(item.path)}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
               {item.label}
@@ -892,10 +907,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 8) * 30}ms both`
                 : 'none',
             }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
+            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
+                since 2026-08-29 no hover VISUALS anywhere either -- this
+                handler paints nothing, it warms the route chunk so the tap
+                that follows is instant. Touch and focus fire it too. */
+            onMouseEnter={() => handleItemHover(item.path)}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
               {item.label}
@@ -923,10 +939,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 15) * 30}ms both`
                 : 'none',
             }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
+            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
+                since 2026-08-29 no hover VISUALS anywhere either -- this
+                handler paints nothing, it warms the route chunk so the tap
+                that follows is instant. Touch and focus fire it too. */
+            onMouseEnter={() => handleItemHover(item.path)}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
               {item.label}
@@ -964,10 +981,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 17) * 30}ms both`
                 : 'none',
             }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
+            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
+                since 2026-08-29 no hover VISUALS anywhere either -- this
+                handler paints nothing, it warms the route chunk so the tap
+                that follows is instant. Touch and focus fire it too. */
+            onMouseEnter={() => handleItemHover(item.path)}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
               {item.label}
@@ -1015,10 +1033,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 29) * 30}ms both`
                 : 'none',
             }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
+            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
+                since 2026-08-29 no hover VISUALS anywhere either -- this
+                handler paints nothing, it warms the route chunk so the tap
+                that follows is instant. Touch and focus fire it too. */
+            onMouseEnter={() => handleItemHover(item.path)}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
               {item.label}
@@ -1367,10 +1386,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 32) * 30}ms both`
                 : 'none',
             }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
+            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
+                since 2026-08-29 no hover VISUALS anywhere either -- this
+                handler paints nothing, it warms the route chunk so the tap
+                that follows is instant. Touch and focus fire it too. */
+            onMouseEnter={() => handleItemHover(item.path)}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
               {item.label}
@@ -1448,10 +1468,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 41) * 30}ms both`
                 : 'none',
             }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
+            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
+                since 2026-08-29 no hover VISUALS anywhere either -- this
+                handler paints nothing, it warms the route chunk so the tap
+                that follows is instant. Touch and focus fire it too. */
+            onMouseEnter={() => handleItemHover(item.path)}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
               {item.label}

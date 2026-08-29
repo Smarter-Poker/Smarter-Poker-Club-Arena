@@ -267,6 +267,28 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
     seatPositions.get(event.fromSeat) || (toPos ? { x: toPos.x, y: toPos.y + 240 } : undefined);
 
   const t = event.throwable;
+  /* THE PLAYER'S ANIMATION SPEED, READ ONCE PER THROW.
+     ═════════════════════════════════════════════════════════════════════════
+     Until 2026-08-29 the entire throwable system ignored this setting: 125
+     animation declarations across ThrowAnimation.css and
+     ThrowableSignatures.css carried hardcoded durations, and not one JS timer
+     in this file multiplied by it. A player on the slow setting watched every
+     other animation on the table stretch to 3x while throwables kept snapping
+     past at 1x — and CLAUDE.md's animation law is explicit that speed scaling
+     is the ONE sanctioned control over animation duration.
+
+     It is scaled in exactly ONE place per duration, which is the only way to
+     avoid scaling something twice:
+       - the four timeline variables below are computed in JS and handed to
+         the CSS as `--flight-dur`, `--impact-dur`, `--life-dur` and
+         `--linger-dur`. They are multiplied HERE, so every keyframe that
+         reads them stretches for free;
+       - every other duration lives as a literal in the stylesheets, and those
+         are wrapped in calc(... * var(--animation-speed, 1)) THERE.
+     Read once rather than per-use so a setting changed mid-flight cannot
+     desynchronise a throw that is already in the air. */
+  const speed = getAnimationSpeed();
+  const scaled = (ms: number) => Math.round(ms * speed);
   const basePhysics = PHYSICS[t.physics] || PHYSICS.arc;
   const rawPhysics = DURATION_OVERRIDES[t.id]
     ? { ...basePhysics, duration: DURATION_OVERRIDES[t.id] }
@@ -337,7 +359,11 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
-    const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
+    /* Scaled here so all four phase transitions stretch together. Scaling at
+       the call sites instead would be four chances to forget one, and a
+       forgotten one shows up as an impact that fires before its projectile
+       has landed. */
+    const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms * speed));
 
     const launchPan = fromPos ? panForX(fromPos.x) : 0;
     const impactPan = toPos ? panForX(toPos.x) : 0;
@@ -347,7 +373,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
       setPhase('flight');
       try {
         throwableSoundService.playLaunch(t.weight, launchPan);
-        throwableSoundService.playFlight(t.id, physics.duration, impactPan);
+        throwableSoundService.playFlight(t.id, scaled(physics.duration), impactPan);
       } catch {
         /* audio is best-effort */
       }
@@ -364,7 +390,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
              flurry's CSS does. */
           soundService.playKnockoutFlurry({
             isHero: false,
-            speed: getAnimationSpeed(),
+            speed,
             withCall: false,
           });
         } else {
@@ -383,7 +409,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
         const seatEl = scope.querySelector(`[data-seat-num="${event.toSeat}"]`);
         if (seatEl) {
           seatEl.classList.add('seat--throw-flinch');
-          setTimeout(() => seatEl.classList.remove('seat--throw-flinch'), 500);
+          setTimeout(() => seatEl.classList.remove('seat--throw-flinch'), 500 * speed);
         }
       } catch {
         /* flinch is decorative */
@@ -402,7 +428,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
           document.querySelector('.table-scaler, .poker-table, .table-layout, [data-table]');
         if (table) {
           table.classList.add('throw-animation--shake');
-          setTimeout(() => table.classList.remove('throw-animation--shake'), 520);
+          setTimeout(() => table.classList.remove('throw-animation--shake'), 520 * speed);
         }
       }
     });
@@ -461,7 +487,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
             {
               left: toPos.x,
               top: toPos.y,
-              '--flight-dur': `${physics.duration}ms`,
+              '--flight-dur': `${scaled(physics.duration)}ms`,
             } as React.CSSProperties
           }
         />
@@ -477,7 +503,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
               '--from-y': `${fromPos.y}px`,
               '--to-x': `${toPos.x}px`,
               '--to-y': `${toPos.y}px`,
-              '--flight-dur': `${physics.duration}ms`,
+              '--flight-dur': `${scaled(physics.duration)}ms`,
               '--arc-height': `${physics.arc}px`,
               '--spin': `${t.spin}deg`,
               '--tilt': `${travelTilt}deg`,
@@ -514,9 +540,9 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
             {
               left: toPos.x,
               top: toPos.y,
-              '--impact-dur': `${impactMs}ms`,
-              '--life-dur': `${lifeMs}ms`,
-              '--linger-dur': `${lingerMs}ms`,
+              '--impact-dur': `${scaled(impactMs)}ms`,
+              '--life-dur': `${scaled(lifeMs)}ms`,
+              '--linger-dur': `${scaled(lingerMs)}ms`,
             } as React.CSSProperties
           }
         >

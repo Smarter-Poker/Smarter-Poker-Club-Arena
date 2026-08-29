@@ -89,7 +89,8 @@
 }
 
 .throw-animation__glow--flight {
-  animation: throwable-glow-pulse 320ms ease-in-out infinite alternate;
+  animation: throwable-glow-pulse calc(320ms * var(--animation-speed, 1)) ease-in-out infinite
+    alternate;
 }
 
 @keyframes throwable-glow-pulse {
@@ -126,7 +127,8 @@
 .throw-animation__windup {
   position: absolute;
   transform: translate(-50%, -50%);
-  animation: throwable-windup 140ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: throwable-windup calc(140ms * var(--animation-speed, 1))
+    cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
 @keyframes throwable-windup {
@@ -220,10 +222,10 @@
   animation: throwable-arc var(--flight-dur) forwards;
 }
 .throw-animation__projectile--arc .throw-animation__trail--1 {
-  animation-delay: 30ms;
+  animation-delay: calc(30ms * var(--animation-speed, 1));
 }
 .throw-animation__projectile--arc .throw-animation__trail--2 {
-  animation-delay: 60ms;
+  animation-delay: calc(60ms * var(--animation-speed, 1));
 }
 
 @keyframes throwable-arc {
@@ -246,10 +248,10 @@
   animation: throwable-fastball var(--flight-dur) ease-in forwards;
 }
 .throw-animation__projectile--fastball .throw-animation__trail--1 {
-  animation-delay: 20ms;
+  animation-delay: calc(20ms * var(--animation-speed, 1));
 }
 .throw-animation__projectile--fastball .throw-animation__trail--2 {
-  animation-delay: 40ms;
+  animation-delay: calc(40ms * var(--animation-speed, 1));
 }
 
 @keyframes throwable-fastball {
@@ -270,10 +272,10 @@
   animation: throwable-arc var(--flight-dur) forwards;
 }
 .throw-animation__projectile--lob .throw-animation__trail--1 {
-  animation-delay: 45ms;
+  animation-delay: calc(45ms * var(--animation-speed, 1));
 }
 .throw-animation__projectile--lob .throw-animation__trail--2 {
-  animation-delay: 90ms;
+  animation-delay: calc(90ms * var(--animation-speed, 1));
 }
 
 /* -- float: bobbing emoji drift (v2: lands AT the impact point, the v1
@@ -283,10 +285,10 @@
   animation: throwable-float var(--flight-dur) ease-in-out forwards;
 }
 .throw-animation__projectile--float .throw-animation__trail--1 {
-  animation-delay: 60ms;
+  animation-delay: calc(60ms * var(--animation-speed, 1));
 }
 .throw-animation__projectile--float .throw-animation__trail--2 {
-  animation-delay: 120ms;
+  animation-delay: calc(120ms * var(--animation-speed, 1));
 }
 
 @keyframes throwable-float {
@@ -313,10 +315,10 @@
   animation: throwable-drop var(--flight-dur) forwards;
 }
 .throw-animation__projectile--drop .throw-animation__trail--1 {
-  animation-delay: 30ms;
+  animation-delay: calc(30ms * var(--animation-speed, 1));
 }
 .throw-animation__projectile--drop .throw-animation__trail--2 {
-  animation-delay: 60ms;
+  animation-delay: calc(60ms * var(--animation-speed, 1));
 }
 
 @keyframes throwable-drop {
@@ -341,10 +343,10 @@
   animation: throwable-swoop var(--flight-dur) ease-in-out forwards;
 }
 .throw-animation__projectile--swoop .throw-animation__trail--1 {
-  animation-delay: 45ms;
+  animation-delay: calc(45ms * var(--animation-speed, 1));
 }
 .throw-animation__projectile--swoop .throw-animation__trail--2 {
-  animation-delay: 90ms;
+  animation-delay: calc(90ms * var(--animation-speed, 1));
 }
 
 @keyframes throwable-swoop {
@@ -368,10 +370,10 @@
   animation: throwable-spiral var(--flight-dur) linear forwards;
 }
 .throw-animation__projectile--spiral .throw-animation__trail--1 {
-  animation-delay: 30ms;
+  animation-delay: calc(30ms * var(--animation-speed, 1));
 }
 .throw-animation__projectile--spiral .throw-animation__trail--2 {
-  animation-delay: 60ms;
+  animation-delay: calc(60ms * var(--animation-speed, 1));
 }
 
 @keyframes throwable-spiral {
@@ -418,7 +420,7 @@
   border-radius: 50%;
   background: radial-gradient(circle, var(--c1) 0%, transparent 60%);
   mix-blend-mode: screen;
-  animation: throwable-impact-glow 600ms ease-out forwards;
+  animation: throwable-impact-glow calc(600ms * var(--animation-speed, 1)) ease-out forwards;
 }
 
 @keyframes throwable-impact-glow {
@@ -441,7 +443,8 @@
    set opacity at all. */
 .throw-animation__impact-life {
   position: absolute;
-  animation: throwable-impact-life var(--life-dur, 2400ms) linear forwards;
+  animation: throwable-impact-life var(--life-dur, calc(2400ms * var(--animation-speed, 1))) linear
+    forwards;
 }
 
 @keyframes throwable-impact-life {
@@ -459,7 +462,7 @@
 /* An exploding item is consumed by its own fireball, so it must NOT sit
    around for three seconds -- only its smoke and scorch mark should. */
 .throw-animation__impact--explode .throw-animation__impact-life {
-  animation-duration: 420ms;
+  animation-duration: calc(420ms * var(--animation-speed, 1));
 }
 
 /* -- squash-and-stretch item ----------------------------------------------- */
@@ -467,8 +470,8 @@
 .throw-animation__impact-icon {
   position: absolute;
   transform: translate(-50%, -50%);
-  animation: throwable-impact-squash var(--impact-dur, 820ms) cubic-bezier(0.16, 1.11, 0.36, 1.2)
-    forwards;
+  animation: throwable-impact-squash var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    cubic-bezier(0.16, 1.11, 0.36, 1.2) forwards;
 }
 
 @keyframes throwable-impact-squash {
@@ -491,7 +494,8 @@
 
 /* bounce profile: diminishing hops instead of a squash-fade */
 .throw-animation__impact--bounce .throw-animation__impact-icon {
-  animation: throwable-impact-bounce var(--impact-dur, 820ms) ease-out forwards;
+  animation: throwable-impact-bounce var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    ease-out forwards;
 }
 
 @keyframes throwable-impact-bounce {
@@ -517,7 +521,8 @@
 
 /* splat profile: hit flat and STICK (no rebound) */
 .throw-animation__impact--splat .throw-animation__impact-icon {
-  animation: throwable-impact-splat var(--impact-dur, 820ms) ease-out forwards;
+  animation: throwable-impact-splat var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    ease-out forwards;
 }
 
 @keyframes throwable-impact-splat {
@@ -534,7 +539,7 @@
 
 /* explode profile: item is consumed by the fireball */
 .throw-animation__impact--explode .throw-animation__impact-icon {
-  animation: throwable-impact-consume 300ms ease-out forwards;
+  animation: throwable-impact-consume calc(300ms * var(--animation-speed, 1)) ease-out forwards;
 }
 
 @keyframes throwable-impact-consume {
@@ -556,7 +561,7 @@
   border: 3px solid var(--c1);
   border-radius: 50%;
   opacity: 0.85;
-  animation: throwable-burst-ring 500ms ease-out forwards;
+  animation: throwable-burst-ring calc(500ms * var(--animation-speed, 1)) ease-out forwards;
 }
 
 @keyframes throwable-burst-ring {
@@ -577,7 +582,7 @@
 .throw-animation__impact--explode .throw-animation__burst,
 .throw-animation__impact--thud .throw-animation__burst {
   border-width: 5px;
-  animation-duration: 620ms;
+  animation-duration: calc(620ms * var(--animation-speed, 1));
 }
 
 /* -- flash + fireball + smoke (explode / zap only) --------------------------- */
@@ -598,7 +603,7 @@
   width: 190px;
   height: 190px;
   background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 65%);
-  animation: throwable-flash 260ms ease-out forwards;
+  animation: throwable-flash calc(260ms * var(--animation-speed, 1)) ease-out forwards;
 }
 
 @keyframes throwable-flash {
@@ -623,7 +628,8 @@
     var(--c1, #ff7043) 60%,
     rgba(80, 30, 0, 0) 78%
   );
-  animation: throwable-fireball 560ms cubic-bezier(0.2, 0.9, 0.35, 1) forwards;
+  animation: throwable-fireball calc(560ms * var(--animation-speed, 1))
+    cubic-bezier(0.2, 0.9, 0.35, 1) forwards;
 }
 
 @keyframes throwable-fireball {
@@ -648,20 +654,20 @@
   height: 46px;
   background: radial-gradient(circle, rgba(90, 84, 78, 0.55) 0%, rgba(60, 56, 52, 0) 70%);
   filter: blur(3px);
-  animation: throwable-smoke 900ms ease-out forwards;
+  animation: throwable-smoke calc(900ms * var(--animation-speed, 1)) ease-out forwards;
 }
 
 .throw-animation__impact--explode .throw-animation__smoke--1 {
-  animation-delay: 180ms;
+  animation-delay: calc(180ms * var(--animation-speed, 1));
   --sx: -22px;
 }
 .throw-animation__impact--explode .throw-animation__smoke--2 {
-  animation-delay: 280ms;
+  animation-delay: calc(280ms * var(--animation-speed, 1));
   --sx: 4px;
   scale: 1.25;
 }
 .throw-animation__impact--explode .throw-animation__smoke--3 {
-  animation-delay: 400ms;
+  animation-delay: calc(400ms * var(--animation-speed, 1));
   --sx: 24px;
   scale: 0.85;
 }
@@ -688,7 +694,7 @@
     var(--c1, #ffee58) 35%,
     rgba(255, 255, 255, 0) 70%
   );
-  animation: throwable-zap-flicker 420ms steps(6, end) forwards;
+  animation: throwable-zap-flicker calc(420ms * var(--animation-speed, 1)) steps(6, end) forwards;
 }
 
 @keyframes throwable-zap-flicker {
@@ -729,7 +735,8 @@
   background: var(--p-color, var(--c1));
   border-radius: 50%;
   opacity: 0;
-  animation: throwable-particle 700ms ease-out var(--p-delay, 0s) forwards;
+  animation: throwable-particle calc(700ms * var(--animation-speed, 1)) ease-out
+    var(--p-delay, calc(0s * var(--animation-speed, 1))) forwards;
 }
 
 @keyframes throwable-particle {
@@ -770,7 +777,7 @@
   border-radius: 1px;
   height: calc(var(--p-size, 7px) * 0.55);
   animation-name: throwable-confetti;
-  animation-duration: 850ms;
+  animation-duration: calc(850ms * var(--animation-speed, 1));
 }
 
 @keyframes throwable-confetti {
@@ -812,7 +819,8 @@
   background: radial-gradient(ellipse at 45% 40%, var(--c1) 0%, var(--c1) 45%, transparent 75%);
   opacity: 0.75;
   filter: blur(1.5px) saturate(1.15);
-  animation: throwable-linger var(--linger-dur, 2500ms) ease-in forwards;
+  animation: throwable-linger var(--linger-dur, calc(2500ms * var(--animation-speed, 1))) ease-in
+    forwards;
 }
 
 /* goo drip */
@@ -825,7 +833,7 @@
   height: 22px;
   border-radius: 0 0 50% 50%;
   background: var(--c1);
-  animation: throwable-drip 1.6s ease-in forwards;
+  animation: throwable-drip calc(1.6s * var(--animation-speed, 1)) ease-in forwards;
 }
 
 @keyframes throwable-drip {
@@ -894,7 +902,8 @@
    ================================================================================= */
 
 .seat--throw-flinch {
-  animation: throwable-seat-flinch 450ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  animation: throwable-seat-flinch calc(450ms * var(--animation-speed, 1))
+    cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
 
 /* Uses the INDIVIDUAL translate/rotate properties, not `transform` --
@@ -933,7 +942,8 @@
    ================================================================================= */
 
 .throw-animation--shake {
-  animation: throwable-screen-shake 450ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both !important;
+  animation: throwable-screen-shake calc(450ms * var(--animation-speed, 1))
+    cubic-bezier(0.36, 0.07, 0.19, 0.97) both !important;
 }
 
 @keyframes throwable-screen-shake {
@@ -965,7 +975,7 @@
   .throw-animation__spinner,
   .throw-animation__trail,
   .throw-animation__windup {
-    animation-duration: 1ms !important;
+    animation-duration: calc(1ms * var(--animation-speed, 1)) !important;
   }
 
   .throw-animation__trail,
@@ -979,7 +989,7 @@
   }
 
   .throw-animation__impact-icon {
-    animation: throwable-reduced-impact 600ms ease-out forwards !important;
+    animation: throwable-reduced-impact calc(600ms * var(--animation-speed, 1)) ease-out forwards !important;
   }
 
   @keyframes throwable-reduced-impact {
@@ -1015,7 +1025,8 @@
   text-shadow:
     0 2px 0 rgba(0, 0, 0, 0.75),
     0 0 14px var(--c1, #fff);
-  animation: throwable-caption 1500ms cubic-bezier(0.16, 1.11, 0.36, 1.2) forwards;
+  animation: throwable-caption calc(1500ms * var(--animation-speed, 1))
+    cubic-bezier(0.16, 1.11, 0.36, 1.2) forwards;
   pointer-events: none;
   z-index: 2;
 }

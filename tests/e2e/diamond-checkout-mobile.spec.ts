@@ -37,7 +37,7 @@ test.describe('mobile Diamond Store', () => {
               )
               .join('')}
           </div>
-          <footer class="diamond-modal__trust"><span>Stripe checkout</span><span>Server-priced</span><span>Permanent balance</span></footer>
+          <footer class="diamond-modal__trust"><span>Stripe Checkout</span><span>Server-Priced</span><span>Permanent Balance</span></footer>
         </section>
       </div>
     `);

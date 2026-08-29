@@ -210,9 +210,9 @@ export function DiamondTopUpModal({ isOpen, onClose }: DiamondTopUpModalProps) {
         )}
 
         <div className="diamond-modal__trust" aria-label="Checkout assurances">
-          <span>Stripe checkout</span>
-          <span>Server-priced</span>
-          <span>Permanent balance</span>
+          <span>Stripe Checkout</span>
+          <span>Server-Priced</span>
+          <span>Permanent Balance</span>
         </div>
       </div>
     </div>

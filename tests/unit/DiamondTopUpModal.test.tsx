@@ -51,7 +51,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
       name: 'Buy First Stack, 550 diamonds for $3.99',
     });
     expect(purchase).toBeEnabled();
-    expect(screen.getByText('Server-priced')).toBeVisible();
+    expect(screen.getByText('Server-Priced')).toBeVisible();
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Close Diamond Store' })).toHaveFocus()
     );

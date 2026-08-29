@@ -71,6 +71,10 @@ import { bubbleFactor, premiumFromBubbleFactor } from './IcmModel.js';
 // actually executed. Gated on opts.telemetry — league/benchmark/tests never
 // count. See engine/BrainTelemetry.ts.
 import { noteFire, telemetryOn } from './BrainTelemetry.js';
+// V27 (Dan 2026-08-29): the PioSolver push/fold charts, preloaded in memory
+// by GtoChartLoader so the synchronous decision can read them at zero I/O.
+// See engine/GtoCharts.ts for scope and why absence falls back to heuristics.
+import { gtoOpenJam, gtoBbVsSbJam, handClass as gtoHandClass } from './GtoCharts.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
 // HorseEval.ts (extracted verbatim; zero behavior change).
 import {
@@ -894,6 +898,13 @@ export interface HorseDecideOpts {
    *  on average, and whether the top prize is still in the box — and prices a
    *  bust in BIG BLINDS instead of guessing from a pool ratio (default: on) */
   v26Prizes?: boolean;
+  /** disable the V27 solver charts (Dan 2026-08-29): short-stack NLH preflop
+   *  reads the PioSolver push/fold charts (memory_charts_gold) instead of the
+   *  hand-tuned thresholds — open jam-or-fold at <=15bb, BB call-off vs an SB
+   *  jam at <=25bb. With no charts hydrated the layer is inert and the
+   *  heuristics decide, so a boot race can never lobotomize the brain
+   *  (default: enabled) */
+  v27GtoCharts?: boolean;
 }
 
 /**
@@ -1170,6 +1181,85 @@ export class HorseLogic {
       (p) => !p.is_folded && p.seat !== player.seat && (opts.v13 === false || !p.is_sitting_out)
     ).length;
     const stackBB = player.stack / bb;
+
+    // ═══ V27 GTO CHARTS (Dan 2026-08-29) ══════════════════════════════════
+    // "THEY'RE NOT JUST GUESSING — THEY HAVE SPECIFIC GTO RENDERED PLAYS."
+    // Short-stack hold'em preflop consults the PioSolver charts before any
+    // heuristic runs. Hold'em only (the 169 classes assume a full deck), no
+    // straddle (the charts don't model one — V18 owns those pots), and
+    // authoritative only where the chart answers the WHOLE question: an
+    // unopened jam-or-fold at <=15bb, and the BB's call-off against an SB
+    // all-in at <=25bb. Everything else falls through unchanged, and so does
+    // everything when the loader has not hydrated — gtoOpenJam/gtoBbVsSbJam
+    // return null on an empty store and yesterday's heuristics decide.
+    if (
+      (opts.v27GtoCharts ?? true) !== false &&
+      player.cards.length === 2 &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      gs.straddleActive !== true
+    ) {
+      const hand = gtoHandClass(player.cards[0], player.cards[1]);
+      const tourney = isTournamentMode(gs);
+
+      // Chart positions are UTG/MP/CO/BTN/SB. classifyPosition collapses the
+      // last two non-blind seats into 'late'; the dealer seat tells BTN from
+      // CO exactly, so nothing is guessed.
+      const chartPos =
+        position === 'sb'
+          ? 'SB'
+          : position === 'early'
+            ? 'UTG'
+            : position === 'middle'
+              ? 'MP'
+              : position === 'late'
+                ? player.seat === gs.dealerSeat
+                  ? 'BTN'
+                  : 'CO'
+                : null;
+
+      // CASE A — folded to hero, push/fold zone: the chart decides the open.
+      if (
+        raises === 0 &&
+        limpers === 0 &&
+        callers === 0 &&
+        chartPos !== null &&
+        toCall <= bb &&
+        stackBB <= 15
+      ) {
+        const advice = gtoOpenJam({ isTournament: tourney, position: chartPos, stackBB, hand });
+        if (advice) {
+          if (telemetryOn(opts)) noteFire('v27_gto_open_jam');
+          // The chart gives the mixed strategy; the horse rolls it. A 77%
+          // jam is jammed 77% of the time, not rounded to always.
+          const pushProb = advice.action === 'push' ? advice.freq : 1 - advice.freq;
+          if (fastRandom() < pushProb) return { action: 'all_in', thinkTime: 0 };
+          // SB folding still surrenders the small blind; check when free.
+          if (toCall <= 0) return { action: 'check', thinkTime: 0 };
+          return { action: 'fold', thinkTime: 0 };
+        }
+      }
+
+      // CASE B — BB facing an SB all-in: call or fold IS the whole decision,
+      // so the chart answers at any charted depth. Effective stack is the
+      // smaller side: calling 25bb against an 8bb jam is an 8bb decision.
+      if (position === 'bb' && raises >= 1 && raiserPosition === 'sb' && oppsLeft === 1) {
+        const raiserAllIn = history.some((a) => a.seat === lastRaiserSeat && a.action === 'all_in');
+        if (raiserAllIn && toCall > 0) {
+          // currentBet is the SB's total commitment — an all-in, so his stack.
+          const effectiveBB = Math.min(stackBB, gs.currentBet / bb);
+          const advice = gtoBbVsSbJam({ isTournament: tourney, effectiveBB, hand });
+          if (advice) {
+            if (telemetryOn(opts)) noteFire('v27_gto_bb_defend');
+            const callProb = advice.action === 'call' ? advice.freq : 1 - advice.freq;
+            if (fastRandom() < callProb) {
+              return { action: 'call', amount: Math.min(toCall, player.stack), thinkTime: 0 };
+            }
+            return { action: 'fold', thinkTime: 0 };
+          }
+        }
+      }
+    }
 
     // V12 ANTI-EXPLOIT: is the raiser hunting THIS horse? Best-effort.
     let targeted = 0;

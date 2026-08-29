@@ -1214,35 +1214,98 @@
 }
 
 @media (max-width: 767px) {
+  /* The table is the product, so it never scrolls away while a player browses.
+     The upper row is a compact live broadcast stage; only the catalog below
+     scrolls. This also leaves a useful first viewport of choices on short
+     phones instead of stacking the entire preview above them. */
+  .theme-modal__workspace {
+    display: grid;
+    grid-template-rows: clamp(218px, 32dvh, 286px) minmax(0, 1fr);
+    overflow: hidden;
+  }
   .theme-modal__visual-rail {
-    padding: 9px 10px 10px;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    padding: 7px 9px 6px;
+    overflow: hidden;
   }
   .theme-modal__mode {
-    margin-bottom: 7px;
+    position: absolute;
+    z-index: 8;
+    top: 11px;
+    right: 13px;
+    display: block;
+    margin: 0;
+  }
+  .theme-modal__mode-options {
+    grid-template-columns: repeat(2, 58px);
+    gap: 3px;
+  }
+  .theme-modal__mode-option {
+    min-height: 44px;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 3px;
+    font-size: 8px;
+  }
+  .theme-modal__mode-icon {
+    width: 13px;
+    height: 13px;
   }
   .theme-modal__mode-note {
     display: none;
   }
   .theme-modal__preview-shell {
-    padding-top: 48px;
+    min-height: 0;
+    display: flex;
+    grid-row: 1;
+    flex-direction: column;
+    padding: 0;
   }
   .theme-modal__preview-switch {
-    top: 3px;
+    top: 4px;
+    left: 5px;
   }
   .theme-modal__live-preview {
-    height: min(31dvh, 270px);
-    min-height: 220px;
+    min-height: 0;
+    flex: 1 1 auto;
     aspect-ratio: auto;
+  }
+  .theme-modal__live-caption {
+    top: 52px;
+    bottom: auto;
+    left: 50%;
+    right: auto;
+    width: max-content;
+    max-width: calc(100% - 20px);
+    padding: 4px 8px;
+    transform: translateX(-50%);
+    border-left-width: 1px;
+  }
+  .theme-modal__live-caption strong {
+    display: none;
   }
   .theme-modal__selection-ledger {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    margin-top: 6px;
+    grid-row: 2;
+    margin-top: 5px;
   }
   .theme-modal__selection-item {
-    padding: 7px 6px;
+    padding: 5px 6px;
   }
   .theme-modal__selection-item strong {
     font-size: 9px;
+  }
+  .theme-modal__catalog {
+    min-height: 0;
+  }
+  .theme-modal__catalog-scroll {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-color: #334654 #080d12;
   }
   .theme-modal__tabs {
     scroll-snap-type: x proximity;

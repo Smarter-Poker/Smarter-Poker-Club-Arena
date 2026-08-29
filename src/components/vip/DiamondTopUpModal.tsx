@@ -30,7 +30,7 @@
  * else — never an amount, never a price.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useToast } from '../common/Toast';
 import {
   loadStoreCatalog,
@@ -53,6 +53,7 @@ interface DiamondTopUpModalProps {
 
 export function DiamondTopUpModal({ isOpen, onClose }: DiamondTopUpModalProps) {
   const toast = useToast();
+  const dialogRef = useRef<HTMLDivElement>(null);
   const [redirecting, setRedirecting] = useState<string | null>(null);
   const [packages, setPackages] = useState<DiamondPackage[] | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -75,6 +76,44 @@ export function DiamondTopUpModal({ isOpen, onClose }: DiamondTopUpModalProps) {
     };
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusable = () =>
+      Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], [tabindex="0"]'
+        ) || []
+      );
+    window.requestAnimationFrame(() => focusable()[0]?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const controls = focusable();
+      if (!controls.length) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handlePurchase = async (pkg: DiamondPackage) => {
@@ -92,21 +131,41 @@ export function DiamondTopUpModal({ isOpen, onClose }: DiamondTopUpModalProps) {
 
   return (
     <div className="diamond-modal-overlay" onClick={onClose}>
-      <div className="diamond-modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="diamond-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="diamond-store-title"
+        aria-describedby="diamond-store-description"
+        aria-busy={redirecting !== null}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="diamond-modal__header">
-          <h2>Diamond Store</h2>
-          <button className="diamond-modal__close" onClick={onClose}>
+          <div>
+            <span className="diamond-modal__eyebrow">SECURE PLAYER CHECKOUT</span>
+            <h2 id="diamond-store-title">Add Diamonds</h2>
+          </div>
+          <button
+            className="diamond-modal__close"
+            onClick={onClose}
+            aria-label="Close Diamond Store"
+          >
             ×
           </button>
         </div>
 
-        <p className="diamond-modal__desc">
-          Diamonds Power Your VIP Features, Themes, And Throwables.
+        <p id="diamond-store-description" className="diamond-modal__desc">
+          Choose A Pack. Stripe Confirms The Price Before Payment, Then Your Balance Updates From
+          The Server.
         </p>
 
         {/* A catalog that could not be read is not an empty store. */}
         {packages === null ? (
-          <p className="diamond-modal__desc">Loading Packages...</p>
+          <div className="diamond-modal__loading" role="status">
+            <span />
+            Loading Secure Packages
+          </div>
         ) : (
           <>
             {loadError && (
@@ -139,6 +198,7 @@ export function DiamondTopUpModal({ isOpen, onClose }: DiamondTopUpModalProps) {
                     className="diamond-package__btn"
                     onClick={() => handlePurchase(pkg)}
                     disabled={redirecting !== null}
+                    aria-label={`Buy ${pkg.name}, ${(pkg.diamonds + pkg.bonus).toLocaleString()} diamonds for $${pkg.priceUsd.toFixed(2)}`}
                   >
                     {/* DOLLARS, LABELLED AS DOLLARS. */}
                     {redirecting === pkg.id ? '...' : `$${pkg.priceUsd.toFixed(2)}`}
@@ -149,9 +209,11 @@ export function DiamondTopUpModal({ isOpen, onClose }: DiamondTopUpModalProps) {
           </>
         )}
 
-        <p className="diamond-modal__note">
-          Secure Payment Via Stripe. Diamonds Are Credited After Payment And Never Expire.
-        </p>
+        <div className="diamond-modal__trust" aria-label="Checkout assurances">
+          <span>Stripe checkout</span>
+          <span>Server-priced</span>
+          <span>Permanent balance</span>
+        </div>
       </div>
     </div>
   );

@@ -84,6 +84,15 @@ vi.mock('../../src/components/table/TableStudioGameplayPreview', () => ({
   ),
 }));
 
+vi.mock('../../src/components/vip/DiamondTopUpModal', () => ({
+  DiamondTopUpModal: ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) =>
+    isOpen ? (
+      <div role="dialog" aria-label="Diamond Store">
+        <button onClick={onClose}>Close Diamond Store</button>
+      </div>
+    ) : null,
+}));
+
 vi.mock('../../src/lib/applyTableAppearance', () => ({
   applyTableAppearance: mocks.applyAppearance,
 }));
@@ -290,6 +299,40 @@ describe('ThemeSettingsModal hardening', () => {
       )
     );
     expect(mocks.toast.success).toHaveBeenCalledWith('Neon City Purchased And Applied');
+  });
+
+  it('turns a short diamond balance into a working store continuation', async () => {
+    useWalletStore.setState({ diamonds: 100 });
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
+
+    const addDiamonds = await screen.findByRole('button', { name: 'Add 250 Diamonds' });
+    expect(addDiamonds).toBeEnabled();
+    fireEvent.click(addDiamonds);
+
+    expect(await screen.findByRole('dialog', { name: 'Diamond Store' })).toBeVisible();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it('opens the Diamond Store if the server rejects a stale balance as insufficient', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: { success: false, error: 'insufficient_diamonds' },
+      error: null,
+    });
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
+
+    expect(await screen.findByRole('dialog', { name: 'Diamond Store' })).toBeVisible();
+    expect(mocks.toast.info).toHaveBeenCalledWith('Add Diamonds To Finish Unlocking This Design.');
   });
 
   it('unlocks an already-open catalog when another device delivers an entitlement', async () => {

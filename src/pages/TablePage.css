@@ -4333,6 +4333,58 @@ button.post-bb-overlay-button {
        name plate. If that trade is ever wanted, narrow the side seats' plate
        in the same commit, or the names pay for the felt. */
     max-width: 100%;
+
+    /* ── 2026-08-29: THE OVAL FILLS THE BOX A REAL PHONE ACTUALLY HAS ──────
+       Dan, twice in one day, second time after a "fix" verified on emulated
+       hardware: "THE TABLES HAVE NOT RE ADJUSTED IN SIZE, THEY ARE STILL
+       SMALL IN LENGTH AND WIDTH."
+
+       He was right and every measurement in this repo was wrong, for one
+       reason: env(safe-area-inset-*) is 0 in every harness and every
+       Playwright emulation, and on the hardware Dan actually holds it is not.
+       A notched iPhone pays ~47px of inset through the tab bar and ~34px of
+       home indicator through the action reserve, all of it out of
+       --sp-table-h — and because the base rule derives WIDTH from that
+       height through the 605/1000 aspect, the real felt at 390x844 was
+       344x569. Height-bound. Which is why removing the side gutters, a
+       width-side fix, changed NOTHING on his phone: min(390, 344) and
+       min(366, 344) are the same number.
+
+       THE ASPECT LOCK IS THE THING STARVING THE WIDTH, AND IT IS NO LONGER
+       LOAD-BEARING. It dates from when the skin was an oversized composite
+       cropped by object-fit: cover, where the box's shape decided WHICH
+       PIXELS of art were visible and the seat percentages were calibrated to
+       that crop. Since 2026-08-18 the art is pre-cropped and drawn with
+       object-fit: FILL (see .table-art): it stretches to whatever box the
+       scaler is, and the seats, the felt window and every %-positioned thing
+       stretch with it by the same linear map. A wider box is a wider rail
+       with the seats still ON it — internal consistency is free at any
+       aspect. What the lock actually cost was 46px of table on the one
+       device class Dan reviews from.
+
+       So at phone/tablet widths the scaler takes the whole budget on BOTH
+       axes: full height, and full width up to a roundness cap. 0.7 is the
+       cap: a real notched phone lands at 0.67-0.69 (untouched by the cap,
+       edge-to-edge), an un-notched emulation at 0.605-0.7, and a portrait
+       iPad — whose height budget is enormous — stops at 0.7 instead of
+       ballooning toward a circle. Desktop (>768px) keeps the classic
+       605/1000; it is height-bound with room to spare and looks right.
+
+       Measured (feltHarness, which models the insets as of this commit):
+
+           iPhone 12/13/14, real insets   344x569  ->  390x569
+           iPhone 14 ProMax, real insets  369x610* ->  430x644
+           iPhone SE (no notch)           287x474  ->  332x474
+           iPad portrait                  491x811  ->  568x811
+           (* pre-fix Pro Max was aspect-derived from its own budget)
+
+       Width is the axis this buys. LENGTH is budget-bound and stays where
+       the reserves Dan tuned put it — every remaining pixel of length sits
+       inside --sp-table-top / --sp-hero-clear / the bars, and those are his
+       knobs, not this rule's. */
+    width: min(100%, calc(var(--sp-table-h, 100svh) * 0.7));
+    height: var(--sp-table-h, auto);
+    aspect-ratio: auto;
   }
 
   .spectator-footer-bar {

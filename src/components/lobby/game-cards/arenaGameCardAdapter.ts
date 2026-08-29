@@ -11,7 +11,7 @@ import type { ArenaGameCardData, ArenaGameFamily, ArenaGameStatus } from './aren
 
 function familyOf(entry: LobbyEntry): ArenaGameFamily {
   if (entry.kind === 'mtt') return 'mtt';
-  if (entry.kind === 'spin') return 'spin';
+  if (entry.kind === 'spin') return 'spins';
   if (entry.kind === 'sng' && entry.capacity <= 2) return 'heads-up';
   return /^PLO|OMAHA/i.test(entry.gameLabel) ? 'plo' : 'nlh';
 }
@@ -71,8 +71,8 @@ export function arenaGameCardDataFromEntry(entry: LobbyEntry): ArenaGameCardData
     currentLevel: level ? String(level) : undefined,
     currentBlinds: blinds || undefined,
     waitlist: entry.status === 'waitlist' ? entry.statusLabel : undefined,
-    maxPayout: family === 'spin' ? spinPayoutLabel(entry) || undefined : undefined,
-    topPrize: family === 'spin' ? spinPrizeLabel(entry) || undefined : undefined,
+    maxPayout: family === 'spins' ? spinPayoutLabel(entry) || undefined : undefined,
+    topPrize: family === 'spins' ? spinPrizeLabel(entry) || undefined : undefined,
     blindLevels: tournament ? levelSpeedLabel(tournament) || undefined : undefined,
     format: tournament ? stackDepthLabel(entry) || entry.speedLabel || undefined : undefined,
     status: statusOf(entry),

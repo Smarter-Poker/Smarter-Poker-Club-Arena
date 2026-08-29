@@ -1,5 +1,14 @@
 # Next Steps
 
+## 2026-08-29 completion note
+
+The five-family local replacement is complete and approved: MTT, NLH cash,
+PLO, Spins, and Heads Up now resolve to their V2 premium desktop/mobile skins.
+The dynamic action-state matrix, focused tests, build, stress rendering, and all
+required breakpoint checks are complete. No preview was published from this
+worktree because its build provenance reports it is 18 commits behind
+`origin/main`; reconcile that branch state before any deployment.
+
 ## Immediate, in order
 
 1. Open the MTT A/B references and the exact game-card directive.

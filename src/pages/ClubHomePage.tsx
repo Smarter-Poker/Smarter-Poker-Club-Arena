@@ -3471,6 +3471,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         if (row) handleRegister(row);
         else openEntry(e);
       },
+      onUnregister: (e) => {
+        const row = filteredTournamentsRef.current.find((t) => t.id === e.id);
+        if (row) void handleUnregister(row);
+      },
+      actionBusy,
       /* SEAT-FIRST (Dan 2026-08-21, binding): a Spin or Heads-Up card's Sit
          Down opens the TABLE — the seat is bought there, by the tap that
          picks it. Same flow the game-lobby panel already runs; the card was
@@ -3539,12 +3544,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       currentUserId,
       handleToggleFavorite,
       handleRegister,
+      handleUnregister,
       handleJoinTable,
       openEntry,
       navigate,
       handleWaitlistToggle,
       openTournamentLobby,
       spinQuickJoin,
+      actionBusy,
     ]
   );
 

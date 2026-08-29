@@ -115,7 +115,7 @@
   white-space: nowrap;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 1100px) {
   .agc-showcase {
     padding: 12px 8px 32px;
   }
@@ -127,6 +127,11 @@
 
   .agc-showcase__controls {
     min-width: 0;
+  }
+
+  .agc-showcase__controls select {
+    min-width: 0;
+    width: 100%;
   }
 
   .agc-showcase__grid {

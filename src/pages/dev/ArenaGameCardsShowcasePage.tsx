@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import {
   ArenaGameCard,
-  ARENA_GAME_CARD_TEMPLATES,
+  listArenaGameCardSkins,
+  resolveArenaGameCardTemplate,
+  type ArenaGameCardActions,
   type ArenaGameCardData,
   type ArenaGameFamily,
   type ArenaGameStatus,
@@ -80,9 +82,9 @@ const samples: Record<ArenaGameFamily, ArenaGameCardData> = {
       rule('ante', 'Ante', '2x BB'),
     ],
   },
-  spin: {
+  spins: {
     id: 'spin-1',
-    family: 'spin',
+    family: 'spins',
     title: '50 Chip Spin PLO5',
     subtitle: 'Three-player prize machine',
     gameType: 'PLO5',
@@ -132,18 +134,61 @@ const labels: Record<ArenaGameFamily, string> = {
   mtt: 'MTT / Tournament',
   nlh: 'NLH Cash',
   plo: 'PLO Family',
-  spin: 'Spins',
+  spins: 'Spins',
   'heads-up': 'Heads Up',
 };
+
+interface CardPreview {
+  data: ArenaGameCardData;
+  skin?: string;
+}
+
+function previewActions(data: ArenaGameCardData): ArenaGameCardActions {
+  if (data.family === 'mtt') {
+    if (data.registeredByViewer && (data.status === 'running' || data.status === 'late-reg')) {
+      return {
+        primaryLabel: 'Return To Tournament',
+        primaryTone: 'gold',
+        secondaryLabel: 'Details',
+      };
+    }
+    if (data.registeredByViewer) {
+      return { primaryLabel: 'Unregister', primaryTone: 'red', secondaryLabel: 'Details' };
+    }
+    if (data.status === 'late-reg') {
+      return { primaryLabel: 'Late Register', primaryTone: 'gold', secondaryLabel: 'Details' };
+    }
+    if (data.status === 'running' || data.status === 'closed' || data.status === 'full') {
+      return {
+        primaryLabel: data.status === 'full' ? 'Tournament Full' : 'Registration Closed',
+        primaryTone: 'neutral',
+        primaryDisabled: true,
+        secondaryLabel: 'Details',
+      };
+    }
+    return { primaryLabel: 'Register', primaryTone: 'blue', secondaryLabel: 'Details' };
+  }
+  if (data.family === 'spins' || data.family === 'heads-up') return { primaryLabel: 'Sit Down' };
+  return {
+    secondaryLabel: 'View Table',
+    primaryLabel: data.status === 'waitlist' ? 'Join Waitlist' : 'Join Table',
+  };
+}
 
 export default function ArenaGameCardsShowcasePage() {
   const [status, setStatus] = useState<ArenaGameStatus | 'sample'>('sample');
   const [longValues, setLongValues] = useState(false);
   const [presentation, setPresentation] = useState<'mobile' | 'desktop'>('mobile');
+  const [familyFilter, setFamilyFilter] = useState<ArenaGameFamily | 'all'>('all');
+  const [skinMode, setSkinMode] = useState('default');
+  const [viewerState, setViewerState] = useState<'sample' | 'unregistered' | 'registered'>(
+    'sample'
+  );
 
-  const cards = useMemo(
-    () =>
-      (Object.keys(samples) as ArenaGameFamily[]).map((family) => {
+  const cards = useMemo<CardPreview[]>(() => {
+    const normalized = (Object.keys(samples) as ArenaGameFamily[])
+      .filter((family) => familyFilter === 'all' || family === familyFilter)
+      .map((family) => {
         const sample = samples[family];
         return {
           ...sample,
@@ -154,10 +199,24 @@ export default function ArenaGameCardsShowcasePage() {
           guarantee: longValues && family === 'mtt' ? '$1,000,000 GTD' : sample.guarantee,
           status: status === 'sample' ? sample.status : status,
           statusLabel: status === 'sample' ? sample.statusLabel : status.replace('-', ' '),
+          registeredByViewer:
+            family !== 'mtt' || viewerState === 'sample'
+              ? sample.registeredByViewer
+              : viewerState === 'registered',
         };
-      }),
-    [longValues, status]
-  );
+      });
+    const previews: CardPreview[] = [];
+    for (const data of normalized) {
+      if (familyFilter === 'all' || skinMode === 'default') previews.push({ data });
+      else if (skinMode === 'compare') {
+        for (const cardSkin of listArenaGameCardSkins(data.family))
+          previews.push({ data, skin: cardSkin.id });
+      } else previews.push({ data, skin: skinMode });
+    }
+    return previews;
+  }, [familyFilter, longValues, skinMode, status, viewerState]);
+
+  const availableSkins = familyFilter === 'all' ? [] : listArenaGameCardSkins(familyFilter);
 
   return (
     <main className="agc-showcase">
@@ -168,6 +227,39 @@ export default function ArenaGameCardsShowcasePage() {
           <span>Approved artwork as hardware. Every displayed value is live DOM content.</span>
         </div>
         <div className="agc-showcase__controls">
+          <label>
+            Family
+            <select
+              value={familyFilter}
+              onChange={(event) => {
+                setFamilyFilter(event.target.value as ArenaGameFamily | 'all');
+                setSkinMode('default');
+              }}
+            >
+              <option value="all">All Families</option>
+              {(Object.keys(samples) as ArenaGameFamily[]).map((family) => (
+                <option key={family} value={family}>
+                  {labels[family]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Skin
+            <select
+              value={skinMode}
+              disabled={familyFilter === 'all'}
+              onChange={(event) => setSkinMode(event.target.value)}
+            >
+              <option value="default">Family Default</option>
+              <option value="compare">Compare All Skins</option>
+              {availableSkins.map((cardSkin) => (
+                <option key={cardSkin.id} value={cardSkin.id}>
+                  {cardSkin.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <label>
             View
             <select
@@ -190,6 +282,17 @@ export default function ArenaGameCardsShowcasePage() {
               ))}
             </select>
           </label>
+          <label>
+            Player State
+            <select
+              value={viewerState}
+              onChange={(event) => setViewerState(event.target.value as typeof viewerState)}
+            >
+              <option value="sample">Sample Player State</option>
+              <option value="unregistered">Not Registered</option>
+              <option value="registered">Already Registered</option>
+            </select>
+          </label>
           <label className="agc-showcase__check">
             <input
               type="checkbox"
@@ -202,34 +305,30 @@ export default function ArenaGameCardsShowcasePage() {
       </header>
 
       <section className={`agc-showcase__grid agc-showcase__grid--${presentation}`}>
-        {cards.map((data) => (
-          <article className="agc-showcase__sample" key={data.family}>
-            <div className="agc-showcase__label">
-              <span>{labels[data.family]}</span>
-              <small>{ARENA_GAME_CARD_TEMPLATES[data.family].zones.join(' · ')}</small>
-            </div>
-            <ArenaGameCard
-              data={data}
-              presentation={presentation}
-              actions={{
-                secondaryLabel:
-                  data.family === 'mtt'
-                    ? 'Details'
-                    : data.family === 'spin' || data.family === 'heads-up'
-                      ? undefined
-                      : 'View Table',
-                primaryLabel:
-                  data.family === 'mtt'
-                    ? 'Register'
-                    : data.family === 'spin' || data.family === 'heads-up'
-                      ? 'Sit Down'
-                      : data.status === 'waitlist'
-                        ? 'Join Waitlist'
-                        : 'Join Table',
-              }}
-            />
-          </article>
-        ))}
+        {cards.map(({ data, skin }) => {
+          const resolved = resolveArenaGameCardTemplate({
+            family: data.family,
+            skin,
+            presentation,
+          });
+          return (
+            <article className="agc-showcase__sample" key={`${data.family}-${resolved.skinId}`}>
+              <div className="agc-showcase__label">
+                <span>{labels[data.family]}</span>
+                <small>
+                  {resolved.skin.name} · {resolved.skin.lifecycle} ·{' '}
+                  {Object.keys(resolved.template.zones).join(' · ')}
+                </small>
+              </div>
+              <ArenaGameCard
+                data={data}
+                skin={resolved.skinId}
+                presentation={presentation}
+                actions={previewActions(data)}
+              />
+            </article>
+          );
+        })}
       </section>
     </main>
   );

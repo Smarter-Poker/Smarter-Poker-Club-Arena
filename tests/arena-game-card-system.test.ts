@@ -6,7 +6,13 @@ import type {
   RuleMedallion,
 } from '../src/components/lobby/lobbyEntries';
 import { arenaGameCardDataFromEntry } from '../src/components/lobby/game-cards/arenaGameCardAdapter';
-import { ARENA_GAME_CARD_TEMPLATES } from '../src/components/lobby/game-cards/arenaGameCardRegistry';
+import { arenaGameCardActionsForEntry } from '../src/components/lobby/game-cards/ArenaLobbyGameCard';
+import {
+  ARENA_GAME_CARD_TEMPLATE_REGISTRY,
+  resolveArenaGameCardTemplate,
+  validateArenaGameCardRegistry,
+} from '../src/components/lobby/game-cards/arenaGameCardRegistry';
+import type { LobbyRowContext } from '../src/components/lobby/lobbyCardContext';
 
 const rule = (key: string, label = key): RuleMedallion => ({ key, label, tip: label });
 
@@ -98,12 +104,28 @@ function tournamentEntry(kind: 'mtt' | 'spin' | 'sng', capacity: number): LobbyE
   };
 }
 
+function lobbyContext(overrides: Partial<LobbyRowContext> = {}): LobbyRowContext {
+  return {
+    waitlistedIds: new Set(),
+    seatedIds: new Set(),
+    registeredIds: new Set(),
+    favoriteIds: new Set(),
+    onRegister: () => undefined,
+    onUnregister: () => undefined,
+    onSpinJoin: () => undefined,
+    onJoinTable: () => undefined,
+    onViewTable: () => undefined,
+    onWaitlistToggle: () => undefined,
+    ...overrides,
+  };
+}
+
 describe('Arena game-card creation', () => {
   it('automatically selects all five card families from existing lobby data', () => {
     expect(arenaGameCardDataFromEntry(tournamentEntry('mtt', 200)).family).toBe('mtt');
     expect(arenaGameCardDataFromEntry(cashEntry('NLH')).family).toBe('nlh');
     expect(arenaGameCardDataFromEntry(cashEntry('PLO8')).family).toBe('plo');
-    expect(arenaGameCardDataFromEntry(tournamentEntry('spin', 3)).family).toBe('spin');
+    expect(arenaGameCardDataFromEntry(tournamentEntry('spin', 3)).family).toBe('spins');
     expect(arenaGameCardDataFromEntry(tournamentEntry('sng', 2)).family).toBe('heads-up');
   });
 
@@ -118,17 +140,119 @@ describe('Arena game-card creation', () => {
   });
 
   it('keeps one central desktop/mobile hardware definition for every family', () => {
-    expect(Object.keys(ARENA_GAME_CARD_TEMPLATES).sort()).toEqual([
+    expect(Object.keys(ARENA_GAME_CARD_TEMPLATE_REGISTRY).sort()).toEqual([
       'heads-up',
       'mtt',
       'nlh',
       'plo',
-      'spin',
+      'spins',
     ]);
-    for (const template of Object.values(ARENA_GAME_CARD_TEMPLATES)) {
-      expect(template.desktopArtwork).toMatch(/\/desktop\.png$/);
-      expect(template.mobileArtwork).toMatch(/\/mobile\.png$/);
-      expect(template.zones.length).toBeGreaterThanOrEqual(5);
+    expect(validateArenaGameCardRegistry()).toEqual([]);
+    const approvedDefaults = {
+      mtt: 'shark-mtt-v2',
+      nlh: 'shark-nlh-v2',
+      plo: 'shark-plo-v2',
+      spins: 'shark-spins-v2',
+      'heads-up': 'shark-headsup-v2',
+    } as const;
+
+    for (const family of Object.keys(ARENA_GAME_CARD_TEMPLATE_REGISTRY) as Array<
+      keyof typeof ARENA_GAME_CARD_TEMPLATE_REGISTRY
+    >) {
+      const resolved = resolveArenaGameCardTemplate({ family, presentation: 'mobile' });
+      expect(resolved.skinId).toBe(approvedDefaults[family]);
+      expect(resolved.skin.lifecycle).toBe('approved');
+      expect(resolved.skin.version).toBe(2);
+      expect(resolved.skin.desktop.asset).toMatch(/shell-desktop-v2\.webp$/);
+      expect(resolved.skin.mobile.asset).toMatch(/shell-mobile-v2\.webp$/);
+      expect(Object.keys(resolved.template.zones).length).toBeGreaterThanOrEqual(5);
     }
+  });
+
+  it('maps live MTT player state to blue, red, gold, and disabled actions', () => {
+    const entry = tournamentEntry('mtt', 200);
+    const ctx = (registered: boolean) =>
+      lobbyContext({ registeredIds: registered ? new Set([entry.id]) : new Set() });
+
+    expect(arenaGameCardActionsForEntry(entry, ctx(false))).toMatchObject({
+      primaryLabel: 'Register',
+      primaryTone: 'blue',
+    });
+    expect(arenaGameCardActionsForEntry(entry, ctx(true))).toMatchObject({
+      primaryLabel: 'Unregister',
+      primaryTone: 'red',
+    });
+
+    const lateReg = { ...entry, status: 'late_reg' as const, statusLabel: 'Late Reg' };
+    expect(arenaGameCardActionsForEntry(lateReg, ctx(false))).toMatchObject({
+      primaryLabel: 'Late Register',
+      primaryTone: 'gold',
+    });
+    expect(arenaGameCardActionsForEntry(lateReg, ctx(true))).toMatchObject({
+      primaryLabel: 'Return To Tournament',
+      primaryTone: 'gold',
+    });
+
+    const full = {
+      ...entry,
+      players: entry.capacity,
+      status: 'full' as const,
+      statusLabel: 'Full',
+    };
+    expect(arenaGameCardActionsForEntry(full, ctx(false))).toMatchObject({
+      primaryLabel: 'Tournament Full',
+      primaryTone: 'neutral',
+      primaryDisabled: true,
+    });
+  });
+
+  it('keeps cash, waitlist, spin, and heads-up actions live and state-driven', () => {
+    const cash = cashEntry('NLH');
+    expect(arenaGameCardActionsForEntry(cash, lobbyContext())).toMatchObject({
+      primaryLabel: 'Join Table',
+      primaryTone: 'blue',
+      primaryDisabled: false,
+    });
+    expect(
+      arenaGameCardActionsForEntry(cash, lobbyContext({ seatedIds: new Set([cash.id]) }))
+    ).toMatchObject({ primaryLabel: 'Return To Game', primaryTone: 'green' });
+
+    const fullCash = { ...cash, status: 'full' as const, statusLabel: 'Full' };
+    expect(arenaGameCardActionsForEntry(fullCash, lobbyContext())).toMatchObject({
+      primaryLabel: 'Join Waitlist',
+      primaryTone: 'blue',
+      primaryDisabled: false,
+    });
+    expect(
+      arenaGameCardActionsForEntry(
+        fullCash,
+        lobbyContext({ waitlistedIds: new Set([fullCash.id]) })
+      )
+    ).toMatchObject({ primaryLabel: 'Leave Waitlist', primaryTone: 'red' });
+
+    const spin = tournamentEntry('spin', 3);
+    expect(arenaGameCardActionsForEntry(spin, lobbyContext())).toMatchObject({
+      primaryLabel: 'Sit Down',
+      primaryTone: 'blue',
+      primaryDisabled: false,
+    });
+    expect(
+      arenaGameCardActionsForEntry(spin, lobbyContext({ registeredIds: new Set([spin.id]) }))
+    ).toMatchObject({ primaryLabel: 'Return To Game', primaryTone: 'green' });
+    expect(
+      arenaGameCardActionsForEntry(
+        { ...spin, status: 'running' as const, statusLabel: 'Running' },
+        lobbyContext()
+      )
+    ).toMatchObject({ primaryLabel: 'Watch', primaryTone: 'neutral' });
+
+    const headsUp = tournamentEntry('sng', 2);
+    expect(arenaGameCardActionsForEntry(headsUp, lobbyContext())).toMatchObject({
+      primaryLabel: 'Sit Down',
+      primaryTone: 'blue',
+    });
+    expect(
+      arenaGameCardActionsForEntry(headsUp, lobbyContext({ registeredIds: new Set([headsUp.id]) }))
+    ).toMatchObject({ primaryLabel: 'Return To Game', primaryTone: 'green' });
   });
 });

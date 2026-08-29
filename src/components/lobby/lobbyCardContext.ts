@@ -6,12 +6,14 @@ export interface LobbyRowContext {
   registeredIds: Set<string>;
   favoriteIds: Set<string>;
   onRegister?: (entry: LobbyEntry) => void;
+  onUnregister?: (entry: LobbyEntry) => void;
   onSpinJoin?: (entry: LobbyEntry, variant: 'spin' | 'sng') => void;
   onJoinTable?: (entry: LobbyEntry) => void;
   onViewTable?: (entry: LobbyEntry) => void;
   onToggleFavorite?: (tableId: string, next: boolean) => void;
   onWaitlistToggle?: (tableId: string, joining: boolean) => void;
   spinTopTierLive?: boolean;
+  actionBusy?: boolean;
 }
 export type LobbyPlayerState = 'seated' | 'waitlisted' | 'registered' | null;
 

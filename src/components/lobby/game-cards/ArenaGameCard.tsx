@@ -8,141 +8,307 @@ import type {
 import { ArenaGameRuleBadge } from './ArenaGameRuleIcon';
 import './ArenaGameCard.css';
 
+function ActionIcon({ label }: { label: string }) {
+  const normalized = label.toLowerCase();
+  if (normalized.includes('detail')) {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 10v7M12 7h.01" />
+      </svg>
+    );
+  }
+  if (normalized.includes('watch') || normalized.includes('view')) {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+        <circle cx="12" cy="12" r="2.5" />
+      </svg>
+    );
+  }
+  if (normalized.includes('wait')) {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 3h10M7 21h10M8 3c0 5 2 6 4 9-2 3-4 4-4 9m8-18c0 5-2 6-4 9 2 3 4 4 4 9" />
+      </svg>
+    );
+  }
+  if (normalized.includes('registered') || normalized.includes('return')) {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2 4 5v6c0 5 3.4 8.7 8 11 4.6-2.3 8-6 8-11V5l-8-3Z" />
+        <path d="m8.5 12 2.2 2.2 4.8-5" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 2 4 5v6c0 5 3.4 8.7 8 11 4.6-2.3 8-6 8-11V5l-8-3Z" />
+      <path d="M12 8v8M8 12h8" />
+    </svg>
+  );
+}
+
 export interface ArenaGameCardProps {
   data: ArenaGameCardData;
   actions: ArenaGameCardActions;
   presentation?: 'auto' | 'desktop' | 'mobile';
+  /** Explicit visual-only override. It never changes data or handlers. */
+  skin?: string;
+  /** Reserved for future club-level visual configuration. */
+  clubSkin?: string;
   selected?: boolean;
   className?: string;
 }
 
-function Fact({ label, value, tone }: { label: string; value?: string; tone?: string }) {
-  if (!value) return null;
+function Rules({
+  data,
+  className,
+  limit = 4,
+  omit = [],
+}: {
+  data: ArenaGameCardData;
+  className?: string;
+  limit?: number;
+  omit?: string[];
+}) {
+  const rules = data.rules.filter((rule) => !omit.includes(rule.key));
+  if (!rules.length) return null;
   return (
-    <div className={`agc-fact${tone ? ` agc-fact--${tone}` : ''}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function Rules({ data }: { data: ArenaGameCardData }) {
-  if (!data.rules.length) return null;
-  return (
-    <div className="agc-rules" aria-label="Game rules">
-      {data.rules.slice(0, 4).map((rule) => (
+    <div
+      className={`agc-rules${className ? ` ${className}` : ''}`}
+      data-zone="rules"
+      aria-label="Game rules"
+    >
+      {rules.slice(0, limit).map((rule) => (
         <ArenaGameRuleBadge key={rule.key} rule={rule} />
       ))}
-      {data.rules.length > 4 && (
-        <span className="agc-rule agc-rule--more">+{data.rules.length - 4} Rules</span>
+      {rules.length > limit && (
+        <span className="agc-rule agc-rule--more">+{rules.length - limit} Rules</span>
       )}
     </div>
   );
 }
 
 function Actions({ actions }: { actions: ArenaGameCardActions }) {
+  const inferredTone = actions.primaryLabel.toLowerCase().includes('registered')
+    ? 'green'
+    : actions.primaryTone || 'blue';
   return (
-    <div className="agc-actions">
+    <div className="agc-actions" data-zone="actions">
       {actions.secondaryLabel && (
         <button
           type="button"
           className="agc-action agc-action--secondary"
+          data-zone="secondaryAction"
           onClick={actions.onSecondary}
         >
-          {actions.secondaryLabel}
+          <i className="agc-action__icon">
+            <ActionIcon label={actions.secondaryLabel} />
+          </i>
+          <span>{actions.secondaryLabel}</span>
         </button>
       )}
       <button
         type="button"
-        className="agc-action agc-action--primary"
+        className={`agc-action agc-action--primary agc-action--${inferredTone}`}
+        data-zone="primaryAction"
         disabled={actions.primaryDisabled || actions.busy}
         onClick={actions.onPrimary}
       >
-        {actions.busy ? 'Working...' : actions.primaryLabel}
+        <i className="agc-action__icon">
+          <ActionIcon label={actions.primaryLabel} />
+        </i>
+        <span>{actions.busy ? 'Working...' : actions.primaryLabel}</span>
       </button>
     </div>
   );
 }
 
-function Header({ data }: { data: ArenaGameCardData }) {
+function PremiumStatus({ data }: { data: ArenaGameCardData }) {
   return (
-    <header className="agc-header">
-      <div className="agc-heading">
+    <span className={`agc-premium-status agc-premium-status--${data.status}`} data-zone="status">
+      <i aria-hidden="true" />
+      {data.statusLabel}
+    </span>
+  );
+}
+
+function PremiumHeader({ data }: { data: ArenaGameCardData }) {
+  return (
+    <header className="agc-premium-header">
+      <div className="agc-premium-heading" data-zone="title">
         <h3 title={data.title}>{data.title}</h3>
         {data.subtitle && <p>{data.subtitle}</p>}
       </div>
-      <span className={`agc-status agc-status--${data.status}`}>{data.statusLabel}</span>
+      <PremiumStatus data={data} />
     </header>
   );
 }
 
+function LiveValue({
+  className,
+  value,
+  zone,
+  children,
+}: {
+  className: string;
+  value?: string;
+  zone: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className={`agc-premium-value ${className}`} data-zone={zone}>
+      {children || <strong>{value || '—'}</strong>}
+    </div>
+  );
+}
+
 function MttMachine({ data, actions }: ArenaGameCardProps) {
+  const visibleRules = data.rules.slice(0, 2);
   return (
     <div className="agc-machine agc-machine--mtt">
-      <Header data={data} />
-      <div className="agc-mtt-meta">
-        {data.guarantee && <strong>{data.guarantee}</strong>}
-        {data.startTime && <span>{data.startTime}</span>}
+      <header className="agc-mtt-header">
+        <h3 data-zone="title" title={data.title}>
+          {data.title}
+        </h3>
+        <div className="agc-mtt-meta">
+          {data.guarantee && <strong data-zone="guaranteeHero">{data.guarantee}</strong>}
+          <span data-zone="startsIn">{data.startsIn || data.statusLabel}</span>
+        </div>
+        <div className="agc-mtt-badge-rail">
+          {data.featured && (
+            <span className="agc-badge agc-badge--gold">
+              <b aria-hidden="true">★</b> Featured
+            </span>
+          )}
+          {data.registeredByViewer && (
+            <span className="agc-badge agc-badge--green">
+              <b aria-hidden="true">✓</b> Registered
+            </span>
+          )}
+          {visibleRules.map((rule) => (
+            <ArenaGameRuleBadge key={rule.key} rule={rule} />
+          ))}
+          {data.rules.length > visibleRules.length && (
+            <span className="agc-rule agc-rule--more">
+              +{data.rules.length - visibleRules.length} Rules
+            </span>
+          )}
+        </div>
+      </header>
+      <div className="agc-mtt-value agc-mtt-value--starting-time" data-zone="startingTime">
+        <strong>{data.startTime || '—'}</strong>
       </div>
-      <div className="agc-badges">
-        {data.featured && <span className="agc-badge agc-badge--gold">Featured</span>}
-        {data.registeredByViewer && <span className="agc-badge agc-badge--green">Registered</span>}
+      <div className="agc-mtt-value agc-mtt-value--buy-in" data-zone="buyIn">
+        <strong>{data.buyIn || '—'}</strong>
       </div>
-      <div className="agc-facts agc-facts--four">
-        <Fact label="Starting Time" value={data.startTime} tone="blue" />
-        <Fact label="Buy-In" value={data.buyIn} />
-        <Fact label="Guarantee" value={data.guarantee} tone="blue" />
-        <Fact label="Registered" value={data.registered} />
+      <div className="agc-mtt-value agc-mtt-value--guarantee" data-zone="guarantee">
+        <strong>{data.guarantee || '—'}</strong>
       </div>
-      <div className="agc-facts agc-facts--two">
-        <Fact label="Starting Stack" value={data.startingStack} />
-        <Fact label="Current Level" value={data.currentLevel} tone="blue" />
+      <div className="agc-mtt-value agc-mtt-value--registered" data-zone="registered">
+        <strong>{data.registered || '—'}</strong>
       </div>
-      <Rules data={data} />
+      <div className="agc-mtt-value agc-mtt-value--starting-stack" data-zone="startingStack">
+        <strong>{data.startingStack || '—'}</strong>
+      </div>
+      <div className="agc-mtt-value agc-mtt-value--current-level" data-zone="currentLevel">
+        <strong>{data.currentLevel || '—'}</strong>
+        {data.currentBlinds && <small>{data.currentBlinds}</small>}
+      </div>
       <Actions actions={actions} />
     </div>
   );
 }
 
-function CashMachine({ data, actions }: ArenaGameCardProps) {
+function NlhMachine({ data, actions }: ArenaGameCardProps) {
   return (
-    <div className={`agc-machine agc-machine--${data.family}`}>
-      <Header data={data} />
-      <div className="agc-cash-identity">
-        <strong>{data.gameType}</strong>
-        <div>
-          <span>Stakes</span>
-          <b>{data.stakes || '-'}</b>
-        </div>
-      </div>
-      <div className="agc-facts agc-facts--two">
-        <Fact label="Players" value={data.players} tone="blue" />
-        <Fact label="Buy-In" value={data.buyIn} />
-      </div>
-      <Rules data={data} />
+    <div className="agc-machine agc-machine--nlh">
+      <PremiumHeader data={data} />
+      <span className="agc-semantic-only" data-zone="gameType">
+        {data.gameType}
+      </span>
+      <Rules data={data} className="agc-premium-rules agc-premium-rules--nlh" limit={3} />
+      <LiveValue className="agc-premium-value--stakes" value={data.stakes} zone="stakes" />
+      <LiveValue className="agc-premium-value--players" value={data.players} zone="players" />
+      <LiveValue className="agc-premium-value--buy-in" value={data.buyIn} zone="buyIn" />
       <Actions actions={actions} />
     </div>
   );
+}
+
+function PloMachine({ data, actions }: ArenaGameCardProps) {
+  return (
+    <div className="agc-machine agc-machine--plo">
+      <PremiumHeader data={data} />
+      <Rules data={data} className="agc-premium-rules agc-premium-rules--plo" limit={3} />
+      <LiveValue className="agc-premium-value--game-type" value={data.gameType} zone="gameType" />
+      <span className="agc-plo-game-repeat" aria-hidden="true">
+        {data.gameType}
+      </span>
+      <LiveValue className="agc-premium-value--stakes" value={data.stakes} zone="stakes" />
+      <LiveValue className="agc-premium-value--players" value={data.players} zone="players" />
+      <LiveValue className="agc-premium-value--buy-in" value={data.buyIn} zone="buyIn" />
+      <Actions actions={actions} />
+    </div>
+  );
+}
+
+function payoutParts(value?: string) {
+  const normalized = value || 'Win Up To 100x';
+  const match = normalized.match(/^(.*?)(\d+(?:\.\d+)?x)$/i);
+  return match ? { lead: match[1].trim(), hero: match[2] } : { lead: '', hero: normalized };
+}
+
+function prizeParts(value?: string) {
+  if (!value) return { label: '', value: '' };
+  const stripped = value.replace(/^top prize\s*/i, '');
+  return { label: stripped === value ? '' : 'Top Prize', value: stripped };
 }
 
 function SpinMachine({ data, actions }: ArenaGameCardProps) {
+  const payout = payoutParts(data.maxPayout);
+  const prize = prizeParts(data.topPrize);
   return (
     <div className="agc-machine agc-machine--spin">
-      <Header data={data} />
-      <div className="agc-spin-promo">{data.featured ? '100x Live' : 'Prize Ladder Live'}</div>
-      <div className="agc-spin-hero">
-        <span>Max Payout</span>
-        <strong>{data.maxPayout || 'Win Up To 100x'}</strong>
-        {data.topPrize && <b>{data.topPrize}</b>}
+      <PremiumHeader data={data} />
+      <div className="agc-premium-promotion" data-zone="promotion">
+        {data.featured ? '100x Live' : 'Prize Ladder Live'}
       </div>
-      <div className="agc-spin-facts">
-        <Fact label="Game Type" value={data.gameType} tone="blue" />
-        <Fact label="Buy-In" value={data.buyIn} />
-        <Fact label="Registered" value={data.registered} />
-        <Fact label="Starting Stack" value={data.startingStack} />
-        <Fact label="Blind Levels" value={data.blindLevels} />
-        <Fact label="Format" value={data.format} />
+      <div className="agc-premium-payout" data-zone="maxPayout">
+        {payout.lead && <span>{payout.lead}</span>}
+        <strong>{payout.hero}</strong>
+        {prize.value && (
+          <b>
+            {prize.label && <small>{prize.label}</small>}
+            {prize.value}
+          </b>
+        )}
       </div>
+      <Rules
+        data={data}
+        className="agc-premium-rules agc-premium-rules--spins"
+        limit={2}
+        omit={['turbo', 'gtd']}
+      />
+      <LiveValue className="agc-premium-value--game-type" value={data.gameType} zone="gameType" />
+      <LiveValue className="agc-premium-value--buy-in" value={data.buyIn} zone="buyIn" />
+      <LiveValue
+        className="agc-premium-value--registered"
+        value={data.registered}
+        zone="registered"
+      />
+      <LiveValue
+        className="agc-premium-value--starting-stack"
+        value={data.startingStack}
+        zone="startingStack"
+      />
+      <LiveValue
+        className="agc-premium-value--blind-levels"
+        value={data.blindLevels}
+        zone="blindLevels"
+      />
+      <LiveValue className="agc-premium-value--format" value={data.format} zone="format" />
       <Actions actions={actions} />
     </div>
   );
@@ -151,21 +317,35 @@ function SpinMachine({ data, actions }: ArenaGameCardProps) {
 function HeadsUpMachine({ data, actions }: ArenaGameCardProps) {
   return (
     <div className="agc-machine agc-machine--heads-up">
-      <Header data={data} />
-      <div className="agc-duel">
-        <Fact label="Buy-In" value={data.buyIn} tone="blue" />
-        <strong>{data.gameType}</strong>
-        <Fact label="Registered" value={data.registered} />
-      </div>
-      <div className="agc-facts agc-facts--two">
-        <Fact label="Starting Stack" value={data.startingStack} />
-        <Fact label="Blind Levels" value={data.blindLevels} tone="blue" />
-      </div>
-      <div className="agc-format">
-        <span>Format</span>
-        <strong>{data.format || 'Standard'}</strong>
-      </div>
-      <Rules data={data} />
+      <PremiumHeader data={data} />
+      <Rules
+        data={data}
+        className="agc-premium-rules agc-premium-rules--heads-up"
+        limit={2}
+        omit={['deepstack']}
+      />
+      <LiveValue className="agc-premium-value--game-type" value={data.gameType} zone="gameType" />
+      <LiveValue className="agc-premium-value--buy-in" value={data.buyIn} zone="buyIn" />
+      <LiveValue
+        className="agc-premium-value--registered"
+        value={data.registered}
+        zone="registered"
+      />
+      <LiveValue
+        className="agc-premium-value--starting-stack"
+        value={data.startingStack}
+        zone="startingStack"
+      />
+      <LiveValue
+        className="agc-premium-value--blind-levels"
+        value={data.blindLevels}
+        zone="blindLevels"
+      />
+      <LiveValue
+        className="agc-premium-value--format"
+        value={data.format || 'Standard'}
+        zone="format"
+      />
       <Actions actions={actions} />
     </div>
   );
@@ -176,9 +356,9 @@ const familyRenderers: Record<
   (props: ArenaGameCardProps) => ReactNode
 > = {
   mtt: MttMachine,
-  nlh: CashMachine,
-  plo: CashMachine,
-  spin: SpinMachine,
+  nlh: NlhMachine,
+  plo: PloMachine,
+  spins: SpinMachine,
   'heads-up': HeadsUpMachine,
 };
 
@@ -195,25 +375,36 @@ export const ArenaGameCard = memo(function ArenaGameCard({
   data,
   actions,
   presentation = 'auto',
+  skin,
+  clubSkin,
   selected,
   className,
 }: ArenaGameCardProps) {
-  const template = resolveArenaGameCardTemplate(data.family);
+  const resolved = resolveArenaGameCardTemplate({
+    family: data.family,
+    skin,
+    clubSkin,
+    presentation: presentation === 'auto' ? undefined : presentation,
+    status: data.status,
+  });
+  const template = resolved.skin;
   const Renderer = familyRenderers[data.family];
   const dataState = data.dataState || 'loaded';
   const notice = stateLabel(dataState);
   const style = {
-    '--agc-art-desktop': `url("${template.desktopArtwork}")`,
-    '--agc-art-mobile': `url("${template.mobileArtwork}")`,
-    '--agc-desktop-ratio': template.desktopAspectRatio,
-    '--agc-mobile-ratio': template.mobileAspectRatio,
+    '--agc-art-desktop': `url("${template.desktop.asset}")`,
+    '--agc-art-mobile': `url("${template.mobile.asset}")`,
+    '--agc-desktop-ratio': template.desktop.aspectRatio,
+    '--agc-mobile-ratio': template.mobile.aspectRatio,
   } as CSSProperties;
   const summary = `${data.title}, ${data.gameType}${data.stakes ? ` ${data.stakes}` : ''}, ${data.players || data.registered || 'player count unavailable'}, ${data.statusLabel}`;
 
   return (
     <article
-      className={`arena-game-card arena-game-card--${data.family}${selected ? ' is-selected' : ''}${className ? ` ${className}` : ''}`}
+      className={`arena-game-card arena-game-card--${data.family} arena-game-card--skin-${resolved.skinId} arena-game-card--layout-${resolved.template.layout}${selected ? ' is-selected' : ''}${className ? ` ${className}` : ''}`}
       data-presentation={presentation}
+      data-template-presentation={resolved.presentation}
+      data-skin={resolved.skinId}
       data-state={dataState}
       style={style}
       aria-label={summary}

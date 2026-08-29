@@ -5,13 +5,17 @@ import { arenaGameCardDataFromEntry } from './arenaGameCardAdapter';
 import ArenaGameCard from './ArenaGameCard';
 import type { ArenaGameCardActions } from './arenaGameCardTypes';
 
-function actionsFor(entry: LobbyEntry, ctx: LobbyRowContext): ArenaGameCardActions {
+export function arenaGameCardActionsForEntry(
+  entry: LobbyEntry,
+  ctx: LobbyRowContext
+): ArenaGameCardActions {
   const mine = playerStateOf(entry, ctx);
 
   if (entry.kind === 'cash') {
     if (mine === 'seated') {
       return {
         primaryLabel: 'Return To Game',
+        primaryTone: 'green',
         onPrimary: () => ctx.onViewTable?.(entry),
         secondaryLabel: 'Details',
         onSecondary: () => ctx.onViewTable?.(entry),
@@ -21,6 +25,7 @@ function actionsFor(entry: LobbyEntry, ctx: LobbyRowContext): ArenaGameCardActio
       const joined = mine === 'waitlisted';
       return {
         primaryLabel: joined ? 'Leave Waitlist' : 'Join Waitlist',
+        primaryTone: joined ? 'red' : 'blue',
         onPrimary: () => ctx.onWaitlistToggle?.(entry.id, !joined),
         primaryDisabled: !ctx.onWaitlistToggle,
         secondaryLabel: 'Watch Table',
@@ -29,6 +34,7 @@ function actionsFor(entry: LobbyEntry, ctx: LobbyRowContext): ArenaGameCardActio
     }
     return {
       primaryLabel: 'Join Table',
+      primaryTone: 'blue',
       onPrimary: () => ctx.onJoinTable?.(entry),
       primaryDisabled: !ctx.onJoinTable,
       secondaryLabel: 'View Table',
@@ -45,11 +51,13 @@ function actionsFor(entry: LobbyEntry, ctx: LobbyRowContext): ArenaGameCardActio
     ) {
       return {
         primaryLabel: mine ? 'Return To Game' : 'Watch',
+        primaryTone: mine ? 'green' : 'neutral',
         onPrimary: () => ctx.onViewTable?.(entry),
       };
     }
     return {
       primaryLabel: 'Sit Down',
+      primaryTone: 'blue',
       onPrimary: () => ctx.onSpinJoin?.(entry, entry.kind === 'spin' ? 'spin' : 'sng'),
       primaryDisabled: !ctx.onSpinJoin,
     };
@@ -58,16 +66,42 @@ function actionsFor(entry: LobbyEntry, ctx: LobbyRowContext): ArenaGameCardActio
   const registered = mine === 'registered';
   const running =
     entry.status === 'running' || entry.status === 'completed' || entry.status === 'closed';
+  if (registered && (entry.status === 'running' || entry.status === 'late_reg')) {
+    return {
+      primaryLabel: 'Return To Tournament',
+      primaryTone: 'gold',
+      busy: ctx.actionBusy,
+      onPrimary: () => ctx.onViewTable?.(entry),
+      primaryDisabled: !ctx.onViewTable,
+      secondaryLabel: 'Details',
+      onSecondary: () => ctx.onViewTable?.(entry),
+    };
+  }
+  if (registered) {
+    return {
+      primaryLabel: 'Unregister',
+      primaryTone: 'red',
+      busy: ctx.actionBusy,
+      onPrimary: () => ctx.onUnregister?.(entry),
+      primaryDisabled: !ctx.onUnregister,
+      secondaryLabel: 'Details',
+      onSecondary: () => ctx.onViewTable?.(entry),
+    };
+  }
+  const full = entry.capacity > 0 && entry.players >= entry.capacity;
+  const registrationClosed = running || full;
   return {
-    primaryLabel: running
-      ? registered
-        ? 'Return To Game'
-        : 'Watch'
-      : registered
-        ? 'Registered'
+    primaryLabel: registrationClosed
+      ? full
+        ? 'Tournament Full'
+        : 'Registration Closed'
+      : entry.status === 'late_reg'
+        ? 'Late Register'
         : 'Register',
-    onPrimary: () => (running || registered ? ctx.onViewTable?.(entry) : ctx.onRegister?.(entry)),
-    primaryDisabled: running || registered ? !ctx.onViewTable : !ctx.onRegister,
+    primaryTone: entry.status === 'late_reg' ? 'gold' : registrationClosed ? 'neutral' : 'blue',
+    busy: ctx.actionBusy,
+    onPrimary: () => ctx.onRegister?.(entry),
+    primaryDisabled: registrationClosed || !ctx.onRegister,
     secondaryLabel: 'Details',
     onSecondary: () => ctx.onViewTable?.(entry),
   };
@@ -89,7 +123,7 @@ export const ArenaLobbyGameCard = memo(function ArenaLobbyGameCard({
     const playerState = playerStateOf(entry, ctx);
     return { ...normalized, registeredByViewer: playerState === 'registered' };
   }, [entry, ctx]);
-  const actions = useMemo(() => actionsFor(entry, ctx), [entry, ctx]);
+  const actions = useMemo(() => arenaGameCardActionsForEntry(entry, ctx), [entry, ctx]);
 
   return (
     <div onFocus={() => onSelect?.(entry)}>

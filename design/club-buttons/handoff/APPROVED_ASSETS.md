@@ -17,5 +17,10 @@
 | PLO references A/B          | `../references/session-2026-08-28/game-card-plo-reference-a.png`, `game-card-plo-reference-b.png`           | PLO family targets                          | Approved references, not implementation |
 | Spins references A/B        | `../references/session-2026-08-28/game-card-spins-reference-a.png`, `game-card-spins-reference-b.png`       | Spins family targets                        | Approved references, not implementation |
 | Heads Up references A/B     | `../references/session-2026-08-28/game-card-heads-up-reference-a.png`, `game-card-heads-up-reference-b.png` | Heads Up family targets                     | Approved references, not implementation |
+| Runtime MTT V2 shells       | `../../../public/assets/club-buttons/game-cards/mtt/shell-desktop-v2.webp`, `shell-mobile-v2.webp`          | Dynamic MTT desktop/mobile hardware         | Approved default                        |
+| Runtime NLH V2 shells       | `../../../public/assets/club-buttons/game-cards/nlh/shell-desktop-v2.webp`, `shell-mobile-v2.webp`          | Dynamic NLH cash desktop/mobile hardware    | Approved default                        |
+| Runtime PLO V2 shells       | `../../../public/assets/club-buttons/game-cards/plo/shell-desktop-v2.webp`, `shell-mobile-v2.webp`          | Dynamic PLO desktop/mobile hardware         | Approved default                        |
+| Runtime Spins V2 shells     | `../../../public/assets/club-buttons/game-cards/spins/shell-desktop-v2.webp`, `shell-mobile-v2.webp`        | Dynamic Spins desktop/mobile hardware       | Approved default                        |
+| Runtime Heads Up V2 shells  | `../../../public/assets/club-buttons/game-cards/heads-up/shell-desktop-v2.webp`, `shell-mobile-v2.webp`     | Dynamic Heads Up desktop/mobile hardware    | Approved default                        |
 
 All changing values, labels, statuses, and actions remain live DOM content layered over or inside the artwork.

@@ -26,6 +26,33 @@ vi.mock('../src/components/common/Toast', () => ({
 }));
 vi.mock('../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  WAIT FOR THE CATALOG, NOT FOR A NAME THE FALLBACK ALSO HAS
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * 2026-08-29. Every case in this file used to open with
+ * `await screen.findByText('Neon Table Theme')`, and the bundled fallback list
+ * contains a reward by that exact name. `RewardsMarketplace` initialises
+ * `rewards` to `null` and renders `rewards ?? FALLBACK_REWARDS`, so the FIRST
+ * paint is the whole bundled catalog — featured banner and eight Redeem
+ * buttons — before the mocked query has resolved. The `findByText` matched that
+ * first paint and returned immediately, so the assertions ran against the
+ * fallback rather than against the catalog under test.
+ *
+ * It passed on a laptop because the mocked promise resolves within the same
+ * microtask queue as the first paint. On the 2-core CI runner it did not, and
+ * `will not spend points the member does not have` failed with "Found multiple
+ * elements with the role button and name /^Redeem$/" — eight of them, which is
+ * the fallback list, named exactly what the harness had been told to wait for.
+ *
+ * The row the catalog serves is therefore given a name the fallback does NOT
+ * have. Waiting for it is now real proof the query landed. The one case that
+ * deliberately exercises the fallback still waits on the bundled name, which is
+ * correct there and only there.
+ */
+const CATALOG_ONLY_NAME = 'Catalog Neon Theme';
+
 /** The catalog read. Resolves empty so the bundled fallback list renders. */
 const catalogRows: { data: unknown; error: unknown } = { data: [], error: null };
 vi.mock('../src/lib/supabase', () => ({
@@ -44,7 +71,7 @@ beforeEach(() => {
   catalogRows.data = [
     {
       id: 'theme-neon',
-      name: 'Neon Table Theme',
+      name: CATALOG_ONLY_NAME,
       description: 'Vibrant neon-style table theme',
       category: 'theme',
       points_cost: 2000,
@@ -61,7 +88,7 @@ describe('RewardsMarketplace redemption', () => {
   it('says nothing about success on its own — the handler owns the outcome', async () => {
     const onRedeem = vi.fn().mockResolvedValue(undefined);
     render(<RewardsMarketplace currentPoints={9000} onRedeem={onRedeem} />);
-    await screen.findByText('Neon Table Theme');
+    await screen.findByText(CATALOG_ONLY_NAME);
     clickRedeem();
     await waitFor(() => expect(onRedeem).toHaveBeenCalledTimes(1));
     // THE ORIGINAL BUG: `Successfully redeemed Neon Table Theme!` fired here.
@@ -75,7 +102,7 @@ describe('RewardsMarketplace redemption', () => {
       error('Not Enough VIP Points For This Reward.');
     });
     render(<RewardsMarketplace currentPoints={9000} onRedeem={onRedeem} />);
-    await screen.findByText('Neon Table Theme');
+    await screen.findByText(CATALOG_ONLY_NAME);
     clickRedeem();
     await waitFor(() => expect(onRedeem).toHaveBeenCalled());
     expect(success).not.toHaveBeenCalled();
@@ -89,7 +116,7 @@ describe('RewardsMarketplace redemption', () => {
     });
     const onRedeem = vi.fn().mockReturnValue(gate);
     render(<RewardsMarketplace currentPoints={9000} onRedeem={onRedeem} />);
-    await screen.findByText('Neon Table Theme');
+    await screen.findByText(CATALOG_ONLY_NAME);
     clickRedeem();
     await waitFor(() => expect(onRedeem).toHaveBeenCalled());
     // While the server has not answered, the button stays busy.
@@ -103,7 +130,7 @@ describe('RewardsMarketplace redemption', () => {
   it('surfaces a thrown redemption as an error, not a success', async () => {
     const onRedeem = vi.fn().mockRejectedValue(new Error('Redemption Failed'));
     render(<RewardsMarketplace currentPoints={9000} onRedeem={onRedeem} />);
-    await screen.findByText('Neon Table Theme');
+    await screen.findByText(CATALOG_ONLY_NAME);
     clickRedeem();
     await waitFor(() => expect(error).toHaveBeenCalled());
     expect(success).not.toHaveBeenCalled();
@@ -111,7 +138,7 @@ describe('RewardsMarketplace redemption', () => {
 
   it('refuses to redeem at all when nothing can perform the redemption', async () => {
     render(<RewardsMarketplace currentPoints={9000} />);
-    await screen.findByText('Neon Table Theme');
+    await screen.findByText(CATALOG_ONLY_NAME);
     clickRedeem();
     await waitFor(() => expect(error).toHaveBeenCalled());
     expect(success).not.toHaveBeenCalled();
@@ -126,7 +153,7 @@ describe('RewardsMarketplace redemption', () => {
     catalogRows.data = [
       {
         id: 'theme-neon',
-        name: 'Neon Table Theme',
+        name: CATALOG_ONLY_NAME,
         description: 'x',
         category: 'theme',
         points_cost: 3300,
@@ -152,11 +179,14 @@ describe('RewardsMarketplace redemption', () => {
   it('will not spend points the member does not have', async () => {
     const onRedeem = vi.fn();
     render(<RewardsMarketplace currentPoints={10} onRedeem={onRedeem} />);
-    await screen.findByText('Neon Table Theme');
+    await screen.findByText(CATALOG_ONLY_NAME);
+    /* Exactly one, and it is the catalog's. This count is the assertion that
+       caught the harness bug above: eight buttons here meant the test was
+       looking at the bundled fallback, not at the row it had set up. */
+    const buttons = screen.getAllByRole('button', { name: /^Redeem$/ }) as HTMLButtonElement[];
+    expect(buttons).toHaveLength(1);
     // The button is disabled, so no redemption can even be attempted.
-    expect((screen.getByRole('button', { name: /^Redeem$/ }) as HTMLButtonElement).disabled).toBe(
-      true
-    );
+    expect(buttons[0].disabled).toBe(true);
     expect(onRedeem).not.toHaveBeenCalled();
   });
 });

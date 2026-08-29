@@ -281,3 +281,57 @@ not deployed while the table was under test, so it is unit-proven only. The
 E2E table has been left on `once_per_orbit` + separate button + PLO5 + 3 boards
 precisely so the runaway and the seat law stay under permanent live coverage,
 with normal hands between bombs keeping the non-bomb path exercised too.
+
+---
+
+# ADDENDUM 2 — round 8 deployed, and the last two claims proven live
+
+The Hetzner engine picked up round 8 at about 21:15Z (the scheduler state
+carries the `x` key). Both things that were unit-proven only are now
+field-proven, on the horse-only E2E table with nobody sitting at it.
+
+## The bomb button WALKS
+
+Consecutive bomb hands, reading the bomb-button seat:
+
+```
+21:16:55  seat 8   plo5  3 boards  3 units  net 48.50 = ledger 48.50
+21:22:31  seat 9   plo5  3 boards  3 units  net 16.20 = ledger 16.20
+21:26:34  seat 2   plo5  3 boards  3 units  net 13.50 = ledger 13.50
+21:30:32  seat 4   plo5  3 boards  3 units  net 13.50 = ledger 13.50
+```
+
+`8 → 9 → 2 → 4`, and **8 distinct seats across the last 10 bombs**. Before this
+fix that column read one seat, every orbit, for the life of the table.
+
+## A held bomb is genuinely held
+
+Raised `bomb_pot_min_players` to 9 on a table seating 5, then watched:
+
+```
+floor 9 · seats last hand 5 · token pending p=true · reason once_per_orbit
+hands since the floor was raised: 2   bombs: 0
+```
+
+The token stays armed and no bomb fires — exactly the state
+`bomb_pot_waiting_for` reports to the felt as
+`BOMB POT WAITING FOR 9 PLAYERS`. Floor restored to 3 afterwards.
+
+## The wider backoff is holding
+
+```
+new ledger gaps since the backoff deployed .......... 0
+bomb hands reconciling since the epoch ......... 488 of 490
+award units in the ledger ......................... 1,889
+```
+
+The 2 outstanding gaps both pre-date the wider backoff and are the known
+multi-winner hands the arithmetic backfill deliberately will not invent.
+
+## The table's standing configuration
+
+`once_per_orbit` + separate bomb button + PLO5 override + 3 boards + fixed ante
+3.00, min players 3. That combination is deliberate: it is the exact pairing
+that ran away before #1741, so leaving it running means that regression cannot
+return unnoticed, and the seat count drifting across PLO5's 7-max boundary
+exercises both branches of the seat law by itself.

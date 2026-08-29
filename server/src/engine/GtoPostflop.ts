@@ -1,42 +1,49 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * GTO POSTFLOP — V29: the flop plays from the solver (Dan 2026-08-29)
+ * GTO POSTFLOP — V29 flop + V30 turn/river: open nodes play from the solver
+ * (Dan 2026-08-29)
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * Stage 2 of the solver integration. The 8.8M-row warehouse was aggregated
- * OFFLINE (fn_aggregate_gto_flop, 24 index-driven batches — never a live read
- * of the 79 GB table) into gto_postflop_compact: 5,556 cells keyed by
- * (street, game_family, position, depth bucket, TEXTURE CLASS, facing), each
- * holding mean solver frequencies per 169-hand class. ~12 MB, preloaded by
- * GtoPostflopLoader, read here as a synchronous Map — the same zero-I/O
- * contract as V27 and HorseMind.
+ * The 8.8M-row warehouse is aggregated OFFLINE (V29: fn_aggregate_gto_flop,
+ * 24 batches; V30: fn_aggregate_gto_street_next, cursor-driven and paced by
+ * GtoAggregationDriver — never a live read of the 79 GB table) into
+ * gto_postflop_compact: cells keyed by (street, game_family, position, depth
+ * bucket, TEXTURE CLASS), each holding mean solver frequencies per 169-hand
+ * class. Preloaded by GtoPostflopLoader, read here as a synchronous Map —
+ * the same zero-I/O contract as V27 and HorseMind.
+ *
+ * ── OPEN NODES ONLY (V30 correction, 2026-08-29) ────────────────────────
+ *
+ * Every solved tree in the warehouse is an OPEN node: the root actions
+ * (tree_lines matching r:0:X) are uniformly check / bet — no tree anywhere
+ * starts with hero facing a bet. The exported per-hand numbers are
+ * trustworthy only at the root; deep-node labels (f, b45) carry
+ * contaminated EV-magnitude values (fold "frequencies" averaging 299).
+ * V29's 'facing' cells were built from exactly those numbers and were
+ * purged from the table (migration 20260829213000); the facing-a-bet
+ * consult was removed from HorseLogic in the same change. This store now
+ * answers ONE question per street: the solver's check / bet_small /
+ * bet_big mix when hero holds the betting lead.
  *
  * ── THE TEXTURE CLASS, STATED HONESTLY ─────────────────────────────────
  *
- * The solved boards are a canonical subset; a live flop essentially never
- * exact-matches one. Boards are therefore classed by the four properties
- * that drive flop strategy — high card (A/B/M/L), suit distribution (m/t/r),
- * pairing (p/u), connectivity (c/d) — and the cell is the MEAN of the
- * solver's answers across every solved board in the class. That is an
- * approximation and is meant to be: it replaces hand-tuned literals with
- * solver-derived frequencies, it does not claim to be an exact solve of the
- * live board. textureClass() below is MIRRORED by fn_gto_texture_class in
- * the database; the two must classify identically or lookups land in the
- * wrong cell (pinned by tests on shared examples).
+ * A live board essentially never exact-matches a solved one. Boards are
+ * classed by high card (A/B/M/L), suit distribution (m/t/r), pairing
+ * (p/u), connectivity (c/d), and the cell is the MEAN of the solver's
+ * answers across every solved board in the class — an approximation, and
+ * meant to be. textureClass() is MIRRORED by fn_gto_texture_class (3
+ * cards) and fn_gto_texture_class_any (4/5 cards) in the database; the
+ * classifiers must agree or lookups land in the wrong cell (pinned by
+ * tests on shared examples classified by the production functions).
  *
- * ── SCOPE OF AUTHORITY ──────────────────────────────────────────────────
+ * ── SAFETY PROPERTIES ───────────────────────────────────────────────────
  *
- *  - Hold'em, FLOP only (turn/river aggregation is a later batch pass).
- *  - 'open' (no bet to face): the c-bet/check mix — check, bet_small
- *    (~third pot), bet_big (~three-quarter pot), rolled at solver frequency.
- *  - 'facing' (a bet to face, hero has not been raised): fold / call /
- *    raise_small / raise_big.
- *  - A SAFETY VALVE the caller applies: a solver "fold" is ignored when the
- *    live MC equity is overwhelming (>= 0.72) — the cell is a class mean and
- *    the specific board can be far better for hero than the class average.
- *    The valve only ever prevents folds, never creates them.
- *  - Empty store -> null -> yesterday's heuristics. A loader failure cannot
- *    lobotomize the brain (ablation-equality pinned, like V27).
+ *  - Open advice can only choose among check/bet — it can never fold a
+ *    hand or misprice a call; the worst case is a differently-sized bet.
+ *  - Empty store -> null -> yesterday's heuristics. A loader failure
+ *    cannot lobotomize the brain (ablation-equality pinned, like V27).
+ *  - An absent hand in a cell means the solver never reached this node
+ *    with it — no signal, stay silent, let the heuristics play it.
  */
 
 import type { Card } from '../types.js';
@@ -51,7 +58,7 @@ export interface GtoPostflopRow {
   hand_matrix: Record<string, Record<string, number>>;
 }
 
-export type GtoFlopAdvice = {
+export type GtoStreetAdvice = {
   /** action -> frequency, exactly as stored (already class-mean). */
   mix: Record<string, number>;
   cell: string;
@@ -62,22 +69,27 @@ const store = new Map<string, Record<string, Record<string, number>>>();
 const DEPTH_BUCKETS = [10, 20, 40, 80, 150];
 
 function key(
+  street: string,
   family: string,
   position: string,
   depth: number,
-  texture: string,
-  facing: string
+  texture: string
 ): string {
-  return `flop|${family}|${position}|${depth}|${texture}|${facing}`;
+  return `${street}|${family}|${position}|${depth}|${texture}`;
 }
 
 export function setGtoPostflop(rows: GtoPostflopRow[]): number {
   let n = 0;
   for (const r of rows) {
-    if (!r || r.street !== 'flop') continue;
+    if (!r) continue;
+    if (r.street !== 'flop' && r.street !== 'turn' && r.street !== 'river') continue;
+    // 'facing' cells were proven contaminated and purged from the table
+    // (2026-08-29). Refuse them here too so a stale or restored snapshot
+    // cannot resurrect the over-folding bug through the loader.
+    if (r.facing !== 'open') continue;
     if (!r.hand_matrix || typeof r.hand_matrix !== 'object') continue;
     store.set(
-      key(r.game_family, r.position, r.depth_bucket, r.texture_class, r.facing),
+      key(r.street, r.game_family, r.position, r.depth_bucket, r.texture_class),
       r.hand_matrix
     );
     n++;
@@ -111,40 +123,80 @@ const RANKV: Record<string, number> = {
 };
 
 /**
- * The flop texture class — the EXACT mirror of fn_gto_texture_class.
- * high(A/B/M/L) + suits(m/t/r) + paired(p/u) + connectivity(c/d).
+ * Texture class for 3/4/5-card boards.
+ *
+ * 3 cards: the EXACT mirror of fn_gto_texture_class — the shipped V29
+ * contract, byte-identical, untouched by V30.
+ * 4/5 cards: the EXACT mirror of fn_gto_texture_class_any —
+ *   high    A/B/M/L of ALL board cards
+ *   suits   m = 4+ of one suit, t = exactly 3 (flush possible), r = no 3
+ *   paired  any board pair
+ *   conn    any 5-rank window holding 3+ distinct board ranks (straights
+ *           live), wheel ace counted low
  */
 export function textureClass(board: Card[]): string | null {
   if (!board || board.length < 3) return null;
+  const n = Math.min(board.length, 5);
+  if (board.length > 5) return null;
+
   const ranks: number[] = [];
   const suits: string[] = [];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < n; i++) {
     const r = RANKV[board[i]?.rank ?? ''];
     if (!r || !board[i]?.suit) return null;
     ranks.push(r);
     suits.push(board[i].suit);
   }
 
-  const hi = Math.max(ranks[0], ranks[1], ranks[2]);
+  const hi = Math.max(...ranks);
   const high = hi === 14 ? 'A' : hi >= 12 ? 'B' : hi >= 9 ? 'M' : 'L';
 
-  const suitkind =
-    suits[0] === suits[1] && suits[1] === suits[2]
-      ? 'm'
-      : suits[0] === suits[1] || suits[1] === suits[2] || suits[0] === suits[2]
-        ? 't'
-        : 'r';
+  if (n === 3) {
+    // ── the shipped V29 flop classifier, unchanged ──
+    const suitkind =
+      suits[0] === suits[1] && suits[1] === suits[2]
+        ? 'm'
+        : suits[0] === suits[1] || suits[1] === suits[2] || suits[0] === suits[2]
+          ? 't'
+          : 'r';
 
-  const paired = ranks[0] === ranks[1] || ranks[1] === ranks[2] || ranks[0] === ranks[2];
+    const paired = ranks[0] === ranks[1] || ranks[1] === ranks[2] || ranks[0] === ranks[2];
 
-  const distinct = [...new Set(ranks)].sort((a, b) => a - b);
-  let conn = false;
-  if (distinct.length >= 2) {
-    if (distinct[distinct.length - 1] - distinct[0] <= 4) conn = true;
-    // wheel: the ace plays low
-    if (!conn && distinct[distinct.length - 1] === 14 && distinct[distinct.length - 2] <= 5) {
-      conn = true;
+    const distinct = [...new Set(ranks)].sort((a, b) => a - b);
+    let conn = false;
+    if (distinct.length >= 2) {
+      if (distinct[distinct.length - 1] - distinct[0] <= 4) conn = true;
+      // wheel: the ace plays low
+      if (!conn && distinct[distinct.length - 1] === 14 && distinct[distinct.length - 2] <= 5) {
+        conn = true;
+      }
     }
+
+    return high + suitkind + (paired ? 'p' : 'u') + (conn ? 'c' : 'd');
+  }
+
+  // ── 4/5 cards: mirror of fn_gto_texture_class_any ──
+  const suitCounts = new Map<string, number>();
+  for (const s of suits) suitCounts.set(s, (suitCounts.get(s) ?? 0) + 1);
+  const maxSuit = Math.max(...suitCounts.values());
+  const suitkind = maxSuit >= 4 ? 'm' : maxSuit === 3 ? 't' : 'r';
+
+  const rankCounts = new Map<number, number>();
+  for (const r of ranks) rankCounts.set(r, (rankCounts.get(r) ?? 0) + 1);
+  const paired = [...rankCounts.values()].some((c) => c >= 2);
+
+  const distinct = [...rankCounts.keys()];
+  let conn = false;
+  for (let win = 14; win >= 6 && !conn; win--) {
+    let c = 0;
+    for (const r of distinct) if (r <= win && r > win - 5) c++;
+    if (c >= 3) conn = true;
+  }
+  if (!conn) {
+    // explicit wheel window (A-2-3-4-5)
+    let c = 0;
+    for (const r of distinct) if (r <= 5 || r === 14) c++;
+    if (c >= 3) conn = true;
   }
 
   return high + suitkind + (paired ? 'p' : 'u') + (conn ? 'c' : 'd');
@@ -161,23 +213,23 @@ export function snapDepthBucket(stackBB: number): number {
 }
 
 /**
- * Look up the solver's flop mix for this exact situation.
+ * Look up the solver's open-node mix for this exact situation.
  *
  * Family fallback: a tournament spot prefers the ICM aggregate and falls back
  * to chip-EV (and vice versa is never done — chip-EV advice in an ICM spot is
  * the milder error, ICM advice in a chip-EV spot over-folds). Depth fallback:
  * the neighbouring bucket, because the fleet's 40bb tables sit near a bucket
  * edge. Texture is NEVER substituted — a monotone board answered with a
- * rainbow cell is worse than no answer.
+ * rainbow cell is worse than no answer. Absent hand -> null (no signal).
  */
-export function gtoFlopAdvice(args: {
+export function gtoStreetAdvice(args: {
+  street: 'flop' | 'turn' | 'river';
   family: 'cash' | 'spin' | 'tourney_icm' | 'tourney_ev';
   position: string;
   stackBB: number;
   board: Card[];
-  facing: 'open' | 'facing';
   hand: string | null;
-}): GtoFlopAdvice | null {
+}): GtoStreetAdvice | null {
   if (!args.hand) return null;
   const tex = textureClass(args.board);
   if (!tex) return null;
@@ -194,18 +246,11 @@ export function gtoFlopAdvice(args: {
 
   for (const fam of families) {
     for (const d of depths) {
-      const k = key(fam, args.position, d, tex, args.facing);
+      const k = key(args.street, fam, args.position, d, tex);
       const matrix = store.get(k);
       if (!matrix) continue;
       const entry = matrix[args.hand];
-      if (!entry) {
-        // AN ABSENT HAND IS A FOLD in the solver output. For an 'open' node
-        // there is no fold — absence means the solver never reached this node
-        // with the hand, so it carries no signal: stay silent and let the
-        // heuristics play it.
-        if (args.facing === 'facing') return { mix: { fold: 1 }, cell: k };
-        return null;
-      }
+      if (!entry) return null;
       return { mix: entry, cell: k };
     }
   }

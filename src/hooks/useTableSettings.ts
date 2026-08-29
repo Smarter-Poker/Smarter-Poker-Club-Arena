@@ -393,6 +393,55 @@ function pushKeyToServer(key: keyof TableUserSettings, value: unknown): void {
  * which is what carries a returning player's existing settings onto their
  * account the first time they sign in after this ships.
  */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  WHOSE PREFERENCES ARE IN THIS BROWSER?
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * 2026-08-29. `hydrateFromServer` pushes a local value UP when the account has
+ * no opinion on it, which is what carries a returning player's existing
+ * settings onto their account the first time they sign in after these columns
+ * shipped. On a personal device that is exactly right.
+ *
+ * On a SHARED one it was account contamination. Person A mutes sound and signs
+ * out; sound settings deliberately survive a sign-out (`clearUserCaches` keeps
+ * device preferences — "a sign-out is not a factory reset", and there is a test
+ * pinning that). Person B signs in, their row is all defaults, so every one of
+ * A's choices was written into B's ACCOUNT and followed B to their phone. Not
+ * a stale local copy: a permanent, cross-device edit to someone else's
+ * settings, made by nobody.
+ *
+ * The discriminator is ownership, recorded here. The upward push is allowed
+ * when this browser's settings are UNCLAIMED — the pre-existing blob the
+ * migration exists to rescue — or already claimed by the user signing in. It
+ * is refused when they belong to somebody else.
+ *
+ * The claim is written on the FIRST hydrate of any user, so the unclaimed
+ * window is one sign-in per browser, which is the smallest it can be while
+ * still letting the migration happen at all.
+ *
+ * NOT PURGED ON SIGN-OUT, deliberately. `clearUserCaches` would be the obvious
+ * place, and putting it there would clear the claim and re-open the window on
+ * every sign-out — precisely the case this guards.
+ */
+export const TABLE_SETTINGS_OWNER_KEY = 'ca_table_settings_owner';
+
+function localSettingsOwner(): string | null {
+  try {
+    return localStorage.getItem(TABLE_SETTINGS_OWNER_KEY);
+  } catch {
+    return null; // private mode: treat as unknown, and refuse below
+  }
+}
+
+function claimLocalSettings(userId: string): void {
+  try {
+    localStorage.setItem(TABLE_SETTINGS_OWNER_KEY, userId);
+  } catch {
+    /* private mode */
+  }
+}
+
 async function hydrateFromServer(userId: string): Promise<void> {
   const columns = Object.values(COLUMN_FOR_KEY).join(', ');
   let row: Record<string, unknown> | null = null;
@@ -419,13 +468,20 @@ async function hydrateFromServer(userId: string): Promise<void> {
   const toPush: Array<[keyof TableUserSettings, unknown]> = [];
   let changed = false;
 
+  /* May this browser's values be written into THIS account? See the note above
+     TABLE_SETTINGS_OWNER_KEY. Unclaimed is the migration case; a claim by
+     somebody else means these preferences are not this person's to inherit. */
+  const owner = localSettingsOwner();
+  const mayAdoptLocal = owner === null || owner === userId;
+  claimLocalSettings(userId);
+
   for (const [key, column] of Object.entries(COLUMN_FOR_KEY) as Array<
     [keyof TableUserSettings, string]
   >) {
     const serverValue = row?.[column];
     if (row === null || serverValue === null || serverValue === undefined) {
       // No row, or a column this row predates: the local value is all there is.
-      if (local[key] !== DEFAULT_SETTINGS[key]) toPush.push([key, local[key]]);
+      if (mayAdoptLocal && local[key] !== DEFAULT_SETTINGS[key]) toPush.push([key, local[key]]);
       continue;
     }
     if (locallyTouched.has(key)) continue; // a live edit outranks a stale read
@@ -436,7 +492,7 @@ async function hydrateFromServer(userId: string): Promise<void> {
         (merged as unknown as Record<string, unknown>)[key] = serverValue;
         changed = true;
       }
-    } else if (local[key] !== DEFAULT_SETTINGS[key]) {
+    } else if (mayAdoptLocal && local[key] !== DEFAULT_SETTINGS[key]) {
       // Server never had an opinion; carry this browser's choice up to it.
       toPush.push([key, local[key]]);
     }

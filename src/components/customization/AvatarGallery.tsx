@@ -126,6 +126,18 @@ export function AvatarGallery({
     }
   }, [isOpen, currentAvatarUrl]);
 
+  // A shop redemption or VIP reward can land while this modal is already
+  // open (and can originate in another tab). Re-read both the avatar library
+  // and style ledger immediately so the purchased tile unlocks without a
+  // close/reopen cycle.
+  useEffect(() => {
+    if (!isOpen || !userId) return undefined;
+    return masterBus.subscribe('COSMETIC_OWNERSHIP_CHANGED', (event) => {
+      if (event.payload.userId !== userId || event.payload.category !== 'avatar') return;
+      setReloadKey((revision) => revision + 1);
+    });
+  }, [isOpen, userId]);
+
   // Load the library and the provider photo together
   useEffect(() => {
     if (!isOpen) return undefined;

@@ -158,7 +158,7 @@ describe('ThemeSettingsModal hardening', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Cards' }));
 
     expect(screen.getByRole('button', { name: 'Premium Gold, checking ownership' })).toBeDisabled();
-    expect(screen.getByText('Checking Your Card Back Purchases')).toBeVisible();
+    expect(screen.getByText('Checking Your Purchases And Rewards')).toBeVisible();
 
     await act(async () => {
       pendingOwnership.resolve({ data: [{ feature: 'card_back_gold' }], error: null });

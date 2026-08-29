@@ -37,22 +37,164 @@ import {
 // Two bundled pairings were also simply wrong: "Rustic Wood" bundled the green
 // casino felt and "Casino Green" bundled the VIP jade neon felt. Each preset
 // now names the skin its label promises, and no two name the same one.
-export const THEME_PRESET_SKINS: Readonly<Record<string, string>> = {
-  // The three free presets must bundle the three free felts. The database
-  // validates every bundled field independently; a free preset pointing at a
-  // VIP felt can be selected in the UI and then is correctly rejected by the
-  // ownership trigger. These pairings keep UI access and persistence equal.
-  'default-dark': 'classic_green',
-  'classic-brown': 'carbon_red',
-  'neon-blue': 'ice_cavern',
-  'rustic-wood': 'golden_sand',
-  'casino-green': 'jade_city',
-  'ocean-depths': 'ocean_blue',
-  'crimson-club': 'crimson',
-  'arctic-suite': 'arctic_white',
-  'amethyst-night': 'amethyst_cavern',
-  'carbon-ion': 'carbon_ion',
+export type ThemePresetTier = 'free' | 'vip';
+
+export interface ThemePresetDefinition {
+  id: string;
+  name: string;
+  thumbnail: string;
+  tier: ThemePresetTier;
+  table_id: string;
+  button_id: string;
+  background_id: string;
+  cards_id: string;
+}
+
+/**
+ * ONE composite-preset catalog for the picker, the marketplace editor and the
+ * persistence layer. A table theme is not a decorative label: it is a bundle
+ * of five independently guarded assets. Keeping those bundle fields next to
+ * the public id makes it impossible for a shop item to sell a name that cannot
+ * paint a real table, or for the preview and the saved row to drift apart.
+ *
+ * The matching rows in `theme_preset_catalog` are asserted by
+ * 20260829190000_cosmetic_checkout_and_entitlement_delivery.sql.
+ */
+export const THEME_PRESET_CATALOG: readonly ThemePresetDefinition[] = [
+  {
+    id: 'default-dark',
+    name: 'House Classic',
+    thumbnail: 'linear-gradient(135deg, #1a1a2e, #16213e)',
+    tier: 'free',
+    table_id: 'classic_green',
+    button_id: 'classic-white',
+    background_id: 'midnight',
+    cards_id: 'classic_red',
+  },
+  {
+    id: 'classic-brown',
+    name: 'Carbon Club',
+    thumbnail: 'linear-gradient(135deg, #3e2723, #5d4037)',
+    tier: 'free',
+    table_id: 'carbon_red',
+    button_id: 'gray-d-gear',
+    background_id: 'midnight',
+    cards_id: 'classic_red',
+  },
+  {
+    id: 'neon-blue',
+    name: 'Neon Ice',
+    thumbnail: 'linear-gradient(135deg, #0d47a1, #1565c0)',
+    tier: 'vip',
+    table_id: 'ice_cavern',
+    button_id: 'blue-crystal',
+    background_id: 'galaxy',
+    cards_id: 'classic_blue',
+  },
+  {
+    id: 'rustic-wood',
+    name: 'Golden Dusk',
+    thumbnail: 'linear-gradient(135deg, #4e342e, #795548)',
+    tier: 'vip',
+    table_id: 'golden_sand',
+    button_id: 'gold-star',
+    background_id: 'golden_dusk',
+    cards_id: 'gold',
+  },
+  {
+    id: 'casino-green',
+    name: 'Jade Casino',
+    thumbnail: 'linear-gradient(135deg, #1b5e20, #2e7d32)',
+    tier: 'vip',
+    table_id: 'jade_city',
+    button_id: 'gold-star',
+    background_id: 'jade_neon',
+    cards_id: 'carbon',
+  },
+  {
+    id: 'ocean-depths',
+    name: 'Ocean Suite',
+    thumbnail: 'linear-gradient(135deg, #061a2c, #0b6584)',
+    tier: 'free',
+    table_id: 'ocean_blue',
+    button_id: 'classic-white',
+    background_id: 'royal_indigo',
+    cards_id: 'classic_blue',
+  },
+  {
+    id: 'crimson-club',
+    name: 'Crimson Club',
+    thumbnail: 'linear-gradient(135deg, #26070d, #8f142c)',
+    tier: 'vip',
+    table_id: 'crimson',
+    button_id: 'red-d-gear',
+    background_id: 'crimson_lounge',
+    cards_id: 'classic_red',
+  },
+  {
+    id: 'arctic-suite',
+    name: 'Arctic Suite',
+    thumbnail: 'linear-gradient(135deg, #dce9f0, #55748a)',
+    tier: 'vip',
+    table_id: 'arctic_white',
+    button_id: 'ocean-pearl',
+    background_id: 'ice_frost',
+    cards_id: 'diamond-foil',
+  },
+  {
+    id: 'amethyst-night',
+    name: 'Amethyst Night',
+    thumbnail: 'linear-gradient(135deg, #160b27, #63389a)',
+    tier: 'vip',
+    table_id: 'amethyst_cavern',
+    button_id: 'amethyst-chip',
+    background_id: 'royal_indigo',
+    cards_id: 'royal',
+  },
+  {
+    id: 'carbon-ion',
+    name: 'Carbon Ion',
+    thumbnail: 'linear-gradient(135deg, #080d0f, #167f78)',
+    tier: 'vip',
+    table_id: 'carbon_ion',
+    button_id: 'carbon-ion',
+    background_id: 'carbon_grid',
+    cards_id: 'carbon',
+  },
+];
+
+export const THEME_PRESET_SKINS: Readonly<Record<string, string>> = Object.fromEntries(
+  THEME_PRESET_CATALOG.map((preset) => [preset.id, preset.table_id])
+);
+
+export const THEME_PRESET_BUNDLES: Readonly<
+  Record<
+    string,
+    Pick<ThemePresetDefinition, 'table_id' | 'button_id' | 'background_id' | 'cards_id'>
+  >
+> = Object.fromEntries(
+  THEME_PRESET_CATALOG.map(({ id, table_id, button_id, background_id, cards_id }) => [
+    id,
+    { table_id, button_id, background_id, cards_id },
+  ])
+);
+
+/** Legacy receipts already sold by VIP rewards and club marketplaces. */
+export const THEME_PRESET_ALIASES: Readonly<Record<string, string>> = {
+  neon: 'neon-blue',
+  midnight_casino: 'carbon-ion',
+  cosmic: 'amethyst-night',
+  midnight_felt: 'carbon-ion',
+  midnight_a: 'carbon-ion',
+  royal_gold: 'rustic-wood',
+  royal_b: 'rustic-wood',
 };
+
+export function normalizeThemePresetId(themeId: string | undefined | null): string | null {
+  if (!themeId) return null;
+  if (THEME_PRESET_CATALOG.some((preset) => preset.id === themeId)) return themeId;
+  return THEME_PRESET_ALIASES[themeId] ?? null;
+}
 
 /** The skin asset for an id, or undefined if nothing real is behind it. */
 function skinAsset(tid: string): string | undefined {

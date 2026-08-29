@@ -20,9 +20,16 @@ import {
   isFeltUnlocked,
   normalizeFeltId,
   normalizeBackgroundId,
-  THEME_PRESET_SKINS,
+  THEME_PRESET_BUNDLES,
+  THEME_PRESET_CATALOG,
 } from '../../lib/tableTheme';
-import { CardBack, normalizeCardBack, CARD_BACK_CATALOG, isCardBackUnlocked } from './CardImage';
+import {
+  CardBack,
+  normalizeCardBack,
+  CARD_BACK_CATALOG,
+  cardBackDesign,
+  isCardBackUnlocked,
+} from './CardImage';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
@@ -36,6 +43,7 @@ import { applyTableAppearance, type AppearancePatch } from '../../lib/applyTable
 import { canonicalGameType, pickThemeRow } from '../../hooks/useUserThemeSettings';
 import { persistInterfaceTheme, type InterfaceTheme } from '../../lib/persistInterfaceTheme';
 import { masterBus } from '../../core/MasterBus';
+import { useWalletStore } from '../../stores/useWalletStore';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -67,6 +75,12 @@ interface ThemeAsset {
   thumbnail: string; // CSS gradient or image URL for preview
   /** Whether the asset requires VIP access */
   vipOnly: boolean;
+}
+
+interface PendingCardPurchase {
+  id: string;
+  name: string;
+  price: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -198,68 +212,12 @@ const CARD_ASSETS: ThemeAsset[] = CARD_BACK_CATALOG.map((design) => ({
   vipOnly: design.tier !== 'standard',
 }));
 
-export const THEME_PRESETS: ThemeAsset[] = [
-  {
-    id: 'default-dark',
-    name: 'House Classic',
-    thumbnail: 'linear-gradient(135deg, #1a1a2e, #16213e)',
-    vipOnly: false,
-  },
-  {
-    id: 'classic-brown',
-    name: 'Carbon Club',
-    thumbnail: 'linear-gradient(135deg, #3e2723, #5d4037)',
-    vipOnly: false,
-  },
-  {
-    id: 'neon-blue',
-    name: 'Neon Ice',
-    thumbnail: 'linear-gradient(135deg, #0d47a1, #1565c0)',
-    vipOnly: true,
-  },
-  {
-    id: 'rustic-wood',
-    name: 'Golden Dusk',
-    thumbnail: 'linear-gradient(135deg, #4e342e, #795548)',
-    vipOnly: true,
-  },
-  {
-    id: 'casino-green',
-    name: 'Jade Casino',
-    thumbnail: 'linear-gradient(135deg, #1b5e20, #2e7d32)',
-    vipOnly: true,
-  },
-  {
-    id: 'ocean-depths',
-    name: 'Ocean Suite',
-    thumbnail: 'linear-gradient(135deg, #061a2c, #0b6584)',
-    vipOnly: false,
-  },
-  {
-    id: 'crimson-club',
-    name: 'Crimson Club',
-    thumbnail: 'linear-gradient(135deg, #26070d, #8f142c)',
-    vipOnly: true,
-  },
-  {
-    id: 'arctic-suite',
-    name: 'Arctic Suite',
-    thumbnail: 'linear-gradient(135deg, #dce9f0, #55748a)',
-    vipOnly: true,
-  },
-  {
-    id: 'amethyst-night',
-    name: 'Amethyst Night',
-    thumbnail: 'linear-gradient(135deg, #160b27, #63389a)',
-    vipOnly: true,
-  },
-  {
-    id: 'carbon-ion',
-    name: 'Carbon Ion',
-    thumbnail: 'linear-gradient(135deg, #080d0f, #167f78)',
-    vipOnly: true,
-  },
-];
+export const THEME_PRESETS: ThemeAsset[] = THEME_PRESET_CATALOG.map((preset) => ({
+  id: preset.id,
+  name: preset.name,
+  thumbnail: preset.thumbnail,
+  vipOnly: preset.tier === 'vip',
+}));
 
 export const BUTTON_ASSETS: ThemeAsset[] = [
   {
@@ -394,83 +352,6 @@ function normalizeStoredSelection(value: unknown): ThemeSelection | null {
 }
 
 /**
- * Dan 2026-08-17 (STEP 8) — Tab 1 preset bundles. Picking a Theme fills the
- * other four categories with a coordinated set (each tab can still be
- * overridden before Confirm). Free presets bundle only free assets; the two
- * VIP presets may bundle VIP assets because the preset tile itself is
- * VIP-gated by canAccessAsset before the bundle is applied.
- *
- * Dan 2026-08-25: the `table_id` half is NOT written here. It comes from
- * THEME_PRESET_SKINS in lib/tableTheme, the same map resolveSkin consults when
- * a stored row carries a theme id and no table id. Two copies of that pairing
- * is precisely how "Rustic Wood" ended up bundling the green casino felt while
- * the felt code sent the same preset somewhere else entirely.
- */
-const PRESET_TRIMMINGS: Record<string, Omit<Partial<ThemeSelection>, 'table_id'>> = {
-  'default-dark': {
-    button_id: 'classic-white',
-    background_id: 'midnight',
-    cards_id: 'classic_red',
-  },
-  'classic-brown': {
-    button_id: 'gray-d-gear',
-    background_id: 'midnight',
-    cards_id: 'classic_red',
-  },
-  'neon-blue': {
-    button_id: 'blue-crystal',
-    background_id: 'galaxy',
-    cards_id: 'classic_blue',
-  },
-  'rustic-wood': {
-    button_id: 'gold-star',
-    background_id: 'golden_dusk',
-    cards_id: 'gold',
-  },
-  'casino-green': {
-    button_id: 'gold-star',
-    background_id: 'jade_neon',
-    cards_id: 'carbon',
-  },
-  'ocean-depths': {
-    // This is the third free preset, so every bundled field must also be one
-    // of the three free assets enforced by cosmetic_catalog. The previous
-    // Ocean Pearl / Ocean Abyss pairing looked free in the picker and was
-    // rejected by the database entitlement trigger on every tap.
-    button_id: 'classic-white',
-    background_id: 'royal_indigo',
-    cards_id: 'classic_blue',
-  },
-  'crimson-club': {
-    button_id: 'red-d-gear',
-    background_id: 'crimson_lounge',
-    cards_id: 'classic_red',
-  },
-  'arctic-suite': {
-    button_id: 'ocean-pearl',
-    background_id: 'ice_frost',
-    cards_id: 'diamond-foil',
-  },
-  'amethyst-night': {
-    button_id: 'amethyst-chip',
-    background_id: 'royal_indigo',
-    cards_id: 'royal',
-  },
-  'carbon-ion': {
-    button_id: 'carbon-ion',
-    background_id: 'carbon_grid',
-    cards_id: 'carbon',
-  },
-};
-
-const THEME_PRESET_BUNDLES: Record<string, Partial<ThemeSelection>> = Object.fromEntries(
-  Object.entries(PRESET_TRIMMINGS).map(([id, rest]) => [
-    id,
-    { table_id: THEME_PRESET_SKINS[id], ...rest },
-  ])
-);
-
-/**
  * Can this player use this asset?
  *
  * Dan 2026-08-25: "a VIP/premium item must not be selectable by someone who
@@ -491,9 +372,11 @@ function canAccessAsset(
   assetId: string,
   isVip: boolean,
   vipOnly: boolean,
-  ownedCardBacks: readonly string[]
+  ownedCardBacks: readonly string[],
+  ownedThemeAssets: readonly string[]
 ): boolean {
   if (!vipOnly) return true; // Free items always accessible
+  if (ownedThemeAssets.includes(`${TAB_TO_FIELD[tab]}:${assetId}`)) return true;
   if (tab === 'cards') return isCardBackUnlocked(assetId, { isVip, owned: ownedCardBacks });
   if (tab === 'table') return isFeltUnlocked(assetId, { isVip });
   return isVip; // VIP-only items require VIP status
@@ -652,6 +535,13 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   const [loadoutRevision, setLoadoutRevision] = useState(0);
   /** Card backs bought with diamonds in the store. See canAccessAsset. */
   const [ownedCardBacks, setOwnedCardBacks] = useState<string[]>([]);
+  /** Every category-specific entitlement issued by rewards, clubs or checkout. */
+  const [ownedThemeAssets, setOwnedThemeAssets] = useState<string[]>([]);
+  const [cardBackPrices, setCardBackPrices] = useState<Record<string, number>>({});
+  const [pricingState, setPricingState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [pendingCardPurchase, setPendingCardPurchase] = useState<PendingCardPurchase | null>(null);
+  const [purchaseBusy, setPurchaseBusy] = useState(false);
+  const purchaseBusyRef = useRef(false);
   const [themeLoadState, setThemeLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
     'idle'
   );
@@ -663,6 +553,8 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   const [modeSaving, setModeSaving] = useState(false);
   const uiMode = useSettingsStore((state) => state.theme);
   const setUiMode = useSettingsStore((state) => state.setTheme);
+  const diamonds = useWalletStore((state) => state.diamonds);
+  const loadDiamonds = useWalletStore((state) => state.loadDiamonds);
   const modeRevisionRef = useRef(0);
 
   // The live selection, readable from a callback without making every callback
@@ -729,7 +621,8 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   useEffect(() => {
     if (!isOpen) return undefined;
     const previousFocus = document.activeElement as HTMLElement | null;
-    const activeDialog = showVipPrompt ? vipPromptRef.current : modalRef.current;
+    const activeDialog =
+      showVipPrompt || pendingCardPurchase ? vipPromptRef.current : modalRef.current;
     const focusable = () =>
       Array.from(
         activeDialog?.querySelectorAll<HTMLElement>(
@@ -739,7 +632,8 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     focusable()[0]?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        if (showVipPrompt) setShowVipPrompt(false);
+        if (pendingCardPurchase && !purchaseBusyRef.current) setPendingCardPurchase(null);
+        else if (showVipPrompt) setShowVipPrompt(false);
         else onClose();
         return;
       }
@@ -761,7 +655,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
       document.removeEventListener('keydown', onKeyDown);
       previousFocus?.focus();
     };
-  }, [isOpen, onClose, showVipPrompt]);
+  }, [isOpen, onClose, pendingCardPurchase, showVipPrompt]);
 
   // The preview uses the same production library as AvatarGallery. No preview-
   // only portraits are bundled or generated. The first six stable library
@@ -793,41 +687,116 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     setRecentIds(Array.isArray(recent) ? recent.filter((id) => typeof id === 'string') : []);
   }, [isOpen, userId]);
 
-  // ── Which paid card backs has this player actually bought? ──
-  // Without this the modal padlocks a design the player owns (see
-  // canAccessAsset). Missing rows are not an error: nobody has bought one yet.
+  // ── Which premium assets does this player actually own? ──
+  // A club redemption and a VIP-points reward now issue category-specific
+  // rows for the complete preset bundle. Reading only feature_purchases made
+  // those legitimately purchased felts/buttons/backgrounds look VIP-locked.
   useEffect(() => {
     if (!isOpen) return undefined;
     setOwnedCardBacks([]);
-    if (!userId || isVip) {
+    setOwnedThemeAssets([]);
+    if (!userId) {
       setOwnershipState('ready');
       return undefined;
     }
     let mounted = true;
     setOwnershipState('loading');
+    Promise.all([
+      supabase
+        .from('feature_purchases')
+        .select('feature')
+        .eq('user_id', userId)
+        .like('feature', 'card_back_%'),
+      supabase.from('theme_asset_unlocks').select('category, asset_id').eq('user_id', userId),
+    ]).then(([cardBacks, assets]) => {
+      if (!mounted) return;
+      if (cardBacks.error || assets.error) {
+        // Not fatal, and not silently swallowed either: a failure here means
+        // paid designs read as locked, so it has to be visible somewhere.
+        reportError(
+          cardBacks.error || assets.error,
+          'ThemeSettingsModal.Cosmetic_ownership_load_failed'
+        );
+        setOwnershipState('error');
+        return;
+      }
+      setOwnedCardBacks(
+        (cardBacks.data || []).map((r: { feature: string }) => r.feature.replace('card_back_', ''))
+      );
+      setOwnedThemeAssets(
+        (assets.data || []).map(
+          (row: { category: string; asset_id: string }) => `${row.category}:${row.asset_id}`
+        )
+      );
+      setOwnershipState('ready');
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [isOpen, userId, ownershipRevision]);
+
+  // Prices are server truth. If the catalog cannot be read, a paid tile stays
+  // visibly unavailable; it never quotes a fallback amount and then charges a
+  // different one. fn_purchase_feature independently re-prices every request.
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    let mounted = true;
+    setPricingState('loading');
     supabase
-      .from('feature_purchases')
-      .select('feature')
-      .eq('user_id', userId)
-      .like('feature', 'card_back_%')
+      .from('feature_pricing')
+      .select('feature, diamond_cost')
       .then(({ data, error }) => {
         if (!mounted) return;
         if (error) {
-          // Not fatal, and not silently swallowed either: a failure here means
-          // paid designs read as locked, so it has to be visible somewhere.
-          reportError(error, 'ThemeSettingsModal.Owned_card_backs_load_failed');
-          setOwnershipState('error');
+          reportError(error, 'ThemeSettingsModal.Card_back_pricing_load_failed');
+          setCardBackPrices({});
+          setPricingState('error');
           return;
         }
-        setOwnedCardBacks(
-          (data || []).map((r: { feature: string }) => r.feature.replace('card_back_', ''))
+        setCardBackPrices(
+          Object.fromEntries(
+            (data || [])
+              .map((row: { feature: string; diamond_cost: number }) => [
+                row.feature.replace('card_back_', ''),
+                Number(row.diamond_cost),
+              ])
+              .filter(([id]) =>
+                CARD_BACK_CATALOG.some((design) => design.id === id && design.price > 0)
+              )
+          )
         );
-        setOwnershipState('ready');
+        setPricingState('ready');
       });
     return () => {
       mounted = false;
     };
-  }, [isOpen, userId, isVip, ownershipRevision]);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !userId) return undefined;
+    void loadDiamonds(userId);
+    return masterBus.subscribe('COSMETIC_OWNERSHIP_CHANGED', (event) => {
+      if (event.payload.userId !== userId) return;
+      if (event.payload.category === 'avatar') return;
+      // A card-back purchase delivers one exact asset. Merge that receipt
+      // immediately (including cross-tab broadcasts) instead of clearing all
+      // ownership while a redundant full reload runs.
+      if (event.payload.category === 'cards_id' && event.payload.assetId) {
+        const assetId = event.payload.assetId;
+        setOwnedCardBacks((current) =>
+          current.includes(assetId) ? current : [...current, assetId]
+        );
+        setOwnedThemeAssets((current) => {
+          const key = `cards_id:${assetId}`;
+          return current.includes(key) ? current : [...current, key];
+        });
+        return;
+      }
+      // Theme redemptions deliver five linked assets server-side, so refresh
+      // the complete bundle rather than guessing its component ids here.
+      setOwnershipRevision((revision) => revision + 1);
+    });
+  }, [isOpen, loadDiamonds, userId]);
 
   // Load existing theme for selected game type
   useEffect(() => {
@@ -1002,14 +971,8 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     [userId, gameType, toast, replaceSelection]
   );
 
-  const handleAssetSelect = useCallback(
-    (tab: ThemeTab, assetId: string, vipOnly: boolean) => {
-      if (themeLoadState !== 'ready') return;
-      if (tab === 'cards' && vipOnly && !isVip && ownershipState !== 'ready') return;
-      if (!canAccessAsset(tab, assetId, isVip, vipOnly, ownedCardBacks)) {
-        setShowVipPrompt(true);
-        return;
-      }
+  const applyAccessibleAsset = useCallback(
+    (tab: ThemeTab, assetId: string) => {
       const field = TAB_TO_FIELD[tab];
       let newSel: Partial<ThemeSelection> = {};
 
@@ -1039,8 +1002,103 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
       });
       void handleSave(newSel, previousPatch);
     },
-    [isVip, ownedCardBacks, handleSave, replaceSelection, userId, themeLoadState, ownershipState]
+    [handleSave, replaceSelection, userId]
   );
+
+  const handleAssetSelect = useCallback(
+    (tab: ThemeTab, assetId: string, vipOnly: boolean) => {
+      if (themeLoadState !== 'ready') return;
+      if (vipOnly && !isVip && ownershipState !== 'ready') return;
+      if (!canAccessAsset(tab, assetId, isVip, vipOnly, ownedCardBacks, ownedThemeAssets)) {
+        if (tab === 'cards') {
+          const design = cardBackDesign(assetId);
+          const price = cardBackPrices[design.id];
+          if (pricingState !== 'ready' || !Number.isFinite(price) || price <= 0) {
+            toast.error('This Card Back Is Temporarily Unavailable For Purchase.');
+            return;
+          }
+          setPendingCardPurchase({ id: design.id, name: design.name, price });
+        } else {
+          setShowVipPrompt(true);
+        }
+        return;
+      }
+      applyAccessibleAsset(tab, assetId);
+    },
+    [
+      applyAccessibleAsset,
+      cardBackPrices,
+      isVip,
+      ownedCardBacks,
+      ownedThemeAssets,
+      ownershipState,
+      pricingState,
+      themeLoadState,
+      toast,
+    ]
+  );
+
+  const handleCardBackPurchase = useCallback(async () => {
+    const pending = pendingCardPurchase;
+    if (!pending || !userId || purchaseBusyRef.current) return;
+    purchaseBusyRef.current = true;
+    setPurchaseBusy(true);
+    try {
+      const { data, error } = await supabase.rpc('fn_purchase_feature', {
+        p_user_id: userId,
+        p_feature: `card_back_${pending.id}`,
+      });
+      if (error) throw error;
+
+      const alreadyOwned = data?.error === 'already_owned' || data?.already_owned === true;
+      if (!data?.success && !alreadyOwned) {
+        const reason = String(data?.error || 'Purchase failed');
+        if (reason.toLowerCase().includes('insufficient')) {
+          toast.error('Not Enough Diamonds For This Card Back.');
+        } else {
+          toast.error('Card Back Purchase Failed. Please Try Again.');
+          reportError(new Error(reason), 'ThemeSettingsModal.Card_back_purchase_refused');
+        }
+        return;
+      }
+
+      // Permission lands before the paint. Updating both ownership views makes
+      // the tile unlock in this render; the event refreshes every other open
+      // Studio (including another browser tab) from the authoritative ledger.
+      setOwnedCardBacks((current) =>
+        current.includes(pending.id) ? current : [...current, pending.id]
+      );
+      setOwnedThemeAssets((current) => {
+        const key = `cards_id:${pending.id}`;
+        return current.includes(key) ? current : [...current, key];
+      });
+      setOwnershipState('ready');
+      setPendingCardPurchase(null);
+      masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
+        userId,
+        category: 'cards_id',
+        assetId: pending.id,
+        source: alreadyOwned ? 'ownership-reconciled' : 'diamond-purchase',
+      });
+      if (!alreadyOwned) {
+        masterBus.emit('DIAMOND_SPENT', {
+          amount: Number(data.cost) || pending.price,
+          item: pending.id,
+          category: 'card_back',
+        });
+      }
+      // The purchase completes the user's original selection. Do not make them
+      // tap the same card a second time after checkout.
+      applyAccessibleAsset('cards', pending.id);
+      toast.success(alreadyOwned ? 'Card Back Restored' : `${pending.name} Purchased And Applied`);
+    } catch (error) {
+      toast.error('Card Back Purchase Failed. Please Try Again.');
+      reportError(error, 'ThemeSettingsModal.Card_back_purchase_failed');
+    } finally {
+      purchaseBusyRef.current = false;
+      setPurchaseBusy(false);
+    }
+  }, [applyAccessibleAsset, pendingCardPurchase, toast, userId]);
 
   /**
    * RESET DID NOTHING (2026-08-25). It set local state and stopped: no write,
@@ -1074,7 +1132,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     if (themeLoadState !== 'ready') return;
     const pick = (assets: ThemeAsset[], tab: ThemeTab) => {
       const accessible = assets.filter((asset) =>
-        canAccessAsset(tab, asset.id, isVip, asset.vipOnly, ownedCardBacks)
+        canAccessAsset(tab, asset.id, isVip, asset.vipOnly, ownedCardBacks, ownedThemeAssets)
       );
       return accessible[Math.floor(Math.random() * accessible.length)]?.id;
     };
@@ -1088,7 +1146,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     const previous = { ...selectionRef.current };
     replaceSelection(randomized);
     void handleSave(randomized, previous);
-  }, [handleSave, isVip, ownedCardBacks, replaceSelection, themeLoadState]);
+  }, [handleSave, isVip, ownedCardBacks, ownedThemeAssets, replaceSelection, themeLoadState]);
 
   const loadoutKey = `table-studio-loadouts:${userId || 'guest'}`;
   const readLoadouts = useCallback((): Array<ThemeSelection | null> => {
@@ -1391,13 +1449,13 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                   </button>
                 </div>
               )}
-              {activeTab === 'cards' && !isVip && ownershipState === 'loading' && (
+              {!isVip && ownershipState === 'loading' && (
                 <div className="theme-modal__state" role="status">
-                  <strong>Checking Your Card Back Purchases</strong>
-                  <span>Premium Designs Unlock As Soon As Ownership Is Confirmed.</span>
+                  <strong>Checking Your Purchases And Rewards</strong>
+                  <span>Owned Designs Unlock As Soon As Entitlements Are Confirmed.</span>
                 </div>
               )}
-              {activeTab === 'cards' && !isVip && ownershipState === 'error' && (
+              {!isVip && ownershipState === 'error' && (
                 <div className="theme-modal__state theme-modal__state--error" role="alert">
                   <div>
                     <strong>Purchases Could Not Be Verified</strong>
@@ -1422,19 +1480,21 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                 )}
                 {currentAssets.map((asset) => {
                   const isSelected = currentSelected === asset.id;
-                  const ownershipPending =
-                    activeTab === 'cards' &&
-                    asset.vipOnly &&
-                    !isVip &&
-                    ownershipState === 'loading';
+                  const explicitKey = `${TAB_TO_FIELD[activeTab]}:${asset.id}`;
+                  const isExplicitlyOwned =
+                    ownedThemeAssets.includes(explicitKey) ||
+                    (activeTab === 'cards' &&
+                      isCardBackUnlocked(asset.id, { owned: ownedCardBacks }));
+                  const ownershipPending = asset.vipOnly && !isVip && ownershipState === 'loading';
                   const ownershipUnavailable =
-                    activeTab === 'cards' && asset.vipOnly && !isVip && ownershipState === 'error';
+                    asset.vipOnly && !isVip && ownershipState === 'error';
                   const isLocked = !canAccessAsset(
                     activeTab,
                     asset.id,
                     isVip,
                     asset.vipOnly,
-                    ownedCardBacks
+                    ownedCardBacks,
+                    ownedThemeAssets
                   );
 
                   return (
@@ -1447,7 +1507,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                           themeLoadState !== 'ready' || ownershipPending || ownershipUnavailable
                         }
                         aria-pressed={isSelected}
-                        aria-label={`${asset.name}${ownershipPending ? ', checking ownership' : ownershipUnavailable ? ', ownership unavailable' : isLocked ? ', VIP required' : ''}`}
+                        aria-label={`${asset.name}${ownershipPending ? ', checking ownership' : ownershipUnavailable ? ', ownership unavailable' : isLocked ? (activeTab === 'cards' ? ', purchase required' : ', VIP required') : ''}`}
                       >
                         <div className={`theme-asset__preview theme-asset__preview--${activeTab}`}>
                           {/* ── Dan 2026-08-18: show the actual thing, not a colour ──
@@ -1466,14 +1526,20 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                             </div>
                           ) : isLocked ? (
                             <div className="theme-asset__lock">
-                              <span className="theme-asset__lock-icon">VIP</span>
+                              <span className="theme-asset__lock-icon">
+                                {activeTab === 'cards' && pricingState === 'ready'
+                                  ? `${cardBackPrices[asset.id] ?? '—'} ◆`
+                                  : 'VIP'}
+                              </span>
                             </div>
                           ) : null}
                           {isSelected && !isLocked && <div className="theme-asset__check">✓</div>}
                         </div>
                         <span className="theme-asset__name">{asset.name}</span>
                         {asset.vipOnly && !isLocked && (
-                          <span className="theme-asset__tier-badge">VIP</span>
+                          <span className="theme-asset__tier-badge">
+                            {isExplicitlyOwned ? 'Owned' : 'VIP'}
+                          </span>
                         )}
                       </button>
                       <button
@@ -1567,6 +1633,60 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             </div>
           </section>
         </div>
+
+        {pendingCardPurchase && (
+          <div
+            className="theme-vip-prompt-overlay"
+            onClick={() => {
+              if (!purchaseBusyRef.current) setPendingCardPurchase(null);
+            }}
+          >
+            <div
+              ref={vipPromptRef}
+              className="theme-vip-prompt"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="theme-purchase-title"
+              aria-describedby="theme-purchase-description"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="theme-vip-prompt__icon" aria-hidden="true">
+                ◆
+              </div>
+              <h4 id="theme-purchase-title" className="theme-vip-prompt__title">
+                Unlock {pendingCardPurchase.name}
+              </h4>
+              <p id="theme-purchase-description" className="theme-vip-prompt__text">
+                Purchase This Card Back For {pendingCardPurchase.price.toLocaleString()} Diamonds.
+                It Will Unlock Permanently And Apply To The Live Table Immediately.
+              </p>
+              <div className="theme-purchase-balance" aria-live="polite">
+                <span>Your Balance</span>
+                <strong>{diamonds.toLocaleString()} ◆</strong>
+              </div>
+              <div className="theme-vip-prompt__actions">
+                <button
+                  type="button"
+                  className="theme-vip-prompt__btn theme-vip-prompt__btn--upgrade"
+                  disabled={purchaseBusy}
+                  onClick={() => void handleCardBackPurchase()}
+                >
+                  {purchaseBusy
+                    ? 'Processing...'
+                    : `Buy For ${pendingCardPurchase.price.toLocaleString()} ◆`}
+                </button>
+                <button
+                  type="button"
+                  className="theme-vip-prompt__btn theme-vip-prompt__btn--cancel"
+                  disabled={purchaseBusy}
+                  onClick={() => setPendingCardPurchase(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* FIX 221: VIP Upgrade Prompt — Bible V8 §11.2.3 */}
         {showVipPrompt && (

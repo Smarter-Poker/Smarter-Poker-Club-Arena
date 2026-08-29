@@ -494,6 +494,16 @@
       "new_avatar_url",
       "migrated_at"
     ],
+    "avatar_shop_aliases": [
+      "alias",
+      "avatar_id"
+    ],
+    "avatar_shop_catalog": [
+      "avatar_id"
+    ],
+    "avatar_style_catalog": [
+      "unlock_token"
+    ],
     "avatar_unlocks": [
       "id",
       "user_id",
@@ -4858,6 +4868,17 @@
       "created_at",
       "updated_at"
     ],
+    "gto_postflop_compact": [
+      "street",
+      "game_family",
+      "position",
+      "depth_bucket",
+      "texture_class",
+      "facing",
+      "hand_matrix",
+      "source_rows",
+      "built_at"
+    ],
     "gto_scenarios": [
       "id",
       "title",
@@ -9072,6 +9093,15 @@
       "left_at",
       "kick_reason"
     ],
+    "table_settings_changes": [
+      "id",
+      "table_id",
+      "club_id",
+      "changed_by",
+      "changed_at",
+      "before",
+      "after"
+    ],
     "table_templates": [
       "id",
       "club_id",
@@ -9120,7 +9150,6 @@
       "game_variant",
       "enable_straddle",
       "run_it_twice",
-      "bomb_pots",
       "auto_muck",
       "ante",
       "allow_rabbit_hunt",
@@ -9253,6 +9282,19 @@
       "category",
       "asset_id",
       "unlock_method",
+      "created_at"
+    ],
+    "theme_preset_aliases": [
+      "alias",
+      "theme_id"
+    ],
+    "theme_preset_catalog": [
+      "theme_id",
+      "display_name",
+      "table_id",
+      "button_id",
+      "background_id",
+      "cards_id",
       "created_at"
     ],
     "theme_unlocks": [

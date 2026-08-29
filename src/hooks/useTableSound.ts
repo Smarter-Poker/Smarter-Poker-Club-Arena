@@ -16,6 +16,7 @@ import { useState, useEffect, useRef } from 'react';
 import { soundService } from '../services/SoundService';
 import { isSoundAllowed } from '../utils/soundGate';
 import { setVibrationAllowed, isVibrationPreferred } from '../utils/vibrationGate';
+import { setTableSetting } from './useTableSettings';
 
 export interface UseTableSoundReturn {
   /** Whether sound effects are active. Read this for UI toggle state. */
@@ -144,13 +145,34 @@ export function useTableSound(): UseTableSoundReturn {
     soundService.setEnabled(isSoundAllowed());
   }, []);
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  ONE SETTER, SO NO CALL SITE CAN GET IT HALF-RIGHT
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * These reach the ENGINE (via the gate) and the STORE (which owns the
+   * cross-device copy). Until 2026-08-29 they reached only the engine, and
+   * TablePage had FOUR sound call sites that called this and stopped — the bus
+   * `TOGGLE_SOUNDS` branch, the quick-actions bar, the table menu and the side
+   * menu. Muting from any of them left the settings panel showing Sound ON and
+   * `user_table_settings.sound_enabled` unwritten, so the mute never followed
+   * the account to another device.
+   *
+   * The alternative was to fix four call sites and hope the fifth remembers.
+   * `setTableSetting` is `useTableSettings`' own writer, hoisted out of the hook
+   * so it can be called from here; it commits to the shared store, broadcasts
+   * for other tabs, and pushes the column.
+   */
   const setIsSoundEnabled = (v: boolean) => {
     setIsSoundEnabledRaw(v);
-    soundService.setEnabled(v);
+    soundService.setEnabled(v); // both gate keys + the live engine flag
+    setTableSetting('isSoundEnabled', v);
   };
 
   const setIsVibrationEnabled = (v: boolean) => {
     setIsVibrationEnabledRaw(v);
+    // The persist effect below writes the gate; this is the store half.
+    setTableSetting('isHapticEnabled', v);
   };
 
   const setIsAutoRebuyEnabled = setIsAutoRebuyEnabledRaw;

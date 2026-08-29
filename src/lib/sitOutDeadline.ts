@@ -51,6 +51,13 @@ export const SITOUT_MAX_MS = 5 * 60 * 1000;
 export const SITOUT_MAX_ORBITS = 2;
 
 /**
+ * How far ahead of us a server stamp may be before we stop believing the
+ * device's clock at all. Two minutes: comfortably past any plausible write
+ * latency or timezone-free skew, comfortably short of a deadline worth showing.
+ */
+export const CLOCK_SKEW_TOLERANCE_MS = 2 * 60 * 1000;
+
+/**
  * Milliseconds remaining before a cash seat may be reclaimed, or `null` when no
  * deadline applies.
  *
@@ -73,11 +80,19 @@ export function sitOutMsRemaining(params: {
   if (!sitOutSince || !Number.isFinite(sitOutSince)) return null;
   const now = params.now ?? Date.now();
   const elapsed = now - sitOutSince;
-  /* A clock that started in the future is a clock we do not understand — a
-     clock-skewed device, or a stamp written by something else. Say nothing
-     rather than show a number that will jump. */
-  if (elapsed < 0) return null;
-  return Math.max(0, SITOUT_MAX_MS - elapsed);
+  /* A STAMP SLIGHTLY IN THE FUTURE IS CLOCK SKEW, NOT A MYSTERY.
+     `sit_out_at` is `now()` on the DATABASE, so a device whose clock is behind
+     real time makes every server stamp look future-dated. The first version
+     returned `null` for any negative elapsed, which meant such a device lost
+     the countdown ENTIRELY and silently — no badge clock, no line in the modal,
+     no clock on the footer — while a real eviction timer ran against them.
+     Saying nothing is right for a value we cannot trust; it is wrong for a
+     value that is merely a few seconds off.
+     So: treat a small negative as "just started" (the deadline is then at worst
+     a few seconds LATE, which under-promises, the safe direction), and keep
+     `null` for a stamp far enough ahead that the clock is genuinely unusable. */
+  if (elapsed < -CLOCK_SKEW_TOLERANCE_MS) return null;
+  return Math.max(0, SITOUT_MAX_MS - Math.max(0, elapsed));
 }
 
 /**
@@ -99,9 +114,24 @@ export function formatSitOutRemaining(msRemaining: number): string {
  * because everything a player reads in this product is (Dan 2026-08-20) — and
  * no em dashes.
  */
-export function sitOutBadgeLabel(msRemaining: number | null): string {
-  if (msRemaining === null) return 'Sitting Out';
-  if (msRemaining <= 0) return 'Sitting Out. Seat At Risk';
+export function sitOutBadgeLabel(
+  msRemaining: number | null,
+  /**
+   * How the sentence opens. The footer says "You Are Sitting Out" because it is
+   * the HERO's own bar; a seat badge says "Sitting Out" because it is about
+   * somebody else.
+   *
+   * A PARAMETER, because the footer used to do
+   * `sitOutBadgeLabel(...).replace('Sitting Out', 'You Are Sitting Out')` —
+   * string surgery on the output of the one function that exists so two
+   * surfaces cannot word the same rule differently. Any rewording that stopped
+   * beginning with those exact words would have silently produced a sentence
+   * with the subject missing, and nothing would have failed.
+   */
+  subject: 'Sitting Out' | 'You Are Sitting Out' = 'Sitting Out'
+): string {
+  if (msRemaining === null) return subject;
+  if (msRemaining <= 0) return `${subject}. Seat At Risk`;
   /* "UP TO", and this function is the reason the hedge is not optional.
      The rule is "2 orbits or 5 minutes, whichever comes FIRST", and the orbit
      half is engine state no client can see — so a bare `Sitting Out 4:37`
@@ -109,7 +139,7 @@ export function sitOutBadgeLabel(msRemaining: number | null): string {
      exactly that: the one function created "so the two surfaces cannot word the
      same rule differently" was the one that dropped the rule, while the modal,
      which builds its own string, kept it. */
-  return `Sitting Out. Up To ${formatSitOutRemaining(msRemaining)}`;
+  return `${subject}. Up To ${formatSitOutRemaining(msRemaining)}`;
 }
 
 /** Under a minute left: the point at which a seat is worth shouting about. */

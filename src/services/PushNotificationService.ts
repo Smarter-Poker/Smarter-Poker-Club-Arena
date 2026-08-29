@@ -200,7 +200,6 @@ class PushNotificationServiceClass {
       }
       return false;
 
-      // eslint-disable-next-line no-unreachable
       const { error } = await supabase.functions.invoke('send-push-notification', {
         body: {
           userIds: filteredUserIds,

@@ -139,7 +139,7 @@ opaque and still white. Eroding the source mask by one pixel takes the colour
 from under the matte, and every skin then lands within ±2.4 of neutral instead
 of +30.
 
-`scripts/dev/defringe-table-skins.py` does the repair and is safe to re-run;
+`scripts/dev/table-skin-defringe.py` does the repair and is safe to re-run;
 `tests/table-skin-no-white-edging.law.test.ts` fails any future asset that
 arrives with a matte. Checked that the guard is not vacuous by restoring the
 old jade city and watching it fail at 148.0 against a limit of 20.

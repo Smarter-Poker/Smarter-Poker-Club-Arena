@@ -36,7 +36,7 @@
  * shadow, it is art, and "no white edging" is not "every edge must be
  * neutral". Only a BRIGHT edge is the defect.
  *
- * The repair is scripts/dev/defringe-table-skins.py: it bleeds the artwork's
+ * The repair is scripts/dev/table-skin-defringe.py: it bleeds the artwork's
  * own colour outward into the edge pixels and never touches alpha, so the
  * silhouette and the soft edge are bit-identical.
  */
@@ -109,7 +109,7 @@ describe('table skins carry no white matte', () => {
         h,
         `${file} edge reads ${h.toFixed(1)} brighter than the artwork behind it — ` +
           `that is a white matte. Fix it with ` +
-          `python3 scripts/dev/defringe-table-skins.py --apply`
+          `python3 scripts/dev/table-skin-defringe.py --apply`
       ).toBeLessThan(MAX_HALO);
     });
   }

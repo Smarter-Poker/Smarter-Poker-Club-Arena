@@ -78,7 +78,7 @@ import { gtoOpenJam, gtoBbVsSbJam, handClass as gtoHandClass } from './GtoCharts
 // V29 (Dan 2026-08-29): the flop plays from the solver — class-mean mixes
 // aggregated offline from the 8.8M-solution warehouse, preloaded by
 // GtoPostflopLoader. See engine/GtoPostflop.ts for scope and honesty notes.
-import { gtoFlopAdvice, rollMix } from './GtoPostflop.js';
+import { gtoStreetAdvice, rollMix } from './GtoPostflop.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
 // HorseEval.ts (extracted verbatim; zero behavior change).
 import {
@@ -943,11 +943,19 @@ export interface HorseDecideOpts {
    *  (default: enabled) */
   v27GtoCharts?: boolean;
   /** disable the V29 solver flop layer (Dan 2026-08-29): heads-up hold'em
-   *  flops play the PioSolver class-mean mixes — the c-bet mix with the lead,
-   *  and the fold/call/raise defense against the first bet — from the offline
-   *  aggregation of the 8.8M-solution warehouse. Empty store = inert, exactly
-   *  like V27 (default: enabled) */
+   *  flops with the betting lead play the PioSolver class-mean check/bet mix
+   *  from the offline aggregation of the 8.8M-solution warehouse. (The
+   *  facing-a-bet consult that first shipped with V29 was REMOVED the same
+   *  day: the warehouse holds only open nodes, and the 'facing' cells were
+   *  built from contaminated deep-tree numbers — see GtoPostflop.ts.)
+   *  Empty store = inert, exactly like V27 (default: enabled) */
   v29GtoFlop?: boolean;
+  /** disable the V30 solver turn/river layer (Dan 2026-08-29): same
+   *  open-node consult as V29, extended to turn and river from the
+   *  cursor-driven aggregation (fn_aggregate_gto_street_next, root-node
+   *  actions only, per-hand validated). Empty store = inert
+   *  (default: enabled) */
+  v30GtoTurnRiver?: boolean;
 }
 
 /**
@@ -2358,17 +2366,21 @@ export class HorseLogic {
 
     // ═══ Not facing a bet ═══
     if (!facingBet) {
-      // ═══ V29 GTO FLOP (Dan 2026-08-29): the c-bet mix comes from the solver ═══
-      // Heads-up hold'em flop with the betting lead: the check / bet_small /
-      // bet_big mix is the class-mean of the PioSolver warehouse (see
-      // GtoPostflop.ts for the aggregation and its stated approximation).
-      // The 'open' cells are dominated by aggressor nodes (r:0:c — checked to
-      // the preflop raiser), so the consult requires hero to hold the lead;
-      // donk-lead spots keep the V11 initiative gate and the heuristics.
+      // ═══ V29/V30 GTO OPEN NODES (Dan 2026-08-29): the betting mix comes
+      // from the solver ═══ Heads-up hold'em with the betting lead: the
+      // check / bet_small / bet_big mix is the class-mean of the PioSolver
+      // warehouse (see GtoPostflop.ts for the aggregation and its stated
+      // approximation) — V29 covers the flop, V30 the turn and river. Every
+      // solved tree is an OPEN node, so this consult requires hero to hold
+      // the lead; donk-lead spots keep the V11 initiative gate and the
+      // heuristics, and facing a bet is played by the layers below (the
+      // warehouse holds no trustworthy facing data — see GtoPostflop.ts).
       // Empty store or uncharted spot -> null -> everything below unchanged.
       if (
-        (opts.v29GtoFlop ?? true) !== false &&
-        street === 'flop' &&
+        (street === 'flop'
+          ? (opts.v29GtoFlop ?? true) !== false
+          : (opts.v30GtoTurnRiver ?? true) !== false) &&
+        (street === 'flop' || street === 'turn' || street === 'river') &&
         player.cards.length === 2 &&
         !vi.isOmaha &&
         !vi.isShortDeck &&
@@ -2390,29 +2402,34 @@ export class HorseLogic {
                   : player.seat === gs.dealerSeat
                     ? 'BTN'
                     : 'CO';
-        const advice29 = gtoFlopAdvice({
+        const advice29 = gtoStreetAdvice({
+          street,
           family: !isTournamentMode(gs) ? 'cash' : gs.format === 'spin' ? 'spin' : 'tourney_icm',
           position: chartPos29,
           stackBB: gs.bigBlind > 0 ? player.stack / gs.bigBlind : 100,
           board: gs.communityCards,
-          facing: 'open',
           hand: hand29,
         });
         if (advice29) {
           const pick = rollMix(advice29.mix, fastRandom);
           if (pick) {
-            if (telemetryOn(opts)) noteFire('v29_gto_flop_open');
+            if (telemetryOn(opts)) {
+              noteFire(
+                street === 'flop'
+                  ? 'v29_gto_flop_open'
+                  : street === 'turn'
+                    ? 'v30_gto_turn_open'
+                    : 'v30_gto_river_open'
+              );
+            }
             if (pick === 'check') return { action: 'check', thinkTime: 0 };
             if (pick === 'bet_small') {
-              return this.betSize(
-                pot,
-                0.32 + fastRandom() * 0.04,
-                player,
-                gs,
-                vi,
-                params,
-                useSizing
-              );
+              // Flop cells derive bet_small from ~third-pot c-bets; the
+              // turn/river root vocabulary is the 16%-pot block/probe, so
+              // those streets size it as a genuine block bet.
+              const frac =
+                street === 'flop' ? 0.32 + fastRandom() * 0.04 : 0.24 + fastRandom() * 0.08;
+              return this.betSize(pot, frac, player, gs, vi, params, useSizing);
             }
             if (pick === 'bet_big') {
               return this.betSize(
@@ -2754,80 +2771,18 @@ export class HorseLogic {
     // V11: tournaments rake the buy-in, not the pot — pot odds are honest.
     const rakeMarg = useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind) : 0;
 
-    // ═══ V29 GTO FLOP DEFENSE (Dan 2026-08-29) ═══ heads-up hold'em flop,
-    // first bet faced this street: fold / call / raise_small / raise_big at
-    // the solver's class-mean frequencies. Two guards on top of the roll:
-    //  - THE SAFETY VALVE: a solver 'fold' is ignored when live MC equity is
-    //    overwhelming (>= 0.72) — the cell is a texture-class mean and this
-    //    specific board can be far better for hero than the class average.
-    //    The valve only prevents folds; it never creates one.
-    //  - THE PRICE-IN GUARD (V11's rule, honored here too): no fold at a
-    //    price any two cards beat.
-    // Raised pots (raisedAfterAggr) keep the plan/war-gate machinery — the
-    // solver cells only describe the first bet.
-    if (
-      (opts.v29GtoFlop ?? true) !== false &&
-      street === 'flop' &&
-      player.cards.length === 2 &&
-      !vi.isOmaha &&
-      !vi.isShortDeck &&
-      oppCount === 1 &&
-      !raisedAfterAggr &&
-      !(gs.communityCards2 && gs.communityCards2.length > 0)
-    ) {
-      const hand29 = gtoHandClass(player.cards[0], player.cards[1]);
-      const pos29 = classifyPosition(player.seat, gs.dealerSeat, gs.players, opts.v13 !== false);
-      const chartPos29 =
-        pos29 === 'sb'
-          ? 'SB'
-          : pos29 === 'bb'
-            ? 'BB'
-            : pos29 === 'early'
-              ? 'UTG'
-              : pos29 === 'middle'
-                ? 'MP'
-                : player.seat === gs.dealerSeat
-                  ? 'BTN'
-                  : 'CO';
-      const advice29 = gtoFlopAdvice({
-        family: !isTournamentMode(gs) ? 'cash' : gs.format === 'spin' ? 'spin' : 'tourney_icm',
-        position: chartPos29,
-        stackBB: gs.bigBlind > 0 ? player.stack / gs.bigBlind : 100,
-        board: gs.communityCards,
-        facing: 'facing',
-        hand: hand29,
-      });
-      if (advice29) {
-        const pick = rollMix(advice29.mix, fastRandom);
-        const guardOdds29 = toCall / Math.max(0.01, pot + toCall);
-        if (pick) {
-          if (telemetryOn(opts)) noteFire('v29_gto_flop_defend');
-          if (pick === 'fold' && equity < 0.72 && guardOdds29 >= 0.15) {
-            return { action: 'fold', thinkTime: 0 };
-          }
-          if (pick === 'call' || pick === 'fold') {
-            // a vetoed fold (crushing equity or priced in) continues as a call
-            return { action: 'call', amount: Math.min(toCall, stack), thinkTime: 0 };
-          }
-          if (pick === 'raise_small') {
-            return this.raiseTo(
-              currentBet + (pot + toCall) * (0.5 + fastRandom() * 0.15),
-              player,
-              gs,
-              vi
-            );
-          }
-          if (pick === 'raise_big') {
-            return this.raiseTo(
-              currentBet + (pot + toCall) * (0.9 + fastRandom() * 0.25),
-              player,
-              gs,
-              vi
-            );
-          }
-        }
-      }
-    }
+    // ═══ V29 GTO FLOP DEFENSE — REMOVED 2026-08-29, the same day it
+    // shipped. ═══ The consult assumed the warehouse held facing-a-bet
+    // solves; it does not. Every solved tree is an open node, and the
+    // 'facing' cells were aggregated from deep-tree labels whose exported
+    // numbers are EV-magnitude contamination (fold "frequencies" averaging
+    // 299 against calls in [0,1]) — rollMix read that as fold-almost-always
+    // and the layer over-folded flops against first bets. The cells were
+    // purged (migration 20260829213000), setGtoPostflop refuses facing rows
+    // outright, and the heuristic facing-a-bet layers below decide, as they
+    // did before V29. Do NOT rebuild this consult from gto_postflop_compact
+    // unless genuinely facing-node solves have been added to the warehouse
+    // and verified hand-by-hand (per-hand strategies summing to 1).
     // V28 AUDIT FIX: rake is a percentage of the WHOLE pot including hero's
     // call, so break-even equity is toCall / ((pot + toCall) * (1 - r)). The
     // old denominator pot*(1-r) + toCall applied the drag at ~60% of its true

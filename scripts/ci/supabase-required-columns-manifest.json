@@ -1350,6 +1350,9 @@
       "question_hash",
       "explanation"
     ],
+    "gto_agg_progress": [
+      "street"
+    ],
     "gto_postflop_compact": [
       "street",
       "game_family",

@@ -443,11 +443,17 @@ function applyGateChanges(prev: TableUserSettings | null, next: TableUserSetting
   if (!prev || prev.isHapticEnabled !== next.isHapticEnabled) {
     setVibrationAllowed(next.isHapticEnabled);
   }
-  /* Master volume has ONE owner now. `SoundService.restoreStoredConfig` used to
-     set it too, from a localStorage key nothing has ever written, and whichever
-     of the two ran later won. The store is the owner because it is the copy that
-     is user-scoped and follows the account across devices. 0-100 here, 0-1 in
-     the engine — the unit conversion is why it must live in one place. */
+  /* Master volume has ONE owner, and as of 2026-08-29 that is finally true.
+     `SoundService.restoreStoredConfig` used to set it at boot from a
+     localStorage key nothing has ever written; a TablePage effect set it on
+     every mount of every one of six tables; the settings-panel handler set it
+     again right after calling `updateSetting`, which had already applied it;
+     and SettingsPage did the same on save. All four derived it from this store,
+     so nothing ever visibly disagreed — which is exactly why four copies
+     accumulated behind a comment claiming there was one. They are gone. The
+     store is the owner because it is the copy that is user-scoped and follows
+     the account across devices. 0-100 here, 0-1 in the engine — the unit
+     conversion is the reason it must live in one place. */
   if (!prev || prev.soundVolume !== next.soundVolume) {
     soundService.setMasterVolume(Math.max(0, Math.min(100, next.soundVolume)) / 100);
   }
@@ -758,6 +764,53 @@ export function __resetTableSettingsStoreForTest(): void {
   busAttached = false;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  THE ONE WRITER, AVAILABLE WITHOUT MOUNTING THE HOOK
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * This was the body of `updateSetting`, trapped inside the hook. Every surface
+ * that could not conveniently call a hook therefore hand-rolled its own
+ * half-write instead — and on 2026-08-29 an audit found FOUR of them for sound
+ * alone (the bus `TOGGLE_SOUNDS` branch, the quick-actions bar, the table menu
+ * and the side menu), each calling `setIsSoundEnabled` and stopping. The result
+ * was that muting from anywhere except the settings panel never reached the
+ * store, never reached `user_table_settings.sound_enabled`, and so never
+ * followed the account to another device — while the panel went on showing
+ * Sound ON.
+ *
+ * Hoisting it costs nothing (the body only ever touched module-level state) and
+ * removes the reason to write a fifth copy.
+ */
+export function setTableSetting<K extends keyof TableUserSettings>(
+  key: K,
+  value: TableUserSettings[K]
+): void {
+  commit((prev) => ({
+    ...prev,
+    [key]: value,
+    // SHOWDOWN AUDIT 2026-08-25: a personal autoMuck toggle is the ONLY
+    // thing that makes a stored false authoritative — see the loader.
+    ...(key === 'autoMuck' ? { autoMuckExplicit: true } : {}),
+  }));
+  // Broadcast for cross-TAB sync. Within this tab the shared store above
+  // has already updated every consumer, so a dropped message costs nothing.
+  masterBus.emit('SETTINGS_CHANGED', {
+    setting: key,
+    value: value as string | number | boolean,
+    origin: originIdRef.current,
+  });
+  // …and up to the user's row, for cross-DEVICE.
+  locallyTouched.add(key);
+  pushKeyToServer(key, value);
+  if (key === 'autoMuck') {
+    // The explicit marker is what makes a stored OFF authoritative, so it
+    // has to travel with the setting rather than staying in one browser.
+    locallyTouched.add('autoMuckExplicit');
+    pushKeyToServer('autoMuckExplicit', true);
+  }
+}
+
 export function useTableSettings() {
   attachBusOnce();
   const settings = useSyncExternalStore(subscribeToStore, getSnapshot, getSnapshot);
@@ -772,34 +825,7 @@ export function useTableSettings() {
   }, [userId]);
 
   // Update a single setting by key
-  const updateSetting = useCallback(
-    <K extends keyof TableUserSettings>(key: K, value: TableUserSettings[K]) => {
-      commit((prev) => ({
-        ...prev,
-        [key]: value,
-        // SHOWDOWN AUDIT 2026-08-25: a personal autoMuck toggle is the ONLY
-        // thing that makes a stored false authoritative — see the loader.
-        ...(key === 'autoMuck' ? { autoMuckExplicit: true } : {}),
-      }));
-      // Broadcast for cross-TAB sync. Within this tab the shared store above
-      // has already updated every consumer, so a dropped message costs nothing.
-      masterBus.emit('SETTINGS_CHANGED', {
-        setting: key,
-        value: value as string | number | boolean,
-        origin: originIdRef.current,
-      });
-      // …and up to the user's row, for cross-DEVICE.
-      locallyTouched.add(key);
-      pushKeyToServer(key, value);
-      if (key === 'autoMuck') {
-        // The explicit marker is what makes a stored OFF authoritative, so it
-        // has to travel with the setting rather than staying in one browser.
-        locallyTouched.add('autoMuckExplicit');
-        pushKeyToServer('autoMuckExplicit', true);
-      }
-    },
-    []
-  );
+  const updateSetting = useCallback(setTableSetting, []);
 
   // Reset all settings to defaults
   const resetSettings = useCallback(() => {

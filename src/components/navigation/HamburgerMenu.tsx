@@ -28,6 +28,8 @@ import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
 import { soundService } from '../../services/SoundService';
+import { isSoundAllowed } from '../../utils/soundGate';
+import { isVibrationPreferred, setVibrationAllowed } from '../../utils/vibrationGate';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { CLUB_ARENA_SUPPORT_NAV, getClubArenaNavigation } from '../../config/clubArenaNavigation';
@@ -79,12 +81,15 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       return fallback;
     }
   };
-  const [soundsEnabled, setSoundsEnabled] = useState(() =>
-    readStoredBool(STORAGE_KEYS.SOUNDS, true)
-  );
-  const [vibrationsEnabled, setVibrationsEnabled] = useState(() =>
-    readStoredBool(STORAGE_KEYS.VIBRATIONS, true)
-  );
+  /* SEED FROM THE GATES, not from one of the two keys each gate reads.
+     `soundGate` and `vibrationGate` fail closed on EITHER of their keys; reading
+     only `club_arena_sounds` here meant a player who had muted IN-TABLE
+     ('ca_sound_enabled'='false') opened this menu to a Sounds switch reading ON
+     over a silent app. `useTableSound` was converted to `isSoundAllowed()` on
+     2026-08-29 for exactly this reason and this component was not — the fourth
+     hand-rolled copy of a two-key rule that lives in one place. */
+  const [soundsEnabled, setSoundsEnabled] = useState(() => isSoundAllowed());
+  const [vibrationsEnabled, setVibrationsEnabled] = useState(() => isVibrationPreferred());
   /* `showBBEnabled` state DELETED 2026-08-29: it was written in three places
      and READ IN NONE — no JSX, no condition. The switch a player sees lives in
      the expandable TableSettingsPanel and reads the hook directly. What
@@ -300,15 +305,24 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               displayName: data.display_name || data.username || null,
               avatarUrl: data.avatar_url || null,
             });
-            // These columns may not exist on profiles — use optional chaining with defaults
-            if (data.sounds_enabled !== undefined && data.sounds_enabled !== null) {
-              setSoundsEnabled(data.sounds_enabled);
-              localStorage.setItem(STORAGE_KEYS.SOUNDS, String(data.sounds_enabled));
-            }
-            if (data.vibrations_enabled !== undefined && data.vibrations_enabled !== null) {
-              setVibrationsEnabled(data.vibrations_enabled);
-              localStorage.setItem(STORAGE_KEYS.VIBRATIONS, String(data.vibrations_enabled));
-            }
+            /* ── `profiles.sounds_enabled` / `vibrations_enabled` ARE NO LONGER
+                  READ BACK OVER THE GATES (2026-08-29) ──────────────────────
+               This used to `setState` from the profile row AND write the gate's
+               `club_arena_sounds` / `vibrationsEnabled` keys directly, bypassing
+               `persistSoundPreference` and `setVibrationAllowed` (which write
+               both of each gate's keys as a pair) and never calling
+               `soundService.setEnabled`.
+
+               That made `profiles` a SECOND DATABASE OWNER of "is sound on",
+               alongside `user_table_settings.sound_enabled`, with nothing
+               reconciling them — so muting at the table and then opening this
+               menu re-asserted the stale profile value over the gate on every
+               open. Only the gate's fail-closed rule stopped it actually
+               un-muting anyone.
+
+               The columns are still WRITTEN below (`updateSetting` mirrors to
+               them for older surfaces). They are simply not an input any more:
+               the gates are, and they are what the audio engine consults. */
             /* `profiles.show_stack_bb` is NOT read here any more — see the note
                where the second query used to be. */
             setIsVIP(data.is_vip || data.tier === 'vip' || false);
@@ -440,6 +454,12 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     updateSetting(STORAGE_KEYS.VIBRATIONS, 'vibrations_enabled', newValue, () =>
       setVibrationsEnabled(!newValue)
     );
+    /* Through the GATE, which writes both of its keys. The sound sibling above
+       got `soundService.setEnabled` on 2026-08-27 for precisely this reason and
+       the haptic half was left behind: turning vibration ON here could not clear
+       a mute set by the in-table switch, because the gate fails closed on
+       `ca_vibration_enabled` and nothing here ever touched it. */
+    setVibrationAllowed(newValue);
     /* 2026-08-26: the key was `vibrationsEnabled`, which is NOT a field of
        useTableSettings — the store calls it `isHapticEnabled` — so the
        whitelist at useTableSettings dropped this event silently and an open

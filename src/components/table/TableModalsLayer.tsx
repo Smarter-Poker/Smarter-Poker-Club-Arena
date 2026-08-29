@@ -828,7 +828,6 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
            never fires. Heads-up cash is NOT exempt on either side of the wire —
            see src/lib/sitOutDeadline.ts. */
         isTournament={isTournament}
-        tableName={tableName}
       />
 
       {/* Wait List Modal */}

@@ -24,6 +24,7 @@ import { describe, it, expect } from 'vitest';
 import {
   SITOUT_MAX_MS,
   SITOUT_MAX_ORBITS,
+  CLOCK_SKEW_TOLERANCE_MS,
   sitOutMsRemaining,
   formatSitOutRemaining,
   sitOutBadgeLabel,
@@ -64,10 +65,31 @@ describe('no deadline is invented where none exists', () => {
     expect(sitOutMsRemaining({ sitOutSince: NaN, isTournament: false, now })).toBeNull();
   });
 
-  it('a start time in the future is treated as unknown, not as extra time', () => {
-    /* Clock skew on the device, or a stamp written by something we do not
-       understand. Saying nothing beats a number that will jump. */
-    expect(sitOutMsRemaining({ sitOutSince: now + 30_000, isTournament: false, now })).toBeNull();
+  it('a stamp slightly in the future is clock skew, and still counts down', () => {
+    /* CHANGED 2026-08-29 (round 4). This used to assert `null` for ANY negative
+       elapsed. `sit_out_at` is `now()` on the DATABASE, so a device whose clock
+       runs behind real time makes EVERY server stamp look future-dated — and
+       that device then lost the countdown entirely and silently: no badge
+       clock, no line in the modal, nothing on the footer, while a real eviction
+       timer ran against them. Saying nothing is right for a value we cannot
+       trust; it was wrong for one that is merely a few seconds off.
+
+       Inside the tolerance the clock is treated as just-started, so the
+       deadline is at worst a few seconds LATE — under-promising, which is the
+       safe direction on a seat about to be reclaimed. */
+    expect(sitOutMsRemaining({ sitOutSince: now + 30_000, isTournament: false, now })).toBe(
+      SITOUT_MAX_MS
+    );
+  });
+
+  it('but a stamp far in the future means the clock is unusable, so say nothing', () => {
+    expect(
+      sitOutMsRemaining({
+        sitOutSince: now + CLOCK_SKEW_TOLERANCE_MS + 1_000,
+        isTournament: false,
+        now,
+      })
+    ).toBeNull();
   });
 
   it('counts down on cash and floors at zero rather than going negative', () => {

@@ -706,7 +706,10 @@ export default function SettingsPage() {
          persists BOTH gate keys (the HamburgerMenu path); volume is applied
          live for the same reason rather than waiting for a table mount. */
       soundService.setEnabled(settings.soundEnabled);
-      soundService.setMasterVolume(Math.max(0, Math.min(100, settings.soundVolume)) / 100);
+      /* Volume is NOT applied here. `updateTableSettings` above commits it to
+         the store, which applies it in `applyGateChanges` — this line applied
+         the same number a second time. `setEnabled` stays because the gate keys
+         are a different owner from the store and this page has to write both. */
 
       /* Sync theme to Zustand store so Shell.tsx applies it immediately.
          2026-08-26: "Auto (System)" was offered in the dropdown, accepted by

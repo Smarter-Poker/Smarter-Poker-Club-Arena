@@ -130,6 +130,12 @@ jobs:
         # same reason that gate names its own: a spec not named in a job runs
         # in no job. If you add a spec that needs a login or a live URL, add it
         # here in the same commit.
+        #
+        # tests/e2e/routes/ (nine files) is named as a DIRECTORY on purpose.
+        # The first sweep that wired the orphans missed it entirely by globbing
+        # only tests/e2e/*.spec.ts, so nine route suites stayed invisible one
+        # level down - the same class of miss as the specs this job exists for.
+        # A directory cannot go stale when a tenth file is added beside them.
         run: |
           npx playwright test \
             tests/e2e/smoke.spec.ts \
@@ -141,6 +147,7 @@ jobs:
             tests/e2e/club-lobby.spec.ts \
             tests/e2e/tournament-buy-in-dialog.spec.ts \
             tests/e2e/tournament-watch.spec.ts \
+            tests/e2e/routes \
             --reporter=line --retries=1
 
       - name: Upload the report when something is wrong on production

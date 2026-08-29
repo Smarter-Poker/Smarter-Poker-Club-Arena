@@ -790,6 +790,65 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     });
   }, [isOpen, loadDiamonds, userId]);
 
+  // A purchase made in another browser profile or on another device does not
+  // travel through MasterBus. Follow the server-owned entitlement ledger so an
+  // already-open Studio unlocks the exact tile as soon as the checkout
+  // transaction commits. Card-back purchases land in this same ledger through
+  // trg_deliver_card_back_entitlement, so one channel covers every category.
+  useEffect(() => {
+    if (!isOpen || !userId || typeof (supabase as { channel?: unknown }).channel !== 'function') {
+      return undefined;
+    }
+
+    const channel = supabase
+      .channel(`table-studio-entitlements:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'theme_asset_unlocks',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const row = payload.new as { category?: unknown; asset_id?: unknown };
+          if (typeof row.category !== 'string' || typeof row.asset_id !== 'string') return;
+          if (!Object.values(TAB_TO_FIELD).includes(row.category as keyof ThemeSelection)) return;
+
+          const category = row.category as keyof ThemeSelection;
+          const assetId = row.asset_id;
+          if (category === 'cards_id') {
+            setOwnedCardBacks((current) =>
+              current.includes(assetId) ? current : [...current, assetId]
+            );
+          }
+          setOwnedThemeAssets((current) => {
+            const key = `${category}:${assetId}`;
+            return current.includes(key) ? current : [...current, key];
+          });
+          setOwnershipState('ready');
+          masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
+            userId,
+            category,
+            assetId,
+            source: 'realtime-entitlement',
+          });
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          reportError(
+            new Error(`Table Studio entitlement channel ${status.toLowerCase()}`),
+            'ThemeSettingsModal.Entitlement_realtime_failed'
+          );
+        }
+      });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [isOpen, userId]);
+
   // Load existing theme for selected game type
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -964,7 +1023,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   );
 
   const applyAccessibleAsset = useCallback(
-    (tab: ThemeTab, assetId: string) => {
+    async (tab: ThemeTab, assetId: string): Promise<boolean> => {
       const field = TAB_TO_FIELD[tab];
       let newSel: Partial<ThemeSelection> = {};
 
@@ -988,7 +1047,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
       }
       const recentKey = `${tab}:${assetId}`;
       collections.rememberRecent(recentKey);
-      void handleSave(newSel, previousPatch);
+      return handleSave(newSel, previousPatch);
     },
     [collections, handleSave, replaceSelection]
   );
@@ -1015,7 +1074,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
         });
         return;
       }
-      applyAccessibleAsset(tab, assetId);
+      void applyAccessibleAsset(tab, assetId);
     },
     [
       applyAccessibleAsset,
@@ -1088,8 +1147,16 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
       }
       // The purchase completes the user's original selection. Do not make them
       // tap the same card a second time after checkout.
-      applyAccessibleAsset(pending.tab, pending.id);
-      toast.success(alreadyOwned ? 'Design Restored' : `${pending.name} Purchased And Applied`);
+      const applied = await applyAccessibleAsset(pending.tab, pending.id);
+      toast.success(
+        alreadyOwned
+          ? applied
+            ? 'Design Restored And Applied'
+            : 'Design Restored'
+          : applied
+            ? `${pending.name} Purchased And Applied`
+            : `${pending.name} Purchased`
+      );
     } catch (error) {
       toast.error('Design Purchase Failed. Please Try Again.');
       reportError(error, 'ThemeSettingsModal.Asset_purchase_failed');

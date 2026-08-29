@@ -6,6 +6,10 @@ const migration = readFileSync(
 );
 const modal = readFileSync('src/components/table/ThemeSettingsModal.tsx', 'utf8');
 const collections = readFileSync('src/hooks/useTableStudioCollections.ts', 'utf8');
+const realtimeMigration = readFileSync(
+  'supabase/migrations/20260829233000_table_studio_entitlement_realtime.sql',
+  'utf8'
+);
 
 describe('Table Studio permanent storefront', () => {
   it('prices every premium non-card category from cosmetic_catalog', () => {
@@ -30,6 +34,18 @@ describe('Table Studio permanent storefront', () => {
     expect(modal).toContain("supabase.rpc('fn_purchase_feature'");
     expect(modal).toContain('p_feature: pending.feature');
     expect(modal).toContain('applyAccessibleAsset(pending.tab, pending.id)');
+  });
+
+  it('streams the owner-only entitlement ledger to already-open studios on other devices', () => {
+    expect(realtimeMigration).toContain(
+      'ALTER TABLE public.theme_asset_unlocks REPLICA IDENTITY FULL'
+    );
+    expect(realtimeMigration).toContain(
+      'ALTER PUBLICATION supabase_realtime ADD TABLE public.theme_asset_unlocks'
+    );
+    expect(modal).toContain("table: 'theme_asset_unlocks'");
+    expect(modal).toContain("source: 'realtime-entitlement'");
+    expect(modal).toContain('supabase.removeChannel(channel)');
   });
 });
 

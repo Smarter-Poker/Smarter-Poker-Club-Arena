@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   persistMode: vi.fn(),
   navigate: vi.fn(),
   themeListeners: new Set<(event: { payload: unknown }) => void>(),
+  entitlementInsert: null as null | ((payload: { new: Record<string, unknown> }) => void),
+  removeChannel: vi.fn(),
   toast: {
     success: vi.fn(),
     error: vi.fn(),
@@ -107,6 +109,23 @@ vi.mock('../../src/lib/supabase', () => ({
       return builder;
     }),
     rpc: mocks.rpc,
+    channel: vi.fn(() => {
+      const channel = {
+        on: vi.fn(
+          (
+            _event: string,
+            _filter: Record<string, unknown>,
+            handler: (payload: { new: Record<string, unknown> }) => void
+          ) => {
+            mocks.entitlementInsert = handler;
+            return channel;
+          }
+        ),
+        subscribe: vi.fn(() => channel),
+      };
+      return channel;
+    }),
+    removeChannel: mocks.removeChannel,
   },
 }));
 
@@ -154,6 +173,8 @@ describe('ThemeSettingsModal hardening', () => {
     mocks.persistMode.mockReset();
     mocks.persistMode.mockResolvedValue({ ok: true });
     mocks.navigate.mockReset();
+    mocks.entitlementInsert = null;
+    mocks.removeChannel.mockReset();
     for (const method of Object.values(mocks.toast)) method.mockReset();
     useSettingsStore.setState({ theme: 'dark' });
     useWalletStore.setState({
@@ -269,6 +290,40 @@ describe('ThemeSettingsModal hardening', () => {
       )
     );
     expect(mocks.toast.success).toHaveBeenCalledWith('Neon City Purchased And Applied');
+  });
+
+  it('unlocks an already-open catalog when another device delivers an entitlement', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    expect(
+      screen.getByRole('button', { name: 'Neon City, purchase or VIP required' })
+    ).toBeEnabled();
+
+    act(() => {
+      mocks.entitlementInsert?.({
+        new: { user_id: 'user-1', category: 'table_id', asset_id: 'neon_city' },
+      });
+    });
+
+    expect(await screen.findByRole('button', { name: 'Neon City' })).toBeEnabled();
+  });
+
+  it('does not claim a completed purchase was applied when the appearance save fails', async () => {
+    mocks.applyAppearance.mockResolvedValue({ ok: false, error: new Error('save failed') });
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
+
+    await waitFor(() => expect(mocks.toast.success).toHaveBeenCalledWith('Neon City Purchased'));
+    expect(mocks.toast.success).not.toHaveBeenCalledWith('Neon City Purchased And Applied');
+    expect(mocks.toast.error).toHaveBeenCalledWith('Could Not Save Your Theme. Please Try Again.');
   });
 
   it('applies interface mode immediately and persists it to the signed-in account', async () => {

@@ -80,7 +80,7 @@ describe('Avatar Gallery mobile interaction contract', () => {
 
     const captain = await screen.findByRole('button', { name: 'Club Captain' });
     expect(captain).toHaveAttribute('aria-pressed', 'false');
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Search avatars' }), {
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search Avatars' }), {
       target: { value: 'shark' },
     });
     expect(screen.queryByRole('button', { name: 'Club Captain' })).not.toBeInTheDocument();

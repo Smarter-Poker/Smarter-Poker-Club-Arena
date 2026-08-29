@@ -841,7 +841,8 @@ export interface BusPayloadMap {
       | 'club-purchase'
       | 'club-redemption'
       | 'vip-reward'
-      | 'ownership-reconciled';
+      | 'ownership-reconciled'
+      | 'realtime-entitlement';
   };
   /**
    * A paid entitlement was durably delivered. Unlike the cosmetic-only event,

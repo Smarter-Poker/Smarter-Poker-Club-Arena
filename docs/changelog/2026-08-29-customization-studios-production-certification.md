@@ -29,6 +29,10 @@ delivers the exact category entitlement in the same transaction as the diamond
 charge. Theme purchases grant their complete linked preset. A successful buy
 unlocks and applies the original selection immediately, broadcasts ownership to
 other open surfaces, and forces the displayed diamond balance to refresh.
+Checkout now waits for the appearance write before claiming an item was
+"Purchased And Applied"; if entitlement delivery succeeds but the subsequent
+appearance save fails, the receipt remains usable and the interface reports the
+purchase without falsely claiming that the table was changed.
 
 Favorites and loadouts now have an owner-only cloud row and a realtime channel.
 Existing device-local collections seed that row on first open, subsequent
@@ -39,6 +43,10 @@ remain deliberately device-local.
 `user_theme_settings` also gained a ref-counted client realtime subscription:
 all persistent tables for one player share one database channel and repaint
 when another device inserts, updates, or deletes that player's table design.
+The owner-only `theme_asset_unlocks` ledger is now in the realtime publication
+too, so an already-open Table Studio on another device unlocks a purchased or
+rewarded table, background, button, card back, or complete theme as soon as the
+server transaction commits.
 
 ## Media
 
@@ -49,7 +57,7 @@ the actual table continues to render the full-quality originals.
 
 ## Verification
 
-- Full Vitest suite: 596 files, 9,044 passing, 1 intentional skip.
+- Full Vitest suite: 596 files, 9,047 passing, 1 intentional skip.
 - Production build: passed; 425 distribution images optimized with 0 failures.
 - ESLint: 0 errors. The repository still reports its existing warning backlog.
 - Mobile Chromium coverage at 390 × 844: Avatar Gallery and Table Studio stay
@@ -67,3 +75,8 @@ permanent prices, one delivery trigger, three owner-only preference policies,
 RLS enabled, and the preferences table in the realtime publication. The live
 schema, column, and required-column manifests were regenerated from the
 production helper RPCs afterward.
+
+The follow-up entitlement stream was applied and recorded as migration
+`20260829233000`. Live verification confirms `theme_asset_unlocks` uses full
+replica identity, is present in the Supabase Realtime publication, and retains
+its single owner-only SELECT policy.

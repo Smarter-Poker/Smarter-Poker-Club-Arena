@@ -55,14 +55,6 @@ export interface CommissionSpread {
   }>;
 }
 
-export interface RakeAttribution {
-  handId: string;
-  playerId: string;
-  rakeAmount: number;
-  agentId?: string;
-  timestamp: string;
-}
-
 export interface CommissionPayout {
   agentId: string;
   periodId: string;
@@ -273,55 +265,17 @@ export const CommissionService = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // RAKE ATTRIBUTION
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Attribute rake to players after hand completion
-   * Called after pot drops. (Previously by client RakeService, deleted
-   * 2026-08-15; rake distribution is server-authoritative.)
-   */
-  async attributeRake(handId: string, attributions: RakeAttribution[]): Promise<void> {
-    if (attributions.length === 0) return;
-
-    const records = attributions.map((a) => ({
-      hand_id: handId,
-      player_id: a.playerId,
-      rake_amount: a.rakeAmount,
-      agent_id: a.agentId || null,
-      created_at: new Date().toISOString(),
-    }));
-
-    // Audit M2: this was a bare .insert() with no uniqueness guard, so a
-    // replayed hand-complete wrote a second attribution row per player —
-    // which downstream becomes double rakeback AND double agent commission.
-    // Migration 20260806_uq_rake_attributions_hand_player adds
-    // UNIQUE (hand_id, player_id); upserting against it makes a replay a
-    // no-op rather than a duplicate credit or a thrown 23505.
-    const { error } = await supabase
-      .from('rake_attributions')
-      .upsert(records, { onConflict: 'hand_id,player_id', ignoreDuplicates: true });
-
-    if (error) throw error;
-  },
-
-  /**
-   * Get player's total rake contribution
-   */
-  async getPlayerRakeTotal(playerId: string, periodId?: string): Promise<number> {
-    const { data, error } = await retryAsync(
-      () =>
-        supabase.rpc('get_player_rake_total', {
-          p_player_id: playerId,
-          p_period_id: periodId || null,
-        }),
-      3
-    );
-
-    if (error) throw error;
-    return data;
-  },
-
+  // RAKE ATTRIBUTION — CLIENT PATH DELETED (Dan 2026-08-29, weighted rake law)
+  //
+  // attributeRake() and getPlayerRakeTotal() were removed in the weighted
+  // contributed rake residue sweep. Both were dead (zero callers) and both
+  // belonged to the retired client-side attribution era: rake_attributions is
+  // now the ENGINE's per-player weighted ledger, written exclusively inside
+  // atomic_distribute_rake (RLS: service_role writes, players read only their
+  // own rows), and per-player rake totals come from the authoritative pipeline
+  // (rakeback_periods / player_stats / fn_agent_downline_rake). The frontend
+  // must never write or recompute financial attribution (§30, server
+  // authoritative).
   // ─────────────────────────────────────────────────────────────────────────────
   // CASCADING COMMISSION CALCULATION
   // ─────────────────────────────────────────────────────────────────────────────

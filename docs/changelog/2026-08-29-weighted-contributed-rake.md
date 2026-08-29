@@ -144,6 +144,10 @@ method)` (SQL) and `server/src/services/rakeAllocation.ts` (TS mirror,
 RakebackEngine.ts` (the FIX 144 equal-share accumulator, inert since
    RAKE-AUDIT 2026-07-24) is DELETED, along with its instantiation, configure
    and dispose wiring in `ServerTableEngineBase.ts`.
-4. World Hub `pages/api/club-arena/rakeback.js` performs no splitting (safe);
-   its header comment describing the equal-share era is refreshed in a
-   companion World Hub PR.
+4. **CLOSED in the residue sweep (same PR):** `CommissionService.attributeRake`
+   and `getPlayerRakeTotal` (dead client-side attribution writers/readers from
+   the pre-server-authoritative era, zero callers, writes already blocked by
+   rake_attributions RLS) are deleted. rake_attributions is written
+   exclusively by atomic_distribute_rake.
+5. World Hub `pages/api/club-arena/rakeback.js` performs no splitting (safe);
+   its stale equal-share comments are refreshed in World Hub PR #919.

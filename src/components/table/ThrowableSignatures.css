@@ -709,6 +709,88 @@
   animation-duration: calc(300ms * var(--animation-speed, 1));
 }
 
+/* Steam from both ears — the one gesture that reads as FURIOUS rather than
+   merely red. Two puffs on one element (the second is ::after) at different
+   offsets and rhythms, so they do not pulse in lockstep. */
+.throw-animation[data-throwable='angry_emoji'] .throw-animation__fxf {
+  display: block;
+  left: -12px;
+  top: 24%;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0) 70%);
+  animation: fx-rage-steam calc(520ms * var(--animation-speed, 1)) ease-out infinite;
+}
+
+.throw-animation[data-throwable='angry_emoji'] .throw-animation__fxf::after {
+  content: '';
+  position: absolute;
+  left: 34px;
+  top: 0;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 70%);
+  animation: fx-rage-steam calc(520ms * var(--animation-speed, 1)) ease-out
+    calc(260ms * var(--animation-speed, 1)) infinite;
+}
+
+/* The landing flushes red. A plain-colour floor is declared first: a browser
+   that cannot parse color-mix() discards the WHOLE declaration, and this one
+   IS the effect. */
+.throw-animation[data-throwable='angry_emoji'] .throw-animation__fxi {
+  display: block;
+  width: 96px;
+  height: 96px;
+  margin: -48px 0 0 -48px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(229, 57, 53, 0.6) 0%, rgba(229, 57, 53, 0) 68%);
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--c1, #e53935) 60%, transparent) 0%,
+    transparent 68%
+  );
+  animation: fx-rage-flash calc(560ms * var(--animation-speed, 1)) ease-out both;
+}
+
+@keyframes fx-rage-steam {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.4);
+  }
+  30% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-14px, -20px) scale(1.5);
+  }
+}
+
+@keyframes fx-rage-flash {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  16% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+  46% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  62% {
+    opacity: 0.9;
+    transform: scale(1.06);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.3);
+  }
+}
+
 /* =================================================================================
    6. COOL SUNGLASSES -- lands, holds the pose, fades late (deal with it)
    ================================================================================= */
@@ -1176,6 +1258,78 @@
   animation-duration: calc(600ms * var(--animation-speed, 1));
 }
 
+/* This item had TWO declarations and NOT ONE animation — the only throwable in
+   the set with no motion of its own at all. It is a fastball; everything about
+   it should be speed.
+
+   Speed lines, drawn as hard stripes rather than a soft blur because a tennis
+   ball is small and light: the eye reads separated streaks as fast and a soft
+   smear as heavy. */
+.throw-animation[data-throwable='tennis_ball'] .throw-animation__fxf {
+  display: block;
+  left: -40px;
+  top: 50%;
+  width: 40px;
+  height: 14px;
+  margin-top: -7px;
+  background: repeating-linear-gradient(
+    to right,
+    rgba(220, 231, 117, 0) 0 4px,
+    rgba(220, 231, 117, 0.85) 4px 7px
+  );
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 70%);
+  mask-image: linear-gradient(to right, transparent, #000 70%);
+  animation: fx-ball-lines calc(180ms * var(--animation-speed, 1)) linear infinite;
+}
+
+/* The felt takes a scuff. Elliptical and offset, so it reads as a mark ON the
+   table rather than a ring in the air — the same ground-plane rule the
+   framework's dust follows. */
+.throw-animation[data-throwable='tennis_ball'] .throw-animation__fxi {
+  display: block;
+  width: 66px;
+  height: 22px;
+  margin: -4px 0 0 -33px;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    rgba(220, 231, 117, 0.55) 0%,
+    rgba(220, 231, 117, 0.18) 55%,
+    transparent 78%
+  );
+  animation: fx-ball-scuff calc(520ms * var(--animation-speed, 1)) ease-out both;
+}
+
+@keyframes fx-ball-lines {
+  0% {
+    opacity: 0.45;
+    transform: scaleX(0.8);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scaleX(1.1);
+  }
+  100% {
+    opacity: 0.45;
+    transform: scaleX(0.8);
+  }
+}
+
+@keyframes fx-ball-scuff {
+  0% {
+    opacity: 0;
+    transform: scale(0.3, 0.7);
+  }
+  22% {
+    opacity: 0.9;
+    transform: scale(1.05, 1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.35, 1.05);
+  }
+}
+
 /* =================================================================================
    24. BOWLING BALL -- STRIKE: pins scatter out of the impact
    ================================================================================= */
@@ -1542,6 +1696,74 @@
 .throw-animation[data-throwable='ufo'] .throw-animation__glow--flight {
   animation-duration: calc(160ms * var(--animation-speed, 1)); /* strobing saucer lights */
 }
+
+/* The beam was good; the saucer itself was a static glyph with a fast glow
+   behind it. It gets a RIM OF LIGHTS that travels around the hull — a conic
+   gradient rotated under a ring mask, which is one element and one composited
+   rotation rather than six positioned lamps. */
+.throw-animation[data-throwable='ufo'] .throw-animation__fxf {
+  display: block;
+  left: 50%;
+  top: 58%;
+  width: 62px;
+  height: 20px;
+  margin: -10px 0 0 -31px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(105, 240, 174, 0) 0deg 24deg,
+    rgba(105, 240, 174, 0.95) 24deg 36deg,
+    rgba(105, 240, 174, 0) 36deg 114deg,
+    rgba(105, 240, 174, 0.95) 114deg 126deg,
+    rgba(105, 240, 174, 0) 126deg 204deg,
+    rgba(105, 240, 174, 0.95) 204deg 216deg,
+    rgba(105, 240, 174, 0) 216deg 294deg,
+    rgba(105, 240, 174, 0.95) 294deg 306deg,
+    rgba(105, 240, 174, 0) 306deg 360deg
+  );
+  /* Ring, not disc — the hull is opaque, only its edge carries lamps. */
+  -webkit-mask-image: radial-gradient(closest-side, transparent 58%, #000 66%, #000 100%);
+  mask-image: radial-gradient(closest-side, transparent 58%, #000 66%, #000 100%);
+  animation: fx-ufo-rim calc(1400ms * var(--animation-speed, 1)) linear infinite;
+}
+
+/* A scan sweep across the seat under the beam — the abduction actually
+   LOOKING at something, rather than a cone that simply arrives. */
+.throw-animation[data-throwable='ufo'] .throw-animation__fxi::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 70px;
+  height: 8px;
+  margin-left: -35px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(105, 240, 174, 0.85) 0%, rgba(105, 240, 174, 0) 72%);
+  animation: fx-ufo-scan calc(900ms * var(--animation-speed, 1)) ease-in-out 2 both;
+}
+
+@keyframes fx-ufo-rim {
+  from {
+    rotate: 0deg;
+  }
+  to {
+    rotate: 360deg;
+  }
+}
+
+@keyframes fx-ufo-scan {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.4) translateY(-26px);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1.15) translateY(6px);
+  }
+}
 .throw-animation[data-throwable='ufo'] .throw-animation__fxi {
   display: block;
   width: 34px;
@@ -1583,12 +1805,183 @@
     forwards;
 }
 
+/* In flight it is POWERED: a scanning eye sweeping left to right, on the
+   flight signature slot. steps() rather than a smooth sweep, because a robot
+   reads as mechanical when its motion quantises. */
+.throw-animation[data-throwable='robot'] .throw-animation__fxf {
+  display: block;
+  left: 50%;
+  top: 34%;
+  width: 22px;
+  height: 4px;
+  margin-left: -11px;
+  border-radius: 2px;
+  background: linear-gradient(to right, rgba(255, 82, 82, 0), #ff5252 45%, rgba(255, 82, 82, 0));
+  animation: fx-robot-scan calc(620ms * var(--animation-speed, 1)) steps(6, end) infinite;
+}
+
+/* Antenna blink — a second, slower rhythm so the two do not lock into one
+   pulse and read as a single flashing lamp. */
+.throw-animation[data-throwable='robot'] .throw-animation__fxf::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -16px;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: #ff5252;
+  box-shadow: 0 0 8px 2px rgba(255, 82, 82, 0.7);
+  animation: fx-robot-antenna calc(430ms * var(--animation-speed, 1)) steps(2, end) infinite;
+}
+
+/* THE MALFUNCTION. The glitch had nothing around it, so a robot landed and
+   flickered in an empty space. Now it shorts out: electric arcs snap across
+   the impact point, then the whole thing browns out. */
+.throw-animation[data-throwable='robot'] .throw-animation__fxi {
+  display: block;
+  width: 76px;
+  height: 76px;
+  margin: -38px 0 0 -38px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 12deg,
+    transparent 0deg 26deg,
+    rgba(255, 209, 128, 0.9) 26deg 30deg,
+    transparent 30deg 104deg,
+    rgba(255, 82, 82, 0.85) 104deg 107deg,
+    transparent 107deg 191deg,
+    rgba(255, 209, 128, 0.8) 191deg 196deg,
+    transparent 196deg 288deg,
+    rgba(255, 82, 82, 0.7) 288deg 291deg,
+    transparent 291deg 360deg
+  );
+  animation: fx-robot-arc calc(420ms * var(--animation-speed, 1)) steps(3, end) 2 both;
+}
+
+.throw-animation[data-throwable='robot'] .throw-animation__glow--flight {
+  animation-duration: calc(210ms * var(--animation-speed, 1));
+}
+
+@keyframes fx-robot-scan {
+  0% {
+    transform: translateX(-9px);
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(9px);
+    opacity: 0.55;
+  }
+}
+
+@keyframes fx-robot-antenna {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.15;
+  }
+}
+
+@keyframes fx-robot-arc {
+  0% {
+    opacity: 0;
+    transform: scale(0.35) rotate(0deg);
+  }
+  30% {
+    opacity: 0.95;
+    transform: scale(0.9) rotate(24deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.25) rotate(52deg);
+  }
+}
+
 /* =================================================================================
    41. GHOST -- translucent in flight, rises through the target and vanishes
    ================================================================================= */
 
+/* A ghost should not be a sticker at 82% opacity — it should be UNSTEADY.
+   The waver is on the tilt wrapper, which owns no transform of its own, so it
+   cannot collide with the arc or the tumble spin on the spinner above it. */
 .throw-animation[data-throwable='ghost'] .throw-animation__tilt {
   opacity: 0.82;
+  animation: fx-ghost-waver calc(900ms * var(--animation-speed, 1)) ease-in-out infinite;
+}
+
+/* A spectral wisp streaming behind it. Sits in the flight slot, stretched
+   along the travel line rather than drawn as a shape, so it reads as
+   something the ghost is TRAILING rather than an object it is carrying. */
+.throw-animation[data-throwable='ghost'] .throw-animation__fxf {
+  display: block;
+  left: -30px;
+  top: 46%;
+  width: 30px;
+  height: 16px;
+  border-radius: 50%;
+  filter: blur(3px);
+  background: linear-gradient(to left, rgba(224, 231, 255, 0.55), rgba(224, 231, 255, 0));
+  animation: fx-ghost-waver calc(900ms * var(--animation-speed, 1)) ease-in-out infinite reverse;
+}
+
+/* It passes THROUGH the seat rather than hitting it, so the impact is a cold
+   ripple pushing outward, not a shockwave. Two rings on one element via
+   ::after, staggered, because a single ring reads as a bubble. */
+.throw-animation[data-throwable='ghost'] .throw-animation__fxi {
+  display: block;
+  width: 84px;
+  height: 84px;
+  margin: -42px 0 0 -42px;
+  border-radius: 50%;
+  border: 2px solid rgba(224, 231, 255, 0.5);
+  animation: fx-ghost-mist calc(1100ms * var(--animation-speed, 1)) ease-out both;
+}
+
+.throw-animation[data-throwable='ghost'] .throw-animation__fxi::after {
+  content: '';
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(224, 231, 255, 0.32);
+  animation: fx-ghost-mist calc(1100ms * var(--animation-speed, 1)) ease-out
+    calc(200ms * var(--animation-speed, 1)) both;
+}
+
+@keyframes fx-ghost-waver {
+  0%,
+  100% {
+    opacity: 0.82;
+    translate: 0 0;
+  }
+  35% {
+    opacity: 0.55;
+    translate: -3px -4px;
+  }
+  70% {
+    opacity: 0.95;
+    translate: 3px 2px;
+  }
+}
+
+@keyframes fx-ghost-mist {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  25% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
 }
 .throw-animation[data-throwable='ghost'] .throw-animation__impact-icon {
   animation: fx-icon-ghost-rise var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-out

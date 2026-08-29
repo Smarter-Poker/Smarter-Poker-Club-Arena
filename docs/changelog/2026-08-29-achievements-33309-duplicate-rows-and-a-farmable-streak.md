@@ -118,3 +118,29 @@ written into it, per section 5 rule 8.
 
 `npx tsc --noEmit` exit 0. `npx vitest run tests/` — **558 files, 8,555 tests,
 all passing.**
+
+## CI note, and one thing left broken that is not mine to land here
+
+The first CI run failed on "Supabase Invariants — New Migrations Were Applied":
+the migration declares `fn_achievement_record_progress` and
+`scripts/ci/supabase-schema-manifest.json` did not list it. The function WAS
+applied to production (verified in `pg_proc`, SECURITY DEFINER, correct
+signature) — the manifest was simply stale, which is exactly the case that gate
+exists to catch. Regenerated; the schema manifest gains **one line**, my
+function, and nothing else.
+
+`gen-schema-manifest.mjs` also rewrites two other manifests, and both were
+reverted out of this PR rather than carried:
+
+- `supabase-columns-manifest.json` picked up `profiles.player_tags`, somebody
+  else's column and somebody else's PR to declare.
+- `supabase-required-columns-manifest.json` churned **3,960 lines** with no
+  content change at all: it is stored compact (`["action_type"]`) and the
+  generator writes it expanded. That is precisely the Prettier oscillation the
+  comment inside that generator says was fixed — it was fixed for the schema
+  and column manifests (`JSON.stringify(..., 2)`) and NOT for this third one,
+  which was added later. So every regeneration flips the file and the next
+  `prettier --write` flips it back, which is what `detect-silent-revert.mjs`
+  flagged in PR #360. Left alone here deliberately: it is a real bug in that
+  script, it has nothing to do with achievements, and burying a 3,960-line
+  reformat inside a money-adjacent PR is how a fix becomes unreviewable.

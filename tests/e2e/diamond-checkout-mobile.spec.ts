@@ -55,16 +55,23 @@ test.describe('mobile Diamond Store', () => {
       expect(box?.height).toBeGreaterThanOrEqual(43.9);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
-    expect(
-      await page
-        .locator('.diamond-modal__grid')
-        .evaluate((node) => node.scrollHeight > node.clientHeight)
-    ).toBe(true);
     await expect(page.locator('.diamond-modal__header')).toBeVisible();
     await expect(page.locator('.diamond-modal__trust')).toBeVisible();
 
     if (process.env.CAPTURE_CUSTOMIZATION_VISUALS) {
       await page.screenshot({ path: 'test-results/diamond-checkout-mobile.png' });
     }
+
+    // A shorter phone keeps the hardware/header fixed and gives scrolling to
+    // the package rail—not to the page underneath the checkout.
+    await page.setViewportSize({ width: 390, height: 667 });
+    expect(
+      await page
+        .locator('.diamond-modal__grid')
+        .evaluate((node) => node.scrollHeight > node.clientHeight)
+    ).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(667);
+    await expect(page.locator('.diamond-modal__header')).toBeVisible();
+    await expect(page.locator('.diamond-modal__trust')).toBeVisible();
   });
 });

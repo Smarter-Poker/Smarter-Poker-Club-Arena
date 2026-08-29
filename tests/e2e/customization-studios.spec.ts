@@ -76,8 +76,19 @@ test.describe('mobile-first customization studios', () => {
     `);
 
     const preview = await page.locator('.theme-modal__live-preview').boundingBox();
-    expect(preview?.height).toBeGreaterThanOrEqual(210);
-    expect(preview?.height).toBeLessThanOrEqual(270);
+    expect(preview?.height).toBeGreaterThanOrEqual(190);
+    expect(preview?.height).toBeLessThanOrEqual(225);
+    const previewStateControl = await page
+      .locator('.theme-modal__preview-switch button')
+      .first()
+      .boundingBox();
+    const interfaceControl = await page.locator('.theme-modal__mode-option').first().boundingBox();
+    expect(preview?.y).toBeGreaterThanOrEqual(
+      Math.max(
+        (previewStateControl?.y || 0) + (previewStateControl?.height || 0),
+        (interfaceControl?.y || 0) + (interfaceControl?.height || 0)
+      )
+    );
     for (const selector of [
       '.theme-modal__close',
       '.theme-modal__game-select',

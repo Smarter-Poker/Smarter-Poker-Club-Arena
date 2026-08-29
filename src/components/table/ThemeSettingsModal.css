@@ -1220,7 +1220,7 @@
      phones instead of stacking the entire preview above them. */
   .theme-modal__workspace {
     display: grid;
-    grid-template-rows: clamp(218px, 32dvh, 286px) minmax(0, 1fr);
+    grid-template-rows: clamp(248px, 35dvh, 310px) minmax(0, 1fr);
     overflow: hidden;
   }
   .theme-modal__visual-rail {
@@ -1261,7 +1261,7 @@
     display: flex;
     grid-row: 1;
     flex-direction: column;
-    padding: 0;
+    padding: 48px 0 0;
   }
   .theme-modal__preview-switch {
     top: 4px;

@@ -20,6 +20,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 const svc = readFileSync(
   new URL('./ScheduledTournamentService.ts', import.meta.url).pathname,
@@ -39,10 +40,12 @@ describe('the pop-up wiring — a guarantee refusal must notify the owners', () 
   });
 
   it('the restart path notifies too — a manual club event deserves the same pop-up', () => {
-    const restartAt = svc.indexOf('ScheduledTournaments.restart_insert_failed');
-    expect(restartAt).toBeGreaterThan(0);
-    const after = svc.slice(restartAt, restartAt + 1500);
-    expect(after).toContain('fn_notify_guarantee_bank_short');
+    // Bounded by the insert-failure branch the tag lives in, not by a byte
+    // count -- a fixed window can be pushed off the code it guards by a
+    // comment (see tests/helpers/sourceWindow.ts, and the meta-test
+    // tests/unit/noFixedSizeSourceWindows.test.ts that refuses magic numbers).
+    const branch = sliceEnclosingBlock(svc, "'ScheduledTournaments.restart_insert_failed'");
+    expect(branch).toContain('fn_notify_guarantee_bank_short');
   });
 
   it('a notify failure is reported, never swallowed', () => {

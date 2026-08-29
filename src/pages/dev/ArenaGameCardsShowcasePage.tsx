@@ -224,7 +224,7 @@ export default function ArenaGameCardsShowcasePage() {
         <div>
           <p>#ClubButtons / Dynamic Game Factory</p>
           <h1>Same Factory. Five Different Machines.</h1>
-          <span>Approved artwork as hardware. Every displayed value is live DOM content.</span>
+          <span>Approved Artwork As Hardware. Every Displayed Value Is Live DOM Content.</span>
         </div>
         <div className="agc-showcase__controls">
           <label>
@@ -299,7 +299,7 @@ export default function ArenaGameCardsShowcasePage() {
               checked={longValues}
               onChange={(event) => setLongValues(event.target.checked)}
             />
-            Stress-test long values
+            Stress-Test Long Values
           </label>
         </div>
       </header>

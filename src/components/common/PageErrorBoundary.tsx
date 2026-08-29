@@ -115,7 +115,7 @@ export class PageErrorBoundary extends React.Component<
         >
           {this.state.error?.message && (
             <details>
-              <summary>Technical details</summary>
+              <summary>Technical Details</summary>
               <code>{String(this.state.error.message).slice(0, 300)}</code>
             </details>
           )}

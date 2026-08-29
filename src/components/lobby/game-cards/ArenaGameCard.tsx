@@ -159,7 +159,7 @@ function LiveValue({
 }) {
   return (
     <div className={`agc-premium-value ${className}`} data-zone={zone}>
-      {children || <strong>{value || '—'}</strong>}
+      {children || <strong>{value || '-'}</strong>}
     </div>
   );
 }
@@ -198,22 +198,22 @@ function MttMachine({ data, actions }: ArenaGameCardProps) {
         </div>
       </header>
       <div className="agc-mtt-value agc-mtt-value--starting-time" data-zone="startingTime">
-        <strong>{data.startTime || '—'}</strong>
+        <strong>{data.startTime || '-'}</strong>
       </div>
       <div className="agc-mtt-value agc-mtt-value--buy-in" data-zone="buyIn">
-        <strong>{data.buyIn || '—'}</strong>
+        <strong>{data.buyIn || '-'}</strong>
       </div>
       <div className="agc-mtt-value agc-mtt-value--guarantee" data-zone="guarantee">
-        <strong>{data.guarantee || '—'}</strong>
+        <strong>{data.guarantee || '-'}</strong>
       </div>
       <div className="agc-mtt-value agc-mtt-value--registered" data-zone="registered">
-        <strong>{data.registered || '—'}</strong>
+        <strong>{data.registered || '-'}</strong>
       </div>
       <div className="agc-mtt-value agc-mtt-value--starting-stack" data-zone="startingStack">
-        <strong>{data.startingStack || '—'}</strong>
+        <strong>{data.startingStack || '-'}</strong>
       </div>
       <div className="agc-mtt-value agc-mtt-value--current-level" data-zone="currentLevel">
-        <strong>{data.currentLevel || '—'}</strong>
+        <strong>{data.currentLevel || '-'}</strong>
         {data.currentBlinds && <small>{data.currentBlinds}</small>}
       </div>
       <Actions actions={actions} />

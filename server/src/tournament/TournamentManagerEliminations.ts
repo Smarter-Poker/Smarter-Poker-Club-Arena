@@ -117,8 +117,59 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
   protected startEliminationChecker(): void {
     this.eliminationTimer = setInterval(async () => {
-      if (!this.running || this.isProcessingEliminations) return;
+      if (!this.running) return;
+
+      /**
+       * ── THE LOCK IS NO LONGER HELD FOREVER (2026-08-29) ──
+       *
+       * See TournamentManagerBase's note on eliminationSweepStartedAt. In
+       * short: `finally` cannot release a lock held by an await that never
+       * settles, and a permanently held lock here means this tournament never
+       * eliminates anybody again and never pays anybody out — silently, for
+       * the life of the process.
+       *
+       * So a held lock is now inspected rather than simply obeyed.
+       */
+      if (this.isProcessingEliminations) {
+        const heldForMs = this.eliminationSweepStartedAt
+          ? Date.now() - this.eliminationSweepStartedAt
+          : 0;
+        const verdict = TournamentManagerBase.eliminationLockVerdict(heldForMs);
+
+        if (verdict === 'force') {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] elimination sweep has held its lock for ${Math.round(
+                heldForMs / 1000
+              )}s — taking it back. The stalled sweep (generation ${this.eliminationSweepGeneration}) is superseded and will stand down at its next write. Eliminations were stopped for this tournament until now.`
+            ),
+            'Tournament.elimination_sweep_lock_forced'
+          );
+          this.isProcessingEliminations = false;
+          this.eliminationSweepStartedAt = 0;
+          this.eliminationSweepStuckReportedAt = 0;
+          // Fall through and start a fresh sweep on this same tick: the field
+          // has already waited five minutes.
+        } else {
+          // Not forcing yet, but say so — ONCE per episode, not once per tick.
+          if (verdict === 'warn' && this.eliminationSweepStuckReportedAt < this.eliminationSweepStartedAt) {
+            this.eliminationSweepStuckReportedAt = Date.now();
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] elimination sweep still running after ${Math.round(
+                  heldForMs / 1000
+                )}s — no player can be eliminated and the tournament cannot finish while it is held`
+              ),
+              'Tournament.elimination_sweep_overrunning'
+            );
+          }
+          return;
+        }
+      }
+
       this.isProcessingEliminations = true;
+      this.eliminationSweepStartedAt = Date.now();
+      const sweepGeneration = ++this.eliminationSweepGeneration;
 
       try {
         // ── SYNC STACKS: table_seats → tournament_players ──
@@ -561,6 +612,31 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
           let nextPosition = Math.max(unplacedCount, playingCount, bustedOrdered.length + 1);
           for (let i = 0; i < bustedOrdered.length; i++) {
+            /**
+             * SUPERSEDED SWEEPS STAND DOWN (2026-08-29). This sweep may have
+             * been declared stuck and had its lock taken back while it was
+             * waiting on one of the reads above; a fresh sweep is then running
+             * with a chip picture and a taken-places set newer than ours.
+             *
+             * `takenPositions` is a snapshot, so continuing from here would
+             * hand out a place the live sweep may already have paid — and the
+             * wallet idempotency key dedupes a repeated USER, not a repeated
+             * PLACE, so nothing downstream would catch it. Stop before the
+             * write. Every player left in `bustedOrdered` still has 0 chips
+             * and is picked up by the sweep that replaced us.
+             */
+            if (sweepGeneration !== this.eliminationSweepGeneration) {
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] elimination sweep generation ${sweepGeneration} was superseded mid-run — standing down with ${
+                    bustedOrdered.length - i
+                  } elimination(s) unassigned rather than writing places from a stale ladder`
+                ),
+                'Tournament.elimination_sweep_superseded'
+              );
+              return; // the finally block leaves the live sweep's lock alone
+            }
+
             // Place 1 belongs to the winner and is never handed out here.
             let place = nextPosition;
             while (place >= 2 && takenPositions.has(place)) place--;
@@ -830,7 +906,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       } catch (err) {
         reportError(err, 'TournamentthistournamentIdslic.Elimination_check_error');
       } finally {
-        this.isProcessingEliminations = false;
+        // Only the CURRENT holder may release the lock. A sweep that was
+        // declared stuck, superseded and then finally settled must not free a
+        // lock that a live sweep is now holding — doing so would let a third
+        // sweep start alongside the second, which is the collision the
+        // generation check exists to prevent.
+        if (sweepGeneration === this.eliminationSweepGeneration) {
+          this.isProcessingEliminations = false;
+          this.eliminationSweepStartedAt = 0;
+          this.eliminationSweepStuckReportedAt = 0;
+        }
       }
     }, TournamentManagerBase.ELIMINATION_SWEEP_MS);
   }

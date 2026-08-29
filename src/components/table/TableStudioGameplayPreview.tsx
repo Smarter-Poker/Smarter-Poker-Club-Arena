@@ -45,9 +45,15 @@ export function TableStudioGameplayPreview({ selection, avatarUrls, finalTable }
           : 'Gameplay preview using avatars from your avatar library'
       }
     >
-      <img className="studio-game-preview__background" src={background} alt="" />
+      <img
+        className="studio-game-preview__background-ambient"
+        src={background}
+        alt=""
+        decoding="async"
+      />
+      <img className="studio-game-preview__background" src={background} alt="" decoding="async" />
       <div className="studio-game-preview__scrim" />
-      <img className="studio-game-preview__table" src={table} alt="" />
+      <img className="studio-game-preview__table" src={table} alt="" decoding="async" />
 
       {SEATS.map((seat, index) => (
         <div

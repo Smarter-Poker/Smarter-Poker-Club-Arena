@@ -132,7 +132,7 @@ describe('ThemeSettingsModal hardening', () => {
     renderStudio();
 
     expect(await screen.findByText('Loading Your Saved Design')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Default Dark' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'House Classic' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Shuffle Look' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Restore Defaults' })).toBeDisabled();
 
@@ -141,7 +141,9 @@ describe('ThemeSettingsModal hardening', () => {
       await pendingTheme.promise;
     });
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Default Dark' })).toBeEnabled());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
     expect(screen.queryByText('Loading Your Saved Design')).not.toBeInTheDocument();
   });
 
@@ -150,7 +152,9 @@ describe('ThemeSettingsModal hardening', () => {
     mocks.purchaseResult = pendingOwnership.promise;
     renderStudio();
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Default Dark' })).toBeEnabled());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole('tab', { name: 'Cards' }));
 
     expect(screen.getByRole('button', { name: 'Premium Gold, checking ownership' })).toBeDisabled();
@@ -171,7 +175,9 @@ describe('ThemeSettingsModal hardening', () => {
     });
     renderStudio();
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Default Dark' })).toBeEnabled());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole('tab', { name: 'Cards' }));
 
     expect(await screen.findByText('Purchases Could Not Be Verified')).toBeVisible();
@@ -182,7 +188,9 @@ describe('ThemeSettingsModal hardening', () => {
 
   it('treats the VIP prompt as its own dialog and Escape closes only that prompt', async () => {
     renderStudio();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Default Dark' })).toBeEnabled());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
     fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
 
     const locked = screen
@@ -205,7 +213,9 @@ describe('ThemeSettingsModal hardening', () => {
 
   it('applies interface mode immediately and persists it to the signed-in account', async () => {
     renderStudio();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Default Dark' })).toBeEnabled());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Light' }));
 
@@ -216,7 +226,9 @@ describe('ThemeSettingsModal hardening', () => {
   it('rolls interface mode back when account persistence fails', async () => {
     mocks.persistMode.mockResolvedValue({ ok: false, error: new Error('write failed') });
     renderStudio();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Default Dark' })).toBeEnabled());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Light' }));
 
@@ -228,7 +240,9 @@ describe('ThemeSettingsModal hardening', () => {
 
   it('keeps an open studio synchronized with live changes for the same account and bucket', async () => {
     renderStudio();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Default Dark' })).toBeEnabled());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
 
     act(() => {
       masterBus.emit('UI_THEME_CHANGED', {

@@ -16,15 +16,13 @@ import {
 } from '../assets/tableAssets';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// THE FIVE THEME PRESETS PAINT FIVE DIFFERENT TABLES (2026-08-25)
+// EVERY THEME PRESET PAINTS A REAL, DISTINCT TABLE (2026-08-29)
 // ═══════════════════════════════════════════════════════════════════════════════
 //
-// The Theme Settings "Themes" tab offers five presets - default-dark,
-// classic-brown, neon-blue, rustic-wood, casino-green. NOT ONE of those ids is
-// a key in TABLE_SKINS, so wherever a theme id reaches resolveSkin (the felt
-// reads `table_id || theme_id || settings.theme`, and a row saved before the
-// Table tab existed carries no table_id at all) every one of the five fell
-// through to classic green. Five names, one felt.
+// Table Studio offers composite presets whose ids are intentionally not direct
+// TABLE_SKINS keys. Before this alias registry existed, every preset fell
+// through to classic green wherever its theme id reached resolveSkin. Ten
+// premium names would have meant one felt.
 //
 // The CSS written for them was inert in the same way: a block per preset
 // setting --felt-gradient / --bg-gradient, custom properties defined 37 times

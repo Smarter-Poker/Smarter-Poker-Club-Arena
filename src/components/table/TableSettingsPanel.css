@@ -155,31 +155,6 @@
   transform: translateX(0);
 }
 
-/* ── Theme Settings Link ── */
-.tsp-theme-link {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  margin: 4px 8px 8px;
-  border-radius: 8px;
-  cursor: pointer;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  transition: background 0.15s ease;
-}
-
-.tsp-theme-link__label {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--royal-blue, #1877f2);
-}
-
-.tsp-theme-link__arrow {
-  font-size: 18px;
-  color: var(--soft-white, #b0b3b8);
-}
-
 /* Table Studio companion treatment: in-game controls use the same tactile
    obsidian/cobalt language as the appearance picker they open. */
 .tsp-container {
@@ -282,26 +257,4 @@
 }
 .tsp-toggle--on .tsp-toggle__thumb {
   transform: translateX(20px);
-}
-
-.tsp-theme-link {
-  min-height: 52px;
-  margin: 7px 8px 12px;
-  padding: 11px 13px;
-  background: linear-gradient(135deg, rgba(72, 191, 255, 0.13), rgba(72, 191, 255, 0.035));
-  border-color: rgba(72, 191, 255, 0.22);
-  border-radius: 11px;
-}
-.tsp-theme-link:focus-visible {
-  background: linear-gradient(135deg, rgba(72, 191, 255, 0.2), rgba(72, 191, 255, 0.07));
-  border-color: rgba(72, 191, 255, 0.42);
-  outline: none;
-}
-.tsp-theme-link__label {
-  color: #79d5ff;
-  font-size: 13px;
-  font-weight: 700;
-}
-.tsp-theme-link__arrow {
-  color: #79d5ff;
 }

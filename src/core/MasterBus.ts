@@ -78,8 +78,6 @@ export type BusEventType =
   | 'PREFLOP_WIN'
   | 'FLUSH_WIN'
   | 'PLAY_MINUTES'
-  // Phase 5: Card color customization
-  | 'CARD_COLOR_CHANGED'
   // Phase 8: Diamond economy bus event
   | 'DIAMOND_BALANCE_CHANGED'
   // Social & Messaging events
@@ -448,8 +446,6 @@ export interface BusPayloadMap {
   PREFLOP_WIN: { handId: string; playerId: string };
   FLUSH_WIN: { handId: string; playerId: string };
   PLAY_MINUTES: { minutes: number };
-  // UI customization
-  CARD_COLOR_CHANGED: { preset: string };
   // Phase 8: Diamond economy
   DIAMOND_BALANCE_CHANGED: { newBalance: number; delta: number; source: string };
   // Social & Messaging

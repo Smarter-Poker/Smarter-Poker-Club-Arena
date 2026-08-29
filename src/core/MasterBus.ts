@@ -373,7 +373,15 @@ export interface BusPayloadMap {
     kind: 'table-appearance' | 'player-appearance' | 'user-table-setting';
     scope: string;
     mutationId: string;
-    state: 'pending' | 'confirmed' | 'rolling-back' | 'rolled-back';
+    /**
+     * `save-failed` (2026-08-29) is a TERMINAL state that is not a rollback:
+     * the write was lost after its retries and the user's value was KEPT on
+     * screen anyway (Dan: "NEVER REGRESS OR AUTO CHANGE BACK"). Subscribers
+     * that clear pending state on any non-`pending` state already handle it
+     * correctly; only one that specifically watches for `rolled-back` needs to
+     * know the difference.
+     */
+    state: 'pending' | 'confirmed' | 'rolling-back' | 'rolled-back' | 'save-failed';
   };
   AUTH_STATE_CHANGED: AuthStatePayload;
   USER_PROFILE_LOADED: { avatarUrl?: string; displayName?: string; userId?: string };

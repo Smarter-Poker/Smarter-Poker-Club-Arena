@@ -198,6 +198,7 @@ export type BusEventType =
   | 'SETTINGS_CHANGED'
   | 'DIAMOND_SPENT'
   | 'COSMETIC_OWNERSHIP_CHANGED'
+  | 'ENTITLEMENTS_CHANGED'
   // Gamification engagement events (Session Build)
   | 'SETTLEMENT_RECEIPT_COPIED'
   | 'CHALLENGE_PROGRESS_UPDATED'
@@ -792,6 +793,11 @@ export interface BusPayloadMap {
   FLASH_PLAYER_JOINED: { poolId: string; playerId: string; poolSize: number };
   FLASH_PLAYER_SEATED: { poolId: string; playerId: string; tableId: string; seatCount: number };
   FLASH_TRANSITION: { poolId: string; playerId: string; fromTableId: string; direction: string };
+  /* DECLARED ONLY — no emitter and no subscriber anywhere in src/ (checked
+     2026-08-29). Kept rather than deleted because the two SEAT_* entries beside
+     it are kept for the same reason, and a payload type costs nothing; noted so
+     nobody spends time looking for the code that fires it. Its `poolId` shape
+     suggests it was drafted for the BBJ pool surface and never wired. */
   FLASH_SIT_OUT: { poolId: string; playerId: string };
   FLASH_SIT_BACK: { poolId: string; playerId: string };
   FLASH_PLAYER_LEFT: { poolId: string; playerId: string; cashout: number; handsPlayed: number };
@@ -830,7 +836,29 @@ export interface BusPayloadMap {
     userId: string;
     category: 'theme_id' | 'table_id' | 'button_id' | 'background_id' | 'cards_id' | 'avatar';
     assetId?: string;
-    source: 'diamond-purchase' | 'club-redemption' | 'vip-reward' | 'ownership-reconciled';
+    source:
+      | 'diamond-purchase'
+      | 'club-purchase'
+      | 'club-redemption'
+      | 'vip-reward'
+      | 'ownership-reconciled';
+  };
+  /**
+   * A paid entitlement was durably delivered. Unlike the cosmetic-only event,
+   * this also covers consumable balances and VIP membership. It is broadcast
+   * cross-tab so an open table updates in the purchase response frame.
+   */
+  ENTITLEMENTS_CHANGED: {
+    userId: string;
+    category: 'time_bank' | 'throwable' | 'emote_pack' | 'table_skin' | 'avatar' | 'vip';
+    assetId?: string;
+    quantity?: number;
+    source:
+      | 'diamond-purchase'
+      | 'club-purchase'
+      | 'club-redemption'
+      | 'vip-purchase'
+      | 'vip-reward';
   };
   // Gamification engagement events (Session Build)
   SETTLEMENT_RECEIPT_COPIED: { receiptId: string };
@@ -1288,6 +1316,9 @@ class MasterBusCore {
     // A receipt must unlock every mounted picker, even when two rewards grant
     // the same bundle inside the fingerprint window.
     'COSMETIC_OWNERSHIP_CHANGED',
+    // Two distinct purchases may legitimately grant the same quantity inside
+    // 500ms. A ledger delivery event must never be fingerprint-deduplicated.
+    'ENTITLEMENTS_CHANGED',
     // ANIMATION AUDIT 2026-08-27: gameplay-animation events added. These are
     // engine-fact relays whose payloads can legitimately repeat within 500ms
     // (two identical antes, an engine re-emit after reconnect, back-to-back

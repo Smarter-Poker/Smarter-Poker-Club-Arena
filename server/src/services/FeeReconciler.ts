@@ -104,8 +104,17 @@ const QUEUE_INSERT_ATTEMPTS = 4;
  * failed, and buys the reload time to finish.
  */
 const QUEUE_BACKOFF_MS = (attempt: number): number => 100 * 3 ** attempt;
-/** Bound the work a single cycle does so a large backlog cannot stall the loop. */
-const RECONCILE_BATCH = 100;
+/**
+ * Bound the work a single cycle does so a large backlog cannot stall the loop.
+ *
+ * Raised 100 -> 250 after the 2026-08-29 FK outage: 1,860 queued hands at 100
+ * per cycle meant hours of natural drain for a backlog the database could
+ * clear in minutes. 250 keeps a cycle comfortably under a minute of
+ * sequential RPCs while cutting worst-case drain time by 2.5x. For anything
+ * bigger, the DB-side sweep exists: fn_redrive_unbanked_rake (service_role),
+ * which re-drives idempotently without the per-row HTTP round trip.
+ */
+const RECONCILE_BATCH = 250;
 
 /**
  * Durably record a fee that left the pot but could not be banked.

@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import { vipService, VIP_GOLD_LIMITS, FEATURE_PRICING } from '../../services/VIPService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
+import { masterBus } from '../../core/MasterBus';
 import './EmojiPicker.css';
 
 interface EmojiPickerProps {
@@ -81,15 +82,33 @@ export function EmojiPicker({ isOpen, onClose, onSelect, position }: EmojiPicker
         if (mounted) setLoading(false);
         return;
       }
-      const vip = await vipService.isVIP(user.id);
-      if (!mounted) return;
-      setIsVIP(vip);
-      setLoading(false);
+      try {
+        const access = await vipService.checkFeatureAccess(user.id, 'emoji_pack');
+        if (!mounted) return;
+        setIsVIP(access.hasAccess);
+      } catch {
+        /* Keep the last known access on a transient read failure. */
+      } finally {
+        if (mounted) setLoading(false);
+      }
     };
     if (isOpen) check();
     return () => {
       mounted = false;
     };
+  }, [isOpen, user?.id]);
+
+  React.useEffect(() => {
+    if (!isOpen || !user?.id) return undefined;
+    return masterBus.subscribe('ENTITLEMENTS_CHANGED', (event) => {
+      if (event.payload.userId !== user.id || event.payload.category !== 'emote_pack') return;
+      void vipService.checkFeatureAccess(user.id, 'emoji_pack').then(
+        (access) => setIsVIP(access.hasAccess),
+        () => {
+          /* Keep the last known access on a transient read failure. */
+        }
+      );
+    });
   }, [isOpen, user?.id]);
 
   /**
@@ -133,6 +152,13 @@ export function EmojiPicker({ isOpen, onClose, onSelect, position }: EmojiPicker
         if (result.charged > 0) {
           toast.info(`${result.charged} Diamonds Charged For The Emoji Pack.`);
         }
+        setIsVIP(true);
+        masterBus.emit('ENTITLEMENTS_CHANGED', {
+          userId: user.id,
+          category: 'emote_pack',
+          quantity: 1,
+          source: 'diamond-purchase',
+        });
       } finally {
         busyRef.current = false;
         setPurchasing(false);

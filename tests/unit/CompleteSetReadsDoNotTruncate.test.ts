@@ -89,8 +89,16 @@ describe('complete-set reads page instead of capping', () => {
   });
 
   it("a player's own tournament history is not capped at 5000", () => {
+    /* PIN MOVED (2026-08-29, round 12): the mechanism changed, the invariant
+       did not. The page no longer fetches the player's complete entry set
+       at all - the Mine filter is an inner join, so the newest 100 completed
+       events THE PLAYER WAS IN come back in one query and no entry can age
+       past a client-side cap because there is no client-side set. What this
+       pin now guards is that the join is really there and the capped scan
+       cannot come back. */
     const src = code(read('src/pages/tournament/TournamentResultsPage.tsx'));
-    expect(src).toMatch(/fetchAllRows\s*[<(]/);
+    expect(src).toMatch(/tournament_players!inner\(user_id\)/);
+    expect(src).toMatch(/eq\('tournament_players\.user_id', user\.id\)/);
     expect(src).not.toMatch(/\.limit\(5000\)/);
   });
 });

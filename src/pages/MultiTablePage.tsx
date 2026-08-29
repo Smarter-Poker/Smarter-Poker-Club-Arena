@@ -24,6 +24,7 @@ import React, {
 } from 'react';
 import { matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
+import { isSitOutUrgent } from '../lib/sitOutDeadline';
 import LiveTablesBar from '../components/table/LiveTablesBar';
 import {
   InTabLobbyContext,
@@ -109,6 +110,10 @@ interface TableInstance {
   heroStack?: number;
   /** Hero is sitting out at this table. */
   sittingOut?: boolean;
+  /** Absolute epoch-ms this table's sit-out clock runs out. Cash only. */
+  sitOutDeadlineMs?: number;
+  /** Tournament tables sit out indefinitely; cash tables are on a clock. */
+  isTournament?: boolean;
   /** Dan 2026-08-21: short game code the tab shows when no hand is live
    *  (NLH / PLO5 / SPIN / MTT / HU). Best-effort at first paint, replaced by
    *  TablePage's authoritative value the moment it loads. */
@@ -335,18 +340,54 @@ const dockStateFor = (
   if (!hidden) return { kind: 'none' as const };
   const live = tabs.filter((t) => !isLobbyTab(t));
   if (live.length === 0) return { kind: 'none' as const };
-  const urgent = live
+  /**
+   * TWO KINDS OF CLOCK CAN RUN OUT WHILE YOU ARE LOOKING SOMEWHERE ELSE.
+   *
+   * This used to be gated on `isMyTurn` alone, so the dock had a countdown, a
+   * document-title flip, a favicon badge and a tick-tock loop for a TURN — and
+   * nothing whatsoever for a seat being reclaimed. A player who tapped Sit Out
+   * At All Tables started up to six five-minute eviction clocks and no surface
+   * outside the hidden tables reported one of them. Losing a turn costs a hand;
+   * losing a seat cashes out a stack.
+   *
+   * The turn still wins when both are running — it is the shorter fuse by an
+   * order of magnitude — and the sit-out only competes once it is inside the
+   * last minute, which is where `isSitOutUrgent` puts it. Otherwise a sat-out
+   * player would sit in a permanently "urgent" dock for five minutes.
+   */
+  const urgentTurn = live
     .filter((t) => t.isMyTurn)
     .sort((a, b) => (a.turnDeadlineMs ?? Infinity) - (b.turnDeadlineMs ?? Infinity))[0];
-  if (urgent) {
+  if (urgentTurn) {
     return {
       kind: 'urgent' as const,
-      targetId: urgent.id,
-      name: urgent.name,
+      targetId: urgentTurn.id,
+      name: urgentTurn.name,
       secondsLeft:
-        urgent.turnDeadlineMs !== undefined
-          ? Math.max(0, Math.ceil((urgent.turnDeadlineMs - nowMs) / 1000))
+        urgentTurn.turnDeadlineMs !== undefined
+          ? Math.max(0, Math.ceil((urgentTurn.turnDeadlineMs - nowMs) / 1000))
           : undefined,
+    };
+  }
+  const urgentSeat = live
+    .filter((t) => {
+      /* `> 0` as well as urgent. `isSitOutUrgent` is deliberately unbounded
+         below — it is the styling predicate, and a badge must stay red AT 0:00
+         when the seat is at its most at-risk. The dock is the opposite case: it
+         renders a COUNTDOWN, and once the deadline has passed the value only
+         gets more negative, so an unbounded test would pin this dock to
+         `urgent` with `0s` forever — favicon badge and tick-tock included —
+         which is exactly what the note above claims the design avoids. */
+      const left = t.sitOutDeadlineMs === undefined ? null : t.sitOutDeadlineMs - nowMs;
+      return left !== null && left > 0 && isSitOutUrgent(left);
+    })
+    .sort((a, b) => (a.sitOutDeadlineMs ?? Infinity) - (b.sitOutDeadlineMs ?? Infinity))[0];
+  if (urgentSeat) {
+    return {
+      kind: 'urgent' as const,
+      targetId: urgentSeat.id,
+      name: urgentSeat.name,
+      secondsLeft: Math.max(0, Math.ceil(((urgentSeat.sitOutDeadlineMs ?? nowMs) - nowMs) / 1000)),
     };
   }
   /**
@@ -1074,8 +1115,17 @@ export default function MultiTablePage() {
    * table had a TURN. A background table's discard / insurance / RIT offer or
    * a burning time bank left it stopped, so nothing counted down anywhere.
    */
+  /* 2026-08-29: a SIT-OUT clock is the fourth thing that has to keep counting.
+     It was not in this list, so the tab's SEAT countdown and the dock's
+     sit-out urgency would both have frozen at whatever second the last turn
+     ended — which is precisely when a sat-out player has nothing else running.
+     The most important clock on the page was the one that stopped. */
   const anyTurnLive = tables.some(
-    (t) => (t.isMyTurn && t.turnDeadlineMs !== undefined) || !!t.decision || !!t.timeBank
+    (t) =>
+      (t.isMyTurn && t.turnDeadlineMs !== undefined) ||
+      !!t.decision ||
+      !!t.timeBank ||
+      t.sitOutDeadlineMs !== undefined
   );
   useEffect(() => {
     if (!anyTurnLive) return;
@@ -1128,6 +1178,11 @@ export default function MultiTablePage() {
           folded: t.folded,
           handResult: t.handResult,
           sittingOut: t.sittingOut,
+          /* Precomputed here, like every other countdown this bar renders. */
+          sitOutSecondsLeft:
+            t.sitOutDeadlineMs === undefined
+              ? undefined
+              : Math.max(0, Math.ceil((t.sitOutDeadlineMs - nowMs) / 1000)),
           /* OBSERVING vs PLAYING. The bar goes quiet on a table the hero holds
              no seat at (Dan 2026-08-26). `seated` is the only server-truth
              answer to that question -- it is set by TABLE_SEATED and by the
@@ -1374,7 +1429,12 @@ export default function MultiTablePage() {
         case 'sitout': {
           const res = await setSitOut(tabId, true);
           if (res?.success) {
-            toast.info('Sitting Out', 2500);
+            /* SAY WHAT WAS JUST STARTED. "Sitting Out" alone omits the only
+               part with a consequence: on a cash table this begins a
+               five-minute clock that ends with the seat gone and the stack
+               cashed out. The tab now carries the countdown, but the toast is
+               what the player is looking at in the moment they tap. */
+            toast.info(sitOutStartedMessage(tablesRef.current, tabId), 3500);
           } else {
             toast.error(res?.error || 'Could Not Sit Out', 4000);
           }
@@ -1398,12 +1458,37 @@ export default function MultiTablePage() {
   // One tap instead of four trips through per-table menus. Direct engine
   // calls, never the per-table SIT_OUT bus action - that opens each table's
   // modal, which is exactly the ceremony this shortcut exists to skip.
+  /**
+   * What a single Sit Out just committed the player to, in one sentence.
+   *
+   * A tournament seat is held indefinitely and blinded off; a cash seat is on a
+   * five-minute clock and is cashed out at the end of it. Those are different
+   * enough decisions that one toast cannot describe both.
+   */
+  const sitOutStartedMessage = (list: TableInstance[], tabId: string): string => {
+    const t = list.find((x) => x.id === tabId);
+    if (t && t.isTournament) return 'Sitting Out. You Will Be Blinded Off.';
+    return 'Sitting Out. Your Seat Is Held For Up To 5 Minutes.';
+  };
+
   const handleSitOutAll = useCallback(async () => {
     const live = tablesRef.current.filter((t) => !isLobbyTab(t) && t.seated);
     if (live.length === 0) return;
     const results = await Promise.all(live.map((t) => setSitOut(t.id, true)));
     const ok = results.filter((r) => r?.success).length;
-    if (ok > 0) toast.info(`Sitting Out At ${ok} ${ok === 1 ? 'Table' : 'Tables'}`, 3000);
+    if (ok > 0) {
+      /* One tap can start SIX five-minute eviction clocks. Saying only how many
+         tables were sat out leaves out the half that costs money. */
+      const cashCount = live.filter((t, i) => results[i]?.success && !t.isTournament).length;
+      toast.info(
+        cashCount > 0
+          ? `Sitting Out At ${ok} ${ok === 1 ? 'Table' : 'Tables'}. ${cashCount} Cash ${
+              cashCount === 1 ? 'Seat Is' : 'Seats Are'
+            } Held For Up To 5 Minutes.`
+          : `Sitting Out At ${ok} ${ok === 1 ? 'Table' : 'Tables'}`,
+        4500
+      );
+    }
     if (ok < live.length) toast.error('Some Tables Could Not Sit Out', 4000);
   }, [toast]);
 

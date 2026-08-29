@@ -102,6 +102,15 @@ export interface TournamentResult {
   isSpin?: boolean;
   /** The hole cards the hero held when they won the tournament. */
   winningCards?: Card[];
+  /**
+   * The finished tournament's id (2026-08-29, round 12). What Play Again
+   * needs to be a real button: with the id, the ranking card can read the
+   * origin game's club, stake and variant and seat the player straight into
+   * the open sibling game - the supply audit proved one always exists for
+   * every seat-first stake. Without it (an older payload), Play Again keeps
+   * its list-navigation fallback.
+   */
+  tournamentId?: string;
 }
 
 export interface SessionSummaryPayload {

@@ -385,7 +385,19 @@
        4px, not 0: a page whose first element is a full-bleed panel still
        wants a hairline of separation from the header's bottom border. */
     padding-top: 4px;
+    /* clip, not hidden — full reasoning on the body rule in
+       src/styles/design-system.css.
+
+       THIS LINE IS WHY THE BUG WAS MOBILE-ONLY. `.casinoStage` above already
+       uses `clip`; this block is later in the file, so below 600px it put
+       `hidden` back on the SAME element, `overflow-y` computed to `auto`,
+       <main> became a scroll container 25,000px tall, and WebKit pinned the
+       fixed ClubBottomNav to the bottom of THAT instead of the screen. Above
+       600px the rule never applied, so desktop looked perfect. Dan,
+       2026-08-29: "THE FOOTER IS COMING UP ON MOBILE AND ISN'T STAYING LOCKED
+       TO THE FOOTER." */
     overflow-x: hidden;
+    overflow-x: clip;
   }
 
   .headerContent {

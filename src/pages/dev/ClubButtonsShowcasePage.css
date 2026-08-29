@@ -2,7 +2,12 @@
   min-height: 100vh;
   min-height: 100dvh;
   padding: clamp(16px, 3vw, 36px);
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
   overflow-x: hidden;
+  overflow-x: clip;
   background:
     radial-gradient(circle at 50% -20%, rgba(22, 143, 255, 0.13), transparent 42%),
     linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),

@@ -118,6 +118,13 @@ import { preloadRoute } from '../utils/ChunkPreloader';
    emblem and fills the box as intended. */
 const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
 
+// Club Arena is deployed beneath /hub/club-arena/. Root-relative /assets URLs
+// bypass Vite's configured base path in production and silently 404, leaving
+// the live lobby DOM visible without its premium chassis or campaign artwork.
+const CLUB_LOBBY_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/lobby`;
+const CLUB_LOBBY_CHASSIS = `${CLUB_LOBBY_ASSET_ROOT}/lobby-command-chassis-v2.png`;
+const CLUB_LOBBY_CAMPAIGN = `${CLUB_LOBBY_ASSET_ROOT}/shark-club-championship-ad-v2.png`;
+
 /**
  * The order the Omaha tab groups its variants in (Dan 2026-08-25). Four cards
  * first because it is the game most players mean by "PLO", then five, six, and
@@ -4100,7 +4107,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       <section className="club-lobby-machine" aria-label={`${club.name} Game Lobby`}>
         <img
           className="club-lobby-machine__chassis"
-          src="/assets/club-buttons/lobby/lobby-command-chassis-v2.png"
+          src={CLUB_LOBBY_CHASSIS}
           alt=""
           aria-hidden="true"
         />
@@ -4350,9 +4357,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               }}
             >
               <img
-                src={
-                  club.banner_url || '/assets/club-buttons/lobby/shark-club-championship-ad-v2.png'
-                }
+                src={club.banner_url || CLUB_LOBBY_CAMPAIGN}
                 alt={
                   club.banner_url
                     ? `${club.name} Promotion`

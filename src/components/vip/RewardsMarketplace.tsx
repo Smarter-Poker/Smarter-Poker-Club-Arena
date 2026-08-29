@@ -13,7 +13,7 @@
  * even resolved, and again when it had REFUSED - VIPPage's own error toast
  * ("Not enough VIP points") landed next to a success toast for the same click.
  *
- * The twelve rewards were also hardcoded HERE, while the redemption RPC took
+ * The original twelve rewards were also hardcoded HERE, while the redemption RPC took
  * the price FROM THE CLIENT, so a 5,000-point pass could be bought for one
  * point; and redemption granted nothing at all, so 2,000 points spent on a
  * table theme bought a ledger line and no theme.
@@ -52,16 +52,6 @@ export interface Reward {
  */
 const FALLBACK_REWARDS: Reward[] = [
   {
-    id: 'tournament-elite',
-    name: 'Elite Tournament Pass',
-    description: 'Entry to premium tournament series with higher payouts',
-    category: 'tournament',
-    pointsCost: 5000,
-    icon: 'T',
-    stock: 25,
-    featured: true,
-  },
-  {
     id: 'avatar-gold-frame',
     name: 'Gold Avatar Frame',
     description: 'Exclusive gold avatar frame',
@@ -76,22 +66,6 @@ const FALLBACK_REWARDS: Reward[] = [
     description: 'Vibrant neon-style table theme',
     category: 'theme',
     pointsCost: 2000,
-    icon: '◆',
-  },
-  {
-    id: 'bonus-50k',
-    name: '50K Bonus Package',
-    description: 'Bonus chips to use in games',
-    category: 'bonus',
-    pointsCost: 3500,
-    icon: '→',
-  },
-  {
-    id: 'tournament-vip',
-    name: 'VIP Tournament Seat',
-    description: 'Reserved seat in exclusive weekly tournament',
-    category: 'tournament',
-    pointsCost: 4000,
     icon: '◆',
   },
   {
@@ -111,22 +85,6 @@ const FALLBACK_REWARDS: Reward[] = [
     icon: '◐',
   },
   {
-    id: 'bonus-25k',
-    name: '25K Bonus Package',
-    description: 'Bonus chips to use in games',
-    category: 'bonus',
-    pointsCost: 1500,
-    icon: '◆',
-  },
-  {
-    id: 'tournament-weekly',
-    name: 'Weekly Tournament Bundle',
-    description: 'Entry to 4 weekly tournaments',
-    category: 'tournament',
-    pointsCost: 2000,
-    icon: '▤',
-  },
-  {
     id: 'avatar-diamond-halo',
     name: 'Diamond Avatar Frame',
     description: 'Premium faceted diamond avatar frame',
@@ -141,15 +99,6 @@ const FALLBACK_REWARDS: Reward[] = [
     category: 'theme',
     pointsCost: 2200,
     icon: '▲',
-  },
-  {
-    id: 'merch-hoodie',
-    name: 'Premium Hoodie',
-    description: 'Limited edition branded hoodie',
-    category: 'merch',
-    pointsCost: 8000,
-    icon: '◆',
-    stock: 50,
   },
 ];
 
@@ -174,6 +123,7 @@ interface CatalogRow {
   points_cost: number;
   stock: number | null;
   featured: boolean;
+  grant_type: 'theme' | 'avatar' | 'manual';
 }
 
 export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
@@ -193,7 +143,7 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
   const loadCatalog = useCallback(async () => {
     const { data, error } = await supabase
       .from('vip_reward_catalog')
-      .select('id, name, description, category, points_cost, stock, featured')
+      .select('id, name, description, category, points_cost, stock, featured, grant_type')
       .eq('is_active', true)
       .order('sort_order', { ascending: true });
     if (error) {
@@ -206,16 +156,20 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
     }
     const iconById = new Map(FALLBACK_REWARDS.map((r) => [r.id, r.icon]));
     setRewards(
-      ((data || []) as CatalogRow[]).map((row) => ({
-        id: row.id,
-        name: row.name,
-        description: row.description,
-        category: row.category,
-        pointsCost: Number(row.points_cost),
-        icon: iconById.get(row.id) || '◆',
-        stock: row.stock ?? undefined,
-        featured: row.featured,
-      }))
+      ((data || []) as CatalogRow[])
+        // Manual rewards had no fulfillment surface. A paid claim that merely
+        // says “someone will handle it” is not a functioning product.
+        .filter((row) => row.grant_type === 'theme' || row.grant_type === 'avatar')
+        .map((row) => ({
+          id: row.id,
+          name: row.name,
+          description: row.description,
+          category: row.category,
+          pointsCost: Number(row.points_cost),
+          icon: iconById.get(row.id) || '◆',
+          stock: row.stock ?? undefined,
+          featured: row.featured,
+        }))
     );
     setLoadFailed(false);
   }, []);
@@ -277,7 +231,7 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
       count: REWARDS.filter((r) => r.category === 'bonus').length,
     },
     { id: 'merch', label: 'Merch', count: REWARDS.filter((r) => r.category === 'merch').length },
-  ];
+  ].filter((category) => category.id === 'all' || category.count > 0);
 
   const handleRedeem = async (reward: Reward) => {
     if (inFlightRef.current) return;

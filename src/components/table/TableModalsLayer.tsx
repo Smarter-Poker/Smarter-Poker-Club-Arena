@@ -61,7 +61,8 @@ import { BombPotOverlay } from './BombPotOverlay';
 import { FinalTableOverlay } from '../tournament/FinalTableOverlay';
 import { HeadsUpOverlay } from '../tournament/HeadsUpOverlay';
 import { TableErrorBoundary } from '../common/TableErrorBoundary';
-import { setSitOut } from '../../services/GameServerAPI';
+/* `setSitOut` is no longer imported here: this component reports the intent and
+   TablePage owns the request. See `onReturn` below. */
 import { roomService } from '../../services/RoomService';
 import { reportError } from '../../utils/errorReporter';
 import { tournamentService } from '../../services/TournamentService';
@@ -790,29 +791,14 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
          * completely silent and the player was returned to a felt they were
          * still sitting out of. Close only after the server agrees.
          */
-        onReturn={() => {
-          if (!tableId) {
-            onReturnFromSitOut();
-            return;
-          }
-          void setSitOut(tableId, false).then((res) => {
-            if (res?.success) {
-              onReturnFromSitOut();
-            } else {
-              /* SAY IT OUT LOUD (2026-08-29). This branch reported to telemetry
-                 and stopped. The modal stayed open, the player stayed sitting
-                 out, and NOTHING on screen changed — on the one surface a
-                 sitting-out player is looking at, with a deadline running. Every
-                 other sit-out entry point in the app toasts its refusal; this
-                 one, the most important, did not. */
-              toast?.error?.(res?.error || 'Could Not Sit Back In. Please Try Again.');
-              reportError(
-                new Error(res?.error || 'setSitOut(false) rejected by engine'),
-                'TableModalsLayer.Return_failed'
-              );
-            }
-          });
-        }}
+        /* REPORTS THE INTENT; TablePage owns the request.
+           This used to issue its own `setSitOut(tableId, false)`, which made two
+           implementations of "sit back in" — and only the other one was behind
+           the in-flight guard, so the out -> in -> out race was still reachable
+           by alternating THIS button with the table menu's Sit Out. It also let
+           the two buttons' local cleanup and failure toasts drift apart, which
+           they had. `handleSitBackIn` is now the single path. */
+        onReturn={onReturnFromSitOut}
         /**
          * 2026-08-20: was `() => navigate('/')`. "Leave Table" navigated away
          * without ever leaving the table — no cash-out, no seat release. The
@@ -828,7 +814,6 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
            never fires. Heads-up cash is NOT exempt on either side of the wire —
            see src/lib/sitOutDeadline.ts. */
         isTournament={isTournament}
-        tableName={tableName}
       />
 
       {/* Wait List Modal */}

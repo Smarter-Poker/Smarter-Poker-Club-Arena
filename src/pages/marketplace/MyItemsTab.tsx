@@ -137,7 +137,7 @@ export default function MyItemsTab({
       // fn_redeem_shop_item now grants a real entitlement and reports it back.
       const g = data?.granted as
         | {
-            type?: string;
+            type?: 'time_bank' | 'throwable' | 'emote_pack' | 'table_skin' | 'avatar' | 'none';
             uses?: number;
             seconds?: number;
             theme_id?: string;
@@ -164,6 +164,15 @@ export default function MyItemsTab({
           userId: String(data.user_id || ''),
           category: g.type === 'avatar' ? 'avatar' : 'theme_id',
           assetId: g.avatar_id || g.theme_id,
+          source: 'club-redemption',
+        });
+      }
+      if (g?.type && g.type !== 'none') {
+        masterBus.emit('ENTITLEMENTS_CHANGED', {
+          userId: String(data.user_id || ''),
+          category: g.type,
+          assetId: g.avatar_id || g.theme_id,
+          quantity: g.uses,
           source: 'club-redemption',
         });
       }
@@ -210,6 +219,17 @@ export default function MyItemsTab({
     purchases.forEach((p) => m.set(p.id, p.currency || 'diamonds'));
     return m;
   }, [purchases]);
+
+  const deliveredPurchaseIds = useMemo(
+    () =>
+      new Set(
+        inventory
+          .filter((item) => !!item.redeemed_at || item.status === 'redeemed')
+          .map((item) => item.purchase_id)
+          .filter((purchaseId): purchaseId is string => !!purchaseId)
+      ),
+    [inventory]
+  );
 
   const entitlementStrip =
     entitlementChips.length > 0 ? (
@@ -261,6 +281,8 @@ export default function MyItemsTab({
             <tbody>
               {inventory.map((it) => {
                 const spent = !isOwnedRow(it);
+                const delivered = !!it.redeemed_at;
+                const activated = !spent && delivered;
                 const redeemed = spent;
                 /* SPENT_STATUSES is {redeemed, refunded, revoked, expired}, and
                    `redeemed = spent` collapsed all four into one badge - so a
@@ -274,11 +296,13 @@ export default function MyItemsTab({
                       ? 'Revoked'
                       : it.status === 'expired'
                         ? 'Expired'
-                        : it.status === 'redeemed'
-                          ? 'Redeemed'
-                          : spent
-                            ? 'Spent'
-                            : 'Owned';
+                        : activated
+                          ? 'Active'
+                          : it.status === 'redeemed'
+                            ? 'Redeemed'
+                            : spent
+                              ? 'Spent'
+                              : 'Owned';
                 const rowUnit = unitOf(
                   it.purchase_id ? currencyByPurchase.get(it.purchase_id) : undefined
                 );
@@ -316,7 +340,7 @@ export default function MyItemsTab({
                       </span>
                     </td>
                     <td>
-                      {!redeemed && (
+                      {!redeemed && !delivered && (
                         <button
                           className={styles.emptyButton}
                           style={{ padding: '4px 12px', fontSize: '12px' }}
@@ -400,7 +424,7 @@ export default function MyItemsTab({
                           {/* A refunded purchase cannot be refunded again — the
                               server answers "already refunded". Say so here
                               instead of offering the action. */}
-                          {p.refunded_at ? (
+                          {p.refunded_at || deliveredPurchaseIds.has(p.id) ? (
                             <span style={{ fontSize: '11px', color: '#8b8d91' }}>-</span>
                           ) : (
                             <button

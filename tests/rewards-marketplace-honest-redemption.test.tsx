@@ -77,6 +77,7 @@ beforeEach(() => {
       points_cost: 2000,
       stock: null,
       featured: false,
+      grant_type: 'theme',
     },
   ];
   catalogRows.error = null;
@@ -159,6 +160,7 @@ describe('RewardsMarketplace redemption', () => {
         points_cost: 3300,
         stock: null,
         featured: false,
+        grant_type: 'theme',
       },
     ];
     render(<RewardsMarketplace currentPoints={9000} onRedeem={vi.fn()} />);
@@ -170,10 +172,9 @@ describe('RewardsMarketplace redemption', () => {
     catalogRows.error = { message: 'rls denied' };
     render(<RewardsMarketplace currentPoints={9000} onRedeem={vi.fn()} />);
     // Falls back to the bundled list rather than an empty shop, and every
-    // bundled reward is still shown.
+    // bundled auto-delivered reward is still shown.
     expect(await screen.findByText('Neon Table Theme')).toBeTruthy();
-    // Appears twice: once in the featured banner, once in the grid.
-    expect(screen.getAllByText('Elite Tournament Pass').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Gold Avatar Frame').length).toBeGreaterThan(0);
   });
 
   it('will not spend points the member does not have', async () => {

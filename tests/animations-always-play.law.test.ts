@@ -220,7 +220,13 @@ describe('LAW: no animation may be skipped by state plumbing', () => {
       /boxing_glove: \{ text:/
     );
     // It still scales with the player's Animation Speed, like everything else.
-    expect(THROW).toContain('speed: getAnimationSpeed()');
+    /* MOVED 2026-08-29, same commit as the change: this read
+       `speed: getAnimationSpeed()`. The throwable system now hoists ONE
+       `const speed = getAnimationSpeed()` per throw — read once so a setting
+       changed mid-flight cannot desynchronise a throw already in the air —
+       and the cue is handed that. What matters is unchanged and is what is
+       asserted: the knockout cue stretches with the player's setting. */
+    expect(THROW).toMatch(/playKnockoutFlurry\(\{[\s\S]*?\n\s*speed,/);
     // The flurry sizes off the THROWABLE's own impact size, not the seat token
     // it cannot see from outside the seat ring.
     expect(THROW).toContain("'--sko-unit': `${Math.round(impactSize * 1.15)}px`");
@@ -336,6 +342,112 @@ describe('LAW: the end-of-hand cadence plays in order, every hand', () => {
   });
   // The 1-second rest itself (POST_PUSH_PAUSE_MS) is pinned arithmetically in
   // tests/unit/handCompletionLaw.test.ts, in every hold formula.
+});
+
+describe('LAW: the throwable system obeys the speed the player chose', () => {
+  /* Found 2026-08-29 by counting, not by looking: ThrowAnimation.css and
+     ThrowableSignatures.css carried 217 hardcoded durations between them and
+     NOT ONE of them scaled, while ThrowAnimation.tsx never called
+     getAnimationSpeed() at all. So a player on the slow setting watched every
+     other animation on the table stretch to 3x while throwables kept snapping
+     past at 1x. CLAUDE.md §10.6 names speed scaling as the one sanctioned
+     control over animation duration; the throwables had opted out of it
+     wholesale, and nothing noticed because no test had ever asked. */
+  const THROW_TSX = read('src/components/table/ThrowAnimation.tsx');
+  const THROW_CSS = read('src/components/table/ThrowAnimation.css');
+  const SIG_CSS = read('src/components/table/ThrowableSignatures.css');
+
+  it('every animation duration in both throwable stylesheets scales', () => {
+    for (const [name, css] of [
+      ['ThrowAnimation.css', THROW_CSS],
+      ['ThrowableSignatures.css', SIG_CSS],
+    ] as const) {
+      /* Comments out, THEN scan. `.throw-animation:` inside a prose comment
+         satisfies /\banimation:/ - the hyphen is a word boundary - so the
+         first version of this test reported a phantom unscaled declaration
+         sitting in a paragraph of documentation. The property must also not
+         be preceded by a hyphen or a word character, or the same string
+         matches all over again. */
+      const code = css.replace(/\/\*[\s\S]*?\*\//g, '');
+      const decls = [
+        ...code.matchAll(/(?<![-\w])animation(?:-duration|-delay)?\s*:([^;{}]*)/g),
+      ].map((m) => m[1]);
+      expect(decls.length, `${name} should declare animations`).toBeGreaterThan(20);
+      for (const d of decls) {
+        // Either it scales, or it defers to one of the four timeline variables
+        // that ThrowAnimation.tsx has already scaled in JS, or it is a
+        // switch-off with no duration to scale.
+        const okay =
+          /var\(--animation-speed, 1\)/.test(d) ||
+          /var\(--(?:flight|impact|life|linger)-dur/.test(d) ||
+          /^\s*(?:none|inherit|unset)\b/.test(d);
+        expect(okay, `"${d.trim().slice(0, 70)}" in ${name} must scale`).toBe(true);
+      }
+    }
+  });
+
+  it('the impact caption is a struck BADGE, not floating text', () => {
+    /* Dan 2026-08-29, on the PokerBros captures: "THE DESIGN GRAPHICS ETC
+       NEEDS TO BE REPLICATED INSIDE OF EVERY SINGLE THROWABLE ANIMATION."
+       Theirs is a plate with a starburst behind it; ours was 22px of white
+       Rajdhani floating in space. It is one element still — the plate is the
+       element, the burst is ::before, the shine is ::after — because a table
+       can be running four throws at once. */
+    const cap = THROW_CSS.slice(THROW_CSS.indexOf('.throw-animation__caption {'));
+    expect(cap, 'the plate').toMatch(/background:\s*\n?\s*linear-gradient/);
+    expect(THROW_CSS, 'the starburst').toContain('.throw-animation__caption::before');
+    expect(THROW_CSS, 'the struck-metal shine').toContain('.throw-animation__caption::after');
+    // Irregular by construction. repeating-conic-gradient at even intervals is
+    // the cartoon sun the knockout's first star was, and that mistake is
+    // documented at length in SeatKnockout.css.
+    expect(cap, 'no evenly-spaced spokes').not.toContain('repeating-conic-gradient');
+    expect(cap).toContain('conic-gradient');
+
+    /* color-mix() FALLBACKS. A browser that does not understand color-mix
+       throws away the WHOLE declaration, so a single shadow list using it
+       would take the bevel and the drop shadow down with the glow. Every
+       property that uses color-mix must be declared TWICE — a plain-colour
+       floor first, the enhanced version second. */
+    for (const prop of ['box-shadow', 'text-shadow', 'background']) {
+      const uses = [...cap.matchAll(new RegExp(`\\n  ${prop}:`, 'g'))].length;
+      const mixed = [...cap.matchAll(new RegExp(`\\n  ${prop}:[^;]*color-mix`, 'g'))].length;
+      if (mixed > 0) {
+        expect(
+          uses,
+          `${prop} uses color-mix and therefore needs a plain-colour declaration before it`
+        ).toBeGreaterThan(mixed);
+      }
+    }
+  });
+
+  it('the four JS-computed timeline variables are scaled exactly once', () => {
+    // Scaled in JS (here) and NOT again in CSS — double-scaling a duration is
+    // as broken as not scaling it, and much harder to spot.
+    expect(THROW_TSX).toContain('const speed = getAnimationSpeed();');
+    expect(THROW_TSX).toContain("'--flight-dur': `${scaled(physics.duration)}ms`");
+    expect(THROW_TSX).toContain("'--impact-dur': `${scaled(impactMs)}ms`");
+    expect(THROW_TSX).toContain("'--life-dur': `${scaled(lifeMs)}ms`");
+    expect(THROW_TSX).toContain("'--linger-dur': `${scaled(lingerMs)}ms`");
+    for (const css of [THROW_CSS, SIG_CSS]) {
+      expect(
+        css,
+        'the timeline vars are pre-scaled; multiplying them again doubles the duration'
+      ).not.toMatch(
+        /var\(--(?:flight|impact|life|linger)-dur[^)]*\)\s*\*\s*var\(--animation-speed/
+      );
+    }
+  });
+
+  it('the phase timers and the decorative class removals scale too', () => {
+    // One scaled `at()` covers all four phase transitions. Scaling at the call
+    // sites would be four chances to forget one, and a forgotten one fires an
+    // impact before its projectile has landed.
+    expect(THROW_TSX).toMatch(/const at = \(ms: number, fn: \(\) => void\) =>[\s\S]*?ms \* speed/);
+    expect(THROW_TSX).toContain("'seat--throw-flinch'), 500 * speed");
+    expect(THROW_TSX).toContain("'throw-animation--shake'), 520 * speed");
+    // The whoosh has to last as long as the flight it is announcing.
+    expect(THROW_TSX).toContain('playFlight(t.id, scaled(physics.duration), impactPan)');
+  });
 });
 
 describe('LAW: reduced motion removes motion, never meaning', () => {

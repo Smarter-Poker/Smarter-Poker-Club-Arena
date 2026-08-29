@@ -11,7 +11,12 @@
   color: #fff;
   width: 100%;
   max-width: 100vw;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
   overflow-x: hidden;
+  overflow-x: clip;
   /* Reserve the fixed bottom nav this page renders (2026-08-23). The bar is
      out of flow, so whatever it covers is simply unreachable — the token
      is the bar's height PLUS the home-indicator inset it adds on iOS. */

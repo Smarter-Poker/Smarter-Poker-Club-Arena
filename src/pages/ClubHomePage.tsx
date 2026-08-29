@@ -89,7 +89,7 @@ import {
   type LobbyViewPrefs,
 } from '../components/lobby/lobbyViewPrefs';
 import { useUserStore } from '../stores/useUserStore';
-import LobbyAdStrip from '../components/lobby/LobbyAdStrip';
+import ClubLobbyCommandTop from '../components/lobby/ClubLobbyCommandTop';
 import HouseAdCard from '../components/ads/HouseAdCard';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
@@ -218,6 +218,7 @@ interface ClubData {
   description: string;
   avatar_url: string;
   logo_url?: string;
+  banner_url?: string | null;
   member_count: number;
   online_count: number;
   owner_id: string;
@@ -1052,8 +1053,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const handleBBJChange = (payload: any) => {
         if (!isMounted) return;
         const row = (payload?.new ?? payload?.old) as
-          | { main_balance?: number | string }
-          | undefined;
+          { main_balance?: number | string } | undefined;
         // main_balance is numeric(14,2), and PostgREST/Realtime deliver
         // numerics as STRINGS ("350.40"). The old guard was
         // `typeof row.main_balance === 'number'`, which is therefore NEVER
@@ -1547,7 +1547,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, slug, description, avatar_url, logo_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at, is_union, union_id'
+              'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at, is_union, union_id'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -3489,6 +3489,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         if (row) handleRegister(row);
         else openEntry(e);
       },
+      onUnregister: (e) => {
+        const row = filteredTournamentsRef.current.find((t) => t.id === e.id);
+        if (row) void handleUnregister(row);
+      },
+      actionBusy,
       /* SEAT-FIRST (Dan 2026-08-21, binding): a Spin or Heads-Up card's Sit
          Down opens the TABLE — the seat is bought there, by the tap that
          picks it. Same flow the game-lobby panel already runs; the card was
@@ -3557,12 +3562,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       currentUserId,
       handleToggleFavorite,
       handleRegister,
+      handleUnregister,
       handleJoinTable,
       openEntry,
       navigate,
       handleWaitlistToggle,
       openTournamentLobby,
       spinQuickJoin,
+      actionBusy,
     ]
   );
 
@@ -3989,87 +3996,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           )}
         </div>
 
-        {/* ── Editable Club Notice ── */}
-        {(club.description?.trim() || noticeEditable) && (
-          <div
-            className={`lobby-top__notice ${isOwner || isClubStaff(userRole) ? 'lobby-top__notice--editable' : ''}`}
-            /* Editable for staff, so it is a control for staff: it carried a
-               click handler and nothing else, which no keyboard and no screen
-               reader could reach. For everyone else it stays a paragraph. */
-            role={noticeEditable && !isEditingNotice ? 'button' : undefined}
-            tabIndex={noticeEditable && !isEditingNotice ? 0 : undefined}
-            aria-label={
-              noticeEditable && !isEditingNotice ? 'Edit Club Welcome Message' : undefined
-            }
-            onKeyDown={(e) => {
-              if (!noticeEditable || isEditingNotice) return;
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                setNoticeDraft(club.description || '');
-                setIsEditingNotice(true);
-              }
-            }}
-            onClick={() => {
-              if (noticeEditable && !isEditingNotice) {
-                setNoticeDraft(club.description || '');
-                setIsEditingNotice(true);
-              }
-            }}
-          >
-            {isEditingNotice ? (
-              <div className="lobby-top__notice-editor" onClick={(e) => e.stopPropagation()}>
-                <textarea
-                  value={noticeDraft}
-                  onChange={(e) => setNoticeDraft(e.target.value)}
-                  placeholder="Welcome To The Shark Club, All Fish Of All Shapes And Sizes Are Welcome!"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') setIsEditingNotice(false);
-                  }}
-                />
-                <div className="lobby-top__notice-actions">
-                  <button onClick={() => setIsEditingNotice(false)}>Cancel</button>
-                  <button
-                    onClick={() => {
-                      const newDesc = noticeDraft.trim();
-                      /* `club.id`, not `resolvedClubId`. The latter can still
-                         be null on a slug route, and `.eq('id', null)` matches
-                         zero rows and returns NO error - so the owner saw
-                         "Successfully Updated", the optimistic text stayed on
-                         screen, and the notice reverted on the next load with
-                         nothing ever having been written. `club` is non-null
-                         in this branch by construction. */
-                      const targetId = club.id;
-                      // Optimistic UI update
-                      setClub((prev) => (prev ? { ...prev, description: newDesc } : prev));
-                      setIsEditingNotice(false);
-
-                      void (async () => {
-                        const { error } = await supabase
-                          .from('clubs')
-                          .update({ description: newDesc })
-                          .eq('id', targetId);
-                        // The toast reports what HAPPENED. It used to fire
-                        // before the request was even sent.
-                        if (error) {
-                          reportError(error, 'ClubHomePage.Notice_save_failed');
-                          toast.error('Could Not Save The Welcome Message');
-                        } else {
-                          toast.success('Welcome Message Updated');
-                        }
-                      })();
-                    }}
-                  >
-                    Save
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <p>{club.description?.trim() || 'Click to add a welcome message...'}</p>
-            )}
-          </div>
-        )}
-
         {/* ── NO SEARCH BOX ────────────────────────────────────────────────
             Dan 2026-08-25 asked for the search-by-name field to be removed
             completely: nobody is ever typing the name of a game.
@@ -4170,39 +4096,110 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       {/* ═══════════════════════════════════════════════════════════════════
           GAME ACTION BAR — every game type, flat, plus explicit sorting
       ═══════════════════════════════════════════════════════════════════ */}
-      <section className="lobby-controls" aria-label="Browse games">
-        <div className="lobby-controls__heading">
-          <div>
-            <span className="lobby-controls__eyebrow">Live Club Schedule</span>
-            <strong className="lobby-controls__title">Find Your Game</strong>
+      <ClubLobbyCommandTop
+        welcome={
+          <div
+            className={`lobby-top__notice ${isOwner || isClubStaff(userRole) ? 'lobby-top__notice--editable' : ''}`}
+            role={noticeEditable && !isEditingNotice ? 'button' : undefined}
+            tabIndex={noticeEditable && !isEditingNotice ? 0 : undefined}
+            aria-label={
+              noticeEditable && !isEditingNotice ? 'Edit Club Welcome Message' : undefined
+            }
+            onKeyDown={(e) => {
+              if (!noticeEditable || isEditingNotice) return;
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setNoticeDraft(club.description || '');
+                setIsEditingNotice(true);
+              }
+            }}
+            onClick={() => {
+              if (noticeEditable && !isEditingNotice) {
+                setNoticeDraft(club.description || '');
+                setIsEditingNotice(true);
+              }
+            }}
+          >
+            {isEditingNotice ? (
+              <div className="lobby-top__notice-editor" onClick={(e) => e.stopPropagation()}>
+                <textarea
+                  value={noticeDraft}
+                  onChange={(e) => setNoticeDraft(e.target.value)}
+                  placeholder="All Fish Of All Shapes And Sizes Are Welcome!"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') setIsEditingNotice(false);
+                  }}
+                />
+                <div className="lobby-top__notice-actions">
+                  <button onClick={() => setIsEditingNotice(false)}>Cancel</button>
+                  <button
+                    onClick={() => {
+                      const newDesc = noticeDraft.trim();
+                      const targetId = club.id;
+                      setClub((prev) => (prev ? { ...prev, description: newDesc } : prev));
+                      setIsEditingNotice(false);
+                      void (async () => {
+                        const { error } = await supabase
+                          .from('clubs')
+                          .update({ description: newDesc })
+                          .eq('id', targetId);
+                        if (error) {
+                          reportError(error, 'ClubHomePage.Notice_save_failed');
+                          toast.error('Could Not Save The Welcome Message');
+                        } else {
+                          toast.success('Welcome Message Updated');
+                        }
+                      })();
+                    }}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="club-lobby-command-top__welcome-copy">
+                <span className="club-lobby-command-top__welcome-eyebrow">Welcome To The</span>
+                <h2 className="club-lobby-command-top__club-name">{club.name}</h2>
+                <p>{club.description?.trim() || 'Welcome To The Club'}</p>
+              </div>
+            )}
           </div>
-          <span className="lobby-controls__total">
-            <strong>
-              {totalGameCount.toLocaleString()}
-              {countsCapped ? '+' : ''}
-            </strong>{' '}
-            Games
-          </span>
-        </div>
-        <div className="game-bar">
-          <div className="game-bar__types" role="tablist" aria-label="Game type">
-            {GAME_TYPE_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                role="tab"
-                aria-selected={gameType === tab.key}
-                className={`game-bar__type ${gameType === tab.key ? 'is-active' : ''}`}
-                onClick={() => {
-                  haptic.selection();
-                  selectGameType(tab.key);
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+        }
+        controls={
+          <section className="lobby-controls" aria-label="Browse games">
+            <div className="lobby-controls__heading">
+              <div>
+                <span className="lobby-controls__eyebrow">Live Club Schedule</span>
+                <strong className="lobby-controls__title">Find Your Game</strong>
+              </div>
+              <span className="lobby-controls__total">
+                <strong>
+                  {totalGameCount.toLocaleString()}
+                  {countsCapped ? '+' : ''}
+                </strong>{' '}
+                Games
+              </span>
+            </div>
+            <div className="game-bar">
+              <div className="game-bar__types" role="tablist" aria-label="Game type">
+                {GAME_TYPE_TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    role="tab"
+                    aria-selected={gameType === tab.key}
+                    className={`game-bar__type ${gameType === tab.key ? 'is-active' : ''}`}
+                    onClick={() => {
+                      haptic.selection();
+                      selectGameType(tab.key);
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
 
-          {/* ON ALL THIS IS A SORT BUTTON, AND IT SAYS SO (Dan 2026-08-25).
+              {/* ON ALL THIS IS A SORT BUTTON, AND IT SAYS SO (Dan 2026-08-25).
             The comment that used to sit here claimed the button was "Hidden
             on ALL". It was not, and what it opened there was worse than
             hidden: AdvancedFilters retargets initialType 'ALL' to 'HOLDEM',
@@ -4217,27 +4214,27 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             to order. So the sheet opens in sortOnly mode instead: the game
             type row and every filter section are gone, Sort By is all that is
             left, and the button reads Sort. Every other tab is unchanged. */}
-          <button
-            className={`game-bar__filter-btn ${(() => {
-              if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
-              const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
-              const fVal = advFilters[gameType as FilterGameType];
-              const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
-              return isFilt || sortKey !== 'recommended' ? 'is-set' : '';
-            })()}`}
-            aria-label={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
-            title={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
-            onClick={() => {
-              haptic.light();
-              setFiltersOpen(true);
-            }}
-          >
-            <IconSort />
-            <span>{gameType === 'ALL' ? 'Sort' : 'Filters'}</span>
-          </button>
-        </div>
+              <button
+                className={`game-bar__filter-btn ${(() => {
+                  if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
+                  const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+                  const fVal = advFilters[gameType as FilterGameType];
+                  const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
+                  return isFilt || sortKey !== 'recommended' ? 'is-set' : '';
+                })()}`}
+                aria-label={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
+                title={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
+                onClick={() => {
+                  haptic.light();
+                  setFiltersOpen(true);
+                }}
+              >
+                <IconSort />
+                <span>{gameType === 'ALL' ? 'Sort' : 'Filters'}</span>
+              </button>
+            </div>
 
-        {/* ═══════════════════════════════════════════════════════════════════
+            {/* ═══════════════════════════════════════════════════════════════════
           QUICK PREFERENCES — the one-tap shortcuts under the action bar
           ───────────────────────────────────────────────────────────────────
           Dan 2026-08-21: "you never added the quick preference link under the
@@ -4249,32 +4246,35 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           two can never disagree, and the icon on the right opens that sheet
           for everything the row has no space for.
       ═══════════════════════════════════════════════════════════════════ */}
-        {gameType !== 'ALL' &&
-          (() => {
-            const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
-            if (!qSpec) return null;
-            const qVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
+            {gameType !== 'ALL' &&
+              (() => {
+                const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+                if (!qSpec) return null;
+                const qVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
 
-            return (
-              <div className="quickprefs">
-                <div className="quickprefs__row quickprefs__row--status" aria-label="Game status">
-                  <button
-                    type="button"
-                    className={`quickprefs__chip ${qVal.statuses.length === 0 ? 'is-on' : ''}`}
-                    aria-pressed={qVal.statuses.length === 0}
-                    onClick={() => {
-                      haptic.selection();
-                      const next: FilterStore = {
-                        ...advFilters,
-                        [gameType]: { ...qVal, statuses: [] },
-                      };
-                      setAdvFilters(next);
-                      if (resolvedClubId) saveFilters(resolvedClubId, next);
-                    }}
-                  >
-                    All
-                  </button>
-                  {/* AUDIT 2026-08-21: these chips used to be a hand-written list
+                return (
+                  <div className="quickprefs">
+                    <div
+                      className="quickprefs__row quickprefs__row--status"
+                      aria-label="Game status"
+                    >
+                      <button
+                        type="button"
+                        className={`quickprefs__chip ${qVal.statuses.length === 0 ? 'is-on' : ''}`}
+                        aria-pressed={qVal.statuses.length === 0}
+                        onClick={() => {
+                          haptic.selection();
+                          const next: FilterStore = {
+                            ...advFilters,
+                            [gameType]: { ...qVal, statuses: [] },
+                          };
+                          setAdvFilters(next);
+                          if (resolvedClubId) saveFilters(resolvedClubId, next);
+                        }}
+                      >
+                        All
+                      </button>
+                      {/* AUDIT 2026-08-21: these chips used to be a hand-written list
                     chosen by showsCash, which disagreed with the sheet on the
                     same screen - Spin-It offered Full/Empty/Open Seats inside
                     Advanced Filters and Running/Registering out here. Both now
@@ -4284,50 +4284,74 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     They also write the SAVED filter now rather than the local
                     sub-filter state, which is what makes them agree with the
                     sheet after a reload instead of resetting. */}
-                  {qSpec.statuses.map((sf) => {
-                    const on = qVal.statuses.includes(sf.key);
-                    return (
-                      <button
-                        key={sf.key}
-                        className={`quickprefs__chip ${on ? 'is-on' : ''}`}
-                        aria-pressed={on}
-                        onClick={() => {
-                          haptic.selection();
-                          const next: FilterStore = {
-                            ...advFilters,
-                            [gameType]: {
-                              ...qVal,
-                              statuses: on
-                                ? qVal.statuses.filter((k) => k !== sf.key)
-                                : [...qVal.statuses, sf.key],
-                            },
-                          };
-                          setAdvFilters(next);
-                          if (resolvedClubId) saveFilters(resolvedClubId, next);
-                        }}
-                      >
-                        {sf.label}
-                      </button>
-                    );
-                  })}
-                  {currentUserId && showsCash && (
-                    <button
-                      type="button"
-                      className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
-                      aria-pressed={favoritesOnly}
-                      onClick={() => {
-                        haptic.selection();
-                        selectFavoritesOnly(!favoritesOnly);
-                      }}
-                    >
-                      Favorites
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-      </section>
+                      {qSpec.statuses.map((sf) => {
+                        const on = qVal.statuses.includes(sf.key);
+                        return (
+                          <button
+                            key={sf.key}
+                            className={`quickprefs__chip ${on ? 'is-on' : ''}`}
+                            aria-pressed={on}
+                            onClick={() => {
+                              haptic.selection();
+                              const next: FilterStore = {
+                                ...advFilters,
+                                [gameType]: {
+                                  ...qVal,
+                                  statuses: on
+                                    ? qVal.statuses.filter((k) => k !== sf.key)
+                                    : [...qVal.statuses, sf.key],
+                                },
+                              };
+                              setAdvFilters(next);
+                              if (resolvedClubId) saveFilters(resolvedClubId, next);
+                            }}
+                          >
+                            {sf.label}
+                          </button>
+                        );
+                      })}
+                      {currentUserId && showsCash && (
+                        <button
+                          type="button"
+                          className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
+                          aria-pressed={favoritesOnly}
+                          onClick={() => {
+                            haptic.selection();
+                            selectFavoritesOnly(!favoritesOnly);
+                          }}
+                        >
+                          Favorites
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+          </section>
+        }
+        campaign={
+          <button
+            type="button"
+            className="club-lobby-command-top__campaign-button"
+            aria-label={`Open ${club.name} Promotions`}
+            onClick={() => {
+              haptic.selection();
+              navigate(`/clubs/${clubId}/announcements`);
+            }}
+          >
+            <img
+              src={
+                club.banner_url || '/assets/club-buttons/lobby/shark-club-championship-ad-v2.png'
+              }
+              alt={
+                club.banner_url
+                  ? `${club.name} Promotion`
+                  : 'Shark Club Championship Series, 250,000 Guaranteed Main Event'
+              }
+            />
+          </button>
+        }
+      />
 
       {/* ═══════════════════════════════════════════════════════════════════
           CLUB / UNION AD STRIP — directly under the action bar
@@ -4349,22 +4373,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           sortOnly={gameType === 'ALL'}
         />
       )}
-
-      <LobbyAdStrip
-        clubId={bbjScope.clubUuid || resolvedClubId}
-        unionId={bbjScope.unionId}
-        onOpen={() => {
-          haptic.selection();
-          navigate(`/clubs/${clubId}/announcements`);
-        }}
-        /* A house ad carries its own destination (2026-08-27). Without this
-           every promo would land on the club's announcements page, where the
-           thing it advertised is not. */
-        onNavigate={(path) => {
-          haptic.selection();
-          navigate(path);
-        }}
-      />
 
       {/* The standalone STATUS REFINEMENT row was folded into the quick
           preferences block above on 2026-08-21. Keeping both would have shown

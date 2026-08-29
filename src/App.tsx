@@ -118,6 +118,9 @@ const NotificationCenter = lazyWithRetry(() => import('./pages/NotificationCente
 const BusDevToolsPage = lazyWithRetry(() => import('./pages/BusDevToolsPage'));
 const ClubButtonsShowcasePage = lazyWithRetry(() => import('./pages/dev/ClubButtonsShowcasePage'));
 const ClubWalletPreviewPage = lazyWithRetry(() => import('./pages/dev/ClubWalletPreviewPage'));
+const ArenaGameCardsShowcasePage = lazyWithRetry(
+  () => import('./pages/dev/ArenaGameCardsShowcasePage')
+);
 const clubButtonsPreviewEnabled = import.meta.env.VITE_CLUB_BUTTONS_PREVIEW === 'true';
 const FinancialAlertsPage = lazyWithRetry(() => import('./pages/FinancialAlertsPage'));
 const DisputeManagementPage = lazyWithRetry(() => import('./pages/DisputeManagementPage'));
@@ -1624,6 +1627,22 @@ export default function App() {
                       <AuthGuard>
                         <PageErrorBoundary pageName="ClubButtons UI Laboratory">
                           <ClubButtonsShowcasePage />
+                        </PageErrorBoundary>
+                      </AuthGuard>
+                    )
+                  }
+                />
+                <Route
+                  path="dev/game-cards"
+                  element={
+                    clubButtonsPreviewEnabled ? (
+                      <PageErrorBoundary pageName="Arena Game Card Preview">
+                        <ArenaGameCardsShowcasePage />
+                      </PageErrorBoundary>
+                    ) : (
+                      <AuthGuard>
+                        <PageErrorBoundary pageName="Arena Game Card Laboratory">
+                          <ArenaGameCardsShowcasePage />
                         </PageErrorBoundary>
                       </AuthGuard>
                     )

@@ -1,0 +1,297 @@
+.club-lobby-command-top {
+  position: relative;
+  container-type: inline-size;
+  width: min(100%, 1050px);
+  aspect-ratio: 1086 / 622;
+  margin: 10px auto 0;
+  overflow: hidden;
+  background: #000;
+  isolation: isolate;
+}
+
+.club-lobby-command-top__chassis {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  filter: brightness(1.18) contrast(1.06);
+  pointer-events: none;
+  user-select: none;
+}
+
+.club-lobby-command-top__welcome,
+.club-lobby-command-top__controls,
+.club-lobby-command-top__campaign {
+  position: absolute;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.club-lobby-command-top__welcome {
+  inset: 16.2% 8.7% auto;
+  height: 23.85%;
+}
+
+.club-lobby-command-top__controls {
+  inset: 44% 8.8% auto;
+  height: 24.7%;
+}
+
+.club-lobby-command-top__campaign {
+  inset: 73.2% 8.7% auto;
+  height: 23.1%;
+}
+
+.club-lobby-command-top .lobby-top__notice {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 0 4%;
+  text-align: center;
+}
+
+.club-lobby-command-top .lobby-top__notice p {
+  display: block;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #269fff;
+  font-size: clamp(5px, 1.16cqw, 12px);
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.28em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.club-lobby-command-top__welcome-copy {
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+}
+
+.club-lobby-command-top__welcome-eyebrow {
+  color: #cbd3db;
+  font-size: clamp(6px, 1.42cqw, 14px);
+  letter-spacing: 0.46em;
+  text-transform: uppercase;
+}
+
+.club-lobby-command-top__club-name {
+  max-width: 100%;
+  margin: 0;
+  overflow: hidden;
+  color: #dce2e7;
+  font-family: 'Cinzel', Georgia, 'Times New Roman', serif;
+  font-size: clamp(25px, 7.45cqw, 78px);
+  font-weight: 500;
+  line-height: 0.94;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  text-shadow:
+    0 3px 0 #000,
+    0 -1px 0 #fff,
+    0 0 14px rgba(255, 255, 255, 0.18);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.club-lobby-command-top .lobby-top__notice-editor {
+  width: min(84%, 680px);
+  padding: 4px;
+  border: 1px solid rgba(66, 170, 255, 0.46);
+  background: rgba(1, 6, 10, 0.94);
+}
+
+.club-lobby-command-top .lobby-top__notice-editor textarea {
+  min-height: 38px;
+  max-height: 54px;
+}
+
+.club-lobby-command-top .lobby-controls {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.club-lobby-command-top .lobby-controls::before {
+  display: none;
+}
+
+.club-lobby-command-top .lobby-controls__heading {
+  align-items: baseline;
+  padding: 1.4% 1.7% 0.8%;
+  border: 0;
+}
+
+.club-lobby-command-top .lobby-controls__heading > div {
+  flex-direction: row-reverse;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.club-lobby-command-top .lobby-controls__title {
+  font-size: clamp(9px, 2.2cqw, 23px);
+  letter-spacing: 0;
+}
+
+.club-lobby-command-top .lobby-controls__eyebrow,
+.club-lobby-command-top .lobby-controls__total {
+  font-size: clamp(5px, 0.92cqw, 9px);
+}
+
+.club-lobby-command-top .lobby-controls__total strong {
+  font-size: clamp(8px, 1.55cqw, 15px);
+}
+
+.club-lobby-command-top .lobby-controls .game-bar {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 0.72cqw;
+  padding: 0 1.7%;
+}
+
+.club-lobby-command-top .lobby-controls .game-bar__types {
+  display: contents;
+}
+
+.club-lobby-command-top .lobby-controls .game-bar__type,
+.club-lobby-command-top .lobby-controls .game-bar__filter-btn,
+.club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: clamp(12px, 3.25cqw, 31px);
+  padding: 0 2px;
+  border: 1px solid #59646d;
+  border-radius: 0;
+  clip-path: polygon(
+    5px 0,
+    calc(100% - 5px) 0,
+    100% 5px,
+    100% calc(100% - 5px),
+    calc(100% - 5px) 100%,
+    5px 100%,
+    0 calc(100% - 5px),
+    0 5px
+  );
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.075), transparent 28%),
+    linear-gradient(180deg, #0d1216, #010304);
+  color: #c8cdd2;
+  font-size: clamp(4px, 0.94cqw, 9px);
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow:
+    inset 0 0 0 1px #020304,
+    inset 0 -4px 8px #000,
+    0 1px 0 rgba(210, 220, 228, 0.2);
+}
+
+.club-lobby-command-top .lobby-controls .game-bar__type.is-active,
+.club-lobby-command-top .lobby-controls .game-bar__filter-btn.is-set,
+.club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip.is-on {
+  border-color: #59bfff;
+  background:
+    linear-gradient(180deg, rgba(81, 185, 255, 0.18), transparent 35%),
+    linear-gradient(180deg, #08223c, #02070c);
+  color: #eef8ff;
+  box-shadow:
+    inset 0 0 0 1px #010407,
+    inset 0 0 12px rgba(23, 151, 255, 0.32),
+    0 0 8px rgba(23, 151, 255, 0.6);
+}
+
+.club-lobby-command-top .lobby-controls .quickprefs {
+  padding: 0.72cqw 1.7% 0;
+}
+
+.club-lobby-command-top .lobby-controls .quickprefs__row--status {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.72cqw;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.club-lobby-command-top__campaign-button {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 1.05% 1.2%;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+}
+
+.club-lobby-command-top__campaign-button:focus-visible {
+  outline: 2px solid #159dff;
+  outline-offset: -3px;
+}
+
+.club-lobby-command-top__campaign-button img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  clip-path: polygon(
+    7px 0,
+    calc(100% - 7px) 0,
+    100% 7px,
+    100% calc(100% - 7px),
+    calc(100% - 7px) 100%,
+    7px 100%,
+    0 calc(100% - 7px),
+    0 7px
+  );
+  filter: saturate(0.94) contrast(1.03);
+  transform: scaleY(1.42);
+}
+
+@media (max-width: 600px) {
+  .club-lobby-command-top {
+    width: 100vw;
+    margin-left: calc(50% - 50vw);
+  }
+
+  .club-lobby-command-top__club-name {
+    font-size: clamp(18px, 7.45cqw, 34px);
+  }
+
+  .club-lobby-command-top .lobby-controls__heading > div {
+    gap: 3px;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn {
+    gap: 1px;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn svg {
+    width: 7px;
+    height: 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .club-lobby-command-top * {
+    transition: none !important;
+  }
+}

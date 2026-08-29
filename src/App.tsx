@@ -154,6 +154,26 @@ const AdminDashboardPage = lazyWithRetry(() => import('./pages/AdminDashboardPag
 const PlayerSessionsPage = lazyWithRetry(() => import('./pages/PlayerSessionsPage'));
 const AgentDashboardPage = lazyWithRetry(() => import('./pages/AgentDashboardPage'));
 const UnionDashboardPage = lazyWithRetry(() => import('./pages/UnionDashboardPage'));
+const RewardsWorkspacePage = lazyWithRetry(() =>
+  import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
+    default: module.RewardsWorkspacePage,
+  }))
+);
+const LegalWorkspacePage = lazyWithRetry(() =>
+  import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
+    default: module.LegalWorkspacePage,
+  }))
+);
+const ClubFinanceWorkspacePage = lazyWithRetry(() =>
+  import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
+    default: module.ClubFinanceWorkspacePage,
+  }))
+);
+const ClubControlWorkspacePage = lazyWithRetry(() =>
+  import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
+    default: module.ClubControlWorkspacePage,
+  }))
+);
 
 // Q3: Social, Messaging & Discovery Pages
 const PublicProfilePage = lazyWithRetry(() => import('./pages/PublicProfilePage'));
@@ -460,6 +480,8 @@ export default function App() {
           {/* Offline Banner — subtle amber bar, only for navigator.onLine === false */}
           {isOffline && (
             <div
+              role="status"
+              aria-live="polite"
               style={{
                 position: 'fixed',
                 top: 0,
@@ -664,6 +686,30 @@ export default function App() {
                   }
                 />
                 <Route
+                  path="clubs/:clubId/finance"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Finance And Risk">
+                          <ClubFinanceWorkspacePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/control"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Control">
+                          <ClubControlWorkspacePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
                   path="clubs/:clubId/dashboard-full"
                   element={
                     <AuthGuard>
@@ -806,6 +852,16 @@ export default function App() {
                     </AuthGuard>
                   }
                 />
+                <Route
+                  path="unions/:unionId/operations"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Union Operations">
+                        <UnionDashboardPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
                 {/*
                   The union lead's side of the weekly square-up. Separate from
                   settlement because settlement moves chips and this does not:
@@ -900,6 +956,16 @@ export default function App() {
                   }
                 />
                 <Route path="history" element={<Navigate to="/hand-history" replace />} />
+                <Route
+                  path="rewards"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Rewards Center">
+                        <RewardsWorkspacePage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
                 <Route
                   path="wallet"
                   element={
@@ -1687,6 +1753,14 @@ export default function App() {
                 />
 
                 {/* Legal Pages — public (no AuthGuard) so users can read terms before signup */}
+                <Route
+                  path="legal"
+                  element={
+                    <PageErrorBoundary pageName="Legal Center">
+                      <LegalWorkspacePage />
+                    </PageErrorBoundary>
+                  }
+                />
                 <Route
                   path="legal/tos"
                   element={

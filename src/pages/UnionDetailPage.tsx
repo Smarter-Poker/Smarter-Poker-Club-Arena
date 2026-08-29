@@ -1479,7 +1479,10 @@ export default function UnionDetailPage() {
                   people who own it. */}
               <p style={{ margin: '0 0 12px', fontSize: 13, opacity: 0.75 }}>
                 Weekly Player Win/Loss Settlement, Wallet And Treasury Live On The{' '}
-                <Link to="/union-dashboard" style={{ color: '#1877F2', fontWeight: 600 }}>
+                <Link
+                  to={`/unions/${unionId}/operations`}
+                  style={{ color: '#1877F2', fontWeight: 600 }}
+                >
                   Union Dashboard
                 </Link>
                 .

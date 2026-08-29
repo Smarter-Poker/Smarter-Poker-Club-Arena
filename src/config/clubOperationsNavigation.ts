@@ -118,6 +118,15 @@ const DEFINITIONS: OperationDefinition[] = [
     access: 'control',
   },
   {
+    id: 'finance-overview',
+    label: 'Finance Overview',
+    description: 'One live entry point for ledgers, cashier, settlement, and risk',
+    suffix: 'finance',
+    group: 'finance',
+    access: 'finance',
+    rail: true,
+  },
+  {
     id: 'data',
     label: 'Club Data',
     description: 'Game production, player results, and union invoices',
@@ -157,6 +166,15 @@ const DEFINITIONS: OperationDefinition[] = [
     suffix: 'insurance-report',
     group: 'finance',
     access: 'finance',
+  },
+  {
+    id: 'control-overview',
+    label: 'Control Overview',
+    description: 'One live entry point for policy, promotions, identity, and access',
+    suffix: 'control',
+    group: 'control',
+    access: 'control',
+    rail: true,
   },
   {
     id: 'announcements',
@@ -232,6 +250,8 @@ const OPERATION_SUFFIXES = new Set([
   'dashboard',
   'dashboard-full',
   'data',
+  'finance',
+  'control',
   'members',
   'agents',
   'agent-dashboard',
@@ -249,6 +269,43 @@ const OPERATION_SUFFIXES = new Set([
   'rules',
   'settings',
 ]);
+
+const FINANCE_SUFFIXES = new Set([
+  'finance',
+  'data',
+  'financials',
+  'settlement',
+  'insurance-report',
+]);
+
+const CONTROL_SUFFIXES = new Set(['control', 'blacklist', 'settings']);
+
+// These routes combine a member-facing read/buy experience with controls that
+// are already gated inside the page and again by RLS/RPC. Blocking the whole
+// route would remove valid player cashier, rules, promotion, announcement, or
+// read-only vault behavior.
+const MEMBER_VISIBLE_SUFFIXES = new Set([
+  'cashier',
+  'cashier-classic',
+  'announcements',
+  'promotions',
+  'promo-vault',
+  'rules',
+]);
+
+/**
+ * Route-level capability contract for the operator workspace. This registry is
+ * shared with navigation so hidden tools and protected tools cannot drift.
+ */
+export function getRequiredClubOperationAccess(pathname: string): ClubOperationAccess | null {
+  const match = pathname.replace(/\/+$/, '').match(/^\/clubs\/[^/]+\/([^/]+)/);
+  const suffix = match?.[1];
+  if (!suffix || !OPERATION_SUFFIXES.has(suffix)) return null;
+  if (MEMBER_VISIBLE_SUFFIXES.has(suffix)) return null;
+  if (CONTROL_SUFFIXES.has(suffix)) return 'control';
+  if (FINANCE_SUFFIXES.has(suffix)) return 'finance';
+  return 'staff';
+}
 
 /** Return the club id only for routes that belong to the operator workspace. */
 export function getClubOperationContext(pathname: string): string | null {

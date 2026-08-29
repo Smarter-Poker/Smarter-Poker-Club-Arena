@@ -25,6 +25,7 @@ import { isAuthzError } from '../../utils/clubDashboard';
 import { reportError } from '../../utils/errorReporter';
 import { downloadCsv, csvEscape } from '../../utils/downloadCsv';
 import styles from './ClubInsuranceReportPage.module.css';
+import { ErrorState } from '../../components/common/EmptyState';
 
 interface ReportDay {
   day: string;
@@ -169,7 +170,7 @@ export default function ClubInsuranceReportPage() {
       {loading && !report ? (
         <p className={styles.empty}>Loading Report...</p>
       ) : error ? (
-        <p className={styles.empty}>{error}</p>
+        <ErrorState message={error} onRetry={() => void load()} />
       ) : !report ? (
         <p className={styles.empty}>No Report Data</p>
       ) : (

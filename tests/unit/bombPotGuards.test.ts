@@ -183,7 +183,13 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
     // 02:31 and 02:37 that both wrote their rows, and zero rows of its own.
     const window = sliceBlockAfter(SETTLEMENT, 'if (v_handHistoryId && this.currentHandBombPot');
     expect(window).toMatch(/attempt <= BOMB_LEDGER_WRITE_ATTEMPTS/);
-    expect(window).toMatch(/BOMB_LEDGER_RETRY_BASE_MS \* attempt/);
+    // 2026-08-29: the backoff is EXPONENTIAL and capped. It was linear
+    // (250/500), which fitted all three attempts inside the first second and
+    // therefore inside the same blip — production measured 2 losses in 457
+    // hands, both having survived all three. A capped doubling covers ~4.75s
+    // and cannot leave retry timers open across a table's later hands.
+    expect(window).toMatch(/BOMB_LEDGER_RETRY_BASE_MS \* \(2 \*\* attempt - 1\)/);
+    expect(window).toMatch(/BOMB_LEDGER_RETRY_MAX_MS/);
     // reportError, never console.warn — a log line on a host nobody reads is
     // how this went unnoticed in the first place.
     expect(window).toMatch(/ServerTableEngine\.bomb_award_ledger_write_failed/);
@@ -191,7 +197,7 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
     // Still fire-and-forget: `void`, and a catch so the retry loop can never
     // surface as an unhandled rejection (noUnhandledRejections.test.ts).
     expect(window).toMatch(/void writeAwardUnits\(\)\.catch\(/);
-    expect(SETTLEMENT).toMatch(/const BOMB_LEDGER_WRITE_ATTEMPTS = 3;/);
+    expect(SETTLEMENT).toMatch(/const BOMB_LEDGER_WRITE_ATTEMPTS = 4;/);
   });
 
   it('a gap that still slips through is reported by reconciliation, not lost', () => {

@@ -9241,6 +9241,9 @@ export default function TablePage({
                        the engine just decided, whereas the row may not have
                        been written yet when we read it. */
                     finishPlace: position || full?.finishPlace || null,
+                    /* Round 12: lets the ranking card's Play Again seat the
+                       player into the open same-stake sibling game. */
+                    tournamentId: tid || undefined,
                     winningCards:
                       position === 1
                         ? (tableStateRef.current.players[

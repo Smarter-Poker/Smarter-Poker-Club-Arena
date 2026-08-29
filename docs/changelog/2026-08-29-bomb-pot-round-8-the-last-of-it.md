@@ -208,3 +208,76 @@ field-proven. The runaway fixed in #1741 is the standing argument for why that
 distinction matters, and the permanent E2E table (`d2e23e79-…`, horse-only) plus
 the new settings editor are now the tools to close it without touching a table
 anybody is sitting at.
+
+---
+
+# ADDENDUM — the four never-run paths, proven in production
+
+Written after the fact, on the horse-only E2E table
+(`d2e23e79-f769-4029-868f-65dec481b44c`), with #1741 deployed to Hetzner and
+round 8 still in review. Nobody was sitting at the table.
+
+## `once_per_orbit`, and the runaway disproven
+
+Seven bombs. Reading the button seat of every hand in sequence, the **regular**
+rotation walks its seven occupied seats and wraps cleanly — `2,3,4,5,6,7,9` —
+while the **separate bomb button** advances one occupied seat per bomb:
+
+```
+15:12 bomb (seat 5)   15:26 bomb (seat 6)   15:32 bomb (seat 1)
+15:34 bomb (seat 2)   15:43 bomb (seat 3)   15:54 bomb (seat 4)
+16:01 bomb (seat 5)
+```
+
+Exactly one bomb per orbit, seven normal hands between the last two, and the
+regular button never froze. That is the runaway from #1741 refusing to happen
+on the precise configuration that caused it: `once_per_orbit` + a separate bomb
+button, which is also what the "Classic Double Board" host preset selects.
+
+Every one of the seven dealt three complete boards, awarded units on boards
+`[1,2,3]`, and the award units summed to net winnings **to the cent**.
+
+## `bomb_pot_only`
+
+```
+hands 3 · bomb_pot_only 3 · non-bomb 0 · dealt plo4 3 · three boards 3
+ledger reconciles 3 · bomb buttons 6 → 7 → 9
+```
+
+Every hand a bomb, which is the whole contract of the mode.
+
+## The PLO5 override, and the seat law at its exact boundary
+
+The seat-law check added in #1741 (`maxSeatsForVariant`, PLO5 is 7-max) can be
+read straight off the hands, because the horse fleet's seat count drifts:
+
+| seats dealt | outcome                                            |
+| ----------- | -------------------------------------------------- |
+| 3, 4, 7     | override applied — dealt `plo5`                    |
+| 8, 9        | override **refused** — dealt the table's own `nlh` |
+
+Seven applied and eight refused is the boundary exactly where the rule puts it.
+Before #1741 a nine-handed table would have been dealt nine-handed PLO5 — 45
+hole cards — and the host's three boards would then have collapsed to one with
+only a `console.warn` to show for it.
+
+## The board-count downgrade: unreachable, and that is the finding
+
+It never fired, and could not have. The seat law now refuses an override before
+the deck can run short, so the stepwise 3 → 2 → 1 downgrade in
+`postBombPotAntes` is **defence in depth rather than a live path**. It should
+stay — it is the last guard if a future variant or seat rule widens — but it
+should not be described as a behaviour anybody will observe.
+
+Two hands looked like a downgrade and were not: `b1 = b2 = b3 = 4` with a single
+uncontested winner. All three boards were dealt in lockstep to the turn and the
+hand ended in folds, so only board 1 settles — the exact behaviour pinned by the
+fold-win tests in #1724.
+
+## Not proven live
+
+`bomb_pot_waiting_for` (the "waiting for players" pill) is round-8 code and was
+not deployed while the table was under test, so it is unit-proven only. The
+E2E table has been left on `once_per_orbit` + separate button + PLO5 + 3 boards
+precisely so the runaway and the seat law stay under permanent live coverage,
+with normal hands between bombs keeping the non-bomb path exercised too.

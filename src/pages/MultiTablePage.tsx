@@ -214,6 +214,90 @@ const clearLobbyTournaments = (t: TableInstance): TableInstance => ({
   lobbyTournamentId: undefined,
 });
 
+/**
+ * The `?name=&stakes=&code=` a /table/:id URL carries, rebuilt from a tab we
+ * already hold (Dan 2026-08-28 round 3).
+ *
+ * The route effect reads those three params to name and label a tab it has not
+ * built yet, falling back to `Table <n>` with blank stakes when they are
+ * absent. Three places navigated to /table/:id with NO query — the cap
+ * correction, the tournament backstop, and every tab switch — so any of them
+ * left the address bar carrying less information than the tab strip was
+ * already showing. Reload after one and a "PLO4 0.5/1" tab came back as
+ * "Table 1" with no stakes under it.
+ *
+ * Only emits the params it actually has, so a tab that genuinely knows nothing
+ * produces "" and behaves exactly as before.
+ */
+const tableQuery = (t: TableInstance): string => {
+  const p = new URLSearchParams();
+  if (t.name && !/^Table \d+$/.test(t.name)) p.set('name', t.name);
+  if (t.stakes) p.set('stakes', t.stakes);
+  if (t.gameCode) p.set('code', t.gameCode);
+  const qs = p.toString();
+  return qs ? `?${qs}` : '';
+};
+
+/**
+ * ─── THE DRILL-IN SURVIVES A RELOAD (Dan 2026-08-28 round 3) ────────────────
+ *
+ * Reloading while reading a tournament in a lobby tab used to drop the player
+ * onto a felt with no message: the stack is React state, tabs rebuild from
+ * `table_seats`, and a lobby tab is not a seat so nothing brought it back. The
+ * address bar could not help either — a lobby tab borrows a table's URL.
+ *
+ * WHY THIS IS NOT THE PERSISTENCE THAT WAS DELETED. The `multi_table_session`
+ * key removed above stored TABLES, and a resurrected table tab is a claim that
+ * you hold a seat you may have left — it implies chips. This stores a list of
+ * tournament ids somebody was READING. No seat, no stack of chips, no engine
+ * socket; the worst case is a lobby tab open on a page they had open a minute
+ * ago. Restored through the same `openTournamentTab` path a tap uses, so it
+ * cannot invent a state a tap could not reach.
+ *
+ * TTL, because "what you were reading" goes stale fast: a tab reopened
+ * tomorrow morning on last night's tournament is clutter, not continuity.
+ */
+const DRILL_IN_KEY = 'ca_lobby_drill_in';
+const DRILL_IN_TTL_MS = 30 * 60 * 1000;
+
+const saveDrillIn = (stack: InTabTournamentTarget[] | undefined) => {
+  try {
+    if (!stack || stack.length === 0) {
+      sessionStorage.removeItem(DRILL_IN_KEY);
+      return;
+    }
+    sessionStorage.setItem(DRILL_IN_KEY, JSON.stringify({ at: Date.now(), stack }));
+  } catch {
+    /* private-mode storage throws; the drill-in is a convenience, not a seat */
+  }
+};
+
+const readDrillIn = (): InTabTournamentTarget[] | null => {
+  try {
+    const raw = sessionStorage.getItem(DRILL_IN_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { at?: number; stack?: unknown };
+    if (typeof parsed?.at !== 'number' || Date.now() - parsed.at > DRILL_IN_TTL_MS) {
+      sessionStorage.removeItem(DRILL_IN_KEY);
+      return null;
+    }
+    // Validate every entry rather than trusting the blob: this is parsed JSON
+    // from storage, and a half-written or hand-edited value must not reach the
+    // renderer as a tournament id.
+    const stack = Array.isArray(parsed.stack) ? parsed.stack : [];
+    const clean = stack.filter(
+      (e): e is InTabTournamentTarget =>
+        !!e &&
+        typeof (e as InTabTournamentTarget).tournamentId === 'string' &&
+        (e as InTabTournamentTarget).tournamentId.length > 0 &&
+        typeof (e as InTabTournamentTarget).search === 'string'
+    );
+    return clean.length > 0 ? clean : null;
+  } catch {
+    return null;
+  }
+};
+
 /** Lobby tabs carry a synthetic id so they can share the tabs array. */
 const LOBBY_TAB_PREFIX = 'lobby:';
 const isLobbyTab = (t: TableInstance) => t.kind === 'lobby' || t.id.startsWith(LOBBY_TAB_PREFIX);
@@ -401,6 +485,17 @@ export default function MultiTablePage() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const lastActiveTableIdRef = useRef<string | undefined>(undefined);
+  /**
+   * "The next route arrival must focus THIS tab, not the one its URL names."
+   *
+   * Set only by `handleTabSelect` when it borrows a real table's URL to make a
+   * LOBBY tab reachable from off-route (round 3). The route layout effect
+   * consumes it exactly once and clears it. A ref rather than state because it
+   * must be readable by that effect in the same commit as the navigation — a
+   * state write would land a render too late and the lobby tab would flash
+   * past on its way to the borrowed table.
+   */
+  const pendingTabIndexRef = useRef<number | null>(null);
   useEffect(() => {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
@@ -470,6 +565,9 @@ export default function MultiTablePage() {
   // removed. Seat at a 2nd/3rd/4th table in the lobby, come back, and every
   // seat is a tab again — the PokerBros flow.
   const droppedRef = useRef(0);
+  /** True once the server-truth rebuild has completed (or failed) at least
+   *  once. Gates the drill-in restore; see DRILL_IN_KEY. */
+  const [tablesReady, setTablesReady] = useState(false);
   /**
    * A TABLE THE SERVER MOVED YOU OFF MUST NOT STAY ON SCREEN
    * (Dan 2026-08-28, bug 1).
@@ -674,6 +772,13 @@ export default function MultiTablePage() {
           7000
         );
       }
+      /* Server truth has landed (round 3). The drill-in restore waits on this
+         so a restored lobby tab is placed BESIDE the player's real seats
+         rather than racing them for the last slot — and so it never wins that
+         race, because a seat is worth more than a page you were reading. Set
+         even when the read failed: "we tried" is the signal, and a restore
+         blocked forever by a bad network is just the old bug again. */
+      if (!cancelled) setTablesReady(true);
     })();
     return () => {
       cancelled = true;
@@ -1436,25 +1541,61 @@ export default function MultiTablePage() {
   const handleTabSelect = useCallback(
     (tabId: string) => {
       const idx = tables.findIndex((t) => t.id === tabId);
-      if (idx !== -1 && idx !== activeIndex) {
+      if (idx === -1) return;
+      /**
+       * `idx !== activeIndex` USED TO GATE THIS WHOLE BODY, and that was wrong
+       * once the bar could be tapped from off-route (round 3).
+       *
+       * Off-route the container is display:none, so tapping the tab that is
+       * ALREADY `activeIndex` is not a no-op from the player's point of view —
+       * it is "take me back to my table", and the gate made that one tab dead.
+       * The tab a player is most likely to press is the one they were last on.
+       * So: only the transition animation is skipped for a same-tab press; the
+       * navigation still happens.
+       */
+      if (idx !== activeIndex) {
         setIsTransitioning(true);
         setActiveIndex(idx);
         trackedTimeout(() => setIsTransitioning(false), 320);
-        // Keep the address bar on the table the player is looking at (Dan
-        // 2026-08-28). A tab switch used to leave the URL naming the OLD
-        // table, so the next route arrival at that stale URL painted the
-        // wrong table first, and browser Back yanked the player to a tab
-        // they had already left. `replace` so switching tabs does not pile
-        // history entries. Lobby tabs have no /table route of their own —
-        // navigating to one would mint a phantom table id on reload — so
-        // they keep the current URL, exactly as before.
-        const target = tables[idx];
-        if (target && !isLobbyTab(target)) {
-          navigate(`/table/${target.id}`, { replace: true });
-        }
       }
+
+      // Keep the address bar on the table the player is looking at (Dan
+      // 2026-08-28). A tab switch used to leave the URL naming the OLD
+      // table, so the next route arrival at that stale URL painted the
+      // wrong table first, and browser Back yanked the player to a tab
+      // they had already left. `replace` so switching tabs does not pile
+      // history entries.
+      const target = tables[idx];
+      if (!target) return;
+
+      if (!isLobbyTab(target)) {
+        navigate(`/table/${target.id}${tableQuery(target)}`, { replace: true });
+        return;
+      }
+
+      /**
+       * A LOBBY TAB HAS NO /table ROUTE OF ITS OWN, and on-route it does not
+       * need one — the container is already visible, so switching to it is
+       * pure state.
+       *
+       * OFF-ROUTE it needs one, or the tab is unreachable: the container only
+       * un-hides for a /table/:tableId URL. Round 3 borrows the URL of a real
+       * open table and then overrides the index the route effect derives from
+       * it, via `pendingTabIndexRef`. Without that override the layout effect
+       * would immediately snap `activeIndex` to the borrowed table and the
+       * lobby tab would flash past. Nothing is minted: the id in the URL
+       * belongs to a table the player genuinely has open, so a reload lands
+       * them on that table rather than on a phantom.
+       */
+      if (!hidden) return;
+      const host =
+        tables.find((t) => t.id === lastActiveTableIdRef.current && !isLobbyTab(t)) ??
+        tables.find((t) => !isLobbyTab(t));
+      if (!host) return; // lobby tabs only: nothing to borrow, nothing to do
+      pendingTabIndexRef.current = idx;
+      navigate(`/table/${host.id}${tableQuery(host)}`, { replace: true });
     },
-    [tables, activeIndex, trackedTimeout, navigate]
+    [tables, activeIndex, trackedTimeout, navigate, hidden]
   );
 
   // ─── Batch 3: quick-join sheet on "+" ─────────────────────────────────
@@ -2456,7 +2597,7 @@ export default function MultiTablePage() {
       // thumb, and the address bar must follow the felt (Dan 2026-08-28).
       const target = tables[newIndex];
       if (target && !isLobbyTab(target)) {
-        navigate(`/table/${target.id}`, { replace: true });
+        navigate(`/table/${target.id}${tableQuery(target)}`, { replace: true });
       }
     }
 
@@ -2487,6 +2628,22 @@ export default function MultiTablePage() {
   useLayoutEffect(() => {
     if (!routeTableId) return;
     const prev = tablesRef.current;
+    /**
+     * A BORROWED URL DOES NOT MEAN "FOCUS THAT TABLE" (round 3).
+     *
+     * `handleTabSelect` navigates to a real table's URL in order to un-hide
+     * this container when the player taps a LOBBY tab from off-route. Without
+     * this override the branch below would immediately focus the borrowed
+     * table and the lobby tab the player actually pressed would flash past.
+     * Consumed once, cleared always — including on the paths that return
+     * early, so a stale intent can never redirect a later, unrelated arrival.
+     */
+    const pending = pendingTabIndexRef.current;
+    pendingTabIndexRef.current = null;
+    if (pending !== null && pending >= 0 && pending < prev.length) {
+      setActiveIndex(pending);
+      return;
+    }
     const existingIdx = prev.findIndex((t) => t.id === routeTableId);
     if (existingIdx !== -1) {
       // Dan 2026-08-19: navigating to a table that is ALREADY mounted (dock
@@ -2534,7 +2691,8 @@ export default function MultiTablePage() {
        */
       notifyCapReached('route');
       const current = prev[activeIndexRef.current] ?? prev[0];
-      if (current && !isLobbyTab(current)) navigate(`/table/${current.id}`, { replace: true });
+      if (current && !isLobbyTab(current))
+        navigate(`/table/${current.id}${tableQuery(current)}`, { replace: true });
     }
   }, [routeTableId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2578,7 +2736,7 @@ export default function MultiTablePage() {
        deep link, anything outside the provider — must still watch, or the
        backstop would "rescue" the player by quietly discarding their intent. */
     if (!openTournamentTab({ tournamentId, search: location.search })) return;
-    navigate(`/table/${returnTo.id}`, { replace: true });
+    navigate(`/table/${returnTo.id}${tableQuery(returnTo)}`, { replace: true });
   }, [location.pathname, location.search, openTournamentTab, navigate]);
 
   /**
@@ -2607,8 +2765,63 @@ export default function MultiTablePage() {
       open.find((t) => !isLobbyTab(t));
     if (!returnTo) return;
     masterBus.emit('OPEN_LOBBY_TAB', {});
-    navigate(`/table/${returnTo.id}`, { replace: true });
+    navigate(`/table/${returnTo.id}${tableQuery(returnTo)}`, { replace: true });
   }, [location.pathname, navigate]);
+
+  /**
+   * ─── MAKE ROOM FOR THE PINNED BAR (round 3) ──────────────────────────────
+   *
+   * The pinned strip is `position: fixed`, so it is out of flow and would
+   * otherwise sit ON TOP of the first thing on every page — a heading, a back
+   * button, the cashier's balance — unreadable and untappable.
+   *
+   * One attribute on <body> drives the padding (see MultiTablePage.css), so
+   * there is a single number to change and any page that needs to know can ask
+   * the DOM rather than this component. Cleared whenever the bar is not
+   * showing, and on unmount, so a stale 48px gap can never outlive it.
+   */
+  /**
+   * Mirror the lobby tab's drill-in to storage on every change, and restore it
+   * once on mount. See DRILL_IN_KEY for why this persistence is safe where the
+   * deleted table persistence was not.
+   */
+  useEffect(() => {
+    const lobby = tables.find(isLobbyTab);
+    saveDrillIn(lobby?.lobbyTournamentStack);
+  }, [tables]);
+
+  const drillInRestoredRef = useRef(false);
+  useEffect(() => {
+    if (drillInRestoredRef.current) return;
+    // Wait until the server-truth rebuild has had its say, so the restored
+    // lobby tab lands BESIDE the player's real seats rather than racing them
+    // for the last slot.
+    if (!tablesReady) return;
+    drillInRestoredRef.current = true;
+    const saved = readDrillIn();
+    if (!saved) return;
+    // Already showing a tournament (a deep link, a fast tap): the live state
+    // is newer than anything on disk and wins.
+    if (tablesRef.current.some((t) => isLobbyTab(t) && t.lobbyTournamentId)) return;
+    // Replay through the ordinary path so the restored tab is identical to a
+    // tapped one, then re-seat the parent levels underneath the top.
+    if (!openTournamentTab(saved[saved.length - 1])) return;
+    if (saved.length > 1) {
+      setTables((cur) =>
+        cur.map((t) => (isLobbyTab(t) ? { ...t, lobbyTournamentStack: saved } : t))
+      );
+    }
+  }, [tablesReady, openTournamentTab]);
+
+  const pinnedBarVisible = hidden && tables.length >= 1;
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const { body } = document;
+    if (!body) return;
+    if (pinnedBarVisible) body.setAttribute('data-ca-pinned-bar', '1');
+    else body.removeAttribute('data-ca-pinned-bar');
+    return () => body.removeAttribute('data-ca-pinned-bar');
+  }, [pinnedBarVisible]);
 
   // Remember the last REAL table the player had on screen, so the dock can
   // send them back to it rather than to whichever tab happens to be oldest.
@@ -2638,7 +2851,11 @@ export default function MultiTablePage() {
     (tableId: string) => {
       const idx = tablesRef.current.findIndex((t) => t.id === tableId);
       if (idx !== -1) setActiveIndex(idx);
-      navigate(`/table/${tableId}`);
+      /* Carry the tab's own name/stakes/code (round 3). The dock knows the id
+         and nothing else, but this container holds the whole tab — sending a
+         bare /table/:id would drop a labelled tab back to "Table 1". */
+      const t = idx !== -1 ? tablesRef.current[idx] : undefined;
+      navigate(`/table/${tableId}${t ? tableQuery(t) : ''}`);
     },
     [navigate]
   );
@@ -2684,14 +2901,70 @@ export default function MultiTablePage() {
      * /tournaments/:id.
      */
     <InTabLobbyContext.Provider value={inTabLobbyNav}>
-      {hidden && dock.kind !== 'none' && (
+      {/**
+       * ─── THE BAR IS PINNED OFF-ROUTE (Dan 2026-08-28 round 3) ─────────────
+       *
+       * Dan, verbatim: "IF YOU ARE ON A PAGE THROUGH THE + BUTTON, THAT YOUR
+       * ACTION BAR STAYS AT THE TOP 100% OF THE TIME."
+       *
+       * Rounds 1 and 2 delivered that by never LEAVING /table/* — they
+       * intercept tournament destinations and render them in the tab. That is
+       * the right answer for a destination the tab can render. It is no answer
+       * at all for the ones it cannot: the club bottom nav's six links
+       * (Profile, Players, Cashier, Market, Data, Stats), the create-table and
+       * buy-diamonds buttons, a house ad pointing at /marketplace. Those have
+       * no in-tab renderer, so interception would mean building one — and
+       * REFUSING to navigate would be worse than the bug, because the player
+       * asked to go to the cashier.
+       *
+       * So the bar stops depending on the route. Off-route the container is
+       * still display:none — the felt must not paint over the cashier — but
+       * the strip itself is hoisted out and fixed to the top of the viewport,
+       * above whatever page the player went to. Every table stays one tap
+       * away, urgency still flashes on the tab that owns it, and "100% of the
+       * time" becomes literally true rather than true-for-the-destinations-we
+       * -enumerated.
+       *
+       * This is also what makes the enumeration stop mattering. A destination
+       * added next month keeps the bar without anyone remembering to add it to
+       * a list — which is the failure mode that produced this whole body of
+       * work (a guard written against anchors that quietly stopped matching).
+       */}
+      {hidden && tables.length >= 1 && (
+        <div className="multi-table-page__tab-bar-wrapper multi-table-page__tab-bar-wrapper--pinned">
+          <TableTabBar
+            tabs={tabInfos}
+            activeTabId={activeTableId}
+            onTabSelect={handleTabSelect}
+            onAddTable={handleAddTable}
+            maxTables={MAX_TABLES}
+            realtimeDown={realtimeDown}
+            onReorder={handleReorder}
+            mutedIds={mutedIds}
+            onQuickAction={handleQuickAction}
+            onSitOutAll={handleSitOutAll}
+            onBackAll={handleBackAll}
+          />
+        </div>
+      )}
+      {/**
+       * The dock stays for URGENCY ONLY now.
+       *
+       * It used to be the only thing a player had off-route, so it carried
+       * both jobs: "return to your game" and "a clock is running". The pinned
+       * strip above does the first one better — every table, not just one, and
+       * in the place the player already knows. Rendering both for a quiet
+       * table would be two controls saying the same thing in one screen.
+       *
+       * Urgency is different in kind: it is a countdown the player is about to
+       * lose money to, it wants to be loud, and the dock sits at the BOTTOM,
+       * within thumb reach, while the strip is at the top. Keeping it for that
+       * case only is why `dock.kind === 'urgent'` replaced `!== 'none'`.
+       */}
+      {hidden && dock.kind === 'urgent' && (
         <LiveTablesBar
           tables={tables.filter((t) => !isLobbyTab(t)).map((t) => ({ id: t.id, name: t.name }))}
-          urgent={
-            dock.kind === 'urgent'
-              ? { tableId: dock.targetId, name: dock.name, secondsLeft: dock.secondsLeft }
-              : null
-          }
+          urgent={{ tableId: dock.targetId, name: dock.name, secondsLeft: dock.secondsLeft }}
           onReturn={handleDockReturn}
         />
       )}

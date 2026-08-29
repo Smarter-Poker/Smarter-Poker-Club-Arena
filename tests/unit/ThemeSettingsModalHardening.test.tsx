@@ -11,10 +11,17 @@ const mocks = vi.hoisted(() => ({
     data: unknown[];
     error: unknown;
   }>,
+  pricingResult: Promise.resolve({ data: [], error: null }) as Promise<{
+    data: unknown[];
+    error: unknown;
+  }>,
+  rpc: vi.fn(),
   applyAppearance: vi.fn(),
   persistMode: vi.fn(),
   navigate: vi.fn(),
   themeListeners: new Set<(event: { payload: unknown }) => void>(),
+  entitlementInsert: null as null | ((payload: { new: Record<string, unknown> }) => void),
+  removeChannel: vi.fn(),
   toast: {
     success: vi.fn(),
     error: vi.fn(),
@@ -55,6 +62,18 @@ vi.mock('../../src/services/AvatarService', () => ({
   },
 }));
 
+vi.mock('../../src/hooks/useTableStudioCollections', () => ({
+  useTableStudioCollections: () => ({
+    favorites: [],
+    loadouts: [null, null, null],
+    recent: [],
+    syncState: 'synced',
+    toggleFavorite: vi.fn(),
+    saveLoadout: vi.fn(),
+    rememberRecent: vi.fn(),
+  }),
+}));
+
 vi.mock('../../src/components/table/TableStudioGameplayPreview', () => ({
   default: ({ selection }: { selection: { button_id: string; cards_id: string } }) => (
     <div
@@ -77,7 +96,11 @@ vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     from: vi.fn((table: string) => {
       const result = () =>
-        table === 'user_theme_settings' ? mocks.themeResult : mocks.purchaseResult;
+        table === 'user_theme_settings'
+          ? mocks.themeResult
+          : table === 'feature_pricing'
+            ? mocks.pricingResult
+            : mocks.purchaseResult;
       const builder: Record<string, unknown> = {};
       const chain = () => builder;
       for (const method of ['select', 'eq', 'like']) builder[method] = vi.fn(chain);
@@ -85,10 +108,29 @@ vi.mock('../../src/lib/supabase', () => ({
         result().then(resolve, reject);
       return builder;
     }),
+    rpc: mocks.rpc,
+    channel: vi.fn(() => {
+      const channel = {
+        on: vi.fn(
+          (
+            _event: string,
+            _filter: Record<string, unknown>,
+            handler: (payload: { new: Record<string, unknown> }) => void
+          ) => {
+            mocks.entitlementInsert = handler;
+            return channel;
+          }
+        ),
+        subscribe: vi.fn(() => channel),
+      };
+      return channel;
+    }),
+    removeChannel: mocks.removeChannel,
   },
 }));
 
 import { useSettingsStore } from '../../src/stores/useSettingsStore';
+import { useWalletStore } from '../../src/stores/useWalletStore';
 import { ThemeSettingsModal } from '../../src/components/table/ThemeSettingsModal';
 import { masterBus } from '../../src/core/MasterBus';
 
@@ -117,13 +159,28 @@ describe('ThemeSettingsModal hardening', () => {
   beforeEach(() => {
     mocks.themeResult = Promise.resolve({ data: [savedTheme], error: null });
     mocks.purchaseResult = Promise.resolve({ data: [], error: null });
+    mocks.pricingResult = Promise.resolve({
+      data: [
+        { feature: 'studio:table_id:neon_city', diamond_cost: 350 },
+        { feature: 'card_back_gold', diamond_cost: 150 },
+      ],
+      error: null,
+    });
+    mocks.rpc.mockReset();
+    mocks.rpc.mockResolvedValue({ data: { success: true, cost: 350 }, error: null });
     mocks.applyAppearance.mockReset();
     mocks.applyAppearance.mockResolvedValue({ ok: true });
     mocks.persistMode.mockReset();
     mocks.persistMode.mockResolvedValue({ ok: true });
     mocks.navigate.mockReset();
+    mocks.entitlementInsert = null;
+    mocks.removeChannel.mockReset();
     for (const method of Object.values(mocks.toast)) method.mockReset();
     useSettingsStore.setState({ theme: 'dark' });
+    useWalletStore.setState({
+      diamonds: 1_000,
+      loadDiamonds: vi.fn().mockResolvedValue(undefined),
+    });
   });
 
   it('keeps customization choices disabled until the saved row is known', async () => {
@@ -186,7 +243,7 @@ describe('ThemeSettingsModal hardening', () => {
     ).toBeDisabled();
   });
 
-  it('treats the VIP prompt as its own dialog and Escape closes only that prompt', async () => {
+  it('treats checkout as its own dialog and Escape closes only checkout', async () => {
     renderStudio();
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
@@ -195,20 +252,78 @@ describe('ThemeSettingsModal hardening', () => {
 
     const locked = screen
       .getAllByRole('button')
-      .find((button) => button.getAttribute('aria-label')?.includes('VIP required'));
+      .find((button) => button.getAttribute('aria-label')?.includes('purchase or VIP required'));
     expect(locked).toBeDefined();
     fireEvent.click(locked!);
 
-    const vipDialog = await screen.findByRole('dialog', { name: 'VIP Design' });
-    expect(vipDialog).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Upgrade To VIP' })).toHaveFocus();
+    const purchaseDialog = await screen.findByRole('dialog', { name: 'Unlock Neon City' });
+    expect(purchaseDialog).toBeVisible();
+    expect(screen.getByRole('button', { name: /Buy For 350/ })).toHaveFocus();
 
     fireEvent.keyDown(document, { key: 'Escape' });
 
     await waitFor(() =>
-      expect(screen.queryByRole('dialog', { name: 'VIP Design' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('dialog', { name: 'Unlock Neon City' })).not.toBeInTheDocument()
     );
     expect(screen.getByRole('dialog', { name: 'Make The Table Yours' })).toBeVisible();
+  });
+
+  it('purchases and auto-applies a premium felt through its exact server SKU', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
+
+    await waitFor(() =>
+      expect(mocks.rpc).toHaveBeenCalledWith('fn_purchase_feature', {
+        p_user_id: 'user-1',
+        p_feature: 'studio:table_id:neon_city',
+      })
+    );
+    await waitFor(() =>
+      expect(mocks.applyAppearance).toHaveBeenCalledWith(
+        { table_id: 'neon_city' },
+        expect.objectContaining({ userId: 'user-1', gameType: 'ALL' })
+      )
+    );
+    expect(mocks.toast.success).toHaveBeenCalledWith('Neon City Purchased And Applied');
+  });
+
+  it('unlocks an already-open catalog when another device delivers an entitlement', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    expect(
+      screen.getByRole('button', { name: 'Neon City, purchase or VIP required' })
+    ).toBeEnabled();
+
+    act(() => {
+      mocks.entitlementInsert?.({
+        new: { user_id: 'user-1', category: 'table_id', asset_id: 'neon_city' },
+      });
+    });
+
+    expect(await screen.findByRole('button', { name: 'Neon City' })).toBeEnabled();
+  });
+
+  it('does not claim a completed purchase was applied when the appearance save fails', async () => {
+    mocks.applyAppearance.mockResolvedValue({ ok: false, error: new Error('save failed') });
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
+
+    await waitFor(() => expect(mocks.toast.success).toHaveBeenCalledWith('Neon City Purchased'));
+    expect(mocks.toast.success).not.toHaveBeenCalledWith('Neon City Purchased And Applied');
+    expect(mocks.toast.error).toHaveBeenCalledWith('Could Not Save Your Theme. Please Try Again.');
   });
 
   it('applies interface mode immediately and persists it to the signed-in account', async () => {

@@ -2,9 +2,8 @@
  * EVERY CARD BACK OFFERED MUST BE A CARD BACK THAT EXISTS — AND MUST SAVE THE
  * ONE IT SHOWS (2026-08-25).
  *
- * The diamond store and Table Studio are the two legitimate card-back
- * surfaces. The hamburger used to keep a third literal copy of the catalogue,
- * and was removed in the 2026-08-29 Table Studio consolidation.
+ * Table Studio is the one legitimate selectable card-back surface. The old
+ * standalone store and hamburger copies were removed in the consolidation.
  *
  *   - 2026-08-20  ThemeSettingsModal offered standard-red / premium-gold /
  *                 premium-platinum. Matched nothing. normalizeCardBack sent
@@ -28,7 +27,6 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 const CARD_IMAGE = read('src/components/table/CardImage.tsx');
 const HAMBURGER = read('src/components/navigation/HamburgerMenu.tsx');
 const THEME_MODAL = read('src/components/table/ThemeSettingsModal.tsx');
-const STORE = read('src/components/customization/CardBackSelector.tsx');
 
 /** The authoritative ids, read from where the artwork is actually named. */
 function realCardBackIds(): Set<string> {
@@ -88,16 +86,9 @@ describe('the menus no longer keep their own copies', () => {
     expect(THEME_MODAL).toMatch(/cards: CARD_ASSETS/);
   });
 
-  it('the diamond store sells the catalogue, not a list of its own', () => {
-    expect(STORE, 'CardBackSelector must render CARD_BACK_CATALOG').toMatch(
-      /CARD_BACK_CATALOG\.map/
-    );
-    // The invented store ids are what made three paid designs identical to a
-    // free one. They survive only as normalizeCardBack aliases, for rows
-    // already written; nothing may SELL them again.
-    for (const invented of ["id: 'burgundy'", "id: 'navy'", "id: 'white'", "id: 'black'"]) {
-      expect(STORE, `${invented} is not a card back design`).not.toContain(invented);
-    }
+  it('has no standalone store that can drift from Table Studio', () => {
+    expect(() => read('src/components/customization/CardBackSelector.tsx')).toThrow();
+    expect(read('src/components/customization/index.ts')).not.toContain('CardBackSelector');
   });
 
   it('Theme Settings generates its Table tab from the felt catalogue', () => {
@@ -137,13 +128,8 @@ describe('a paid card back is not free somewhere else', () => {
     expect(HAMBURGER).not.toContain('ownedCardBacks');
   });
 
-  it('both selectable surfaces use the SAME unlock rule', () => {
-    for (const [name, src] of [
-      ['ThemeSettingsModal', THEME_MODAL],
-      ['CardBackSelector', STORE],
-    ] as const) {
-      expect(src, `${name} must use isCardBackUnlocked`).toMatch(/isCardBackUnlocked/);
-    }
+  it('the selectable surface uses the shared unlock rule', () => {
+    expect(THEME_MODAL).toMatch(/isCardBackUnlocked/);
   });
 
   it('Theme Settings considers purchases, not only VIP', () => {
@@ -154,10 +140,9 @@ describe('a paid card back is not free somewhere else', () => {
   });
 });
 
-describe('the two pickers do not disagree about what is real', () => {
-  it('the shared catalogue is the source for both pickers', () => {
+describe('the picker and renderer agree about what is real', () => {
+  it('the shared catalogue is the source for Table Studio', () => {
     expect(CARD_BACK_CATALOG.length).toBe(CARD_BACK_IDS.length);
     expect(THEME_MODAL).toContain('CARD_BACK_CATALOG.map');
-    expect(STORE).toContain('CARD_BACK_CATALOG.map');
   });
 });

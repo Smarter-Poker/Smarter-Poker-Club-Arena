@@ -841,7 +841,8 @@ export interface BusPayloadMap {
       | 'club-purchase'
       | 'club-redemption'
       | 'vip-reward'
-      | 'ownership-reconciled';
+      | 'ownership-reconciled'
+      | 'realtime-entitlement';
   };
   /**
    * A paid entitlement was durably delivered. Unlike the cosmetic-only event,
@@ -1656,7 +1657,7 @@ class MasterBusCore {
       }
     });
 
-    // Phase 7: Reload diamond balance after any diamond spend (CardBackSelector purchases, etc.)
+    // Phase 7: Reload diamond balance after any diamond spend (Table Studio purchases, etc.)
     this.subscribe('DIAMOND_SPENT', () => {
       const user = useUserStore.getState().user;
       if (user) {

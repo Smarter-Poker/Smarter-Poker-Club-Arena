@@ -67,7 +67,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 
@@ -82,7 +82,7 @@ const sourceFiles = (): string[] =>
   execSync("git ls-files 'src/**/*.ts' 'src/**/*.tsx'", { cwd: ROOT, encoding: 'utf8' })
     .trim()
     .split('\n')
-    .filter(Boolean);
+    .filter((file) => Boolean(file) && existsSync(resolve(ROOT, file)));
 
 describe('current_level is treated as an index, never as a level number', () => {
   /**

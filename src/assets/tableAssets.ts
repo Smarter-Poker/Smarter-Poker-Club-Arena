@@ -69,6 +69,21 @@ import bgSkinGoldenSparks from '../assets/backgrounds/bg_skin_golden_sparks.jpg'
 import bgSkinPlatinumDeco from '../assets/backgrounds/bg_skin_platinum_deco.jpg';
 import bgFinalTableBroadcast from '../assets/backgrounds/bg_final_table_broadcast.jpg';
 
+const tableThumbnailModules = import.meta.glob('./customization-thumbs/tables/*.webp', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>;
+const backgroundThumbnailModules = import.meta.glob('./customization-thumbs/backgrounds/*.webp', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>;
+
+function thumbnail(modules: Record<string, string>, directory: string, file: string): string {
+  return modules[`./customization-thumbs/${directory}/${file}.webp`] || '';
+}
+
 export const TABLE_SKINS: Record<string, string> = {
   classic_green: skinClassicGreen,
   'classic-green': skinClassicGreen,
@@ -195,3 +210,15 @@ export const TABLE_BACKGROUND_IDS: string[] = [
   'skin_golden_sparks',
   'skin_platinum_deco',
 ];
+
+/** Lightweight derivatives used only by dense Studio grids. */
+export const TABLE_SKIN_THUMBNAILS: Record<string, string> = Object.fromEntries(
+  TABLE_SKIN_IDS.map((id) => [id, thumbnail(tableThumbnailModules, 'tables', `skin_${id}`)])
+);
+
+export const TABLE_BACKGROUND_THUMBNAILS: Record<string, string> = Object.fromEntries(
+  TABLE_BACKGROUND_IDS.map((id) => [
+    id,
+    thumbnail(backgroundThumbnailModules, 'backgrounds', `bg_${id}`),
+  ])
+);

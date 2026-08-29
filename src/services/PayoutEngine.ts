@@ -25,7 +25,14 @@ export interface PayoutEntry {
 }
 
 export type PayoutTemplate =
-  'top15' | 'top20' | 'winner_take_all' | '50_30_20' | 'sng3' | 'sng6' | 'sng9' | 'custom';
+  | 'top15'
+  | 'top20'
+  | 'winner_take_all'
+  | '50_30_20'
+  | 'sng3'
+  | 'sng6'
+  | 'sng9'
+  | 'custom';
 
 export interface ICMResult {
   userId: string;

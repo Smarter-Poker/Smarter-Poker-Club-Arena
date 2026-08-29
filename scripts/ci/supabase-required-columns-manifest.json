@@ -1340,6 +1340,16 @@
       "question_hash",
       "explanation"
     ],
+    "gto_postflop_compact": [
+      "street",
+      "game_family",
+      "position",
+      "depth_bucket",
+      "texture_class",
+      "facing",
+      "hand_matrix",
+      "source_rows"
+    ],
     "gto_scenarios": [
       "id",
       "title",
@@ -2639,6 +2649,13 @@
     "table_sessions": [
       "table_id",
       "player_id"
+    ],
+    "table_settings_changes": [
+      "table_id",
+      "club_id",
+      "changed_by",
+      "before",
+      "after"
     ],
     "table_templates": [
       "name",

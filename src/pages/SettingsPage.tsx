@@ -338,8 +338,22 @@ export default function SettingsPage() {
       const [profiles, wallets, achievements, handHistory] = await Promise.all([
         supabase
           .from('profiles')
+          /**
+           * `streak_days` REMOVED FROM THIS EXPORT (2026-08-29).
+           *
+           * It is a dead column: 0 non-zero values across all 1,023 profiles,
+           * and nothing in the repo has ever written it. `login_streak` is the
+           * live one — `AchievementTriggerService.onLogin` maintains it against
+           * `last_login_date`. This export fetched `streak_days` and then never
+           * read it, which is harmless in itself but is exactly how a dead
+           * column stays alive: the next person greps, finds a reader, and
+           * assumes it means something.
+           *
+           * See the migration of the same date, which puts that fact in a
+           * COMMENT on the column where a schema reader will find it.
+           */
           .select(
-            'id, display_name, username, avatar_url:arena_avatar_url, bio, role, created_at, streak_days, last_login'
+            'id, display_name, username, avatar_url:arena_avatar_url, bio, role, created_at, last_login'
           )
           .eq('id', user.id)
           .maybeSingle(),

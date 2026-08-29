@@ -242,8 +242,9 @@
 .lt-row.is-mine {
   box-shadow: inset 3px 0 0 #2ed573;
 }
-2,
-0) {
+/* Preserve hover feedback on a player's own row. This selector was corrupted
+   into a bare `2, 0)` token sequence, so the browser discarded the rule. */
+.lt-row.is-mine:hover {
   background: rgba(65, 105, 225, 0.07);
 }
 .lt-row.is-mine.is-selected {

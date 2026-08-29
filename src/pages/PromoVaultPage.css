@@ -118,6 +118,10 @@
   font-size: 0.75rem;
 }
 
+.pv-balance__value {
+  font-variant-numeric: tabular-nums;
+}
+
 .pv-help-button {
   width: 32px;
   height: 32px;

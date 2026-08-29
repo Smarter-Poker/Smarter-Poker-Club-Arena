@@ -3,30 +3,37 @@ import { persist } from 'zustand/middleware';
 import { masterBus } from '../core/MasterBus';
 import { STORAGE_KEYS } from '../lib/storage';
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  THIS STORE OWNS THE INTERFACE MODE. THAT IS ALL IT OWNS.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * It used to also hold `soundEnabled`, `fourColorDeck` and `notificationsEnabled`
+ * with a toggle for each. Every one of the six was dead: repo-wide, the only
+ * members ever read off this store are `theme` and `setTheme`, and
+ * `toggleSound` / `toggleFourColorDeck` / `toggleNotifications` had zero call
+ * sites.
+ *
+ * Dead is the smaller half of the problem. `soundEnabled` was a FOURTH persisted
+ * copy of "is sound on" (after `ca_sound_enabled`, `club_arena_sounds` and
+ * `TableUserSettings.isSoundEnabled` + its column), and `fourColorDeck` a THIRD
+ * copy of the deck preference — sitting in localStorage, free to disagree with
+ * the real ones forever, and ready to be wired up by the next contributor who
+ * finds a plausibly-named toggle and gets a switch that does nothing.
+ *
+ * Removed 2026-08-29. Sound belongs to `utils/soundGate` and the deck to
+ * `useTableSettings`. If this store ever needs to grow again, check those first.
+ */
 interface SettingsState {
-  soundEnabled: boolean;
-  fourColorDeck: boolean;
   theme: 'dark' | 'light';
-  notificationsEnabled: boolean;
-
-  toggleSound: () => void;
-  toggleFourColorDeck: () => void;
-  toggleNotifications: () => void;
   setTheme: (theme: 'dark' | 'light', userId?: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
-      soundEnabled: true,
-      fourColorDeck: false,
       theme: 'dark',
-      notificationsEnabled: true,
 
-      toggleSound: () => set((state) => ({ soundEnabled: !state.soundEnabled })),
-      toggleFourColorDeck: () => set((state) => ({ fourColorDeck: !state.fourColorDeck })),
-      toggleNotifications: () =>
-        set((state) => ({ notificationsEnabled: !state.notificationsEnabled })),
       setTheme: (theme, userId) => {
         set({ theme });
         /* Keep the full Settings page's separate, deliberately namespaced

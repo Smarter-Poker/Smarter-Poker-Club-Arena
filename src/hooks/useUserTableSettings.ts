@@ -20,6 +20,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { STORAGE_KEYS } from '../lib/storage';
 import { reportError } from '../utils/errorReporter';
+import { markSettingsTouched } from './useTableSettings';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES — matches Bible V8 §11.1.1 exactly
@@ -413,13 +414,19 @@ async function persistSettingColumn(
   stillCurrent: () => boolean
 ): Promise<PersistOutcome> {
   let error = await upsertSettingColumn(userId, column, value);
-  if (!error) return { status: 'saved' };
+  if (!error) {
+    await markSettingsTouched([column]);
+    return { status: 'saved' };
+  }
 
   for (const backoff of SAVE_RETRY_DELAYS_MS) {
     await delay(backoff);
     if (!stillCurrent()) return { status: 'superseded' };
     error = await upsertSettingColumn(userId, column, value);
-    if (!error) return { status: 'saved' };
+    if (!error) {
+      await markSettingsTouched([column]);
+      return { status: 'saved' };
+    }
   }
 
   return { status: 'failed', error };
@@ -449,6 +456,21 @@ export function useUserTableSettings(userId: string | null | undefined) {
   settingsRef.current = settings;
   const mutationRevisionRef = useRef(new Map<string, number>());
   const writeTailsRef = useRef(new Map<string, Promise<void>>());
+  /**
+   * Keys the user has changed since this hook mounted.
+   *
+   * `useTableSettings` has had this guard since 2026-08-28 and this hook did
+   * not, so the last of the four auto-change-backs lived here: the panel mounts,
+   * the row read goes out, the user taps a switch inside that window, and then
+   * the stale answer lands and `setSettings(loaded)` puts it back — writing the
+   * old value to the cache and to `ca_ws_mux` too. The database ends up holding
+   * what the user asked for while the panel shows the opposite, until reload.
+   *
+   * The in-flight de-duplication WIDENS that window rather than closing it: a
+   * component mounting during a burst shares one promise, so the answer it gets
+   * is as old as the first mount.
+   */
+  const locallyTouchedRef = useRef(new Set<keyof UserTableSettings>());
   /* `durableValueRef` and `pendingWriteCountRef` lived here until 2026-08-29.
      Both existed only to reconstruct the value a failed write should be rolled
      back TO. Nothing rolls back any more, so both had become write-only — the
@@ -457,6 +479,9 @@ export function useUserTableSettings(userId: string | null | undefined) {
 
   // ── Load from Supabase on mount ──
   useEffect(() => {
+    // A new account's row must not be reconciled against the previous account's
+    // live edits.
+    locallyTouchedRef.current.clear();
     const cached = readCachedSettings(userId);
     settingsRef.current = cached;
     setSettings(cached);
@@ -473,8 +498,12 @@ export function useUserTableSettings(userId: string | null | undefined) {
         const { data, error } = await fetchUserTableSettingsRow(userId);
 
         if (error) {
-          console.warn('[useUserTableSettings] Load failed, using cache:', error.message);
-          setLoading(false);
+          /* Reported, not just console-warned. A settings read that fails for
+             EVERY user — an RLS regression, a dropped column, a revoked grant —
+             used to produce zero telemetry and a UI quietly serving defaults.
+             Both write paths in this file already report; the read did not. */
+          reportError(error, 'useUserTableSettings.Load_failed');
+          if (mounted && activeUserIdRef.current === userId) setLoading(false);
           return;
         }
 
@@ -508,10 +537,19 @@ export function useUserTableSettings(userId: string | null | undefined) {
             multi_shared_socket:
               data.multi_shared_socket ?? DEFAULT_USER_TABLE_SETTINGS.multi_shared_socket,
           };
-          setSettings(loaded);
+          /* A LIVE EDIT OUTRANKS A STALE READ. Anything the user changed while
+             this row was in flight keeps the value they chose — see the note on
+             locallyTouchedRef. Without this the answer that was already stale
+             when it was asked for silently undid their tap. */
+          const reconciled = { ...loaded };
+          for (const key of locallyTouchedRef.current) {
+            (reconciled as Record<string, unknown>)[key] = settingsRef.current[key];
+          }
+          settingsRef.current = reconciled;
+          setSettings(reconciled);
           // Cache locally for instant loads
           try {
-            localStorage.setItem(cacheKeyForUser(userId), JSON.stringify(loaded));
+            localStorage.setItem(cacheKeyForUser(userId), JSON.stringify(reconciled));
           } catch {
             /* */
           }
@@ -519,14 +557,17 @@ export function useUserTableSettings(userId: string | null | undefined) {
           // device - mirror the loaded value so EngineStateClient's next
           // (re)connect sees it here too.
           try {
-            localStorage.setItem('ca_ws_mux', loaded.multi_shared_socket ? '1' : '0');
+            localStorage.setItem('ca_ws_mux', reconciled.multi_shared_socket ? '1' : '0');
           } catch {
             /* private mode */
           }
         }
         // If no row exists, defaults are already set — row will be created on first toggle
       } catch (err) {
-        console.warn('[useUserTableSettings] Unexpected error:', err);
+        /* This is the rejection `fetchUserTableSettingsRow` deliberately
+           re-throws so one blip cannot wedge the shared promise. Swallowing it
+           to the console meant that re-throw reached nothing that records it. */
+        reportError(err, 'useUserTableSettings.Load_threw');
       }
       if (mounted && activeUserIdRef.current === userId) setLoading(false);
     };
@@ -594,6 +635,7 @@ export function useUserTableSettings(userId: string | null | undefined) {
       const revision = (mutationRevisionRef.current.get(mutationScope) ?? 0) + 1;
       const mutationId = `${mutationScope}:${revision}`;
       mutationRevisionRef.current.set(mutationScope, revision);
+      locallyTouchedRef.current.add(key);
 
       // Optimistic update
       const optimistic = { ...settingsRef.current, [key]: newValue };
@@ -711,6 +753,7 @@ export function useUserTableSettings(userId: string | null | undefined) {
       const revision = (mutationRevisionRef.current.get(mutationScope) ?? 0) + 1;
       const mutationId = `${mutationScope}:${revision}`;
       mutationRevisionRef.current.set(mutationScope, revision);
+      locallyTouchedRef.current.add('table_alias');
 
       masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
         kind: 'user-table-setting',

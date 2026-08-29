@@ -107,7 +107,9 @@ describe('the sweep lock, in TournamentManagerEliminations', () => {
     // The original line was `if (!this.running || this.isProcessingEliminations) return;`
     // — one early return, no way out, no alert. That single line is the whole
     // bug: it makes a permanently held lock indistinguishable from a busy one.
-    expect(code(ELIM)).not.toMatch(/if\s*\(\s*!this\.running\s*\|\|\s*this\.isProcessingEliminations\s*\)\s*return;/);
+    expect(code(ELIM)).not.toMatch(
+      /if\s*\(\s*!this\.running\s*\|\|\s*this\.isProcessingEliminations\s*\)\s*return;/
+    );
     expect(code(ELIM)).toMatch(/eliminationLockVerdict/);
   });
 

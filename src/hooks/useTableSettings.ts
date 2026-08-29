@@ -3,6 +3,8 @@ import { masterBus } from '../core/MasterBus';
 import { useUserStore } from '../stores/useUserStore';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { soundService } from '../services/SoundService';
+import { setVibrationAllowed } from '../utils/vibrationGate';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -211,6 +213,55 @@ const KEY_FOR_COLUMN: Record<string, keyof TableUserSettings> = Object.fromEntri
   Object.entries(COLUMN_FOR_KEY).map(([key, column]) => [column, key as keyof TableUserSettings])
 ) as Record<string, keyof TableUserSettings>;
 
+/**
+ * The column recording which settings this account has DELIBERATELY set.
+ * Written only by `fn_mark_table_setting_touched`; see migration
+ * 20260829125943_a_setting_records_that_it_was_chosen.sql for the bug it closes.
+ */
+export const TOUCHED_COLUMN = 'settings_touched';
+
+/** OWN keys only. See the note at the bus subscriber for why `in` is unsafe. */
+function isSettingKey(name: string): name is keyof TableUserSettings {
+  return Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, name);
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  POSTGREST HANDS BACK `numeric` AS A STRING
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * 2026-08-29. `animation_speed` and `sound_volume` are `numeric` columns, and
+ * PostgREST serialises `numeric` as a STRING with its scale intact — this repo
+ * already documents that for `tables.small_blind` ("384000.00", never 384000).
+ *
+ * `hydrateFromServer` compares the row against `DEFAULT_SETTINGS` to decide
+ * whether the account ever chose a value. `"1" !== 1` is ALWAYS true, so
+ * `animationSpeed` was permanently judged "the server chose this", with three
+ * consequences, all silent:
+ *
+ *   1. the carry-up branch could never run for it, so a returning player's
+ *      chosen speed was never adopted onto their account;
+ *   2. `merged.animationSpeed` was set to the STRING on every hydrate, so a
+ *      player who had picked Slow on this browser had it reset to normal on
+ *      sign-in. That is the auto-change-back, arriving at the login screen;
+ *   3. the string was then written into localStorage and re-merged forever,
+ *      violating the declared `animationSpeed: number` at runtime.
+ *
+ * Coerce on the way in, against the TYPE OF THE DEFAULT rather than a list of
+ * column names, so a column that becomes numeric later cannot reintroduce it.
+ */
+function coerceToDefaultType(key: keyof TableUserSettings, raw: unknown): unknown {
+  const expected = typeof DEFAULT_SETTINGS[key];
+  if (expected === 'number' && typeof raw === 'string') {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : DEFAULT_SETTINGS[key];
+  }
+  if (expected === 'boolean' && typeof raw !== 'boolean') {
+    return Boolean(raw);
+  }
+  return raw;
+}
+
 /** The one copy. `null` until first read — see the note above on laziness. */
 let sharedSettings: TableUserSettings | null = null;
 const listeners = new Set<() => void>();
@@ -274,12 +325,34 @@ function applySideEffects(next: TableUserSettings): void {
   }
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    // HapticService reads its own key.
-    localStorage.setItem('vibrationsEnabled', String(next.isHapticEnabled));
   } catch (error) {
     console.warn('Failed to save table settings to localStorage:', error);
   }
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  WHY applySideEffects NO LONGER WRITES `vibrationsEnabled`
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * It used to, "because HapticService reads its own key". That made this store a
+ * SECOND, unsynchronised writer of `vibrationGate`'s settings key — the same
+ * ownership collision this file's own `data-theme` postmortem describes, applied
+ * to localStorage instead of to a DOM attribute.
+ *
+ * And `applySideEffects` runs on the FIRST `getSnapshot()`, i.e. the first
+ * render of any TablePage, SettingsPage or TournamentStartingTicker. So: mute
+ * haptics in the hamburger menu while no consumer of this store is mounted, the
+ * bus relay never reaches the store (its subscription does not exist until
+ * `attachBusOnce` has run from inside the hook), the blob still says
+ * `isHapticEnabled: true`, and the next table mount stamps
+ * `vibrationsEnabled='true'` straight over the mute. Vibration turns itself back
+ * on, which is precisely Dan's rule 10 again.
+ *
+ * The gate owns those keys. This store now writes them only when the USER
+ * changes the setting, through `setVibrationAllowed`, which writes both of them
+ * together — see `updateSetting`.
+ */
 
 function getSnapshot(): TableUserSettings {
   if (sharedSettings === null) {
@@ -289,12 +362,47 @@ function getSnapshot(): TableUserSettings {
   return sharedSettings;
 }
 
+/**
+ * Reach the two things that are NOT this store: the sound engine and the
+ * vibration gate.
+ *
+ * ON CHANGE ONLY, and from `commit` rather than from one call site, so it covers
+ * every route a value can take — a local toggle, `updateSettings`, a reset, a
+ * cross-TAB bus echo, and a cross-DEVICE `sound_enabled` relayed by
+ * PostgresSyncHooks. That last one is why this exists at all: `isSoundEnabled`
+ * was persisted here, mirrored to a column, and synced across devices, and
+ * NOTHING read it back to the audio engine. Muting on your phone updated a
+ * database column and left your laptop playing.
+ *
+ * Not in `applySideEffects`, which also runs on the first snapshot: stamping the
+ * gate keys from a freshly-loaded blob is the second-writer bug documented above
+ * it.
+ */
+function applyGateChanges(prev: TableUserSettings | null, next: TableUserSettings): void {
+  if (!prev || prev.isSoundEnabled !== next.isSoundEnabled) {
+    soundService.setEnabled(next.isSoundEnabled);
+  }
+  if (!prev || prev.isHapticEnabled !== next.isHapticEnabled) {
+    setVibrationAllowed(next.isHapticEnabled);
+  }
+  /* Master volume has ONE owner now. `SoundService.restoreStoredConfig` used to
+     set it too, from a localStorage key nothing has ever written, and whichever
+     of the two ran later won. The store is the owner because it is the copy that
+     is user-scoped and follows the account across devices. 0-100 here, 0-1 in
+     the engine — the unit conversion is why it must live in one place. */
+  if (!prev || prev.soundVolume !== next.soundVolume) {
+    soundService.setMasterVolume(Math.max(0, Math.min(100, next.soundVolume)) / 100);
+  }
+}
+
 /** Replace the one copy, persist it, apply it, and wake every consumer. */
 function commit(update: (prev: TableUserSettings) => TableUserSettings): void {
+  const previous = sharedSettings;
   const next = update(getSnapshot());
   if (next === sharedSettings) return;
   sharedSettings = next;
   applySideEffects(next);
+  applyGateChanges(previous, next);
   for (const listener of listeners) listener();
 }
 
@@ -334,10 +442,13 @@ function attachBusOnce(): void {
        names the COLUMN. Both are this setting — translate before matching, or
        cross-device changes arrive and are silently discarded. */
     const rawSetting = event.payload.setting as string | undefined;
+    /* `own()`, not `in`. `'constructor' in DEFAULT_SETTINGS` is TRUE — `in`
+       walks the prototype chain — so the whitelist admitted every Object
+       member and would have spread one straight into the settings object. */
     const setting =
-      rawSetting && rawSetting in DEFAULT_SETTINGS ? rawSetting : KEY_FOR_COLUMN[rawSetting ?? ''];
+      rawSetting && isSettingKey(rawSetting) ? rawSetting : KEY_FOR_COLUMN[rawSetting ?? ''];
     const { value } = event.payload;
-    if (setting && setting in DEFAULT_SETTINGS) {
+    if (setting && isSettingKey(setting)) {
       commit((prev) => ({
         ...prev,
         [setting]: value,
@@ -370,12 +481,48 @@ function attachBusOnce(): void {
 function pushKeyToServer(key: keyof TableUserSettings, value: unknown): void {
   const column = COLUMN_FOR_KEY[key];
   if (!column || !hydratedUserId) return;
-  void supabase
-    .from('user_table_settings')
-    .upsert({ user_id: hydratedUserId, [column]: value }, { onConflict: 'user_id' })
-    .then(({ error }) => {
-      if (error) reportError(error, 'useTableSettings.Save_failed');
+  /* `.then(onFulfilled)` with ONE argument handles fulfilment only, and a
+     PostgREST builder REJECTS on transport failure (offline, DNS, aborted
+     fetch) rather than resolving with an `error`. So every settings change made
+     with the connection down produced an unhandled rejection and reached
+     telemetry through neither branch: the reportError below sits on the path
+     that was never taken. Fire-and-forget must still catch. */
+  void (async () => {
+    try {
+      const { error } = await supabase
+        .from('user_table_settings')
+        .upsert({ user_id: hydratedUserId, [column]: value }, { onConflict: 'user_id' });
+      if (error) {
+        reportError(error, 'useTableSettings.Save_failed');
+        return;
+      }
+      await markSettingsTouched([column]);
+    } catch (error) {
+      reportError(error, 'useTableSettings.Save_failed');
+    }
+  })();
+}
+
+/**
+ * Record that the user CHOSE these columns, so hydration stops having to guess
+ * from the value. Best-effort and deliberately never surfaced: the setting is
+ * already saved, and the worst case of a lost mark is that this account keeps
+ * the pre-2026-08-29 inference for that one column until the next write.
+ *
+ * Shared with `useUserTableSettings`, which writes different columns of the same
+ * row — one marker for one table, or the two hooks would disagree about which
+ * half of a user's settings were deliberate.
+ */
+export async function markSettingsTouched(columns: string[]): Promise<void> {
+  if (columns.length === 0) return;
+  try {
+    const { error } = await supabase.rpc('fn_mark_table_setting_touched', {
+      p_columns: columns,
     });
+    if (error) reportError(error, 'useTableSettings.Touch_mark_failed');
+  } catch (error) {
+    reportError(error, 'useTableSettings.Touch_mark_failed');
+  }
 }
 
 /**
@@ -443,7 +590,7 @@ function claimLocalSettings(userId: string): void {
 }
 
 async function hydrateFromServer(userId: string): Promise<void> {
-  const columns = Object.values(COLUMN_FOR_KEY).join(', ');
+  const columns = [...Object.values(COLUMN_FOR_KEY), TOUCHED_COLUMN].join(', ');
   let row: Record<string, unknown> | null = null;
   try {
     const { data, error } = await supabase
@@ -475,6 +622,17 @@ async function hydrateFromServer(userId: string): Promise<void> {
   const mayAdoptLocal = owner === null || owner === userId;
   claimLocalSettings(userId);
 
+  /* WHICH COLUMNS THIS ACCOUNT ACTUALLY CHOSE.
+     Until 2026-08-29 this was inferred as `serverValue !== DEFAULT`, which is
+     wrong for every setting whose ON state IS the default: turn the ticker off
+     on a laptop, back on from a phone, and the laptop reads the row's `true` as
+     "never set" and pushes its stale `false` back up — the ticker turns itself
+     off on both devices with nobody touching a control. The row now records the
+     FACT of the choice (migration 20260829125943). */
+  const touched = new Set(
+    Array.isArray(row?.[TOUCHED_COLUMN]) ? (row[TOUCHED_COLUMN] as string[]) : []
+  );
+
   for (const [key, column] of Object.entries(COLUMN_FOR_KEY) as Array<
     [keyof TableUserSettings, string]
   >) {
@@ -486,14 +644,15 @@ async function hydrateFromServer(userId: string): Promise<void> {
     }
     if (locallyTouched.has(key)) continue; // a live edit outranks a stale read
 
-    const serverChose = serverValue !== DEFAULT_SETTINGS[key];
-    if (serverChose) {
-      if (merged[key] !== serverValue) {
-        (merged as unknown as Record<string, unknown>)[key] = serverValue;
+    if (touched.has(column)) {
+      // PostgREST returns `numeric` as a string; see coerceToDefaultType.
+      const adopted = coerceToDefaultType(key, serverValue);
+      if (merged[key] !== adopted) {
+        (merged as unknown as Record<string, unknown>)[key] = adopted;
         changed = true;
       }
     } else if (mayAdoptLocal && local[key] !== DEFAULT_SETTINGS[key]) {
-      // Server never had an opinion; carry this browser's choice up to it.
+      // The account has never chosen this; carry this browser's choice up to it.
       toPush.push([key, local[key]]);
     }
   }

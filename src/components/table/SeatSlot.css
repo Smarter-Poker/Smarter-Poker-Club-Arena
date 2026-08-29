@@ -4111,34 +4111,24 @@
   transform: none;
 }
 
-/* SITTING OUT BADGE */
-.seat__sitout-badge {
-  position: absolute;
-  top: -12px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(255, 60, 60, 0.95);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 3px 6px;
-  border-radius: 4px;
-  box-shadow: 0 0 8px rgba(255, 0, 0, 0.6);
-  z-index: 20;
-  pointer-events: none;
-  white-space: nowrap;
-  animation: pulseSitOut 2s infinite alternate;
-}
+/* ─── SITTING OUT BADGE: SECOND DECLARATION REMOVED 2026-08-29 ────────────
+   There were TWO `.seat__sitout-badge` rules in this file at identical
+   specificity. This one came later, so it is the one the browser applied, and
+   it silently undid the mobile-first rule ~2600 lines above it: no `max-width`,
+   `white-space: nowrap`, and a font twice the size. On a 375px phone, where a
+   seat is 58-66px wide, "SITTING OUT" on one unbreakable line overflows the
+   seat and lands on its neighbours.
 
-@keyframes pulseSitOut {
-  0% {
-    opacity: 0.8;
-    box-shadow: 0 0 5px rgba(255, 0, 0, 0.4);
-  }
-  100% {
-    opacity: 1;
-    box-shadow: 0 0 12px rgba(255, 0, 0, 0.8);
-  }
-}
+   The guard could not see it either. `tests/unit/sittingOutTagIsVisible.test.tsx`
+   slices with `sliceCssRule`, which is `css.indexOf(selector)` — FIRST match —
+   so it asserted `max-width: 100%` and `pointer-events: none` against the rule
+   that never applied, and passed while the shipped badge had neither. That test
+   now pins that the selector is declared exactly ONCE, which is the property
+   that actually protects it.
+
+   The surviving declaration is the documented mobile-first one. Also gone with
+   this block: `animation: pulseSitOut 2s infinite alternate` on an element
+   carrying no `data-motion="keep"`, which `reducedMotion.css` collapses to 1ms —
+   an infinite 1ms alternate between two opacities is a flicker, not a
+   reduced-motion fallback. A player sitting out is told so by the badge and, on
+   cash, by the countdown in it; it does not also need to blink. */

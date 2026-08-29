@@ -50,7 +50,12 @@ function seatSittingOut(de: DisconnectEngine, id = SITTER) {
   return id;
 }
 
-describe('an orbit is a HAND, not a loop iteration', () => {
+/* Title corrected 2026-08-29. It read "an orbit is a HAND, not a loop
+   iteration" — the previous fix's landing spot, and the second of three
+   answers this counter has had. An orbit is a BUTTON ROTATION. A hand is not
+   one, a loop iteration is not one, and at 6-max the difference between the
+   last two answers is a factor of six. */
+describe('an orbit is a BUTTON ROTATION, not a hand and not a loop iteration', () => {
   it('an idle tick does not advance the orbit count', () => {
     // THE BUG: the counter was bumped by the dealing loop's own tick, which
     // fires once per hand while dealing and once per 3-SECOND IDLE TICK while
@@ -64,11 +69,23 @@ describe('an orbit is a HAND, not a loop iteration', () => {
   });
 
   it('evicts once the button has genuinely passed twice', () => {
+    /* ── CORRECTED 2026-08-29 (Dan's call) ────────────────────────────────
+       This used to read: "SITOUT_MAX_ORBITS is 2 and the check is strictly
+       greater, so the THIRD dealt hand is the one that removes them." Both
+       halves of that sentence were bugs, and the test's own title gave it
+       away — it says "passed twice" and asserted three.
+
+         1. `>` against a constant named MAX_ORBITS = 2 fired on the third.
+            Dan's rule is "removed after the button passes them TWICE": the
+            second pass is the one that removes them. Now `>=`.
+         2. "dealt hand" is not an orbit. The caller counted once per DEAL, so
+            at a 6-max table this was three hands out of a twelve-hand
+            allowance — a player removed roughly four times sooner than the
+            rule they were told. The caller now counts a real button wrap.
+
+       So: two counted orbits, and the second one evicts. */
     const de = makeEngine();
     seatSittingOut(de);
-    // SITOUT_MAX_ORBITS is 2 and the check is strictly greater, so the third
-    // dealt hand is the one that removes them.
-    expect(de.tickSitOutsAndCollectEvictions(TABLE, [SITTER], { countOrbit: true })).toEqual([]);
     expect(de.tickSitOutsAndCollectEvictions(TABLE, [SITTER], { countOrbit: true })).toEqual([]);
     expect(de.tickSitOutsAndCollectEvictions(TABLE, [SITTER], { countOrbit: true })).toEqual([
       SITTER,
@@ -141,10 +158,23 @@ describe('the eviction runs where the table actually is', () => {
     expect(DEALING).toMatch(/evictExpiredSitOuts\(\{ countOrbit: false \}\)/);
   });
 
-  it('counts the orbit at the DEAL, which is the only place one passes', () => {
-    const at = DEALING.indexOf('this.lastButtonSeat = dealerSeat');
-    expect(at).toBeGreaterThan(-1);
-    const after = sliceEnclosingBlock(DEALING, 'this.lastButtonSeat = dealerSeat');
+  it('counts the orbit on a BUTTON WRAP, which is the only place one passes', () => {
+    /* RE-AIMED 2026-08-29. This pinned "at the DEAL", which was the previous
+       fix's landing spot and still wrong: a deal is a HAND, and at 6-max an
+       orbit is about six of them, so "2 orbits" was being enforced as 3 hands.
+       The genuine signal was already being computed a line away for time-bank
+       refills — `prevButtonSeat > 0 && dealerSeat <= prevButtonSeat` — and the
+       counter now rides it.
+
+       Pinned on the ORBIT-COMPLETE condition rather than on a byte offset, so
+       moving the block cannot quietly re-point it at the deal again. */
+    const at = DEALING.indexOf('const orbitComplete =');
+    expect(at, 'the orbit-wrap detector has moved or gone').toBeGreaterThan(-1);
+    expect(DEALING).toMatch(
+      /const orbitComplete =\s*prevButtonSeat > 0 && dealerSeat <= prevButtonSeat;/
+    );
+    expect(DEALING).toMatch(/if \(orbitComplete && !this\.isTournamentTable\(\)\)/);
+    const after = sliceEnclosingBlock(DEALING, 'orbitComplete && !this.isTournamentTable()');
     expect(after).toMatch(/countOrbit: true/);
   });
 

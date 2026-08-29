@@ -3215,7 +3215,14 @@ export abstract class ServerTableEngineBase {
         this.preActionEngine.removePlayer(this.tableId, userId);
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_evict_cashout');
-        await markSeatAsLeft(this.tableId, userId, seated.seat_number).catch(() => {});
+        /* The fallback's own failure is reported too. `seat_left` has already
+           gone out, so a silent failure here means every client has cleared a
+           seat whose row is still occupied — the player is told they were
+           removed and the seat stays blocked, with nothing anywhere to say so.
+           A cleanup that cannot complete is precisely the case worth an alert. */
+        await markSeatAsLeft(this.tableId, userId, seated.seat_number).catch((err2) =>
+          reportError(err2, 'ServerTableEngine.' + this.tableId + '.sitout_evict_mark_left')
+        );
       }
     }
     this.seatedPlayers = this.seatedPlayers.filter((p) => !evictable.includes(p.user_id));

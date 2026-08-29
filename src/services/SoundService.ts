@@ -289,32 +289,30 @@ class SoundService {
    * not depend on a component).
    */
   private restoreStoredConfig() {
-    try {
-      const stored = localStorage.getItem('sp_sound_settings');
-      if (!stored) return;
-      const cfg = JSON.parse(stored) as Record<string, unknown>;
-      const num = (v: unknown): number | null =>
-        typeof v === 'number' && Number.isFinite(v) ? v : null;
-      const mv = num(cfg.masterVolume);
-      if (mv !== null) this.setMasterVolume(Math.max(0, Math.min(100, mv)) / 100);
-      const ev = num(cfg.effectsVolume);
-      if (ev !== null) this.setEffectsVolume(Math.max(0, Math.min(100, ev)) / 100);
-      const bool = (v: unknown, fallback: boolean): boolean =>
-        typeof v === 'boolean' ? v : fallback;
-      this.categoryEnabled = {
-        action: bool(cfg.enableActionSounds, true),
-        chat: bool(cfg.enableChatSounds, true),
-        turn_alert: bool(cfg.enableTurnAlert, true),
-        win: bool(cfg.enableWinSound, true),
-        event: bool(cfg.enableEventSounds, true),
-      };
-      // Deliberately NOT applying cfg.enableSounds here: the master mute is
-      // owned by the shared gate (soundGate.ts), which shouldPlay consults on
-      // every call. Applying a third key's opinion over it is exactly the bug
-      // that let opening the settings panel un-mute the app.
-    } catch {
-      /* corrupt storage — defaults stand */
-    }
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  THIS USED TO READ A KEY NOTHING HAS EVER WRITTEN
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * 2026-08-29. It read `localStorage['sp_sound_settings']`, a key that
+     * appeared EXACTLY ONCE in the whole repository — here. The component its
+     * doc-comment named as the shape owner, `SoundSettings.tsx`, does not
+     * exist. So the restore was a no-op that read as working code, and the
+     * 2026-08-27 bug it claims to fix ("a player who disabled Chat Message
+     * Sounds got it back on every reload") was never actually fixed.
+     *
+     * It was also a SECOND owner of master volume. `useTableSettings.soundVolume`
+     * is the real one: user-scoped, persisted to `user_table_settings.sound_volume`,
+     * and synced across devices. Both wrote `masterVolume` at boot and whichever
+     * ran later won, which is the volume half of the same "two owners, free to
+     * disagree" family as the sound and haptic switches.
+     *
+     * Master volume now follows the settings store and nothing else — see
+     * `applyGateChanges` in useTableSettings. Categories keep their engine-level
+     * API (`setCategoryStates`) for the surface that will drive them; until one
+     * exists they are all on, which is the state this code was producing anyway,
+     * now without pretending otherwise.
+     */
   }
 
   // ─── Context Management ──────────────────────────────────────────────

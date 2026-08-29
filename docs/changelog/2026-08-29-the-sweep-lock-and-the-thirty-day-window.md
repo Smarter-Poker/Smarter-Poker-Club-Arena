@@ -12,7 +12,11 @@ only fail silently, and nothing watching it.
 ```ts
 if (!this.running || this.isProcessingEliminations) return;
 this.isProcessingEliminations = true;
-try { /* the sweep */ } finally { this.isProcessingEliminations = false; }
+try {
+  /* the sweep */
+} finally {
+  this.isProcessingEliminations = false;
+}
 ```
 
 The `finally` looks like a guarantee and is not. `finally` runs when the try
@@ -35,11 +39,11 @@ A held lock is inspected rather than obeyed. `eliminationLockVerdict` — pure,
 in a deliberately import-free module so it can be pinned by unit test rather
 than scanned for with a regex — answers one of three ways:
 
-| held for | verdict | what happens |
-| --- | --- | --- |
-| < 60s | `wait` | normal; most ticks of a busy tournament |
-| 60s – 5min | `warn` | one report per episode, and keep waiting |
-| >= 5 min | `force` | take the lock back and start a fresh sweep on the same tick |
+| held for   | verdict | what happens                                                |
+| ---------- | ------- | ----------------------------------------------------------- |
+| < 60s      | `wait`  | normal; most ticks of a busy tournament                     |
+| 60s – 5min | `warn`  | one report per episode, and keep waiting                    |
+| >= 5 min   | `force` | take the lock back and start a fresh sweep on the same tick |
 
 The asymmetry is the point. Complaining is free; forcing is not, so a merely
 slow sweep gets four more minutes to finish on its own. The alert is
@@ -78,8 +82,8 @@ server suite green: 212 files, 2,320 tests.
 ## 2. 11,238.80 of prize money the thirty-day window never asked about
 
 On 2026-08-28 a sweep paid 20,110.50 of prize money that players had earned and
-never been given, across 75 events, and then reported *owed across all completed
-events: 0.00*.
+never been given, across 75 events, and then reported _owed across all completed
+events: 0.00_.
 
 That report was bounded by `started_at > now() - interval '30 days'`, and the
 bound is the whole story. 938 completed events sit outside it. Asking them:
@@ -91,10 +95,10 @@ taken from the reconciler — which had a counting bug of its own as recently as
 yesterday (`20260828_reconcile_counts_a_debit_as_a_debit`). Union Grand
 Championship (NLH) `3b1a6dc9`, pool 2,500.00:
 
-| place | `tournament_players.prize` | wallet rows |
-| --- | --- | --- |
-| 1 | 750.00 | 750.00, dated the day of the event |
-| 2–9 | 0.00 | none at all |
+| place | `tournament_players.prize` | wallet rows                        |
+| ----- | -------------------------- | ---------------------------------- |
+| 1     | 750.00                     | 750.00, dated the day of the event |
+| 2–9   | 0.00                       | none at all                        |
 
 All eight of the unpaid places share one identical backfill `eliminated_at` of
 `2026-08-28 03:12:31.611729` — a month after the event ended on 2026-07-31.
@@ -106,7 +110,8 @@ idempotent path, each event dry-run first and asserted to 0 owed afterwards:
 identical terms — `is_horse` is not read anywhere in it (CLAUDE.md 10.5).
 
 Post-check on `3b1a6dc9`: places 1–9 now hold 750 + 500 + 375 + 250 + 200 + 150
-+ 125 + 87.50 + 62.50 = **2,500.00**, the pool to the cent.
+
+- 125 + 87.50 + 62.50 = **2,500.00**, the pool to the cent.
 
 ### Two things this leaves behind, deliberately
 
@@ -158,5 +163,5 @@ event's four previous runs recorded their first elimination at 67, 69, 70 and
 flushed at 83 and finished with a textbook ladder.
 
 Roughly forty minutes went into confirming a healthy tournament was healthy.
-The query needs to ask *how long* a player has been sitting at zero, and
+The query needs to ask _how long_ a player has been sitting at zero, and
 whether the rebuy window is even shut, before it calls anything a deadlock.

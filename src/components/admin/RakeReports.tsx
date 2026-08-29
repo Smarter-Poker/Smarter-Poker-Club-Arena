@@ -305,7 +305,7 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
       <div className="top-games">
         <h3>Hand Rake Breakdown</h3>
         <p style={{ opacity: 0.7, fontSize: '0.85rem', margin: '4px 0 10px' }}>
-          Look Up Any Raked Hand By Hand Id Or Hand Number To See Each Player&apos;s Contribution,
+          Look Up Any Raked Hand By Hand ID Or Hand Number To See Each Player&apos;S Contribution,
           Weight And Credited Rake.
         </p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>

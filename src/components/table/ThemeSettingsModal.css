@@ -166,7 +166,7 @@
 }
 .theme-modal__game-select {
   min-width: 112px;
-  min-height: 38px;
+  min-height: 44px;
   padding: 7px 30px 7px 10px;
   border: 1px solid rgba(174, 185, 195, 0.24);
   border-radius: 3px;
@@ -203,6 +203,13 @@
   border-radius: 50%;
   background: #3fb950;
   box-shadow: 0 0 8px rgba(63, 185, 80, 0.8);
+}
+.theme-modal__autosave--error {
+  color: #ffb3b3;
+}
+.theme-modal__autosave--error .theme-modal__autosave-dot {
+  background: #ff6464;
+  box-shadow: 0 0 8px rgba(255, 100, 100, 0.72);
 }
 .theme-modal__workspace {
   min-height: 0;
@@ -247,7 +254,7 @@
   gap: 5px;
 }
 .theme-modal__mode-option {
-  min-height: 42px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -336,8 +343,8 @@
   gap: 3px;
 }
 .theme-modal__preview-switch button {
-  min-height: 25px;
-  padding: 4px 9px;
+  min-height: 44px;
+  padding: 7px 11px;
   border: 1px solid rgba(174, 185, 195, 0.2);
   border-radius: 2px;
   color: #8193a1;
@@ -359,7 +366,7 @@
   position: relative;
   overflow: hidden;
   aspect-ratio: 9/13;
-  min-height: 340px;
+  min-height: 250px;
   background: #05080c;
 }
 .theme-modal__live-caption {
@@ -442,7 +449,10 @@
   z-index: 8;
   top: 0;
   display: grid;
-  grid-template-columns: repeat(5, minmax(66px, 1fr));
+  /* "Background" is the widest label. A 390px phone cannot contain five
+     fully legible touch targets, so preserve the words and let the rail do
+     the horizontal scrolling it already advertises. */
+  grid-template-columns: repeat(5, minmax(124px, 1fr));
   flex: 0 0 auto;
   overflow-x: auto;
   scrollbar-width: none;
@@ -467,6 +477,7 @@
     sans-serif;
   letter-spacing: 0.055em;
   text-transform: uppercase;
+  white-space: nowrap;
   cursor: pointer;
 }
 .theme-modal__tab::after {
@@ -644,7 +655,7 @@
   font-size: 10px;
 }
 .theme-modal__state button {
-  min-height: 38px;
+  min-height: 44px;
   padding: 7px 10px;
   border: 1px solid currentColor;
   border-radius: 2px;
@@ -926,8 +937,11 @@
   z-index: 4;
   left: 9px;
   bottom: 8px;
-  min-height: 24px;
-  padding: 3px 6px;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 6px;
   border: 0;
   color: #748692;
   background: transparent;
@@ -958,7 +972,7 @@
 }
 .theme-modal__randomize,
 .theme-modal__loadout button {
-  min-height: 36px;
+  min-height: 44px;
   padding: 7px 9px;
   border: 1px solid rgba(174, 185, 195, 0.22);
   border-radius: 2px;
@@ -1177,6 +1191,69 @@
 [data-theme='light'] .theme-modal__selection-item strong {
   color: #172730;
 }
+[data-theme='light'] .theme-modal__visual-rail {
+  background:
+    linear-gradient(rgba(18, 44, 59, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(18, 44, 59, 0.045) 1px, transparent 1px),
+    radial-gradient(circle at 50% 38%, rgba(4, 122, 184, 0.14), transparent 44%), #c8d2d9;
+  background-size:
+    28px 28px,
+    28px 28px,
+    auto,
+    auto;
+}
+[data-theme='light'] .theme-modal__catalog-scroll,
+[data-theme='light'] .theme-modal__selection-ledger {
+  scrollbar-color: #758995 #dce4e9;
+}
+[data-theme='light'] .theme-modal__autosave,
+[data-theme='light'] .theme-modal__mode-note,
+[data-theme='light'] .theme-modal__section-heading div > span,
+[data-theme='light'] .theme-modal__loadout-note {
+  color: #465d6b;
+}
+
+@media (max-width: 767px) {
+  .theme-modal__visual-rail {
+    padding: 9px 10px 10px;
+  }
+  .theme-modal__mode {
+    margin-bottom: 7px;
+  }
+  .theme-modal__mode-note {
+    display: none;
+  }
+  .theme-modal__preview-shell {
+    padding-top: 48px;
+  }
+  .theme-modal__preview-switch {
+    top: 3px;
+  }
+  .theme-modal__live-preview {
+    height: min(31dvh, 270px);
+    min-height: 220px;
+    aspect-ratio: auto;
+  }
+  .theme-modal__selection-ledger {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-top: 6px;
+  }
+  .theme-modal__selection-item {
+    padding: 7px 6px;
+  }
+  .theme-modal__selection-item strong {
+    font-size: 9px;
+  }
+  .theme-modal__tabs {
+    scroll-snap-type: x proximity;
+  }
+  .theme-modal__tab {
+    scroll-snap-align: start;
+  }
+  .theme-modal__filters button {
+    min-height: 44px;
+  }
+}
 
 @media (min-width: 768px) {
   .theme-modal-overlay {
@@ -1284,7 +1361,7 @@
     padding: 9px;
   }
   .theme-modal__live-preview {
-    min-height: 315px;
+    min-height: 210px;
   }
   .theme-modal__grid {
     gap: 6px;

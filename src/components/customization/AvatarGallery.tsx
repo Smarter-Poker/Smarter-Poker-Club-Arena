@@ -98,6 +98,8 @@ export function AvatarGallery({
   const [customFailed, setCustomFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [showQuickAvatar, setShowQuickAvatar] = useState(false);
+  const [search, setSearch] = useState('');
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   // ── Style tab: frames + auras ───────────────────────────────────────────
   const [cosmetics, setCosmetics] = useState<(AvatarCosmetic & { isOwned: boolean })[]>([]);
@@ -125,6 +127,44 @@ export function AvatarGallery({
       setSelectedAvatar(currentAvatarUrl);
     }
   }, [isOpen, currentAvatarUrl]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusable = () =>
+      Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), [href], [tabindex="0"]'
+        ) || []
+      );
+    window.requestAnimationFrame(() => focusable()[0]?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const controls = focusable();
+      if (!controls.length) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
+    };
+  }, [isOpen, onClose]);
 
   // A shop redemption or VIP reward can land while this modal is already
   // open (and can originate in another tab). Re-read both the avatar library
@@ -340,11 +380,17 @@ export function AvatarGallery({
   const myAvatars = useMemo(() => avatars.filter((a) => a.category === 'custom'), [avatars]);
 
   const filteredAvatars = useMemo(() => {
-    if (activeTab === 'free') return freeAvatars;
-    if (activeTab === 'vip') return vipAvatars;
-    if (activeTab === 'custom') return myAvatars;
-    return [];
-  }, [activeTab, freeAvatars, vipAvatars, myAvatars]);
+    const source =
+      activeTab === 'free'
+        ? freeAvatars
+        : activeTab === 'vip'
+          ? vipAvatars
+          : activeTab === 'custom'
+            ? myAvatars
+            : [];
+    const query = search.trim().toLowerCase();
+    return query ? source.filter((avatar) => avatar.name.toLowerCase().includes(query)) : source;
+  }, [activeTab, freeAvatars, vipAvatars, myAvatars, search]);
 
   const saveAvatar = useCallback(
     async (newUrl: string, previousUrl: string) => {
@@ -513,6 +559,24 @@ export function AvatarGallery({
     onClose();
   }, [onClose]);
 
+  const handleTabKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>, tab: GalleryTab) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const tabs: GalleryTab[] = ['free', 'vip', 'custom', 'style'];
+      const current = tabs.indexOf(tab);
+      const next =
+        event.key === 'Home'
+          ? 0
+          : event.key === 'End'
+            ? tabs.length - 1
+            : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+      setActiveTab(tabs[next]);
+      document.getElementById(`avatar-tab-${tabs[next]}`)?.focus();
+    },
+    []
+  );
+
   if (!isOpen) return null;
 
   const unchanged = selectedAvatar === currentAvatarUrl;
@@ -522,15 +586,22 @@ export function AvatarGallery({
   const content = (
     <div className="avatar-gallery-overlay" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="avatar-gallery"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="Choose Avatar"
+        aria-labelledby="avatar-gallery-title"
       >
         {/* Header */}
         <div className="ag-header">
-          <h3 className="ag-title">Choose Avatar</h3>
+          <div>
+            <span className="ag-eyebrow">PLAYER IDENTITY STUDIO</span>
+            <h3 id="avatar-gallery-title" className="ag-title">
+              Avatar Gallery
+            </h3>
+            <p className="ag-subtitle">Choose From Your 97-Avatar Library And Live Styles</p>
+          </div>
           <button className="ag-close" onClick={onClose} aria-label="Close">
             &times;
           </button>
@@ -571,6 +642,10 @@ export function AvatarGallery({
             <AvatarCosmetics frame={equippedFrame} aura={equippedAura} />
             <span className="ag-preview__label">{unchanged ? 'Unchanged' : 'New'}</span>
           </div>
+          <div className="ag-preview__status" aria-live="polite">
+            <span className={saving || savingCosmetic ? 'is-saving' : ''} />
+            {saving || savingCosmetic ? 'Saving live change' : 'Changes apply instantly'}
+          </div>
         </div>
 
         {/* Quick actions.
@@ -610,32 +685,69 @@ export function AvatarGallery({
         )}
 
         {/* Tabs */}
-        <div className="ag-tabs">
+        <div className="ag-tabs" role="tablist" aria-label="Avatar gallery categories">
           <button
+            id="avatar-tab-free"
             className={`ag-tab ${activeTab === 'free' ? 'ag-tab--active' : ''}`}
             onClick={() => setActiveTab('free')}
+            role="tab"
+            aria-selected={activeTab === 'free'}
+            aria-controls="avatar-gallery-panel"
+            tabIndex={activeTab === 'free' ? 0 : -1}
+            onKeyDown={(event) => handleTabKeyDown(event, 'free')}
           >
             Presets ({freeAvatars.length})
           </button>
           <button
+            id="avatar-tab-vip"
             className={`ag-tab ${activeTab === 'vip' ? 'ag-tab--active' : ''}`}
             onClick={() => setActiveTab('vip')}
+            role="tab"
+            aria-selected={activeTab === 'vip'}
+            aria-controls="avatar-gallery-panel"
+            tabIndex={activeTab === 'vip' ? 0 : -1}
+            onKeyDown={(event) => handleTabKeyDown(event, 'vip')}
           >
             VIP ({vipAvatars.length})
           </button>
           <button
+            id="avatar-tab-custom"
             className={`ag-tab ${activeTab === 'custom' ? 'ag-tab--active' : ''}`}
             onClick={() => setActiveTab('custom')}
+            role="tab"
+            aria-selected={activeTab === 'custom'}
+            aria-controls="avatar-gallery-panel"
+            tabIndex={activeTab === 'custom' ? 0 : -1}
+            onKeyDown={(event) => handleTabKeyDown(event, 'custom')}
           >
             Mine ({myAvatars.length})
           </button>
           <button
+            id="avatar-tab-style"
             className={`ag-tab ${activeTab === 'style' ? 'ag-tab--active' : ''}`}
             onClick={() => setActiveTab('style')}
+            role="tab"
+            aria-selected={activeTab === 'style'}
+            aria-controls="avatar-gallery-panel"
+            tabIndex={activeTab === 'style' ? 0 : -1}
+            onKeyDown={(event) => handleTabKeyDown(event, 'style')}
           >
             Style
           </button>
         </div>
+
+        {activeTab !== 'style' && (
+          <label className="ag-search">
+            <span className="sr-only">Search avatars</span>
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search this collection"
+            />
+            <span aria-hidden="true">⌕</span>
+          </label>
+        )}
 
         {notice && (
           <div className="ag-notice" role="status">
@@ -649,7 +761,12 @@ export function AvatarGallery({
             avatar, and AvatarService.isLibraryAvatarUrl now refuses anything
             else at the write point, so this is the affordance going away rather
             than the rule itself. */}
-        <div className="ag-content">
+        <div
+          id="avatar-gallery-panel"
+          className="ag-content"
+          role="tabpanel"
+          aria-labelledby={`avatar-tab-${activeTab}`}
+        >
           {activeTab === 'style' ? (
             cosmeticsLoading ? (
               <div className="ag-empty">Loading Styles...</div>
@@ -803,7 +920,8 @@ export function AvatarGallery({
                 const isUnlockedByPurchase = avatar.category === 'vip' && !isVip && avatar.isOwned;
 
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={avatar.id}
                     className={[
                       'ag-item',
@@ -813,6 +931,8 @@ export function AvatarGallery({
                       .filter(Boolean)
                       .join(' ')}
                     onClick={() => handleSelect(avatar)}
+                    aria-pressed={isSelected}
+                    aria-label={`${avatar.name}${isLocked ? ', VIP required' : isUnlockedByPurchase ? ', owned' : ''}`}
                     title={isLocked ? `${avatar.name} (VIP)` : avatar.name}
                   >
                     <img
@@ -832,7 +952,7 @@ export function AvatarGallery({
                     {isUnlockedByPurchase && <div className="ag-item__owned">Owned</div>}
                     {isSelected && !isLocked && <div className="ag-item__check">&#10003;</div>}
                     <span className="ag-item__name">{avatar.name}</span>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -856,11 +976,11 @@ export function AvatarGallery({
             </button>
           ) : (
             <button
-              className={`ag-apply ${saving ? 'ag-apply--saving' : ''} ${unchanged ? 'ag-apply--disabled' : ''}`}
+              className={`ag-apply ${saving ? 'ag-apply--saving' : ''}`}
               onClick={handleApply}
-              disabled={saving || unchanged}
+              disabled={saving}
             >
-              {saving ? 'Saving...' : 'Done'}
+              {saving ? 'Saving...' : unchanged ? 'Done' : 'Done · Avatar Applied'}
             </button>
           )}
         </div>

@@ -69,7 +69,7 @@ describe('checkout and delivery contract', () => {
     expect(MODAL).toContain("supabase.rpc('fn_purchase_feature'");
     expect(MODAL).toContain('purchaseBusyRef.current');
     expect(MODAL).toMatch(/if \(!pending \|\| !userId \|\| purchaseBusyRef\.current\) return/);
-    expect(MODAL).toContain("applyAccessibleAsset('cards', pending.id)");
+    expect(MODAL).toContain('applyAccessibleAsset(pending.tab, pending.id)');
     expect(MODAL).toContain("masterBus.emit('DIAMOND_SPENT'");
     expect(MODAL).toContain("masterBus.emit('COSMETIC_OWNERSHIP_CHANGED'");
   });

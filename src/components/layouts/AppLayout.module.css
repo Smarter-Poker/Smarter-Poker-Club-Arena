@@ -75,11 +75,6 @@
   transition: all var(--duration-fast) var(--ease-out-expo);
 }
 
-.navLink:hover {
-  color: var(--text-primary);
-  background: var(--club-elevated);
-}
-
 .navLink.active {
   color: var(--club-blue-light);
   background: var(--club-blue-dim);
@@ -127,11 +122,6 @@
   transition: all var(--duration-fast) var(--ease-out-expo);
 }
 
-.settingsButton:hover {
-  background: var(--club-elevated);
-  border-color: var(--border-hover);
-}
-
 /* Mobile Menu Toggle */
 .mobileMenuToggle {
   display: none;
@@ -169,7 +159,6 @@
   transition: all var(--duration-fast) var(--ease-out-expo);
 }
 
-.mobileNavLink:hover,
 .mobileNavLink:active {
   color: var(--text-primary);
   background: var(--club-elevated);

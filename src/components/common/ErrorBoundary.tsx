@@ -197,12 +197,6 @@ class ErrorBoundary extends Component<Props, State> {
                       cursor: 'pointer',
                       transition: 'transform 0.2s',
                     }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-2px)';
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.transform = 'translateY(0)';
-                    }}
                   >
                     Report Feedback
                   </button>
@@ -220,14 +214,6 @@ class ErrorBoundary extends Component<Props, State> {
                     fontWeight: '500',
                     cursor: 'pointer',
                     transition: 'all 0.2s',
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                    e.currentTarget.style.transform = 'translateY(0)';
                   }}
                 >
                   Reload Page

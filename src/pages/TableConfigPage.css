@@ -421,19 +421,10 @@
   color: #1877f2;
 }
 
-.btn-save:hover {
-  background: rgba(24, 119, 242, 0.1);
-}
-
 .btn-start {
   background: #1877f2;
   border: 2px solid #1877f2;
   color: white;
-}
-
-.btn-start:hover {
-  background: #166fe5;
-  border-color: #166fe5;
 }
 
 .btn-save:disabled,
@@ -563,12 +554,6 @@
   color: #ccc;
 }
 
-.btn-template:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.5);
-  color: white;
-}
-
 .btn-template:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -584,10 +569,6 @@
   font-size: 0.85rem;
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.btn-delete:hover {
-  background: rgba(220, 38, 38, 0.1);
 }
 
 /* DELETE MODAL */
@@ -721,7 +702,4 @@
   font-weight: 700;
   cursor: pointer;
   transition: filter 0.15s ease;
-}
-.config-preset-chip:hover {
-  filter: brightness(1.2);
 }

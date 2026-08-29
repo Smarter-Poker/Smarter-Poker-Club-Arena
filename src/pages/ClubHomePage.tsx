@@ -16,7 +16,13 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { ClubRole } from '../types/clubRoles';
 import { isClubStaff } from '../types/clubRoles';
 import { MEDIA_BASE } from '../utils/mediaBase';
-import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
+/* Dan 2026-08-28: NOT react-router's useNavigate. This page is also mounted
+   INSIDE a MultiTablePage lobby tab (the in-table "+"), and there a
+   /tournaments/:id destination must render in the tab rather than change the
+   route - a route change hides the container and takes the action bar with it.
+   Outside that tab this IS useNavigate, unchanged. See InTabLobbyContext.tsx. */
+import { useAppNavigate } from '../context/InTabLobbyContext';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
@@ -294,6 +300,23 @@ type TournVariant = 'ALL' | 'MTT' | 'Spin-It' | 'SN';
     (Dan 2026-08-25: "the cap is 10 for MTT only"). */
 const ALL_TAB_MTT_CAP = 10;
 
+/**
+ * THE ONE LIST OF STATUSES THIS LOBBY SHOWS (2026-08-28 audit).
+ *
+ * The fetch and the realtime admission test are two halves of the same rule
+ * and they had drifted: the fetch admitted LATE_REG and STARTING_SOON, the
+ * realtime `belongsInTournamentList` re-typed a shorter `['REGISTERING',
+ * 'RUNNING']` beside a comment saying it must mirror the fetch. So a
+ * tournament that arrived in the page under either of the two extra statuses
+ * would be DELETED from the board by its own next UPDATE — the row vanishes
+ * while the player is looking at it, and only a reload brings it back. That
+ * is exactly the shape of "every single one disappears from the spins lobby",
+ * so it is fixed whether or not a writer sets those statuses today.
+ *
+ * One array, both consumers. Adding a status here can no longer half-land.
+ */
+const LOBBY_TOURNAMENT_STATUSES = ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON'];
+
 const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'LIMIT', 'MIXED'];
 const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
 
@@ -504,8 +527,30 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const { clubId: routeClubId } = useParams<{ clubId: string }>();
   const clubId = clubIdOverride || routeClubId;
   useVisibilityRefresh(() => loadClubData());
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
   const isMountedRef = useIsMounted();
+  /**
+   * ─── NOT A MEMBER, WITHOUT LEAVING THE TABLE (Dan 2026-08-28 round 2) ─────
+   *
+   * `/invite/:clubId` is a route outside /table/:tableId, so navigating to it
+   * from the in-tab lobby collapses MultiTablePage — action bar, tab strip,
+   * Take Seat button, all of it — while the player's other tables keep
+   * dealing. That is the exact failure this whole body of work exists to stop,
+   * and it fires from a LOAD EFFECT rather than a click, so the player cannot
+   * even connect it to something they did.
+   *
+   * Embedded, the honest answer is to say so IN THE TAB and leave the felt
+   * alone; the player can then decide to go and join. On its own route the
+   * redirect is unchanged.
+   */
+  const [notAMember, setNotAMember] = useState(false);
+  const bounceToInvite = useCallback(() => {
+    if (clubIdOverride) {
+      setNotAMember(true);
+      return;
+    }
+    navigate(`/invite/${clubId}`);
+  }, [clubIdOverride, clubId, navigate]);
   /* THE LATEST loadClubData, ALWAYS.
      `loadClubData` is redefined every render and closes over that render's
      clubId. The bus effect below and the realtime member handler both have []
@@ -906,10 +951,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         return inClubScope(row, rtScope);
       };
 
-      const JOINABLE_TOURNAMENT_STATUS = ['REGISTERING', 'RUNNING'];
       const belongsInTournamentList = (row: any): boolean => {
         if (!row) return false;
-        if (!JOINABLE_TOURNAMENT_STATUS.includes(String(row.status))) return false;
+        // Same array the fetch uses — see LOBBY_TOURNAMENT_STATUSES.
+        if (!LOBBY_TOURNAMENT_STATUSES.includes(String(row.status))) return false;
         return inClubScope(row, rtScope);
       };
 
@@ -1180,16 +1225,57 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         // sibling; this is it. Identity is name + buy-in + variant, which is
         // exactly what the tile showed the player, so the game they land in
         // is the game they chose — just the running edition of it.
-        const { data: sibs, error: sibErr } = await supabase
+        /* ── THE HOP MUST NOT LEAVE THIS CLUB (2026-08-28, audit) ──────────
+           The identity above is name + buy-in + variant, and on this platform
+           those three are IDENTICAL ON EVERY BOARD by construction — the
+           recurring service builds "10 Chip Spin PLO4" from the ladder, and
+           its own code comments that "`10 Chip Spin PLO4` is the same string
+           on every board", which is why the SERVER-side equivalent is
+           owner-scoped. This query was not scoped at all, so a recycled tile
+           could resolve ANOTHER CLUB'S spin, navigate the player into it, and
+           let the seat sheet charge that club's wallet at that club's rake —
+           with nothing on screen saying they had changed clubs.
+
+           Latent rather than live today (one club currently runs the ladder,
+           and all 33 open keys are distinct), which is exactly why it had to
+           be fixed before a second board makes it real. Scoped through the
+           same `applyClubScope` every other lobby query in this file uses, so
+           the hop can only ever land on a game this club is entitled to see. */
+        /* Scoped to the ORIGINAL game's own club — the tightest rule there
+           is, and it needs no component state (this callback is defined
+           before the club data loads). The replacement for a recycled board
+           is created by the same club that ran the original, so requiring an
+           exact club_id match is both correct and impossible to widen by
+           accident. `buy_in_amount` is read from the row rather than from the
+           tile: a heads-up SNG's tile value is buy_in + 5% fee, which would
+           match no row at all. If the original row cannot be read we do NOT
+           guess — we fall through to the honest "no longer open" message. */
+        const { data: originRow, error: originErr } = await supabase
           .from('tournaments')
-          .select('id')
-          .eq('status', 'REGISTERING')
-          .eq('variant', variant === 'sng' ? 'sng' : 'spin')
-          .eq('name', t.name)
-          .eq('buy_in_amount', t.buy_in_amount)
-          .neq('id', t.id)
-          .order('created_at', { ascending: false })
-          .limit(1);
+          .select('club_id, buy_in_amount')
+          .eq('id', t.id)
+          .maybeSingle();
+        if (originErr) {
+          reportError?.(originErr, 'ClubHomePage.spinQuickJoin_origin_lookup', {
+            tournamentId: t.id,
+          });
+        }
+        const originClubId = (originRow as { club_id?: string } | null)?.club_id;
+        const originBuyIn = Number((originRow as { buy_in_amount?: number } | null)?.buy_in_amount);
+
+        const { data: sibs, error: sibErr } = originClubId
+          ? await supabase
+              .from('tournaments')
+              .select('id')
+              .eq('status', 'REGISTERING')
+              .eq('variant', variant === 'sng' ? 'sng' : 'spin')
+              .eq('club_id', originClubId)
+              .eq('name', t.name)
+              .eq('buy_in_amount', Number.isFinite(originBuyIn) ? originBuyIn : t.buy_in_amount)
+              .neq('id', t.id)
+              .order('created_at', { ascending: false })
+              .limit(1)
+          : { data: null, error: null };
         if (sibErr) {
           reportError?.(sibErr, 'ClubHomePage.spinQuickJoin_sibling_lookup');
         }
@@ -1618,18 +1704,48 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               }
             }
             if (localSession?.userId) {
-              const { data: memStat } = await supabase
+              const { data: memStat, error: memErr } = await supabase
                 .from('club_members')
                 .select('status')
                 .eq('club_id', home.club.id)
                 .eq('user_id', localSession.userId)
                 .maybeSingle();
-              if (!memStat || !['active', 'approved'].includes(memStat.status)) {
-                navigate(`/invite/${clubId}`);
+              /* A FAILED READ IS NOT "NOT A MEMBER" (2026-08-28 audit).
+                 `error` was discarded here, and Supabase resolves
+                 `{ data: null, error }` on a query-level failure — so a
+                 timeout, a 500 or an RLS hiccup was indistinguishable from a
+                 stranger, and a paid-up member on a flaky connection was
+                 ejected from their own club onto the invite screen with no
+                 explanation. That is the exact anti-pattern this file's own
+                 doctrine forbids a hundred lines below ("the database has
+                 been timing statements out under load all day"), and which
+                 loadMyGameStates already handles correctly.
+
+                 Eviction now requires PROOF: a successful read that says the
+                 viewer is not active/approved. An unreadable answer leaves
+                 them where they are — the club's own RLS is the real gate,
+                 so a genuine non-member still sees nothing.
+
+                 The EVICTION ITSELF goes through `bounceToInvite` (in-tab
+                 lobby round 2): on the club's own route that is the same
+                 redirect as before, but embedded in a table tab it renders a
+                 panel instead of navigating, because a route change there
+                 collapses MultiTablePage and takes the action bar with it
+                 while the player's other tables are still dealing. */
+              if (memErr) {
+                reportError(memErr, 'ClubHomePage.fastPath.membership_unreadable', {
+                  clubId: home.club.id,
+                });
+              } else if (!memStat || !['active', 'approved'].includes(memStat.status)) {
+                bounceToInvite();
                 return;
               }
             } else {
-              navigate(`/invite/${clubId}`);
+              /* No local session AND the auth read did not produce a user. On
+                 the fast path that is genuinely "signed out" — `readLocalSession`
+                 is a synchronous localStorage read, so there is no timeout to
+                 confuse it with. */
+              bounceToInvite();
               return;
             }
 
@@ -1729,7 +1845,24 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const authUser = authRes?.data?.user ?? null;
       if (!authUser) {
         if (getIsMounted && !getIsMounted()) return;
-        navigate(`/invite/${clubId}`);
+        /**
+         * ONLY ON POSITIVE EVIDENCE (Dan 2026-08-28 round 2) — the same rule
+         * the union cascade below already follows, applied to the two checks
+         * that were still bouncing on failure.
+         *
+         * `failed` means the auth read TIMED OUT or threw; it does not mean
+         * there is no user. `loadClubData` re-runs on tab refocus, on a
+         * realtime resubscribe and on a 90-second interval, and this page
+         * stays mounted in a parked lobby tab for the whole session — so a
+         * single blip while the player was heads-up in a hand navigated the
+         * whole app to /invite, collapsed MultiTablePage to display:none, and
+         * left them staring at a "Join This Club" page while their tables
+         * dealt on invisibly behind it. Nobody clicked anything.
+         *
+         * Do nothing and let the next scheduled load answer the question.
+         */
+        if ((authRes as { failed?: boolean } | null)?.failed) return;
+        bounceToInvite();
         return;
       }
       if (authUser) {
@@ -1749,12 +1882,27 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           .eq('user_id', authUser.id)
           .maybeSingle();
 
-        if (
+        /* Same rule as the fast path above: eviction requires PROOF, never a
+           failed read. `memberResult.error` was discarded here, so any
+           query-level failure read as "not a member" and bounced a real
+           member to the invite screen mid-session (2026-08-28 audit).
+
+           This load is not mount-only — it re-runs on tab refocus, on a
+           realtime resubscribe and on a 90-second interval, and in the in-tab
+           lobby this page never unmounts. So the failure window was the whole
+           session, including while the player was seated: one blip and the
+           app navigated to /invite, collapsing the table container mid-hand.
+           `bounceToInvite` is the embedded-aware exit; see its definition. */
+        if (memberResult.error) {
+          reportError(memberResult.error, 'ClubHomePage.membership_unreadable', {
+            clubId: resolvedId,
+          });
+        } else if (
           !memberResult.data ||
           !['active', 'approved'].includes((memberResult.data as any).status)
         ) {
           if (getIsMounted && !getIsMounted()) return;
-          navigate(`/invite/${clubId}`);
+          bounceToInvite();
           return;
         }
 
@@ -1942,9 +2090,19 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                Still summed WITHOUT de-duplication, exactly as specified above:
                the RPC returns one row per club and a player in two clubs is two
                memberships, which is what unions.member_count holds. */
-            const { data: perClub } = await supabase.rpc('fn_batch_club_member_counts', {
-              p_club_ids: unionClubIds,
-            });
+            const { data: perClub, error: perClubErr } = await supabase.rpc(
+              'fn_batch_club_member_counts',
+              {
+                p_club_ids: unionClubIds,
+              }
+            );
+            // ROUND 9 (2026-08-29): keeping the previous count on a failed
+            // read is the right fallback; doing it silently is not. The
+            // header quietly showing a stale union total is the exact shape
+            // Dan caught on 2026-08-23.
+            if (perClubErr) {
+              reportError(perClubErr, 'ClubHomePage.union_member_counts_read_failed');
+            }
             const unionMembers = Array.isArray(perClub)
               ? perClub.reduce(
                   (sum: number, row: { member_count: number | string }) =>
@@ -2067,7 +2225,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         // joinable 6/6 card after TournamentService was fixed, because it
         // runs its own query rather than the service. Same rule as the
         // service now: a lobby lists what can be ENTERED.
-        .in('status', ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON'])
+        .in('status', LOBBY_TOURNAMENT_STATUSES)
         /* THE BOARD IS A WINDOW, AND THE CAP IS NOT A WINDOW (Dan 2026-08-26).
            This query had no time bound at all, so the only thing deciding what
            reached the lobby was `.limit(200)` ordered by start_time ASCENDING
@@ -2263,13 +2421,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               /* Dedupe is an optimisation; losing it costs one extra RPC. */
             }
             // Re-read the updated level from DB
-            const { data: refreshedClub } = await supabase
+            const { data: refreshedClub, error: levelReadErr } = await supabase
               .from('clubs')
               .select(
                 'level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
               )
               .eq('id', resolvedId)
               .maybeSingle();
+            // ROUND 9 (2026-08-29): a failed re-read left the badge at level 1
+            // with no trace - the recompute RPC had just SUCCEEDED, so the DB
+            // holds the real level and only this display missed it.
+            if (levelReadErr) {
+              reportError(levelReadErr, 'ClubHomePage.level_reread_failed', {
+                clubId: resolvedId,
+              });
+            }
             if (refreshedClub && refreshedClub.level > 1) {
               effectiveLevel = refreshedClub.level;
               // Also update threshold values for accurate progress bar
@@ -2472,6 +2638,38 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (resolvedClubId) saveFilters(resolvedClubId, next);
     }
   }, [narrowing.fSpec, advFilters, gameType, resolvedClubId, selectFavoritesOnly, selectGameType]);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A SAVED FILTER MAY NEVER EMPTY A LOBBY THAT HAS GAMES (2026-08-28)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Dan: "every single time i try to sit down at a spin, EVERY SINGLE ONE
+   * disappears from the spins lobby. and you can't sit or register for one."
+   *
+   * Reproduced on this club: the SPINS tab rendered "Nothing Matches Your
+   * Filters - 46 Games Are Open In This Club, But The Filters On This Tab
+   * Hide Them All" over a board that had forty-odd joinable spins on it. The
+   * filters were real and saved (`ca_advanced_filters_<club>` carried
+   * statuses and buy-in bands for SPIN), and `saveFilters` persists them
+   * per club per tab — so once a combination that matches nothing is stored,
+   * EVERY later visit to that tab opens empty. Nothing about it says
+   * "filter"; it just looks like the spins are gone, forever, which is
+   * exactly the report.
+   *
+   * The empty state does offer "Show All Games", and that is the right
+   * control to keep — but a remedy the player has to notice is not a fix for
+   * a lobby that lies about being empty. A filter set that hides EVERY game
+   * is not a preference, it is a dead end, so it is dropped automatically and
+   * announced. One shot per tab per club: the guard ref stops this fighting a
+   * player who is deliberately narrowing toward zero in the filter sheet,
+   * because a deliberate narrowing they can see and undo is not a dead end.
+   *
+   * Deliberately narrow — it fires only when the tab's own filters are what
+   * emptied it (`narrowing.filtered`), never for a genuinely empty club and
+   * never for the tab or Favorites, which are one visible tap to undo.
+   */
+  const autoUnfilteredRef = useRef<string | null>(null);
 
   const filteredTournaments = useMemo(() => {
     if (!showsTournaments) return [];
@@ -2757,8 +2955,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     try {
       const [seatsRes, regsRes, favsRes] = await Promise.all([
         supabase
+          /* The TOURNAMENT id comes back with the table id (2026-08-28 audit).
+             A Spin or Heads-Up row in this lobby is keyed by its TOURNAMENT
+             id, so `seatedIds.has(entry.id)` — which playerStateOf checks
+             first, precisely so a bought seat reads "You Are Seated" — could
+             never match: this set held only table ids. Every seat-first
+             holder fell through to the registeredIds branch and was told
+             "You Are Registered", the same softer word as "Spectating" that
+             Dan rejected on the table itself. Verified against production
+             the same day: 41 of 41 live seat-first seats carry a
+             tournament_players row, which is why the wrong label was the
+             only symptom and nobody lost a seat over it. Putting both ids in
+             the set makes the seated branch reachable for seat-first games
+             and changes nothing for cash rows, which still key on table_id. */
           .from('table_seats')
-          .select('table_id')
+          .select('table_id, tables(tournament_id)')
           .eq('user_id', currentUserId)
           .is('left_at', null)
           .limit(QUERY_LIMITS.LIST),
@@ -2786,7 +2997,16 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (seatsRes.error) {
         reportError(seatsRes.error, 'ClubHomePage.loadMyGameStates.seats');
       } else {
-        setSeatedTableIds(new Set((seatsRes.data || []).map((r) => r.table_id)));
+        setSeatedTableIds(
+          new Set(
+            (seatsRes.data || []).flatMap((r: any) => {
+              const tournamentId = Array.isArray(r.tables)
+                ? r.tables[0]?.tournament_id
+                : r.tables?.tournament_id;
+              return tournamentId ? [r.table_id, tournamentId] : [r.table_id];
+            })
+          )
+        );
       }
       if (regsRes.error) {
         reportError(regsRes.error, 'ClubHomePage.loadMyGameStates.registrations');
@@ -3179,6 +3399,40 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     clubNames,
   ]);
 
+  /* The auto-recovery declared above, placed here because it needs the two
+     values it judges: the rendered board and the club's real game count. */
+  useEffect(() => {
+    if (loading) return;
+    if (!narrowing.filtered || !narrowing.fSpec) return;
+    if (lobbyEntries.length > 0) return;
+    /* The same total `totalGameCount` reports further down, written out here
+       because that constant is declared below this effect. "The club has
+       games but this tab shows none" is the whole trigger. */
+    if (tables.length + tournaments.length <= 0) return;
+    const guardKey = `${resolvedClubId ?? 'unknown'}:${gameType}`;
+    if (autoUnfilteredRef.current === guardKey) return;
+    autoUnfilteredRef.current = guardKey;
+
+    const next: FilterStore = {
+      ...advFilters,
+      [gameType]: emptyFilterValue(narrowing.fSpec),
+    };
+    setAdvFilters(next);
+    if (resolvedClubId) saveFilters(resolvedClubId, next);
+    toast.info('Filters Cleared, They Were Hiding Every Game');
+  }, [
+    loading,
+    narrowing.filtered,
+    narrowing.fSpec,
+    lobbyEntries.length,
+    tables.length,
+    tournaments.length,
+    advFilters,
+    gameType,
+    resolvedClubId,
+    toast,
+  ]);
+
   const selectedEntry = useMemo(
     () => (selectedId ? lobbyEntries.find((e) => e.id === selectedId) || null : null),
     [selectedId, lobbyEntries]
@@ -3390,6 +3644,64 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     );
   }
 
+  /**
+   * NOT A MEMBER, SAID IN THE TAB (Dan 2026-08-28 round 2).
+   *
+   * Only reachable when `clubIdOverride` is set — `bounceToInvite` still
+   * redirects on the club's own route. This is the embedded half: the player
+   * is told plainly, their tables keep dealing above this panel, and joining
+   * is a deliberate tap rather than something that happened to them mid-hand.
+   */
+  if (notAMember) {
+    return (
+      <div className="club-home error">
+        <h2>You Are Not In This Club</h2>
+        <p style={{ color: '#888', fontSize: '0.9rem', margin: '0 0 1rem' }}>
+          Your Games Are Still Running. Join The Club To Browse Its Lobby.
+        </p>
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              setNotAMember(false);
+              loadingRef.current = false;
+              loadClubData();
+            }}
+            style={{
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              color: 'white',
+              padding: '0.6rem 1.2rem',
+              borderRadius: 8,
+              cursor: 'pointer',
+              fontWeight: 600,
+            }}
+          >
+            Retry
+          </button>
+          {/* The ONE deliberate exit. Joining genuinely lives on another
+              route, so this is the player choosing to leave the felt — not a
+              load effect choosing for them. */}
+          <Link
+            to={`/invite/${clubId}`}
+            className="btn btn-primary"
+            style={{
+              background: '#1877f2',
+              border: 'none',
+              color: 'white',
+              padding: '0.6rem 1.2rem',
+              borderRadius: 8,
+              textDecoration: 'none',
+              fontWeight: 600,
+            }}
+          >
+            Join This Club
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (!club) {
     /**
      * Dan 2026-08-20: distinguish "we asked and the club is not there" from
@@ -3445,21 +3757,30 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           >
             Retry
           </button>
-          <Link
-            to="/clubs"
-            className="btn btn-primary"
-            style={{
-              background: 'rgba(255,255,255,0.1)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              color: 'white',
-              padding: '0.6rem 1.2rem',
-              borderRadius: 8,
-              textDecoration: 'none',
-              fontWeight: 600,
-            }}
-          >
-            Back To Clubs
-          </Link>
+          {/* Dan 2026-08-28 round 2: "Back To Clubs" is a real anchor to a
+              route OUTSIDE /table/*, and this panel is reachable in the in-tab
+              lobby precisely when the club load is flaky — so the one obvious
+              button on a failure screen was an exit that took the action bar
+              and every running table's container with it. Retry is the right
+              action in the tab anyway; the tab's own back pill is the way out.
+              TournamentDetails already guards its identical link this way. */}
+          {!clubIdOverride && (
+            <Link
+              to="/clubs"
+              className="btn btn-primary"
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                color: 'white',
+                padding: '0.6rem 1.2rem',
+                borderRadius: 8,
+                textDecoration: 'none',
+                fontWeight: 600,
+              }}
+            >
+              Back To Clubs
+            </Link>
+          )}
         </div>
       </div>
     );
@@ -3527,11 +3848,18 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 // instantly when the player taps it.
                 const session = readLocalSession();
                 if (session?.userId) {
-                  const { data: prof } = await supabase
+                  const { data: prof, error: profErr } = await supabase
                     .from('profiles')
                     .select('player_number')
                     .eq('id', session.userId)
                     .maybeSingle();
+                  // ROUND 9 (2026-08-29): the uuid fallback below still
+                  // credits the referral, so behaviour is unchanged - but a
+                  // failed read was silently downgrading share links from the
+                  // friendly player number to a raw uuid.
+                  if (profErr) {
+                    reportError(profErr, 'ClubHomePage.share_ref_profile_read_failed');
+                  }
                   if (prof?.player_number) {
                     profRefNum = prof.player_number;
                     refQuery = `?ref=${prof.player_number}`;
@@ -4249,7 +4577,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           canDelete={
             (isOwner || userRole === 'admin' || userRole === 'co_owner') &&
             selectedEntry.players === 0 &&
-            (!(selectedEntry.raw as any).club_id || (selectedEntry.raw as any).club_id === clubId)
+            /* resolvedClubId, not clubId (2026-08-28 audit). On a `/clubs/:slug`
+               route `clubId` is the SLUG while `raw.club_id` is a UUID, so this
+               comparison was always false and the owner's Delete Table button
+               was silently absent from the panel for every game that carries a
+               club_id — which is all of them. The resolved UUID is in scope and
+               is what every other comparison in this file uses. */
+            (!(selectedEntry.raw as any).club_id ||
+              (selectedEntry.raw as any).club_id === resolvedClubId)
           }
           onDeleteTable={(id) => {
             setPanelOpen(false);

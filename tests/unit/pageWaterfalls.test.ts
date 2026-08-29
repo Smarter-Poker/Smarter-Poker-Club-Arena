@@ -69,7 +69,11 @@ describe('ProfilePage issues independent queries together', () => {
       'const secondaryDataPromise = Promise.allSettled(',
       'ProfilePage'
     );
-    const profile = indexOf(src, 'const { data: profile } = await retryFetch(', 'ProfilePage');
+    const profile = indexOf(
+      src,
+      'const { data: profile, error: profileError } = await retryFetch(',
+      'ProfilePage'
+    );
     expect(
       secondary,
       'the achievements/transactions batch is behind the profile fetch again'

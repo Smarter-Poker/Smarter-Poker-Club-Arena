@@ -132,11 +132,6 @@
   }
 }
 
-.stat-card:hover {
-  border-color: rgba(255, 215, 0, 0.2);
-  background: linear-gradient(135deg, rgba(255, 215, 0, 0.08), rgba(255, 215, 0, 0.02));
-}
-
 .stat-icon {
   font-size: 20px;
   flex-shrink: 0;

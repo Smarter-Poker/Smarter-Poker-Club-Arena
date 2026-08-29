@@ -71,7 +71,6 @@
   transition: all 0.2s ease;
 }
 
-.ps-back:hover,
 .ps-back:focus-visible {
   border-color: var(--ca-cyan);
   color: var(--ca-cyan);
@@ -157,11 +156,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.ps-range__tabs button:hover {
-  border-color: var(--ca-border-hi);
-  color: var(--ca-text-dim);
-}
-
 .ps-range__tabs button.active {
   background: linear-gradient(135deg, var(--ca-cyan) 0%, #0099cc 100%);
   border-color: var(--ca-cyan);
@@ -230,11 +224,6 @@
   min-height: 44px;
   touch-action: manipulation;
   transition: all 0.2s ease;
-}
-
-.ps-range__confirm:hover {
-  background: rgba(65, 105, 225, 0.24);
-  color: #c3d3ff;
 }
 
 .ps-range__caption {

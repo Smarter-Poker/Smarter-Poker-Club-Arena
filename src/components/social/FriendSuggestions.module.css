@@ -40,10 +40,6 @@
   transition: transform 0.2s;
 }
 
-.card:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
 .dismissBtn {
   position: absolute;
   top: 6px;
@@ -55,11 +51,6 @@
   font-size: 0.65rem;
   opacity: 0.5;
   padding: 2px;
-}
-
-.dismissBtn:hover {
-  opacity: 1;
-  color: #ff3b30;
 }
 
 .avatar {
@@ -116,10 +107,6 @@
   margin-top: 4px;
   text-align: center;
   box-sizing: border-box;
-}
-
-.addBtn:hover:not(:disabled) {
-  background: rgba(0, 212, 255, 0.2);
 }
 
 .addBtn:disabled {

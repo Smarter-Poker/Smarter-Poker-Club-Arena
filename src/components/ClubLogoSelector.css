@@ -79,11 +79,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.logo-tab:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: white;
-}
-
 .logo-tab--active {
   background: #1877f2;
   border-color: #1877f2;
@@ -112,10 +107,6 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.logo-upload__button:hover:not(:disabled) {
-  background: #166fe5;
 }
 
 .logo-upload__button:disabled {
@@ -152,11 +143,6 @@
   overflow: hidden;
 }
 
-.logo-preset:hover {
-  border-color: rgba(24, 119, 242, 0.5);
-  background: rgba(24, 119, 242, 0.1);
-}
-
 .logo-preset--selected {
   border-color: #1877f2;
   background: rgba(24, 119, 242, 0.2);
@@ -183,10 +169,6 @@
 .logo-preset-grid::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2);
   border-radius: 3px;
-}
-
-.logo-preset-grid::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

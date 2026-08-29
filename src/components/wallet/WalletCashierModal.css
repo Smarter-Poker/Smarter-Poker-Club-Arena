@@ -89,11 +89,6 @@
   cursor: pointer;
 }
 
-.cbc-x:hover:not(:disabled) {
-  color: #e8eaf0;
-  border-color: rgba(0, 180, 230, 0.4);
-}
-
 .cbc-x:disabled {
   opacity: 0.4;
   cursor: default;
@@ -136,11 +131,6 @@
   font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
-}
-
-.cbc-mint:hover {
-  background: rgba(24, 119, 242, 0.24);
-  border-color: rgba(24, 119, 242, 0.7);
 }
 
 .cbc-note {
@@ -287,10 +277,6 @@
     0 4px 6px rgba(0, 0, 0, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
   transition: all 0.2s ease;
-}
-
-.cbc-member:hover {
-  border-color: rgba(0, 180, 230, 0.35);
 }
 
 .cbc-member--on {
@@ -553,11 +539,6 @@
   font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
-}
-
-.cbc-undo:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.16);
-  border-color: rgba(239, 68, 68, 0.6);
 }
 
 .cbc-undo:disabled {

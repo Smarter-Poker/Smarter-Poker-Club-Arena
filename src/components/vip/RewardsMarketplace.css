@@ -162,10 +162,6 @@
   flex-shrink: 0;
   box-shadow: 0 4px 16px rgba(255, 215, 0, 0.3);
 }
-
-.featured-redeem-btn:hover:not(:disabled) {
-}
-
 .featured-redeem-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -211,11 +207,6 @@
   white-space: nowrap;
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   font-weight: 500;
-}
-
-.category-tab:hover {
-  border-color: rgba(255, 215, 0, 0.3);
-  color: rgba(255, 255, 255, 0.8);
 }
 
 .category-tab.active {
@@ -264,11 +255,6 @@
   transition: all 0.3s ease;
 }
 
-.sort-select:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 215, 0, 0.3);
-}
-
 .sort-select option {
   background: #1a1a2e;
   color: rgba(255, 255, 255, 0.8);
@@ -311,10 +297,6 @@
 .reward-card.available {
   border-color: rgba(255, 215, 0, 0.2);
   background: linear-gradient(135deg, rgba(255, 215, 0, 0.05), rgba(255, 255, 255, 0.01));
-}
-
-.reward-card.available:hover {
-  border-color: rgba(255, 215, 0, 0.3);
 }
 
 .reward-card.insufficient {
@@ -410,11 +392,6 @@
   font-size: 11px;
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   white-space: nowrap;
-}
-
-.redeem-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #ffd700, #ffc700);
-  box-shadow: 0 4px 12px rgba(255, 215, 0, 0.3);
 }
 
 .redeem-btn:disabled {

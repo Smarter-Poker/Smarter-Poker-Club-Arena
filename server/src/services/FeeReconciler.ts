@@ -51,6 +51,14 @@ export interface UnbankedFee {
   pot: number;
   numPlayers: number;
   contributions: Record<string, number>;
+  /** Per-player uncalled amounts returned (weighted contributed rake audit). */
+  returnedUncalled?: Record<string, number> | null;
+  /**
+   * Methodology the hand was settled under ('WEIGHTED_CONTRIBUTED' for the
+   * post-2026-08-29 engine). Threaded through the queue so a re-driven hand
+   * keeps the attribution it was played with.
+   */
+  rakeMethod?: string | null;
   tournamentId?: string | null;
   bigBlind?: number | null;
   lastError: string;
@@ -67,6 +75,8 @@ interface PendingFeeRow {
   pot: number;
   num_players: number;
   contributions: Record<string, number> | null;
+  returned_uncalled: Record<string, number> | null;
+  rake_method: string | null;
   tournament_id: string | null;
   big_blind: number | null;
   kind: PendingFeeKind;
@@ -124,6 +134,8 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
         pot: fee.pot,
         num_players: fee.numPlayers,
         contributions: fee.contributions,
+        returned_uncalled: fee.returnedUncalled ?? null,
+        rake_method: fee.rakeMethod ?? null,
         tournament_id: fee.tournamentId ?? null,
         big_blind: fee.bigBlind ?? null,
         kind,
@@ -192,6 +204,8 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
       pot: fee.pot,
       numPlayers: fee.numPlayers,
       contributions: fee.contributions ?? {},
+      returnedUncalled: fee.returnedUncalled ?? null,
+      rakeMethod: fee.rakeMethod ?? null,
       tournamentId: fee.tournamentId ?? null,
       bigBlind: fee.bigBlind ?? null,
       dbError: lastError,
@@ -293,7 +307,7 @@ export async function reconcilePendingFees(): Promise<{
   const { data, error } = await supabase
     .from('pending_fee_distributions')
     .select(
-      'id, table_id, club_id, hand_id, hand_number, rake, bbj, pot, num_players, contributions, tournament_id, big_blind, kind, attempts'
+      'id, table_id, club_id, hand_id, hand_number, rake, bbj, pot, num_players, contributions, returned_uncalled, rake_method, tournament_id, big_blind, kind, attempts'
     )
     .is('resolved_at', null)
     .lt('attempts', MAX_RECONCILE_ATTEMPTS)
@@ -352,6 +366,11 @@ export async function reconcilePendingFees(): Promise<{
           p_num_players: row.num_players,
           p_contributions: row.contributions ?? {},
           p_tournament_id: row.tournament_id,
+          // Weighted contributed rake (Dan 2026-08-29): a re-driven hand keeps
+          // the methodology it was settled under. Legacy queue rows (null)
+          // stay DEALT_EQUAL, which is what they were played as.
+          p_returned_uncalled: row.returned_uncalled ?? null,
+          p_rake_method: row.rake_method ?? 'DEALT_EQUAL',
         });
         ok = !rdErr;
         failureMessage = rdErr?.message ?? '';
@@ -562,6 +581,59 @@ export async function auditBBJDrift(
     return { booked, received, drift, unlinkableRows, unlinkableChips };
   } catch (err) {
     reportError(err, 'FeeReconciler.drift_threw');
+    return null;
+  }
+}
+
+/**
+ * WEIGHTED CONTRIBUTED RAKE reconciliation watchdog (Dan 2026-08-29).
+ *
+ * Invariants 4 and 9 of the weighted-rake law: for every cash hand settled
+ * under WEIGHTED_CONTRIBUTED, the per-player ledger (rake_attributions) must
+ * sum back EXACTLY to the rake collected (rake_records.rake_amount). The
+ * allocator guarantees this by construction, so ANY row here means either the
+ * ledger write was lost (missing attribution rows) or the two ledgers were
+ * written by disagreeing code. Read-only: it reports, it never "fixes"
+ * financial discrepancies silently.
+ */
+export async function auditRakeAttributionDrift(
+  windowHours = 24
+): Promise<{ mismatchedHands: number; chips: number } | null> {
+  try {
+    const { data, error } = await supabase.rpc('fn_rake_attribution_drift', {
+      p_hours: windowHours,
+    });
+    if (error) {
+      reportError(error, 'FeeReconciler.rake_attribution_drift_query_failed');
+      return null;
+    }
+    const rows = (data ?? []) as Array<{
+      hand_id: string;
+      rake_amount: number;
+      allocated: number;
+      difference: number;
+    }>;
+    if (rows.length === 0) return { mismatchedHands: 0, chips: 0 };
+
+    const chips = Math.round(rows.reduce((s, r) => s + Number(r.difference || 0), 0) * 100) / 100;
+    const detail =
+      `[A5] RAKE_ALLOCATION_MISMATCH: ${rows.length} weighted-contributed hand(s) in the last ` +
+      `${windowHours}h whose per-player rake_attributions do not sum to the rake collected ` +
+      `(net difference ${chips} chips). First hands: ` +
+      rows
+        .slice(0, 10)
+        .map((r) => `${r.hand_id} (rake ${r.rake_amount}, allocated ${r.allocated})`)
+        .join(', ');
+    reportError(new Error(detail), 'FeeReconciler.rake_attribution_drift');
+    await raiseFinancialAlert('critical', 'FeeReconciler.rake_attribution_drift', detail, {
+      windowHours,
+      mismatchedHands: rows.length,
+      netDifferenceChips: chips,
+      hands: rows.slice(0, 50),
+    });
+    return { mismatchedHands: rows.length, chips };
+  } catch (err) {
+    reportError(err, 'FeeReconciler.rake_attribution_drift_threw');
     return null;
   }
 }

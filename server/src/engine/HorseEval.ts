@@ -134,8 +134,21 @@ export function variantInfo(gameVariant: string): VariantInfo {
     isHiLo: isHiLoVariant(v),
     isShortDeck: isShortDeckVariant(v),
     isPotLimit: isPotLimitVariant(v),
-    iterations:
-      v === 'plo6' ? 120 : v === 'plo5' ? 170 : isHiLoVariant(v) ? 140 : isOmaha ? 220 : 450,
+    // V28 AUDIT FIX (2026-08-29): hi-lo tested AFTER the plo5/plo6 literals
+    // (so a future plo5/plo6 hi-lo string takes the right branch), and raised
+    // from 140 to 220 — each hi-lo iteration returns hi*0.5 + lo*0.5 with
+    // quarter/scoop atoms, the WIDEST per-iteration variance in the engine,
+    // and it had the second-smallest sample while scoop/quarter frequencies
+    // were read as discrete strategy triggers at ~4pp standard error.
+    iterations: isHiLoVariant(v)
+      ? 220
+      : v === 'plo6'
+        ? 120
+        : v === 'plo5'
+          ? 170
+          : isOmaha
+            ? 220
+            : 450,
   };
 }
 
@@ -680,7 +693,27 @@ export function nlhNutStatus(hole: Card[], board: Card[], shortDeck: boolean): N
       const heroSuited = hole.filter((c) => c.suit === flushSuit);
       // NLH plays any five: board 3 needs two suited hole cards, board 4+ one.
       const heroMakesFlush = heroSuited.length >= Math.max(1, 5 - flushSuitN);
-      if (heroMakesFlush && heroSuited.length > 0) {
+      // V28 AUDIT FIX (2026-08-29): on a MONOTONE FIVE-CARD board a hero with
+      // ZERO cards of the suit plays the board flush — scoreHoldem says cat 6,
+      // but this block skipped him, leaving higherFlushRanks at its default 0,
+      // which every consumer reads as "NUT flush". A hand that can do no
+      // better than chop was classified undominated and left the stack-off
+      // path open. Playing the board means EVERY live rank above the board's
+      // lowest flush card beats hero.
+      if (flushSuitN === 5 && heroSuited.length === 0) {
+        const boardRanks = board
+          .filter((c) => c.suit === flushSuit)
+          .map((c) => RANK_VALUES[c.rank]);
+        const boardLow = Math.min(...boardRanks);
+        const seen = new Set<number>(boardRanks);
+        let higher = 0;
+        const floor = shortDeck ? 6 : 2;
+        for (let r = floor; r <= 14; r++) {
+          if (!seen.has(r) && r > boardLow) higher++;
+        }
+        out.heroFlushHigh = boardLow;
+        out.higherFlushRanks = Math.max(1, higher);
+      } else if (heroMakesFlush && heroSuited.length > 0) {
         let heroTop = 0;
         for (const c of heroSuited) heroTop = Math.max(heroTop, RANK_VALUES[c.rank]);
         out.heroFlushHigh = heroTop;
@@ -689,13 +722,12 @@ export function nlhNutStatus(hole: Card[], board: Card[], shortDeck: boolean): N
         for (const c of heroSuited) seen.add(RANK_VALUES[c.rank]);
         let higher = 0;
         for (let r = heroTop + 1; r <= 14; r++) if (!seen.has(r)) higher++;
-        // Short deck strips 2-5: those ranks cannot be live.
-        if (shortDeck) {
-          for (let r = heroTop + 1; r <= Math.min(5, 14); r++) {
-            if (!seen.has(r)) higher--;
-          }
-          if (higher < 0) higher = 0;
-        }
+        // V28: a dead short-deck "correction" deleted here. It looped
+        // r = heroTop+1 .. min(5,14), but in short deck heroTop >= 6 always,
+        // so the body never executed — and the counting loop above starts at
+        // heroTop+1 walking UP, so ranks 2-5 could never be counted anyway.
+        // A correction that looks live and is not is a trap for the next
+        // editor; the upward walk is already short-deck-safe by construction.
         out.higherFlushRanks = higher;
       }
     }
@@ -846,7 +878,16 @@ export function connectsBoard(hole: Card[], board: Card[], shortDeck: boolean): 
     // still bets sometimes; treat pocket pairs as contact.
     return cat;
   }
-  if (board.length >= 5) return cat; // river: no draws left
+  // V28 AUDIT FIX (2026-08-29): the two fall-throughs below returned `cat` —
+  // the very board-derived value the V13 guard above just REJECTED. 32o on
+  // K-K-7 still "connected" with the board's kings via the terminal return,
+  // so the V12/V16 aggressor conditioning was a no-op on every paired board
+  // (~17% of flops, and every board once it pairs) — the exact pre-V13
+  // behaviour the guard's own comment says it fixed. When the hole cards add
+  // nothing to what the board already makes, the honest contact value is the
+  // high-card floor, not the board's category.
+  const noContact = cat <= boardCat && !isPocketPair ? 1 : cat;
+  if (board.length >= 5) return noContact; // river: no draws left
   // Flush draw: 4 to a flush with at least one hole card of the suit.
   const suitCount = new Map<string, number>();
   for (const c of all) suitCount.set(c.suit, (suitCount.get(c.suit) || 0) + 1);
@@ -867,7 +908,9 @@ export function connectsBoard(hole: Card[], board: Card[], shortDeck: boolean): 
       }
     }
   }
-  return cat;
+  // V28: same fall-through as the river shortcut above — no made improvement,
+  // no draw found. Report no-contact rather than echoing the board's hand.
+  return noContact;
 }
 
 /**
@@ -1345,14 +1388,29 @@ export function simulateEquity(
           for (let t = 0; t < 2; t++) {
             if (omahaConnectsBoard(oppCards, boardCards)) break;
             if (fastRandom() >= pConnect) break; // some of the range IS air
-            for (let i = 0; i < oppHole; i++) {
-              const slot = windowStart + i;
-              const j = slot + Math.floor(fastRandom() * (n - slot));
-              const tmp = deck[slot];
-              deck[slot] = deck[j];
-              deck[j] = tmp;
-              oppCards[i] = deck[slot];
+            // V28 AUDIT FIX (2026-08-29): this redraw drew UNIFORMLY from the
+            // whole remaining deck and never re-tested the band — the exact
+            // V13 collapse the NLH branch below fixed, still live on the
+            // Omaha side. A [0.4, 1] "open" read redrew into the bottom 40%
+            // of the combo space, so a raiser's range acquired the trash the
+            // read excluded. placeOmahaBandCombo is the in-band sampler the
+            // V16 work built for precisely this; use it, falling back to the
+            // uniform swap only when the band sampler cannot place a combo
+            // (degenerate band / exhausted deck).
+            const placed =
+              band != null
+                ? placeOmahaBandCombo(deck, windowStart, n, band, oppHole, vi.isHiLo)
+                : false;
+            if (!placed) {
+              for (let i = 0; i < oppHole; i++) {
+                const slot = windowStart + i;
+                const j = slot + Math.floor(fastRandom() * (n - slot));
+                const tmp = deck[slot];
+                deck[slot] = deck[j];
+                deck[j] = tmp;
+              }
             }
+            for (let i = 0; i < oppHole; i++) oppCards[i] = deck[windowStart + i];
           }
         }
       }
@@ -1567,7 +1625,20 @@ export function holdemPreflopScore(c1: Card, c2: Card, shortDeck: boolean): numb
       score = suited ? 0.82 : 0.74; // AJ
     else if (lo === 10)
       score = suited ? 0.76 : 0.66; // AT
-    else score = suited ? 0.52 + (lo - 2) * 0.008 : 0.34 + (lo - 2) * 0.01; // Axs / Axo
+    else if (suited)
+      // V28 AUDIT FIX: wheel-ace suits (A2s-A5s) were the lowest-scored
+      // suited aces (0.520-0.544), which put every one of them BELOW the
+      // 0.55 3-bet-bluff floor in HorsePreflop — the canonical ace-blocker
+      // bluffs were unplayable as bluffs, while KTo/QJo (0.56-0.58) bluffed
+      // instead. A5s>A4s>A3s>A2s for the straight, and all four sit above
+      // A6s (the true bottom of the suited-ace ladder, no wheel, no
+      // broadway). The ladder now says so.
+      score =
+        lo <= 5
+          ? 0.556 + (lo - 2) * 0.006 // A2s 0.556 .. A5s 0.574
+          : 0.535 + (lo - 6) * 0.01;
+    // A6s 0.535 .. A9s 0.565
+    else score = 0.34 + (lo - 2) * 0.01; // Axo
   } else if (hi === 13) {
     // King-high
     if (lo === 12)
@@ -1587,8 +1658,15 @@ export function holdemPreflopScore(c1: Card, c2: Card, shortDeck: boolean): numb
     if (lo === 10)
       score = suited ? 0.64 : 0.5; // JT
     else if (lo === 9)
-      score = suited ? 0.55 : 0.38; // J9
-    else score = suited ? 0.3 + (lo - 2) * 0.01 : 0.12 + (lo - 2) * 0.01;
+      // V28 AUDIT FIX: J9 was 0.55s/0.38o — scored ABOVE K9s (0.45) and
+      // Q9s (0.41), both of which dominate it. Connectivity is worth
+      // something; domination is worth more.
+      score = suited ? 0.44 : 0.27; // J9
+    else
+      // V28: Jx low was 0.30+(lo-2)*0.01, which put J8s (0.36) BELOW T8s
+      // (0.40) — a strictly dominated ordering. Lifted so Jx >= the same-gap
+      // Tx hand.
+      score = suited ? 0.33 + (lo - 2) * 0.012 : 0.13 + (lo - 2) * 0.011;
   } else {
     // Connectors / gappers / rags below jack-high
     const connected = gap === 1;
@@ -1599,7 +1677,14 @@ export function holdemPreflopScore(c1: Card, c2: Card, shortDeck: boolean): numb
     } else if (oneGap && lo >= 4) {
       score = suited ? 0.34 + (hi - 6) * 0.015 : 0.15 + (hi - 6) * 0.012;
     } else {
-      score = suited ? 0.14 + hi * 0.012 : 0.02 + hi * 0.01;
+      // V28 AUDIT FIX: this bucket scored on high card ONLY, so 72s (0.224)
+      // outranked 43s (0.188) and 72o outranked four hands that beat it.
+      // Wide-gap rags now pay for their gap: 43s keeps its connectivity
+      // credit above, and 72 sinks to the bottom where it belongs.
+      const gapDrag = Math.max(0, gap - 2) * 0.014;
+      score = suited
+        ? Math.max(0.1, 0.14 + hi * 0.012 - gapDrag)
+        : Math.max(0.02, 0.02 + hi * 0.01 - gapDrag);
     }
   }
 
@@ -1610,6 +1695,11 @@ export function holdemPreflopScore(c1: Card, c2: Card, shortDeck: boolean): numb
     if (!pair && gap <= 1) score += 0.03;
     if (pair && hi <= 9) score -= 0.04;
     if (hi === 14 && lo === 13) score += 0.02;
+    // V28 AUDIT FIX: the A-6-7-8-9 wheel was not modelled at all. In short
+    // deck the ace plays low in that straight, so A6-A9 are connectors —
+    // the code computed gap = 14-lo and gave them nothing. A6s was scored
+    // below A9s exactly as in the full deck, which is the wrong game.
+    if (!pair && hi === 14 && lo >= 6 && lo <= 9) score += 0.035;
   }
 
   return clamp01(score);

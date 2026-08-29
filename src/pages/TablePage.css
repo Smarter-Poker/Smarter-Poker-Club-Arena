@@ -442,7 +442,6 @@
   border-radius: 7px 7px 0 0;
 }
 
-.header-btn:hover,
 .header-btn:active {
   background: rgba(255, 255, 255, 0.15);
   color: #e2e8f0;
@@ -1291,6 +1290,24 @@
   color: rgba(77, 198, 96, 0.6);
 }
 
+/* Masthead line 3 — time left in the round (Dan 2026-08-28). Its own line on
+   MTT, Spin and Heads-Up tables, under the level and blinds.
+
+   `tabular-nums` on the whole line, not just the digits, so the label does not
+   shuffle sideways as the seconds tick from 9 to 10; the countdown sits still,
+   which is the entire point of putting it where a player can watch it. Dimmer
+   than line 2 for the same reason line 2 is dimmer than the felt: it is
+   reference, not action. */
+.table-brand__line--round {
+  display: block;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: rgba(198, 210, 228, 0.4);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 /* Union name after the club on masthead line 1 — cooler tone than the club's
    gold so the two read as different things at a glance. */
 .table-brand__union {
@@ -1567,9 +1584,16 @@
   background: rgba(12, 12, 20, 0.78);
   border: 1px solid rgba(255, 158, 44, 0.35);
   color: rgba(255, 190, 120, 0.9);
-  font-size: 0.55rem;
+  /* 2026-08-29: 0.55rem is 8.8px, which made this the smallest text on the
+     felt — smaller than the run badge and the run equity beside it, both
+     0.62rem — while carrying the longest strings on it ("TRIPLE BOARD BOMB POT
+     NEXT HAND", 31 characters). It is a warning that a forced ante is coming,
+     so it has to be readable on a phone. 0.62rem matches its neighbours; the
+     letter-spacing drops a little to buy the width back, and the pill still
+     fits the 254px felt window at 375px. */
+  font-size: 0.62rem;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
   white-space: nowrap;
   z-index: 3;
   pointer-events: none;
@@ -2168,12 +2192,6 @@
   transform: scale(0.96);
 }
 
-.control-strip__btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.9);
-  border-color: rgba(255, 255, 255, 0.15);
-}
-
 .control-strip__icon {
   font-size: 0.8125rem;
   line-height: 1;
@@ -2333,10 +2351,6 @@
   text-align: left;
   cursor: pointer;
   transition: all 0.15s ease;
-}
-
-.menu-item:hover {
-  background: rgba(255, 255, 255, 0.05);
 }
 
 .menu-item.exit {
@@ -3634,9 +3648,6 @@ button.post-bb-overlay-button {
   cursor: pointer;
   animation: post-bb-pulse 1.6s ease-in-out infinite alternate;
 }
-button.post-bb-overlay-button:hover {
-  background: linear-gradient(180deg, #374151 0%, #1f2937 100%);
-}
 /* The notice: informational, not tappable. Calmer than the old pulsing pill,
    because nothing is being asked of the player — they are already seated and
    will be dealt in free. */
@@ -3726,10 +3737,6 @@ button.post-bb-overlay-button:hover {
   border: 1px solid rgba(255, 255, 255, 0.25);
   background: transparent;
   color: rgba(255, 255, 255, 0.85);
-}
-.post-or-wait__wait:hover,
-.post-or-wait__post:not(:disabled):hover {
-  filter: brightness(1.12);
 }
 @keyframes post-bb-pulse {
   from {
@@ -3879,19 +3886,11 @@ button.post-bb-overlay-button:hover {
   padding: 10px 20px;
 }
 
-.menu-item--embed:hover {
-  background: transparent;
-}
-
 /* Disabled menu rows (e.g. Tip Dealer while not seated) must read as
    unavailable rather than silently doing nothing when tapped. */
 .menu-item:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-}
-
-.menu-item:disabled:hover {
-  background: transparent;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -4059,6 +4058,63 @@ button.post-bb-overlay-button:hover {
   line-height: 1.45;
   color: rgba(255, 255, 255, 0.45);
 }
+/* ── Multiplier odds ladder on the Spin buy-in sheet (2026-08-29) ──────────
+   Collapsed behind a toggle so the 375px sheet keeps Buy In above the fold;
+   the open table caps its own height and scrolls inside itself, never the
+   sheet. */
+.seat-buyin-confirm__odds {
+  margin-top: 12px;
+}
+.seat-buyin-confirm__odds-toggle {
+  width: 100%;
+  min-height: 34px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.65);
+}
+.seat-buyin-confirm__odds-toggle:active {
+  transform: scale(0.98);
+}
+.seat-buyin-confirm__odds-table {
+  margin-top: 8px;
+  max-height: 168px;
+  overflow-y: auto;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+}
+.seat-buyin-confirm__odds-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 1fr 1.2fr;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 10px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.72);
+  text-align: left;
+}
+.seat-buyin-confirm__odds-row:nth-child(even) {
+  background: rgba(255, 255, 255, 0.03);
+}
+.seat-buyin-confirm__odds-row--head {
+  position: sticky;
+  top: 0;
+  background: #16181d;
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+}
+.seat-buyin-confirm__odds-row > span:first-child {
+  font-weight: 700;
+  color: #ffd479;
+}
+
 .seat-buyin-confirm__actions {
   margin-top: 20px;
   display: flex;
@@ -4221,7 +4277,32 @@ button.post-bb-overlay-button:hover {
     /* 2026-08-26: gutters removed per Dan — edge-to-edge felt at 375px
        measures 375x619.8 (up from 367x606.6 with 4px gutters). Side-seat
        overhang at narrow viewports is addressed by the max-width: 340px
-       safeguard in SeatSlot.css. */
+       safeguard in SeatSlot.css.
+
+       ── 2026-08-29: THE REMOVAL ABOVE NEVER SHIPPED, AND THE TABLE SHRANK ──
+       Dan, from his phone: "the table width and length has shrunk and need to
+       be put back to how it was."
+
+       #950 removed the `padding-left: 4px; padding-right: 4px` longhands that
+       used to sit here — but DELETING an override does not produce zero, it
+       resurrects whatever the base rule says, and the base `.table-container`
+       shorthand pays 12px gutters on each side. So "edge-to-edge per Dan"
+       cascaded to the NARROWEST felt this table had ever had on a phone:
+       364px at 390 (measured on production 2026-08-29), down from 374px the
+       day before the change, when the comment right above this one claims
+       375px at 375. The 375x619.8 in that comment was never rendered by any
+       shipped build. The length followed the width through the 605/1000
+       aspect: 618 -> 602.
+
+       These longhands are what the removal actually meant. Zero, stated,
+       because a deleted declaration cannot hold a value. The felt is now
+       width-bound edge-to-edge on every portrait phone wide enough to bind
+       (390x844 measures 390x644.6; an iPhone SE stays height-bound and does
+       not change). Guarded by the edge-to-edge beat in
+       tests/e2e/table-proportions.spec.ts — if either gutter comes back at
+       this breakpoint, that beat names the device and the pixels lost. */
+    padding-left: 0;
+    padding-right: 0;
   }
 
   .table-scaler {
@@ -4353,11 +4434,6 @@ button.post-bb-overlay-button:hover {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
-.control-strip__btn--icon-img:hover,
-.add-chips-icon-btn:hover {
-  background: transparent !important;
-  filter: brightness(1.1);
-}
 
 /* Dan 2026-08-28 (icon backgrounds sweep): two leftovers the 2026-08-26 pass
    missed. The :active rule at line ~3407 still flashed a white box on every
@@ -4379,10 +4455,30 @@ button.post-bb-overlay-button:hover {
    chip pushes, holds a few seconds, and leaves. Gold on dark, same family
    as the bomb ETA pill; scales with the felt, never captures the pointer. */
 .bomb-scoop-banner {
+  /* ── 2026-08-29: ANCHORED TO THE BOARD STACK, NOT TO THE FELT ─────────────
+     This was `top: 21%` against .table-surface, and it collided with the very
+     thing it celebrates. The banner only ever renders on a multi-board bomb
+     pot (scoopBanner is set only when boardsSeen.length >= 2), which is
+     exactly when the stack is tall: at 375px a three-board stack spans about
+     y 17.5%..69% of the surface and the banner occupied 21%..33% — directly
+     over board 1. Two boards were no better, 26%..61% against the same banner.
+
+     It is now a child of .community-area, hung off that element's own bottom
+     edge. `top: 100%` means "immediately below the last board" for one, two or
+     three boards, at every viewport width, and it stays true the next time the
+     stack's height or position changes. No percentage here can go stale
+     because there is no percentage here.
+
+     The stack is 68% of the felt and the banner is wider than its content
+     needs; `white-space: nowrap` plus a centering translate lets it overhang
+     both sides symmetrically rather than wrapping inside the narrower column.
+     Nothing here captures the pointer, so overhanging costs no hit area. */
   position: absolute;
-  top: 21%;
+  top: 100%;
+  margin-top: 10px;
   left: 50%;
   transform: translateX(-50%);
+  white-space: nowrap;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -4419,8 +4515,17 @@ button.post-bb-overlay-button:hover {
     transform: translateX(-50%) scale(1);
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .bomb-scoop-banner {
-    animation: none;
-  }
-}
+/* 2026-08-29: the `animation: none` that used to live here is gone.
+   src/styles/reducedMotion.css states the house rule in as many words — "Set
+   `animation: none` instead and those elements would be stranded mid-thought"
+   — and its global rule already collapses every animation to 1ms with a single
+   iteration, which ends the motion while still running the keyframes to their
+   final state.
+
+   This one happened to be survivable: bombScoopIn starts at opacity 0 and the
+   base rule declares no opacity, so dropping the animation left the banner
+   visible by luck. It was a trap rather than a bug — the day anyone adds an
+   opacity or a transform to the keyframes' `to` state that the base rule does
+   not also declare, the banner vanishes for every reduced-motion player, and
+   CLAUDE.md §10.6 is explicit that reduced motion collapses motion but never
+   meaning. Deleting the override is the fix; the global rule is the mechanism. */

@@ -144,10 +144,6 @@
   gap: 6px;
   transition: all 0.2s ease;
 }
-.tab:hover {
-  color: #e4e6eb;
-  background: rgba(69, 153, 255, 0.06);
-}
 .tabActive {
   color: #fff;
   background: linear-gradient(135deg, rgba(69, 153, 255, 0.2) 0%, rgba(69, 153, 255, 0.08) 100%);
@@ -189,10 +185,6 @@
   white-space: nowrap;
   touch-action: manipulation;
   transition: all 0.2s ease;
-}
-.categoryBtn:hover {
-  border-color: rgba(69, 153, 255, 0.3);
-  color: #e4e6eb;
 }
 .categoryBtnActive {
   background: linear-gradient(135deg, rgba(69, 153, 255, 0.2) 0%, rgba(69, 153, 255, 0.08) 100%);
@@ -264,9 +256,6 @@
   transition: all 0.3s ease;
 }
 
-.itemCard:hover {
-  border-color: rgba(69, 153, 255, 0.3);
-}
 .itemImageArea {
   height: 148px;
   background: linear-gradient(135deg, #2a2b2e 0%, #1e1f22 100%);
@@ -520,9 +509,6 @@
 .dataTable tbody tr {
   transition: background 0.15s ease;
 }
-.dataTable tbody tr:hover {
-  background: rgba(69, 153, 255, 0.04);
-}
 
 /* ═══ Admin ═══ */
 .createForm {
@@ -594,9 +580,6 @@
   align-items: center;
   transition: border-color 0.2s ease;
 }
-.adminRow:hover {
-  border-color: rgba(69, 153, 255, 0.2);
-}
 .adminActions {
   display: flex;
   gap: 6px;
@@ -611,9 +594,6 @@
   cursor: pointer;
   font-weight: 700;
   transition: all 0.15s;
-}
-.btnActiveToggle:hover {
-  background: rgba(74, 222, 128, 0.18);
 }
 .btnInactiveToggle {
   font-size: 11px;
@@ -637,9 +617,6 @@
   font-weight: 700;
   transition: all 0.15s;
 }
-.btnDeleteSmall:hover {
-  background: rgba(250, 56, 62, 0.15);
-}
 
 /* ═══ Buttons ═══ */
 .btnPrimary {
@@ -655,9 +632,6 @@
   touch-action: manipulation;
   transition: all 0.2s ease;
   box-shadow: 0 2px 8px rgba(69, 153, 255, 0.25);
-}
-.btnPrimary:hover {
-  background: linear-gradient(135deg, #357ce6 0%, #1d4ed8 100%);
 }
 .btnPrimary:disabled {
   opacity: 0.45;
@@ -676,11 +650,6 @@
   cursor: pointer;
   text-decoration: none;
   transition: all 0.2s ease;
-}
-.btnGhost:hover {
-  border-color: rgba(69, 153, 255, 0.4);
-  color: #4599ff;
-  background: rgba(69, 153, 255, 0.04);
 }
 .btnOwned {
   padding: 9px 18px;
@@ -729,10 +698,6 @@
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
-}
-.emptyButton:hover {
-  background: rgba(69, 153, 255, 0.2);
-  border-color: rgba(69, 153, 255, 0.4);
 }
 
 /* ═══ Purchase success flash ═══ */
@@ -952,12 +917,6 @@
   .adminRow {
     transition: none !important;
   }
-
-  .itemCard:hover,
-  .btnPrimary:hover,
-  .emptyButton:hover {
-    transform: none;
-  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1021,10 +980,6 @@
   text-decoration: underline;
 }
 
-.inlineLink:hover {
-  color: #6fb1ff;
-}
-
 .sectionIntro {
   margin-bottom: 20px;
 }
@@ -1066,10 +1021,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.1),
     0 4px 20px rgba(0, 0, 0, 0.5);
   transition: all 0.3s ease;
-}
-
-.pkgCard:hover {
-  border-color: rgba(69, 153, 255, 0.5);
 }
 
 .pkgCardPopular {
@@ -1135,10 +1086,6 @@
   cursor: pointer;
   touch-action: manipulation;
   transition: filter 0.15s ease;
-}
-
-.pkgBuy:hover:not(:disabled) {
-  filter: brightness(1.15);
 }
 
 .pkgBuy:disabled {
@@ -1303,10 +1250,6 @@
   transition: background 0.15s ease;
 }
 
-.btnGhostWide:hover:not(:disabled) {
-  background: rgba(69, 153, 255, 0.16);
-}
-
 .btnGhostWide:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -1348,11 +1291,6 @@
   transition: border-color 0.15s ease;
 }
 
-.historyToggle:hover {
-  border-color: rgba(69, 153, 255, 0.4);
-  color: #e4e6eb;
-}
-
 .adminRowWrap {
   display: flex;
   flex-direction: column;
@@ -1379,10 +1317,6 @@
   background: rgba(69, 153, 255, 0.1);
   border: 1px solid rgba(69, 153, 255, 0.3);
   cursor: pointer;
-}
-
-.btnEditSmall:hover {
-  background: rgba(69, 153, 255, 0.18);
 }
 
 .btnDeleteSmall:disabled {
@@ -1656,10 +1590,6 @@
   background: linear-gradient(180deg, #4599ff, rgba(69, 153, 255, 0.35));
 }
 
-.chartBar:hover {
-  background: linear-gradient(180deg, #6fb1ff, rgba(69, 153, 255, 0.5));
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
    2026-08-23 REBUILD — procedural HD item art (3D depth), diamond funding
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -1676,11 +1606,6 @@
   position: relative;
   z-index: 1;
 }
-
-/* Slow parallax float gives the scene physical depth on hover. */
-.itemCard:hover .itemArt {
-}
-
 .itemArt {
   transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -1710,10 +1635,6 @@
     0 10px 24px rgba(0, 0, 0, 0.5);
   transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-
-.pkgCard:hover .pkgArt {
-}
-
 /* VIP plan shield art */
 .planArt {
   width: 100%;
@@ -1748,10 +1669,5 @@
   .itemArt,
   .pkgArt {
     transition: none !important;
-  }
-
-  .itemCard:hover .itemArt,
-  .pkgCard:hover .pkgArt {
-    transform: none;
   }
 }

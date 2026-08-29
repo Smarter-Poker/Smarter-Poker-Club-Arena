@@ -564,7 +564,25 @@ export default function HandReplay({
                     )}
                     {handData.bomb_pot.trigger_reason && (
                       <span>
-                        {String(handData.bomb_pot.trigger_reason).replace(/_/g, ' ').toUpperCase()}
+                        {/* 2026-08-29: was `.replace(/_/g,' ').toUpperCase()`,
+                            which printed the raw DB enum at the player — "EVERY
+                            N HANDS", "ONCE PER ORBIT", "BOMB POT ONLY", "MANUAL
+                            NEXT HAND". Two of those are engineering
+                            identifiers, not English, and "EVERY N HANDS" names
+                            a variable nobody outside this codebase has ever
+                            seen. The lobby already maps the same four values to
+                            readable labels (lobbyEntries.ts); this is the
+                            replay saying the same thing the lobby says. */}
+                        {(
+                          {
+                            every_n_hands: 'SCHEDULED',
+                            once_per_orbit: 'EVERY ORBIT',
+                            timed: 'ON THE CLOCK',
+                            bomb_pot_only: 'BOMB POT TABLE',
+                            manual_next_hand: 'CALLED BY THE HOST',
+                          } as Record<string, string>
+                        )[String(handData.bomb_pot.trigger_reason)] ??
+                          String(handData.bomb_pot.trigger_reason).replace(/_/g, ' ').toUpperCase()}
                       </span>
                     )}
                   </div>

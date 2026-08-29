@@ -35,10 +35,6 @@
   z-index: 10;
 }
 
-.create-table-page__back:hover {
-  color: #1877f2;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    GAME TYPE LIST
 ═══════════════════════════════════════════════════════════════════════════════ */
@@ -77,10 +73,6 @@
     transform: translateX(0);
   }
 }
-
-.game-type-card:hover {
-}
-
 .game-type-card.locked {
   opacity: 0.5;
   cursor: not-allowed;
@@ -166,11 +158,6 @@
   pointer-events: none;
 }
 
-/* Hover glow effect — Facebook blue */
-.game-type-card:hover::before {
-  background: linear-gradient(90deg, transparent, rgba(24, 119, 242, 0.15));
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    FOOTER
 ═══════════════════════════════════════════════════════════════════════════════ */
@@ -198,11 +185,6 @@
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.template-button:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .template-icon {

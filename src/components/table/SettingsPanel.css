@@ -108,12 +108,6 @@
   transition: all 0.2s ease;
 }
 
-.settings-panel__close:hover {
-  background: rgba(248, 81, 73, 0.2);
-  border-color: rgba(248, 81, 73, 0.3);
-  color: #f85149;
-}
-
 .settings-panel__close:active {
   transform: scale(0.95);
 }
@@ -157,12 +151,6 @@
   align-items: center;
   padding: 12px 20px;
   transition: background 0.15s ease;
-}
-
-.settings-item:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-left: 2px solid rgba(24, 119, 242, 0.3);
-  padding-left: 18px;
 }
 
 .settings-item--toggle {
@@ -215,10 +203,6 @@
   transition: all 0.15s ease;
 }
 
-.settings-item__slider::-webkit-slider-thumb:hover {
-  background: #3591ff;
-}
-
 .settings-item__slider:disabled {
   opacity: 0.3;
 }
@@ -235,11 +219,6 @@
   cursor: pointer;
   outline: none;
   transition: all 0.2s ease;
-}
-
-.settings-item__select select:hover {
-  border-color: rgba(24, 119, 242, 0.3);
-  background: rgba(255, 255, 255, 0.1);
 }
 
 .settings-item__select select:focus {
@@ -329,13 +308,6 @@
   transition: all 0.2s ease;
 }
 
-.settings-panel__reset:hover {
-  border-color: rgba(248, 81, 73, 0.4);
-  color: #f85149;
-  background: rgba(248, 81, 73, 0.08);
-  box-shadow: 0 0 16px rgba(248, 81, 73, 0.1);
-}
-
 .settings-panel__reset:active {
   transform: scale(0.98);
 }
@@ -370,10 +342,6 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
-}
-.settings-action-btn:hover {
-  background: rgba(24, 119, 242, 0.2);
-  border-color: rgba(24, 119, 242, 0.4);
 }
 .settings-avatar-preview {
   width: 28px;

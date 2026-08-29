@@ -124,10 +124,6 @@
   border: 2px solid transparent;
   transition: all 0.2s;
 }
-
-.avatar-choice:hover {
-}
-
 .avatar-choice.selected {
   border-color: #3fb950;
   box-shadow: 0 0 10px rgba(63, 185, 80, 0.3);
@@ -187,11 +183,6 @@
   transition: all 0.2s;
 }
 
-.tag-choice:hover {
-  border-color: #1877f2;
-  color: #e4e6eb;
-}
-
 .tag-choice.active {
   background: rgba(24, 119, 242, 0.2);
   border-color: #1877f2;
@@ -216,16 +207,12 @@
   font-weight: 600;
 }
 
-.save-btn {
+.save-btn-blue {
   padding: 10px 20px;
-  background: #3fb950;
+  background: #0088cc;
   border: none;
   border-radius: 8px;
   color: #fff;
   cursor: pointer;
   font-weight: 600;
-}
-
-.save-btn:hover {
-  background: #2ea043;
 }

@@ -239,7 +239,6 @@
     box-shadow 0.16s var(--tl-ease);
 }
 
-.dov-deal__btn:hover:not(:disabled),
 .dov-deal__btn:focus-visible:not(:disabled) {
   outline: none;
 }
@@ -264,6 +263,97 @@
   flex: 1 1 auto;
   min-height: 0;
   padding: 10px 12px;
+}
+
+/* ─── Band 4's two sections ───────────────────────────────────────────────
+   These were nine inline style objects in the JSX, and three of them fought
+   this stylesheet and won:
+
+     `style={{ padding: 0 }}` on the panel beat `.dov-info`'s padding above AND
+     its `@media (max-width: 400px)` override below, so the band's phone tuning
+     had no effect at all;
+
+     `backgroundColor: 'var(--surface)'` on each section referenced a token that
+     is not defined anywhere in this repo -- `grep -r "--surface:"` finds
+     nothing -- so both sections were transparent and the wrapper's
+     `rgba(255,255,255,0.05)`, which was only ever meant to show through a 1px
+     gap as a hairline rule, washed the entire band;
+
+     `padding: 16` hardcoded on each section replaced the 9px the phone rule
+     would have applied, so at 375px the two-column grid inside was squeezed to
+     roughly 161px per column against nowrap values.
+
+   A rule in a stylesheet can be overridden by a media query. An inline style
+   cannot be overridden by anything short of !important.
+   ───────────────────────────────────────────────────────────────────────── */
+.dov-info--band {
+  padding: 0;
+  overflow: hidden;
+}
+
+.dov-band {
+  display: flex;
+  flex-direction: column;
+  /* The 1px gap IS the separator: the parent's background shows through it. */
+  gap: 1px;
+  background: var(--tl-hairline-soft, rgba(255, 255, 255, 0.06));
+}
+
+.dov-band__section {
+  padding: 12px;
+  background: var(--tl-surface, #1a2436);
+}
+
+.dov-band__title {
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  /* Was `var(--text-muted)`, which resolves to #606770 / #6b7280 -- both fail
+     WCAG AA against this surface. --tl-text-dim is the scale this panel is
+     built on and clears it. */
+  color: var(--tl-text-dim, #8892a4);
+}
+
+.dov-band__note {
+  font-size: 13px;
+  color: var(--tl-text-dim, #8892a4);
+}
+
+.dov-band__note--error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  color: var(--tl-danger-soft, #ffb4b4);
+}
+
+.dov-band__retry {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--tl-hairline, rgba(111, 220, 255, 0.14));
+  border-radius: var(--tl-radius-pill, 999px);
+  background: var(--tl-surface-raised, #223046);
+  color: var(--tl-text, #e8eaf0);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dov-band__retry:focus-visible {
+  outline: 2px solid var(--tl-accent, #6fdcff);
+  outline-offset: 2px;
+}
+
+.dov-band__retry:active {
+  background: var(--tl-surface, #1a2436);
+}
+
+.dov-band__sats {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .dov-info__grid {
@@ -469,6 +559,18 @@
   .dov-info {
     padding: 9px 10px;
   }
+  /* The band owns its own padding, so the rule above must not re-apply it on
+     top of the sections' -- and the sections tighten with everything else,
+     which is what the hardcoded `padding: 16` used to prevent. */
+  .dov-info--band {
+    padding: 0;
+  }
+  .dov-band__section {
+    padding: 9px 10px;
+  }
+  .dov-band__title {
+    margin-bottom: 9px;
+  }
   .dov-info__grid {
     gap: 6px 8px;
   }
@@ -494,7 +596,6 @@
    ───────────────────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .dov-deal__btn,
-  .dov-deal__btn:hover,
   .dov-deal__btn:focus-visible,
   .dov-deal__btn:active {
     transform: none;
@@ -525,12 +626,6 @@
   cursor: pointer;
   touch-action: manipulation;
   transition: all 0.2s;
-}
-
-.dov-ladder-link:hover {
-  border-color: #6fdcff;
-  background: linear-gradient(180deg, #223046 0%, #1a2436 100%);
-  color: #e8eaf0;
 }
 
 .dov-ladder-link:focus-visible {

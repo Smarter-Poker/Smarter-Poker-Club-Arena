@@ -224,10 +224,29 @@ describe('AchievementTriggerService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('onLogin', () => {
-    it('should increment streak_7', async () => {
+    // REPLACED 2026-08-29, in the commit that removed the behaviour it pinned.
+    //
+    // This asserted that onLogin calls `incrementProgress('user-1',
+    // 'streak_7')`. That was the FARM: onLogin runs on every Supabase auth
+    // event (INITIAL_SESSION, SIGNED_IN, TOKEN_REFRESHED), so reloading the
+    // page advanced "Log in 7 days in a row" and, at 30 and 100, paid 100 and
+    // 500 chips through `add_to_promo_wallet`. Production carried the proof:
+    // 3 of 5 streak_7 unlocks and 1 of 2 streak_30 unlocks were stamped
+    // `unlocked_at` on the same day the row was created.
+    //
+    // The streak is now computed once per UTC day from profiles.last_login_date
+    // and written with `incrementProgressTo`, so `incrementProgress` is no
+    // longer the right thing to look for. The rule that replaces it — a second
+    // visit on the same day writes nothing at all — is pinned in full in
+    // `achievementsCannotBeFarmed.test.ts`, which mocks the profile row and can
+    // therefore drive every branch. Here we assert only what this file's
+    // shared mock can honestly see: onLogin no longer bumps a streak by one.
+    it('never bumps a streak by one, because a streak counts days not loads', async () => {
       await achievementTriggerService.onLogin('user-1');
 
-      expect(mockIncrementProgress).toHaveBeenCalledWith('user-1', 'streak_7');
+      expect(mockIncrementProgress).not.toHaveBeenCalledWith('user-1', 'streak_7');
+      expect(mockIncrementProgress).not.toHaveBeenCalledWith('user-1', 'streak_30');
+      expect(mockIncrementProgress).not.toHaveBeenCalledWith('user-1', 'streak_100');
     });
   });
 });

@@ -25,10 +25,6 @@
   cursor: pointer;
 }
 
-.list-item.clickable:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
 .list-item-left {
   flex-shrink: 0;
 }

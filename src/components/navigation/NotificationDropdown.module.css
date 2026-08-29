@@ -24,13 +24,6 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
-.trigger:hover {
-  background: rgba(255, 255, 255, 0.15);
-  box-shadow:
-    0 0 8px rgba(255, 255, 255, 0.1),
-    0 0 0 1px rgba(255, 255, 255, 0.04);
-}
-
 .badge {
   position: absolute;
   top: -4px;
@@ -125,11 +118,6 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.item:hover {
-  background: rgba(255, 255, 255, 0.03);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
 .item.unread {
   background: rgba(59, 130, 246, 0.08);
 }
@@ -201,8 +189,4 @@
   margin: 0;
   opacity: 0.6;
   transition: opacity 0.2s ease;
-}
-
-.markReadBtn:hover {
-  opacity: 1;
 }

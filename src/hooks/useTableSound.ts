@@ -15,6 +15,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { soundService } from '../services/SoundService';
 import { isSoundAllowed } from '../utils/soundGate';
+import { setVibrationAllowed, isVibrationPreferred } from '../utils/vibrationGate';
 
 export interface UseTableSoundReturn {
   /** Whether sound effects are active. Read this for UI toggle state. */
@@ -40,25 +41,56 @@ export interface UseTableSoundReturn {
 }
 
 const STORAGE_SOUND = 'ca_sound_enabled';
-const STORAGE_VIBRATION = 'ca_vibration_enabled';
+/* `STORAGE_VIBRATION` is gone with the last hand-rolled read of it: the haptic
+   switch both reads and writes through `utils/vibrationGate`, which owns that
+   key and its sibling. */
 const STORAGE_AUTO_REBUY = 'ca_auto_rebuy';
 
-function readBool(key: string, defaultVal: boolean): boolean {
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw === null) return defaultVal;
-    return raw !== 'false';
-  } catch {
-    return defaultVal;
-  }
-}
+/* `readBool` and `SETTINGS_VIBRATION` lived here until 2026-08-29. Both were
+   this file's own copy of what `utils/soundGate` and `utils/vibrationGate`
+   already decide, and the copy is what let the haptic switch fall behind the
+   sound one. Both switches read their gate now.
+
+   `readBool` was also fail-OPEN — `raw !== 'false'` treats '0', 'off' and ''
+   as ON — against the fail-CLOSED convention both gate files establish. */
 
 export function useTableSound(): UseTableSoundReturn {
-  const [isSoundEnabled, setIsSoundEnabledRaw] = useState<boolean>(() =>
-    readBool(STORAGE_SOUND, true)
-  );
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  SEED FROM THE GATE, NOT FROM ONE OF THE TWO KEYS IT READS
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * 2026-08-29. Fix 2 below made the ENGINE seed from `isSoundAllowed()` and
+   * left the REACT STATE seeding from `ca_sound_enabled` alone, so the two
+   * disagreed for exactly the player the fix was written for.
+   *
+   * A player who muted in Settings or the hamburger menu has
+   * `club_arena_sounds='false'` and, commonly, no `ca_sound_enabled` at all.
+   * `readBool` then returned its default of TRUE:
+   *
+   *   - the in-table badge read ON while the app was silent;
+   *   - worse, effects run in declaration order, so the persist effect below
+   *     wrote `ca_sound_enabled='true'` from that stale state BEFORE the mount
+   *     effect called `setEnabled(false)` and wrote it back to `'false'`;
+   *   - so the first press computed `!true = false` and muted something
+   *     already muted. The player had to press TWICE to get sound back, with
+   *     the switch lying the whole time.
+   *
+   * Both halves now read the same gate, which fails closed on either key.
+   * Vibration gets the same treatment for the same reason.
+   */
+  const [isSoundEnabled, setIsSoundEnabledRaw] = useState<boolean>(() => isSoundAllowed());
+  /* `isVibrationPreferred()`, not `isVibrationAllowed()`: the latter also
+     returns false when the DEVICE cannot vibrate, which is not a preference —
+     a desktop player must not see their haptics switch stuck off.
+
+     This was two hand-rolled `readBool` calls here, which made it a THIRD copy
+     of the gate's own two-key rule. It lives in the gate now, next to the rule
+     it implements, so a change to that rule cannot leave this switch behind
+     — which is exactly how the haptic side got left behind by the 2026-08-27
+     sound fix in the first place. */
   const [isVibrationEnabled, setIsVibrationEnabledRaw] = useState<boolean>(() =>
-    readBool(STORAGE_VIBRATION, true)
+    isVibrationPreferred()
   );
   const [isAutoRebuyEnabled, setIsAutoRebuyEnabledRaw] = useState<boolean>(() => {
     try {
@@ -77,12 +109,15 @@ export function useTableSound(): UseTableSoundReturn {
     }
   }, [isSoundEnabled]);
 
+  /* Persist through the GATE, which writes both of its keys.
+     Writing only `ca_vibration_enabled` here was the haptic twin of the sound
+     bug above, and it survived the 2026-08-27 sweep that fixed the sound side:
+     a player who muted haptics in Settings ('vibrationsEnabled'='false') and
+     then turned them ON at the table stayed silent, because the gate fails
+     closed on EITHER key and nothing here ever cleared the other one. The
+     switch read ON and the phone never buzzed. */
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_VIBRATION, String(isVibrationEnabled));
-    } catch {
-      /* unavailable */
-    }
+    setVibrationAllowed(isVibrationEnabled);
   }, [isVibrationEnabled]);
 
   useEffect(() => {

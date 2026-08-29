@@ -85,8 +85,8 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
     onSave({
       ...formData,
       username: sanitizeInput(formData.username),
-      displayName: sanitizeInput(formData.displayName),
       bio: sanitizeInput(formData.bio),
+      tags: formData.tags,
     });
     onClose();
   };
@@ -170,15 +170,6 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
             </div>
 
             <div className="form-group">
-              <label>Real Name (Optional)</label>
-              <input
-                value={formData.displayName || ''}
-                onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-                maxLength={24}
-              />
-            </div>
-
-            <div className="form-group">
               <label>Bio (Max 100 Chars)</label>
               <textarea
                 value={formData.bio}
@@ -208,7 +199,7 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
               <button type="button" className="cancel-btn" onClick={onClose}>
                 Cancel
               </button>
-              <button type="submit" className="save-btn">
+              <button type="submit" className="save-btn-blue">
                 Save Profile
               </button>
             </div>

@@ -49,7 +49,16 @@ describe('MultiTablePage route sync paints in the same frame as visibility', () 
   it('keeps the URL on the table the player is looking at when switching tabs', () => {
     // Both the tab bar select and the swipe commit must navigate (replace) to
     // the target table, so URL and felt can never disagree about a real table.
-    const navSyncs = src.match(/navigate\(`\/table\/\$\{target\.id\}`, \{ replace: true \}\)/g);
+    //
+    // 2026-08-28: those URLs now also carry the tab's own name/stakes/code
+    // (`${tableQuery(target)}`), because a bare /table/:id told a reload less
+    // than the tab strip was already showing and a labelled tab came back as
+    // "Table 1". The suffix is optional in this pattern rather than required:
+    // what this test is about is that BOTH paths sync the URL with `replace`,
+    // and it should not fail if a tab legitimately has nothing to add.
+    const navSyncs = src.match(
+      /navigate\(`\/table\/\$\{target\.id\}(?:\$\{tableQuery\(target\)\})?`, \{ replace: true \}\)/g
+    );
     expect(navSyncs?.length ?? 0).toBeGreaterThanOrEqual(2);
   });
 });

@@ -229,7 +229,7 @@ describe('the last two Club Arena slots are wired, and only where they earn it',
     expect(LOBBY_PAGE).toMatch(/import HouseAdCard from '\.\.\/components\/ads\/HouseAdCard'/);
     expect(LOBBY_PAGE).toMatch(/<HouseAdCard\s+slot="empty_state"/);
     expect(SESSION).toMatch(/import HouseAdCard from '\.\.\/ads\/HouseAdCard'/);
-    expect(SESSION).toMatch(/<HouseAdCard slot="session_summary"/);
+    expect(SESSION).toMatch(/<HouseAdCard[\s\n]+slot="session_summary"/);
   });
 
   it('empty_state appears only where the player has nothing to tap', () => {
@@ -258,10 +258,20 @@ describe('the last two Club Arena slots are wired, and only where they earn it',
     expect(code).not.toMatch(/profitLoss/);
   });
 
-  it('is not activatable when there is nowhere to go', () => {
+  it('is not activatable when there is nowhere SAFE to go', () => {
     /* Without this the card was still focusable, still showed a pointer, and
-       did nothing when tapped - the same defect the lobby strip had. */
-    expect(CARD).toMatch(/const activatable = Boolean\(ad\.targetUrl\) && Boolean\(onNavigate\)/);
+       did nothing when tapped - the same defect the lobby strip had.
+
+       2026-08-28: the condition was `Boolean(ad.targetUrl)`, i.e. "there is a
+       string in the column". `target_url` is free text typed into the admin
+       panel, so that made the whole card a link to wherever it pointed -
+       including off-site. The rule is now "there is a string AND it is a
+       rooted same-origin path" (isSafeAdTarget), which is strictly stronger:
+       every destination that used to be activatable and is still safe still
+       is. The pin follows the intent rather than the old expression. */
+    expect(CARD).toMatch(
+      /const activatable = isSafeAdTarget\(ad\.targetUrl\) && Boolean\(onNavigate\)/
+    );
     expect(CARD).toMatch(/house-ad--static/);
   });
 
@@ -878,5 +888,124 @@ describe('retention is reachable, and shows its blast radius first', () => {
        the wire would let the number shown at render differ from the number
        used at click. */
     expect(page).not.toMatch(/kind: 'prune'[^}]*days/);
+  });
+});
+
+describe('a click is only counted when it went somewhere (2026-08-29)', () => {
+  /* `target_url` is admin-entered text. Every client already refuses one that
+     is not a rooted, same-origin path - but the lobby strip logged the click
+     BEFORE it checked, and decided whether to render a button from the raw
+     column rather than from the checked destination. So an ad pointing at
+     `https://…` rendered as a tappable strip, recorded a click, and went
+     nowhere. Those events are worse than no events: in the panel they are
+     indistinguishable from a campaign that works, and they inflate the very
+     click-through rate an operator uses to choose what to run next. */
+  const SUMMARY = read('src/components/session/SessionSummaryHost.tsx');
+
+  it('the strip resolves and validates the destination before anything else uses it', () => {
+    expect(STRIP).toMatch(/const houseTarget = \(\(\) => \{/);
+    expect(STRIP).toMatch(/return isSafeAdTarget\(url\) \? url : null;/);
+  });
+
+  it('logClick sits inside the branch that has a safe destination', () => {
+    const activate = STRIP.slice(
+      STRIP.indexOf('const handleActivate = () => {'),
+      STRIP.indexOf('const text = ad.title')
+    );
+    const guard = activate.indexOf('if (houseTarget && ad.adId)');
+    const log = activate.indexOf('AdService.logClick');
+    expect(guard).toBeGreaterThan(-1);
+    expect(log).toBeGreaterThan(guard);
+    // And the raw column is never what the router is handed.
+    expect(activate).not.toMatch(/onNavigate\?\.\(ad\.targetUrl/);
+  });
+
+  it('a house ad with no safe destination is not rendered as a button', () => {
+    expect(STRIP).toMatch(/const isActivatable = Boolean\(onOpen\) \|\| Boolean\(houseTarget\);/);
+    expect(STRIP).not.toMatch(/isActivatable =[^;]*Boolean\(ad\.targetUrl\)/);
+  });
+
+  it('the card was already right, and stays right', () => {
+    const CARD = read('src/components/ads/HouseAdCard.tsx');
+    expect(CARD).toMatch(/const activatable = isSafeAdTarget\(ad\.targetUrl\)/);
+    const activate = CARD.slice(CARD.indexOf('const activate = () => {'));
+    expect(activate.indexOf('if (!activatable) return;')).toBeLessThan(
+      activate.indexOf('AdService.logClick')
+    );
+  });
+
+  it('the session summary closes itself before it routes', () => {
+    /* The host is a createPortal overlay that only clearSessionSummary() takes
+       down, and the card inside it stops propagation, so the backdrop never
+       fires. Navigating without closing left Session Complete covering the
+       page the player had just been sent to - with the click already logged. */
+    expect(SUMMARY).toMatch(/onNavigate=\{\(path\) => \{\s*close\(\);\s*navigate\(path\);\s*\}\}/);
+  });
+});
+
+describe('the weight box cannot ask for a weight the database refuses', () => {
+  it('the panel floors weight at 1, matching ad_catalog_weight_positive', () => {
+    /* PATCH already clamped to 1 and said why. Create clamped to 0, and the
+       input allowed 0, so a cleared field (Number('') === 0) came back as
+       "Could not create that ad" without ever naming the field. */
+    const weightInput = ADMIN.slice(ADMIN.indexOf('id="ad-weight"'), ADMIN.indexOf('max={1000}'));
+    expect(weightInput).toMatch(/min=\{1\}/);
+    expect(weightInput).not.toMatch(/min=\{0\}/);
+  });
+});
+
+describe('the destructive dialog reads like every other dialog on the page', () => {
+  it('the delete confirm is Title Case, as CLAUDE.md 5.7 requires', () => {
+    /* The two other dialogs on this page already were. The one that was not
+       is the only one that deletes an ad and its whole history. */
+    expect(ADMIN).toMatch(/And Its Performance History Will Be Removed\. This Cannot Be Undone\./);
+    expect(ADMIN).not.toMatch(/and its performance history will be removed/);
+  });
+});
+
+describe('the panel can edit the destination the surface is actually serving', () => {
+  /* fn_resolve_ads serves COALESCE(pl.target_url, c.target_url). Eight live
+     placements carried an override - every hub_promotions row and both
+     session_summary rows - and this panel neither read the column nor wrote
+     it. So editing "Links To" on the campaign reported "Saved." and changed
+     nothing on those surfaces: a control that lies about what it did, which is
+     the failure shape readSlot and the Silent Write Guard both exist to end. */
+  it('the placement row carries the override', () => {
+    const rowType = ADMIN.slice(
+      ADMIN.indexOf('interface PlacementRow'),
+      ADMIN.indexOf('type StatRow')
+    );
+    expect(rowType).toMatch(/target_url: string \| null;/);
+  });
+
+  it('shows it in the table, and says what blank means', () => {
+    expect(ADMIN).toMatch(/<th>Links To<\/th>/);
+    expect(ADMIN).toMatch(/Inherited From The Ad/);
+  });
+
+  it('loads the current value into the draft when editing', () => {
+    const edit = ADMIN.slice(
+      ADMIN.indexOf('const editPlacement'),
+      ADMIN.indexOf('const savePlacement')
+    );
+    expect(edit).toMatch(/target_url: p\.target_url \|\| '',/);
+  });
+
+  it('sends the field even when empty, because empty is an instruction', () => {
+    /* The server keys on `!== undefined`: omitting it means "leave it alone",
+       an empty string means "clear the override and fall back to the ad's own
+       destination". An operator who empties the box means the second. */
+    const save = ADMIN.slice(
+      ADMIN.indexOf('const savePlacement'),
+      ADMIN.indexOf('const togglePlacement')
+    );
+    expect(save).toMatch(/target_url: placementDraft\.target_url,/);
+    expect(save).not.toMatch(/target_url: placementDraft\.target_url \|\|/);
+  });
+
+  it('the actions column header is named rather than empty', () => {
+    // A header cell with no text is a column a screen reader announces as
+    // nothing at all.
+    expect(ADMIN).toMatch(/<th aria-label="Actions" \/>/);
   });
 });

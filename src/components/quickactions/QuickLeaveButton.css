@@ -11,10 +11,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.quick-leave-button:hover {
-  background: rgba(248, 113, 113, 0.25);
-}
-
 .leave-icon {
   font-size: 1rem;
 }
@@ -112,10 +108,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.cancel-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
 .confirm-btn {
   flex: 1;
   padding: 12px;
@@ -126,8 +118,4 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.confirm-btn:hover {
-  background: #ef4444;
 }

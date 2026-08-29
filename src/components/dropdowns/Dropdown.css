@@ -17,10 +17,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.dropdown-trigger:hover {
-  border-color: rgba(255, 255, 255, 0.3);
-}
-
 .dropdown-trigger .placeholder {
   color: rgba(255, 255, 255, 0.5);
 }
@@ -75,10 +71,6 @@
   padding: 10px 14px;
   cursor: pointer;
   transition: background 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.dropdown-menu li:hover {
-  background: rgba(255, 255, 255, 0.08);
 }
 
 .dropdown-menu li.selected {

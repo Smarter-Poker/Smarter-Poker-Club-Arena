@@ -71,14 +71,6 @@
   background: linear-gradient(135deg, rgba(0, 0, 0, 0.1), transparent);
 }
 
-.benefit-card.unlocked:hover {
-  border-color: var(--tier-color);
-}
-
-.benefit-card.locked:hover {
-  background: linear-gradient(135deg, rgba(0, 0, 0, 0.15), transparent);
-}
-
 /* Top section with icon */
 .benefit-top {
   display: flex;
@@ -148,10 +140,6 @@
   z-index: 2;
   opacity: 0;
   transition: opacity 0.3s ease;
-}
-
-.benefit-card.locked:hover .lock-overlay {
-  opacity: 1;
 }
 
 .lock-icon {

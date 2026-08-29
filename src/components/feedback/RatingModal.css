@@ -48,7 +48,6 @@
   padding: 0;
 }
 
-.star-btn:hover,
 .star-btn.active {
   color: #ffd700;
 }
@@ -101,10 +100,6 @@
   transition: background 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.skip-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
 .submit-btn {
   flex: 1;
   padding: 12px;
@@ -116,10 +111,6 @@
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.submit-btn:hover:not(:disabled) {
-}
-
 .submit-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;

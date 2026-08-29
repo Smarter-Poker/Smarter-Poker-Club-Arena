@@ -43,11 +43,6 @@
   transition: all 0.2s ease;
 }
 
-.promo-filters button:hover {
-  border-color: #3a4a5a;
-  color: #8a9aaa;
-}
-
 .promo-filters button.active {
   background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
   border-color: #00d4ff;
@@ -75,10 +70,6 @@
   overflow: hidden;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.promo-card:hover {
-  border-color: #00d4ff;
 }
 
 .promo-image {
@@ -198,10 +189,6 @@
 .daily-bonus-banner {
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.daily-bonus-banner:hover {
-}
-
 .bonus-icon {
   font-size: 1.5rem;
 }
@@ -271,10 +258,6 @@
   transition: all 0.2s ease;
 }
 
-.modal-close:hover {
-  border-color: #ef4444;
-  color: #ef4444;
-}
 /* ─────────────────────────────────────────────────────────────────────────────
    MOBILE RESPONSIVE
    ───────────────────────────────────────────────────────────────────────────── */
@@ -468,10 +451,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
 }
-
-.referral-banner:hover {
-}
-
 @media (max-width: 768px) {
   .promotions-page {
     /* padding: 0 !important used to wipe the bottom-nav clearance declared on

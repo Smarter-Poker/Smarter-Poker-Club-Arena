@@ -213,10 +213,6 @@
   border-color: rgba(110, 118, 129, 0.3);
 }
 
-.chat-collapsed:hover {
-  background: rgba(24, 119, 242, 0.3);
-}
-
 /* Dan 2026-08-21 (item 5): now an SVG messenger bubble, not the ✉ glyph. */
 .chat-collapsed__icon {
   display: inline-flex;
@@ -304,10 +300,6 @@
   transition: all 0.15s ease;
 }
 
-.table-chat__minimize:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
 /* Dan 2026-08-23: the header's only control was the 24px "▾" above, which
    reads as minimize. This is the X that closes chat. 32px, not 24px: the
    header sits over a live table on a phone, and 24px is under the 44px Apple /
@@ -329,11 +321,6 @@
   color: #c9d1d9;
   cursor: pointer;
   transition: all 0.15s ease;
-}
-
-.table-chat__close:hover {
-  background: rgba(237, 66, 69, 0.28);
-  color: #ffffff;
 }
 
 .table-chat__close:active {
@@ -568,10 +555,6 @@
   transition: all 0.15s ease;
 }
 
-.table-chat__emoji-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    INPUT
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -596,10 +579,6 @@
   font-size: 1.125rem;
   cursor: pointer;
   transition: all 0.15s ease;
-}
-
-.table-chat__emoji-toggle:hover {
-  background: rgba(255, 255, 255, 0.12);
 }
 
 .table-chat__emoji-toggle--active {
@@ -666,10 +645,6 @@
   content: none;
 }
 
-.table-chat__send:hover:not(:disabled) {
-  background: #3591ff;
-}
-
 .table-chat__send:disabled {
   background: #6e7681;
   cursor: not-allowed;
@@ -702,10 +677,6 @@
   transition: all 0.15s ease;
   animation: fabBounceIn 0.2s ease-out;
   z-index: 5;
-}
-
-.table-chat__scroll-fab:hover {
-  background: rgba(24, 119, 242, 1);
 }
 
 @keyframes fabBounceIn {
@@ -796,10 +767,6 @@
   box-shadow: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-}
-.chat-collapsed:hover {
-  background: transparent !important;
-  filter: brightness(1.1);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

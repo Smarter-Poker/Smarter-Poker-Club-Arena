@@ -67,10 +67,6 @@
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
   box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
 }
-
-.closeButton:hover {
-}
-
 .content {
   flex: 1;
   overflow-y: auto;
@@ -126,10 +122,6 @@
 .content a {
   color: #60a5fa;
   text-decoration: none;
-}
-
-.content a:hover {
-  text-decoration: underline;
 }
 
 .preamble {
@@ -252,7 +244,4 @@
   box-shadow:
     0 0 20px rgba(96, 165, 250, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.confirmButton:not(:disabled):hover {
 }

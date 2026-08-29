@@ -240,12 +240,6 @@
     color 0.2s ease,
     border-color 0.2s ease;
 }
-
-.lobby-club__share:hover {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
 .lobby-club__share:active {
   transform: translateY(2px);
   box-shadow:
@@ -275,11 +269,6 @@
     transform 0.12s ease,
     border-color 0.15s ease;
 }
-
-.lobby-bbj:hover {
-  border-color: #4baeff;
-}
-
 .lobby-bbj:active {
   transform: translateY(3px);
   box-shadow:
@@ -450,10 +439,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transition: all 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.wallet-row:hover {
-}
-
 .wallet-row.gold {
   border-color: rgba(255, 255, 255, 0.08);
 }
@@ -496,11 +481,7 @@
   justify-content: center;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
-}
-
-.wallet-add-btn:hover {
-}
-/* The .club-home__intro block moved into the header as .lobby-top__notice
+} /* The .club-home__intro block moved into the header as .lobby-top__notice
    (line-clamped), and the three-row .club-home__filters / .filter-tab stack was
    replaced by the single .game-bar below. Both sets of markup are gone. */
 
@@ -594,12 +575,6 @@
     color 0.2s ease,
     border-color 0.2s ease;
 }
-
-.game-bar__type:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #dfe5ee;
-}
-
 .game-bar__type.is-active {
   background: linear-gradient(135deg, #0088ff, #0055ff);
   border-color: rgba(0, 136, 255, 0.75);
@@ -693,12 +668,6 @@
   white-space: nowrap;
   cursor: pointer;
 }
-
-.quickprefs__chip:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  color: #fff;
-}
-
 .quickprefs__chip.is-on {
   background: linear-gradient(135deg, #0088ff, #0055ff);
   border-color: rgba(0, 136, 255, 0.75);
@@ -728,12 +697,6 @@
   transition: all 0.2s ease;
   cursor: pointer;
 }
-
-.quickprefs__more:hover {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.05);
-}
-
 .quickprefs__more:focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.3);
   outline-offset: 2px;
@@ -760,12 +723,6 @@
     border-color 0.2s ease,
     background 0.2s ease;
 }
-
-.game-bar__filter-btn:hover {
-  color: #dfe6ef;
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
 /* Saved filters are invisible narrowing - a player who set "Bomb Pot only"
    last week and comes back to a short list must be able to see WHY. Gold
    fill plus a dot, matching how the sort control signals a non-default. */
@@ -872,9 +829,6 @@
   text-decoration: none;
   cursor: pointer;
 }
-.lobby-createbtn:hover {
-  background: rgba(65, 105, 225, 0.2);
-}
 .club-home__games {
   animation: gamesGridFade 0.5s ease-out;
 }
@@ -911,11 +865,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-
-.table-card:hover {
-  border-color: #1877f2;
-}
-
 .table-card__header {
   display: flex;
   justify-content: space-between;
@@ -999,11 +948,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-
-.tournament-card:hover {
-  border-color: #3b82f6;
-}
-
 .tournament-card.live {
   border-color: rgba(239, 68, 68, 0.4);
   box-shadow:
@@ -1141,11 +1085,6 @@
     filter 0.16s ease,
     transform 0.16s ease;
 }
-
-.empty-action:hover {
-  filter: brightness(1.08);
-}
-
 .empty-action:focus-visible {
   outline: 2px solid rgba(24, 119, 242, 0.85);
   outline-offset: 2px;
@@ -1158,15 +1097,7 @@
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: #ffce5c;
 }
-
-.empty-action--ghost:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .empty-action:hover {
-    transform: none;
-  }
   /* This block covered ONE hover transform. The animations a
      motion-sensitive player actually meets on this page were all declared
      after it and untouched: the games grid fades and slides on every filter
@@ -1355,10 +1286,6 @@
 .lobby-top__notice--editable:focus-visible {
   outline: 2px solid rgba(0, 200, 255, 0.6);
   outline-offset: 2px;
-}
-
-.lobby-top__notice--editable:hover {
-  background: rgba(0, 0, 0, 0.5);
 }
 .lobby-top__notice-editor {
   display: flex;
@@ -2136,8 +2063,6 @@
   background: transparent;
   box-shadow: none;
 }
-
-.lobby-bbj:hover,
 .lobby-bbj:active {
   border: 0;
   background: transparent;

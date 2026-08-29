@@ -70,7 +70,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/AdminDashboardPage.tsx', 7],
   ['src/components/modals/FindPlayerModal.tsx', 7],
   ['src/services/ClubsService.ts', 5],
-  ['src/services/PromotionService.ts', 4],
+  ['src/services/PromotionService.ts', 2],
   ['src/services/CreditService.ts', 5],
   ['src/pages/ClubDetailPage.tsx', 5],
   ['src/services/FriendSuggestionService.ts', 4],

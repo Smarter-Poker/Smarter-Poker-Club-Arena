@@ -386,17 +386,38 @@ class PromotionServiceClass {
 
   async applyDepositBonus(userId: string, depositAmount: number): Promise<number> {
     // Find applicable deposit bonus promotion
-    const { data: promotions } = await supabase
+    /**
+     * `is_active` DOES NOT EXIST ON THIS TABLE (2026-08-29).
+     *
+     * `promotions` carries `status text CHECK (status IN ('scheduled','active',
+     * 'paused','completed','cancelled'))`. Filtering on a boolean `is_active`
+     * makes PostgREST return 42703 -- the whole query fails -- and because the
+     * error was not destructured, the failure was indistinguishable from "no
+     * such promotion" and this function returned 0 every single time.
+     *
+     * `getPromotions` in this same file filters on `status` correctly, and the
+     * mapper thirty lines below even says so: "promotions has `status`
+     * (open/active/...), not a boolean is_active." Two paths in one file
+     * disagreeing, with only one of them reachable.
+     *
+     * The error is now checked, because a deposit bonus that cannot be read is
+     * not a deposit bonus that does not exist.
+     */
+    const { data: promotions, error: promoErr } = await supabase
       .from('promotions')
       .select(
         'id, club_id, title:name, description, type, image_url:banner_url, start_date, end_date, prize_pool, status, requirements, max_claims, min_deposit, bonus_percent, wager_requirement, created_at'
       )
       .eq('type', 'deposit_match')
-      .eq('is_active', true)
+      .eq('status', 'active')
       .lte('start_date', new Date().toISOString())
       .gte('end_date', new Date().toISOString())
       .limit(1);
 
+    if (promoErr) {
+      reportError(promoErr, 'PromotionService.deposit_bonus_lookup_failed');
+      return 0;
+    }
     if (!promotions?.length) return 0;
 
     const promo = this.mapPromotion(promotions[0]);
@@ -456,15 +477,22 @@ class PromotionServiceClass {
     if (!referrer) return;
 
     // Check for refer-a-friend promotion
-    const { data: promotions } = await supabase
+    // Same defect as applyDepositBonus above: `is_active` is not a column on
+    // `promotions`, so this query always failed and the discarded error made
+    // it look like no referral promotion was configured.
+    const { data: promotions, error: promoErr } = await supabase
       .from('promotions')
       .select(
         'id, club_id, title:name, description, type, image_url:banner_url, start_date, end_date, prize_pool, status, requirements, max_claims, min_deposit, bonus_percent, wager_requirement, created_at'
       )
       .eq('type', 'refer_friend')
-      .eq('is_active', true)
+      .eq('status', 'active')
       .limit(1);
 
+    if (promoErr) {
+      reportError(promoErr, 'PromotionService.referral_promo_lookup_failed');
+      return;
+    }
     if (!promotions?.length) return;
 
     const promo = this.mapPromotion(promotions[0]);

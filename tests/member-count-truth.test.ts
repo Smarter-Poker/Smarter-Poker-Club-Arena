@@ -63,7 +63,9 @@ describe('ClubHomePage asks the database the right question', () => {
 
   it('takes the UNION total from the batch RPC, not from a filtered scan', () => {
     expect(HOME).not.toMatch(DIRECT_UNION_COUNT);
-    expect(HOME).toMatch(/rpc\('fn_batch_club_member_counts'/);
+    // \s* : the call gained an `error:` binding on 2026-08-29 (round 9)
+    // and Prettier wrapped it; the pin is about WHICH RPC, not line shape.
+    expect(HOME).toMatch(/rpc\(\s*'fn_batch_club_member_counts'/);
   });
 
   it('still sums the union without de-duplicating, as specified', () => {

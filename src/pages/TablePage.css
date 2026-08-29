@@ -4051,6 +4051,63 @@ button.post-bb-overlay-button {
   line-height: 1.45;
   color: rgba(255, 255, 255, 0.45);
 }
+/* ── Multiplier odds ladder on the Spin buy-in sheet (2026-08-29) ──────────
+   Collapsed behind a toggle so the 375px sheet keeps Buy In above the fold;
+   the open table caps its own height and scrolls inside itself, never the
+   sheet. */
+.seat-buyin-confirm__odds {
+  margin-top: 12px;
+}
+.seat-buyin-confirm__odds-toggle {
+  width: 100%;
+  min-height: 34px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.65);
+}
+.seat-buyin-confirm__odds-toggle:active {
+  transform: scale(0.98);
+}
+.seat-buyin-confirm__odds-table {
+  margin-top: 8px;
+  max-height: 168px;
+  overflow-y: auto;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+}
+.seat-buyin-confirm__odds-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 1fr 1.2fr;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 10px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.72);
+  text-align: left;
+}
+.seat-buyin-confirm__odds-row:nth-child(even) {
+  background: rgba(255, 255, 255, 0.03);
+}
+.seat-buyin-confirm__odds-row--head {
+  position: sticky;
+  top: 0;
+  background: #16181d;
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+}
+.seat-buyin-confirm__odds-row > span:first-child {
+  font-weight: 700;
+  color: #ffd479;
+}
+
 .seat-buyin-confirm__actions {
   margin-top: 20px;
   display: flex;

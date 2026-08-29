@@ -250,6 +250,25 @@ export async function logHandHistory(params: {
     enqueueHandHistory(row);
   }
 
+  // V28 AUDIT FIX (2026-08-29): the opponent-model observation used to sit
+  // INSIDE the `if (handId ...)` block below, coupling an in-memory read to a
+  // database write it does not need. During any DB incident (596 supabase
+  // timeouts in one hour on the day this was found), every hand that fell to
+  // the background queue silently skipped observeHandComplete — the
+  // fold-to-c-bet, fold-to-3-bet and big-bet tells went dark exactly when
+  // nothing else was watching either. The observation is memory-only and
+  // idempotent (handFlags dedupe); it runs whether or not the row landed.
+  try {
+    HorseMind.observeHandComplete(
+      `${params.tableId}:${params.handNumber}`,
+      params.actions,
+      params.bigBlind,
+      params.showdownReveal ?? null
+    );
+  } catch {
+    /* observation must never endanger settlement */
+  }
+
   // STATS FACT LAYER 2026-08-21. Durable per-human-per-hand row for the stats
   // page: exact net, own hole cards on every hand (not just showdowns),
   // all-in EV, and head-to-head chip flow. Deliberately NOT awaited — this is
@@ -276,20 +295,7 @@ export async function logHandHistory(params: {
       // The rule and its evidence must cover the same seats. See writeHandFacts.
       nitGame: params.nitGame,
     });
-    // V16 DEEP READS 2026-08-26: the completed hand feeds the fold-to-c-bet,
-    // fold-to-3-bet and big-bet sizing-tell counters — reads the per-decision
-    // stream can never compute because it never sees the whole hand or the
-    // showdown. Best-effort by contract; never throws into settlement.
-    try {
-      HorseMind.observeHandComplete(
-        `${params.tableId}:${params.handNumber}`,
-        params.actions,
-        params.bigBlind,
-        params.showdownReveal ?? null
-      );
-    } catch {
-      /* observation must never endanger settlement */
-    }
+    // (V16 deep-read observation moved ABOVE the handId gate — V28 audit.)
 
     // HORSE HAND REVIEW 2026-08-26 (Dan): every horse that won or lost 20bb+
     // in this hand gets a review row with leak tags — same exact in-memory

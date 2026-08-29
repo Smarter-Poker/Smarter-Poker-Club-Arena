@@ -1567,7 +1567,20 @@ export function holdemPreflopScore(c1: Card, c2: Card, shortDeck: boolean): numb
       score = suited ? 0.82 : 0.74; // AJ
     else if (lo === 10)
       score = suited ? 0.76 : 0.66; // AT
-    else score = suited ? 0.52 + (lo - 2) * 0.008 : 0.34 + (lo - 2) * 0.01; // Axs / Axo
+    else if (suited)
+      // V28 AUDIT FIX: wheel-ace suits (A2s-A5s) were the lowest-scored
+      // suited aces (0.520-0.544), which put every one of them BELOW the
+      // 0.55 3-bet-bluff floor in HorsePreflop — the canonical ace-blocker
+      // bluffs were unplayable as bluffs, while KTo/QJo (0.56-0.58) bluffed
+      // instead. A5s>A4s>A3s>A2s for the straight, and all four sit above
+      // A6s (the true bottom of the suited-ace ladder, no wheel, no
+      // broadway). The ladder now says so.
+      score =
+        lo <= 5
+          ? 0.556 + (lo - 2) * 0.006 // A2s 0.556 .. A5s 0.574
+          : 0.535 + (lo - 6) * 0.01;
+    // A6s 0.535 .. A9s 0.565
+    else score = 0.34 + (lo - 2) * 0.01; // Axo
   } else if (hi === 13) {
     // King-high
     if (lo === 12)
@@ -1587,8 +1600,15 @@ export function holdemPreflopScore(c1: Card, c2: Card, shortDeck: boolean): numb
     if (lo === 10)
       score = suited ? 0.64 : 0.5; // JT
     else if (lo === 9)
-      score = suited ? 0.55 : 0.38; // J9
-    else score = suited ? 0.3 + (lo - 2) * 0.01 : 0.12 + (lo - 2) * 0.01;
+      // V28 AUDIT FIX: J9 was 0.55s/0.38o — scored ABOVE K9s (0.45) and
+      // Q9s (0.41), both of which dominate it. Connectivity is worth
+      // something; domination is worth more.
+      score = suited ? 0.44 : 0.27; // J9
+    else
+      // V28: Jx low was 0.30+(lo-2)*0.01, which put J8s (0.36) BELOW T8s
+      // (0.40) — a strictly dominated ordering. Lifted so Jx >= the same-gap
+      // Tx hand.
+      score = suited ? 0.33 + (lo - 2) * 0.012 : 0.13 + (lo - 2) * 0.011;
   } else {
     // Connectors / gappers / rags below jack-high
     const connected = gap === 1;
@@ -1599,7 +1619,14 @@ export function holdemPreflopScore(c1: Card, c2: Card, shortDeck: boolean): numb
     } else if (oneGap && lo >= 4) {
       score = suited ? 0.34 + (hi - 6) * 0.015 : 0.15 + (hi - 6) * 0.012;
     } else {
-      score = suited ? 0.14 + hi * 0.012 : 0.02 + hi * 0.01;
+      // V28 AUDIT FIX: this bucket scored on high card ONLY, so 72s (0.224)
+      // outranked 43s (0.188) and 72o outranked four hands that beat it.
+      // Wide-gap rags now pay for their gap: 43s keeps its connectivity
+      // credit above, and 72 sinks to the bottom where it belongs.
+      const gapDrag = Math.max(0, gap - 2) * 0.014;
+      score = suited
+        ? Math.max(0.1, 0.14 + hi * 0.012 - gapDrag)
+        : Math.max(0.02, 0.02 + hi * 0.01 - gapDrag);
     }
   }
 
@@ -1610,6 +1637,11 @@ export function holdemPreflopScore(c1: Card, c2: Card, shortDeck: boolean): numb
     if (!pair && gap <= 1) score += 0.03;
     if (pair && hi <= 9) score -= 0.04;
     if (hi === 14 && lo === 13) score += 0.02;
+    // V28 AUDIT FIX: the A-6-7-8-9 wheel was not modelled at all. In short
+    // deck the ace plays low in that straight, so A6-A9 are connectors —
+    // the code computed gap = 14-lo and gave them nothing. A6s was scored
+    // below A9s exactly as in the full deck, which is the wrong game.
+    if (!pair && hi === 14 && lo >= 6 && lo <= 9) score += 0.035;
   }
 
   return clamp01(score);

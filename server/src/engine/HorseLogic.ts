@@ -264,8 +264,15 @@ export function resolveHorseStyle(
     const obj = profile as Record<string, unknown>;
     const cand = obj.style ?? obj.type ?? obj.personality ?? obj.profile;
     if (typeof cand === 'string') styleName = cand.toLowerCase();
+    // V28 AUDIT FIX: clamp at the READ boundary, not only in the self-tuner.
+    // The tuner clamps its writes to [0.85, 1.18], but any other writer of
+    // horse_profile — a seed script, an admin edit, a manual SQL fix — could
+    // put 0 or 5 here, and the live path multiplied straight through:
+    // tightness 0 plays every hand, bluffFreq 5 saturates every bluff branch
+    // past probability 1. The clamp range is wider than the tuner's so a
+    // deliberate manual setting still expresses, but a typo cannot lobotomize.
     const num = (v: unknown): number | undefined =>
-      typeof v === 'number' && isFinite(v) ? v : undefined;
+      typeof v === 'number' && isFinite(v) ? Math.max(0.6, Math.min(1.5, v)) : undefined;
     mods = {
       aggression: num(obj.aggression),
       tightness: num(obj.tightness),
@@ -341,11 +348,26 @@ function classifyPosition(
   if (n === 2) return idx === 0 ? 'sb' : 'bb'; // heads-up: dealer is SB
   if (idx === 0) return 'sb';
   if (idx === 1) return 'bb';
-  // Remaining players: first third early, last two late, rest middle
+  /**
+   * V28 AUDIT FIX (2026-08-29): 'middle' was UNREACHABLE at 6-max and below.
+   * The old bucketing was early = first ceil(nonBlind/3), late = last two —
+   * at 6-max (nonBlind 4) that made early = {0,1} and late = {2,3}, leaving
+   * middle the empty set. The hijack was classified 'early', so its opens
+   * were 3-bet on the top-14% bar instead of top-20%, the V20/V25 middle
+   * reshove layers were dead code at every 6-max table on the platform, and
+   * the V27 charts could never select 'MP'. Thirteen unit tests injected
+   * 'middle' directly and stayed green while the bucket was unreachable live.
+   *
+   * New bucketing: last two non-blind seats are late (CO+BTN), the first
+   * HALF of what remains is early, the rest middle. 6-max: UTG early, HJ
+   * middle, CO+BTN late. 9-max: 3 early, 2 middle, 2 late. 5-max and below
+   * have no middle seat in real poker and correctly produce none.
+   */
   const nonBlind = n - 2;
   const pos = idx - 2; // 0-based among non-blind seats
   if (pos >= nonBlind - 2) return 'late';
-  if (pos < Math.ceil(nonBlind / 3)) return 'early';
+  const earlyCount = Math.max(1, Math.ceil((nonBlind - 2) / 2));
+  if (pos < earlyCount) return 'early';
   return 'middle';
 }
 
@@ -1140,32 +1162,67 @@ export class HorseLogic {
     let callers = 0;
     let lastRaiserSeat = -1;
     for (const a of history) {
+      /**
+       * ═══ V28 AUDIT FIX (2026-08-29): AN ALL-IN IS NEVER INVISIBLE ═══
+       *
+       * The old test was `a.action === 'all_in' && a.isFullRaise`, which made
+       * a NON-full-raise all-in count as NEITHER a raise NOR a caller. It
+       * still moves currentBet, so downstream `unopened` (raises===0 &&
+       * currentBet<=1.05bb) was false too — an unhandled state that fell
+       * through HorsePreflop's ladder into the "facing a 3-bet or bigger"
+       * block. A 1.5bb open-shove was answered with top-7%-raise/top-25%-call
+       * thresholds: the fleet folded KJ/A9/22 getting better than 5:1. This
+       * fired on essentially every tournament short-stack under-shove.
+       *
+       * HandController's flag is the discriminator (HandController.ts:836-848):
+       *   isFullRaise === true       the all-in is a full raise
+       *   isFullRaise === false      it RAISED currentBet but under the min
+       *   isFullRaise === undefined  it did NOT exceed currentBet: a call-off
+       *
+       * For ROUTING (is the pot opened, how many raises), anything that moved
+       * the bet is a raise; a call-off is a caller. The full-raise distinction
+       * matters for re-opening the betting, which is the engine's job, not
+       * range routing's.
+       */
       const isAggr =
-        a.action === 'raise' || a.action === 'bet' || (a.action === 'all_in' && a.isFullRaise);
+        a.action === 'raise' ||
+        a.action === 'bet' ||
+        (a.action === 'all_in' && a.isFullRaise !== undefined);
       if (isAggr) {
         raises++;
         callers = 0; // callers-of-THE-raise reset when a new raise lands
         lastRaiserSeat = a.seat;
-      } else if (a.action === 'call') {
+      } else if (a.action === 'call' || a.action === 'all_in') {
+        // an all-in call-off (isFullRaise undefined) is a caller of the price
         if (raises === 0) limpers++;
         else callers++;
       }
     }
-    if (history.length === 0 && gs.currentBet > bb * 1.05) {
+    // ═══ V18 STRADDLE FIX (widened by the V28 audit, 2026-08-29) ═══
+    // A UTG straddle posts 2xBB WITHOUT an ActionRecord, so the history-empty
+    // fallback below used to read every straddled pot as an open raise and
+    // the fleet folded to dead money.
+    //
+    // The original gate ALSO required history.length === 0 — but the engine
+    // records EVERY action including folds, so only the FIRST actor ever saw
+    // the pot as unopened. After one fold or limp, `raises` was 0 with
+    // currentBet at 2bb, `unopened` came out false, and every later seat fell
+    // through to the "facing a 3-bet" thresholds: 5 of 6 seats at a straddle
+    // table folded ~75% of hands to dead money — the exact bug V18 was
+    // written to fix, still live for everyone but the first actor. A
+    // straddled pot stays unopened until someone actually RAISES, however
+    // many folds or limps came first (any real raise over a 2bb straddle is
+    // at least 4bb, so the <= 2.2bb shape test still separates the cases).
+    const straddleUnopened =
+      (opts.v18Straddle ?? true) !== false &&
+      gs.straddleActive === true &&
+      raises === 0 &&
+      gs.currentBet > bb * 1.05 &&
+      gs.currentBet <= bb * 2.2;
+    if (straddleUnopened) {
+      if (telemetryOn(opts)) noteFire('v18_straddle');
+    } else if (history.length === 0 && gs.currentBet > bb * 1.05) {
       raises = gs.currentBet > bb * 4.5 ? 2 : 1;
-      // ═══ V18 STRADDLE FIX ═══ a UTG straddle posts 2xBB WITHOUT an
-      // ActionRecord, so this fallback read every straddled pot as an open
-      // raise and the fleet folded to dead money. When straddles are
-      // possible and the shape matches (no history, current bet at most the
-      // straddle), the pot is UNOPENED - the money in front is blind money.
-      if (
-        (opts.v18Straddle ?? true) !== false &&
-        gs.straddleActive === true &&
-        gs.currentBet <= bb * 2.2
-      ) {
-        raises = 0;
-        if (telemetryOn(opts)) noteFire('v18_straddle');
-      }
     }
 
     const position = classifyPosition(player.seat, gs.dealerSeat, gs.players, opts.v13 !== false);
@@ -1218,16 +1275,33 @@ export class HorseLogic {
                   : 'CO'
                 : null;
 
+      // V28 audit fixes to both cases:
+      // - depth INCLUDES the posted blind. player.stack is chips BEHIND, so a
+      //   10bb BB read as 9bb and every chart snapped one level shallow. The
+      //   all-in a chart prices is blind + stack.
+      // - CASE A additionally requires that nobody is already all-in. The
+      //   open-jam chart prices FOLD EQUITY against players yet to act; a
+      //   player already all-in has none to give, so that spot is a call-off,
+      //   never an "open".
+      const chartDepthBB = (player.stack + player.bet) / bb;
+      const someoneAllInAhead = history.some((a) => a.action === 'all_in');
+
       // CASE A — folded to hero, push/fold zone: the chart decides the open.
       if (
         raises === 0 &&
         limpers === 0 &&
         callers === 0 &&
+        !someoneAllInAhead &&
         chartPos !== null &&
         toCall <= bb &&
-        stackBB <= 15
+        chartDepthBB <= 15
       ) {
-        const advice = gtoOpenJam({ isTournament: tourney, position: chartPos, stackBB, hand });
+        const advice = gtoOpenJam({
+          isTournament: tourney,
+          position: chartPos,
+          stackBB: chartDepthBB,
+          hand,
+        });
         if (advice) {
           if (telemetryOn(opts)) noteFire('v27_gto_open_jam');
           // The chart gives the mixed strategy; the horse rolls it. A 77%
@@ -1247,7 +1321,9 @@ export class HorseLogic {
         const raiserAllIn = history.some((a) => a.seat === lastRaiserSeat && a.action === 'all_in');
         if (raiserAllIn && toCall > 0) {
           // currentBet is the SB's total commitment — an all-in, so his stack.
-          const effectiveBB = Math.min(stackBB, gs.currentBet / bb);
+          // Hero's side includes the posted big blind (V28): the decision is
+          // about hero's whole 10bb, not the 9bb behind the blind.
+          const effectiveBB = Math.min(chartDepthBB, gs.currentBet / bb);
           const advice = gtoBbVsSbJam({ isTournament: tourney, effectiveBB, hand });
           if (advice) {
             if (telemetryOn(opts)) noteFire('v27_gto_bb_defend');
@@ -1404,11 +1480,9 @@ export class HorseLogic {
       raiserFoldTo3Bet: raiserF3b,
       // V18 STRADDLE: the shape the fallback above detected - hand the
       // truth to the preflop engine so its unopened branch owns the pot.
-      straddled:
-        (opts.v18Straddle ?? true) !== false &&
-        gs.straddleActive === true &&
-        gs.currentBet <= bb * 2.2 &&
-        history.length === 0,
+      // V28: the single source of truth computed above — unopened for EVERY
+      // seat until someone raises, not only for the first actor.
+      straddled: straddleUnopened,
       // V18 SQUEEZE: hero opened, at least one caller came along, and then
       // a 3-bet arrived - the classic squeeze shape. Squeeze ranges are
       // polarized toward air, so the opener defends wider.

@@ -267,11 +267,20 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   // Load user data and settings
   useEffect(() => {
-    const sounds = localStorage.getItem(STORAGE_KEYS.SOUNDS);
-    const vibrations = localStorage.getItem(STORAGE_KEYS.VIBRATIONS);
+    /* ── THE GATES, NOT ONE OF THEIR TWO KEYS ────────────────────────────
+       This read `STORAGE_KEYS.SOUNDS` ('club_arena_sounds') and
+       `STORAGE_KEYS.VIBRATIONS` ('vibrationsEnabled') RAW and unconditionally
+       — so it overwrote the gate-derived seed above one render later, and
+       undid the fix that seed exists to be. In the exact case that fix names
+       (`ca_sound_enabled='false'`, `club_arena_sounds='true'`) the switch went
+       back to reading ON over a silent app.
+
+       Both gates fail closed on EITHER of their two keys, so re-reading them
+       here is the only answer that agrees with the seed AND with the engine.
+       `useRealName` keeps its raw read: it has one key and no gate. */
+    setSoundsEnabled(isSoundAllowed());
+    setVibrationsEnabled(isVibrationPreferred());
     const useReal = localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME);
-    if (sounds !== null) setSoundsEnabled(sounds === 'true');
-    if (vibrations !== null) setVibrationsEnabled(vibrations === 'true');
     if (useReal !== null) setUseRealName(useReal === 'true');
 
     if (user?.id) {

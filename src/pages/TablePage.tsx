@@ -3405,6 +3405,40 @@ export default function TablePage({
     });
   }, [userId]);
 
+  /**
+   * SIT BACK IN — the one implementation, guarded like its outbound twin.
+   *
+   * There were two: this page's footer button and a second copy inside
+   * `TableModalsLayer`'s `onReturn`, which issued its own `setSitOut(false)`
+   * and never touched the in-flight ref. So the race the ref exists to close
+   * was still reachable by alternating the MODAL's I'm Back with the table
+   * menu's Sit Out — and the guard's own comment claimed to cover four entry
+   * points while covering two.
+   *
+   * The modal now reports the intent and this owns the request, which is also
+   * why the local cleanup and the failure toast can no longer drift apart
+   * between the two buttons.
+   */
+  const handleSitBackIn = useCallback(async () => {
+    if (!tableId) {
+      clearLocalSitOutState();
+      return;
+    }
+    if (sitOutRequestInFlightRef.current) return;
+    sitOutRequestInFlightRef.current = true;
+    try {
+      const res = await setSitOut(tableId, false);
+      if (res?.success) {
+        clearLocalSitOutState();
+        toast?.success?.("Welcome Back, You'll Be Dealt Into The Next Hand");
+      } else {
+        toast?.error?.(res?.error || 'Could Not Sit Back In. Please Try Again.');
+      }
+    } finally {
+      sitOutRequestInFlightRef.current = false;
+    }
+  }, [tableId, toast, clearLocalSitOutState]);
+
   const handleSitOut = useCallback(async () => {
     if (!tableId) return;
     if (sitOutRequestInFlightRef.current) return;
@@ -3451,7 +3485,11 @@ export default function TablePage({
     } finally {
       sitOutRequestInFlightRef.current = false;
     }
-  }, [tableId, toast, handsPlayedRef, tableState.isTournament]);
+    /* `handsPlayedRef` and `tableState.isTournament` left this list with the
+       local one-hand gate that read them — the gate is the server's alone now
+       (see the note above). A dependency nothing in the body reads is a claim
+       about the code that is not true. */
+  }, [tableId, toast]);
 
   // ─── Table Menu Actions ────────────────────────────────────────────────
   useMasterBusSubscription('TABLE_MENU_ACTION', (event) => {
@@ -4546,7 +4584,11 @@ export default function TablePage({
       isTournament: tableState.isTournament,
     });
     return remaining === null ? undefined : Date.now() + remaining;
-  }, [heroTabSittingOut, sitOutSince, tableState.isTournament, sitOutTick]);
+    /* NO `sitOutTick` DEPENDENCY. The value is `sitOutSince + SITOUT_MAX_MS` —
+       an absolute deadline, algebraically constant for a given sit-out — so a
+       per-second recompute would produce the identical number. The tick drives
+       the FOOTER's rendered label, not this. */
+  }, [heroTabSittingOut, sitOutSince, tableState.isTournament]);
 
   // Win/loss edge for the tab showdown flash. engineWinners only carries a
   // value while the engine is settling a hand, so this collapses back to ''
@@ -4617,6 +4659,14 @@ export default function TablePage({
     heroTabLastAction,
     heroTabFolded,
     heroTabResult,
+    /* BOTH HALVES OF THE SIT-OUT REPORT. `heroTabSittingOut` alone covers the
+       true/false EDGES, which is the common path — but not the case this
+       report exists for: a quiet table where the deadline arrives (or the poll
+       corrects it) AFTER the flag has already flipped and nothing else here
+       changes. The multi-table SEAT countdown and the dock would then never
+       learn the deadline at all, and a stale one could persist. */
+    heroTabSitOutDeadlineMs,
+    tableState.isTournament,
     onTableInfoUpdate,
   ]);
 
@@ -19297,20 +19347,7 @@ export default function TablePage({
             <button
               type="button"
               className="spectator-footer-bar__cta"
-              onClick={() => {
-                if (!tableId) return;
-                if (sitOutRequestInFlightRef.current) return;
-                sitOutRequestInFlightRef.current = true;
-                void setSitOut(tableId, false).then((res) => {
-                  sitOutRequestInFlightRef.current = false;
-                  if (res?.success) {
-                    clearLocalSitOutState();
-                    toast?.success?.("Welcome Back, You'll Be Dealt Into The Next Hand");
-                  } else {
-                    toast?.error?.(res?.error || 'Could not sit you back in');
-                  }
-                });
-              }}
+              onClick={() => void handleSitBackIn()}
             >
               I'm Back
             </button>
@@ -20198,7 +20235,7 @@ export default function TablePage({
         /* The SAME cleanup the footer's I'm Back does. This used to clear two
            of the six things and leave the footer insisting, with a live clock,
            that the player was still sitting out. */
-        onReturnFromSitOut={clearLocalSitOutState}
+        onReturnFromSitOut={() => void handleSitBackIn()}
         // Wait List
         showWaitList={showWaitList}
         waitListPlayers={waitListPlayers}

@@ -201,3 +201,64 @@ enough ahead still yields nothing.
 - **A human evicted at the five-minute mark on a live cash table has still not
   been observed.** Every clock the player sees is now the engine's, on every
   surface; the observation is the last step and it needs a human on a cash seat.
+
+---
+
+## Round 4b: ten findings from auditing round 4 before it merged
+
+Every round today has shipped a defect the next round found. This one was
+audited before merging instead, and the audit earned its keep.
+
+**The one that mattered.** The HamburgerMenu gate-seeding fix in §C was **undone
+five lines later**. The lazy `useState` seeds from `isSoundAllowed()`; the mount
+effect below it read `STORAGE_KEYS.SOUNDS` — one of the gate's two keys — raw
+and unconditionally, overwriting the correct seed on mount. So in the exact case
+the new comment describes (`ca_sound_enabled='false'`,
+`club_arena_sounds='true'`) the switch survived one render and went back to
+reading ON over a silent app. A fix undone by the code immediately after it is
+indistinguishable from no fix. The effect re-reads both gates now.
+
+**The dock would have pinned itself urgent forever.** `isSitOutUrgent` is
+`ms <= 60_000` with no lower bound, so once a deadline passed the value only got
+more negative and stayed "urgent" — favicon badge and tick-tock included —
+contradicting the note directly above it claiming the design avoided exactly
+that. The fix is _not_ to bound the helper: it is the **styling** predicate, and
+a badge must stay red at 0:00 when the seat is at its most at-risk. The `> 0`
+belongs at the dock, which renders a countdown and cannot count towards a
+deadline that has passed. It is there, with the reason.
+
+**The in-flight guard covered two of the four entry points its comment claimed.**
+`TableModalsLayer` issued its own `setSitOut(tableId, false)` — a second
+implementation of "sit back in", unguarded — so the race was still reachable by
+alternating the modal's I'm Back with the table menu's Sit Out, and the two
+buttons' cleanup and failure toasts were free to drift apart. There is one
+`handleSitBackIn` now; the modal reports the intent and no longer imports
+`GameServerAPI`.
+
+**The tab report omitted two of its own inputs.** The effect sent
+`sitOutDeadlineMs` and `isTournament` but listed neither as a dependency.
+`heroTabSittingOut` covers the true/false edges — but not the case the report
+exists for: a quiet table where the deadline arrives, or the poll corrects it,
+_after_ the flag has flipped. The multi-table countdown would never have learned
+it, and a stale deadline could persist.
+
+Also fixed: an unused `sitOutBadgeLabel` import; a dead `sitOutTick` dependency
+on a memo whose value is algebraically constant; two dependencies left behind by
+the one-hand gate deleted in an earlier round; a comment claiming
+`.sitout-overlay`'s dead `onClick` was `onClose`'s "only route in" when
+`handleReturn` and `handleLeave` both call it, and that the reset fired from
+`onClose` when it fired from an `isOpen` effect; a "the effect below" that was
+above; and `setTableSetting` not calling `attachBusOnce()`, which left two doors
+into one store behaving differently.
+
+**And the test guard caught me.** My new assertion used
+`deps.slice(0, 400)` — the magic-number source window that
+`tests/unit/noFixedSizeSourceWindows.test.ts` exists to forbid. It went red on
+the first full run. Re-bounded on the dependency array's own closing bracket.
+
+Verified clean by the same audit: the `createGain` fix and the entire signal
+graph (all 53 nodes route through `masterGain`; `ThrowableSoundService`,
+`PremiumSFX` and `ThrowableVoice` each apply master exactly once on their own
+graphs), the `setTableSetting` hoist with no import cycle, every
+`SETTINGS_CHANGED` subscriber checked for loops, `handleSitOutAll`'s index
+alignment, and all TablePage declaration ordering.

@@ -786,6 +786,13 @@ export function setTableSetting<K extends keyof TableUserSettings>(
   key: K,
   value: TableUserSettings[K]
 ): void {
+  /* The hook subscribes on render; this entry point has to do it itself, or a
+     caller that reached the store WITHOUT mounting `useTableSettings` would
+     commit and broadcast while never listening for anybody else's changes.
+     Idempotent by design — that is what the `busAttached` latch is for. Today
+     TablePage mounts both hooks so it cannot happen; leaving the two doors into
+     one store with different behaviour is how it would start. */
+  attachBusOnce();
   commit((prev) => ({
     ...prev,
     [key]: value,

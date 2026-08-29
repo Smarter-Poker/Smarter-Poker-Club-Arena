@@ -24,7 +24,7 @@ import React, {
 } from 'react';
 import { matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
-import { isSitOutUrgent, sitOutBadgeLabel } from '../lib/sitOutDeadline';
+import { isSitOutUrgent } from '../lib/sitOutDeadline';
 import LiveTablesBar from '../components/table/LiveTablesBar';
 import {
   InTabLobbyContext,
@@ -370,7 +370,17 @@ const dockStateFor = (
     };
   }
   const urgentSeat = live
-    .filter((t) => isSitOutUrgent(t.sitOutDeadlineMs ? t.sitOutDeadlineMs - nowMs : null))
+    .filter((t) => {
+      /* `> 0` as well as urgent. `isSitOutUrgent` is deliberately unbounded
+         below — it is the styling predicate, and a badge must stay red AT 0:00
+         when the seat is at its most at-risk. The dock is the opposite case: it
+         renders a COUNTDOWN, and once the deadline has passed the value only
+         gets more negative, so an unbounded test would pin this dock to
+         `urgent` with `0s` forever — favicon badge and tick-tock included —
+         which is exactly what the note above claims the design avoids. */
+      const left = t.sitOutDeadlineMs === undefined ? null : t.sitOutDeadlineMs - nowMs;
+      return left !== null && left > 0 && isSitOutUrgent(left);
+    })
     .sort((a, b) => (a.sitOutDeadlineMs ?? Infinity) - (b.sitOutDeadlineMs ?? Infinity))[0];
   if (urgentSeat) {
     return {

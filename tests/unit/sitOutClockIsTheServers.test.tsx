@@ -27,6 +27,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { sliceEnclosingBlock } from '../helpers/sourceWindow';
+import { isSitOutUrgent } from '../../src/lib/sitOutDeadline';
 
 const readRaw = (p: string) => readFileSync(resolve(__dirname, '../..', p), 'utf8');
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -259,7 +260,10 @@ describe('the multi-table surfaces can see the deadline too', () => {
        badge and a tick-tock for a TURN, and nothing for a seat. Losing a turn
        costs a hand; losing a seat cashes out a stack. */
     expect(MULTI).toMatch(/const urgentSeat = live/);
-    expect(MULTI).toMatch(/isSitOutUrgent\(t\.sitOutDeadlineMs/);
+    /* The exact predicate moved into the filter body a few hours later, to add
+       the `> 0` bound — see "the dock requires a LIVE clock" below. Pinned on
+       the name rather than the call shape so the two cases cannot disagree. */
+    expect(MULTI).toMatch(/isSitOutUrgent\(/);
   });
 
   it('the urgent tab style exists, and is not amber', () => {
@@ -305,5 +309,54 @@ describe('one request at a time, and one wording', () => {
     expect(TABLE_PAGE).toMatch(/spectator-footer-bar__label"\s*\n?\s*role="status"/);
     const regions = (TABLE_PAGE.match(/seat__sitout-badge[\s\S]{0,200}aria-live/g) || []).length;
     expect(regions, 'the seat badges must NOT each be a live region').toBe(0);
+  });
+});
+
+describe('one sit-back-in, and a dock that does not pin itself', () => {
+  const MULTI2 = strip(readRaw('src/pages/MultiTablePage.tsx'));
+  const LAYER = strip(readRaw('src/components/table/TableModalsLayer.tsx'));
+
+  it('the modal reports intent; TablePage owns the request', () => {
+    /* There were TWO implementations of "sit back in" and only one was behind
+       the in-flight guard, so the out -> in -> out race was still reachable by
+       alternating the MODAL's I'm Back with the table menu's Sit Out — while
+       the guard's own comment claimed to cover four entry points. It also let
+       the two buttons' cleanup and failure toasts drift apart, which they had. */
+    expect(LAYER).not.toMatch(/setSitOut\(tableId, false\)/);
+    expect(LAYER).not.toMatch(/from '\.\.\/\.\.\/services\/GameServerAPI'/);
+    expect(TABLE_PAGE).toMatch(/const handleSitBackIn = useCallback/);
+    const fn = sliceEnclosingBlock(TABLE_PAGE, 'const handleSitBackIn = useCallback');
+    expect(fn).toMatch(/sitOutRequestInFlightRef\.current/);
+    expect(fn).toMatch(/finally/);
+  });
+
+  it('the dock requires a LIVE clock, not merely an urgent one', () => {
+    /* `isSitOutUrgent` is deliberately unbounded below — it is the STYLING
+       predicate and a badge must stay red at 0:00, when the seat is at its most
+       at-risk. The dock renders a COUNTDOWN, so an unbounded test pinned it to
+       `urgent` with `0s` forever once the deadline passed, favicon badge and
+       tick-tock included: exactly what its own comment claims to avoid. */
+    expect(MULTI2).toMatch(/left !== null && left > 0 && isSitOutUrgent\(left\)/);
+  });
+
+  it('and the styling predicate still fires at zero', () => {
+    expect(isSitOutUrgent(0)).toBe(true);
+    expect(isSitOutUrgent(-5_000)).toBe(true);
+    expect(isSitOutUrgent(null)).toBe(false);
+  });
+
+  it('the tab report re-fires when the deadline itself changes', () => {
+    /* `heroTabSittingOut` alone covers the true/false EDGES. It does not cover
+       a quiet table where the deadline arrives, or the poll corrects it, AFTER
+       the flag has flipped — the multi-table countdown would never learn it. */
+    /* Bounded by the array's own closing bracket, not by a byte count.
+       `slice(indexOf(x), 400)` is the magic-number window
+       tests/unit/noFixedSizeSourceWindows.test.ts exists to forbid — it caught
+       this on the first run, which is the whole point of it. */
+    const at = TABLE_PAGE.indexOf('heroTabResult,');
+    expect(at, 'the report effect deps have moved').toBeGreaterThan(-1);
+    const deps = TABLE_PAGE.slice(at, TABLE_PAGE.indexOf(']);', at));
+    expect(deps).toMatch(/heroTabSitOutDeadlineMs/);
+    expect(deps).toMatch(/tableState\.isTournament/);
   });
 });

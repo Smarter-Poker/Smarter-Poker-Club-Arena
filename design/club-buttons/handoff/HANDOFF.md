@@ -57,6 +57,17 @@ Blocked / not yet approved:
 - Do not replace existing realtime, wallet, role, registration, seat, or navigation logic.
 - Do not publish game cards before the user approves a rendered mockup.
 
+## Non-Negotiable Visual Approval Gate
+
+Every Club Arena visual change must stop at a green pull request until the user explicitly approves representative rendered images. Before enabling auto-merge or publishing:
+
+1. Render and show both desktop and mobile compositions in the chat.
+2. State clearly that the branch is green but not shipped.
+3. Wait for an explicit user approval of those renders.
+4. Only then enable merge and follow the production publish through verification.
+
+Pushing a branch for CI is allowed, but auto-merge must remain disabled until approval. Passing checks, silence, an earlier approval of a different render, or a request to report when green is not permission to merge or publish.
+
 ## Current release evidence
 
 - Branch commit: `a01d21c3cd8d6f874895d220b838bdfd0dd805fa`

@@ -6,13 +6,14 @@
  * Dan, 2026-08-28: the final table is "broken and distorted around the table
  * where the seat buttons are".
  *
- * `skin_final_table.png` is the only one of the fourteen skins that paints seat
- * furniture into the rail — gold plates with amber jewels. Its geometry is
- * fine: 605x1000 RGBA, identical to the other thirteen, and `.table-art` uses
- * `object-fit: fill`, so a wrong aspect ratio would stretch rather than
- * misalign. The problem is that the painted plates are not where
- * `SEAT_POSITIONS_9MAX` puts the seats, so every seat button lands on a plate
- * edge or on a jewel.
+ * `skin_final_table.png` WAS the only one of the fourteen skins that painted
+ * seat furniture into the rail — gold plates with amber jewels. Its geometry
+ * was fine: 605x1000 RGBA, identical to the other thirteen, and `.table-art`
+ * uses `object-fit: fill`, so a wrong aspect ratio would stretch rather than
+ * misalign. The problem was that the painted plates were not where
+ * `SEAT_POSITIONS_9MAX` puts the seats, so every seat button landed on a
+ * plate edge or on a jewel. The plates were removed on 2026-08-29 with Dan's
+ * approval; this file is what stops the next skin arriving the same way.
  *
  * Nothing caught it, because nothing has ever compared an ASSET against the
  * seat ring. It was authored that way in #1431 and shipped.
@@ -75,7 +76,7 @@ const MAX_MIDPOINT_DEVIATION = 35;
 
 const SKIN_DIR = path.join(process.cwd(), 'src/assets/tables');
 
-/** The known-bad asset. See the it.skip at the foot of this file. */
+/** The asset this file was written for. See the note at the foot. */
 const FINAL_TABLE = 'skin_final_table.png';
 
 /** Mean luminance of a PATCH_RADIUS square centred on a percentage position. */
@@ -143,11 +144,6 @@ describe('table skins', () => {
   });
 
   for (const file of skins) {
-    // The final table is the known offender and is asserted separately below,
-    // as a skipped spec, so this file is green on main while the art is
-    // redrawn. Everything else must hold now.
-    if (file === FINAL_TABLE) continue;
-
     it(`${file} leaves the side rails to the app`, () => {
       const r = reading.get(file)!;
       expect(r.sideRailStep).toBeLessThan(MAX_SIDE_RAIL_STEP);
@@ -156,37 +152,21 @@ describe('table skins', () => {
   }
 
   /**
-   * UNSKIP THIS IN THE COMMIT THAT REDRAWS THE ART.
+   * THE FINAL TABLE WAS THE ONE THIS FILE WAS WRITTEN FOR, and it is fixed.
    *
-   * Bug 7b, reported by Dan on 2026-08-28 and still open: skin_final_table.png
-   * paints gold seat plates and amber jewels into the rail at positions that do
-   * not match SEAT_POSITIONS_9MAX, so seats 3/4 and 7/8 straddle plate edges.
-   * The fix is a redrawn asset — a plain premium rail that keeps the blue neon
-   * and gold trim identity and drops the per-seat furniture — and that needs
-   * Dan's sign-off on the look, so it is not something to improvise into
-   * production.
+   * Bug 7b, reported by Dan on 2026-08-28: gold seat plates and amber jewels
+   * painted into the rail at positions SEAT_POSITIONS_9MAX does not use, so
+   * seats 3/4 and 7/8 straddled plate edges. The spec above ran skipped for
+   * one commit while the art was decided, and Dan approved the cleaned asset
+   * on 2026-08-29 -- so the `.skip` is gone in the same commit that ships it,
+   * and the final table is asserted by the loop above like every other skin.
    *
-   * The spec is written now so the work is documented rather than remembered.
-   * Measured today: sideRailStep 113 (limit 70), midpointDeviation 54.7
-   * (limit 35).
+   *   sideRailStep        113  ->  32.2   (limit 70)
+   *   midpointDeviation  54.7  ->  15.1   (limit 35)
+   *
+   * The plates were removed by scripts/dev/remove-final-table-plates.py, which
+   * rebuilds the rail from its own material at the same distance from the
+   * table's spine. The blue neon is explicitly protected and untouched, and
+   * alpha is bit-identical, so the silhouette is the original.
    */
-  it.skip('skin_final_table.png leaves the side rails to the app — BLOCKED on redrawn art (bug 7b)', () => {
-    const r = reading.get(FINAL_TABLE)!;
-    expect(r.sideRailStep).toBeLessThan(MAX_SIDE_RAIL_STEP);
-    expect(r.midpointDeviation).toBeLessThan(MAX_MIDPOINT_DEVIATION);
-  });
-
-  it('still measures the final table as broken, so the skip is not forgotten', () => {
-    // If someone redraws the asset without unskipping the spec above, THIS is
-    // what tells them: the guard has become vacuous and the .skip should go.
-    const r = reading.get(FINAL_TABLE)!;
-    const stillBroken =
-      r.sideRailStep >= MAX_SIDE_RAIL_STEP || r.midpointDeviation >= MAX_MIDPOINT_DEVIATION;
-    expect(
-      stillBroken,
-      `${FINAL_TABLE} now passes the rail check (step ${r.sideRailStep.toFixed(1)}, ` +
-        `midpoint ${r.midpointDeviation.toFixed(1)}). The art has been fixed — ` +
-        `remove the .skip above and delete this test.`
-    ).toBe(true);
-  });
 });

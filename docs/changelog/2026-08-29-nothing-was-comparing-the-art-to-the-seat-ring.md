@@ -150,3 +150,55 @@ Ice cavern reads **−72**: its outer edge is much darker than the artwork behin
 it. That is a painted shadow, it is art, and it is left alone. "No white
 edging" is not "every edge must be neutral", and a guard that flattened both
 directions would quietly delete somebody's work.
+
+---
+
+## Bug 7b closed: the seat plates are out of the final table
+
+Dan set the rule rather than answering the question I asked, which was the
+better answer:
+
+> "LAYER ONE IS THE BACKGROUND, EVERYTHING FROM THERE SHOULD SIT ON TOP, NEXT
+> WOULD BE THE TABLE, LAID SPECIFICALLY ON TOP OF THE BACKGROUND, THERE ARE NO
+> PLUS BUTTONS, JUST THE AVATARS, AND WHEN THEY BUST SHOULD HAVE AN 'EMPTY'
+> BUTTON OVERLAYED AS LAYER 3."
+
+Seat furniture belongs to layer 3. The table is layer 2 and carries none of it.
+That settles 7b without needing a taste judgement: the plates come out.
+
+**Layer 3 was already correct** and worth recording so nobody "fixes" it. There
+is no plus button on a seat: `SeatSlot` renders the SIT coin on an open seat you
+can take and the EMPTY coin on one you cannot, which is every busted seat in a
+tournament. The `+` is the add-screen button in the tab bar, a different control
+entirely.
+
+**Layer 2 is what changed.** `scripts/dev/remove-final-table-plates.py` rebuilds
+the rail rather than redrawing it. The table is a stadium, so every point on the
+rail is at some distance from a vertical spine between the two cap centres, and
+at a given distance the rail is the same material all the way round — that is
+what a revolve means. The plates are replaced with the median colour of the
+non-plate pixels at the same distance, so the rail's own gradient and sheen come
+back and nothing is invented.
+
+Two things learned by getting them wrong first:
+
+- **The neon is not a plate.** The blue ring is not perfectly concentric with the
+  fitted stadium, so reconstructing it by distance smears it — the first attempt
+  left the bottom of the ring visibly chewed. Blue-dominant pixels are protected
+  outright and come through untouched.
+- **Alpha is never touched.** The silhouette and soft edge are the original's,
+  bit for bit.
+
+|                     | before |    after | limit |
+| ------------------- | -----: | -------: | ----: |
+| `sideRailStep`      |    113 | **32.2** |    70 |
+| `midpointDeviation` |   54.7 | **15.1** |    35 |
+
+So the `.skip` is gone in the same commit that ships the asset, exactly as
+CLAUDE.md §5.8 asks, and the final table is now asserted by the same loop as the
+other thirteen. The companion test that existed only to catch "art fixed,
+guard left vacuous" is deleted with it — it has done its job.
+
+The script is idempotent: run against the cleaned asset it finds 1,065 pixels of
+residue and no plates, so a fresh export from the same source can be cleaned the
+same way.

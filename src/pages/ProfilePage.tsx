@@ -389,7 +389,7 @@ export default function ProfilePage() {
         ]);
 
         // Fetch basic profile and stats
-        const { data: profile } = await retryFetch(
+        const { data: profile, error: profileError } = await retryFetch(
           () =>
             supabase
               .from('profiles')
@@ -401,6 +401,8 @@ export default function ProfilePage() {
               .then((r) => r),
           { maxRetries: 2, isMountedRef: isMountedRef }
         );
+
+        if (profileError) throw profileError;
 
         if (profile && isMounted) {
           setUser({
@@ -530,9 +532,9 @@ export default function ProfilePage() {
             if (authUser && isMounted) {
               supabase
                 .from('profiles')
-              .select(
-                'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak, bio, player_tags'
-              )
+                .select(
+                  'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak, bio, player_tags'
+                )
                 .eq('id', authUser.id)
                 .maybeSingle()
                 .then(({ data: profile }) => {
@@ -798,8 +800,10 @@ export default function ProfilePage() {
           {user.bio && <p className={styles.bio}>{user.bio}</p>}
           {user.player_tags && user.player_tags.length > 0 && (
             <div className={styles.tagsContainer}>
-              {user.player_tags.map(tag => (
-                <span key={tag} className={styles.playerTag}>{tag}</span>
+              {user.player_tags.map((tag) => (
+                <span key={tag} className={styles.playerTag}>
+                  {tag}
+                </span>
               ))}
             </div>
           )}

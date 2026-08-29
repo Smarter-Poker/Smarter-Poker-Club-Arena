@@ -119,26 +119,23 @@ The proportions stay demand-based, so **merit decides who is in a band and
 demand decides how many** — no stake level is left without enough horses to
 fill it. The two constraints are independent and both hold.
 
-### Balanced, not hashed
+### Why the band lives in the database and not in a hash
 
 Same reason lanes are assigned: `horseHash` is a weak multiply-add and a
 low-bit modulo of it clusters on UUIDs — the lane hash aimed at 33/33/34 and
 measured 32.0/39.0/28.9 across the real fleet. Here a skew is worse than
 cosmetic, because a short band is a stake level with too few horses to fill its
-tables, and the band is strict.
+tables, and the band is strict. The merit ranking needs the database anyway:
+`player_stats` is where the winrates are.
 
-`fn_assign_horse_stake_bands()` takes contiguous slices of the id-ordered fleet,
-so the split is exact at any size. `ORDER BY id`, never `random()` — a re-run
-must not let a horse be a micro grinder on Tuesday.
-
-Weights follow live seat demand (micro 83 seats, low 220, mid 36, high 26):
+Band sizes follow live seat demand (micro 83 seats, low 220, mid 36, high 26):
 **22 / 52 / 15 / 11**. A third of the roster is events-only, but each horse may
 hold four tables, so every band clears its seats several times over.
 
-Applied to production. Measured after: 21.9 / 52.1 / 14.9 / 11.1, and
-cash-eligible horses per band 79 / 211 / 57 / 45 against 83 / 220 / 36 / 26
-seats. The `lane` assignment survived the jsonb merge on all 584 horses, which
-the migration asserts rather than assumes.
+Applied to production, and the `lane` assignment survived the jsonb merge on
+all 584 horses — the migration asserts that rather than assuming it, because
+the merge writes into the same column a third of the fleet's behaviour depends
+on.
 
 ## What this does not do
 
@@ -153,6 +150,7 @@ band. The visible mixed-stakes names should be gone within a session cycle.
 The pins include the headline rule (a 10/25 horse refused at 0.50/1), the exact
 `yankee` case (no horse may be allowed at both 0.10/0.20 and 25.00/50.00),
 exactly-one-band-per-table, garbage band values falling back rather than being
-stored, the fallback hash populating all four bands, and three wiring pins that
+stored, an unproven horse starting at `micro` and never reaching `high` by luck
+of its uuid, and three wiring pins that
 fail if the filter is moved after the pick or if the rescue path is ever
 widened past the band.

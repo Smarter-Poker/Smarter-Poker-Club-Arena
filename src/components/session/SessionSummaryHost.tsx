@@ -443,7 +443,20 @@ export function SessionSummaryHost() {
             drops any destination carrying an unresolved {clubId} rather than
             serving a link it knows is broken, so this surface simply gets the
             campaigns whose placement names its own destination. */}
-        <HouseAdCard slot="session_summary" onNavigate={(path) => navigate(path)} />
+        {/* close() BEFORE navigate(), and it is not tidiness. This host is a
+            createPortal overlay that nothing but clearSessionSummary() takes
+            down: the backdrop closes it, but the card stops propagation, and
+            the ad lives inside the card. Navigating without closing routed the
+            page underneath a Session Complete panel still covering it, with
+            the click already logged - so the panel read it as a campaign that
+            worked while the player was looking at a dead end. */}
+        <HouseAdCard
+          slot="session_summary"
+          onNavigate={(path) => {
+            close();
+            navigate(path);
+          }}
+        />
 
         {/* Dan 2026-08-23: "add a share button to this." Uses the platform
             share sheet where there is one (every phone, and desktop Safari),

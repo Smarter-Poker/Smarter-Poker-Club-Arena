@@ -218,11 +218,19 @@ class SoundService {
   private ctx: AudioContext | null = null;
   private enabled: boolean = true;
   private masterVolume: number = 0.7;
-  // SOUND AUDIT 2026-08-27: was 0.5 — but setEffectsVolume's ONLY caller is
-  // the Settings → Sound panel (whose default is 100%). A player who never
-  // opened that panel ran at half the intended effects gain forever, and the
-  // in-table volume slider (master only) topped out at 0.5. Default matches
-  // the panel's default now; restoreStoredConfig() applies any saved value.
+  /* SOUND AUDIT 2026-08-27: was 0.5, which meant a player who never opened the
+     settings panel ran at half the intended effects gain forever and the
+     in-table volume slider (master only) topped out at 0.5. 1.0 is right.
+
+     CORRECTED 2026-08-29: the rest of that note named "the Settings → Sound
+     panel" as `setEffectsVolume`'s only caller. There is no such panel and
+     never was — `setEffectsVolume` has no production caller at all, and the
+     `restoreStoredConfig` it said "applies any saved value" was reading a
+     localStorage key nothing has ever written. So this is a CONSTANT, and
+     `getEffectsVolume` (consumed by ThrowableSoundService) is multiplying by 1.
+     It stays because the gain maths reads better with the term in it and
+     because a per-category volume is a plausible future control — but nothing
+     varies it today, and no comment here should imply otherwise. */
   private effectsVolume: number = 1.0;
   private masterGain: GainNode | null = null;
   /**
@@ -276,7 +284,12 @@ class SoundService {
     // Resume on the FIRST user gesture (the only place browsers allow it),
     // and again whenever the tab returns to the foreground.
     this.installUnlockListeners();
-    this.restoreStoredConfig();
+    /* `restoreStoredConfig()` was called here. It is gone with the call: its
+       body became empty on 2026-08-29 when the localStorage key it read
+       (`sp_sound_settings`) turned out to be written by nothing anywhere in the
+       repository, and an empty private method invoked from a constructor reads
+       as live boot logic to the next person. The history is kept where the
+       method was. */
   }
 
   /**
@@ -288,34 +301,22 @@ class SoundService {
    * Key/shape must match SoundSettings.tsx (not imported — a service must
    * not depend on a component).
    */
-  private restoreStoredConfig() {
-    try {
-      const stored = localStorage.getItem('sp_sound_settings');
-      if (!stored) return;
-      const cfg = JSON.parse(stored) as Record<string, unknown>;
-      const num = (v: unknown): number | null =>
-        typeof v === 'number' && Number.isFinite(v) ? v : null;
-      const mv = num(cfg.masterVolume);
-      if (mv !== null) this.setMasterVolume(Math.max(0, Math.min(100, mv)) / 100);
-      const ev = num(cfg.effectsVolume);
-      if (ev !== null) this.setEffectsVolume(Math.max(0, Math.min(100, ev)) / 100);
-      const bool = (v: unknown, fallback: boolean): boolean =>
-        typeof v === 'boolean' ? v : fallback;
-      this.categoryEnabled = {
-        action: bool(cfg.enableActionSounds, true),
-        chat: bool(cfg.enableChatSounds, true),
-        turn_alert: bool(cfg.enableTurnAlert, true),
-        win: bool(cfg.enableWinSound, true),
-        event: bool(cfg.enableEventSounds, true),
-      };
-      // Deliberately NOT applying cfg.enableSounds here: the master mute is
-      // owned by the shared gate (soundGate.ts), which shouldPlay consults on
-      // every call. Applying a third key's opinion over it is exactly the bug
-      // that let opening the settings panel un-mute the app.
-    } catch {
-      /* corrupt storage — defaults stand */
-    }
-  }
+  /* ── `restoreStoredConfig` REMOVED 2026-08-29 ──────────────────────────
+     It read `localStorage['sp_sound_settings']`, a key that appeared EXACTLY
+     ONCE in the whole repository — in that read. `SoundSettings.tsx`, the
+     component its doc-comment named as the shape owner, does not exist. So the
+     restore was a no-op that read as working code, and the 2026-08-27 bug it
+     claimed to fix ("a player who disabled Chat Message Sounds got it back on
+     every reload") was never actually fixed.
+
+     It was also a SECOND owner of master volume: it set it at boot, racing the
+     settings store, and whichever ran later won. Master volume now follows
+     `useTableSettings.soundVolume` and nothing else.
+
+     Sound categories keep their engine-level API (`setCategoryStates`) for the
+     surface that will drive them. Until one exists they are all on, which is
+     the state this code was producing anyway — now without pretending
+     otherwise. */
 
   // ─── Context Management ──────────────────────────────────────────────
 

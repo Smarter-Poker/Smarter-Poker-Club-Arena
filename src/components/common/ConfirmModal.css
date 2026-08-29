@@ -134,21 +134,12 @@
   color: rgba(255, 255, 255, 0.8);
 }
 
-.confirm-modal__btn--cancel:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-}
-
 .confirm-modal__btn--confirm {
   background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   color: #fff;
 }
 .confirm-modal__btn--danger {
   background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-}
-
-.confirm-modal__btn--danger:hover:not(:disabled) {
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
 }
 
 /* Spinner */

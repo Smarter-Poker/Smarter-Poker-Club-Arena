@@ -410,19 +410,55 @@ export default function UnionsTab({ tournament, entries, currentUserId }: Tourna
       return out;
     }
 
+    /**
+     * Page through a whole result set.
+     *
+     * "No `.limit()`" is not "no limit": PostgREST caps a request without a
+     * range at 1,000 rows and reports nothing about having done so. The query
+     * below reads one row per entrant, and this file's own header is about
+     * fields of a thousand-plus on a 114,679-row table. Past 1,000 entrants the
+     * tail was silently dropped, those players fell through to the membership
+     * inference path, and their cards were labelled "By Membership" even though
+     * the authoritative club id existed and had simply not been fetched.
+     */
+    async function fetchAllPages<T>(
+      run: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>
+    ): Promise<T[]> {
+      const PAGE = 1000;
+      const MAX_PAGES = 60; // 60k entrants is far past any real field.
+      const out: T[] = [];
+      for (let i = 0; i < MAX_PAGES; i++) {
+        const { data: rows, error } = await run(i * PAGE, (i + 1) * PAGE - 1);
+        if (error) throw error;
+        const got = rows || [];
+        out.push(...got);
+        if (got.length < PAGE) break;
+      }
+      return out;
+    }
+
     (async () => {
       try {
-        // 1. The club each player ENTERED FROM. One query for the whole field.
-        const { data: tpRows, error: tpErr } = await supabase
-          .from('tournament_players')
-          .select('user_id, club_id')
-          .eq('tournament_id', tournamentId);
-        if (tpErr) throw tpErr;
+        // 1. The club each player ENTERED FROM. One paged query for the field.
+        const tpRows = await fetchAllPages<{ user_id: string; club_id: string | null }>(
+          (from, to) =>
+            supabase
+              .from('tournament_players')
+              .select('user_id, club_id')
+              .eq('tournament_id', tournamentId)
+              .range(from, to)
+        );
 
         const clubByUser = new Map<string, string>();
         const sourceByUser = new Map<string, ClubSource>();
-        for (const row of (tpRows || []) as { user_id: string; club_id: string | null }[]) {
-          if (row.user_id && row.club_id) {
+        /* Only players who are actually in `entries`. A re-entry event keeps a
+           `tournament_players` row per bust, so seeding from every row made
+           step 3 fetch clubs for players this tab will never render — and on a
+           big re-entry field that is a measurable slice of a query that is
+           already chunked. */
+        const entrantSet = new Set(userIds);
+        for (const row of tpRows as { user_id: string; club_id: string | null }[]) {
+          if (row.user_id && row.club_id && entrantSet.has(row.user_id)) {
             clubByUser.set(row.user_id, row.club_id);
             sourceByUser.set(row.user_id, 'entered');
           }
@@ -492,8 +528,13 @@ export default function UnionsTab({ tournament, entries, currentUserId }: Tourna
             .eq('id', unionId)
             .maybeSingle();
           // A missing union name costs the header a word. It is not worth
-          // failing the whole tab, which can still show every club.
-          if (!unionErr) unionName = (unionRow as { name?: string } | null)?.name || null;
+          // failing the whole tab, which can still show every club. But it is
+          // worth SAYING: every other error path here calls reportError, and
+          // this one silently degraded the header to "Union Tournament" with no
+          // telemetry, so a permission problem on `unions` could sit
+          // indefinitely with nobody able to see it had happened.
+          if (unionErr) reportError(unionErr, 'UnionsTab.union_name');
+          else unionName = (unionRow as { name?: string } | null)?.name || null;
         }
 
         if (cancelled || !isMounted.current) return;

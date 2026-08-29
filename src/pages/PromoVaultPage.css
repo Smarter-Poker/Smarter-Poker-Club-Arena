@@ -71,7 +71,6 @@
   transition: all 0.2s ease;
 }
 
-.pv-back:hover,
 .pv-back:focus-visible {
   border-color: var(--ca-cyan);
   color: var(--ca-cyan);
@@ -131,7 +130,6 @@
   transition: all 0.2s ease;
 }
 
-.pv-help-button:hover,
 .pv-help-button:focus-visible {
   border-color: var(--ca-cyan);
   color: var(--ca-cyan);
@@ -161,11 +159,6 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.pv-tabs button:hover {
-  border-color: var(--ca-border-hi);
-  color: var(--ca-text-dim);
 }
 
 .pv-tabs button.active {
@@ -248,7 +241,6 @@
   box-shadow: 0 0 12px color-mix(in srgb, var(--tile-color) 25%, transparent);
 }
 
-.pv-tile:hover,
 .pv-tile:focus-within {
   border-color: var(--tile-color);
 }
@@ -347,7 +339,6 @@
   transition: all 0.2s ease;
 }
 
-.pv-tile__plus:hover,
 .pv-tile__plus:focus-visible {
   background: rgba(0, 212, 255, 0.28);
   outline: none;
@@ -607,11 +598,6 @@
   color: #8a9aaa;
 }
 
-.pv-btn--ghost:hover {
-  border-color: #3a4a5a;
-  color: #b6c4d2;
-}
-
 .pv-btn--primary {
   background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
   border: 1px solid #00d4ff;
@@ -717,7 +703,6 @@
   cursor: pointer;
 }
 
-.pv-picker__row:hover,
 .pv-picker__row:focus-visible {
   border-color: #00d4ff;
   outline: none;
@@ -799,11 +784,6 @@
   font-size: 0.7rem;
   font-weight: 600;
   cursor: pointer;
-}
-
-.pv-chosen__change:hover {
-  color: #00d4ff;
-  border-color: rgba(0, 212, 255, 0.45);
 }
 
 /* ── Help ─────────────────────────────────────────────────────────────────── */

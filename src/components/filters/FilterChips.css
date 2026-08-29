@@ -18,11 +18,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.filter-chip:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
 .filter-chip.selected {
   background: rgba(255, 215, 0, 0.15);
   border-color: rgba(255, 215, 0, 0.5);

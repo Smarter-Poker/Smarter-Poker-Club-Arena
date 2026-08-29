@@ -623,7 +623,18 @@ export abstract class ServerTableEngineBase {
    * against a large side pot paid its bounty to the side-pot winner.
    */
   protected currentHandPots: { index: number; amount: number; eligible: string[] }[] = [];
-  protected currentHandContributions: Map<string, number> = new Map(); // userId → totalInvested
+  /**
+   * userId → ELIGIBLE contribution (engine totalInvested, which is net of any
+   * returned uncalled bet). This is the authoritative basis for WEIGHTED
+   * CONTRIBUTED rake attribution (Dan 2026-08-29).
+   */
+  protected currentHandContributions: Map<string, number> = new Map();
+  /**
+   * userId → uncalled amount returned to the player this hand. Persisted for
+   * audit alongside contributions (gross = eligible + returned). Zero-entry
+   * players are omitted.
+   */
+  protected currentHandReturnedUncalled: Map<string, number> = new Map();
   protected currentHandInsuranceSettlements: InsuranceSettlement[] = [];
   /**
    * EV CASHOUT 2026-08-28: pot winnings clawed back to the bank for each
@@ -2816,9 +2827,32 @@ export abstract class ServerTableEngineBase {
   } {
     if (!this.tableInfo) return { bomb_pot_in: null, bomb_pot_next_at: null };
     const s = bombPotSettingsFromTable(this.tableInfo);
+    const dueAt = this.bombPotScheduler.nextBombDueAt(s);
+    /**
+     * THE ANNOUNCE WINDOW IS ENFORCED HERE, NOT ON THE CLIENT (2026-08-29).
+     *
+     * `bomb_pot_announce_seconds` lets a host keep the timed clock quiet until
+     * the bomb is close. It was read into tableInfo and then never used by the
+     * engine: the snapshot published the exact due timestamp to every player,
+     * every broadcast, and the ONLY thing honouring the setting was a
+     * `remainMs > announce * 1000` test in the client's render.
+     *
+     * A host who sets a five-minute window is asking for the detonation time
+     * to be secret until then. Shipping it in every snapshot and asking the
+     * browser not to draw it is not a secret — anyone reading the websocket
+     * has the number, which on a table with a forced ante is an edge over the
+     * players who cannot. A rule about what players may know has to be
+     * enforced where the knowledge is handed out.
+     *
+     * The client check stays: it is what makes the pill disappear mid-session
+     * without waiting for the next snapshot, and it is now a presentation
+     * detail rather than the whole enforcement.
+     */
+    const announceSec = Number(this.tableInfo.bomb_pot_announce_seconds ?? 0);
+    const withheld = dueAt !== null && announceSec > 0 && dueAt - Date.now() > announceSec * 1000;
     return {
       bomb_pot_in: this.bombPotScheduler.handsUntilDue(s),
-      bomb_pot_next_at: this.bombPotScheduler.nextBombDueAt(s),
+      bomb_pot_next_at: withheld ? null : dueAt,
     };
   }
 
@@ -3215,7 +3249,14 @@ export abstract class ServerTableEngineBase {
         this.preActionEngine.removePlayer(this.tableId, userId);
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_evict_cashout');
-        await markSeatAsLeft(this.tableId, userId, seated.seat_number).catch(() => {});
+        /* The fallback's own failure is reported too. `seat_left` has already
+           gone out, so a silent failure here means every client has cleared a
+           seat whose row is still occupied — the player is told they were
+           removed and the seat stays blocked, with nothing anywhere to say so.
+           A cleanup that cannot complete is precisely the case worth an alert. */
+        await markSeatAsLeft(this.tableId, userId, seated.seat_number).catch((err2) =>
+          reportError(err2, 'ServerTableEngine.' + this.tableId + '.sitout_evict_mark_left')
+        );
       }
     }
     this.seatedPlayers = this.seatedPlayers.filter((p) => !evictable.includes(p.user_id));

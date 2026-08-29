@@ -134,11 +134,6 @@
   cursor: pointer;
 }
 
-.closeBtn:hover {
-  background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
-}
-
 /* Balance Bar */
 .balanceBar {
   display: flex;
@@ -207,7 +202,6 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.methodCard:hover,
 .methodCard:active {
   background: rgba(251, 191, 36, 0.1);
   border-color: rgba(251, 191, 36, 0.3);
@@ -325,7 +319,6 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.quickAmounts button:hover,
 .quickAmounts button:active,
 .quickAmounts button.active {
   background: rgba(251, 191, 36, 0.2);
@@ -583,7 +576,6 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.doneBtn:hover,
 .doneBtn:active {
   background: rgba(255, 255, 255, 0.15);
 }

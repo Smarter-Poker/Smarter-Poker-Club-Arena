@@ -893,6 +893,13 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
             if (res?.success) {
               onReturnFromSitOut();
             } else {
+              /* SAY IT OUT LOUD (2026-08-29). This branch reported to telemetry
+                 and stopped. The modal stayed open, the player stayed sitting
+                 out, and NOTHING on screen changed — on the one surface a
+                 sitting-out player is looking at, with a deadline running. Every
+                 other sit-out entry point in the app toasts its refusal; this
+                 one, the most important, did not. */
+              toast?.error?.(res?.error || 'Could Not Sit Back In. Please Try Again.');
               reportError(
                 new Error(res?.error || 'setSitOut(false) rejected by engine'),
                 'TableModalsLayer.Return_failed'
@@ -909,6 +916,12 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
          */
         onLeaveTable={onConfirmLeaveTable}
         sitOutSince={sitOutSince}
+        /* The countdown applies to CASH only. Dan 2026-08-28: a tournament
+           player (a spin is one) may sit out "as long as they want" and is
+           blinded off instead, so they must see no clock rather than one that
+           never fires. Heads-up cash is NOT exempt on either side of the wire —
+           see src/lib/sitOutDeadline.ts. */
+        isTournament={isTournament}
         tableName={tableName}
       />
 

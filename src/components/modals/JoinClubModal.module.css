@@ -174,18 +174,10 @@
   transform: skewX(-20deg);
 }
 
-.joinButton:not(:disabled):hover::after {
-  animation: shine 1.5s ease;
-}
-
 @keyframes shine {
   100% {
     left: 200%;
   }
-}
-
-.joinButton:not(:disabled):hover {
-  filter: brightness(1.1);
 }
 
 .joinButton:not(:disabled):active {
@@ -232,10 +224,4 @@
 }
 .closeButton::after {
   transform: rotate(-45deg);
-}
-
-.closeButton:hover {
-  background: rgba(255, 50, 50, 0.2);
-  color: #ff5555;
-  border-color: rgba(255, 50, 50, 0.5);
 }

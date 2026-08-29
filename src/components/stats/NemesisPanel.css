@@ -190,10 +190,6 @@
   transition: background 0.15s ease;
 }
 
-.nemesis-table tbody tr:hover {
-  background: rgba(0, 212, 255, 0.06);
-}
-
 .nemesis-table tbody th[scope='row'] {
   display: flex;
   align-items: center;
@@ -269,10 +265,6 @@
   .nemesis-card,
   .nemesis-table tbody tr {
     transition: none;
-  }
-
-  .nemesis-card:hover {
-    transform: none;
   }
 }
 

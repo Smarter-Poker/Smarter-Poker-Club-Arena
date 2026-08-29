@@ -223,9 +223,6 @@
 }
 
 /* The winner's chest invites the tap; a spectator's does not. */
-.mbc__chest--tappable:hover {
-  animation-play-state: paused;
-}
 
 /* PRESS PHYSICALITY. A button that only reacts on click feels like a link. A
    lid you can feel yourself pushing down on is what makes the tap land. The

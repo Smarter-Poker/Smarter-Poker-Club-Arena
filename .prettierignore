@@ -13,3 +13,12 @@ coverage
 # identical each time. The generator is the single formatter now.
 scripts/ci/supabase-schema-manifest.json
 scripts/ci/supabase-columns-manifest.json
+# The required-column manifest was added on 2026-08-28, after this block was
+# written, and was never listed here -- so the exact oscillation described above
+# was live again for the one file nobody had exempted. Regenerating it churned
+# 3,965 lines with ZERO content change (verified: 766 tables before and after,
+# none added, none removed, none altered), which is the reason an agent reverted
+# it out of PR #1708 rather than bury that in a money-adjacent diff. Listing it
+# here is the whole fix; the generator already writes it with the same
+# `JSON.stringify(x, null, 2)` as the other two.
+scripts/ci/supabase-required-columns-manifest.json

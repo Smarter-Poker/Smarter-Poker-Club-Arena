@@ -11,7 +11,13 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { sliceMethod, sliceEnclosingBlock } from '../helpers/sourceWindow';
+import {
+  sliceMethod,
+  sliceEnclosingBlock,
+  sliceBlockAfter,
+  sliceCssRule,
+  blankNonCode,
+} from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -89,14 +95,35 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
   const HORSE = read('server/src/engine/HorseLogic.ts');
   const TURNS = read('server/src/engine/ServerTableEngineTurns.ts');
 
-  it('the manual trigger fails CLOSED when the flag cannot be cleared', () => {
+  it('the manual trigger is claimed ATOMICALLY and fails CLOSED', () => {
     // A bomb that fires twice is worse than one that arrives a hand late.
+    //
+    // 2026-08-29: this pinned a SELECT-then-UPDATE that no longer exists. The
+    // invariant it guards is unchanged and the mechanism is stronger, so the
+    // pin moves with it rather than being deleted.
+    //
+    // What was wrong: two sequential awaits on the hand-start critical path of
+    // every bomb-enabled table on every non-bomb hand, and — worse — a
+    // check-then-act with no predicate on the write. Two engines overlapping
+    // during a shard handoff or a restart could both read `true` and both
+    // fire, which is the double bomb the old comment said it was preventing.
+    //
+    // A conditional UPDATE is both halves at once: exactly one caller gets a
+    // row back and that caller owns the bomb.
     expect(DEALING.indexOf('bomb_pot_manual_pending: false')).toBeGreaterThan(-1);
-    // The clear and its error branch are siblings in the same handler, so the
-    // bound is that block - not however many bytes the update happens to take.
     const window = sliceEnclosingBlock(DEALING, 'bomb_pot_manual_pending: false', 0, 2);
-    expect(window).toMatch(/if \(clearErr\)/);
+    // The predicate is the whole point — without it this is the old race.
+    expect(window).toMatch(/\.eq\('bomb_pot_manual_pending', true\)/);
+    // One statement, not two: no SELECT of the flag before the write.
+    expect(window).not.toMatch(/\.select\('bomb_pot_manual_pending'\)/);
+    // Fails closed: an error claims nothing and the bomb waits a hand.
+    expect(window).toMatch(/if \(claimErr\)/);
     expect(window).toMatch(/deferring/);
+    // And the claim only happens when the bomb could actually fire — claiming
+    // below the min-players floor would consume the host's request and deal a
+    // normal hand, which is the one way an atomic claim can be worse than the
+    // read it replaced.
+    expect(DEALING).toMatch(/players\.length >= schedulerSettings\.minPlayers/);
   });
 
   it('the separate bomb button rewinds the regular rotation on bomb hands', () => {
@@ -126,7 +153,14 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
   it('the award-unit ledger covers EVERY bomb hand, idempotently', () => {
     // The gate and the write are siblings in one `if` block, so that block is
     // the window — bounded by structure, never a byte count.
-    const window = sliceEnclosingBlock(SETTLEMENT, "from('bomb_pot_award_units')", 0, 2);
+    //
+    // 2026-08-29: anchored on the `if` itself rather than climbing N levels
+    // out from the upsert. The retry loop added a nesting level between the
+    // two, which silently moved a `levels: 2` window off the gate it was
+    // written to guard — the exact failure mode sourceWindow.ts exists to
+    // stop. An anchor on the condition cannot drift no matter what is nested
+    // inside it.
+    const window = sliceBlockAfter(SETTLEMENT, 'if (v_handHistoryId && this.currentHandBombPot');
     // Gated on the hand being a BOMB, and on there being awards to record —
     // never on the board count (2026-08-28: a single-board bomb with side
     // pots is exactly as hard to rebuild, and a partial ledger cannot tell a
@@ -136,6 +170,52 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
     expect(window).not.toMatch(/board_count \?\? 1\) >= 2/);
     expect(window).toMatch(/onConflict: 'hand_history_id,pot_index,board,side,user_id'/);
     expect(window).toMatch(/ignoreDuplicates: true/);
+  });
+
+  it('a failed ledger write is retried, and the last failure is REPORTED', () => {
+    // 2026-08-29. The write is fire-and-forget on purpose — logHandHistory has
+    // already recorded the money, and a ledger that only narrates a settlement
+    // must never be able to fail the hand it narrates. But "cannot fail the
+    // hand" had been built as "one attempt, then console.warn on the engine
+    // host", so one transient error lost a hand's award units permanently AND
+    // silently. Hand 3364829 (2026-08-29 02:35:08Z) is the proof: a clean
+    // two-board showdown paid out correctly to the cent, bracketed by hands at
+    // 02:31 and 02:37 that both wrote their rows, and zero rows of its own.
+    const window = sliceBlockAfter(SETTLEMENT, 'if (v_handHistoryId && this.currentHandBombPot');
+    expect(window).toMatch(/attempt <= BOMB_LEDGER_WRITE_ATTEMPTS/);
+    expect(window).toMatch(/BOMB_LEDGER_RETRY_BASE_MS \* attempt/);
+    // reportError, never console.warn — a log line on a host nobody reads is
+    // how this went unnoticed in the first place.
+    expect(window).toMatch(/ServerTableEngine\.bomb_award_ledger_write_failed/);
+    expect(window).not.toMatch(/console\.warn/);
+    // Still fire-and-forget: `void`, and a catch so the retry loop can never
+    // surface as an unhandled rejection (noUnhandledRejections.test.ts).
+    expect(window).toMatch(/void writeAwardUnits\(\)\.catch\(/);
+    expect(SETTLEMENT).toMatch(/const BOMB_LEDGER_WRITE_ATTEMPTS = 3;/);
+  });
+
+  it('a gap that still slips through is reported by reconciliation, not lost', () => {
+    // The retry above makes a lost row unlikely; this makes a lost row VISIBLE.
+    // Same shape CLAUDE.md section 11.5 settled on for seat-stack exits: a
+    // guard that can REFUSE a settlement is worse than the thing it guards
+    // against, so make the failure loud rather than impossible.
+    const gaps = read('supabase/migrations/20260829_bomb_award_ledger_gaps_are_loud.sql');
+    expect(gaps).toMatch(/CREATE OR REPLACE FUNCTION public\.fn_bomb_pot_ledger_gaps/);
+    // p_grace: the write is asynchronous by design, so a hand that settled
+    // seconds ago legitimately has no rows yet and is NOT a gap.
+    expect(gaps).toMatch(/p_grace interval\s+DEFAULT '10 minutes'::interval/);
+    // Named roles, not just PUBLIC — REVOKE ... FROM PUBLIC does not remove
+    // Supabase's own anon grant (fn_request_manual_bomb_pot kept one that way).
+    expect(gaps).toMatch(/FROM PUBLIC, anon, authenticated;/);
+
+    const nightly = read('supabase/migrations/20260829_reconcile_reports_bomb_award_gaps.sql');
+    expect(nightly).toMatch(
+      /'bomb_award_ledger_gap', NULL, g\.net_winnings, g\.ledger_total, 'critical'/
+    );
+    expect(nightly).toMatch(/FROM public\.fn_bomb_pot_ledger_gaps\('1 day'::interval\) g/);
+    // The CHECK constraint must accept the value the reporter emits, or the
+    // whole nightly run aborts on the first gap it finds.
+    expect(gaps).toMatch(/'bomb_award_ledger_gap'::text\]\)\);/);
   });
 });
 
@@ -150,9 +230,46 @@ describe('ROUND 5 (2026-08-28) — clone hygiene and manual-trigger ordering', (
     const manualIdx = DEALING.indexOf('bomb_pot_manual_pending');
     expect(schedIdx).toBeGreaterThan(-1);
     expect(manualIdx).toBeGreaterThan(schedIdx);
+    // 2026-08-29: the condition gained the min-players gate and Prettier broke
+    // it across lines, so a single-line regex could no longer match code that
+    // had not changed in substance. The invariant here is ORDER, so assert the
+    // order — each clause after the scheduler's decision and before the claim
+    // that acts on it. No window, fixed-size or otherwise: three indexes and
+    // the relations between them, which no amount of reformatting can move.
+    const claimIdx = DEALING.indexOf(".eq('bomb_pot_manual_pending', true)");
+    expect(claimIdx).toBeGreaterThan(-1);
+    for (const clause of [
+      '!decision.isBombPot',
+      'this.tableInfo.bomb_pot_enabled === true',
+      'players.length >= schedulerSettings.minPlayers',
+    ]) {
+      const at = DEALING.indexOf(clause);
+      expect(at, `${clause} is missing from the manual-trigger gate`).toBeGreaterThan(schedIdx);
+      expect(at, `${clause} must be read before the claim`).toBeLessThan(claimIdx);
+    }
+  });
+
+  it('a bomb hand carries no straddle into HandConfig', () => {
+    // The straddle block runs BEFORE the bomb decision, so straddleResults was
+    // populated on every bomb hand of a straddle-enabled table and handed
+    // straight into the config. No money moved — HandController reads
+    // config.straddles only in postBlinds and in the preflop-first-action
+    // branch, and a bomb hand reaches neither — but a config asserting
+    // straddles nobody posted is a trap for the next reader of either branch.
     expect(DEALING).toMatch(
-      /if \(!decision\.isBombPot && this\.tableInfo\.bomb_pot_enabled === true\)/
+      /straddles:\s*bombPotConfig \|\| straddleResults\.length === 0 \? undefined : straddleResults/
     );
+  });
+
+  it('a voided bomb hand still dismisses the overlay', () => {
+    // BOMB_POT_COMPLETED is emitted after every HAND_COMPLETE by
+    // HandController — four paths, all covered. The 10-minute safety timer is
+    // the fifth exit and the only one that tears the hand down from OUTSIDE
+    // the controller, so nothing emitted it and the overlay stayed on screen
+    // over a table that had already started the next hand.
+    const window = sliceEnclosingBlock(DEALING, 'Hand ${handNumber} timed out', 0, 2);
+    expect(window).toMatch(/BOMB_POT_COMPLETED/);
+    expect(window).toMatch(/this\.currentHandBombPot/);
   });
 
   it('a swept multi-board pot is announced with sound, not in silence', () => {
@@ -262,5 +379,220 @@ describe('the table page reads bomb rules from the COLUMNS (spec §15.2)', () =>
   it('the timed felt clock counts down to the engine due timestamp', () => {
     expect(PAGE).toMatch(/bomb_pot_next_at|bombPotNextAt/);
     expect(PAGE).toMatch(/bombClockLabel/);
+  });
+});
+
+/**
+ * ROUND 7 (2026-08-29) — the audit sweep.
+ *
+ * Every pin below is a defect that shipped and was found by reading the whole
+ * feature, server and client, line by line. None of them was visible from a
+ * failing test, which is why they are pinned here now.
+ */
+describe('ROUND 7 (2026-08-29) — the audit sweep', () => {
+  const SCHED = read('server/src/engine/BombPotScheduler.ts');
+  const DEALING = read('server/src/engine/ServerTableEngineDealing.ts');
+  const HC = read('server/src/engine/HandController.ts');
+  const RUNOUT = read('server/src/engine/ServerTableEngineRunout.ts');
+  const BASE = read('server/src/engine/ServerTableEngineBase.ts');
+  const PAGE = read('src/pages/TablePage.tsx');
+  const MODAL = read('src/components/table/GameRulesModal.tsx');
+  const OVERLAY = read('src/components/table/BombPotOverlay.tsx');
+  const CSS = read('src/pages/TablePage.css');
+
+  it('a button that has not moved has not completed an orbit', () => {
+    // THE RUNAWAY. buttonCrossedAnchor returned true when from === to, on the
+    // reasoning that "a single seat dealt around" completes an orbit every
+    // hand — a case that cannot occur, because a hand needs two players and
+    // Dealing forces the button across whenever players.length > 2.
+    //
+    // What DOES produce from === to is the separate bomb button, which rewinds
+    // the regular rotation on every bomb hand by design. So once_per_orbit
+    // plus a separate button — and once_per_orbit is what the first host
+    // preset selects — armed the token again on the very next hand: a forced
+    // ante on EVERY hand, blinds that never post, and a regular button frozen
+    // on one seat for the life of the table.
+    const fn = sliceMethod(SCHED, 'private buttonCrossedAnchor');
+    expect(fn).toMatch(/if \(from === to\) \{[\s\S]*?return false;/);
+    expect(fn).not.toMatch(/if \(from === to\) \{[\s\S]*?return true;/);
+  });
+
+  it('once_per_orbit counts down on the felt like every other mode', () => {
+    // handsUntilDue returned null for every mode but every_n_hands, and the
+    // token is set and consumed inside one noteHandStart call — so the pill
+    // never rendered and an orbit-mode table gave the player no warning at
+    // all before a forced ante. An orbit is one hand per player dealt in;
+    // both terms are measured, not guessed at from seat numbering.
+    const fn = sliceMethod(SCHED, 'handsUntilDue(s: BombPotSchedulerSettings)');
+    expect(fn).toMatch(/once_per_orbit/);
+    expect(fn).toMatch(/this\.lastDealtInCount - this\.handsSinceAnchor/);
+    // Persisted with the rest of the scheduler, or a deploy blanks the pill
+    // for a whole orbit.
+    expect(SCHED).toMatch(/o: this\.handsSinceAnchor/);
+    expect(SCHED).toMatch(/n: this\.lastDealtInCount/);
+  });
+
+  it('the bomb ante is rounded to the cent BEFORE anybody is charged', () => {
+    // The only forced-money path in the engine that did not round. The ante
+    // multiplier steps by 0.5, so at micro stakes the product is a fraction of
+    // a cent; snapChips then rounds each stack independently of state.pot and
+    // the table stops conserving chips. Even at legal multiples the raw float
+    // (0.1 * 3 = 0.30000000000000004) escaped into the actions log and into
+    // hand_history.bomb_pot.ante_amount.
+    const fn = sliceMethod(HC, 'private postBombPotAntes');
+    expect(fn).toMatch(/Math\.round\(\s*\(bombPot\.anteFixed/);
+    expect(fn).toMatch(/const actualAnte = Math\.round\(Math\.min\(anteAmount, player\.stack\)/);
+    // And the deck size comes from VariantRules, not a sixth local literal.
+    expect(fn).toMatch(/deckSizeFor\(this\.config\.gameVariant\)/);
+    // blankNonCode: a negative assertion must read CODE. The comment above this
+    // line quotes the literal it forbids, and without stripping comments the
+    // pin fails on its own explanation of why it exists.
+    expect(blankNonCode(fn)).not.toMatch(/=== .{0,14} \? 36 : 52/);
+  });
+
+  it('insurance and the RIT chooser read the HAND variant, not the table', () => {
+    // Insurance is suppressed only on MULTI-board bombs. A single-board bomb
+    // with a variant override is fully eligible, and both the leader election
+    // and the pricing ran on tableInfo.game_variant — a Hold'em evaluator on
+    // four-card holdings, and a contract priced as though the extra cards did
+    // not exist. Insurance premiums and payouts are real money.
+    // Negative assertions read CODE only — the comments in this file and in
+    // Runout both quote the lines they replaced.
+    const code = blankNonCode(RUNOUT);
+    expect(code).not.toMatch(/const variant = this\.tableInfo\?\.game_variant/);
+    expect(code).toMatch(/const variant = this\.activeHandVariant\(\);/);
+    expect(code).not.toMatch(/this\.tableInfo\?\.game_variant ===/);
+  });
+
+  it('every equity broadcast prices every live board', () => {
+    // dealNextStreet fills boards 2/3 in lockstep but returns board 1 alone,
+    // so the three broadcasts AFTER the first had nothing to pass and fell
+    // back to single-board pricing. A multi-board bomb showed correct averaged
+    // percentages at the all-in and then wrong ones for the flop, turn and
+    // river — drifting further from the truth as the hand got more dramatic.
+    expect(RUNOUT).toMatch(/protected liveExtraBoards\(\)/);
+    const calls = RUNOUT.match(/broadcastAllInEquity\(\s*allInPlayers,[\s\S]*?\)/g) ?? [];
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    for (const call of calls) {
+      expect(call, `an equity broadcast still prices board 1 only: ${call}`).toMatch(
+        /liveExtraBoards\(\)/
+      );
+    }
+  });
+
+  it('the announce window is enforced by the ENGINE, not by the browser', () => {
+    // The host's "keep the clock quiet until the bomb is close" setting was
+    // read into tableInfo and never used: the snapshot published the exact due
+    // timestamp to every player on every broadcast, and only the client's
+    // render honoured it. Anyone reading the websocket had a number the
+    // players looking at the felt did not — on a table with a forced ante.
+    const fn = sliceMethod(BASE, 'protected bombPotSnapshotFields()');
+    expect(fn).toMatch(/bomb_pot_announce_seconds/);
+    expect(fn).toMatch(/bomb_pot_next_at: withheld \? null : dueAt/);
+  });
+
+  it('the bomb button obeys the new-player rule the regular button obeys', () => {
+    // Dan, binding: "NEW PLAYERS NEVER GET THE BUTTON WHEN SITTING DOWN."
+    // buttonRoster exists to enforce it; the bomb rotation was using the raw
+    // seat list, so a player on their first ever hand here could take the
+    // button — which sets postflop action order and odd-chip allocation.
+    const window = sliceEnclosingBlock(DEALING, 'this.bombButtonSeat = bombSeat;', 0, 2);
+    expect(window).toMatch(/this\.getNextSeat\(this\.bombButtonSeat, buttonRoster\)/);
+    expect(window).not.toMatch(/this\.getNextSeat\(this\.bombButtonSeat, players\)/);
+  });
+
+  it('a variant override obeys the seat law, not just the deck', () => {
+    // maxSeatsFor('plo5') is 9 by deck arithmetic, but PLO5 is 7-max and PLO6
+    // is 6-max by Dan's ruling. Nine players passed the deck test and were
+    // dealt nine-handed PLO5 — and 45 hole cards then left no room for the
+    // three boards the host asked for, so the feature was silently downgraded
+    // on a hand that should not have used the override at all.
+    expect(DEALING).toMatch(/const seatMax = maxSeatsForVariant\(resolved\);/);
+    expect(DEALING).toMatch(/holeNeed <= deckSizeFor\(resolved\) && players\.length <= seatMax/);
+  });
+
+  it('disabling bomb pots clears the PERSISTED token too', () => {
+    // noteHandStart resets the in-memory scheduler when the schedule is off,
+    // but the write was gated on `enabled` — so `{p: true}` stayed in the row.
+    // Re-enable, restart, and restoreState detonated that stale token on the
+    // first valid hand: exactly what "re-enabling starts a fresh schedule"
+    // exists to prevent.
+    expect(DEALING).toMatch(/const snapObj = enabled[\s\S]*?: null;/);
+    expect(DEALING).not.toMatch(/if \(schedulerSettings\.enabled\) \{\s*const dueAt/);
+  });
+
+  it('the bomb button is persisted AFTER the hand that uses it is decided', () => {
+    // The persistence block used to run before `if (decision.isBombPot)`, so
+    // on a bomb hand it wrote the PREVIOUS bomb's button seat — the seat this
+    // hand uses had not been chosen yet.
+    const decideIdx = DEALING.indexOf('this.bombButtonSeat = bombSeat;');
+    const persistIdx = DEALING.indexOf('b: this.bombButtonSeat ?? null');
+    expect(decideIdx).toBeGreaterThan(-1);
+    expect(persistIdx).toBeGreaterThan(decideIdx);
+  });
+
+  it('the Table Info tab can actually be opened', () => {
+    // One token. The button labelled `info` called setActiveTab('rules'), and
+    // nothing anywhere set 'info' — so the entire tab was unreachable in
+    // production: the bomb-pot disclosure block, and with it the ONLY control
+    // that reaches the manual-bomb RPC. A club owner could not fire a manual
+    // bomb pot at all.
+    // Anchored on the tab's OWN active-class expression, which is unique and
+    // is code rather than prose — 'Table Info' as a needle also appears in the
+    // comment explaining this fix, and in this test's own explanation.
+    const tab = sliceEnclosingBlock(
+      MODAL,
+      "activeTab === 'info' ? 'rules-modal__tab--active'",
+      0,
+      2
+    );
+    expect(tab).toMatch(/setActiveTab\('info'\)/);
+    expect(blankNonCode(tab)).not.toMatch(/setActiveTab\('rules'\)/);
+    // The content it reveals must still be gated on the same value.
+    expect(MODAL).toMatch(/\{activeTab === 'info' && \(/);
+  });
+
+  it('the rules panel quotes the ante the engine actually charges', () => {
+    // The config form writes bomb_pot_ante_multiplier in BOTH modes and the
+    // engine prefers bomb_pot_ante_fixed, which the table never fetched — so a
+    // "Fixed Ante 25" table was described here as "2x BB" while the lobby,
+    // which does read the fixed column, said 25. Two surfaces disagreeing
+    // about the price of a hand.
+    expect(PAGE).toMatch(/bomb_pot_ante_fixed, bomb_pot_min_players, bomb_pot_button_policy/);
+    expect(MODAL).toMatch(/\(bombPotRules\.anteFixed \?\? 0\) > 0/);
+  });
+
+  it('the scoop banner is anchored to the boards it celebrates', () => {
+    // It only ever renders on a multi-board hand — the one case where the
+    // stack is tall enough to reach a banner pinned at 21% of the felt — so
+    // the celebration for the biggest moment in the feature covered the board
+    // that proved it. Anchored to .community-area, the collision is impossible
+    // rather than unlikely, for one, two or three boards at any width.
+    // sliceCssRule stops at the first `}`, and this rule opens with a comment
+    // block containing braces, so bound it by structure on BLANKED source and
+    // read the declarations from there.
+    const rule = sliceCssRule(blankNonCode(CSS), '.bomb-scoop-banner {');
+    expect(rule).toMatch(/top: 100%/);
+    expect(rule).not.toMatch(/top: 21%/);
+    // And reduced motion collapses the motion, never the meaning (§10.6): the
+    // global 1ms rule does that; `animation: none` would strand it mid-thought.
+    expect(blankNonCode(CSS)).not.toMatch(/\.bomb-scoop-banner \{\s*animation: none;/);
+  });
+
+  it('a forced ante is announced in words, not only in motion', () => {
+    // The overlay is aria-hidden and should be — but every WORD of the event
+    // lived inside it, so a screen-reader player was charged a forced ante
+    // with no announcement of any kind (§10.6: reduced motion collapses the
+    // motion, never the meaning; the same applies when it is hidden).
+    expect(OVERLAY).toMatch(/role="status" aria-live="assertive"/);
+    expect(OVERLAY).toMatch(/Everyone antes \$\{anteAmount\.toLocaleString\(\)\}/);
+  });
+
+  it('urgency is not the steady state on a bomb-pot-only table', () => {
+    // bomb_pot_only reports 1 hand until due forever, so the "next hand is the
+    // bomb" pulse ran for the whole session on the one table where that fact
+    // is ordinary — and stopped meaning anything everywhere else by
+    // association.
+    expect(PAGE).toMatch(/bombPotRules\?\.triggerMode !== 'bomb_pot_only' &&/);
   });
 });

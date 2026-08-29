@@ -23,10 +23,6 @@
   cursor: pointer;
 }
 
-.bbj-ticker--clickable:hover {
-  border-color: rgba(213, 218, 226, 0.6);
-}
-
 .bbj-ticker__pool {
   display: flex;
   flex-direction: column;

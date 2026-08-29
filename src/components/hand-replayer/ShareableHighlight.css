@@ -237,11 +237,6 @@
   white-space: nowrap;
 }
 
-.action-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(6, 182, 212, 0.5);
-}
-
 .action-btn:active {
   transform: translateY(0);
 }
@@ -251,21 +246,9 @@
   color: #06b6d4;
 }
 
-.share-btn:hover {
-  background: rgba(6, 182, 212, 0.1);
-  border-color: rgba(6, 182, 212, 0.6);
-  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
-}
-
 .copy-btn {
   border-color: rgba(139, 92, 246, 0.3);
   color: #a78bfa;
-}
-
-.copy-btn:hover {
-  background: rgba(139, 92, 246, 0.1);
-  border-color: rgba(139, 92, 246, 0.6);
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
 }
 
 /* Footer branding */

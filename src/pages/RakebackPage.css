@@ -201,10 +201,6 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.period-row:hover {
-  border-color: #3a4a5a;
-}
-
 .period-dates {
   flex: 1;
   font-size: 0.85rem;

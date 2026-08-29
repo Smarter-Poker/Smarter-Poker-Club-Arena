@@ -19,6 +19,7 @@ import { fetchGameCreationAccess } from './GameAccessService';
 import { parseBlindStructure, parsePayoutStructure } from '../utils/parseBlindStructure';
 import type { Tournament, TournamentPlayer } from '../types/database.types';
 import { reportError } from '../utils/errorReporter';
+import { computePlacePrize } from '../lib/payoutMath';
 
 // AUDIT M19: fn_unregister_from_tournament returns a `reason` for ordinary
 // refusals rather than raising, so a player is told why - "you are already
@@ -423,15 +424,25 @@ class TournamentService {
 
       let resolvedUnionId: string | null = unionClubRow?.union_id ?? null;
 
+      // ROUND 8 (2026-08-29): the clubs.union_id fallback discarded ITS error
+      // too, so when union_clubs succeeded-empty and the clubs read failed,
+      // `unionClubErr` was null, the cache below was never consulted, and the
+      // cache was CLEARED - a transient failure on the second read demoted a
+      // union club to standalone and destroyed the one thing that could have
+      // rescued the next load. Either read failing now counts as "cannot
+      // conclude standalone".
+      let clubRowErr: unknown = null;
       if (!resolvedUnionId) {
-        const { data: clubRow } = await supabase
+        const { data: clubRow, error: clubErr } = await supabase
           .from('clubs')
           .select('union_id')
           .eq('id', resolvedId)
           .maybeSingle();
+        clubRowErr = clubErr;
         resolvedUnionId = (clubRow as { union_id?: string | null } | null)?.union_id ?? null;
       }
-      if (!resolvedUnionId && unionClubErr) {
+      const anyResolveErr = unionClubErr || clubRowErr;
+      if (!resolvedUnionId && anyResolveErr) {
         try {
           resolvedUnionId = sessionStorage.getItem(unionCacheKey);
         } catch {
@@ -440,7 +451,7 @@ class TournamentService {
       }
       try {
         if (resolvedUnionId) sessionStorage.setItem(unionCacheKey, resolvedUnionId);
-        else if (!unionClubErr) sessionStorage.removeItem(unionCacheKey);
+        else if (!anyResolveErr) sessionStorage.removeItem(unionCacheKey);
       } catch {
         /* storage unavailable */
       }
@@ -449,7 +460,7 @@ class TournamentService {
 
       if (unionClub?.union_id) {
         // IMPORTANT: Only fetch XMTT if union allows cross-club tournaments
-        const { data: unionData } = await supabase
+        const { data: unionData, error: unionSettingsErr } = await supabase
           .from('unions')
           .select('settings')
           .eq('id', unionClub.union_id)
@@ -461,8 +472,23 @@ class TournamentService {
         // turned back ON by a malformed settings blob. A permission check that
         // grants the permission when it cannot read the rule is not a check.
         // The bound error was also never reported, so it failed open silently.
+        //
+        // ROUND 8 (2026-08-29): that fix closed the PARSE failure but left the
+        // READ failure open - `.maybeSingle()` returns { data: null } for a
+        // failed query too, so a timeout skipped the settings block entirely
+        // and allowCrossClub kept its default of true. Same rule, same hole:
+        // a read error now fails closed and is reported.
         let allowCrossClub = true;
-        if (unionData?.settings) {
+        if (unionSettingsErr) {
+          allowCrossClub = false;
+          reportError(
+            unionSettingsErr,
+            'TournamentService.union_settings_read_failed_failing_closed',
+            {
+              unionId: unionClub.union_id,
+            }
+          );
+        } else if (unionData?.settings) {
           try {
             const settings =
               typeof unionData.settings === 'string'
@@ -478,7 +504,7 @@ class TournamentService {
         }
 
         if (allowCrossClub) {
-          const { data: xmttData } = await supabase
+          const { data: xmttData, error: xmttErr } = await supabase
             .from('tournaments')
             .select(
               'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
@@ -495,6 +521,15 @@ class TournamentService {
             .in('status', ['REGISTERING', 'RUNNING'])
             .order('created_at', { ascending: false });
 
+          // ROUND 8 (2026-08-29): a failed read here silently emptied the
+          // union half of the lobby - the exact "games vanish" symptom this
+          // sweep chased. The fallback is unchanged (club games still list);
+          // the failure is now visible instead of dressed as an empty union.
+          if (xmttErr) {
+            reportError(xmttErr, 'TournamentService.union_tournaments_read_failed', {
+              unionId: unionClub.union_id,
+            });
+          }
           xmttTournaments = xmttData || [];
         }
       }
@@ -655,11 +690,21 @@ class TournamentService {
         throw new Error('XMTT tournaments require a union ID');
       }
       // Verify union exists and has crossClubTournaments enabled
-      const { data: unionData } = await supabase
+      const { data: unionData, error: unionReadErr } = await supabase
         .from('unions')
         .select('id, settings')
         .eq('id', config.unionId)
         .maybeSingle();
+      // ROUND 8 (2026-08-29): a failed read used to fall into 'Union not
+      // found' - a permanent-sounding verdict for a transient failure. The
+      // creator would reasonably conclude their union is misconfigured rather
+      // than retry.
+      if (unionReadErr) {
+        reportError(unionReadErr, 'TournamentService.createTournament_union_read_failed', {
+          unionId: config.unionId,
+        });
+        throw new Error('Could not verify union settings. Please try again.');
+      }
       if (!unionData) {
         throw new Error('Union not found');
       }
@@ -892,11 +937,24 @@ class TournamentService {
       }
     }
 
-    const { data } = await supabase
+    // ROUND 8 (2026-08-29): this refetch discarded its error and returned
+    // `data` bare, so a transient failure returned null from a method typed
+    // Promise<Tournament> - the creation surfaces then treated a SUCCESSFUL
+    // creation as a failure, and a creator who believed the error made the
+    // same tournament twice. The message now says what actually happened.
+    const { data, error: refetchErr } = await supabase
       .from('tournaments')
       .select('*')
       .eq('id', result.tournament_id!)
       .maybeSingle();
+    if (refetchErr || !data) {
+      reportError(refetchErr, 'TournamentService.created_tournament_refetch_failed', {
+        tournamentId: result.tournament_id,
+      });
+      throw new Error(
+        'The tournament was created. It could not be loaded for display, so refresh the lobby to see it.'
+      );
+    }
     return data;
   }
 
@@ -967,11 +1025,19 @@ class TournamentService {
 
     // ── SNG/SPIN AUTO-START nudge (unchanged behavior): when full, pull
     // start_time to now so the server discovery loop starts it immediately.
-    const { data: freshTournament } = await supabase
+    const { data: freshTournament, error: freshErr } = await supabase
       .from('tournaments')
       .select('current_players, max_players, variant')
       .eq('id', tournamentId)
       .maybeSingle();
+    // ROUND 8 (2026-08-29): reported, not thrown - the player IS registered,
+    // and the server discovery loop still starts a full game on its own
+    // schedule. But a silently skipped nudge is a slower start with no trace.
+    if (freshErr) {
+      reportError(freshErr, 'TournamentService.SNG_autostart_freshness_read_failed', {
+        tournamentId,
+      });
+    }
     if (
       freshTournament?.max_players &&
       (freshTournament.current_players ?? 0) >= freshTournament.max_players &&
@@ -1078,10 +1144,17 @@ class TournamentService {
     // RAKE-AUDIT 2026-07-24: fetch the players BEFORE the atomic cancel — the
     // RPC deletes tournament_players rows, so the old post-RPC query always
     // returned empty and no BALANCE_UPDATED events ever fired for refunds.
-    const { data: players } = await supabase
+    const { data: players, error: playersErr } = await supabase
       .from('tournament_players')
       .select('user_id')
       .eq('tournament_id', tournamentId);
+    // ROUND 8 (2026-08-29): reported, not thrown - the cancel itself refunds
+    // through the atomic RPC regardless. A failed read here only meant the
+    // BALANCE_UPDATED nudges never fired, so refunded players saw stale
+    // balances until their next reload, with nothing recorded anywhere.
+    if (playersErr) {
+      reportError(playersErr, 'TournamentService.cancel_roster_read_failed', { tournamentId });
+    }
 
     // Execute atomic cancellation and refund (prevents partial refunds on server crash)
     // RAKE-AUDIT 2026-07-24: the RPC now refunds ONLY real (non-horse) players
@@ -1171,7 +1244,7 @@ class TournamentService {
     }
 
     // 1. Get Players
-    const { data: players } = await supabase
+    const { data: players, error: rosterErr } = await supabase
       .from('tournament_players')
       .select(
         'id, tournament_id, user_id, username, status, chips, table_id, position, prize, current_bounty, mystery_bounty_value, rebuys, registered_at'
@@ -1179,6 +1252,16 @@ class TournamentService {
       .eq('tournament_id', tournamentId)
       .eq('status', 'registered');
 
+    // ROUND 8 (2026-08-29): a FAILED roster read used to fall into 'No players
+    // registered' - and worse, a failure that resolved to an empty array would
+    // have sailed past this into the < 3 branch below, which CANCELS the
+    // tournament and refunds everyone, on the strength of a timeout. A read
+    // failure must never be allowed to impersonate an empty roster on a path
+    // that destroys the tournament.
+    if (rosterErr) {
+      reportError(rosterErr, 'TournamentService.start_roster_read_failed', { tournamentId });
+      throw new Error('Could not load the player list. Please try again.');
+    }
     if (!players || players.length === 0) throw new Error('No players registered');
 
     // Auto-cancel if fewer than 3 players — minimum for a valid tournament
@@ -1392,12 +1475,11 @@ class TournamentService {
    * Get payout amount for a position
    */
   calculatePayout(prizePool: number, position: number, structure: PayoutStructure[]): number {
-    const entry = structure.find((p) => p.place === position);
-    if (!entry) return 0;
-    // Exact precision: multiply ×100, truncate, back to chips
-    // Formula: trunc(pool * percentage / 100 * 100) / 100
-    // Simplified: trunc(pool * percentage) / 100
-    return Math.trunc(prizePool * entry.percentage) / 100;
+    // 2026-08-29: was `Math.trunc(prizePool * entry.percentage) / 100`, which
+    // truncated where the engine rounds and had no residual rule, so its
+    // places did not sum to the pool. One rule now, shared with the engine
+    // byte for byte -- see src/lib/payoutMath.ts.
+    return computePlacePrize(prizePool, structure, position);
   }
 
   /**
@@ -1588,13 +1670,20 @@ class TournamentService {
     }
 
     // Check current stack (must be at or below starting stack)
-    const { data: player } = await supabase
+    const { data: player, error: stackErr } = await supabase
       .from('tournament_players')
       .select('chips')
       .eq('tournament_id', tournamentId)
       .eq('user_id', userId)
       .maybeSingle();
 
+    // ROUND 8 (2026-08-29): a failed read used to answer 'Player not found' -
+    // a permanent-sounding refusal for a transient failure, to a player who is
+    // demonstrably IN the tournament asking to rebuy.
+    if (stackErr) {
+      reportError(stackErr, 'TournamentService.canRebuy_stack_read_failed', { tournamentId });
+      return { allowed: false, reason: 'Could not check your stack. Please try again.' };
+    }
     if (!player) return { allowed: false, reason: 'Player not found' };
     if (player.chips > tournament.starting_chips) {
       return { allowed: false, reason: 'Stack too high for rebuy' };
@@ -1746,11 +1835,19 @@ class TournamentService {
         p_amount: fee,
       });
       if (incErr) {
-        const { data: tData } = await supabase
+        const { data: tData, error: tReadErr } = await supabase
           .from('tournaments')
           .select('total_rake')
           .eq('id', tournamentId)
           .maybeSingle();
+        // ROUND 8 (2026-08-29): both the RPC and the fallback read failing
+        // used to leave no trace at all - the club's rake total silently
+        // under-reported with nothing anywhere saying so.
+        if (tReadErr) {
+          reportError(tReadErr, 'TournamentService.recordTournamentFee_fallback_read_failed', {
+            tournamentId,
+          });
+        }
         if (tData) {
           // Same defect shape as D7: the catch below cannot see a PostgREST
           // `{ error }`, so a failed rake counter fallback was invisible and
@@ -1773,11 +1870,19 @@ class TournamentService {
     const unionId = tournament.union_id || undefined;
     if (unionId) {
       try {
-        const { data: unionData } = await supabase
+        const { data: unionData, error: unionReadErr } = await supabase
           .from('unions')
           .select('total_rake')
           .eq('id', unionId)
           .maybeSingle();
+        // ROUND 8 (2026-08-29): same silent under-report shape as the
+        // tournament counter above, on the union ledger.
+        if (unionReadErr) {
+          reportError(unionReadErr, 'TournamentService.recordTournamentFee_union_read_failed', {
+            tournamentId,
+            unionId,
+          });
+        }
         if (unionData) {
           // Same defect shape as D7, on the union ledger this time.
           const { error: unionUpdErr } = await supabase
@@ -1956,13 +2061,22 @@ class TournamentService {
     const addonTotalCost = addonCost;
 
     // Check if player already used their add-on (each player gets max 1 add-on)
-    const { data: existingAddon } = await supabase
+    const { data: existingAddon, error: addonCheckErr } = await supabase
       .from('wallet_transactions')
       .select('id')
       .eq('user_id', userId)
       .eq('category', 'addon')
       .eq('related_entity_id', tournamentId)
       .limit(1);
+    // ROUND 8 (2026-08-29): a failed read used to pass the duplicate gate on a
+    // MONEY action - the one-add-on-per-player rule waved through anyone whose
+    // check query timed out. Fails closed and retryable instead.
+    if (addonCheckErr) {
+      reportError(addonCheckErr, 'TournamentService.addon_duplicate_check_read_failed', {
+        tournamentId,
+      });
+      throw new Error('Could not verify your add-on status. Please try again.');
+    }
     if (existingAddon && existingAddon.length > 0) {
       throw new Error('You have already used your add-on for this tournament');
     }
@@ -2041,19 +2155,27 @@ class TournamentService {
     }
 
     // Verify player does NOT already have an active entry
-    const { data: activeEntry } = await supabase
+    const { data: activeEntry, error: activeCheckErr } = await supabase
       .from('tournament_players')
       .select('id')
       .eq('tournament_id', tournamentId)
       .eq('user_id', userId)
       .in('status', ['registered', 'playing']);
 
+    // ROUND 8 (2026-08-29): same shape as the add-on gate - a failed read
+    // waved a re-entry (a money action) past the active-entry check.
+    if (activeCheckErr) {
+      reportError(activeCheckErr, 'TournamentService.reentry_active_check_read_failed', {
+        tournamentId,
+      });
+      throw new Error('Could not verify your entries. Please try again.');
+    }
     if (activeEntry && activeEntry.length > 0) {
       throw new Error('You already have an active entry in this tournament');
     }
 
     // Verify player was previously eliminated
-    const { data: eliminatedEntry } = await supabase
+    const { data: eliminatedEntry, error: elimCheckErr } = await supabase
       .from('tournament_players')
       .select('id')
       .eq('tournament_id', tournamentId)
@@ -2063,6 +2185,15 @@ class TournamentService {
       .limit(1)
       .maybeSingle();
 
+    // ROUND 8 (2026-08-29): a failed read used to fall into 'You have not
+    // been eliminated in this tournament' - flatly untrue for a player whose
+    // bust screen is the thing offering the re-entry button.
+    if (elimCheckErr) {
+      reportError(elimCheckErr, 'TournamentService.reentry_eliminated_check_read_failed', {
+        tournamentId,
+      });
+      throw new Error('Could not verify your entries. Please try again.');
+    }
     if (!eliminatedEntry) {
       throw new Error('You have not been eliminated in this tournament');
     }
@@ -2391,12 +2522,18 @@ class TournamentService {
    */
   async checkBalanceNeeded(tournamentId: string): Promise<boolean> {
     // Get all active tournament tables from the main tables table
-    const { data: tables } = await supabase
+    const { data: tables, error: tablesReadErr } = await supabase
       .from('tables')
       .select('id, current_players')
       .eq('tournament_id', tournamentId)
       .neq('status', 'closed');
 
+    // ROUND 8 (2026-08-29): report a failed read instead of letting it wear
+    // the same "balanced" answer as a healthy check. The false is unchanged -
+    // skipping one balance tick is safe, doing it invisibly forever is not.
+    if (tablesReadErr) {
+      reportError(tablesReadErr, 'TournamentService.balance_check_read_failed', { tournamentId });
+    }
     if (!tables || tables.length < 2) return false;
 
     const counts = tables.map((t) => t.current_players);
@@ -2411,13 +2548,17 @@ class TournamentService {
    * Merge tables when player count drops
    */
   async checkTableMerge(tournamentId: string): Promise<{ tableMerged: boolean }> {
-    const { data: tables } = await supabase
+    const { data: tables, error: mergeReadErr } = await supabase
       .from('tables')
       .select('id, current_players')
       .eq('tournament_id', tournamentId)
       .neq('status', 'closed')
       .order('current_players', { ascending: true });
 
+    // ROUND 8 (2026-08-29): same shape as checkBalanceNeeded above.
+    if (mergeReadErr) {
+      reportError(mergeReadErr, 'TournamentService.merge_check_read_failed', { tournamentId });
+    }
     if (!tables || tables.length < 2) return { tableMerged: false };
 
     // Get total remaining players
@@ -2449,16 +2590,30 @@ class TournamentService {
    * Create final table (consolidate to 1 table when 9 or fewer players remain)
    */
   async createFinalTable(tournamentId: string): Promise<{ finalTableId: string | null }> {
-    const { count } = await supabase
+    const { count, error: playingCountErr } = await supabase
       .from('tournament_players')
       .select('*', { count: 'exact' })
       .eq('tournament_id', tournamentId)
       .eq('status', 'playing');
 
+    // ROUND 10 (2026-08-29): a failed count wore the same "more than nine
+    // still in" answer as a healthy big field. The null return is the safe
+    // no-op either way (the next consolidation tick retries); the failure
+    // now reports.
+    if (playingCountErr) {
+      reportError(playingCountErr, 'TournamentService.final_table_count_read_failed', {
+        tournamentId,
+      });
+    }
     if (!count || count > 9) return { finalTableId: null };
 
     // Get or create final table (look for a table named "Final Table")
-    let { data: finalTable } = await supabase
+    // ROUND 8 (2026-08-29): the lookup error was discarded, so a FAILED read
+    // was indistinguishable from "no final table yet" and fell straight into
+    // the CREATE branch below - a transient timeout minted a duplicate Final
+    // Table beside the real one. A failed lookup now stands down; the next
+    // consolidation tick retries.
+    const { data: lookedUp, error: finalLookupErr } = await supabase
       .from('tables')
       .select('id')
       .eq('tournament_id', tournamentId)
@@ -2466,6 +2621,11 @@ class TournamentService {
       .neq('status', 'closed')
       .limit(1)
       .maybeSingle();
+    if (finalLookupErr) {
+      reportError(finalLookupErr, 'TournamentService.final_table_lookup_failed', { tournamentId });
+      return { finalTableId: null };
+    }
+    let finalTable = lookedUp;
 
     if (!finalTable) {
       const tournament = await this.getTournament(tournamentId);
@@ -2475,7 +2635,7 @@ class TournamentService {
       const resolvedBlinds = parseBlindStructure(tournament.blind_structure);
       const blinds = resolvedBlinds[0];
 
-      const { data: newTable } = await supabase
+      const { data: newTable, error: finalCreateErr } = await supabase
         .from('tables')
         .insert({
           club_id: tournament.club_id,
@@ -2495,6 +2655,13 @@ class TournamentService {
         .select()
         .maybeSingle();
 
+      // ROUND 8 (2026-08-29): a failed insert was silent; the caller saw
+      // { finalTableId: null } with no trace of why.
+      if (finalCreateErr) {
+        reportError(finalCreateErr, 'TournamentService.final_table_create_failed', {
+          tournamentId,
+        });
+      }
       if (newTable) {
         finalTable = { id: newTable.id };
       }
@@ -2591,13 +2758,19 @@ class TournamentService {
 
     // Submit all placements to POY leaderboard system
     try {
-      const { data: players } = await supabase
+      const { data: players, error: poyReadErr } = await supabase
         .from('tournament_players')
         .select('user_id, position, prize')
         .eq('tournament_id', tournamentId)
         .not('position', 'is', null)
         .order('position', { ascending: true });
 
+      // ROUND 8 (2026-08-29): a failed read silently submitted nothing to the
+      // POY leaderboard - every placement in the event vanished from the race
+      // with no trace. Reported; the catch below only sees thrown errors.
+      if (poyReadErr) {
+        reportError(poyReadErr, 'TournamentService.poy_placements_read_failed', { tournamentId });
+      }
       if (players && players.length > 0) {
         // Dynamically import to avoid circular deps
         const { POYService } = await import('./POYService');
@@ -2706,7 +2879,13 @@ class TournamentService {
       .eq('tournament_id', tournamentId)
       .eq('collector_player_id', playerId);
 
-    if (error) return 0;
+    // ROUND 8 (2026-08-29): the 0 stays (it is a display fallback), but a
+    // failed read no longer wears it silently - the same confident-zero shape
+    // as round 7's finding #9.
+    if (error) {
+      reportError(error, 'TournamentService.player_bounties_read_failed', { tournamentId });
+      return 0;
+    }
     return (data || []).reduce((sum, b) => sum + b.bounty_amount, 0);
   }
 
@@ -2722,21 +2901,34 @@ class TournamentService {
     userId: string
   ): Promise<{ position: number }> {
     // Check if already on waitlist
-    const { data: existing } = await supabase
+    const { data: existing, error: existingErr } = await supabase
       .from('tournament_waitlists')
       .select('id')
       .eq('tournament_id', tournamentId)
       .eq('user_id', userId)
       .maybeSingle();
 
+    // ROUND 8 (2026-08-29): a failed read waved the duplicate check through,
+    // and a failed count below minted position 1 for whoever joined during
+    // the outage - both silent. Both now stand down and ask for a retry.
+    if (existingErr) {
+      reportError(existingErr, 'TournamentService.waitlist_duplicate_check_read_failed', {
+        tournamentId,
+      });
+      throw new Error('Could not check the waitlist. Please try again.');
+    }
     if (existing) {
       throw new Error('You are already on the waitlist');
     }
 
-    const { count } = await supabase
+    const { count, error: countErr } = await supabase
       .from('tournament_waitlists')
       .select('id', { count: 'exact', head: true })
       .eq('tournament_id', tournamentId);
+    if (countErr) {
+      reportError(countErr, 'TournamentService.waitlist_count_read_failed', { tournamentId });
+      throw new Error('Could not check the waitlist. Please try again.');
+    }
 
     const position = (count || 0) + 1;
 
@@ -2783,19 +2975,30 @@ class TournamentService {
     tournamentId: string,
     userId: string
   ): Promise<{ position: number; total: number } | null> {
-    const { data: entry } = await supabase
+    const { data: entry, error: posErr } = await supabase
       .from('tournament_waitlists')
       .select('id, position')
       .eq('tournament_id', tournamentId)
       .eq('user_id', userId)
       .maybeSingle();
 
+    // ROUND 8 (2026-08-29): display path - null (meaning "not on the
+    // waitlist") stays the fallback, but a failed read is now recorded
+    // instead of impersonating that answer.
+    if (posErr) {
+      reportError(posErr, 'TournamentService.waitlist_position_read_failed', { tournamentId });
+    }
     if (!entry) return null;
 
-    const { count } = await supabase
+    const { count, error: totalErr } = await supabase
       .from('tournament_waitlists')
       .select('id', { count: 'exact', head: true })
       .eq('tournament_id', tournamentId);
+    // ROUND 10 (2026-08-29): display path; the 0 total stays as the
+    // fallback, the failure now reports instead of wearing it.
+    if (totalErr) {
+      reportError(totalErr, 'TournamentService.waitlist_total_read_failed', { tournamentId });
+    }
 
     return { position: entry.position, total: count || 0 };
   }

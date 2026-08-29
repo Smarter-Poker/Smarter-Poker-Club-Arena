@@ -98,10 +98,6 @@
   transition: box-shadow 0.3s ease;
 }
 
-.vip-status-card:hover .badge-icon {
-  box-shadow: 0 0 30px color-mix(in srgb, var(--tier-color) 50%, transparent);
-}
-
 .tier-label {
   display: block;
   color: var(--tier-color);

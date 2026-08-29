@@ -14,10 +14,6 @@
   padding: 6px 0;
 }
 
-.clear-filters:hover {
-  text-decoration: underline;
-}
-
 .filter-chips {
   display: flex;
   flex-wrap: wrap;
@@ -36,10 +32,6 @@
   font-size: 0.85rem;
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.filter-chip:hover {
-  background: rgba(255, 255, 255, 0.12);
 }
 
 .filter-chip.active {

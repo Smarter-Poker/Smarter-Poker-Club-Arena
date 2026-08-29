@@ -172,6 +172,32 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
 
   return (
     <div className="bomb-pot-overlay" ref={containerRef} data-phase={phase} aria-hidden="true">
+      {/*
+        THE ANTE IS ANNOUNCED IN WORDS, NOT ONLY IN MOTION (2026-08-29).
+
+        The overlay is aria-hidden, and correctly so — a cherry bomb, a wick,
+        a blast and a screen shake are decoration, and reading them out would
+        be noise. But every WORD of the event lived inside that decoration: the
+        BOMB POT title, the DOUBLE BOARD / TRIPLE BOARD badge and the "Everyone
+        Antes n" line. So a player using a screen reader was charged a forced
+        ante with no announcement of any kind.
+
+        CLAUDE.md §10.6 is the rule this breaks: reduced motion collapses the
+        motion but never the meaning. The same applies when the motion is
+        hidden rather than reduced. This live region carries the meaning
+        alongside the decoration — one sentence, announced once when the title
+        lands, in the same words the felt shows. The scoop banner already had
+        aria-live; this is the pattern catching up with it.
+      */}
+      {phase === 'title' && (
+        <div className="bpo-sr-only" role="status" aria-live="assertive" aria-hidden={false}>
+          {`Bomb Pot. ${
+            boardCount >= 3 ? 'Triple board. ' : doubleBoard ? 'Double board. ' : ''
+          }${variantLabel ? `Played as ${variantLabel}. ` : ''}${
+            anteAmount > 0 ? `Everyone antes ${anteAmount.toLocaleString()}.` : ''
+          }`}
+        </div>
+      )}
       {/* ── Phases 1-2: the cherry bomb, wick lit ───────────────────────── */}
       {bombVisible && (
         <div className={`bpo-bomb bpo-bomb--${phase}`}>

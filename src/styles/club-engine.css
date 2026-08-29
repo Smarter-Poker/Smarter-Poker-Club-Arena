@@ -246,10 +246,6 @@ a {
   transition: color var(--duration-fast) var(--ease-out-expo);
 }
 
-a:hover {
-  color: var(--pure-white);
-}
-
 code,
 pre {
   font-family: var(--font-mono);
@@ -304,20 +300,10 @@ pre {
   border: 1px solid var(--border-subtle);
 }
 
-.btn-ghost:hover:not(:disabled) {
-  background: var(--club-elevated);
-  color: var(--text-primary);
-  border-color: var(--club-blue);
-}
-
 /* White/Light */
 .btn-white {
   background: var(--pure-white);
   color: var(--club-black);
-}
-
-.btn-white:hover:not(:disabled) {
-  background: var(--off-white);
 }
 
 /* Sizes */
@@ -347,10 +333,6 @@ pre {
   border-radius: var(--radius-xl);
   padding: var(--space-6);
   transition: all var(--duration-normal) var(--ease-out-expo);
-}
-
-.card:hover {
-  border-color: var(--border-hover);
 }
 
 .card-elevated {
@@ -821,10 +803,6 @@ pre {
 ::-webkit-scrollbar-thumb {
   background: var(--club-blue-dim);
   border-radius: var(--radius-full);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--club-blue);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

@@ -43,11 +43,6 @@
   backdrop-filter: blur(10px);
 }
 
-.intro-skip-btn:hover {
-  background: rgba(0, 180, 255, 0.3);
-  border-color: rgba(0, 220, 255, 0.8);
-}
-
 .intro-loading-hint {
   position: absolute;
   bottom: 40px;

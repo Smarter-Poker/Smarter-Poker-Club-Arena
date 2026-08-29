@@ -77,16 +77,6 @@
   pointer-events: none;
 }
 
-.qc-preset-btn:hover:not(:disabled)::after {
-  left: 150%;
-}
-
-.qc-preset-btn:hover:not(:disabled) {
-  background: rgba(24, 119, 242, 0.12);
-  border-color: rgba(24, 119, 242, 0.3);
-  color: #ffffff;
-}
-
 .qc-preset-btn:active:not(:disabled) {
   transform: scale(0.92);
   background: rgba(24, 119, 242, 0.2);

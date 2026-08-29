@@ -65,10 +65,6 @@
   cursor: pointer;
 }
 
-.tour-skip:hover {
-  color: rgba(255, 255, 255, 0.7);
-}
-
 .tour-tooltip h3 {
   color: #fff;
   font-size: 1.4rem;
@@ -121,10 +117,6 @@
   font-weight: 500;
   cursor: pointer;
   transition: background 0.2s;
-}
-
-.prev-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
 }
 
 .next-btn {

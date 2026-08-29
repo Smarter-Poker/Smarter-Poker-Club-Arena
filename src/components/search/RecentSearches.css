@@ -24,10 +24,6 @@
   cursor: pointer;
 }
 
-.clear-all:hover {
-  color: #f87171;
-}
-
 .recent-list {
   display: flex;
   flex-direction: column;
@@ -43,10 +39,6 @@
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.recent-item:hover {
-  background: rgba(255, 255, 255, 0.06);
 }
 
 .recent-icon {
@@ -69,24 +61,18 @@
   text-transform: capitalize;
 }
 
+/* Visible at rest - see the note on `.delete-btn` in PlayerNotes.css. This
+   was opacity 0 until `.recent-item:hover` painted it in, so on a phone the
+   remove control was unreachable. */
 .remove-btn {
   width: 20px;
   height: 20px;
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.45);
   cursor: pointer;
-  opacity: 0;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  opacity: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.recent-item:hover .remove-btn {
-  opacity: 1;
-}
-
-.remove-btn:hover {
-  color: #f87171;
 }

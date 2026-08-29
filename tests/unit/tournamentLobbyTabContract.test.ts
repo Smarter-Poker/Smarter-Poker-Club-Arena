@@ -134,17 +134,46 @@ describe('parsePayoutStructure', () => {
 });
 
 describe('placePrize', () => {
-  it('uses the enginerounding, so the lobby and the money agree to the cent', () => {
-    // Multiply, truncate, divide - the same as TournamentService.calculatePayout.
-    expect(placePrize(1000, 50)).toBe(500);
-    expect(placePrize(3333, 6.25)).toBe(Math.trunc(3333 * 6.25) / 100);
+  /* 2026-08-29: these pinned `Math.trunc(pool * pct) / 100` and a two-argument
+     signature, and both were the bug. The lobby truncated where the engine
+     rounds, and a function handed ONE percentage cannot express the rule the
+     engine actually pays by -- the last paid place takes what is left, so the
+     places sum to the pool. Measured that day: 13 of the 78 pool-and-structure
+     combinations in production showed a player a different number from the one
+     that reached their wallet. placePrize now takes the whole structure and
+     defers to src/lib/payoutMath.ts, which is byte-identical to the engine's
+     copy. Moved to the new mechanism in the same commit that shipped it. */
+  const NINE = [30, 20, 15, 10, 8, 6, 5, 3.5, 2.5].map((percentage, i) => ({
+    place: i + 1,
+    percentage,
+  }));
+  const HEADS_UP = [
+    { place: 1, percentage: 50 },
+    { place: 2, percentage: 50 },
+  ];
+
+  it('prices a place exactly as the engine pays it', () => {
+    expect(placePrize(1000, HEADS_UP, 1)).toBe(500);
+    expect(placePrize(1000, HEADS_UP, 2)).toBe(500);
+    // The cent that used to differ: 3.5% of 513 is 17.955, and the lobby
+    // showed 17.95 while the wallet received 17.96.
+    expect(placePrize(513, NINE, 8)).toBe(17.96);
   });
 
-  it('pays nothing for a pool or a percentage that is not a number', () => {
-    expect(placePrize(Number.NaN, 50)).toBe(0);
-    expect(placePrize(1000, Number.NaN)).toBe(0);
-    expect(placePrize(0, 50)).toBe(0);
-    expect(placePrize(-100, 50)).toBe(0);
+  it('the places it shows add up to the pool, to the cent', () => {
+    for (const pool of [513, 483, 1000, 0.19, 12345.67]) {
+      const total = NINE.reduce((s, e) => s + Math.round(placePrize(pool, NINE, e.place) * 100), 0);
+      expect(total, `pool ${pool}`).toBe(Math.round(pool * 100));
+    }
+  });
+
+  it('pays nothing for a pool or a place that is not a number', () => {
+    expect(placePrize(Number.NaN, HEADS_UP, 1)).toBe(0);
+    expect(placePrize(1000, HEADS_UP, Number.NaN)).toBe(0);
+    expect(placePrize(0, HEADS_UP, 1)).toBe(0);
+    expect(placePrize(-100, HEADS_UP, 1)).toBe(0);
+    expect(placePrize(1000, HEADS_UP, 99)).toBe(0);
+    expect(placePrize(1000, [], 1)).toBe(0);
   });
 });
 

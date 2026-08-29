@@ -24,11 +24,6 @@
   transition: all 0.2s ease;
 }
 
-.time-bank__trigger:hover:not(:disabled) {
-  background: rgba(255, 184, 0, 0.1);
-  border-color: rgba(255, 184, 0, 0.5);
-}
-
 .time-bank__trigger:active:not(:disabled) {
   transform: scale(0.95);
 }

@@ -48,6 +48,29 @@ import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
  */
 const RABBIT_HUNT_OFFER_TTL_MS = 90_000;
 
+/**
+ * BOMB-POT AWARD LEDGER DURABILITY (2026-08-29).
+ *
+ * The award-unit write is deliberately fire-and-forget — the money is already
+ * recorded by logHandHistory, and a ledger that narrates a settlement must
+ * never be able to fail the hand it is narrating. But "cannot fail the hand"
+ * had been implemented as "one attempt, then a console.warn on the engine
+ * host", which means a single transient error loses a hand's award units
+ * PERMANENTLY and SILENTLY.
+ *
+ * Hand 3364829 (2026-08-29 02:35:08Z, table c4874708) is the proof: a clean
+ * two-board showdown, pot 88.00 paid out correctly to the cent, bracketed by
+ * hands at 02:31 and 02:37 whose rows both landed — and zero rows of its own.
+ * Nothing on the platform noticed; it was found by hand-written SQL.
+ *
+ * Three attempts with a linear backoff, then reportError. What still slips
+ * through is caught by fn_bomb_pot_ledger_gaps, which reconcile_ledger_nightly
+ * files as critical — the same "make it LOUD rather than impossible" shape
+ * CLAUDE.md section 11.5 settled on for seat-stack exits.
+ */
+const BOMB_LEDGER_WRITE_ATTEMPTS = 3;
+const BOMB_LEDGER_RETRY_BASE_MS = 250;
+
 export abstract class ServerTableEngineSettlement extends ServerTableEngineDealing {
   /**
    * RABBIT HUNT — the paid reveal. Dan 2026-08-25.
@@ -1277,20 +1300,38 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             amount: a.amount,
             hand_name: a.hand?.name ?? null,
           }));
-          void Promise.resolve(
-            supabase.from('bomb_pot_award_units').upsert(ledgerRows, {
-              onConflict: 'hand_history_id,pot_index,board,side,user_id',
-              ignoreDuplicates: true,
-            })
-          )
-            .then(({ error }) => {
-              if (error) {
-                console.warn('[BombPot] award-unit ledger write failed:', error.message);
+          // DURABILITY 2026-08-29: see BOMB_LEDGER_WRITE_ATTEMPTS above. Still
+          // fire-and-forget — nothing here is awaited and nothing here can fail
+          // the hand — but a lost row now costs three attempts to lose, and the
+          // third failure is reported rather than logged to a host nobody reads.
+          const handNumberForLedger = this.handCount;
+          const writeAwardUnits = async (): Promise<void> => {
+            let lastMessage = 'unknown error';
+            for (let attempt = 1; attempt <= BOMB_LEDGER_WRITE_ATTEMPTS; attempt++) {
+              const { error } = await supabase.from('bomb_pot_award_units').upsert(ledgerRows, {
+                onConflict: 'hand_history_id,pot_index,board,side,user_id',
+                ignoreDuplicates: true,
+              });
+              if (!error) return;
+              lastMessage = error.message;
+              if (attempt < BOMB_LEDGER_WRITE_ATTEMPTS) {
+                await new Promise((resolve) =>
+                  setTimeout(resolve, BOMB_LEDGER_RETRY_BASE_MS * attempt)
+                );
               }
-            })
-            .catch((err: unknown) => {
-              console.warn('[BombPot] award-unit ledger write threw:', err);
-            });
+            }
+            reportError(
+              new Error(
+                `[BombPot] award-unit ledger write failed after ${BOMB_LEDGER_WRITE_ATTEMPTS} ` +
+                  `attempts for hand ${handNumberForLedger} (${ledgerRows.length} units): ` +
+                  lastMessage
+              ),
+              'ServerTableEngine.bomb_award_ledger_write_failed'
+            );
+          };
+          void writeAwardUnits().catch((err: unknown) =>
+            reportError(err, 'ServerTableEngine.bomb_award_ledger_write_threw')
+          );
         }
 
         // ── Dan 2026-08-15 (item 3): tell the clients the hand's row id ──
@@ -1364,6 +1405,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         for (const [uid, amt] of this.currentHandContributions.entries()) {
           contribsObj[uid] = amt;
         }
+        // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): pass the returned-
+        // uncalled audit map and stamp the methodology. contribsObj is already
+        // ELIGIBLE contribution (net of returned uncalled bets), so the RPC's
+        // weighted per-player attribution needs no further adjustment.
+        const returnedObj: Record<string, number> = {};
+        for (const [uid, amt] of this.currentHandReturnedUncalled.entries()) {
+          returnedObj[uid] = amt;
+        }
         let rakeDistributed = false;
         for (let attempt = 0; attempt < 3 && !rakeDistributed; attempt++) {
           const { error: rdErr } = await supabase.rpc('atomic_distribute_rake', {
@@ -1377,6 +1426,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             p_num_players: this.currentHandContributions.size,
             p_contributions: contribsObj,
             p_tournament_id: this.tableInfo.tournament_id || null,
+            p_returned_uncalled: returnedObj,
+            p_rake_method: 'WEIGHTED_CONTRIBUTED',
           });
           if (!rdErr) {
             rakeDistributed = true;
@@ -1402,6 +1453,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               pot: this.currentHandPotSize,
               numPlayers: this.currentHandContributions.size,
               contributions: contribsObj,
+              returnedUncalled: returnedObj,
+              rakeMethod: 'WEIGHTED_CONTRIBUTED',
               tournamentId: this.tableInfo?.tournament_id || null,
               bigBlind: this.tableInfo?.big_blind ?? null,
               lastError: rdErr.message,

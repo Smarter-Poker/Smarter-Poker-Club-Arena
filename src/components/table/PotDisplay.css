@@ -224,10 +224,6 @@
   user-select: none;
 }
 
-.pot-display__main--clickable:hover {
-  border-color: var(--pd-gold-mid);
-}
-
 .pot-display__main--clickable:active {
   transform: scale(0.98);
   transition-duration: 0.1s;

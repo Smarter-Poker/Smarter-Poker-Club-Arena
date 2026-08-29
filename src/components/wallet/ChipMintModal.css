@@ -126,10 +126,6 @@
   cursor: pointer;
 }
 
-.cmm-quick button:hover:not(:disabled) {
-  border-color: rgba(0, 180, 230, 0.5);
-}
-
 .cmm-quick button:disabled {
   opacity: 0.35;
   cursor: default;

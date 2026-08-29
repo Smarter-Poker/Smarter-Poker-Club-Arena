@@ -118,10 +118,6 @@
 .cb-action[data-size='large'] {
   max-width: 620px;
 }
-.cb-action:hover:not(:disabled) {
-  filter: drop-shadow(0 15px 16px rgba(0, 0, 0, 0.7)) brightness(1.09);
-}
-.cb-action:hover:not(:disabled)::after,
 .cb-action[data-selected='true']::after {
   opacity: calc(0.62 * var(--club-blue-energy));
 }
@@ -214,9 +210,6 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.cb-wallet-row:hover:not(:disabled) {
-  filter: drop-shadow(0 9px 9px rgba(0, 0, 0, 0.72)) brightness(1.09);
-}
 .cb-wallet-row:active:not(:disabled) {
   transform: translateX(1px) translateY(1px);
   filter: brightness(0.88);
@@ -442,9 +435,6 @@
   font-size: 0.58rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-.cb-icon-button:hover {
-  filter: brightness(1.15);
 }
 .cb-icon-button:active {
   transform: translateY(1px);

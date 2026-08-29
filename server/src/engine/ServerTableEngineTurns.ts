@@ -35,6 +35,21 @@ import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineSeating } from './ServerTableEngineSeating.js';
 // Static watchdog thresholds live on the Base class (single source of truth).
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
+import { noteDecisionMs } from './BrainTelemetry.js';
+
+/**
+ * A monotonic millisecond clock that cannot throw.
+ *
+ * `performance` is global in every Node this runs on, but the measurement must
+ * never be able to break a hand — a horse failing to act because a timer was
+ * unavailable would be an absurd way to lose a table. Date.now() is the
+ * fallback and is accurate enough for a millisecond-scale budget.
+ */
+function perfNow(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
 
 export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   /**
@@ -1912,7 +1927,19 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     const fullState = this.handController ? this.handController.getState() : null;
     const gameState = {
-      players: state.players,
+      // V28 AUDIT FIX (2026-08-29): is_sitting_out was hardcoded false at the
+      // deal (correctly, for HandController's purposes), which made EVERY
+      // !is_sitting_out filter in the brain inert — oppsLeft, tableSize,
+      // classifyPosition and the postflop opponent count all counted a
+      // blinding-off seat as a live opponent. At a 3-handed final table with
+      // one player disconnected, the heads-up branches never fired: the SB
+      // opened on 0.44 instead of 0.24. The engine has the truth in
+      // DisconnectEngine; stamp it onto the copy the brain reads.
+      players: state.players.map((p) => ({
+        ...p,
+        is_sitting_out:
+          p.is_sitting_out === true || this.disconnectEngine.isSittingOut(this.tableId, p.user_id),
+      })),
       communityCards: state.communityCards,
       // MULTI-BOARD EQUITY 2026-08-28 (Horses Are Players law): on a
       // double/triple-board bomb hand the fleet prices EVERY board — the
@@ -1952,6 +1979,18 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // Get decision — SYNCHRONOUS (budgeted <15ms incl. Monte Carlo equity)
     // PROOF OF RECEIPT: telemetry is set HERE and only here — this is the
     // one call site that is a real horse at a real table.
+    //
+    // AND NOW MEASURED (Dan 2026-08-29). That "<15ms" was a comment, not a
+    // fact: nothing in the engine had ever timed a decision. The whole read —
+    // hand strength, board texture, the opponent model, blockers, ICM, the
+    // Monte Carlo equity run, every version layer and the final sizing —
+    // happens inside this one synchronous call, so one clock around it is the
+    // complete answer to how long a horse takes to think.
+    //
+    // The clock is deliberately OUTSIDE HorseLogic: this is the only call site
+    // that is a live horse, and the league and the nightly self-tuner must not
+    // pollute the number with self-play bursts on an idle box.
+    const decideStartedAt = perfNow();
     const decision = HorseLogic.decide(
       enginePlayer as any,
       gameState as any,
@@ -1959,6 +1998,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       horseMods,
       { telemetry: true }
     );
+    // Scoped by variant family, because a 6-card PLO decision runs the most
+    // expensive equity simulation on the platform and averaging it into a
+    // heads-up NLH decision would hide both.
+    noteDecisionMs(String((gameState as any)?.variant ?? 'nlh'), perfNow() - decideStartedAt);
 
     // Humanlike think time comes from the decision engine itself (style- and
     // situation-aware, 0.7-8s). Clamp inside the table's action timer window.
@@ -1999,7 +2042,26 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const actionTimeMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
     const requested = decision.thinkTime || 2500;
     let thinkTimeMs: number;
-    if (requested >= HorseLogic.THINK_TIMEBANK_SENTINEL) {
+    // V28 AUDIT FIX (2026-08-29): the sentinel path scheduled the action PAST
+    // the turn clock with no check that a bank existed to catch it. A horse's
+    // bank is 2 uses per session, never refilled — after both were spent,
+    // primary-timer expiry auto-folded the seat, the real decision fired into
+    // currentPlayerSeat !== seat and was silently discarded. The horse that
+    // decided to CALL a big river bet visibly timed out and folded — the one
+    // behaviour a human at the table cannot fail to notice. Bank mode fires
+    // on 1-6% of decisions, weighted toward exactly those big river spots.
+    // Same shape when time_bank is disabled table-wide, and when the last
+    // bank has fewer seconds left than the planned burn. So: burn the bank
+    // ONLY when a full activation is genuinely available; otherwise the tank
+    // stays inside the ordinary clock.
+    const bank = this.timeBankEngine?.getPlayerBank?.(this.tableId, player.user_id);
+    const bankUsable =
+      this.tableInfo?.time_bank_enabled !== false &&
+      bank != null &&
+      (bank as { usesRemaining?: number }).usesRemaining !== 0 &&
+      ((bank as { remainingSeconds?: number }).remainingSeconds ?? 0) * 1000 >
+        ServerTableEngineTurns.HORSE_MAX_BANK_BURN_MS + 2000;
+    if (requested >= HorseLogic.THINK_TIMEBANK_SENTINEL && bankUsable) {
       // A deliberate TIME BANK burn. Let the turn clock expire — the engine
       // auto-activates the bank on primary-timer expiry (Bible V8 6.2) — then
       // act a few seconds into it. Bounded well inside the granted bank so a
@@ -2008,6 +2070,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       thinkTimeMs = Math.round(
         actionTimeMs + Math.min(intoBank, ServerTableEngineTurns.HORSE_MAX_BANK_BURN_MS)
       );
+    } else if (requested >= HorseLogic.THINK_TIMEBANK_SENTINEL) {
+      // Bank mode chosen but no bank to burn: the longest legal ordinary tank.
+      thinkTimeMs = Math.round(Math.max(2000, actionTimeMs - 1500));
     } else {
       // Everything else must land inside the ordinary clock, with a small
       // margin so a genuine tank still acts rather than timing out.

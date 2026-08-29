@@ -36,29 +36,14 @@
   color: rgba(255, 255, 255, 0.7);
 }
 
-.icon-button.variant-ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
 .icon-button.variant-outlined {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: rgba(255, 255, 255, 0.8);
 }
 
-.icon-button.variant-outlined:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.4);
-  color: #fff;
-}
-
 .icon-button.variant-filled {
   background: rgba(255, 255, 255, 0.1);
   border: none;
   color: rgba(255, 255, 255, 0.9);
-}
-
-.icon-button.variant-filled:hover:not(:disabled) {
-  background: rgba(255, 215, 0, 0.2);
-  color: #ffd700;
 }

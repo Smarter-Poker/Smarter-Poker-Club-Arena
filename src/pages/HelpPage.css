@@ -38,11 +38,6 @@
   transition: all 0.2s ease;
 }
 
-.help-header .back-btn:hover {
-  border-color: #00d4ff;
-  color: #00d4ff;
-}
-
 .help-header h1 {
   font-size: 1.25rem;
   margin: 0;
@@ -98,10 +93,6 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.faq-item:hover {
-  border-color: #3a4a5a;
-}
-
 .faq-question {
   width: 100%;
   display: flex;
@@ -116,10 +107,6 @@
   text-align: left;
   cursor: pointer;
   transition: all 0.2s ease;
-}
-
-.faq-question:hover {
-  color: #00d4ff;
 }
 
 .faq-toggle {

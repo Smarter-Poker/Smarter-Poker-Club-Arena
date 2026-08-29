@@ -216,7 +216,7 @@ const KEY_FOR_COLUMN: Record<string, keyof TableUserSettings> = Object.fromEntri
 /**
  * The column recording which settings this account has DELIBERATELY set.
  * Written only by `fn_mark_table_setting_touched`; see migration
- * 20260829120000_a_setting_records_that_it_was_chosen.sql for the bug it closes.
+ * 20260829125943_a_setting_records_that_it_was_chosen.sql for the bug it closes.
  */
 export const TOUCHED_COLUMN = 'settings_touched';
 
@@ -628,7 +628,7 @@ async function hydrateFromServer(userId: string): Promise<void> {
      on a laptop, back on from a phone, and the laptop reads the row's `true` as
      "never set" and pushes its stale `false` back up — the ticker turns itself
      off on both devices with nobody touching a control. The row now records the
-     FACT of the choice (migration 20260829120000). */
+     FACT of the choice (migration 20260829125943). */
   const touched = new Set(
     Array.isArray(row?.[TOUCHED_COLUMN]) ? (row[TOUCHED_COLUMN] as string[]) : []
   );

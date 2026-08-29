@@ -16,7 +16,7 @@ ignoring them.
 
 ### A1. Hydration was guessing which settings the account had chosen
 
-`src/hooks/useTableSettings.ts` · migration `20260829120000`
+`src/hooks/useTableSettings.ts` · migration `20260829125943`
 
 Every column on `user_table_settings` is `NOT NULL` with a default, so a stored
 value equal to the default is indistinguishable from a value nobody ever set.

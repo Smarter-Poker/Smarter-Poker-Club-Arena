@@ -37,6 +37,35 @@ import './HeroHubPanel.css';
 
 export type HeroHubTab = 'throwables' | 'stats' | 'profile' | 'settings';
 
+/**
+ * 2026-08-29 hardening pass: the hub reopens on the tab the player last used,
+ * for this session. A grinder who lives in Stats stops paying one extra tap
+ * per open; a fresh session still lands on Throwables, the most-tapped tab.
+ * sessionStorage on purpose — a preference this light should not follow the
+ * player across devices or outlive the session, and it must never throw the
+ * panel (private mode, blocked storage), hence the try/catch on both sides.
+ */
+export const HERO_HUB_TAB_KEY = 'ca_hero_hub_tab';
+const TAB_IDS: readonly HeroHubTab[] = ['throwables', 'stats', 'profile', 'settings'];
+
+export function readInitialHubTab(): HeroHubTab {
+  try {
+    const raw = sessionStorage.getItem(HERO_HUB_TAB_KEY);
+    if (raw && (TAB_IDS as readonly string[]).includes(raw)) return raw as HeroHubTab;
+  } catch {
+    /* storage unavailable — land on the default */
+  }
+  return 'throwables';
+}
+
+export function rememberHubTab(tab: HeroHubTab): void {
+  try {
+    sessionStorage.setItem(HERO_HUB_TAB_KEY, tab);
+  } catch {
+    /* storage unavailable — remembering is a convenience, never a requirement */
+  }
+}
+
 export interface HeroHubPanelProps {
   isOpen: boolean;
   onClose: () => void;
@@ -75,7 +104,12 @@ export function HeroHubPanel({
   onOpenIdentity,
   onOpenTableSettings,
 }: HeroHubPanelProps) {
-  const [tab, setTab] = useState<HeroHubTab>('throwables');
+  const [tab, setTab] = useState<HeroHubTab>(readInitialHubTab);
+  /** Select a tab and remember it for the next open this session. */
+  const selectTab = (next: HeroHubTab) => {
+    setTab(next);
+    rememberHubTab(next);
+  };
 
   if (!isOpen) return null;
 
@@ -108,7 +142,7 @@ export function HeroHubPanel({
               role="tab"
               aria-selected={tab === t.id}
               className={`hero-hub__tab${tab === t.id ? ' hero-hub__tab--active' : ''}`}
-              onClick={() => setTab(t.id)}
+              onClick={() => selectTab(t.id)}
             >
               {t.label}
             </button>

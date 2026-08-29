@@ -56,6 +56,7 @@
  * before this file existed: they are on the old bundle and nothing loops.
  */
 import { useEffect } from 'react';
+import { masterBus } from '../core/MasterBus';
 
 /** How long before another shell reload may be attempted in this tab. */
 export const RELOAD_COOLDOWN_MS = 10 * 60 * 1000;
@@ -214,6 +215,12 @@ export function useShellUpdateGate(): void {
         } catch {
           /* storage blocked - the disarm above is the real guard */
         }
+        /* 2026-08-29 telemetry: every shell reload is counted, with the page
+           age at the moment it fired. A reload inside the startup window is
+           the fix working (adopt before the player settles in); one long
+           after paint is the glitch Dan reported — the rate of the latter is
+           what must stay at zero. */
+        masterBus.emit('SHELL_RELOADED', { pageAgeMs: Math.round(performance.now()) });
         window.location.reload();
       }, settleDelayMs(performance.now()));
     };
@@ -231,7 +238,7 @@ export function useShellUpdateGate(): void {
      * reload can't help either case.
      */
     let verifying = false;
-    const verifyThenArm = () => {
+    const verifyThenArm = (source: 'shell-updated' | 'controllerchange') => {
       if (!armed || pending || verifying) return;
       const running = extractEntryScript(document.documentElement.outerHTML);
       if (!running) return; // dev server or unknown shell shape: stand down
@@ -244,7 +251,14 @@ export function useShellUpdateGate(): void {
         .then((res) => (res.ok ? res.text() : null))
         .then((html) => {
           const deployed = html ? extractEntryScript(html) : null;
-          if (deployed && deployed !== running) {
+          const stale = !!deployed && deployed !== running;
+          /* 2026-08-29 telemetry: emitted for BOTH outcomes — the not-stale
+             result is the SW freshness race doing its job, and its share is
+             the KPI that says the open-from-Hub glitch fix is holding. */
+          if (deployed) {
+            masterBus.emit('SHELL_STALENESS_CHECKED', { stale, source, running, deployed });
+          }
+          if (stale) {
             pending = true;
             attempt();
           }
@@ -260,7 +274,7 @@ export function useShellUpdateGate(): void {
     const onMessage = (event: MessageEvent) => {
       const type = (event.data as { type?: string } | null)?.type;
       if (type !== 'SHELL_UPDATED') return;
-      verifyThenArm();
+      verifyThenArm('shell-updated');
     };
 
     /* A new service worker taking control means new chunk names are being
@@ -268,7 +282,7 @@ export function useShellUpdateGate(): void {
        this session finish on a half-rotated bundle — but only after the
        verify above confirms this page is actually running the old ones. */
     const onControllerChange = () => {
-      verifyThenArm();
+      verifyThenArm('controllerchange');
     };
 
     /* The resume-path probe. See the block comment above the hook. */
@@ -297,7 +311,16 @@ export function useShellUpdateGate(): void {
         .then((html) => {
           if (!html) return;
           const deployed = extractEntryScript(html);
-          if (deployed && deployed !== running) {
+          const stale = !!deployed && deployed !== running;
+          if (deployed) {
+            masterBus.emit('SHELL_STALENESS_CHECKED', {
+              stale,
+              source: 'resume-probe',
+              running,
+              deployed,
+            });
+          }
+          if (stale) {
             pending = true;
             attempt();
           }

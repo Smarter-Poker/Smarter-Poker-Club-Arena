@@ -145,6 +145,34 @@ describe('SHELL_UPDATED and controllerchange arm the gate only after verificatio
   });
 });
 
+describe('shell telemetry — the fix is measured, not believed (2026-08-29 hardening)', () => {
+  /* SHELL_STALENESS_CHECKED (both outcomes, per source) gives the stale-boot
+     rate; SHELL_RELOADED (with page age) counts actual reboots. Together they
+     are how we know the open-from-Hub glitch stays dead. Source-level pin:
+     the triggers are SW events and the effect is a page reload. */
+  const src = readFileSync(
+    path.resolve(__dirname, '../../src/hooks/useShellUpdateGate.ts'),
+    'utf8'
+  );
+
+  it('every staleness verification emits SHELL_STALENESS_CHECKED — both outcomes', () => {
+    const emits = src.match(/masterBus\.emit\('SHELL_STALENESS_CHECKED'/g) ?? [];
+    // One in verifyThenArm (shell-updated / controllerchange), one in the
+    // resume probe. Emitting only when stale would destroy the denominator.
+    expect(emits.length).toBeGreaterThanOrEqual(2);
+    expect(src.includes("source: 'resume-probe'")).toBe(true);
+  });
+
+  it('every actual reload emits SHELL_RELOADED with the page age', () => {
+    expect(
+      /masterBus\.emit\('SHELL_RELOADED', \{ pageAgeMs[\s\S]{0,120}?window\.location\.reload\(\)/.test(
+        src
+      ),
+      'the reload fires without being counted — the glitch rate is unmeasurable again'
+    ).toBe(true);
+  });
+});
+
 describe('the probe is throttled', () => {
   it('cannot touch the network more than once a minute', () => {
     // The constant is load-bearing: without it every visibility flick puts a

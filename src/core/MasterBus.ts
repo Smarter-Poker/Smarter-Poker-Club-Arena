@@ -347,10 +347,32 @@ export type BusEventType =
   | 'TABLE_UNLOCKED'
   | 'RABBIT_HUNT_AVAILABLE'
   | 'ALL_IN_EQUITY'
-  | 'ONLINE_COUNT';
+  | 'ONLINE_COUNT'
+  // 2026-08-29 hardening pass: shell-freshness telemetry. The SW's bounded
+  // freshness race (sw-bus.js) and useShellUpdateGate's verified reloads are
+  // invisible when they work — these two events are how we KNOW the
+  // open-from-Hub glitch stays dead instead of believing it.
+  | 'SHELL_STALENESS_CHECKED'
+  | 'SHELL_RELOADED';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
+  /**
+   * 2026-08-29: a shell staleness verification completed (useShellUpdateGate).
+   * `stale: false` is the win condition — the running bundle matched the
+   * deployed one, so no reload was owed. The RATE of stale results per source
+   * is the KPI for the open-from-Hub glitch fix: it should be near zero on
+   * 'shell-updated'/'controllerchange' (the SW race served the fresh shell)
+   * and small on 'resume-probe' (long-lived PWA sessions catching up).
+   */
+  SHELL_STALENESS_CHECKED: {
+    stale: boolean;
+    source: 'shell-updated' | 'controllerchange' | 'resume-probe';
+    running: string | null;
+    deployed: string | null;
+  };
+  /** 2026-08-29: the gate actually reloaded the page to adopt a new shell. */
+  SHELL_RELOADED: { pageAgeMs: number };
   TABLE_CHAT_INSERT: { tableId: string; newRow: Record<string, unknown> };
   /**
    * A seated player's render-only identity changed. This event deliberately

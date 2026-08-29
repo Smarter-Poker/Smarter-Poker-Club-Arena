@@ -85,10 +85,6 @@
   transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-.details-header .back-btn:hover {
-  text-shadow: 0 0 12px rgba(111, 220, 255, 0.6);
-}
-
 .details-header h1 {
   font-size: 18px;
   font-weight: 600;
@@ -127,11 +123,6 @@
   box-shadow:
     0 4px 6px rgba(0, 0, 0, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-.details-tabs .tab:hover {
-  color: #e8eaf0;
-  border-color: #6fdcff;
 }
 
 .details-tabs .tab.active {
@@ -196,10 +187,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-.qr-btn:hover {
-  border-color: #6fdcff;
-}
-
 .tournament-desc {
   margin-top: 6px;
 }
@@ -259,11 +246,6 @@
     0 4px 8px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.quick-stats .stat:hover {
-  border-color: #6fdcff;
-  background: linear-gradient(180deg, #223046 0%, #1a2436 100%);
 }
 
 .quick-stats .stat-label {
@@ -389,10 +371,6 @@
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-.table-card:hover {
-  border-color: #6fdcff;
-}
-
 /* -------------------------------------------------------------------------
    THE CONTENT AREA - the only band that grows, and the only one that scrolls.
 
@@ -505,15 +483,6 @@
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
-.details-footer .btn-watch:hover {
-  background: linear-gradient(180deg, #223046 0%, #1a2436 100%);
-  color: #ffffff;
-  box-shadow:
-    0 6px 18px rgba(0, 0, 0, 0.45),
-    0 0 16px rgba(111, 220, 255, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-}
-
 .details-footer .btn-register {
   background: linear-gradient(180deg, #1877f2 0%, #0a5dc2 100%);
   color: white;
@@ -524,13 +493,6 @@
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
-.details-footer .btn-register:hover {
-  background: linear-gradient(180deg, #00b4e6 0%, #1877f2 100%);
-  box-shadow:
-    0 8px 24px rgba(0, 180, 230, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-}
-
 /* These two were `.btn-secondary` and `.btn-danger`, which this footer has
    never rendered - it emits `btn-share` and `btn-unregister`, so both blocks
    painted nothing at all and Share fell back to the bare button base. Same
@@ -539,11 +501,6 @@
   background: linear-gradient(180deg, #223046 0%, #1a2436 100%);
   color: #e8eaf0;
   border: 1px solid #223046;
-}
-
-.details-footer .btn-share:hover {
-  border-color: #6fdcff;
-  color: #ffffff;
 }
 
 .details-footer .btn-unregister {
@@ -576,11 +533,6 @@
     0 4px 16px rgba(0, 180, 230, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-}
-
-.details-footer .btn-enter-table:hover {
-  color: #ffffff;
-  background: linear-gradient(180deg, #6fdcff 0%, #00b4e6 100%);
 }
 
 /* ── Late Registration Button ── */

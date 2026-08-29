@@ -53,11 +53,6 @@
   transition: all var(--duration-fast) var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.tab:hover {
-  color: var(--text-primary);
-  background: var(--club-elevated);
-}
-
 .tab.active {
   color: var(--pure-white);
   background: var(--gradient-club);
@@ -144,10 +139,6 @@
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-
-.clubCard:hover {
-  border-color: var(--club-blue);
 }
 
 .clubHeader {
@@ -383,10 +374,6 @@
   transition: all var(--duration-fast) ease;
 }
 
-.btnPrimary:hover:not(:disabled) {
-  filter: brightness(1.15);
-}
-
 .btnPrimary:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -482,9 +469,4 @@
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: #fff;
-}
-
-.btnSecondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.4);
 }

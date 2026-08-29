@@ -77,10 +77,6 @@
   transition: all 0.2s;
 }
 
-.public-profile-header .back-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
-}
-
 .profile-hero {
   display: flex;
   flex-direction: column;
@@ -155,10 +151,6 @@
   box-sizing: border-box;
 }
 
-.action-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
-}
-
 .action-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -227,10 +219,6 @@
   font-size: 0.8rem;
   cursor: pointer;
   transition: all 0.2s;
-}
-
-.playing-at-badge:hover {
-  background: rgba(52, 199, 89, 0.2);
 }
 
 .player-status-text {
@@ -303,10 +291,6 @@
   cursor: pointer;
   transition: all 0.2s;
   font-size: 0.8rem;
-}
-
-.mutual-friend-chip:hover {
-  background: rgba(255, 255, 255, 0.12);
 }
 
 .mutual-avatar {

@@ -86,11 +86,6 @@
   transition: all 0.15s;
 }
 
-.pd-close:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
-}
-
 .pd-description {
   font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.5);

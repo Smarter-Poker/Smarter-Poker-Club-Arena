@@ -76,10 +76,6 @@
   color: #fff;
 }
 
-.fcm-type-card:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
 .fcm-selected {
   border-color: rgba(0, 212, 255, 0.4) !important;
   background: rgba(0, 212, 255, 0.08) !important;
@@ -134,8 +130,4 @@
 .fcm-send-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-}
-
-.fcm-send-btn:hover:not(:disabled) {
-  opacity: 0.9;
 }

@@ -155,11 +155,6 @@
   text-transform: uppercase;
 }
 
-.toggle-btn:hover {
-  border-color: #4a5a6a;
-  color: #8a9aaa;
-}
-
 .toggle-btn.on {
   background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
   border-color: #00d4ff;
@@ -337,10 +332,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.btn-secondary:hover {
-  border-color: #4a5a6a;
-  color: #fff;
-}
 /* ─────────────────────────────────────────────────────────────────────────────
    MOBILE RESPONSIVE
    ───────────────────────────────────────────────────────────────────────────── */

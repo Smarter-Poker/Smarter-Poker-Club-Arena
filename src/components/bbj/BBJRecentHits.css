@@ -57,7 +57,6 @@
     border-color 0.15s ease;
 }
 
-.bbj-hits__row.is-clickable:hover,
 .bbj-hits__row.is-clickable:focus-visible {
   background: rgba(213, 218, 226, 0.07);
   border-color: rgba(213, 218, 226, 0.3);
@@ -347,10 +346,6 @@
   font-weight: 700;
   letter-spacing: 0.02em;
   cursor: pointer;
-}
-
-.bbj-hits__more:hover:not(:disabled) {
-  background: rgba(240, 185, 11, 0.16);
 }
 
 .bbj-hits__more:disabled {

@@ -116,11 +116,6 @@
   transition: all 0.15s ease;
 }
 
-.rules-modal__close:hover {
-  background: rgba(248, 81, 73, 0.3);
-  color: #f85149;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    TABS
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -144,11 +139,6 @@
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
-}
-
-.rules-modal__tab:hover {
-  color: #e4e6eb;
-  background: rgba(255, 255, 255, 0.03);
 }
 
 .rules-modal__tab--active {
@@ -506,9 +496,6 @@
   letter-spacing: 0.04em;
   cursor: pointer;
   transition: filter 0.15s ease;
-}
-.rules-modal__manual-bomb:hover {
-  filter: brightness(1.18);
 }
 .rules-modal__manual-bomb:active {
   filter: brightness(0.92);

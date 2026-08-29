@@ -52,7 +52,3 @@
   line-height: 1;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.tag-remove:hover {
-  opacity: 1;
-}

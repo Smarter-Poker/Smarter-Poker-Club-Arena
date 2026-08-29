@@ -52,10 +52,6 @@
   margin-bottom: 1rem;
 }
 
-.request-btn:hover {
-  opacity: 0.9;
-}
-
 /* Request Form */
 .request-form {
   display: flex;

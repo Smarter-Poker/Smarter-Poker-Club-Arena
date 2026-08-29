@@ -313,10 +313,6 @@ body {
   color: white;
 }
 
-.btn-primary:hover:not(:disabled) {
-  background: var(--fb-blue-hover);
-}
-
 .btn-gold {
   background: var(--chip-gold);
   color: #000;
@@ -336,10 +332,6 @@ body {
   background: transparent;
   color: var(--text-primary);
   border: 1px solid var(--border-medium);
-}
-
-.btn-ghost:hover:not(:disabled) {
-  background: var(--bg-tertiary);
 }
 
 /* Action Button Sizes (for poker actions) */
@@ -540,10 +532,6 @@ body {
   text-align: center;
 }
 
-.tab:hover {
-  color: var(--text-primary);
-}
-
 .tab.active {
   background: var(--fb-blue);
   color: white;
@@ -589,8 +577,4 @@ body {
 ::-webkit-scrollbar-thumb {
   background: var(--bg-tertiary);
   border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
 }

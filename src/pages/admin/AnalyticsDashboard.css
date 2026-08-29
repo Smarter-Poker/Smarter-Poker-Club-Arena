@@ -245,10 +245,6 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
 }
 
-.vip-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.02);
-}
-
 .vip-type-badge {
   display: inline-block;
   padding: 2px 8px;
@@ -348,11 +344,6 @@
   transition: all 0.15s;
 }
 
-.range-btn:hover {
-  color: #e2e8f0;
-  background: rgba(255, 255, 255, 0.06);
-}
-
 .range-btn.active {
   background: rgba(59, 130, 246, 0.2);
   color: #3b82f6;
@@ -370,10 +361,6 @@
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s;
-}
-
-.export-btn:hover:not(:disabled) {
-  background: rgba(34, 197, 94, 0.2);
 }
 
 .export-btn:disabled {
@@ -437,10 +424,6 @@
 /* ── Enhancement #9: Live Player Card ─────────────────────────────────────── */
 .live-card {
   border-color: rgba(6, 182, 212, 0.2);
-}
-
-.live-card:hover {
-  border-color: rgba(6, 182, 212, 0.4);
 }
 
 .summary-card .value.text-cyan {

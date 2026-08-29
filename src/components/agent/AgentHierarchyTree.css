@@ -33,11 +33,6 @@
   transition: all 0.2s;
 }
 
-.refresh-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
 .hierarchy-container {
   padding: 16px;
   max-height: 600px;
@@ -60,11 +55,6 @@
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.node-content:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.15);
 }
 
 .node-content.tier-super {

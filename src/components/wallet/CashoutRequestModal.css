@@ -87,10 +87,6 @@
   transition: background 0.2s;
 }
 
-.close-btn:hover {
-  background: var(--surface-hover, #3a3a5a);
-}
-
 .modal-body {
   padding: 24px;
 }
@@ -216,11 +212,6 @@
   transition: all 0.2s;
 }
 
-.pending-item .cancel-btn:hover {
-  background: #ef5350;
-  color: #fff;
-}
-
 .pending-note {
   margin-top: 12px;
   font-size: 0.75rem;
@@ -297,7 +288,6 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.quick-btn:hover,
 .quick-btn:active {
   background: var(--primary, #667eea);
   border-color: var(--primary, #667eea);
@@ -361,7 +351,6 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.submit-btn:hover:not(:disabled),
 .submit-btn:active:not(:disabled) {
   opacity: 0.9;
 }

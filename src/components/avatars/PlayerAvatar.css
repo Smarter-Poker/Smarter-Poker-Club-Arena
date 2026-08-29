@@ -365,10 +365,6 @@
   transition: opacity 0.2s ease;
 }
 
-.player-avatar-with-name:hover {
-  opacity: 0.92;
-}
-
 .player-avatar-name-block {
   display: flex;
   flex-direction: column;

@@ -103,10 +103,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.join-btn:hover:not(:disabled) {
-  background: rgba(74, 222, 128, 0.3);
-}
-
 .join-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -122,11 +118,6 @@
   cursor: pointer;
   font-size: 1rem;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.remove-btn:hover {
-  background: rgba(248, 113, 113, 0.2);
-  color: #f87171;
 }
 
 .no-favorites {

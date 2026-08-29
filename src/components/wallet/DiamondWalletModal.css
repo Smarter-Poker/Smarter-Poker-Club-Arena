@@ -73,11 +73,6 @@
   transition: all 0.15s;
 }
 
-.diamond-wallet-modal__close-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: white;
-}
-
 /* ── Header ────────────────────────────────────────────────────── */
 .diamond-wallet-modal__header {
   padding: 16px 20px 20px;
@@ -126,10 +121,6 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
-}
-
-.diamond-wallet-modal__buy-btn:hover {
-  background: linear-gradient(135deg, rgba(0, 212, 255, 0.35), rgba(0, 150, 255, 0.35));
 }
 
 /* ── Filters ───────────────────────────────────────────────────── */
@@ -202,10 +193,6 @@
   padding: 12px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
   transition: background 0.15s;
-}
-
-.diamond-wallet-modal__tx:hover {
-  background: rgba(255, 255, 255, 0.02);
 }
 
 .diamond-wallet-modal__tx-icon {

@@ -177,10 +177,12 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* `.hero-btn:hover:not(:disabled)` already anticipated a disabled state and
-   nothing ever styled one, so a disabled hero button looked identical to an
-   enabled one. The Dispute button is disabled off a club context now, so this
-   is load-bearing rather than defensive. */
+/* Nothing else styles a disabled hero button, so without this one a disabled
+   button looked identical to an enabled one. The Dispute button is disabled
+   off a club context, so this is load-bearing rather than defensive.
+   (The rule that used to make the point -- `.hero-btn:hover:not(:disabled)`,
+   which excluded a state nobody had styled -- went with the estate-wide hover
+   removal on 2026-08-29.) */
 .hero-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -218,10 +220,6 @@
 .wallet-tabs button.active {
   color: #00d4ff;
   border-bottom-color: #00d4ff;
-}
-
-.wallet-tabs button:hover:not(.active) {
-  color: #8a9aaa;
 }
 
 .wallet-content {

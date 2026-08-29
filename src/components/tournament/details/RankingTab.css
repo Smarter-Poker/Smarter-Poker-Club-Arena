@@ -535,10 +535,6 @@
     0 3px 10px rgba(0, 0, 0, 0.36);
 }
 
-.rk-btn--ghost:hover {
-  color: var(--tl-text);
-}
-
 .rk-btn--go {
   color: #ffffff;
   background: linear-gradient(180deg, #1877f2 0%, #0a5dc2 100%);
@@ -553,7 +549,6 @@
    ───────────────────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .rk-btn,
-  .rk-btn--go:hover,
   .rk-btn:active {
     transform: none;
     transition: none;

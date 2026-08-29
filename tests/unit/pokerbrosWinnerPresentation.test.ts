@@ -54,7 +54,9 @@ describe('the whole scene steps back behind the winner (measured 0.73)', () => {
       );
     }
     const at = TABLE_CSS.indexOf('.table-page--winner-flash .table-art');
-    expect(sliceCssRule(TABLE_CSS, '.table-page--winner-flash .table-art')).toMatch(/brightness\(0\.73\)/);
+    expect(sliceCssRule(TABLE_CSS, '.table-page--winner-flash .table-art')).toMatch(
+      /brightness\(0\.73\)/
+    );
   });
 
   it('every seat chrome element dims — cards, +N float and sparkles excluded', () => {
@@ -70,7 +72,9 @@ describe('the whole scene steps back behind the winner (measured 0.73)', () => {
   it('the page backdrop and the dealer button dim with the scene', () => {
     expect(TABLE_CSS).toMatch(/\.table-page--winner-flash::before/);
     const at = TABLE_CSS.indexOf('.table-page--winner-flash::before');
-    expect(sliceCssRule(TABLE_CSS, '.table-page--winner-flash::before')).toMatch(/rgba\(0,\s*0,\s*0,\s*0\.27\)/);
+    expect(sliceCssRule(TABLE_CSS, '.table-page--winner-flash::before')).toMatch(
+      /rgba\(0,\s*0,\s*0,\s*0\.27\)/
+    );
     expect(TABLE_CSS).toMatch(/\.table-page--winner-flash \.dealer-button/);
   });
 
@@ -154,9 +158,21 @@ describe('the highlight is STEADY — zero motion at the cut', () => {
     }
   });
 
-  it('the hover lift is frozen while the winner tableau is painted', () => {
-    expect(BOARD_CSS).toMatch(/\.community-cards__card--dimmed:hover/);
-    expect(BOARD_CSS).toMatch(/\.community-cards__card--highlighted:hover/);
+  // This used to assert that `.community-cards__card--dimmed:hover` and
+  // `--highlighted:hover` EXISTED. They were counter-rules: a base
+  // `.community-cards__card:hover` lifted a board card, and during the winner
+  // tableau a lifted losing card or a bobbing winner is motion the reference
+  // does not have, so those two rules cancelled the lift back out.
+  //
+  // Hover was removed estate-wide on 2026-08-29, base rule included, so there
+  // is nothing left to cancel and the counter-rules went with it. The property
+  // the test was protecting has not changed -- a pointer must not disturb the
+  // tableau -- so it is pinned against the new mechanism instead, and pinned
+  // more strictly than before: not "the lift is frozen for these two states"
+  // but "no pointer state moves a board card at all, in any state".
+  it('no pointer state disturbs the winner tableau, because none exists', () => {
+    const withoutComments = BOARD_CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(withoutComments).not.toContain(':hover');
   });
 
   it('CardImage no longer lifts a highlighted card off its slot', () => {
@@ -185,7 +201,9 @@ describe('the state lands as a CUT — nothing slower than 120ms', () => {
     expect(BOARD_CSS).toMatch(/ccBannerCut/);
     expect(BOARD_CSS).not.toMatch(/ccHandNameShimmer/);
     const at = BOARD_CSS.indexOf('animation: ccBannerCut');
-    expect(sliceBetween(BOARD_CSS, 'animation: ccBannerCut', ';')).toMatch(/0\.0?9\d*s|0\.1[0-2]?s/);
+    expect(sliceBetween(BOARD_CSS, 'animation: ccBannerCut', ';')).toMatch(
+      /0\.0?9\d*s|0\.1[0-2]?s/
+    );
   });
 
   it('the seat chrome dim carries no transition — filters snap', () => {
@@ -277,7 +295,9 @@ describe('the banner is the reference banner (measured geometry)', () => {
   it('hugs the board from below', () => {
     const at = BOARD_CSS.indexOf('.community-cards__hand-name {');
     expect(at).toBeGreaterThan(-1);
-    expect(sliceCssRule(BOARD_CSS, '.community-cards__hand-name {')).toMatch(/top:\s*calc\(100%\s*\+\s*4px\)/);
+    expect(sliceCssRule(BOARD_CSS, '.community-cards__hand-name {')).toMatch(
+      /top:\s*calc\(100%\s*\+\s*4px\)/
+    );
   });
 
   it('the hand name is a gradient-gold span over the band, sized off the card height', () => {

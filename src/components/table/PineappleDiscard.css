@@ -80,10 +80,6 @@
     background 0.16s ease;
 }
 
-.pineapple-discard__card:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-}
-
 .pineapple-discard__card:disabled {
   cursor: default;
   opacity: 0.6;
@@ -137,8 +133,5 @@
 @media (prefers-reduced-motion: reduce) {
   .pineapple-discard__card {
     transition: none;
-  }
-  .pineapple-discard__card:hover:not(:disabled) {
-    transform: none;
   }
 }

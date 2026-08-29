@@ -221,7 +221,3 @@
   font-size: var(--fs-sm);
   cursor: pointer;
 }
-
-.export-btn:hover {
-  background: var(--bg-tertiary);
-}

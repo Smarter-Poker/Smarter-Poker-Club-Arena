@@ -74,9 +74,17 @@ describe('solid-color metallic popup system', () => {
     expect(popupCss).toContain('.modal-overlay');
     expect(popupCss).toContain("[class*='_modalOverlay_']");
     expect(popupCss).toContain("input:not([type='checkbox']):not([type='radio'])");
-    expect(popupCss).toContain('button:hover:not(:disabled)');
+    // Was `button:hover:not(:disabled)`. Hover was removed estate-wide on
+    // 2026-08-29, so the pressed state is now the only interaction feedback a
+    // popup button gives -- and it is the one that was always doing the work,
+    // since a phone cannot hover and this sheet is mostly read on a phone.
+    expect(popupCss).toContain('button:active:not(:disabled)');
     expect(popupCss).toContain("[aria-label*='Close']");
     expect(popupCss).toContain('@media (max-width: 640px)');
+  });
+
+  it('gives a popup button no hover state to fall back on', () => {
+    expect(popupCss.replace(/\/\*[\s\S]*?\*\//g, '')).not.toContain(':hover');
   });
 });
 

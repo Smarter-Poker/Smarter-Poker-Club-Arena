@@ -88,10 +88,6 @@
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.2s;
 }
 
-.table-row:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-
 .table-row.current {
   background: rgba(74, 222, 128, 0.1);
   color: var(--text-primary);

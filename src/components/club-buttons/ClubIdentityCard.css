@@ -211,10 +211,6 @@ button.club-identity__line {
   height: 50%;
 }
 
-.club-identity__share:hover {
-  color: #cceeff;
-}
-
 .club-identity__share:active {
   transform: translateY(1px);
 }

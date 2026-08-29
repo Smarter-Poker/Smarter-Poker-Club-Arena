@@ -28,11 +28,6 @@
     0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
-.sit-out-toggle button:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
-}
-
 .sit-out-toggle button:active {
   transform: scale(0.97);
 }

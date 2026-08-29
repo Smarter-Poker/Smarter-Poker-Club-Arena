@@ -170,10 +170,6 @@
   border-bottom: none;
 }
 
-.suggestItem:hover {
-  background: rgba(0, 100, 200, 0.2);
-}
-
 .suggestAvatar {
   width: 32px;
   height: 32px;
@@ -277,11 +273,6 @@
   transition: all 0.2s ease;
 }
 
-.sortBtn:hover {
-  border-color: rgba(0, 200, 255, 0.5);
-  background: rgba(0, 50, 100, 0.5);
-}
-
 .sortBtnActive {
   background: linear-gradient(145deg, rgba(0, 168, 255, 0.3), rgba(0, 100, 200, 0.3));
   border-color: rgba(0, 200, 255, 0.6);
@@ -372,11 +363,6 @@
   border-radius: 12px;
   padding: 14px;
   transition: all 0.2s ease;
-}
-
-.playerResult:hover {
-  border-color: rgba(0, 200, 255, 0.4);
-  background: rgba(0, 40, 80, 0.4);
 }
 
 @keyframes findPlayerModalFadeIn {
@@ -485,11 +471,6 @@
   -webkit-backdrop-filter: blur(8px);
 }
 
-.tableCard:hover {
-  background: rgba(0, 80, 150, 0.4);
-  border-color: rgba(0, 200, 255, 0.6);
-}
-
 .tableInfo {
   display: flex;
   flex-direction: column;
@@ -531,9 +512,4 @@
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-}
-
-.closeButton:hover {
-  background: rgba(100, 120, 140, 0.5);
-  border-color: rgba(100, 150, 180, 0.6);
 }

@@ -49,10 +49,6 @@
   transition: color 0.2s;
 }
 
-.backLink:hover {
-  color: #fff;
-}
-
 /* Header */
 .header {
   display: flex;
@@ -166,11 +162,6 @@
   transition: all 0.2s;
 }
 
-.clubOption:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: var(--accent);
-}
-
 .clubOption span {
   font-size: 0.8rem;
   color: var(--text-muted);
@@ -242,11 +233,6 @@
   transition: all 0.2s ease;
 }
 
-.tab:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-}
-
 .tab.active {
   background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
   border-color: #8b5cf6;
@@ -300,10 +286,6 @@
   text-decoration: none;
   color: #fff;
   transition: background 0.2s;
-}
-
-.tableRow:hover {
-  background: rgba(255, 255, 255, 0.08);
 }
 
 .tableRow .stakes {
@@ -710,10 +692,6 @@
   transition: all 0.2s;
 }
 
-.removeClubBtn:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.2);
-}
-
 .removeClubBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -826,10 +804,6 @@
   transition: all 0.2s;
 }
 
-.saveButton:hover:not(:disabled) {
-  filter: brightness(1.1);
-}
-
 .saveButton:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -846,11 +820,6 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
-}
-
-.viewAllBtn:hover {
-  background: rgba(139, 92, 246, 0.1);
-  border-color: #8b5cf6;
 }
 
 /* ═══════ PREMIUM ANIMATIONS ═══════ */

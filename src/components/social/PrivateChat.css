@@ -124,10 +124,6 @@
   border-radius: 6px;
 }
 
-.chat-close:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
 /* Messages */
 .chat-messages {
   flex: 1;

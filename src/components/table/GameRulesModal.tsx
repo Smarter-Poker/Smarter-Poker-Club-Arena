@@ -563,7 +563,7 @@ export function GameRulesModal({
                       <div className="rules-modal__item">
                         <span className="rules-modal__label">Needs</span>
                         <span className="rules-modal__value">
-                          {bombPotRules.minPlayers} players
+                          {bombPotRules.minPlayers} Players
                         </span>
                       </div>
                     )}
@@ -575,7 +575,7 @@ export function GameRulesModal({
                     {bombPotRules.buttonPolicy === 'separate' && (
                       <div className="rules-modal__item">
                         <span className="rules-modal__label">Button</span>
-                        <span className="rules-modal__value">Separate bomb button</span>
+                        <span className="rules-modal__value">Separate Bomb Button</span>
                       </div>
                     )}
                   </div>

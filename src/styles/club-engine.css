@@ -188,6 +188,48 @@ body {
   overflow-x: hidden;
 }
 
+/* Keyboard entry point. This lives in the loaded Club Engine sheet (the former
+   rule was stranded in the legacy, unimported globals.css file). Keep it fully
+   outside the viewport until focused so it never occupies layout space. */
+.skip-link {
+  position: fixed;
+  inset: 8px auto auto 8px;
+  z-index: 10000;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 16px;
+  border: 1px solid rgba(197, 211, 224, 0.72);
+  border-radius: 3px;
+  background: linear-gradient(180deg, #151a20 0%, #07090c 100%);
+  color: #f4f8fb;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 0 1px rgba(0, 112, 255, 0.24),
+    0 10px 28px rgba(0, 0, 0, 0.72);
+  font-family: var(--font-primary);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  text-transform: uppercase;
+  transform: translateY(calc(-100% - 16px));
+  transition: transform 140ms ease-out;
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  outline: 2px solid #2388ff;
+  outline-offset: 2px;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skip-link {
+    transition: none;
+  }
+}
+
 #root {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */

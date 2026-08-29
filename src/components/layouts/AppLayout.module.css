@@ -184,6 +184,104 @@
      exactly this reason on 2026-08-24; tablet and desktop were missed. */
 }
 
+.main:focus {
+  outline: none;
+}
+
+/* #SmarterCasinoRealism route shell. The live page remains the source of all
+   data and controls; this supplies the shared physical environment around it. */
+.casinoStage {
+  position: relative;
+  isolation: isolate;
+  overflow-x: clip;
+  background:
+    linear-gradient(180deg, rgba(2, 5, 8, 0.86), rgba(2, 5, 8, 0.97)),
+    url('/hub/club-arena/images/bg-vault.jpg') center top / cover fixed;
+  box-shadow:
+    inset 1px 0 rgba(196, 211, 226, 0.08),
+    inset -1px 0 rgba(196, 211, 226, 0.08);
+}
+
+.casinoStage::before {
+  content: '';
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  min-height: min(760px, 100dvh);
+  pointer-events: none;
+  background-image:
+    linear-gradient(90deg, #030609 0%, rgba(3, 6, 9, 0.82) 39%, rgba(3, 6, 9, 0.08) 82%),
+    linear-gradient(180deg, rgba(3, 6, 9, 0.12) 0%, #030609 70%), var(--casino-route-art);
+  background-repeat: no-repeat;
+  background-position:
+    center,
+    center,
+    right -32px top 8px;
+  background-size:
+    cover,
+    cover,
+    min(56vw, 760px) auto;
+  opacity: 0.28;
+  filter: saturate(0.78) contrast(1.12);
+}
+
+.casinoStage::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0 0 auto;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(188, 207, 224, 0.46) 15%,
+    rgba(46, 155, 255, 0.78) 50%,
+    rgba(188, 207, 224, 0.46) 85%,
+    transparent
+  );
+  box-shadow: 0 0 14px rgba(46, 155, 255, 0.28);
+}
+
+.casinoStage > * {
+  position: relative;
+  z-index: 1;
+}
+
+.casinoStage :global(h1) {
+  color: #edf4fa;
+  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  font-weight: 500;
+  letter-spacing: 0.035em;
+  text-shadow: 0 1px 0 #000;
+}
+
+.casinoStage :global(h2),
+.casinoStage :global(h3) {
+  color: #dfe9f2;
+  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.casinoStage :global(input:focus-visible),
+.casinoStage :global(select:focus-visible),
+.casinoStage :global(textarea:focus-visible),
+.casinoStage :global(button:focus-visible),
+.casinoStage :global(a:focus-visible) {
+  outline: 2px solid #75beff;
+  outline-offset: 3px;
+}
+
+.casinoStage :global(table) {
+  border-color: rgba(163, 184, 203, 0.22);
+}
+
+.casinoStage :global(th) {
+  color: #aebdcb;
+  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  letter-spacing: 0.08em;
+}
+
 /* Pages that own their own chrome edge-to-edge — a full-bleed list that must
    sit flush against the global header's bottom border, with no shell gutter
    framing it. Higher specificity than .main so it wins inside the media
@@ -244,6 +342,18 @@
        The header is sticky and already occupies flow space; adding 55px for
        it put a dead band under it on every tablet-width page. */
   }
+
+  .casinoStage::before {
+    background-position:
+      center,
+      center,
+      right -100px top 10px;
+    background-size:
+      cover,
+      cover,
+      min(74vw, 680px) auto;
+    opacity: 0.22;
+  }
 }
 
 @media (max-width: 600px) {
@@ -284,5 +394,24 @@
 
   .logoText {
     font-size: var(--text-base);
+  }
+
+  .casinoStage::before {
+    min-height: 520px;
+    background-image:
+      linear-gradient(180deg, rgba(3, 6, 9, 0.16), #030609 68%), var(--casino-route-art);
+    background-position:
+      center,
+      center top 10px;
+    background-size:
+      cover,
+      115vw auto;
+    opacity: 0.18;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .casinoStage {
+    background-attachment: scroll;
   }
 }

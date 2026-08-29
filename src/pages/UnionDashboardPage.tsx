@@ -32,6 +32,7 @@ import UnionOpsPanel from '../components/union/UnionOpsPanel';
 import UnionClubGovernance from '../components/union/UnionClubGovernance';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { EmptyState, ErrorState } from '../components/common/EmptyState';
 // ── Helpers ─────────────────────────────────────────────────
 const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
 
@@ -874,11 +875,22 @@ export default function UnionDashboardPage() {
   }
 
   if (error && !union) {
+    const accessRestricted = /not a union admin|not.*owner/i.test(error);
     return (
       <div className="admin-page">
-        <div className="admin-container">
-          <div className="admin-error-banner">{error}</div>
-        </div>
+        {accessRestricted ? (
+          <EmptyState
+            icon="UNION"
+            eyebrow="Union Permission Gate"
+            tone="permission"
+            title="No Union Workspace Is Available"
+            description="Union treasury, clubs, agents, and settlement controls are available only to a union owner or appointed administrator."
+            action={{ label: 'Browse Unions', onClick: () => navigate('/unions') }}
+            secondaryAction={{ label: 'Return To Arena', onClick: () => navigate('/') }}
+          />
+        ) : (
+          <ErrorState message={error} onRetry={() => void loadDashboard(unionId)} />
+        )}
       </div>
     );
   }
@@ -999,8 +1011,9 @@ export default function UnionDashboardPage() {
           </div>
           <div className="admin-header-actions">
             <button
-              onClick={() => navigate('/union-games')}
+              onClick={() => unionId && navigate(`/unions/${unionId}/games`)}
               className="admin-btn admin-btn-primary"
+              disabled={!unionId}
             >
               Games
             </button>

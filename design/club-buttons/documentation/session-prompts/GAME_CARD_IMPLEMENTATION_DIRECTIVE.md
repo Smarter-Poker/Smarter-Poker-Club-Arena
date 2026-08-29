@@ -70,8 +70,7 @@ EXISTING CLUB ARENA HANDLERS
 \=
 PRODUCTION GAME CARD
 
-=============================================================== 2. CRITICAL TEMPLATE RULE
----
+## =============================================================== 2. CRITICAL TEMPLATE RULE
 
 DO NOT CREATE A NEW IMAGE FOR EVERY GAME.
 
@@ -101,8 +100,7 @@ different club settings
 
 Do not couple the card artwork to example values shown in the reference.
 
-=============================================================== 3. STATIC VS DYNAMIC CONTENT
----
+## =============================================================== 3. STATIC VS DYNAMIC CONTENT
 
 Anything that NEVER changes for that template may be part of the
 pre-rendered artwork.
@@ -161,8 +159,7 @@ Other game-specific rules
 
 NO SERVER-FED VALUE MAY BE BAKED INTO THE PRODUCTION ART.
 
-=============================================================== 4. BUILD FIVE CARD ENGINES
----
+## =============================================================== 4. BUILD FIVE CARD ENGINES
 
 Create five reusable component families.
 
@@ -179,8 +176,7 @@ follow it.
 
 Do not create unnecessary duplicate implementations.
 
-=============================================================== 5. MTT / TOURNAMENT CARD
----
+## =============================================================== 5. MTT / TOURNAMENT CARD
 
 The MTT card must dynamically support at minimum:
 
@@ -225,8 +221,7 @@ application state.
 
 DO NOT invent new tournament logic.
 
-=============================================================== 6. NLH CASH GAME CARD
----
+## =============================================================== 6. NLH CASH GAME CARD
 
 The NLH cash-game card must dynamically support:
 
@@ -277,8 +272,7 @@ Leave Waitlist
 
 Use existing application eligibility and seat logic.
 
-=============================================================== 7. PLO CARD FAMILY
----
+## =============================================================== 7. PLO CARD FAMILY
 
 Do not build separate codebases for:
 
@@ -321,8 +315,7 @@ other PLO rule flags
 The PLO family may use the approved PLO-specific visual template while
 preserving the same Shark Club manufacturing language.
 
-=============================================================== 8. SPINS CARD
----
+## =============================================================== 8. SPINS CARD
 
 Spins require a specialized template because MAX PAYOUT is a primary
 piece of information.
@@ -373,8 +366,7 @@ SIT DOWN
 
 All values remain dynamic.
 
-=============================================================== 9. HEADS UP CARD
----
+## =============================================================== 9. HEADS UP CARD
 
 Heads Up must dynamically support:
 
@@ -415,8 +407,7 @@ SIT DOWN
 
 Again, these are example values only.
 
-=============================================================== 10. ONE NORMALIZED CARD DATA MODEL
----
+## =============================================================== 10. ONE NORMALIZED CARD DATA MODEL
 
 Create a normalized data model so cards are not manually assembled on
 every page.
@@ -521,8 +512,7 @@ Use existing repository types and domain models where possible.
 
 Do not duplicate data types unnecessarily.
 
-=============================================================== 11. TEMPLATE REGISTRY
----
+## =============================================================== 11. TEMPLATE REGISTRY
 
 Create a central template registry.
 
@@ -557,8 +547,7 @@ state
 
 correct card presentation
 
-=============================================================== 12. DESKTOP AND MOBILE MUST BE SEPARATE COMPOSITIONS
----
+## =============================================================== 12. DESKTOP AND MOBILE MUST BE SEPARATE COMPOSITIONS
 
 DO NOT simply shrink the desktop card.
 
@@ -593,8 +582,7 @@ avoid microscopic text
 reflow data logically
 preserve the premium Shark Club appearance
 
-=============================================================== 13. MOBILE CONTENT PRIORITY
----
+## =============================================================== 13. MOBILE CONTENT PRIORITY
 
 When mobile space becomes constrained, preserve information in this
 priority:
@@ -611,8 +599,7 @@ priority:
 
 Decoration must yield before essential data.
 
-=============================================================== 14. DYNAMIC DATA ZONES
----
+## =============================================================== 14. DYNAMIC DATA ZONES
 
 Do not position values by random magic numbers on every component.
 
@@ -641,8 +628,7 @@ zones.
 This gives us the ability to swap artwork later without rewriting game
 logic.
 
-=============================================================== 15. TEMPLATE SWAPPING MUST BE EASY
----
+## =============================================================== 15. TEMPLATE SWAPPING MUST BE EASY
 
 This is mandatory.
 
@@ -666,8 +652,7 @@ The game card logic must not depend on one exact background image.
 
 Build adapters/configuration so the visual shell can be changed safely.
 
-=============================================================== 16. CARD SKINS / FUTURE VARIANTS
----
+## =============================================================== 16. CARD SKINS / FUTURE VARIANTS
 
 Prepare the architecture so future skins can exist.
 
@@ -682,8 +667,7 @@ DO NOT build those additional skins now unless they already exist.
 Just ensure the component architecture does not hard-code Shark Club
 into unrelated game logic.
 
-=============================================================== 17. STATUS PRESENTATION
----
+## =============================================================== 17. STATUS PRESENTATION
 
 Support visual status modules for:
 
@@ -719,8 +703,7 @@ Do not change the exterior chrome frame to red or green.
 
 State color should stay primarily inside the designated status module.
 
-=============================================================== 18. RULE BADGES
----
+## =============================================================== 18. RULE BADGES
 
 Rules must not make the card explode in size.
 
@@ -750,8 +733,7 @@ first 2 to 4 important badges visible +
 
 Do not attempt to fit 12 labels across a narrow mobile card.
 
-=============================================================== 19. ACTION BUTTONS
----
+## =============================================================== 19. ACTION BUTTONS
 
 Buttons must preserve all existing application functionality.
 
@@ -778,8 +760,7 @@ Card receives handler
 ↓
 Real semantic button invokes handler
 
-=============================================================== 20. BUTTON SEMANTICS
----
+## =============================================================== 20. BUTTON SEMANTICS
 
 The visible artwork may be highly graphical, but interaction must still
 use semantic HTML controls.
@@ -808,8 +789,7 @@ Preferred mobile target:
 
 48 x 48 CSS px
 
-=============================================================== 21. REALTIME DATA
----
+## =============================================================== 21. REALTIME DATA
 
 These cards must update from the existing Club Arena data systems.
 
@@ -840,8 +820,7 @@ ARENA GAME CARD
 ↓
 LIVE DOM VALUE
 
-=============================================================== 22. DO NOT PUT BUSINESS LOGIC INSIDE ART COMPONENTS
----
+## =============================================================== 22. DO NOT PUT BUSINESS LOGIC INSIDE ART COMPONENTS
 
 The visual card should not decide:
 
@@ -856,8 +835,7 @@ Those decisions belong to existing domain logic.
 
 The card only renders the state and invokes supplied handlers.
 
-=============================================================== 23. NUMBER FORMATTING
----
+## =============================================================== 23. NUMBER FORMATTING
 
 Use consistent formatters.
 
@@ -881,8 +859,7 @@ where useful.
 
 Never allow long values to destroy the layout.
 
-=============================================================== 24. STRESS TEST VALUES
----
+## =============================================================== 24. STRESS TEST VALUES
 
 Test at minimum:
 
@@ -931,8 +908,7 @@ No clipping.
 
 No overflow outside the card.
 
-=============================================================== 25. LONG TITLE HANDLING
----
+## =============================================================== 25. LONG TITLE HANDLING
 
 Tournament and game names may be long.
 
@@ -946,8 +922,7 @@ full title via accessible label / detail surface
 
 Do not shrink text until it becomes unreadable.
 
-=============================================================== 26. ARTWORK ASSETS
----
+## =============================================================== 26. ARTWORK ASSETS
 
 Create a dedicated production directory for approved game-card assets.
 
@@ -978,8 +953,7 @@ Do not randomly scatter these assets across the repository.
 
 If the repo has an established asset directory, follow it.
 
-=============================================================== 27. ASSET QUALITY
----
+## =============================================================== 27. ASSET QUALITY
 
 Use high-resolution optimized WebP or PNG where appropriate.
 
@@ -994,8 +968,7 @@ use responsive image handling
 preload only when useful
 cache static card shells
 
-=============================================================== 28. PERFORMANCE ARCHITECTURE
----
+## =============================================================== 28. PERFORMANCE ARCHITECTURE
 
 A lobby may display MANY cards simultaneously.
 
@@ -1015,8 +988,7 @@ Do not add continuous GPU-heavy animation to every card.
 
 Blue illumination should mostly be static or low-cost.
 
-=============================================================== 29. HOVER / PRESSED / SELECTED
----
+## =============================================================== 29. HOVER / PRESSED / SELECTED
 
 Desktop hover:
 
@@ -1038,8 +1010,7 @@ possibly subtle blue glass tint
 
 Mobile must not depend on hover.
 
-=============================================================== 30. CARD FAMILY VISUAL PERSONALITY
----
+## =============================================================== 30. CARD FAMILY VISUAL PERSONALITY
 
 All cards belong to the same Shark Club manufacturing family but must
 not all be identical.
@@ -1066,8 +1037,7 @@ The system principle is:
 SAME FACTORY.
 DIFFERENT MACHINES.
 
-=============================================================== 31. DO NOT REPEAT THE PREVIOUS GENERIC-FRAME MISTAKE
----
+## =============================================================== 31. DO NOT REPEAT THE PREVIOUS GENERIC-FRAME MISTAKE
 
 Do NOT build:
 
@@ -1077,8 +1047,7 @@ different icon
 
 The five families must preserve the approved distinct compositions.
 
-=============================================================== 32. DO NOT TOUCH LIVE POKER GAMEPLAY
----
+## =============================================================== 32. DO NOT TOUCH LIVE POKER GAMEPLAY
 
 This assignment applies to LOBBY / GAME DISCOVERY CARDS.
 
@@ -1096,8 +1065,7 @@ gameplay utility controls
 
 This is not the gameplay migration.
 
-=============================================================== 33. EXISTING CARD AUDIT
----
+## =============================================================== 33. EXISTING CARD AUDIT
 
 Before implementing:
 
@@ -1129,8 +1097,7 @@ Do not ask me to locate all five manually.
 
 Audit the repository.
 
-=============================================================== 34. FIRST IMPLEMENTATION PHASE
----
+## =============================================================== 34. FIRST IMPLEMENTATION PHASE
 
 Implement one family at a time.
 
@@ -1154,8 +1121,7 @@ verify state changes
 
 Then proceed.
 
-=============================================================== 35. VISUAL QA BREAKPOINTS
----
+## =============================================================== 35. VISUAL QA BREAKPOINTS
 
 Validate rendered cards at:
 
@@ -1178,8 +1144,7 @@ no overlap
 no broken long monetary values
 no cramped rule badges
 
-=============================================================== 36. FUNCTIONAL QA
----
+## =============================================================== 36. FUNCTIONAL QA
 
 Test:
 
@@ -1212,8 +1177,7 @@ Starting → Running
 Make sure the correct artwork/status changes without remounting unrelated
 application systems.
 
-=============================================================== 37. TEMPLATE DEVELOPMENT PAGE
----
+## =============================================================== 37. TEMPLATE DEVELOPMENT PAGE
 
 Create or extend a private development showcase for the five cards.
 
@@ -1251,8 +1215,7 @@ long titles
 
 This allows visual testing without altering production data.
 
-=============================================================== 38. DO NOT HARDCODE SHARK CLUB DATA
----
+## =============================================================== 38. DO NOT HARDCODE SHARK CLUB DATA
 
 The references may contain example content such as:
 
@@ -1271,8 +1234,7 @@ These are EXAMPLES ONLY.
 Production cards must display whatever game information the backend
 supplies.
 
-=============================================================== 39. DO NOT PUT CLUB-SPECIFIC TEXT INTO GENERIC CARD LOGIC
----
+## =============================================================== 39. DO NOT PUT CLUB-SPECIFIC TEXT INTO GENERIC CARD LOGIC
 
 The visual theme may currently be Shark Club.
 
@@ -1286,8 +1248,7 @@ Shark Club
 into card data components unless it is genuinely part of a supplied club
 record.
 
-=============================================================== 40. DEFAULT CARD RESOLUTION LOGIC
----
+## =============================================================== 40. DEFAULT CARD RESOLUTION LOGIC
 
 Conceptually:
 
@@ -1307,8 +1268,7 @@ status configuration
 
 Do not scatter viewport and family conditionals throughout random JSX.
 
-=============================================================== 41. CENTRAL FORMATTER LAYER
----
+## =============================================================== 41. CENTRAL FORMATTER LAYER
 
 Create or reuse utility formatters for:
 
@@ -1324,8 +1284,7 @@ blinds
 
 Do not format those independently in five components.
 
-=============================================================== 42. ERROR / LOADING STATES
----
+## =============================================================== 42. ERROR / LOADING STATES
 
 Cards must support:
 
@@ -1348,8 +1307,7 @@ Unknown players does NOT automatically equal:
 
 Use the existing application's unavailable state.
 
-=============================================================== 43. DATA UPDATE WITHOUT ARTWORK FLASH
----
+## =============================================================== 43. DATA UPDATE WITHOUT ARTWORK FLASH
 
 When:
 
@@ -1365,8 +1323,7 @@ Only the live data layer should update.
 
 Avoid image flicker.
 
-=============================================================== 44. CARD CLICK BEHAVIOR
----
+## =============================================================== 44. CARD CLICK BEHAVIOR
 
 Do not make the entire card clickable if doing so creates conflicts with
 internal buttons unless the existing product intentionally works that
@@ -1378,8 +1335,7 @@ If the entire card opens details:
 
 ensure nested buttons do not trigger the card click accidentally.
 
-=============================================================== 45. ACCESSIBILITY
----
+## =============================================================== 45. ACCESSIBILITY
 
 Card artwork is decorative.
 
@@ -1393,8 +1349,7 @@ Example accessible summary:
 
 Buttons need explicit labels.
 
-=============================================================== 46. ACCEPTANCE CRITERIA
----
+## =============================================================== 46. ACCEPTANCE CRITERIA
 
 This migration is complete only when:
 
@@ -1426,8 +1381,7 @@ Mobile layouts are production-ready.
 
 No live poker gameplay has been modified.
 
-=============================================================== 47. FINAL REPORT
----
+## =============================================================== 47. FINAL REPORT
 
 At completion return:
 
@@ -1447,8 +1401,7 @@ At completion return:
 14. Any intentionally excluded surfaces.
 15. Confirmation live gameplay was not changed.
 
-=============================================================== 48. CONTINUOUS EXECUTION
----
+## =============================================================== 48. CONTINUOUS EXECUTION
 
 Treat this as one controlled assignment.
 
@@ -1488,8 +1441,7 @@ Do not stop simply because a component needs a new reusable variant.
 
 ---
 
-FINAL COMMAND
----
+## FINAL COMMAND
 
 Audit the current Club Arena game-card architecture first.
 

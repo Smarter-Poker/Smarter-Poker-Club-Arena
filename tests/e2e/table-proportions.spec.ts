@@ -334,7 +334,9 @@ test.describe('every device gets the same proportions', () => {
     ).toEqual([]);
   });
 
-  test('nothing on the felt changes size without saying so (the geometry baseline)', async ({ page }) => {
+  test('nothing on the felt changes size without saying so (the geometry baseline)', async ({
+    page,
+  }) => {
     /* Dan 2026-08-29: "YOU NEED TO ADD PREVENTIVE REGRESSION TO ALL ASPECTS
        ... WE DON'T EVER WANT THINGS RANDOMLY REGRESSING."
 

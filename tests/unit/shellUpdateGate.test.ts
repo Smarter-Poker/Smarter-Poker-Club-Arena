@@ -25,7 +25,12 @@ import {
 } from '../../src/hooks/useShellUpdateGate';
 
 describe('mayReloadForShell — never mid-hand, never unseen, never in a loop', () => {
-  const base = { pathname: '/hub/club-arena/clubs', visible: true, lastReloadAt: null, now: 1_000_000 };
+  const base = {
+    pathname: '/hub/club-arena/clubs',
+    visible: true,
+    lastReloadAt: null,
+    now: 1_000_000,
+  };
 
   it('allows a reload on a boring page, visible, no recent reload', () => {
     expect(mayReloadForShell(base)).toBe(true);
@@ -41,12 +46,12 @@ describe('mayReloadForShell — never mid-hand, never unseen, never in a loop', 
   });
 
   it('refuses a second reload inside the cooldown, allows one after it', () => {
-    expect(
-      mayReloadForShell({ ...base, lastReloadAt: base.now - RELOAD_COOLDOWN_MS + 1 })
-    ).toBe(false);
-    expect(
-      mayReloadForShell({ ...base, lastReloadAt: base.now - RELOAD_COOLDOWN_MS - 1 })
-    ).toBe(true);
+    expect(mayReloadForShell({ ...base, lastReloadAt: base.now - RELOAD_COOLDOWN_MS + 1 })).toBe(
+      false
+    );
+    expect(mayReloadForShell({ ...base, lastReloadAt: base.now - RELOAD_COOLDOWN_MS - 1 })).toBe(
+      true
+    );
   });
 });
 

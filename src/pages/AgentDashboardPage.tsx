@@ -32,6 +32,7 @@ import { reportError } from '../utils/errorReporter';
 import AgentBackOffice from '../components/agent/AgentBackOffice';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { EmptyState } from '../components/common/EmptyState';
 type AgentTab =
   | 'overview'
   | 'players'
@@ -566,6 +567,25 @@ export default function AgentDashboardPage() {
             <div key={i} className="admin-skeleton" style={{ height: '60px', marginTop: '8px' }} />
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (!clubId) {
+    return (
+      <div className="admin-page">
+        <EmptyState
+          icon="AGENT"
+          eyebrow="Agent Context Required"
+          tone="permission"
+          title="No Agent Workspace Is Available"
+          description={
+            error ||
+            'Agent balances, downlines, cashouts, and commissions belong to a club. Open the Agent Team from an authorized club workspace.'
+          }
+          action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
+          secondaryAction={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
+        />
       </div>
     );
   }

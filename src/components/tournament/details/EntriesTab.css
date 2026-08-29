@@ -235,6 +235,33 @@
    Verified live before shipping: this exact CSS injected into production moved
    the list from 520px to 726px inside the 860px panel, 9 visible rows to 12,
    no dead space, footer still pinned.
+
+   ── AND THEN IT WAS RENDERED AT 375px (2026-08-29) ───────────────────────
+
+   The line above says "the fill is correct on a phone for the same reason it
+   is correct here". It was measured on a 860px desktop panel and reasoned onto
+   a phone. Rendered at 375x812 on production it is not correct at all:
+
+     .et-panel          321px
+       .tl-section-head  18px
+       .et-stats        128px      <- 40% of the panel
+       .et-scroll       160px      <- its own min-height, NOT what is available
+
+   Drop the floor and the list measures 129px, so it was overflowing its parent
+   by 31px and being propped up by the minimum. The panel had turned its own
+   overflow on to cope, which means the reader got TWO nested scrollbars -
+   precisely the shape this block was written to remove, arriving on the one
+   screen size nobody rendered.
+
+   The cause is the stat grid. `.tl-stat-grid` is shared and asks for
+   `repeat(auto-fit, minmax(104px, 1fr))`; at a 309px inner width that resolves
+   to TWO columns, so three tiles take two rows and the second row is half
+   empty. Sixty-four pixels of nothing, on the screen with the least to spare,
+   next to a 49-row list showing under three rows.
+
+   Three tiles, one row, on a phone. That returns the 64px to the list, which
+   then sits above its floor and stops overflowing, and the nested scrollbar
+   goes with it.
    ------------------------------------------------------------------------- */
 .et-panel {
   display: flex;
@@ -246,4 +273,21 @@
   flex: 1 1 auto;
   max-height: none;
   min-height: 160px;
+}
+
+@media (max-width: 480px) {
+  /* Scoped to this tab: `.tl-stat-grid`'s auto-fit is right for the tabs whose
+     tiles carry longer values. Entries has three short ones. */
+  .et-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  /* A floor taller than the space available is not a floor, it is an overflow.
+     Low enough that the list can always fit inside the panel, high enough that
+     it is still a list. */
+  .et-scroll {
+    min-height: 120px;
+  }
 }

@@ -454,6 +454,19 @@
   box-shadow: inset 0 0 12px #000;
 }
 
+/* The source frame includes two white pixels at its extreme left edge. Mask
+   only those pixels so the approved chrome and its geometry remain untouched
+   at both desktop and mobile scales. */
+.club-lobby-command-top__welcome--approved-universal::before {
+  content: '';
+  position: absolute;
+  z-index: 10;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: #000;
+  pointer-events: none;
+}
+
 @media (min-width: 901px) {
   /* One approved, text-free header frame is shared by every club. It overlays
      the reference chassis' baked Shark Club sample and leaves the live club

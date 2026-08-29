@@ -2090,9 +2090,19 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                Still summed WITHOUT de-duplication, exactly as specified above:
                the RPC returns one row per club and a player in two clubs is two
                memberships, which is what unions.member_count holds. */
-            const { data: perClub } = await supabase.rpc('fn_batch_club_member_counts', {
-              p_club_ids: unionClubIds,
-            });
+            const { data: perClub, error: perClubErr } = await supabase.rpc(
+              'fn_batch_club_member_counts',
+              {
+                p_club_ids: unionClubIds,
+              }
+            );
+            // ROUND 9 (2026-08-29): keeping the previous count on a failed
+            // read is the right fallback; doing it silently is not. The
+            // header quietly showing a stale union total is the exact shape
+            // Dan caught on 2026-08-23.
+            if (perClubErr) {
+              reportError(perClubErr, 'ClubHomePage.union_member_counts_read_failed');
+            }
             const unionMembers = Array.isArray(perClub)
               ? perClub.reduce(
                   (sum: number, row: { member_count: number | string }) =>
@@ -2411,13 +2421,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               /* Dedupe is an optimisation; losing it costs one extra RPC. */
             }
             // Re-read the updated level from DB
-            const { data: refreshedClub } = await supabase
+            const { data: refreshedClub, error: levelReadErr } = await supabase
               .from('clubs')
               .select(
                 'level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
               )
               .eq('id', resolvedId)
               .maybeSingle();
+            // ROUND 9 (2026-08-29): a failed re-read left the badge at level 1
+            // with no trace - the recompute RPC had just SUCCEEDED, so the DB
+            // holds the real level and only this display missed it.
+            if (levelReadErr) {
+              reportError(levelReadErr, 'ClubHomePage.level_reread_failed', {
+                clubId: resolvedId,
+              });
+            }
             if (refreshedClub && refreshedClub.level > 1) {
               effectiveLevel = refreshedClub.level;
               // Also update threshold values for accurate progress bar
@@ -3830,11 +3848,18 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 // instantly when the player taps it.
                 const session = readLocalSession();
                 if (session?.userId) {
-                  const { data: prof } = await supabase
+                  const { data: prof, error: profErr } = await supabase
                     .from('profiles')
                     .select('player_number')
                     .eq('id', session.userId)
                     .maybeSingle();
+                  // ROUND 9 (2026-08-29): the uuid fallback below still
+                  // credits the referral, so behaviour is unchanged - but a
+                  // failed read was silently downgrading share links from the
+                  // friendly player number to a raw uuid.
+                  if (profErr) {
+                    reportError(profErr, 'ClubHomePage.share_ref_profile_read_failed');
+                  }
                   if (prof?.player_number) {
                     profRefNum = prof.player_number;
                     refQuery = `?ref=${prof.player_number}`;

@@ -216,7 +216,7 @@ import SpinWheel, {
   parseLockedTiers,
   type SpinWheelData,
 } from '../components/tournament/SpinWheel';
-import { spinRevealTotalMs } from '../config/spinSpec';
+import { spinRevealTotalMs, spinOddsTable } from '../config/spinSpec';
 import { isSpinTournament, type SpinRevealSubject } from '../utils/spinReveal';
 // RealtimeChannelService imported if needed for future use
 import { tournamentService } from '../services/TournamentService';
@@ -1512,11 +1512,20 @@ export default function TablePage({
       if (!user) return;
       if (isMounted.current) setUserId(user.id);
       try {
-        const { data: profile } = await supabase
+        const { data: profile, error: profileErr } = await supabase
           .from('profiles')
           .select('display_name, username, avatar_url:arena_avatar_url')
           .eq('id', user.id)
           .maybeSingle();
+        /* ROUND 9 (2026-08-29): a FAILED read used to fall through as an
+           empty profile - the hero became 'Player' AND persistIdentity below
+           overwrote the first-paint cache with nulls, so the failure
+           propagated to the NEXT table open too. A failed read now keeps
+           whatever identity the cache already painted. */
+        if (profileErr) {
+          reportError(profileErr, 'TablePage.initUser_profile_read_failed');
+          return;
+        }
         if (isMounted.current) {
           const resolvedName = profile?.display_name || profile?.username || 'Player';
           setUsername(resolvedName);
@@ -3374,6 +3383,15 @@ export default function TablePage({
    * until the player confirms the price, and nothing is charged until they do.
    */
   const [seatFirstConfirm, setSeatFirstConfirm] = useState<number | null>(null);
+  /* ENHANCEMENT 2026-08-29: the multiplier odds ladder on the Spin buy-in
+     sheet. Collapsed by default (the sheet has to fit 375px with the Buy In
+     button above the fold); resets closed whenever the sheet closes so the
+     next open starts compact. Derived from spinOddsTable - the one ladder -
+     so a retuned tier reprices this display by itself. */
+  const [spinOddsOpen, setSpinOddsOpen] = useState(false);
+  useEffect(() => {
+    if (seatFirstConfirm === null) setSpinOddsOpen(false);
+  }, [seatFirstConfirm]);
 
   // Buy-in 60s timeout enforcement
   useEffect(() => {
@@ -5181,11 +5199,16 @@ export default function TablePage({
 
     const loadBBJPool = async () => {
       try {
-        const { data: tableData } = await supabase
+        // ROUND 9 (2026-08-29): the three BBJ reads below all discarded their
+        // resolved errors (the catch only sees THROWN ones), so a failed load
+        // was indistinguishable from "no jackpot here" and the banner stayed
+        // blank with no trace. Display fallbacks unchanged; failures reported.
+        const { data: tableData, error: bbjTableErr } = await supabase
           .from('tables')
           .select('club_id')
           .eq('id', tableId)
           .maybeSingle();
+        if (bbjTableErr) reportError(bbjTableErr, 'TablePage.bbj_table_read_failed', { tableId });
         const actualClubId = tableData?.club_id;
         if (!actualClubId || cancelled) return;
 
@@ -5193,9 +5216,10 @@ export default function TablePage({
         // trips, and the union rule lives server-side in fn_bbj_pool_for_club
         // rather than being re-implemented here (it was re-implemented in four
         // surfaces and wrong in three).
-        const { data: poolRows } = await supabase.rpc('fn_bbj_pool_for_club', {
+        const { data: poolRows, error: bbjPoolErr } = await supabase.rpc('fn_bbj_pool_for_club', {
           p_club_id: actualClubId,
         });
+        if (bbjPoolErr) reportError(bbjPoolErr, 'TablePage.bbj_pool_read_failed', { tableId });
         const pool = Array.isArray(poolRows) ? poolRows[0] : poolRows;
         if (!pool || cancelled || !isMounted.current) return;
 
@@ -5225,11 +5249,14 @@ export default function TablePage({
            freshness stamp below (now the ledger's real `awarded_at`) is the
            second, independent gate. */
         try {
-          const { data: poolRow } = await supabase
+          const { data: poolRow, error: hitBaselineErr } = await supabase
             .from('bbj_pools')
             .select('hit_count')
             .eq('id', pool.pool_id)
             .maybeSingle();
+          if (hitBaselineErr) {
+            reportError(hitBaselineErr, 'TablePage.bbj_hit_baseline_read_failed', { tableId });
+          }
           const liveHitCount = Number(poolRow?.hit_count);
           if (
             Number.isFinite(liveHitCount) &&
@@ -6370,12 +6397,21 @@ export default function TablePage({
       let elimErr: unknown = null;
       for (let attempt = 1; attempt <= ELIM_ATTEMPTS; attempt++) {
         try {
-          const { data } = await supabase
+          /* ROUND 9 (2026-08-29): the retry above was DEFEATED. PostgREST
+             RESOLVES with `{ error }` rather than throwing, so a failed read
+             landed in the success branch - tp null, elimErr null, loop broken
+             on attempt 1 - and the routing condition below saw neither an
+             elimination nor an error. The player stayed parked on the dead
+             table: the exact bug the 2026-08-26 note says was fixed, alive
+             through the seam between "throws" and "resolves with error". A
+             resolved error now retries exactly like a thrown one. */
+          const { data, error: elimReadErr } = await supabase
             .from('tournament_players')
             .select('status, position, prize')
             .eq('tournament_id', tableState.tournamentId!)
             .eq('user_id', userId)
             .maybeSingle();
+          if (elimReadErr) throw elimReadErr;
           tp = data;
           elimErr = null;
           break;
@@ -6955,7 +6991,7 @@ export default function TablePage({
 
     const fetchExistingHand = async () => {
       if (cancelled) return;
-      const { data } = await supabase
+      const { data, error: holeCardsErr } = await supabase
         .from('table_hole_cards')
         .select('cards, hand_number')
         .eq('table_id', tableId)
@@ -6963,6 +6999,14 @@ export default function TablePage({
         .order('hand_number', { ascending: false })
         .limit(1)
         .maybeSingle();
+
+      // ROUND 9 (2026-08-29): this is the mid-hand reload recovery for the
+      // hero's OWN cards. A failed read looked exactly like "no hand yet",
+      // and the 0s/2s/5s poll then stopped without cards. The retries still
+      // cover a transient failure; the failure is now visible.
+      if (holeCardsErr) {
+        reportError(holeCardsErr, 'TablePage.hole_card_recovery_read_failed', { tableId });
+      }
 
       if (cancelled) return;
 
@@ -8367,11 +8411,16 @@ export default function TablePage({
                 viewerClubId &&
                 viewerClubId !== table.club_id
               ) {
-                const { data: viewerClub } = await supabase
+                const { data: viewerClub, error: viewerClubErr } = await supabase
                   .from('clubs')
                   .select('name')
                   .eq('id', viewerClubId)
                   .maybeSingle();
+                // ROUND 9 (2026-08-29): cosmetic masthead fallback is fine;
+                // a silent failure is not.
+                if (viewerClubErr) {
+                  reportError(viewerClubErr, 'TablePage.masthead_viewer_club_read_failed');
+                }
                 if (viewerClub?.name) clubName = viewerClub.name;
               }
               if (unionName && clubName === unionName) {
@@ -8599,30 +8648,52 @@ export default function TablePage({
              * "spectator" — while tournament_players says he has paid.
              */
             if (userId) {
-              const { data: myEntry } = await supabase
+              const { data: myEntry, error: myEntryErr } = await supabase
                 .from('tournament_players')
                 .select('status, table_id')
                 .eq('tournament_id', table.tournament_id)
                 .eq('user_id', userId)
                 .maybeSingle();
-              const live = myEntry?.status === 'registered' || myEntry?.status === 'playing';
-              // "Seated" is table_seats, NEVER tournament_players.table_id.
-              // createTablesAndSeatPlayers historically wrote the seat row and
-              // left that column NULL, so it was null for 166 of 297 live
-              // entrants who were all demonstrably sitting down. Trusting it
-              // told more than half a tournament their seat was still coming
-              // while they were sitting in it.
-              let seatedSomewhere = false;
-              if (live) {
-                const { count } = await supabase
-                  .from('table_seats')
-                  .select('id, tables!inner(tournament_id)', { count: 'exact', head: true })
-                  .eq('user_id', userId)
-                  .eq('tables.tournament_id', table.tournament_id)
-                  .is('left_at', null);
-                seatedSomewhere = (count ?? 0) > 0;
+              /* ROUND 9 (2026-08-29): this is the read that separates a PAID
+                 entrant awaiting a seat from a spectator. A failed read used
+                 to fall through as "no entry" and OVERWRITE the awaiting flag
+                 with false - a paid player demoted to Spectating by a
+                 timeout, the exact complaint that started this sweep. On a
+                 failed read, keep whatever the flag already says and let the
+                 rest of this load (bounties, channels) continue. */
+              if (myEntryErr) {
+                reportError(myEntryErr, 'TablePage.paid_entrant_read_failed', {
+                  tournamentId: table.tournament_id,
+                });
+              } else {
+                const live = myEntry?.status === 'registered' || myEntry?.status === 'playing';
+                // "Seated" is table_seats, NEVER tournament_players.table_id.
+                // createTablesAndSeatPlayers historically wrote the seat row and
+                // left that column NULL, so it was null for 166 of 297 live
+                // entrants who were all demonstrably sitting down. Trusting it
+                // told more than half a tournament their seat was still coming
+                // while they were sitting in it.
+                let seatedSomewhere = false;
+                if (live) {
+                  const { count, error: seatCountErr } = await supabase
+                    .from('table_seats')
+                    .select('id, tables!inner(tournament_id)', { count: 'exact', head: true })
+                    .eq('user_id', userId)
+                    .eq('tables.tournament_id', table.tournament_id)
+                    .is('left_at', null);
+                  /* A failed count answers "awaiting a seat" for a paid
+                     entrant - the safe direction (the footer says the seat is
+                     coming rather than demoting them to spectator), and the
+                     next snapshot corrects it. Reported so it cannot hide. */
+                  if (seatCountErr) {
+                    reportError(seatCountErr, 'TablePage.paid_entrant_seat_count_failed', {
+                      tournamentId: table.tournament_id,
+                    });
+                  }
+                  seatedSomewhere = (count ?? 0) > 0;
+                }
+                if (isMounted) setAwaitingTournamentSeat(Boolean(live && !seatedSomewhere));
               }
-              if (isMounted) setAwaitingTournamentSeat(Boolean(live && !seatedSomewhere));
             }
           } else {
             /**
@@ -8646,12 +8717,20 @@ export default function TablePage({
             (tournData.is_bounty || tournData.is_pko || tournData.is_mystery_bounty)
           ) {
             // Load current bounty values for all players in this tournament
-            const { data: bountyData } = await supabase
+            const { data: bountyData, error: bountyErr } = await supabase
               .from('tournament_players')
               .select('user_id, current_bounty')
               .eq('tournament_id', table.tournament_id)
               .gt('current_bounty', 0);
 
+            // ROUND 9 (2026-08-29): a failed read used to REPLACE the bounty
+            // map with an empty one - every bounty badge on the felt blinked
+            // out on a timeout. Keep the map the table already has.
+            if (bountyErr) {
+              reportError(bountyErr, 'TablePage.bounty_map_read_failed', {
+                tournamentId: table.tournament_id,
+              });
+            }
             const bMap: Record<string, number> = {};
             if (bountyData) {
               bountyData.forEach((p: any) => {
@@ -8660,7 +8739,7 @@ export default function TablePage({
             }
             setTableState((prev) => ({
               ...prev,
-              bountyMap: bMap,
+              bountyMap: bountyErr ? prev.bountyMap : bMap,
               isBountyTournament: true,
               spinMultiplier: tournData.spin_multiplier || undefined,
             }));
@@ -9117,12 +9196,18 @@ export default function TablePage({
                       }> = [];
                       let prizePool = 0;
                       try {
-                        const { data: rows } = await supabase
+                        /* ROUND 9 (2026-08-29): both reads here resolved their
+                           errors past the catch below, which only sees throws.
+                           The announcement still fires either way (that is the
+                           design), but an empty roster or a 0 prize pool now
+                           reports instead of impersonating a real answer. */
+                        const { data: rows, error: ftRowsErr } = await supabase
                           .from('tournament_players')
                           .select('user_id, username, chips')
                           .eq('tournament_id', tid)
                           .eq('status', 'playing')
                           .order('chips', { ascending: false });
+                        if (ftRowsErr) throw ftRowsErr;
                         ftPlayers = (rows || []).map(
                           (r: { user_id: string; username?: string; chips?: number }) => ({
                             userId: r.user_id,
@@ -9130,11 +9215,12 @@ export default function TablePage({
                             chips: Number(r.chips) || 0,
                           })
                         );
-                        const { data: trow } = await supabase
+                        const { data: trow, error: ftPoolErr } = await supabase
                           .from('tournaments')
                           .select('prize_pool')
                           .eq('id', tid)
                           .maybeSingle();
+                        if (ftPoolErr) throw ftPoolErr;
                         prizePool = Number(trow?.prize_pool) || 0;
                       } catch (e) {
                         reportError(e, 'TablePage.final_table_fetch');
@@ -9290,12 +9376,19 @@ export default function TablePage({
                   const tid = tableStateRef.current.tournamentId;
                   (async () => {
                     try {
-                      const { data: rows } = await supabase
+                      /* ROUND 9 (2026-08-29): a resolved error slipped past
+                         this catch as rows null - the HEADS_UP_SWITCH
+                         announcement silently never fired and nothing
+                         recorded why. The widened 2..4 pre-filter gives later
+                         eliminations another chance, but the failure itself
+                         must be visible. */
+                      const { data: rows, error: huRowsErr } = await supabase
                         .from('tournament_players')
                         .select('user_id, username, chips')
                         .eq('tournament_id', tid)
                         .eq('status', 'playing')
                         .order('chips', { ascending: false });
+                      if (huRowsErr) throw huRowsErr;
                       // Only announce if the field really is two-handed; a
                       // simultaneous double bust would make this a 3-way.
                       if (rows && rows.length === 2) {
@@ -9453,12 +9546,19 @@ export default function TablePage({
                     // BUG-G FIX: Use table.tournament_id (closure-safe local)
                     // instead of stale tableState.tournamentId
                     if (userId && table.tournament_id) {
-                      const { data: playerData } = await supabase
+                      /* ROUND 9 (2026-08-29): a resolved error here meant the
+                         player who had just been MOVED by a rebalance was
+                         neither redirected NOR refreshed - null fell through
+                         both branches while the catch (which refreshes) only
+                         sees throws. A resolved error now takes the same
+                         refresh fallback a thrown one always did. */
+                      const { data: playerData, error: rebalanceErr } = await supabase
                         .from('tournament_players')
                         .select('table_id')
                         .eq('tournament_id', table.tournament_id)
                         .eq('user_id', userId)
                         .maybeSingle();
+                      if (rebalanceErr) throw rebalanceErr;
 
                       if (playerData?.table_id && playerData.table_id !== tableId) {
                         // Current user was moved to a different table — redirect
@@ -9827,7 +9927,7 @@ export default function TablePage({
 
         // ─── Load existing seated players from DB (reconnection support) ───
         // If page reloads while players are seated, we must restore their state
-        const { data: existingSeats } = await supabase
+        const { data: existingSeats, error: seatsRestoreErr } = await supabase
           .from('table_seats')
           .select(
             'seat_number, user_id, stack, status, horse_id, is_sitting_out, time_bank_remaining, time_bank_uses_remaining'
@@ -9835,16 +9935,33 @@ export default function TablePage({
           .eq('table_id', table.id)
           .is('left_at', null);
 
+        // ROUND 9 (2026-08-29): a failed restore read rendered an EMPTY felt
+        // on a mid-session reload - every seat blank until the next engine
+        // snapshot arrived to repair it. The snapshot is still the authority
+        // and still repairs it; the failure is now recorded.
+        if (seatsRestoreErr) {
+          reportError(seatsRestoreErr, 'TablePage.seat_restore_read_failed', {
+            tableId: table.id,
+          });
+        }
+
         if (existingSeats && existingSeats.length > 0) {
           // Fetch display names for seated players
           const userIds = existingSeats.map((s) => s.user_id).filter(Boolean);
-          const { data: profiles } = await supabase
+          const { data: profiles, error: seatProfilesErr } = await supabase
             .from('profiles')
             .select(
               'id, username, display_name, avatar_url:arena_avatar_url, is_horse, horse_profile'
             )
             .in('id', userIds);
 
+          // ROUND 9 (2026-08-29): every seat degrading to 'Player' with no
+          // trace. The fallback stands; the failure reports.
+          if (seatProfilesErr) {
+            reportError(seatProfilesErr, 'TablePage.seat_profiles_read_failed', {
+              tableId: table.id,
+            });
+          }
           const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
 
           // BUG-09 FIX: Merged heroSeat update into same setTableState callback
@@ -16092,10 +16209,17 @@ export default function TablePage({
         { username?: string; display_name?: string; avatar_url?: string; is_horse?: boolean }
       >();
       if (ids.length > 0) {
-        const { data: profiles } = await supabase
+        const { data: profiles, error: wlProfilesErr } = await supabase
           .from('profiles')
           .select('id, username, display_name, avatar_url:arena_avatar_url, is_horse')
           .in('id', ids);
+        // ROUND 9 (2026-08-29): the 2026-08-20 fix promised names would
+        // resolve like the felt's; a resolved error quietly regressed the
+        // list to "Player 1, Player 2" again. Fallback stands; failure
+        // reports.
+        if (wlProfilesErr) {
+          reportError(wlProfilesErr, 'TablePage.waitlist_profiles_read_failed', { tableId });
+        }
         for (const pr of profiles || []) profileById.set(pr.id, pr);
       }
 
@@ -18311,6 +18435,45 @@ export default function TablePage({
             <div className="seat-buyin-confirm__note">
               This {seatFirstBuyIn.label} Starts When All {seatFirstBuyIn.seats} Seats Are Bought
             </div>
+            {/* ENHANCEMENT 2026-08-29: the multiplier ladder, priced at THIS
+                stake. Spins only - a Heads-Up has no wheel. Every number is
+                derived from the one canonical ladder (spinOddsTable), so the
+                sheet can never advertise odds the draw does not use. The
+                prize is cost x multiplier: spin fee is 0 by construction
+                (rake lives inside the multiplier distribution), so cost IS
+                the buy-in the pool multiplies. */}
+            {seatFirstBuyIn.label === 'Spin' && (
+              <div className="seat-buyin-confirm__odds">
+                <button
+                  type="button"
+                  className="seat-buyin-confirm__odds-toggle"
+                  aria-expanded={spinOddsOpen}
+                  onClick={() => setSpinOddsOpen((v) => !v)}
+                >
+                  {spinOddsOpen ? 'Hide Multiplier Odds' : 'Show Multiplier Odds'}
+                </button>
+                {spinOddsOpen && (
+                  <div className="seat-buyin-confirm__odds-table" role="table">
+                    <div className="seat-buyin-confirm__odds-row seat-buyin-confirm__odds-row--head">
+                      <span>Wheel</span>
+                      <span>Prize Pool</span>
+                      <span>Odds</span>
+                      <span>Payout</span>
+                    </div>
+                    {spinOddsTable().map((row) => (
+                      <div className="seat-buyin-confirm__odds-row" key={row.multiplier}>
+                        <span>{row.multiplier}x</span>
+                        <span>
+                          {Math.round(seatFirstBuyIn.cost * row.multiplier).toLocaleString()}
+                        </span>
+                        <span>1 In {row.oneIn.toLocaleString()}</span>
+                        <span>{row.payoutLabel}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="seat-buyin-confirm__actions">
               <button
                 type="button"
@@ -19647,13 +19810,23 @@ export default function TablePage({
           try {
             if (userId && userId !== 'guest' && tableId && selectedSeat) {
               try {
-                const { data: existingSeat } = await supabase
+                const { data: existingSeat, error: seatPrecheckErr } = await supabase
                   .from('table_seats')
                   .select('seat_number')
                   .eq('table_id', tableId)
                   .eq('user_id', userId)
                   .is('left_at', null)
                   .maybeSingle();
+                /* ROUND 9 (2026-08-29): this pre-check exists only for the
+                   friendlier message - atomic_table_buyin is the authority
+                   and refuses a double seat itself, under the idempotency
+                   key. So a failed pre-check proceeds to the RPC (failing
+                   the buy-in on a cosmetic read would be worse), reported. */
+                if (seatPrecheckErr) {
+                  reportError(seatPrecheckErr, 'TablePage.buyin_seat_precheck_read_failed', {
+                    tableId,
+                  });
+                }
                 if (existingSeat) {
                   toast.error(`You're already seated at seat ${existingSeat.seat_number}.`);
                   revertSeat();

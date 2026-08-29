@@ -274,32 +274,56 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     expect(result.swConfFall, 'a big multiplier must rain confetti').toBe(1800);
   });
 
-  test('the KNOCKOUT: the glove swings, the star breaks, KO stamps the seat', async ({ page }) => {
-    // Replaced 2026-08-28. The full-screen knockout this used to measure
-    // (vignette / shockwave / falling head) was deleted for a seat-anchored
-    // one, so the pin moves to the new mechanism — same rule the law test
-    // states. Every number below is measured off Dan's PokerBros capture.
+  test('the KNOCKOUT: two gloves flurry, the star breaks, KO stamps the seat', async ({ page }) => {
+    // Replaced 2026-08-28 (the full-screen knockout this used to measure was
+    // deleted for a seat-anchored one) and again 2026-08-29, twice: once when
+    // the twelve `.sko__ray` divs became one irregular SVG path, and once when
+    // Dan supplied branded glove art and a capture of a TWO-GLOVE FLURRY. Same
+    // rule each time, stated in the animation law: if you deliberately replace
+    // a mechanism, the pin moves to the new one in the same commit.
+    //
+    // `skoGloveStrike` (one glove, one strike) is gone. `skoPunchRight` and
+    // `skoPunchLeft` are the flurry, and `skoFlurryHit` is the single element
+    // that flashes a warm burst at each of the two jab landings.
     const b = await beat(
       page,
       `const l=document.createElement('div');l.className='sko-layer';
        const k=document.createElement('div');k.className='sko';
        k.style.setProperty('--sko-x','30%');k.style.setProperty('--sko-y','40%');
-       k.innerHTML='<div class="sko__glove"><svg viewBox="0 0 128 96"></svg></div>'+
-         '<div class="sko__burst"><span class="sko__ray" style="--sko-ray-i:0"></span></div>'+
+       k.innerHTML='<div class="sko__light"></div><div class="sko__ring"></div>'+
+         '<img class="sko__glove sko__glove--r" alt="">'+
+         '<img class="sko__glove sko__glove--l" alt="">'+
+         '<svg class="sko__star" viewBox="-30 -30 260 260">'+
+           '<g class="sko__star-alt"><path d="M60 60L140 140Z"></path></g>'+
+           '<g class="sko__star-main"><path d="M60 60L140 140Z"></path></g>'+
+           '<g class="sko__shards"><path d="M60 60L140 140Z"></path></g>'+
+         '</svg>'+
          '<div class="sko__core"></div>'+
+         '<svg class="sko__hit" viewBox="-30 -30 260 260"><path d="M60 60L140 140Z"></path></svg>'+
          '<span class="sko__ember" style="--sko-ember-x:0.2;--sko-ember-y:0.3"></span>'+
-         '<div class="sko__stamp" data-motion="keep">KO</div>';
-       l.appendChild(k);document.querySelector('.table-page').appendChild(l);`
+         '<div class="sko__flash"></div><div class="sko__stampring"></div>'+
+         '<div class="sko__stamp" data-motion="keep"><svg viewBox="0 0 138 78"></svg></div>';
+       l.appendChild(k);document.querySelector('.table-page').appendChild(l);
+       const s=document.createElement('div');s.className='seat seat--ko-flinch';
+       document.querySelector('.table-page').appendChild(s);`
     );
-    // The glove creeps, then strikes through inside one 930ms pass — the creep
-    // is what makes the strike read as a strike rather than a pan.
-    expect(b.skoGloveStrike, 'the glove must swing THROUGH the seat').toBe(930);
-    expect(b.skoCoreFlash, 'the hit must flash white-hot').toBe(340);
-    expect(b.skoRay, 'the flash must be a spiked STAR, not a ring').toBe(320);
+    // Both gloves run the SAME 930ms pass. They have to: they land the finish
+    // together, and two passes of different lengths cannot agree on when that
+    // is at any animation speed other than 1.
+    expect(b.skoPunchRight, 'the right glove jabs and then finishes').toBe(930);
+    expect(b.skoPunchLeft, 'the left glove jabs and then finishes').toBe(930);
+    expect(b.skoFlurryHit, 'each jab throws its own warm burst').toBe(930);
+    expect(b.skoCoreFlash, 'the finish must flash white-hot').toBe(340);
+    expect(b.skoStarBurst, 'the flash must be a spiked STAR, not a ring').toBe(240);
+    expect(b.skoRingCrack, 'the impact must crack, not just glow').toBe(300);
     expect(b.skoEmber, 'the star must come apart, not switch off').toBe(440);
-    // The centrepiece: KO lands 930ms after the glove appears, and then HOLDS.
-    // Both the delay and the length are the drama — a stamp that arrives with
-    // the punch reads as a label, and one that leaves with it is unreadable.
+    // The seat REACTS. A punch that lands on a photograph is not a punch, and
+    // three of these land inside 280ms, so it has to be short.
+    expect(b.skoSeatFlinch, 'the busted seat snaps on every landing').toBe(200);
+    // The centrepiece: KO lands 930ms after the first glove appears, and then
+    // HOLDS. Both the delay and the length are the drama — a stamp that
+    // arrives with the punch reads as a label, and one that leaves with it is
+    // unreadable.
     expect(b.skoStampLife, 'KO must slam on and BURN').toBe(1470);
   });
 

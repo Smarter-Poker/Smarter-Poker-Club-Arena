@@ -1330,6 +1330,15 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       if (
         !decision.isBombPot &&
         this.tableInfo.bomb_pot_enabled === true &&
+        // PUSHED, NOT POLLED (2026-08-29). This block used to run on EVERY
+        // non-bomb hand of every bomb table — one round trip on the hand-start
+        // critical path to learn a flag that is false essentially always.
+        // fn_request_manual_bomb_pot now broadcasts on the table topic this
+        // engine already holds open, and the throttled table refresh (which
+        // was already happening) latches the column as the backstop for a
+        // broadcast the engine was not alive to hear. Either way the database
+        // is touched only when there is genuinely something to claim.
+        this.manualBombPushed &&
         // Below the floor the request simply stays pending (spec §3.1), so
         // there is nothing to claim and no reason to touch the database.
         players.length >= schedulerSettings.minPlayers
@@ -1364,9 +1373,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             .select('id')
             .maybeSingle();
           if (claimErr) {
+            // Fail closed and KEEP the armed flag, so the next hand tries
+            // again rather than dropping the host's request on one blip.
             console.warn('[BombPot] manual claim failed — deferring:', claimErr.message);
           } else if (claimed) {
+            this.manualBombPushed = false;
             decision = { isBombPot: true, triggerReason: 'manual_next_hand' };
+          } else {
+            // No row came back: somebody else claimed it, or the flag was
+            // already false (a broadcast heard twice, or heard after another
+            // engine consumed it). Disarm — there is nothing left to claim.
+            this.manualBombPushed = false;
           }
         } catch (err) {
           console.warn('[BombPot] manual claim threw:', err);

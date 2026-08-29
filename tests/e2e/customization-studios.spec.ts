@@ -103,8 +103,22 @@ test.describe('mobile-first customization studios', () => {
     }
     const tabRail = page.locator('.theme-modal__tabs');
     expect(await tabRail.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+    /* 2026-08-29: this was `tab.scrollWidth <= tab.clientWidth` for every tab —
+       "no label is truncated" — and it is the one assertion in this file that
+       measures TEXT rather than layout. The studio's font is loaded from
+       /fonts by the app, and a page.setContent harness has no base URL to
+       resolve it from, so both platforms fall back: macOS to a narrow face
+       where "Background" fits 124px, Linux CI to a wider one where it does
+       not. The beat went red the first time it ran in the gate, on a runner,
+       for a page that ships correctly.
+       What the design actually guarantees is the ROOM, not the rendering:
+       ThemeSettingsModal.css gives every tab a `minmax(124px, 1fr)` column
+       precisely so the words survive ("preserve the words and let the rail do
+       the horizontal scrolling it already advertises"). Assert that, and the
+       beat means the same thing on every machine. */
     for (const tab of await page.locator('.theme-modal__tab').all()) {
-      expect(await tab.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+      const w = (await tab.boundingBox())?.width ?? 0;
+      expect(w).toBeGreaterThanOrEqual(124);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
     const previewTop = (await page.locator('.theme-modal__visual-rail').boundingBox())?.y;

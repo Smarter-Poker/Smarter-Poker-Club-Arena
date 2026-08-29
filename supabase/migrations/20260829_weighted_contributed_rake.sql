@@ -1109,3 +1109,25 @@ BEGIN
   SELECT COALESCE(SUM(credit), 0) INTO s FROM public.fn_allocate_rake_credits(0, v, 'WEIGHTED_CONTRIBUTED');
   IF s <> 0 THEN RAISE EXCEPTION 'self-test zero-rake: got %', s; END IF;
 END $$;
+
+-- ── 13. Close the re-declared SECURITY DEFINER writers to browser roles ─────
+-- (check-definer-authorization). None of these derives an actor from
+-- auth.uid() — they are engine/cron surfaces. fn_close_settlement_period is
+-- reached by browsers ONLY through fn_claim_rakeback (which derives
+-- auth.uid()) and settle_club_rakeback; both are SECURITY DEFINER, so they
+-- keep working after direct EXECUTE is revoked. PUBLIC is named alongside the
+-- roles deliberately: revoking a role while PUBLIC still holds EXECUTE reads
+-- as a fix and does nothing. Mirrored in 20260829b_weighted_rake_definer_grants.sql
+-- (the applied production migration for these statements).
+
+REVOKE ALL ON FUNCTION public.fn_rakeback_recompute_periods(uuid, date, date, uuid[]) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_rakeback_recompute_periods(uuid, date, date, uuid[]) TO service_role;
+
+REVOKE ALL ON FUNCTION public.fn_close_settlement_period(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_close_settlement_period(uuid) TO service_role;
+
+REVOKE ALL ON FUNCTION public.fn_club_rake_rollup_day(uuid, date) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_club_rake_rollup_day(uuid, date) TO service_role;
+
+REVOKE ALL ON FUNCTION public.fn_bbj_rollup_day(uuid, date) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_bbj_rollup_day(uuid, date) TO service_role;

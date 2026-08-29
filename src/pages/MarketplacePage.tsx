@@ -543,7 +543,7 @@ export default function MarketplacePage() {
           <span className={styles.eyebrow}>Club Arena // Player Exchange</span>
           <h1 className={styles.title}>Club Marketplace</h1>
           <p className={styles.headerSubtitle}>
-            Table Upgrades, Player Perks, And Club Exclusives — Delivered Live To Your Account.
+            Table Upgrades, Player Perks, And Club Exclusives - Delivered Live To Your Account.
           </p>
           <div className={styles.walletBar}>
             {/* One wallet, one currency: diamonds. The shop API and the VIP

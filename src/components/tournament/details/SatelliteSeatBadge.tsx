@@ -52,11 +52,12 @@
  * `btn-hamburger-v4.png` and `header-help-v4.png` in this same folder are the
  * same lesson already learned once.
  *
- * `satellite-seat-icon.png` is kept beside it, holding the SAME bytes, purely
- * so a browser still running the previous JS chunk renders the new art rather
- * than a broken-image box for the few minutes before it picks up this build.
- * It has no importer left in `src/`; when the next person is confident no
- * stale bundle is in flight, it can go.
+ * `satellite-seat-icon.png` was kept beside it for a day, holding the SAME
+ * bytes, so that a browser still running the previous JS chunk rendered the new
+ * art rather than a broken-image box. DELETED 2026-08-29: it had no importer
+ * left in `src/`, no reference anywhere in the built bundle currently serving
+ * from the World Hub, and a build a day old is not still in flight. It was
+ * 22,434 bytes of duplicate binary in the repo and in every deploy.
  *
  * IF YOU CHANGE THE SIZE, change `width`/`height` here AND `.sw-badge__icon`
  * in the stylesheet together. The attributes reserve the box before the

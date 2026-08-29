@@ -36,8 +36,7 @@ import MysteryBountyChest, { getTier } from '../../src/components/tournament/Mys
 vi.mock('../../src/services/SoundService', () => ({
   soundService: {
     playBountyCollected: vi.fn(),
-    playKnockoutSwing: vi.fn(),
-    playKnockoutImpact: vi.fn(),
+    playKnockoutFlurry: vi.fn(),
     playMysteryChestLand: vi.fn(),
     playMysteryChestOpen: vi.fn(),
     playMysteryChestExplosion: vi.fn(),
@@ -94,53 +93,37 @@ describe('SeatKnockout — the glove, the star, the stamp', () => {
   const layer = (hits: SeatKnockoutHit[], props: Record<string, unknown> = {}) =>
     render(<SeatKnockoutLayer hits={hits} seatPositions={SEATS} onDone={() => {}} {...props} />);
 
-  it('renders nothing until somebody busts', () => {
-    const { container } = layer([]);
-    expect(container.querySelector('.sko-layer')).toBeNull();
-  });
-
-  it('draws the knockout ON the busted seat, not in the middle of the felt', () => {
-    // The whole point of the rewrite. The percentages are the same
-    // hero-rotated ones the seat ring renders from, so the glove lands on that
-    // player's plate at every breakpoint.
-    const { container } = layer([hit({ seatIndex: 3 })]);
-    const el = container.querySelector('.sko') as HTMLElement;
-    expect(el).toBeTruthy();
-    expect(el.style.getPropertyValue('--sko-x')).toBe(`${SEATS[3].x}%`);
-    expect(el.style.getPropertyValue('--sko-y')).toBe(`${SEATS[3].y}%`);
-  });
-
-  it('SIMULTANEOUS knockouts are simultaneous', () => {
-    // The retired full-screen overlay was fed through useAnimationQueue, so a
-    // three-way all-in showed the second knockout 3.6s after the first — by
-    // which time that seat had been empty for three seconds. Two heads, two
-    // chairs, same frames.
-    const { container } = layer([
-      hit({ id: 'bob', seatIndex: 3 }),
-      hit({ id: 'carol', seatIndex: 6, eliminatedName: 'Carol' }),
-    ]);
-    const all = container.querySelectorAll('.sko');
-    expect(all.length).toBe(2);
-    expect((all[0] as HTMLElement).style.getPropertyValue('--sko-x')).toBe(`${SEATS[3].x}%`);
-    expect((all[1] as HTMLElement).style.getPropertyValue('--sko-x')).toBe(`${SEATS[6].x}%`);
-  });
-
-  it('swings first and connects later — the travel is not silent', () => {
+  it('fires ONE cue for the whole flurry, on the audio clock, scaled by speed', () => {
+    // REWRITTEN 2026-08-29 with the mechanism. playKnockoutSwing +
+    // playKnockoutImpact were built for a single glove that crept in and
+    // struck once; there are three landings now and they are 140ms apart, so
+    // scheduling them with setTimeout would put their spacing at the mercy of
+    // a main thread that is busy re-laying-out a table which just lost a seat.
+    // One cue, and SoundService schedules the beats on the AudioContext clock.
     layer([hit()]);
-    expect(soundService.playKnockoutSwing).toHaveBeenCalledTimes(1);
-    expect(soundService.playKnockoutImpact).not.toHaveBeenCalled();
-    act(() => {
-      vi.advanceTimersByTime(SKO_IMPACT_AT_MS + 20);
-    });
-    expect(soundService.playKnockoutImpact).toHaveBeenCalledTimes(1);
+    expect(soundService.playKnockoutFlurry).toHaveBeenCalledTimes(1);
+    const arg = (soundService.playKnockoutFlurry as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls[0][0] as {
+      isHero: boolean;
+      speed: number;
+      punchesAtMs: readonly number[];
+      stampAtMs: number;
+    };
+    expect(arg.punchesAtMs, 'three landings, the last one IS the impact beat').toEqual([
+      180,
+      320,
+      SKO_IMPACT_AT_MS,
+    ]);
+    expect(arg.stampAtMs).toBe(930);
+    expect(arg.speed, 'the audio stretches with the CSS, not against it').toBeGreaterThan(0);
   });
 
-  it('tells the impact cue whose knockout it is', () => {
+  it("tells the cue when it is the viewer's own knockout", () => {
     layer([hit({ isHero: true })]);
-    act(() => {
-      vi.advanceTimersByTime(SKO_IMPACT_AT_MS + 20);
-    });
-    expect(soundService.playKnockoutImpact).toHaveBeenCalledWith(true);
+    expect(
+      (soundService.playKnockoutFlurry as unknown as { mock: { calls: unknown[][] } }).mock
+        .calls[0][0]
+    ).toMatchObject({ isHero: true });
   });
 
   it('NEVER blocks input — it fires while you may be in a hand', () => {
@@ -151,13 +134,77 @@ describe('SeatKnockout — the glove, the star, the stamp', () => {
     expect(container.querySelector('.sko-layer')).toBeTruthy();
   });
 
-  it('draws every piece of the reference: glove, star, embers, stamp', () => {
+  it('draws every piece of the reference: glove, star, sparks, stamp', () => {
+    // REWRITTEN 2026-08-29 alongside the rebuild it pins, per the animation
+    // law: "if you deliberately replace a mechanism with a better one, move
+    // the pin to the new mechanism IN THE SAME COMMIT."
+    //   - the burst was 12 `.sko__ray` divs at exact 30-degree increments and
+    //     is now ONE irregular `<path>`; twelve even spokes cannot be
+    //     irregular, and it cost twelve elements per knockout;
+    //   - the stamp was a text node in 'Arial Black', which Android does not
+    //     have, so the one element here carrying INFORMATION rather than drama
+    //     was the one rendering differently per device. It is glyph paths now;
+    //   - and the hand-drawn glove became Dan's two branded renders, which
+    //     retired the ghost and the speed streak with it.
     const { container } = layer([hit()]);
-    expect(container.querySelector('.sko__glove svg'), 'the glove is inline SVG').toBeTruthy();
-    expect(container.querySelectorAll('.sko__ray').length).toBe(12);
+    /* TWO GLOVES, and they are Dan's RENDERS, not a drawing of them. The
+       hand-drawn SVG glove and the ghost/streak that faked its motion blur are
+       all retired: with two real gloves alternating there is nothing left for
+       a silhouette copy to add, and the flurry carries the speed by itself. */
+    const gloves = container.querySelectorAll('img.sko__glove');
+    expect(gloves, 'a left glove and a right glove').toHaveLength(2);
+    expect((gloves[0] as HTMLImageElement).src, 'right glove render').toContain(
+      'images/knockout/glove-right.webp'
+    );
+    expect((gloves[1] as HTMLImageElement).src, 'left glove render').toContain(
+      'images/knockout/glove-left.webp'
+    );
+    expect(container.querySelector('.sko__glove svg'), 'the drawn glove is gone').toBeNull();
+    expect(container.querySelector('.sko__ghost'), 'and its motion-blur ghost').toBeNull();
+    expect(container.querySelector('.sko__streak'), 'and its speed streak').toBeNull();
+    expect(container.querySelectorAll('.sko__ray'), 'the ray divs are retired').toHaveLength(0);
+    /* ONE element flashes a warm burst at BOTH jab landings. */
+    expect(container.querySelector('.sko__hit path'), 'each jab throws a burst').toBeTruthy();
+    expect(container.querySelector('.sko__star-main path'), 'the star is one path').toBeTruthy();
+    expect(container.querySelector('.sko__star-alt path'), 'and a second for depth').toBeTruthy();
+    expect(container.querySelector('.sko__shards path'), 'impact throws debris').toBeTruthy();
     expect(container.querySelector('.sko__core')).toBeTruthy();
-    expect(container.querySelectorAll('.sko__ember').length).toBeGreaterThan(0);
-    expect(container.querySelector('.sko__stamp')!.textContent).toBe('KO');
+    expect(container.querySelector('.sko__ring'), 'the impact cracks').toBeTruthy();
+    expect(container.querySelector('.sko__light'), 'the felt is lit').toBeTruthy();
+    // 14-18 sparks with varied size and lifetime; eight identical dots read as
+    // a pattern rather than as an explosion.
+    const sparks = container.querySelectorAll('.sko__ember');
+    expect(sparks.length).toBeGreaterThanOrEqual(14);
+    expect(
+      new Set([...sparks].map((s) => (s as HTMLElement).style.getPropertyValue('--sko-ember-size')))
+        .size
+    ).toBeGreaterThan(4);
+    expect(container.querySelector('.sko__stamp svg'), 'KO is glyph paths').toBeTruthy();
+    expect(
+      container.querySelector('.sko__stamp')!.textContent,
+      'and therefore carries no text node to fall back to a missing font'
+    ).toBe('');
+  });
+
+  it('never hardcodes an SVG gradient id — a multi-table view mounts several', () => {
+    // SVG <defs> ids are global to the DOCUMENT. MultiTablePage mounts one of
+    // these layers per table, so two knockouts with the same gradient id
+    // silently repaint each other. The FIRST cut of this component avoided the
+    // problem by having no gradients at all, which is why the art read as a
+    // red blob; useId() solves it properly and this stops anyone undoing it.
+    const { container } = render(
+      <SeatKnockoutLayer
+        hits={[hit({ id: 'a' }), hit({ id: 'b', seatIndex: 6 })]}
+        seatPositions={SEATS}
+        onDone={() => {}}
+      />
+    );
+    const ids = [...container.querySelectorAll('[id]')].map((n) => n.id);
+    expect(ids.length, 'the art is gradient-shaded, so there ARE defs ids').toBeGreaterThan(4);
+    expect(new Set(ids).size, 'every id is unique across both knockouts').toBe(ids.length);
+    for (const id of ids) {
+      expect(id, `${id} must be instance-suffixed`).toMatch(/^sko-[a-z]+-[A-Za-z0-9]+$/);
+    }
   });
 
   it('exempts the stamp from the global reduced-motion collapse', () => {
@@ -193,7 +240,7 @@ describe('SeatKnockout — the glove, the star, the stamp', () => {
       <SeatKnockoutLayer hits={[hit({ seatIndex: 42 })]} seatPositions={SEATS} onDone={onDone} />
     );
     expect(container.querySelector('.sko')).toBeNull();
-    expect(soundService.playKnockoutSwing, 'invisible means inaudible too').not.toHaveBeenCalled();
+    expect(soundService.playKnockoutFlurry, 'invisible means inaudible too').not.toHaveBeenCalled();
     act(() => {
       vi.advanceTimersByTime(SKO_DURATION_MS + 50);
     });
@@ -205,8 +252,7 @@ describe('SeatKnockout — the glove, the star, the stamp', () => {
     act(() => {
       vi.advanceTimersByTime(SKO_IMPACT_AT_MS + 20);
     });
-    expect(soundService.playKnockoutSwing).not.toHaveBeenCalled();
-    expect(soundService.playKnockoutImpact).not.toHaveBeenCalled();
+    expect(soundService.playKnockoutFlurry).not.toHaveBeenCalled();
   });
 });
 

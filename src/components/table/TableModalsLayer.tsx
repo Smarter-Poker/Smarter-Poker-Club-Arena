@@ -157,6 +157,9 @@ export interface TableModalsLayerProps {
   showGameRules: boolean;
   isStraddleEnabled: boolean;
   /** Round 2 (double board): the table's bomb pot rules for the rules modal. */
+  /** 2026-08-29: staff-only link to the live-table bomb settings editor. */
+  canEditBombSettings?: boolean;
+  onEditBombSettings?: () => void;
   bombPotRules?: {
     enabled: boolean;
     frequency: number;
@@ -505,6 +508,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     showGameRules,
     isStraddleEnabled,
     bombPotRules,
+    canEditBombSettings,
+    onEditBombSettings,
     canManualBombPot,
     onManualBombPot,
     onCloseGameRules,
@@ -866,6 +871,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         isStraddleEnabled={!isTournament && isStraddleEnabled}
         isRunItTwiceEnabled={runItTwice ?? true}
         bombPotRules={bombPotRules}
+        canEditBombSettings={canEditBombSettings}
+        onEditBombSettings={onEditBombSettings}
         canManualBombPot={canManualBombPot}
         onManualBombPot={onManualBombPot}
       />

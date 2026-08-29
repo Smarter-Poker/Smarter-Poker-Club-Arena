@@ -150,7 +150,8 @@ export class HandController {
   }
   /** Round 2: per-board winner breakdown for the next WINNERS emit (multi-board only). */
   private pendingWinnersByBoard:
-    Array<{ board: 1 | 2 | 3; userId: string; amount: number; handName?: string }> | undefined;
+    | Array<{ board: 1 | 2 | 3; userId: string; amount: number; handName?: string }>
+    | undefined;
   /**
    * SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 8): set the moment an all-in
    * ends all possible betting with cards to come. At such a showdown every

@@ -32,13 +32,20 @@
  * so they read as additive light and cost nothing over dark felt.
  */
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useId, useRef, useState, useCallback, useMemo } from 'react';
 import { ThrowEvent } from '../../services/ThrowableService';
 import type { ThrowPhysics } from '../../services/ThrowableService';
 import { throwableSoundService } from '../../services/ThrowableSoundService';
 import { throwableVoice } from '../../services/ThrowableVoice';
 import { reportError } from '../../utils/errorReporter';
 import { ThrowableImage } from './ThrowableImage';
+/* THE BOXING GLOVE IS THE KNOCKOUT NOW (Dan 2026-08-29): "THIS ANIMATION
+   SHOULD ALSO REPLACE THE BOXING GLOVE ANIMATION INSIDE THE CLUB ARENA
+   THROWABLE. SAME ANIMATION, SAME SOUND EFFECTS (MINUS THE K.O. AT THE END)."
+   One implementation, two callers — see KnockoutFlurry's own header. */
+import { KnockoutFlurry } from './SeatKnockout';
+import { soundService } from '../../services/SoundService';
+import { getAnimationSpeed } from '../../utils/animationSpeed';
 import './ThrowAnimation.css';
 // Per-item signature FX -- MUST load after ThrowAnimation.css so its
 // equal-specificity overrides win the cascade.
@@ -146,7 +153,8 @@ const TARGET_TELEGRAPH = new Set(['anvil', 'lightning_bolt', 'bomb']);
 const IMPACT_CAPTION: Record<string, string> = {
   bowling_ball: 'STRIKE!',
   football: "IT'S GOOD!",
-  boxing_glove: 'K.O.',
+  /* boxing_glove has NO caption: it plays the knockout flurry MINUS the K.O.
+     (Dan 2026-08-29), and the caption was the loudest part of the K.O. */
   anvil: 'OOF',
   magic_8_ball: 'ASK AGAIN LATER',
   trophy: "YOU'RE THE BEST",
@@ -172,7 +180,9 @@ const IMPACT_MS: Record<string, number> = {
   thumbs_down: 950,
   banana_peel: 950,
   cake: 900,
-  boxing_glove: 900,
+  // The flurry is three landings plus a star: 930ms before it starts to
+  // decay. 900 cut it off mid-punch.
+  boxing_glove: 1500,
   basketball: 950,
   dice: 900,
   magic_8_ball: 1250,
@@ -241,6 +251,11 @@ interface ParticleSpec {
 
 export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimationProps) {
   const [phase, setPhase] = useState<'windup' | 'flight' | 'impact' | 'done'>('windup');
+  /* Unique per mounted throw: SVG <defs> ids are global to the document, and
+     two gloves landing at once would otherwise repaint each other's gradients.
+     Same rule, same fix, as SeatKnockout. */
+  const koUid = useId().replace(/[^a-zA-Z0-9]/g, '');
+  const isKnockoutGlove = event.throwable.id === 'boxing_glove';
 
   const toPos = seatPositions.get(event.toSeat);
   // ACCURACY FIX (per-item pass): an unseated thrower (railbird, or a seat
@@ -342,9 +357,21 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
     at(WINDUP_DURATION + physics.duration, () => {
       setPhase('impact');
       try {
-        throwableSoundService.playImpact(t.sound, t.weight, impactPan);
-        // Spoken taunt, for the items that have one. Silent for the rest.
-        throwableVoice.speakFor(t.id);
+        if (isKnockoutGlove) {
+          /* The knockout's own cue, WITHOUT the called "K.O." or the stamp
+             tick — nobody has been eliminated here. `speed` goes in so the
+             audio stretches with the player's Animation Speed exactly as the
+             flurry's CSS does. */
+          soundService.playKnockoutFlurry({
+            isHero: false,
+            speed: getAnimationSpeed(),
+            withCall: false,
+          });
+        } else {
+          throwableSoundService.playImpact(t.sound, t.weight, impactPan);
+          // Spoken taunt, for the items that have one. Silent for the rest.
+          throwableVoice.speakFor(t.id);
+        }
       } catch {
         /* audio is best-effort */
       }
@@ -500,56 +527,85 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
           <div className="throw-animation__smoke throw-animation__smoke--2" />
           <div className="throw-animation__smoke throw-animation__smoke--3" />
 
-          {/* squash-and-stretch item with additive glow */}
-          <div className="throw-animation__impact-glow" />
-          {/* Two nested elements on purpose. The inner one owns the MOTION
+          {/* THE BOXING GLOVE LANDS AS A KNOCKOUT. Same component the bounty
+              knockout uses, minus the stamp — see KnockoutFlurry. It replaces
+              the generic impact FX entirely rather than layering on top of
+              them: a shockwave ring and a particle scatter under a two-glove
+              flurry is two impacts for one landing.
+
+              --sko-unit comes from the throwable's OWN impact size rather than
+              --seat-avatar-base. The knockout layer sits inside the seat ring
+              where that token is retuned per breakpoint; this wrapper does
+              not, so it would have inherited the :root 84px and drawn a
+              desktop-sized flurry on a phone. */}
+          {isKnockoutGlove ? (
+            <div
+              className="sko throw-animation__ko"
+              style={
+                {
+                  '--sko-unit': `${Math.round(impactSize * 1.15)}px`,
+                  '--sko-x': '0px',
+                  '--sko-y': '0px',
+                } as React.CSSProperties
+              }
+              aria-hidden="true"
+            >
+              <KnockoutFlurry uid={koUid} showStamp={false} />
+            </div>
+          ) : (
+            <>
+              {/* squash-and-stretch item with additive glow */}
+              <div className="throw-animation__impact-glow" />
+              {/* Two nested elements on purpose. The inner one owns the MOTION
               (squash / bounce / per-item signature) at its tuned duration; the
               outer owns OPACITY for the whole landing life. Splitting them is
               what lets a throw last 3.5s without the landing animation playing
               in slow motion. */}
-          <div className="throw-animation__impact-life">
-            <div className="throw-animation__impact-icon">
-              <ThrowableImage throwableId={t.id} size={impactSize} />
-            </div>
-          </div>
+              <div className="throw-animation__impact-life">
+                <div className="throw-animation__impact-icon">
+                  <ThrowableImage throwableId={t.id} size={impactSize} />
+                </div>
+              </div>
 
-          {/* shockwave ring */}
-          <div className="throw-animation__burst" />
+              {/* shockwave ring */}
+              <div className="throw-animation__burst" />
 
-          {/* impact shout */}
-          {IMPACT_CAPTION[t.id] && (
-            <div className="throw-animation__caption">{IMPACT_CAPTION[t.id]}</div>
-          )}
+              {/* impact shout */}
+              {IMPACT_CAPTION[t.id] && (
+                <div className="throw-animation__caption">{IMPACT_CAPTION[t.id]}</div>
+              )}
 
-          {/* stain / scorch residue for messy items. Concurrent with the
+              {/* stain / scorch residue for messy items. Concurrent with the
               impact, not appended after it: a splat appears the moment the
               thing lands. */}
-          {t.linger && (
-            <div className={`throw-animation__linger throw-animation__linger--${t.impact}`} />
-          )}
+              {t.linger && (
+                <div className={`throw-animation__linger throw-animation__linger--${t.impact}`} />
+              )}
 
-          {/* per-item impact signature (frost ring, bite marks, claw slashes,
+              {/* per-item impact signature (frost ring, bite marks, claw slashes,
               steam, petals, pins, cork, magic-8 answer... CSS-gated) */}
-          <div className="throw-animation__fxi" />
+              <div className="throw-animation__fxi" />
 
-          {/* particle scatter */}
-          <div className="throw-animation__particles">
-            {particles.map((p, i) => (
-              <div
-                key={i}
-                className="throw-animation__particle"
-                style={
-                  {
-                    '--p-angle': `${p.angle}deg`,
-                    '--p-dist': `${p.dist}px`,
-                    '--p-size': `${p.size}px`,
-                    '--p-delay': `${p.delay}s`,
-                    '--p-color': p.useAlt ? 'var(--c2)' : 'var(--c1)',
-                  } as React.CSSProperties
-                }
-              />
-            ))}
-          </div>
+              {/* particle scatter */}
+              <div className="throw-animation__particles">
+                {particles.map((p, i) => (
+                  <div
+                    key={i}
+                    className="throw-animation__particle"
+                    style={
+                      {
+                        '--p-angle': `${p.angle}deg`,
+                        '--p-dist': `${p.dist}px`,
+                        '--p-size': `${p.size}px`,
+                        '--p-delay': `${p.delay}s`,
+                        '--p-color': p.useAlt ? 'var(--c2)' : 'var(--c1)',
+                      } as React.CSSProperties
+                    }
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

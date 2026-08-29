@@ -1,0 +1,23 @@
+-- 20260829e_requeue_carries_rake_method.sql
+-- APPLIED TO PRODUCTION 2026-08-29 ~16:20 UTC via Supabase MCP
+-- (migration name: requeue_carries_rake_method). Full body in the Supabase
+-- migration history; recorded here for the repo and CHECK 17.
+--
+-- fn_requeue_unbanked_fees predated the weighted-rake law: rebuilding a queue
+-- row from a financial_alerts payload dropped rake_method and
+-- returned_uncalled, so a hand PLAYED weighted could be re-banked as
+-- DEALT_EQUAL (4 hands on 2026-08-29, requeued 16:02:26 UTC — caught because
+-- the re-banked rows appeared as fresh DEALT_EQUAL cash hands in the
+-- verification sweep). Fixed:
+--   1. The requeuer now copies rakeMethod + returnedUncalled from the alert
+--      context into pending_fee_distributions (older alerts have neither and
+--      correctly re-drive as DEALT_EQUAL).
+--   2. One-shot repair: every rake_records row banked DEALT_EQUAL whose
+--      queue_failed alert proves the hand was played WEIGHTED_CONTRIBUTED is
+--      relabelled, its ledger deleted and rebuilt under the corrected method,
+--      and fn_rake_attribution_drift is ASSERTED clean afterwards.
+--
+-- The lesson, for the next reader: every path that RE-CREATES a banking call
+-- (queue, requeuer, alert payload) must carry rake_method and
+-- returned_uncalled end to end. As of this migration all three do.
+SELECT 'applied via MCP as requeue_carries_rake_method — see migration history' AS notice;

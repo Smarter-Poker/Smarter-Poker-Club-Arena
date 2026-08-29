@@ -1900,7 +1900,7 @@ abbr.lt-variant[title] {
   display: none;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 900px) {
   .arena-lobby-card-list {
     width: 100%;
     display: grid;

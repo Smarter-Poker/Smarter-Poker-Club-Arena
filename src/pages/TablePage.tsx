@@ -134,6 +134,7 @@ import { useEngineTableState } from '../hooks/useEngineTableState';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
 import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
+import { isPreActionHonorable, PRE_ACTION_EXEC_GRACE_MS } from '../lib/preActionPanelGate';
 
 import { gameCode } from '../utils/gameCode';
 import { masterBus } from '../core/MasterBus';
@@ -515,6 +516,8 @@ interface TableState {
   bombPotIn: number | null;
   /** BOMB POT STANDARDIZATION 2026-08-27: timed mode — epoch ms of next due bomb. */
   bombPotNextAt: number | null;
+  /** 2026-08-29: seats a due-but-held bomb is waiting for. Null = not waiting. */
+  bombPotWaitingFor: number | null;
   /**
    * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is played
    * as — differs from gameType on a variant-override bomb pot (e.g. a PLO4
@@ -1756,6 +1759,7 @@ export default function TablePage({
       communityCards3: [],
       bombPotIn: null,
       bombPotNextAt: null,
+      bombPotWaitingFor: null,
       handVariant: null,
       boardStage: 'preflop',
       engineStage: 'preflop',
@@ -2061,6 +2065,7 @@ export default function TablePage({
         communityCards3: nextCards3,
         bombPotIn: mapped.bombPotIn,
         bombPotNextAt: mapped.bombPotNextAt,
+        bombPotWaitingFor: mapped.bombPotWaitingFor,
         handVariant: mapped.handVariant,
         boardStage: nextStage,
         engineStage: mapped.boardStage,
@@ -5211,6 +5216,25 @@ export default function TablePage({
       toast.error('Could Not Arm The Bomb Pot');
     }
   }, [tableId]);
+
+  /**
+   * EDIT THE RULES OF A RUNNING TABLE (2026-08-29).
+   *
+   * Until now every bomb setting was write-once: TableConfigPage takes a
+   * gameType and never a table id, so a host who wanted to change the
+   * frequency, raise the ante, or turn bomb pots off had to kill the table and
+   * lose its seated players. The settings page reachable from here edits only
+   * the columns the engine re-reads on its own throttled refresh, so the
+   * change lands on a live table within a minute with no restart.
+   *
+   * Drawn beside the manual-bomb button, under the same staff check, because
+   * this is where a host already comes to act on bomb pots.
+   */
+  const handleEditBombSettings = useCallback(() => {
+    const clubId = actualClubIdRef.current;
+    if (!clubId || !tableId) return;
+    navigate(`/clubs/${clubId}/tables/${tableId}/bomb-settings`);
+  }, [tableId, navigate]);
 
   // Straddle state
   const [isStraddleEnabled, setIsStraddleEnabled] = useState(false);
@@ -15429,6 +15453,52 @@ export default function TablePage({
     tableState.isHandInProgress;
 
   /**
+   * ═══ AN ARMED PRE-ACTION MUST NOT FLASH THE ACTION PANEL (Dan 2026-08-29) ═══
+   *
+   * Dan, verbatim: "WHEN YOU ARE PLAYING IN THE LIVE PAGES, AND YOU CLICK A
+   * 'PRE SELECT OPTION' IT SHOULD JUST EXECUTE THAT OPTION ... IT CURRENTLY
+   * 'EXECUTES THE CHOICE' BUT THEN IT 'FLASHES THE ACTION TAB BACK UP' BEFORE
+   * IT CLOSES IT AGAIN. THAT SHOULDN'T HAPPEN."
+   *
+   * Pre-actions are executed by the ENGINE (Bible V8 §4.15 — the client's
+   * delayed executor was removed, see the P2-1 note below). So between the
+   * snapshot that hands the hero the turn and the snapshot that carries the
+   * engine's auto-executed action there is one network round trip — and the
+   * ActionPanel was mounting for exactly that gap, flashing up and closing.
+   *
+   * While the armed pre-action is one the engine CAN honor right now, the
+   * panel stays down for a short grace window:
+   *   - fold / check-fold and Call Any are always honorable;
+   *   - Check is honorable only when there is nothing to call;
+   *   - Call <N> is honorable only while the price still fits the cap the
+   *     player armed (the engine refuses past it — same rule, both halves).
+   *
+   * If the engine has NOT acted by the end of the grace window — engine down,
+   * clear lost, cap refused in a way the client could not predict — the panel
+   * appears and the player acts manually. The suppression can only ever cost
+   * the flash gap; it can never cost the player their turn.
+   */
+  const preActionCallDue = Math.max(
+    0,
+    (tableState.currentBet || 0) -
+      (tableState.heroSeat > 0 ? tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0 : 0)
+  );
+  const awaitingPreActionExec =
+    isHeroTurnContext &&
+    preAction !== null &&
+    isPreActionHonorable(preAction, preActionCallDue, preActionCallAmountRef.current);
+  const [preActionOverdue, setPreActionOverdue] = useState(false);
+  useEffect(() => {
+    if (!awaitingPreActionExec) {
+      setPreActionOverdue(false);
+      return;
+    }
+    const t = window.setTimeout(() => setPreActionOverdue(true), PRE_ACTION_EXEC_GRACE_MS);
+    return () => window.clearTimeout(t);
+  }, [awaitingPreActionExec]);
+  const suppressPanelForPreAction = awaitingPreActionExec && !preActionOverdue;
+
+  /**
    * ═══ ONE SLOT, ONE CONTROL (2026-08-27) ═══
    *
    * The bottom-left HUD corner holds the previous-hand card and ONE other
@@ -17970,39 +18040,52 @@ export default function TablePage({
                     goes non-null the moment an owner enables bomb pots, while
                     bombPotRules is a one-shot fetch that would hold the pill
                     hostage until a page reload. */}
-                {(tableState.bombPotIn != null || bombClockLabel != null) && !bombPotActive && (
-                  <div
-                    className={`bomb-pot-eta ${
-                      // URGENCY IS NOT A STEADY STATE (2026-08-29). The pulse
-                      // marks "the next hand is the bomb". On a bomb_pot_only
-                      // table the scheduler reports 1 forever, because every
-                      // hand is a bomb — so this pill pulsed for the entire
-                      // session on the one table where the fact is ordinary
-                      // rather than urgent, and the animation stopped meaning
-                      // anything on every other table by association.
-                      bombPotRules?.triggerMode !== 'bomb_pot_only' &&
-                      (tableState.bombPotIn === 1 || bombClockLabel === 'NEXT HAND')
-                        ? 'bomb-pot-eta--next'
-                        : ''
-                    }`}
-                  >
-                    <span className="bomb-pot-eta__dot" />
-                    {/* BOMB POT STANDARDIZATION 2026-08-27: badge names the
+                {(tableState.bombPotIn != null ||
+                  bombClockLabel != null ||
+                  tableState.bombPotWaitingFor != null) &&
+                  !bombPotActive && (
+                    <div
+                      className={`bomb-pot-eta ${
+                        // URGENCY IS NOT A STEADY STATE (2026-08-29). The pulse
+                        // marks "the next hand is the bomb". On a bomb_pot_only
+                        // table the scheduler reports 1 forever, because every
+                        // hand is a bomb — so this pill pulsed for the entire
+                        // session on the one table where the fact is ordinary
+                        // rather than urgent, and the animation stopped meaning
+                        // anything on every other table by association.
+                        bombPotRules?.triggerMode !== 'bomb_pot_only' &&
+                        tableState.bombPotWaitingFor == null &&
+                        (tableState.bombPotIn === 1 || bombClockLabel === 'NEXT HAND')
+                          ? 'bomb-pot-eta--next'
+                          : ''
+                      }`}
+                    >
+                      <span className="bomb-pot-eta__dot" />
+                      {/* BOMB POT STANDARDIZATION 2026-08-27: badge names the
                         board count (spec §15.2); bomb-only tables show a
                         permanent identity pill rather than a countdown.
                         TIMED CLOCK 2026-08-28: timed tables count down in
                         m:ss to the engine's bomb_pot_next_at. */}
-                    {bombPotRules?.triggerMode === 'bomb_pot_only'
-                      ? `${bombPotRules.boardCount >= 3 ? 'TRIPLE BOARD ' : bombPotRules.boardCount === 2 ? 'DOUBLE BOARD ' : ''}BOMB POT ONLY`
-                      : bombClockLabel != null
-                        ? bombClockLabel === 'NEXT HAND'
-                          ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
-                          : `BOMB POT IN ${bombClockLabel}`
-                        : tableState.bombPotIn === 1
-                          ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
-                          : `BOMB POT IN ${tableState.bombPotIn}`}
-                  </div>
-                )}
+                      {/* WHY THE BOMB HAS NOT COME (2026-08-29). A due bomb waits
+                        for bomb_pot_min_players, and the engine held it in
+                        silence — the pill said BOMB POT NEXT HAND and then the
+                        table dealt ordinary hands, indefinitely, with no
+                        explanation available anywhere in the product. This
+                        branch is first because it is the truest thing the pill
+                        can say when it applies. */}
+                      {tableState.bombPotWaitingFor != null
+                        ? `BOMB POT WAITING FOR ${tableState.bombPotWaitingFor} PLAYERS`
+                        : bombPotRules?.triggerMode === 'bomb_pot_only'
+                          ? `${bombPotRules.boardCount >= 3 ? 'TRIPLE BOARD ' : bombPotRules.boardCount === 2 ? 'DOUBLE BOARD ' : ''}BOMB POT ONLY`
+                          : bombClockLabel != null
+                            ? bombClockLabel === 'NEXT HAND'
+                              ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
+                              : `BOMB POT IN ${bombClockLabel}`
+                            : tableState.bombPotIn === 1
+                              ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
+                              : `BOMB POT IN ${tableState.bombPotIn}`}
+                    </div>
+                  )}
 
                 {/* Dan 2026-08-15: the "Game Info Strip" that lived here is
                     gone. It printed the stakes a second and third time
@@ -18710,7 +18793,19 @@ export default function TablePage({
                     tableState.heroSeat === seatNumber || pendingSeat === seatNumber
                   }
                   onAvatarClick={() => {
-                    if (player?.isHero) {
+                    /* Dan 2026-08-29: the check MUST read displayPlayer, not
+                       player. The seat renders displayPlayer, which synthesizes
+                       a hero placeholder while the hero is pending / waiting to
+                       be dealt in (see above) — in that window `player` is null,
+                       so checking `player?.isHero` sent the hero's own click
+                       down the villain branch and opened the throwable-only
+                       selector instead of the full tabbed Hero Hub. The
+                       id === userId check is the backstop for the other known
+                       failure of the same shape: a snapshot rebuild that drops
+                       the isHero stamp (see the isHero recovery effect above).
+                       Your own avatar opens YOUR hub, always, on every page
+                       and every variant. */
+                    if (displayPlayer?.isHero || (userId && displayPlayer?.id === userId)) {
                       /* Dan 2026-08-28: the hero's avatar opens the tabbed
                          HERO HUB — Throwables / Stats / Profile / Table
                          Settings. (It used to open the read-only profile
@@ -19293,7 +19388,12 @@ export default function TablePage({
             /* "only after all cards are dealt out does the action start" —
                released by DealAnimation.onComplete, or by the 2.6s ceiling in
                beginDealHold if the animation never reports back. */
-            !dealInFlight
+            !dealInFlight &&
+            /* Dan 2026-08-29: an armed pre-action the engine is about to
+               execute must not flash this panel up for the round-trip gap.
+               See suppressPanelForPreAction above — it self-releases if the
+               engine does not act inside the grace window. */
+            !suppressPanelForPreAction
               ? (() => {
                   // Bible V8 §1.4: Use SERVER-AUTHORITATIVE values, not local calculations
                   const heroPlayer = getPlayerAtSeat(tableState.heroSeat);
@@ -20108,6 +20208,8 @@ export default function TablePage({
         bombPotRules={bombPotRules}
         canManualBombPot={isClubStaff && bombPotRules?.enabled === true}
         onManualBombPot={handleManualBombPot}
+        canEditBombSettings={isClubStaff}
+        onEditBombSettings={handleEditBombSettings}
         onCloseGameRules={() => setShowGameRules(false)}
         // Chips
         chipAnimations={chipAnimations}

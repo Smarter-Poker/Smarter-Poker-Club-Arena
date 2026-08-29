@@ -738,7 +738,7 @@ export function AvatarGallery({
 
         {activeTab !== 'style' && (
           <label className="ag-search">
-            <span className="sr-only">Search avatars</span>
+            <span className="sr-only">Search Avatars</span>
             <input
               type="search"
               value={search}

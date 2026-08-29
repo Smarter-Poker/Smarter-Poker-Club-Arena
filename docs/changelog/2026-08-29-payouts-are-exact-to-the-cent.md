@@ -119,3 +119,110 @@ Four historical events sit at 513.01 — the cents this checker paid before it
 was fixed. Four cents, to horses. They now report correctly as a one-cent
 overpayment rather than being re-created every sweep. Reversing them is a
 clawback and clawbacks are Dan's call, so they are reported, not touched.
+
+---
+
+## The audit Dan asked for, and what it found
+
+> "CHECK FOR ANY AND ALL BUGS, GAPS, STUBS, ERRORS, REGRESSIONS OR WIRING
+> ISSUES ANYWHERE AND EVERYWHERE."
+
+Nine findings in the tournament money path. Three are fixed here; the rest are
+written up below with file and line so the next session can take them in order.
+Every one was verified against the source or the live database before being
+believed — the audit also cleared five things that look wrong and are not, and
+those are recorded too so nobody re-opens them.
+
+### Fixed now
+
+**A regression armed and waiting.** Two migrations written on 2026-08-29 both
+redefine `fn_tournament_payout_reconcile` in full: mine made the pricing exact,
+and another agent's — `20260829140000_reconciler_stamps_the_prize_it_pays` —
+made it write `tournament_players.prize`, which it had never done (833 paid
+placements displaying 0 to the player and feeding 0 to the POY race). Both are
+right. But theirs sorts **after** mine, so on any replay it lands last and
+silently reverts the exactness fix. Nothing would have noticed until a pool
+divided unevenly again. `20260829145557` carries both and sorts after both, and
+a guard now fails if a later redefinition drops either.
+
+**A phantom ledger row, in my own migration.** I wrote:
+
+```sql
+PERFORM credit_player_wallet(...);   -- returns void, dedupes silently
+PERFORM log_wallet_transaction(...); -- runs regardless
+```
+
+That is the exact pair `20260822190000_credit_player_wallet_once` was written
+to abolish, after it produced 95 phantom prize rows worth 7,446.45 chips. The
+idempotency key carries no amount, so a second reconcile of the same place at a
+_higher_ expected prize dedupes the credit to nothing and logs the delta anyway
+— and since `v_paid` is computed by summing `wallet_transactions`, that phantom
+row makes the real shortfall permanently invisible to the only automated net
+there is. Now credits through `fn_credit_and_log`, which returns boolean and
+writes the row only when money moved; a refusal is reported as an issue instead
+of recorded as a payment.
+
+**A configured mystery bounty that was never configured.**
+`mystery_bounty_top_percent` was read fourteen lines below a select list that
+did not contain it. PostgREST returns only what you ask for, `undefined == null`
+is true, so **every mystery bounty event built its chest at the 20% default**
+regardless of what the host set. The spec file claims this defect was already
+fixed — it was fixed in the arithmetic and never wired to the query. On a
+25,000 pool configured at 30%, the lobby advertises a 7,500 headline prize and
+the chest holds 5,000.
+
+**A champion the stuck-tournament watchdog could not see.** Its collision map
+tested `status === 'eliminated'`, and `finishTournament` stamps the winner
+`status: 'winner', position: 1`. A process dying between that stamp and the
+COMPLETED flip — the exact window the watchdog exists for — left place 1 reading
+as free, and the lone survivor was handed it. Nobody is paid twice, and that is
+what makes it nasty: the survivor is stamped `winner` with first prize and
+receives **nothing**, while the place they actually finished in is never paid to
+anybody.
+
+### Open, in order of money at risk
+
+1. **`tournamentRecovery.ts:463-482`** — the ITM top-up reuses
+   `tourney:{id}:prize:place:{N}`, the same key `eliminatePlayer` already paid
+   under, so whenever `recorded > 0` the top-up moves **zero chips** — and the
+   next line stamps `prize = owed` as if it had. No caller anywhere checks
+   `fn_credit_and_log`'s boolean. `recalculateEliminatedPrizes` gets this right
+   with a distinct namespace (`prizeadj:{user}:{position}:{prize}`); recovery
+   does not. Exposure: the whole late-reg pool growth for every ITM place on
+   every rescued event.
+2. **`TournamentManager.ts:549-561`** — a transient failure reading the
+   satellite target is discarded, `ticketCost` falls to 0, and the event pays
+   **the entire pool as cash to one player** instead of awarding N seats. The
+   unchecked `finishers` read two lines down has the opposite failure: an empty
+   list returns early and the pool is never distributed at all.
+3. **`tournamentRecovery.ts:262-268`** — recovery has no satellite guard and no
+   final-table-deal guard, though both `eliminatePlayer` and `finishTournament`
+   do. A satellite stuck in COMPLETING gets paid structure cash under the same
+   key `processSatelliteAwards` uses for the ticket value; whichever runs first
+   wins and the other silently no-ops **with a different amount**.
+4. **`TournamentManagerBase.ts:3572-3591`** — `prizePoolFinalized` is set
+   _before_ the guarantee funding is attempted, and funding failure returns
+   `null` so `recalculateEliminatedPrizes` is skipped. The flag is what trims
+   the structure to the field, so places priced before and after that line use
+   different structures and nothing reconciles them.
+5. **`TournamentManagerBase.ts:1866-1888`** — the start-time structure
+   "normalisation" truncates percentages in floats, permanently overwrites the
+   stored column with the lossy version, dumps the remainder on `payouts[0]`
+   (the first array element, not necessarily place 1, and a headline prize
+   either way — the opposite of the payout law), and discards the write error.
+   Now redundant: `computePlacePrize` already normalises exactly. Recommend
+   deleting it.
+6. **`TournamentManagerEliminations.ts:1578-1620`** — split-pot knockouts share
+   the mystery chest but not the regular/PKO bounty: `claimants` is computed and
+   then ignored, so on a tied pot one winner takes the whole head and the other
+   takes nothing.
+
+### Looked wrong, is not
+
+- `tryTournamentRebuys` filtering on `is_horse` is the sanctioned input-device
+  exception, not a denial — horses take the same RPC at the same price with the
+  same eligibility enforced in SQL, because they have no browser to click with.
+- `mysteryBountyPool.ts` is integer cents throughout with a largest-remainder
+  carry and an inventory assertion. Clean.
+- `eliminatePlayer`'s place-scoped idempotency key is deliberate and correct;
+  findings 1 and 3 are about _other_ paths reusing it for a _different amount_.

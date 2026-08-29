@@ -4,10 +4,10 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 const HamburgerMenu = lazyWithRetry(() => import('./HamburgerMenu'));
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
@@ -15,12 +15,11 @@ import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { useAuthUser } from '../../hooks/useAuthUser';
 
 import styles from './GlobalHeader.module.css';
-import { generateDefaultAvatar, getAvatarWithFallback } from '../../utils/avatarGenerator';
-import { cachedAuthUserId, hydrateIdentity } from '../../lib/cachedIdentity';
-import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 const BASE = MEDIA_BASE;
+const APPROVED_HEADER_ASSET = `${BASE}images/global-header/`;
+const DEFAULT_AVATAR = `${BASE}default-avatar.png`;
 
 /*
  * Dan 2026-08-19: "the club arena needs a back button and hub button inside the
@@ -39,70 +38,12 @@ const BASE = MEDIA_BASE;
  */
 export default function GlobalHeader() {
   const navigate = useNavigate();
-  const location = useLocation();
   const { loadBalances, loadDiamonds } = useWalletStore();
   const { user: authUser } = useAuthUser();
 
-  const { avatarUrl, equippedFrame, equippedAura, notificationCount, unreadMessages, loadOnce } =
-    useHeaderDataStore();
+  const { avatarUrl, notificationCount, unreadMessages, loadOnce } = useHeaderDataStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isNavigatingAway, setIsNavigatingAway] = useState(false);
-
-  /**
-   * ── THE PROFILE ORB ────────────────────────────────────────────────────────
-   *
-   * Two things were wrong here and both were invisible until 2026-08-22.
-   *
-   * 1. The failure fallback was written imperatively — onError assigned
-   *    `e.target.src = generateDefaultAvatar()`. React's virtual DOM does not
-   *    know about a src it did not set, so once a single transient failure
-   *    swapped in the monogram, any later render computing the SAME src string
-   *    was a no-op and the real avatar could never come back for the rest of
-   *    the session. Held in state instead, and reset whenever avatarUrl
-   *    changes, so a retry actually retries.
-   *
-   * 2. The empty state was a bare `◉` glyph, and this was the one avatar
-   *    surface in the app that did not go through getAvatarWithFallback — so it
-   *    also did not resize Storage objects or map library art the way every
-   *    seat, friend row and leaderboard entry does. The shared resolver returns
-   *    a deterministic monogram for a player with no avatar, which is a face
-   *    rather than a placeholder, so the orb is never empty and the branch that
-   *    made it empty is gone.
-   */
-  const [avatarFailed, setAvatarFailed] = useState(false);
-
-  /**
-   * FIRST-PAINT IDENTITY (2026-08-28, flash sweep): before auth resolves,
-   * `authUser` is null and `avatarUrl` (header store) is unhydrated — so the
-   * most-seen chrome in the app cold-opened as the monogram for the literal
-   * seed 'player', then swapped to the real face. The persisted session
-   * yields the user id synchronously (a paint hint, never authentication),
-   * and the identity cache is keyed to that id, so the first frame already
-   * wears the signed-in player's name and face. Auth + the store's own
-   * fetch then take over as truth.
-   */
-  const cachedIdentity = useMemo(() => hydrateIdentity(cachedAuthUserId()), []);
-
-  const displayName =
-    (authUser as { display_name?: string; username?: string } | null)?.display_name ||
-    (authUser as { username?: string } | null)?.username ||
-    cachedIdentity.displayName ||
-    'Player';
-
-  const avatarSrc = useMemo(() => {
-    if (avatarFailed) return generateDefaultAvatar();
-    return getAvatarWithFallback(
-      avatarUrl || cachedIdentity.avatarUrl,
-      authUser?.id || cachedAuthUserId() || 'player',
-      displayName,
-      40
-    );
-  }, [avatarFailed, avatarUrl, authUser?.id, displayName, cachedIdentity]);
-
-  // A new avatar deserves a fresh attempt; the old one's failure is not its.
-  useEffect(() => {
-    setAvatarFailed(false);
-  }, [avatarUrl]);
 
   const handleMenuToggle = useCallback(() => setMenuOpen((prev) => !prev), []);
   const handleMenuClose = useCallback(() => setMenuOpen(false), []);
@@ -255,173 +196,134 @@ export default function GlobalHeader() {
         <HamburgerMenu isOpen={menuOpen} onClose={handleMenuClose} />
       </Suspense>
 
-      <header id="global-header" className={styles.header} style={headerStyle}>
-        {/* LEFT: Hamburger, then Back and Hub sitting immediately left of the
-            brand. All three are always rendered — see the note on the component. */}
-        <div className={styles.headerLeft}>
-          <button onClick={handleMenuToggle} className={styles.hamburgerBtn} aria-label="Open Menu">
-            <img
-              src={`${BASE}images/btn-hamburger-v4.png`}
-              alt="Menu"
-              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-            />
-          </button>
-          <button
-            onClick={handleBackClick}
-            className={`${styles.headerImgBtn} ${styles.headerNavBtn}`}
-            aria-label="Go back"
-            title="Back"
-          >
-            <img
-              src={`${BASE}images/btn-back.png`}
-              alt="Back"
-              style={{ height: '100%', width: 'auto', objectFit: 'contain' }}
-            />
-          </button>
-          <button
-            onClick={handleHubClick}
-            className={`${styles.headerImgBtn} ${styles.headerNavBtn}`}
-            aria-label="Go to the Hub"
-            title="Hub"
-          >
-            <img
-              src={`${BASE}images/btn-hub-v4.png`}
-              alt="Hub"
-              style={{ height: '100%', width: 'auto', objectFit: 'contain' }}
-            />
-          </button>
-        </div>
+      <header
+        id="global-header"
+        className={styles.header}
+        style={headerStyle}
+        data-artwork="approved-global-header"
+      >
+        {/* Desktop and landscape use the supplied artwork itself. This is a
+            lossless crop: no redrawing, substitutions, filters, or resampling
+            were applied to the source file. The controls below become precise
+            hit regions over the artwork at these breakpoints. */}
+        <img
+          src={`${APPROVED_HEADER_ASSET}global-header-desktop.png`}
+          alt=""
+          width={1648}
+          height={168}
+          className={styles.desktopArtwork}
+          aria-hidden="true"
+          fetchPriority="high"
+          decoding="sync"
+        />
 
-        {/* CENTER: Brand Text Image */}
-        <div className={styles.headerCenter}>
-          <img
-            src={`${BASE}images/brand-text-clean.png`}
-            alt="Smarter.Poker"
-            className={styles.brandTextImg}
-          />
-          {location.pathname.includes('/messages') && (
-            <span
-              className={styles.hideMobile}
-              style={{ marginLeft: 8, fontSize: 16, display: 'flex', alignItems: 'center' }}
-              title="Securely Encrypted"
-            >
-              ◈
-            </span>
-          )}
-        </div>
-
-        {/* RIGHT: Orb Icons - Exact World Hub Order */}
-        <div className={styles.headerRight}>
-          {/* Avatar/Profile Orb */}
-          <button
-            className={styles.orbBtn}
-            onClick={() => navigateToHub('/hub/profile')}
-            style={{ overflow: 'visible' }}
-            aria-label="My Profile"
-          >
-            <div className={styles.profileOrb}>
-              <img
-                src={avatarSrc}
-                alt=""
-                className={styles.profileImg}
-                /* The orb is 40 CSS px. getAvatarWithFallback passes that
-                   through to sizedStorageUrl for Storage objects, so an
-                   uploaded picture arrives at orb size rather than at whatever
-                   the player originally uploaded. */
-                width={40}
-                height={40}
-                decoding="async"
-                onError={() => setAvatarFailed(true)}
-              />
-              {/* Equipped frame + aura. `.profileOrb` is the 40px circle and
-                  owns the radius, so the overlay inherits it. The button around
-                  it is `overflow: visible`, which is why the frame's outer glow
-                  survives here and is clipped on the felt. */}
-              <AvatarCosmetics frame={equippedFrame} aura={equippedAura} />
-            </div>
-          </button>
-
-          {/* Diamond Wallet Icon */}
-          <button
-            className={styles.orbBtn}
-            onClick={() => navigate('/marketplace?tab=diamonds')}
-            title="Diamond Wallet"
-          >
-            <img
-              src={`${BASE}images/header-wallet-v4.png`}
-              alt="Wallet"
-              className={styles.orbImg}
-            />
-          </button>
-
-          {/* VIP Card Icon */}
-          <button
-            className={styles.orbBtn}
-            onClick={() => navigateToHub('/hub/vip')}
-            title="VIP Member"
-          >
-            <img src={`${BASE}images/vip-card-v8.jpg`} alt="VIP Member" className={styles.orbImg} />
-          </button>
-
-          {/* Messages */}
-          {authUser?.id && (
+        <div className={styles.headerControls}>
+          <div className={styles.headerLeft}>
             <button
-              className={styles.orbBtn}
+              onClick={handleMenuToggle}
+              className={`${styles.artButton} ${styles.hamburgerBtn}`}
+              aria-label="Open Menu"
+            >
+              <img src={`${APPROVED_HEADER_ASSET}menu.png`} alt="Menu" />
+            </button>
+            <button
+              onClick={handleBackClick}
+              className={`${styles.artButton} ${styles.backBtn}`}
+              aria-label="Go back"
+              title="Back"
+            >
+              <img src={`${APPROVED_HEADER_ASSET}back.png`} alt="Back" />
+            </button>
+            <button
+              onClick={handleHubClick}
+              className={`${styles.artButton} ${styles.hubBtn}`}
+              aria-label="Go to the Hub"
+              title="Hub"
+            >
+              <img src={`${APPROVED_HEADER_ASSET}hub.png`} alt="Hub" />
+            </button>
+          </div>
+
+          {/* Functional order matches the approved right-hand group exactly. */}
+          <div className={styles.headerRight}>
+            <button
+              className={`${styles.artButton} ${styles.profileBtn}`}
+              onClick={() => navigateToHub('/hub/profile')}
+              aria-label="My Profile"
+              title="My Profile"
+            >
+              <img src={`${APPROVED_HEADER_ASSET}profile.png`} alt="Profile" />
+              <img
+                src={avatarUrl || DEFAULT_AVATAR}
+                alt=""
+                className={styles.profileAvatar}
+                aria-hidden="true"
+                onError={(event) => {
+                  event.currentTarget.src = DEFAULT_AVATAR;
+                }}
+              />
+            </button>
+
+            <button
+              className={`${styles.artButton} ${styles.walletBtn}`}
+              onClick={() => navigate('/marketplace?tab=diamonds')}
+              aria-label="Diamond Wallet"
+              title="Diamond Wallet"
+            >
+              <img src={`${APPROVED_HEADER_ASSET}wallet.png`} alt="Wallet" />
+            </button>
+
+            <button
+              className={`${styles.artButton} ${styles.vipBtn}`}
+              onClick={() => navigateToHub('/hub/vip-membership')}
+              aria-label="VIP Member"
+              title="VIP Member"
+            >
+              <img src={`${APPROVED_HEADER_ASSET}vip.png`} alt="VIP Member" />
+            </button>
+
+            <button
+              className={`${styles.artButton} ${styles.messengerBtn}`}
               onClick={() => navigate('/messages')}
               onMouseEnter={prefetchMessenger}
               onTouchStart={prefetchMessenger}
               aria-label="Messages"
               title="Messages"
             >
-              <img
-                src={`${BASE}images/header-messenger-v4.png`}
-                alt="Messages"
-                className={styles.orbImg}
-              />
+              <img src={`${APPROVED_HEADER_ASSET}messenger.png`} alt="Messages" />
               {unreadMessages > 0 && (
                 <span className={styles.badge} aria-live="polite">
                   {unreadMessages > 99 ? '99+' : unreadMessages}
                 </span>
               )}
             </button>
-          )}
 
-          {/* Notifications */}
-          <Link
-            to="/notifications"
-            className={styles.orbLink}
-            title="Notifications"
-            aria-label="Notifications"
-          >
+            <Link
+              to="/notifications"
+              className={`${styles.artButton} ${styles.notificationsBtn}`}
+              title="Notifications"
+              aria-label="Notifications"
+            >
+              <img src={`${APPROVED_HEADER_ASSET}notifications.png`} alt="Notifications" />
+              {notificationCount > 0 && (
+                <span className={styles.badge} aria-live="polite">
+                  {notificationCount > 99 ? '99+' : notificationCount}
+                </span>
+              )}
+            </Link>
+          </div>
+
+          {/* Accessible fallback for the brand embedded in the complete
+              approved raster. It is never laid out as a separate mobile row. */}
+          <div className={styles.headerCenter}>
             <img
-              src={`${BASE}images/notification-bell-trimmed.png`}
-              alt="Notifications"
-              className={styles.orbImg}
+              src={`${APPROVED_HEADER_ASSET}brand.png`}
+              alt="Smarter.Poker"
+              width={430}
+              height={88}
+              className={styles.brandArtwork}
             />
-            {notificationCount > 0 && (
-              <span className={styles.badge} aria-live="polite">
-                {notificationCount > 99 ? '99+' : notificationCount}
-              </span>
-            )}
-          </Link>
-
-          {/* Settings */}
-          <button
-            className={styles.orbBtn}
-            onClick={() => navigateToHub('/hub/settings')}
-            title="Settings"
-          >
-            <img
-              src={`${BASE}images/header-settings-v4.png`}
-              alt="Settings"
-              className={styles.orbImg}
-            />
-          </button>
-
-          {/* Live Help removed 2026-08-24 at Dan's request ("REMOVE THE ?
-              MARK ICON IN THE TOP GLOBAL HEADER"). /help is still routed and
-              reachable from the hamburger menu — only the header orb is gone,
-              which also buys the row 24px of width on a phone. */}
+          </div>
         </div>
       </header>
     </>

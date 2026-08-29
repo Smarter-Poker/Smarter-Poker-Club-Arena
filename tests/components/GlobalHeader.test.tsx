@@ -13,7 +13,7 @@ vi.mock('@/stores/useWalletStore', () => ({
 
 vi.mock('@/stores/useHeaderDataStore', () => ({
   useHeaderDataStore: () => ({
-    avatarUrl: null,
+    avatarUrl: '/avatars/test-user.png',
     notificationCount: 0,
     unreadMessages: 0,
     loadOnce: vi.fn(),
@@ -49,7 +49,10 @@ describe('GlobalHeader Component', () => {
     );
     const brandImage = screen.getByAltText('Smarter.Poker');
     expect(brandImage).toBeInTheDocument();
-    expect(brandImage).toHaveAttribute('src', expect.stringContaining('brand-text-clean.png'));
+    expect(brandImage).toHaveAttribute(
+      'src',
+      expect.stringContaining('images/global-header/brand.png')
+    );
   });
 
   /*
@@ -75,15 +78,48 @@ describe('GlobalHeader Component', () => {
 
     expect(screen.getByAltText('Menu')).toHaveAttribute(
       'src',
-      expect.stringContaining('btn-hamburger-v4.png')
+      expect.stringContaining('images/global-header/menu.png')
     );
     expect(screen.getByAltText('Back')).toHaveAttribute(
       'src',
-      expect.stringContaining('btn-back.png')
+      expect.stringContaining('images/global-header/back.png')
     );
     expect(screen.getByAltText('Hub')).toHaveAttribute(
       'src',
-      expect.stringContaining('btn-hub-v4.png')
+      expect.stringContaining('images/global-header/hub.png')
+    );
+  });
+
+  it('renders every approved right-side control in the supplied order', () => {
+    render(
+      <MemoryRouter>
+        <GlobalHeader />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole('button', { name: /My Profile/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Diamond Wallet/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /VIP Member/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Messages/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Notifications/i })).toBeInTheDocument();
+
+    expect(document.querySelector('img[src="/avatars/test-user.png"]')).toBeInTheDocument();
+
+    expect(screen.getByAltText('Wallet')).toHaveAttribute(
+      'src',
+      expect.stringContaining('images/global-header/wallet.png')
+    );
+    expect(screen.getByAltText('VIP Member')).toHaveAttribute(
+      'src',
+      expect.stringContaining('images/global-header/vip.png')
+    );
+    expect(screen.getByAltText('Messages')).toHaveAttribute(
+      'src',
+      expect.stringContaining('images/global-header/messenger.png')
+    );
+    expect(screen.getByAltText('Notifications')).toHaveAttribute(
+      'src',
+      expect.stringContaining('images/global-header/notifications.png')
     );
   });
 

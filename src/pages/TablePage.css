@@ -863,11 +863,14 @@
      faking a giant table. 360px lets the painted rail span nearly the full
      375px viewport, PokerBros-style. */
   max-width: min(calc(100% - 8px), 360px);
-  /* Dan 2026-08-17: 605/1000 — the canonical 896x1200 skin composites shown
-     with object-fit: cover crop to x [9.5%, 90.5%] at this aspect, which is
-     the rail plus a small scene margin. The seat ring percentages in
-     TablePage.tsx are derived from THIS box; changing the aspect moves every
-     seat off the painted rail. */
+  /* Dan 2026-08-17: 605/1000, the classic desktop shape. The claim that
+     used to end this comment — "changing the aspect moves every seat off the
+     painted rail" — stopped being true on 2026-08-18, when the skins became
+     pre-cropped and .table-art switched to object-fit: FILL: art and seat
+     ring now stretch by the same linear map at any aspect. The <=768px block
+     at the foot of this file relies on exactly that to fill a real phone's
+     box (see the 2026-08-29 note there). Desktop keeps this ratio because it
+     is height-bound with room to spare and this is the look. */
   aspect-ratio: 605 / 1000;
   position: relative;
   transform-origin: center center;
@@ -1384,29 +1387,6 @@
   z-index: 30;
 }
 
-/*
- * Phase 2 T1-04 — PokerBros hand-strength label at pot center on showdown.
- * Pops in, holds ~1s, fades out. Per POKERBROS_CLONE_SPEC.md §6 line 548:
- *   "Hand strength label displayed at pot center temporarily (1 second)"
- * Total duration 1.4s (150ms in + 850ms hold + 400ms out) so the label is
- * readable without being in the way of the next hand.
- */
-15% {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0) scale(1.1);
-}
-25% {
-  transform: translateX(-50%) translateY(0) scale(1);
-}
-70% {
-  opacity: 1;
-  transform: translateX(-50%) translateY(-2px) scale(1);
-}
-100% {
-  opacity: 0;
-  transform: translateX(-50%) translateY(-8px) scale(0.97);
-}
-
 /* Community Cards Area */
 /* Dan 2026-08-25, item 9: "the board cards are slightly cutting off
    Smarter.Poker and need to be raised up slightly."
@@ -1492,11 +1472,38 @@
      their y.
 
      A stack therefore has to clear the seats on X instead, and that is the
-     constraint the felt board used to live under: a seat box at x 10.5% reaches
-     x 24.3%, so the row's left edge must stay at or right of it, which caps the
-     stack at 69.9% of the felt. 68% is that cap with margin, and it is exactly
-     what shipped before today — a run-it-twice stack is pixel-for-pixel what it
-     always was.
+     constraint the felt board used to live under: the cap is 69.9% of the felt
+     and 68% is that cap with margin.
+
+     ── 2026-08-29: THE CAP WAS RE-DERIVED. THE NUMBER SURVIVED. ─────────────
+     The sentence that used to stand here named "a seat box at x 10.5% reaches
+     x 24.3%" as the binding constraint, and that reads as stale the moment you
+     notice the 2026-08-26 pass moved the side rail OUT to x 8/92. It sent me
+     looking for 20% of free felt that is not there, so the derivation is
+     written out properly now.
+
+     THE BINDING MARKER IS NOT A SIDE SEAT AT ALL. Re-derived across every
+     marker the estate models — bet chips, dealer button and the 96px seat box,
+     on every ring at every table size — the tightest is the BOTTOM-CAP seat's
+     box at (10.5, 82.5), which is still at 10.5 (item 3 left the caps there on
+     purpose) and whose box reaches UP into the stack's band. Cap: 69.86%. The
+     second tightest is a side seat's BET CHIPS, which rest inboard of its box
+     (4-max at x 8, y 58 rests chips at x 20.60 against a box edge at 21.83) —
+     so even the seats that did move out are bound by their chips, not by the
+     plate you can see.
+
+     Both were verified the hard way: 76% was tried, and
+     tests/unit/mobileBoardAndActionBar.test.ts went red naming the chips. A
+     production probe that measured 88% of available room had missed them,
+     because there were no chips on the felt at the moment it measured and its
+     three-run stack was cloned rather than real. Do not widen this from a
+     screenshot or a static probe; the markers that bind are only on the felt
+     during the hand this stack exists for.
+
+     IF IT IS EVER REVISITED: measure a REAL run-it-twice showdown's stack
+     height with its true per-run headers. The model assumes a stack can reach
+     y 75, which is what drags the bottom-cap seat into the band; a genuinely
+     shorter stack releases it and roughly 77% becomes available.
 
      Specificity, not order, is what makes this win: this selector is (0,3,0)
      against `.table-surface .community-area`'s (0,2,0), so it holds even though
@@ -4325,14 +4332,64 @@ button.post-bb-overlay-button {
        than the plate grows, so the overhang against the page edge goes from
        6.1px to 5.5px.
 
-       NOT taken to `100%` with the gutters removed, which measures 375x619.8
-       and is the largest the oval can be at this width. That costs the 4px
-       gutters, and by the formula above the side plates then overhang by
-       8.6px instead of 5.5px - a real regression in the one place this table
-       is already tight. 8px of extra felt is not worth 3px more of a clipped
-       name plate. If that trade is ever wanted, narrow the side seats' plate
-       in the same commit, or the names pay for the felt. */
+       (2026-08-29: the paragraph that stood here argued against max-width
+       100% to protect the side plates from ~3px of extra overhang. Dan took
+       that trade the same day — twice, in capitals — and the fill rule below
+       is the result; SeatSlot's plate max-widths absorb the overhang. Kept
+       as history, overruled as guidance.) */
     max-width: 100%;
+
+    /* ── 2026-08-29: THE OVAL FILLS THE BOX A REAL PHONE ACTUALLY HAS ──────
+       Dan, twice in one day, second time after a "fix" verified on emulated
+       hardware: "THE TABLES HAVE NOT RE ADJUSTED IN SIZE, THEY ARE STILL
+       SMALL IN LENGTH AND WIDTH."
+
+       He was right and every measurement in this repo was wrong, for one
+       reason: env(safe-area-inset-*) is 0 in every harness and every
+       Playwright emulation, and on the hardware Dan actually holds it is not.
+       A notched iPhone pays ~47px of inset through the tab bar and ~34px of
+       home indicator through the action reserve, all of it out of
+       --sp-table-h — and because the base rule derives WIDTH from that
+       height through the 605/1000 aspect, the real felt at 390x844 was
+       344x569. Height-bound. Which is why removing the side gutters, a
+       width-side fix, changed NOTHING on his phone: min(390, 344) and
+       min(366, 344) are the same number.
+
+       THE ASPECT LOCK IS THE THING STARVING THE WIDTH, AND IT IS NO LONGER
+       LOAD-BEARING. It dates from when the skin was an oversized composite
+       cropped by object-fit: cover, where the box's shape decided WHICH
+       PIXELS of art were visible and the seat percentages were calibrated to
+       that crop. Since 2026-08-18 the art is pre-cropped and drawn with
+       object-fit: FILL (see .table-art): it stretches to whatever box the
+       scaler is, and the seats, the felt window and every %-positioned thing
+       stretch with it by the same linear map. A wider box is a wider rail
+       with the seats still ON it — internal consistency is free at any
+       aspect. What the lock actually cost was 46px of table on the one
+       device class Dan reviews from.
+
+       So at phone/tablet widths the scaler takes the whole budget on BOTH
+       axes: full height, and full width up to a roundness cap. 0.7 is the
+       cap: a real notched phone lands at 0.67-0.69 (untouched by the cap,
+       edge-to-edge), an un-notched emulation at 0.605-0.7, and a portrait
+       iPad — whose height budget is enormous — stops at 0.7 instead of
+       ballooning toward a circle. Desktop (>768px) keeps the classic
+       605/1000; it is height-bound with room to spare and looks right.
+
+       Measured (feltHarness, which models the insets as of this commit):
+
+           iPhone 12/13/14, real insets   344x569  ->  390x569
+           iPhone 14 ProMax, real insets  369x610* ->  430x644
+           iPhone SE (no notch)           287x474  ->  332x474
+           iPad portrait                  491x811  ->  568x811
+           (* pre-fix Pro Max was aspect-derived from its own budget)
+
+       Width is the axis this buys. LENGTH is budget-bound and stays where
+       the reserves Dan tuned put it — every remaining pixel of length sits
+       inside --sp-table-top / --sp-hero-clear / the bars, and those are his
+       knobs, not this rule's. */
+    width: min(100%, calc(var(--sp-table-h, 100svh) * 0.7));
+    height: var(--sp-table-h, auto);
+    aspect-ratio: auto;
   }
 
   .spectator-footer-bar {

@@ -12,7 +12,6 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -265,7 +264,6 @@ export default function ClubRulesPage() {
             Retry
           </button>
         </div>
-        <ClubBottomNav clubId={clubId || ''} />
       </StandardContentLayout>
     );
   }
@@ -336,8 +334,6 @@ export default function ClubRulesPage() {
           </div>
         )}
       </div>
-
-      <ClubBottomNav clubId={clubId || ''} />
     </StandardContentLayout>
   );
 }

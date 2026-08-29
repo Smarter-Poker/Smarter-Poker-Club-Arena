@@ -25,6 +25,7 @@ import {
 
 interface StoreTabProps {
   clubId: string;
+  userId: string;
   items: MarketplaceItem[];
   ownedItemIds: Set<string>;
   /** the buyer's DIAMOND balance (global wallet) — all prices are in diamonds */
@@ -49,6 +50,7 @@ interface StoreTabProps {
 
 export default function StoreTab({
   clubId,
+  userId,
   items,
   ownedItemIds,
   balance,
@@ -89,6 +91,7 @@ export default function StoreTab({
   const purchaseKeyRef = useRef<string | null>(null);
   const inFlightRef = useRef(false);
   const [processing, setProcessing] = useState(false);
+  const modalRef = useRef<HTMLDivElement | null>(null);
   const confirmBtnRef = useRef<HTMLButtonElement | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
@@ -146,18 +149,41 @@ export default function StoreTab({
     const prevOverflow = document.body.style.overflow;
     const trigger = document.activeElement as HTMLElement | null;
     document.body.style.overflow = 'hidden';
-    confirmBtnRef.current?.focus();
+    const confirm = confirmBtnRef.current;
+    const initialFocus =
+      confirm && !confirm.disabled
+        ? confirm
+        : modalRef.current?.querySelector<HTMLElement>('button:not([disabled])');
+    initialFocus?.focus();
     return () => {
       document.body.style.overflow = prevOverflow;
       trigger?.focus?.();
     };
   }, [buyTarget]);
 
-  // Escape needs the live `processing` value, so it gets its own effect.
+  // Escape and a small focus trap need the live `processing` value, so they
+  // get their own effect. The purchase sheet is the only interactive surface
+  // while open; keyboard focus must not escape into the shop behind it.
   useEffect(() => {
     if (!buyTarget) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !processing) closeBuy();
+      if (e.key !== 'Tab') return;
+      const focusable = Array.from(
+        modalRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        ) ?? []
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -205,6 +231,26 @@ export default function StoreTab({
       );
       toast.success(`Purchased ${buyTarget.name}`);
       masterBus.emit('BALANCE_UPDATED', { source: 'marketplace_purchase', clubId });
+      const grant = buyTarget.grant_spec;
+      if (grant && grant.type !== 'none') {
+        const quantity = Math.max(1, Math.floor(Number(grant.qty) || 1));
+        const assetId = grant.theme_id || grant.avatar_id;
+        masterBus.emit('ENTITLEMENTS_CHANGED', {
+          userId,
+          category: grant.type,
+          assetId,
+          quantity,
+          source: 'club-purchase',
+        });
+        if (grant.type === 'table_skin' || grant.type === 'avatar') {
+          masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
+            userId,
+            category: grant.type === 'avatar' ? 'avatar' : 'theme_id',
+            assetId,
+            source: 'club-purchase',
+          });
+        }
+      }
       closeBuy();
       onPurchased(typeof data.newBalance === 'number' ? data.newBalance : null);
     } catch (err: unknown) {
@@ -271,12 +317,25 @@ export default function StoreTab({
       {buyTarget && (
         <div className={styles.modalOverlay} onClick={() => !processing && closeBuy()}>
           <div
+            ref={modalRef}
             className={styles.modal}
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-labelledby="buy-modal-title"
+            aria-describedby="buy-modal-description"
           >
+            <div className={styles.modalHandle} aria-hidden="true" />
+            <button
+              type="button"
+              className={styles.modalClose}
+              onClick={closeBuy}
+              disabled={processing}
+              aria-label="Close Purchase"
+            >
+              ×
+            </button>
+            <span className={styles.modalEyebrow}>Instant Account Delivery</span>
             <h2 className={styles.modalTitle} id="buy-modal-title">
               Confirm Purchase
             </h2>
@@ -296,9 +355,13 @@ export default function StoreTab({
               </div>
               <div>
                 <div className={styles.itemName}>{buyTarget.name}</div>
-                <div className={styles.itemDesc}>{buyTarget.description}</div>
+                <div className={styles.itemDesc} id="buy-modal-description">
+                  {buyTarget.description}
+                </div>
                 {grantText(buyTarget) && (
-                  <div className={styles.grantLine}>Grants On Redeem: {grantText(buyTarget)}</div>
+                  <div className={styles.grantLine}>
+                    Delivered Instantly: {grantText(buyTarget)}
+                  </div>
                 )}
               </div>
             </div>
@@ -350,6 +413,19 @@ export default function StoreTab({
         </div>
       )}
 
+      <div className={styles.storeIntro}>
+        <div>
+          <span className={styles.eyebrow}>Curated For This Club</span>
+          <h2 className={styles.sectionTitle}>Premium Table Upgrades</h2>
+          <p className={styles.sectionSub}>
+            Own A New Look Or Add A Gameplay Perk. Every Eligible Purchase Appears Without A Reload.
+          </p>
+        </div>
+        <span className={styles.deliveryStatus}>
+          <span aria-hidden="true" /> Live Delivery
+        </span>
+      </div>
+
       {/* Category filters */}
       {/* A filter chip row is a set of toggles, not a list of unrelated
           buttons: without aria-pressed a screen reader reads seven identical
@@ -371,14 +447,17 @@ export default function StoreTab({
 
       {/* Search + sort */}
       <div className={styles.toolbar}>
-        <input
-          type="text"
-          placeholder="Search Items..."
-          aria-label="Search shop items"
-          value={searchFilter}
-          onChange={(e) => setSearchFilter(e.target.value)}
-          className={styles.searchInput}
-        />
+        <div className={styles.searchWrap}>
+          <span className={styles.searchIcon} aria-hidden="true" />
+          <input
+            type="search"
+            placeholder="Search The Collection..."
+            aria-label="Search Shop Items"
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            className={styles.searchInput}
+          />
+        </div>
         <select
           value={sortMode}
           onChange={(e) => setSortMode(e.target.value as SortMode)}
@@ -390,6 +469,24 @@ export default function StoreTab({
           <option value="price-high">Price: High To Low</option>
           <option value="popular">Most Popular</option>
         </select>
+      </div>
+
+      <div className={styles.resultSummary} aria-live="polite">
+        <span>
+          Showing <strong>{fmt(filteredItems.length)}</strong> Of{' '}
+          <strong>{fmt(items.length)}</strong> Items
+        </span>
+        {(categoryFilter !== 'All' || searchFilter) && (
+          <button
+            type="button"
+            onClick={() => {
+              setCategoryFilter('All');
+              setSearchFilter('');
+            }}
+          >
+            Clear Filters
+          </button>
+        )}
       </div>
 
       {/* Item grid */}
@@ -450,21 +547,25 @@ export default function StoreTab({
                       }}
                     />
                   )}
-                  <span className={styles.categoryTag}>{item.category || 'Time Banks'}</span>
-                  {soldOut && <span className={styles.soldOutTag}>SOLD OUT</span>}
-                  {/* Every number a member reads goes through fmt (house rule:
+                  <div className={styles.itemBadgesLeft}>
+                    <span className={styles.categoryTag}>{item.category || 'Time Banks'}</span>
+                    {onSale && !soldOut && <span className={styles.saleTag}>SALE</span>}
+                  </div>
+                  <div className={styles.itemBadgesRight}>
+                    {soldOut && <span className={styles.soldOutTag}>SOLD OUT</span>}
+                    {/* Every number a member reads goes through fmt (house rule:
                       .toLocaleString, never a raw interpolation). A shop with
                       12000 units in stock printed "12000 Left". */}
-                  {limited && !soldOut && (
-                    <span className={styles.stockTag}>{fmt(item.stock)} Left</span>
-                  )}
-                  {onSale && !soldOut && <span className={styles.saleTag}>SALE</span>}
-                  {item.per_user_limit && !blocked ? (
-                    <span className={styles.stockTag}>
-                      {fmt(Math.max(0, item.per_user_limit - (item.my_purchase_count ?? 0)))} Left
-                      For You
-                    </span>
-                  ) : null}
+                    {limited && !soldOut && !item.per_user_limit && (
+                      <span className={styles.stockTag}>{fmt(item.stock)} Left</span>
+                    )}
+                    {item.per_user_limit && !blocked ? (
+                      <span className={styles.stockTag}>
+                        {fmt(Math.max(0, item.per_user_limit - (item.my_purchase_count ?? 0)))} Left
+                        For You
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
                 <div className={styles.itemBody}>
                   <div className={styles.itemName}>{item.name}</div>

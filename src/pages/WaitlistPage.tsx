@@ -13,6 +13,7 @@ import { haptic } from '../services/HapticService';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import './WaitlistPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { EmptyState, ErrorState } from '../components/common/EmptyState';
 import { reportError } from '../utils/errorReporter';
 
 const waitlistCardAnimationStyle = (index: number) => ({
@@ -39,6 +40,7 @@ export default function WaitlistPage() {
 
   const [entries, setEntries] = useState<WaitlistEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [leavingId, setLeavingId] = useState<string | null>(null);
   const [positionCounts, setPositionCounts] = useState<Record<string, number>>({});
   const positionCountsRef = useRef<Record<string, number>>({});
@@ -132,7 +134,10 @@ export default function WaitlistPage() {
     if (!user?.id) return;
     if (loadingRef.current) return;
     loadingRef.current = true;
-    if (!getIsMounted || getIsMounted()) setLoading(true);
+    if (!getIsMounted || getIsMounted()) {
+      setLoading(true);
+      setLoadError(null);
+    }
     try {
       const waitlists = await waitlistService.getUserWaitlists(user.id);
       if (getIsMounted && !getIsMounted()) return;
@@ -150,6 +155,11 @@ export default function WaitlistPage() {
       );
     } catch (error) {
       reportError(error, 'WaitlistPage.Failed_to_load_waitlist');
+      if (!getIsMounted || getIsMounted()) {
+        setLoadError(
+          'Your table waitlists could not be loaded. Check your connection and try again.'
+        );
+      }
     } finally {
       loadingRef.current = false;
       if (!getIsMounted || getIsMounted()) setLoading(false);
@@ -243,7 +253,7 @@ export default function WaitlistPage() {
     <div className="waitlist-page">
       {/* Real-time indicator */}
       {entries.length > 0 && (
-        <div className="realtime-indicator">
+        <div className="realtime-indicator" role="status">
           <span className="live-dot"></span>
           <span>Live Updates Enabled</span>
         </div>
@@ -251,24 +261,17 @@ export default function WaitlistPage() {
 
       <div className="waitlist-content">
         {loading ? (
-          <div className="waitlist-skeleton-list">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="waitlist-skeleton-card">
-                <div className="wskel-line" style={{ width: '55%' }} />
-                <div className="wskel-line" style={{ width: '35%' }} />
-                <div className="wskel-bar" />
-              </div>
-            ))}
-          </div>
+          <PageSkeleton variant="list" />
+        ) : loadError ? (
+          <ErrorState message={loadError} onRetry={() => void loadWaitlist()} />
         ) : entries.length === 0 ? (
-          <div className="empty-state">
-            <span className="empty-icon">☰</span>
-            <h3>No Active Waitlists</h3>
-            <p>You're Not On Any Table Waitlists</p>
-            <button className="btn btn-primary" onClick={() => navigate('/')}>
-              Browse Tables
-            </button>
-          </div>
+          <EmptyState
+            icon="QUEUE"
+            eyebrow="Table Queue"
+            title="No Active Waitlists"
+            description="Join a full table's waitlist and its live position will appear here."
+            action={{ label: 'Browse Tables', onClick: () => navigate('/') }}
+          />
         ) : (
           <div className="waitlist-entries">
             {entries.map((entry, idx) => (
@@ -295,6 +298,7 @@ export default function WaitlistPage() {
                 <div className="waitlist-actions">
                   <span className="wait-time">{formatWaitTime(entry.estimated_wait)}</span>
                   <button
+                    type="button"
                     className={`btn btn-ghost btn-sm leave-btn ${leavingId === entry.id ? 'loading' : ''}`}
                     onClick={() => {
                       haptic.medium();

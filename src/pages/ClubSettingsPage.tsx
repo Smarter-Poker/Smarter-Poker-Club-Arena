@@ -14,7 +14,6 @@ import { useToast } from '../components/common/Toast';
 import SpinActivationPanel from '../components/club/SpinActivationPanel';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import PageSkeleton from '../components/common/PageSkeleton';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import AuditLog from '../components/admin/AuditLog';
 import { StatsExport } from '../components/admin/StatsExport';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
@@ -981,7 +980,6 @@ export default function ClubSettingsPage() {
             Browse Clubs
           </button>
         </div>
-        <ClubBottomNav clubId={clubId} />
       </div>
     );
   }
@@ -1007,7 +1005,6 @@ export default function ClubSettingsPage() {
             Retry
           </button>
         </div>
-        {clubId && <ClubBottomNav clubId={clubId} />}
       </div>
     );
   }
@@ -1731,8 +1728,6 @@ export default function ClubSettingsPage() {
           </button>
         </div>
       )}
-
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

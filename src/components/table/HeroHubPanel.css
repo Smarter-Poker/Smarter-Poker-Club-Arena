@@ -136,3 +136,111 @@
   color: rgba(255, 255, 255, 0.55);
   font-size: 0.85rem;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2026-08-29 HARDENING / MAX PASS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* WHOSE HUB IS THIS. The panel was titled "Player hub" and showed no player. */
+.hero-hub__identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 0;
+}
+
+.hero-hub__identity-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.hero-hub__identity-name {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-hub__identity-stack {
+  margin-left: auto;
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #3fb950;
+  font-variant-numeric: tabular-nums;
+}
+
+/* THE FIGURES, INLINE. Mobile-first: two columns at 375px, three from 420px. */
+.hero-hub__figures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+@media (min-width: 420px) {
+  .hero-hub__figures {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.hero-hub__figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  min-width: 0;
+}
+
+.hero-hub__figure-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.hero-hub__figure-value {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-hub__figure.is-up .hero-hub__figure-value {
+  color: #3fb950;
+}
+
+.hero-hub__figure.is-down .hero-hub__figure-value {
+  color: var(--color-danger, #ef4444);
+}
+
+/* TWO CLOSE BUTTONS THAT DO THE SAME THING READ AS A BUG. The embedded
+   ThrowableSelector keeps its own close for its standalone mount (the villain
+   avatar path); inside the hub, the hub's own x is the one close. The
+   component is NOT forked - it is pinned by protected-features.json - so this
+   is done here, in the wrapper's stylesheet, where it belongs. */
+.hero-hub__throwables .throwable-selector__close {
+  display: none;
+}
+
+/* Keyboard focus must be VISIBLE - the panel is now reachable and trapped. */
+.hero-hub__tab:focus-visible,
+.hero-hub__close:focus-visible,
+.hero-hub__item:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+.hero-hub:focus {
+  outline: none;
+}

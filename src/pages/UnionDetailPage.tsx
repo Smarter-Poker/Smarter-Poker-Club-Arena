@@ -21,7 +21,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import type { PokerTable, Tournament } from '../types/database.types';
 import type { Club } from '../types/club.types';
 import { useUnionStore } from '../stores/useUnionStore';
-import PageSkeleton from '../components/common/PageSkeleton';
+import { EmptyState, ErrorState, LoadingState } from '../components/common/EmptyState';
 import styles from './UnionDetailPage.module.css';
 import { useToast } from '../components/common/Toast';
 import ConfirmModal from '../components/common/ConfirmModal';
@@ -71,12 +71,16 @@ export default function UnionDetailPage() {
   const toast = useToast();
   useVisibilityRefresh(async () => {
     if (!unionId) return;
-    const [unionData, tablesData] = await Promise.all([
-      unionService.getUnion(unionId),
-      tableService.getUnionTables(unionId),
-    ]);
-    if (unionData) setUnion(unionData);
-    if (tablesData) setTables(tablesData);
+    try {
+      const [unionData, tablesData] = await Promise.all([
+        unionService.getUnion(unionId),
+        tableService.getUnionTables(unionId),
+      ]);
+      if (unionData) setUnion(unionData);
+      if (tablesData) setTables(tablesData);
+    } catch (error) {
+      reportError(error, 'UnionDetailPage.Visibility_refresh_failed');
+    }
   });
 
   const navigate = useNavigate();
@@ -85,6 +89,8 @@ export default function UnionDetailPage() {
   const [tables, setTables] = useState<PokerTable[]>([]);
   const [unionTournaments, setUnionTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadRevision, setLoadRevision] = useState(0);
 
   // UNION LAW (2026-08-19, Dan): the union surface is the owner's operations
   // page. Players never see a union card, and a deep link must not leak the
@@ -218,6 +224,7 @@ export default function UnionDetailPage() {
     setIsUpdatingSettings(false);
     setShowXmttModal(false);
     setOnlineCount(0);
+    setLoadError(null);
     loadingRef.current = false;
   }, [unionId]);
 
@@ -228,7 +235,10 @@ export default function UnionDetailPage() {
     const loadData = async () => {
       if (loadingRef.current) return;
       loadingRef.current = true;
-      if (isMounted) setLoading(true);
+      if (isMounted) {
+        setLoading(true);
+        setLoadError(null);
+      }
       try {
         let unionData = await unionService.getUnion(unionId);
 
@@ -361,6 +371,7 @@ export default function UnionDetailPage() {
       } catch (err) {
         reportError(err, 'UnionDetailPage.Error_loading_data');
         toast.error('Failed to load union data');
+        if (isMounted) setLoadError('Club Arena could not load this union workspace.');
       } finally {
         loadingRef.current = false;
         if (isMounted) setLoading(false);
@@ -371,7 +382,7 @@ export default function UnionDetailPage() {
     return () => {
       isMounted = false;
     };
-  }, [unionId]);
+  }, [unionId, loadRevision]);
 
   // Sync settings form when union data loads or tab switches to settings
   useEffect(() => {
@@ -671,7 +682,15 @@ export default function UnionDetailPage() {
   if (loading) {
     return (
       <div className={styles.loading}>
-        <PageSkeleton variant="dashboard" />
+        <LoadingState message="Opening Union Command" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className={styles.error}>
+        <ErrorState message={loadError} onRetry={() => setLoadRevision((value) => value + 1)} />
       </div>
     );
   }
@@ -679,7 +698,14 @@ export default function UnionDetailPage() {
   if (!union) {
     return (
       <div className={styles.error}>
-        <h2>Union Not Found</h2>
+        <EmptyState
+          icon="UNION"
+          eyebrow="Network Unavailable"
+          title="Union Not Found"
+          description="This union may have been removed, or the link may use an outdated identifier."
+          action={{ label: 'Browse Unions', onClick: () => navigate('/unions', { replace: true }) }}
+          secondaryAction={{ label: 'Return To Arena', onClick: () => navigate('/') }}
+        />
       </div>
     );
   }
@@ -1453,7 +1479,10 @@ export default function UnionDetailPage() {
                   people who own it. */}
               <p style={{ margin: '0 0 12px', fontSize: 13, opacity: 0.75 }}>
                 Weekly Player Win/Loss Settlement, Wallet And Treasury Live On The{' '}
-                <Link to="/union-dashboard" style={{ color: '#1877F2', fontWeight: 600 }}>
+                <Link
+                  to={`/unions/${unionId}/operations`}
+                  style={{ color: '#1877F2', fontWeight: 600 }}
+                >
                   Union Dashboard
                 </Link>
                 .

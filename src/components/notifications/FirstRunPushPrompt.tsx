@@ -45,7 +45,35 @@ import {
 import { useAuthUser } from '../../hooks/useAuthUser';
 import './FirstRunPushPrompt.css';
 
-const KEY_PREFIX = 'sp_firstrun_notif_';
+/**
+ * ONE re-offer, on purpose. Read this before changing the suffix again.
+ *
+ * This prompt asks once per account per browser and then closes that door for
+ * good. Between 2026-08-19 and 2026-08-29 the door was being closed against a
+ * question nobody could answer yes to: the ROOT service worker this app enrols
+ * against could not install at all, because one entry in its precache manifest
+ * 404'd (World Hub PR #929). Every player who saw this sheet in that window and
+ * tapped Not Now — or tapped Enable, hit the error, and gave up — had
+ * `sp_firstrun_notif_<uid>` written anyway, permanently.
+ *
+ * Measured the day the worker was fixed: 1 subscribed user out of 1,023
+ * profiles, against 2,437 seat offers in seven days skipped for
+ * `no_subscription`. Shipping the fix without this line would have fixed push
+ * for an audience that could never be asked again.
+ *
+ * `_v2` gives everybody exactly one more ask. It is NOT a re-prompt lever to
+ * reach for whenever enrolment looks low — bumping it again re-asks 1,000
+ * people who already said no, which is nagging, and the honest reading of a
+ * second no is that they meant the first one. Bump it only if the enrolment
+ * path is broken again in a way that made their answer meaningless, and say
+ * here what broke.
+ *
+ * The suffix stays in step with the World Hub's own key
+ * (src/components/FirstRunNotificationPrompt.jsx). Same origin, same device,
+ * same single subscription behind both apps: if one app re-offers and the other
+ * does not, a player gets asked twice about the same thing.
+ */
+const KEY_PREFIX = 'sp_firstrun_notif_v2_';
 const IOS_KEY_PREFIX = 'sp_firstrun_ios_install_';
 const IOS_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000; // a week is long enough not to nag
 const SHOW_DELAY_MS = 20_000; // let the player land before asking for anything
@@ -179,10 +207,29 @@ export default function FirstRunPushPrompt() {
     const result = await enablePush();
     if (!mounted.current) return;
     setBusy(false);
-    markDone();
-    // The question has been put and answered. Clearing `pending` is what stops
-    // the re-arm effect from raising it again after the success card fades or
-    // the player navigates.
+
+    /**
+     * ONLY AN ANSWER SPENDS THE ASK.
+     *
+     * markDone() used to run here unconditionally, which meant a player who
+     * tapped Enable and hit a TECHNICAL failure — the service worker still
+     * installing, a dropped VAPID fetch, a flaky minute of signal — had their
+     * one and only prompt recorded as spent. They wanted notifications. They
+     * said so. The platform wrote down "asked, done" and never offered again.
+     *
+     * That is exactly how the 2026-08-19..29 outage turned a fixable bug into a
+     * permanent loss of audience, and the outage is over but the mechanism is
+     * not: any transient failure still burns the prompt.
+     *
+     * Success and a DENIED permission are both real answers and are recorded.
+     * Anything else leaves the door open for the next session. `answered` is
+     * still set either way, so nothing re-raises the sheet at the player while
+     * they are standing here reading the error.
+     */
+    const wasAnswered = result.ok || notificationPermission() === 'denied';
+    if (wasAnswered) markDone();
+    // Clearing `pending` is what stops the re-arm effect from raising it again
+    // after the success card fades or the player navigates.
     answered.current = true;
     setPending(null);
     if (result.ok) {

@@ -24,7 +24,6 @@ import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { getLocalStorage, setLocalStorage } from '../../lib/storage';
 import ClubStatsCards, { DashboardStats } from '../../components/club/ClubStatsCards';
 import ClubActivityFeed from '../../components/club/ClubActivityFeed';
-import ClubBottomNav from '../../components/club/ClubBottomNav';
 import PageSkeleton from '../../components/common/PageSkeleton';
 import { useToast } from '../../components/common/Toast';
 import ClubMemberManagement from '../../components/admin/ClubMemberManagement';
@@ -877,7 +876,6 @@ export default function ClubDashboard() {
             Retry
           </button>
         </div>
-        {clubId && <ClubBottomNav clubId={clubId} />}
       </div>
     );
   }
@@ -1676,6 +1674,27 @@ export default function ClubDashboard() {
                   </Link>
                 )}
 
+                {/* BOMB POT REPORT 2026-08-29. Unconditional, unlike the
+                    insurance link above: that one is gated on the club HAVING
+                    insurance revenue, but the first question about bomb pots is
+                    whether to run them at all, and an owner who has never
+                    switched them on is exactly who needs to see the page. It
+                    tells them plainly when there is nothing to show yet. */}
+                <Link
+                  to={`/clubs/${clubId}/bomb-pot-report`}
+                  style={{
+                    display: 'inline-block',
+                    marginBottom: 14,
+                    marginLeft: revenue.insurance ? 14 : 0,
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    color: '#1877f2',
+                    textDecoration: 'none',
+                  }}
+                >
+                  View Bomb Pot Report
+                </Link>
+
                 <Suspense fallback={<p className={styles.empty}>Loading Chart...</p>}>
                   <ClubActivityChart
                     data={revenue.daily.map((d) => ({ d: d.d, hands: d.hands, rake: d.rake }))}
@@ -1807,8 +1826,6 @@ export default function ClubDashboard() {
           </div>
         )}
       </div>
-
-      {clubId && <ClubBottomNav clubId={clubId} />}
 
       {clubId && user?.id && (
         <div style={{ padding: '0 16px 80px', maxWidth: '100%' }}>

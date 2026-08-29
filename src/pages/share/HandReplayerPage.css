@@ -14,7 +14,12 @@
   position: relative;
   /* 2026-08-23: was `overflow: hidden` — the page body may clip sideways
      overflow only; vertical scroll must stay available on phones */
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
   overflow-x: hidden;
+  overflow-x: clip;
   padding: var(--space-4);
 }
 

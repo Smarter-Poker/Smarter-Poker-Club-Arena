@@ -15,17 +15,14 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { sliceEnclosingBlock, sliceStatement } from '../helpers/sourceWindow';
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const root = join(__dirname, '..', '..');
 const RESULTS = readFileSync(
   join(root, 'src', 'pages', 'tournament', 'TournamentResultsPage.tsx'),
   'utf8'
 );
-const MENU = readFileSync(
-  join(root, 'src', 'components', 'navigation', 'HamburgerMenu.tsx'),
-  'utf8'
-);
+const NAVIGATION = readFileSync(join(root, 'src', 'config', 'clubArenaNavigation.ts'), 'utf8');
 const PRELOADER = readFileSync(join(root, 'src', 'utils', 'ChunkPreloader.ts'), 'utf8');
 
 describe('the results filters are deep-linkable', () => {
@@ -47,7 +44,10 @@ describe('the results filters are deep-linkable', () => {
 
 describe('the hamburger links a spin player to their own history', () => {
   it('carries the My Spin Results entry with both params', () => {
-    const entry = sliceStatement(MENU, "{ label: 'My Spin Results'");
+    // Navigation entries are centrally owned by clubArenaNavigation and the
+    // hamburger renders that registry. Pin the owning module so an IA cleanup
+    // cannot silently strand this route merely by moving the menu markup.
+    const entry = sliceEnclosingBlock(NAVIGATION, "label: 'My Spin Results'");
     expect(entry).toContain('/tournament-results?filter=mine&type=spin');
   });
 
@@ -63,5 +63,31 @@ describe('round 10: the results page reads bind their errors', () => {
     expect(RESULTS).toContain('deep_link_read_failed');
     expect(RESULTS).toContain('if (standingsErr) throw standingsErr');
     expect(RESULTS).toContain('if (handsErr) throw handsErr');
+  });
+});
+
+describe('round 11: the Biggest Hits strip', () => {
+  it('loads only on the Spin view, 10x and up, both reads error-bound', () => {
+    // Level 2: the async IIFE body that holds both the try and its catch.
+    const loader = sliceEnclosingBlock(RESULTS, 'biggest_hits_load_failed', 0, 2);
+    expect(loader).toContain(".gte('spin_multiplier', 10)");
+    expect(loader).toContain('if (hitsErr) throw hitsErr');
+    expect(loader).toContain('if (winnersErr) throw winnersErr');
+    // The gate: anything but the spin filter clears the strip.
+    expect(RESULTS).toContain("if (typeFilter !== 'spin')");
+  });
+
+  it('the prize comes from the stamped column, ladder arithmetic as fallback', () => {
+    const loader = sliceEnclosingBlock(RESULTS, 'biggest_hits_load_failed', 0, 2);
+    expect(loader).toContain('Number(w?.prize)');
+  });
+
+  it('HORSES ARE PLAYERS: no is_horse filter anywhere in the strip', () => {
+    const loader = sliceEnclosingBlock(RESULTS, 'biggest_hits_load_failed', 0, 2);
+    expect(loader).not.toContain('is_horse');
+  });
+
+  it('renders only when the spin filter is active and there are hits', () => {
+    expect(RESULTS).toContain("typeFilter === 'spin' && biggestHits.length > 0");
   });
 });

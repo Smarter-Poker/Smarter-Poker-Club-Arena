@@ -368,7 +368,7 @@ const DEFAULT_CARD_BACK = 'classic_blue';
  * Map legacy/invalid ids onto real designs rather than rendering nothing.
  *
  * 2026-08-20 — THE STORE AND THE TABLE SPOKE DIFFERENT LANGUAGES.
- * CardBackSelector sells twelve designs by id (black, red, blue, white,
+ * Table Studio sells twelve designs by id (black, red, blue, white,
  * classic, burgundy, navy, gold, holographic, carbon, club-branded,
  * diamond-foil). Only five of those ids existed here, so buying any of the
  * other seven — six of them PAID, up to 300 diamonds each — resolved to the
@@ -437,7 +437,7 @@ export function isKnownCardBackId(style: string | undefined | null): boolean {
 // Dan 2026-08-25: "every selectable feature must be 100% fully built out,
 // functional and actually change and update in real time when selected."
 //
-// THREE SURFACES SELL CARD BACKS — CardBackSelector (the diamond store),
+// ONE SURFACE SELLS CARD BACKS — Table Studio owns checkout and selection,
 // ThemeSettingsModal's Cards tab, and the table hamburger menu — and each kept
 // its OWN copy of the list. That is the defect this repo has now fixed three
 // separate times, always in one copy at a time:
@@ -447,7 +447,7 @@ export function isKnownCardBackId(style: string | undefined | null): boolean {
 //                 classic_blue.
 //   - 2026-08-25  HamburgerMenu offered default / emerald / crimson /
 //                 midnight / obsidian. Same outcome, five days later.
-//   - now         CardBackSelector sold TWELVE ids that resolved to SEVEN
+//   - then        CardBackSelector sold TWELVE ids that resolved to SEVEN
 //                 designs. `classic` (50 diamonds), `burgundy` (75) and the
 //                 free `red` were the identical picture; `navy` (75), `black`
 //                 and `blue` were the identical picture. Three paid designs

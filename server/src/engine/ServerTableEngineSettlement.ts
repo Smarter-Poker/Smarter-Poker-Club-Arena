@@ -68,8 +68,30 @@ const RABBIT_HUNT_OFFER_TTL_MS = 90_000;
  * files as critical — the same "make it LOUD rather than impossible" shape
  * CLAUDE.md section 11.5 settled on for seat-stack exits.
  */
-const BOMB_LEDGER_WRITE_ATTEMPTS = 3;
+/**
+ * MEASURED, THEN WIDENED (2026-08-29, same day).
+ *
+ * The first cut was 3 attempts with a LINEAR 250ms backoff — 750ms of cover in
+ * total. Production then reported the rate: of 457 bomb hands settled after the
+ * ledger became complete, 455 wrote their award units and **2 did not**. Both
+ * survived three attempts.
+ *
+ * Three independent transient failures in under a second is not what 0.44%
+ * looks like. A short outage window is: one blip a couple of seconds long
+ * swallows all three attempts, because they all land inside it.
+ *
+ * So the backoff is exponential now and the window is about 4.75 seconds
+ * (250ms, 750ms, 1.75s, 2s cap) instead of 750ms — long enough to outlast the
+ * kind of blip that produced both losses, at no cost to a hand that succeeds
+ * first time, which is every hand but two in 457.
+ *
+ * The cap matters as much as the growth: this runs per settled bomb hand, and
+ * an unbounded doubling would have a failing table holding retry timers open
+ * across several of its own subsequent hands.
+ */
+const BOMB_LEDGER_WRITE_ATTEMPTS = 4;
 const BOMB_LEDGER_RETRY_BASE_MS = 250;
+const BOMB_LEDGER_RETRY_MAX_MS = 2_000;
 
 export abstract class ServerTableEngineSettlement extends ServerTableEngineDealing {
   /**
@@ -1316,9 +1338,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               if (!error) return;
               lastMessage = error.message;
               if (attempt < BOMB_LEDGER_WRITE_ATTEMPTS) {
-                await new Promise((resolve) =>
-                  setTimeout(resolve, BOMB_LEDGER_RETRY_BASE_MS * attempt)
+                // Exponential, capped: 250ms, 750ms, 1.75s. Was linear
+                // (250/500), which put all three attempts inside the first
+                // second and so inside the same blip. See the constants above
+                // for the production rate that motivated the change.
+                const backoff = Math.min(
+                  BOMB_LEDGER_RETRY_BASE_MS * (2 ** attempt - 1),
+                  BOMB_LEDGER_RETRY_MAX_MS
                 );
+                await new Promise((resolve) => setTimeout(resolve, backoff));
               }
             }
             reportError(

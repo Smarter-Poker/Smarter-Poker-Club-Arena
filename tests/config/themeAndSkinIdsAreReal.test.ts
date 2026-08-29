@@ -17,78 +17,40 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { TABLE_FELT_CATALOG } from '../../src/lib/tableTheme';
+import { TABLE_FELT_CATALOG, THEME_PRESET_SKINS } from '../../src/lib/tableTheme';
+import { THEME_PRESETS } from '../../src/components/table/ThemeSettingsModal';
 
 const root = process.cwd();
 const read = (p: string) => fs.readFileSync(path.join(root, p), 'utf8');
 
-const DESIGN_TOKENS = read('src/styles/design-tokens.css');
-const GLOBALS = read('src/styles/globals.css');
-/* 2026-08-26 sweep: both ThemeSelector components were DELETED — each was a
-   complete picker with no call site, reachable only through barrels that
-   nothing imported. The theme list players can actually reach is the one in
-   the table's SettingsPanel, so that is what this file now reads. The old
-   `customization/ThemeSelector` duplicate-list test went with the file it
-   guarded; `tests/unit/noUnreachableSettingsUi.test.ts` pins that neither
-   comes back. */
-const TABLE_THEME_SELECTOR = read('src/components/table/SettingsPanel.tsx');
 const TABLE_ASSETS = read('src/assets/tableAssets.ts');
 const THEME_MODAL = read('src/components/table/ThemeSettingsModal.tsx');
 
-/** Every id with a real `[data-theme='<id>']` rule in the shipped stylesheets. */
-function idsWithThemeTokens(): Set<string> {
-  const css = DESIGN_TOKENS + '\n' + GLOBALS;
-  const ids = [...css.matchAll(/\[data-theme=['"]([a-z0-9_-]+)['"]\]/g)].map((m) => m[1]);
-  expect(ids.length, 'no [data-theme] rules found at all').toBeGreaterThan(0);
-  return new Set(ids);
-}
-
-/** The ids the one shared theme list offers. */
-function tableThemeIds(): string[] {
-  const block = TABLE_THEME_SELECTOR.match(/TABLE_THEMES(?::\s*\w+\[\])? = \[([\s\S]*?)\n\];/);
-  expect(block, 'TABLE_THEMES not found in table/SettingsPanel.tsx').toBeTruthy();
-  /* SettingsPanel's list is `{ value, label }` — the deleted ThemeSelector's
-     was `{ id, ... }`. Accept either key so this reads the shape that is
-     actually mounted rather than the one that was removed. */
-  const ids = [...block![1].matchAll(/(?:id|value): '([a-z0-9_-]+)'/g)].map((m) => m[1]);
-  expect(ids.length, 'TABLE_THEMES parsed empty').toBeGreaterThan(0);
-  return ids;
-}
-
 describe('a theme you can pick is a theme that exists', () => {
-  it('every TABLE_THEMES id except the default has a [data-theme] token block', () => {
-    const real = idsWithThemeTokens();
-    const offered = tableThemeIds();
-    // 'green' is the bare :root default — the attribute is REMOVED for it,
-    // which is why it is the one id allowed to have no block of its own.
-    const needsTokens = offered.filter((id) => id !== 'green');
-    const dead = needsTokens.filter((id) => !real.has(id));
-    expect(dead, `themes offered with no styling behind them: ${dead.join(', ')}`).toEqual([]);
+  it('every Table Studio preset resolves to a real table skin', () => {
+    const realFelts = new Set(TABLE_FELT_CATALOG.map((felt) => felt.id));
+    const dead = THEME_PRESETS.filter(
+      (preset) => !THEME_PRESET_SKINS[preset.id] || !realFelts.has(THEME_PRESET_SKINS[preset.id])
+    ).map((preset) => preset.id);
+    expect(dead, `theme presets with no real table skin: ${dead.join(', ')}`).toEqual([]);
   });
 
-  it('all seven themes are distinct ids', () => {
-    const offered = tableThemeIds();
+  it('all ten premium presets are distinct ids', () => {
+    const offered = THEME_PRESETS.map((preset) => preset.id);
     expect(new Set(offered).size).toBe(offered.length);
-    expect(offered.length).toBeGreaterThanOrEqual(7);
+    expect(offered).toHaveLength(10);
+    expect(Object.keys(THEME_PRESET_SKINS).sort()).toEqual([...offered].sort());
   });
 
   it('the eight invented themes never come back', () => {
     // The exact ids the customization picker used to offer. Every one of them
     // matched nothing. 'gold' is NOT in this list: it is a real theme with a
     // real [data-theme='gold'] block, and it survives.
-    const real = idsWithThemeTokens();
+    const offered = THEME_PRESETS.map((preset) => preset.id);
     for (const invented of ['classic', 'crimson', 'ocean', 'royal', 'sunset', 'neon', 'midnight']) {
-      expect(real.has(invented), `${invented} still has no tokens, so nothing may offer it`).toBe(
+      expect(offered.includes(invented), `Table Studio offers the dead id ${invented} again`).toBe(
         false
       );
-      /* The second half of this check used to read
-         customization/ThemeSelector, which was deleted in the 2026-08-26
-         sweep (no call site). The surviving, MOUNTED list is the one to ask —
-         if a dead id creeps back into a picker, that is where it will be. */
-      expect(
-        tableThemeIds().includes(invented),
-        `the mounted theme picker offers the dead id ${invented} again`
-      ).toBe(false);
     }
   });
 });

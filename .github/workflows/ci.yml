@@ -13,7 +13,6 @@ on:
     # tests the same thing.
     - cron: '17 */2 * * *'
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # THE GROUP IS KEYED ON THE HEAD SHA, NOT THE BRANCH — changed 2026-08-26.
 #
@@ -145,7 +144,7 @@ jobs:
           found=$(grep -rn --include="*.ts" --include="*.tsx" \
             -E '\b(TODO|FIXME)\b' \
             src/ server/src/ 2>/dev/null | grep -v -E '\b(TODO|FIXME)\(#[0-9]+\)' || true)
-          
+
           if [ -n "$found" ]; then
             echo "::error::Bare stub markers found! Use TODO(#1234) with an issue reference, or resolve the stub."
             echo "$found"
@@ -213,6 +212,16 @@ jobs:
       # in a document gets re-broken; this one now fails the build.
       - name: Data Invariant — .maybeSingle() never .single()
         run: node scripts/ci/check-maybe-single.mjs
+
+      # The same mechanism, one step worse: a read whose error is discarded and
+      # whose RESULT decides whether to insert. "The read failed" becomes "the
+      # row is not there" and the branch writes. That is how
+      # training_user_achievements reached 33,353 rows for 44 real pairs, at
+      # one new row per page load, with the worst single pair at 13,047.
+      # check-maybe-single cannot see this: the call sites are already using
+      # .maybeSingle() correctly. It is the destructuring that is wrong.
+      - name: Data Invariant — no discarded read error gating a write
+        run: node scripts/ci/check-discarded-read-then-write.mjs
 
       # Copy invariant. Dan 2026-08-20: "forbid the use of em bars anywhere."
       # A style rule that lives only in someone's head gets re-broken by the
@@ -283,8 +292,6 @@ jobs:
       # (loaded / mounted / routed somewhere real), not rule contents.
       - name: Monitoring Invariant — every alert rule is loaded, mounted, and routed
         run: node scripts/ci/check-monitoring-drift.mjs
-
-
 
       - name: Report Typecheck Time
         if: always()
@@ -826,6 +833,13 @@ jobs:
         run: npm run build
         env:
           NODE_ENV: production
+          # Public browser configuration. The previous PR build omitted these,
+          # so it produced an artifact that threw before React mounted and no
+          # browser performance check could exercise the actual application.
+          VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co'
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          VITE_ENGINE_URL: 'https://engine.smarter.poker'
+          VITE_APP_ENV: production
           # Phase U5.1 (task #133): wire Sentry sourcemap upload at build time.
           # Without these, the sentry-vite-plugin in vite.config.ts skips (the
           # `!!(NODE_ENV === 'production' && SENTRY_AUTH_TOKEN)` gate is false)
@@ -846,11 +860,11 @@ jobs:
           ELAPSED=$(( END - ${{ steps.build-timer.outputs.start }} ))
           echo "## ⏱️ Build Duration: ${ELAPSED}s" >> $GITHUB_STEP_SUMMARY
 
-      # ── Lighthouse Performance Audit ──────────────────────────────────────
-      - name: Lighthouse Audit
+      # ── Build Artifact Inventory ──────────────────────────────────────────
+      - name: Build Artifact Inventory
         continue-on-error: true
         run: |
-          echo "## 🔦 Lighthouse Audit" >> $GITHUB_STEP_SUMMARY
+          echo "## Build Artifact Inventory" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           INDEX_SIZE=$(wc -c < dist/index.html | tr -d ' ')
           INDEX_KB=$((INDEX_SIZE / 1024))
@@ -875,6 +889,16 @@ jobs:
         # correct code-splitting score exactly as badly as shipping the code
         # eagerly. See the header of the script for the measurements.
         run: node scripts/ci/bundle-size.mjs
+
+      # Real browser performance and responsive budgets. This replaces the old
+      # file-count step that was labelled Lighthouse but never opened a page.
+      - name: Install Performance Browser
+        if: success()
+        run: npx playwright install --with-deps chromium
+
+      - name: Route Performance Budget
+        if: success()
+        run: npm run test:performance
 
   # ───────────────────────────────────────────────────────────────────────────
   # LIVE PRODUCTION E2E (split out of `Production Build` 2026-08-22).
@@ -1024,9 +1048,9 @@ jobs:
             echo "Signed in via \`SP_EMAIL\` — the auth-gated route specs ran." >> $GITHUB_STEP_SUMMARY
           fi
 
-  # ─────────────────────────────────────────────────────────────────────────────
-  # STEP 4: Post-deploy smoke test on smarter.poker
-  # ─────────────────────────────────────────────────────────────────────────────
+      # ─────────────────────────────────────────────────────────────────────────────
+      # STEP 4: Post-deploy smoke test on smarter.poker
+      # ─────────────────────────────────────────────────────────────────────────────
 
       - name: Open an issue if production E2E failed
         if: failure()
@@ -1191,7 +1215,29 @@ jobs:
         # second. It is what stops a breakpoint being reintroduced for cards,
         # avatars or seats — the failure the ladder caused was invisible for as
         # long as nobody happened to open a tablet.
-        run: npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts --reporter=line --retries=1
+        # 2026-08-29: seven more self-contained specs joined, because the no-job
+        # trap fired again at scale. An inventory found SIXTEEN spec files
+        # running in no job; every self-contained one is now named here.
+        #
+        # customization-studios went red on this runner the first time it ran,
+        # on a TEXT-metric assertion: it required each tab's label to fit its
+        # column, the studio font is loaded from /fonts and a setContent
+        # harness has no base URL to resolve it, so macOS fell back to a narrow
+        # face and Linux to a wide one. The page ships correctly on both. The
+        # beat now asserts the ROOM the grid guarantees (minmax(124px, 1fr))
+        # rather than the rendering of a font that never loaded, so it means
+        # the same thing on every machine. A gate spec must be deterministic
+        # across platforms; the fix is to stop measuring the runner, not to
+        # exile the spec. Three were already red - top-rail-seat pinned the
+        # px-ladder avatar #1650 retired, pot-above-chips froze a pot position
+        # two deliberate redesigns old, raise-panel-covers-chat lost the
+        # stylesheet its anchor moved into - and every one had been failing
+        # invisibly. The remaining orphans (mobile-fit-audit, smoke,
+        # tournament-watch, the routes/ suite, showdown-beats,
+        # mobile-chrome-occlusion, mobile-input-zoom, mobile-tap-targets,
+        # club-lobby, tournament-buy-in-dialog) need a login or a deployed URL
+        # and belong to the post-deploy tier, not this gate.
+        run: npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/customization-studios.spec.ts --reporter=line --retries=1
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 5: AUTO-REVERT — DISABLED (was causing revert loops during migration)
@@ -1199,7 +1245,7 @@ jobs:
   auto-revert:
     name: Auto-Revert Broken Commit (DISABLED)
     needs: [typecheck, build]
-    if: false  # DISABLED — was auto-reverting valid commits during active migration
+    if: false # DISABLED — was auto-reverting valid commits during active migration
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -1306,4 +1352,3 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "The breaking commit has been automatically reverted." >> $GITHUB_STEP_SUMMARY
           echo "A GitHub issue has been created for tracking." >> $GITHUB_STEP_SUMMARY
-

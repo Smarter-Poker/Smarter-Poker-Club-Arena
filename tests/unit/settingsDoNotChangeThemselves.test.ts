@@ -154,7 +154,6 @@ describe('3. Reset To Defaults writes only what the panel offers', () => {
       'showBetSizePresets',
       'showTicker',
       'animationSpeed',
-      'tableTheme',
       'soundEnabled',
       'soundVolume',
       'hapticEnabled',

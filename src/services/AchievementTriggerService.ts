@@ -84,7 +84,7 @@ function notifyChallengesCompleted(
 class AchievementTriggerServiceClass {
   /**
    * Process a completed hand and check for achievements
-   * Called by HandPersistenceService or HandController after HAND_COMPLETE
+   * Called after HAND_COMPLETE (HandPersistenceService was deleted 2026-08-29; the engine owns hand persistence)
    */
   async onHandComplete(
     userId: string,
@@ -430,11 +430,25 @@ class AchievementTriggerServiceClass {
     // NOTE: player_stats has no total_wins column (win count is not tracked) and
     // friends_count lives on `profiles`, not here. tournament_wins is aliased from
     // the real column tournaments_won. Absent stats default to 0.
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('player_stats')
       .select('hands_played, tournaments_played, tournament_wins:tournaments_won')
       .eq('user_id', userId)
       .maybeSingle();
+
+    /**
+     * A FAILED READ IS NOT A PLAYER WITH NO HISTORY (2026-08-29).
+     *
+     * Only `data` was destructured, and every field below coalesces to 0. So a
+     * refused or failed read returned the profile of somebody who has never
+     * played a hand — which is the input the achievement checks then reason
+     * from. "First hand" and "first tournament" milestones are exactly the ones
+     * that go off on that reading, and some of them pay chips.
+     *
+     * The reads stay non-fatal — a stats hiccup must not break a hand — but the
+     * failure is now visible instead of being laundered into a zero.
+     */
+    if (error) reportError(error, 'AchievementTriggerService.getUserStats');
 
     return {
       handsPlayed: data?.hands_played || 0,

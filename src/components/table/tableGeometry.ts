@@ -137,9 +137,10 @@ export const FELT_WINDOW = {
 /**
  * The scaler's own shape, width over height.
  *
- * `.table-scaler { aspect-ratio: 605 / 1000 }` - declared at every breakpoint in
- * TablePage.css and locked there, because the seat ring percentages are derived
- * from that box. It is needed here because a percentage of the width and a
+ * `.table-scaler { aspect-ratio: 605 / 1000 }` - the DESKTOP shape. Since
+ * 2026-08-29 phones and tablets (<=768px) fill their real box instead and land
+ * anywhere from 0.605 to 0.7 wide-per-tall; the art is object-fit: fill, so
+ * the ring and the rail stretch together and percentages stay aligned. It is needed here because a percentage of the width and a
  * percentage of the height are not the same distance: an angle, a rotation or
  * an "equal distance" computed in raw percentages is wrong by a factor of 1.65
  * on one axis. Every construction below converts into a square space first.

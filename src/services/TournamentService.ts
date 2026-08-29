@@ -17,6 +17,10 @@ import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fetchGameCreationAccess } from './GameAccessService';
 import { parseBlindStructure, parsePayoutStructure } from '../utils/parseBlindStructure';
+/* The canonical level-length reader. It is the ONLY one that gets the
+   three-spelling precedence right - see getCurrentLevelState. Pure, no React,
+   despite living under components/lobby. */
+import { blindLevelMinutes } from '../components/lobby/tournamentFigures';
 import type { Tournament, TournamentPlayer } from '../types/database.types';
 import { reportError } from '../utils/errorReporter';
 import { computePlacePrize } from '../lib/payoutMath';
@@ -1513,11 +1517,52 @@ class TournamentService {
       blinds = [{ level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 15 }];
     }
 
+    /**
+     * A LEVEL'S LENGTH IS SPELLED THREE WAYS, AND ONE OF THEM IS SECONDS.
+     *
+     * `durationMinutes` / `duration_minutes` hold minutes; `duration` holds
+     * SECONDS, and every Spin is written that way — `createSpin` stores
+     * `duration: 180` for a three-minute level and no minutes key at all.
+     * Reading `.durationMinutes` directly, as all four sites in this method
+     * used to, gives a Spin:
+     *
+     *   line 1520   `undefined * 60`            -> NaN  (the pre-start clock)
+     *   here        `(undefined || 10) * 60`    -> 600s for a 180s level
+     *   wall-clock  `undefined * 60 * 1000`     -> NaN, and the loop that
+     *                                              walks the structure never
+     *                                              matches, so it falls off
+     *                                              the end
+     *
+     * The 600 is the one that shows. DetailOverviewTab's hero meter computes
+     * `(1 - remaining/duration) * 100` against a `duration` the PAGE
+     * normalised correctly to 180 — so `(1 - 600/180) * 100` is -233%, clamps
+     * to 0, and the meter sits visibly empty for the first seven minutes of a
+     * three-minute level before snapping. The clock beside it counts down from
+     * 10:00 on a level that ends at 3:00.
+     *
+     * `blindLevelMinutes` is the canonical reader and gets the precedence
+     * right (canonical keys first, seconds last, 0 for "unknown" rather than a
+     * guess). Everything below goes through `levelMinutes`, which adds only
+     * the service's own 10-minute fallback for a structure that genuinely does
+     * not say — and never mistakes 180 seconds for 180 minutes.
+     */
+    /** What this method fell back to before, kept so behaviour is unchanged
+     *  for a structure that genuinely carries no length at all. */
+    const DEFAULT_LEVEL_MINUTES = 10;
+    const levelMinutes = (level: BlindLevel | undefined): number => {
+      if (!level) return DEFAULT_LEVEL_MINUTES;
+      /* `blindLevelMinutes` matches on the row's own `level` field first and
+         falls back to position, so a single-element array asked for level 1
+         resolves to that element either way. */
+      const mins = blindLevelMinutes([level] as Parameters<typeof blindLevelMinutes>[0], 1);
+      return mins > 0 ? mins : DEFAULT_LEVEL_MINUTES;
+    };
+
     if (tournament.status !== 'RUNNING' || !tournament.started_at) {
       return {
         currentLevel: blinds[0],
         nextLevel: blinds[1] || null,
-        timeRemainingSeconds: blinds[0].durationMinutes * 60,
+        timeRemainingSeconds: Math.round(levelMinutes(blinds[0]) * 60),
         levelIndex: 0,
       };
     }
@@ -1573,7 +1618,7 @@ class TournamentService {
     if (typeof serverLevel === 'number' && Number.isFinite(serverLevel) && serverLevel >= 0) {
       const lookupIndex = Math.min(serverLevel, blinds.length - 1);
       const level = blinds[lookupIndex];
-      const durationSec = (level?.durationMinutes || 10) * 60;
+      const durationSec = Math.round(levelMinutes(level) * 60);
       // TOURNEY-AUDIT 2026-07-24 (sweep 5): precise remaining time from the
       // server-persisted level clock (tournaments.level_started_at) — the
       // countdown now matches the engine's actual timer instead of showing
@@ -1598,7 +1643,7 @@ class TournamentService {
 
     for (let i = 0; i < blinds.length; i++) {
       const level = blinds[i];
-      const durationMs = level.durationMinutes * 60 * 1000;
+      const durationMs = levelMinutes(level) * 60 * 1000;
 
       if (elapsedMs < accumulatedMs + durationMs) {
         return {

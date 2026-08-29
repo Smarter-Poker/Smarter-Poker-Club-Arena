@@ -288,6 +288,71 @@ export function __inFlightThemeReadCount(): number {
 
 const THEME_ROWS_CACHE_PREFIX = 'ca_user_theme_rows:';
 
+type ThemeRealtimeEntry = {
+  refs: number;
+  channel: ReturnType<typeof supabase.channel>;
+};
+
+const themeRealtimeByUser = new Map<string, ThemeRealtimeEntry>();
+
+/** One database channel per account, even when four persistent tables mount. */
+function acquireThemeRealtime(userId: string): () => void {
+  const existing = themeRealtimeByUser.get(userId);
+  if (existing) {
+    existing.refs += 1;
+    return () => releaseThemeRealtime(userId);
+  }
+
+  // Several unit suites intentionally provide a minimal PostgREST-only mock.
+  if (typeof (supabase as { channel?: unknown }).channel !== 'function') return () => undefined;
+
+  const channel = supabase
+    .channel(`user-theme-settings:${userId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'user_theme_settings',
+        filter: `user_id=eq.${userId}`,
+      },
+      (payload) => {
+        const raw =
+          payload.eventType === 'DELETE' ? (payload.old as ThemeRow) : (payload.new as ThemeRow);
+        if (!raw || typeof raw !== 'object') return;
+        const value =
+          payload.eventType === 'DELETE'
+            ? { ...DEFAULT_THEME }
+            : Object.fromEntries(
+                THEME_FIELDS.flatMap((field) =>
+                  typeof raw[field] === 'string' && raw[field] ? [[field, raw[field]]] : []
+                )
+              );
+        masterBus.emit('UI_THEME_CHANGED', {
+          key: canonicalGameType(raw.game_type),
+          value,
+          userId,
+        });
+      }
+    )
+    .subscribe();
+  themeRealtimeByUser.set(userId, { refs: 1, channel });
+  return () => releaseThemeRealtime(userId);
+}
+
+function releaseThemeRealtime(userId: string): void {
+  const entry = themeRealtimeByUser.get(userId);
+  if (!entry) return;
+  entry.refs -= 1;
+  if (entry.refs > 0) return;
+  themeRealtimeByUser.delete(userId);
+  void supabase.removeChannel(entry.channel);
+}
+
+export function __themeRealtimeChannelCount(): number {
+  return themeRealtimeByUser.size;
+}
+
 function themeRowsCacheKey(userId: string): string {
   return `${THEME_ROWS_CACHE_PREFIX}${userId}`;
 }
@@ -367,6 +432,11 @@ export function useUserThemeSettings(
     () => resolveThemeBucket(gameVariant, isTournament, tournamentType),
     [gameVariant, isTournament, tournamentType]
   );
+
+  useEffect(() => {
+    if (!userId) return undefined;
+    return acquireThemeRealtime(userId);
+  }, [userId]);
 
   useEffect(() => {
     if (!userId) {

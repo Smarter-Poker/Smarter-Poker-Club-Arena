@@ -141,26 +141,12 @@ describe('the settings page writes into the store the table reads', () => {
     expect(restored.soundVolume).toBe(sample.soundVolume);
   });
 
-  it('does not announce an unqualified success after a card-back sync failure', () => {
+  it('sends table visuals to the one live Table Studio instead of a duplicate dropdown', () => {
     const page = readFileSync(resolve(__dirname, '../../src/pages/SettingsPage.tsx'), 'utf-8');
-    expect(page).toContain('if (cardBackSyncFailed)');
-    expect(page).toContain(
-      'Settings Saved, But Card Back Could Not Sync. Choose It Again To Retry.'
-    );
-    expect(page).toContain('const previousCardBack = tableSettingsRef.current.cardBack');
-    expect(page).toContain('rollbackFailedCardBack(settings, previousCardBack)');
-    /* Anchored on `updateTableSettings(` rather than on the whole call text.
-       The argument list gained a second parameter on 2026-08-29 (the current
-       table settings, so a speed this page cannot name survives a Save that
-       never touched it) and this assertion silently became `indexOf(...) === -1`
-       — which is "less than -1 is false", so it failed loudly rather than
-       passing vacuously. It could as easily have gone the other way. The
-       ORDERING is what this pins; the exact arguments are not its business. */
-    const capture = page.indexOf('const previousCardBack');
-    const write = page.indexOf('updateTableSettings(');
-    expect(capture, 'the capture must exist').toBeGreaterThan(-1);
-    expect(write, 'the write must exist').toBeGreaterThan(-1);
-    expect(capture).toBeLessThan(write);
+    expect(page).toContain('<ThemeSettingsModal');
+    expect(page).toContain('Table Studio');
+    expect(page).not.toContain('Card Back Style');
+    expect(page).not.toContain('applyTableAppearance');
   });
 });
 

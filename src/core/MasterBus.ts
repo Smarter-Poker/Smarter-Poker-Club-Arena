@@ -78,8 +78,6 @@ export type BusEventType =
   | 'PREFLOP_WIN'
   | 'FLUSH_WIN'
   | 'PLAY_MINUTES'
-  // Phase 5: Card color customization
-  | 'CARD_COLOR_CHANGED'
   // Phase 8: Diamond economy bus event
   | 'DIAMOND_BALANCE_CHANGED'
   // Social & Messaging events
@@ -199,6 +197,8 @@ export type BusEventType =
   // Phase 6: Card Back Store events
   | 'SETTINGS_CHANGED'
   | 'DIAMOND_SPENT'
+  | 'COSMETIC_OWNERSHIP_CHANGED'
+  | 'ENTITLEMENTS_CHANGED'
   // Gamification engagement events (Session Build)
   | 'SETTLEMENT_RECEIPT_COPIED'
   | 'CHALLENGE_PROGRESS_UPDATED'
@@ -347,10 +347,32 @@ export type BusEventType =
   | 'TABLE_UNLOCKED'
   | 'RABBIT_HUNT_AVAILABLE'
   | 'ALL_IN_EQUITY'
-  | 'ONLINE_COUNT';
+  | 'ONLINE_COUNT'
+  // 2026-08-29 hardening pass: shell-freshness telemetry. The SW's bounded
+  // freshness race (sw-bus.js) and useShellUpdateGate's verified reloads are
+  // invisible when they work — these two events are how we KNOW the
+  // open-from-Hub glitch stays dead instead of believing it.
+  | 'SHELL_STALENESS_CHECKED'
+  | 'SHELL_RELOADED';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
+  /**
+   * 2026-08-29: a shell staleness verification completed (useShellUpdateGate).
+   * `stale: false` is the win condition — the running bundle matched the
+   * deployed one, so no reload was owed. The RATE of stale results per source
+   * is the KPI for the open-from-Hub glitch fix: it should be near zero on
+   * 'shell-updated'/'controllerchange' (the SW race served the fresh shell)
+   * and small on 'resume-probe' (long-lived PWA sessions catching up).
+   */
+  SHELL_STALENESS_CHECKED: {
+    stale: boolean;
+    source: 'shell-updated' | 'controllerchange' | 'resume-probe';
+    running: string | null;
+    deployed: string | null;
+  };
+  /** 2026-08-29: the gate actually reloaded the page to adopt a new shell. */
+  SHELL_RELOADED: { pageAgeMs: number };
   TABLE_CHAT_INSERT: { tableId: string; newRow: Record<string, unknown> };
   /**
    * A seated player's render-only identity changed. This event deliberately
@@ -448,8 +470,6 @@ export interface BusPayloadMap {
   PREFLOP_WIN: { handId: string; playerId: string };
   FLUSH_WIN: { handId: string; playerId: string };
   PLAY_MINUTES: { minutes: number };
-  // UI customization
-  CARD_COLOR_CHANGED: { preset: string };
   // Phase 8: Diamond economy
   DIAMOND_BALANCE_CHANGED: { newBalance: number; delta: number; source: string };
   // Social & Messaging
@@ -795,6 +815,11 @@ export interface BusPayloadMap {
   FLASH_PLAYER_JOINED: { poolId: string; playerId: string; poolSize: number };
   FLASH_PLAYER_SEATED: { poolId: string; playerId: string; tableId: string; seatCount: number };
   FLASH_TRANSITION: { poolId: string; playerId: string; fromTableId: string; direction: string };
+  /* DECLARED ONLY — no emitter and no subscriber anywhere in src/ (checked
+     2026-08-29). Kept rather than deleted because the two SEAT_* entries beside
+     it are kept for the same reason, and a payload type costs nothing; noted so
+     nobody spends time looking for the code that fires it. Its `poolId` shape
+     suggests it was drafted for the BBJ pool surface and never wired. */
   FLASH_SIT_OUT: { poolId: string; playerId: string };
   FLASH_SIT_BACK: { poolId: string; playerId: string };
   FLASH_PLAYER_LEFT: { poolId: string; playerId: string; cashout: number; handsPlayed: number };
@@ -829,6 +854,35 @@ export interface BusPayloadMap {
     origin?: string;
   };
   DIAMOND_SPENT: { amount: number; item: string; category: string };
+  COSMETIC_OWNERSHIP_CHANGED: {
+    userId: string;
+    category: 'theme_id' | 'table_id' | 'button_id' | 'background_id' | 'cards_id' | 'avatar';
+    assetId?: string;
+    source:
+      | 'diamond-purchase'
+      | 'club-purchase'
+      | 'club-redemption'
+      | 'vip-reward'
+      | 'ownership-reconciled'
+      | 'realtime-entitlement';
+  };
+  /**
+   * A paid entitlement was durably delivered. Unlike the cosmetic-only event,
+   * this also covers consumable balances and VIP membership. It is broadcast
+   * cross-tab so an open table updates in the purchase response frame.
+   */
+  ENTITLEMENTS_CHANGED: {
+    userId: string;
+    category: 'time_bank' | 'throwable' | 'emote_pack' | 'table_skin' | 'avatar' | 'vip';
+    assetId?: string;
+    quantity?: number;
+    source:
+      | 'diamond-purchase'
+      | 'club-purchase'
+      | 'club-redemption'
+      | 'vip-purchase'
+      | 'vip-reward';
+  };
   // Gamification engagement events (Session Build)
   SETTLEMENT_RECEIPT_COPIED: { receiptId: string };
   CHALLENGE_PROGRESS_UPDATED: Record<string, unknown>;
@@ -1282,6 +1336,12 @@ class MasterBusCore {
     'SETTINGS_CHANGED',
     'USER_PROFILE_LOADED',
     'CUSTOMIZATION_MUTATION_STATE',
+    // A receipt must unlock every mounted picker, even when two rewards grant
+    // the same bundle inside the fingerprint window.
+    'COSMETIC_OWNERSHIP_CHANGED',
+    // Two distinct purchases may legitimately grant the same quantity inside
+    // 500ms. A ledger delivery event must never be fingerprint-deduplicated.
+    'ENTITLEMENTS_CHANGED',
     // ANIMATION AUDIT 2026-08-27: gameplay-animation events added. These are
     // engine-fact relays whose payloads can legitimately repeat within 500ms
     // (two identical antes, an engine re-emit after reconnect, back-to-back
@@ -1619,7 +1679,7 @@ class MasterBusCore {
       }
     });
 
-    // Phase 7: Reload diamond balance after any diamond spend (CardBackSelector purchases, etc.)
+    // Phase 7: Reload diamond balance after any diamond spend (Table Studio purchases, etc.)
     this.subscribe('DIAMOND_SPENT', () => {
       const user = useUserStore.getState().user;
       if (user) {

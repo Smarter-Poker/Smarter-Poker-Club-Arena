@@ -82,7 +82,12 @@ const harness = `
        silently measure a compact seat. */
     :root { --seat-avatar-size: 84px; }
     body { margin: 0; }
-    .table-scaler { position: relative; width: 605px; height: ${SCALER_H}px; margin: 0 auto; }
+    /* 2026-08-29: --table-w republished the way the app publishes it
+       (ResizeObserver writes the measured width back). Without it the
+       proportional --seat-avatar-size (#1650) resolves from its 360px
+       fallback and every full-size assertion below measures a felt that
+       never ships at this scaler size. */
+    .table-scaler { position: relative; width: 605px; height: ${SCALER_H}px; margin: 0 auto; --table-w: 605px; }
     .table-felt { position: absolute; inset: 0; }
     .table-surface { position: absolute; left: 13.3%; top: ${FELT_TOP_PCT}%;
                      width: 73.2%; height: 80.3%; z-index: 1; }
@@ -148,7 +153,8 @@ test('CONTROL: a full-size seat at this height would leave the canvas', async ({
   // Proves the compact treatment is doing real work, not decorating a fix.
   await p.setContent(page(TOP_CENTRE_Y, ''));
   const m = await measure(p);
-  expect(m.avatarPx).toBe(84);
+  // Full-size means the proportional law's answer, not the retired 84px rung.
+  expect(Math.abs(m.avatarPx - Math.max(50, 605 * 0.158))).toBeLessThanOrEqual(1);
   expect(m.artTopPct).toBeLessThan(0);
 });
 
@@ -161,7 +167,16 @@ test('CONTROL: the previous y=11 position stranded the box on the felt', async (
 test('side and bottom seats keep the full-size avatar and 1.45x bust', async ({ page: p }) => {
   await p.setContent(page(50, ''));
   const m = await measure(p);
-  expect(m.avatarPx).toBe(84);
+  /* 2026-08-29: was `toBe(84)` — the px-ladder avatar that #1650 deliberately
+     replaced with a fraction of the felt. This spec ran in NO CI job, so the
+     pin sat red for a day and guarded nothing. The full-size avatar is now
+     the same law table-proportions.spec.ts enforces: 15.8% of the felt,
+     floored at 50px. What THIS beat still owns is the contrast with the
+     compact top seat above — full-size seats must not silently inherit the
+     top row's 56px cap. */
+  const expected = Math.max(50, 605 * 0.158);
+  expect(Math.abs(m.avatarPx - expected)).toBeLessThanOrEqual(1);
+  expect(m.avatarPx).toBeGreaterThan(56 + 10);
   const t = await p.evaluate(
     () => getComputedStyle(document.querySelector('.seat__avatar-img')!).transform
   );

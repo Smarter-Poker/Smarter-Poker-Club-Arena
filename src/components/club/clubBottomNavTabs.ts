@@ -16,8 +16,7 @@
  *   /admin  (the PLATFORM console, not the club Profile page)  ->  read as Profile
  *
  * Matching whole path segments makes each of those an explicit decision. The
- * consequence of a wrong answer is not cosmetic: the matched tab is REMOVED
- * from the bar, so a false positive silently deletes a destination.
+ * result drives `aria-current` while all six approved controls remain present.
  */
 
 export type TabKey = 'profile' | 'players' | 'cashier' | 'marketplace' | 'data' | 'stats';
@@ -26,11 +25,11 @@ export type TabKey = 'profile' | 'players' | 'cashier' | 'marketplace' | 'data' 
  * Path segments that mean "you are already on this tab's page", by tab.
  *
  * `dashboard-full` is the older multi-tab club dashboard and is deliberately
- * the SAME destination as Club Data, so it hides the Data tab too.
+ * the SAME destination as Club Data, so it marks the Data control current.
  * `cashier-classic` is the full cashier behind the Trade front door.
  * Deliberately ABSENT: `admin`, `agent-dashboard`, `settlement-dashboard`,
  * `union-dashboard`, `player-sessions` - different pages that a substring
- * match used to swallow.
+ * match used to misidentify.
  */
 export const TAB_SEGMENTS: Record<TabKey, readonly string[]> = {
   profile: ['settings'],

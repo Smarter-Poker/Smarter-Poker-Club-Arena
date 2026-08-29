@@ -36,7 +36,6 @@ import haptic from '../services/HapticService';
 
 import PremiumSFX from '../services/PremiumSFX';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
-
 import ClubContextMenu from '../components/home/ClubContextMenu';
 import ClubQuickLinkTile from '../components/home/ClubQuickLinkTile';
 import LOBBY_TILES from '../config/lobbyTiles.config';
@@ -65,12 +64,6 @@ const JoinClubModal = lazyWithRetry(() => import('../components/modals/JoinClubM
 const FindPlayerModal = lazyWithRetry(() => import('../components/modals/FindPlayerModal'));
 
 const SWR_CACHE_TTL = 60 * 60 * 1000; // 1 hour — skip stale cache from old sessions
-
-// Typed shape for the user preferences JSON column
-interface UserPreferences {
-  card_color_preset?: string;
-  [key: string]: unknown;
-}
 
 // Action button images
 const ACTION_BAR_HORIZONTAL = `${MEDIA_BASE}images/icons/action-bar-horizontal.webp`;
@@ -304,22 +297,6 @@ function HomePageInner() {
     };
   }, []);
 
-  // #6: Listen for card color changes from hamburger menu — sync to localStorage only
-  useMasterBusSubscription(
-    'CARD_COLOR_CHANGED',
-    (payload: any) => {
-      const preset = payload?.preset as string;
-      if (preset) {
-        try {
-          localStorage.setItem(STORAGE_KEYS.CARD_COLOR, preset);
-        } catch {
-          /* quota */
-        }
-      }
-    },
-    { debounce: 300 }
-  );
-
   // ═══════════════════════════════════════════════════════════════════════════════
   // DATA FETCHING (with SWR cache)
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -345,21 +322,6 @@ function HomePageInner() {
           data: { user: authUser },
         } = await getAuthUser();
         if (authUser) {
-          // PERF 2026-08-23: the card-colour preference needs only
-          // authUser.id, and was sitting behind the membership fetch for no
-          // reason but code order. Started here, awaited unchanged below, so
-          // the two round trips overlap. The rejection handler keeps a
-          // pre-await failure from surfacing as an unhandled rejection.
-          const colorPrefPromise = supabase
-            .from('profiles')
-            .select('preferences')
-            .eq('id', authUser.id)
-            .maybeSingle()
-            .then(
-              (r) => r,
-              (error) => ({ data: null, error })
-            );
-
           const memberships = await ClubsService.getUserMemberships(authUser);
           const clubs =
             memberships?.map(
@@ -415,27 +377,6 @@ function HomePageInner() {
            * priming is still valid, and the flags are the half that matters.
            */
           primeUnionFlags(lawFilteredClubs);
-
-          // ── Batch: card color sync ──
-          const [colorResult] = await Promise.allSettled([colorPrefPromise]);
-
-          if (getIsMounted && !getIsMounted()) return;
-
-          // Process card color sync — persist to localStorage for other components
-          if (
-            colorResult.status === 'fulfilled' &&
-            (colorResult.value.data?.preferences as UserPreferences | null)?.card_color_preset
-          ) {
-            const preset = (colorResult.value.data?.preferences as UserPreferences)
-              .card_color_preset!;
-            if (preset !== localStorage.getItem(STORAGE_KEYS.CARD_COLOR)) {
-              try {
-                localStorage.setItem(STORAGE_KEYS.CARD_COLOR, preset);
-              } catch {
-                /* quota */
-              }
-            }
-          }
         } else {
           if (getIsMounted && !getIsMounted()) return;
           setUserClubs([]);

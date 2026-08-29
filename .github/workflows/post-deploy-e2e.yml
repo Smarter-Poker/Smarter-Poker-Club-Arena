@@ -1,0 +1,154 @@
+name: Post-Deploy E2E (production)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# THE TIER THAT DID NOT EXIST (Dan 2026-08-29)
+#
+# An inventory of the e2e suite found SIXTEEN spec files running in no CI job
+# at all. Seven pure-geometry ones joined `css-beats-e2e` on the same day. The
+# rest could not: they need a signed-in session or a deployed URL, and
+# `css-beats-e2e` has neither by design (it renders stylesheets with
+# page.setContent so it can gate a merge in seconds).
+#
+# So they had nowhere to run, and "nowhere to run" is how a guard becomes a
+# comment. mobile-fit-audit.spec.ts has said the answer in its own header
+# since the day it was written:
+#
+#   "STRICT mode (MOBILE_FIT_STRICT=1, or CI where this suite runs against
+#    production AFTER a deploy) fails on any violation. Post-deploy CI is the
+#    right place for strict: a red run names the route and the offending
+#    element without blocking anyone's merge."
+#
+# This is that job. It runs AFTER the World Hub sync publishes, against the
+# real deployed bundle, signed in.
+#
+# WHY IT DOES NOT GATE A MERGE, and why that is not a weakness: by the time it
+# runs, the code is already on main and already published. Blocking is not
+# available. What it provides is the thing this estate keeps discovering it
+# lacks — somebody actually looking at production after a deploy. A red run
+# here is a real defect on the live site, named by route and element.
+#
+# NOT A `schedule:` TRIGGER. `workflow_run` is explicitly not the cron the
+# estate rules restrict (World Hub CLAUDE.md section 11), because it is
+# event-driven off the publish it verifies, and it schedules nothing.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_run:
+    workflows: ['Build for World Hub Sync']
+    types: [completed]
+  workflow_dispatch:
+
+# One at a time, and the NEWEST wins: an older run is measuring a bundle that is
+# no longer serving, so finishing it would report a verdict about the past.
+#
+# 2026-08-29, the first real run of this workflow was CANCELLED here, and that
+# exposed the flaw in its first design. It used to WAIT (up to ten minutes) for
+# production to serve its own commit's sha before testing anything. On a repo
+# where merges land every few minutes, every run spent its life in that wait
+# and was cancelled by the next one before reaching a single spec — a job that
+# always cancels is a job that never runs, which is precisely the "a guard with
+# nowhere to run becomes a comment" failure this workflow was built to end.
+#
+# The fix is to stop pinning to a sha. The question this job answers is "is
+# PRODUCTION healthy right now", not "is commit abc123 healthy" — the specs
+# below check routes, layout and touch targets on the live site, and any deploy
+# that reaches production is a fair subject. So it tests whatever is serving
+# when it starts, names that sha in the summary, and finishes in about three
+# minutes instead of thirteen. Cancellation now only dedupes a burst.
+concurrency:
+  group: post-deploy-e2e
+  cancel-in-progress: true
+
+jobs:
+  production-e2e:
+    # Only when the publish actually succeeded. A failed sync means production
+    # is still serving the previous bundle, and testing that proves nothing
+    # about this commit.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    name: Specs that need a real deployed page
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.3.1
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4.1.0
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install Chromium
+        run: npx playwright install chromium --with-deps
+
+      # Production must be reachable and serving a bundle before any of this
+      # means anything. This is a readiness check, NOT a sha match: see the
+      # note on `concurrency` above for why waiting for this commit's own sha
+      # made the job cancel itself out of existence.
+      - name: Confirm production is serving, and record what we are testing
+        id: live
+        run: |
+          for i in $(seq 1 10); do
+            LIVE=$(curl -fsS "https://smarter.poker/hub/club-arena/build-info.json?cb=$RANDOM" \
+              | sed -n 's/.*"ca_sha": *"\([a-f0-9]*\)".*/\1/p') || true
+            if [ -n "$LIVE" ]; then
+              echo "sha=$LIVE" >> $GITHUB_OUTPUT
+              echo "ready=true" >> $GITHUB_OUTPUT
+              echo "### Post-deploy E2E" >> $GITHUB_STEP_SUMMARY
+              echo "Testing production as it is serving right now: \`$LIVE\`" >> $GITHUB_STEP_SUMMARY
+              if [ "$LIVE" = "${{ github.event.workflow_run.head_sha || github.sha }}" ]; then
+                echo "(that is this run's own commit)" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "(a newer deploy has overtaken this run's commit - testing what players actually have)" >> $GITHUB_STEP_SUMMARY
+              fi
+              exit 0
+            fi
+            echo "  attempt $i: build-info.json not readable yet"
+            sleep 10
+          done
+          echo "ready=false" >> $GITHUB_OUTPUT
+          echo "::error::production did not serve a readable build-info.json - the site may be down."
+          exit 1
+
+      - name: Run the specs that need a deployed page
+        if: steps.live.outputs.ready == 'true'
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          ARENA_BASE_URL: https://smarter.poker/hub/club-arena
+          SP_EMAIL: ${{ secrets.SP_EMAIL }}
+          SP_PASS: ${{ secrets.SP_PASS }}
+          # The mode mobile-fit-audit.spec.ts was built for and has never been
+          # run in. Without it the spec logs a report and passes regardless.
+          MOBILE_FIT_STRICT: '1'
+        # Every spec the css-beats gate cannot take, named explicitly for the
+        # same reason that gate names its own: a spec not named in a job runs
+        # in no job. If you add a spec that needs a login or a live URL, add it
+        # here in the same commit.
+        run: |
+          npx playwright test \
+            tests/e2e/smoke.spec.ts \
+            tests/e2e/mobile-fit-audit.spec.ts \
+            tests/e2e/mobile-tap-targets.spec.ts \
+            tests/e2e/mobile-input-zoom.spec.ts \
+            tests/e2e/mobile-chrome-occlusion.spec.ts \
+            tests/e2e/showdown-beats.spec.ts \
+            tests/e2e/club-lobby.spec.ts \
+            tests/e2e/tournament-buy-in-dialog.spec.ts \
+            tests/e2e/tournament-watch.spec.ts \
+            --reporter=line --retries=1
+
+      - name: Upload the report when something is wrong on production
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-deploy-playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

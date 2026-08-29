@@ -11,6 +11,7 @@ import { reportError } from '../../utils/errorReporter';
 import { fmt, timeAgo } from '../../utils/format';
 import { useMemo, useRef, useState } from 'react';
 import { callClubArenaApi } from '../../services/clubArenaApi';
+import { masterBus } from '../../core/MasterBus';
 import styles from '../MarketplacePage.module.css';
 import ItemArt from './ItemArt';
 import {
@@ -134,7 +135,15 @@ export default function MyItemsTab({
         throw new Error(data?.error || error?.message || 'Redeem failed');
       }
       // fn_redeem_shop_item now grants a real entitlement and reports it back.
-      const g = data?.granted as { type?: string; uses?: number; seconds?: number } | undefined;
+      const g = data?.granted as
+        | {
+            type?: 'time_bank' | 'throwable' | 'emote_pack' | 'table_skin' | 'avatar' | 'none';
+            uses?: number;
+            seconds?: number;
+            theme_id?: string;
+            avatar_id?: string;
+          }
+        | undefined;
       if (g?.type === 'time_bank' && g.seconds) {
         toast.success(`Redeemed - +${fmt(g.seconds)}s Of Table Time Added`);
       } else if (g?.type === 'throwable' && g.uses) {
@@ -148,21 +157,41 @@ export default function MyItemsTab({
       } else {
         toast.success('Redeemed - Your Club Will Fulfil This Perk');
       }
+      if (g?.type === 'table_skin' || g?.type === 'avatar') {
+        masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
+          // The function only redeems inventory owned by auth.uid(); the user id
+          // is returned by the grant response in the new contract.
+          userId: String(data.user_id || ''),
+          category: g.type === 'avatar' ? 'avatar' : 'theme_id',
+          assetId: g.avatar_id || g.theme_id,
+          source: 'club-redemption',
+        });
+      }
+      if (g?.type && g.type !== 'none') {
+        masterBus.emit('ENTITLEMENTS_CHANGED', {
+          userId: String(data.user_id || ''),
+          category: g.type,
+          assetId: g.avatar_id || g.theme_id,
+          quantity: g.uses,
+          source: 'club-redemption',
+        });
+      }
       onRedeemed();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Redeem failed');
       reportError(err, 'MyItemsTab.handleRedeem');
     } finally {
+      redeemingRef.current = false;
       setRedeeming(null);
     }
   };
 
   const ent = entitlements;
   /**
-   * Counts, not vague claims. "Table Theme" was printed off the generic
-   * `feature_purchases.theme_unlock` flag, so a member who had bought and
-   * redeemed four skins was told the same thing as one who had bought one.
-   * `theme_unlocks` knows which, so say how many.
+   * Counts, not vague claims. "Table Theme" was printed off a retired generic
+   * receipt, so a member who had bought and redeemed four skins was told the
+   * same thing as one who had bought one.
+   * `theme_asset_unlocks` knows which, so say how many.
    */
   const themeCount = ent.themes.length || (ent.themeUnlock ? 1 : 0);
   const entitlementChips = ent.loaded
@@ -173,6 +202,9 @@ export default function MyItemsTab({
         themeCount > 0 ? `${fmt(themeCount)} Table Theme${themeCount > 1 ? 's' : ''}` : null,
         ent.avatars.length > 0
           ? `${fmt(ent.avatars.length)} Avatar${ent.avatars.length > 1 ? 's' : ''}`
+          : null,
+        ent.avatarCosmetics.length > 0
+          ? `${fmt(ent.avatarCosmetics.length)} Avatar Style${ent.avatarCosmetics.length > 1 ? 's' : ''}`
           : null,
       ].filter(Boolean)
     : [];
@@ -187,6 +219,17 @@ export default function MyItemsTab({
     purchases.forEach((p) => m.set(p.id, p.currency || 'diamonds'));
     return m;
   }, [purchases]);
+
+  const deliveredPurchaseIds = useMemo(
+    () =>
+      new Set(
+        inventory
+          .filter((item) => !!item.redeemed_at || item.status === 'redeemed')
+          .map((item) => item.purchase_id)
+          .filter((purchaseId): purchaseId is string => !!purchaseId)
+      ),
+    [inventory]
+  );
 
   const entitlementStrip =
     entitlementChips.length > 0 ? (
@@ -238,6 +281,8 @@ export default function MyItemsTab({
             <tbody>
               {inventory.map((it) => {
                 const spent = !isOwnedRow(it);
+                const delivered = !!it.redeemed_at;
+                const activated = !spent && delivered;
                 const redeemed = spent;
                 /* SPENT_STATUSES is {redeemed, refunded, revoked, expired}, and
                    `redeemed = spent` collapsed all four into one badge - so a
@@ -251,11 +296,13 @@ export default function MyItemsTab({
                       ? 'Revoked'
                       : it.status === 'expired'
                         ? 'Expired'
-                        : it.status === 'redeemed'
-                          ? 'Redeemed'
-                          : spent
-                            ? 'Spent'
-                            : 'Owned';
+                        : activated
+                          ? 'Active'
+                          : it.status === 'redeemed'
+                            ? 'Redeemed'
+                            : spent
+                              ? 'Spent'
+                              : 'Owned';
                 const rowUnit = unitOf(
                   it.purchase_id ? currencyByPurchase.get(it.purchase_id) : undefined
                 );
@@ -293,7 +340,7 @@ export default function MyItemsTab({
                       </span>
                     </td>
                     <td>
-                      {!redeemed && (
+                      {!redeemed && !delivered && (
                         <button
                           className={styles.emptyButton}
                           style={{ padding: '4px 12px', fontSize: '12px' }}
@@ -377,7 +424,7 @@ export default function MyItemsTab({
                           {/* A refunded purchase cannot be refunded again — the
                               server answers "already refunded". Say so here
                               instead of offering the action. */}
-                          {p.refunded_at ? (
+                          {p.refunded_at || deliveredPurchaseIds.has(p.id) ? (
                             <span style={{ fontSize: '11px', color: '#8b8d91' }}>-</span>
                           ) : (
                             <button

@@ -26,7 +26,13 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { TABLE_SKINS, TABLE_SKIN_IDS } from '../../src/assets/tableAssets';
-import { feltDesign, resolveSkin, THEME_PRESET_SKINS } from '../../src/lib/tableTheme';
+import {
+  feltDesign,
+  resolveSkin,
+  THEME_PRESET_BUNDLES,
+  THEME_PRESET_CATALOG,
+  THEME_PRESET_SKINS,
+} from '../../src/lib/tableTheme';
 import { THEME_PRESETS } from '../../src/components/table/ThemeSettingsModal';
 
 const root = process.cwd();
@@ -34,11 +40,9 @@ const read = (p: string) => fs.readFileSync(path.join(root, p), 'utf8');
 
 const THEME_MODAL = read('src/components/table/ThemeSettingsModal.tsx');
 
-/** The ids the Themes tab actually renders, read from the shipped source. */
+/** The ids the Themes tab actually renders, from its shared runtime catalog. */
 function offeredThemeIds(): string[] {
-  const block = THEME_MODAL.match(/export const THEME_PRESETS[^=]*= \[([\s\S]*?)\n\];/);
-  expect(block, 'the shared theme preset catalogue was not found').toBeTruthy();
-  const ids = [...block![1].matchAll(/id: '([a-z0-9_-]+)'/g)].map((m) => m[1]);
+  const ids = THEME_PRESET_CATALOG.map((preset) => preset.id);
   expect(ids.length, 'themes tab parsed empty').toBeGreaterThan(0);
   return ids;
 }
@@ -85,18 +89,18 @@ describe('a theme preset repaints the table', () => {
     ).toEqual([]);
   });
 
-  it('the preset bundles read the shared map instead of typing table_id again', () => {
-    // A second hand-written copy of the pairing is how "Rustic Wood" came to
-    // bundle the green casino felt while the felt code disagreed. The bundle
-    // must derive table_id, never state it.
-    // Body only: the type annotation legitimately names table_id (it Omits it).
-    const trimmings = THEME_MODAL.match(/const PRESET_TRIMMINGS[^=]*=\s*\{([\s\S]*?)\n\};/);
-    expect(trimmings, 'PRESET_TRIMMINGS not found — bundles were re-inlined?').toBeTruthy();
-    expect(
-      trimmings![1].includes('table_id'),
-      'a preset bundle states table_id itself again; it must come from THEME_PRESET_SKINS'
-    ).toBe(false);
-    expect(THEME_MODAL).toContain('THEME_PRESET_SKINS');
+  it('the picker, resolver and bundle read one composite catalog', () => {
+    for (const preset of THEME_PRESET_CATALOG) {
+      expect(THEME_PRESET_SKINS[preset.id]).toBe(preset.table_id);
+      expect(THEME_PRESET_BUNDLES[preset.id]).toEqual({
+        table_id: preset.table_id,
+        button_id: preset.button_id,
+        background_id: preset.background_id,
+        cards_id: preset.cards_id,
+      });
+    }
+    expect(THEME_MODAL).toContain('THEME_PRESET_CATALOG.map');
+    expect(THEME_MODAL).toContain('THEME_PRESET_BUNDLES[assetId]');
   });
 });
 

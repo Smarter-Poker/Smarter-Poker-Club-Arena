@@ -11,7 +11,6 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { CardBackSelector } from '../customization/CardBackSelector';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import { TableSettingsPanel } from './TableSettingsPanel';
 import { ThemeSettingsModal } from './ThemeSettingsModal';
@@ -40,7 +39,6 @@ export interface TableSettings {
   showBetSizePresets: boolean;
   confirmAllIn: boolean;
   sitOutNextHand: boolean;
-  tableTheme: string;
   /** Dan 2026-08-28: the scrolling tournament/announcement ticker. */
   showTicker: boolean;
 }
@@ -54,14 +52,7 @@ export interface SettingsPanelProps {
   userId?: string;
   currentAvatarUrl?: string;
   isVip?: boolean;
-  userDiamonds?: number;
-  currentCardBack?: string;
-  ownedCardBacks?: string[];
   onAvatarChanged?: (url: string) => void;
-  /* Both may be async and may reject. CardBackSelector awaits them before it
-     reports success, so a failed write cannot show as a success. */
-  onCardBackChanged?: (id: string) => void | Promise<unknown>;
-  onCardBackPurchase?: (id: string, price: number) => void | Promise<unknown>;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -88,7 +79,6 @@ export const DEFAULT_TABLE_SETTINGS: TableSettings = {
   showBetSizePresets: true,
   confirmAllIn: true,
   sitOutNextHand: false,
-  tableTheme: 'black',
   showTicker: true,
 };
 
@@ -127,7 +117,6 @@ const RESETTABLE_KEYS = [
   'showBetSizePresets',
   'showTicker',
   'animationSpeed',
-  'tableTheme',
   'soundEnabled',
   'soundVolume',
   'hapticEnabled',
@@ -147,17 +136,6 @@ export function resetPayload(): Partial<TableSettings> {
   return out;
 }
 
-/** Available table themes from design-tokens.css */
-const TABLE_THEMES = [
-  { value: 'green', label: 'Classic Green' },
-  { value: 'blue', label: 'Ocean Blue' },
-  { value: 'red', label: 'Ruby Red' },
-  { value: 'purple', label: 'Royal Purple' },
-  { value: 'black', label: 'Midnight Black' },
-  { value: 'gold', label: 'VIP Gold' },
-  { value: 'light', label: 'Light Mode' },
-];
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -170,12 +148,7 @@ export function SettingsPanel({
   userId = '',
   currentAvatarUrl = '',
   isVip = false,
-  userDiamonds = 0,
-  currentCardBack = 'black',
-  ownedCardBacks = [],
   onAvatarChanged,
-  onCardBackChanged,
-  onCardBackPurchase,
 }: SettingsPanelProps) {
   const [visibleSections, setVisibleSections] = useState<boolean[]>([]);
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
@@ -393,24 +366,6 @@ export function SettingsPanel({
                 </select>
               </div>
             </div>
-
-            <div className="settings-item">
-              <div className="settings-item__info">
-                <span className="settings-item__label">Table Theme</span>
-              </div>
-              <div className="settings-item__select">
-                <select
-                  value={settings.tableTheme}
-                  onChange={(e) => handleSelect('tableTheme', e.target.value)}
-                >
-                  {TABLE_THEMES.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
           </div>
 
           {/* Sound Section */}
@@ -485,19 +440,21 @@ export function SettingsPanel({
               </button>
             </div>
 
-            {/* Card Back Selector */}
-            <CardBackSelector
-              currentCardBack={currentCardBack}
-              ownedCardBacks={ownedCardBacks}
-              userDiamonds={userDiamonds}
-              /* 2026-08-25: the store gated paid designs on a purchase alone
-                 while Theme Settings gated the same designs on VIP alone, so a
-                 VIP was quoted a price here for something that was already
-                 theirs one modal across. Same resolvedVip both places. */
-              isVip={resolvedVip}
-              onChange={onCardBackChanged}
-              onPurchase={onCardBackPurchase}
-            />
+            <div className="settings-item settings-item--action settings-item--studio">
+              <div className="settings-item__info">
+                <span className="settings-item__eyebrow">Appearance Suite</span>
+                <span className="settings-item__label">Table Studio</span>
+                <span className="settings-item__description">
+                  Tables, Backgrounds, Buttons And Card Backs
+                </span>
+              </div>
+              <button
+                className="settings-action-btn settings-action-btn--studio"
+                onClick={() => setShowThemeSettings(true)}
+              >
+                Open Studio
+              </button>
+            </div>
           </div>
 
           {/* ═══════════════════════════════════════════════════════════
@@ -510,7 +467,6 @@ export function SettingsPanel({
               loading={v8Loading}
               onToggle={v8Toggle}
               mode="inline"
-              onOpenThemeSettings={() => setShowThemeSettings(true)}
             />
           </div>
         </div>

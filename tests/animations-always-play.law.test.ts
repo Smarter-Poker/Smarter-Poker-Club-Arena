@@ -572,6 +572,94 @@ describe('LAW: a thrown item is an object, not a sticker', () => {
   });
 });
 
+describe('LAW: no throwable ships as a stub', () => {
+  /* Measured 2026-08-29 rather than eyeballed: every one of the 48 throwables
+     had a signature BLOCK, so "does it have a signature" was useless as a
+     question. Counting declarations instead found five that were signatures in
+     name only against a median of 23 - robot had ONE declaration, and
+     tennis_ball had two and NOT ONE animation, the only item in the set with
+     no motion of its own at all. */
+  const SIG3 = read('src/components/table/ThrowableSignatures.css');
+  const TA3 = read('src/components/table/ThrowAnimation.css');
+  const CODE = SIG3.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  /** Declarations + animations actually attached to one item's selectors. */
+  function depth(id: string) {
+    let decls = 0;
+    const anims = new Set<string>();
+    for (const m of CODE.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      if (!new RegExp(`data-throwable='${id}'`).test(m[1])) continue;
+      decls += (m[2].match(/[a-z-]+\s*:/g) || []).length;
+      for (const a2 of m[2].matchAll(/animation:\s*([\w-]+)/g)) anims.add(a2[1]);
+    }
+    return { decls, anims: anims.size };
+  }
+
+  it('the five stub signatures are real animations now', () => {
+    // The floor is deliberately well under the median: this pins them as
+    // FINISHED, it does not freeze the tuning.
+    for (const id of ['robot', 'ghost', 'tennis_ball', 'angry_emoji', 'ufo']) {
+      const d = depth(id);
+      expect(`${id}:${d.decls >= 18}`).toBe(`${id}:true`);
+      expect(`${id}:${d.anims >= 2}`).toBe(`${id}:true`);
+    }
+  });
+
+  it('tennis_ball has motion at all — it had none', () => {
+    expect(depth('tennis_ball').anims).toBeGreaterThanOrEqual(2);
+    expect(SIG3).toContain('fx-ball-lines');
+    expect(SIG3).toContain('fx-ball-scuff');
+  });
+
+  it('no throwable is left with a signature that does nothing', () => {
+    const ids = [...new Set([...CODE.matchAll(/data-throwable='([a-z0-9_]+)'/g)].map((m) => m[1]))];
+    expect(ids.length).toBeGreaterThanOrEqual(48);
+    // boxing_glove is the sanctioned exception: it delegates its whole landing
+    // to KnockoutFlurry, so its own block is deliberately thin.
+    const stubs = ids
+      .filter((id) => id !== 'boxing_glove')
+      .filter((id) => depth(id).decls < 8 || depth(id).anims < 1);
+    expect(stubs).toEqual([]);
+  });
+
+  it('every new signature keyframe is uniquely named', () => {
+    /* @keyframes is a GLOBAL namespace shared with ~880 others in this app, so
+       a generic name silently overrides someone else's animation. */
+    const names = [...SIG3.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]);
+    expect(new Set(names).size).toBe(names.length);
+    for (const n of names) expect(n.startsWith('fx-')).toBe(true);
+  });
+
+  it('a color-mix value always has a plain colour declared before it', () => {
+    /* An engine that cannot parse color-mix() discards the WHOLE declaration,
+       not just the unknown colour - so the floor has to be a separate earlier
+       declaration of the same property, in the same block. */
+    for (const [name, css] of [
+      ['ThrowableSignatures.css', SIG3],
+      ['ThrowAnimation.css', TA3],
+    ] as const) {
+      const code = css.replace(/\/\*[\s\S]*?\*\//g, '');
+      const missing: string[] = [];
+      for (const m of code.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        const body = m[2];
+        if (!/color-mix\(/.test(body)) continue;
+        const decls = [...body.matchAll(/([a-z-]+)\s*:\s*([^;]*);/g)].map((d) => ({
+          p: d[1],
+          v: d[2],
+        }));
+        for (const prop of new Set(decls.filter((d) => /color-mix\(/.test(d.v)).map((d) => d.p))) {
+          const all = decls.filter((d) => d.p === prop);
+          const at = all.findIndex((d) => /color-mix\(/.test(d.v));
+          if (!all.slice(0, at).some((d) => !/color-mix\(/.test(d.v))) {
+            missing.push(`${name}: ${m[1].trim().slice(0, 50)} -> ${prop}`);
+          }
+        }
+      }
+      expect(missing).toEqual([]);
+    }
+  });
+});
+
 describe('LAW: reduced motion removes motion, never meaning', () => {
   it('the global collapse keeps its escape hatch, and the turn clock uses it', () => {
     // The countdown ring is duration-carrying animation — its length IS the

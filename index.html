@@ -55,8 +55,6 @@
        auth (getSession → token refresh) + data fetches against this origin.
        Warming DNS+TLS in parallel with JS download saves 100-300ms on mobile. -->
   <link rel="preconnect" href="https://kuklfnapbkmacvwxktbh.supabase.co" crossorigin>
-  <!-- The dns-prefetch to cdn.onesignal.com is gone with the SDK it warmed.
-       See the note where the injector used to be, below. -->
   <!-- PERF 2026-08-22: Google Fonts stylesheet loads ASYNC (media=print swap
        trick) instead of render-blocking. display=swap already renders text in
        fallback fonts, so nothing waits on this fetch anymore. -->
@@ -74,29 +72,11 @@
   <!-- Preload club card frame template (used by carousel) -->
   <link rel="preload" href="/images/club-card-frame-template.webp" as="image" type="image/webp">
 
-  <!-- ═══════════════════════════════════════════════════════════════════════
-       THE ONESIGNAL SDK USED TO BE INJECTED HERE. DO NOT PUT IT BACK.
-
-       OneSignal was removed from this platform on 2026-08-19 and replaced with
-       self-hosted VAPID web push (src/lib/pushClient.ts, and the hub's
-       worker/index.js). This loader was left behind, so for ten days every
-       Club Arena session still fetched OneSignalSDK.page.js from a third-party
-       CDN, initialised it, and made a request to
-       api.onesignal.com/sync/<app-id>/web — announcing the visit to a vendor
-       the platform no longer uses, for a feature it no longer provided.
-       Confirmed live on production 2026-08-29: `typeof window.OneSignal` was
-       "function" and two cdn.onesignal.com script tags were in the document.
-
-       It was also a standing CSP violation. The report-only policy in the
-       hub's next.config.js had to keep cdn.onesignal.com and api.onesignal.com
-       allowed purely to accommodate it, which is three allowances that had to
-       be carried into any future enforced policy.
-
-       Nothing observed the SDK: the only consumers were four methods on
-       PushNotificationService (init / setExternalUserId / requestPermission /
-       isEnabled), all of which are gone with it, and none of which had a
-       caller outside a single line in IdentityDNA.
-       ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- No third-party push SDK is loaded here, deliberately. OneSignal was
+       retired 2026-08-19 and this loader was left behind until 2026-08-29,
+       fetching its SDK and pinging the vendor on every session for a feature
+       it no longer provided. Full story: docs/changelog/2026-08-29-onesignal-was-still-loading.md
+       Push enrolment is src/lib/pushClient.ts against the ROOT service worker. -->
 </head>
 
 <body>

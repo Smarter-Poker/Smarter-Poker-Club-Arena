@@ -16,7 +16,12 @@
   background: linear-gradient(180deg, #0a0a0f 0%, #1a1a2e 100%);
   padding: 1rem;
   position: relative;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
   overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

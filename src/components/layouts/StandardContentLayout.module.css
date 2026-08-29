@@ -6,7 +6,12 @@
 .pageContainer {
   width: 100%;
   max-width: 100vw;
+  /* clip, not hidden — full reasoning on the body rule in
+     src/styles/design-system.css. This wrapper is shared by every
+     StandardContentLayout page, so `hidden` here made a scroll container
+     between the fixed bottom nav and the viewport on all of them at once. */
   overflow-x: hidden;
+  overflow-x: clip;
   /* Crucial: clears the fixed bottom nav bar on mobile */
   padding-bottom: var(--bottom-nav-clearance, 74px);
   /* Safe area inset for notched devices */

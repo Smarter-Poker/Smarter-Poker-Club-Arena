@@ -8,7 +8,12 @@
   margin: 0 auto;
   padding: 12px;
   padding-bottom: max(70px, env(safe-area-inset-bottom));
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
   overflow-x: hidden;
+  overflow-x: clip;
   box-sizing: border-box;
   color: #e0e0e0;
   background: #0a0e18;

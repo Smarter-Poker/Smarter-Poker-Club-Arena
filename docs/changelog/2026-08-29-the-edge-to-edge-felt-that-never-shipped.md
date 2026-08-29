@@ -14,11 +14,11 @@ the base `.table-container` shorthand is `padding: var(--sp-table-top) 12px
 var(--sp-table-bottom)`. So the "widening" gave every width-bound phone 12px
 gutters instead of 4px, and the felt NARROWED:
 
-| state                     | felt at 390x844 | felt at 375 |
-| ------------------------- | --------------- | ----------- |
-| before #950 (4px gutters) | 374 x 618       | 367 x 606.6 |
-| #950's comment claimed    | —               | 375 x 619.8 |
-| what #950 actually shipped| 364 x 602       | 351 x 580   |
+| state                      | felt at 390x844 | felt at 375 |
+| -------------------------- | --------------- | ----------- |
+| before #950 (4px gutters)  | 374 x 618       | 367 x 606.6 |
+| #950's comment claimed     | —               | 375 x 619.8 |
+| what #950 actually shipped | 364 x 602       | 351 x 580   |
 
 The 375x619.8 in that comment was never rendered by any shipped build. The
 length followed the width through the locked 605/1000 aspect. It survived
@@ -46,12 +46,12 @@ had approved, since the commit whose stated purpose was making it wider.
 `padding-left: 0; padding-right: 0;` stated as longhands in the `<=768px`
 block of TablePage.css — what the removal actually meant. Measured after:
 
-| device            | before      | after       |
-| ----------------- | ----------- | ----------- |
-| iPhone 12/13/14   | 366 x 605   | 390 x 644.6 |
-| iPhone 14 Pro Max | 406 x 671   | 430 x 710.7 |
-| iPhone SE         | 286.7 (height-bound) | unchanged |
-| iPads, landscapes, desktop | height-bound | unchanged |
+| device                     | before               | after       |
+| -------------------------- | -------------------- | ----------- |
+| iPhone 12/13/14            | 366 x 605            | 390 x 644.6 |
+| iPhone 14 Pro Max          | 406 x 671            | 430 x 710.7 |
+| iPhone SE                  | 286.7 (height-bound) | unchanged   |
+| iPads, landscapes, desktop | height-bound         | unchanged   |
 
 Every proportion beat stays flat (cards 13.9%, avatars 15.8%, PLO4 row 31.3%)
 — everything on the felt grows with it.

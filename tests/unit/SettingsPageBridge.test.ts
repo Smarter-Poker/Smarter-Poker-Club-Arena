@@ -39,18 +39,31 @@ const TABLE_CONSUMES = [
   'animationSpeed',
   'showPotOdds',
   'confirmAllIn',
-  'autoMuckWinners',
   // Dan 2026-08-28: consumed by TournamentStartingTicker (the scrolling
   // announcement marquee bails out when this is false).
   'showTicker',
 ] as const;
+
+/* `autoMuckWinners` LEFT THIS LIST 2026-08-29, and its control left the page
+   with it. It was never really "consumed by the table": the prompt it governs
+   sits behind `const ASK_TO_SHOW_ON_UNCONTESTED_WIN = false` in TablePage and
+   has done since 2026-08-23, on Dan's ruling that the prompt should not exist.
+   So it belonged in TABLE_IGNORES all along — this file's own words, "mapping a
+   page control onto one of these would recreate the original bug in a form that
+   looks wired", describe exactly what was happening. Writing it is now pinned
+   as a regression by tests/unit/settingsHaveOneOwner.test.ts. */
 
 /**
  * Keys that exist on the table store but that nothing at the table reads.
  * Mapping a page control onto one of these would recreate the original bug in
  * a form that looks wired.
  */
-const TABLE_IGNORES = ['autoMuck', 'autoPostBlinds', 'showBetSizePresets'] as const;
+const TABLE_IGNORES = [
+  'autoMuck',
+  'autoPostBlinds',
+  'showBetSizePresets',
+  'autoMuckWinners',
+] as const;
 
 const sample: UserSettings = {
   ...DEFAULT_SETTINGS,
@@ -61,7 +74,6 @@ const sample: UserSettings = {
   animationSpeed: 'fast',
   showPotOdds: true,
   confirmAllIn: false,
-  autoMuckWinners: true,
 };
 
 describe('the settings page writes into the store the table reads', () => {
@@ -92,7 +104,6 @@ describe('the settings page writes into the store the table reads', () => {
     expect(m.fourColorDeck).toBe(true);
     expect(m.showPotOdds).toBe(true);
     expect(m.confirmAllIn).toBe(false);
-    expect(m.autoMuckWinners).toBe(true);
   });
 
   it('does not invert animation speed — the CSS value is a duration multiplier', () => {
@@ -117,7 +128,6 @@ describe('the settings page writes into the store the table reads', () => {
     expect(back.animationSpeed).toBe(sample.animationSpeed);
     expect(back.showPotOdds).toBe(sample.showPotOdds);
     expect(back.confirmAllIn).toBe(sample.confirmAllIn);
-    expect(back.autoMuckWinners).toBe(sample.autoMuckWinners);
   });
 
   it('falls back rather than showing a card back the renderer cannot draw', () => {
@@ -139,9 +149,18 @@ describe('the settings page writes into the store the table reads', () => {
     );
     expect(page).toContain('const previousCardBack = tableSettingsRef.current.cardBack');
     expect(page).toContain('rollbackFailedCardBack(settings, previousCardBack)');
-    expect(page.indexOf('const previousCardBack')).toBeLessThan(
-      page.indexOf('updateTableSettings(toTableSettings(settings))')
-    );
+    /* Anchored on `updateTableSettings(` rather than on the whole call text.
+       The argument list gained a second parameter on 2026-08-29 (the current
+       table settings, so a speed this page cannot name survives a Save that
+       never touched it) and this assertion silently became `indexOf(...) === -1`
+       — which is "less than -1 is false", so it failed loudly rather than
+       passing vacuously. It could as easily have gone the other way. The
+       ORDERING is what this pins; the exact arguments are not its business. */
+    const capture = page.indexOf('const previousCardBack');
+    const write = page.indexOf('updateTableSettings(');
+    expect(capture, 'the capture must exist').toBeGreaterThan(-1);
+    expect(write, 'the write must exist').toBeGreaterThan(-1);
+    expect(capture).toBeLessThan(write);
   });
 });
 

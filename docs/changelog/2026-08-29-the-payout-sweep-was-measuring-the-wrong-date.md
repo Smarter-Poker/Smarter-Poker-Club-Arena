@@ -14,12 +14,12 @@ ORDER BY t.updated_at DESC
 it and there is no trigger, so it still holds the moment the row was created.
 Measured across the whole table today:
 
-| | |
-| --- | --- |
-| COMPLETED events | 39,338 |
-| `updated_at >= ended_at` | **0** |
-| `updated_at < ended_at` | 39,328 |
-| completed in the last 2 days | 3,763 |
+|                                                     |                     |
+| --------------------------------------------------- | ------------------- |
+| COMPLETED events                                    | 39,338              |
+| `updated_at >= ended_at`                            | **0**               |
+| `updated_at < ended_at`                             | 39,328              |
+| completed in the last 2 days                        | 3,763               |
 | …of those, `updated_at` still equal to `created_at` | 3,763 — all of them |
 
 For a scheduled recurring event, row creation is when it went on the calendar.

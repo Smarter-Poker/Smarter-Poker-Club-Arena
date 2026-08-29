@@ -291,7 +291,9 @@ test.describe('every device gets the same proportions', () => {
     expect(offenders, 'two different-sized tables drew the same card — that is a rung').toEqual([]);
   });
 
-  test('the felt is edge-to-edge on portrait phones (Dan 2026-08-26, restored 2026-08-29)', async ({ page }) => {
+  test('the felt is edge-to-edge on portrait phones (Dan 2026-08-26, restored 2026-08-29)', async ({
+    page,
+  }) => {
     /* SHIPPED BUG, twice. #950 removed the 4px side gutters "per Dan --
        edge-to-edge felt" and wrote 375x619.8 into the comment -- but deleting
        an override resurrects the base rule, and the base `.table-container`

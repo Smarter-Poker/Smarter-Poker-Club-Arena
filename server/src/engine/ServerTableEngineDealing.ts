@@ -1147,28 +1147,49 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     for (const p of players) {
       this.dealtInUserIds.add(p.user_id);
     }
-    // AN ORBIT IS A HAND, NOT A LOOP ITERATION. The sit-out counter used to be
-    // bumped by the dealing loop's own tick, which fires once per hand while
-    // dealing and once per 3-second idle tick while not — so "removed after the
-    // button passes them twice" silently became "after about nine seconds" on a
-    // quiet table. It is counted HERE, at the deal, which is the only place an
-    // orbit actually advances. The five-minute half is evaluated on every tick
-    // regardless, so a table that stops dealing still evicts on the clock.
-    if (!this.isTournamentTable()) {
-      this.disconnectEngine.tickSitOutsAndCollectEvictions(
-        this.tableId,
-        this.seatedPlayers.map((p) => p.user_id),
-        { countOrbit: true }
-      );
-    }
     // Keep the legacy index roughly in sync for any remaining reads (defensive).
     this.dealerSeatIndex = Math.max(0, sortedSeats.indexOf(dealerSeat)) + 1;
 
     // Bible V8 §6: Orbit complete (button wrapped past the top seat) → refill
     // time banks. With seat-based rotation, a wrap means the new button seat is
     // not strictly greater than the previous one.
-    if (prevButtonSeat > 0 && dealerSeat <= prevButtonSeat) {
+    const orbitComplete = prevButtonSeat > 0 && dealerSeat <= prevButtonSeat;
+    if (orbitComplete) {
       this.timeBankEngine.onOrbitComplete(this.tableId);
+    }
+
+    /**
+     * ── AN ORBIT IS A BUTTON ROTATION, NOT A HAND (Dan, 2026-08-29) ─────────
+     *
+     * The rule is "removed after the button passes them TWICE, or after 5
+     * minutes, whichever happens first". This counter has been wrong twice, in
+     * the same direction, each fix moving it closer without arriving:
+     *
+     *   originally  bumped by the dealing loop's own tick — once per hand while
+     *               dealing and once per 3-SECOND IDLE TICK while not, so on a
+     *               quiet table "two orbits" became about nine seconds;
+     *   2026-08-28  moved here, to the deal, and the comment said "an orbit is
+     *               a hand". It is not. At a 6-max table a real orbit is about
+     *               six hands, so "2 orbits" was being enforced as 3 hands —
+     *               a player booted roughly four times sooner than the rule
+     *               they were told.
+     *
+     * The correct signal was already being computed one line above for time
+     * banks: `orbitComplete` is a genuine button wrap. Counted there now, so
+     * the two halves of the rule finally mean what they say, and the
+     * five-minute half is usually the one that fires — which is the rule as
+     * Dan states it.
+     *
+     * The five-minute half is still evaluated on EVERY tick, deal or not. That
+     * is the half that has to work when the table has gone quiet, which is
+     * exactly when a seat would otherwise be held forever.
+     */
+    if (orbitComplete && !this.isTournamentTable()) {
+      this.disconnectEngine.tickSitOutsAndCollectEvictions(
+        this.tableId,
+        this.seatedPlayers.map((p) => p.user_id),
+        { countOrbit: true }
+      );
     }
 
     // Who posts the blinds this hand. ONE computation, used by the straddle
@@ -2134,7 +2155,15 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         );
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.busted_standup_cashout');
-        await markSeatAsLeft(this.tableId, player.user_id, player.seat_number).catch(() => {});
+        /* If the FALLBACK also fails, say so. Swallowing it left the worst
+           outcome invisible: `seat_left` has already been broadcast above, so
+           every client has cleared the seat while the row is still occupied —
+           a ghost seat that blocks a paying player and that nothing anywhere
+           reports. A cleanup that cannot complete is exactly the case worth
+           knowing about. */
+        await markSeatAsLeft(this.tableId, player.user_id, player.seat_number).catch((err2) =>
+          reportError(err2, 'ServerTableEngine.' + this.tableId + '.busted_standup_mark_left')
+        );
       }
     }
 
@@ -2158,6 +2187,29 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // Stop-Loss Bankroll logic (same rule as Settlement step 5): after two
       // rebuys (3 buy-ins lost) the horse leaves instead of rebuying again.
       if (currentRebuys >= 2) {
+        /* ── HORSES ARE PLAYERS (CLAUDE.md 10.5) ────────────────────────────
+           This branch used to release the seat SILENTLY: no `seat_left` event,
+           where the human path immediately above emits one. Both stand a busted
+           player up for the same reason — out of chips, not coming back — but a
+           busted human's seat cleared on every client the instant the event
+           arrived, and a busted horse's seat cleared only when a client next
+           happened to diff a snapshot.
+
+           That is a TELL, and it is the one this file's own comment warns
+           about in the other direction: "a felt that clears a busted horse's
+           seat promptly and leaves a busted human's sitting there is a tell
+           either way round." Timing is part of the treatment (Dan 2026-08-27) —
+           the rhythm of the table is what gives the fleet away, not any one
+           hand. Same event, same reason, same moment. */
+        this.hub?.emitEvent(this.tableId, {
+          type: 'seat_left',
+          table_id: this.tableId,
+          seat: horse.seat_number,
+          user_id: horse.user_id,
+          mid_hand: false,
+          reason: 'busted_no_rebuy',
+          timestamp: Date.now(),
+        });
         await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
         this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
         this.timeBankEngine.removePlayer(this.tableId, horse.user_id);

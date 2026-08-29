@@ -72,6 +72,7 @@ import { ButtonImagePreloader } from '../components/table/ButtonImagePreloader';
 
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
+import { sitOutMsRemaining, sitOutBadgeLabel } from '../lib/sitOutDeadline';
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
@@ -2905,6 +2906,24 @@ export default function TablePage({
   // from a table they were never at risk of losing. Track when sit-out started
   // instead and report elapsed time.
   const [sitOutSince, setSitOutSince] = useState<number | null>(null);
+  /**
+   * A 1 Hz clock, and ONLY while a cash sit-out deadline is actually running.
+   *
+   * The spectator footer prints how long the seat is held for. That number has
+   * to move, and the cheapest honest way is a tick that the render reads —
+   * rather than a per-second `setState` of the countdown itself, which would
+   * re-render this very large page once a second for the whole sit-out.
+   *
+   * It costs nothing in the common cases: no interval at all when the hero is
+   * not sitting out, when the start time is unknown, or on a tournament, spin
+   * or heads-up table, where Dan's rule is that a player may sit out as long as
+   * they want.
+   *
+   * `Date.now()` is re-read each tick rather than the value being decremented,
+   * so a backgrounded tab — where browsers throttle timers to once a minute —
+   * shows the true remaining time the instant it is looked at again.
+   */
+  const [sitOutTick, setSitOutTick] = useState(() => Date.now());
   // SIT-OUT REVIEW FIX 2026-08-21: authoritative set of seated user ids whose
   // table_seats row says is_sitting_out. The engine snapshot's per-hand flag
   // is (correctly) always false — a sat-out tournament player is a full hand
@@ -2927,6 +2946,18 @@ export default function TablePage({
       return null;
     });
   }, [heroIsSittingOut]);
+
+  /* Drive the footer countdown. Starts only when there is genuinely a deadline
+     to count — see the note on sitOutTick — and stops the moment there is not,
+     so a tournament sit-out and an ordinary seated player both run no timer. */
+  const sitOutDeadlineIsLive =
+    sitOutMsRemaining({ sitOutSince, isTournament: tableState.isTournament }) !== null;
+  useEffect(() => {
+    if (!sitOutDeadlineIsLive) return;
+    setSitOutTick(Date.now());
+    const id = setInterval(() => setSitOutTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [sitOutDeadlineIsLive, sitOutSince]);
 
   // showSessionSummary REMOVED (Phase 2 2026-08-22): it was never set true —
   // the Session Complete card is published to SessionSummaryHost at the app
@@ -3205,20 +3236,45 @@ export default function TablePage({
   const handleSitOut = useCallback(async () => {
     if (!tableId) return;
 
-    // Enforce minimum one hand played before sitting out
-    if (handsPlayedRef.current === 0) {
-      toast?.error?.('You must play at least one hand before you can sit out.');
-      return;
-    }
-
+    /**
+     * THE ONE-HAND GATE IS THE SERVER'S (fixed 2026-08-29).
+     *
+     * Dan 2026-08-28: "A PLAYER MUST ALSO PLAY AT LEAST ONE HAND, BEFORE THEY
+     * CAN SIT OUT." `ServerTableEngineSeating.sitOut` enforces it against
+     * `dealtInUserIds`, which is the authority: it is per-table, pruned on seat
+     * turnover, and RE-SEEDED from whoever is already seated when the engine
+     * restarts.
+     *
+     * The copy that used to live here diverged from it in two ways, and both
+     * refused players the engine would have allowed — before the request ever
+     * left the browser, so the server never got the chance to disagree:
+     *
+     *   1. NO TOURNAMENT EXEMPTION. The server deliberately exempts tournaments
+     *      (a late-registered entrant has not been dealt in yet and must still
+     *      be able to sit out). This gate was unconditional.
+     *   2. THE WRONG ORACLE. `handsPlayedRef` is a `useRef(0)` incremented on
+     *      the HAND_COMPLETED bus event and is NOT persisted across a page load.
+     *      Reload the tab and a player who had been at the table all night was
+     *      told they must play a hand first, until another one finished.
+     *
+     * A narrower local copy was considered and rejected: any version of this
+     * check that lives here can be wrong in a way the engine is not, and it
+     * fails CLOSED, so being wrong means silently refusing a legitimate player.
+     * The engine's refusal is already exact, already Title Case, and already
+     * surfaced verbatim below — there is nothing a second copy can add except a
+     * chance to disagree. The gate is the server's alone. This is now the same
+     * arrangement every OTHER sit-out entry point already used: MultiTablePage
+     * and the settings-panel toggle never had a local copy, so the same player
+     * could sit out from the multi-table tab bar and not from the table menu.
+     */
     const res = await setSitOut(tableId, true);
     if (res?.success) {
       setSitOutSince(Date.now());
       setShowSitOut(true);
     } else {
-      toast?.error?.(res?.error || 'Could not sit out - you are still in the game');
+      toast?.error?.(res?.error || 'Could Not Sit Out. You Are Still In The Game.');
     }
-  }, [tableId, toast, handsPlayedRef]);
+  }, [tableId, toast, handsPlayedRef, tableState.isTournament]);
 
   // ─── Table Menu Actions ────────────────────────────────────────────────
   useMasterBusSubscription('TABLE_MENU_ACTION', (event) => {
@@ -8052,14 +8108,19 @@ export default function TablePage({
          what the in-table sound switch does. */
       setIsSoundEnabled(!soundService.isEnabled());
     } else if (event.action === 'TOGGLE_VIBRATIONS') {
-      const enabled = isVibrationAllowed();
-      if (enabled) {
-        setVibrationAllowed(false);
-      } else {
-        setVibrationAllowed(true);
-      }
-      // Force update by triggering something or just relying on onTableInfoUpdate
-      masterBus.emit('SETTINGS_CHANGED', { setting: 'vibrations', value: !enabled });
+      /* Fixed 2026-08-29, the twin of the TOGGLE_SOUNDS fix immediately above,
+         which was made on 2026-08-28 and left this branch carrying the same
+         defect. It emitted `setting: 'vibrations'` — a name that is not a key of
+         DEFAULT_SETTINGS, not a value in COLUMN_FOR_KEY, and not a key of
+         DEFAULT_USER_TABLE_SETTINGS — so every settings store dropped it. The
+         phone did stop buzzing (setVibrationAllowed writes the gate directly),
+         but no store learned about it, so `isHapticEnabled` in the table-settings
+         blob went stale and the /settings switch kept showing the old value.
+
+         Route it through `updateSetting` instead: that commits to the store,
+         broadcasts under the key the stores accept, applies the gate through
+         `applyGateChanges`, and pushes the column for cross-device. */
+      updateSetting('isHapticEnabled', !isVibrationAllowed());
     }
   });
 
@@ -13372,7 +13433,14 @@ export default function TablePage({
         break;
       }
       case 'SEAT_LEFT': {
-        masterBus.emit('SEAT_LEFT', evt.data as any);
+        /* The `masterBus.emit('SEAT_LEFT', …)` that used to be here is gone
+           (2026-08-29). Repo-wide, `'SEAT_LEFT'` appeared in exactly three
+           places: that emit, the event-name union, and the payload type. NOTHING
+           subscribed, so it was a no-op that read as a fan-out — the shape that
+           makes the next reader believe other surfaces are being kept in step
+           when they are not. Everything this case needs to do, it does below.
+           The bus type is left in place: it costs nothing and is the right home
+           if a real subscriber ever appears. */
         // Dan 2026-08-23: until now this event was emitted onto masterBus and
         // NOTHING subscribed to it. A player removed by the server — sat out
         // too long, kicked, or (new) away past the one-SB-one-BB cap — found
@@ -13425,6 +13493,19 @@ export default function TablePage({
             setSitOutSince(null);
             setSitOutNextHand(false);
             setTableState((prev) => (prev.heroSeat === 0 ? prev : { ...prev, heroSeat: 0 }));
+          }
+
+          /* ── THE TABLE LOSES THE BADGE TOO (2026-08-29) ──────────────────
+             Whoever left, their SITTING OUT tag has to go with them. The block
+             above is gated on `d.user_id === userId`, so until now the badge
+             was cleared only for the player it happened to: every OTHER client
+             kept rendering "SITTING OUT" over an empty seat until something
+             else happened to re-read the roster. */
+          if (d?.user_id) {
+            const leaverId = String(d.user_id);
+            if (sittingOutIdsRef.current.delete(leaverId)) {
+              setTableState((prev) => ({ ...prev }));
+            }
           }
         }
         break;
@@ -18531,7 +18612,23 @@ export default function TablePage({
              "they just get blinded out") — all the more reason the CTA must
              be impossible to miss. */
           <div className="spectator-footer-bar" data-state="sitting-out">
-            <span className="spectator-footer-bar__label">You Are Sitting Out</span>
+            {/* THE DEADLINE, on the bar the player is actually looking at.
+                Dan 2026-08-28: a cash player has five minutes. Until 2026-08-29
+                this said "You Are Sitting Out" and nothing else, on a seat that
+                was going to be taken from them — the countdown existed only in
+                the engine. Worded as an upper bound because the rule is "2
+                orbits or 5 minutes, whichever comes first" and the orbit half is
+                engine state no client can see. Tournaments get the plain label:
+                they sit out as long as they like. */}
+            <span className="spectator-footer-bar__label">
+              {sitOutBadgeLabel(
+                sitOutMsRemaining({
+                  sitOutSince,
+                  isTournament: tableState.isTournament,
+                  now: sitOutTick,
+                })
+              ).replace('Sitting Out', 'You Are Sitting Out')}
+            </span>
             <button
               type="button"
               className="spectator-footer-bar__cta"

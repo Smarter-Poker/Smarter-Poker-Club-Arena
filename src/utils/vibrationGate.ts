@@ -50,8 +50,18 @@ export function isVibrationAllowed(): boolean {
 
 export function setVibrationAllowed(allowed: boolean): void {
   const val = allowed ? 'true' : 'false';
-  localStorage.setItem(IN_TABLE_KEY, val);
-  localStorage.setItem(SETTINGS_KEY, val);
+  /* The one function in this file, and in soundGate, that was not guarded.
+     `setItem` THROWS in Safari private mode and in storage-restricted webviews
+     — the environments the catch above names by name — and the only caller runs
+     inside a MasterBus subscriber, so the throw escaped into a bus dispatch and
+     took the emit after it (and possibly the remaining subscribers) with it. */
+  try {
+    localStorage.setItem(IN_TABLE_KEY, val);
+    localStorage.setItem(SETTINGS_KEY, val);
+  } catch {
+    /* private mode: the buzz still follows the in-memory decision this call
+       came from; only the memory of it across a reload is lost. */
+  }
 }
 
 /**

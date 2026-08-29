@@ -152,7 +152,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // has already waited five minutes.
         } else {
           // Not forcing yet, but say so — ONCE per episode, not once per tick.
-          if (verdict === 'warn' && this.eliminationSweepStuckReportedAt < this.eliminationSweepStartedAt) {
+          if (
+            verdict === 'warn' &&
+            this.eliminationSweepStuckReportedAt < this.eliminationSweepStartedAt
+          ) {
             this.eliminationSweepStuckReportedAt = Date.now();
             reportError(
               new Error(

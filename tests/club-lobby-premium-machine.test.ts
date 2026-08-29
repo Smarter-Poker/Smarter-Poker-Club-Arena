@@ -11,7 +11,7 @@ const TABLE_CSS = readFileSync(resolve(ROOT, 'src/components/lobby/LobbyTable.cs
 describe('premium single-frame club lobby', () => {
   it('mounts the approved generated chassis around both the command top and game results', () => {
     const machine = PAGE.indexOf('className="club-lobby-machine"');
-    const chassis = PAGE.indexOf('lobby-command-chassis-v2.png', machine);
+    const chassis = PAGE.indexOf('src={CLUB_LOBBY_CHASSIS}', machine);
     const commandTop = PAGE.indexOf('<ClubLobbyCommandTop', machine);
     const results = PAGE.indexOf('className="club-home__games club-home__games--v2"', machine);
 
@@ -20,6 +20,16 @@ describe('premium single-frame club lobby', () => {
     expect(commandTop).toBeGreaterThan(chassis);
     expect(results).toBeGreaterThan(commandTop);
     expect(TOP).not.toContain('club-lobby-command-top__chassis');
+  });
+
+  it('resolves premium artwork through the deployed Club Arena base path', () => {
+    expect(PAGE).toContain(
+      'const CLUB_LOBBY_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/lobby`'
+    );
+    expect(PAGE).toContain('src={CLUB_LOBBY_CHASSIS}');
+    expect(PAGE).toContain('src={club.banner_url || CLUB_LOBBY_CAMPAIGN}');
+    expect(PAGE).not.toContain('src="/assets/club-buttons/lobby/');
+    expect(PAGE).not.toContain("'/assets/club-buttons/lobby/");
   });
 
   it('uses the full native artwork ratio and maps every live region to its own bay', () => {

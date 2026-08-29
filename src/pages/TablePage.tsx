@@ -4756,8 +4756,31 @@ export default function TablePage({
 
   useEffect(() => {
     if (!onTableInfoUpdate) return;
+    /**
+     * ═══ "YOUR TURN" TOLD TO A PLAYER WHO IS NOT EVEN SEATED ═════════════════
+     * Dan 2026-08-29, observed live while SPECTATING a 9-handed table: the
+     * browser tab read "YOUR TURN - nlh 0.1/0.2" the whole time.
+     *
+     * This expression was `currentPlayerSeat === heroSeat && isHandInProgress`
+     * with NO `> 0` guards — the exact 2026-04-14 trap that the felt's own
+     * `isHeroTurnContext` (further down this file) was fixed for and this
+     * reporting effect never was. A SPECTATOR has heroSeat 0, and
+     * currentPlayerSeat is also 0 between hands and during snapshot churn, so
+     * `0 === 0` reported isMyTurn TRUE to the multi-table container.
+     *
+     * That is not a cosmetic title: MultiTablePage feeds this same flag to the
+     * tab badge, the favicon dot, the desktop Notification, the haptic/flash
+     * alerts and the dock countdown. Every one of them was firing at people
+     * who had no seat and no turn — and, worse, the alert that means "act now"
+     * was being spent on noise, which is how a real one stops being believed.
+     *
+     * Same guard as the felt uses. Both seats must be REAL seats.
+     */
     const isHeroTurn =
-      tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress;
+      tableState.heroSeat > 0 &&
+      tableState.currentPlayerSeat > 0 &&
+      tableState.currentPlayerSeat === tableState.heroSeat &&
+      tableState.isHandInProgress;
     onTableInfoUpdate({
       name:
         tableState.tableName !== 'Loading...' && tableState.gameType && tableState.blinds
@@ -11072,8 +11095,17 @@ export default function TablePage({
 
   // ── Reset timeBankActive when hero's turn ends ──
   useEffect(() => {
+    /* Guarded 2026-08-29 with the same `> 0` rule as everywhere else in this
+       file (see the onTableInfoUpdate note and isHeroTurnContext). Unguarded,
+       `0 === 0` reads as "still hero's turn" during the between-hands window
+       and snapshot churn — which is precisely when this effect exists to
+       CANCEL the bank. It therefore skipped the cancel at the one moment it
+       was meant to fire, leaving a spent-looking bank on screen. */
     const isHeroTurn =
-      tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress;
+      tableState.heroSeat > 0 &&
+      tableState.currentPlayerSeat > 0 &&
+      tableState.currentPlayerSeat === tableState.heroSeat &&
+      tableState.isHandInProgress;
     if (!isHeroTurn && timeBankActive) {
       // Hero acted or hand ended — cancel time bank state
       setTimeBankActive(false);
@@ -15693,7 +15725,6 @@ export default function TablePage({
     }
     // preActionCallDue is derived from tableState fields each render; the
     // values below are exactly what it is built from.
-     
   }, [preAction, preActionCallDue]);
 
   /**
@@ -15733,6 +15764,38 @@ export default function TablePage({
    *
    * Pinned by tests/all-in-cannot-leave-and-the-hud-slot.test.ts.
    */
+  /**
+   * ═══ WHAT THE HERO HUB SHOWS ABOUT YOU (2026-08-29) ═══════════════════════
+   *
+   * The hub's Stats tab used to be a single button that closed the hub and
+   * opened another panel — a "Stats" tab with no stats in it. Every figure
+   * below already exists on this page or in the session service, so the tab
+   * now shows them and keeps the deep panel as a launcher underneath.
+   *
+   * Read live (not memoised on the stats object) because sessionStatsService
+   * holds a mutable record; the hub only mounts while open, so this is
+   * computed at most once per open plus a re-render, never in a loop.
+   */
+  const heroHubName = (() => {
+    const heroPlayer = tableState.heroSeat > 0 ? getPlayerAtSeat(tableState.heroSeat) : null;
+    return heroPlayer?.name || username || undefined;
+  })();
+  const heroHubStats = (() => {
+    if (!showHeroHub) return undefined; // only computed while the hub is open
+    const s = tableId ? sessionStatsService.getStats(tableId) : null;
+    const heroPlayer = tableState.heroSeat > 0 ? getPlayerAtSeat(tableState.heroSeat) : null;
+    const stack =
+      typeof heroPlayer?.stack === 'number' ? heroPlayer.stack : (s?.currentStack ?? null);
+    return {
+      stack,
+      profitLoss: s?.profitLoss ?? null,
+      handsPlayed: s?.handsPlayed ?? null,
+      vpipPercent: s?.vpipPercent ?? null,
+      pfrPercent: s?.pfrPercent ?? null,
+      bigBlindsWon: s?.bigBlindsWon ?? null,
+    };
+  })();
+
   const hudSlotControl: 'timebank' | 'rabbit' | null = isHeroTurnContext
     ? 'timebank'
     : !tableState.isHandInProgress && isRabbitAvailable
@@ -21047,6 +21110,13 @@ export default function TablePage({
           onOpenAvatarPicker={() => avatarService.openAvatarSelector()}
           onOpenIdentity={() => setShowIdentityModal(true)}
           onOpenTableSettings={() => setShowSettings(true)}
+          /* 2026-08-29: the hub knows who it belongs to, shows the figures
+             inline instead of one tap away, and hands the felt back the
+             moment the turn arrives (a menu must never time out a hand). */
+          heroName={heroHubName}
+          heroAvatarUrl={heroAvatarUrl || undefined}
+          stats={heroHubStats}
+          isHeroTurn={isHeroTurnContext}
         />
       )}
 

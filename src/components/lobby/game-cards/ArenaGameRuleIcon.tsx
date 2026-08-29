@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { RuleMedallion } from '../lobbyEntries';
+import './ArenaGameCard.css';
 
 const paths: Record<string, ReactNode> = {
   insurance: <path d="M12 2 4 5v6c0 5 3.4 8.7 8 11 4.6-2.3 8-6 8-11V5l-8-3Zm-3 10 2 2 4-5" />,

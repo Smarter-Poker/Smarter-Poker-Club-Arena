@@ -57,6 +57,10 @@ import { blindLevelMinutes } from '../../src/components/lobby/tournamentFigures'
 
 const CSS = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTable.css'), 'utf8');
 const TSX = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTable.tsx'), 'utf8');
+const CARD_CONTEXT = readFileSync(
+  resolve(__dirname, '../../src/components/lobby/lobbyCardContext.ts'),
+  'utf8'
+);
 
 /** The phone card block, so an assertion cannot accidentally match a desktop rule. */
 const PHONE_BLOCK = (() => {
@@ -578,7 +582,7 @@ describe('a game the player is already in (Dan 7)', () => {
   });
 
   it('counts a seat, a registration or a waitlist place on any game kind', () => {
-    const fn = TSX.slice(TSX.indexOf('export function playerStateOf'));
+    const fn = CARD_CONTEXT.slice(CARD_CONTEXT.indexOf('export function lobbyPlayerStateOf'));
     expect(fn).toContain('seatedIds');
     expect(fn).toContain('registeredIds');
     expect(fn).toContain('waitlistedIds');

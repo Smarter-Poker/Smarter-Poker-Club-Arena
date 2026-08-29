@@ -61,6 +61,13 @@ export interface GameRulesModalProps {
    */
   canManualBombPot?: boolean;
   onManualBombPot?: () => void;
+  /**
+   * 2026-08-29: club staff can edit the bomb rules of a table that is already
+   * running. Until now every bomb setting was write-once — the only way to
+   * change one was to kill the table and lose its seated players.
+   */
+  canEditBombSettings?: boolean;
+  onEditBombSettings?: () => void;
 }
 
 type TabType = 'info' | 'rules' | 'limits' | 'rankings';
@@ -317,6 +324,8 @@ export function GameRulesModal({
   bombPotRules = null,
   canManualBombPot = false,
   onManualBombPot,
+  canEditBombSettings = false,
+  onEditBombSettings,
 }: GameRulesModalProps) {
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('rules');
@@ -589,6 +598,20 @@ export function GameRulesModal({
                       onClick={onManualBombPot}
                     >
                       Bomb Pot Next Hand
+                    </button>
+                  )}
+                  {/* EDIT THE RUNNING TABLE (2026-08-29). Same staff gate, and
+                      the RPC behind it re-checks the role anyway. Drawn here
+                      because this is where a host already comes to act on bomb
+                      pots, and because the panel above is exactly the list of
+                      values they are about to change. */}
+                  {canEditBombSettings && onEditBombSettings && (
+                    <button
+                      type="button"
+                      className="rules-modal__edit-bomb"
+                      onClick={onEditBombSettings}
+                    >
+                      Edit Bomb Pot Settings
                     </button>
                   )}
                 </div>

@@ -916,7 +916,13 @@ export default function TableConfigPage() {
     // DOUBLE-BOARD BOMB POT 2026-08-20 (legacy pair, kept in sync): the
     // engine used to read bomb_pot_double_board; board_count supersedes it.
     bomb_pot_double_board: config.bombPotEnabled && config.bombPotBoards >= 2,
-    double_board: config.bombPotEnabled && config.bombPotBoards >= 2,
+    // `double_board` is no longer written (2026-08-29), for the same reason
+    // `triple_board` stopped being written in 2026-08-27: it has ZERO readers.
+    // Verified across both repos — the lobby reads the settings-blob key of
+    // the same name, never the column, and the engine reads
+    // bomb_pot_double_board. Live proof: the column is `true` on 0 of 97,944
+    // rows despite this line writing it on every double-board table created.
+    // A write-only column is a promise to a reader that does not exist.
     // triple_board is no longer written (2026-08-27): the column has zero
     // readers, so the toggle that fed it promised a game that never existed.
     /**
@@ -1609,7 +1615,18 @@ export default function TableConfigPage() {
                     onChange={(v) => updateConfig('bombPotAnteBB', v)}
                     min={1}
                     max={10}
-                    step={0.5}
+                    /* 2026-08-29: was 0.5, and it was a LIE. tables
+                       .bomb_pot_ante_multiplier is an INTEGER column (verified
+                       against the live schema), so a host who dragged this to
+                       2.5 had it silently stored as 3 and every player at the
+                       table was charged the larger ante. A control must not
+                       offer a value the database cannot hold.
+
+                       The half-step is not lost: the Fixed Ante above is
+                       `numeric` and takes any amount, which is the right home
+                       for "two and a half big blinds" anyway — it states the
+                       price in chips rather than in a multiple. */
+                    step={1}
                     suffix=" Big Blind"
                   />
                 )}

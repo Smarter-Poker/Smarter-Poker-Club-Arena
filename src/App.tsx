@@ -112,6 +112,8 @@ const ReportPlayerPage = lazyWithRetry(() => import('./pages/ReportPlayerPage'))
 const ReportReviewPage = lazyWithRetry(() => import('./pages/ReportReviewPage'));
 // INSURANCE REPORT 2026-08-28: staff-facing funnel + P&L for all-in insurance.
 const ClubInsuranceReportPage = lazyWithRetry(() => import('./pages/club/ClubInsuranceReportPage'));
+const ClubBombPotReportPage = lazyWithRetry(() => import('./pages/club/ClubBombPotReportPage'));
+const TableBombSettingsPage = lazyWithRetry(() => import('./pages/club/TableBombSettingsPage'));
 const ClubAnnouncementsPage = lazyWithRetry(() => import('./pages/ClubAnnouncementsPage'));
 const VIPPage = lazyWithRetry(() => import('./pages/VIPPage'));
 const ClubFinancialsPage = lazyWithRetry(() => import('./pages/ClubFinancialsPage'));
@@ -1291,6 +1293,30 @@ export default function App() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Insurance Report">
                           <ClubInsuranceReportPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/tables/:tableId/bomb-settings"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Table Bomb Settings">
+                          <TableBombSettingsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/bomb-pot-report"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Bomb Pot Report">
+                          <ClubBombPotReportPage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>

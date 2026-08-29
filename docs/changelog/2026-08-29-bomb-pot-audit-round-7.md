@@ -226,3 +226,32 @@ the three views carry `security_invoker=true` and no `anon`/`authenticated`
 grant, `bomb_pot_manual_requests` is fully closed, `bomb_pot_award_units` has no
 write grants and no `anon` read, and its read policy is scoped to the club the
 hand was dealt in.
+
+---
+
+## CORRECTION (2026-08-29, same day)
+
+The ante-rounding entry above overstates one of its two cases, and the record
+should say so rather than quietly stand.
+
+**What I wrote:** "The multiplier slider steps by 0.5, so at micro stakes the
+product is a fraction of a cent (0.05 BB x 1.5 = 0.075) and the table stops
+conserving chips."
+
+**What is true:** `tables.bomb_pot_ante_multiplier` is an **integer** column —
+verified against the live schema while probing the new settings RPC. A
+multiplier of 1.5 can never be stored, so that sub-cent path was not reachable
+through this column. The slider offering a half-step was a defect in the FORM,
+not evidence of a live conservation break.
+
+**What stands unchanged:** the second case, which is real at every stake.
+`bigBlind * anteMultiplier` on binary floats produces dust — `0.1 * 3` is
+`0.30000000000000004` — and that value escaped raw into `BOMB_POT_TRIGGERED`,
+`FORCED_BETS_POSTED`, the persisted actions log and
+`hand_history.bomb_pot.ante_amount`. Rounding before anybody is charged fixes
+that, and it also closes the sub-cent case for good the day someone widens the
+column.
+
+The half-step slider is fixed in round 8, in both forms, along with the RPC
+that had been letting Postgres round on assignment and returning `ok: true`
+with no indication the ante had changed.

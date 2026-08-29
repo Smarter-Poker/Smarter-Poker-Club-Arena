@@ -27,8 +27,10 @@
  *     which requires dealtInCount >= minPlayers. Below the minimum the token
  *     stays pending and normal hands are dealt (spec §3.1 / §19).
  *   - Counters reset from the CONSUMING hand: the timed clock restarts at the
- *     actual bomb-hand start, the orbit anchor re-anchors on the bomb hand's
- *     dealer seat.
+ *     actual bomb-hand start, and the orbit re-anchors on the seat the button
+ *     reaches AFTER the bomb — one seat further round, so the bomb button
+ *     walks the table instead of parking on one player (2026-08-29; a bomb pot
+ *     posts no blinds, so the button is the only positional variable in it).
  *
  * The scheduler holds no money and no cards; it is deliberately a pure state
  * machine over (settings, dealerSeat, dealtInCount, now) so it can be tested
@@ -137,6 +139,12 @@ export class BombPotScheduler {
    */
   private handsSinceAnchor = 0;
   private lastDealtInCount = 0;
+  /**
+   * once_per_orbit: set on a bomb hand, consumed on the next one. The new
+   * anchor is the seat the button reaches AFTER the bomb, which is not known
+   * until that hand starts — see the consume branch in noteHandStart.
+   */
+  private anchorAdvancePending = false;
 
   /**
    * Call exactly once per hand, at the hand boundary, before HandConfig is
@@ -200,6 +208,16 @@ export class BombPotScheduler {
         // The felt countdown's numerator. Counted before the arc test so the
         // hand that completes the orbit is included in the orbit it completes.
         this.handsSinceAnchor++;
+        if (this.anchorAdvancePending) {
+          // The hand AFTER a bomb: its dealer seat is the new anchor, so the
+          // bomb button advances one seat per orbit instead of parking on one
+          // player forever. See the consume branch below for the full reason.
+          this.anchorAdvancePending = false;
+          this.orbitAnchorSeat = dealerSeat;
+          this.lastDealerSeat = dealerSeat;
+          this.handsSinceAnchor = 0;
+          break;
+        }
         if (this.orbitAnchorSeat === null) {
           // First hand of tracking: this dealer seat anchors the orbit.
           this.orbitAnchorSeat = dealerSeat;
@@ -228,8 +246,37 @@ export class BombPotScheduler {
         this.nextDueAtMs = nowMs + s.intervalSeconds * 1000;
       }
       if (s.triggerMode === 'once_per_orbit') {
-        // The bomb hand's dealer seat anchors the next orbit (§4.2).
-        this.orbitAnchorSeat = dealerSeat;
+        /**
+         * THE BOMB WALKS THE TABLE (2026-08-29).
+         *
+         * This set `orbitAnchorSeat = dealerSeat` — the bomb hand's own seat.
+         * The bomb fires exactly when the button lands on the anchor, so
+         * re-anchoring to the seat it just landed on meant the SAME PLAYER
+         * held the button on every bomb pot for the life of the table.
+         *
+         * That is not a cosmetic repeat. A bomb pot posts no blinds, so the
+         * button is the ONLY positional variable in the hand: one seat acted
+         * last on every street of every bomb pot, forever, on a table where
+         * every player has been forced to ante.
+         *
+         * Anchoring on the NEXT hand's dealer seat instead advances the anchor
+         * by exactly one dealt-in seat per orbit, so the bomb button walks
+         * round the table and every player takes it in turn. The seat is not
+         * known yet, so the intent is recorded and the next noteHandStart
+         * fills it in.
+         *
+         * THE TRADE, stated plainly: an orbit on an N-handed table is N hands,
+         * and this makes the bomb arrive every N+1. It is still never twice in
+         * an orbit — which is what the mode promises — and one extra hand is a
+         * much smaller cost than one seat owning position on every bomb pot a
+         * table ever deals.
+         *
+         * Under the SEPARATE bomb button policy this is a no-op: that policy
+         * rewinds the regular rotation, so the next hand repeats the same
+         * dealer seat and the anchor does not move. It does not need to —
+         * the bomb button there is its own rotation and already advances.
+         */
+        this.anchorAdvancePending = true;
         this.handsSinceAnchor = 0;
       }
       return { isBombPot: true, triggerReason: reason };
@@ -378,6 +425,10 @@ export class BombPotScheduler {
       // guarantee the every-N counter and the timed clock already had.
       o: this.handsSinceAnchor,
       n: this.lastDealtInCount,
+      // The pending anchor advance. Lost across a restart this would park the
+      // bomb button on one seat for one extra orbit — small, but it is one
+      // boolean and the whole point of the flag is that it survives.
+      x: this.anchorAdvancePending,
     };
   }
 
@@ -415,6 +466,7 @@ export class BombPotScheduler {
     if (typeof o.n === 'number' && Number.isFinite(o.n) && o.n >= 0) {
       this.lastDealtInCount = Math.floor(o.n);
     }
+    if (typeof o.x === 'boolean') this.anchorAdvancePending = o.x;
   }
 
   private reset(): void {
@@ -426,5 +478,6 @@ export class BombPotScheduler {
     this.lastDealerSeat = null;
     this.handsSinceAnchor = 0;
     this.lastDealtInCount = 0;
+    this.anchorAdvancePending = false;
   }
 }

@@ -300,6 +300,23 @@ type TournVariant = 'ALL' | 'MTT' | 'Spin-It' | 'SN';
     (Dan 2026-08-25: "the cap is 10 for MTT only"). */
 const ALL_TAB_MTT_CAP = 10;
 
+/**
+ * THE ONE LIST OF STATUSES THIS LOBBY SHOWS (2026-08-28 audit).
+ *
+ * The fetch and the realtime admission test are two halves of the same rule
+ * and they had drifted: the fetch admitted LATE_REG and STARTING_SOON, the
+ * realtime `belongsInTournamentList` re-typed a shorter `['REGISTERING',
+ * 'RUNNING']` beside a comment saying it must mirror the fetch. So a
+ * tournament that arrived in the page under either of the two extra statuses
+ * would be DELETED from the board by its own next UPDATE — the row vanishes
+ * while the player is looking at it, and only a reload brings it back. That
+ * is exactly the shape of "every single one disappears from the spins lobby",
+ * so it is fixed whether or not a writer sets those statuses today.
+ *
+ * One array, both consumers. Adding a status here can no longer half-land.
+ */
+const LOBBY_TOURNAMENT_STATUSES = ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON'];
+
 const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'LIMIT', 'MIXED'];
 const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
 
@@ -912,10 +929,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         return inClubScope(row, rtScope);
       };
 
-      const JOINABLE_TOURNAMENT_STATUS = ['REGISTERING', 'RUNNING'];
       const belongsInTournamentList = (row: any): boolean => {
         if (!row) return false;
-        if (!JOINABLE_TOURNAMENT_STATUS.includes(String(row.status))) return false;
+        // Same array the fetch uses — see LOBBY_TOURNAMENT_STATUSES.
+        if (!LOBBY_TOURNAMENT_STATUSES.includes(String(row.status))) return false;
         return inClubScope(row, rtScope);
       };
 
@@ -1186,16 +1203,57 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         // sibling; this is it. Identity is name + buy-in + variant, which is
         // exactly what the tile showed the player, so the game they land in
         // is the game they chose — just the running edition of it.
-        const { data: sibs, error: sibErr } = await supabase
+        /* ── THE HOP MUST NOT LEAVE THIS CLUB (2026-08-28, audit) ──────────
+           The identity above is name + buy-in + variant, and on this platform
+           those three are IDENTICAL ON EVERY BOARD by construction — the
+           recurring service builds "10 Chip Spin PLO4" from the ladder, and
+           its own code comments that "`10 Chip Spin PLO4` is the same string
+           on every board", which is why the SERVER-side equivalent is
+           owner-scoped. This query was not scoped at all, so a recycled tile
+           could resolve ANOTHER CLUB'S spin, navigate the player into it, and
+           let the seat sheet charge that club's wallet at that club's rake —
+           with nothing on screen saying they had changed clubs.
+
+           Latent rather than live today (one club currently runs the ladder,
+           and all 33 open keys are distinct), which is exactly why it had to
+           be fixed before a second board makes it real. Scoped through the
+           same `applyClubScope` every other lobby query in this file uses, so
+           the hop can only ever land on a game this club is entitled to see. */
+        /* Scoped to the ORIGINAL game's own club — the tightest rule there
+           is, and it needs no component state (this callback is defined
+           before the club data loads). The replacement for a recycled board
+           is created by the same club that ran the original, so requiring an
+           exact club_id match is both correct and impossible to widen by
+           accident. `buy_in_amount` is read from the row rather than from the
+           tile: a heads-up SNG's tile value is buy_in + 5% fee, which would
+           match no row at all. If the original row cannot be read we do NOT
+           guess — we fall through to the honest "no longer open" message. */
+        const { data: originRow, error: originErr } = await supabase
           .from('tournaments')
-          .select('id')
-          .eq('status', 'REGISTERING')
-          .eq('variant', variant === 'sng' ? 'sng' : 'spin')
-          .eq('name', t.name)
-          .eq('buy_in_amount', t.buy_in_amount)
-          .neq('id', t.id)
-          .order('created_at', { ascending: false })
-          .limit(1);
+          .select('club_id, buy_in_amount')
+          .eq('id', t.id)
+          .maybeSingle();
+        if (originErr) {
+          reportError?.(originErr, 'ClubHomePage.spinQuickJoin_origin_lookup', {
+            tournamentId: t.id,
+          });
+        }
+        const originClubId = (originRow as { club_id?: string } | null)?.club_id;
+        const originBuyIn = Number((originRow as { buy_in_amount?: number } | null)?.buy_in_amount);
+
+        const { data: sibs, error: sibErr } = originClubId
+          ? await supabase
+              .from('tournaments')
+              .select('id')
+              .eq('status', 'REGISTERING')
+              .eq('variant', variant === 'sng' ? 'sng' : 'spin')
+              .eq('club_id', originClubId)
+              .eq('name', t.name)
+              .eq('buy_in_amount', Number.isFinite(originBuyIn) ? originBuyIn : t.buy_in_amount)
+              .neq('id', t.id)
+              .order('created_at', { ascending: false })
+              .limit(1)
+          : { data: null, error: null };
         if (sibErr) {
           reportError?.(sibErr, 'ClubHomePage.spinQuickJoin_sibling_lookup');
         }
@@ -1624,13 +1682,32 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               }
             }
             if (localSession?.userId) {
-              const { data: memStat } = await supabase
+              const { data: memStat, error: memErr } = await supabase
                 .from('club_members')
                 .select('status')
                 .eq('club_id', home.club.id)
                 .eq('user_id', localSession.userId)
                 .maybeSingle();
-              if (!memStat || !['active', 'approved'].includes(memStat.status)) {
+              /* A FAILED READ IS NOT "NOT A MEMBER" (2026-08-28 audit).
+                 `error` was discarded here, and Supabase resolves
+                 `{ data: null, error }` on a query-level failure — so a
+                 timeout, a 500 or an RLS hiccup was indistinguishable from a
+                 stranger, and a paid-up member on a flaky connection was
+                 ejected from their own club onto the invite screen with no
+                 explanation. That is the exact anti-pattern this file's own
+                 doctrine forbids a hundred lines below ("the database has
+                 been timing statements out under load all day"), and which
+                 loadMyGameStates already handles correctly.
+
+                 Eviction now requires PROOF: a successful read that says the
+                 viewer is not active/approved. An unreadable answer leaves
+                 them where they are — the club's own RLS is the real gate,
+                 so a genuine non-member still sees nothing. */
+              if (memErr) {
+                reportError(memErr, 'ClubHomePage.fastPath.membership_unreadable', {
+                  clubId: home.club.id,
+                });
+              } else if (!memStat || !['active', 'approved'].includes(memStat.status)) {
                 navigate(`/invite/${clubId}`);
                 return;
               }
@@ -1755,7 +1832,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           .eq('user_id', authUser.id)
           .maybeSingle();
 
-        if (
+        /* Same rule as the fast path above: eviction requires PROOF, never a
+           failed read. `memberResult.error` was discarded here, so any
+           query-level failure read as "not a member" and bounced a real
+           member to the invite screen mid-session (2026-08-28 audit). */
+        if (memberResult.error) {
+          reportError(memberResult.error, 'ClubHomePage.membership_unreadable', {
+            clubId: resolvedId,
+          });
+        } else if (
           !memberResult.data ||
           !['active', 'approved'].includes((memberResult.data as any).status)
         ) {
@@ -2073,7 +2158,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         // joinable 6/6 card after TournamentService was fixed, because it
         // runs its own query rather than the service. Same rule as the
         // service now: a lobby lists what can be ENTERED.
-        .in('status', ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTING_SOON'])
+        .in('status', LOBBY_TOURNAMENT_STATUSES)
         /* THE BOARD IS A WINDOW, AND THE CAP IS NOT A WINDOW (Dan 2026-08-26).
            This query had no time bound at all, so the only thing deciding what
            reached the lobby was `.limit(200)` ordered by start_time ASCENDING
@@ -2795,8 +2880,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     try {
       const [seatsRes, regsRes, favsRes] = await Promise.all([
         supabase
+          /* The TOURNAMENT id comes back with the table id (2026-08-28 audit).
+             A Spin or Heads-Up row in this lobby is keyed by its TOURNAMENT
+             id, so `seatedIds.has(entry.id)` — which playerStateOf checks
+             first, precisely so a bought seat reads "You Are Seated" — could
+             never match: this set held only table ids. Every seat-first
+             holder fell through to the registeredIds branch and was told
+             "You Are Registered", the same softer word as "Spectating" that
+             Dan rejected on the table itself. Verified against production
+             the same day: 41 of 41 live seat-first seats carry a
+             tournament_players row, which is why the wrong label was the
+             only symptom and nobody lost a seat over it. Putting both ids in
+             the set makes the seated branch reachable for seat-first games
+             and changes nothing for cash rows, which still key on table_id. */
           .from('table_seats')
-          .select('table_id')
+          .select('table_id, tables(tournament_id)')
           .eq('user_id', currentUserId)
           .is('left_at', null)
           .limit(QUERY_LIMITS.LIST),
@@ -2824,7 +2922,16 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (seatsRes.error) {
         reportError(seatsRes.error, 'ClubHomePage.loadMyGameStates.seats');
       } else {
-        setSeatedTableIds(new Set((seatsRes.data || []).map((r) => r.table_id)));
+        setSeatedTableIds(
+          new Set(
+            (seatsRes.data || []).flatMap((r: any) => {
+              const tournamentId = Array.isArray(r.tables)
+                ? r.tables[0]?.tournament_id
+                : r.tables?.tournament_id;
+              return tournamentId ? [r.table_id, tournamentId] : [r.table_id];
+            })
+          )
+        );
       }
       if (regsRes.error) {
         reportError(regsRes.error, 'ClubHomePage.loadMyGameStates.registrations');
@@ -4321,7 +4428,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           canDelete={
             (isOwner || userRole === 'admin' || userRole === 'co_owner') &&
             selectedEntry.players === 0 &&
-            (!(selectedEntry.raw as any).club_id || (selectedEntry.raw as any).club_id === clubId)
+            /* resolvedClubId, not clubId (2026-08-28 audit). On a `/clubs/:slug`
+               route `clubId` is the SLUG while `raw.club_id` is a UUID, so this
+               comparison was always false and the owner's Delete Table button
+               was silently absent from the panel for every game that carries a
+               club_id — which is all of them. The resolved UUID is in scope and
+               is what every other comparison in this file uses. */
+            (!(selectedEntry.raw as any).club_id ||
+              (selectedEntry.raw as any).club_id === resolvedClubId)
           }
           onDeleteTable={(id) => {
             setPanelOpen(false);

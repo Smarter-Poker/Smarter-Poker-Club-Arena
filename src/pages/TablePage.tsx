@@ -389,7 +389,18 @@ async function fetchTournamentResult(
        whole tournament"). Counting tournament_players is the same source the
        clock uses, so the two agree, and it stays right for re-entry events.
        current_players remains the fallback if the count cannot be read. */
-    const [{ data: entry }, { data: tourney }, { count: entryCount }] = await Promise.all([
+    /* A FAILED READ MAY NOT BE REPORTED AS A PRIZE OF ZERO (2026-08-28 audit).
+       These three destructured `data`/`count` and discarded `error`. This
+       function's own header promises that "on any failure it returns a result
+       with nulls, so the summary shows '—' … rather than falling back to a
+       chip panel that would be actively wrong" — but that only held for the
+       outer catch, which a Supabase query-level error never reaches (it
+       RESOLVES with `{data: null, error}`). So winning a 100x Spin and hitting
+       a transient error on the entry read told the player they finished
+       nowhere and won 0, with the Spin branding stripped off the card too.
+       Throwing hands the failure to the outer catch, which already returns
+       the honest all-nulls result. */
+    const [entryRes, tourneyRes, countRes] = await Promise.all([
       supabase
         .from('tournament_players')
         .select('position, prize, bounty_winnings, bounties_collected, rebuys, add_on, status')
@@ -413,6 +424,13 @@ async function fetchTournamentResult(
         .select('user_id', { count: 'exact', head: true })
         .eq('tournament_id', tournamentId),
     ]);
+
+    if (entryRes.error) throw entryRes.error;
+    if (tourneyRes.error) throw tourneyRes.error;
+    if (countRes.error) throw countRes.error;
+    const entry = entryRes.data;
+    const tourney = tourneyRes.data;
+    const entryCount = countRes.count;
 
     /* MYSTERY BOUNTY (sections 43, 44). The chest half of what this player won,
        from the RPCs - `tournament_bounty_awards` has RLS on with no select
@@ -3309,6 +3327,17 @@ export default function TablePage({
      assignment on purpose, same pattern as heartbeatToastRef: the effects
      that read it must see the current value without depending on it. */
   seatFirstOpenRef.current = seatFirstBuyIn !== null;
+  /* The seat COUNT, mirrored for the same reason (2026-08-28 audit). The
+     seat-first buy-in callback reads it to say "Waiting For N More Players",
+     but that callback's dependency list is deliberately narrow — it must not
+     be rebuilt on every roster change mid-purchase — so reading the state
+     variable there captured whatever the value was when the callback was
+     built, which is null on the render that opens the sheet. The fallback
+     that exists precisely for the countless idempotent re-seat answer was
+     therefore reading 0 and the player was told "Waiting For More Players"
+     with no number. A ref is current by definition. */
+  const seatFirstSeatsRef = useRef<number>(0);
+  seatFirstSeatsRef.current = seatFirstBuyIn?.seats ?? 0;
   const [seatFirstPending, setSeatFirstPending] = useState(false);
   /**
    * Which tournament the seat-first recovery has already settled, so it asks
@@ -9738,8 +9767,13 @@ export default function TablePage({
           const rb = await WalletService.readPlayerBalance(userId, { tableId });
           if (rb.balance !== null) setAccountBalance(rb.balance);
 
-          // FIX 136: Check 2-hour re-entry restriction from recent cashout
-          const { data: cashoutHistory } = await supabase
+          /* FIX 136: Check 2-hour re-entry restriction from recent cashout.
+             2026-08-28: the error was discarded, so a failed read looked
+             exactly like "no restriction" and the minimum silently did not
+             apply — the one outcome this rule exists to prevent. Report it;
+             the row is still absent so the buy-in proceeds unrestricted,
+             but the failure is now visible rather than invented. */
+          const { data: cashoutHistory, error: cashoutErr } = await supabase
             .from('table_cashout_history')
             .select('cashout_amount, restriction_expires_at')
             .eq('table_id', table.id)
@@ -9749,6 +9783,7 @@ export default function TablePage({
             .limit(1)
             .maybeSingle();
 
+          if (cashoutErr) reportError(cashoutErr, 'TablePage.cashout_restriction_read');
           if (cashoutHistory) {
             setCashoutMinBuyIn(cashoutHistory.cashout_amount);
           }
@@ -14139,8 +14174,10 @@ export default function TablePage({
              was told "Waiting For 0 More Players" (2026-08-28). Fall back to
              what this page already knows — the seat-first cap and the live
              roster — and say the plain thing when even that is unavailable. */
-          const needed = Number(res.seats_needed ?? seatFirstBuyIn?.seats ?? 0);
-          const taken = Number(res.seats_taken ?? tableState.players.filter(Boolean).length);
+          const needed = Number(res.seats_needed ?? seatFirstSeatsRef.current ?? 0);
+          const taken = Number(
+            res.seats_taken ?? tableStateRef.current.players.filter(Boolean).length
+          );
           const left = Math.max(0, needed - taken);
           toast?.success?.(
             left === 1
@@ -14302,6 +14339,23 @@ export default function TablePage({
 
       seatFirstRecoveryDoneRef.current = tournId;
       console.debug('[Seat] Seat-first recovered for tournament', tournId);
+      /* RECOVER THE FORMAT TOO, NOT JUST THE SHEET (2026-08-28 audit).
+         `tournamentFormat` is written only inside the mount effect, and its
+         failure branch latches it to 'mtt' (`prev ?? 'mtt'`). This recovery
+         exists precisely for the case where that read failed — so it restored
+         the buy-in sheet while leaving the page believing a Spin was an MTT,
+         for the rest of the session. Two things break on that belief and both
+         are the product:
+
+           - the D2 fallback that opens the SPIN WHEEL when the SPIN_REVEAL
+             broadcast is missed is gated on `tournamentFormat !== 'spin'`, so
+             the wheel could never appear;
+           - the HEADS-UP overlay is gated on the same value, so it would take
+             over the felt on the last hand of a 90-second Spin — the exact
+             thing its own comment says must never happen.
+
+         The row we just read carries the answer, so use it. */
+      setTournamentFormat(isSpin ? 'spin' : maxP > 0 && maxP <= 2 ? 'sng' : 'mtt');
       setSeatFirstBuyIn({
         cost: Number(row.buy_in_amount ?? 0) + Number(row.buy_in_fee ?? 0),
         seats: maxP || (isSpin ? 3 : 2),
@@ -18209,7 +18263,14 @@ export default function TablePage({
             <div className="seat-buyin-confirm__title">Buy In</div>
             <div className="seat-buyin-confirm__amount">{seatFirstBuyIn.cost.toLocaleString()}</div>
             <div className="seat-buyin-confirm__meta">
-              Your Balance {Number(accountBalance || 0).toLocaleString()}
+              {/* An unknown balance prints as "—", never as a confident 0
+                  (2026-08-28 audit). `accountBalance` is deliberately left
+                  null when the wallet read fails, and the Buy In button 25
+                  lines below already respects that — so this line was the one
+                  place still telling a funded player "Your Balance 0" beside
+                  an enabled spend button. */}
+              Your Balance{' '}
+              {accountBalance === null ? 'Unknown' : Number(accountBalance).toLocaleString()}
             </div>
             <div className="seat-buyin-confirm__note">
               This {seatFirstBuyIn.label} Starts When All {seatFirstBuyIn.seats} Seats Are Bought

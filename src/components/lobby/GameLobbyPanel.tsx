@@ -16,7 +16,7 @@ import { Link } from 'react-router-dom';
 import CasinoPlaque, { PlaqueSeats } from './CasinoPlaque';
 import type { LobbyEntry, LobbyTableRow, LobbyTournamentRow } from './lobbyEntries';
 import { parseBlindStructure, tournamentBlinds, tournamentLevel } from './tournamentFigures';
-import { parseTableSettings, seatsTakenLabel } from './lobbyEntries';
+import { parseTableSettings, seatsTakenLabel, seatFirstJoinable } from './lobbyEntries';
 import { cashBuyInRange } from '../../lib/cashBuyIn';
 import { tournamentService } from '../../services/TournamentService';
 import { waitlistService, type WaitlistEntry } from '../../services/WaitlistService';
@@ -284,6 +284,16 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
          flip to RUNNING has no seat either (QA 2026-08-22 found live 2/2
          games offering an active CTA because this only checked 'running'). */
       if (full) return { label: 'Game Full', kind: 'disabled' as const };
+      /* A RUNNING SPIN CANNOT BE JOINED (2026-08-28 audit). This branch had
+         no `running` case, so a spin already in progress whose seat count had
+         dipped below capacity (a bust-out closes a seat row and
+         fn_sync_seat_first_player_count decrements the counter) offered a
+         gold "Join Spin" on the buy-in screen — while the board row behind it
+         correctly said Watch. `seatFirstJoinable` is the ONE list of dead
+         states (running / completed / closed, plus capacity) and LobbyTable
+         already uses it; this panel was re-spelling a narrower rule by hand. */
+      if (!seatFirstJoinable(entry))
+        return { label: 'Watch', kind: 'secondary' as const, run: () => onSpinJoin(t, 'spin') };
       return {
         label: 'Join Spin',
         kind: 'primary' as const,
@@ -310,6 +320,9 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       const full = entry.players >= entry.capacity;
       // Same rule as spins: no seat exists at 2/2, whatever the status label.
       if (full) return { label: 'Table Full', kind: 'disabled' as const };
+      // Same rule as the spin branch above — one list of dead states.
+      if (!seatFirstJoinable(entry))
+        return { label: 'Watch', kind: 'secondary' as const, run: () => onSpinJoin(t, 'sng') };
       return {
         label: 'Take Seat',
         kind: 'primary' as const,

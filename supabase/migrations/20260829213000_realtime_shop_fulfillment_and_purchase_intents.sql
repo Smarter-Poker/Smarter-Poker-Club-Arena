@@ -498,6 +498,19 @@ BEGIN
 END;
 $$;
 
+-- Both writers are implementation details behind trusted trigger/API paths.
+-- CREATE OR REPLACE preserves old ACLs, so close every browser role explicitly
+-- after both definitions and leave service_role as the only direct caller.
+REVOKE ALL ON FUNCTION public.sp_grant_shop_item(uuid, uuid, text)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.sp_grant_shop_item(uuid, uuid, text)
+  TO service_role;
+
+REVOKE ALL ON FUNCTION public.fn_refund_shop_purchase(uuid, uuid, uuid, text)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_refund_shop_purchase(uuid, uuid, uuid, text)
+  TO service_role;
+
 -- ── 7. Fulfil every historical inventory row still waiting on a click ────
 
 DO $$

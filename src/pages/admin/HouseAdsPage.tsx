@@ -603,7 +603,7 @@ export default function HouseAdsPage() {
   const handleDelete = async (ad: AdRow) => {
     const ok = await confirmDialog({
       title: 'Delete This Ad?',
-      message: `"${ad.headline}" and its performance history will be removed. This cannot be undone.`,
+      message: `"${ad.headline}" And Its Performance History Will Be Removed. This Cannot Be Undone.`,
       confirmText: 'Delete',
       variant: 'danger',
     });
@@ -775,8 +775,12 @@ export default function HouseAdsPage() {
                 <input
                   id="ad-weight"
                   className="admin-input"
+                  /* min={1}, not 0: the database refuses a zero weight
+                     (ad_catalog_weight_positive), so a 0 here was a save that
+                     came back "Could not create that ad" without ever naming
+                     the field that caused it. */
                   type="number"
-                  min={0}
+                  min={1}
                   max={1000}
                   value={form.weight}
                   onChange={(e) => setForm((f) => ({ ...f, weight: e.target.value }))}

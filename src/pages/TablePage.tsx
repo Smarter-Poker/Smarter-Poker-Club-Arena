@@ -1027,6 +1027,25 @@ const _LAST_BBJ_HIT_COUNT: Record<string, number> = {};
  */
 let enhancedViewHolders = 0;
 
+/**
+ * Why a player was removed, in words they can act on.
+ *
+ * Module scope so BOTH boot paths quote the same sentence — they used to each
+ * carry their own copy and the poll's had no per-reason text at all, so a
+ * five-minute sit-out eviction that arrived by poll said only the generic line.
+ * Title Case, no em dashes (Dan 2026-08-20): these are rendered through the
+ * Toast layer, but a string that is already correct cannot be mangled by a
+ * future change to it.
+ */
+const BOOT_EXPLANATIONS: Record<string, string> = {
+  away_blind_cap:
+    'You Were Away, So We Cashed You Out After One Small Blind And One Big Blind. Your Chips Are Back In Your Wallet.',
+  sit_out_timeout: 'You Sat Out Too Long And Were Cashed Out. Your Chips Are Back In Your Wallet.',
+  busted_no_rebuy: 'You Ran Out Of Chips And Did Not Rebuy, So Your Seat Was Released.',
+  nit_game_vpip:
+    'This Table Has A Minimum VPIP And You Were Below It, So You Were Cashed Out. Your Chips Are Back In Your Wallet.',
+};
+
 export default function TablePage({
   embeddedTableId,
   onTableInfoUpdate,
@@ -2661,6 +2680,16 @@ export default function TablePage({
      told twice. Reset when they take a seat again. */
   const bootNoticeShownRef = useRef(false);
   /**
+   * The reason the LAST `seat_left` gave for this hero, if one arrived.
+   *
+   * The ten-second seat read is the fallback for a websocket event that never
+   * landed — and it cannot know WHY a seat vanished, so on its own it can only
+   * say the generic sentence. When the event DID arrive but its toast was
+   * dropped, this lets the fallback still name the real reason instead of
+   * downgrading the message.
+   */
+  const evictionReasonRef = useRef<string | undefined>(undefined);
+  /**
    * ── PRE-START SEAT-FIRST TABLES ARE NOT DEAD TABLES (Dan 2026-08-28) ──────
    *
    * "I'M ALSO GETTING MESSAGES ON THE BOTTOM THAT 'THIS TABLE IS NO LONGER
@@ -3404,6 +3433,73 @@ export default function TablePage({
       return { ...prev, players };
     });
   }, [userId]);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  THE SEAT IS GONE: MAKE THE SCREEN AGREE, AND SAY SO
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Dan, from live play 2026-08-29, after the eviction itself was confirmed
+   * working: "IT DOESN'T GIVE YOU A 'REMOVED FROM TABLE' NOTIFICATION, AND THE
+   * 'SITTING OUT BUTTON' NEVER LEAVES THE TABLE."
+   *
+   * Two boot paths existed — the `seat_left` websocket event and the ten-second
+   * seat read — and BOTH were written as the same six lines, copied. Every one
+   * of those six could complete without causing a single re-render:
+   *
+   *   setTableState(prev => prev.heroSeat === 0 ? prev : {...prev, heroSeat: 0})
+   *
+   * A sitting-out player is NOT in the current hand's player list, so
+   * `syncedHeroSeat` is 0 and `tableState.heroSeat` is commonly already 0 by the
+   * time the eviction lands. That line then returns `prev` — React bails, no
+   * render. The other five are a ref mutation and three `setState` calls that
+   * were already at their target value. So the whole recovery ran, changed
+   * nothing observable, and the footer went on rendering
+   * `sittingOutIdsRef.current.has(userId)` — a REF read during render, which
+   * nothing re-renders on — for the rest of the session.
+   *
+   * And nothing ever removed the hero from `tableState.players`, so their
+   * avatar and SITTING OUT badge stayed on the felt over a seat they no longer
+   * held.
+   *
+   * This is now ONE function, it clears the SEAT as well as the claim, and it
+   * commits an object identity every time so the render cannot be skipped.
+   */
+  const applySeatRemoved = useCallback(
+    (reason?: string) => {
+      const heroId = String(userId ?? '');
+      heroSeatRef.current = 0;
+      sittingOutIdsRef.current.delete(heroId);
+      setHeroSitsOutPerRow(false);
+      setShowSitOut(false);
+      setSitOutSince(null);
+      setSitOutNextHand(false);
+      setTableState((prev) => {
+        /* ALWAYS a new object — see the note above. `prev.heroSeat === 0` is the
+           COMMON case here, not the rare one, and returning `prev` for it is
+           what made this whole recovery invisible. */
+        const players = prev.players.map((p) =>
+          p && heroId && p.id === heroId ? null : p
+        ) as typeof prev.players;
+        return { ...prev, heroSeat: 0, players };
+      });
+
+      /* The notice, and the flag ONLY once it has actually gone out. It used to
+         be set first, so any drop — a toast provider not yet mounted, a race on
+         teardown — burned the one-shot and silenced the OTHER path too. */
+      if (!bootNoticeShownRef.current) {
+        const say = heartbeatToastRef.current?.info;
+        if (typeof say === 'function') {
+          bootNoticeShownRef.current = true;
+          say(
+            (reason && BOOT_EXPLANATIONS[reason]) ||
+              'You Were Removed From The Table. Your Chips Are Back In Your Wallet.'
+          );
+        }
+      }
+    },
+    [userId]
+  );
 
   /**
    * SIT BACK IN — the one implementation, guarded like its outbound twin.
@@ -13911,22 +14007,8 @@ export default function TablePage({
           const d = evt.data as { user_id?: string; reason?: string };
           const reason = d?.reason;
           if (reason && userId && String(d?.user_id) === String(userId)) {
-            const EXPLANATIONS: Record<string, string> = {
-              away_blind_cap:
-                'You were away, so we cashed you out after one small blind and one big blind. Your chips are back in your wallet.',
-              sit_out_timeout:
-                'You sat out too long and were cashed out. Your chips are back in your wallet.',
-              busted_no_rebuy: 'You ran out of chips and did not rebuy, so your seat was released.',
-              nit_game_vpip:
-                'This table has a minimum VPIP and you were below it, so you were cashed out. Your chips are back in your wallet.',
-            };
-            if (!bootNoticeShownRef.current) {
-              bootNoticeShownRef.current = true;
-              heartbeatToastRef.current?.info?.(
-                EXPLANATIONS[reason] ??
-                  `You were removed from the table (${reason.replace(/_/g, ' ')}). Your chips are back in your wallet.`
-              );
-            }
+            // Remembered for the poll fallback — see evictionReasonRef.
+            evictionReasonRef.current = reason;
 
             /* TELLING THEM IS HALF OF IT — THE SCREEN HAS TO AGREE (2026-08-28).
              *
@@ -13942,12 +14024,7 @@ export default function TablePage({
              * `heroSeat > 0` or on this id being in `sittingOutIdsRef`. The
              * ten-second seat read does the same thing for anyone who never
              * received this event; both are needed and they dedupe. */
-            heroSeatRef.current = 0;
-            sittingOutIdsRef.current.delete(String(userId));
-            setShowSitOut(false);
-            setSitOutSince(null);
-            setSitOutNextHand(false);
-            setTableState((prev) => (prev.heroSeat === 0 ? prev : { ...prev, heroSeat: 0 }));
+            applySeatRemoved(reason);
           }
 
           /* ── THE TABLE LOSES THE BADGE TOO (2026-08-29) ──────────────────
@@ -15390,18 +15467,11 @@ export default function TablePage({
             seatAcquiredAtRef.current != null && Date.now() - seatAcquiredAtRef.current < 15_000;
           // A buy-in that has not landed yet is not an eviction.
           if (!freshJoin) {
-            heroSeatRef.current = 0;
-            sittingOutIdsRef.current.delete(String(userId));
-            setShowSitOut(false);
-            setSitOutSince(null);
-            setSitOutNextHand(false);
-            setTableState((prev) => (prev.heroSeat === 0 ? prev : { ...prev, heroSeat: 0 }));
-            if (!bootNoticeShownRef.current) {
-              bootNoticeShownRef.current = true;
-              heartbeatToastRef.current?.info?.(
-                'You Were Removed From The Table. Your Chips Are Back In Your Wallet.'
-              );
-            }
+            /* The SAME recovery the websocket path runs. These were two copies
+               of six lines and they had already drifted: this one carried no
+               per-reason wording, so an eviction that arrived by poll rather
+               than by socket said only the generic sentence. */
+            applySeatRemoved(evictionReasonRef.current);
           }
         }
 
@@ -15486,7 +15556,7 @@ export default function TablePage({
       window.clearInterval(pollId);
       void supabase.removeChannel(channel);
     };
-  }, [tableId, userId]);
+  }, [tableId, userId, applySeatRemoved]);
 
   //broadcastLocalHandState removed — server broadcasts state authoritatively
 
@@ -19323,8 +19393,18 @@ export default function TablePage({
               Leave Seat
             </button>
           </div>
-        ) : getPlayerAtSeat(tableState.heroSeat)?.status === 'sitting_out' ||
-          sittingOutIdsRef.current.has(userId || '') ? (
+        ) : /* STATE, NOT A REF READ AT RENDER TIME.
+               This said `sittingOutIdsRef.current.has(userId || '')`. A ref
+               mutation schedules nothing, so when the eviction recovery deleted
+               the hero from that Set the footer had no reason to re-render —
+               and every other line of that recovery was a `setState` already at
+               its target value, so nothing else forced one either. The bar went
+               on saying "You Are Sitting Out", with an I'm Back button, over a
+               seat the player no longer held, for the rest of the session.
+               `heroSitsOutPerRow` is the same fact as state; `heroIsSittingOut`
+               was converted to it on 2026-08-29 and this, the surface the
+               player actually looks at, was missed. */
+        getPlayerAtSeat(tableState.heroSeat)?.status === 'sitting_out' || heroSitsOutPerRow ? (
           /* SIT-OUT VISIBILITY 2026-08-21: whether the hero sat out from the
              settings panel or was force-sat-out after 3 straight timeouts,
              the footer says so plainly and offers the way back. In

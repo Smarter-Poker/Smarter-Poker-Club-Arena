@@ -92,3 +92,61 @@ handoff:
 - **the money-owed window is `started_at`, not `updated_at`** — see the
   companion change today; `updated_at` is never maintained and holds
   row-creation time.
+
+---
+
+## The white edging (added later the same day)
+
+Dan, on seeing the seat-mismatch picture above: _"ALL THAT WHITE EDGING AROUND
+THE TABLES MUST NEVER BE THERE EITHER."_
+
+He is right, and it was visible in the diagram I had just drawn for him. It is
+not CSS — there is no border or outline on `.table-art`. It is baked into the
+assets.
+
+Seven of the fourteen skins were exported from a tool that composited them
+against **white** and then wrote an alpha channel. The opaque interior is fine,
+but every partially transparent pixel on the silhouette kept its white RGB —
+and so did the first fully-opaque ring behind it. Over the app's dark
+background those pixels composite as a white halo tracing the whole table.
+
+Measuring it correctly matters more than it sounds. "How white is the edge"
+condemns golden sand forever, because a pale gold rail is legitimately
+near-white. What a matte actually looks like is **an edge that does not belong
+to the picture behind it**: compare each partially transparent pixel with the
+solid artwork within two pixels of it. Correct anti-aliasing reads about zero.
+
+| skin            | before | after |     | skin         | reading |
+| --------------- | -----: | ----: | --- | ------------ | ------: |
+| jade city       |  148.0 |  −1.0 |     | crimson      |    −2.5 |
+| electric purple |  116.5 |  −1.2 |     | mahogany red |    −2.0 |
+| classic green   |  103.2 |   0.0 |     | ocean blue   |    −1.4 |
+| carbon red      |  101.7 |   0.6 |     | final table  |     8.3 |
+| carbon ion      |   83.0 |   0.0 |     | neon city    |     8.4 |
+| amethyst cavern |   74.3 |  −0.0 |     | arctic white |    10.6 |
+| golden sand     |   51.7 |   1.9 |     | ice cavern   |   −72.0 |
+
+**Nothing was redrawn and no alpha was touched** — verified against `HEAD`, the
+alpha channel is bit-identical on all seven and the dimensions are unchanged.
+The repair bleeds the artwork's _own_ colour outward into the edge pixels,
+which is the standard fix for a matte fringe. Between 6,000 and 18,000 pixels
+changed per skin, all of them on the silhouette.
+
+One detail worth keeping: the colour has to be sampled **one pixel deeper than
+the first opaque ring**. Bleeding from that ring leaves a third of the halo
+behind, because on these exports the ring is itself part of the matte — fully
+opaque and still white. Eroding the source mask by one pixel takes the colour
+from under the matte, and every skin then lands within ±2.4 of neutral instead
+of +30.
+
+`scripts/dev/defringe-table-skins.py` does the repair and is safe to re-run;
+`tests/table-skin-no-white-edging.law.test.ts` fails any future asset that
+arrives with a matte. Checked that the guard is not vacuous by restoring the
+old jade city and watching it fail at 148.0 against a limit of 20.
+
+### The limit is one-sided, on purpose
+
+Ice cavern reads **−72**: its outer edge is much darker than the artwork behind
+it. That is a painted shadow, it is art, and it is left alone. "No white
+edging" is not "every edge must be neutral", and a guard that flattened both
+directions would quietly delete somebody's work.

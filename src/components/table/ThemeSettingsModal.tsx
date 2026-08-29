@@ -49,6 +49,7 @@ import { canonicalGameType, pickThemeRow } from '../../hooks/useUserThemeSetting
 import { persistInterfaceTheme, type InterfaceTheme } from '../../lib/persistInterfaceTheme';
 import { masterBus } from '../../core/MasterBus';
 import { useWalletStore } from '../../stores/useWalletStore';
+import { DiamondTopUpModal } from '../vip/DiamondTopUpModal';
 import {
   useTableStudioCollections,
   type TableStudioLoadout,
@@ -539,6 +540,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     null
   );
   const [purchaseBusy, setPurchaseBusy] = useState(false);
+  const [diamondStoreOpen, setDiamondStoreOpen] = useState(false);
   const purchaseBusyRef = useRef(false);
   const [themeLoadState, setThemeLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
     'idle'
@@ -618,6 +620,10 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
 
   useEffect(() => {
     if (!isOpen) return undefined;
+    // DiamondTopUpModal becomes the only active dialog while its secure
+    // checkout catalog is open. Suspending this trap prevents the Studio
+    // behind it from stealing Tab/Escape and focus.
+    if (diamondStoreOpen) return undefined;
     const previousFocus = document.activeElement as HTMLElement | null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -654,7 +660,13 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
       document.body.style.overflow = previousOverflow;
       previousFocus?.focus();
     };
-  }, [isOpen, onClose, pendingAssetPurchase]);
+  }, [diamondStoreOpen, isOpen, onClose, pendingAssetPurchase]);
+
+  useEffect(() => {
+    if (isOpen) return;
+    setDiamondStoreOpen(false);
+    setPendingAssetPurchase(null);
+  }, [isOpen]);
 
   // The preview uses the same production library as AvatarGallery. No preview-
   // only portraits are bundled or generated. The first six stable library
@@ -1105,7 +1117,9 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
       if (!data?.success && !alreadyOwned) {
         const reason = String(data?.error || 'Purchase failed');
         if (reason.toLowerCase().includes('insufficient')) {
-          toast.error('Not Enough Diamonds For This Design.');
+          toast.info('Add Diamonds To Finish Unlocking This Design.');
+          void loadDiamonds(userId, { force: true });
+          setDiamondStoreOpen(true);
         } else {
           toast.error('Design Purchase Failed. Please Try Again.');
           reportError(new Error(reason), 'ThemeSettingsModal.Asset_purchase_refused');
@@ -1164,7 +1178,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
       purchaseBusyRef.current = false;
       setPurchaseBusy(false);
     }
-  }, [applyAccessibleAsset, pendingAssetPurchase, toast, userId]);
+  }, [applyAccessibleAsset, loadDiamonds, pendingAssetPurchase, toast, userId]);
 
   /**
    * RESET DID NOTHING (2026-08-25). It set local state and stopped: no write,
@@ -1753,7 +1767,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           </section>
         </div>
 
-        {pendingAssetPurchase && (
+        {pendingAssetPurchase && !diamondStoreOpen && (
           <div
             className="theme-vip-prompt-overlay"
             onClick={() => {
@@ -1787,13 +1801,19 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                 <button
                   type="button"
                   className="theme-vip-prompt__btn theme-vip-prompt__btn--upgrade"
-                  disabled={purchaseBusy || diamonds < pendingAssetPurchase.price}
-                  onClick={() => void handleAssetPurchase()}
+                  disabled={purchaseBusy}
+                  onClick={() => {
+                    if (diamonds < pendingAssetPurchase.price) {
+                      setDiamondStoreOpen(true);
+                      return;
+                    }
+                    void handleAssetPurchase();
+                  }}
                 >
                   {purchaseBusy
                     ? 'Processing...'
                     : diamonds < pendingAssetPurchase.price
-                      ? `Need ${(pendingAssetPurchase.price - diamonds).toLocaleString()} More ◆`
+                      ? `Add ${(pendingAssetPurchase.price - diamonds).toLocaleString()} Diamonds`
                       : `Buy For ${pendingAssetPurchase.price.toLocaleString()} ◆`}
                 </button>
                 <button
@@ -1808,6 +1828,13 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             </div>
           </div>
         )}
+        <DiamondTopUpModal
+          isOpen={diamondStoreOpen}
+          onClose={() => {
+            setDiamondStoreOpen(false);
+            if (userId) void loadDiamonds(userId, { force: true });
+          }}
+        />
       </div>
     </div>
   );

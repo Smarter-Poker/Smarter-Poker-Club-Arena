@@ -31,6 +31,7 @@ import { BBJCelebration } from './BBJCelebration';
 import { ThrowableSelector } from './ThrowableSelector';
 import type { ThrowEvent } from '../../services/ThrowableService';
 import DiamondWalletModal from '../wallet/DiamondWalletModal';
+import { DiamondTopUpModal } from '../vip/DiamondTopUpModal';
 import CashierModal from './CashierModal';
 import BuyInModal from './BuyInModal';
 
@@ -696,6 +697,10 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
   // "Detailed Analytics" button. Local state — nothing outside this layer
   // needs to open it.
   const [showDetailedAnalytics, setShowDetailedAnalytics] = React.useState(false);
+  // The wallet's Buy action used to close the wallet and stop. Keep the live
+  // table mounted while handing the player to the same server-priced Stripe
+  // catalog used by VIP and Table Studio.
+  const [showDiamondTopUp, setShowDiamondTopUp] = React.useState(false);
 
   return (
     <>
@@ -1043,7 +1048,15 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       {/* Leave Table Notice — see the effect above; it is a toast now. */}
 
       {/* Diamond Wallet Modal */}
-      <DiamondWalletModal isOpen={showDiamondWallet} onClose={onCloseDiamondWallet} />
+      <DiamondWalletModal
+        isOpen={showDiamondWallet}
+        onClose={onCloseDiamondWallet}
+        onBuyClick={() => {
+          onCloseDiamondWallet();
+          setShowDiamondTopUp(true);
+        }}
+      />
+      <DiamondTopUpModal isOpen={showDiamondTopUp} onClose={() => setShowDiamondTopUp(false)} />
 
       {/* Bust Rebuy Modal */}
 

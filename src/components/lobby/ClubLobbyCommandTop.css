@@ -13,7 +13,7 @@
   --machine-preference-default: url('/hub/club-arena/assets/club-buttons/lobby/lobby-preference-default-v3.png');
   --machine-preference-active: url('/hub/club-arena/assets/club-buttons/lobby/lobby-preference-active-v3.png');
   --machine-filter-default: url('/hub/club-arena/assets/club-buttons/lobby/lobby-filter-default-v3.png');
-  --machine-header-frame: url('/hub/club-arena/assets/club-buttons/lobby/lobby-header-frame-v3.png');
+  --machine-header-frame: url('/hub/club-arena/assets/club-buttons/lobby/lobby-header-frame-universal-v4.png');
   --machine-controls-frame: url('/hub/club-arena/assets/club-buttons/lobby/lobby-controls-frame-v3.png');
   --machine-campaign-frame: url('/hub/club-arena/assets/club-buttons/lobby/lobby-campaign-frame-v3.png');
   position: relative;
@@ -455,18 +455,27 @@
 }
 
 @media (min-width: 901px) {
-  /* The desktop club identity is approved, fixed artwork. Do not repaint it
-     with live typography: the chassis already contains the exact metallic
-     wordmark, letter spacing, highlights, and welcome line from the reference.
-     The editable/live treatment remains available in the dedicated mobile
-     composition below, where the header must reflow. */
-  .club-lobby-command-top__welcome--approved-shark {
-    background: transparent;
+  /* One approved, text-free header frame is shared by every club. It overlays
+     the reference chassis' baked Shark Club sample and leaves the live club
+     name/description as the only identity layer, so no club can silently fall
+     back to a different header treatment. */
+  .club-lobby-command-top__welcome--approved-universal {
+    inset: 0 0 auto;
+    height: 15.35%;
+    background: var(--machine-header-frame) center / 100% 100% no-repeat;
   }
 
-  .club-lobby-command-top__welcome--approved-shark .club-lobby-command-top__welcome-copy {
-    opacity: 0;
-    pointer-events: none;
+  .club-lobby-command-top__welcome--approved-universal .lobby-top__notice {
+    padding: 2.2% 7% 4.2%;
+  }
+
+  .club-lobby-command-top__welcome--approved-universal .club-lobby-command-top__welcome-copy {
+    width: 86%;
+  }
+
+  .club-lobby-command-top__welcome--approved-universal .club-lobby-command-top__club-name {
+    font-size: clamp(36px, 7.9cqw, 58px);
+    line-height: 0.86;
   }
 
   .club-lobby-machine > .club-home__games--v2 {
@@ -1182,10 +1191,9 @@
     pointer-events: none;
   }
 
-  /* Shark Club uses the approved desktop wordmark itself on mobile. Scaling
-     the complete 734 x 150 header proportionally keeps the exact Cinzel-like
-     letterforms, chrome gradient, blue line, spacing, and frame geometry. */
-  .club-lobby-command-top__welcome--approved-shark {
+  /* The exact same text-free chrome header and live typography are used for
+     every club on mobile. Only the club's name and description may change. */
+  .club-lobby-command-top__welcome--approved-universal {
     height: auto;
     min-height: 0;
     aspect-ratio: 734 / 150;
@@ -1195,13 +1203,12 @@
     background: var(--machine-header-frame) center / 100% 100% no-repeat;
   }
 
-  .club-lobby-command-top__welcome--approved-shark .lobby-top__notice {
-    padding: 0;
+  .club-lobby-command-top__welcome--approved-universal .lobby-top__notice {
+    padding: 2.2% 7% 4.2%;
   }
 
-  .club-lobby-command-top__welcome--approved-shark .club-lobby-command-top__welcome-copy {
-    opacity: 0;
-    pointer-events: none;
+  .club-lobby-command-top__welcome--approved-universal .club-lobby-command-top__welcome-copy {
+    width: 86%;
   }
 }
 

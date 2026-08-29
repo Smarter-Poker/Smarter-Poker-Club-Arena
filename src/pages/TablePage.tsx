@@ -3611,6 +3611,54 @@ export default function TablePage({
   seatFirstSeatsRef.current = seatFirstBuyIn?.seats ?? 0;
   const [seatFirstPending, setSeatFirstPending] = useState(false);
   /**
+   * ── THE WAIT IS NAMED, NEVER SILENT (2026-08-29, round 13) ───────────────
+   *
+   * Dan, live at 18:06Z: bought a spin seat, watched nothing happen for 24
+   * seconds, and left - during one of the day's twenty engine-restart
+   * windows, when no fill loop was running. The footer said "Waiting For 2
+   * More Players" identically at second 1 and second 40, so a stalled room
+   * was indistinguishable from a normal one and bailing was the rational
+   * move. After 30 seconds holding a seat in a game that has not filled,
+   * the footer now says the wait is long and that the seat (and the chips)
+   * are safe - and fires one telemetry event per seat session, so every
+   * long human wait is a searchable production fact.
+   */
+  const [seatFirstWaitLong, setSeatFirstWaitLong] = useState(false);
+  const seatFirstWaitReportedRef = useRef(false);
+  useEffect(() => {
+    const holding = !!seatFirstBuyIn && tableState.heroSeat > 0 && !playHasBegun;
+    if (!holding) {
+      setSeatFirstWaitLong(false);
+      seatFirstWaitReportedRef.current = false;
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setSeatFirstWaitLong(true);
+      if (!seatFirstWaitReportedRef.current) {
+        seatFirstWaitReportedRef.current = true;
+        reportError(
+          new Error('seat-first seat held 30s with no fill'),
+          'TablePage.seat_first_wait_exceeded',
+          {
+            tableId,
+            tournamentId: tableState.tournamentId,
+            seats: seatFirstBuyIn?.seats,
+            taken: tableState.players.filter(Boolean).length,
+          }
+        );
+      }
+    }, 30_000);
+    return () => window.clearTimeout(timer);
+    // Re-arms whenever the roster moves, so the 30s measures STALLED time,
+    // not merely elapsed time - a game filling normally never trips it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    seatFirstBuyIn,
+    tableState.heroSeat,
+    playHasBegun,
+    tableState.players.filter(Boolean).length,
+  ]);
+  /**
    * Which tournament the seat-first recovery has already settled, so it asks
    * once per game rather than on every render that leaves seat-first null. A
    * ref, not state: settling it must not itself cause a render.
@@ -19236,6 +19284,13 @@ export default function TablePage({
                   0,
                   seatFirstBuyIn.seats - tableState.players.filter(Boolean).length
                 );
+                /* Round 13: a wait past 30s says so, and says the seat is
+                   safe - a stalled room must read differently from a normal
+                   one, or leaving looks like the rational move (it did, at
+                   18:06Z today). */
+                if (left > 0 && seatFirstWaitLong) {
+                  return 'Still Filling Your Game, Your Seat And Chips Are Safe';
+                }
                 return left === 1
                   ? 'Seat Reserved, Waiting For 1 More Player'
                   : left > 1

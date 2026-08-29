@@ -31,7 +31,6 @@ import { useWalletStore } from '../stores/useWalletStore';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { cashoutService } from '../services/CashoutService';
 import { supabase } from '../lib/supabase';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import CashierClubSwitcher from '../components/club/CashierClubSwitcher';
 
 import { useToast } from '../components/common/Toast';
@@ -2795,8 +2794,6 @@ export default function CashierPage() {
           </div>
         </section>
       )}
-
-      {clubId && <ClubBottomNav clubId={clubId} />}
 
       {/* Cashout Request Modal — Full step tracker UX */}
       {clubId && user?.id && (

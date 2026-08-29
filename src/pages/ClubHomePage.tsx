@@ -28,7 +28,6 @@ import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import haptic from '../services/HapticService';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 /* LOBBY V2 (Dan 2026-08-22): the large card grid (DynamicGameCard) is replaced
    by the dense line-based LobbyTable + the CasinoPlaque game lobby panel.
@@ -4645,12 +4644,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           </div>
         </div>
       )}
-
-      {/* Unguarded. ClubBottomNav resolves its own club precisely so call
-          sites stop dropping the footer - its header comment says so - and
-          then this call site put the guard back. It renders null when it has
-          no tabs to show. */}
-      <ClubBottomNav clubId={clubId} />
 
       {/* Confirm Modal for Table Deletion */}
       <ConfirmModal

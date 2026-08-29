@@ -13,7 +13,6 @@ import { masterBus } from '../core/MasterBus';
 import './InvitePage.css';
 import { resolveClubIdFilter } from '../utils/clubIdResolver';
 import PageSkeleton from '../components/common/PageSkeleton';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { reportError } from '../utils/errorReporter';
 import { MEDIA_BASE } from '../utils/mediaBase';
@@ -463,7 +462,6 @@ export default function InvitePage() {
           )}
         </div>
       </div>
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

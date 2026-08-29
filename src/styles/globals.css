@@ -133,15 +133,10 @@
 
   /* ─────────────── Layout ─────────────── */
   --header-height: 56px;
-  /* Dan 2026-08-20: this said 60px and the nav has never been 60px. Measured
-     in headless Chrome against the real ClubBottomNav markup: 74px (8px row
-     padding x2, 8px item padding x2, a 24px icon, a 4px gap and a ~12px
-     label). Every page that reserved `var(--bottom-nav-height)` was therefore
-     14px short and its last row of content sat UNDER the nav — which is the
-     "footer links are not at the bottom" symptom. .bottomNav now also carries
-     `min-height: var(--bottom-nav-height)` so the token and the component can
-     never silently disagree again. */
-  --bottom-nav-height: 74px;
+  /* Lossless approved artwork is 1916:256. Keep its exact ratio on tablet and
+     desktop; on phones its internal 640px scroller yields an 86px physical bar
+     and 44px+ targets without distorting the raster. */
+  --bottom-nav-height: clamp(44px, calc(13.3612vw - 0.5344px), 256px);
   /* What a page must actually reserve: the bar plus the phone's home-indicator
      inset, which the bar adds to its own padding on iOS. Reserving the bar
      alone is why content still hid behind it on notched devices. */
@@ -149,11 +144,8 @@
   /* WHERE THE TOP OF THE DRAWN BAR ACTUALLY IS (Dan 2026-08-25).
      --bottom-nav-clearance is what a page must RESERVE, and it is deliberately
      generous. It is the wrong number to stack a second fixed bar on, because
-     below 768px .bottomNav sets `padding-bottom: 0` and therefore occupies
-     exactly --bottom-nav-height - not height + inset. Anything anchored at the
-     clearance floats 34px above the nav on a notched iPhone, and page content
-     scrolls through the gap. That is what happened to the Cashier's action
-     footer. Anchor stacked bars on THIS. */
+     Anything anchored at the clearance floats above the nav on a notched
+     iPhone. Anchor stacked bars on THIS. */
   --bottom-nav-stack-base: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   --sidebar-width: 280px;
 
@@ -824,14 +816,4 @@ html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
-}
-
-/* Mirrors ClubBottomNav.module.css's own `@media (max-width: 768px)` rule,
-   where the bar drops its safe-area padding and is exactly
-   --bottom-nav-height tall. Kept in lockstep with it: if that rule changes,
-   this one must change with it or stacked bars drift again. */
-@media (max-width: 768px) {
-  :root {
-    --bottom-nav-stack-base: var(--bottom-nav-height);
-  }
 }

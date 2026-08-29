@@ -33,7 +33,6 @@ import AgentCommissionDashboard from '@/components/agent/AgentCommissionDashboar
 import { useToast } from '@/components/common/Toast';
 import AgentAssignmentPanel from '@/components/agent/AgentAssignmentPanel';
 import AgentCashoutPanel from '@/components/agent/AgentCashoutPanel';
-import ClubBottomNav from '@/components/club/ClubBottomNav';
 import { PlayerSearch } from '@/components/admin/PlayerSearch';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { EmptyState, ErrorState } from '../components/common/EmptyState';
@@ -1526,9 +1525,6 @@ export default function AgentManagementPage() {
           }
         }}
       />
-
-      {/* Bottom Navigation */}
-      {clubId && <ClubBottomNav clubId={clubId} />}
 
       {/* Confirm Modal */}
       <ConfirmModal

@@ -421,10 +421,8 @@
   position: fixed;
   left: 0;
   right: 0;
-  /* --bottom-nav-stack-base, not height + inset: below 768px the nav drops its
-     safe-area padding, so anchoring here left a 34px band of scrolling content
-     visible BETWEEN the nav and this footer on a notched iPhone. */
-  bottom: var(--bottom-nav-stack-base, 74px);
+  /* Shared stack base includes the painted footer and safe-area strip. */
+  bottom: var(--bottom-nav-stack-base, 86px);
   display: flex;
   gap: 10px;
   padding: 12px 14px 12px;

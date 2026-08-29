@@ -31,7 +31,6 @@ import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { enumToTitleCase } from '../utils/titleCase';
@@ -323,8 +322,6 @@ export default function PlayerStatisticsPage() {
           </section>
         </>
       )}
-
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

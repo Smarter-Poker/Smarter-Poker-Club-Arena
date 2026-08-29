@@ -20,6 +20,7 @@
   width: 100%;
   margin: 0 auto;
   padding: var(--space-8) var(--space-6);
+  padding-bottom: max(var(--space-8), var(--bottom-nav-clearance, 86px));
   /* NO HEADER RESERVATION HERE. GlobalHeader is position: sticky, which stays
      IN the flow and is therefore already accounted for by normal layout. This
      rule used to add `padding-top: calc(63px + var(--space-8))` on top of it,
@@ -164,6 +165,7 @@
 @media (max-width: 1024px) {
   .main {
     padding: var(--space-4);
+    padding-bottom: max(var(--space-4), var(--bottom-nav-clearance, 86px));
     /* Header reservation removed 2026-08-27 — see the note on .main above.
        The header is sticky and already occupies flow space; adding 55px for
        it put a dead band under it on every tablet-width page. */
@@ -199,6 +201,7 @@
        doesn't. overflow-x stays clipped — that part cost nothing and is what
        stops a stray wide child from panning the whole page sideways. */
     padding: var(--space-3);
+    padding-bottom: max(var(--space-3), var(--bottom-nav-clearance, 86px));
     /* MEASURED 2026-08-24 on the live club lobby: .main started at y=41 —
        exactly the bottom of the global header — and then added another 63px
        of padding for it, so every Club Arena page carried a header's worth of

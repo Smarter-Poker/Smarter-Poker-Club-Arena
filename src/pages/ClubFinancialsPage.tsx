@@ -8,7 +8,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useToast } from '../components/common/Toast';
 import { ClubFinancialDashboard } from '../components/dashboard/ClubFinancialDashboard';
 import FinancialChart from '../components/charts/FinancialChart';
@@ -598,8 +597,6 @@ export default function ClubFinancialsPage() {
           </div>
         </section>
       )}
-
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

@@ -8,7 +8,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import { useParams } from 'react-router-dom';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import ClubIntegrityHeader from '../components/club/ClubIntegrityHeader';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useToast } from '../components/common/Toast';
@@ -379,8 +378,6 @@ export default function ReportReviewPage() {
           </section>
         </div>
       )}
-
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

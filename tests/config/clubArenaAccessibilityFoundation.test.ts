@@ -58,16 +58,15 @@ describe('Club Arena accessibility foundation', () => {
     expect(source).toContain('PermissionState');
   });
 
-  it('keeps the fixed club rail semantic, permission-aware, and canonically routed', () => {
+  it('keeps the approved fixed club footer semantic, complete, and canonically routed', () => {
     const source = read('src/components/club/ClubBottomNav.tsx');
-    const accessSource = read('src/hooks/useClubNavigationAccess.ts');
 
-    expect(source).toContain('useClubNavigationAccess');
-    expect(accessSource).toContain('getClubNavigationCapabilities');
-    expect(accessSource).toContain("masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED'");
     expect(source).toContain("label: 'Settings'");
-    expect(source).toContain('club ? `/clubs/${club}/data` : null');
-    expect(source).toContain('aria-label="Club Sections"');
+    expect(source).toContain("label: 'Stats'");
+    expect(source).toContain("clubRoot ? `${clubRoot}/data` : '/data'");
+    expect(source).toContain('aria-label="Club Arena"');
+    expect(source).toContain("aria-current={activeTab === destination.key ? 'page' : undefined}");
+    expect(source).toContain('data-footer-control={destination.key}');
   });
 
   it('uses a keyboard-native union card and explicit union loading/error states', () => {

@@ -92,7 +92,30 @@ const T = {
   permission: 90_000, // a human needs time to read the OS dialog
   vapid: 10_000,
   register: 10_000,
-  ready: 30_000, // cold PWA launch on a weak connection
+  /**
+   * How long we will wait for a NEWLY REGISTERED root worker to activate.
+   *
+   * Raised from 30s on 2026-08-29, measured. `/sw.js` is next-pwa's generated
+   * worker and its `install` precaches the whole manifest — 826 entries the day
+   * this was measured — atomically. On a fast desktop connection that took ~55
+   * SECONDS end to end. Under the old 30s ceiling the wait expired while the
+   * worker was still legitimately installing, `reg.active` was still null, and
+   * the player got "The notification service worker did not start" for a worker
+   * that was in fact starting fine.
+   *
+   * That path is the COMMON one for a Club Arena player, not an edge case: the
+   * hub registers this worker on its own pages, Club Arena is a Vite SPA that
+   * never loads them, so for somebody who lives in Club Arena the tap on Enable
+   * is what registers the root worker for the very first time — and it pays for
+   * the entire precache before it can subscribe.
+   *
+   * 90s is not a spinner budget anybody would choose; it is how long the work
+   * actually takes on a phone. The button reads "Enabling..." throughout, and
+   * the alternative is a wrong error message on a device that would have
+   * succeeded. If this is still not enough, the fix is to stop precaching 826
+   * files, not to shorten the wait.
+   */
+  ready: 90_000,
   getSubscription: 8_000,
   subscribe: 20_000,
   save: 10_000,
@@ -270,6 +293,15 @@ async function getPushRegistration(): Promise<ServiceWorkerRegistration> {
     await waitForActiveWorker(reg, T.ready);
     // An active worker is all subscribe() needs. Control is irrelevant.
     if (reg.active && reg.pushManager) return reg;
+
+    // Still installing when the wait ran out. This is NOT the same failure as
+    // "the worker died", and telling somebody to reload while a precache is
+    // half done throws that work away and starts it over. Say what is true.
+    if (reg.installing) {
+      throw new Error(
+        'Notifications are still setting up on this device. Give it a moment and tap Enable again.'
+      );
+    }
   }
 
   // Nothing usable yet. `ready` resolves against whichever registration

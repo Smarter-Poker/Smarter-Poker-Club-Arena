@@ -282,7 +282,7 @@ export default function TableBombSettingsPage() {
               value={draft.anteBB}
               onChange={(e) => set('anteBB', Math.max(0, Number(e.target.value) || 0))}
             />
-            <span className={styles.suffix}>x BB</span>
+            <span className={styles.suffix}>X BB</span>
           </label>
 
           <label className={styles.field}>

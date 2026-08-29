@@ -1472,11 +1472,38 @@
      their y.
 
      A stack therefore has to clear the seats on X instead, and that is the
-     constraint the felt board used to live under: a seat box at x 10.5% reaches
-     x 24.3%, so the row's left edge must stay at or right of it, which caps the
-     stack at 69.9% of the felt. 68% is that cap with margin, and it is exactly
-     what shipped before today — a run-it-twice stack is pixel-for-pixel what it
-     always was.
+     constraint the felt board used to live under: the cap is 69.9% of the felt
+     and 68% is that cap with margin.
+
+     ── 2026-08-29: THE CAP WAS RE-DERIVED. THE NUMBER SURVIVED. ─────────────
+     The sentence that used to stand here named "a seat box at x 10.5% reaches
+     x 24.3%" as the binding constraint, and that reads as stale the moment you
+     notice the 2026-08-26 pass moved the side rail OUT to x 8/92. It sent me
+     looking for 20% of free felt that is not there, so the derivation is
+     written out properly now.
+
+     THE BINDING MARKER IS NOT A SIDE SEAT AT ALL. Re-derived across every
+     marker the estate models — bet chips, dealer button and the 96px seat box,
+     on every ring at every table size — the tightest is the BOTTOM-CAP seat's
+     box at (10.5, 82.5), which is still at 10.5 (item 3 left the caps there on
+     purpose) and whose box reaches UP into the stack's band. Cap: 69.86%. The
+     second tightest is a side seat's BET CHIPS, which rest inboard of its box
+     (4-max at x 8, y 58 rests chips at x 20.60 against a box edge at 21.83) —
+     so even the seats that did move out are bound by their chips, not by the
+     plate you can see.
+
+     Both were verified the hard way: 76% was tried, and
+     tests/unit/mobileBoardAndActionBar.test.ts went red naming the chips. A
+     production probe that measured 88% of available room had missed them,
+     because there were no chips on the felt at the moment it measured and its
+     three-run stack was cloned rather than real. Do not widen this from a
+     screenshot or a static probe; the markers that bind are only on the felt
+     during the hand this stack exists for.
+
+     IF IT IS EVER REVISITED: measure a REAL run-it-twice showdown's stack
+     height with its true per-run headers. The model assumes a stack can reach
+     y 75, which is what drags the bottom-cap seat into the band; a genuinely
+     shorter stack releases it and roughly 77% becomes available.
 
      Specificity, not order, is what makes this win: this selector is (0,3,0)
      against `.table-surface .community-area`'s (0,2,0), so it holds even though

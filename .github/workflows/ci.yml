@@ -1217,14 +1217,18 @@ jobs:
         # long as nobody happened to open a tablet.
         # 2026-08-29: seven more self-contained specs joined, because the no-job
         # trap fired again at scale. An inventory found SIXTEEN spec files
-        # running in no job; the five that need no server, no login and no
-        # font metrics are now named here. (customization-controls and
-        # customization-studios are self-contained too but assert TEXT-metric
-        # overflow - tab rails scrolling, labels fitting - and Linux CI's
-        # fonts answer those differently than the macOS they were written on:
-        # studios went red on this runner on its first gated run. A gate spec
-        # must be deterministic across platforms; those two stay local until
-        # someone pins their fonts.) Three were already red - top-rail-seat pinned the
+        # running in no job; every self-contained one is now named here.
+        #
+        # customization-studios went red on this runner the first time it ran,
+        # on a TEXT-metric assertion: it required each tab's label to fit its
+        # column, the studio font is loaded from /fonts and a setContent
+        # harness has no base URL to resolve it, so macOS fell back to a narrow
+        # face and Linux to a wide one. The page ships correctly on both. The
+        # beat now asserts the ROOM the grid guarantees (minmax(124px, 1fr))
+        # rather than the rendering of a font that never loaded, so it means
+        # the same thing on every machine. A gate spec must be deterministic
+        # across platforms; the fix is to stop measuring the runner, not to
+        # exile the spec. Three were already red - top-rail-seat pinned the
         # px-ladder avatar #1650 retired, pot-above-chips froze a pot position
         # two deliberate redesigns old, raise-panel-covers-chat lost the
         # stylesheet its anchor moved into - and every one had been failing
@@ -1233,7 +1237,7 @@ jobs:
         # mobile-chrome-occlusion, mobile-input-zoom, mobile-tap-targets,
         # club-lobby, tournament-buy-in-dialog) need a login or a deployed URL
         # and belong to the post-deploy tier, not this gate.
-        run: npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts --reporter=line --retries=1
+        run: npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/customization-studios.spec.ts --reporter=line --retries=1
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 5: AUTO-REVERT — DISABLED (was causing revert loops during migration)

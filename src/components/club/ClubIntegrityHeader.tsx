@@ -41,7 +41,7 @@ export default function ClubIntegrityHeader({
         <div className={styles.copy}>
           <div className={styles.signal} aria-hidden="true">
             <span />
-            Integrity circuit online
+            Integrity Circuit Online
           </div>
           <p className={styles.eyebrow}>{eyebrow}</p>
           <h1>{title}</h1>

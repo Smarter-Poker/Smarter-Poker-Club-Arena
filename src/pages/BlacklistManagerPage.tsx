@@ -128,7 +128,7 @@ export default function BlacklistManagerPage() {
         ]}
         action={
           <button className={styles.addButton} type="button" onClick={() => setShowAddForm(true)}>
-            Add exclusion
+            Add Exclusion
           </button>
         }
       />
@@ -136,10 +136,10 @@ export default function BlacklistManagerPage() {
       <main className={styles.workspace}>
         <div className={styles.workspaceHeading}>
           <div>
-            <p className={styles.kicker}>Controlled access ledger</p>
-            <h2>Excluded players</h2>
+            <p className={styles.kicker}>Controlled Access Ledger</p>
+            <h2>Excluded Players</h2>
           </div>
-          {clubId && <Link to={`/clubs/${clubId}/operations`}>Return to operations</Link>}
+          {clubId && <Link to={`/clubs/${clubId}/operations`}>Return To Operations</Link>}
         </div>
 
         {error && (
@@ -166,14 +166,14 @@ export default function BlacklistManagerPage() {
           <form className={styles.formPanel} onSubmit={handleAdd}>
             <div className={styles.panelHeader}>
               <div>
-                <p className={styles.kicker}>New control record</p>
-                <h2>Exclude a player</h2>
+                <p className={styles.kicker}>New Control Record</p>
+                <h2>Exclude A Player</h2>
               </div>
-              <span>Reason required</span>
+              <span>Reason Required</span>
             </div>
             <div className={styles.formGrid}>
               <div className={styles.field}>
-                <label htmlFor="blacklist-user-id">Player user ID</label>
+                <label htmlFor="blacklist-user-id">Player User ID</label>
                 <input
                   id="blacklist-user-id"
                   autoComplete="off"
@@ -194,7 +194,7 @@ export default function BlacklistManagerPage() {
                 />
               </div>
               <div className={styles.field}>
-                <label htmlFor="blacklist-expiry">Expiry date (optional)</label>
+                <label htmlFor="blacklist-expiry">Expiry Date (Optional)</label>
                 <input
                   id="blacklist-expiry"
                   type="date"
@@ -222,20 +222,20 @@ export default function BlacklistManagerPage() {
           <section className={styles.ledger} aria-labelledby="blacklist-ledger-title">
             <div className={styles.panelHeader}>
               <div>
-                <p className={styles.kicker}>Live club control</p>
-                <h2 id="blacklist-ledger-title">Exclusion ledger</h2>
+                <p className={styles.kicker}>Live Club Control</p>
+                <h2 id="blacklist-ledger-title">Exclusion Ledger</h2>
               </div>
-              <span>{entries.length} total</span>
+              <span>{entries.length} Total</span>
             </div>
 
             {loading ? (
               <div className={styles.state} aria-live="polite">
-                Loading exclusion records…
+                Loading Exclusion Records…
               </div>
             ) : entries.length === 0 ? (
               <div className={styles.state}>
-                <strong>No club exclusions</strong>
-                <p>Players with an active or historical exclusion will appear in this ledger.</p>
+                <strong>No Club Exclusions</strong>
+                <p>Players With An Active Or Historical Exclusion Will Appear In This Ledger.</p>
               </div>
             ) : (
               <div
@@ -244,7 +244,7 @@ export default function BlacklistManagerPage() {
                 aria-label="Scrollable exclusion ledger"
               >
                 <table>
-                  <caption className={styles.srOnly}>Club player exclusion records</caption>
+                  <caption className={styles.srOnly}>Club Player Exclusion Records</caption>
                   <thead>
                     <tr>
                       <th scope="col">Player ID</th>
@@ -299,7 +299,7 @@ export default function BlacklistManagerPage() {
                                 type="button"
                                 onClick={() => setConfirmingRemoval(entry.id)}
                               >
-                                Remove access control
+                                Remove Access Control
                               </button>
                             )}
                           </td>

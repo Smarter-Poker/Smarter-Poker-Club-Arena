@@ -302,7 +302,7 @@ export default function DisputeManagementPage() {
       <div className="dispute-management-page">
         <div className="dispute-header">
           <div>
-            <p className="dispute-kicker">Live case docket</p>
+            <p className="dispute-kicker">Live Case Docket</p>
             <h2>{clubId ? 'Club transaction disputes' : 'Account disputes'}</h2>
           </div>
           {statusCounts.open > 0 && (
@@ -333,7 +333,7 @@ export default function DisputeManagementPage() {
 
         {/* Search */}
         <div className="dispute-search">
-          <label htmlFor="dispute-search">Search cases</label>
+          <label htmlFor="dispute-search">Search Cases</label>
           <input
             id="dispute-search"
             type="text"
@@ -352,20 +352,20 @@ export default function DisputeManagementPage() {
           {loading ? (
             <div className="loading-state">
               <PageSkeleton variant="list" />
-              <p>Loading disputes…</p>
+              <p>Loading Disputes…</p>
             </div>
           ) : loadError ? (
             <div className="dispute-state dispute-error" role="alert">
-              <strong>Dispute docket unavailable</strong>
-              <p>The live case feed could not be loaded. No dispute records were changed.</p>
+              <strong>Dispute Docket Unavailable</strong>
+              <p>The Live Case Feed Could Not Be Loaded. No Dispute Records Were Changed.</p>
               <button type="button" onClick={() => void loadDisputes()}>
-                Retry case feed
+                Retry Case Feed
               </button>
             </div>
           ) : filtered.length === 0 ? (
             <div className="empty-state">
               <span className="empty-signal" aria-hidden="true" />
-              <strong>Docket clear</strong>
+              <strong>Docket Clear</strong>
               <p>
                 {activeTab === 'all'
                   ? 'No disputes have been filed.'

@@ -220,8 +220,8 @@ export default function ReportReviewPage() {
       <main className="report-workspace">
         <div className="case-toolbar">
           <div>
-            <p className="case-kicker">Moderation queue</p>
-            <h2>Conduct reports</h2>
+            <p className="case-kicker">Moderation Queue</p>
+            <h2>Conduct Reports</h2>
           </div>
           <div className="filter-tabs" role="tablist" aria-label="Filter reports by status">
             {REPORT_FILTERS.map((item) => (
@@ -248,19 +248,19 @@ export default function ReportReviewPage() {
             <PageSkeleton variant="list" />
           ) : loadError ? (
             <div className="report-state report-error" role="alert">
-              <strong>Report queue unavailable</strong>
+              <strong>Report Queue Unavailable</strong>
               <p>
-                The live moderation feed could not be loaded. Existing case data was not changed.
+                The Live Moderation Feed Could Not Be Loaded. Existing Case Data Was Not Changed.
               </p>
               <button type="button" onClick={() => void loadReports()}>
-                Retry report feed
+                Retry Report Feed
               </button>
             </div>
           ) : reports.length === 0 ? (
             <div className="report-state">
               <span className="state-signal" aria-hidden="true" />
-              <strong>Queue clear</strong>
-              <p>No {filter === 'pending' ? 'pending ' : ''}reports match this view.</p>
+              <strong>Queue Clear</strong>
+              <p>No {filter === 'pending' ? 'pending ' : ''}reports Match This View.</p>
             </div>
           ) : (
             <div className="reports-list">
@@ -278,7 +278,7 @@ export default function ReportReviewPage() {
                   </span>
                   <span className="report-players">
                     <span>
-                      <strong>Filed by</strong>
+                      <strong>Filed By</strong>
                       {report.reporter_username || 'Unknown player'}
                     </span>
                     <span>
@@ -289,7 +289,7 @@ export default function ReportReviewPage() {
                   <span className="report-date">
                     Opened {new Date(report.created_at).toLocaleDateString()}
                   </span>
-                  <span className="inspect-label">Inspect case</span>
+                  <span className="inspect-label">Inspect Case</span>
                 </button>
               ))}
             </div>
@@ -312,8 +312,8 @@ export default function ReportReviewPage() {
           >
             <div className="modal-header">
               <div>
-                <p className="case-kicker">Conduct case</p>
-                <h2 id="report-dialog-title">Report details</h2>
+                <p className="case-kicker">Conduct Case</p>
+                <h2 id="report-dialog-title">Report Details</h2>
               </div>
               <button
                 ref={closeButtonRef}
@@ -327,11 +327,11 @@ export default function ReportReviewPage() {
             <div className="modal-body">
               <dl className="case-details">
                 <div>
-                  <dt>Reported player</dt>
+                  <dt>Reported Player</dt>
                   <dd>{selectedReport.reported_username || 'Unknown player'}</dd>
                 </div>
                 <div>
-                  <dt>Reported by</dt>
+                  <dt>Reported By</dt>
                   <dd>{selectedReport.reporter_username || 'Unknown player'}</dd>
                 </div>
                 <div>
@@ -346,7 +346,7 @@ export default function ReportReviewPage() {
               {selectedReport.status === 'pending' && (
                 <>
                   <div className="notes-field">
-                    <label htmlFor="report-admin-notes">Decision notes</label>
+                    <label htmlFor="report-admin-notes">Decision Notes</label>
                     <textarea
                       id="report-admin-notes"
                       value={adminNotes}
@@ -362,7 +362,7 @@ export default function ReportReviewPage() {
                       onClick={() => handleAction(selectedReport.id, 'actioned')}
                       disabled={processing}
                     >
-                      Take action
+                      Take Action
                     </button>
                     <button
                       className="btn btn-secondary"
@@ -370,7 +370,7 @@ export default function ReportReviewPage() {
                       onClick={() => handleAction(selectedReport.id, 'dismissed')}
                       disabled={processing}
                     >
-                      Dismiss report
+                      Dismiss Report
                     </button>
                   </div>
                 </>

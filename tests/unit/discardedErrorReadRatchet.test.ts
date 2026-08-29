@@ -135,7 +135,11 @@ const BASELINE = new Map<string, number>([
   ['src/components/agent/AgentAnalyticsDashboard.tsx', 2],
   ['src/components/admin/ArenaLedger.tsx', 2],
   ['src/utils/unionScope.ts', 1],
-  ['src/services/PushNotificationService.ts', 1],
+  // 1 -> 0 on 2026-08-29. The discarded read was in filterByPreferences(),
+  // which ran a preference query to decide who to send nothing to — the whole
+  // send path has delivered nothing since OneSignal was retired. Query and
+  // path both gone; sendToUsers() now reports every dropped notification.
+  ['src/services/PushNotificationService.ts', 0],
   ['src/services/ProfileService.ts', 1],
   ['src/services/PermissionService.ts', 1],
   ['src/services/HandHistoryService.ts', 1],

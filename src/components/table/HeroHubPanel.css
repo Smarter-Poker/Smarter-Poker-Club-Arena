@@ -171,7 +171,7 @@
   margin-left: auto;
   font-size: 0.9rem;
   font-weight: 800;
-  color: #4ade80;
+  color: #3fb950;
   font-variant-numeric: tabular-nums;
 }
 
@@ -217,11 +217,11 @@
 }
 
 .hero-hub__figure.is-up .hero-hub__figure-value {
-  color: #4ade80;
+  color: #3fb950;
 }
 
 .hero-hub__figure.is-down .hero-hub__figure-value {
-  color: #f87171;
+  color: var(--color-danger, #ef4444);
 }
 
 /* TWO CLOSE BUTTONS THAT DO THE SAME THING READ AS A BUG. The embedded

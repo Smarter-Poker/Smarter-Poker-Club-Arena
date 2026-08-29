@@ -598,7 +598,9 @@ export default function DetailOverviewTab({
       .sort((a, b) => (a.position || 99) - (b.position || 99))
       .map((player) => {
         const row = structure.find((p) => p.place === player.position);
-        return { player, prizeValue: row ? placePrize(pool, row.percentage) : 0 };
+        // The whole structure, not one percentage: the last paid place absorbs
+        // the residual, so a place cannot be priced without the others.
+        return { player, prizeValue: row ? placePrize(pool, structure, row.place) : 0 };
       });
   }, [isCompleted, entries, tournament?.payout_structure, prize.effective]);
 

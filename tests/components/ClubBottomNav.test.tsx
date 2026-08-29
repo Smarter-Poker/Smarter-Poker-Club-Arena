@@ -18,7 +18,7 @@
  *     REMOVED, a false positive silently deletes a destination - and the old
  *     `path.includes('/dashboard')` matched /agent-dashboard, /union-dashboard
  *     and /settlement-dashboard, while `includes('/admin')` matched the
- *     platform console and deleted Profile there.
+ *     platform console and deleted Settings there.
  *
  * Label text is matched case-insensitively on purpose: the house Title Case
  * rule rewrites forward-facing copy, and pinning casing here would fail on a
@@ -44,8 +44,18 @@ vi.mock('../../src/hooks/useAuthUser', () => ({
  */
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    from: () => ({
-      select: () => ({ eq: () => ({ in: async () => ({ data: [], error: null }) }) }),
+    from: (table: string) => ({
+      select: () => {
+        const chain: any = {
+          eq: () => chain,
+          in: async () => ({ data: [], error: null }),
+          maybeSingle: async () => ({
+            data: { role: table === 'club_members' ? 'owner' : 'user' },
+            error: null,
+          }),
+        };
+        return chain;
+      },
     }),
   },
 }));
@@ -93,7 +103,7 @@ const labels = (): string[] =>
 const hrefs = (): string[] =>
   screen.queryAllByRole('link').map((a) => a.getAttribute('href') || '');
 
-const ALL = ['profile', 'players', 'cashier', 'market', 'data', 'stats'];
+const ALL = ['settings', 'players', 'cashier', 'market', 'data', 'stats'];
 
 describe('activeTabForPath - segments, not substrings', () => {
   it.each([
@@ -138,7 +148,7 @@ describe('ClubBottomNav - the current page is not offered', () => {
   });
 
   it.each([
-    [`/clubs/${CLUB}/settings`, 'profile'],
+    [`/clubs/${CLUB}/settings`, 'settings'],
     [`/clubs/${CLUB}/members`, 'players'],
     [`/clubs/${CLUB}/cashier`, 'cashier'],
     ['/marketplace', 'market'],
@@ -173,7 +183,7 @@ describe('ClubBottomNav - top-level routes still get a footer', () => {
     await renderAt('/stats');
     expect(hrefs()).toContain(`/clubs/${CLUB}/settings`);
     expect(hrefs()).toContain(`/clubs/${CLUB}/cashier`);
-    expect(hrefs()).toContain(`/clubs/${CLUB}/dashboard`);
+    expect(hrefs()).toContain(`/clubs/${CLUB}/data`);
     // The page you are on is never one of the offered destinations.
     expect(hrefs()).not.toContain('/stats');
   });

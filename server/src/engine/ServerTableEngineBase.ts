@@ -24,7 +24,6 @@ import { ShadowRecorder } from './eventlog/ShadowRecorder.js';
 import type { BlindKind } from './eventlog/events.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import type { Span as EngineSpan } from '../observability/Tracing.js';
-import { RakebackEngine } from './RakebackEngine.js';
 import { ChipRaceEngine } from './ChipRaceEngine.js';
 import { TableBalancer } from './TableBalancer.js';
 import { TableBreakEngine } from './TableBreakEngine.js';
@@ -950,7 +949,6 @@ export abstract class ServerTableEngineBase {
   protected straddleEngine: StraddleEngine;
   protected runItTwiceEngine: RunItTwiceEngine;
   protected insuranceEngine: InsuranceEngine;
-  protected rakebackEngine: RakebackEngine;
 
   // ── Step 7: Ported Tournament & Extras Modules ──
   protected chipRaceEngine: ChipRaceEngine;
@@ -1149,29 +1147,17 @@ export abstract class ServerTableEngineBase {
       }
     });
     /**
-     * Dan 2026-08-23: "WHY WOULD YOU LEAVE THIS INSTEAD OF FIXING IT?!"
-     *
-     * These callbacks were console.log and nothing else, so the events never
-     * left the process. TablePage has always subscribed to RAKEBACK_DISTRIBUTED
-     * and TABLE_BALANCE_EXECUTED on MasterBus and its handlers were already
-     * written - "Received +$N rakeback!" and "You were moved to balance the
-     * tables." - they simply could not run. Both now go out on the hub, which
-     * is the same path insurance and RIT already use.
+     * WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): RakebackEngine is DELETED,
+     * not just disabled. It was the FIX 144 equal-share accumulator — inert
+     * since RAKE-AUDIT 2026-07-24 (its in-memory totals were never flushed,
+     * its tiers disagreed with the authoritative RakebackSettlerService), and
+     * equal-share attribution itself is retired. Durable rakeback runs
+     * exclusively through rake_records -> RakebackSettlerService, which now
+     * allocates via services/rakeAllocation.ts (weighted contributed). The
+     * TABLE_BALANCE_EXECUTED hub bridge below (Dan 2026-08-23) is untouched;
+     * the client's `rakeback_distributed` listener stays as a no-op — this
+     * engine never emitted it while disabled either.
      */
-    this.rakebackEngine = new RakebackEngine(supabase, (event) => {
-      console.log(`[ServerTableEngine:${tableId}] Rakeback: ${event.type}`);
-      if (event.type === 'RAKEBACK_DISTRIBUTED') {
-        try {
-          this.hub?.emitEvent(this.tableId, {
-            ...(event as unknown as Record<string, unknown>),
-            type: 'rakeback_distributed',
-            table_id: this.tableId,
-          });
-        } catch {
-          /* broadcast failure is non-fatal */
-        }
-      }
-    });
 
     // Step 7: Initialize tournament & extras modules
     this.chipRaceEngine = new ChipRaceEngine((event) => {
@@ -1576,26 +1562,10 @@ export abstract class ServerTableEngineBase {
         });
       }
 
-      // ⚠ D22 (2026-08-20): this object is INERT. It is constructed and
-      // configured per table, but recordHandRake only accumulates into an
-      // in-memory total that nothing ever flushes, and its rakeback tiers
-      // DISAGREE with the live authoritative tiers used by
-      // RakebackSettlerService — which reads rake_records and is the only thing
-      // that actually pays rakeback. Do not re-enable this by flipping a flag:
-      // its numbers are not the platform's numbers.
-      //
-      // FIX 104 → RAKE-AUDIT 2026-07-24: RakebackEngine is DISABLED. Its
-      // in-memory accumulator was never flushed anywhere (settleRakeback has
-      // zero callers), its tier table conflicts with the authoritative
-      // RakebackSettlerService tiers, and with enabled:true it grew an
-      // unbounded per-player Map on every raked hand — a slow memory leak that
-      // paid out nothing. Durable rakeback runs exclusively through
-      // rake_records → RakebackSettlerService (30-min daemon + weekly close).
-      if (this.tableInfo.club_id) {
-        this.rakebackEngine.configure(this.tableInfo.club_id, {
-          enabled: false,
-        });
-      }
+      // RakebackEngine (FIX 144 equal-share, inert since RAKE-AUDIT
+      // 2026-07-24) was DELETED on 2026-08-29 under the weighted contributed
+      // rake law. Rakeback runs exclusively through rake_records ->
+      // RakebackSettlerService, allocated by services/rakeAllocation.ts.
 
       // ── Dan 2026-08-16 — SEED handCount FROM PERSISTED HISTORY ──
       //
@@ -1783,7 +1753,6 @@ export abstract class ServerTableEngineBase {
       this.straddleEngine.disposeAll();
       this.runItTwiceEngine.disposeAll();
       this.insuranceEngine.disposeAll();
-      this.rakebackEngine.disposeAll();
 
       // Step 7: Dispose tournament & extras modules
       this.engineTelemetry.dispose();

@@ -43,12 +43,32 @@
      component from contributing another one. */
   transform: none;
   contain: none;
-  background: #000000;
-  border-top: 1px solid rgba(0, 180, 255, 0.15);
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+  background: linear-gradient(180deg, rgba(34, 44, 54, 0.5) 0, rgba(7, 11, 15, 0.98) 5px), #05080b;
+  border-top: 1px solid rgba(191, 208, 222, 0.38);
+  box-shadow:
+    0 -1px 0 rgba(0, 0, 0, 0.9),
+    0 -12px 30px rgba(0, 0, 0, 0.66),
+    inset 0 1px rgba(255, 255, 255, 0.06);
   /* No backdrop-filter. The background is fully opaque, so there is nothing
      behind this bar to blur - the only effect was a compositing layer, on a
      position:fixed element that is on screen for the whole session. */
+}
+
+.bottomNav::before {
+  content: '';
+  position: absolute;
+  inset: -1px 12% auto;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(117, 190, 255, 0.28) 22%,
+    #75beff 50%,
+    rgba(117, 190, 255, 0.28) 78%,
+    transparent
+  );
+  box-shadow: 0 0 12px rgba(46, 155, 255, 0.38);
 }
 
 /* Navigation items container. A <ul> since 2026-08-25 — a bar of links is a
@@ -59,8 +79,9 @@
   display: flex;
   align-items: stretch;
   justify-content: space-around;
+  width: min(100%, 880px);
   padding: 8px 0;
-  margin: 0;
+  margin: 0 auto;
   list-style: none;
 }
 
@@ -93,9 +114,13 @@
   min-height: 44px;
   padding: 8px 4px;
   text-decoration: none;
-  color: rgba(255, 255, 255, 0.5);
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  border-radius: 8px;
+  color: #8192a2;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease;
 }
 
 /* Keyboard focus is now the ONLY interaction state this bar draws: hover was
@@ -104,25 +129,30 @@
    would have told them (the active one) is deliberately not rendered -- so
    nothing here changes except that it no longer has a sibling. */
 .navItem:focus-visible {
-  outline: 2px solid #00d4ff;
+  outline: 2px solid #75beff;
   outline-offset: -2px;
-  color: #00d4ff;
-  background: rgba(0, 180, 255, 0.12);
+  color: #eef7ff;
+  background: rgba(31, 87, 132, 0.2);
 }
 
 /* Icon styling */
 .icon {
   width: 24px;
   height: 24px;
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  color: #9eb0bf;
+  filter: drop-shadow(0 1px 0 #000);
+  transition:
+    color 160ms ease,
+    filter 160ms ease;
 }
 
 /* Label styling */
 .label {
   font-size: 10px;
-  font-weight: 600;
+  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.08em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

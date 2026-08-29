@@ -19,6 +19,7 @@ import { fetchGameCreationAccess } from './GameAccessService';
 import { parseBlindStructure, parsePayoutStructure } from '../utils/parseBlindStructure';
 import type { Tournament, TournamentPlayer } from '../types/database.types';
 import { reportError } from '../utils/errorReporter';
+import { computePlacePrize } from '../lib/payoutMath';
 
 // AUDIT M19: fn_unregister_from_tournament returns a `reason` for ordinary
 // refusals rather than raising, so a player is told why - "you are already
@@ -1474,12 +1475,11 @@ class TournamentService {
    * Get payout amount for a position
    */
   calculatePayout(prizePool: number, position: number, structure: PayoutStructure[]): number {
-    const entry = structure.find((p) => p.place === position);
-    if (!entry) return 0;
-    // Exact precision: multiply ×100, truncate, back to chips
-    // Formula: trunc(pool * percentage / 100 * 100) / 100
-    // Simplified: trunc(pool * percentage) / 100
-    return Math.trunc(prizePool * entry.percentage) / 100;
+    // 2026-08-29: was `Math.trunc(prizePool * entry.percentage) / 100`, which
+    // truncated where the engine rounds and had no residual rule, so its
+    // places did not sum to the pool. One rule now, shared with the engine
+    // byte for byte -- see src/lib/payoutMath.ts.
+    return computePlacePrize(prizePool, structure, position);
   }
 
   /**

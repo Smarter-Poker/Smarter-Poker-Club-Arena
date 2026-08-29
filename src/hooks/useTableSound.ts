@@ -15,7 +15,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { soundService } from '../services/SoundService';
 import { isSoundAllowed } from '../utils/soundGate';
-import { setVibrationAllowed } from '../utils/vibrationGate';
+import { setVibrationAllowed, isVibrationPreferred } from '../utils/vibrationGate';
 
 export interface UseTableSoundReturn {
   /** Whether sound effects are active. Read this for UI toggle state. */
@@ -41,20 +41,18 @@ export interface UseTableSoundReturn {
 }
 
 const STORAGE_SOUND = 'ca_sound_enabled';
-const STORAGE_VIBRATION = 'ca_vibration_enabled';
-/** vibrationGate's OTHER key — Settings / HamburgerMenu. Both gate this switch. */
-const SETTINGS_VIBRATION = 'vibrationsEnabled';
+/* `STORAGE_VIBRATION` is gone with the last hand-rolled read of it: the haptic
+   switch both reads and writes through `utils/vibrationGate`, which owns that
+   key and its sibling. */
 const STORAGE_AUTO_REBUY = 'ca_auto_rebuy';
 
-function readBool(key: string, defaultVal: boolean): boolean {
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw === null) return defaultVal;
-    return raw !== 'false';
-  } catch {
-    return defaultVal;
-  }
-}
+/* `readBool` and `SETTINGS_VIBRATION` lived here until 2026-08-29. Both were
+   this file's own copy of what `utils/soundGate` and `utils/vibrationGate`
+   already decide, and the copy is what let the haptic switch fall behind the
+   sound one. Both switches read their gate now.
+
+   `readBool` was also fail-OPEN — `raw !== 'false'` treats '0', 'off' and ''
+   as ON — against the fail-CLOSED convention both gate files establish. */
 
 export function useTableSound(): UseTableSoundReturn {
   /**
@@ -82,12 +80,17 @@ export function useTableSound(): UseTableSoundReturn {
    * Vibration gets the same treatment for the same reason.
    */
   const [isSoundEnabled, setIsSoundEnabledRaw] = useState<boolean>(() => isSoundAllowed());
-  const [isVibrationEnabled, setIsVibrationEnabledRaw] = useState<boolean>(
-    () =>
-      /* `isVibrationAllowed()` also returns false when the DEVICE cannot vibrate,
-       which is not a preference — a desktop player must not see their haptics
-       switch stuck off. Read the preference only. */
-      readBool(STORAGE_VIBRATION, true) && readBool(SETTINGS_VIBRATION, true)
+  /* `isVibrationPreferred()`, not `isVibrationAllowed()`: the latter also
+     returns false when the DEVICE cannot vibrate, which is not a preference —
+     a desktop player must not see their haptics switch stuck off.
+
+     This was two hand-rolled `readBool` calls here, which made it a THIRD copy
+     of the gate's own two-key rule. It lives in the gate now, next to the rule
+     it implements, so a change to that rule cannot leave this switch behind
+     — which is exactly how the haptic side got left behind by the 2026-08-27
+     sound fix in the first place. */
+  const [isVibrationEnabled, setIsVibrationEnabledRaw] = useState<boolean>(() =>
+    isVibrationPreferred()
   );
   const [isAutoRebuyEnabled, setIsAutoRebuyEnabledRaw] = useState<boolean>(() => {
     try {

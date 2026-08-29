@@ -1192,7 +1192,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
      * exactly when a seat would otherwise be held forever.
      */
     if (orbitComplete && !this.isTournamentTable()) {
-      this.disconnectEngine.tickSitOutsAndCollectEvictions(
+      /* THE RETURN IS DELIBERATELY DISCARDED. This call's job is to ADVANCE the
+         orbit counter, not to act on it: a hand is being dealt right now, and
+         standing a player up between the button moving and the cards going out
+         is the mid-hand removal that `evictExpiredSitOuts` and `leaveTable`
+         both refuse. Whoever this increment just pushed over the limit is
+         collected on the next pass of `evictExpiredSitOuts({ countOrbit:
+         false })` at the top of the loop, which runs between hands and takes
+         the seat lock. Said out loud because a bare discarded `string[]` of
+         evictable players reads like a dropped result. */
+      void this.disconnectEngine.tickSitOutsAndCollectEvictions(
         this.tableId,
         this.seatedPlayers.map((p) => p.user_id),
         { countOrbit: true }

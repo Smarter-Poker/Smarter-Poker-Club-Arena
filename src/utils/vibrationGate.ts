@@ -48,6 +48,27 @@ export function isVibrationAllowed(): boolean {
   }
 }
 
+/**
+ * The PREFERENCE only, ignoring whether this device can vibrate at all.
+ *
+ * `isVibrationAllowed` answers "should we buzz right now", so it returns false
+ * on a desktop with no vibrate API — correct for firing a buzz, wrong for
+ * painting a switch. A desktop player whose haptics control reads permanently
+ * OFF because their hardware has no motor is being told they turned something
+ * off that they did not.
+ *
+ * Same two keys, same fail-closed rule: either being off means off.
+ */
+export function isVibrationPreferred(): boolean {
+  try {
+    if (localStorage.getItem(IN_TABLE_KEY) === 'false') return false;
+    if (localStorage.getItem(SETTINGS_KEY) === 'false') return false;
+    return true;
+  } catch {
+    return true; // no readable preference is not a preference to be silent
+  }
+}
+
 export function setVibrationAllowed(allowed: boolean): void {
   const val = allowed ? 'true' : 'false';
   /* The one function in this file, and in soundGate, that was not guarded.

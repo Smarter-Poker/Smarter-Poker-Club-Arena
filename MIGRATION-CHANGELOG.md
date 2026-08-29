@@ -2,6 +2,54 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Codex session 2026-08-29 — CLUB ARENA IA PHASE 3: COMMAND RAILS, UNION RECOVERY, INVITE CONTEXT
+
+The exhaustive hamburger cleanup now extends beyond the drawer itself into the
+routes it launches. This pass did not replace a query, mutation, Supabase
+subscription, form handler, checkout path, or permission guard. It repaired the
+orientation and recovery layers around those systems:
+
+1. **Contextual route-family command rails.** Play records, community, rewards,
+   player identity, support/legal, and union workspaces now expose their sibling
+   destinations directly below the global header. Current-page state is
+   semantic, targets are 44px, the mobile rail scrolls internally, and owner-only
+   union finance links are not advertised from the member-accessible games page.
+2. **One club capability vocabulary.** The hamburger and fixed club rail now
+   share `getClubNavigationCapabilities`. The bottom rail no longer calls club
+   Settings “Profile”, no longer routes Data through the legacy dashboard, and
+   no longer advertises members/data/settings to roles that cannot use them.
+   Role changes refresh from the existing `CLUB_UPDATED` and
+   `MEMBER_ROLE_CHANGED` bus events; route and API guards remain authoritative.
+3. **Invite context repaired.** Bare `/invite` now resolves the last eligible
+   club (or the first active membership) and replaces the URL with
+   `/invite/:clubId`. No eligible club produces an explicit club-context state
+   instead of the old invalid-invite page.
+4. **Union routes recovered.** The directory is a keyboard-native linked-card
+   list with proper progress semantics and explicit loading/empty/error states.
+   Union detail has retryable load failure and not-found states. The dashboard's
+   Games action now uses `/unions/:unionId/games`, eliminating the context-free
+   `/union-games` dead end.
+5. **Designed route failure.** The catch-all now uses the shared
+   #SmarterCasinoRealism state system, shows the unresolved path, and offers
+   Arena/back recovery rather than an inline generic SaaS 404.
+6. **Accessibility regression closed.** The root skip link's rule had lived in
+   an unimported legacy stylesheet, leaving it visible at the top of every page.
+   It now lives in the loaded Club Engine sheet, stays fully off-canvas at rest,
+   appears as a 44px machined control on keyboard focus, and lands focus on the
+   routed main region.
+7. **Build hygiene recovered.** A Promo Vault numeric selector is declared; the
+   lobby player-state regression test follows the shared classifier after its
+   refactor; malformed CSS fragments in the lobby, table, and shared button
+   sheet were repaired or removed. Vite now reports zero CSS syntax warnings.
+
+Verification: 562 Vitest files / 8,608 tests green; targeted IA, accessibility,
+club-rail, lobby, and CSS-integrity set 119/119; TypeScript clean; targeted ESLint
+0 errors; responsive browser pass at 1200, 600 (200%-zoom equivalent), 390, and
+320 CSS pixels with no document overflow; production build and full media
+pipeline completed. Shipping provenance correctly refused to certify the build
+because this shared working branch is 29 commits behind `origin/main` and dirty.
+No deployment was attempted.
+
 ## Cowork session 2026-08-28 — MULTI-BOARD EQUITY, PLO8 HI-LO, LEDGER SCOPE
 
 Dan asked for the all-in equity to appear only AFTER a street lands, and for a

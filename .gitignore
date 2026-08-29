@@ -164,3 +164,7 @@ _to_delete/
 # untracked makes the shared clone read dirty forever, which is how a clone
 # ends up stranded on a rescue branch with real work mixed into the noise.
 .agent-trees/
+
+# Python bytecode from dev scripts
+__pycache__/
+*.pyc

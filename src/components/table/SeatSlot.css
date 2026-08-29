@@ -1546,6 +1546,18 @@
   z-index: 3;
 }
 
+/* Under a minute left on a cash seat. The badge now carries the clock (see
+   SitOutBadge), so it also has to be able to say when that clock is nearly
+   out — the difference between a seat worth waiting for and one that is not.
+   A border and a red, not a pulse: the previous declaration of this badge
+   animated `opacity` forever with no `data-motion="keep"`, which reducedMotion
+   collapses to a 1ms alternate, i.e. a flicker. */
+.seat__sitout-badge--urgent {
+  background: rgba(80, 12, 12, 0.86);
+  border-color: rgba(248, 81, 73, 0.65);
+  color: #ffb3ae;
+}
+
 /* ─── ALL IN ──────────────────────────────────────────────────────────── */
 
 .seat--all_in .seat__avatar {
@@ -4130,5 +4142,11 @@
    this block: `animation: pulseSitOut 2s infinite alternate` on an element
    carrying no `data-motion="keep"`, which `reducedMotion.css` collapses to 1ms —
    an infinite 1ms alternate between two opacities is a flicker, not a
-   reduced-motion fallback. A player sitting out is told so by the badge and, on
-   cash, by the countdown in it; it does not also need to blink. */
+   reduced-motion fallback.
+
+   The pulse existed to say "this seat needs attention". That job is now done by
+   information rather than by motion: the badge carries the countdown on cash
+   tables and turns red in the last minute (`--urgent`, above; see
+   src/components/table/SitOutBadge.tsx). When this comment was first written on
+   2026-08-29 it claimed that countdown already existed and it did not — the
+   badge was a hardcoded string for another few hours. It exists now. */

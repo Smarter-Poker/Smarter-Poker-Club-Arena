@@ -916,10 +916,11 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
          */
         onLeaveTable={onConfirmLeaveTable}
         sitOutSince={sitOutSince}
-        /* The countdown applies to CASH only. Dan 2026-08-28: a tournament,
-           spin or heads-up player may sit out "as long as they want" and is
+        /* The countdown applies to CASH only. Dan 2026-08-28: a tournament
+           player (a spin is one) may sit out "as long as they want" and is
            blinded off instead, so they must see no clock rather than one that
-           never fires. */
+           never fires. Heads-up cash is NOT exempt on either side of the wire —
+           see src/lib/sitOutDeadline.ts. */
         isTournament={isTournament}
         tableName={tableName}
       />

@@ -9072,6 +9072,15 @@
       "left_at",
       "kick_reason"
     ],
+    "table_settings_changes": [
+      "id",
+      "table_id",
+      "club_id",
+      "changed_by",
+      "changed_at",
+      "before",
+      "after"
+    ],
     "table_templates": [
       "id",
       "club_id",
@@ -9120,7 +9129,6 @@
       "game_variant",
       "enable_straddle",
       "run_it_twice",
-      "bomb_pots",
       "auto_muck",
       "ante",
       "allow_rabbit_hunt",

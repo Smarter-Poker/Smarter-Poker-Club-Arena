@@ -2640,6 +2640,13 @@
       "table_id",
       "player_id"
     ],
+    "table_settings_changes": [
+      "table_id",
+      "club_id",
+      "changed_by",
+      "before",
+      "after"
+    ],
     "table_templates": [
       "name",
       "config"

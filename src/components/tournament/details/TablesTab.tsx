@@ -59,7 +59,8 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../common/Toast';
 import { openTableAsObserver } from '../../../utils/observeTable';
 import { chips, chipsCompact, isPlayerLive, type TournamentTabProps } from './types';
-import type { TournamentEntry, TournamentTable } from './types';
+/* `TournamentEntry` was imported here too and referenced nowhere in the file. */
+import type { TournamentTable } from './types';
 import '../../../styles/tournament-lobby-3d.css';
 import './TablesTab.css';
 
@@ -145,7 +146,7 @@ interface TableRowProps {
 }
 
 const TableRow = React.memo(function TableRow({ line, scaleMax, fieldAvg, onOpen }: TableRowProps) {
-  const { table, seated, minStack, avgStack, maxStack, hasStacks } = line;
+  const { table, seated, minStack, avgStack, maxStack, hasStacks, seatCountIsFallback } = line;
   const badge = statusLabel(table);
 
   // The spread is drawn on ONE scale for every row, which is the whole point:
@@ -175,13 +176,20 @@ const TableRow = React.memo(function TableRow({ line, scaleMax, fieldAvg, onOpen
           <span className={`tl-badge${badge.tone}`}>{badge.text}</span>
           <span className="tt-seats">
             <span className="tl-num tt-seatnum">{seatText}</span>
-            <span className="tl-sub">Players</span>
+            {/* `seatCountIsFallback` was computed, stored on every line and
+                documented in the interface, and then never read by anything --
+                so a count taken from a possibly-stale `tables.current_players`
+                row was presented exactly like a count derived from live
+                entries. It is the same figure either way; the difference is
+                whether it can be trusted, which is precisely the thing a
+                player deciding where they are being moved needs to know. */}
+            <span className="tl-sub">{seatCountIsFallback ? 'Reported' : 'Players'}</span>
           </span>
         </span>
       </span>
 
       {hasStacks && scaleMax > 0 && (
-        <span className="tl-meter tt-meter">
+        <span className="tl-meter tt-meter" aria-hidden="true">
           <span
             className={`tl-meter__fill tt-spread${belowField ? ' tl-meter__fill--under' : ''}`}
             style={{ left: `${spreadLeft}%`, width: `${spreadWidth}%` }}
@@ -440,9 +448,14 @@ export default function TablesTab({
       </div>
 
       <ul className="tl-list tl-scroll tt-list">
-        {lines.map((line) => (
+        {lines.map((line, i) => (
           <TableRow
-            key={line.table.id}
+            /* The id, but falling back to the index. This file explicitly
+               handles a table with no id ("This Table Cannot Be Opened"), so
+               an id-less row is a known case -- and TWO of them produced two
+               siblings keyed `undefined`, which React warns about and which
+               lets it reuse the wrong DOM node between renders. */
+            key={line.table.id || `row-${i}`}
             line={line}
             scaleMax={scaleMax}
             fieldAvg={fieldAvg}

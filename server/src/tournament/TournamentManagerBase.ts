@@ -3886,6 +3886,9 @@ export abstract class TournamentManagerBase {
         prize_pool?: number | string;
         overlay?: number | string;
         treasury_after?: number | string | null;
+        /** 2026-08-29: which bank funded the overlay — 'union' or 'club'. */
+        bank_type?: string;
+        bank_entity_id?: string;
       };
       if (error || res.ok !== true) {
         reportError(
@@ -3910,8 +3913,14 @@ export abstract class TournamentManagerBase {
       if (this.tournamentCache) this.tournamentCache.prize_pool = pool;
       const overlay = Number(res.overlay) || 0;
       if (overlay > 0) {
+        // 2026-08-29: overlays fund from the UNION bank for a union-affiliated
+        // club and the club treasury only for a standalone club. The RPC says
+        // which bank paid; naming the wrong one in a money log is how the next
+        // reconciliation chases a debit in a wallet that never moved.
+        const bank =
+          res.bank_type === 'union' ? `union bank ${res.bank_entity_id ?? ''}` : 'club treasury';
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Guarantee FUNDED via ${source}: overlay ${overlay} debited from the club treasury (now ${res.treasury_after ?? 'unknown'}), pool ${pool}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Guarantee FUNDED via ${source}: overlay ${overlay} debited from the ${bank} (now ${res.treasury_after ?? 'unknown'}), pool ${pool}`
         );
       }
       return pool;

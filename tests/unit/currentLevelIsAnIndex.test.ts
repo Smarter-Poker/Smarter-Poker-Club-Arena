@@ -10,12 +10,34 @@
  *     .update({ current_level: this.currentLevel })  <- it STORES what it indexed
  *
  * and the stored structures number their own `level` field from 1, so element 0
- * reads `level: 1`. `BLIND_LEVEL_CHANGE.level` is the SAME number —
- * TournamentTimerService writes one variable to both the column and the payload.
+ * reads `level: 1`.
  *
- * Therefore: to INDEX a structure, use the value as-is. To DISPLAY a level
+ * Therefore: to INDEX a structure, use the COLUMN as-is. To DISPLAY a level
  * number, add one. `tournamentLevel()` in components/lobby/tournamentFigures.ts
  * is the canonical converter and carries the production evidence.
+ *
+ * ── THE BUS PAYLOAD IS THE OTHER UNIT (corrected 2026-08-29) ─────────────────
+ *
+ * This header used to end the paragraph above with "`BLIND_LEVEL_CHANGE.level`
+ * is the SAME number — TournamentTimerService writes one variable to both the
+ * column and the payload." IT DOES NOT, and that sentence is the reason the bug
+ * spread: `handleLevelChange` computes `const displayLevel = newLevel + 1`,
+ * writes the raw 0-based `newLevel` to the column and emits `displayLevel` on
+ * the bus. Two units, one name.
+ *
+ * All three consumers had guessed, and all three had guessed wrong the same
+ * way — each carrying a comment repeating the claim above:
+ *
+ *   TournamentDetails  wrote the payload straight into `current_level`,
+ *                      corrupting the object every tab on the page reads
+ *   TournamentClock    added one to an already-1-based number, so the 2026-08-26
+ *                      fix below turned a projector clock that flashed one level
+ *                      BACKWARDS into one that flashed one level FORWARD
+ *   BlindsTab          indexed the structure with it and showed the NEXT level's
+ *                      blinds from the instant the engine advanced
+ *
+ * The contract now lives on the payload type in src/core/MasterBus.ts, where a
+ * reader will find it without having to trace the emitter.
  *
  * THE INCIDENTS. This has now been fixed four separate times, in four files,
  * for the same reason each time — someone read `current_level` and assumed the
@@ -145,12 +167,29 @@ describe('the canonical converter still says what the fixes rely on', () => {
 describe('the display path of the projector clock and the HUD agree', () => {
   it('TournamentClock converts the bus payload the same way it converts the row', () => {
     const src = stripComments(read('src/components/tournament/TournamentClock.tsx'));
-    // The DB path has always converted; the bus fast path did not, so the same
-    // state field carried two conventions and the level flashed backwards.
+    // The DB path holds an INDEX, so it converts.
     expect(src).toMatch(/currentLevel:\s*levelState\.levelIndex\s*\+\s*1/);
-    expect(src).toMatch(
-      /currentLevel:\s*Math\.max\(0,\s*Number\(payload\.level\)\s*\|\|\s*0\)\s*\+\s*1/
-    );
+    /*
+     * The bus path holds a DISPLAY LEVEL already, so it must NOT (corrected
+     * 2026-08-29). This assertion used to require the `+ 1`, and it was wrong:
+     * it was written on 2026-08-26 from the header's claim that the payload and
+     * the column carry the same number, which they do not. Requiring the
+     * conversion pinned the clock one level AHEAD on every level-up — the same
+     * flash the 2026-08-26 fix was chasing, in the opposite direction, which is
+     * exactly why that fix looked like it had worked.
+     *
+     * Both lines land on the same convention now: whatever `clock.currentLevel`
+     * holds is what gets rendered as `LEVEL {n}`.
+     */
+    expect(src).toMatch(/currentLevel:\s*Math\.max\(1,\s*Number\(payload\.level\)\s*\|\|\s*1\)/);
+    expect(src).not.toMatch(/Number\(payload\.level\)\s*\|\|\s*0\)\s*\+\s*1/);
+  });
+
+  it('TournamentDetails stores the bus payload as the index the column expects', () => {
+    // The third consumer, and the one that did damage beyond its own render:
+    // `current_level` is read by every tab off the shared tournament object.
+    const src = stripComments(read('src/pages/tournament/TournamentDetails.tsx'));
+    expect(src).toMatch(/current_level:\s*displayLevel - 1/);
   });
 
   it('TablePage converts the engine level_up index for display', () => {

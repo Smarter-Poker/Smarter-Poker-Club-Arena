@@ -623,6 +623,33 @@ export interface BusPayloadMap {
   // Tournament timer & rebuy event payloads
   BLIND_LEVEL_CHANGE: {
     tournamentId: string;
+    /**
+     * THE 1-BASED DISPLAY LEVEL. The first level of an event is `1`.
+     *
+     * This is NOT `tournaments.current_level`, which stores the 0-based index
+     * the engine uses on `blindStructure[]`. TournamentTimerService computes
+     * `const displayLevel = newLevel + 1` and emits THAT here while writing the
+     * raw index to the row — see handleLevelChange.
+     *
+     * The distinction was undocumented until 2026-08-29 and ALL THREE consumers
+     * had guessed wrong, each with a comment asserting the opposite ("the
+     * payload carries an index", "TournamentTimerService writes one variable to
+     * both"):
+     *
+     *   TournamentDetails wrote the payload straight into
+     *   `tournament.current_level`, corrupting the shared object every tab
+     *   reads until the next poll overwrote it;
+     *
+     *   TournamentClock added one to an already-1-based number and displayed a
+     *   level TWO ahead;
+     *
+     *   BlindsTab indexed the structure with it and showed the next level's
+     *   blinds, duration and "Next Level" from the instant the engine advanced.
+     *
+     * All three symptoms only appeared between an advance and the next poll,
+     * which is why they read as flicker rather than as one bug. If you need the
+     * index, subtract one.
+     */
     level: number;
     smallBlind: number;
     bigBlind: number;

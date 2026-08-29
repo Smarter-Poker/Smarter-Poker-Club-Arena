@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { sliceMethod, sliceEnclosingBlock } from '../helpers/sourceWindow';
+import { sliceMethod, sliceEnclosingBlock, sliceBlockAfter } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -126,7 +126,14 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
   it('the award-unit ledger covers EVERY bomb hand, idempotently', () => {
     // The gate and the write are siblings in one `if` block, so that block is
     // the window — bounded by structure, never a byte count.
-    const window = sliceEnclosingBlock(SETTLEMENT, "from('bomb_pot_award_units')", 0, 2);
+    //
+    // 2026-08-29: anchored on the `if` itself rather than climbing N levels
+    // out from the upsert. The retry loop added a nesting level between the
+    // two, which silently moved a `levels: 2` window off the gate it was
+    // written to guard — the exact failure mode sourceWindow.ts exists to
+    // stop. An anchor on the condition cannot drift no matter what is nested
+    // inside it.
+    const window = sliceBlockAfter(SETTLEMENT, 'if (v_handHistoryId && this.currentHandBombPot');
     // Gated on the hand being a BOMB, and on there being awards to record —
     // never on the board count (2026-08-28: a single-board bomb with side
     // pots is exactly as hard to rebuild, and a partial ledger cannot tell a
@@ -136,6 +143,52 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
     expect(window).not.toMatch(/board_count \?\? 1\) >= 2/);
     expect(window).toMatch(/onConflict: 'hand_history_id,pot_index,board,side,user_id'/);
     expect(window).toMatch(/ignoreDuplicates: true/);
+  });
+
+  it('a failed ledger write is retried, and the last failure is REPORTED', () => {
+    // 2026-08-29. The write is fire-and-forget on purpose — logHandHistory has
+    // already recorded the money, and a ledger that only narrates a settlement
+    // must never be able to fail the hand it narrates. But "cannot fail the
+    // hand" had been built as "one attempt, then console.warn on the engine
+    // host", so one transient error lost a hand's award units permanently AND
+    // silently. Hand 3364829 (2026-08-29 02:35:08Z) is the proof: a clean
+    // two-board showdown paid out correctly to the cent, bracketed by hands at
+    // 02:31 and 02:37 that both wrote their rows, and zero rows of its own.
+    const window = sliceBlockAfter(SETTLEMENT, 'if (v_handHistoryId && this.currentHandBombPot');
+    expect(window).toMatch(/attempt <= BOMB_LEDGER_WRITE_ATTEMPTS/);
+    expect(window).toMatch(/BOMB_LEDGER_RETRY_BASE_MS \* attempt/);
+    // reportError, never console.warn — a log line on a host nobody reads is
+    // how this went unnoticed in the first place.
+    expect(window).toMatch(/ServerTableEngine\.bomb_award_ledger_write_failed/);
+    expect(window).not.toMatch(/console\.warn/);
+    // Still fire-and-forget: `void`, and a catch so the retry loop can never
+    // surface as an unhandled rejection (noUnhandledRejections.test.ts).
+    expect(window).toMatch(/void writeAwardUnits\(\)\.catch\(/);
+    expect(SETTLEMENT).toMatch(/const BOMB_LEDGER_WRITE_ATTEMPTS = 3;/);
+  });
+
+  it('a gap that still slips through is reported by reconciliation, not lost', () => {
+    // The retry above makes a lost row unlikely; this makes a lost row VISIBLE.
+    // Same shape CLAUDE.md section 11.5 settled on for seat-stack exits: a
+    // guard that can REFUSE a settlement is worse than the thing it guards
+    // against, so make the failure loud rather than impossible.
+    const gaps = read('supabase/migrations/20260829_bomb_award_ledger_gaps_are_loud.sql');
+    expect(gaps).toMatch(/CREATE OR REPLACE FUNCTION public\.fn_bomb_pot_ledger_gaps/);
+    // p_grace: the write is asynchronous by design, so a hand that settled
+    // seconds ago legitimately has no rows yet and is NOT a gap.
+    expect(gaps).toMatch(/p_grace interval\s+DEFAULT '10 minutes'::interval/);
+    // Named roles, not just PUBLIC — REVOKE ... FROM PUBLIC does not remove
+    // Supabase's own anon grant (fn_request_manual_bomb_pot kept one that way).
+    expect(gaps).toMatch(/FROM PUBLIC, anon, authenticated;/);
+
+    const nightly = read('supabase/migrations/20260829_reconcile_reports_bomb_award_gaps.sql');
+    expect(nightly).toMatch(
+      /'bomb_award_ledger_gap', NULL, g\.net_winnings, g\.ledger_total, 'critical'/
+    );
+    expect(nightly).toMatch(/FROM public\.fn_bomb_pot_ledger_gaps\('1 day'::interval\) g/);
+    // The CHECK constraint must accept the value the reporter emits, or the
+    // whole nightly run aborts on the first gap it finds.
+    expect(gaps).toMatch(/'bomb_award_ledger_gap'::text\]\)\);/);
   });
 });
 

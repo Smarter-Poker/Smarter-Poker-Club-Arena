@@ -132,4 +132,10 @@ describe('Club Arena accessibility foundation', () => {
     expect(source).toContain('club_id: resolvedClubId');
     expect(source).not.toContain(".eq('club_id', clubId)");
   });
+
+  it('keeps the dispute workspace from painting over the shared integrity header', () => {
+    const styles = read('src/pages/DisputeManagementPage.css');
+
+    expect(styles).not.toContain('.dispute-management-page::before');
+  });
 });

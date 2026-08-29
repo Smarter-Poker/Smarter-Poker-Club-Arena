@@ -4213,7 +4213,32 @@ button.post-bb-overlay-button {
     /* 2026-08-26: gutters removed per Dan — edge-to-edge felt at 375px
        measures 375x619.8 (up from 367x606.6 with 4px gutters). Side-seat
        overhang at narrow viewports is addressed by the max-width: 340px
-       safeguard in SeatSlot.css. */
+       safeguard in SeatSlot.css.
+
+       ── 2026-08-29: THE REMOVAL ABOVE NEVER SHIPPED, AND THE TABLE SHRANK ──
+       Dan, from his phone: "the table width and length has shrunk and need to
+       be put back to how it was."
+
+       #950 removed the `padding-left: 4px; padding-right: 4px` longhands that
+       used to sit here — but DELETING an override does not produce zero, it
+       resurrects whatever the base rule says, and the base `.table-container`
+       shorthand pays 12px gutters on each side. So "edge-to-edge per Dan"
+       cascaded to the NARROWEST felt this table had ever had on a phone:
+       364px at 390 (measured on production 2026-08-29), down from 374px the
+       day before the change, when the comment right above this one claims
+       375px at 375. The 375x619.8 in that comment was never rendered by any
+       shipped build. The length followed the width through the 605/1000
+       aspect: 618 -> 602.
+
+       These longhands are what the removal actually meant. Zero, stated,
+       because a deleted declaration cannot hold a value. The felt is now
+       width-bound edge-to-edge on every portrait phone wide enough to bind
+       (390x844 measures 390x644.6; an iPhone SE stays height-bound and does
+       not change). Guarded by the edge-to-edge beat in
+       tests/e2e/table-proportions.spec.ts — if either gutter comes back at
+       this breakpoint, that beat names the device and the pixels lost. */
+    padding-left: 0;
+    padding-right: 0;
   }
 
   .table-scaler {

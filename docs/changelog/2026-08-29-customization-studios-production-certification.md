@@ -57,8 +57,8 @@ the actual table continues to render the full-quality originals.
 
 ## Verification
 
-- Full Vitest suite: 596 files, 9,047 passing, 1 intentional skip.
-- Production build: passed; 425 distribution images optimized with 0 failures.
+- Full Vitest suite: 597 files, 9,058 passing, 0 skipped.
+- Production build: passed; 428 distribution images optimized with 0 failures.
 - ESLint: 0 errors. The repository still reports its existing warning backlog.
 - Mobile Chromium coverage at 390 × 844: Avatar Gallery and Table Studio stay
   viewport-contained; catalogs scroll internally; controls meet the 44px touch
@@ -80,3 +80,18 @@ The follow-up entitlement stream was applied and recorded as migration
 `20260829233000`. Live verification confirms `theme_asset_unlocks` uses full
 replica identity, is present in the Supabase Realtime publication, and retains
 its single owner-only SELECT policy.
+
+## Final Table art correction
+
+The automatic MTT Final Table now uses a redrawn mobile-first table layer in
+the established Smarter Casino Realism language: black lacquer and carbon
+materials, midnight navy felt, one restrained electric-blue energy seam, and
+small champagne-gold championship accents. The separate broadcast-room
+background remains behind the table, while live Club Arena avatars, seats,
+cards, chips, controls, names, and stacks remain app-rendered above it.
+
+The old asset's painted side-seat plates and amber jewels were removed. Both
+side rails are now continuous and quiet, so the six- and nine-seat layouts no
+longer collide with baked artwork. The previously skipped pixel-law regression
+is active and passes, and a new alpha assertion prevents an opaque or fake
+checkerboard backdrop from replacing the transparent compositing layer.

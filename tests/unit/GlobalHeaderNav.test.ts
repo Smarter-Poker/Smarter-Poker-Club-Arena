@@ -26,15 +26,19 @@
  * nothing else in CI would notice.
  */
 import { describe, it, expect } from 'vitest';
+import { createHash } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
+const readBytes = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)));
 const exists = (rel: string) => existsSync(fileURLToPath(new URL(rel, import.meta.url)));
 
 const TSX = read('../../src/components/navigation/GlobalHeader.tsx');
 const CSS = read('../../src/components/navigation/GlobalHeader.module.css');
 const LAYOUT = read('../../src/components/layouts/AppLayout.tsx');
+const OPTIMIZER = read('../../scripts/optimize-dist-media.mjs');
+const APPROVED_DESKTOP = readBytes('../../public/images/global-header/global-header-desktop.png');
 
 /**
  * Comments explain the bugs by name, so "the word is gone" is the wrong
@@ -66,8 +70,18 @@ describe('the bar stretches across the top', () => {
     expect(header).toContain(decl);
   });
 
-  it('still spreads its three groups apart', () => {
-    expect(header).toContain('justify-content: space-between');
+  it('reserves the approved artwork ratio before the image loads', () => {
+    expect(CSS).toContain('aspect-ratio: 1648 / 168');
+    expect(TSX).toContain('width={1648}');
+    expect(TSX).toContain('height={168}');
+  });
+
+  it('caps the chrome height while keeping full-height click regions', () => {
+    expect(CSS).toContain('--global-header-height: clamp(44px, 7.64vw, 84px)');
+    expect(ruleBody(CSS, '.desktopArtwork')).toContain('height: var(--global-header-height)');
+    expect(ruleBody(CSS, '.desktopArtwork')).toContain('object-fit: fill');
+    expect(ruleBody(CSS, '.headerControls')).toContain('height: var(--global-header-height)');
+    expect(ruleBody(CSS, '.artButton')).toContain('height: 100%');
   });
 
   it('is not capped by a max-width anywhere in the file', () => {
@@ -101,9 +115,7 @@ describe('no handler is left wired to nothing', () => {
     '%s is both defined and used in an onClick',
     (fn) => {
       expect(TSX_CODE, `${fn} is not defined`).toContain(`const ${fn} =`);
-      expect(TSX_CODE, `${fn} is defined but never wired to a button`).toContain(
-        `onClick={${fn}}`
-      );
+      expect(TSX_CODE, `${fn} is defined but never wired to a button`).toContain(`onClick={${fn}}`);
     }
   );
 
@@ -118,23 +130,75 @@ describe('no handler is left wired to nothing', () => {
 });
 
 describe('the button artwork exists', () => {
-  const IMAGES = ['btn-hamburger-v4.png', 'btn-back.png', 'btn-hub-v4.png'] as const;
+  const IMAGES = ['menu.png', 'back.png', 'hub.png'] as const;
 
   it.each(IMAGES)('%s is referenced by the header', (file) => {
-    expect(TSX).toContain(`images/${file}`);
+    expect(TSX).toContain(`APPROVED_HEADER_ASSET}${file}`);
   });
 
-  it.each(IMAGES)('%s is actually in public/images', (file) => {
+  it.each(IMAGES)('%s is actually in public/images/global-header', (file) => {
     // These buttons are images with no text fallback. A missing file is a hole
     // in the header, and nothing else in CI would say a word about it.
-    expect(exists(`../../public/images/${file}`)).toBe(true);
+    expect(exists(`../../public/images/global-header/${file}`)).toBe(true);
   });
 
   it('every header image reference resolves to a real file', () => {
-    const referenced = [...TSX.matchAll(/\$\{BASE\}images\/([A-Za-z0-9._-]+)/g)].map((m) => m[1]);
+    const referenced = [...TSX.matchAll(/\$\{APPROVED_HEADER_ASSET\}([A-Za-z0-9._-]+)/g)].map(
+      (m) => m[1]
+    );
     expect(referenced.length).toBeGreaterThanOrEqual(IMAGES.length);
     for (const file of referenced) {
-      expect(exists(`../../public/images/${file}`), `missing public/images/${file}`).toBe(true);
+      expect(
+        exists(`../../public/images/global-header/${file}`),
+        `missing public/images/global-header/${file}`
+      ).toBe(true);
     }
+  });
+});
+
+describe('mobile uses the identical desktop header', () => {
+  it('has no portrait-only alternate composition', () => {
+    expect(CSS).not.toContain('@media (max-width: 767px) and (orientation: portrait)');
+    expect(CSS).not.toContain('flex-direction: column');
+    expect(CSS).not.toContain('border-image-source');
+  });
+
+  it('keeps the approved raster visible at every viewport width', () => {
+    expect(CSS).toContain('width: calc(100% - env(safe-area-inset-left');
+    expect(CSS).toContain('aspect-ratio: 1648 / 168');
+    expect(CSS).not.toMatch(/\.desktopArtwork\s*\{\s*display: none;/);
+  });
+
+  it('uses only artwork derived from the approved source image', () => {
+    expect(TSX).toContain('global-header-desktop.png');
+    for (const file of [
+      'menu.png',
+      'back.png',
+      'hub.png',
+      'profile.png',
+      'wallet.png',
+      'vip.png',
+      'messenger.png',
+      'notifications.png',
+      'brand.png',
+    ]) {
+      expect(TSX).toContain(`APPROVED_HEADER_ASSET}${file}`);
+    }
+  });
+
+  it('locks the approved desktop bytes and excludes global-header art from resizing', () => {
+    expect(createHash('sha256').update(APPROVED_DESKTOP).digest('hex')).toBe(
+      '7c5613a84a395abd6b9527785b46c99fb28b6264e2258bee366a04cac5500c7f'
+    );
+    expect(OPTIMIZER).toContain("{ prefix: 'images/global-header/', maxDim: 0 }");
+  });
+});
+
+describe('the profile frame contains the live profile picture', () => {
+  it('reads the cached profile URL and overlays it inside the approved frame', () => {
+    expect(TSX_CODE).toContain('avatarUrl');
+    expect(TSX).toContain('className={styles.profileAvatar}');
+    expect(CSS).toContain('.profileAvatar');
+    expect(ruleBody(CSS, '.profileAvatar')).toContain('border-radius: 50%');
   });
 });

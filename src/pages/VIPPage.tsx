@@ -41,6 +41,10 @@ export default function VIPPage() {
   const [showTopUpModal, setShowTopUpModal] = useState(false);
   const [showDiamondHistory, setShowDiamondHistory] = useState(false);
   const [purchasing, setPurchasing] = useState<string | null>(null);
+  // React state is not synchronous: two taps in the same frame can both see
+  // `purchasing === null`. This ref closes that mobile double-tap window before
+  // the first network request leaves the device.
+  const purchaseInFlightRef = useRef(false);
   const [vipEntranceComplete, setVIPEntranceComplete] = useState(false);
 
   // VIP Points System
@@ -188,21 +192,58 @@ export default function VIPPage() {
   };
 
   const handlePurchase = async (feature: VIPFeature) => {
-    if (!user?.id) return;
+    if (!user?.id || purchaseInFlightRef.current) return;
 
+    purchaseInFlightRef.current = true;
     setPurchasing(feature);
     try {
       const result = await vipService.purchaseFeature(user.id, feature);
       if (result.success) {
-        toast.success(`Purchased ${feature} for ${result.charged} `);
-        setDiamonds((prev) => prev - result.charged);
+        const nextBalance = Math.max(0, diamonds - result.charged);
+        toast.success(`Purchased ${feature.replace(/_/g, ' ')} for ${result.charged} Diamonds`);
+        setDiamonds(nextBalance);
+        masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+          newBalance: nextBalance,
+          delta: -result.charged,
+          source: 'vip_feature_purchase',
+        });
+
+        const category =
+          feature === 'emoji_pack'
+            ? 'emote_pack'
+            : feature === 'throwable'
+              ? 'throwable'
+              : feature === 'time_bank_seconds' || feature === 'auto_time_bank'
+                ? 'time_bank'
+                : null;
+        if (category) {
+          masterBus.emit('ENTITLEMENTS_CHANGED', {
+            userId: user.id,
+            category,
+            assetId: feature,
+            quantity: 1,
+            source: 'vip-purchase',
+          });
+        }
+      } else if (result.alreadyOwned) {
+        toast.success(`You already own ${feature.replace(/_/g, ' ')}`);
+        if (feature === 'emoji_pack') {
+          masterBus.emit('ENTITLEMENTS_CHANGED', {
+            userId: user.id,
+            category: 'emote_pack',
+            assetId: feature,
+            source: 'vip-purchase',
+          });
+        }
       } else {
         toast.error(result.error || 'Purchase failed');
       }
     } catch (error) {
       toast.error('Purchase failed');
+    } finally {
+      purchaseInFlightRef.current = false;
+      setPurchasing(null);
     }
-    setPurchasing(null);
   };
 
   if (loading) {
@@ -246,11 +287,15 @@ export default function VIPPage() {
         <RewardsMarketplace
           currentPoints={vipPoints.current}
           onRedeem={async (reward: Reward) => {
+            if (!user?.id) {
+              toast.error('Please Sign In To Redeem Rewards.');
+              return;
+            }
             // Real spend AND a real grant. `p_reward_id` is what makes this
             // honest: without it the RPC charged whatever `p_cost` the browser
             // sent (so a 5,000-point pass cost one point) and granted nothing
             // at all. With it, vip_reward_catalog prices the reward and the
-            // cosmetic lands in theme_unlocks / avatar_unlocks. p_cost is still
+            // cosmetic lands in the live entitlement ledgers. p_cost is still
             // sent for the audit trail; the server ignores it for catalog
             // rewards. Migration 20260825_vip_reward_catalog.
             const { data, error } = await supabase.rpc('fn_redeem_vip_points', {
@@ -273,6 +318,23 @@ export default function VIPPage() {
               return;
             }
             setVipPoints((prev) => ({ ...prev, current: Number(data.balance ?? prev.current) }));
+            if (data.status === 'granted') {
+              const granted = data.granted as
+                | { type?: string; theme_id?: string; avatar_id?: string }
+                | undefined;
+              masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
+                userId: user.id,
+                category: granted?.type === 'avatar' ? 'avatar' : 'theme_id',
+                assetId: granted?.avatar_id || granted?.theme_id,
+                source: 'vip-reward',
+              });
+              masterBus.emit('ENTITLEMENTS_CHANGED', {
+                userId: user.id,
+                category: granted?.type === 'avatar' ? 'avatar' : 'table_skin',
+                assetId: granted?.avatar_id || granted?.theme_id,
+                source: 'vip-reward',
+              });
+            }
             // Say what actually happened: a cosmetic is yours now, a physical
             // or tournament reward still needs somebody to fulfil it.
             toast.success(
@@ -440,7 +502,11 @@ export default function VIPPage() {
 
           <div className="purchase-grid">
             {Object.entries(FEATURE_PRICING)
-              .filter(([, pricing]) => pricing.cost > 0)
+              // A generic "theme_unlock" does not identify a theme and cannot
+              // issue a usable entitlement. Themes are bought/redeemed from
+              // Table Studio and the rewards catalog, where the exact preset
+              // bundle is part of the server-side SKU.
+              .filter(([feature, pricing]) => feature !== 'theme_unlock' && pricing.cost > 0)
               .map(([feature, pricing]) => (
                 <div key={feature} className="purchase-card">
                   <div className="purchase-info">

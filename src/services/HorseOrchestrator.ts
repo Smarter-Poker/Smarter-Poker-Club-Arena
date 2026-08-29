@@ -1158,12 +1158,21 @@ class HorseOrchestrator {
       const clubLabel = clubId === this.sharkClubId ? 'Shark Club' : 'Club JAQK';
 
       // Check if already in union_clubs
-      const { data: existing } = await supabase
+      const { data: existing, error: existingErr } = await supabase
         .from('union_clubs')
         .select('club_id')
         .eq('union_id', this.unionId)
         .eq('club_id', clubId)
         .maybeSingle();
+
+      /* A FAILED CHECK IS NOT "NOT ATTACHED" (2026-08-29). Only `data` was
+         destructured, so a failed read fell into the attach branch below and
+         tried to insert a membership that already exists. Skip the club and
+         let the next orchestrator pass retry it. */
+      if (existingErr) {
+        console.error(`[Orchestrator] union_clubs check failed for ${clubLabel}:`, existingErr);
+        continue;
+      }
 
       if (!existing) {
         console.debug(`[Orchestrator] Attaching ${clubLabel} to Midway Union...`);
@@ -2061,10 +2070,19 @@ class HorseOrchestrator {
 
       for (const clubId of clubIds) {
         // Get existing members for this club
-        const { data: existing } = await supabase
+        const { data: existing, error: existingErr } = await supabase
           .from('club_members')
           .select('user_id')
           .eq('club_id', await resolveClubUUID(clubId));
+
+        /* A FAILED READ IS NOT AN EMPTY CLUB (2026-08-29). Only `data` was
+           destructured, so a failure produced an EMPTY `existingIds` set --
+           i.e. "no horse is in this club" -- and the batch insert below then
+           tried to add every horse in the fleet again. */
+        if (existingErr) {
+          console.error(`[Orchestrator] club_members read failed for ${clubId}:`, existingErr);
+          continue;
+        }
 
         const existingIds = new Set((existing || []).map((m: any) => m.user_id));
 

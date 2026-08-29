@@ -92,6 +92,19 @@ export const DEVICES = [
   ['iPhone SE', 375, 667],
   ['iPhone 12/13/14', 390, 844],
   ['iPhone 14 Pro Max', 430, 932],
+  /* ── REAL HARDWARE ROWS (2026-08-29) ─────────────────────────────────────
+     The rows above are what Playwright emulates: env(safe-area-inset-*) = 0.
+     No iPhone Dan has ever held works that way — the notch is ~47px (Dynamic
+     Island 59px) and the home indicator 34px, all of it paid out of
+     --sp-table-h. The 2026-08-29 felt "fix" was verified green on the rows
+     above while changing NOTHING on Dan's actual phone, because the real
+     felt was height-bound under insets this harness could not see. These two
+     rows are the phones as they exist; measureAll substitutes the env()
+     tokens with these values (a browser offers no other way to emulate
+     them). If a beat passes on the emulated row and fails here, believe
+     HERE. */
+  ['iPhone 12/13/14 (real)', 390, 844, 47, 34],
+  ['iPhone 14 Pro Max (real)', 430, 932, 59, 34],
   ['iPhone landscape', 844, 390],
   ['iPad mini portrait', 744, 1133],
   ['iPad portrait', 768, 1024],
@@ -200,11 +213,25 @@ export const PROBE = () => {
 
 /** Measure every device in one browser. `page` is a Playwright page from either
  *  the spec's fixture or a script's own chromium launch. */
+/** Substitute env(safe-area-inset-top/bottom) with concrete px. A browser
+ *  offers no API to emulate the insets, and they are exactly what separated
+ *  every green check from Dan's phone on 2026-08-29 — so the harness rewrites
+ *  the tokens in the CSS text itself. Fallback forms with or without a default
+ *  are both matched; left/right stay 0 (no portrait phone has either). */
+export const applyInsets = (css, insetTop, insetBottom) =>
+  css
+    .replace(/env\(\s*safe-area-inset-top\s*(?:,[^()]*)?\)/g, `${insetTop}px`)
+    .replace(/env\(\s*safe-area-inset-bottom\s*(?:,[^()]*)?\)/g, `${insetBottom}px`);
+
 export async function measureAll(page, css) {
-  const html = buildHtml(css);
+  const plainHtml = buildHtml(css);
   const rows = [];
-  for (const [device, width, height] of DEVICES) {
+  for (const [device, width, height, insetTop = 0, insetBottom = 0] of DEVICES) {
     await page.setViewportSize({ width, height });
+    const html =
+      insetTop || insetBottom
+        ? buildHtml(applyInsets(css, insetTop, insetBottom))
+        : plainHtml;
     await page.setContent(html);
     rows.push({ device, vp: `${width}x${height}`, ...(await page.evaluate(PROBE)) });
   }

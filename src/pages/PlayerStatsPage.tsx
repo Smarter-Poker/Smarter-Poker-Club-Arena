@@ -26,7 +26,6 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { tabTransition, instant } from '../components/stats/statsMotion';
 import { useParams, useNavigate } from 'react-router-dom';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import { supabase } from '../lib/supabase';
 // The two caches sign-out has to be able to reach. They live in a leaf module
 // so clearUserCaches can purge them without importing this page - that import
@@ -2229,11 +2228,6 @@ export default function PlayerStatsPage() {
           )}
         </motion.div>
       </AnimatePresence>
-      {/* Dan 2026-08-25: this page is reachable from the footer's Stats tab,
-          so it must carry the footer too - it is a top-level route with no
-          :clubId, which is exactly why it had none. ClubBottomNav resolves the
-          club itself now. The Stats tab hides itself while you are here. */}
-      <ClubBottomNav />
     </div>
   );
 }

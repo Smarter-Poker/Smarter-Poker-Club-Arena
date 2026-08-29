@@ -16,6 +16,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { retryAsync } from '../utils/retryAsync';
 import { formatDateShort as formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import { ErrorState } from '../components/common/EmptyState';
 
 interface RakebackPeriod {
   id: string;
@@ -38,6 +39,7 @@ export default function RakebackPage() {
 
   const [periods, setPeriods] = useState<RakebackPeriod[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [totalEarned, setTotalEarned] = useState(0);
   const [currentRate, setCurrentRate] = useState(0);
   const [claimStatus, setClaimStatus] = useState<ClaimStatus>('idle');
@@ -63,6 +65,7 @@ export default function RakebackPage() {
     if (loadingRef.current) return;
     loadingRef.current = true;
     if (!getIsMounted || getIsMounted()) setLoading(true);
+    if (!getIsMounted || getIsMounted()) setLoadError(null);
     try {
       const { data, error } = await supabase
         .from('rakeback_periods')
@@ -74,15 +77,17 @@ export default function RakebackPage() {
         .limit(12);
 
       if (getIsMounted && !getIsMounted()) return;
-      if (!error && data) {
-        setPeriods(data);
-        setTotalEarned(data.reduce((sum, p) => sum + (p.rakeback_earned || 0), 0));
-        if (data.length > 0) {
-          setCurrentRate(data[0].rakeback_rate || 0);
-        }
+      if (error) throw error;
+      setPeriods(data || []);
+      setTotalEarned((data || []).reduce((sum, p) => sum + (p.rakeback_earned || 0), 0));
+      if (data && data.length > 0) {
+        setCurrentRate(data[0].rakeback_rate || 0);
       }
     } catch (error) {
       reportError(error, 'RakebackPage.Failed_to_load_rakeback');
+      if (!getIsMounted || getIsMounted()) {
+        setLoadError('Rakeback history could not be loaded. Your balance has not been changed.');
+      }
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load rakeback data.');
     } finally {
       loadingRef.current = false;
@@ -361,6 +366,8 @@ export default function RakebackPage() {
           <div className="loading-state">
             <PageSkeleton variant="financial" />
           </div>
+        ) : loadError ? (
+          <ErrorState message={loadError} onRetry={() => void loadRakebackData()} />
         ) : periods.length === 0 ? (
           <div className="empty-state">
             <p>No Rakeback History Yet. Play Some Hands To Earn Rakeback!</p>

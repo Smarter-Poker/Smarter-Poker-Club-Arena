@@ -33,9 +33,9 @@ import AgentCommissionDashboard from '@/components/agent/AgentCommissionDashboar
 import { useToast } from '@/components/common/Toast';
 import AgentAssignmentPanel from '@/components/agent/AgentAssignmentPanel';
 import AgentCashoutPanel from '@/components/agent/AgentCashoutPanel';
-import ClubBottomNav from '@/components/club/ClubBottomNav';
 import { PlayerSearch } from '@/components/admin/PlayerSearch';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { EmptyState, ErrorState } from '../components/common/EmptyState';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
@@ -565,13 +565,14 @@ export default function AgentManagementPage() {
   if (!clubId) {
     return (
       <div className={styles.page}>
-        <div className={styles.error}>
-          <h2>No Club Selected</h2>
-          <p>Please Select A Club To Manage Agents.</p>
-          <button className={styles.addButton} onClick={() => navigate('/clubs')}>
-            Go To Clubs
-          </button>
-        </div>
+        <EmptyState
+          icon="CLUB"
+          eyebrow="Club Context Required"
+          tone="permission"
+          title="Choose A Club To Manage Agents"
+          description="Agent roles, commissions, credit lines, and players belong to one club. Open this tool from that club's Operations menu."
+          action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
+        />
       </div>
     );
   }
@@ -589,7 +590,17 @@ export default function AgentManagementPage() {
   if (error) {
     return (
       <div className={styles.page}>
-        <div className={styles.error}>Error: {error}</div>
+        <ErrorState
+          message={error}
+          onRetry={() => {
+            setIsLoading(true);
+            setError(null);
+            AgentService.getAgents(clubId)
+              .then(setAgents)
+              .catch((retryError) => setError(safeErrorMessage(retryError)))
+              .finally(() => setIsLoading(false));
+          }}
+        />
       </div>
     );
   }
@@ -1514,9 +1525,6 @@ export default function AgentManagementPage() {
           }
         }}
       />
-
-      {/* Bottom Navigation */}
-      {clubId && <ClubBottomNav clubId={clubId} />}
 
       {/* Confirm Modal */}
       <ConfirmModal

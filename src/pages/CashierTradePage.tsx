@@ -68,7 +68,6 @@ import { useToast } from '../components/common/Toast';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
 import { DEFAULT_CASHIER_WALLET, secondsLeftFromServer } from '../components/wallet/cashierModes';
 import { canSeeClubBank, canHoldAgentWallet } from '../components/wallet/walletRows';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import styles from './CashierTradePage.module.css';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -2341,8 +2340,6 @@ export default function CashierTradePage() {
           </div>
         </div>
       )}
-
-      {clubUuid && <ClubBottomNav clubId={clubUuid} />}
     </div>
   );
 }

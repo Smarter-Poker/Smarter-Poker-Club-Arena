@@ -14,7 +14,6 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { bonusService } from '../services/BonusService';
 import { promotionService } from '../services/PromotionService';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import './PromotionsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -24,6 +23,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import PageSkeleton from '../components/common/PageSkeleton';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { reportError } from '../utils/errorReporter';
+import { ErrorState } from '../components/common/EmptyState';
 
 interface Promotion {
   id: string;
@@ -46,6 +46,7 @@ export default function PromotionsPage() {
 
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'upcoming'>('active');
   const [showBonusWheel, setShowBonusWheel] = useState(false);
   const [showReferral, setShowReferral] = useState(false);
@@ -206,6 +207,7 @@ export default function PromotionsPage() {
 
   const loadPromotions = async (getIsMounted?: () => boolean) => {
     setLoading(true);
+    setLoadError(null);
     try {
       let query = supabase
         .from('promotions')
@@ -228,11 +230,11 @@ export default function PromotionsPage() {
 
       if (getIsMounted && !getIsMounted()) return;
 
-      if (!error && data) {
-        setPromotions(data);
-      }
+      if (error) throw error;
+      setPromotions(data || []);
     } catch (error) {
       reportError(error, 'PromotionsPage.Failed_to_load_promotions');
+      setLoadError('Promotions could not be loaded. Existing offers have not been changed.');
       toast.error('Failed to load promotions');
     }
     if (getIsMounted && !getIsMounted()) return;
@@ -342,6 +344,8 @@ export default function PromotionsPage() {
               </div>
             ))}
           </div>
+        ) : loadError ? (
+          <ErrorState message={loadError} onRetry={() => void loadPromotions()} />
         ) : filteredPromos.length === 0 ? (
           <div className="empty-state" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
             <span
@@ -507,9 +511,6 @@ export default function PromotionsPage() {
         referralLink={referralLink}
         totalReferrals={0}
       />
-
-      {/* Bottom Navigation */}
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </StandardContentLayout>
   );
 }

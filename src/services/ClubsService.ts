@@ -191,11 +191,21 @@ export async function createClub(clubData: {
   }
 
   // Duplicate name check (pattern-escaped so "100%" matches literally)
-  const { data: existing } = await supabase
+  const { data: existing, error: existingErr } = await supabase
     .from('clubs')
     .select('id')
     .ilike('name', escapeIlikePattern(safeName))
     .limit(1);
+
+  /* A FAILED CHECK IS NOT "THE NAME IS FREE" (2026-08-29). Only `data` was
+     destructured. A Supabase builder resolves with {data: null, error}, so any
+     failure here made `existing` null, skipped the guard below, and CREATED THE
+     CLUB -- with a name the check exists to prevent. Refuse instead: a club
+     creation the player can retry is much cheaper than a second club wearing
+     somebody else's name. */
+  if (existingErr) {
+    throw new Error('Could not verify that club name is available. Please try again.');
+  }
 
   if (existing && existing.length > 0) {
     throw new Error('A club with this name already exists. Please choose a different name.');

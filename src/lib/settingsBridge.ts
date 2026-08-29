@@ -154,7 +154,7 @@ export function validateSettings(raw: unknown): UserSettings {
  *
  * Restricted to the FREE tier for exactly that reason: a `<select>` has
  * nowhere to show a lock, a price or a purchase flow. Paid designs are sold
- * by CardBackSelector and the theme modal, both of which gate on ownership.
+ * by Table Studio, which gates every category on permanent ownership.
  * Deriving means a design added to the catalogue appears here automatically
  * if it is free, and can never appear here by accident if it is not.
  */

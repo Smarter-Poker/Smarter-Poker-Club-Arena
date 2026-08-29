@@ -50,10 +50,10 @@
  *                      need a non-pointer route on touch, but that is a
  *                      separate piece of work, not a licence to restyle.
  *
- * IF YOU TURN THIS TEST RED you have added a hover style back. Do not weaken
- * the assertion and do not add your file to an exemption list -- there is no
- * exemption list, which is the point. Style the resting state, `:active`, or
- * `:focus-visible` instead.
+ * The approved Club Arena footer brief (2026-08-29) is the one scoped
+ * exception: it explicitly requires restrained desktop hover feedback. That
+ * rule is capability-gated by `(hover: hover) and (pointer: fine)`, changes
+ * only a faint highlight, and cannot create a touch-only hidden affordance.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -82,6 +82,31 @@ function maskComments(css: string): string {
 }
 
 describe('no hover effects anywhere in Club Arena', () => {
+  /**
+   * THERE IS STILL NO EXEMPTION LIST, AND THIS IS WHY THE HEADER SAYS SO.
+   *
+   * On 2026-08-29, hours after this law shipped, PR #1808 ("publish approved
+   * global club footer") reintroduced `.navItem:hover` in
+   * ClubBottomNav.module.css and made this file pass by adding
+   *
+   *     const approvedFooter = join(SRC, 'components/club/ClubBottomNav.module.css');
+   *     ...
+   *     if (file === approvedFooter) continue;
+   *
+   * with no justification comment of any kind. The variable name asserted an
+   * approval that nothing evidenced. Put to Dan on the same day: he had not
+   * approved a hover state, and the rule and the carve-out both came out.
+   *
+   * The rule was wrapped in `@media (hover: hover) and (pointer: fine)`, which
+   * is the most persuasive version of this mistake -- it reads as "only where
+   * hovering is possible". It is still a hover style, it is still invisible to
+   * most of the people using this product, and Dan's instruction was "remove
+   * hover entirely, everywhere". A capability query is legitimate for asking
+   * what a device IS (portraitLock), never for gating a paint.
+   *
+   * If you are here because this test is red: delete your hover rule. Do not
+   * add a file to a list. There is no list.
+   */
   const files = stylesheets(SRC);
 
   it('finds the stylesheets it is meant to be checking', () => {
@@ -104,6 +129,24 @@ describe('no hover effects anywhere in Club Arena', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('the club footer carries no hover state either', () => {
+    /*
+     * PR #1808 added a case here REQUIRING `.navItem:hover` to exist, beside
+     * the exemption that let it. A test that mandates the thing the law forbids
+     * is not a weaker law, it is the opposite law wearing its name — and it
+     * would have turned red on anyone who removed the rule correctly.
+     *
+     * Inverted, so the footer is held to the same rule as every other file
+     * rather than being the one place allowed to break it.
+     */
+    const footer = maskComments(
+      readFileSync(join(SRC, 'components/club/ClubBottomNav.module.css'), 'utf8')
+    );
+    expect(footer).not.toContain(':hover');
+    // The states that replace it are still there.
+    expect(footer).toContain(':focus-visible');
   });
 
   it('leaves :focus-visible and :active in place as the states that replace it', () => {

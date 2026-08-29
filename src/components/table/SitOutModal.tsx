@@ -60,7 +60,8 @@ export interface SitOutModalProps {
    * note in src/lib/sitOutDeadline.ts.
    */
   isTournament?: boolean;
-  tableName?: string;
+  /* `tableName` REMOVED 2026-08-29: accepted, destructured and passed in by
+     TableModalsLayer, and rendered by nothing. */
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -119,20 +120,15 @@ export function SitOutModal({
   onLeaveTable,
   sitOutSince,
   isTournament = false,
-  tableName,
 }: SitOutModalProps) {
-  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
-
-  // Reset the destructive confirm on every close.
-  //
-  // The overlay dismisses via onClose without touching `showLeaveConfirm`, so
-  // a player who tapped "Leave Table", thought better of it and tapped outside
-  // reopened the modal straight into the confirm step — with "Leave" sitting
-  // exactly where "Return to Game" had been the moment before. One tap cashed
-  // them out of the table.
-  useEffect(() => {
-    if (!isOpen) setShowLeaveConfirm(false);
-  }, [isOpen]);
+  /* ── `showLeaveConfirm` REMOVED 2026-08-29 ─────────────────────────────
+     Nothing ever set it TRUE and no JSX read it. The ten-line comment it
+     carried described a two-step Leave confirmation ("Leave sitting exactly
+     where Return to Game had been") that is not in this component — and the
+     reset it guarded was triggered by `onClose`, whose only route in is the
+     overlay's `onClick`, which cannot fire: `.sitout-overlay` is
+     `pointer-events: none`. Dead state, guarded by a dead reset, for a UI that
+     does not exist, described by a comment a reader would trust. */
 
   /**
    * THE COUNTDOWN, restored 2026-08-29 — and this time it ticks against a
@@ -156,7 +152,6 @@ export function SitOutModal({
   // Handle leave
   const handleLeave = useCallback(() => {
     onLeaveTable();
-    setShowLeaveConfirm(false);
     onClose();
   }, [onLeaveTable, onClose]);
 

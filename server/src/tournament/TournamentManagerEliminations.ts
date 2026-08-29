@@ -1614,6 +1614,45 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // onto the knocker's head, and records tournament_bounties — all in one
     // transaction. Any residual is settled to the champion by
     // fn_finalize_bounty_pool at completion.
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A SPLIT POT SHARES THE CHEST BUT NOT THE BOUNTY (2026-08-29)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * `claimants` carries everyone with a claim on this knockout and the
+     * weight of that claim -- the winners of the pot that held the busted
+     * player's last chips, equally weighted when that pot was tied. The
+     * mystery path honours it (buildRecipientClaims splits the chest by
+     * weight). This path does not: `fn_collect_bounty` takes ONE
+     * `p_collector_user_id`, so on a tied pot one of the tied winners takes
+     * the whole head -- the cash bounty AND, in a PKO, the half that
+     * accumulates onto their own head -- and the other takes nothing.
+     *
+     * It is NOT fixed here, deliberately. Splitting a PKO head is not
+     * arithmetic, it is a rule: whether each winner takes half the cash and
+     * half the head increment, or the head passes whole to one of them, is a
+     * decision about how the game plays and it belongs to Dan. Improvising it
+     * inside a money RPC would be the same mistake as inventing the
+     * horses-earn-nothing rule.
+     *
+     * What IS fixed is that it was silent. A tied pot on a bounty event now
+     * says so, with the players and the weights, so the frequency is
+     * measurable and the ruling can be made against real numbers instead of a
+     * guess.
+     */
+    if (claimants.length > 1) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] SPLIT-POT KNOCKOUT: ${claimants.length} players share the pot that busted ${eliminatedUserId.slice(0, 8)} (${claimants
+            .map((c) => `${c.userId.slice(0, 8)}:${c.weight}`)
+            .join(
+              ', '
+            )}), but the bounty pays a single collector — ${knockerUserId.slice(0, 8)} takes the whole head. Needs a ruling on how a split head is shared.`
+        ),
+        'Tournament.split_pot_bounty_paid_to_one'
+      );
+    }
+
     const { data: result, error } = await supabase.rpc('fn_collect_bounty', {
       p_tournament_id: this.tournamentId,
       p_eliminated_user_id: eliminatedUserId,

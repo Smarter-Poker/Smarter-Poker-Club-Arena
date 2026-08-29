@@ -38,7 +38,7 @@ import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
 import { isAuthzError } from '../../utils/clubDashboard';
 import { reportError } from '../../utils/errorReporter';
 import { downloadCsv, csvEscape } from '../../utils/downloadCsv';
-import ClubBottomNav from '../../components/club/ClubBottomNav';
+import { EmptyState, LoadingState, PermissionState } from '../../components/common/EmptyState';
 import styles from './ClubDataPage.module.css';
 
 type PresetId = 1 | 7 | 14;
@@ -704,14 +704,18 @@ export default function ClubDataPage() {
   if (isHydrating) {
     return (
       <div className={styles.page}>
-        <div className={styles.state}>Loading...</div>
+        <LoadingState message="Opening Club Data" />
       </div>
     );
   }
   if (!user) {
     return (
       <div className={styles.page}>
-        <div className={styles.state}>Sign In To View Club Data.</div>
+        <PermissionState
+          title="Sign In To View Club Data"
+          description="Financial and player analytics are restricted to authenticated club operators."
+          onBack={() => navigate('/')}
+        />
       </div>
     );
   }
@@ -721,8 +725,15 @@ export default function ClubDataPage() {
        out, and it can resolve a club of its own even when the route gave none. */
     return (
       <div className={styles.page}>
-        <div className={styles.state}>No Club Selected.</div>
-        <ClubBottomNav />
+        <EmptyState
+          icon="CLUB"
+          eyebrow="Club Context Required"
+          tone="permission"
+          title="Choose A Club To View Its Data"
+          description="Revenue, rake, player results, and union invoices belong to a specific club. Open Club Data from that club's Operations menu."
+          action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
+          secondaryAction={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
+        />
       </div>
     );
   }
@@ -1291,10 +1302,6 @@ export default function ClubDataPage() {
             : ''}
         </div>
       )}
-
-      {/* Dan 2026-08-25: Club Data is the footer's Data tab, so it carries the
-          footer itself. The Data tab hides itself while you are here. */}
-      <ClubBottomNav clubId={clubUuid || undefined} />
     </div>
   );
 }

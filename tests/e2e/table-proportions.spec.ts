@@ -313,7 +313,18 @@ test.describe('every device gets the same proportions', () => {
        far narrower, the height budget shrank and the device stopped being
        width-bound; that is a real felt-size change and belongs in front of
        Dan, not silently under this beat. */
-    const WIDTH_BOUND_PHONES = ['iPhone 12/13/14', 'iPhone 14 Pro Max'];
+    /* The (real) rows carry the actual notch and home-indicator insets and
+       are the ones that map to Dan's hand. 2026-08-29, second lesson of the
+       day: the first edge-to-edge fix went green on the emulated rows while
+       changing nothing on real hardware, because the real felt was
+       HEIGHT-bound under insets no emulation models. If a device is ever
+       width-starved again, it must be starved HERE, loudly. */
+    const WIDTH_BOUND_PHONES = [
+      'iPhone 12/13/14',
+      'iPhone 14 Pro Max',
+      'iPhone 12/13/14 (real)',
+      'iPhone 14 Pro Max (real)',
+    ];
     const rows = await measureAll(page, css);
     const offenders: string[] = [];
     for (const r of rows) {
@@ -334,7 +345,9 @@ test.describe('every device gets the same proportions', () => {
     ).toEqual([]);
   });
 
-  test('nothing on the felt changes size without saying so (the geometry baseline)', async ({ page }) => {
+  test('nothing on the felt changes size without saying so (the geometry baseline)', async ({
+    page,
+  }) => {
     /* Dan 2026-08-29: "YOU NEED TO ADD PREVENTIVE REGRESSION TO ALL ASPECTS
        ... WE DON'T EVER WANT THINGS RANDOMLY REGRESSING."
 

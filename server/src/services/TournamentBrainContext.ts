@@ -285,16 +285,42 @@ export function deriveContext(
   // V16 ICM inputs: the payout CURVE and the live stack DISTRIBUTION are
   // what a real Malmuth-Harville pressure model needs; counts alone were why
   // the old premium had to be a flat guess.
-  const payoutPct = (places ?? [])
+  // V29 AUDIT FIX (H3, 2026-08-29): the curve used to be sliced to the top 9
+  // places and the REST OF THE PAID MASS DISCARDED — a 1,200-runner event
+  // paying 150 was modelled as a 9-paid tournament, so the survival premium
+  // in deep fields was derived from a fiction (and telemetry reported the
+  // path as 'real', so it looked healthy). The model still takes at most 9
+  // buckets, but the 9th now CARRIES the sum of every remaining paid place:
+  // total paid mass is preserved, and the tail the model prices reflects the
+  // actual money below the top table.
+  const sortedPlaces = (places ?? [])
     .slice()
     .sort((a, b) => a.place - b.place)
-    .slice(0, 9)
     .map((p) => p.percentage)
     .filter((p) => p > 0);
-  const stacks = liveStacks
-    .filter((s) => isFinite(s) && s > 0)
-    .sort((a, b) => b - a)
-    .slice(0, 200);
+  const payoutPct =
+    sortedPlaces.length <= 9
+      ? sortedPlaces
+      : [...sortedPlaces.slice(0, 8), sortedPlaces.slice(8).reduce((a, b) => a + b, 0)];
+  // Same defect on the stack side: it took the TOP 200 stacks, discarding the
+  // bottom of the field entirely — in any event past 200 players the model saw
+  // only big stacks, hero's chip share was computed against an inflated
+  // average, and a below-median hero was substituted over a real big stack.
+  // The 200-stack cap stays (the model needs bounded work), but the sample is
+  // now a QUANTILE sample of the whole sorted field: every 200th-ile stack
+  // from chip leader to shortest. The distribution's shape, mean and hero's
+  // relative standing all survive; only resolution is lost.
+  const allLive = liveStacks.filter((s) => isFinite(s) && s > 0).sort((a, b) => b - a);
+  let stacks: number[];
+  if (allLive.length <= 200) {
+    stacks = allLive;
+  } else {
+    stacks = [];
+    for (let i = 0; i < 200; i++) {
+      const idx = Math.min(allLive.length - 1, Math.round((i * (allLive.length - 1)) / 199));
+      stacks.push(allLive[idx]);
+    }
+  }
 
   // V23: the blind clock and the final-table flag ride the same derivation.
   const clock = deriveBlindClock(
@@ -351,7 +377,14 @@ export function getTournamentBrainContext(tournamentId: string): TournamentBrain
   const now = Date.now();
   let e = cache.get(tournamentId);
   if (!e) {
-    if (cache.size > MAX_CACHED) cache.clear();
+    // V29 AUDIT FIX (was LOW in the wire audit): .clear() dropped EVERY live
+    // tournament's context at once — every horse in every event fell back to
+    // the flat premium simultaneously until refreshes landed. Evict the
+    // stalest quarter instead.
+    if (cache.size > MAX_CACHED) {
+      const entries = [...cache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt);
+      for (let i = 0; i < Math.ceil(entries.length / 4); i++) cache.delete(entries[i][0]);
+    }
     e = { ctx: null, fetchedAt: 0, inFlight: false };
     cache.set(tournamentId, e);
   }

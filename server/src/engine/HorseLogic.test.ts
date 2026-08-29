@@ -145,6 +145,28 @@ const STYLES: HorseStyle[] = ['tag', 'lag', 'balanced', 'tricky', 'grinder'];
 // ───────────────────────────────────────────────────────────────────────────────────
 
 describe('HorseLogic V2 — legality fuzz (all variants, all streets)', () => {
+  /**
+   * EXPLICIT TIMEOUT (2026-08-29). This fuzz costs ~6.0s on an idle machine
+   * against the 10s global in vitest.config.ts — four seconds of headroom for
+   * a test that runs 250 trials across every variant and every street.
+   *
+   * That is not enough. Running the whole server suite (220 files) in parallel
+   * contends the box hard enough to eat it: measured here twice in a row,
+   * failing with "Test timed out in 10000ms" in the full run and passing 77/77
+   * in isolation seconds later. It is a scheduling artifact, not a legality
+   * failure — the assertion never fired.
+   *
+   * That distinction matters because of what a red test costs on this repo:
+   * `npx vitest run` in build-for-world-hub.yml is what PUBLISHES the bundle,
+   * so a suite that goes red on machine load stops the World Hub sync for
+   * every agent (CLAUDE.md section 5 rule 8). A timeout is the one failure
+   * mode that says nothing about the code, so it must not be the one that
+   * blocks the estate.
+   *
+   * 60s is ten times the measured cost. If this test ever approaches it, the
+   * fuzz has genuinely got slower and that is worth knowing — which is why
+   * this is a raised bound rather than a removed one.
+   */
   it('never produces an illegal action across randomized states', () => {
     let checked = 0;
     for (const { variant, hole, short } of VARIANTS) {
@@ -300,7 +322,9 @@ describe('HorseLogic V2 — legality fuzz (all variants, all streets)', () => {
       }
     }
     expect(checked).toBe(VARIANTS.length * 250);
-  });
+    // 60s: ten times the ~6.0s this costs idle. See the docblock above — the
+    // 10s global is not survivable when 220 files contend the box.
+  }, 60_000);
 
   /**
    * The state that made the fuzz above flaky, pinned deterministically.

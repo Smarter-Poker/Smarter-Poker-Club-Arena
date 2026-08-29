@@ -130,6 +130,119 @@ describe('LAW: no animation may be skipped by state plumbing', () => {
     expect(TABLE_PAGE).toContain('lastSeatOfUserRef');
   });
 
+  it('the busted seat FLINCHES, on this table, on the impact beat', () => {
+    // Dan 2026-08-29: the first cut of the seat knockout did nothing at all to
+    // the seat, so a punch landed on a photograph. The mechanism is the one
+    // ThrowAnimation has used since 2026-08-15 and it carries that component's
+    // hard-won lesson: a bare document.querySelector('[data-seat-num="3"]')
+    // hits the FIRST seat 3 in DOM order, which in a multi-table view is
+    // somebody else's table.
+    expect(KO).toContain("rootRef.current?.closest('.table-page')");
+    expect(KO, 'data-seat-num is 1-based; hit.seatIndex is 0-based').toContain(
+      'data-seat-num="${hit.seatIndex + 1}"'
+    );
+    expect(KO).toContain("classList.add('seat--ko-flinch')");
+    // Its own class and its own keyframe. The throwable flinch is 450ms and is
+    // pinned at 600 * getAnimationSpeed() two describes down; neither may
+    // retune the other.
+    expect(KO_CSS).toContain('skoSeatFlinch calc(0.2s * var(--animation-speed, 1))');
+    // INDIVIDUAL `translate` / `rotate`, never `transform`. `.seat` states
+    // carry their own `transform: scale(...)` (hero, active, winner) and a
+    // transform keyframe stomps that scale for the whole flinch — three times
+    // per knockout, on the seat everyone is looking at. throwable-seat-flinch
+    // learned this first and says so in ThrowAnimation.css.
+    const flinch = KO_CSS.slice(
+      KO_CSS.indexOf('@keyframes skoSeatFlinch'),
+      KO_CSS.indexOf('}', KO_CSS.indexOf('100% {', KO_CSS.indexOf('@keyframes skoSeatFlinch')))
+    );
+    expect(flinch).toContain('translate:');
+    expect(flinch, 'a transform keyframe would stomp the seat scale').not.toContain('transform:');
+    // Once per LANDING, not once per knockout.
+    expect(KO).toContain('for (const at of SKO_PUNCH_AT_MS)');
+    expect(KO, 'and it must not borrow the throwable one').not.toContain(
+      "classList.add('seat--throw-flinch')"
+    );
+    // A class added by a timer must be removed by one, or it is stranded on a
+    // seat that outlives the animation that added it.
+    expect(KO).toContain("classList.remove('seat--ko-flinch')");
+  });
+
+  it('the KO stamp does not depend on a font the device may not have', () => {
+    // 'Arial Black' is not installed on Android. The one element in this
+    // animation that carries INFORMATION rather than drama was falling back to
+    // something much lighter for a large share of the userbase — a correctness
+    // bug wearing a taste bug's clothes. Two hand-authored glyph paths render
+    // identically everywhere, need no font load and cannot FOUT.
+    expect(KO_CSS, 'the stamp must not name a font').not.toMatch(
+      /\.sko__stamp\s*\{[^}]*font-family/
+    );
+    expect(KO).toContain('function StampArt');
+    // #FC0000 is the measured red off the capture; #ff1f1f (the first cut) is
+    // visibly pinker.
+    expect(KO).toContain('#fc0000');
+  });
+
+  it("the gloves are Dan's art, and they are warm in the cache before the first bust", () => {
+    // Dan 2026-08-29 supplied two branded renders. The FIRST cut of this
+    // component drew the glove as vector precisely because "a lazily-fetched
+    // PNG cannot promise the FIRST knockout of a session animates" — a real
+    // constraint, and the answer is a preload at module scope rather than
+    // hand-drawing a boxing glove. TablePage imports this module, so both
+    // decodes start when a table opens.
+    expect(KO).toContain("mediaUrl('images/knockout/glove-left.webp')");
+    expect(KO).toContain("mediaUrl('images/knockout/glove-right.webp')");
+    expect(KO, 'preloaded, or the first knockout of a session pops').toContain('new Image()');
+    expect(KO).toContain('img.decoding');
+    // The fist, not the image centre, lands on the seat. If these margins ever
+    // go symmetric the punches land beside the player.
+    expect(KO_CSS).toContain('--sko-fist-x: 29.2%');
+    expect(KO_CSS).toContain('--sko-fist-x: 65.8%');
+  });
+
+  it('the boxing-glove THROWABLE is the same flurry, minus the knockout', () => {
+    // Dan 2026-08-29: "THIS ANIMATION SHOULD ALSO REPLACE THE BOXING GLOVE
+    // ANIMATION INSIDE THE CLUB ARENA THROWABLE. SAME ANIMATION, SAME SOUND
+    // EFFECTS (MINUS THE K.O. AT THE END)."
+    //
+    // ONE implementation, two callers. A second copy of the flurry would drift
+    // from this one the first time either is tuned, and every fix would have
+    // to be made twice.
+    const THROW = read('src/components/table/ThrowAnimation.tsx');
+    expect(THROW).toContain("import { KnockoutFlurry } from './SeatKnockout'");
+    expect(THROW).toContain("event.throwable.id === 'boxing_glove'");
+    // MINUS the knockout: no stamp on a seat that is still occupied, no called
+    // "K.O." for a player who has not been eliminated, and no caption or
+    // spoken line saying one has.
+    expect(THROW).toContain('showStamp={false}');
+    expect(THROW).toContain('withCall: false');
+    expect(THROW, 'the K.O. caption is gone').not.toMatch(/boxing_glove: 'K\.O\.'/);
+    expect(read('src/services/ThrowableVoice.ts'), 'and the spoken line').not.toMatch(
+      /boxing_glove: \{ text:/
+    );
+    // It still scales with the player's Animation Speed, like everything else.
+    /* MOVED 2026-08-29, same commit as the change: this read
+       `speed: getAnimationSpeed()`. The throwable system now hoists ONE
+       `const speed = getAnimationSpeed()` per throw — read once so a setting
+       changed mid-flight cannot desynchronise a throw already in the air —
+       and the cue is handed that. What matters is unchanged and is what is
+       asserted: the knockout cue stretches with the player's setting. */
+    expect(THROW).toMatch(/playKnockoutFlurry\(\{[\s\S]*?\n\s*speed,/);
+    // The flurry sizes off the THROWABLE's own impact size, not the seat token
+    // it cannot see from outside the seat ring.
+    expect(THROW).toContain("'--sko-unit': `${Math.round(impactSize * 1.15)}px`");
+  });
+
+  it('every SVG gradient id is instance-scoped — a multi-table view mounts several', () => {
+    // <defs> ids are global to the DOCUMENT. The FIRST cut of this component
+    // dodged that by having no gradients at all, which is precisely why Dan
+    // called the art what he called it. useId() is what makes gradients safe
+    // here, and this stops the next agent "simplifying" it back out.
+    expect(KO).toContain('useId');
+    expect(KO, 'ids are built from the instance id, never written literally').toMatch(
+      /const g = \(n: string\) => `sko-\$\{n\}-\$\{uid\}`/
+    );
+  });
+
   it('the bounty ships on the same beat as the stamp, summed once per winner', () => {
     // Busting two players pays two bounties and the reference shows ONE
     // number. Two floats stacked on one seat is the bug this prevents; the
@@ -193,10 +306,25 @@ describe('LAW: animations land where they aim, at the speed the player chose', (
     // The knockout is the newest pair and the easiest to break: the glove, the
     // star and the stamp are three CSS animations whose delays have to stay in
     // step with SKO_IMPACT_AT_MS / SKO_STAMP_AT_MS on the JS side.
-    expect(KO_CSS).toContain('skoGloveStrike calc(0.93s * var(--animation-speed, 1))');
+    // Moved 2026-08-29 with the mechanisms, twice and in the same commits as
+    // the changes: the burst was twelve `.sko__ray` divs and is now one
+    // irregular path, and the single `skoGloveStrike` became a TWO-GLOVE
+    // flurry after Dan supplied branded art and a capture of one.
+    expect(KO_CSS).toContain('skoPunchRight calc(0.93s * var(--animation-speed, 1))');
+    expect(KO_CSS).toContain('skoPunchLeft calc(0.93s * var(--animation-speed, 1))');
+    expect(KO_CSS).toContain('skoFlurryHit calc(0.93s * var(--animation-speed, 1))');
+    expect(KO_CSS).toContain('skoStarBurst calc(0.24s * var(--animation-speed, 1))');
+    expect(KO_CSS, 'the ray divs are retired').not.toContain('skoRay ');
+    expect(KO_CSS, 'and the single-glove strike with them').not.toContain('skoGloveStrike');
     expect(KO_CSS).toContain('calc(0.46s * var(--animation-speed, 1))'); // impact delay
     expect(KO_CSS).toContain('calc(0.93s * var(--animation-speed, 1))'); // stamp delay
-    expect(KO).toContain('SKO_IMPACT_AT_MS) * speed');
+    // The audio is no longer a setTimeout at the impact beat — it is ONE cue
+    // that carries the whole flurry and schedules it on the AudioContext
+    // clock. What still has to scale is the beat table it is handed, and the
+    // per-landing seat flinch.
+    expect(KO).toContain('SKO_PUNCH_AT_MS');
+    expect(KO).toContain('at * speed');
+    expect(KO).toMatch(/punchesAtMs: reduced \? \[0\] : SKO_PUNCH_AT_MS/);
   });
 
   it('throw flinch and shake are scoped to their own table', () => {
@@ -216,6 +344,322 @@ describe('LAW: the end-of-hand cadence plays in order, every hand', () => {
   // tests/unit/handCompletionLaw.test.ts, in every hold formula.
 });
 
+describe('LAW: the throwable system obeys the speed the player chose', () => {
+  /* Found 2026-08-29 by counting, not by looking: ThrowAnimation.css and
+     ThrowableSignatures.css carried 217 hardcoded durations between them and
+     NOT ONE of them scaled, while ThrowAnimation.tsx never called
+     getAnimationSpeed() at all. So a player on the slow setting watched every
+     other animation on the table stretch to 3x while throwables kept snapping
+     past at 1x. CLAUDE.md §10.6 names speed scaling as the one sanctioned
+     control over animation duration; the throwables had opted out of it
+     wholesale, and nothing noticed because no test had ever asked. */
+  const THROW_TSX = read('src/components/table/ThrowAnimation.tsx');
+  const THROW_CSS = read('src/components/table/ThrowAnimation.css');
+  const SIG_CSS = read('src/components/table/ThrowableSignatures.css');
+
+  it('every animation duration in both throwable stylesheets scales', () => {
+    for (const [name, css] of [
+      ['ThrowAnimation.css', THROW_CSS],
+      ['ThrowableSignatures.css', SIG_CSS],
+    ] as const) {
+      /* Comments out, THEN scan. `.throw-animation:` inside a prose comment
+         satisfies /\banimation:/ - the hyphen is a word boundary - so the
+         first version of this test reported a phantom unscaled declaration
+         sitting in a paragraph of documentation. The property must also not
+         be preceded by a hyphen or a word character, or the same string
+         matches all over again. */
+      const code = css.replace(/\/\*[\s\S]*?\*\//g, '');
+      const decls = [
+        ...code.matchAll(/(?<![-\w])animation(?:-duration|-delay)?\s*:([^;{}]*)/g),
+      ].map((m) => m[1]);
+      expect(decls.length, `${name} should declare animations`).toBeGreaterThan(20);
+      for (const d of decls) {
+        // Either it scales, or it defers to one of the four timeline variables
+        // that ThrowAnimation.tsx has already scaled in JS, or it is a
+        // switch-off with no duration to scale.
+        const okay =
+          /var\(--animation-speed, 1\)/.test(d) ||
+          /var\(--(?:flight|impact|life|linger)-dur/.test(d) ||
+          /^\s*(?:none|inherit|unset)\b/.test(d);
+        expect(okay, `"${d.trim().slice(0, 70)}" in ${name} must scale`).toBe(true);
+      }
+    }
+  });
+
+  it('the impact caption is a struck BADGE, not floating text', () => {
+    /* Dan 2026-08-29, on the PokerBros captures: "THE DESIGN GRAPHICS ETC
+       NEEDS TO BE REPLICATED INSIDE OF EVERY SINGLE THROWABLE ANIMATION."
+       Theirs is a plate with a starburst behind it; ours was 22px of white
+       Rajdhani floating in space. It is one element still — the plate is the
+       element, the burst is ::before, the shine is ::after — because a table
+       can be running four throws at once. */
+    const cap = THROW_CSS.slice(THROW_CSS.indexOf('.throw-animation__caption {'));
+    expect(cap, 'the plate').toMatch(/background:\s*\n?\s*linear-gradient/);
+    expect(THROW_CSS, 'the starburst').toContain('.throw-animation__caption::before');
+    expect(THROW_CSS, 'the struck-metal shine').toContain('.throw-animation__caption::after');
+    // Irregular by construction. repeating-conic-gradient at even intervals is
+    // the cartoon sun the knockout's first star was, and that mistake is
+    // documented at length in SeatKnockout.css.
+    expect(cap, 'no evenly-spaced spokes').not.toContain('repeating-conic-gradient');
+    expect(cap).toContain('conic-gradient');
+
+    /* color-mix() FALLBACKS. A browser that does not understand color-mix
+       throws away the WHOLE declaration, so a single shadow list using it
+       would take the bevel and the drop shadow down with the glow. Every
+       property that uses color-mix must be declared TWICE — a plain-colour
+       floor first, the enhanced version second. */
+    for (const prop of ['box-shadow', 'text-shadow', 'background']) {
+      const uses = [...cap.matchAll(new RegExp(`\\n  ${prop}:`, 'g'))].length;
+      const mixed = [...cap.matchAll(new RegExp(`\\n  ${prop}:[^;]*color-mix`, 'g'))].length;
+      if (mixed > 0) {
+        expect(
+          uses,
+          `${prop} uses color-mix and therefore needs a plain-colour declaration before it`
+        ).toBeGreaterThan(mixed);
+      }
+    }
+  });
+
+  it('the four JS-computed timeline variables are scaled exactly once', () => {
+    // Scaled in JS (here) and NOT again in CSS — double-scaling a duration is
+    // as broken as not scaling it, and much harder to spot.
+    expect(THROW_TSX).toContain('const speed = getAnimationSpeed();');
+    expect(THROW_TSX).toContain("'--flight-dur': `${scaled(physics.duration)}ms`");
+    expect(THROW_TSX).toContain("'--impact-dur': `${scaled(impactMs)}ms`");
+    expect(THROW_TSX).toContain("'--life-dur': `${scaled(lifeMs)}ms`");
+    expect(THROW_TSX).toContain("'--linger-dur': `${scaled(lingerMs)}ms`");
+    for (const css of [THROW_CSS, SIG_CSS]) {
+      expect(
+        css,
+        'the timeline vars are pre-scaled; multiplying them again doubles the duration'
+      ).not.toMatch(
+        /var\(--(?:flight|impact|life|linger)-dur[^)]*\)\s*\*\s*var\(--animation-speed/
+      );
+    }
+  });
+
+  it('the phase timers and the decorative class removals scale too', () => {
+    // One scaled `at()` covers all four phase transitions. Scaling at the call
+    // sites would be four chances to forget one, and a forgotten one fires an
+    // impact before its projectile has landed.
+    expect(THROW_TSX).toMatch(/const at = \(ms: number, fn: \(\) => void\) =>[\s\S]*?ms \* speed/);
+    expect(THROW_TSX).toContain("'seat--throw-flinch'), 500 * speed");
+    expect(THROW_TSX).toContain("'throw-animation--shake'), 520 * speed");
+    // The whoosh has to last as long as the flight it is announcing.
+    expect(THROW_TSX).toContain('playFlight(t.id, scaled(physics.duration), impactPan)');
+  });
+});
+
+describe('LAW: a thrown item is an object, not a sticker', () => {
+  /* Dan on the PokerBros captures: CURRENTLY ANIMATIONS ARE JUST AN FLAT BASIC
+     EMOJI THAT FLOATS AND LANDS, NOT DYNAMIC GRAPHIC ANIMATIONS LIKE THIS.
+     Four framework pieces answer that for all ~40 items at once, and each one
+     shipped because it was MISSING, so each gets a pin. */
+  const THROW_TSX2 = read('src/components/table/ThrowAnimation.tsx');
+  const THROW_CSS2 = read('src/components/table/ThrowAnimation.css');
+  const SIG_CSS2 = read('src/components/table/ThrowableSignatures.css');
+
+  it('every physics profile casts a contact shadow while it flies', () => {
+    // The shadow is the only cue for HEIGHT. Without one per profile, the
+    // shadow and the item disagree about where the ground is.
+    for (const profile of ['arc', 'fastball', 'float', 'drop', 'swoop', 'spiral']) {
+      expect(THROW_CSS2).toMatch(new RegExp(`@keyframes throwable-shadow-${profile}\\b`));
+    }
+    // lob shares arc's curve, so it shares arc's shadow rather than inventing
+    // a second one that could drift from it.
+    expect(THROW_CSS2).toContain('.throw-animation__projectile--lob .throw-animation__shadow');
+    expect(THROW_TSX2).toContain('className="throw-animation__shadow"');
+  });
+
+  it('the flight shadow is a sibling of the spinner, never a child', () => {
+    /* A shadow inside .throw-animation__spinner would inherit the arc's
+       vertical offset and the tumble spin - it would climb with the item and
+       rotate, which tells the eye there is no ground at all. Assert the
+       shadow appears BEFORE the spinner opens, at projectile level. */
+    const proj = THROW_TSX2.slice(THROW_TSX2.indexOf('throw-animation__projectile--$'));
+    const iShadow = proj.indexOf('throw-animation__shadow');
+    const iSpinner = proj.indexOf('throw-animation__spinner');
+    expect(iShadow).toBeGreaterThan(-1);
+    expect(iSpinner).toBeGreaterThan(iShadow);
+  });
+
+  it('the motion smear is proportional to the real speed of the throw', () => {
+    // Pinned at 0.30 / 0.14, a 420ms fastball and an 1100ms float smeared
+    // identically - and the smear is the main thing that separates them.
+    expect(THROW_TSX2).toMatch(/--trail-strength/);
+    expect(THROW_TSX2).toMatch(/Math\.hypot\(toPos\.x - fromPos\.x/);
+    expect(THROW_CSS2).toContain('calc(0.3 * var(--trail-strength, 1))');
+    expect(THROW_CSS2).toContain('calc(0.14 * var(--trail-strength, 1))');
+  });
+
+  it('a landed item has a shadow on the felt and kicks dust along it', () => {
+    expect(THROW_TSX2).toContain('className="throw-animation__ground"');
+    expect(THROW_TSX2).toContain('className="throw-animation__dust"');
+    expect(THROW_CSS2).toMatch(/@keyframes throwable-ground\b/);
+    expect(THROW_CSS2).toMatch(/@keyframes throwable-dust\b/);
+    // Dust vectors must be SQUASHED vertically, or the puff reads as a flat
+    // screen-plane ring - the exact mistake the knockout star made. Every
+    // --dy is smaller in magnitude than its --dx.
+    const pairs = [...THROW_CSS2.matchAll(/--dx:\s*(-?[\d.]+)px;\s*\n\s*--dy:\s*(-?[\d.]+)px;/g)];
+    expect(pairs.length).toBeGreaterThanOrEqual(6);
+    for (const [, dx, dy] of pairs) {
+      expect(Math.abs(Number(dy))).toBeLessThan(Math.abs(Number(dx)));
+    }
+  });
+
+  it('the settle rocks about the base, on its own element, via `rotate`', () => {
+    /* Three separate bugs avoided, all of which have shipped here before:
+       - `transform` on the settle would stomp the four squash keyframe sets
+         that already own transform on the icon (see skoSeatFlinch, CLAUDE.md);
+       - rotating about the centre makes a landed object spin rather than rock;
+       - a thing rocks on the felt it touches, so the pivot is BELOW centre. */
+    expect(THROW_TSX2).toContain('className="throw-animation__settle"');
+    const block = THROW_CSS2.slice(
+      THROW_CSS2.indexOf('.throw-animation__settle {'),
+      THROW_CSS2.indexOf('@keyframes throwable-settle')
+    );
+    expect(block).toMatch(/transform-origin:\s*0\s+calc\(var\(--impact-size/);
+    const kf = THROW_CSS2.slice(
+      THROW_CSS2.indexOf('@keyframes throwable-settle'),
+      THROW_CSS2.indexOf('@keyframes throwable-settle') + 400
+    );
+    expect(kf).toMatch(/rotate:/);
+    expect(kf).not.toMatch(/transform:/);
+  });
+
+  it('no item both rocks under the house settle and under its own signature', () => {
+    /* THE DOUBLE-SETTLE GUARD. Eleven items already slip, tumble, tip or
+       wobble to rest under a bespoke signature; fx-icon-wobble-settle is
+       literally this same animation. The opt-out list is re-derived from
+       ThrowableSignatures.css here rather than trusted, so an item whose
+       signature GAINS a rotation later cannot quietly start double-rocking. */
+    const kfBodies = new Map<string, string>();
+    for (const m of SIG_CSS2.matchAll(/@keyframes\s+([\w-]+)\s*\{([\s\S]*?)\n\}/g)) {
+      kfBodies.set(m[1], m[2]);
+    }
+    const rotating = new Set(
+      [...kfBodies].filter(([, body]) => /rotate[:(]/.test(body)).map(([n]) => n)
+    );
+    const needOptOut = new Set<string>();
+    for (const m of SIG_CSS2.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const [, sel, body] = m;
+      if (!sel.includes('impact-icon')) continue;
+      const anim = /animation:\s*([\w-]+)/.exec(body);
+      if (!anim || !rotating.has(anim[1])) continue;
+      for (const id of sel.matchAll(/data-throwable='([\w-]+)'/g)) needOptOut.add(id[1]);
+    }
+    expect(needOptOut.size).toBeGreaterThanOrEqual(11);
+
+    const optedOut = new Set(
+      [...THROW_CSS2.matchAll(/\.throw-animation\[data-throwable='([\w-]+)'\](?=,|\s*\{)/g)].map(
+        (m) => m[1]
+      )
+    );
+    const missing = [...needOptOut].filter((id) => !optedOut.has(id));
+    expect(missing).toEqual([]);
+    expect(THROW_CSS2).toContain('--settle: 0;');
+  });
+
+  it('reduced motion drops the theatrics but keeps the ground shadow', () => {
+    /* CLAUDE.md 10.6: reduced motion collapses motion, never meaning. The
+       flight shadow and the dust are drama and go; the ground shadow is the
+       cue that says the item is ON the felt, so it stops moving and stays. */
+    const rm = THROW_CSS2.slice(THROW_CSS2.indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(rm).toContain('.throw-animation__shadow');
+    expect(rm).toContain('.throw-animation__dust');
+    expect(rm).toMatch(/\.throw-animation__ground \{\s*\n?\s*animation: none/);
+    expect(rm).not.toMatch(/\.throw-animation__ground[^{]*\{[^}]*display: none/);
+  });
+});
+
+describe('LAW: no throwable ships as a stub', () => {
+  /* Measured 2026-08-29 rather than eyeballed: every one of the 48 throwables
+     had a signature BLOCK, so "does it have a signature" was useless as a
+     question. Counting declarations instead found five that were signatures in
+     name only against a median of 23 - robot had ONE declaration, and
+     tennis_ball had two and NOT ONE animation, the only item in the set with
+     no motion of its own at all. */
+  const SIG3 = read('src/components/table/ThrowableSignatures.css');
+  const TA3 = read('src/components/table/ThrowAnimation.css');
+  const CODE = SIG3.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  /** Declarations + animations actually attached to one item's selectors. */
+  function depth(id: string) {
+    let decls = 0;
+    const anims = new Set<string>();
+    for (const m of CODE.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      if (!new RegExp(`data-throwable='${id}'`).test(m[1])) continue;
+      decls += (m[2].match(/[a-z-]+\s*:/g) || []).length;
+      for (const a2 of m[2].matchAll(/animation:\s*([\w-]+)/g)) anims.add(a2[1]);
+    }
+    return { decls, anims: anims.size };
+  }
+
+  it('the five stub signatures are real animations now', () => {
+    // The floor is deliberately well under the median: this pins them as
+    // FINISHED, it does not freeze the tuning.
+    for (const id of ['robot', 'ghost', 'tennis_ball', 'angry_emoji', 'ufo']) {
+      const d = depth(id);
+      expect(`${id}:${d.decls >= 18}`).toBe(`${id}:true`);
+      expect(`${id}:${d.anims >= 2}`).toBe(`${id}:true`);
+    }
+  });
+
+  it('tennis_ball has motion at all — it had none', () => {
+    expect(depth('tennis_ball').anims).toBeGreaterThanOrEqual(2);
+    expect(SIG3).toContain('fx-ball-lines');
+    expect(SIG3).toContain('fx-ball-scuff');
+  });
+
+  it('no throwable is left with a signature that does nothing', () => {
+    const ids = [...new Set([...CODE.matchAll(/data-throwable='([a-z0-9_]+)'/g)].map((m) => m[1]))];
+    expect(ids.length).toBeGreaterThanOrEqual(48);
+    // boxing_glove is the sanctioned exception: it delegates its whole landing
+    // to KnockoutFlurry, so its own block is deliberately thin.
+    const stubs = ids
+      .filter((id) => id !== 'boxing_glove')
+      .filter((id) => depth(id).decls < 8 || depth(id).anims < 1);
+    expect(stubs).toEqual([]);
+  });
+
+  it('every new signature keyframe is uniquely named', () => {
+    /* @keyframes is a GLOBAL namespace shared with ~880 others in this app, so
+       a generic name silently overrides someone else's animation. */
+    const names = [...SIG3.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]);
+    expect(new Set(names).size).toBe(names.length);
+    for (const n of names) expect(n.startsWith('fx-')).toBe(true);
+  });
+
+  it('a color-mix value always has a plain colour declared before it', () => {
+    /* An engine that cannot parse color-mix() discards the WHOLE declaration,
+       not just the unknown colour - so the floor has to be a separate earlier
+       declaration of the same property, in the same block. */
+    for (const [name, css] of [
+      ['ThrowableSignatures.css', SIG3],
+      ['ThrowAnimation.css', TA3],
+    ] as const) {
+      const code = css.replace(/\/\*[\s\S]*?\*\//g, '');
+      const missing: string[] = [];
+      for (const m of code.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        const body = m[2];
+        if (!/color-mix\(/.test(body)) continue;
+        const decls = [...body.matchAll(/([a-z-]+)\s*:\s*([^;]*);/g)].map((d) => ({
+          p: d[1],
+          v: d[2],
+        }));
+        for (const prop of new Set(decls.filter((d) => /color-mix\(/.test(d.v)).map((d) => d.p))) {
+          const all = decls.filter((d) => d.p === prop);
+          const at = all.findIndex((d) => /color-mix\(/.test(d.v));
+          if (!all.slice(0, at).some((d) => !/color-mix\(/.test(d.v))) {
+            missing.push(`${name}: ${m[1].trim().slice(0, 50)} -> ${prop}`);
+          }
+        }
+      }
+      expect(missing).toEqual([]);
+    }
+  });
+});
+
 describe('LAW: reduced motion removes motion, never meaning', () => {
   it('the global collapse keeps its escape hatch, and the turn clock uses it', () => {
     // The countdown ring is duration-carrying animation — its length IS the
@@ -232,6 +676,12 @@ describe('LAW: reduced motion removes motion, never meaning', () => {
     const reduced = KO_CSS.slice(KO_CSS.indexOf('prefers-reduced-motion'));
     expect(reduced).toMatch(/\.sko__glove[\s\S]*animation:\s*none/);
     expect(reduced).toContain('skoStampReduced');
+    // The seat jolt is motion with no information in it, so it is DROPPED
+    // rather than collapsed: a 1ms shake is one displaced frame, which is
+    // worse than none at all.
+    expect(reduced).toContain('.seat--ko-flinch');
+    expect(reduced, 'the gloves go too').toContain('.sko__glove');
+    expect(reduced, 'and the flurry bursts with them').toContain('.sko__hit');
   });
 });
 

@@ -148,7 +148,8 @@ export function BBJRulesPanel({ poolAmount = 0 }: BBJRulesPanelProps) {
           </table>
 
           <ul className="bbj-rules__list">
-            <li>Minimum Pot: {BBJ_RULES.minPotBB} Big Blinds</li>
+            <li>Drop Collected On Every Flop With {BBJ_RULES.minPlayersDealt}+ Players Dealt In</li>
+            <li>Minimum Pot To Win The Jackpot: {BBJ_RULES.minPotBB} Big Blinds</li>
             <li>Minimum Players Dealt In: {BBJ_RULES.minPlayersDealt}</li>
             {BBJ_RULES.requireBothHoleCards && (
               <li>

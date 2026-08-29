@@ -242,8 +242,7 @@
 .lt-row.is-mine {
   box-shadow: inset 3px 0 0 #2ed573;
 }
-2,
-0) {
+.lt-row.is-mine:focus-within {
   background: rgba(65, 105, 225, 0.07);
 }
 .lt-row.is-mine.is-selected {
@@ -729,7 +728,15 @@ abbr.lt-variant[title] {
      a flex container that wraps, which is a guarantee rather than a budget.
      ═══════════════════════════════════════════════════════════════════════ */
   .lobby-table-wrap {
+    /* clip, not hidden — full reasoning on the body rule in
+       src/styles/design-system.css. `hidden` on one axis computes the other to
+       `auto`, which makes this a scroll container nobody asked for. This
+       particular wrapper is not an ancestor of the fixed bottom nav today, so
+       it was not part of the 2026-08-29 footer bug — but "not an ancestor
+       today" is one refactor away from being wrong, and clipping is what this
+       rule actually wants either way. */
     overflow-x: hidden;
+    overflow-x: clip;
   }
 
   .lobby-table,
@@ -1895,5 +1902,28 @@ abbr.lt-variant[title] {
       0 4px 0 #02050a,
       inset 0 1px 0 rgba(255, 255, 255, 0.12),
       inset 0 -2px 0 #0d1624;
+  }
+}
+.arena-lobby-card-list {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .arena-lobby-card-list {
+    width: 100%;
+    display: grid;
+    justify-items: center;
+    gap: 14px;
+    padding: 8px 4px 28px;
+  }
+
+  .arena-lobby-card-list > div {
+    width: 100%;
+    display: grid;
+    justify-items: center;
+  }
+
+  .arena-lobby-card-list + .lobby-table-wrap {
+    display: none;
   }
 }

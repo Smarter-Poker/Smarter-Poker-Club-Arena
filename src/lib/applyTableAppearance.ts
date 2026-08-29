@@ -10,33 +10,17 @@
  * WHY THIS FILE EXISTS. The felt reads its appearance from exactly one place —
  * `user_theme_settings` via `useUserThemeSettings` (TablePage: `resolveSkin`,
  * `resolveBackgroundLayers`, `activeCardBack`, and the `data-*-theme`
- * attributes). But THREE different surfaces wrote it, each with its own hand
- * -rolled upsert, and a fourth wrote somewhere else entirely:
+ * attributes). Historically, three surfaces hand-rolled this upsert and a
+ * fourth wrote a different setting altogether. The hamburger card tiles even
+ * selected an entire row and spread immutable columns back into PostgREST;
+ * the retired /settings dropdown saved `useTableSettings.cardBack`, while
+ * gameplay always preferred the non-empty `cards_id`, so it could announce
+ * success without repainting the dealt cards.
  *
- *   TablePage.onCardBackChanged   correct: emit, then a minimal upsert.
- *   HamburgerMenu card tiles      SELECT '*' then spread the whole row back
- *                                 into the upsert — re-sending `id`,
- *                                 `created_at`, `updated_at`, `user_id` and
- *                                 `game_type` to PostgREST. One generated or
- *                                 immutable column and the write fails, the
- *                                 tile reverts, and the player is told their
- *                                 card back "could not save" for no reason
- *                                 they can see.
- *   ThemeSettingsModal            correct, per game type.
- *   /settings "Card Back Style"   wrote `useTableSettings.cardBack`, which
- *                                 the felt reads ONLY as
- *                                 `v8Theme.cards_id || userSettings.cardBack`
- *                                 — and `cards_id` is never falsy, because
- *                                 `toSelection()` fills it from DEFAULT_THEME.
- *                                 So that dropdown was UNREACHABLE: it saved,
- *                                 said "Settings saved!", and the felt kept
- *                                 dealing the old design forever. Exactly the
- *                                 complaint above.
- *
- * Four writers, three shapes, one of them structurally broken and one of them
- * pointed at a dead key. This module is the single path all of them now use:
- * emit first so the felt repaints instantly, then write ONLY the columns being
- * changed, then revert the emit if the write failed.
+ * Table Studio is now the one selectable-appearance owner, and every launcher
+ * mounts that same component. This module remains its one mutation path: emit
+ * first so every open felt repaints instantly, write only the columns being
+ * changed, and revert the exact optimistic field if persistence fails.
  *
  * It deliberately does NOT own reading. `useUserThemeSettings` remains the one
  * reader; a writer that also reads is how the two drift apart again.

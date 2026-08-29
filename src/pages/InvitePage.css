@@ -70,7 +70,12 @@
   align-items: center;
   width: 100%;
   max-width: 100vw;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
   overflow-x: hidden;
+  overflow-x: clip;
   /* Dan 2026-08-25: this page renders ClubBottomNav but reserved only the
      safe-area inset, which is 0px on a flat screen - the bar sat straight on
      top of the last row. */

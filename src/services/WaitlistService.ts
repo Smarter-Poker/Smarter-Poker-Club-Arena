@@ -160,7 +160,7 @@ export const WaitlistService = {
     }
 
     // Return existing active row if present (idempotent join).
-    const { data: existing } = await supabase
+    const { data: existing, error: existingErr } = await supabase
       .from('table_waitlist')
       .select('id, table_id, user_id, status, created_at, notified_at')
       .eq('table_id', tableId)
@@ -169,6 +169,26 @@ export const WaitlistService = {
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle();
+    /**
+     * A FAILED IDEMPOTENCY CHECK IS NOT "NOT ON THE LIST" (2026-08-29).
+     *
+     * Only `data` was destructured. A Supabase builder RESOLVES with
+     * `{data: null, error}`, so a failure here read as "no active row" and fell
+     * straight through to the INSERT — which is the whole point of this lookup.
+     * Every one of the guards above it (`tableErr`, `!tableRow`,
+     * `tournament_id`) reports and returns; this one, the one immediately
+     * before the write, did not.
+     *
+     * The partial unique index added on 2026-08-29 refuses the duplicate row,
+     * so this cannot put a player in one queue twice any more — but the insert
+     * then fails with a 23505 that the recovery path below diagnoses as "a
+     * concurrent join won the race", which is a false explanation for what was
+     * really a read that never worked. Report the real cause and stop.
+     */
+    if (existingErr) {
+      reportError(existingErr, 'WaitlistService.joinWaitlist.existingLookup', { tableId, userId });
+      return null;
+    }
     if (existing) return mapRow(existing as any);
 
     const { data: inserted, error: insErr } = await supabase

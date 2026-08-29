@@ -56,12 +56,28 @@
  * before this file existed: they are on the old bundle and nothing loops.
  */
 import { useEffect } from 'react';
+import { masterBus } from '../core/MasterBus';
 
 /** How long before another shell reload may be attempted in this tab. */
 export const RELOAD_COOLDOWN_MS = 10 * 60 * 1000;
 
 /** Both conditions must hold continuously for this long before reloading. */
 export const SETTLE_MS = 3000;
+
+/**
+ * Dan 2026-08-29 ("it like glitches and reloads... it looks like broken
+ * code"): a reload that must happen anyway looks worst when it lands seconds
+ * AFTER the app has painted. Inside this window from page start the settle
+ * delay is skipped — the sooner a genuinely-stale boot restarts, the more it
+ * reads as part of loading and the less state the player has built to lose.
+ * All other guards (not at a table, visible, cooldown) still apply.
+ */
+export const STARTUP_WINDOW_MS = 15 * 1000;
+
+/** The settle delay to use for a reload decided at `pageAgeMs` into the page. */
+export function settleDelayMs(pageAgeMs: number): number {
+  return pageAgeMs < STARTUP_WINDOW_MS ? 0 : SETTLE_MS;
+}
 
 const RELOAD_KEY = 'ca_shell_reload_at';
 
@@ -177,7 +193,9 @@ export function useShellUpdateGate(): void {
       if (!ok) return;
 
       // Re-check after the settle delay: a player who opened a table in the
-      // meantime must not be reloaded out of it.
+      // meantime must not be reloaded out of it. During the startup window
+      // the delay is zero (see settleDelayMs) — the timeout still fires
+      // asynchronously and still re-checks every condition.
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         if (!pending || !armed) return;
@@ -197,23 +215,74 @@ export function useShellUpdateGate(): void {
         } catch {
           /* storage blocked - the disarm above is the real guard */
         }
+        /* 2026-08-29 telemetry: every shell reload is counted, with the page
+           age at the moment it fired. A reload inside the startup window is
+           the fix working (adopt before the player settles in); one long
+           after paint is the glitch Dan reported — the rate of the latter is
+           what must stay at zero. */
+        masterBus.emit('SHELL_RELOADED', { pageAgeMs: Math.round(performance.now()) });
         window.location.reload();
-      }, SETTLE_MS);
+      }, settleDelayMs(performance.now()));
+    };
+
+    /**
+     * Dan 2026-08-29: SHELL_UPDATED and controllerchange used to arm the
+     * reload BLINDLY, and both fire in situations where the running bundle is
+     * already current — the SW's freshness race can serve the NEW shell on
+     * the very navigation whose revalidation then reports "changed", and a
+     * new SW claiming this page says nothing about which shell this page is
+     * executing. Every one of those blind arms was a full visible reboot of
+     * a session that had nothing to gain from it. So: verify first. Only a
+     * page whose running entry chunk differs from the deployed one arms the
+     * gate. Offline or unrecognisable shells verify as "not stale" — a
+     * reload can't help either case.
+     */
+    let verifying = false;
+    const verifyThenArm = (source: 'shell-updated' | 'controllerchange') => {
+      if (!armed || pending || verifying) return;
+      const running = extractEntryScript(document.documentElement.outerHTML);
+      if (!running) return; // dev server or unknown shell shape: stand down
+      const base =
+        import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
+          ? import.meta.env.BASE_URL
+          : '/';
+      verifying = true;
+      fetch(`${base}index.html`, { cache: 'no-cache' })
+        .then((res) => (res.ok ? res.text() : null))
+        .then((html) => {
+          const deployed = html ? extractEntryScript(html) : null;
+          const stale = !!deployed && deployed !== running;
+          /* 2026-08-29 telemetry: emitted for BOTH outcomes — the not-stale
+             result is the SW freshness race doing its job, and its share is
+             the KPI that says the open-from-Hub glitch fix is holding. */
+          if (deployed) {
+            masterBus.emit('SHELL_STALENESS_CHECKED', { stale, source, running, deployed });
+          }
+          if (stale) {
+            pending = true;
+            attempt();
+          }
+        })
+        .catch(() => {
+          /* offline or blocked: nothing to adopt, nothing to do */
+        })
+        .finally(() => {
+          verifying = false;
+        });
     };
 
     const onMessage = (event: MessageEvent) => {
       const type = (event.data as { type?: string } | null)?.type;
       if (type !== 'SHELL_UPDATED') return;
-      pending = true;
-      attempt();
+      verifyThenArm('shell-updated');
     };
 
     /* A new service worker taking control means new chunk names are being
-       served from here on. Same treatment: adopt them at a safe moment rather
-       than letting this session finish on a half-rotated bundle. */
+       served from here on. Adopt them at a safe moment rather than letting
+       this session finish on a half-rotated bundle — but only after the
+       verify above confirms this page is actually running the old ones. */
     const onControllerChange = () => {
-      pending = true;
-      attempt();
+      verifyThenArm('controllerchange');
     };
 
     /* The resume-path probe. See the block comment above the hook. */
@@ -242,7 +311,16 @@ export function useShellUpdateGate(): void {
         .then((html) => {
           if (!html) return;
           const deployed = extractEntryScript(html);
-          if (deployed && deployed !== running) {
+          const stale = !!deployed && deployed !== running;
+          if (deployed) {
+            masterBus.emit('SHELL_STALENESS_CHECKED', {
+              stale,
+              source: 'resume-probe',
+              running,
+              deployed,
+            });
+          }
+          if (stale) {
             pending = true;
             attempt();
           }

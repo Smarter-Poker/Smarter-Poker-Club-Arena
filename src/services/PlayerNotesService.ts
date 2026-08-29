@@ -137,12 +137,32 @@ class PlayerNotesServiceClass {
     // Unique index on (user_id, target_user_id) is partial, so ON CONFLICT
     // inference is unreliable — do an explicit find-then-update/insert instead.
     await retryAsync(async () => {
-      const { data: existing } = await supabase
+      const { data: existing, error: readErr } = await supabase
         .from('player_notes')
         .select('id')
         .eq('user_id', userId)
         .eq('target_user_id', targetId)
         .maybeSingle();
+
+      /**
+       * A FAILED READ IS NOT "NO NOTE YET" (2026-08-29).
+       *
+       * Only `data` was destructured here. A Supabase builder RESOLVES with
+       * `{data: null, error}` rather than rejecting, so any failure of this
+       * lookup — RLS, a network blip, or `.maybeSingle()` raising because more
+       * than one row already matched — arrived as `existing === null` and the
+       * branch below INSERTED a second note for the same pair. The next call
+       * then hits the multi-row error for certain, and inserts again.
+       *
+       * That is the exact mechanism that took training_user_achievements to
+       * 33,353 rows for 44 real pairs. This table has a unique index, so the
+       * duplicate is refused rather than written — but `retryAsync` would then
+       * spend all three attempts on a 23505 and surface it as a save failure on
+       * a note the player already has. Throwing here lets the retry do
+       * something useful about a transient read, and stops the write dead on a
+       * read that cannot be trusted.
+       */
+      if (readErr) throw readErr;
 
       const payload = { notes: note, color_label: colorLabel, tags };
 

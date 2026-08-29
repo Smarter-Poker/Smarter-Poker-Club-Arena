@@ -25,7 +25,12 @@
     /* Guard the page against sideways scroll on phones. (Not on desktop —
        an overflow value there would turn the page into a scroll container
        and un-pin the sticky tournament-stats header.) */
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
     overflow-x: hidden;
+    overflow-x: clip;
   }
 }
 

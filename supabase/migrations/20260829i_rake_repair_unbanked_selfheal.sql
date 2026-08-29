@@ -1,0 +1,40 @@
+-- 20260829i_rake_repair_unbanked_selfheal.sql
+-- APPLIED TO PRODUCTION 2026-08-29 ~21:20 UTC via Supabase MCP
+-- (migration name: rake_repair_unbanked_selfheal). Full body in the Supabase
+-- migration history.
+--
+-- THE LEAK (found by the final validation sweep, PRE-EXISTING, restart-
+-- correlated): when the engine dies/restarts between writing hand_history and
+-- calling atomic_distribute_rake, the rake was withheld from the pot and
+-- credited NOWHERE — no rake_records row, no queue row, no alert. Measured:
+-- 28 hands in one 20-second burst at the 19:51 UTC restart, 29 more in the
+-- 8 hours BEFORE the weighted deploy, 130 hands / 403.73 chips across 48h.
+-- fn_bbj_repair_unbanked (2026-08-18) closed this class for BBJ but works
+-- FROM rake_records — which for these hands never existed.
+--
+-- THE FIX: fn_rake_repair_unbanked(p_since_hours, p_limit) — banks the rake
+-- via atomic_distribute_rake (idempotent, hand-gated) from what hand_history
+-- durably holds (rake_amount, bbj_amount, pot_size, club via tables).
+-- Per-player contributions are NOT recoverable (hand_history stores stacks,
+-- not invested), so p_contributions is NULL: club/union money is conserved
+-- and NO attribution is invented — per FeeReconciler's standing rule that a
+-- guessed split corrupts rakeback. Once the rake row exists (bbj_contribution
+-- included), the existing BBJ self-heal banks the jackpot slice from it —
+-- verified live: 17 BBJ contributions banked on the next pass, and the
+-- hand-by-hand booked-vs-received join reads ZERO missing / ZERO mismatched.
+--
+-- Guards: skips hands younger than 5 minutes (racing live settlement),
+-- tournament hands, anything already banked (by hand_id OR time-bounded
+-- table+hand_number probe) or queued. rake_method stamped by era boundary.
+-- Files a financial_alerts row per run that recovers chips (warning and
+-- unresolved above 50 chips; info/resolved below — the 2026-08-22 noise
+-- lesson). service_role only.
+--
+-- SCHEDULED: pg_cron 'rake-repair-unbanked-hourly' at :52, advisory-locked,
+-- the same pattern as every other heal job in this project. DB-side on
+-- purpose: recovery that lives in the engine cannot survive the engine dying,
+-- which is this leak's entire failure mode.
+--
+-- ONE-SHOT RESULT AT APPLY TIME: 130 hand(s), 403.73 chips recovered;
+-- zero unbanked raked cash hands remain in the 48h window (re-verified).
+SELECT 'applied via MCP as rake_repair_unbanked_selfheal — see migration history' AS notice;

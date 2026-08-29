@@ -56,6 +56,21 @@ export interface TabInfo {
   /** Hero is sitting out at this table (long-press menu label). */
   sittingOut?: boolean;
   /**
+   * Seconds until this table's SIT-OUT clock runs out, cash tables only.
+   *
+   * PRECOMPUTED by the parent, exactly like `decisionSecondsLeft` and
+   * `timeBankSecondsLeft` — this bar has no clock of its own and should not
+   * grow one, and MultiTablePage is already ticking for the dock.
+   *
+   * The tab is the only thing a multi-tabling player can see of a table they
+   * are not looking at, and until 2026-08-29 it said nothing at all about a
+   * seat being reclaimed: a player could tap Sit Out At All Tables, start six
+   * five-minute clocks, and watch none of them. TIME BANK and a pending
+   * decision both already get a countdown here; losing a seat is worth more
+   * than either.
+   */
+  sitOutSecondsLeft?: number;
+  /**
    * Dan 2026-08-21: the short game code - NLH / PLO / PLO5 / PLO6 / SPIN /
    * MTT / SNG / HU. This is the tab's PRIMARY label whenever no hand is
    * live: a 100px pill cannot carry a table name, and the name is the least
@@ -636,6 +651,15 @@ export function TableTabBar({
           const decisionLabel =
             !observing && tab.decisionKind ? DECISION_LABEL[tab.decisionKind] : '';
           const timeBankLeft = observing ? undefined : tab.timeBankSecondsLeft;
+          /* Absent while the hero is not sitting out, on a tournament, and
+             while merely observing. `m:ss`, because a five-minute clock read as
+             bare seconds ("241s") is not a number anyone converts at a glance. */
+          const sitOutSecs = observing ? undefined : tab.sitOutSecondsLeft;
+          const sitOutLeft =
+            sitOutSecs === undefined
+              ? undefined
+              : `${Math.floor(sitOutSecs / 60)}:${String(sitOutSecs % 60).padStart(2, '0')}`;
+          const sitOutUrgent = sitOutSecs !== undefined && sitOutSecs <= 60;
           /* The pot is the only TABLE-level thing on this pill, so it is the
              only one that has to be silenced explicitly. Stakes take its place,
              which is what tells two NLH tabs apart anyway. */
@@ -722,6 +746,19 @@ export function TableTabBar({
                   <span className="table-tab-bar__tab-sub">
                     {tab.decisionSecondsLeft ?? 0}s Left
                   </span>
+                </span>
+              ) : sitOutLeft !== undefined ? (
+                /* A SEAT ABOUT TO BE RECLAIMED outranks the game code, the
+                   stakes and the pot — none of those change what the player
+                   should do next. Same shape as TIME BANK below, which is the
+                   established way this bar says "a clock is running here". */
+                <span
+                  className={`table-tab-bar__tab-label${
+                    sitOutUrgent ? ' table-tab-bar__tab-label--seat-urgent' : ''
+                  }`}
+                >
+                  <span className="table-tab-bar__tab-name">SEAT</span>
+                  <span className="table-tab-bar__tab-sub">{sitOutLeft}</span>
                 </span>
               ) : timeBankLeft !== undefined ? (
                 /* Dan 2026-08-21: "if they have auto time banks on, and it

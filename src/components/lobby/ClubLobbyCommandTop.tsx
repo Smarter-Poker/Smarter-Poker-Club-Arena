@@ -5,7 +5,6 @@ interface ClubLobbyCommandTopProps {
   welcome: ReactNode;
   controls: ReactNode;
   campaign: ReactNode;
-  exactDesktopWelcome?: boolean;
 }
 
 /**
@@ -13,17 +12,10 @@ interface ClubLobbyCommandTopProps {
  * lobby chassis. The full generated chassis is mounted by ClubHomePage so the
  * desktop ledger and bottom poker-chip rail remain part of the same machine.
  */
-export function ClubLobbyCommandTop({
-  welcome,
-  controls,
-  campaign,
-  exactDesktopWelcome = false,
-}: ClubLobbyCommandTopProps) {
+export function ClubLobbyCommandTop({ welcome, controls, campaign }: ClubLobbyCommandTopProps) {
   return (
     <section className="club-lobby-command-top" aria-label="Club Lobby Controls And Promotion">
-      <div
-        className={`club-lobby-command-top__welcome${exactDesktopWelcome ? ' club-lobby-command-top__welcome--approved-shark' : ''}`}
-      >
+      <div className="club-lobby-command-top__welcome club-lobby-command-top__welcome--approved-universal">
         {welcome}
       </div>
       <div className="club-lobby-command-top__controls">{controls}</div>

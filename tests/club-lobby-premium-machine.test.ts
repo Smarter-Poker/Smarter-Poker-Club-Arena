@@ -45,18 +45,19 @@ describe('premium single-frame club lobby', () => {
     );
   });
 
-  it('uses the exact Shark Club wordmark without hard-coding it over every other club', () => {
-    expect(PAGE).toContain(
-      "exactDesktopWelcome={club.name.trim().toLocaleLowerCase() === 'shark club'}"
-    );
-    expect(TOP).toContain('exactDesktopWelcome = false');
-    expect(TOP).toContain('club-lobby-command-top__welcome--approved-shark');
+  it('uses one dynamic premium header for every club without a Shark-only branch', () => {
+    expect(PAGE).not.toContain('exactDesktopWelcome=');
+    expect(PAGE).not.toContain("toLocaleLowerCase() === 'shark club'");
+    expect(TOP).not.toContain('exactDesktopWelcome');
+    expect(TOP).toContain('club-lobby-command-top__welcome--approved-universal');
+    expect(CSS).toContain('lobby-header-frame-universal-v4.png');
     expect(CSS).toMatch(
-      /club-lobby-command-top__welcome--approved-shark \.club-lobby-command-top__welcome-copy \{[^}]*opacity: 0/s
+      /@media \(min-width: 901px\)[\s\S]*?club-lobby-command-top__welcome--approved-universal \{[^}]*inset: 0 0 auto[^}]*height: 15\.35%[^}]*background: var\(--machine-header-frame\)/s
     );
     expect(CSS).toMatch(
-      /@media \(max-width: 900px\)[\s\S]*?club-lobby-command-top__welcome--approved-shark \{[^}]*aspect-ratio: 734 \/ 150[^}]*background: var\(--machine-header-frame\)/s
+      /@media \(max-width: 900px\)[\s\S]*?club-lobby-command-top__welcome--approved-universal \{[^}]*aspect-ratio: 734 \/ 150[^}]*background: var\(--machine-header-frame\)/s
     );
+    expect(CSS).not.toMatch(/approved-universal[^}]*opacity:\s*0/s);
   });
 
   it('keeps the bottom medallion above the scrolling tournament ledger', () => {
@@ -119,6 +120,7 @@ describe('premium single-frame club lobby', () => {
     for (const file of [
       'lobby-approved-desktop-reference-v3.png',
       'lobby-header-frame-v3.png',
+      'lobby-header-frame-universal-v4.png',
       'lobby-controls-frame-v3.png',
       'lobby-campaign-frame-v3.png',
       'lobby-selector-default-v3.png',

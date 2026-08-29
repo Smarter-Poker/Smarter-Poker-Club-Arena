@@ -35,7 +35,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 
@@ -80,7 +80,7 @@ describe('a supplied setting value is applied, never toggled', () => {
     })
       .trim()
       .split('\n')
-      .filter(Boolean);
+      .filter((file) => Boolean(file) && existsSync(resolve(ROOT, file)));
 
     const offenders: string[] = [];
     for (const f of files) {

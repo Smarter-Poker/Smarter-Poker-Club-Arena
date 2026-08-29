@@ -7,6 +7,7 @@ describe('premium customization suite', () => {
   const preview = read('src/components/table/TableStudioGameplayPreview.tsx');
   const tablePage = read('src/pages/TablePage.tsx');
   const assets = read('src/assets/tableAssets.ts');
+  const collections = read('src/hooks/useTableStudioCollections.ts');
 
   it('uses the existing avatar service instead of a duplicate avatar catalog', () => {
     expect(modal).toContain('.getAvatarLibraryResult(userId)');
@@ -31,14 +32,11 @@ describe('premium customization suite', () => {
   });
 
   it('provides mobile discovery and personal loadout controls', () => {
-    for (const feature of [
-      "'favorites'",
-      "'recent'",
-      'Shuffle Look',
-      'table-studio-loadouts:',
-      'table-studio-favorites:',
-    ]) {
+    for (const feature of ["'favorites'", "'recent'", 'Shuffle Look']) {
       expect(modal).toContain(feature);
     }
+    expect(collections).toContain('table-studio-loadouts:');
+    expect(collections).toContain('table-studio-favorites:');
+    expect(collections).toContain(".from('user_table_studio_preferences')");
   });
 });

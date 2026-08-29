@@ -76,9 +76,8 @@ describe('the customization barrel only exports things that are reachable', () =
     expect(barrel).not.toMatch(/TableFeltSelector/);
   });
 
-  it('still exports the two that ARE mounted', () => {
-    // CardBackSelector: table settings panel. AvatarCustomizer: avatar gallery.
-    expect(barrel).toMatch(/CardBackSelector/);
+  it('still exports the avatar customizer that IS mounted', () => {
+    expect(barrel).not.toMatch(/CardBackSelector/);
     expect(barrel).toMatch(/AvatarCustomizer/);
   });
 });

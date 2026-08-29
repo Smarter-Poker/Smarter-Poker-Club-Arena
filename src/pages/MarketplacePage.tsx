@@ -540,7 +540,11 @@ export default function MarketplacePage() {
       {/* Header */}
       <header className={styles.header}>
         <div className={styles.headerLeft}>
-          <h1 className={styles.title}>Marketplace</h1>
+          <span className={styles.eyebrow}>Club Arena // Player Exchange</span>
+          <h1 className={styles.title}>Club Marketplace</h1>
+          <p className={styles.headerSubtitle}>
+            Table Upgrades, Player Perks, And Club Exclusives - Delivered Live To Your Account.
+          </p>
           <div className={styles.walletBar}>
             {/* One wallet, one currency: diamonds. The shop API and the VIP
                 status API both report the same profiles.diamonds balance. */}
@@ -576,9 +580,14 @@ export default function MarketplacePage() {
         </div>
         <div className={styles.headerActions}>
           <Link to="/" className={styles.btnGhost}>
-            Lobby
+            Back To Lobby
           </Link>
-          <button onClick={refreshAll} className={styles.btnGhost} disabled={refreshing}>
+          <button
+            onClick={refreshAll}
+            className={styles.btnGhost}
+            disabled={refreshing}
+            aria-busy={refreshing}
+          >
             {refreshing ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>

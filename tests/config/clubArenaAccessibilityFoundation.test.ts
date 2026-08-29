@@ -102,4 +102,40 @@ describe('Club Arena accessibility foundation', () => {
     expect(railSource).toContain("aria-current={isActive ? 'page' : undefined}");
     expect(layoutSource).toContain('{showGlobalHeader && <ClubOperationsRail />}');
   });
+
+  it('makes the integrity case workflow labelled, permission-aware, and keyboard operable', () => {
+    const headerSource = read('src/components/club/ClubIntegrityHeader.tsx');
+    const reportSource = read('src/pages/ReportReviewPage.tsx');
+    const disputeSource = read('src/pages/DisputeManagementPage.tsx');
+    const blacklistSource = read('src/pages/BlacklistManagerPage.tsx');
+
+    expect(headerSource).toContain('aria-label="Integrity and casework"');
+    expect(headerSource).toContain("aria-current={item.id === active ? 'page' : undefined}");
+    expect(headerSource).toContain('getClubIntegrityNavigation');
+    expect(reportSource).toContain('role="dialog"');
+    expect(reportSource).toContain('aria-modal="true"');
+    expect(reportSource).toContain("event.key === 'Escape'");
+    expect(reportSource).toContain('tabIndex={filter === item ? 0 : -1}');
+    expect(reportSource).toContain('requestAnimationFrame');
+    expect(disputeSource).toContain('aria-expanded={expandedId === dispute.id}');
+    expect(disputeSource).toContain('tabIndex={activeTab === tab ? 0 : -1}');
+    expect(disputeSource).toContain('htmlFor="dispute-search"');
+    expect(blacklistSource).toContain('htmlFor="blacklist-user-id"');
+    expect(blacklistSource).toContain('htmlFor="blacklist-reason"');
+  });
+
+  it('resolves public club slugs before reading or writing the UUID blacklist field', () => {
+    const source = read('src/pages/BlacklistManagerPage.tsx');
+
+    expect(source).toContain('const resolvedClubId = await resolveClubUUID(clubId)');
+    expect(source).toContain(".eq('club_id', resolvedClubId)");
+    expect(source).toContain('club_id: resolvedClubId');
+    expect(source).not.toContain(".eq('club_id', clubId)");
+  });
+
+  it('keeps the dispute workspace from painting over the shared integrity header', () => {
+    const styles = read('src/pages/DisputeManagementPage.css');
+
+    expect(styles).not.toContain('.dispute-management-page::before');
+  });
 });

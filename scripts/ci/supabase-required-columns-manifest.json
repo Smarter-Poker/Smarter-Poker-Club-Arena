@@ -3327,6 +3327,9 @@
     "user_table_settings": [
       "user_id"
     ],
+    "user_table_studio_preferences": [
+      "user_id"
+    ],
     "user_theme_settings": [
       "user_id"
     ],

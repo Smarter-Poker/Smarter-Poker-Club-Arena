@@ -204,16 +204,202 @@
   will-change: transform;
 }
 
+/* The smear is proportional to the throw's REAL speed now (--trail-strength,
+   computed in ThrowAnimation.tsx from px/ms). Pinned at 0.30 / 0.14 it made a
+   420ms fastball and an 1100ms float smear identically, which flattened the
+   one cue that separates them. */
 .throw-animation__trail--1 {
-  opacity: 0.3;
-  filter: blur(1px);
+  opacity: calc(0.3 * var(--trail-strength, 1));
+  filter: blur(calc(1px * var(--trail-strength, 1)));
   scale: 0.92;
 }
 
 .throw-animation__trail--2 {
-  opacity: 0.14;
-  filter: blur(2px);
+  opacity: calc(0.14 * var(--trail-strength, 1));
+  filter: blur(calc(2px * var(--trail-strength, 1)));
   scale: 0.8;
+}
+
+/* =================================================================================
+   THE CONTACT SHADOW
+   The single biggest reason a thrown item read as a flat sticker rather than an
+   object: there was nothing underneath it. A real object crossing a table drags
+   a shadow along the felt, and that shadow is the ONLY cue the eye gets for how
+   high the thing is — without it a lob and a fastball differ only in speed.
+
+   High  -> wide, faint.        Low -> tight, dark.
+   Each physics profile gets keyframes at the SAME percentage stops as its arc,
+   because that is the only way the shadow and the item can agree where the
+   ground is. Nothing here animates `filter`: the softness is baked into the
+   gradient, and scaling it up softens it for free, which is a great deal
+   cheaper than interpolating a blur under four concurrent throws.
+   ================================================================================= */
+
+.throw-animation__shadow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--size, 48px);
+  height: calc(var(--size, 48px) * 0.38);
+  margin-left: calc(var(--size, 48px) * -0.5);
+  /* parked on the felt, just under where the item comes to rest */
+  margin-top: calc(var(--size, 48px) * 0.1);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0.5) 0%,
+    rgba(0, 0, 0, 0.26) 46%,
+    rgba(0, 0, 0, 0) 72%
+  );
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.throw-animation__projectile--arc .throw-animation__shadow,
+.throw-animation__projectile--lob .throw-animation__shadow {
+  animation: throwable-shadow-arc var(--flight-dur) forwards;
+}
+
+@keyframes throwable-shadow-arc {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.9, 0.9);
+    animation-timing-function: cubic-bezier(0.17, 0.67, 0.45, 0.99);
+  }
+  50% {
+    opacity: 0.15;
+    transform: scale(1.52, 1.52);
+    animation-timing-function: cubic-bezier(0.55, 0.01, 0.83, 0.33);
+  }
+  100% {
+    opacity: 0.52;
+    transform: scale(0.85, 0.85);
+  }
+}
+
+.throw-animation__projectile--fastball .throw-animation__shadow {
+  animation: throwable-shadow-fastball var(--flight-dur) ease-in forwards;
+}
+
+@keyframes throwable-shadow-fastball {
+  0% {
+    opacity: 0.44;
+    transform: scale(0.95, 0.95);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(1.16, 1.16);
+  }
+  100% {
+    opacity: 0.5;
+    transform: scale(0.9, 0.9);
+  }
+}
+
+.throw-animation__projectile--float .throw-animation__shadow {
+  animation: throwable-shadow-float var(--flight-dur) ease-in-out forwards;
+}
+
+@keyframes throwable-shadow-float {
+  0% {
+    opacity: 0.4;
+    transform: scale(0.95, 0.95);
+  }
+  25% {
+    opacity: 0.17;
+    transform: scale(1.42, 1.42);
+  }
+  50% {
+    opacity: 0.29;
+    transform: scale(1.16, 1.16);
+  }
+  75% {
+    opacity: 0.15;
+    transform: scale(1.48, 1.48);
+  }
+  100% {
+    opacity: 0.44;
+    transform: scale(0.9, 0.9);
+  }
+}
+
+/* drop hovers high and then slams — so its shadow starts big and faint and
+   arrives SMALLER AND DARKER than any other profile's. That contrast is the
+   whole weight cue. */
+.throw-animation__projectile--drop .throw-animation__shadow {
+  animation: throwable-shadow-drop var(--flight-dur) forwards;
+}
+
+@keyframes throwable-shadow-drop {
+  0% {
+    opacity: 0.28;
+    transform: scale(1.28, 1.28);
+    animation-timing-function: ease-out;
+  }
+  55% {
+    opacity: 0.12;
+    transform: scale(1.72, 1.72);
+    animation-timing-function: cubic-bezier(0.7, 0, 1, 0.4);
+  }
+  100% {
+    opacity: 0.62;
+    transform: scale(0.78, 0.78);
+  }
+}
+
+.throw-animation__projectile--swoop .throw-animation__shadow {
+  animation: throwable-shadow-swoop var(--flight-dur) ease-in-out forwards;
+}
+
+@keyframes throwable-shadow-swoop {
+  0% {
+    opacity: 0.45;
+    transform: scale(0.95, 0.95);
+  }
+  30% {
+    opacity: 0.16;
+    transform: scale(1.5, 1.5);
+  }
+  65% {
+    opacity: 0.26;
+    transform: scale(1.22, 1.22);
+  }
+  100% {
+    opacity: 0.48;
+    transform: scale(0.9, 0.9);
+  }
+}
+
+.throw-animation__projectile--spiral .throw-animation__shadow {
+  animation: throwable-shadow-spiral var(--flight-dur) linear forwards;
+}
+
+@keyframes throwable-shadow-spiral {
+  0% {
+    opacity: 0.45;
+    transform: scale(0.95, 0.95);
+  }
+  20% {
+    opacity: 0.27;
+    transform: scale(1.26, 1.26);
+  }
+  40% {
+    opacity: 0.17;
+    transform: scale(1.46, 1.46);
+  }
+  60% {
+    opacity: 0.23;
+    transform: scale(1.31, 1.31);
+  }
+  80% {
+    opacity: 0.34;
+    transform: scale(1.11, 1.11);
+  }
+  100% {
+    opacity: 0.48;
+    transform: scale(0.9, 0.9);
+  }
 }
 
 /* -- arc: classic parabola with tumble ------------------------------------- */
@@ -463,6 +649,232 @@
    around for three seconds -- only its smoke and scorch mark should. */
 .throw-animation__impact--explode .throw-animation__impact-life {
   animation-duration: calc(420ms * var(--animation-speed, 1));
+}
+
+/* -- THE LANDED ITEM'S SHADOW ----------------------------------------------
+   Lives INSIDE __impact-life so it shares the landing's opacity envelope and
+   needs only its own squash timer — a second life animation on a second
+   element is two things that can drift apart. It flattens hard on contact and
+   recovers with the item, which is what makes the squash read as weight
+   landing on a surface rather than a sprite changing shape in mid-air. */
+.throw-animation__ground {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--impact-size, 128px);
+  height: calc(var(--impact-size, 128px) * 0.3);
+  margin-left: calc(var(--impact-size, 128px) * -0.5);
+  margin-top: calc(var(--impact-size, 128px) * 0.14);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0.46) 0%,
+    rgba(0, 0, 0, 0.22) 48%,
+    rgba(0, 0, 0, 0) 74%
+  );
+  pointer-events: none;
+  animation: throwable-ground var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    cubic-bezier(0.16, 1.11, 0.36, 1.2) forwards;
+}
+
+@keyframes throwable-ground {
+  0% {
+    transform: scale(1.5, 1.2);
+    opacity: 0.95;
+  }
+  22% {
+    transform: scale(0.86, 0.8);
+    opacity: 0.62;
+  }
+  40% {
+    transform: scale(1.08, 1.04);
+    opacity: 0.8;
+  }
+  60% {
+    transform: scale(1, 1);
+    opacity: 0.72;
+  }
+  100% {
+    transform: scale(0.94, 0.94);
+    opacity: 0.7;
+  }
+}
+
+/* A splatted item is flat ON the felt, so its shadow stays spread and never
+   recovers; an exploding one has no item left to cast one. */
+.throw-animation__impact--splat .throw-animation__ground {
+  animation: throwable-ground-splat var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    ease-out forwards;
+}
+
+@keyframes throwable-ground-splat {
+  0% {
+    transform: scale(1.5, 1.2);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.18, 0.7);
+    opacity: 0.6;
+  }
+}
+
+.throw-animation__impact--explode .throw-animation__ground {
+  display: none;
+}
+
+/* -- SETTLE -----------------------------------------------------------------
+   A dropped object rocks to rest. Ours stopped dead the instant its squash
+   resolved, which is the difference between an object and a sticker being
+   revealed. Its own wrapper on purpose: one keyframe then covers every impact
+   profile, rather than a rotation being threaded through four sets of squash
+   keyframes that each already own `transform` and would stomp it.
+
+   The pivot is BELOW centre because a thing rocks on the felt it is touching,
+   not around its middle — and it uses the individual `rotate` property, so
+   nothing here can ever collide with a descendant's `transform`. */
+.throw-animation__settle {
+  position: absolute;
+  transform-origin: 0 calc(var(--impact-size, 128px) * 0.34);
+  animation: throwable-settle var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    cubic-bezier(0.22, 0.8, 0.3, 1) forwards;
+}
+
+@keyframes throwable-settle {
+  0% {
+    rotate: 0deg;
+  }
+  26% {
+    rotate: calc(-6.5deg * var(--settle, 1));
+  }
+  46% {
+    rotate: calc(4.5deg * var(--settle, 1));
+  }
+  64% {
+    rotate: calc(-2.6deg * var(--settle, 1));
+  }
+  80% {
+    rotate: calc(1.2deg * var(--settle, 1));
+  }
+  100% {
+    rotate: 0deg;
+  }
+}
+
+/* Two profiles must NOT rock: splat has stuck to what it hit, and explode has
+   been consumed by its own fireball. */
+.throw-animation__impact--splat .throw-animation__settle,
+.throw-animation__impact--explode .throw-animation__settle {
+  animation: none;
+}
+
+/* ITEMS THAT ALREADY ROCK, SPIN OR TIP UNDER THEIR OWN SIGNATURE.
+   The settle above is the house default for the ~30 items whose landing has no
+   rotational character of its own. These eleven DO have one — a banana peel
+   slips, dice tumble, a trash can tips over, sunglasses and a magnet already
+   wobble to rest — and stacking a second rock on top of a bespoke one is the
+   'two mechanisms for one job' trap: at best it muddies a hand-tuned curve, at
+   worst (fx-icon-wobble-settle) it is literally the same animation twice.
+
+   Kept as ONE list in ONE place rather than an `animation: none` scattered
+   through the signature file, and pinned by a law test that re-derives the set
+   from ThrowableSignatures.css — so an item whose signature gains a rotation
+   later cannot quietly start double-rocking. --settle is a multiplier rather
+   than a switch, so a signature that wants a HALF rock can say 0.5. */
+.throw-animation[data-throwable='alien'],
+.throw-animation[data-throwable='banana_peel'],
+.throw-animation[data-throwable='chicken'],
+.throw-animation[data-throwable='cool_sunglasses_emoji'],
+.throw-animation[data-throwable='dice'],
+.throw-animation[data-throwable='football'],
+.throw-animation[data-throwable='laughing_emoji'],
+.throw-animation[data-throwable='magnet'],
+.throw-animation[data-throwable='rubber_duck'],
+.throw-animation[data-throwable='star'],
+.throw-animation[data-throwable='trash_can'] {
+  --settle: 0;
+}
+
+/* -- DUST ------------------------------------------------------------------
+   Debris kicked out ALONG the felt. The shockwave ring further down is drawn
+   in the screen plane and reads as an energy pulse; this reads as the table
+   itself reacting to a weight. The reference captures have both, and they do
+   different jobs.
+
+   The vectors are squashed vertically (a circle of offsets would read as a
+   flat screen-plane ring, the same mistake the knockout star made) and every
+   particle rises a little before it falls, so it is a puff rather than a
+   starburst. */
+.throw-animation__dust {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.throw-animation__dust i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  /* Plain colour first: a browser that cannot parse color-mix() discards the
+     WHOLE declaration, and an invisible particle is not a graceful fallback. */
+  background: rgba(226, 214, 190, 0.85);
+  background: color-mix(in srgb, var(--c2, #e2d6be) 72%, #fff);
+  opacity: 0;
+  animation: throwable-dust calc(640ms * var(--animation-speed, 1)) cubic-bezier(0.12, 0.72, 0.3, 1)
+    forwards;
+}
+
+.throw-animation__dust i:nth-child(1) {
+  --dx: 46px;
+  --dy: 15px;
+}
+.throw-animation__dust i:nth-child(2) {
+  --dx: -44px;
+  --dy: 17px;
+  animation-delay: calc(24ms * var(--animation-speed, 1));
+}
+.throw-animation__dust i:nth-child(3) {
+  --dx: 30px;
+  --dy: -13px;
+  animation-delay: calc(12ms * var(--animation-speed, 1));
+}
+.throw-animation__dust i:nth-child(4) {
+  --dx: -28px;
+  --dy: -15px;
+  animation-delay: calc(38ms * var(--animation-speed, 1));
+}
+.throw-animation__dust i:nth-child(5) {
+  --dx: 58px;
+  --dy: 4px;
+  animation-delay: calc(52ms * var(--animation-speed, 1));
+  width: 6px;
+  height: 6px;
+}
+.throw-animation__dust i:nth-child(6) {
+  --dx: -56px;
+  --dy: 6px;
+  animation-delay: calc(30ms * var(--animation-speed, 1));
+  width: 6px;
+  height: 6px;
+}
+
+@keyframes throwable-dust {
+  0% {
+    opacity: 0.9;
+    transform: translate(0, 0) scale(0.45);
+  }
+  30% {
+    opacity: 0.72;
+    transform: translate(calc(var(--dx, 0px) * 0.55), calc(var(--dy, 0px) * 0.55 - 8px)) scale(1.08);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx, 0px), var(--dy, 0px)) scale(1.4);
+  }
 }
 
 /* -- squash-and-stretch item ----------------------------------------------- */
@@ -984,8 +1396,21 @@
   .throw-animation__smoke,
   .throw-animation__glow,
   .throw-animation__impact-glow,
-  .throw-animation__particle {
+  .throw-animation__particle,
+  .throw-animation__shadow,
+  .throw-animation__dust {
     display: none !important;
+  }
+
+  /* The ground shadow STAYS — it is not theatrics, it is the cue that says the
+     item is on the felt, and reduced motion drops motion, not meaning
+     (CLAUDE.md 10.6). It simply stops moving. */
+  .throw-animation__ground {
+    animation: none !important;
+  }
+
+  .throw-animation__settle {
+    animation: none !important;
   }
 
   .throw-animation__impact-icon {

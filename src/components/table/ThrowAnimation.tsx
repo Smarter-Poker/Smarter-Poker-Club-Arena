@@ -316,6 +316,22 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
   const flightSize = FLIGHT_SIZE[t.weight] || 96;
   const impactSize = IMPACT_SIZE[t.weight] || 128;
 
+  /* HOW HARD THE MOTION SMEAR SHOULD BE, from the throw's ACTUAL speed.
+     The two trail ghosts were pinned at 0.30 / 0.14 opacity for every throw on
+     the table, so a 420ms fastball crossing the felt and an 1100ms feather
+     bobbing the same distance smeared exactly alike — and the smear is the
+     main thing that sells speed. It is a ratio now: pixels per millisecond
+     against a reference of 0.55px/ms (roughly a mid-table arc throw), clamped
+     so a very short throw never loses its trail entirely and a corner-to-
+     corner fastball never turns into a solid bar. */
+  const trailStrength = useMemo(() => {
+    if (!fromPos || !toPos) return 1;
+    const dist = Math.hypot(toPos.x - fromPos.x, toPos.y - fromPos.y);
+    const dur = Math.max(1, rawPhysics.duration);
+    return Math.max(0.35, Math.min(1.6, dist / dur / 0.55));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event.id]);
+
   // Velocity tilt: fast, spinless items lean into their line of travel
   // (rocket, water gun, boxing glove...). Fraction of the true angle so an
   // unknown render orientation can never point completely the wrong way.
@@ -509,9 +525,17 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
               '--tilt': `${travelTilt}deg`,
               '--size': `${flightSize}px`,
               '--half': `${flightSize / 2}px`,
+              '--trail-strength': `${trailStrength.toFixed(3)}`,
             } as React.CSSProperties
           }
         >
+          {/* THE CONTACT SHADOW. Deliberately a sibling of the spinner rather
+              than a child: it must track the throw HORIZONTALLY but must not
+              inherit the arc's vertical offset or the tumble spin. A shadow
+              that climbs with the item, or rotates, tells the eye there is no
+              ground — which is worse than no shadow at all. */}
+          <div className="throw-animation__shadow" />
+
           {/* trail ghosts (staggered, fading copies) */}
           <div className="throw-animation__trail throw-animation__trail--1">
             <ThrowableImage throwableId={t.id} size={flightSize} />
@@ -543,6 +567,9 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
               '--impact-dur': `${scaled(impactMs)}ms`,
               '--life-dur': `${scaled(lifeMs)}ms`,
               '--linger-dur': `${scaled(lingerMs)}ms`,
+              /* The ground shadow and the settle pivot are both sized from the
+                 landed item, so a feather does not cast an anvil's shadow. */
+              '--impact-size': `${impactSize}px`,
             } as React.CSSProperties
           }
         >
@@ -588,9 +615,36 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
               what lets a throw last 3.5s without the landing animation playing
               in slow motion. */}
               <div className="throw-animation__impact-life">
-                <div className="throw-animation__impact-icon">
-                  <ThrowableImage throwableId={t.id} size={impactSize} />
+                {/* The landed item's own shadow on the felt, squashing in step
+                    with it. Inside __impact-life so it shares the landing's
+                    opacity rather than needing a second life timer. */}
+                <div className="throw-animation__ground" />
+
+                {/* SETTLE. A dropped object rocks to rest; ours stopped dead
+                    the instant its squash resolved. This is its own wrapper so
+                    one keyframe covers every impact profile at once, instead
+                    of a rotation being threaded through four sets of squash
+                    keyframes that each already own `transform`. It pivots
+                    BELOW centre, because a thing rocks on the felt it is
+                    touching, not around its middle. */}
+                <div className="throw-animation__settle">
+                  <div className="throw-animation__impact-icon">
+                    <ThrowableImage throwableId={t.id} size={impactSize} />
+                  </div>
                 </div>
+              </div>
+
+              {/* Debris kicked out ALONG the felt. The shockwave ring below is
+                  drawn in the screen plane and reads as an energy pulse; this
+                  reads as the table itself reacting. Both, because the
+                  reference captures have both. */}
+              <div className="throw-animation__dust" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
               </div>
 
               {/* shockwave ring */}

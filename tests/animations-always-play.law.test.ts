@@ -450,6 +450,128 @@ describe('LAW: the throwable system obeys the speed the player chose', () => {
   });
 });
 
+describe('LAW: a thrown item is an object, not a sticker', () => {
+  /* Dan on the PokerBros captures: CURRENTLY ANIMATIONS ARE JUST AN FLAT BASIC
+     EMOJI THAT FLOATS AND LANDS, NOT DYNAMIC GRAPHIC ANIMATIONS LIKE THIS.
+     Four framework pieces answer that for all ~40 items at once, and each one
+     shipped because it was MISSING, so each gets a pin. */
+  const THROW_TSX2 = read('src/components/table/ThrowAnimation.tsx');
+  const THROW_CSS2 = read('src/components/table/ThrowAnimation.css');
+  const SIG_CSS2 = read('src/components/table/ThrowableSignatures.css');
+
+  it('every physics profile casts a contact shadow while it flies', () => {
+    // The shadow is the only cue for HEIGHT. Without one per profile, the
+    // shadow and the item disagree about where the ground is.
+    for (const profile of ['arc', 'fastball', 'float', 'drop', 'swoop', 'spiral']) {
+      expect(THROW_CSS2).toMatch(new RegExp(`@keyframes throwable-shadow-${profile}\\b`));
+    }
+    // lob shares arc's curve, so it shares arc's shadow rather than inventing
+    // a second one that could drift from it.
+    expect(THROW_CSS2).toContain('.throw-animation__projectile--lob .throw-animation__shadow');
+    expect(THROW_TSX2).toContain('className="throw-animation__shadow"');
+  });
+
+  it('the flight shadow is a sibling of the spinner, never a child', () => {
+    /* A shadow inside .throw-animation__spinner would inherit the arc's
+       vertical offset and the tumble spin - it would climb with the item and
+       rotate, which tells the eye there is no ground at all. Assert the
+       shadow appears BEFORE the spinner opens, at projectile level. */
+    const proj = THROW_TSX2.slice(THROW_TSX2.indexOf('throw-animation__projectile--$'));
+    const iShadow = proj.indexOf('throw-animation__shadow');
+    const iSpinner = proj.indexOf('throw-animation__spinner');
+    expect(iShadow).toBeGreaterThan(-1);
+    expect(iSpinner).toBeGreaterThan(iShadow);
+  });
+
+  it('the motion smear is proportional to the real speed of the throw', () => {
+    // Pinned at 0.30 / 0.14, a 420ms fastball and an 1100ms float smeared
+    // identically - and the smear is the main thing that separates them.
+    expect(THROW_TSX2).toMatch(/--trail-strength/);
+    expect(THROW_TSX2).toMatch(/Math\.hypot\(toPos\.x - fromPos\.x/);
+    expect(THROW_CSS2).toContain('calc(0.3 * var(--trail-strength, 1))');
+    expect(THROW_CSS2).toContain('calc(0.14 * var(--trail-strength, 1))');
+  });
+
+  it('a landed item has a shadow on the felt and kicks dust along it', () => {
+    expect(THROW_TSX2).toContain('className="throw-animation__ground"');
+    expect(THROW_TSX2).toContain('className="throw-animation__dust"');
+    expect(THROW_CSS2).toMatch(/@keyframes throwable-ground\b/);
+    expect(THROW_CSS2).toMatch(/@keyframes throwable-dust\b/);
+    // Dust vectors must be SQUASHED vertically, or the puff reads as a flat
+    // screen-plane ring - the exact mistake the knockout star made. Every
+    // --dy is smaller in magnitude than its --dx.
+    const pairs = [...THROW_CSS2.matchAll(/--dx:\s*(-?[\d.]+)px;\s*\n\s*--dy:\s*(-?[\d.]+)px;/g)];
+    expect(pairs.length).toBeGreaterThanOrEqual(6);
+    for (const [, dx, dy] of pairs) {
+      expect(Math.abs(Number(dy))).toBeLessThan(Math.abs(Number(dx)));
+    }
+  });
+
+  it('the settle rocks about the base, on its own element, via `rotate`', () => {
+    /* Three separate bugs avoided, all of which have shipped here before:
+       - `transform` on the settle would stomp the four squash keyframe sets
+         that already own transform on the icon (see skoSeatFlinch, CLAUDE.md);
+       - rotating about the centre makes a landed object spin rather than rock;
+       - a thing rocks on the felt it touches, so the pivot is BELOW centre. */
+    expect(THROW_TSX2).toContain('className="throw-animation__settle"');
+    const block = THROW_CSS2.slice(
+      THROW_CSS2.indexOf('.throw-animation__settle {'),
+      THROW_CSS2.indexOf('@keyframes throwable-settle')
+    );
+    expect(block).toMatch(/transform-origin:\s*0\s+calc\(var\(--impact-size/);
+    const kf = THROW_CSS2.slice(
+      THROW_CSS2.indexOf('@keyframes throwable-settle'),
+      THROW_CSS2.indexOf('@keyframes throwable-settle') + 400
+    );
+    expect(kf).toMatch(/rotate:/);
+    expect(kf).not.toMatch(/transform:/);
+  });
+
+  it('no item both rocks under the house settle and under its own signature', () => {
+    /* THE DOUBLE-SETTLE GUARD. Eleven items already slip, tumble, tip or
+       wobble to rest under a bespoke signature; fx-icon-wobble-settle is
+       literally this same animation. The opt-out list is re-derived from
+       ThrowableSignatures.css here rather than trusted, so an item whose
+       signature GAINS a rotation later cannot quietly start double-rocking. */
+    const kfBodies = new Map<string, string>();
+    for (const m of SIG_CSS2.matchAll(/@keyframes\s+([\w-]+)\s*\{([\s\S]*?)\n\}/g)) {
+      kfBodies.set(m[1], m[2]);
+    }
+    const rotating = new Set(
+      [...kfBodies].filter(([, body]) => /rotate[:(]/.test(body)).map(([n]) => n)
+    );
+    const needOptOut = new Set<string>();
+    for (const m of SIG_CSS2.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const [, sel, body] = m;
+      if (!sel.includes('impact-icon')) continue;
+      const anim = /animation:\s*([\w-]+)/.exec(body);
+      if (!anim || !rotating.has(anim[1])) continue;
+      for (const id of sel.matchAll(/data-throwable='([\w-]+)'/g)) needOptOut.add(id[1]);
+    }
+    expect(needOptOut.size).toBeGreaterThanOrEqual(11);
+
+    const optedOut = new Set(
+      [...THROW_CSS2.matchAll(/\.throw-animation\[data-throwable='([\w-]+)'\](?=,|\s*\{)/g)].map(
+        (m) => m[1]
+      )
+    );
+    const missing = [...needOptOut].filter((id) => !optedOut.has(id));
+    expect(missing).toEqual([]);
+    expect(THROW_CSS2).toContain('--settle: 0;');
+  });
+
+  it('reduced motion drops the theatrics but keeps the ground shadow', () => {
+    /* CLAUDE.md 10.6: reduced motion collapses motion, never meaning. The
+       flight shadow and the dust are drama and go; the ground shadow is the
+       cue that says the item is ON the felt, so it stops moving and stays. */
+    const rm = THROW_CSS2.slice(THROW_CSS2.indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(rm).toContain('.throw-animation__shadow');
+    expect(rm).toContain('.throw-animation__dust');
+    expect(rm).toMatch(/\.throw-animation__ground \{\s*\n?\s*animation: none/);
+    expect(rm).not.toMatch(/\.throw-animation__ground[^{]*\{[^}]*display: none/);
+  });
+});
+
 describe('LAW: reduced motion removes motion, never meaning', () => {
   it('the global collapse keeps its escape hatch, and the turn clock uses it', () => {
     // The countdown ring is duration-carrying animation — its length IS the

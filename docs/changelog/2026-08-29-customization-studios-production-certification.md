@@ -58,9 +58,12 @@ the actual table continues to render the full-quality originals.
   a horizontal rail; and the document has no horizontal overflow.
 - Existing ten-button-theme Chromium contract: passed.
 
-## Release gate
+## Production schema
 
-The migration must be applied through the authenticated Supabase release path,
-then the schema manifest and deployed build provenance must be verified before
-this work is described as published. Local validation cannot substitute for
-that production evidence.
+The migration was applied to PokerIQ-Production through the authenticated
+Supabase CLI fallback authorized for this release and recorded as migration
+`20260829230000`. Live verification found 51 premium assets and 51 executable
+permanent prices, one delivery trigger, three owner-only preference policies,
+RLS enabled, and the preferences table in the realtime publication. The live
+schema, column, and required-column manifests were regenerated from the
+production helper RPCs afterward.

@@ -11394,6 +11394,13 @@
       "card_back",
       "settings_touched"
     ],
+    "user_table_studio_preferences": [
+      "user_id",
+      "favorites",
+      "loadouts",
+      "created_at",
+      "updated_at"
+    ],
     "user_theme_settings": [
       "id",
       "user_id",

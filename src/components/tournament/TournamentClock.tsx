@@ -329,22 +329,25 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
       setClock((prev) => ({
         ...prev,
         /**
-         * `+ 1` BECAUSE THE PAYLOAD CARRIES AN INDEX (fixed 2026-08-26).
+         * NO `+ 1`: THE PAYLOAD IS ALREADY THE DISPLAY LEVEL (2026-08-29).
          *
-         * `clock.currentLevel` is rendered raw as `LEVEL {n}`, and the DB path
-         * above already converts (`currentLevel: levelState.levelIndex + 1`).
-         * This fast path did not, so the same state field was being written in
-         * two different conventions: on every level-up the projector clock
-         * flashed one level BACKWARDS (LEVEL 6 -> LEVEL 5) until the
-         * `refreshState()` below landed and corrected it — and on a slow
-         * refresh the wrong number was simply what the room read.
+         * `clock.currentLevel` is rendered raw as `LEVEL {n}` and the DB path
+         * above converts for itself (`levelState.levelIndex + 1`), so this fast
+         * path has to arrive at the same convention. It used to add one on the
+         * stated grounds that "BLIND_LEVEL_CHANGE.level is the identical value
+         * stored in tournaments.current_level". It is not.
+         * TournamentTimerService.handleLevelChange computes
+         * `const displayLevel = newLevel + 1`, writes the raw index to the row
+         * and emits the DISPLAY level here.
          *
-         * `BLIND_LEVEL_CHANGE.level` is the identical value stored in
-         * `tournaments.current_level`: TournamentTimerService writes one
-         * variable to both, and the engine's is the index it uses on
-         * `blindStructure[]`.
+         * So the 2026-08-26 fix corrected a clock that flashed one level
+         * BACKWARDS into a clock that flashes one level FORWARD — LEVEL 6 ->
+         * LEVEL 7 on the projector in front of the room — for the same window,
+         * between the advance and the next `refreshState()`. Same shape, other
+         * direction, which is why it read as a fix. See MasterBus's
+         * BLIND_LEVEL_CHANGE for the contract, now written down.
          */
-        currentLevel: Math.max(0, Number(payload.level) || 0) + 1,
+        currentLevel: Math.max(1, Number(payload.level) || 1),
         smallBlind: payload.smallBlind,
         bigBlind: payload.bigBlind,
         ante: payload.ante,

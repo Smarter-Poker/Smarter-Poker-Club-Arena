@@ -153,7 +153,17 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
   const [busLevel, setBusLevel] = useState<{ level: number; anchorMs: number } | null>(null);
   const [busBreak, setBusBreak] = useState<{ endsAtMs: number | null } | null>(null);
 
+  /* A finished event has no clock to run. The tick used to be unconditional
+     with an empty dep array, so a COMPLETED or CANCELLED tournament kept
+     re-rendering this tab once a second, for ever, to recompute figures that
+     cannot change and that lines 405 and 435 do not even render. Derived here
+     from the raw row rather than from `isFinished` below, because that is
+     computed after this effect. */
+  const rowStatus = String(row.status || '').toUpperCase();
+  const clockIsDead = rowStatus === 'COMPLETED' || rowStatus === 'CANCELLED' || !!row.ended_at;
+
   useEffect(() => {
+    if (clockIsDead) return;
     const tick = () => setNowMs(Date.now());
     tick();
     const id = setInterval(tick, 1000);
@@ -171,7 +181,7 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
         document.removeEventListener('visibilitychange', onVisible);
       }
     };
-  }, []);
+  }, [clockIsDead]);
 
   /* The row caught up: stop preferring the optimistic values. */
   useEffect(() => {
@@ -201,7 +211,19 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
         epoch(payload.resumeAt) ??
         epoch(payload.breakEndsAt) ??
         (Number.isFinite(minutes) && minutes > 0 ? Date.now() + minutes * 60000 : null);
-      setBusBreak({ endsAtMs });
+      /**
+       * ONE BREAK, TWO EVENTS, ONE ANSWER.
+       *
+       * tournamentEventBridge emits TOURNAMENT_BREAK and BREAK_START from the
+       * same branch, and both are subscribed below (deliberately — either
+       * spelling may be the one that arrives). So this handler runs twice per
+       * break, and the `Date.now() + minutes` fallback computed a DIFFERENT end
+       * time on the second call, milliseconds later. Keeping the first answer
+       * makes the duplicate delivery a no-op instead of a small backwards jump
+       * in the break clock. A payload that carries a real end time is idempotent
+       * anyway; this only matters for the fallback.
+       */
+      setBusBreak((prev) => prev ?? { endsAtMs });
     },
     [tournament.id]
   );
@@ -247,10 +269,23 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
    *
    * The engine stores the value it indexes the structure with:
    * `blindStructure[this.currentLevel]` … `.update({ current_level:
-   * this.currentLevel })` (TournamentManagerBase). `BLIND_LEVEL_CHANGE.level`
-   * is the SAME number — TournamentTimerService writes one variable to both.
-   * But the stored structures number their own `level` field FROM 1, so
-   * element 0 reads `level: 1`.
+   * this.currentLevel })` (TournamentManagerBase). But the stored structures
+   * number their own `level` field FROM 1, so element 0 reads `level: 1`.
+   *
+   * `BLIND_LEVEL_CHANGE.level` IS NOT THE SAME NUMBER (corrected 2026-08-29).
+   * This comment used to say it was — "TournamentTimerService writes one
+   * variable to both" — and it does not: `handleLevelChange` computes
+   * `const displayLevel = newLevel + 1` and emits THAT on the bus while writing
+   * the raw index to the row. So the two branches below arrive in different
+   * units and the bus branch has to convert.
+   *
+   * Left as it was, this tab jumped a whole level FORWARD the instant the
+   * engine advanced — next level's blinds, next level's duration, and the level
+   * after that advertised as "Next" — and stayed there until the row poll
+   * cleared `busLevel`. Which is the same off-by-one this block was written to
+   * fix, arriving through the other door. The `level < 1` guard in
+   * `onLevelChange` is the tell that the payload was always 1-based: on a
+   * 0-based value it would silently drop a genuine advance to the first level.
    *
    * This tab used to clamp to `Math.max(1, … || 1)` and then match on the
    * 1-based `level` field, so from the first level-up onward it was a whole
@@ -266,9 +301,24 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
    * than open-coding the arithmetic a fourth time.
    */
   const levelIndex = busLevel
-    ? Math.max(0, Number(busLevel.level) || 0)
-    : Math.max(0, Number(row.current_level) || 0);
+    ? // 1-based display level from the bus -> 0-based index.
+      Math.max(0, (Number(busLevel.level) || 1) - 1)
+    : // Already a 0-based index on the row.
+      Math.max(0, Number(row.current_level) || 0);
   const index = Math.min(levelIndex, Math.max(0, levelCount - 1));
+  /**
+   * The engine did not stop at the end of the structure.
+   *
+   * `TournamentService` keeps incrementing `current_level` past the last
+   * published level (3,079 production rows are in that state), so this clamp
+   * is load-bearing — without it `blindLevels[index]` is undefined and the tab
+   * renders dashes. But clamping ALONE is a quieter kind of wrong: the tab then
+   * prints the last published blinds and the words "Final Level" as if that
+   * were what is being dealt, when the engine has escalated beyond anything
+   * this structure describes. A player reading those numbers is reading a
+   * guess. Say so instead.
+   */
+  const beyondStructure = levelCount > 0 && levelIndex > levelCount - 1;
   const current: NormalisedBlindLevel | undefined = blindLevels[index];
   const next: NormalisedBlindLevel | null = blindLevels[index + 1] ?? null;
   /** Display number for the fallback when the structure has no `level` field. */
@@ -499,7 +549,12 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
             <span className="blinds-tab__clock-key">{mainCaption}</span>
           </div>
 
-          <div className="tl-meter blinds-tab__meter">
+          {/* The bar duplicates the clock and the two figures beneath it, so it
+              is decoration in the accessibility tree rather than a second,
+              unlabelled reading of the same number. It used to be neither:
+              no role, no aria-value*, and not hidden either, so a screen
+              reader announced an empty group. */}
+          <div className="tl-meter blinds-tab__meter" aria-hidden="true">
             <div className="tl-meter__fill" style={{ width: `${progressPct}%` }} />
           </div>
           <div className="blinds-tab__meter-foot">
@@ -516,7 +571,14 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
           {next ? <span className="tl-section-note">{minutesText(next.duration)}</span> : null}
         </div>
 
-        {!next ? (
+        {beyondStructure ? (
+          <div className="tl-empty">
+            Past The Published Structure
+            <span className="tl-empty__hint">
+              The Clock Has Gone Beyond Level {levelCount}. Ask The Floor For The Current Blinds
+            </span>
+          </div>
+        ) : !next ? (
           <div className="tl-empty">
             Final Level
             <span className="tl-empty__hint">The Structure Does Not Go Any Higher</span>

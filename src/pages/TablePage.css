@@ -863,11 +863,14 @@
      faking a giant table. 360px lets the painted rail span nearly the full
      375px viewport, PokerBros-style. */
   max-width: min(calc(100% - 8px), 360px);
-  /* Dan 2026-08-17: 605/1000 — the canonical 896x1200 skin composites shown
-     with object-fit: cover crop to x [9.5%, 90.5%] at this aspect, which is
-     the rail plus a small scene margin. The seat ring percentages in
-     TablePage.tsx are derived from THIS box; changing the aspect moves every
-     seat off the painted rail. */
+  /* Dan 2026-08-17: 605/1000, the classic desktop shape. The claim that
+     used to end this comment — "changing the aspect moves every seat off the
+     painted rail" — stopped being true on 2026-08-18, when the skins became
+     pre-cropped and .table-art switched to object-fit: FILL: art and seat
+     ring now stretch by the same linear map at any aspect. The <=768px block
+     at the foot of this file relies on exactly that to fill a real phone's
+     box (see the 2026-08-29 note there). Desktop keeps this ratio because it
+     is height-bound with room to spare and this is the look. */
   aspect-ratio: 605 / 1000;
   position: relative;
   transform-origin: center center;
@@ -4302,13 +4305,11 @@ button.post-bb-overlay-button {
        than the plate grows, so the overhang against the page edge goes from
        6.1px to 5.5px.
 
-       NOT taken to `100%` with the gutters removed, which measures 375x619.8
-       and is the largest the oval can be at this width. That costs the 4px
-       gutters, and by the formula above the side plates then overhang by
-       8.6px instead of 5.5px - a real regression in the one place this table
-       is already tight. 8px of extra felt is not worth 3px more of a clipped
-       name plate. If that trade is ever wanted, narrow the side seats' plate
-       in the same commit, or the names pay for the felt. */
+       (2026-08-29: the paragraph that stood here argued against max-width
+       100% to protect the side plates from ~3px of extra overhang. Dan took
+       that trade the same day — twice, in capitals — and the fill rule below
+       is the result; SeatSlot's plate max-widths absorb the overhang. Kept
+       as history, overruled as guidance.) */
     max-width: 100%;
 
     /* ── 2026-08-29: THE OVAL FILLS THE BOX A REAL PHONE ACTUALLY HAS ──────

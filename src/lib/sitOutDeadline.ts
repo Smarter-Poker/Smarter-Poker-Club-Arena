@@ -146,5 +146,13 @@ export function sitOutBadgeLabel(
 export const SITOUT_URGENT_MS = 60 * 1000;
 
 export function isSitOutUrgent(msRemaining: number | null): boolean {
+  /* DELIBERATELY UNBOUNDED BELOW. This is the STYLING predicate: at 0:00 the
+     seat is at its most at-risk, so a badge that dropped its red exactly then
+     would be quietest at the worst moment.
+
+     A caller that needs a LIVE clock — one that intends to count down to this,
+     like the multi-table dock competing for its urgent slot — must add its own
+     `> 0`, because a passed deadline is not something you can count towards.
+     That is done at the dock's own call site, where the reason is visible. */
   return msRemaining !== null && msRemaining <= SITOUT_URGENT_MS;
 }

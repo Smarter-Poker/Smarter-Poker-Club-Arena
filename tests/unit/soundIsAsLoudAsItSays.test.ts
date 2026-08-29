@@ -125,3 +125,29 @@ describe('the hamburger menu uses the gates rather than a fourth copy of them', 
     expect(fn).toMatch(/setVibrationAllowed\(newValue\)/);
   });
 });
+
+describe('the gate seeding is not undone one render later', () => {
+  it('the mount effect re-reads the gates instead of one raw key each', () => {
+    /* THE FIX ABOVE WAS DEAD ON ARRIVAL WITHOUT THIS. The lazy `useState`
+       seeds from `isSoundAllowed()` — and the load effect five lines down read
+       `STORAGE_KEYS.SOUNDS` ('club_arena_sounds', one of the gate's TWO keys)
+       raw and unconditionally, overwriting the correct seed on mount.
+
+       So in the exact case the seeding fix names — ca_sound_enabled='false',
+       club_arena_sounds='true' — the switch survived one render and went back
+       to reading ON over a silent app. A fix undone by the code immediately
+       after it is indistinguishable from no fix. */
+    expect(HAMBURGER).toMatch(/setSoundsEnabled\(isSoundAllowed\(\)\)/);
+    expect(HAMBURGER).toMatch(/setVibrationsEnabled\(isVibrationPreferred\(\)\)/);
+    expect(HAMBURGER).not.toMatch(/getItem\(STORAGE_KEYS\.SOUNDS\)/);
+    expect(HAMBURGER).not.toMatch(/getItem\(STORAGE_KEYS\.VIBRATIONS\)/);
+  });
+
+  it('the store writer subscribes to the bus like the hook does', () => {
+    /* Two doors into one store must not behave differently: a caller that
+       reached it without mounting `useTableSettings` would commit and broadcast
+       while never listening for anybody else's changes. */
+    const fn = sliceMethod(TABLE_SETTINGS, 'export function setTableSetting<');
+    expect(fn).toMatch(/attachBusOnce\(\)/);
+  });
+});

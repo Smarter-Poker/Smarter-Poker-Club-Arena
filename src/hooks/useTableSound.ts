@@ -171,7 +171,7 @@ export function useTableSound(): UseTableSoundReturn {
 
   const setIsVibrationEnabled = (v: boolean) => {
     setIsVibrationEnabledRaw(v);
-    // The persist effect below writes the gate; this is the store half.
+    // The persist effect ABOVE writes the gate; this is the store half.
     setTableSetting('isHapticEnabled', v);
   };
 

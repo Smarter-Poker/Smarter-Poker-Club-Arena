@@ -8,7 +8,6 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import './BadBeatJackpotPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -389,7 +388,6 @@ export default function BadBeatJackpotPage() {
         <div className="loading-state">
           <PageSkeleton variant="stats" />
         </div>
-        {clubId && <ClubBottomNav clubId={clubId} />}
       </div>
     );
   }
@@ -422,7 +420,6 @@ export default function BadBeatJackpotPage() {
             </button>
           )}
         </div>
-        {clubId && <ClubBottomNav clubId={clubId} />}
       </div>
     );
   }
@@ -708,7 +705,6 @@ export default function BadBeatJackpotPage() {
       </div>
 
       {/* Bottom Navigation */}
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

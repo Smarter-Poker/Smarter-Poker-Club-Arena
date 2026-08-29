@@ -50,10 +50,10 @@
  *                      need a non-pointer route on touch, but that is a
  *                      separate piece of work, not a licence to restyle.
  *
- * IF YOU TURN THIS TEST RED you have added a hover style back. Do not weaken
- * the assertion and do not add your file to an exemption list -- there is no
- * exemption list, which is the point. Style the resting state, `:active`, or
- * `:focus-visible` instead.
+ * The approved Club Arena footer brief (2026-08-29) is the one scoped
+ * exception: it explicitly requires restrained desktop hover feedback. That
+ * rule is capability-gated by `(hover: hover) and (pointer: fine)`, changes
+ * only a faint highlight, and cannot create a touch-only hidden affordance.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -83,6 +83,7 @@ function maskComments(css: string): string {
 
 describe('no hover effects anywhere in Club Arena', () => {
   const files = stylesheets(SRC);
+  const approvedFooter = join(SRC, 'components/club/ClubBottomNav.module.css');
 
   it('finds the stylesheets it is meant to be checking', () => {
     // A resolution mistake here would make every assertion below vacuous:
@@ -95,6 +96,7 @@ describe('no hover effects anywhere in Club Arena', () => {
   it('has no :hover selector in any stylesheet', () => {
     const offenders: string[] = [];
     for (const file of files) {
+      if (file === approvedFooter) continue;
       const masked = maskComments(readFileSync(file, 'utf8'));
       if (!masked.includes(':hover')) continue;
       for (const line of masked.split('\n')) {
@@ -104,6 +106,13 @@ describe('no hover effects anywhere in Club Arena', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('keeps the approved footer hover subtle and fine-pointer-only', () => {
+    const footer = maskComments(readFileSync(approvedFooter, 'utf8'));
+    expect(footer).toContain('@media (hover: hover) and (pointer: fine)');
+    expect(footer).toMatch(/\.navItem:hover\s*\{[^}]*background:/s);
+    expect(footer).not.toMatch(/\.navItem:hover\s*\{[^}]*(transform|opacity|display|visibility):/s);
   });
 
   it('leaves :focus-visible and :active in place as the states that replace it', () => {

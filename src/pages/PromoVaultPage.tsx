@@ -47,7 +47,6 @@ import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import RoleBadge from '../components/club/RoleBadge';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -526,8 +525,6 @@ export default function PromoVaultPage() {
           onConfirm={handleGrant}
         />
       )}
-
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

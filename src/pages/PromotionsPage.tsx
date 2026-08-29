@@ -14,7 +14,6 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { bonusService } from '../services/BonusService';
 import { promotionService } from '../services/PromotionService';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import './PromotionsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -507,9 +506,6 @@ export default function PromotionsPage() {
         referralLink={referralLink}
         totalReferrals={0}
       />
-
-      {/* Bottom Navigation */}
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </StandardContentLayout>
   );
 }

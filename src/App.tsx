@@ -6,7 +6,7 @@
  * Root application with routing, auth guards, and global providers
  */
 
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { SessionSummaryHost } from './components/session/SessionSummaryHost';
 import TournamentRankingHost from './components/tournament/TournamentRankingHost';
 import TournamentStartingTicker from './components/tournament/TournamentStartingTicker';
@@ -48,6 +48,8 @@ import { ConfirmHost } from './components/common/confirmDialog';
 import { SignUpHost } from './components/tournament/signUpDialog';
 import MilestoneToast from './components/common/MilestoneToast';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
+import ClubBottomNav from './components/club/ClubBottomNav';
+import { shouldShowClubFooter } from './components/club/clubFooterVisibility';
 
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
@@ -127,6 +129,7 @@ const ClubWalletPreviewPage = lazyWithRetry(() => import('./pages/dev/ClubWallet
 const ArenaGameCardsShowcasePage = lazyWithRetry(
   () => import('./pages/dev/ArenaGameCardsShowcasePage')
 );
+const ClubFooterShowcasePage = lazyWithRetry(() => import('./pages/dev/ClubFooterShowcasePage'));
 const clubButtonsPreviewEnabled = import.meta.env.VITE_CLUB_BUTTONS_PREVIEW === 'true';
 const FinancialAlertsPage = lazyWithRetry(() => import('./pages/FinancialAlertsPage'));
 const DisputeManagementPage = lazyWithRetry(() => import('./pages/DisputeManagementPage'));
@@ -200,6 +203,7 @@ import { reportError } from './utils/errorReporter';
 import SlugEnforcer from './components/common/SlugEnforcer';
 
 export default function App() {
+  const location = useLocation();
   /* The listener the service worker has always been posting SHELL_UPDATED to
      and never had. Without it a cache-first shell — and the exact hashed
      chunks it names — is served for the life of the session, so a player can
@@ -506,6 +510,19 @@ export default function App() {
 
               {/* Scenario Sim — deterministic UI regression playback, no auth */}
               <Route path="/sim" element={<SimPage />} />
+
+              {/* Approved footer visual harness — intentionally blank except
+                  for the one application-root footer mounted below Routes. */}
+              <Route
+                path="/dev/footer"
+                element={
+                  clubButtonsPreviewEnabled ? (
+                    <ClubFooterShowcasePage />
+                  ) : (
+                    <Navigate to="/" replace />
+                  )
+                }
+              />
 
               {/* ═══════════════════════════════════════════════════════════════
                     PROTECTED ROUTES (Auth Required)
@@ -1740,6 +1757,7 @@ export default function App() {
               </Route>
             </Routes>
           </Suspense>
+          {shouldShowClubFooter(location.pathname) && <ClubBottomNav />}
           {/* Persistent multi-table layer — mounted BESIDE <Routes>, it never
               unmounts on navigation: engine sockets for seated tables survive
               every route. Off /table/* it collapses to display:none and

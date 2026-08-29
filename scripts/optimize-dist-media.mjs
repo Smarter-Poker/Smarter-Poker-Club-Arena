@@ -29,7 +29,14 @@
  * missed optimization must never block the deploy pipeline.
  */
 
-import { readdirSync, readFileSync, renameSync, statSync, writeFileSync, existsSync } from 'node:fs';
+import {
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+  existsSync,
+} from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadSharp } from './lib/sharp-loader.mjs';
@@ -41,6 +48,10 @@ const DIST = path.join(ROOT, 'dist');
 // game-card emblems and club logos never render above ~256 CSS px, card backs
 // top out at 80x120 CSS (240x360 @3x), page backgrounds at viewport width.
 const DIR_RULES = [
+  // Approved Club Arena footer is a pixel-locked visual source. Re-encoding
+  // the lossless WebP changed 465,144 of 490,496 pixels in the production
+  // artifact, so it must pass through byte-for-byte.
+  { prefix: 'images/club-footer/', maxDim: 0 },
   { prefix: 'game-card-icons/', maxDim: 512 },
   { prefix: 'club-logos/', maxDim: 512 },
   { prefix: 'cards/backs/table/', maxDim: 0 }, // already hand-optimized — skip
@@ -204,7 +215,9 @@ function injectServiceWorker() {
   const html = readFileSync(htmlPath, 'utf8');
   // Entry module, modulepreloaded vendors, and stylesheets emitted by Vite.
   const urls = new Set();
-  for (const m of html.matchAll(/(?:src|href)="(\/hub\/club-arena\/(?:assets|fonts)\/[^"]+\.(?:js|css))"/g)) {
+  for (const m of html.matchAll(
+    /(?:src|href)="(\/hub\/club-arena\/(?:assets|fonts)\/[^"]+\.(?:js|css))"/g
+  )) {
     urls.add(m[1]);
   }
 

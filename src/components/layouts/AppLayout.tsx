@@ -123,9 +123,8 @@ export default function AppLayout() {
       {/* Global Announcement Banner (shows club announcements when in a club context) */}
       <ClubAnnouncementBanner />
 
-      {/* Route-family navigation. Club routes use ClubBottomNav instead; this
-          rail keeps global sibling pages reachable without reopening the
-          hamburger or duplicating the exhaustive route registry. */}
+      {/* Route-family navigation keeps global sibling pages reachable without
+          reopening the hamburger or duplicating the exhaustive route registry. */}
       {showGlobalHeader && <ArenaSectionRail />}
 
       {/* Club staff pages share one permission-aware command rail. It renders

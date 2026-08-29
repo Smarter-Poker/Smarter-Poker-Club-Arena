@@ -15,7 +15,6 @@ import { exportToCSV } from '../lib/export';
 import styles from './SettlementPage.module.css';
 import '../components/common/ButtonSpinner.css';
 import { useToast } from '../components/common/Toast';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { formatDateShort as formatDate } from '../utils/format';
 import SecurityBadge from '../components/common/SecurityBadge';
@@ -1154,9 +1153,6 @@ export default function SettlementPage() {
           />
         </div>
       )}
-
-      {/* Bottom Navigation */}
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

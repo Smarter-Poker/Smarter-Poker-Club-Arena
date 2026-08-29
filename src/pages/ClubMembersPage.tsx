@@ -60,7 +60,6 @@ import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useToast } from '../components/common/Toast';
 import { useVirtualScroll } from '../hooks/useVirtualScroll';
 import PageSkeleton from '../components/common/PageSkeleton';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
 import { exportToCSV } from '../lib/export';
 import './ClubMembersPage.css';
@@ -614,8 +613,6 @@ export default function ClubMembersPage() {
           </>
         )}
       </div>
-
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

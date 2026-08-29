@@ -24,7 +24,6 @@ import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { getLocalStorage, setLocalStorage } from '../../lib/storage';
 import ClubStatsCards, { DashboardStats } from '../../components/club/ClubStatsCards';
 import ClubActivityFeed from '../../components/club/ClubActivityFeed';
-import ClubBottomNav from '../../components/club/ClubBottomNav';
 import PageSkeleton from '../../components/common/PageSkeleton';
 import { useToast } from '../../components/common/Toast';
 import ClubMemberManagement from '../../components/admin/ClubMemberManagement';
@@ -877,7 +876,6 @@ export default function ClubDashboard() {
             Retry
           </button>
         </div>
-        {clubId && <ClubBottomNav clubId={clubId} />}
       </div>
     );
   }
@@ -1828,8 +1826,6 @@ export default function ClubDashboard() {
           </div>
         )}
       </div>
-
-      {clubId && <ClubBottomNav clubId={clubId} />}
 
       {clubId && user?.id && (
         <div style={{ padding: '0 16px 80px', maxWidth: '100%' }}>

@@ -38,7 +38,6 @@ import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
 import { isAuthzError } from '../../utils/clubDashboard';
 import { reportError } from '../../utils/errorReporter';
 import { downloadCsv, csvEscape } from '../../utils/downloadCsv';
-import ClubBottomNav from '../../components/club/ClubBottomNav';
 import { EmptyState, LoadingState, PermissionState } from '../../components/common/EmptyState';
 import styles from './ClubDataPage.module.css';
 
@@ -735,7 +734,6 @@ export default function ClubDataPage() {
           action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
           secondaryAction={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
         />
-        <ClubBottomNav />
       </div>
     );
   }
@@ -1304,10 +1302,6 @@ export default function ClubDataPage() {
             : ''}
         </div>
       )}
-
-      {/* Dan 2026-08-25: Club Data is the footer's Data tab, so it carries the
-          footer itself. The Data tab hides itself while you are here. */}
-      <ClubBottomNav clubId={clubUuid || undefined} />
     </div>
   );
 }

@@ -45,7 +45,6 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
@@ -246,7 +245,6 @@ export default function MemberManagementPage() {
       <div className="member-mgmt-page">
         <PageHeader onBack={() => navigate(-1)} />
         <PageSkeleton variant="settings" />
-        {clubId && <ClubBottomNav clubId={clubId} />}
       </div>
     );
   }
@@ -264,7 +262,6 @@ export default function MemberManagementPage() {
             This Player Is Not A Member Of This Club, Or You Do Not Have Permission To View Them.
           </p>
         </div>
-        {clubId && <ClubBottomNav clubId={clubId} />}
       </div>
     );
   }
@@ -494,8 +491,6 @@ export default function MemberManagementPage() {
           </span>
         </button>
       </nav>
-
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

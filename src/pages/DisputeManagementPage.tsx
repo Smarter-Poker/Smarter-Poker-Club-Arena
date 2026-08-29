@@ -22,7 +22,6 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import ClubIntegrityHeader from '../components/club/ClubIntegrityHeader';
 import {
   DisputeService,
@@ -504,7 +503,6 @@ export default function DisputeManagementPage() {
           )}
         </div>
       </div>
-      {clubId && <ClubBottomNav clubId={clubId!} />}
     </>
   );
 }

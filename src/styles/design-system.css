@@ -125,9 +125,10 @@
      ═══════════════════════════════════════════════════════════════ */
 
   --header-height: 56px;
-  /* Kept in step with globals.css — measured at 74px, not 60px. See the
-       note there; a 14px shortfall put page content under the nav bar. */
-  --bottom-nav-height: 74px;
+  /* Approved footer artwork is 1916:256. It scales proportionally with the
+     viewport, caps at source resolution, and stays 86px tall on narrow phones
+     where its 640px intrinsic scroller preserves readable controls. */
+  --bottom-nav-height: clamp(44px, calc(13.3612vw - 0.5344px), 256px);
   --bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   --sidebar-width: 280px;
   --max-width-mobile: 480px;
@@ -191,7 +192,7 @@ body {
      `overflow-y: auto` with nobody having asked for it.
 
      WebKit resolves a `position: fixed` descendant against the nearest
-     scrolling ancestor rather than the viewport, so ClubBottomNav — 74px,
+     scrolling ancestor rather than the viewport, so ClubBottomNav — fixed at
      `bottom: 0`, meant to be welded to the bottom of the screen — was being
      pinned to the bottom of a 25,000px scroll box instead. It leaves the
      screen and rides up the page over the game cards. Chrome does not do

@@ -25,6 +25,7 @@ import { supabase } from '../../lib/supabase';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { formatBuyIn } from '../../utils/buyIn';
 import { reportError } from '../../utils/errorReporter';
+import { useInTabLobby } from '../../context/InTabLobbyContext';
 import type { Tournament, BlindLevel } from '../../types/database.types';
 import { parsePayoutStructure } from '../tournament/details/types';
 import type { PayoutPlace } from '../tournament/details/types';
@@ -100,6 +101,16 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     onDeleteTable,
     embedded,
   } = props;
+
+  /**
+   * Am I rendered inside a MultiTablePage lobby tab?
+   *
+   * The context is the authority — it is non-null exactly when a lobby tab is
+   * hosting this subtree — and the prop is kept as an override so existing
+   * callers are untouched. Either one being true is enough; see the back link
+   * at the foot of this component for what turns on it.
+   */
+  const isEmbedded = useInTabLobby() !== null || Boolean(embedded);
 
   const isCash = entry.kind === 'cash';
   /* The drawer declared role=dialog aria-modal=true and trapped nothing:
@@ -999,7 +1010,22 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                 Delete Table
               </button>
             )}
-            {embedded ? (
+            {/**
+             * `isEmbedded`, not `embedded` (Dan 2026-08-28 round 3).
+             *
+             * This link goes to a route outside /table/*, so rendering it
+             * inside the in-tab lobby is a one-tap exit from the felt. It was
+             * safe only because ClubHomePage passes `embedded={Boolean(
+             * clubIdOverride)}` and the in-tab lobby always sets that prop —
+             * a coincidence of two unrelated flags, not an invariant. An
+             * optional boolean defaulting to false meant the NEXT render site
+             * of this panel would silently get the escaping variant.
+             *
+             * The in-tab context answers the question directly: "is a lobby
+             * tab hosting me right now". The prop is still honoured so
+             * existing callers keep working, but the context alone is enough.
+             */}
+            {isEmbedded ? (
               <button type="button" className="glp__backlink" onClick={onClose}>
                 Back To All Games
               </button>

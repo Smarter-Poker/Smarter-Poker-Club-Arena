@@ -496,3 +496,26 @@
     opacity: 0 !important;
   }
 }
+
+/* ── THE ANTE, IN WORDS (2026-08-29) ─────────────────────────────────────────
+   The overlay is aria-hidden and should be: a cherry bomb, a wick, a blast and
+   a screen shake are decoration. But every WORD of the event lived inside that
+   decoration — the title, the board-count badge and the "Everyone Antes n"
+   line — so a screen-reader player was charged a forced ante and told nothing.
+
+   This is the live region that carries the meaning while the motion carries
+   the drama. Defined here rather than reaching for the .sr-only in
+   src/styles/globals.css, because that stylesheet is not loaded in this SPA
+   and a hidden announcement that silently becomes a visible one is worse than
+   no announcement at all. */
+.bpo-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

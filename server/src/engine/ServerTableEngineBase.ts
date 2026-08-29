@@ -2816,9 +2816,32 @@ export abstract class ServerTableEngineBase {
   } {
     if (!this.tableInfo) return { bomb_pot_in: null, bomb_pot_next_at: null };
     const s = bombPotSettingsFromTable(this.tableInfo);
+    const dueAt = this.bombPotScheduler.nextBombDueAt(s);
+    /**
+     * THE ANNOUNCE WINDOW IS ENFORCED HERE, NOT ON THE CLIENT (2026-08-29).
+     *
+     * `bomb_pot_announce_seconds` lets a host keep the timed clock quiet until
+     * the bomb is close. It was read into tableInfo and then never used by the
+     * engine: the snapshot published the exact due timestamp to every player,
+     * every broadcast, and the ONLY thing honouring the setting was a
+     * `remainMs > announce * 1000` test in the client's render.
+     *
+     * A host who sets a five-minute window is asking for the detonation time
+     * to be secret until then. Shipping it in every snapshot and asking the
+     * browser not to draw it is not a secret — anyone reading the websocket
+     * has the number, which on a table with a forced ante is an edge over the
+     * players who cannot. A rule about what players may know has to be
+     * enforced where the knowledge is handed out.
+     *
+     * The client check stays: it is what makes the pill disappear mid-session
+     * without waiting for the next snapshot, and it is now a presentation
+     * detail rather than the whole enforcement.
+     */
+    const announceSec = Number(this.tableInfo.bomb_pot_announce_seconds ?? 0);
+    const withheld = dueAt !== null && announceSec > 0 && dueAt - Date.now() > announceSec * 1000;
     return {
       bomb_pot_in: this.bombPotScheduler.handsUntilDue(s),
-      bomb_pot_next_at: this.bombPotScheduler.nextBombDueAt(s),
+      bomb_pot_next_at: withheld ? null : dueAt,
     };
   }
 

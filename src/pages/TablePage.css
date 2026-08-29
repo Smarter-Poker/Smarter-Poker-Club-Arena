@@ -1584,9 +1584,16 @@
   background: rgba(12, 12, 20, 0.78);
   border: 1px solid rgba(255, 158, 44, 0.35);
   color: rgba(255, 190, 120, 0.9);
-  font-size: 0.55rem;
+  /* 2026-08-29: 0.55rem is 8.8px, which made this the smallest text on the
+     felt — smaller than the run badge and the run equity beside it, both
+     0.62rem — while carrying the longest strings on it ("TRIPLE BOARD BOMB POT
+     NEXT HAND", 31 characters). It is a warning that a forced ante is coming,
+     so it has to be readable on a phone. 0.62rem matches its neighbours; the
+     letter-spacing drops a little to buy the width back, and the pill still
+     fits the 254px felt window at 375px. */
+  font-size: 0.62rem;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
   white-space: nowrap;
   z-index: 3;
   pointer-events: none;
@@ -4366,10 +4373,30 @@ button.post-bb-overlay-button {
    chip pushes, holds a few seconds, and leaves. Gold on dark, same family
    as the bomb ETA pill; scales with the felt, never captures the pointer. */
 .bomb-scoop-banner {
+  /* ── 2026-08-29: ANCHORED TO THE BOARD STACK, NOT TO THE FELT ─────────────
+     This was `top: 21%` against .table-surface, and it collided with the very
+     thing it celebrates. The banner only ever renders on a multi-board bomb
+     pot (scoopBanner is set only when boardsSeen.length >= 2), which is
+     exactly when the stack is tall: at 375px a three-board stack spans about
+     y 17.5%..69% of the surface and the banner occupied 21%..33% — directly
+     over board 1. Two boards were no better, 26%..61% against the same banner.
+
+     It is now a child of .community-area, hung off that element's own bottom
+     edge. `top: 100%` means "immediately below the last board" for one, two or
+     three boards, at every viewport width, and it stays true the next time the
+     stack's height or position changes. No percentage here can go stale
+     because there is no percentage here.
+
+     The stack is 68% of the felt and the banner is wider than its content
+     needs; `white-space: nowrap` plus a centering translate lets it overhang
+     both sides symmetrically rather than wrapping inside the narrower column.
+     Nothing here captures the pointer, so overhanging costs no hit area. */
   position: absolute;
-  top: 21%;
+  top: 100%;
+  margin-top: 10px;
   left: 50%;
   transform: translateX(-50%);
+  white-space: nowrap;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -4406,8 +4433,17 @@ button.post-bb-overlay-button {
     transform: translateX(-50%) scale(1);
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .bomb-scoop-banner {
-    animation: none;
-  }
-}
+/* 2026-08-29: the `animation: none` that used to live here is gone.
+   src/styles/reducedMotion.css states the house rule in as many words — "Set
+   `animation: none` instead and those elements would be stranded mid-thought"
+   — and its global rule already collapses every animation to 1ms with a single
+   iteration, which ends the motion while still running the keyframes to their
+   final state.
+
+   This one happened to be survivable: bombScoopIn starts at opacity 0 and the
+   base rule declares no opacity, so dropping the animation left the banner
+   visible by luck. It was a trap rather than a bug — the day anyone adds an
+   opacity or a transform to the keyframes' `to` state that the base rule does
+   not also declare, the banner vanishes for every reduced-motion player, and
+   CLAUDE.md §10.6 is explicit that reduced motion collapses motion but never
+   meaning. Deleting the override is the fix; the global rule is the mechanism. */

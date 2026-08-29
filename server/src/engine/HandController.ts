@@ -27,6 +27,7 @@ import {
   isFixedLimitCapped,
 } from './BettingStructure.js';
 import {
+  deckSizeFor,
   holeCardCount,
   isHiLoVariant,
   isOmahaVariant,
@@ -594,10 +595,41 @@ export class HandController {
     // BOMB POT STANDARDIZATION 2026-08-27 (spec §3): FIXED ante mode — a
     // positive anteFixed overrides the BB multiple. Both resolve to the same
     // equal forced contribution from every locked participant (BP-ANTE-01).
+    /**
+     * ROUNDED TO THE CENT BEFORE ANYBODY IS CHARGED (2026-08-29).
+     *
+     * This was `bigBlind * bombPot.anteMultiplier`, raw, and it is the only
+     * forced-money path in the engine that did not round. Every sibling does:
+     * postBlinds takes cent-granular blinds from the row and round2s the
+     * recorder, the BBJ fee is `Math.round(bigBlind * feeBB * 100) / 100`, and
+     * returnUncalledBet rounds every term it touches.
+     *
+     * Two things went wrong without it.
+     *
+     * The multiplier slider steps by 0.5 (min 1, max 10), so at micro stakes
+     * the product is a fraction of a cent — a 0.05 big blind at 1.5x is 0.075.
+     * snapChips() then rounds each player's stack and totalInvested
+     * INDEPENDENTLY of state.pot, so N players each paying half a cent leaves
+     * `pot != sum(totalInvested)` and the table's chips no longer conserve.
+     * verifyStreetIntegrity would have caught it as a critical financial
+     * alert, which is presumably why nobody has seen it yet — loud, but still
+     * a hand that should never have been dealt.
+     *
+     * And even at cent-legal multiples, binary floats produce dust: 0.1 * 3 is
+     * 0.30000000000000004. snapChips cleans the engine's own state but not the
+     * number that ESCAPES — anteAmount and every posting are emitted raw in
+     * BOMB_POT_TRIGGERED and FORCED_BETS_POSTED, so that dust landed verbatim
+     * in the persisted actions log and in hand_history.bomb_pot.ante_amount.
+     *
+     * Rounding here fixes both, because this is the single value both the
+     * charge and the announcement are derived from.
+     */
     const anteAmount =
-      bombPot.anteFixed && bombPot.anteFixed > 0
-        ? bombPot.anteFixed
-        : bigBlind * bombPot.anteMultiplier;
+      Math.round(
+        (bombPot.anteFixed && bombPot.anteFixed > 0
+          ? bombPot.anteFixed
+          : bigBlind * bombPot.anteMultiplier) * 100
+      ) / 100;
 
     const dealtIn = this.state.players.filter((p) => !p.is_sitting_out);
 
@@ -610,7 +642,13 @@ export class HandController {
     // by the same arithmetic.
     const requestedBoards: 1 | 2 | 3 = bombPot.boardCount ?? (bombPot.doubleBoard ? 2 : 1);
     if (requestedBoards >= 2) {
-      const deckSize = this.config.gameVariant === 'short_deck' ? 36 : 52;
+      // 2026-08-29: was `gameVariant === 'short_deck' ? 36 : 52`, a sixth copy
+      // of a fact VariantRules owns. Currently equivalent, but the sibling
+      // check in ServerTableEngineDealing already calls deckSizeFor and this
+      // same file uses isShortDeckVariant two hundred lines below — one more
+      // literal is one more place a new short-deck spelling gets a 52-card
+      // deck and a bomb pot that exhausts it mid-hand.
+      const deckSize = deckSizeFor(this.config.gameVariant);
       const holeCardsNeeded = dealtIn.length * this.getCardsPerPlayer();
       let boards = requestedBoards;
       while (boards > 1 && holeCardsNeeded + 5 * boards > deckSize) {
@@ -635,7 +673,10 @@ export class HandController {
       // BP-ANTE-03 (spec §5.2): a stack shorter than the bomb ante posts
       // everything it has and is all-in — side pots come from the normal
       // contribution-layer algorithm, never a bespoke "partial participation".
-      const actualAnte = Math.min(anteAmount, player.stack);
+      // A short stack pays what it has, and a stack is already cent-exact, so
+      // rounding the min again costs nothing and closes the case where a
+      // future change makes stacks fractional.
+      const actualAnte = Math.round(Math.min(anteAmount, player.stack) * 100) / 100;
       player.totalInvested += actualAnte;
       player.stack -= actualAnte;
       this.state.pot += actualAnte;

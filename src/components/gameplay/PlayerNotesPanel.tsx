@@ -78,12 +78,20 @@ export default function PlayerNotesPanel({
 
   const loadSingleNote = async () => {
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('player_notes')
       .select('id, user_id, target_user_id, notes, color_label, tags')
       .eq('user_id', user?.id)
       .eq('target_user_id', targetUserId)
       .maybeSingle();
+
+    /* A FAILED READ IS NOT "NO NOTE ON THIS PLAYER" (2026-08-29). Only `data`
+       was destructured, and a Supabase builder resolves with {data: null,
+       error} rather than rejecting, so a failure left the panel showing an
+       empty note -- and the player, believing they had never written one,
+       types a fresh one over the top of the note they already had. The sibling
+       loadAllNotes twenty lines below already destructures `error`. */
+    if (error) reportError(error, 'PlayerNotesPanel.loadSingleNote');
 
     if (data) {
       setCurrentNote(data.notes || '');

@@ -183,7 +183,13 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
     // 02:31 and 02:37 that both wrote their rows, and zero rows of its own.
     const window = sliceBlockAfter(SETTLEMENT, 'if (v_handHistoryId && this.currentHandBombPot');
     expect(window).toMatch(/attempt <= BOMB_LEDGER_WRITE_ATTEMPTS/);
-    expect(window).toMatch(/BOMB_LEDGER_RETRY_BASE_MS \* attempt/);
+    // 2026-08-29: the backoff is EXPONENTIAL and capped. It was linear
+    // (250/500), which fitted all three attempts inside the first second and
+    // therefore inside the same blip — production measured 2 losses in 457
+    // hands, both having survived all three. A capped doubling covers ~4.75s
+    // and cannot leave retry timers open across a table's later hands.
+    expect(window).toMatch(/BOMB_LEDGER_RETRY_BASE_MS \* \(2 \*\* attempt - 1\)/);
+    expect(window).toMatch(/BOMB_LEDGER_RETRY_MAX_MS/);
     // reportError, never console.warn — a log line on a host nobody reads is
     // how this went unnoticed in the first place.
     expect(window).toMatch(/ServerTableEngine\.bomb_award_ledger_write_failed/);
@@ -191,7 +197,7 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
     // Still fire-and-forget: `void`, and a catch so the retry loop can never
     // surface as an unhandled rejection (noUnhandledRejections.test.ts).
     expect(window).toMatch(/void writeAwardUnits\(\)\.catch\(/);
-    expect(SETTLEMENT).toMatch(/const BOMB_LEDGER_WRITE_ATTEMPTS = 3;/);
+    expect(SETTLEMENT).toMatch(/const BOMB_LEDGER_WRITE_ATTEMPTS = 4;/);
   });
 
   it('a gap that still slips through is reported by reconciliation, not lost', () => {
@@ -594,5 +600,178 @@ describe('ROUND 7 (2026-08-29) — the audit sweep', () => {
     // is ordinary — and stopped meaning anything everywhere else by
     // association.
     expect(PAGE).toMatch(/bombPotRules\?\.triggerMode !== 'bomb_pot_only' &&/);
+  });
+});
+
+/**
+ * ROUND 8 (2026-08-29) — the last of the open items.
+ *
+ * Everything the round-7 audit left on the table, plus the three things that
+ * audit could not see because they were absences rather than defects: a host
+ * with no way to edit a running table, a club owner with no bomb-pot report,
+ * and a ledger with a hole nobody could fill.
+ */
+describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
+  const SCHED = read('server/src/engine/BombPotScheduler.ts');
+  const BASE = read('server/src/engine/ServerTableEngineBase.ts');
+  const DEALING = read('server/src/engine/ServerTableEngineDealing.ts');
+  const PAGE = read('src/pages/TablePage.tsx');
+  const APP = read('src/App.tsx');
+  const CONFIG = read('src/pages/TableConfigPage.tsx');
+
+  it('the bomb button WALKS the table instead of parking on one seat', () => {
+    // The bomb fires when the button lands on the anchor, and the anchor was
+    // re-set to that same seat — so one player held the button on every bomb
+    // pot for the life of the table. A bomb pot posts no blinds, so the button
+    // is the ONLY positional variable in it: that seat acted last on every
+    // street of every bomb pot, at a table where everyone was forced to ante.
+    // Read the whole file rather than slicing a method: 'noteHandStart(' also
+    // appears in the module docblock, so a signature anchor picks up the prose
+    // and every assertion below it passes or fails for the wrong reason.
+    const code = blankNonCode(SCHED);
+    expect(code).toMatch(/this\.anchorAdvancePending = true;/);
+    // The anchor is taken from the hand AFTER the bomb, which is one dealt-in
+    // seat further round.
+    expect(code).toMatch(
+      /if \(this\.anchorAdvancePending\) \{[\s\S]*?this\.orbitAnchorSeat = dealerSeat;/
+    );
+    // The consume branch must NOT re-anchor to the bomb hand's own seat. That
+    // one line is the whole defect: it is what parked the button.
+    expect(code).not.toMatch(
+      /triggerMode === 'once_per_orbit'\) \{\s*this\.orbitAnchorSeat = dealerSeat;/
+    );
+    // Persisted, or a restart parks it for one more orbit.
+    expect(SCHED).toMatch(/x: this\.anchorAdvancePending/);
+  });
+
+  it('the felt says WHY a promised bomb has not arrived', () => {
+    // isPending() had no production caller: a due bomb waits for minPlayers and
+    // the engine said nothing, so the pill read BOMB POT NEXT HAND and the
+    // table dealt ordinary hands indefinitely with no explanation anywhere.
+    const fn = sliceMethod(BASE, 'protected bombPotSnapshotFields()');
+    expect(fn).toMatch(/this\.bombPotScheduler\.isPending\(\)/);
+    expect(fn).toMatch(/bomb_pot_waiting_for: waitingFor/);
+    expect(PAGE).toMatch(/BOMB POT WAITING FOR \$\{tableState\.bombPotWaitingFor\} PLAYERS/);
+    // And it is not URGENT — the pulse means "next hand", and a bomb that is
+    // waiting on players is not coming next hand.
+    expect(PAGE).toMatch(/tableState\.bombPotWaitingFor == null &&/);
+  });
+
+  it('the manual bomb is PUSHED, not polled every hand', () => {
+    // One round trip at the top of every hand on every bomb table, forever,
+    // for a flag that is false essentially always. The RPC now broadcasts on
+    // the table topic the engine already holds open.
+    expect(BASE).toMatch(/protected subscribeManualBomb\(\)/);
+    expect(BASE).toMatch(/event: 'bomb_pot_manual_requested'/);
+    // The poll is DEMOTED, not deleted — a broadcast is best-effort and an
+    // engine that restarted between the click and the hand never hears it, so
+    // the throttled refresh (already happening) latches the column.
+    expect(BASE).toMatch(/bomb_pot_announce_seconds, bomb_pot_manual_pending'/);
+    // And the per-hand claim only runs when something is actually armed.
+    expect(DEALING).toMatch(/this\.manualBombPushed &&/);
+    // Closed with the engine that opened it.
+    expect(BASE).toMatch(/this\.unsubscribeManualBomb\(\);/);
+  });
+
+  it('the write-only column is no longer written', () => {
+    // `double_board` is true on 0 of 97,944 rows despite being written on every
+    // double-board table ever created, because nothing has ever read it. The
+    // lobby reads the settings blob; the engine reads bomb_pot_double_board.
+    expect(blankNonCode(CONFIG)).not.toMatch(/^\s*double_board:/m);
+    // Its canonical sibling is still written — that one has readers.
+    expect(CONFIG).toMatch(/bomb_pot_double_board: config\.bombPotEnabled/);
+  });
+
+  it('a host can edit a table that is already running', () => {
+    // Every bomb setting was write-once: TableConfigPage takes a gameType and
+    // never a table id, so changing a frequency meant killing the table and
+    // losing its seated players.
+    expect(APP).toMatch(/path="clubs\/:clubId\/tables\/:tableId\/bomb-settings"/);
+    const SETTINGS = read('src/pages/club/TableBombSettingsPage.tsx');
+    expect(SETTINGS).toMatch(/fn_update_table_bomb_settings/);
+    // The RPC is the authority; the page must not write the row itself.
+    expect(blankNonCode(SETTINGS)).not.toMatch(/from\('tables'\)[\s\S]{0,80}\.update\(/);
+    // Reachable from where a host already acts on bomb pots.
+    expect(PAGE).toMatch(/bomb-settings/);
+  });
+
+  it('a club owner has a bomb-pot report, and it admits what it cannot see', () => {
+    // The three v_bomb_pot_* views carry no club_id or table_id and no UI read
+    // any of them — platform-operator views wearing a club-analytics label.
+    expect(APP).toMatch(/path="clubs\/:clubId\/bomb-pot-report"/);
+    const REPORT = read('src/pages/club/ClubBombPotReportPage.tsx');
+    expect(REPORT).toMatch(/fn_club_bomb_pot_report/);
+    // The three numbers the views omit entirely.
+    expect(REPORT).toMatch(/Players Per Bomb/);
+    expect(REPORT).toMatch(/Forced Antes Collected/);
+    expect(REPORT).toMatch(/Scooped Outright/);
+    // A report that quietly averages over hands it has no record of is how a
+    // hole in a ledger stays invisible.
+    expect(REPORT).toMatch(/totals\.unrecorded > 0/);
+  });
+
+  it('the backfill reconstructs by ARITHMETIC and refuses to guess', () => {
+    const MIG = read('supabase/migrations/20260829_backfill_bomb_award_units_by_arithmetic.sql');
+    // Single-winner hands only: with one winner there is nothing to infer.
+    expect(MIG).toMatch(/jsonb_array_length\(COALESCE\(h\.winners, '\[\]'::jsonb\)\) = 1/);
+    // Never evaluates a card — every input is a stored column.
+    expect(blankNonCode(MIG)).not.toMatch(/hole_cards/);
+    // Dry run is the DEFAULT, so a careless call writes nothing.
+    expect(MIG).toMatch(/p_dry_run boolean DEFAULT true/);
+    // Idempotent on the ledger's own key.
+    expect(MIG).toMatch(
+      /ON CONFLICT \(hand_history_id, pot_index, board, side, user_id\) DO NOTHING/
+    );
+  });
+
+  it('the outcomes view has a horizon and stays closed', () => {
+    const MIG = read(
+      'supabase/migrations/20260829_bomb_columns_that_lie_and_a_view_that_never_stops.sql'
+    );
+    expect(MIG).toMatch(/WHERE created_at > now\(\) - interval '90 days'/);
+    // CREATE OR REPLACE VIEW resurrects Supabase's default grants; the revoke
+    // has to follow every redefinition or the view re-opens to anon.
+    expect(MIG).toMatch(
+      /REVOKE ALL ON public\.v_bomb_pot_outcomes FROM PUBLIC, anon, authenticated;/
+    );
+    expect(MIG).toMatch(/security_invoker = true/);
+  });
+
+  it('the ante control cannot offer half blinds an integer column will not hold', () => {
+    // tables.bomb_pot_ante_multiplier is an INTEGER column (live schema).
+    // Both forms offered `step 0.5`, so a host dragging to 2.5 had 3 stored
+    // and every player at the table was charged the larger ante with nothing
+    // said. Found by probing the edit RPC's happy path inside a rolled-back
+    // transaction: it answered ok:true and echoed 3.
+    //
+    // The fractional case is not lost - bomb_pot_ante_fixed is `numeric` and
+    // prices the ante in chips, which is the honest way to say "two and a half
+    // big blinds" anyway.
+    const CONFIG_PAGE = read('src/pages/TableConfigPage.tsx');
+    const anteSlider = sliceEnclosingBlock(CONFIG_PAGE, 'label="Bomb Pot Ante"');
+    expect(anteSlider).toMatch(/step=\{1\}/);
+    expect(blankNonCode(anteSlider)).not.toMatch(/step=\{0\.5\}/);
+
+    const SETTINGS = read('src/pages/club/TableBombSettingsPage.tsx');
+    // The editor rounds on the way in rather than letting Postgres do it.
+    expect(SETTINGS).toMatch(/set\('anteBB', Math\.max\(0, Math\.round\(/);
+    // And the RPC says when it rounded, so the host is told rather than
+    // discovering it from the felt after everyone has been charged.
+    expect(SETTINGS).toMatch(/ante_multiplier_rounded/);
+  });
+
+  it('editing a table clears the bomb LIVE state', () => {
+    const MIG = read('supabase/migrations/20260829_a_host_can_change_a_running_table.sql');
+    // A host moving from every-10-hands to timed is starting a new schedule,
+    // not resuming one — and a token from the old schedule must not detonate
+    // under the new rules. Same rule fn_clone_table_row enforces for a clone.
+    expect(MIG).toMatch(/bomb_pot_sched_state\s+= NULL/);
+    expect(MIG).toMatch(/bomb_pot_next_due_at\s+= NULL/);
+    expect(MIG).toMatch(/bomb_pot_manual_pending\s+= false/);
+    // Role-gated server-side, and the audit trail is definer-only.
+    expect(MIG).toMatch(/v_role IN \('owner', 'co_owner', 'admin'\)/);
+    expect(MIG).toMatch(
+      /REVOKE ALL ON public\.table_settings_changes FROM PUBLIC, anon, authenticated;/
+    );
   });
 });

@@ -82,6 +82,12 @@ export interface EnginePublishedState {
   bomb_pot_in?: number | null;
   /** BOMB POT STANDARDIZATION 2026-08-27: timed mode — epoch ms when the next bomb is due. */
   bomb_pot_next_at?: number | null;
+  /**
+   * 2026-08-29: a bomb is due but the table is short of bomb_pot_min_players,
+   * so the engine is holding it. The number is the floor it is waiting for.
+   * Null when nothing is waiting. Absent on older engines.
+   */
+  bomb_pot_waiting_for?: number | null;
   /** VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is played as. */
   hand_variant?: string;
   current_bet: number;
@@ -134,6 +140,12 @@ export interface MappedTableStatePatch {
   bombPotIn: number | null;
   /** BOMB POT STANDARDIZATION 2026-08-27: timed mode — epoch ms of the next due bomb. */
   bombPotNextAt: number | null;
+  /**
+   * 2026-08-29: seats a due-but-held bomb is waiting for, or null when nothing
+   * is waiting. The felt used to promise BOMB POT NEXT HAND and then deal
+   * ordinary hands indefinitely, with the reason available nowhere.
+   */
+  bombPotWaitingFor: number | null;
   /**
    * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is played
    * as; null when the engine predates the field. Clients size villain
@@ -391,6 +403,10 @@ export function mapEngineSnapshot(
     bombPotIn: typeof s.bomb_pot_in === 'number' ? s.bomb_pot_in : null,
     // BOMB POT STANDARDIZATION 2026-08-27: timed-mode due timestamp (epoch ms).
     bombPotNextAt: typeof s.bomb_pot_next_at === 'number' ? s.bomb_pot_next_at : null,
+    // 2026-08-29: why a promised bomb has not arrived. The felt used to
+    // announce BOMB POT NEXT HAND and then deal ordinary hands indefinitely
+    // with no explanation available anywhere.
+    bombPotWaitingFor: typeof s.bomb_pot_waiting_for === 'number' ? s.bomb_pot_waiting_for : null,
     // VARIANT OVERRIDE 2026-08-28: the hand's own variant (null on old engines).
     handVariant: typeof s.hand_variant === 'string' && s.hand_variant ? s.hand_variant : null,
     boardStage: s.stage ?? 'preflop',

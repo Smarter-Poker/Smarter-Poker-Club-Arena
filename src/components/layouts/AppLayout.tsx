@@ -17,6 +17,7 @@ import ClubArenaWelcomeModal, { useClubArenaWelcome } from '../modals/ClubArenaW
 import ClubAnnouncementBanner from '../club/ClubAnnouncementBanner';
 import GlobalHeader from '../navigation/GlobalHeader';
 import ArenaSectionRail from '../navigation/ArenaSectionRail';
+import ClubOperationsRail from '../navigation/ClubOperationsRail';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
 import CompleteProfileModal, { useCompleteProfile } from '../modals/CompleteProfileModal';
@@ -126,6 +127,11 @@ export default function AppLayout() {
           rail keeps global sibling pages reachable without reopening the
           hamburger or duplicating the exhaustive route registry. */}
       {showGlobalHeader && <ArenaSectionRail />}
+
+      {/* Club staff pages share one permission-aware command rail. It renders
+          only inside the operations route family and leaves the live lobby,
+          table, tournament, and ordinary member pages untouched. */}
+      {showGlobalHeader && <ClubOperationsRail />}
 
       {/* Offline Banner */}
       {isOffline && (

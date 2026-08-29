@@ -179,38 +179,14 @@ export function getClubArenaNavigation({
 
     if (isClubStaff) {
       operationItems.push({
-        label: 'Players',
-        path: clubPath('/members'),
-        description: 'Roster, roles, and member records',
+        label: 'Operations Center',
+        path: clubPath('/operations'),
+        description: canControlClub
+          ? 'People, finance, safety, and club controls'
+          : canViewFinance
+            ? 'People, finance, reports, and settlement'
+            : 'Players, agents, reports, and announcements',
       });
-    }
-    if (canViewFinance) {
-      operationItems.push({
-        label: 'Club Data',
-        path: clubPath('/data'),
-        description: 'Games, players, and statements',
-      });
-    }
-    if (canControlClub) {
-      operationItems.push({
-        label: 'Club Settings',
-        path: clubPath('/settings'),
-        description: 'Identity, rules, and permissions',
-      });
-    }
-    if (isClubStaff) {
-      operationItems.push(
-        {
-          label: 'Agent Team',
-          path: clubPath('/agents'),
-          description: 'Hierarchy and agent management',
-        },
-        {
-          label: 'Reports & Disputes',
-          path: clubPath('/reports'),
-          description: 'Review player and game reports',
-        }
-      );
     }
 
     groups.push({

@@ -184,12 +184,22 @@ class PromotionServiceClass {
 
   async claimPromotion(promotionId: string, userId: string): Promise<PromotionClaim> {
     // Check if already claimed
-    const { data: existingClaim } = await supabase
+    const { data: existingClaim, error: existingClaimErr } = await supabase
       .from('promotion_claims')
       .select('id')
       .eq('promotion_id', promotionId)
       .eq('user_id', userId)
       .maybeSingle();
+
+    /* A FAILED CHECK IS NOT "NOT CLAIMED YET" (2026-08-29). Only `data` was
+       destructured, and a Supabase builder resolves with {data: null, error}
+       rather than rejecting -- so a failed read fell through to the claim
+       below, which pays out. The unique constraint stops the second row, but
+       this path leads to money and a guard that cannot see its own failure is
+       not a guard. */
+    if (existingClaimErr) {
+      throw new Error('Could not verify that promotion. Please try again.');
+    }
 
     if (existingClaim) {
       throw new Error('Promotion already claimed');

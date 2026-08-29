@@ -1676,6 +1676,27 @@ export default function ClubDashboard() {
                   </Link>
                 )}
 
+                {/* BOMB POT REPORT 2026-08-29. Unconditional, unlike the
+                    insurance link above: that one is gated on the club HAVING
+                    insurance revenue, but the first question about bomb pots is
+                    whether to run them at all, and an owner who has never
+                    switched them on is exactly who needs to see the page. It
+                    tells them plainly when there is nothing to show yet. */}
+                <Link
+                  to={`/clubs/${clubId}/bomb-pot-report`}
+                  style={{
+                    display: 'inline-block',
+                    marginBottom: 14,
+                    marginLeft: revenue.insurance ? 14 : 0,
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    color: '#1877f2',
+                    textDecoration: 'none',
+                  }}
+                >
+                  View Bomb Pot Report
+                </Link>
+
                 <Suspense fallback={<p className={styles.empty}>Loading Chart...</p>}>
                   <ClubActivityChart
                     data={revenue.daily.map((d) => ({ d: d.d, hands: d.hands, rake: d.rake }))}

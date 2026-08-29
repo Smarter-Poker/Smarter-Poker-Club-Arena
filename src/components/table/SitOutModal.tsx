@@ -93,7 +93,15 @@ function useSitOutCountdown(
     const read = () => setMsRemaining(sitOutMsRemaining({ sitOutSince, isTournament }));
     read();
     if (sitOutMsRemaining({ sitOutSince, isTournament }) === null) return;
-    const id = setInterval(read, 1000);
+    const id = setInterval(() => {
+      read();
+      /* STOP AT ZERO, like the seat badge. `sitOutMsRemaining` floors at 0
+         rather than returning null, so without this the modal re-rendered once
+         a second for however long the eviction sweep took to land — and the
+         line already reads "Your Seat May Be Taken At Any Moment", which cannot
+         become more urgent. */
+      if (sitOutMsRemaining({ sitOutSince, isTournament }) === 0) clearInterval(id);
+    }, 1000);
     return () => clearInterval(id);
   }, [isOpen, sitOutSince, isTournament]);
 

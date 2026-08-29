@@ -102,7 +102,14 @@ export function formatSitOutRemaining(msRemaining: number): string {
 export function sitOutBadgeLabel(msRemaining: number | null): string {
   if (msRemaining === null) return 'Sitting Out';
   if (msRemaining <= 0) return 'Sitting Out. Seat At Risk';
-  return `Sitting Out ${formatSitOutRemaining(msRemaining)}`;
+  /* "UP TO", and this function is the reason the hedge is not optional.
+     The rule is "2 orbits or 5 minutes, whichever comes FIRST", and the orbit
+     half is engine state no client can see — so a bare `Sitting Out 4:37`
+     PROMISES time the player may not have. The first version of this returned
+     exactly that: the one function created "so the two surfaces cannot word the
+     same rule differently" was the one that dropped the rule, while the modal,
+     which builds its own string, kept it. */
+  return `Sitting Out. Up To ${formatSitOutRemaining(msRemaining)}`;
 }
 
 /** Under a minute left: the point at which a seat is worth shouting about. */

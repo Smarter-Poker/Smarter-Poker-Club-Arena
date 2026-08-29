@@ -196,18 +196,24 @@ export interface SeatPlayer {
    * event — still renders the MUCKED label.
    */
   isMucked?: boolean;
-  /**
-   * `table_seats.sit_out_at` in epoch ms, and ONLY when a deadline applies.
-   *
-   * The parent withholds it on tournament, spin and heads-up tables, where a
-   * player may sit out as long as they like — which keeps this component's
-   * standing rule intact: nothing in here may branch a visual on
-   * tournament-ness. A stamp means a clock; no stamp means the plain tag.
-   */
-  sitOutAt?: number | null;
 }
 
 export interface SeatSlotProps {
+  /**
+   * `table_seats.sit_out_at` in epoch ms, and ONLY when a deadline applies.
+   *
+   * A SEPARATE PROP, not a field on `player` — that was the first attempt and it
+   * did not work. `mapEngineSnapshot` builds a BRAND NEW player object on every
+   * engine broadcast, from a fixed list of nine fields, so anything else written
+   * onto a player is erased at the next frame. The stamp would appear on the
+   * 10-second poll and vanish on the next hand, forever.
+   *
+   * The parent withholds it on tournament tables, where a player may sit out as
+   * long as they like — which keeps this component's standing rule intact:
+   * nothing in here may branch a visual on tournament-ness. A stamp means a
+   * clock; no stamp means the plain tag.
+   */
+  sitOutAt?: number | null;
   seatNumber: number;
   player: SeatPlayer | null;
   position: PositionBadge;
@@ -707,6 +713,7 @@ export const SeatSlot = memo(
       // The prop stays on the interface because the memo comparator below still
       // needs to see it change (it feeds SeatSlot's parents), and because
       // removing it from every call site is a bigger change than it is worth.
+      sitOutAt,
       bountyValue,
       bombPotAnte,
       isWinner = false,
@@ -2257,7 +2264,7 @@ export const SeatSlot = memo(
                passing a per-second number through here would defeat this
                component's comparator sixty times a minute per sat-out seat.
                See SitOutBadge for the full reasoning. */
-            <SitOutBadge sitOutAt={player.sitOutAt} />
+            <SitOutBadge sitOutAt={sitOutAt} />
           )}
           {/* FIX 186: Disconnected overlay — shows DISCONNECTED label + countdown */}
           {player.status === 'disconnected' && (
@@ -2784,6 +2791,14 @@ export const SeatSlot = memo(
        feedback". */
     if (prev.timeBankArmed !== next.timeBankArmed) return false;
     if (prev.isTimeBankActive !== next.isTimeBankActive) return false;
+    /* The sit-out countdown. Omitted from this comparator on the first attempt,
+       which made the badge's clock non-deterministic: `paint()` writes the
+       stamp on the 10s poll WITHOUT changing anything else about the seat, so
+       every field below matched, this returned true, and the render was
+       skipped. On the deferred-sit-out path — tap Sit Out mid-hand, trigger
+       fires at settlement — the stamp only ever arrives that way, so the badge
+       showed no clock at all for the whole five minutes. */
+    if (prev.sitOutAt !== next.sitOutAt) return false;
 
     const pp = prev.player;
     const np = next.player;

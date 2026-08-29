@@ -393,10 +393,19 @@ function applySideEffects(next: TableUserSettings): void {
  * value the account actually chose.
  */
 function reconcileWithGates(loaded: TableUserSettings): TableUserSettings {
-  const soundOn = isSoundAllowed();
-  const hapticOn = isVibrationPreferred();
-  if (loaded.isSoundEnabled === soundOn && loaded.isHapticEnabled === hapticOn) return loaded;
-  return { ...loaded, isSoundEnabled: soundOn, isHapticEnabled: hapticOn };
+  /* IT MAY ONLY TURN THINGS OFF.
+     `isSoundAllowed()` and `isVibrationPreferred()` both return TRUE when their
+     keys are absent — "no recorded preference", not "the user chose on". A
+     first version adopted the answer in both directions, which meant that on any
+     browser holding a muted blob and no gate keys, boot would force the blob to
+     `true` and `applySideEffects` would persist that over the stored `false` on
+     the very next line: a muted player un-muted, and the record of the mute
+     destroyed. The gates are authoritative about a MUTE, which is the direction
+     they fail closed in; silence from them is not consent. */
+  const patch: Partial<TableUserSettings> = {};
+  if (loaded.isSoundEnabled && !isSoundAllowed()) patch.isSoundEnabled = false;
+  if (loaded.isHapticEnabled && !isVibrationPreferred()) patch.isHapticEnabled = false;
+  return Object.keys(patch).length === 0 ? loaded : { ...loaded, ...patch };
 }
 
 function getSnapshot(): TableUserSettings {

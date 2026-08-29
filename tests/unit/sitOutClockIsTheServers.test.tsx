@@ -46,12 +46,12 @@ describe('the clock comes from the row, not from this browser', () => {
   });
 
   it('parses it into a per-user map the surfaces can read', () => {
-    expect(TABLE_PAGE).toMatch(/sitOutAtRef\.current = stamps/);
+    expect(TABLE_PAGE).toMatch(/setSitOutStamps\(/);
     expect(TABLE_PAGE).toMatch(/Date\.parse\(row\.sit_out_at\)/);
   });
 
   it('the hero adopts the server stamp when the row provides one', () => {
-    expect(TABLE_PAGE).toMatch(/const serverStamp = stamps\.get\(String\(userId\)\)/);
+    expect(TABLE_PAGE).toMatch(/const serverStamp = stamps\.get\(heroId\)/);
     expect(TABLE_PAGE).toMatch(
       /setSitOutSince\(\(prev\) => \(prev === serverStamp \? prev : serverStamp\)\)/
     );
@@ -64,15 +64,18 @@ describe('the clock comes from the row, not from this browser', () => {
        move the deadline earlier — the safe direction on a seat about to be
        reclaimed. */
     const effect = sliceEnclosingBlock(TABLE_PAGE, 'if (!heroIsSittingOut) return null;');
-    expect(effect).toMatch(
-      /sitOutAtRef\.current\.get\(String\(userId \?\? ''\)\) \?\? Date\.now\(\)/
-    );
+    expect(effect).toMatch(/sitOutStamps\.get\(String\(userId \?\? ''\)\) \?\? Date\.now\(\)/);
   });
 });
 
 describe('the deadline is visible where the player is looking', () => {
   it('the seat badge is a component that can count, not a hardcoded string', () => {
-    expect(SEAT_SLOT).toMatch(/<SitOutBadge sitOutAt=\{player\.sitOutAt\} \/>/);
+    /* A SEPARATE PROP, not a field on `player`. It was a field first, and that
+       could not work: `mapEngineSnapshot` builds a brand new player object from
+       a fixed list of nine fields on every engine broadcast, so the stamp was
+       erased at the next frame. */
+    expect(SEAT_SLOT).toMatch(/<SitOutBadge sitOutAt=\{sitOutAt\} \/>/);
+    expect(SEAT_SLOT, 'the stamp is back on the player object').not.toMatch(/player\.sitOutAt/);
     expect(SEAT_SLOT, 'the old hardcoded label is back').not.toMatch(/>\s*SITTING OUT\s*</);
   });
 
@@ -100,7 +103,30 @@ describe('the deadline is visible where the player is looking', () => {
     );
     expect(props).not.toMatch(/isTournament/);
     expect(props).toMatch(/sitOutAt\?:/);
-    expect(TABLE_PAGE).toMatch(/const deadlinesApply = !prev\.isTournament/);
+    expect(TABLE_PAGE).toMatch(/tableState\.isTournament \|\| !displayPlayer\?\.id/);
+  });
+
+  it('the memo comparator compares the stamp, or the badge never receives it', () => {
+    /* `paint()` writes the stamp WITHOUT changing anything else about the seat.
+       If the comparator does not look at it, every compared field matches, the
+       render is skipped, and on the deferred-sit-out path — the only path where
+       the stamp arrives that way — the badge shows no clock for the whole five
+       minutes. */
+    expect(SEAT_SLOT).toMatch(/if \(prev\.sitOutAt !== next\.sitOutAt\) return false;/);
+  });
+
+  it('the seat poll no longer rewrites every player to carry a stamp', () => {
+    /* `undefined !== null` for any seat that had not been through paint() made
+       it report `changed` on EVERY poll, re-rendering the whole table every ten
+       seconds — on tournament tables too, where the stamp is always null. */
+    const at = TABLE_PAGE.indexOf('const paint = (sittingOut: Set<string>)');
+    expect(at, 'paint has moved or gone').toBeGreaterThan(-1);
+    const paint = TABLE_PAGE.slice(at, TABLE_PAGE.indexOf('const reload = async', at));
+    expect(paint).not.toMatch(/sitOutAt/);
+  });
+
+  it('a new stamp map is only published when something moved', () => {
+    expect(TABLE_PAGE).toMatch(/sameStamps\(prev, stamps\) \? prev : stamps/);
   });
 
   it('every countdown stops at zero instead of re-rendering forever', () => {
@@ -111,6 +137,10 @@ describe('the deadline is visible where the player is looking', () => {
        seat, for as long as the eviction sweep takes to land. */
     expect(BADGE).toMatch(/if \(next !== null && next <= 0\) clearInterval\(id\)/);
     expect(TABLE_PAGE).toMatch(/\) === 0\s*\)\s*\{\s*clearInterval\(id\);/);
+    /* The modal too. An earlier version of this case was titled "every
+       countdown" and pinned only two of the three. */
+    const modal = strip(readRaw('src/components/table/SitOutModal.tsx'));
+    expect(modal).toMatch(/=== 0\) clearInterval\(id\)/);
   });
 });
 
@@ -180,10 +210,16 @@ describe('the footer cannot show the state without the clock', () => {
        in the window the ref exists to cover, `sitOutSince` stayed null and the
        deadline silently disappeared. The player under the clock was the one who
        could not see it. */
-    const decl = sliceEnclosingBlock(TABLE_PAGE, 'const heroIsSittingOut =');
-    expect(TABLE_PAGE).toMatch(
-      /const heroIsSittingOut =[\s\S]{0,240}sittingOutIdsRef\.current\.has\(String\(userId \?\? ''\)\)/
-    );
+    const declAt = TABLE_PAGE.indexOf('const heroIsSittingOut =');
+    const decl = TABLE_PAGE.slice(declAt, TABLE_PAGE.indexOf(';', declAt));
+    expect(TABLE_PAGE).toMatch(/const heroIsSittingOut =[\s\S]{0,200}heroSitsOutPerRow/);
+    /* From STATE, not from a ref read during render. A ref mutation schedules
+       nothing, so deriving this from `sittingOutIdsRef.current` made the value
+       correct only when some unrelated update happened to flush in the same
+       pass — and the effect keyed on it then did not run either, which is what
+       made the cleared-countdown bug permanent rather than transient. */
+    expect(TABLE_PAGE).toMatch(/const \[heroSitsOutPerRow, setHeroSitsOutPerRow\] = useState/);
+    expect(decl).not.toMatch(/sittingOutIdsRef/);
     expect(decl.length).toBeGreaterThan(0);
   });
 });

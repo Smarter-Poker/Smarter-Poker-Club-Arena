@@ -73,6 +73,20 @@ import { ButtonImagePreloader } from '../components/table/ButtonImagePreloader';
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { sitOutMsRemaining, sitOutBadgeLabel } from '../lib/sitOutDeadline';
+
+/**
+ * Two stamp maps hold the same answer.
+ *
+ * The `table_seats` poll runs every ten seconds on every open table, and it
+ * builds a fresh Map each time. Handing React a new object identity when
+ * nothing moved would re-render every seat at that cadence for nothing — the
+ * exact churn that made an earlier version of this feature expensive.
+ */
+function sameStamps(a: Map<string, number>, b: Map<string, number>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [k, v] of a) if (b.get(k) !== v) return false;
+  return true;
+}
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
@@ -2922,8 +2936,23 @@ export default function TablePage({
    * table_seats poll below, which already runs every ten seconds and on every
    * realtime change; read by the hero's footer countdown and by every seat's
    * SITTING OUT badge.
+   *
+   * STATE, not a ref. A ref cannot drive a render, so the seat badges would
+   * only have picked up a new stamp when something ELSE happened to re-render
+   * the page — which on a quiet table is exactly the situation a sit-out
+   * countdown exists for.
    */
-  const sitOutAtRef = useRef<Map<string, number>>(new Map());
+  const [sitOutStamps, setSitOutStamps] = useState<Map<string, number>>(() => new Map());
+  /**
+   * Does the hero's `table_seats` ROW say they are sitting out?
+   *
+   * State rather than a read of `sittingOutIdsRef` during render: a ref
+   * mutation schedules nothing, so deriving `heroIsSittingOut` from one made
+   * that value correct only when some unrelated update happened to flush in the
+   * same pass. The ref stays — it is what paints every OTHER seat, from inside
+   * an effect — and the hero's own half of it is mirrored here.
+   */
+  const [heroSitsOutPerRow, setHeroSitsOutPerRow] = useState(false);
   /**
    * A 1 Hz clock, and ONLY while a cash sit-out deadline is actually running.
    *
@@ -2975,11 +3004,10 @@ export default function TablePage({
    */
   const heroIsSittingOut =
     tableState.heroSeat > 0 &&
-    (tableState.players[tableState.heroSeat - 1]?.status === 'sitting_out' ||
-      sittingOutIdsRef.current.has(String(userId ?? '')));
+    (tableState.players[tableState.heroSeat - 1]?.status === 'sitting_out' || heroSitsOutPerRow);
   /**
    * A PROVISIONAL stamp, replaced by the server's the moment the seat read
-   * comes back (see `sitOutAtRef` in the table_seats poll).
+   * comes back (see `sitOutStamps` in the table_seats poll).
    *
    * `Date.now()` here used to be the ONLY source, which meant the clock
    * restarted at 5:00 on every reload, reconnect and second tab — a player at
@@ -2993,9 +3021,9 @@ export default function TablePage({
     setSitOutSince((prev) => {
       if (!heroIsSittingOut) return null;
       if (prev !== null) return prev;
-      return sitOutAtRef.current.get(String(userId ?? '')) ?? Date.now();
+      return sitOutStamps.get(String(userId ?? '')) ?? Date.now();
     });
-  }, [heroIsSittingOut, userId]);
+  }, [heroIsSittingOut, userId, sitOutStamps]);
 
   /* Drive the footer countdown. Starts only when there is genuinely a deadline
      to count — see the note on sitOutTick — and stops the moment there is not,
@@ -14988,35 +15016,30 @@ export default function TablePage({
       if (cancelled) return;
       setTableState((prev) => {
         let changed = false;
-        /* THE STAMP IS WITHHELD WHERE THERE IS NO DEADLINE. Dan 2026-08-28: a
-           tournament player (a spin is one) sits out "as long as they want"
-           and is blinded off instead. Deciding it here rather than inside
-           SeatSlot honours that component's standing rule that nothing in it
-           may branch a visual on tournament-ness. */
-        const deadlinesApply = !prev.isTournament;
+        /* THE STAMP IS NOT WRITTEN ONTO PLAYERS. It was, briefly, and it could
+           not work: `mapEngineSnapshot` builds a brand new player object from a
+           fixed list of fields on every engine broadcast, so anything else
+           written here is erased at the next frame — the badge's clock would
+           appear on the poll and vanish on the next hand, forever.
+
+           It also made this function report `changed` on every single poll
+           (`undefined !== null` for any seat that had not been through it
+           before), re-rendering the whole table every ten seconds — on
+           tournament tables too, where the stamp is always null.
+
+           The stamps are their own state and reach SeatSlot as their own prop. */
         const players = prev.players.map((p) => {
           if (!p || !p.id) return p;
           const shouldBeOut = sittingOut.has(p.id);
-          const stamp = deadlinesApply ? (sitOutAtRef.current.get(p.id) ?? null) : null;
           /* Never repaint a seat whose status is telling a more urgent story.
              An all-in seat is all-in first; a folded seat has already acted
              this hand. Sitting out is the resting state underneath both, and
              the snapshot mapper applies the same precedence. */
-          if (p.status === 'all_in' || p.status === 'folded') {
-            if (p.sitOutAt === stamp) return p;
-            changed = true;
-            return { ...p, sitOutAt: stamp };
-          }
+          if (p.status === 'all_in' || p.status === 'folded') return p;
           const next = shouldBeOut ? 'sitting_out' : p.status === 'sitting_out' ? 'active' : null;
-          const statusChanges = next !== null && next !== p.status;
-          const stampChanges = p.sitOutAt !== stamp;
-          if (!statusChanges && !stampChanges) return p;
+          if (next === null || next === p.status) return p;
           changed = true;
-          return {
-            ...p,
-            ...(statusChanges ? { status: next as typeof p.status } : {}),
-            sitOutAt: stamp,
-          };
+          return { ...p, status: next as typeof p.status };
         });
         return changed ? { ...prev, players } : prev;
       });
@@ -15062,10 +15085,24 @@ export default function TablePage({
         const stamps = new Map<string, number>();
         for (const row of rows) {
           if (!row.user_id || !row.sit_out_at) continue;
+          /* The SAME fresh-join grace the sitting-out flag gets below. Without
+             it a stale `is_sitting_out` row within 15s of a buy-in armed a
+             countdown for a player who is not sitting out, and the 1 Hz tick
+             ran on them until the stamp aged past five minutes. */
+          if (
+            row.user_id === userId &&
+            seatAcquiredAtRef.current != null &&
+            Date.now() - seatAcquiredAtRef.current < 15_000
+          ) {
+            continue;
+          }
           const at = Date.parse(row.sit_out_at);
           if (Number.isFinite(at)) stamps.set(String(row.user_id), at);
         }
-        sitOutAtRef.current = stamps;
+        /* Replace only when something actually moved: this runs every ten
+           seconds on every table, and handing React a new Map each time would
+           re-render every seat for nothing. */
+        setSitOutStamps((prev) => (sameStamps(prev, stamps) ? prev : stamps));
 
         /* A SEAT THAT IS GONE IS NOT STILL SITTING OUT (2026-08-28, second pass).
          *
@@ -15138,11 +15175,19 @@ export default function TablePage({
            It can only ever move the deadline EARLIER, never later, which is
            the safe direction on a seat that is about to be reclaimed. */
         if (userId) {
-          const serverStamp = stamps.get(String(userId));
+          const heroId = String(userId);
+          setHeroSitsOutPerRow(sittingOutIdsRef.current.has(heroId));
+          /* ADOPT ONLY. Clearing used to live here too, guarded on the ref —
+             but `heroIsSittingOut` is `snapshotStatus || row`, so when the
+             SNAPSHOT said sitting-out and the row had not caught up, this
+             cleared a live countdown and nothing re-seeded it: the effect that
+             would have is keyed on `heroIsSittingOut`, which never changed.
+             The footer kept the sitting-out bar and silently lost its clock,
+             permanently. Clearing belongs to that effect, which owns both
+             halves of the condition. */
+          const serverStamp = stamps.get(heroId);
           if (serverStamp !== undefined) {
             setSitOutSince((prev) => (prev === serverStamp ? prev : serverStamp));
-          } else if (!sittingOutIdsRef.current.has(String(userId))) {
-            setSitOutSince(null);
           }
         }
 
@@ -18268,6 +18313,16 @@ export default function TablePage({
                 <SeatSlot
                   seatNumber={seatNumber}
                   player={displayPlayer}
+                  /* The sit-out deadline for THIS seat, and only where a
+                     deadline applies — a tournament player (a spin is one) may
+                     sit out as long as they like. Withheld here rather than
+                     branched on inside SeatSlot, which carries a standing rule
+                     that nothing in it may branch a visual on tournament-ness. */
+                  sitOutAt={
+                    tableState.isTournament || !displayPlayer?.id
+                      ? null
+                      : (sitOutStamps.get(displayPlayer.id) ?? null)
+                  }
                   /* Dan 2026-08-18: only the hero can mark their own cards. */
                   showPickedCardIndexes={displayPlayer?.isHero ? shownCardIndexes : undefined}
                   onToggleShowCard={displayPlayer?.isHero ? handleToggleShowCard : undefined}

@@ -2590,12 +2590,21 @@ class TournamentService {
    * Create final table (consolidate to 1 table when 9 or fewer players remain)
    */
   async createFinalTable(tournamentId: string): Promise<{ finalTableId: string | null }> {
-    const { count } = await supabase
+    const { count, error: playingCountErr } = await supabase
       .from('tournament_players')
       .select('*', { count: 'exact' })
       .eq('tournament_id', tournamentId)
       .eq('status', 'playing');
 
+    // ROUND 10 (2026-08-29): a failed count wore the same "more than nine
+    // still in" answer as a healthy big field. The null return is the safe
+    // no-op either way (the next consolidation tick retries); the failure
+    // now reports.
+    if (playingCountErr) {
+      reportError(playingCountErr, 'TournamentService.final_table_count_read_failed', {
+        tournamentId,
+      });
+    }
     if (!count || count > 9) return { finalTableId: null };
 
     // Get or create final table (look for a table named "Final Table")
@@ -2981,10 +2990,15 @@ class TournamentService {
     }
     if (!entry) return null;
 
-    const { count } = await supabase
+    const { count, error: totalErr } = await supabase
       .from('tournament_waitlists')
       .select('id', { count: 'exact', head: true })
       .eq('tournament_id', tournamentId);
+    // ROUND 10 (2026-08-29): display path; the 0 total stays as the
+    // fallback, the failure now reports instead of wearing it.
+    if (totalErr) {
+      reportError(totalErr, 'TournamentService.waitlist_total_read_failed', { tournamentId });
+    }
 
     return { position: entry.position, total: count || 0 };
   }

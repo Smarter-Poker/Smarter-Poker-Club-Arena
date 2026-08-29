@@ -854,6 +854,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           { label: 'Tournaments', path: '/tournaments' },
           { label: 'Tournament Lobby', path: '/tournament-lobby' },
           { label: 'Tournament Results', path: '/tournament-results' },
+          /* ROUND 10 (2026-08-29): the results page has carried a Mine
+             filter and a Spin type filter for weeks with no way to arrive
+             at them - the filters became deep-linkable today and this is
+             the link. A spin player's own history, one tap. */
+          { label: 'My Spin Results', path: '/tournament-results?filter=mine&type=spin' },
           { label: 'Hand History', path: '/hand-history' },
           { label: 'Hand Replayer', path: '/hands' },
           { label: 'Session History', path: '/history' },

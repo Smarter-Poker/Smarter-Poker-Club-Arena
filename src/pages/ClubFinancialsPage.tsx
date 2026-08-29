@@ -13,6 +13,7 @@ import { ClubFinancialDashboard } from '../components/dashboard/ClubFinancialDas
 import FinancialChart from '../components/charts/FinancialChart';
 import RakeReports from '../components/admin/RakeReports';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { ErrorState } from '../components/common/EmptyState';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { FinancialExportService } from '../services/FinancialExportService';
@@ -57,6 +58,7 @@ export default function ClubFinancialsPage() {
     []
   );
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [period, setPeriod] = useState<'week' | 'month' | 'all'>('week');
   const [userRole, setUserRole] = useState<ClubRole>('player');
   // Dan 2026-08-23: tapping Club Bank opens the Club Bank Cashier.
@@ -172,6 +174,7 @@ export default function ClubFinancialsPage() {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
+    setLoadError(null);
     try {
       // Use cached resolved ID when available to avoid redundant async lookups
       const resolvedId = resolvedClubIdRef.current || (await resolveClubUUID(clubId));
@@ -357,6 +360,7 @@ export default function ClubFinancialsPage() {
     } catch (error) {
       if (!isMounted.current) return;
       reportError(error, 'ClubFinancialsPage.Failed_to_load_financials');
+      setLoadError('Live financial data could not be loaded. No figures have been estimated.');
       toast.error('Failed to load financial data');
     } finally {
       loadingRef.current = false;
@@ -385,6 +389,14 @@ export default function ClubFinancialsPage() {
     return (
       <div className="financials-page">
         <PageSkeleton variant="financial" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="financials-page">
+        <ErrorState message={loadError} onRetry={loadFinancials} />
       </div>
     );
   }

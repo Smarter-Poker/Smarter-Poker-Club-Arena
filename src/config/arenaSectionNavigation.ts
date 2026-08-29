@@ -25,6 +25,7 @@ const COMMUNITY_ITEMS: ArenaSectionItem[] = [
 ];
 
 const REWARD_ITEMS: ArenaSectionItem[] = [
+  { label: 'Overview', path: '/rewards' },
   { label: 'Wallet', path: '/wallet' },
   { label: 'Transactions', path: '/transactions' },
   { label: 'VIP', path: '/vip' },
@@ -43,6 +44,7 @@ const ACCOUNT_ITEMS: ArenaSectionItem[] = [
 
 const SUPPORT_ITEMS: ArenaSectionItem[] = [
   { label: 'Help Center', path: '/help' },
+  { label: 'Legal Center', path: '/legal' },
   { label: 'Fair Gaming', path: '/legal/fair-gaming' },
   { label: 'Terms', path: '/legal/tos' },
   { label: 'Privacy', path: '/legal/privacy' },
@@ -85,6 +87,7 @@ export function getArenaSectionNavigation(pathname: string): ArenaSectionNavigat
   if (
     isWithin(current, [
       '/wallet',
+      '/rewards',
       '/transactions',
       '/vip',
       '/rakeback',
@@ -130,6 +133,7 @@ export function getArenaSectionNavigation(pathname: string): ArenaSectionNavigat
     // so its rail deliberately omits those financial destinations.
     if (ownerWorkspace) {
       items.push(
+        { label: 'Operations', path: `/unions/${unionId}/operations` },
         { label: 'Statements', path: `/unions/${unionId}/statements` },
         { label: 'Settlement', path: `/unions/${unionId}/settlement` }
       );

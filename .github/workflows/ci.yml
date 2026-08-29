@@ -13,7 +13,6 @@ on:
     # tests the same thing.
     - cron: '17 */2 * * *'
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # THE GROUP IS KEYED ON THE HEAD SHA, NOT THE BRANCH — changed 2026-08-26.
 #
@@ -145,7 +144,7 @@ jobs:
           found=$(grep -rn --include="*.ts" --include="*.tsx" \
             -E '\b(TODO|FIXME)\b' \
             src/ server/src/ 2>/dev/null | grep -v -E '\b(TODO|FIXME)\(#[0-9]+\)' || true)
-          
+
           if [ -n "$found" ]; then
             echo "::error::Bare stub markers found! Use TODO(#1234) with an issue reference, or resolve the stub."
             echo "$found"
@@ -293,8 +292,6 @@ jobs:
       # (loaded / mounted / routed somewhere real), not rule contents.
       - name: Monitoring Invariant — every alert rule is loaded, mounted, and routed
         run: node scripts/ci/check-monitoring-drift.mjs
-
-
 
       - name: Report Typecheck Time
         if: always()
@@ -836,6 +833,13 @@ jobs:
         run: npm run build
         env:
           NODE_ENV: production
+          # Public browser configuration. The previous PR build omitted these,
+          # so it produced an artifact that threw before React mounted and no
+          # browser performance check could exercise the actual application.
+          VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co'
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          VITE_ENGINE_URL: 'https://engine.smarter.poker'
+          VITE_APP_ENV: production
           # Phase U5.1 (task #133): wire Sentry sourcemap upload at build time.
           # Without these, the sentry-vite-plugin in vite.config.ts skips (the
           # `!!(NODE_ENV === 'production' && SENTRY_AUTH_TOKEN)` gate is false)
@@ -856,11 +860,11 @@ jobs:
           ELAPSED=$(( END - ${{ steps.build-timer.outputs.start }} ))
           echo "## ⏱️ Build Duration: ${ELAPSED}s" >> $GITHUB_STEP_SUMMARY
 
-      # ── Lighthouse Performance Audit ──────────────────────────────────────
-      - name: Lighthouse Audit
+      # ── Build Artifact Inventory ──────────────────────────────────────────
+      - name: Build Artifact Inventory
         continue-on-error: true
         run: |
-          echo "## 🔦 Lighthouse Audit" >> $GITHUB_STEP_SUMMARY
+          echo "## Build Artifact Inventory" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           INDEX_SIZE=$(wc -c < dist/index.html | tr -d ' ')
           INDEX_KB=$((INDEX_SIZE / 1024))
@@ -885,6 +889,16 @@ jobs:
         # correct code-splitting score exactly as badly as shipping the code
         # eagerly. See the header of the script for the measurements.
         run: node scripts/ci/bundle-size.mjs
+
+      # Real browser performance and responsive budgets. This replaces the old
+      # file-count step that was labelled Lighthouse but never opened a page.
+      - name: Install Performance Browser
+        if: success()
+        run: npx playwright install --with-deps chromium
+
+      - name: Route Performance Budget
+        if: success()
+        run: npm run test:performance
 
   # ───────────────────────────────────────────────────────────────────────────
   # LIVE PRODUCTION E2E (split out of `Production Build` 2026-08-22).
@@ -1034,9 +1048,9 @@ jobs:
             echo "Signed in via \`SP_EMAIL\` — the auth-gated route specs ran." >> $GITHUB_STEP_SUMMARY
           fi
 
-  # ─────────────────────────────────────────────────────────────────────────────
-  # STEP 4: Post-deploy smoke test on smarter.poker
-  # ─────────────────────────────────────────────────────────────────────────────
+      # ─────────────────────────────────────────────────────────────────────────────
+      # STEP 4: Post-deploy smoke test on smarter.poker
+      # ─────────────────────────────────────────────────────────────────────────────
 
       - name: Open an issue if production E2E failed
         if: failure()
@@ -1227,7 +1241,7 @@ jobs:
   auto-revert:
     name: Auto-Revert Broken Commit (DISABLED)
     needs: [typecheck, build]
-    if: false  # DISABLED — was auto-reverting valid commits during active migration
+    if: false # DISABLED — was auto-reverting valid commits during active migration
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -1334,4 +1348,3 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "The breaking commit has been automatically reverted." >> $GITHUB_STEP_SUMMARY
           echo "A GitHub issue has been created for tracking." >> $GITHUB_STEP_SUMMARY
-

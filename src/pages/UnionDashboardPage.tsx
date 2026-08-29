@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { unionApi } from '../services/UnionApiService';
 import { masterBus } from '../core/MasterBus';
@@ -135,6 +135,7 @@ interface SettlementPeriod {
 
 export default function UnionDashboardPage() {
   const navigate = useNavigate();
+  const { unionId: routeUnionId } = useParams<{ unionId?: string }>();
   const { user } = useAuthUser();
 
   const [tab, setTab] = useState<UnionTab>('overview');
@@ -144,7 +145,7 @@ export default function UnionDashboardPage() {
   const [processing, setProcessing] = useState(false);
 
   // Union data
-  const [unionId, setUnionId] = useState<string | null>(null);
+  const [unionId, setUnionId] = useState<string | null>(routeUnionId || null);
   const [union, setUnion] = useState<UnionRow | null>(null);
   const [adminRole, setAdminRole] = useState<string | null>(null);
   /**
@@ -296,6 +297,15 @@ export default function UnionDashboardPage() {
   }, [appsFilter]);
 
   const dashLoadingRef = useRef(false);
+
+  // The contextual route is authoritative. A user who moves between two union
+  // workspaces in the same session must never keep the first union's cached ID.
+  useEffect(() => {
+    if (!routeUnionId) return;
+    setUnionId(routeUnionId);
+    setUnion(null);
+    setAdminRole(null);
+  }, [routeUnionId]);
 
   // ── Load Dashboard ─────────────────────────────────────────
   const loadDashboard = useCallback(
@@ -514,7 +524,8 @@ export default function UnionDashboardPage() {
       if (cached) {
         const parsed = JSON.parse(cached);
         const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
-        if (age < SWR_TTL_MS && parsed.union) {
+        const cacheMatchesRoute = !routeUnionId || parsed.unionId === routeUnionId;
+        if (age < SWR_TTL_MS && parsed.union && cacheMatchesRoute) {
           setUnion(parsed.union);
           if (parsed.unionId) setUnionId(parsed.unionId);
           if (parsed.adminRole) setAdminRole(parsed.adminRole);
@@ -528,8 +539,8 @@ export default function UnionDashboardPage() {
       reportError(e, 'UnionDashboardPage.useEffect');
       /* corrupt cache */
     }
-    loadDashboard();
-  }, [user?.id, loadDashboard]);
+    loadDashboard(routeUnionId);
+  }, [user?.id, loadDashboard, routeUnionId]);
 
   // ── Load Applications ──────────────────────────────────────
   const loadApps = useCallback(async () => {

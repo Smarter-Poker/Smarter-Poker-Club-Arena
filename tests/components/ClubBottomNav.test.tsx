@@ -9,6 +9,27 @@ vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: 'user-1' }, loading: false }),
 }));
 
+vi.mock('../../src/contexts/ClubWorkspaceContext', () => ({
+  useClubWorkspace: () => ({
+    routeClubId: '11111111-2222-3333-4444-555555555555',
+    clubUUID: '11111111-2222-3333-4444-555555555555',
+    clubRole: 'owner',
+    isPlatformStaff: false,
+    isClubStaff: true,
+    canViewFinance: true,
+    canControlClub: true,
+    loading: false,
+    error: null,
+    reload: vi.fn(),
+  }),
+}));
+
+/**
+ * The cold-cache path calls fetchQuickLinkClubs, which hits Supabase. Left
+ * unmocked it makes a real request from a unit test and settles after the
+ * assertions, which is where the "update not wrapped in act" warnings came
+ * from. An empty membership list is the case these tests care about anyway.
+ */
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     from: () => ({

@@ -25,6 +25,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { reportError } from '../utils/errorReporter';
+import { ErrorState } from '../components/common/EmptyState';
 
 type SortMode = 'default' | 'rarity' | 'progress' | 'recent';
 const RARITY_ORDER: Record<string, number> = { legendary: 0, epic: 1, rare: 2, common: 3 };
@@ -312,6 +313,7 @@ export default function AchievementsPage() {
   const [category, setCategory] = useState<AchievementCategory>('all');
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [newUnlock, setNewUnlock] = useState<Achievement | null>(null);
   const [visibleBadges, setVisibleBadges] = useState(new Set<number>());
@@ -413,6 +415,7 @@ export default function AchievementsPage() {
     if (!user?.id) return;
     if (loadingRef.current) return;
     loadingRef.current = true;
+    setLoadError(null);
     // SWR: show cached instantly
     const cached = getCachedAch(user.id);
     if (cached && cached.length > 0) {
@@ -460,6 +463,7 @@ export default function AchievementsPage() {
       }
     } catch (error) {
       reportError(error, 'AchievementsPage.Failed_to_load_achievements');
+      if (isMounted.current) setLoadError('Achievement progress could not be loaded.');
       if (isMounted.current) toast?.error('Failed to load achievements');
     } finally {
       loadingRef.current = false;
@@ -818,6 +822,8 @@ export default function AchievementsPage() {
               <div key={i} className="ach-skeleton-card" />
             ))}
           </div>
+        ) : loadError ? (
+          <ErrorState message={loadError} onRetry={() => void loadAchievements()} />
         ) : filteredAchievements.length === 0 ? (
           <div className="empty-state" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
             <span

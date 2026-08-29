@@ -11,7 +11,7 @@
 
 import { Outlet, useLocation } from 'react-router-dom';
 import RouteErrorBoundary from '../common/RouteErrorBoundary';
-import { useState, useEffect, useRef, type CSSProperties } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import styles from './AppLayout.module.css';
 import ClubArenaWelcomeModal, { useClubArenaWelcome } from '../modals/ClubArenaWelcomeModal';
 import ClubAnnouncementBanner from '../club/ClubAnnouncementBanner';
@@ -19,8 +19,9 @@ import GlobalHeader from '../navigation/GlobalHeader';
 import ArenaSectionRail from '../navigation/ArenaSectionRail';
 import ClubOperationsRail from '../navigation/ClubOperationsRail';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import { masterBus } from '../../core/MasterBus';
 import CompleteProfileModal, { useCompleteProfile } from '../modals/CompleteProfileModal';
+import { ClubWorkspaceProvider } from '../../contexts/ClubWorkspaceContext';
+import NavigationTelemetry from '../navigation/NavigationTelemetry';
 
 const ROUTE_ART = {
   club: '/hub/club-arena/assets/club-buttons/club/club-identity-template-bbj-finish-v1.png',
@@ -53,27 +54,9 @@ function getCasinoZone(pathname: string): CasinoZone {
   return 'system';
 }
 
-export default function AppLayout() {
+function AppLayoutContent() {
   const location = useLocation();
   const mainRef = useRef<HTMLElement>(null);
-
-  // Use state to ensure correct value after client-side hydration
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
-
-  // ── Offline / Online detection ──
-  useEffect(() => {
-    const handleOffline = () => setIsOffline(true);
-    const handleOnline = () => {
-      setIsOffline(false);
-      masterBus.emit('CONNECTION_RESTORED', { timestamp: Date.now() });
-    };
-    window.addEventListener('offline', handleOffline);
-    window.addEventListener('online', handleOnline);
-    return () => {
-      window.removeEventListener('offline', handleOffline);
-      window.removeEventListener('online', handleOnline);
-    };
-  }, []);
 
   // User store for conditional rendering
   const { user } = useAuthUser();
@@ -132,26 +115,6 @@ export default function AppLayout() {
           table, tournament, and ordinary member pages untouched. */}
       {showGlobalHeader && <ClubOperationsRail />}
 
-      {/* Offline Banner */}
-      {isOffline && (
-        <div
-          role="status"
-          aria-live="polite"
-          style={{
-            background: 'linear-gradient(135deg, #b91c1c, #991b1b)',
-            color: '#fff',
-            textAlign: 'center',
-            padding: '8px 16px',
-            fontSize: '13px',
-            fontWeight: 600,
-            letterSpacing: '0.3px',
-            zIndex: 9999,
-          }}
-        >
-          Offline · Changes Will Sync When Connection Is Restored
-        </div>
-      )}
-
       {/* Main Content */}
       <main
         ref={mainRef}
@@ -170,5 +133,14 @@ export default function AppLayout() {
         </RouteErrorBoundary>
       </main>
     </div>
+  );
+}
+
+export default function AppLayout() {
+  return (
+    <ClubWorkspaceProvider>
+      <NavigationTelemetry />
+      <AppLayoutContent />
+    </ClubWorkspaceProvider>
   );
 }

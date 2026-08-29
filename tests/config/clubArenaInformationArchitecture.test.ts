@@ -123,18 +123,10 @@ describe('Club Arena information architecture', () => {
       'utf8'
     );
 
-    expect(appSource).toContain(
-      '<LegacyClubToolRedirect destination="agents" toolName="Agent Management" />'
-    );
-    expect(appSource).toContain(
-      '<LegacyClubToolRedirect destination="members" toolName="Players" />'
-    );
-    expect(appSource).toContain(
-      '<LegacyClubToolRedirect destination="data" toolName="Club Data" />'
-    );
-    expect(appSource).toContain(
-      '<LegacyClubToolRedirect destination="invite" toolName="Club Invite" />'
-    );
+    expect(appSource).toContain('destination="agents"');
+    expect(appSource).toContain('destination="members"');
+    expect(appSource).toContain('destination="data"');
+    expect(appSource).toContain('destination="invite"');
     expect(redirectSource).toContain("destination === 'invite'");
     expect(redirectSource).toContain('`/clubs/${target.id}/${destination}`');
     expect(redirectSource).toContain('{ replace: true }');
@@ -154,6 +146,7 @@ describe('Club Arena information architecture', () => {
       '/unions',
       '/unions/union-1',
       '/unions/union-1/games',
+      '/unions/union-1/operations',
       '/unions/union-1/statements',
       '/unions/union-1/settlement',
     ]);

@@ -23,6 +23,7 @@ import SettlementTimeline from '../components/settlement/SettlementTimeline';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
+import { ErrorState } from '../components/common/EmptyState';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MONDAY 4AM COUNTDOWN — Live payout timer widget
@@ -218,6 +219,7 @@ export default function SettlementPage() {
   useVisibilityRefresh(() => loadSettlementData());
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Real data from SettlementService
   const [periods, setPeriods] = useState<SettlementPeriod[]>([]);
@@ -263,6 +265,7 @@ export default function SettlementPage() {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setIsLoading(true);
+    setLoadError(null);
     try {
       // Get current period
       const currentPeriod = await SettlementService.getCurrentPeriod();
@@ -377,6 +380,9 @@ export default function SettlementPage() {
       }
     } catch (error) {
       reportError(error, 'SettlementPage.Failed_to_load_data');
+      if (isMounted.current) {
+        setLoadError('Settlement records could not be loaded. No settlement was processed.');
+      }
       if (isMounted.current) toast.error('Failed to load settlement data');
     } finally {
       loadingRef.current = false;
@@ -738,6 +744,14 @@ export default function SettlementPage() {
     return (
       <div className={styles.page}>
         <PageSkeleton variant="dashboard" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className={styles.page}>
+        <ErrorState message={loadError} onRetry={() => void loadSettlementData()} />
       </div>
     );
   }

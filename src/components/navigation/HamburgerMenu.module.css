@@ -224,6 +224,118 @@
   margin: 0 2px 11px;
 }
 
+.quickActionWide {
+  grid-column: 1 / -1;
+}
+
+.contextDeck {
+  margin: 0 2px 12px;
+  padding: 10px;
+  border: 1px solid rgba(134, 157, 178, 0.24);
+  border-radius: 3px;
+  background: linear-gradient(145deg, rgba(13, 21, 29, 0.96), rgba(3, 7, 11, 0.98));
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.contextStatus {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 25px;
+  color: #8093a4;
+  font-size: 10px;
+  letter-spacing: 0.035em;
+}
+
+.contextStatus strong {
+  margin-left: auto;
+  color: #55b1ff;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.statusLamp {
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #46adff;
+  box-shadow: 0 0 10px rgba(70, 173, 255, 0.92);
+}
+
+.statusLampOffline {
+  background: #d49a45;
+  box-shadow: 0 0 10px rgba(212, 154, 69, 0.72);
+}
+
+.contextSwitcher {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin-top: 7px;
+  color: #73889a;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.contextSwitcher select {
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgba(136, 159, 181, 0.34);
+  border-radius: 2px;
+  color: #eaf2f8;
+  background: #080d12;
+}
+
+.menuSearch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.menuSearch input,
+.menuSearch button {
+  min-height: 42px;
+  border: 1px solid rgba(131, 154, 175, 0.32);
+  border-radius: 2px;
+}
+
+.menuSearch input {
+  min-width: 0;
+  padding: 0 11px;
+  color: #edf5fb;
+  background: rgba(2, 5, 8, 0.88);
+}
+
+.menuSearch input::placeholder {
+  color: #617486;
+}
+
+.menuSearch button {
+  padding: 0 11px;
+  color: #69b8fa;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, rgba(28, 42, 54, 0.96), rgba(6, 11, 16, 0.98));
+  cursor: pointer;
+}
+
+.menuSearch input:focus-visible,
+.menuSearch button:focus-visible,
+.contextSwitcher select:focus-visible {
+  border-color: #55adf7;
+  outline: 1px solid rgba(85, 173, 247, 0.42);
+  outline-offset: 1px;
+}
+
 .quickAction {
   min-height: 44px;
   padding: 8px 11px;
@@ -280,7 +392,7 @@
 .navItem {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 12px;
   width: 100%;
   min-height: 51px;
@@ -295,6 +407,100 @@
   transition:
     border-color 150ms ease,
     background-color 150ms ease;
+}
+
+.navItemRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  align-items: stretch;
+  gap: 3px;
+}
+
+.pinButton {
+  min-height: 44px;
+  margin: 0 0 3px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: #566b7e;
+  background: rgba(7, 12, 17, 0.72);
+  cursor: pointer;
+}
+
+.pinButton:focus-visible,
+.pinButtonActive {
+  border-color: rgba(66, 164, 247, 0.44);
+  color: #59b1fa;
+  outline: none;
+  box-shadow: inset 0 -1px rgba(66, 164, 247, 0.5);
+}
+
+.attentionBadge {
+  align-self: center;
+  min-width: 24px;
+  padding: 3px 6px;
+  border: 1px solid rgba(255, 104, 123, 0.52);
+  border-radius: 2px;
+  color: #ff9baa;
+  font-size: 10px;
+  font-weight: 800;
+  text-align: center;
+  background: rgba(101, 14, 31, 0.35);
+}
+
+.memoryRail {
+  display: grid;
+  gap: 6px;
+  margin: 0 2px 12px;
+  padding: 8px;
+  border: 1px solid rgba(130, 151, 171, 0.17);
+  border-radius: 3px;
+  background: rgba(4, 8, 12, 0.76);
+}
+
+.memoryRail .sectionHeader {
+  padding: 2px 3px 6px;
+}
+
+.memoryLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.memoryLinks button {
+  min-height: 36px;
+  padding: 6px 9px;
+  border: 1px solid rgba(124, 148, 170, 0.27);
+  border-radius: 2px;
+  color: #aebdca;
+  background: rgba(14, 22, 29, 0.9);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.memoryLinks button:focus-visible {
+  border-color: rgba(71, 171, 255, 0.56);
+  color: #edf6fd;
+  outline: none;
+}
+
+.noResults {
+  display: grid;
+  gap: 5px;
+  margin: 12px 4px 18px;
+  padding: 18px;
+  border: 1px solid rgba(129, 151, 171, 0.23);
+  color: #7f91a1;
+  background: rgba(4, 8, 12, 0.8);
+  font-size: 11px;
+  text-align: center;
+}
+
+.noResults strong {
+  color: #dce7ef;
+  font-family: 'Rajdhani', system-ui, sans-serif;
+  font-size: 15px;
+  text-transform: uppercase;
 }
 
 .navItem::before {

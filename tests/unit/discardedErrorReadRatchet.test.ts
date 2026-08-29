@@ -178,7 +178,6 @@ const BASELINE = new Map<string, number>([
   ['src/components/navigation/HamburgerMenu.tsx', 1],
   ['src/components/dashboard/AgentFinancialPortal.tsx', 1],
   ['src/components/club/CreateTournamentModal.tsx', 1],
-  ['src/components/auth/ClubMemberGuard.tsx', 1],
   ['src/components/agent/AgentAssignmentPanel.tsx', 1],
   ['src/components/admin/StatsExport.tsx', 1],
   ['src/components/admin/PlayerSearch.tsx', 1],

@@ -185,14 +185,14 @@ function familyRegistry(
 const mttV1 = skin(
   'mtt',
   'shark-mtt-v1',
-  'Shark MTT V1 — Draft',
+  'Shark MTT V1 - Draft',
   presentation('mtt', 'desktop', 'mtt/desktop.png', '754 / 944', 360),
   presentation('mtt', 'mobile', 'mtt/mobile.png', '754 / 944', 280)
 );
 const mttV2 = skin(
   'mtt',
   'shark-mtt-v2',
-  'Shark MTT V2 — Premium Approved',
+  'Shark MTT V2 - Premium Approved',
   presentation('mtt', 'desktop', 'mtt/shell-desktop-v2.webp', '1085 / 1450', 360, 'v2'),
   presentation('mtt', 'mobile', 'mtt/shell-mobile-v2.webp', '1086 / 1448', 280, 'v2'),
   'approved'
@@ -200,14 +200,14 @@ const mttV2 = skin(
 const nlhV1 = skin(
   'nlh',
   'shark-nlh-v1',
-  'Shark NLH V1 — Draft',
+  'Shark NLH V1 - Draft',
   presentation('nlh', 'desktop', 'nlh/desktop.png', '722 / 930', 360),
   presentation('nlh', 'mobile', 'nlh/mobile.png', '754 / 823', 280)
 );
 const nlhV2 = skin(
   'nlh',
   'shark-nlh-v2',
-  'Shark NLH V2 — Premium Approved',
+  'Shark NLH V2 - Premium Approved',
   presentation('nlh', 'desktop', 'nlh/shell-desktop-v2.webp', '1109 / 1418', 360, 'v2'),
   presentation('nlh', 'mobile', 'nlh/shell-mobile-v2.webp', '1174 / 1339', 280, 'v2'),
   'approved'
@@ -215,14 +215,14 @@ const nlhV2 = skin(
 const ploV1 = skin(
   'plo',
   'shark-plo-v1',
-  'Shark PLO V1 — Draft',
+  'Shark PLO V1 - Draft',
   presentation('plo', 'desktop', 'plo/desktop.png', '706 / 856', 360),
   presentation('plo', 'mobile', 'plo/mobile.png', '754 / 944', 280)
 );
 const ploV2 = skin(
   'plo',
   'shark-plo-v2',
-  'Shark PLO V2 — Premium Approved',
+  'Shark PLO V2 - Premium Approved',
   presentation('plo', 'desktop', 'plo/shell-desktop-v2.webp', '1148 / 1370', 360, 'v2'),
   presentation('plo', 'mobile', 'plo/shell-mobile-v2.webp', '1111 / 1416', 280, 'v2'),
   'approved'
@@ -230,14 +230,14 @@ const ploV2 = skin(
 const spinsV1 = skin(
   'spins',
   'shark-spins-v1',
-  'Shark Spins V1 — Draft',
+  'Shark Spins V1 - Draft',
   presentation('spins', 'desktop', 'spins/desktop.png', '754 / 944', 360),
   presentation('spins', 'mobile', 'spins/mobile.png', '754 / 944', 280)
 );
 const spinsV2 = skin(
   'spins',
   'shark-spins-v2',
-  'Shark Spins V2 — Premium Approved',
+  'Shark Spins V2 - Premium Approved',
   presentation('spins', 'desktop', 'spins/shell-desktop-v2.webp', '1111 / 1416', 360, 'v2'),
   presentation('spins', 'mobile', 'spins/shell-mobile-v2.webp', '1087 / 1446', 280, 'v2'),
   'approved'
@@ -245,14 +245,14 @@ const spinsV2 = skin(
 const headsUpV1 = skin(
   'heads-up',
   'shark-headsup-v1',
-  'Shark Heads-Up V1 — Draft',
+  'Shark Heads-Up V1 - Draft',
   presentation('heads-up', 'desktop', 'heads-up/desktop.png', '754 / 944', 360),
   presentation('heads-up', 'mobile', 'heads-up/mobile.png', '754 / 944', 280)
 );
 const headsUpV2 = skin(
   'heads-up',
   'shark-headsup-v2',
-  'Shark Heads-Up V2 — Premium Approved',
+  'Shark Heads-Up V2 - Premium Approved',
   presentation('heads-up', 'desktop', 'heads-up/shell-desktop-v2.webp', '1085 / 1450', 360, 'v2'),
   presentation('heads-up', 'mobile', 'heads-up/shell-mobile-v2.webp', '1015 / 1549', 280, 'v2'),
   'approved'

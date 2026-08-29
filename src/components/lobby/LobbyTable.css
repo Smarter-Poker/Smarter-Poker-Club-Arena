@@ -1897,3 +1897,26 @@ abbr.lt-variant[title] {
       inset 0 -2px 0 #0d1624;
   }
 }
+.arena-lobby-card-list {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .arena-lobby-card-list {
+    width: 100%;
+    display: grid;
+    justify-items: center;
+    gap: 14px;
+    padding: 8px 4px 28px;
+  }
+
+  .arena-lobby-card-list > div {
+    width: 100%;
+    display: grid;
+    justify-items: center;
+  }
+
+  .arena-lobby-card-list + .lobby-table-wrap {
+    display: none;
+  }
+}

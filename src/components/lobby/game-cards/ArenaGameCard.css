@@ -1,0 +1,693 @@
+.arena-game-card {
+  --agc-blue: #31a8ff;
+  --agc-blue-deep: #0069d8;
+  --agc-silver: #e9eef5;
+  --agc-muted: #98a3b1;
+  --agc-green: #54df75;
+  --agc-gold: #ffd451;
+  position: relative;
+  isolation: isolate;
+  width: min(100%, 430px);
+  aspect-ratio: var(--agc-mobile-ratio);
+  color: var(--agc-silver);
+  font-family: Inter, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  container-type: inline-size;
+}
+
+.arena-game-card__art {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background: var(--agc-art-mobile) center / 100% 100% no-repeat;
+  filter: saturate(0.9) contrast(1.06);
+}
+
+.arena-game-card__glass {
+  position: absolute;
+  inset: 7.2% 7% 8.7%;
+  z-index: -1;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgb(255 255 255 / 4%), transparent 25%),
+    repeating-linear-gradient(0deg, rgb(255 255 255 / 1.5%) 0 1px, transparent 1px 4px), #060a0f;
+  border: 1px solid rgb(138 176 210 / 24%);
+  clip-path: polygon(4% 0, 96% 0, 100% 4%, 100% 96%, 96% 100%, 4% 100%, 0 96%, 0 4%);
+  box-shadow:
+    inset 0 0 34px #000,
+    inset 0 0 14px rgb(33 147 255 / 9%);
+}
+
+.agc-machine {
+  position: relative;
+  height: 100%;
+  padding: 5.5% 5% 4.5%;
+  display: flex;
+  flex-direction: column;
+  gap: 2.2cqw;
+}
+
+.agc-header {
+  min-height: 15%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 3cqw;
+  padding-bottom: 2.4cqw;
+  border-bottom: 1px solid rgb(168 198 226 / 26%);
+}
+
+.agc-heading {
+  min-width: 0;
+}
+
+.agc-heading h3 {
+  margin: 0;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: clamp(15px, 5.4cqw, 25px);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+  color: #f7f9fc;
+  text-shadow:
+    0 2px 0 #000,
+    0 0 12px rgb(46 157 255 / 18%);
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.agc-heading p {
+  margin: 1cqw 0 0;
+  color: var(--agc-muted);
+  font-size: clamp(9px, 2.5cqw, 12px);
+  line-height: 1.25;
+}
+
+.agc-status {
+  flex: none;
+  max-width: 35%;
+  min-height: 32px;
+  padding: 0 3cqw;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid #376f9f;
+  border-radius: 4px;
+  background: linear-gradient(#0b3f70, #06182c);
+  box-shadow:
+    inset 0 0 0 2px #020a12,
+    0 0 10px rgb(38 154 255 / 24%);
+  color: #7dccff;
+  font-size: clamp(9px, 2.7cqw, 12px);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+.agc-status--full,
+.agc-status--closed {
+  border-color: #8a3232;
+  color: #ff8484;
+  background: linear-gradient(#4a1212, #1b0707);
+}
+
+.agc-status--late-reg,
+.agc-status--waitlist {
+  border-color: #8d6719;
+  color: #ffd66a;
+  background: linear-gradient(#4f3303, #1d1202);
+}
+
+.agc-facts {
+  display: grid;
+  gap: 2cqw;
+}
+
+.agc-facts--four {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.agc-facts--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.agc-fact {
+  min-width: 0;
+  min-height: 58px;
+  padding: 2.4cqw 2cqw;
+  display: grid;
+  align-content: center;
+  text-align: center;
+  border: 1px solid #40505f;
+  background: linear-gradient(180deg, #111820, #060a0f 76%);
+  box-shadow:
+    inset 0 0 0 2px #020407,
+    inset 0 0 15px rgb(53 148 230 / 6%);
+  clip-path: polygon(7% 0, 93% 0, 100% 12%, 100% 88%, 93% 100%, 7% 100%, 0 88%, 0 12%);
+}
+
+.agc-fact span,
+.agc-format span,
+.agc-spin-hero > span {
+  color: #9eaaba;
+  font-size: clamp(8px, 2.3cqw, 11px);
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.agc-fact strong {
+  display: block;
+  margin-top: 1cqw;
+  overflow-wrap: anywhere;
+  color: #f1f4f7;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: clamp(12px, 4.2cqw, 20px);
+  line-height: 1.08;
+}
+
+.agc-fact--blue strong {
+  color: #63baff;
+}
+
+.agc-actions {
+  margin-top: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 2cqw;
+}
+
+.agc-action {
+  min-height: 48px;
+  padding: 0 3cqw;
+  border: 1px solid #5f7385;
+  border-radius: 2px;
+  background: linear-gradient(#1b2732, #080d12);
+  box-shadow:
+    inset 0 0 0 2px #030609,
+    0 2px 0 #000;
+  color: #eef3f8;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: clamp(11px, 3.8cqw, 18px);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  clip-path: polygon(5% 0, 95% 0, 100% 15%, 100% 85%, 95% 100%, 5% 100%, 0 85%, 0 15%);
+  cursor: pointer;
+}
+
+.agc-action--primary {
+  border-color: #4aaaff;
+  background: linear-gradient(#0e79d9, #063c7c);
+  box-shadow:
+    inset 0 0 0 2px #06182d,
+    0 0 14px rgb(29 143 255 / 24%);
+}
+
+.agc-action:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.agc-action:active:not(:disabled) {
+  transform: translateY(1px);
+  filter: brightness(0.9);
+}
+
+.agc-action:focus-visible {
+  outline: 3px solid #a9dcff;
+  outline-offset: 2px;
+}
+
+.agc-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.agc-rules,
+.agc-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5cqw;
+}
+
+.agc-badge {
+  padding: 1.2cqw 2cqw;
+  border: 1px solid #315577;
+  border-radius: 999px;
+  background: #071521;
+  color: #91cfff;
+  font-size: clamp(7px, 2cqw, 10px);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.agc-rule {
+  min-height: 34px;
+  padding: 0.8cqw 1.5cqw;
+  display: inline-flex;
+  align-items: center;
+  gap: 1.1cqw;
+  border: 1px solid #315577;
+  border-radius: 4px;
+  background: linear-gradient(#0b1a27, #040a0f);
+  color: #91cfff;
+  box-shadow: inset 0 0 0 1px #02070b;
+}
+
+.agc-rule__icon {
+  flex: none;
+  width: clamp(17px, 5cqw, 24px);
+  height: clamp(17px, 5cqw, 24px);
+  display: grid;
+  place-items: center;
+  color: #69bfff;
+  filter: drop-shadow(0 0 4px rgb(52 164 255 / 45%));
+}
+
+.agc-rule__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.agc-rule__copy {
+  min-width: 0;
+  display: grid;
+  line-height: 1.05;
+}
+
+.agc-rule__copy b,
+.agc-rule--more {
+  font-size: clamp(7px, 1.9cqw, 10px);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.agc-rule__copy small {
+  color: #d1dae4;
+  font-size: clamp(6px, 1.6cqw, 8px);
+}
+
+.agc-rule--insurance {
+  border-color: #31824a;
+  color: #67df89;
+}
+
+.agc-rule--insurance .agc-rule__icon {
+  color: #67df89;
+}
+
+.agc-rule--pko,
+.agc-rule--bounty,
+.agc-rule--mystery,
+.agc-rule--rebuy {
+  border-color: #91592a;
+  color: #ffc46d;
+}
+
+.agc-rule--pko .agc-rule__icon,
+.agc-rule--bounty .agc-rule__icon,
+.agc-rule--mystery .agc-rule__icon,
+.agc-rule--rebuy .agc-rule__icon {
+  color: #ffc46d;
+}
+
+.agc-rule--more {
+  min-height: 34px;
+  justify-content: center;
+  padding-inline: 2cqw;
+}
+
+.agc-badge--gold {
+  border-color: #8d6d17;
+  color: var(--agc-gold);
+  background: #271a03;
+}
+
+.agc-badge--green {
+  border-color: #287b3e;
+  color: var(--agc-green);
+  background: #062411;
+}
+
+.agc-mtt-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 2cqw;
+  color: #b6c0cc;
+  font-size: clamp(9px, 2.6cqw, 13px);
+}
+
+/* The tournament machine carries the densest real record. Keep every fact,
+   rule icon, and both actions inside the approved mobile hardware. */
+.agc-machine--mtt {
+  gap: 1.15cqw;
+}
+
+.agc-machine--mtt .agc-header {
+  min-height: 12%;
+  padding-bottom: 1.2cqw;
+}
+
+.agc-machine--mtt .agc-heading h3 {
+  font-size: clamp(12px, 3.8cqw, 20px);
+}
+
+.agc-machine--mtt .agc-mtt-meta {
+  display: none;
+}
+
+.agc-machine--mtt .agc-badge {
+  padding: 0.8cqw 1.6cqw;
+}
+
+.agc-machine--mtt .agc-facts {
+  gap: 1.15cqw;
+}
+
+.agc-machine--mtt .agc-fact {
+  min-height: 42px;
+  padding: 1.2cqw 1.4cqw;
+}
+
+.agc-machine--mtt .agc-rules {
+  flex-wrap: nowrap;
+  gap: 0.7cqw;
+  overflow: hidden;
+}
+
+.agc-machine--mtt .agc-rule {
+  min-height: 27px;
+  padding: 0.45cqw 0.75cqw;
+  gap: 0.45cqw;
+}
+
+.agc-machine--mtt .agc-rule__icon {
+  width: clamp(13px, 3.7cqw, 18px);
+  height: clamp(13px, 3.7cqw, 18px);
+}
+
+.agc-machine--mtt .agc-rule__copy small {
+  display: none;
+}
+
+.agc-machine--mtt .agc-action {
+  min-height: 38px;
+}
+
+.agc-mtt-meta strong {
+  color: var(--agc-blue);
+}
+
+.agc-cash-identity {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.7fr) 1.3fr;
+  gap: 2cqw;
+  align-items: stretch;
+}
+
+.agc-cash-identity > strong,
+.agc-cash-identity > div {
+  display: grid;
+  place-items: center;
+  padding: 3cqw;
+  border: 1px solid #455769;
+  background: radial-gradient(circle at 50% 20%, rgb(30 150 255 / 13%), transparent 45%), #070b10;
+  clip-path: polygon(10% 0, 90% 0, 100% 12%, 100% 88%, 90% 100%, 10% 100%, 0 88%, 0 12%);
+}
+
+.agc-cash-identity > strong {
+  color: #f2f5f8;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: clamp(18px, 7cqw, 34px);
+}
+
+.agc-cash-identity > div span {
+  color: var(--agc-blue);
+  font-size: clamp(9px, 2.6cqw, 12px);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.agc-cash-identity > div b {
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: clamp(20px, 7cqw, 34px);
+}
+
+.agc-machine--plo .agc-cash-identity > strong {
+  background: radial-gradient(circle, rgb(63 152 255 / 20%), transparent 55%), #080c12;
+}
+
+.agc-machine--plo .agc-status--waitlist {
+  border-color: #b84141;
+  color: #ff7373;
+}
+
+.agc-machine--nlh .agc-rules {
+  flex-wrap: nowrap;
+  gap: 0.65cqw;
+}
+
+.agc-machine--nlh .agc-rule {
+  min-height: 28px;
+  padding: 0.4cqw 0.65cqw;
+  gap: 0.4cqw;
+}
+
+.agc-machine--nlh .agc-rule__icon {
+  width: clamp(14px, 4cqw, 19px);
+  height: clamp(14px, 4cqw, 19px);
+}
+
+.agc-machine--nlh .agc-rule__copy small {
+  display: none;
+}
+
+.agc-spin-promo {
+  align-self: center;
+  padding: 1.4cqw 6cqw;
+  border: 1px solid #ad8423;
+  background: linear-gradient(#704d06, #2e1c01);
+  color: #ffe08c;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: clamp(10px, 3.2cqw, 16px);
+  font-weight: 900;
+  text-transform: uppercase;
+  clip-path: polygon(8% 0, 92% 0, 100% 24%, 92% 100%, 8% 100%, 0 76%, 0 24%);
+}
+
+.agc-spin-hero {
+  flex: 1;
+  min-height: 24%;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  padding: 3cqw;
+  border: 1px solid #896919;
+  background:
+    radial-gradient(ellipse at 50% 75%, rgb(255 190 48 / 28%), transparent 48%),
+    linear-gradient(#191304, #090701);
+  box-shadow:
+    inset 0 0 22px #000,
+    0 0 12px rgb(255 190 48 / 14%);
+  clip-path: polygon(9% 0, 91% 0, 100% 9%, 100% 91%, 91% 100%, 9% 100%, 0 91%, 0 9%);
+}
+
+.agc-spin-hero strong {
+  color: #f6d16e;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: clamp(22px, 7.5cqw, 38px);
+  text-align: center;
+  text-shadow:
+    0 2px 0 #000,
+    0 0 12px rgb(255 185 48 / 20%);
+}
+
+.agc-spin-hero b {
+  margin-top: 1cqw;
+  color: #d8dce1;
+  font-size: clamp(10px, 3cqw, 14px);
+}
+
+.agc-spin-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.5cqw;
+}
+
+.agc-spin-facts .agc-fact {
+  min-height: 48px;
+}
+
+.agc-machine--spin .agc-action {
+  min-height: 42px;
+}
+
+.agc-duel {
+  display: grid;
+  grid-template-columns: 1fr 0.7fr 1fr;
+  gap: 1.5cqw;
+  align-items: stretch;
+}
+
+.agc-duel > strong {
+  display: grid;
+  place-items: center;
+  border: 1px solid #376c98;
+  background: radial-gradient(circle, rgb(45 160 255 / 25%), transparent 55%), #080d13;
+  color: #eef4f9;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: clamp(17px, 6cqw, 30px);
+  clip-path: polygon(12% 0, 88% 0, 100% 12%, 100% 88%, 88% 100%, 12% 100%, 0 88%, 0 12%);
+}
+
+.agc-format {
+  display: grid;
+  place-items: center;
+  padding: 2.5cqw;
+  border: 1px solid #3e5263;
+  background: #070c11;
+  clip-path: polygon(5% 0, 95% 0, 100% 18%, 100% 82%, 95% 100%, 5% 100%, 0 82%, 0 18%);
+}
+
+.agc-format strong {
+  color: #eff3f7;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: clamp(18px, 6cqw, 30px);
+}
+
+.arena-game-card__notice {
+  position: absolute;
+  inset: 7.2% 7% 8.7%;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(2 5 8 / 88%);
+  color: #dbe8f3;
+  font-size: 14px;
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  pointer-events: none;
+}
+
+.arena-game-card[data-state='loaded'] .arena-game-card__notice {
+  display: none;
+}
+
+.arena-game-card[data-state='updating'] .arena-game-card__notice,
+.arena-game-card[data-state='stale'] .arena-game-card__notice {
+  inset: auto 9% 10%;
+  min-height: 28px;
+  padding: 4px 12px;
+  background: rgb(2 5 8 / 72%);
+  font-size: 9px;
+}
+
+.arena-game-card.is-selected {
+  filter: drop-shadow(0 0 12px rgb(29 147 255 / 45%));
+}
+
+@media (min-width: 768px) {
+  .arena-game-card:not([data-presentation='mobile']) {
+    width: min(100%, 520px);
+    aspect-ratio: var(--agc-desktop-ratio);
+  }
+
+  .arena-game-card:not([data-presentation='mobile']) .arena-game-card__art {
+    background-image: var(--agc-art-desktop);
+  }
+}
+
+.arena-game-card[data-presentation='desktop'] {
+  width: min(100%, 520px);
+  aspect-ratio: var(--agc-desktop-ratio);
+}
+
+.arena-game-card[data-presentation='desktop'] .arena-game-card__art {
+  background-image: var(--agc-art-desktop);
+}
+
+.arena-game-card[data-presentation='mobile'] {
+  width: min(100%, 430px);
+  aspect-ratio: var(--agc-mobile-ratio);
+}
+
+@container (max-width: 350px) {
+  .agc-machine {
+    gap: 1.5cqw;
+  }
+
+  .agc-fact {
+    min-height: 50px;
+  }
+
+  .agc-action {
+    min-height: 42px;
+  }
+
+  .agc-machine--plo .agc-rules {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.8cqw;
+  }
+
+  .agc-machine--plo .agc-rule {
+    min-height: 27px;
+    padding: 0.35cqw 0.7cqw;
+  }
+
+  .agc-machine--plo .agc-rule__icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .agc-machine--plo .agc-rule__copy small {
+    display: none;
+  }
+
+  .agc-machine--spin,
+  .agc-machine--heads-up {
+    gap: 1cqw;
+  }
+
+  .agc-machine--spin .agc-header,
+  .agc-machine--heads-up .agc-header {
+    min-height: 12%;
+    padding-bottom: 1.2cqw;
+  }
+
+  .agc-machine--spin .agc-spin-hero {
+    min-height: 18%;
+    padding: 1.5cqw;
+  }
+
+  .agc-machine--spin .agc-fact,
+  .agc-machine--heads-up .agc-fact {
+    min-height: 38px;
+    padding: 1cqw;
+  }
+
+  .agc-machine--heads-up .agc-format {
+    padding: 1cqw;
+  }
+
+  .agc-machine--heads-up .agc-rule {
+    min-height: 27px;
+  }
+
+  .agc-machine--spin .agc-action,
+  .agc-machine--heads-up .agc-action {
+    min-height: 38px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agc-action {
+    transition: none;
+  }
+}

@@ -1,0 +1,134 @@
+import { describe, expect, it } from 'vitest';
+import type {
+  LobbyEntry,
+  LobbyTableRow,
+  LobbyTournamentRow,
+  RuleMedallion,
+} from '../src/components/lobby/lobbyEntries';
+import { arenaGameCardDataFromEntry } from '../src/components/lobby/game-cards/arenaGameCardAdapter';
+import { ARENA_GAME_CARD_TEMPLATES } from '../src/components/lobby/game-cards/arenaGameCardRegistry';
+
+const rule = (key: string, label = key): RuleMedallion => ({ key, label, tip: label });
+
+function cashEntry(gameLabel: string, rules: RuleMedallion[] = []): LobbyEntry {
+  const raw: LobbyTableRow = {
+    id: `cash-${gameLabel}`,
+    name: `${gameLabel} 1/2`,
+    game_variant: gameLabel,
+    small_blind: 1,
+    big_blind: 2,
+    min_buy_in: 80,
+    max_buy_in: 400,
+    current_players: 4,
+    max_players: 6,
+    status: 'open',
+  };
+  return {
+    id: raw.id,
+    kind: 'cash',
+    name: raw.name,
+    gameLabel,
+    variantLabel: gameLabel,
+    stakesLabel: '$1 / $2',
+    stakesValue: 2,
+    buyInLabel: '$80 – $400',
+    buyInValue: 80,
+    guaranteeLabel: null,
+    guaranteeValue: 0,
+    players: 4,
+    capacity: 6,
+    startTime: null,
+    startValue: Number.POSITIVE_INFINITY,
+    speedLabel: null,
+    status: 'open',
+    statusLabel: 'Open',
+    live: true,
+    rules,
+    featured: false,
+    isNew: false,
+    vipOnly: false,
+    hideClubName: false,
+    clubLabel: null,
+    raw,
+  };
+}
+
+function tournamentEntry(kind: 'mtt' | 'spin' | 'sng', capacity: number): LobbyEntry {
+  const raw: LobbyTournamentRow = {
+    id: `${kind}-game`,
+    name: `${kind.toUpperCase()} Game`,
+    game_type: 'NLH',
+    buy_in_amount: 50,
+    buy_in_fee: 5,
+    guaranteed_prize: 20_000,
+    start_time: '2026-08-30T17:00:00.000Z',
+    status: 'registering',
+    current_players: 1,
+    max_players: capacity,
+    starting_chips: 30_000,
+    blind_structure: JSON.stringify({ durationMinutes: 3 }),
+  };
+  return {
+    id: raw.id,
+    kind,
+    name: raw.name,
+    gameLabel: 'NLH',
+    variantLabel: 'No Limit Hold’em',
+    stakesLabel: null,
+    stakesValue: 55,
+    buyInLabel: '$50 + $5',
+    buyInValue: 55,
+    guaranteeLabel: '$20,000 GTD',
+    guaranteeValue: 20_000,
+    players: 1,
+    capacity,
+    startTime: raw.start_time,
+    startValue: Date.parse(raw.start_time),
+    speedLabel: 'Turbo',
+    status: 'registering',
+    statusLabel: 'Registering',
+    live: true,
+    rules: [rule('pko', 'PKO'), rule('rebuy', 'REBUY')],
+    featured: true,
+    isNew: false,
+    vipOnly: false,
+    hideClubName: false,
+    clubLabel: null,
+    raw,
+  };
+}
+
+describe('Arena game-card creation', () => {
+  it('automatically selects all five card families from existing lobby data', () => {
+    expect(arenaGameCardDataFromEntry(tournamentEntry('mtt', 200)).family).toBe('mtt');
+    expect(arenaGameCardDataFromEntry(cashEntry('NLH')).family).toBe('nlh');
+    expect(arenaGameCardDataFromEntry(cashEntry('PLO8')).family).toBe('plo');
+    expect(arenaGameCardDataFromEntry(tournamentEntry('spin', 3)).family).toBe('spin');
+    expect(arenaGameCardDataFromEntry(tournamentEntry('sng', 2)).family).toBe('heads-up');
+  });
+
+  it('carries the real configured cash and MTT icons onto the generated card', () => {
+    const cashRules = [rule('insurance'), rule('rit'), rule('nit_game'), rule('straddle')];
+    expect(
+      arenaGameCardDataFromEntry(cashEntry('NLH', cashRules)).rules.map(({ key }) => key)
+    ).toEqual(['insurance', 'rit', 'nit_game', 'straddle']);
+    expect(
+      arenaGameCardDataFromEntry(tournamentEntry('mtt', 200)).rules.map(({ key }) => key)
+    ).toEqual(['pko', 'rebuy']);
+  });
+
+  it('keeps one central desktop/mobile hardware definition for every family', () => {
+    expect(Object.keys(ARENA_GAME_CARD_TEMPLATES).sort()).toEqual([
+      'heads-up',
+      'mtt',
+      'nlh',
+      'plo',
+      'spin',
+    ]);
+    for (const template of Object.values(ARENA_GAME_CARD_TEMPLATES)) {
+      expect(template.desktopArtwork).toMatch(/\/desktop\.png$/);
+      expect(template.mobileArtwork).toMatch(/\/mobile\.png$/);
+      expect(template.zones.length).toBeGreaterThanOrEqual(5);
+    }
+  });
+});

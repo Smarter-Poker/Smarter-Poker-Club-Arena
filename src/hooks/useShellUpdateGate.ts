@@ -63,6 +63,21 @@ export const RELOAD_COOLDOWN_MS = 10 * 60 * 1000;
 /** Both conditions must hold continuously for this long before reloading. */
 export const SETTLE_MS = 3000;
 
+/**
+ * Dan 2026-08-29 ("it like glitches and reloads... it looks like broken
+ * code"): a reload that must happen anyway looks worst when it lands seconds
+ * AFTER the app has painted. Inside this window from page start the settle
+ * delay is skipped — the sooner a genuinely-stale boot restarts, the more it
+ * reads as part of loading and the less state the player has built to lose.
+ * All other guards (not at a table, visible, cooldown) still apply.
+ */
+export const STARTUP_WINDOW_MS = 15 * 1000;
+
+/** The settle delay to use for a reload decided at `pageAgeMs` into the page. */
+export function settleDelayMs(pageAgeMs: number): number {
+  return pageAgeMs < STARTUP_WINDOW_MS ? 0 : SETTLE_MS;
+}
+
 const RELOAD_KEY = 'ca_shell_reload_at';
 
 /**
@@ -177,7 +192,9 @@ export function useShellUpdateGate(): void {
       if (!ok) return;
 
       // Re-check after the settle delay: a player who opened a table in the
-      // meantime must not be reloaded out of it.
+      // meantime must not be reloaded out of it. During the startup window
+      // the delay is zero (see settleDelayMs) — the timeout still fires
+      // asynchronously and still re-checks every condition.
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         if (!pending || !armed) return;
@@ -198,22 +215,60 @@ export function useShellUpdateGate(): void {
           /* storage blocked - the disarm above is the real guard */
         }
         window.location.reload();
-      }, SETTLE_MS);
+      }, settleDelayMs(performance.now()));
+    };
+
+    /**
+     * Dan 2026-08-29: SHELL_UPDATED and controllerchange used to arm the
+     * reload BLINDLY, and both fire in situations where the running bundle is
+     * already current — the SW's freshness race can serve the NEW shell on
+     * the very navigation whose revalidation then reports "changed", and a
+     * new SW claiming this page says nothing about which shell this page is
+     * executing. Every one of those blind arms was a full visible reboot of
+     * a session that had nothing to gain from it. So: verify first. Only a
+     * page whose running entry chunk differs from the deployed one arms the
+     * gate. Offline or unrecognisable shells verify as "not stale" — a
+     * reload can't help either case.
+     */
+    let verifying = false;
+    const verifyThenArm = () => {
+      if (!armed || pending || verifying) return;
+      const running = extractEntryScript(document.documentElement.outerHTML);
+      if (!running) return; // dev server or unknown shell shape: stand down
+      const base =
+        import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
+          ? import.meta.env.BASE_URL
+          : '/';
+      verifying = true;
+      fetch(`${base}index.html`, { cache: 'no-cache' })
+        .then((res) => (res.ok ? res.text() : null))
+        .then((html) => {
+          const deployed = html ? extractEntryScript(html) : null;
+          if (deployed && deployed !== running) {
+            pending = true;
+            attempt();
+          }
+        })
+        .catch(() => {
+          /* offline or blocked: nothing to adopt, nothing to do */
+        })
+        .finally(() => {
+          verifying = false;
+        });
     };
 
     const onMessage = (event: MessageEvent) => {
       const type = (event.data as { type?: string } | null)?.type;
       if (type !== 'SHELL_UPDATED') return;
-      pending = true;
-      attempt();
+      verifyThenArm();
     };
 
     /* A new service worker taking control means new chunk names are being
-       served from here on. Same treatment: adopt them at a safe moment rather
-       than letting this session finish on a half-rotated bundle. */
+       served from here on. Adopt them at a safe moment rather than letting
+       this session finish on a half-rotated bundle — but only after the
+       verify above confirms this page is actually running the old ones. */
     const onControllerChange = () => {
-      pending = true;
-      attempt();
+      verifyThenArm();
     };
 
     /* The resume-path probe. See the block comment above the hook. */

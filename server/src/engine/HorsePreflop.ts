@@ -253,11 +253,24 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   const atRisk = stack > 0 ? Math.min(1, Math.max(0, toCall) / stack) : 1;
   // Square-root so meaningful-but-not-fatal prices still carry real weight:
   // 4% of stack -> 20% of the premium, 25% -> 50%, all-in -> 100%.
-  const riskScaled = ctx.ploPriceDefense === true ? ctx.riskAdd * Math.sqrt(atRisk) : ctx.riskAdd;
+  // V28 AUDIT FIX: gate the sqrt price-scaling on the variant actually being
+  // Omaha. The flag is named ploPriceDefense and was wired from v24PloDefense
+  // with no isOmaha guard, so ablating "PLO price defense" silently moved
+  // every NLH cold-call threshold too — no A/B of V24 measured what its name
+  // says.
+  const riskScaled =
+    ctx.ploPriceDefense === true && ctx.isOmaha ? ctx.riskAdd * Math.sqrt(atRisk) : ctx.riskAdd;
   // Thresholds that decide whether to COMMIT keep the full premium; the
   // price-scaled one is for calls that merely continue.
-  const t = (x: number) => clamp01(x * ctx.tightness + ctx.riskAdd);
-  const tCall = (x: number) => clamp01(x * ctx.tightness + riskScaled);
+  //
+  // V28 AUDIT FIX: cap the bar at 0.965. clamp01 alone let a tight style push
+  // a bar to exactly 1.0 — holdemPreflopScore tops out at 1.0 for AA, so a
+  // grinder (tightness 1.12) could NEVER value-4-bet KK (0.98) or AKs (0.96),
+  // and 4-bet AA only when the ±0.03 jitter landed high. A bar above the best
+  // achievable hand is not "tight", it is a dead branch.
+  const BAR_CAP = 0.965;
+  const t = (x: number) => Math.min(BAR_CAP, clamp01(x * ctx.tightness + ctx.riskAdd));
+  const tCall = (x: number) => Math.min(BAR_CAP, clamp01(x * ctx.tightness + riskScaled));
   const strength = raw;
   const bluffBudget = ctx.bluffFreq * ctx.aggression * Math.max(0.4, 1 - 4 * ctx.riskAdd);
 
@@ -272,8 +285,18 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   // True heads-up: exactly one live opponent and hero is in a blind. HU is a
   // different game — the SB/BTN opens ~75-85% and the BB defends the wide
   // majority of hands against it.
+  // V28 AUDIT FIX (2026-08-29): `oppsLeft === 1` is NOT heads-up. In a full
+  // ring where UTG opens and everyone folds to the BB, oppsLeft is 1 — and
+  // this flag then defended the BB on a 70% range against an UNDER-THE-GUN
+  // open, overriding CALL_VS.early (0.58) with t(0.30). True heads-up needs
+  // the TABLE to be two-handed (tableSize carries dealt-in count when the
+  // caller provides it), or the lone remaining opponent to be the SB — which
+  // is genuine blind-vs-blind and deserves the wide defense.
   const headsUp =
-    ctx.mode !== undefined && ctx.oppsLeft === 1 && (position === 'sb' || position === 'bb');
+    ctx.mode !== undefined &&
+    ctx.oppsLeft === 1 &&
+    (position === 'sb' || position === 'bb') &&
+    ((ctx.tableSize ?? 2) <= 2 || raiserPosition === 'sb' || raiserPosition == null);
 
   // ── V11 PRICE-IN GUARD (Dan 2026-08-22, binding) ────────────────────────
   // "Folding in tournaments to less than 1 BB" — a horse must NEVER fold when
@@ -547,7 +570,18 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
         if (toCall === 0) return { a: 'check' };
         return { a: 'call' };
       }
-      const sizeBB = (2.2 + rand() * 0.8 + limpers * 1.0) * ctx.sizingMultiplier;
+      // V28 OPEN-SIZE LADDER: the open used to be a flat 2.2-3.0x at every
+      // depth and ante state — a 200bb cash open and a 25bb ante open were
+      // the same size, which no player pool does. Depth and antes now move
+      // it: antes pull toward ~2.2x (the dead money already pays the raise),
+      // short stacks open smaller (min-raise territory), deep cash opens a
+      // shade bigger. Late position opens the smaller end of its band.
+      let baseOpen = 2.2 + rand() * 0.8;
+      if (ctx.anteInPlay) baseOpen = 2.05 + rand() * 0.35;
+      else if (stackBB <= 25) baseOpen = 2.0 + rand() * 0.4;
+      else if (ctx.mode === 'cash' && stackBB > 150) baseOpen = 2.5 + rand() * 0.8;
+      if (position === 'late') baseOpen -= 0.15;
+      const sizeBB = (baseOpen + limpers * 1.0) * ctx.sizingMultiplier;
       // V18: in a straddled pot the open is sized off the straddle.
       return { a: 'raiseTo', to: sizeBB * openUnit };
     }
@@ -557,7 +591,13 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     }
     if (toCall === 0) return { a: 'check' };
     const limpable = strength >= openThresh - 0.12;
-    if (toCall <= bb && (limpable || position === 'sb') && rand() < 0.7) {
+    // V28 AUDIT FIX: `|| position === 'sb'` short-circuited the strength test
+    // entirely — the SB completed with ANY two cards 70% of the time and was
+    // play-visible as "the small blind never folds". The SB still completes
+    // wider than other seats (good price, closes half the action), but from a
+    // real range: a deeper shelf below the open bar, not all 169 hands.
+    const sbCompletable = position === 'sb' && strength >= openThresh - 0.22;
+    if (toCall <= bb && (limpable || sbCompletable) && rand() < 0.7) {
       return { a: 'call' };
     }
     if (toCall <= bb * 1.5 && strength >= 0.3) return { a: 'call' };
@@ -636,7 +676,13 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       !ctx.isOmaha &&
       rand() < bluffBudget * 0.3
     ) {
-      const mult = 4.0 + callers * 1.0 + rand() * 0.5;
+      // V28 AUDIT FIX: the bluff squeeze was sized 4.0-5.5x with no IP/OOP
+      // split while the VALUE squeeze was 3.0-4.2x — the bluff was strictly
+      // BIGGER than the value raise at every caller count, a directly
+      // observable sizing tell (fold to the big one, call the small one).
+      // Bluffs now mirror the value sizing shape, a shade under it.
+      const ipSq = position === 'late';
+      const mult = (ipSq ? 2.9 : 3.7) + callers * 1.0 + rand() * 0.4;
       return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };
     }
 
@@ -748,6 +794,10 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       // when the money is already committed on normal sizing, and demand a
       // premium above the 4-bet floor before jamming 150bb+.
       if (raises >= 3 || currentBet * 2.3 >= stack * 0.4) {
+        // The call-instead-of-jam relief window is deepT wide, starting at
+        // the (already deepT-raised) 4-bet bar. Reviewed in the V28 audit
+        // and kept: the window position is intentional — the first deepT of
+        // hands above the deep bar flat rather than jam.
         if (deepT > 0 && strength < fourBetThresh + deepT && toCall < stack * 0.5) {
           return { a: 'call' };
         }

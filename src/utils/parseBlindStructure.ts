@@ -11,6 +11,7 @@
  */
 
 import type { BlindLevel } from '../types/database.types';
+import { parseJsonCached } from './parseJsonCached';
 
 const DEFAULT_BLIND: BlindLevel = {
   level: 1,
@@ -27,14 +28,12 @@ const DEFAULT_BLIND: BlindLevel = {
 export function parseBlindStructure(raw: unknown): BlindLevel[] {
   if (Array.isArray(raw) && raw.length > 0) return raw as BlindLevel[];
 
-  if (typeof raw === 'string' && raw.length > 0) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    } catch {
-      /* not JSON — fall through */
-    }
-  }
+  /* Parsed once per distinct string rather than once per call. Callers on the
+     tournament Detail tab reach this once a SECOND with the same unchanged
+     string, because the level memo has to recompute for the clock and carries
+     the parse along with it. See parseJsonCached. */
+  const parsed = parseJsonCached(raw);
+  if (Array.isArray(parsed) && parsed.length > 0) return parsed as BlindLevel[];
 
   return [DEFAULT_BLIND];
 }
@@ -54,14 +53,8 @@ export function parsePayoutStructure(
 
   if (Array.isArray(raw) && raw.length > 0) return normalize(raw);
 
-  if (typeof raw === 'string' && raw.length > 0) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return normalize(parsed);
-    } catch {
-      /* not JSON */
-    }
-  }
+  const parsed = parseJsonCached(raw);
+  if (Array.isArray(parsed) && parsed.length > 0) return normalize(parsed);
 
   return [];
 }

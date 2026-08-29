@@ -107,6 +107,8 @@ const fromDb = (r: DbRow): { user_id: string } & OpponentStats => ({
   bigBetSD: r.bigbet_sd ?? 0,
   bigBetSDStrong: r.bigbet_sd_strong ?? 0,
   // V23 river reads are memory-only (deliberately unpersisted) - hydrate zero.
+  // importStats keeps the larger of live and incoming for these (V28), so a
+  // hydrate can no longer wipe a live sample.
   riverBetOpps: 0,
   riverBetFolds: 0,
   rHands: r.r_hands,
@@ -114,6 +116,9 @@ const fromDb = (r: DbRow): { user_id: string } & OpponentStats => ({
   rFacedAggr: r.r_faced_aggr,
   rAggr: r.r_aggr,
   rPassive: r.r_passive,
+  // V28 check counters — memory-only, same contract as the river reads.
+  checks: 0,
+  rChecks: 0,
 });
 
 /** V12.3: the newest flush timestamp seen by the pair hydrate, so the caller

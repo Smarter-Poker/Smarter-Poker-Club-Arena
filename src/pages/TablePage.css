@@ -1384,29 +1384,6 @@
   z-index: 30;
 }
 
-/*
- * Phase 2 T1-04 — PokerBros hand-strength label at pot center on showdown.
- * Pops in, holds ~1s, fades out. Per POKERBROS_CLONE_SPEC.md §6 line 548:
- *   "Hand strength label displayed at pot center temporarily (1 second)"
- * Total duration 1.4s (150ms in + 850ms hold + 400ms out) so the label is
- * readable without being in the way of the next hand.
- */
-15% {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0) scale(1.1);
-}
-25% {
-  transform: translateX(-50%) translateY(0) scale(1);
-}
-70% {
-  opacity: 1;
-  transform: translateX(-50%) translateY(-2px) scale(1);
-}
-100% {
-  opacity: 0;
-  transform: translateX(-50%) translateY(-8px) scale(0.97);
-}
-
 /* Community Cards Area */
 /* Dan 2026-08-25, item 9: "the board cards are slightly cutting off
    Smarter.Poker and need to be raised up slightly."

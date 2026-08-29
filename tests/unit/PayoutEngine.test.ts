@@ -67,11 +67,33 @@ describe('PayoutEngine', () => {
       expect(result[2].amount).toBe(2000);
     });
 
-    it('should truncate to 2 decimal places (no rounding up)', () => {
+    it('pays out the whole pool, even when the structure does not sum to 100', () => {
+      /* 2026-08-29: this pinned truncation -- one place at 33.33% of a 100 pool
+         paid 33.33 and left 66.67 of collected buy-ins allocated to nobody.
+         calculateAmounts now uses the one payout rule (src/lib/payoutMath.ts,
+         byte-identical to the engine's), which normalises a malformed
+         structure to 100% instead of silently stranding the rest. A single
+         listed place is also the LAST place, so it takes the residual: the
+         whole pool. Replaced in the same commit that shipped the change. */
       const payouts = [{ place: 1, percentage: 33.33 }];
       const result = payoutEngine.calculateAmounts(payouts, 100);
-      // 33.33% of 100 = 33.33 → truncated
-      expect(result[0].amount).toBe(33.33);
+      expect(result[0].amount).toBe(100);
+    });
+
+    it('never lets the amounts exceed the pool, and never shaves first place', () => {
+      /* The old fallback trimmed any excess off amounts[0] -- the headline
+         prize. The engine's rule puts an adjustment on the SMALLEST prize, on
+         purpose, and the places cannot exceed the pool by construction. */
+      const payouts = [
+        { place: 1, percentage: 90 },
+        { place: 2, percentage: 80 },
+        { place: 3, percentage: 70 },
+      ];
+      const result = payoutEngine.calculateAmounts(payouts, 100);
+      const total = result.reduce((s, a) => s + Math.round((a.amount ?? 0) * 100), 0);
+      expect(total).toBe(10000);
+      expect(result.every((a) => (a.amount ?? 0) >= 0)).toBe(true);
+      expect(result[0].amount).toBe(37.5); // its own normalised share, untouched
     });
 
     it('should handle zero prize pool', () => {

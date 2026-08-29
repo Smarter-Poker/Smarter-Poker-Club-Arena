@@ -29,6 +29,13 @@ import {
 } from './lobbyEntries';
 import { prefetchIntent } from '../../utils/ChunkPreloader';
 import { useSpinTierAvailability } from '../../hooks/useSpinTierAvailability';
+import { ArenaLobbyGameCard } from './game-cards';
+import {
+  lobbyPlayerStateOf as playerStateOf,
+  type LobbyPlayerState as PlayerState,
+  type LobbyRowContext,
+} from './lobbyCardContext';
+export type { LobbyRowContext } from './lobbyCardContext';
 import './LobbyTable.css';
 
 type SortDir = 'asc' | 'desc';
@@ -85,40 +92,6 @@ function writeSort(
   } catch {
     /* quota or private mode - the sort still applies for this session */
   }
-}
-
-export interface LobbyRowContext {
-  waitlistedIds: Set<string>;
-  seatedIds: Set<string>;
-  registeredIds: Set<string>;
-  favoriteIds: Set<string>;
-  /* Dan 2026-08-24: every card carries its own action. These are optional so
-     any other surface can keep rendering the table read-only — a card with no
-     handler simply shows no button rather than a dead one. */
-  onRegister?: (e: LobbyEntry) => void;
-  /**
-   * SEAT-FIRST games only (a Spin, or a 2-seat Heads-Up SNG). Dan 2026-08-21,
-   * binding: "A PLAYER SITS DOWN AT A TABLE AND BUYS INTO THE SPIN OR HEADS
-   * UP, LIKE A CASH GAME." Their Sit Down must OPEN THE TABLE where the seats
-   * are visible and one tap buys the chosen seat — it must never run the MTT
-   * register flow, which charges the entry fee before any seat is picked and
-   * leaves the player a paid, seatless "Spectating" entrant (the exact bug
-   * Dan reported on 2026-08-28: the card's Sit Down was wired to onRegister).
-   * Multi-seat SNGs are registration games and stay on onRegister.
-   */
-  onSpinJoin?: (e: LobbyEntry, variant: 'spin' | 'sng') => void;
-  onJoinTable?: (e: LobbyEntry) => void;
-  onViewTable?: (e: LobbyEntry) => void;
-  onToggleFavorite?: (tableId: string, next: boolean) => void;
-  /* A full cash table cannot be joined, so its primary action is the
-     waitlist. Without this the card offered Join Table, which could only
-     ever fail, while the panel behind it offered the waitlist that works. */
-  onWaitlistToggle?: (tableId: string, joining: boolean) => void;
-  /* True only when the Reserve Pool can actually pay the top Spin multiplier
-     at this club right now. Undefined means "not known yet", which renders as
-     no badge - an absent boast rather than a wrong one. Filled in by
-     LobbyTable itself from `v_spin_tier_availability`; callers do not pass it. */
-  spinTopTierLive?: boolean;
 }
 
 interface ColumnDef {
@@ -251,23 +224,6 @@ export function LobbyStatusBadge({ status, label }: { status: LobbyStatusKey; la
  * ever hides — and `playerStateOf` also drives the row's own outline so the
  * card reads at a glance without being parsed.
  */
-export type PlayerState = 'seated' | 'waitlisted' | 'registered' | null;
-
-export function playerStateOf(entry: LobbyEntry, ctx: LobbyRowContext): PlayerState {
-  if (entry.kind === 'cash') {
-    if (ctx.seatedIds.has(entry.id)) return 'seated';
-    if (ctx.waitlistedIds.has(entry.id)) return 'waitlisted';
-    return null;
-  }
-  /* A Spin or Heads-Up seat is bought, not registered for, so a player who
-     holds one is SEATED — but the id lands in whichever set the page fills,
-     and both are true of the same game. Check both rather than pick one. */
-  if (ctx.seatedIds.has(entry.id)) return 'seated';
-  if (ctx.registeredIds.has(entry.id)) return 'registered';
-  if (ctx.waitlistedIds.has(entry.id)) return 'waitlisted';
-  return null;
-}
-
 const PLAYER_STATE_LABEL: Record<Exclude<PlayerState, null>, string> = {
   seated: 'You Are Seated',
   waitlisted: 'You Are Waitlisted',
@@ -1411,129 +1367,142 @@ export default function LobbyTable({
   );
 
   return (
-    <div
-      className="lobby-table-wrap"
-      /* WAS role="region" (2026-08-26). aria-activedescendant is only honoured
+    <>
+      <div className="arena-lobby-card-list" aria-label={`Game cards, ${sorted.length} games`}>
+        {sorted.map((entry) => (
+          <ArenaLobbyGameCard
+            key={entry.id}
+            entry={entry}
+            ctx={rowCtx}
+            selected={entry.id === selectedId}
+            onSelect={onSelect}
+          />
+        ))}
+      </div>
+      <div
+        className="lobby-table-wrap"
+        /* WAS role="region" (2026-08-26). aria-activedescendant is only honoured
          on a composite widget role - grid, listbox, combobox, application - and
          a region is a landmark, so the cursor this file moves with the arrow
          keys was announced to nobody. The role belongs on the element that
          actually takes focus and handles the keys, which is this one; the
          table below keeps its own grid semantics for the rows. */
-      role="grid"
-      aria-label={`Game list, ${sorted.length} game${sorted.length === 1 ? '' : 's'}`}
-      tabIndex={0}
-      onKeyDown={handleKeyDown}
-      /* Without this the arrow keys moved a selection no screen reader was
+        role="grid"
+        aria-label={`Game list, ${sorted.length} game${sorted.length === 1 ? '' : 's'}`}
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        /* Without this the arrow keys moved a selection no screen reader was
          told about: focus stays on this wrapper by design (moving it into the
          row would fight the scroller), so the grid has to name its own active
          descendant. */
-      aria-activedescendant={keyboardFocusId ? `lt-row-${keyboardFocusId}` : undefined}
-    >
-      {/* role=grid: aria-selected on a <tr> is only valid inside a grid, and
+        aria-activedescendant={keyboardFocusId ? `lt-row-${keyboardFocusId}` : undefined}
+      >
+        {/* role=grid: aria-selected on a <tr> is only valid inside a grid, and
           without it a screen reader announces none of the selection state the
           keyboard navigation produces. */}
-      {/* Sorting rearranges the whole list with no visible message and, until
+        {/* Sorting rearranges the whole list with no visible message and, until
           now, no audible one either: a screen-reader user pressed Enter on a
           header and nothing was announced. */}
-      <span className="sr-only" role="status" aria-live="polite">
-        {sort
-          ? `Sorted by ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${
-              sort.dir === 'asc' ? 'ascending' : 'descending'
-            }`
-          : 'Default order'}
-      </span>
-      {/* The category is on the table so the stylesheet can shed columns per
+        <span className="sr-only" role="status" aria-live="polite">
+          {sort
+            ? `Sorted by ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${
+                sort.dir === 'asc' ? 'ascending' : 'descending'
+              }`
+            : 'Default order'}
+        </span>
+        {/* The category is on the table so the stylesheet can shed columns per
           BOARD rather than per page width. The wide breakpoints were written
           for the ALL and MTT boards, which carry eight columns; the SPIN board
           carries five, so dropping its Max Payout at 1340px starved a table
           that had room to spare — and the payout IS the Spin. */}
-      <table className={`lobby-table lobby-table--${category.toLowerCase()}`} role="grid">
-        <thead role="rowgroup">
-          {/* The explicit row/gridcell roles below are not redundant. Under
+        <table className={`lobby-table lobby-table--${category.toLowerCase()}`} role="grid">
+          <thead role="rowgroup">
+            {/* The explicit row/gridcell roles below are not redundant. Under
               640px this table stops being a table - thead/tbody/tr/td all
               become block or flex boxes so each row can be a card - and a
               browser drops the implicit table roles the moment `display` is
               not a table value. role="grid" on the ancestor does not put them
               back, so on every phone the grid contained no rows and the
               aria-selected state below was attached to nothing. */}
-          <tr role="row">
-            {columns.map((col) => {
-              const active = sort?.key === col.key;
-              return (
-                <th
-                  key={col.key}
-                  className={`${col.className || ''}${col.sortable ? ' is-sortable' : ''}${active ? ' is-sorted' : ''}`}
-                  /* A sortable column that is not the active sort announces
+            <tr role="row">
+              {columns.map((col) => {
+                const active = sort?.key === col.key;
+                return (
+                  <th
+                    key={col.key}
+                    className={`${col.className || ''}${col.sortable ? ' is-sortable' : ''}${active ? ' is-sorted' : ''}`}
+                    /* A sortable column that is not the active sort announces
                      "none", which is what tells a screen reader it CAN be
                      sorted. Leaving it undefined named only the one column
                      already sorted, so the other nine looked inert. */
-                  aria-sort={
-                    active
-                      ? sort!.dir === 'asc'
-                        ? 'ascending'
-                        : 'descending'
-                      : col.sortable
-                        ? 'none'
-                        : undefined
-                  }
-                  /* Sorting was mouse-only: a click handler on a <th> with
+                    aria-sort={
+                      active
+                        ? sort!.dir === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                        : col.sortable
+                          ? 'none'
+                          : undefined
+                    }
+                    /* Sorting was mouse-only: a click handler on a <th> with
                      no role, no tab stop and no key handler, so keyboard and
                      screen-reader users could not sort the lobby at all. */
-                  role={col.sortable ? 'columnheader' : undefined}
-                  tabIndex={col.sortable ? 0 : undefined}
-                  onClick={() => handleHeaderClick(col)}
-                  onKeyDown={(e) => {
-                    if (!col.sortable) return;
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      handleHeaderClick(col);
-                    }
-                  }}
+                    role={col.sortable ? 'columnheader' : undefined}
+                    tabIndex={col.sortable ? 0 : undefined}
+                    onClick={() => handleHeaderClick(col)}
+                    onKeyDown={(e) => {
+                      if (!col.sortable) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleHeaderClick(col);
+                      }
+                    }}
+                  >
+                    <span className="lt-th">
+                      {col.label}
+                      {col.sortable && (
+                        <span className="lt-sortmark" aria-hidden="true">
+                          {active ? (sort!.dir === 'asc' ? '▴' : '▾') : '▴▾'}
+                        </span>
+                      )}
+                    </span>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody ref={bodyRef} role="rowgroup">
+            {loading &&
+              entries.length === 0 &&
+              Array.from({ length: 8 }).map((_, i) => (
+                <tr
+                  key={`skel-${i}`}
+                  className="lt-row lt-row--skeleton"
+                  aria-hidden="true"
+                  role="row"
                 >
-                  <span className="lt-th">
-                    {col.label}
-                    {col.sortable && (
-                      <span className="lt-sortmark" aria-hidden="true">
-                        {active ? (sort!.dir === 'asc' ? '▴' : '▾') : '▴▾'}
-                      </span>
-                    )}
-                  </span>
-                </th>
-              );
-            })}
-          </tr>
-        </thead>
-        <tbody ref={bodyRef} role="rowgroup">
-          {loading &&
-            entries.length === 0 &&
-            Array.from({ length: 8 }).map((_, i) => (
-              <tr
-                key={`skel-${i}`}
-                className="lt-row lt-row--skeleton"
-                aria-hidden="true"
-                role="row"
-              >
-                {columns.map((c) => (
-                  <td key={c.key} role="gridcell" className={c.className || ''}>
-                    <span className="lt-skel" />
-                  </td>
-                ))}
-              </tr>
+                  {columns.map((c) => (
+                    <td key={c.key} role="gridcell" className={c.className || ''}>
+                      <span className="lt-skel" />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            {sorted.map((entry) => (
+              <LobbyRow
+                key={entry.id}
+                entry={entry}
+                columns={columns}
+                ctx={rowCtx}
+                selected={entry.id === selectedId}
+                cursor={entry.id === keyboardFocusId}
+                onSelect={onSelect}
+                onActivate={onActivate}
+              />
             ))}
-          {sorted.map((entry) => (
-            <LobbyRow
-              key={entry.id}
-              entry={entry}
-              columns={columns}
-              ctx={rowCtx}
-              selected={entry.id === selectedId}
-              cursor={entry.id === keyboardFocusId}
-              onSelect={onSelect}
-              onActivate={onActivate}
-            />
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }

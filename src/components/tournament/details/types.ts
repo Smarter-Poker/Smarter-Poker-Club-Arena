@@ -23,6 +23,7 @@
 
 import type { Tournament } from '../../../types/database.types';
 import type { UseMysteryBountyResult } from '../../../hooks/useMysteryBounty';
+import { computePlacePrize } from '../../../lib/payoutMath';
 
 /**
  * SEVEN TABS. Dan 2026-08-25, verbatim: "CHIPS SHOULD BE CALLED 'RANKING'" and
@@ -378,16 +379,29 @@ export function lastPaidPlace(raw: unknown): number {
 /**
  * What one place is paid.
  *
- * The same arithmetic as TournamentService.calculatePayout (multiply, truncate,
- * divide) so the lobby and the money agree to the cent. A rounding difference
- * reads to a player as the site quietly shaving their prize — and two tabs
- * rounding differently is worse still, which is why this lives here.
+ * 2026-08-29: this used to be `Math.trunc(pool * pct) / 100` and took a single
+ * percentage, which is two bugs in one line.
+ *
+ * It TRUNCATED where the engine rounds, and it had no way to express the
+ * residual rule -- the last paid place takes what is left, so the places sum
+ * to the pool -- because a function given one percentage cannot know what the
+ * other places took. Measured across the pool and structure combinations
+ * actually used in production: 13 of 78 showed the player a different number
+ * from the one that reached their wallet.
+ *
+ * The old comment claimed it matched "the money" via
+ * TournamentService.calculatePayout. That function has no callers and is
+ * itself a dead client duplicate; the money is the engine, and the engine's
+ * rule now lives in src/lib/payoutMath.ts, byte-identical to the server's.
+ *
+ * A player must never be shown one number and paid another.
  */
-export function placePrize(pool: number, percentage: number): number {
-  const p = Number(pool);
-  const pct = Number(percentage);
-  if (!Number.isFinite(p) || !Number.isFinite(pct) || p <= 0 || pct <= 0) return 0;
-  return Math.trunc(p * pct) / 100;
+export function placePrize(
+  pool: number,
+  structure: Array<{ place?: number; percentage?: number }>,
+  place: number
+): number {
+  return computePlacePrize(Number(pool), structure, Number(place));
 }
 
 /**

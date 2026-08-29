@@ -136,8 +136,22 @@ interface TableLine {
 //  ONE ROW
 // ═══════════════════════════════════════════════════════════════════════════════
 
-interface TableRowProps {
-  line: TableLine;
+/**
+ * PRIMITIVES, NOT THE LINE OBJECT.
+ *
+ * `TableRow` is wrapped in `React.memo`, and passing `line` defeated it
+ * completely: `lines` is rebuilt from `entries`, so EVERY chip tick produced a
+ * brand-new object for every row and `memo`'s shallow compare failed on all of
+ * them. A 200-table event re-rendered 200 rows and 200 meters once per chip
+ * update, to change nothing on 199 of them.
+ *
+ * Spread flat, the shallow compare does what it is for: only a row whose own
+ * numbers moved re-renders. `table` stays an object, and that is fine -- it
+ * comes from the `tables` prop, whose element identities are stable across a
+ * chip tick because chips arrive on `entries`.
+ */
+interface TableRowProps extends Omit<TableLine, 'table' | 'sortNumber'> {
+  table: TournamentTable;
   /** Biggest single stack anywhere in the event: the meter's full width. */
   scaleMax: number;
   /** Average stack across the whole field, marked inside every meter. */
@@ -145,8 +159,22 @@ interface TableRowProps {
   onOpen: (table: TournamentTable) => void;
 }
 
-const TableRow = React.memo(function TableRow({ line, scaleMax, fieldAvg, onOpen }: TableRowProps) {
-  const { table, seated, minStack, avgStack, maxStack, hasStacks, seatCountIsFallback } = line;
+const TableRow = React.memo(function TableRow({
+  table,
+  displayNumber,
+  seated,
+  seatCountIsFallback,
+  minStack,
+  avgStack,
+  maxStack,
+  hasStacks,
+  isHeroTable,
+  openable,
+  blockedReason,
+  scaleMax,
+  fieldAvg,
+  onOpen,
+}: TableRowProps) {
   const badge = statusLabel(table);
 
   // The spread is drawn on ONE scale for every row, which is the whole point:
@@ -164,13 +192,13 @@ const TableRow = React.memo(function TableRow({ line, scaleMax, fieldAvg, onOpen
   const body = (
     <>
       <span className="tt-index" aria-hidden="true">
-        {line.displayNumber}
+        {displayNumber}
       </span>
 
       <span className="tt-head">
         <span className="tt-headline">
-          <span className="tl-name tt-name">{table.name || `Table ${line.displayNumber}`}</span>
-          {line.isHeroTable && <span className="tl-badge tl-badge--action">Your Table</span>}
+          <span className="tl-name tt-name">{table.name || `Table ${displayNumber}`}</span>
+          {isHeroTable && <span className="tl-badge tl-badge--action">Your Table</span>}
         </span>
         <span className="tt-headmeta">
           <span className={`tl-badge${badge.tone}`}>{badge.text}</span>
@@ -221,8 +249,8 @@ const TableRow = React.memo(function TableRow({ line, scaleMax, fieldAvg, onOpen
         </span>
       </span>
 
-      {line.blockedReason ? (
-        <span className="tl-sub tt-blocked">{line.blockedReason}</span>
+      {blockedReason ? (
+        <span className="tl-sub tt-blocked">{blockedReason}</span>
       ) : (
         <span className="tl-sub tt-hint">Tap To Watch In A New Screen</span>
       )}
@@ -232,14 +260,14 @@ const TableRow = React.memo(function TableRow({ line, scaleMax, fieldAvg, onOpen
   const className = [
     'tl-row',
     'tt-row',
-    line.openable ? 'tl-row--interactive' : 'tt-row--static',
-    line.isHeroTable ? 'tl-row--hero' : '',
+    openable ? 'tl-row--interactive' : 'tt-row--static',
+    isHeroTable ? 'tl-row--hero' : '',
     normalisedStatus(table.status) === 'closed' ? 'tl-row--eliminated' : '',
   ]
     .filter(Boolean)
     .join(' ');
 
-  if (!line.openable) {
+  if (!openable) {
     return (
       <li className="tt-item">
         <div className={className}>{body}</div>
@@ -253,7 +281,7 @@ const TableRow = React.memo(function TableRow({ line, scaleMax, fieldAvg, onOpen
         type="button"
         className={className}
         onClick={() => onOpen(table)}
-        aria-label={`Watch ${table.name || `Table ${line.displayNumber}`}, ${seatText} players seated`}
+        aria-label={`Watch ${table.name || `Table ${displayNumber}`}, ${seatText} players seated`}
       >
         {body}
       </button>
@@ -450,13 +478,13 @@ export default function TablesTab({
       <ul className="tl-list tl-scroll tt-list">
         {lines.map((line, i) => (
           <TableRow
+            {...line}
             /* The id, but falling back to the index. This file explicitly
                handles a table with no id ("This Table Cannot Be Opened"), so
                an id-less row is a known case -- and TWO of them produced two
                siblings keyed `undefined`, which React warns about and which
                lets it reuse the wrong DOM node between renders. */
             key={line.table.id || `row-${i}`}
-            line={line}
             scaleMax={scaleMax}
             fieldAvg={fieldAvg}
             onOpen={handleOpen}

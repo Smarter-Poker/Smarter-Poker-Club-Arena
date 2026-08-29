@@ -49,7 +49,7 @@ the actual table continues to render the full-quality originals.
 
 ## Verification
 
-- Full Vitest suite: 596 files, 9,042 passing, 1 intentional skip.
+- Full Vitest suite: 596 files, 9,044 passing, 1 intentional skip.
 - Production build: passed; 425 distribution images optimized with 0 failures.
 - ESLint: 0 errors. The repository still reports its existing warning backlog.
 - Mobile Chromium coverage at 390 × 844: Avatar Gallery and Table Studio stay

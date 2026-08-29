@@ -179,3 +179,72 @@ was wrong. The first sits in the `buckets.size === 0` branch — no eligible
 credits, nothing to recompute, nothing that can fail — and advancing there is
 correct. My first guard test matched that one and failed; the fix was to make
 the test precise, not to widen the code.
+
+---
+
+## A live overpayment, found by conservation check
+
+The most important find of the whole sweep, and it came from a **query against
+production**, not from reading code. Eight mystery bounty events completed in
+one afternoon paid out **more than their bounty pool held**:
+
+| event                  |   pool |   paid |   over |
+| ---------------------- | -----: | -----: | -----: |
+| Evening Mystery Bounty | 180.00 | 191.00 | +11.00 |
+| Union Mystery Bounty   | 420.00 | 445.00 | +25.00 |
+| Evening Mystery Bounty | 174.00 | 192.00 | +18.00 |
+| Union Mystery Bounty   | 420.00 | 439.00 | +19.00 |
+| Evening Mystery Bounty | 180.00 | 189.50 |  +9.50 |
+| Union Mystery Bounty   | 420.00 | 459.00 | +39.00 |
+| Evening Mystery Bounty | 180.00 | 189.60 |  +9.60 |
+| Evening Mystery Bounty | 180.00 | 189.50 |  +9.50 |
+
+**140.60 of chips created from nothing in about four hours** — roughly 840 a
+day at that rate. And `bounty_pool_paid` agreed with the ledger throughout, so
+the counter was not merely wrong: it had been _updated to match_ the
+overpayment, and nothing objected.
+
+### The mechanism
+
+Taking the 180.00 event apart: 30 entrants × 6.00 = 180.00 funded, and the
+knockers received **exactly 180.00** — the whole pool, correctly, with
+`fn_collect_bounty`'s cap doing its job. The champion was then paid 11.00 on
+top as an "unclaimed" residual.
+
+`fn_finalize_bounty_pool` computed that residual as
+
+```sql
+v_residual := bounty_pool - bounty_pool_paid;
+```
+
+under a `FOR UPDATE` lock on `tournaments`. **The lock is real but it guards
+the wrong thing.** `bounty_pool_paid` is a _counter_ that `fn_collect_bounty`
+increments as knockouts settle, and finalisation runs while collections are
+still landing. It read a stale 169.00, called 11.00 unclaimed, paid it — and
+the outstanding collections then took the pool to 180.00 anyway.
+
+### The fix
+
+The residual is measured from the **ledger**, which is the only record that
+cannot be stale relative to the money, because it _is_ the money: sum every
+`bounty` wallet transaction already written for that tournament, signed off
+`type` (a debit is not a payment — the rule the tournament reconciler learned
+on the 28th). Residual is what remains of the pool after that, floored at zero.
+The counter is reconciled to the ledger at the same time so the next reader is
+not misled the way this function was.
+
+Verified: re-running the finaliser on all eight overpaid events now returns
+**residual 0** on every one. The overpayment cannot repeat.
+
+### What this does not fix, stated plainly
+
+It makes **overpayment impossible**, in any ordering. It does not guarantee the
+residual reaches the right player: if finalisation still runs before the last
+collections, the champion takes a residual those knockouts would have claimed,
+and they find the pool empty. That is a **shortfall** — visible, correctable,
+and with the money still inside the pool — rather than chips minted. The
+ordering question (finalise only after the reveal queue drains) is the
+follow-up; this closes the minting.
+
+The 140.60 already paid is in players' wallets. Reversing it is a clawback, and
+clawbacks are Dan's call.

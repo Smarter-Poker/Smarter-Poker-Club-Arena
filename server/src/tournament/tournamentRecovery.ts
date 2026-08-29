@@ -297,6 +297,84 @@ export async function recoverStuckCompletingTournaments(
     }
     for (const t of stuck ?? []) {
       try {
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  A SATELLITE PAYS SEATS, NOT CASH — AND THIS PATH DID NOT KNOW
+         *  (2026-08-29)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * Both live payout sites refuse to pay per-place cash on a satellite:
+         * `eliminatePlayer` checks `variant === 'satellite'` before pricing,
+         * and `finishTournament` does the same. This rescue never did, though
+         * it selects `variant` (for the Spin structure rebuild) and had it in
+         * hand the whole time.
+         *
+         * The consequence is a race for real money. A satellite stuck in
+         * COMPLETING gets paid cash from `payout_structure` under
+         * `tourney:{id}:prize:place:{N}` -- the IDENTICAL key
+         * `processSatelliteAwards` uses to pay the ticket value. Whichever
+         * path runs first wins, the second silently credits nothing, and the
+         * two amounts are different: a player receives either the seat's worth
+         * or the structure prize depending on which lost the race. If this
+         * path wins, the seats are never awarded at all and the target
+         * tournament's field is never funded.
+         *
+         * Leaving it COMPLETING is the safe outcome: processSatelliteAwards is
+         * the only thing that should finish it, and it is driven separately.
+         */
+        if (
+          String((t as { variant?: string }).variant ?? '').toLowerCase() === 'satellite' ||
+          String((t as { tournament_type?: string }).tournament_type ?? '').toUpperCase() ===
+            'SATELLITE'
+        ) {
+          reportError(
+            new Error(
+              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a SATELLITE — it awards seats, not structure cash. Left COMPLETING for processSatelliteAwards.`
+            ),
+            'GameServer.recoverStuckCompleting_satellite_skipped'
+          );
+          continue;
+        }
+
+        /**
+         * A CHOPPED EVENT HAS ALREADY AGREED ITS OWN PAYOUTS (2026-08-29).
+         *
+         * `settleFinalTableDeal` pays under `tourney:{id}:ftd:{user}`, a
+         * namespace this path never writes -- so nothing dedupes. Step 3 below
+         * tops up any eliminated player whose STRUCTURE prize exceeds their
+         * agreed chop share, which is brand new money on top of a deal the
+         * players negotiated. The emitting side already knows this rescue can
+         * reach a dealt event; the guard belongs on this side too.
+         */
+        const { data: dealRows, error: dealErr } = await supabase
+          .from('tournament_payouts')
+          .select('id')
+          .eq('tournament_id', t.id)
+          .eq('source', 'final_table_deal')
+          .limit(1);
+
+        if (dealErr) {
+          // Unreadable is UNKNOWN. Paying structure cash over a deal that may
+          // exist is exactly the thing this guard is for.
+          reportError(
+            new Error(
+              `[GameServer] recoverStuckCompleting (${reason}): could not tell whether ${t.id.slice(0, 8)} was chopped (${dealErr.message}) — skipped rather than risk paying over a deal`
+            ),
+            'GameServer.recoverStuckCompleting_deal_check_failed'
+          );
+          continue;
+        }
+
+        if ((dealRows?.length ?? 0) > 0) {
+          reportError(
+            new Error(
+              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} settled by a final-table deal — structure prizes would be new money on top of it. Skipped.`
+            ),
+            'GameServer.recoverStuckCompleting_chopped_skipped'
+          );
+          continue;
+        }
+
         // SHORT-FIELD RESIDUAL 2026-08-27: the rescue must price by the same
         // structure a normal finish would, and a normal finish now trims the
         // structure to the size of the field so the residual lands on a place
@@ -358,13 +436,23 @@ export async function recoverStuckCompletingTournaments(
         }
         const rows = players ?? [];
 
+        /**
+         * @returns true when this call actually moved chips; false when the
+         *          idempotency key had already paid.
+         *
+         * 2026-08-29: the boolean used to be discarded, and that is the whole
+         * of the step-3 defect below. `fn_credit_and_log` returns false when
+         * the key has paid before, which is the ONLY signal distinguishing
+         * "already done" from "just done" -- and step 3 was recording the
+         * second when it had the first.
+         */
         const credit = async (
           userId: string,
           amount: number,
           desc: string,
           idempotencyKey: string
-        ) => {
-          if (amount <= 0) return;
+        ): Promise<boolean> => {
+          if (amount <= 0) return false;
           // P1 FIX (2026-07-24): idempotency key in the SAME format the main
           // elimination-prize path uses (`tourney:{id}:prize:place:{position}`)
           // so this recovery path and the main path dedupe against each other and
@@ -375,7 +463,7 @@ export async function recoverStuckCompletingTournaments(
           // and it used to write a "Tournament prize (recovery)" ledger row
           // anyway, 0.06s-0.7s after the real one. Both halves now sit under
           // the one key.
-          const { error } = await supabase.rpc('fn_credit_and_log', {
+          const { data, error } = await supabase.rpc('fn_credit_and_log', {
             p_user_id: userId,
             p_amount: amount,
             p_idempotency_key: idempotencyKey,
@@ -384,6 +472,7 @@ export async function recoverStuckCompletingTournaments(
             p_related_entity_id: t.id,
           });
           if (error) throw new Error(`credit failed for ${userId}: ${error.message}`);
+          return data === true;
         };
 
         // 2. Rank the still-alive players by chips and pay their places
@@ -483,12 +572,53 @@ export async function recoverStuckCompletingTournaments(
           const recorded = Number(r.prize || 0);
           if (owed > recorded) {
             const diff = Math.round((owed - recorded) * 100) / 100;
-            await credit(
+            /**
+             * ── THE TOP-UP NEEDS ITS OWN KEY (2026-08-29) ──────────────────
+             *
+             * This used `tourney:{id}:prize:place:{N}` -- the SAME key
+             * `eliminatePlayer` already paid this place under. The comment
+             * above says "recorded with a zero prize", but the condition is
+             * `owed > recorded`, so it also fires on a PARTIAL shortfall: the
+             * late-reg pool grew, the place is owed more, and the player has
+             * already had the smaller amount under that key.
+             *
+             * `fn_credit_and_log` then deduped the credit to NOTHING, the
+             * boolean saying so was discarded, and the very next statement
+             * stamped `prize = owed` -- so tournament_players claimed a
+             * payment that never happened and no later pass would ever look
+             * again. Exposure: the whole late-reg and guarantee growth for
+             * every in-the-money place on every rescued event.
+             *
+             * `recalculateEliminatedPrizes` had this right all along: a
+             * `prizeadj` namespace carrying the AMOUNT, so a different amount
+             * is a different key and a re-run of the same amount is still
+             * deduped. Same key shape here, deliberately, so the two
+             * adjustment paths also dedupe against each other.
+             *
+             * Step 2 above keeps the shared `prize:place` key on purpose --
+             * there it is paying the place itself and MUST collide with the
+             * main path.
+             */
+            const credited = await credit(
               r.user_id,
               diff,
               `Tournament prize top-up (recovery): position ${r.position} — ${t.name || 'tournament'}`,
-              `tourney:${t.id}:prize:place:${r.position}`
+              `tourney:${t.id}:prizeadj:${r.user_id}:${r.position}:${owed}`
             );
+
+            if (!credited) {
+              // The adjustment was already made under this exact key and
+              // amount, so the row is genuinely owed `owed` and the stamp
+              // below is correct. Anything else would be a key collision, and
+              // this key carries the amount, so there is nothing else it can
+              // be.
+              reportError(
+                new Error(
+                  `[recovery:${t.id.slice(0, 8)}] top-up of ${diff} for place ${r.position} was already credited under its adjustment key; recording the prize only`
+                ),
+                'TournamentRecovery.top_up_already_credited'
+              );
+            }
             // Same rule as the survivor stamp above: a top-up that is paid but
             // not recorded leaves prize < owed, so every later pass recomputes
             // the same shortfall and re-attempts it forever.

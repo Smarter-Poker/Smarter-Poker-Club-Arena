@@ -25,6 +25,8 @@ const sql = (src: string) => src.replace(/^\s*--.*$/gm, '');
 
 const BASE = code(read('src/tournament/TournamentManagerBase.ts'));
 const RECOVERY = code(read('src/tournament/tournamentRecovery.ts'));
+const MANAGER = code(read('src/tournament/TournamentManager.ts'));
+const ELIM = code(read('src/tournament/TournamentManagerEliminations.ts'));
 
 describe('a column that is read is a column that is selected', () => {
   it('mystery_bounty_top_percent is in the query that reads it', () => {
@@ -130,5 +132,100 @@ describe('no money path writes a ledger row it did not earn', () => {
     expect(latest, 'the prize stamp was dropped by a later redefinition').toMatch(
       /SET prize = v_expected/
     );
+  });
+});
+
+describe('the recovery watchdog cannot pay money it has no right to', () => {
+  it('tops up under its own key, not the one that already paid the place', () => {
+    /**
+     * The ITM top-up used `tourney:{id}:prize:place:{N}` -- the key
+     * eliminatePlayer already paid that place under. The comment said "recorded
+     * with a zero prize" but the condition is `owed > recorded`, so it also
+     * fires on a PARTIAL shortfall: the pool grew, more is owed, and the
+     * smaller amount has already been paid under that key. fn_credit_and_log
+     * deduped the credit to nothing, the boolean was discarded, and the next
+     * statement stamped `prize = owed` -- a payment recorded that never
+     * happened, invisible to every later pass.
+     *
+     * `prizeadj` carries the AMOUNT, so a different amount is a different key.
+     */
+    expect(RECOVERY).toMatch(/prizeadj:\$\{r\.user_id\}:\$\{r\.position\}:\$\{owed\}/);
+  });
+
+  it('knows whether the credit actually moved chips', () => {
+    // fn_credit_and_log's boolean is the only signal distinguishing "already
+    // done" from "just done", and it was thrown away.
+    expect(RECOVERY).toMatch(/Promise<boolean>/);
+    expect(RECOVERY).toMatch(/return data === true;/);
+  });
+
+  it('refuses to pay structure cash on a satellite', () => {
+    // A satellite awards SEATS. Both live payout sites check this; recovery
+    // did not, and paid cash under the same key processSatelliteAwards uses
+    // for the ticket value -- a race between two different amounts.
+    expect(RECOVERY).toMatch(/=== 'satellite'/);
+    expect(RECOVERY).toMatch(/recoverStuckCompleting_satellite_skipped/);
+  });
+
+  it('refuses to pay over a final-table deal', () => {
+    // settleFinalTableDeal pays under `tourney:{id}:ftd:{user}`, a namespace
+    // recovery never writes, so nothing dedupes and its top-ups would be new
+    // money on top of a deal the players negotiated.
+    expect(RECOVERY).toMatch(/final_table_deal/);
+    expect(RECOVERY).toMatch(/recoverStuckCompleting_chopped_skipped/);
+  });
+});
+
+describe('satellites decide on reads that succeeded', () => {
+  it('an unreadable target does not become a cash payout', () => {
+    /**
+     * The error was discarded, so a failed read looked like "no target": that
+     * drives ticketCost to 0, seats to 0, and pays the WHOLE POOL as cash to
+     * one player instead of awarding N seats. The event then completes, so
+     * there is nothing left to retry.
+     */
+    expect(MANAGER).toMatch(/satellite_target_unreadable/);
+  });
+
+  it('an unreadable finisher list does not become an empty field', () => {
+    // An empty list returns early and leaves the entire pool undistributed.
+    expect(MANAGER).toMatch(/satellite_finishers_unreadable/);
+  });
+});
+
+describe('the prize pool and the structure it is priced by', () => {
+  it('repricing happens even when the guarantee could not be funded', () => {
+    /**
+     * `prizePoolFinalized` is set before funding is attempted, and it is what
+     * `finalFieldSize()` gates on -- so from that moment the structure is
+     * trimmed to the field and the residual holder MOVES. Skipping the reprice
+     * on a funding failure leaves places priced before and after that line
+     * against different structures, with nothing reconciling them.
+     */
+    const base = code(read('src/tournament/TournamentManagerBase.ts'));
+    expect(base).toMatch(/poolToPriceBy/);
+    expect(base).toMatch(/recalculateEliminatedPrizes\(poolToPriceBy\)/);
+  });
+
+  it('nothing rewrites the stored payout structure at start', () => {
+    /**
+     * It truncated in binary floats, dumped the remainder on `payouts[0]` (the
+     * first ARRAY element, and a headline prize either way -- the opposite of
+     * the payout law), and discarded the write error, leaving the cache and
+     * the column holding different structures. computePlacePrize already
+     * normalises by the structure's own total, exactly, so it bought nothing.
+     */
+    const base = code(read('src/tournament/TournamentManagerBase.ts'));
+    expect(base).not.toMatch(/update\(\{ payout_structure: payouts \}\)/);
+    expect(base).not.toMatch(/payouts\[0\]\.percentage =/);
+  });
+});
+
+describe('a split pot is never settled silently', () => {
+  it('says so when the bounty pays one of several claimants', () => {
+    // Not fixed -- splitting a PKO head is a rule, not arithmetic, and belongs
+    // to Dan. But it must not be silent: the frequency has to be measurable
+    // before the ruling is made.
+    expect(ELIM).toMatch(/split_pot_bounty_paid_to_one/);
   });
 });

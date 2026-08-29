@@ -81,6 +81,9 @@ export function BuyInModal({
   const [isConfirmPulsing, setIsConfirmPulsing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // 60-second kicker visual countdown
+  const [timeLeft, setTimeLeft] = useState(60);
+
   // The backend caps the rathole floor at max_buy_in. If we don't mirror that cap,
   // the user's cashoutRestriction might exceed maxBuyIn, breaking the HTML slider logic entirely.
   const cappedCashoutRestriction = cashoutRestriction ? Math.min(cashoutRestriction, maxBuyIn) : 0;

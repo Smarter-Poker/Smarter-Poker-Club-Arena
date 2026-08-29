@@ -52,6 +52,40 @@ describe('premium single-frame club lobby', () => {
     expect(CSS).toContain('.club-lobby-machine .lobby-table--mtt .lt-col-tstack');
   });
 
+  it('renders selector faces from the approved metal shell instead of generic CSS buttons', () => {
+    expect(CSS).toContain(
+      "--machine-nav-shell: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp')"
+    );
+    expect(CSS).toMatch(
+      /\.lobby-controls \.game-bar__type,[\s\S]*?background:\s*var\(--machine-nav-shell\)/
+    );
+    expect(CSS).toMatch(/\.game-bar__type\.is-active::before,[\s\S]*?border-color:\s*#52bdff/);
+    expect(CSS).not.toMatch(/\.game-bar__type\.is-active[^}]*background:[^;]*#(?:2f|3b|25)6/s);
+  });
+
+  it('has a dedicated connected mobile console with accessible controls', () => {
+    const mobile = CSS.slice(CSS.indexOf('@media (max-width: 900px)'));
+
+    expect(mobile).toContain('.club-lobby-machine__chassis');
+    expect(mobile).toMatch(/\.club-lobby-machine__chassis\s*\{\s*display:\s*none/s);
+    expect(mobile).toMatch(
+      /\.club-lobby-command-top\s*\{[^}]*position:\s*relative[^}]*border-image:\s*var\(--machine-utility-shell\)/s
+    );
+    expect(mobile).toMatch(/\.game-bar\s*\{[^}]*grid-template-columns:\s*repeat\(4,/s);
+    expect(mobile).toMatch(
+      /\.game-bar__type,[\s\S]*?\.quickprefs__chip\s*\{[^}]*min-height:\s*44px/s
+    );
+  });
+
+  it('recesses the live campaign image inside its own hardware shell', () => {
+    expect(CSS).toMatch(
+      /\.club-lobby-command-top__campaign-button\s*\{[^}]*background:\s*var\(--machine-nav-shell\)/s
+    );
+    expect(CSS).toMatch(
+      /\.club-lobby-command-top__campaign-button img\s*\{[^}]*object-fit:\s*cover/s
+    );
+  });
+
   it('keeps the premium V2 card renderer through tablet widths', () => {
     expect(TABLE_CSS).toMatch(
       /@media \(max-width: 900px\) \{\s*\.arena-lobby-card-list\s*\{[^}]*display:\s*grid/s

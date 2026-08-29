@@ -386,6 +386,40 @@ describe('LAW: the throwable system obeys the speed the player chose', () => {
     }
   });
 
+  it('the impact caption is a struck BADGE, not floating text', () => {
+    /* Dan 2026-08-29, on the PokerBros captures: "THE DESIGN GRAPHICS ETC
+       NEEDS TO BE REPLICATED INSIDE OF EVERY SINGLE THROWABLE ANIMATION."
+       Theirs is a plate with a starburst behind it; ours was 22px of white
+       Rajdhani floating in space. It is one element still — the plate is the
+       element, the burst is ::before, the shine is ::after — because a table
+       can be running four throws at once. */
+    const cap = THROW_CSS.slice(THROW_CSS.indexOf('.throw-animation__caption {'));
+    expect(cap, 'the plate').toMatch(/background:\s*\n?\s*linear-gradient/);
+    expect(THROW_CSS, 'the starburst').toContain('.throw-animation__caption::before');
+    expect(THROW_CSS, 'the struck-metal shine').toContain('.throw-animation__caption::after');
+    // Irregular by construction. repeating-conic-gradient at even intervals is
+    // the cartoon sun the knockout's first star was, and that mistake is
+    // documented at length in SeatKnockout.css.
+    expect(cap, 'no evenly-spaced spokes').not.toContain('repeating-conic-gradient');
+    expect(cap).toContain('conic-gradient');
+
+    /* color-mix() FALLBACKS. A browser that does not understand color-mix
+       throws away the WHOLE declaration, so a single shadow list using it
+       would take the bevel and the drop shadow down with the glow. Every
+       property that uses color-mix must be declared TWICE — a plain-colour
+       floor first, the enhanced version second. */
+    for (const prop of ['box-shadow', 'text-shadow', 'background']) {
+      const uses = [...cap.matchAll(new RegExp(`\\n  ${prop}:`, 'g'))].length;
+      const mixed = [...cap.matchAll(new RegExp(`\\n  ${prop}:[^;]*color-mix`, 'g'))].length;
+      if (mixed > 0) {
+        expect(
+          uses,
+          `${prop} uses color-mix and therefore needs a plain-colour declaration before it`
+        ).toBeGreaterThan(mixed);
+      }
+    }
+  });
+
   it('the four JS-computed timeline variables are scaled exactly once', () => {
     // Scaled in JS (here) and NOT again in CSS — double-scaling a duration is
     // as broken as not scaling it, and much harder to spot.

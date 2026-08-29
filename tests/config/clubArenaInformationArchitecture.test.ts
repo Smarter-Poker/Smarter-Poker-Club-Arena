@@ -16,6 +16,7 @@ import {
   getClubOperationGroups,
   getClubOperationRailItems,
 } from '../../src/config/clubOperationsNavigation';
+import { getClubIntegrityNavigation } from '../../src/config/clubIntegrityNavigation';
 
 describe('Club Arena information architecture', () => {
   it('keeps the global menu concise and free of retired aliases', () => {
@@ -219,5 +220,31 @@ describe('Club Arena information architecture', () => {
     expect(getArenaSectionNavigation('/marketplace')).toBeNull();
     expect(getArenaSectionNavigation('/stats')).toBeNull();
     expect(getArenaSectionNavigation('/notifications')).toBeNull();
+  });
+
+  it('connects conduct reports, financial disputes, and exclusions as one permission-aware workflow', () => {
+    const agentItems = getClubIntegrityNavigation(
+      'shark-club',
+      getClubNavigationCapabilities('agent')
+    );
+    const ownerItems = getClubIntegrityNavigation(
+      'shark-club',
+      getClubNavigationCapabilities('owner')
+    );
+    const memberItems = getClubIntegrityNavigation(
+      'shark-club',
+      getClubNavigationCapabilities('member')
+    );
+
+    expect(agentItems.map((item) => item.path)).toEqual([
+      '/clubs/shark-club/reports',
+      '/clubs/shark-club/disputes',
+    ]);
+    expect(ownerItems.map((item) => item.path)).toEqual([
+      '/clubs/shark-club/reports',
+      '/clubs/shark-club/disputes',
+      '/clubs/shark-club/blacklist',
+    ]);
+    expect(memberItems).toEqual([]);
   });
 });

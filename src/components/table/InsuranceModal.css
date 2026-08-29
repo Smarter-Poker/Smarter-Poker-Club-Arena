@@ -584,10 +584,6 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.insurance-modal__preset:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
 .insurance-modal__preset--active {
   background: rgba(24, 119, 242, 0.2);
   border-color: #1877f2;
@@ -674,10 +670,6 @@
     0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
-.insurance-modal__btn--decline:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
 .insurance-modal__btn--accept {
   background: linear-gradient(135deg, #1877f2 0%, #0d5cb8 100%);
   color: #ffffff;
@@ -728,10 +720,6 @@
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s ease;
-}
-
-.insurance-modal__tab:hover {
-  color: #c9d1d9;
 }
 
 .insurance-modal__tab--active {

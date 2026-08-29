@@ -393,10 +393,6 @@
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
 }
 
-.invite-page .invite-btn--primary:hover:not(:disabled) {
-  filter: brightness(1.1);
-}
-
 /* A pressed state, not a hover state: a phone has no hover, and without this
    the only feedback on the one button that matters is the network round trip. */
 .invite-page .invite-btn--primary:active:not(:disabled) {
@@ -411,10 +407,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.16),
     inset 0 -2px 6px rgba(0, 0, 0, 0.55),
     0 5px 14px rgba(0, 0, 0, 0.55);
-}
-
-.invite-page .invite-btn--secondary:hover {
-  filter: brightness(1.15);
 }
 
 .invite-page .invite-btn--secondary:active {

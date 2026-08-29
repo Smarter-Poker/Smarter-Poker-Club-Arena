@@ -225,10 +225,6 @@
     0 0 14px rgb(29 143 255 / 24%);
 }
 
-.agc-action:hover:not(:disabled) {
-  filter: brightness(1.12);
-}
-
 .agc-action:active:not(:disabled) {
   transform: translateY(1px);
   filter: brightness(0.9);

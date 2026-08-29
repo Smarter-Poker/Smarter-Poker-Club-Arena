@@ -48,6 +48,12 @@ export interface GameRulesModalProps {
     variant?: string | null;
     /** ANNOUNCE WINDOW (spec §3): clock shows within this many seconds. */
     announceSeconds?: number;
+    /** FIXED ANTE in chips (2026-08-29). Beats anteBB whenever above zero. */
+    anteFixed?: number;
+    /** Seats required before the engine will fire a bomb (2026-08-29). */
+    minPlayers?: number;
+    /** 'regular' | 'separate' (2026-08-29). */
+    buttonPolicy?: string;
   } | null;
   /**
    * MANUAL_NEXT_HAND (spec §2.1/§15.3): drawn only for club staff. The RPC
@@ -361,9 +367,25 @@ export function GameRulesModal({
 
         {/* Tab Navigation */}
         <div className="rules-modal__tabs">
+          {/*
+            2026-08-29: this button set activeTab to 'rules'. Nothing anywhere
+            set it to 'info', so `{activeTab === 'info' && ...}` below never
+            rendered and the ENTIRE Table Info tab was unreachable in
+            production: the financials, the feature chips, the whole Bomb Pot
+            disclosure block (schedule, ante, boards, played-as variant), and
+            the host's "Bomb Pot Next Hand" button.
+
+            That last one is why this one token mattered. The manual-bomb path
+            is fully built end to end — fn_request_manual_bomb_pot, the
+            bomb_pot_manual_requests audit trail, the bomb_pot_manual_pending
+            column, the engine's per-hand read of it, the staff role check and
+            the toast — and the only control that reaches any of it is inside
+            this tab. A club owner could not fire a manual bomb pot at all, and
+            no player could read the bomb rules from inside the table.
+          */}
           <button
             className={`rules-modal__tab ${activeTab === 'info' ? 'rules-modal__tab--active' : ''}`}
-            onClick={() => setActiveTab('rules')}
+            onClick={() => setActiveTab('info')}
           >
             Table Info
           </button>
@@ -499,7 +521,18 @@ export function GameRulesModal({
                     <div className="rules-modal__item">
                       <span className="rules-modal__label">Ante</span>
                       <span className="rules-modal__value">
-                        {bombPotRules.anteBB > 0 ? `${bombPotRules.anteBB}x BB` : '-'}
+                        {/* FIXED ANTE 2026-08-29: the engine prefers the fixed
+                            amount whenever it is above zero, and the config
+                            form writes the BB multiplier in BOTH modes — so
+                            reading the multiplier alone described a fixed-ante
+                            table with a number nobody is charged, while the
+                            lobby (which reads the fixed column) said the real
+                            one. Same precedence here as in the engine. */}
+                        {(bombPotRules.anteFixed ?? 0) > 0
+                          ? `${(bombPotRules.anteFixed ?? 0).toLocaleString()} chips`
+                          : bombPotRules.anteBB > 0
+                            ? `${bombPotRules.anteBB}x BB`
+                            : '-'}
                       </span>
                     </div>
                     <div className="rules-modal__item">
@@ -520,6 +553,29 @@ export function GameRulesModal({
                         <span className="rules-modal__value">
                           {bombPotRules.variant.toUpperCase()}
                         </span>
+                      </div>
+                    )}
+                    {/* MIN PLAYERS 2026-08-29. The engine holds the bomb below
+                        this floor and says nothing — so a table that had been
+                        promising BOMB POT NEXT HAND for twenty hands offered no
+                        way to find out why it never came. Now it does. */}
+                    {(bombPotRules.minPlayers ?? 0) > 2 && (
+                      <div className="rules-modal__item">
+                        <span className="rules-modal__label">Needs</span>
+                        <span className="rules-modal__value">
+                          {bombPotRules.minPlayers} Players
+                        </span>
+                      </div>
+                    )}
+                    {/* BUTTON POLICY 2026-08-29. This decides who acts last on
+                        every street of a bomb hand, and a separate button moves
+                        on its own rotation — visible at the felt as a button
+                        that does not advance. Disclose it rather than leaving
+                        the player to conclude the table is broken. */}
+                    {bombPotRules.buttonPolicy === 'separate' && (
+                      <div className="rules-modal__item">
+                        <span className="rules-modal__label">Button</span>
+                        <span className="rules-modal__value">Separate Bomb Button</span>
                       </div>
                     )}
                   </div>

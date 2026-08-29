@@ -47,13 +47,7 @@ export type GameVariant =
 
 /** Bible V8 §3.1: Full table state machine states */
 export type TableStatus =
-  | 'empty'
-  | 'waiting'
-  | 'seating'
-  | 'running'
-  | 'paused'
-  | 'closing'
-  | 'closed';
+  'empty' | 'waiting' | 'seating' | 'running' | 'paused' | 'closing' | 'closed';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Player Types
@@ -66,6 +60,14 @@ export interface SeatPlayer {
   stack: number;
   bet: number;
   totalInvested: number;
+  /**
+   * WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): cumulative uncalled amount
+   * returned to this player this hand. returnUncalledBet() already decrements
+   * totalInvested when it refunds the uncalled portion, so totalInvested is
+   * the player's ELIGIBLE contribution; this field preserves the returned
+   * amount as first-class audit state (gross = totalInvested + returnedUncalled).
+   */
+  returnedUncalled?: number;
   /**
    * Dead money portion of totalInvested — antes, a Big Blind Ante posted by the
    * BB on behalf of the whole table, and dead small blinds. Dead money sits in
@@ -751,12 +753,7 @@ export interface PayoutEntry {
 }
 
 export type TournamentStatus =
-  | 'ANNOUNCED'
-  | 'REGISTERING'
-  | 'RUNNING'
-  | 'COMPLETED'
-  | 'CANCELLED'
-  | 'LATE_REG';
+  'ANNOUNCED' | 'REGISTERING' | 'RUNNING' | 'COMPLETED' | 'CANCELLED' | 'LATE_REG';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rake Distribution Types

@@ -50,10 +50,6 @@
   transition: background 0.18s ease;
 }
 
-.sharecard-btn:hover:not(:disabled) {
-  background: rgba(0, 212, 255, 0.2);
-}
-
 .sharecard-btn:disabled {
   opacity: 0.6;
   cursor: default;

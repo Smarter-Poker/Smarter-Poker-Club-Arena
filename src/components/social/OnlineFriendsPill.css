@@ -43,10 +43,6 @@
   flex-shrink: 0;
 }
 
-.ofp-avatar-btn:hover {
-  border-color: rgba(0, 212, 255, 0.5);
-}
-
 .ofp-avatar-img {
   width: 100%;
   height: 100%;

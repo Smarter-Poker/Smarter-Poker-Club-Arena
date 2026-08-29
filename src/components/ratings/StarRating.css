@@ -27,10 +27,6 @@
   color: #ffd700;
 }
 
-.star-rating:not(.readonly) .star:hover {
-  color: #ffd700;
-}
-
 .star-rating.readonly .star {
   cursor: default;
 }

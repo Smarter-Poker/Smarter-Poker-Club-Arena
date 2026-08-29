@@ -55,10 +55,6 @@
   transition: background 0.15s ease;
 }
 
-.tsp-close:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
 /* ── Loading ── */
 .tsp-loading {
   padding: 24px;
@@ -83,10 +79,6 @@
   margin: 0 8px;
   transition: background 0.15s ease;
   gap: 12px;
-}
-
-.tsp-item:hover {
-  background: rgba(255, 255, 255, 0.05);
 }
 
 .tsp-item--active {
@@ -177,10 +169,6 @@
   transition: background 0.15s ease;
 }
 
-.tsp-theme-link:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
 .tsp-theme-link__label {
   font-size: 14px;
   font-weight: 500;
@@ -234,7 +222,6 @@
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--tsp-line);
 }
-.tsp-close:hover,
 .tsp-close:focus-visible {
   color: #fff;
   background: rgba(72, 191, 255, 0.12);
@@ -257,10 +244,6 @@
   background: transparent;
   font: inherit;
   appearance: none;
-}
-.tsp-item:hover {
-  background: rgba(72, 191, 255, 0.055);
-  border-color: rgba(72, 191, 255, 0.12);
 }
 .tsp-item--active {
   background: rgba(72, 191, 255, 0.035);
@@ -318,7 +301,6 @@
   text-align: left;
   font: inherit;
 }
-.tsp-theme-link:hover,
 .tsp-theme-link:focus-visible {
   background: linear-gradient(135deg, rgba(72, 191, 255, 0.2), rgba(72, 191, 255, 0.07));
   border-color: rgba(72, 191, 255, 0.42);

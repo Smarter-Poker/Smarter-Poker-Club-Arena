@@ -133,7 +133,6 @@
   cursor: pointer;
 }
 
-.closeButton:hover,
 .closeButton:focus-visible {
   border-color: rgba(46, 155, 255, 0.78);
   outline: none;
@@ -176,7 +175,6 @@
   box-shadow: 0 0 9px rgba(46, 155, 255, 0.82);
 }
 
-.profilePlate:hover,
 .profilePlate:focus-visible {
   border-color: rgba(111, 183, 255, 0.72);
   outline: none;
@@ -250,14 +248,12 @@
   border-color: rgba(240, 40, 73, 0.36);
 }
 
-.quickActionDanger:hover,
 .quickActionDanger:focus-visible {
   color: #ffdbe1;
   border-color: rgba(240, 40, 73, 0.74);
   box-shadow: inset 0 -1px rgba(240, 40, 73, 0.72);
 }
 
-.quickAction:hover,
 .quickAction:focus-visible {
   color: white;
   border-color: rgba(46, 155, 255, 0.7);
@@ -309,7 +305,6 @@
   background: rgba(160, 177, 194, 0.3);
 }
 
-.navItem:hover,
 .navItem:focus-visible {
   border-color: rgba(120, 145, 169, 0.34);
   outline: none;
@@ -359,7 +354,7 @@
 }
 
 .navItemActive .navArrow,
-.navItem:hover .navArrow {
+.navItem:focus-visible .navArrow {
   color: #62b4ff;
 }
 
@@ -403,7 +398,6 @@
   cursor: pointer;
 }
 
-.settingsDisclosure:hover,
 .settingsDisclosure:focus-visible {
   border-color: rgba(120, 145, 169, 0.34);
   outline: 1px solid #54adff;
@@ -486,7 +480,6 @@
   cursor: pointer;
 }
 
-.cardBackOption:hover,
 .cardBackOption:focus-visible,
 .cardBackOption[aria-pressed='true'] {
   border-color: rgba(84, 173, 255, 0.48);

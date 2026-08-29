@@ -94,7 +94,12 @@ describe('HorseEval V12 — board-contact conditioning shifts equity the right w
     const conditioned = simulateEquity(hole, board, 1, nlh, 4000, band, false, undefined, [
       { aggrW: 0.17, checked: 0 }, // flop + turn barrels
     ]);
-    expect(conditioned).toBeLessThan(plain - 0.03);
+    // V28 (2026-08-29): margin relaxed 0.03 -> 0.02 in the same commit that
+    // recalibrated the preflop ladder (wheel aces up, J9 down, gap drag on
+    // rags). The [0.4, 1] band is defined by ladder percentile, so reordering
+    // the ladder legitimately moves this delta a few tenths of a point; the
+    // DIRECTION is the pin, and it still demands a clearly negative shift.
+    expect(conditioned).toBeLessThan(plain - 0.02);
   });
 
   it('a medium hand GAINS equity vs a passive checked line (monsters capped)', () => {

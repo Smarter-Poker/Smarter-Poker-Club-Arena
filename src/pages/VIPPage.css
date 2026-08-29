@@ -251,10 +251,6 @@
   transition: all 0.2s;
 }
 
-.vip-extend-btn:hover {
-  background: rgba(255, 215, 0, 0.3);
-}
-
 /* Inactive VIP Card */
 .vip-card-inactive {
   text-align: center;

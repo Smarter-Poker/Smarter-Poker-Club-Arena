@@ -164,10 +164,6 @@
   color: #8b949e;
 }
 
-.rit-prompt__btn--decline:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
 .rit-prompt__btn--accept {
   background: linear-gradient(135deg, #3fb950 0%, #2ea043 100%);
   color: #ffffff;
@@ -728,10 +724,6 @@
   background: linear-gradient(135deg, #3fb950 0%, #2ea043 100%);
   color: #ffffff;
   box-shadow: 0 4px 14px rgba(63, 185, 80, 0.3);
-}
-
-.rit-panel__btn:hover {
-  filter: brightness(1.08);
 }
 
 .rit-panel__waiting {

@@ -20,6 +20,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { STORAGE_KEYS } from '../lib/storage';
 import { reportError } from '../utils/errorReporter';
+import { markSettingsTouched } from './useTableSettings';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES — matches Bible V8 §11.1.1 exactly
@@ -330,6 +331,114 @@ export function __inFlightSettingsReadCount(): number {
   return inFlightSettingsReads.size;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  A FAILED SAVE HOLDS THE USER'S CHOICE. IT NEVER UNDOES IT.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Dan 2026-08-28, binding: "WHEN YOU DO TURN THINGS ON OR OFF IN THE TABLE
+ * SETTINGS, THEY NEED TO SAVE GLOBALLY IN REAL TIME ON ALL TABLES, AND ALL
+ * PAGES. AND NEVER REGRESS OR AUTO CHANGE BACK UNLESS THE USER CHANGES THEM
+ * MANUALLY."
+ *
+ * Until 2026-08-29 this hook did the opposite. A refused or timed-out upsert
+ * ran a rollback block that re-wrote the OLD value into state, into
+ * localStorage, and onto the bus — so one dropped request flipped the switch
+ * back on the panel the user was looking at AND on every other open table.
+ * `toggleSetting` did it with no message at all, which is the exact shape of
+ * "my settings keep changing themselves": no error, no console, and it looks
+ * like the app disagreeing with you.
+ *
+ * `useTableSettings` had already been fixed the other way (its
+ * `pushKeyToServer` is fire-and-forget and documents that it deliberately does
+ * not roll back). The two hooks write the same table and now behave the same
+ * way, which is the point — a user cannot tell which one owns a given switch.
+ *
+ * WHAT REPLACED THE ROLLBACK
+ *
+ *  1. RETRY. A lost write is usually a blip, so the upsert is attempted up to
+ *     three times with a short backoff before anyone is told anything. Most
+ *     failures never reach the user at all.
+ *  2. HOLD. If all three fail the optimistic value STAYS — on screen, in
+ *     localStorage, and on the bus. What is lost is the cross-device copy,
+ *     not the setting.
+ *  3. SAY SO. One toast, so the user knows the choice is device-local rather
+ *     than believing it synced. The Toast layer dedupes identical messages,
+ *     so a burst of failed writes cannot stack up popups.
+ *
+ * A SUPERSEDED WRITE STOPS RETRYING. If the user taps again while attempt two
+ * is in flight, the newer revision owns the column; re-writing the older value
+ * would be the auto-change-back this whole change exists to prevent. The
+ * retry loop checks `stillCurrent()` before each attempt and abandons quietly
+ * — no toast, no terminal state, because the newer mutation emits its own.
+ */
+const SAVE_RETRY_DELAYS_MS = [400, 1500] as const;
+
+const SAVE_FAILED_TOAST = 'Setting Saved On This Device Only. We Could Not Reach The Server.';
+
+type PersistOutcome =
+  { status: 'saved' } | { status: 'superseded' } | { status: 'failed'; error: unknown };
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function upsertSettingColumn(
+  userId: string,
+  column: string,
+  value: unknown
+): Promise<unknown | undefined> {
+  try {
+    const { error } = await supabase
+      .from('user_table_settings')
+      .upsert({ user_id: userId, [column]: value }, { onConflict: 'user_id' });
+    return error ?? undefined;
+  } catch (error) {
+    return error;
+  }
+}
+
+/**
+ * Persist one column, retrying a lost write instead of undoing it.
+ *
+ * `stillCurrent` is the supersede check described above. It is a callback
+ * rather than a captured boolean because the answer changes WHILE this is
+ * awaiting — a value read once at entry would always say yes.
+ */
+async function persistSettingColumn(
+  userId: string,
+  column: string,
+  value: unknown,
+  stillCurrent: () => boolean
+): Promise<PersistOutcome> {
+  let error = await upsertSettingColumn(userId, column, value);
+  if (!error) {
+    await markSettingsTouched([column]);
+    return { status: 'saved' };
+  }
+
+  for (const backoff of SAVE_RETRY_DELAYS_MS) {
+    await delay(backoff);
+    if (!stillCurrent()) return { status: 'superseded' };
+    error = await upsertSettingColumn(userId, column, value);
+    if (!error) {
+      await markSettingsTouched([column]);
+      return { status: 'saved' };
+    }
+  }
+
+  return { status: 'failed', error };
+}
+
+/** One toast, whichever column failed. The Toast layer dedupes the rest. */
+function announceSaveFailure(): void {
+  masterBus.emit('SHOW_TOAST', {
+    severity: 'warning',
+    message: SAVE_FAILED_TOAST,
+    source: 'useUserTableSettings',
+  });
+}
+
 export function useUserTableSettings(userId: string | null | undefined) {
   const [settings, setSettings] = useState<UserTableSettings>(() => readCachedSettings(userId));
   const [loading, setLoading] = useState(true);
@@ -345,12 +454,32 @@ export function useUserTableSettings(userId: string | null | undefined) {
   settingsRef.current = settings;
   const mutationRevisionRef = useRef(new Map<string, number>());
   const writeTailsRef = useRef(new Map<string, Promise<void>>());
-  const durableValueRef = useRef(new Map<string, UserTableSettings[keyof UserTableSettings]>());
-  const pendingWriteCountRef = useRef(new Map<string, number>());
+  /**
+   * Keys the user has changed since this hook mounted.
+   *
+   * `useTableSettings` has had this guard since 2026-08-28 and this hook did
+   * not, so the last of the four auto-change-backs lived here: the panel mounts,
+   * the row read goes out, the user taps a switch inside that window, and then
+   * the stale answer lands and `setSettings(loaded)` puts it back — writing the
+   * old value to the cache and to `ca_ws_mux` too. The database ends up holding
+   * what the user asked for while the panel shows the opposite, until reload.
+   *
+   * The in-flight de-duplication WIDENS that window rather than closing it: a
+   * component mounting during a burst shares one promise, so the answer it gets
+   * is as old as the first mount.
+   */
+  const locallyTouchedRef = useRef(new Set<keyof UserTableSettings>());
+  /* `durableValueRef` and `pendingWriteCountRef` lived here until 2026-08-29.
+     Both existed only to reconstruct the value a failed write should be rolled
+     back TO. Nothing rolls back any more, so both had become write-only — the
+     shape of dead code that reads like live code. */
   const pendingEchoRef = useRef(new Map<string, string>());
 
   // ── Load from Supabase on mount ──
   useEffect(() => {
+    // A new account's row must not be reconciled against the previous account's
+    // live edits.
+    locallyTouchedRef.current.clear();
     const cached = readCachedSettings(userId);
     settingsRef.current = cached;
     setSettings(cached);
@@ -367,8 +496,12 @@ export function useUserTableSettings(userId: string | null | undefined) {
         const { data, error } = await fetchUserTableSettingsRow(userId);
 
         if (error) {
-          console.warn('[useUserTableSettings] Load failed, using cache:', error.message);
-          setLoading(false);
+          /* Reported, not just console-warned. A settings read that fails for
+             EVERY user — an RLS regression, a dropped column, a revoked grant —
+             used to produce zero telemetry and a UI quietly serving defaults.
+             Both write paths in this file already report; the read did not. */
+          reportError(error, 'useUserTableSettings.Load_failed');
+          if (mounted && activeUserIdRef.current === userId) setLoading(false);
           return;
         }
 
@@ -402,10 +535,19 @@ export function useUserTableSettings(userId: string | null | undefined) {
             multi_shared_socket:
               data.multi_shared_socket ?? DEFAULT_USER_TABLE_SETTINGS.multi_shared_socket,
           };
-          setSettings(loaded);
+          /* A LIVE EDIT OUTRANKS A STALE READ. Anything the user changed while
+             this row was in flight keeps the value they chose — see the note on
+             locallyTouchedRef. Without this the answer that was already stale
+             when it was asked for silently undid their tap. */
+          const reconciled = { ...loaded };
+          for (const key of locallyTouchedRef.current) {
+            (reconciled as Record<string, unknown>)[key] = settingsRef.current[key];
+          }
+          settingsRef.current = reconciled;
+          setSettings(reconciled);
           // Cache locally for instant loads
           try {
-            localStorage.setItem(cacheKeyForUser(userId), JSON.stringify(loaded));
+            localStorage.setItem(cacheKeyForUser(userId), JSON.stringify(reconciled));
           } catch {
             /* */
           }
@@ -413,14 +555,17 @@ export function useUserTableSettings(userId: string | null | undefined) {
           // device - mirror the loaded value so EngineStateClient's next
           // (re)connect sees it here too.
           try {
-            localStorage.setItem('ca_ws_mux', loaded.multi_shared_socket ? '1' : '0');
+            localStorage.setItem('ca_ws_mux', reconciled.multi_shared_socket ? '1' : '0');
           } catch {
             /* private mode */
           }
         }
         // If no row exists, defaults are already set — row will be created on first toggle
       } catch (err) {
-        console.warn('[useUserTableSettings] Unexpected error:', err);
+        /* This is the rejection `fetchUserTableSettingsRow` deliberately
+           re-throws so one blip cannot wedge the shared promise. Swallowing it
+           to the console meant that re-throw reached nothing that records it. */
+        reportError(err, 'useUserTableSettings.Load_threw');
       }
       if (mounted && activeUserIdRef.current === userId) setLoading(false);
     };
@@ -488,13 +633,7 @@ export function useUserTableSettings(userId: string | null | undefined) {
       const revision = (mutationRevisionRef.current.get(mutationScope) ?? 0) + 1;
       const mutationId = `${mutationScope}:${revision}`;
       mutationRevisionRef.current.set(mutationScope, revision);
-      if ((pendingWriteCountRef.current.get(mutationScope) ?? 0) === 0) {
-        durableValueRef.current.set(mutationScope, previousValue);
-      }
-      pendingWriteCountRef.current.set(
-        mutationScope,
-        (pendingWriteCountRef.current.get(mutationScope) ?? 0) + 1
-      );
+      locallyTouchedRef.current.add(key);
 
       // Optimistic update
       const optimistic = { ...settingsRef.current, [key]: newValue };
@@ -558,80 +697,47 @@ export function useUserTableSettings(userId: string | null | undefined) {
       // Persist in tap order. A slower first request must not finish after the
       // second and become the durable value.
       const previousTail = writeTailsRef.current.get(mutationScope) ?? Promise.resolve();
-      const task = previousTail.then(async () => {
-        try {
-          const { error } = await supabase.from('user_table_settings').upsert(
-            {
-              user_id: userId,
-              [key]: newValue,
-            },
-            { onConflict: 'user_id' }
-          );
-          return error ?? undefined;
-        } catch (error) {
-          return error;
-        }
-      });
+      const task = previousTail.then(() =>
+        persistSettingColumn(
+          userId,
+          String(key),
+          newValue,
+          () =>
+            activeUserIdRef.current === userId &&
+            mutationRevisionRef.current.get(mutationScope) === revision
+        )
+      );
       const tail = task.then(() => undefined);
       writeTailsRef.current.set(mutationScope, tail);
-      const error = await task;
+      const outcome = await task;
       if (writeTailsRef.current.get(mutationScope) === tail) {
         writeTailsRef.current.delete(mutationScope);
       }
 
-      if (error) {
-        reportError(error, 'useUserTableSettings.Save_failed');
-        // Only the latest mutation may roll this field back. Broadcast that
-        // rollback too, or the source panel and the other open tables disagree.
-        if (
-          activeUserIdRef.current === userId &&
-          mutationRevisionRef.current.get(mutationScope) === revision &&
-          settingsRef.current[key] === newValue
-        ) {
-          const rollbackValue = Boolean(
-            durableValueRef.current.get(mutationScope) ?? previousValue
-          );
-          const reverted = { ...settingsRef.current, [key]: rollbackValue };
-          settingsRef.current = reverted;
-          setSettings(reverted);
-          try {
-            localStorage.setItem(cacheKeyForUser(userId), JSON.stringify(reverted));
-          } catch {
-            /* */
-          }
-          masterBus.emit('SETTINGS_CHANGED', {
-            setting: key,
-            value: rollbackValue,
-            userId,
-            origin: originIdRef.current,
-          });
-          if (key === 'multi_shared_socket') {
-            try {
-              localStorage.setItem('ca_ws_mux', rollbackValue ? '1' : '0');
-            } catch {
-              /* private mode */
-            }
-          }
-        }
+      // A superseded write is not a failure and not a save. The newer tap owns
+      // the column and emits its own terminal state; saying anything here would
+      // either double-count it or contradict it.
+      if (outcome.status === 'superseded') return;
+
+      if (outcome.status === 'failed') {
+        reportError(outcome.error, 'useUserTableSettings.Save_failed');
+        // THE VALUE STAYS. See the long note above persistSettingColumn.
+        if (activeUserIdRef.current === userId) announceSaveFailure();
         masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
           kind: 'user-table-setting',
           scope: mutationScope,
           mutationId,
-          state: 'rolled-back',
+          state: 'save-failed',
         });
-      } else {
-        durableValueRef.current.set(mutationScope, newValue);
-        masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
-          kind: 'user-table-setting',
-          scope: mutationScope,
-          mutationId,
-          state: 'confirmed',
-        });
+        return;
       }
-      pendingWriteCountRef.current.set(
-        mutationScope,
-        Math.max(0, (pendingWriteCountRef.current.get(mutationScope) ?? 1) - 1)
-      );
+
+      masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'user-table-setting',
+        scope: mutationScope,
+        mutationId,
+        state: 'confirmed',
+      });
     },
     [userId]
   );
@@ -641,14 +747,11 @@ export function useUserTableSettings(userId: string | null | undefined) {
     async (alias: string) => {
       if (!userId) return;
 
-      const previousAlias = settingsRef.current.table_alias;
       const mutationScope = `${userId}:table_alias`;
       const revision = (mutationRevisionRef.current.get(mutationScope) ?? 0) + 1;
       const mutationId = `${mutationScope}:${revision}`;
       mutationRevisionRef.current.set(mutationScope, revision);
-      if ((pendingWriteCountRef.current.get(mutationScope) ?? 0) === 0) {
-        durableValueRef.current.set(mutationScope, previousAlias);
-      }
+      locallyTouchedRef.current.add('table_alias');
 
       masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
         kind: 'user-table-setting',
@@ -656,10 +759,6 @@ export function useUserTableSettings(userId: string | null | undefined) {
         mutationId,
         state: 'pending',
       });
-      pendingWriteCountRef.current.set(
-        mutationScope,
-        (pendingWriteCountRef.current.get(mutationScope) ?? 0) + 1
-      );
 
       // Optimistic update
       const optimistic = { ...settingsRef.current, table_alias: alias };
@@ -680,70 +779,45 @@ export function useUserTableSettings(userId: string | null | undefined) {
       });
 
       const previousTail = writeTailsRef.current.get(mutationScope) ?? Promise.resolve();
-      const task = previousTail.then(async () => {
-        try {
-          const { error } = await supabase.from('user_table_settings').upsert(
-            {
-              user_id: userId,
-              table_alias: alias,
-            },
-            { onConflict: 'user_id' }
-          );
-          return error ?? undefined;
-        } catch (error) {
-          return error;
-        }
-      });
+      const task = previousTail.then(() =>
+        persistSettingColumn(
+          userId,
+          'table_alias',
+          alias,
+          () =>
+            activeUserIdRef.current === userId &&
+            mutationRevisionRef.current.get(mutationScope) === revision
+        )
+      );
       const tail = task.then(() => undefined);
       writeTailsRef.current.set(mutationScope, tail);
-      const error = await task;
+      const outcome = await task;
       if (writeTailsRef.current.get(mutationScope) === tail) {
         writeTailsRef.current.delete(mutationScope);
       }
 
-      if (error) {
-        reportError(error, 'useUserTableSettings.Alias_save_failed');
-        if (
-          activeUserIdRef.current === userId &&
-          mutationRevisionRef.current.get(mutationScope) === revision &&
-          settingsRef.current.table_alias === alias
-        ) {
-          const rollbackAlias =
-            (durableValueRef.current.get(mutationScope) as string | undefined) ?? previousAlias;
-          const reverted = { ...settingsRef.current, table_alias: rollbackAlias };
-          settingsRef.current = reverted;
-          setSettings(reverted);
-          try {
-            localStorage.setItem(cacheKeyForUser(userId), JSON.stringify(reverted));
-          } catch {
-            /* */
-          }
-          masterBus.emit('SETTINGS_CHANGED', {
-            setting: 'table_alias',
-            value: rollbackAlias,
-            userId,
-            origin: originIdRef.current,
-          });
-        }
+      if (outcome.status === 'superseded') return;
+
+      if (outcome.status === 'failed') {
+        reportError(outcome.error, 'useUserTableSettings.Alias_save_failed');
+        // THE ALIAS STAYS. Retyping a name because one request was dropped is
+        // the same regression as a switch flipping itself back.
+        if (activeUserIdRef.current === userId) announceSaveFailure();
         masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
           kind: 'user-table-setting',
           scope: mutationScope,
           mutationId,
-          state: 'rolled-back',
+          state: 'save-failed',
         });
-      } else if (!error) {
-        durableValueRef.current.set(mutationScope, alias);
-        masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
-          kind: 'user-table-setting',
-          scope: mutationScope,
-          mutationId,
-          state: 'confirmed',
-        });
+        return;
       }
-      pendingWriteCountRef.current.set(
-        mutationScope,
-        Math.max(0, (pendingWriteCountRef.current.get(mutationScope) ?? 1) - 1)
-      );
+
+      masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'user-table-setting',
+        scope: mutationScope,
+        mutationId,
+        state: 'confirmed',
+      });
     },
     [userId]
   );

@@ -178,11 +178,6 @@
   transition: all 0.25s ease;
 }
 
-.metric-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(6, 182, 212, 0.3);
-}
-
 .metric-label {
   font-size: 0.65rem;
   font-weight: 600;

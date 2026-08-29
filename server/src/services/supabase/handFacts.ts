@@ -33,6 +33,7 @@
 
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
+import { allocateWeightedShareCents } from '../rakeAllocation.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. ALL-IN EQUITY CAPTURE
@@ -790,6 +791,15 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
 
     const factRows: Record<string, unknown>[] = [];
 
+    // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): rake_paid uses the SAME
+    // canonical allocator as the money pipeline (rake_attributions /
+    // RakebackSettler), so the stats ledger and the financial ledger agree to
+    // the cent — the old inline `rake * invested / total` float split could
+    // drift a cent from the authoritative allocation on remainder hands.
+    const rakeShares = allocateWeightedShareCents(Number(input.rakeAmount ?? 0), [
+      ...input.contributions.entries(),
+    ]);
+
     for (const uid of participants) {
       if (!factIds.has(uid)) continue; // humans, plus horses at NIT tables
 
@@ -876,7 +886,7 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
         //
         // Contribution-weighted, matching how the engine itself apportions rake
         // (atomic_distribute_rake takes p_contributions).
-        rake_paid: totalInvested > 0 ? r2((input.rakeAmount ?? 0) * (invested / totalInvested)) : 0,
+        rake_paid: rakeShares.get(uid) ?? 0,
         vpip: flags.vpip,
         pfr: flags.pfr,
         three_bet: flags.three_bet,

@@ -43,11 +43,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.period-selector button:hover {
-  border-color: #4a5a6a;
-  color: #8a9aaa;
-}
-
 .period-selector button.active {
   background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
   border-color: #00d4ff;
@@ -174,11 +169,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
-}
-
-.transaction-row:hover {
-  border-color: #00d4ff;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.07) 0%, rgba(100, 100, 100, 0.04) 100%);
 }
 
 .tx-icon {

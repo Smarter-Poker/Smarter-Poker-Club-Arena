@@ -62,10 +62,6 @@
   user-select: none;
 }
 
-.table th.sortable:hover {
-  color: rgba(255, 255, 255, 0.9);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
  * TABLE BODY
  * ═══════════════════════════════════════════════════════════════════════════════ */
@@ -82,11 +78,6 @@
 /* Striped */
 .table-striped tbody tr:nth-child(odd) {
   background: rgba(255, 255, 255, 0.02);
-}
-
-/* Hoverable */
-.table-hoverable tbody tr:hover {
-  background: rgba(255, 255, 255, 0.05);
 }
 
 /* Clickable rows */
@@ -132,10 +123,6 @@
   backdrop-filter: blur(8px) saturate(1.2);
   -webkit-backdrop-filter: blur(8px) saturate(1.2);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
-}
-
-.leaderboard-row:hover {
-  background: rgba(255, 255, 255, 0.06);
 }
 
 /* Top 3 styling */

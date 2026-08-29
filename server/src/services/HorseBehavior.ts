@@ -154,6 +154,124 @@ export function gameLaneFor(horseId: string): HorseGameLane {
   return 'both';
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// STAKE BANDS (Dan 2026-08-29, binding)
+// ═══════════════════════════════════════════════════════════════════════════════
+// "EACH HORSE SHOULD HAVE A SPECIFIC STAKES THEY'RE PLAYING. A HORSE PLAYING
+//  5/10 OR 10/25 SHOULD NEVER BE SEEN ON A 50 CENT ONE DOLLAR GAME OR 1/2
+//  DOLLAR GAME, THAT JUST LOOKS SUSPICIOUS."
+//
+// He is right, and it was measurable. Over 48 hours of cash play: 210 horses
+// seated, and 64 of them - nearly a third - sat at more than one stake level.
+// The worst were not marginal:
+//
+//     yankee            0.10/0.20  and  25.00/50.00      (250x)
+//     mixedgame max     0.10/0.20, 1.00/2.00, 10.00/25.00 (125x)
+//     ronald calabrese 2  0.10/0.20, 2.00/4.00, 10.00/25.00
+//
+// No human bankroll moves like that, and a regular who recognises a name from
+// the 10/25 game sitting in their 0.10/0.20 game notices immediately.
+//
+// The cause was that stakes were never an input. HorseFleetManager picked from
+// every enabled horse, weighted only by how many tables it already sat at; the
+// blinds were read solely to compute a buy-in amount.
+//
+// A band is an IDENTITY, in exactly the sense a lane is: assigned once, stored
+// in profiles.horse_profile, stable across days. Within its band a horse still
+// moves freely - a mid-stakes regular playing both 2/4 and 3/6 is ordinary, and
+// multi-tabling one's own stake is what real players actually do.
+
+export type HorseStakeBand = 'micro' | 'low' | 'mid' | 'high';
+
+/**
+ * The boundaries are the real stake ladder, not round numbers picked in the
+ * abstract. Every live cash table on 2026-08-29 fell inside one of these with
+ * nothing straddling an edge:
+ *
+ *     micro   0.05/0.10, 0.10/0.20, 0.25/0.50
+ *     low     0.50/1.00, 1.00/2.00          <- where the fleet's own configs live
+ *     mid     2.00/4.00, 2.00/5.00, 3.00/6.00
+ *     high    5.00/10.00, 10.00/25.00, 25.00/50.00
+ */
+export function stakeBandForBigBlind(bigBlind: number): HorseStakeBand {
+  const bb = Number(bigBlind);
+  if (!Number.isFinite(bb) || bb <= 0) return 'low';
+  if (bb <= 0.5) return 'micro';
+  if (bb <= 2) return 'low';
+  if (bb <= 6) return 'mid';
+  return 'high';
+}
+
+/**
+ * ASSIGNED bands, hydrated from profiles.horse_profile->>'stakeBand' at boot,
+ * for exactly the reason lanes are assigned rather than hashed: horseHash is a
+ * weak multiply-add and a low-bit modulo of it clusters on UUIDs, so a hashed
+ * split misses its targets by several points at this fleet size. A starved
+ * band is not cosmetic here - it means a table nobody may sit at.
+ */
+const assignedStakeBands = new Map<string, HorseStakeBand>();
+
+function isStakeBand(v: unknown): v is HorseStakeBand {
+  return v === 'micro' || v === 'low' || v === 'mid' || v === 'high';
+}
+
+export function setHorseStakeBands(rows: Array<{ id: string; stakeBand: string | null }>): number {
+  let n = 0;
+  for (const r of rows) {
+    if (!r?.id) continue;
+    if (!isStakeBand(r.stakeBand)) continue;
+    assignedStakeBands.set(r.id, r.stakeBand);
+    n++;
+  }
+  return n;
+}
+
+/** Test/ops hook: how many assigned bands are loaded right now. */
+export function assignedStakeBandCount(): number {
+  return assignedStakeBands.size;
+}
+
+/**
+ * A BAND IS EARNED (Dan 2026-08-29): micro is the worst-performing horses, low
+ * the second worst, mid the good winners, high the best. The ranking is done in
+ * the database by `fn_assign_horse_stake_bands`, on bb/100 - winnings over the
+ * big blinds actually faced, which is the only measure comparable across a
+ * stake ladder, since 500 chips is a career at 0.05/0.10 and a rounding error
+ * at 25/50. Measured after the first merit run: micro -35.6 bb/100, low -12.0,
+ * mid +1.7, high +22.9.
+ *
+ * The proportions (22/52/15/11) still follow live seat demand, so merit decides
+ * WHO is in a band and demand decides HOW MANY - no stake level ends up without
+ * enough horses to fill it.
+ */
+export function stakeBandFor(horseId: string): HorseStakeBand {
+  const assigned = assignedStakeBands.get(horseId);
+  if (assigned) return assigned;
+  /**
+   * A HORSE WITH NO RECORD STARTS AT THE BOTTOM. There is no hash fallback here
+   * and there must not be one: a band is a claim about results, and a brand-new
+   * horse has none. Hashing it into 'high' would seat an unproven player in the
+   * 25/50 game on the strength of its uuid, which is precisely the arbitrary
+   * assignment this replaced. Starting in the smallest game and earning the way
+   * up is both the realistic answer and the safe one - and it is temporary, the
+   * loader re-ranks every 30 minutes.
+   */
+  return 'micro';
+}
+
+/**
+ * May this horse sit in this game?
+ *
+ * NO ESCAPE HATCH, DELIBERATELY. There is a temptation to break the band when
+ * a table has a waiting human and no banded horse is free — but that is
+ * precisely the moment a human is looking, which makes it the worst possible
+ * time to seat a 10/25 name in a 0.50/1 game. A quiet high-stakes table is
+ * ordinary; a nosebleed regular in a micro game is the tell.
+ */
+export function stakeBandAllows(horseId: string, bigBlind: number): boolean {
+  return stakeBandFor(horseId) === stakeBandForBigBlind(bigBlind);
+}
+
 /** How long a table keeps its current popularity before drifting. */
 export const VIBE_BUCKET_MS = 22 * 60_000;
 

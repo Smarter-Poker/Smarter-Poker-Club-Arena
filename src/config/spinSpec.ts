@@ -332,6 +332,36 @@ export function spinTier(multiplier: number): SpinTierSpec | undefined {
   return SPIN_TIERS.find((t) => t.multiplier === multiplier);
 }
 
+/**
+ * The ladder as a player-facing odds table (2026-08-29, spin buy-in sheet).
+ *
+ * DERIVED from SPIN_TIERS and nothing else, so a retuned tier reprices the
+ * display the moment it lands - a hand-written copy of this table is exactly
+ * the drift SPIN_FREQ_DENOMINATOR's own note warns about. `oneIn` is the
+ * everyday phrasing of the frequency ("1 In 9,921"); `payoutLabel` is the
+ * split by place, already formatted ("Winner Takes All" / "80% / 12% / 8%").
+ */
+export interface SpinOddsRow {
+  multiplier: number;
+  oneIn: number;
+  payoutLabel: string;
+}
+
+export function spinOddsTable(tiers: SpinTierSpec[] = SPIN_TIERS): SpinOddsRow[] {
+  const total = tiers.reduce((s, t) => s + t.freq, 0);
+  return tiers
+    .slice()
+    .sort((a, b) => a.multiplier - b.multiplier)
+    .map((t) => ({
+      multiplier: t.multiplier,
+      oneIn: total > 0 && t.freq > 0 ? Math.round(total / t.freq) : 0,
+      payoutLabel:
+        t.payouts.length <= 1
+          ? 'Winner Takes All'
+          : t.payouts.map((p) => `${Math.round(p * 100)}%`).join(' / '),
+    }));
+}
+
 /** Expected multiplier over a set of tiers (default: all of them). */
 export function expectedMultiplier(tiers: SpinTierSpec[] = SPIN_TIERS): number {
   const total = tiers.reduce((s, t) => s + t.freq, 0);

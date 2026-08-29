@@ -28,11 +28,6 @@
   cursor: pointer;
 }
 
-.house-ad:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(148, 163, 184, 0.3);
-}
-
 /* No pointer and no hover lift where there is nowhere to go. */
 .house-ad--static {
   cursor: default;

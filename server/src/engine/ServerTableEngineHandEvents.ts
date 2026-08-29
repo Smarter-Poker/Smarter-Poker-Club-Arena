@@ -193,8 +193,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // SB/BB chips flying from each blind seat into the pot, instead of
         // letting the chips just appear in the pot via snapshot.
         const postings = (event as any).postings as
-          | Array<{ seat: number; type: string; amount: number }>
-          | undefined;
+          Array<{ seat: number; type: string; amount: number }> | undefined;
         if (postings && postings.length > 0) {
           this.hub?.emitEvent(this.tableId, {
             type: 'blinds_posted',
@@ -903,16 +902,26 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             }));
           }
           // Note: rake + bbjFee are captured from HAND_COMPLETE event, not from state
-          // Bible V8 §1.9: Capture totalInvested for equal-share rakeback tracking (FIX 144)
+          // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): capture each player's
+          // ELIGIBLE contribution (totalInvested — already net of any returned
+          // uncalled bet, decremented by returnUncalledBet() before this event)
+          // plus the returned amount as separate audit state. These feed
+          // atomic_distribute_rake's weighted per-player attribution.
           this.currentHandContributions.clear();
+          this.currentHandReturnedUncalled.clear();
           for (const enginePlayer of state.players) {
             const localPlayer = players.find((p) => p.user_id === enginePlayer.user_id);
             if (localPlayer) localPlayer.stack = enginePlayer.stack;
-            // Track actual contributions for rakeback (totalInvested = blinds + bets + raises + calls)
             this.currentHandContributions.set(
               enginePlayer.user_id,
               enginePlayer.totalInvested ?? 0
             );
+            if ((enginePlayer.returnedUncalled ?? 0) > 0) {
+              this.currentHandReturnedUncalled.set(
+                enginePlayer.user_id,
+                enginePlayer.returnedUncalled ?? 0
+              );
+            }
           }
         }
         // ── ADDITIVE event-sourcing shadow (#1): record PotAwarded ──

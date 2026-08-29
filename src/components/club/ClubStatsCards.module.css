@@ -25,10 +25,6 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.card:hover {
-  border-color: var(--accent-color, rgba(255, 255, 255, 0.2));
-}
-
 .card.loading {
   height: 100px;
   background: linear-gradient(

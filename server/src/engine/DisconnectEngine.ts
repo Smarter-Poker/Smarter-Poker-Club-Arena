@@ -682,8 +682,13 @@ export class DisconnectEngine {
     // caller is the dealing loop — which runs once per hand while dealing and
     // once per 3-second idle tick while not. So "2 orbits" was really "3 hands"
     // OR "about nine seconds of sitting at an idle table", depending on
-    // something the rule never mentions. Now only a real deal advances the
-    // orbit count, and the caller says so.
+    // something the rule never mentions.
+    //
+    // 2026-08-29: the caller now passes `countOrbit` only on a genuine BUTTON
+    // WRAP, not on every deal. Counting hands made "2 orbits" mean 3 hands,
+    // which at 6-max is a third of one orbit — a player removed roughly four
+    // times sooner than the rule they were told. The wrap was already being
+    // detected one line away for time-bank refills.
     //
     // The 5-minute half is still evaluated on EVERY call, deal or not. That is
     // the half that has to work when the table has gone quiet, which is exactly
@@ -696,7 +701,13 @@ export class DisconnectEngine {
       if (opts.countOrbit) {
         state.sitOutOrbits = (state.sitOutOrbits ?? 0) + 1;
       }
-      const orbitsUp = (state.sitOutOrbits ?? 0) > DisconnectEngine.SITOUT_MAX_ORBITS;
+      /* `>=`, not `>` (2026-08-29). Strictly-greater-than 2 fires on the THIRD
+         orbit, so a constant named SITOUT_MAX_ORBITS = 2 was enforcing three.
+         Dan's rule is "removed after the button passes them TWICE": the second
+         pass is the one that removes them. Paired with the caller now counting
+         a real button wrap rather than a hand — see the note at its call site
+         in ServerTableEngineDealing. */
+      const orbitsUp = (state.sitOutOrbits ?? 0) >= DisconnectEngine.SITOUT_MAX_ORBITS;
       const timeUp =
         state.sitOutSince != null && now - state.sitOutSince >= DisconnectEngine.SITOUT_MAX_MS;
       if (orbitsUp || timeUp) evict.push(playerId);

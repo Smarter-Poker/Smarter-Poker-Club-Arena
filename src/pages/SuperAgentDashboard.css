@@ -48,11 +48,6 @@
   transition: all 0.2s ease;
 }
 
-.dashboard-header .back-btn:hover {
-  border-color: #00d4ff;
-  color: #00d4ff;
-}
-
 .header-info {
   flex: 1;
 }
@@ -183,10 +178,6 @@
   transition: all 0.2s ease;
 }
 
-.dashboard-tabs button:hover {
-  color: #8a9aaa;
-}
-
 .dashboard-tabs button.active {
   color: #00d4ff;
   border-bottom-color: #00d4ff;
@@ -295,11 +286,6 @@
   border: 1px solid #2a3a4a;
   border-radius: 12px;
   transition: all 0.2s ease;
-}
-
-.agent-row:hover,
-.player-row:hover {
-  border-color: #3a4a5a;
 }
 
 .agent-info,

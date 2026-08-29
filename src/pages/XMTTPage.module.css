@@ -50,9 +50,6 @@
   white-space: nowrap;
   transition: all 0.15s;
 }
-.tab:hover {
-  color: #e4e6eb;
-}
 .tabActive {
   color: #4599ff;
   border-bottom-color: #4599ff;
@@ -110,9 +107,6 @@
   cursor: pointer;
   transition: all 0.15s;
 }
-.tournCard:hover {
-  border-color: #4599ff44;
-}
 .tournCardSelected {
   background: #2a2b2d;
   border-color: #4599ff;
@@ -160,9 +154,6 @@
   cursor: pointer;
   text-decoration: none;
 }
-.btnPrimary:hover {
-  background: #357ce6;
-}
 .btnGhost {
   padding: 8px 16px;
   background: transparent;
@@ -173,10 +164,6 @@
   font-size: 13px;
   cursor: pointer;
   text-decoration: none;
-}
-.btnGhost:hover {
-  border-color: #4599ff;
-  color: #4599ff;
 }
 .btnRegister {
   font-size: 12px;

@@ -104,13 +104,10 @@
     border-color 150ms ease;
 }
 
-.item:hover {
+.item:focus-visible {
   color: #e1ecf5;
   background: rgba(89, 121, 146, 0.12);
   border-color: rgba(137, 166, 190, 0.22);
-}
-
-.item:focus-visible {
   outline: 2px solid #75beff;
   outline-offset: -2px;
 }

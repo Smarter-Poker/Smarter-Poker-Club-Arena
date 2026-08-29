@@ -8,10 +8,6 @@
   position: relative;
 }
 
-.notification-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
 .notification-item.unread {
   background: rgba(255, 215, 0, 0.05);
 }
@@ -82,20 +78,13 @@
   background: rgba(255, 255, 255, 0.05);
   border: none;
   border-radius: 50%;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.55);
   cursor: pointer;
-  opacity: 0;
-  transition: all 0.2s;
+  /* Visible at rest. `.notification-item:hover` was the only thing that ever
+     revealed this dismiss button, which is the wrong dependency for a control
+     on a list people mostly read on a phone. */
+  opacity: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.notification-item:hover .notif-dismiss {
-  opacity: 1;
-}
-
-.notif-dismiss:hover {
-  background: rgba(248, 113, 113, 0.2);
-  color: #f87171;
 }

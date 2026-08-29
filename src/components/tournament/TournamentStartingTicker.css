@@ -68,9 +68,6 @@
   will-change: transform;
   animation: mttScroll 22s linear infinite;
 }
-.mtt-ticker__track:hover .mtt-ticker__scroll {
-  animation-play-state: paused;
-}
 
 .mtt-ticker__msg {
   padding: 0 28px;
@@ -89,9 +86,6 @@
   font-size: 17px;
   line-height: 1;
   cursor: pointer;
-}
-.mtt-ticker__close:hover {
-  color: #fff;
 }
 .mtt-ticker__close:focus-visible {
   outline: 2px solid #00d4ff;

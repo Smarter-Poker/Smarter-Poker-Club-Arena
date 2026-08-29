@@ -41,11 +41,6 @@
     border-color 0.2s ease;
 }
 
-.trigger:hover {
-  background: rgba(111, 220, 255, 0.1);
-  border-color: rgba(111, 220, 255, 0.45);
-}
-
 .trigger:focus-visible {
   outline: 2px solid rgba(111, 220, 255, 0.7);
   outline-offset: 2px;
@@ -53,11 +48,6 @@
 
 .triggerStatic {
   cursor: default;
-}
-
-.triggerStatic:hover {
-  background: rgba(19, 27, 40, 0.6);
-  border-color: rgba(111, 220, 255, 0.25);
 }
 
 .name {
@@ -145,10 +135,6 @@
   border-radius: 6px;
   cursor: pointer;
   min-width: 0;
-}
-
-.item:hover {
-  background: rgba(111, 220, 255, 0.1);
 }
 
 .item:focus-visible {

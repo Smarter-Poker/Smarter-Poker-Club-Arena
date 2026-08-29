@@ -27,19 +27,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.iconBox:hover:not(:disabled) {
-  border-color: var(--metal-glow-cyan);
-}
-
-.iconBox:hover:not(:disabled) .glowEffect {
-  opacity: 1;
-}
-
-.iconBox:hover:not(:disabled) .iconContainer {
-  color: var(--metal-glow-cyan);
-  text-shadow: 0 0 20px var(--metal-glow-cyan);
-}
-
 .iconBox:disabled {
   opacity: 0.5;
   cursor: not-allowed;

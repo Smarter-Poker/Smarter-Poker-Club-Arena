@@ -1,31 +1,27 @@
 .truncate-wrapper {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .truncate {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    margin: 0;
-    line-height: 1.5;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+  line-height: 1.5;
 }
 
 .truncate.expanded {
-    -webkit-line-clamp: unset;
+  -webkit-line-clamp: unset;
 }
 
 .truncate-toggle {
-    background: none;
-    border: none;
-    color: #ffd700;
-    font-size: 0.85rem;
-    cursor: pointer;
-    padding: 0;
-    align-self: flex-start;
-}
-
-.truncate-toggle:hover {
-    text-decoration: underline;
+  background: none;
+  border: none;
+  color: #ffd700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0;
+  align-self: flex-start;
 }

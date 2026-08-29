@@ -65,16 +65,8 @@
   color: #fff;
 }
 
-.action-btn.variant-secondary:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
 .action-btn.variant-danger {
   background: rgba(248, 113, 113, 0.15);
   border: none;
   color: #f87171;
-}
-
-.action-btn.variant-danger:hover {
-  background: rgba(248, 113, 113, 0.25);
 }

@@ -80,6 +80,11 @@ export function getClubArenaNavigation({
           description: 'Finishes, prizes, and past events',
         },
         {
+          label: 'My Spin Results',
+          path: '/tournament-results?filter=mine&type=spin',
+          description: 'Your Spin finishes and prizes',
+        },
+        {
           label: 'Hand History',
           path: '/hand-history',
           description: 'Review, replay, and share hands',

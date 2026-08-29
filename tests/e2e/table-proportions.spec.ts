@@ -42,6 +42,7 @@
 import { test, expect } from '@playwright/test';
 import { chromium } from 'playwright';
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 import {
   buildCss,
   buildHtml,
@@ -289,6 +290,123 @@ test.describe('every device gets the same proportions', () => {
       }
     }
     expect(offenders, 'two different-sized tables drew the same card — that is a rung').toEqual([]);
+  });
+
+  test('the felt is edge-to-edge on portrait phones (Dan 2026-08-26, restored 2026-08-29)', async ({
+    page,
+  }) => {
+    /* SHIPPED BUG, twice. #950 removed the 4px side gutters "per Dan --
+       edge-to-edge felt" and wrote 375x619.8 into the comment -- but deleting
+       an override resurrects the base rule, and the base `.table-container`
+       shorthand pays 12px gutters. So the "widening" narrowed every
+       width-bound phone (390x844 rendered a 364px felt on production,
+       measured 2026-08-29) and nothing noticed for three days, because no
+       spec asserted what the comment claimed. Dan, 2026-08-29: "the table
+       width and length has shrunk and need to be put back to how it was."
+
+       The two devices named here are the width-bound portrait phones in
+       DEVICES: their height budget allows a wider oval than the screen, so
+       the screen is the limit and the felt must reach both edges of it. If
+       this fails with a felt a few px short, a side gutter came back --
+       check the `.table-container` padding longhands at <=768px in
+       TablePage.css before anything else. If it fails because the felt is
+       far narrower, the height budget shrank and the device stopped being
+       width-bound; that is a real felt-size change and belongs in front of
+       Dan, not silently under this beat. */
+    const WIDTH_BOUND_PHONES = ['iPhone 12/13/14', 'iPhone 14 Pro Max'];
+    const rows = await measureAll(page, css);
+    const offenders: string[] = [];
+    for (const r of rows) {
+      if (!WIDTH_BOUND_PHONES.includes(r.device)) continue;
+      const vpW = Number(r.vp.split('x')[0]);
+      if (Math.abs(r.feltW - vpW) > 0.5) {
+        offenders.push(
+          `${r.device} (${r.vp}): felt is ${r.feltW}px on a ${vpW}px screen -- ` +
+            `${(vpW - r.feltW).toFixed(1)}px of gutter came back`
+        );
+      }
+    }
+    expect(
+      offenders,
+      'a width-bound phone is no longer edge-to-edge. The likely cause is a padding ' +
+        'longhand on .table-container reappearing (or being deleted -- deletion ' +
+        'resurrects the base 12px, which is how this shipped the first time).'
+    ).toEqual([]);
+  });
+
+  test('nothing on the felt changes size without saying so (the geometry baseline)', async ({
+    page,
+  }) => {
+    /* Dan 2026-08-29: "YOU NEED TO ADD PREVENTIVE REGRESSION TO ALL ASPECTS
+       ... WE DON'T EVER WANT THINGS RANDOMLY REGRESSING."
+
+       Every other beat in this file pins a RATIO, and ratios cannot see the
+       whole table shrinking -- when the felt loses 26px and everything on it
+       scales down in step, every fraction stays flat and every beat stays
+       green. That is exactly how #950 shipped a narrower felt for three days
+       with all checks passing.
+
+       This beat pins the ABSOLUTE numbers: nine CSS-derived box sizes on all
+       thirteen devices, against a committed baseline. An intended size change
+       ships by regenerating the baseline IN THE SAME COMMIT --
+
+           node scripts/dev/update-geometry-baseline.mjs
+
+       -- reading the diff, and stating the change in the PR. An unexplained
+       geometry-baseline.json hunk is to be treated exactly like a weakened
+       law-test pin: it IS the regression, wearing a green check.
+
+       Tolerance is 1px: the numbers are pure CSS arithmetic (no text metrics),
+       so macOS and CI Linux agree to well under that; a real size change moves
+       a number by several px on at least one device. */
+    const baseline = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'tests/e2e/support/geometry-baseline.json'), 'utf8')
+    ) as Record<string, Record<string, number | string>>;
+    const FIELDS = [
+      'feltW',
+      'feltH',
+      'btnH',
+      'card2W',
+      'card2H',
+      'avatar',
+      'heroAvatar',
+      'seatW',
+      'plo4Row',
+    ] as const;
+
+    const rows = await measureAll(page, css);
+    const offenders: string[] = [];
+    for (const r of rows) {
+      const want = baseline[r.device];
+      if (!want) {
+        offenders.push(
+          `${r.device}: not in geometry-baseline.json -- a new device needs a regenerated baseline`
+        );
+        continue;
+      }
+      for (const f of FIELDS) {
+        const got = r[f] as number;
+        const exp = want[f] as number;
+        if (typeof exp !== 'number') {
+          offenders.push(`${r.device}.${f}: baseline entry missing -- regenerate the baseline`);
+          continue;
+        }
+        if (Math.abs(got - exp) > 1) {
+          offenders.push(
+            `${r.device} (${r.vp}): ${f} is ${got}px, baseline says ${exp}px ` +
+              `(${(got - exp > 0 ? '+' : '') + (got - exp).toFixed(1)}px)`
+          );
+        }
+      }
+    }
+
+    expect(
+      offenders,
+      'a size changed and the baseline was not regenerated. If the change is intended: ' +
+        'run `node scripts/dev/update-geometry-baseline.mjs`, READ the diff, commit it ' +
+        'in this same PR and state the size change in the description. If it is not ' +
+        'intended, congratulations -- this beat just did its job.'
+    ).toEqual([]);
   });
 
   test('every card stays legible and every touch target stays tappable', async ({ page }) => {

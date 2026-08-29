@@ -97,11 +97,6 @@
   transition: all 0.15s ease;
 }
 
-.waitlist-modal__close:hover {
-  background: rgba(248, 81, 73, 0.3);
-  color: #f85149;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    TABLE INFO
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -215,10 +210,6 @@
   align-items: center;
   padding: 10px 20px;
   transition: background 0.15s ease;
-}
-
-.waitlist-modal__player:hover {
-  background: rgba(255, 255, 255, 0.03);
 }
 
 .waitlist-modal__player--me {
@@ -352,10 +343,6 @@
   transition: all 0.15s ease;
 }
 
-.waitlist-modal__leave-btn:hover {
-  background: rgba(248, 81, 73, 0.25);
-}
-
 .waitlist-modal__close-btn {
   padding: 12px 32px;
   font-size: 0.875rem;
@@ -366,10 +353,6 @@
   color: #e4e6eb;
   cursor: pointer;
   transition: all 0.15s ease;
-}
-
-.waitlist-modal__close-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
 }
 
 /* Confirm Dialog */

@@ -72,11 +72,6 @@
   transition: all var(--duration-fast) var(--ease-out);
 }
 
-.shell-hamburger:hover {
-  background: var(--elevated-surface);
-  border-color: var(--royal-blue);
-}
-
 .shell-logo-link {
   display: flex;
   align-items: center;
@@ -117,11 +112,6 @@
   transition: all var(--duration-fast) var(--ease-out);
 }
 
-.shell-nav-link:hover {
-  color: var(--text-primary);
-  background: var(--elevated-surface);
-}
-
 .shell-nav-link.active {
   color: var(--royal-blue-light);
   background: var(--royal-blue-dim);
@@ -147,11 +137,6 @@
   border-radius: var(--radius-full);
   border: 1px solid rgba(255, 255, 255, 0.08);
   transition: all 0.2s ease;
-}
-
-.shell-chips:hover {
-  background: rgba(255, 184, 0, 0.06);
-  border-color: rgba(255, 184, 0, 0.2);
 }
 
 .chip-icon {
@@ -191,11 +176,6 @@
   transition: all var(--duration-fast) var(--ease-out);
 }
 
-.shell-diamonds:hover {
-  background: rgba(96, 165, 250, 0.1);
-  border-color: rgba(96, 165, 250, 0.3);
-}
-
 .diamond-icon {
   font-size: var(--text-lg);
 }
@@ -221,11 +201,6 @@
   transition: all var(--duration-fast) var(--ease-out);
 }
 
-.shell-avatar:hover {
-  border-color: var(--royal-blue-light);
-  box-shadow: var(--shadow-glow-blue);
-}
-
 /* VIP Badge */
 .shell-vip-badge {
   display: flex;
@@ -240,12 +215,6 @@
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--duration-fast) var(--ease-out);
-}
-
-.shell-vip-badge:hover {
-  background: rgba(255, 215, 0, 0.1);
-  border-color: rgba(255, 215, 0, 0.3);
-  color: #ffd700;
 }
 
 .shell-vip-badge.vip-active {
@@ -281,11 +250,6 @@
   font-size: var(--text-lg);
   cursor: pointer;
   transition: all var(--duration-fast) var(--ease-out);
-}
-
-.shell-notifications:hover {
-  background: var(--royal-blue-dim);
-  border-color: var(--royal-blue);
 }
 
 .notification-badge {
@@ -355,7 +319,6 @@
   border-radius: var(--radius-lg);
 }
 
-.shell-mobile-nav a:hover,
 .shell-mobile-nav a:active {
   color: var(--text-primary);
   background: var(--elevated-surface);

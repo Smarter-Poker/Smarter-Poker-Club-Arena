@@ -23,7 +23,7 @@ import {
   determineWinners,
   describeHand,
 } from './PokerEngine.js';
-import { isOmahaVariant } from './VariantRules.js';
+import { deckSizeFor, isOmahaVariant, isShortDeckVariant } from './VariantRules.js';
 import type { SeatPlayer, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
@@ -410,10 +410,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           const current = this.handController.getState();
           const p = current.players.find((pl) => pl.seat === seat);
           if (!p || p.is_folded || p.cards.length !== 3) return;
+          // 2026-08-29: the HAND's variant. Pineapple discard logic is chosen
+          // per hand, and a bomb-pot variant override changes what the three
+          // cards in front of this horse actually are. Same seam as everywhere
+          // else that asks "what game is this hand".
           const idx = HorseLogic.decideDiscard(
             p.cards,
             current.communityCards,
-            (this.tableInfo?.game_variant || 'pineapple') as string
+            (this.activeHandVariant() || 'pineapple') as string
           );
           this.handController.performDiscard(seat, idx);
         } catch {
@@ -561,13 +565,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // dramatic runouts on the platform get their percentages back.
     // ═══════════════════════════════════════════════════════════════════════
     if (allInPlayers.length >= 2) {
-      const hcState = doubleBoardHand ? this.handController.getState?.() : null;
-      const extraBoards = hcState
-        ? [hcState.communityCards2, hcState.communityCards3].filter(
-            (b): b is import('../types.js').Card[] => Array.isArray(b) && b.length > 0
-          )
-        : undefined;
-      void this.broadcastAllInEquity(allInPlayers, board, pot, extraBoards);
+      void this.broadcastAllInEquity(allInPlayers, board, pot, this.liveExtraBoards());
     }
     const insuranceEnabled = this.insuranceEngine.isEnabled(this.tableId) && !doubleBoardHand;
     // SEQUENCING 2026-08-26 (Dan's leader-seat recording): when BOTH features
@@ -614,8 +612,18 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       // - Multiple side pots are handled: each pot evaluated per board.
       // ═══════════════════════════════════════════════════════════════════════
       if (ritFirst && allInPlayers.length >= 2 && board.length < 5) {
-        // Determine the chooser: player with the BEST ACTUAL HAND right now
-        const variant = this.tableInfo?.game_variant || 'nlh';
+        // Determine the chooser: player with the BEST ACTUAL HAND right now.
+        //
+        // 2026-08-29: reads activeHandVariant(), not tableInfo.game_variant.
+        // A SINGLE-board bomb pot with a variant override is fully eligible
+        // for RIT (only MULTI-board hands are suppressed), and on one the
+        // table says nlh while the players are holding four cards each — so
+        // the chooser was elected with a Hold'em evaluator on Omaha hands and
+        // the wrong player was given the right to pick 1/2/3 boards.
+        // dealAndResolveRIT already settles with the hand's own variant
+        // (getVariant, below); this is the election catching up with it.
+        // activeHandVariant is the ONE seam for "what game is this hand".
+        const variant = this.activeHandVariant();
         // Review fix 2026-08-25: isOmahaVariant, not startsWith('plo') —
         // flo8 (fixed-limit Omaha 8) is an Omaha variant that the prefix
         // check silently evaluated as a hold'em hand.
@@ -885,7 +893,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         if (allInPlayers.length >= 2) {
           await this.sleep(this.allInStreetRevealMs);
           if (!this.running || this.handController !== controller) break;
-          await this.broadcastAllInEquity(allInPlayers, result.board, pot);
+          // liveExtraBoards 2026-08-29: dealNextStreet fills boards 2/3 in
+          // lockstep but returns only board 1, so this refresh had been
+          // dropping to single-board pricing on every street of a multi-board
+          // bomb pot. Read them from the controller instead.
+          await this.broadcastAllInEquity(allInPlayers, result.board, pot, this.liveExtraBoards());
         }
 
         if (result.complete) break;
@@ -1676,6 +1688,37 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     return { equity: r.equity, strictLossPct: r.strictLossPct, pushPct: r.pushPct };
   }
 
+  /**
+   * BOARDS 2..N AS THEY STAND RIGHT NOW (2026-08-29).
+   *
+   * Every equity broadcast on a multi-board hand needs these, and only the
+   * FIRST one had them. `dealNextStreet()` fills boards 2 and 3 in lockstep
+   * with board 1 but returns `{ board, stage, complete }` — board 1 alone — so
+   * the three later broadcast sites (the paced runout's per-street refresh,
+   * the insurance per-street flow's, and the RIT continuation's) had nothing
+   * to pass and silently fell back to single-board pricing.
+   *
+   * The effect was that a double or triple board bomb pot showed correct
+   * averaged percentages at the moment of the all-in and then WRONG ones for
+   * the flop, the turn and the river — the numbers drifting further from the
+   * truth exactly as the hand got more dramatic, which is the opposite of what
+   * the multi-board equity work was for.
+   *
+   * Reading the controller's live state at each broadcast is what makes them
+   * agree, and it is cheap: three field reads, and nothing at all on a
+   * single-board hand. Boards shorter than board 1 are excluded rather than
+   * priced — an empty or partial board is not a board the solver can run.
+   */
+  protected liveExtraBoards(): import('../types.js').Card[][] | undefined {
+    if (!(this.handController?.isDoubleBoardActive?.() ?? false)) return undefined;
+    const st = this.handController?.getState?.();
+    if (!st) return undefined;
+    const extras = [st.communityCards2, st.communityCards3].filter(
+      (b): b is import('../types.js').Card[] => Array.isArray(b) && b.length > 0
+    );
+    return extras.length > 0 ? extras : undefined;
+  }
+
   protected async broadcastAllInEquity(
     allInPlayers: import('../types.js').SeatPlayer[],
     board: import('../types.js').Card[],
@@ -1899,10 +1942,28 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // number the pricing uses); a dead-even matchup (within 0.05%) offers to
     // nobody, mirroring the tied-hands rule.
     // ═══════════════════════════════════════════════════════════════════════
-    const variant = this.tableInfo?.game_variant || 'nlh';
+    /**
+     * THE HAND'S VARIANT, NOT THE TABLE'S (2026-08-29).
+     *
+     * Insurance is suppressed only on MULTI-board bomb pots. A SINGLE-board
+     * bomb pot carrying a variant override — an NLH table dealing one PLO
+     * board, which is a supported and host-selectable configuration — is fully
+     * eligible, and every line below ran on `tableInfo.game_variant`.
+     *
+     * That means the leader was elected with a Hold'em evaluator against
+     * four-card holdings, and insuranceEquity was then handed 'nlh' and priced
+     * the contract as though those extra two cards did not exist. Insurance
+     * premiums and payouts are real money, so this was the wrong player being
+     * offered the wrong price.
+     *
+     * activeHandVariant() is the one seam every "what game is this hand"
+     * consumer reads, and broadcastAllInEquity two hundred lines below already
+     * uses it. This block was simply missed when the rest were converted.
+     */
+    const variant = this.activeHandVariant();
     const isOmaha = isOmahaVariant(variant);
     const handEvaluator = isOmaha ? evaluateOmahaHand : evaluateHand;
-    const isShortDeckPreflop = variant === 'short_deck';
+    const isShortDeckPreflop = isShortDeckVariant(variant);
 
     let bestHandPlayer: { playerId: string; holeCards: import('../types.js').Card[] } | null = null;
     let isTied = false;
@@ -1943,7 +2004,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     }
 
     // FIX 139: Pass shortDeck to insurance engine for correct equity calculations
-    const isShortDeckInsurance = this.tableInfo?.game_variant === 'short_deck';
+    // 2026-08-29: the HAND's variant, for the same reason as the block above —
+    // and via isShortDeckVariant rather than a string equality, so a new
+    // short-deck spelling cannot silently price a 36-card game off a 52-card
+    // deck.
+    const isShortDeckInsurance = isShortDeckVariant(variant);
 
     // FIX-A12: full all-in set with each player's at-risk (their own committed
     // chips) so the engine prices the leader against the KNOWN opponent hands.
@@ -2096,7 +2161,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // card that is still turning over (Dan 2026-08-28).
     await this.sleep(this.allInStreetRevealMs);
     if (!this.handController) return;
-    await this.broadcastAllInEquity(allInPlayers, result.board, pot);
+    // liveExtraBoards 2026-08-29: same reason as the paced runout — the street
+    // result carries board 1 only. Harmless on this path today (insurance is
+    // suppressed on multi-board hands) but it is the same call in the same
+    // shape, and leaving one broadcast reading a different truth is how the
+    // first one came to be wrong.
+    await this.broadcastAllInEquity(allInPlayers, result.board, pot, this.liveExtraBoards());
 
     if (result.complete) {
       // River is down — settle (insurance included) via the normal finalize.
@@ -2179,7 +2249,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     if (context && context.outs.length > 0) {
       const known =
         context.board.length + context.allInPlayers.reduce((n, p) => n + (p.cards?.length ?? 0), 0);
-      const deckSize = this.tableInfo?.game_variant === 'short_deck' ? 36 : 52;
+      // 2026-08-29: the HAND's variant, through VariantRules. This is the
+      // denominator of the outs percentage a player reads in the insurance
+      // popup ("10 Outs - 22.7%"), and it was computed from the TABLE's
+      // variant against a hardcoded 36/52 — so on a single-board bomb pot
+      // carrying a variant override the number quoted to the player was drawn
+      // from the wrong deck. Found by the guard pin for the leader-election
+      // fix, which is the same defect one function further along.
+      const deckSize = deckSizeFor(this.activeHandVariant());
       const unseen = Math.max(1, deckSize - known);
       outPct = Math.round((context.outs.length / unseen) * 1000) / 10;
     }

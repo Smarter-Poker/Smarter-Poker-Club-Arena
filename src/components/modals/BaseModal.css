@@ -94,11 +94,6 @@
   transition: all 0.2s;
 }
 
-.modal-close:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-}
-
 .modal-body {
   padding: 24px;
   overflow-y: auto;

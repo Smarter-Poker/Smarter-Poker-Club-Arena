@@ -43,10 +43,6 @@
   flex-shrink: 0;
 }
 
-.banner-cta:hover {
-  background: rgba(255, 255, 255, 0.3);
-}
-
 .banner-dismiss {
   position: absolute;
   top: 8px;
@@ -63,9 +59,4 @@
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
-}
-
-.banner-dismiss:hover {
-  background: rgba(0, 0, 0, 0.4);
-  color: #fff;
 }

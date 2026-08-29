@@ -61,7 +61,14 @@ export interface UserSettings {
 
 export const DEFAULT_SETTINGS: UserSettings = {
   soundEnabled: true,
-  soundVolume: 80,
+  /* 70, not 80. This was the ONE outlier among four copies of this default:
+     useTableSettings, SettingsPanel and the `sound_volume` column all say 70,
+     and that migration's COMMENT ON COLUMN says the client and DB "MUST agree".
+     It was masked on the normal path because `fromTableSettings` overrides it
+     from the table store — but `validateSettings` falls back to this value for
+     any stored blob that fails validation, at which point saving raised the
+     player's volume by 14% without being asked. */
+  soundVolume: 70,
 
   theme: 'dark',
   cardBack: 'classic_blue',
@@ -169,9 +176,31 @@ export const CARD_BACKS = CARD_BACK_CATALOG.filter((d) => d.tier === 'standard')
  * Every key below is one the table genuinely consumes; the file:line of each
  * consumer is noted so a future edit can check the other end still exists.
  */
-export function toTableSettings(s: UserSettings): Partial<TableUserSettings> {
+export function toTableSettings(
+  s: UserSettings,
+  /**
+   * What the table store currently holds. Optional so existing callers keep
+   * working; passing it is what makes the animation-speed round trip lossless.
+   */
+  current?: TableUserSettings
+): Partial<TableUserSettings> {
+  /* PRESERVE A SPEED THIS PAGE CANNOT NAME. The store's scale is
+     0.5 | 1 | 1.5 | 2 and this page offers three labels, so a stored 2 comes in
+     as 'slow' and would go back out as 1.5 — a value silently changed by a page
+     the user opened to change something else. If the label still describes the
+     stored number, keep the number. */
+  const labelOf = (n: number) => (n >= 1.5 ? 'slow' : n <= 0.5 ? 'fast' : 'normal');
+  const animationSpeed =
+    current && labelOf(current.animationSpeed) === s.animationSpeed
+      ? current.animationSpeed
+      : s.animationSpeed === 'slow'
+        ? 1.5
+        : s.animationSpeed === 'fast'
+          ? 0.5
+          : 1;
+
   return {
-    // soundService.setMasterVolume — TablePage useEffect on soundVolume
+    // soundService.setMasterVolume — useTableSettings applyGateChanges
     isSoundEnabled: s.soundEnabled,
     soundVolume: s.soundVolume,
     // SeatSlot cardBack -> <CardBack style> -> .card-back--<id>
@@ -180,15 +209,17 @@ export function toTableSettings(s: UserSettings): Partial<TableUserSettings> {
     fourColorDeck: s.fourColorDeck,
     // --animation-speed CSS custom property. It is a DURATION MULTIPLIER, so
     // a bigger number is a SLOWER animation. Inverting this is the easy bug.
-    animationSpeed: s.animationSpeed === 'slow' ? 1.5 : s.animationSpeed === 'fast' ? 0.5 : 1,
+    animationSpeed,
     // ActionPanel showPotOdds
     showPotOdds: s.showPotOdds,
     // TournamentStartingTicker — Dan 2026-08-28 ticker on/off
     showTicker: s.showTicker,
     // ActionPanel confirmAllIn
     confirmAllIn: s.confirmAllIn,
-    // TablePage: suppress the show/muck prompt on an uncontested win
-    autoMuckWinners: s.autoMuckWinners,
+    /* autoMuckWinners: NOT written. Its control was removed from SettingsPage on
+       2026-08-29 because the prompt it governs has been hard-disabled since
+       2026-08-23 — see the note where the toggle used to be. Writing a column
+       that no control governs is how `live_notifications` got clobbered. */
   };
 }
 
@@ -204,6 +235,15 @@ export function fromTableSettings(t: TableUserSettings, base: UserSettings): Use
       ? t.cardBack
       : normalizeCardBack(t.cardBack) || base.cardBack,
     fourColorDeck: t.fourColorDeck,
+    /* LOSSY, and knowingly so. `TableUserSettings.animationSpeed` is documented
+       as 0.5 | 1 | 1.5 | 2, and this page offers three choices, so a stored 2
+       reads back as 'slow' and `toTableSettings` maps 'slow' to 1.5. Opening
+       /settings and pressing Save — without touching the animation control —
+       used to change a 2 into a 1.5 permanently.
+
+       `toTableSettings` now preserves an unchanged selection instead of
+       re-deriving it, so the round trip is only lossy if the user actually
+       picks a different speed, which is a choice rather than a side effect. */
     animationSpeed: t.animationSpeed >= 1.5 ? 'slow' : t.animationSpeed <= 0.5 ? 'fast' : 'normal',
     showPotOdds: t.showPotOdds,
     showTicker: t.showTicker,

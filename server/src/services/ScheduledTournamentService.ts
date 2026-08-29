@@ -634,6 +634,30 @@ export class ScheduledTournamentService {
         new Error(`[ScheduledTournaments] insert failed for ${spawnKey}: ${msg}`),
         'ScheduledTournaments.insert_failed'
       );
+      // THE POP-UP (Dan 2026-08-29): "IF THE BANK DOESN'T HOLD ENOUGH CHIPS A
+      // POP UP MUST APPEAR LETTING THE CLUB OR UNION KNOW THEY NEED MORE CHIPS
+      // IN THE BANK TO COVER THE GUARANTEE."
+      //
+      // The guard is a BEFORE INSERT trigger, and a trigger that raises rolls
+      // back everything it wrote itself — so the refusal CANNOT write its own
+      // notification. This is the other half: on the guard's signature
+      // ('cannot guarantee', errcode 55000), write the durable owner-facing
+      // notification from a fresh transaction. fn_notify_guarantee_bank_short
+      // dedupes on unread per recipient per bank, so a schedule that re-fails
+      // every 30s poll produces ONE standing bell notification, not a storm.
+      if (/cannot guarantee/i.test(msg) && row.club_id) {
+        const { error: notifyErr } = await supabase.rpc('fn_notify_guarantee_bank_short', {
+          p_club_id: row.club_id,
+        });
+        if (notifyErr) {
+          reportError(
+            new Error(
+              `[ScheduledTournaments] guarantee refusal could not notify the owners: ${notifyErr.message}`
+            ),
+            'ScheduledTournaments.guarantee_notify_failed'
+          );
+        }
+      }
       return;
     }
 
@@ -1193,6 +1217,19 @@ export class ScheduledTournamentService {
         ),
         'ScheduledTournaments.restart_insert_failed'
       );
+      // Same pop-up rule as the scheduled spawn path: a guarantee refusal must
+      // reach the owners, and the raising trigger cannot write it itself.
+      if (/cannot guarantee/i.test(msg) && (row as { club_id?: string }).club_id) {
+        const { error: notifyErr } = await supabase.rpc('fn_notify_guarantee_bank_short', {
+          p_club_id: (row as { club_id?: string }).club_id,
+        });
+        if (notifyErr) {
+          reportError(
+            new Error(`restart guarantee refusal could not notify: ${notifyErr.message}`),
+            'ScheduledTournaments.guarantee_notify_failed'
+          );
+        }
+      }
       return;
     }
 

@@ -385,20 +385,6 @@
   }
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .card:hover:not(:disabled) {
-    transform: translateY(-3px);
-    border-color: rgba(54, 185, 255, 0.48);
-    box-shadow:
-      inset 0 1px rgba(255, 255, 255, 0.07),
-      0 20px 42px rgba(0, 0, 0, 0.38);
-  }
-  .navTab:hover {
-    border-color: rgba(54, 185, 255, 0.42);
-    color: #d7edf7;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .card {
     transition: none;

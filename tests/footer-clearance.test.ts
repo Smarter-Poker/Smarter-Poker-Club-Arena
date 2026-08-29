@@ -38,10 +38,14 @@ describe('global Club Arena footer mounting and clearance', () => {
     expect(duplicateMounts).toEqual([]);
   });
 
-  it('shares a proportional artwork-derived height and safe-area clearance', () => {
-    for (const sheet of ['src/styles/globals.css', 'src/styles/design-system.css']) {
+  it('shares a compact, touch-safe height and safe-area clearance', () => {
+    for (const sheet of [
+      'src/styles/club-engine.css',
+      'src/styles/globals.css',
+      'src/styles/design-system.css',
+    ]) {
       const css = readFileSync(join(ROOT, sheet), 'utf8');
-      expect(css).toContain('--bottom-nav-height: clamp(44px, calc(13.3612vw - 0.5344px), 256px)');
+      expect(css).toContain('--bottom-nav-height: clamp(44px, 9vw, 108px)');
       expect(css).toContain(
         '--bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px))'
       );
@@ -53,12 +57,13 @@ describe('global Club Arena footer mounting and clearance', () => {
 
     expect(css).toMatch(/\.viewport\s*\{[\s\S]*?overflow:\s*hidden/);
     expect(css).toMatch(/\.artwork\s*\{[\s\S]*?width:\s*calc\(100% - 4px\)/);
+    expect(css).toMatch(/\.artwork\s*\{[\s\S]*?height:\s*var\(--bottom-nav-height/);
     expect(css).not.toContain('overflow-x: auto');
     expect(css).not.toContain('width: 640px');
     expect(css).not.toContain('min-width: 640px');
   });
 
-  it('reserves footer clearance in both routed and standalone lobby shells', () => {
+  it('reserves footer clearance on routed pages but not the footerless root lobby', () => {
     const appLayout = readFileSync(
       join(ROOT, 'src/components/layouts/AppLayout.module.css'),
       'utf8'
@@ -66,7 +71,8 @@ describe('global Club Arena footer mounting and clearance', () => {
     const home = readFileSync(join(ROOT, 'src/pages/HomePage.module.css'), 'utf8');
 
     expect(appLayout).toMatch(/\.main\s*\{[\s\S]*?padding-bottom:[^;]*--bottom-nav-clearance/);
-    expect(home).toMatch(/\.mainContent\s*\{[\s\S]*?padding:[^;]*--bottom-nav-clearance/);
+    expect(home).toMatch(/\.mainContent\s*\{[\s\S]*?padding:\s*0 16px 16px/);
+    expect(home.match(/\.mainContent\s*\{[\s\S]*?\}/)?.[0]).not.toContain('--bottom-nav-clearance');
   });
 
   it('keeps the approved production artwork lossless after the dist optimizer', () => {

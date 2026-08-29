@@ -125,10 +125,9 @@
      ═══════════════════════════════════════════════════════════════ */
 
   --header-height: 56px;
-  /* Approved footer artwork is 1916:256. It scales proportionally with the
-     viewport, caps at source resolution, and stays 86px tall on narrow phones
-     where its 640px intrinsic scroller preserves readable controls. */
-  --bottom-nav-height: clamp(44px, calc(13.3612vw - 0.5344px), 256px);
+  /* Keep all six approved controls visible in a compact fixed bar. The floor
+     is a full touch target and the ceiling protects the content viewport. */
+  --bottom-nav-height: clamp(44px, 9vw, 108px);
   --bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   --sidebar-width: 280px;
   --max-width-mobile: 480px;

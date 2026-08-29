@@ -133,10 +133,10 @@
 
   /* ─────────────── Layout ─────────────── */
   --header-height: 56px;
-  /* Lossless approved artwork is 1916:256. Keep its exact ratio on tablet and
-     desktop; on phones its internal 640px scroller yields an 86px physical bar
-     and 44px+ targets without distorting the raster. */
-  --bottom-nav-height: clamp(44px, calc(13.3612vw - 0.5344px), 256px);
+  /* The complete approved footer remains visible, but its display height is
+     intentionally compressed so fixed navigation never consumes a card row.
+     The 44px floor preserves touch targets; 108px is the desktop ceiling. */
+  --bottom-nav-height: clamp(44px, 9vw, 108px);
   /* What a page must actually reserve: the bar plus the phone's home-indicator
      inset, which the bar adds to its own padding on iOS. Reserving the bar
      alone is why content still hid behind it on notched devices. */

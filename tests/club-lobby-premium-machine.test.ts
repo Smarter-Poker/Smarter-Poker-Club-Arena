@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -9,7 +9,7 @@ const CSS = readFileSync(resolve(ROOT, 'src/components/lobby/ClubLobbyCommandTop
 const TABLE_CSS = readFileSync(resolve(ROOT, 'src/components/lobby/LobbyTable.css'), 'utf8');
 
 describe('premium single-frame club lobby', () => {
-  it('mounts the approved generated chassis around both the command top and game results', () => {
+  it('mounts the approved reference chassis around both the command top and game results', () => {
     const machine = PAGE.indexOf('className="club-lobby-machine"');
     const chassis = PAGE.indexOf('src={CLUB_LOBBY_CHASSIS}', machine);
     const commandTop = PAGE.indexOf('<ClubLobbyCommandTop', machine);
@@ -27,19 +27,44 @@ describe('premium single-frame club lobby', () => {
       'const CLUB_LOBBY_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/lobby`'
     );
     expect(PAGE).toContain('src={CLUB_LOBBY_CHASSIS}');
+    expect(PAGE).toContain('lobby-approved-desktop-reference-v3.png');
     expect(PAGE).toContain('src={club.banner_url || CLUB_LOBBY_CAMPAIGN}');
     expect(PAGE).not.toContain('src="/assets/club-buttons/lobby/');
     expect(PAGE).not.toContain("'/assets/club-buttons/lobby/");
   });
 
   it('uses the full native artwork ratio and maps every live region to its own bay', () => {
-    expect(CSS).toContain('aspect-ratio: 1086 / 1448');
+    expect(CSS).toContain('aspect-ratio: 734 / 977');
+    expect(CSS).toContain('734px');
     expect(CSS).toMatch(/club-lobby-command-top__welcome\s*\{[^}]*inset:\s*2\.35%/s);
-    expect(CSS).toMatch(/club-lobby-command-top__controls\s*\{[^}]*inset:\s*15\.25%/s);
-    expect(CSS).toMatch(/club-lobby-command-top__campaign\s*\{[^}]*inset:\s*28\.1%/s);
+    expect(CSS).toMatch(/club-lobby-command-top__welcome\s*\{[^}]*5\.15%/s);
+    expect(CSS).toMatch(/club-lobby-command-top__controls\s*\{[^}]*inset:\s*15\.35%/s);
+    expect(CSS).toMatch(/club-lobby-command-top__campaign\s*\{[^}]*inset:\s*28\.25%/s);
     expect(CSS).toMatch(
-      /club-lobby-machine\s*>\s*\.club-home__games--v2\s*\{[^}]*inset:\s*40\.25%/s
+      /club-lobby-machine\s*>\s*\.club-home__games--v2\s*\{[^}]*inset:\s*39\.2%/s
     );
+  });
+
+  it('uses the exact Shark Club wordmark without hard-coding it over every other club', () => {
+    expect(PAGE).toContain(
+      "exactDesktopWelcome={club.name.trim().toLocaleLowerCase() === 'shark club'}"
+    );
+    expect(TOP).toContain('exactDesktopWelcome = false');
+    expect(TOP).toContain('club-lobby-command-top__welcome--approved-shark');
+    expect(CSS).toMatch(
+      /club-lobby-command-top__welcome--approved-shark \.club-lobby-command-top__welcome-copy \{[^}]*opacity: 0/s
+    );
+    expect(CSS).toMatch(
+      /@media \(max-width: 900px\)[\s\S]*?club-lobby-command-top__welcome--approved-shark \{[^}]*aspect-ratio: 734 \/ 150[^}]*background: var\(--machine-header-frame\)/s
+    );
+  });
+
+  it('keeps the bottom medallion above the scrolling tournament ledger', () => {
+    expect(CSS).toContain('--machine-approved-chassis');
+    expect(CSS).toMatch(/\.club-lobby-machine::after \{[^}]*z-index: 7/s);
+    expect(CSS).toMatch(/\.club-lobby-machine::after \{[^}]*bottom: 0/s);
+    expect(CSS).toMatch(/\.club-lobby-machine::after \{[^}]*-328px -901px \/ 734px 977px/s);
+    expect(CSS).toMatch(/club-lobby-machine\s*>\s*\.club-home__games--v2\s*\{[^}]*z-index:\s*2/s);
   });
 
   it('uses the real campaign art without stretching it and keeps the desktop ledger mechanical', () => {
@@ -52,15 +77,17 @@ describe('premium single-frame club lobby', () => {
     expect(CSS).toContain('.club-lobby-machine .lobby-table--mtt .lt-col-tstack');
   });
 
-  it('renders selector faces from the approved metal shell instead of generic CSS buttons', () => {
-    expect(CSS).toContain(
-      "--machine-nav-shell: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp')"
-    );
+  it('renders selector faces extracted directly from the approved reference', () => {
+    expect(CSS).toContain('lobby-selector-default-v3.png');
+    expect(CSS).toContain('lobby-selector-active-v3.png');
+    expect(CSS).toContain('lobby-preference-default-v3.png');
+    expect(CSS).toContain('lobby-preference-active-v3.png');
+    expect(CSS).toContain('lobby-filter-default-v3.png');
     expect(CSS).toMatch(
-      /\.lobby-controls \.game-bar__type,[\s\S]*?background:\s*var\(--machine-nav-shell\)/
+      /\.lobby-controls \.game-bar__type,[\s\S]*?var\(--machine-selector-default\)/
     );
-    expect(CSS).toMatch(/\.game-bar__type\.is-active::before,[\s\S]*?border-color:\s*#52bdff/);
-    expect(CSS).not.toMatch(/\.game-bar__type\.is-active[^}]*background:[^;]*#(?:2f|3b|25)6/s);
+    expect(CSS).toMatch(/\.game-bar__type\.is-active,[\s\S]*?var\(--machine-selector-active\)/);
+    expect(CSS).not.toContain('--machine-nav-shell');
   });
 
   it('has a dedicated connected mobile console with accessible controls', () => {
@@ -68,22 +95,40 @@ describe('premium single-frame club lobby', () => {
 
     expect(mobile).toContain('.club-lobby-machine__chassis');
     expect(mobile).toMatch(/\.club-lobby-machine__chassis\s*\{\s*display:\s*none/s);
-    expect(mobile).toMatch(
-      /\.club-lobby-command-top\s*\{[^}]*position:\s*relative[^}]*border-image:\s*var\(--machine-utility-shell\)/s
-    );
+    expect(mobile).toContain('border-image-source: var(--machine-header-frame)');
+    expect(mobile).toContain('border-image-source: var(--machine-controls-frame)');
+    expect(mobile).toContain('border-image-source: var(--machine-campaign-frame)');
     expect(mobile).toMatch(/\.game-bar\s*\{[^}]*grid-template-columns:\s*repeat\(4,/s);
     expect(mobile).toMatch(
       /\.game-bar__type,[\s\S]*?\.quickprefs__chip\s*\{[^}]*min-height:\s*44px/s
     );
+    expect(mobile).toMatch(
+      /\.club-lobby-command-top::before\s*\{[^}]*left:\s*0[^}]*width:\s*1px[^}]*background:\s*#000/s
+    );
   });
 
-  it('recesses the live campaign image inside its own hardware shell', () => {
-    expect(CSS).toMatch(
-      /\.club-lobby-command-top__campaign-button\s*\{[^}]*background:\s*var\(--machine-nav-shell\)/s
-    );
+  it('uses the approved campaign directly without adding an unapproved nested frame', () => {
+    expect(CSS).toMatch(/\.club-lobby-command-top__campaign-button\s*\{[^}]*background:\s*#000/s);
     expect(CSS).toMatch(
       /\.club-lobby-command-top__campaign-button img\s*\{[^}]*object-fit:\s*cover/s
     );
+  });
+
+  it('keeps every reference-derived runtime asset present', () => {
+    const lobbyAssets = resolve(ROOT, 'public/assets/club-buttons/lobby');
+    for (const file of [
+      'lobby-approved-desktop-reference-v3.png',
+      'lobby-header-frame-v3.png',
+      'lobby-controls-frame-v3.png',
+      'lobby-campaign-frame-v3.png',
+      'lobby-selector-default-v3.png',
+      'lobby-selector-active-v3.png',
+      'lobby-preference-default-v3.png',
+      'lobby-preference-active-v3.png',
+      'lobby-filter-default-v3.png',
+    ]) {
+      expect(existsSync(resolve(lobbyAssets, file)), file).toBe(true);
+    }
   });
 
   it('keeps the premium V2 card renderer through tablet widths', () => {

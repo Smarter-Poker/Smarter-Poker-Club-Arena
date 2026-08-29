@@ -122,7 +122,7 @@ const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
 // bypass Vite's configured base path in production and silently 404, leaving
 // the live lobby DOM visible without its premium chassis or campaign artwork.
 const CLUB_LOBBY_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/lobby`;
-const CLUB_LOBBY_CHASSIS = `${CLUB_LOBBY_ASSET_ROOT}/lobby-command-chassis-v2.png`;
+const CLUB_LOBBY_CHASSIS = `${CLUB_LOBBY_ASSET_ROOT}/lobby-approved-desktop-reference-v3.png`;
 const CLUB_LOBBY_CAMPAIGN = `${CLUB_LOBBY_ASSET_ROOT}/shark-club-championship-ad-v2.png`;
 
 /**
@@ -1060,8 +1060,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const handleBBJChange = (payload: any) => {
         if (!isMounted) return;
         const row = (payload?.new ?? payload?.old) as
-          | { main_balance?: number | string }
-          | undefined;
+          { main_balance?: number | string } | undefined;
         // main_balance is numeric(14,2), and PostgREST/Realtime deliver
         // numerics as STRINGS ("350.40"). The old guard was
         // `typeof row.main_balance === 'number'`, which is therefore NEVER
@@ -4112,6 +4111,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           aria-hidden="true"
         />
         <ClubLobbyCommandTop
+          exactDesktopWelcome={club.name.trim().toLocaleLowerCase() === 'shark club'}
           welcome={
             <div
               className={`lobby-top__notice ${isOwner || isClubStaff(userRole) ? 'lobby-top__notice--editable' : ''}`}

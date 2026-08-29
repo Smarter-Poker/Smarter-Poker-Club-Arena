@@ -35,7 +35,15 @@ import type { UseMysteryBountyResult } from '../../../hooks/useMysteryBounty';
  * bounty pool", which is the same question, so the ladder renders inside
  * Rewards. See RewardsTab.
  */
-export type TabId = 'detail' | 'blinds' | 'ranking' | 'entries' | 'unions' | 'tables' | 'rewards' | 'satellites';
+export type TabId =
+  | 'detail'
+  | 'blinds'
+  | 'ranking'
+  | 'entries'
+  | 'unions'
+  | 'tables'
+  | 'rewards'
+  | 'satellites';
 
 export const TAB_IDS: readonly TabId[] = [
   'detail',
@@ -338,6 +346,33 @@ export function parsePayoutStructure(raw: unknown): PayoutPlace[] | null {
 /** How many places this event pays. Zero when no structure is published. */
 export function paidPlaceCount(raw: unknown): number {
   return parsePayoutStructure(raw)?.length ?? 0;
+}
+
+/**
+ * The LAST place in the money — the money bubble sits one behind it.
+ *
+ * A COUNT AND A PLACE NUMBER ARE NOT THE SAME THING (2026-08-29). Both callers
+ * that needed the bubble were reading `paidPlaceCount`, which is a length.
+ * `parsePayoutStructure` de-duplicates and sorts but does not require the
+ * places to run contiguously from 1, so a structure paying 1, 2, 3 and 5 has a
+ * length of 4 — a place that is not paid at all. That number was:
+ *
+ *   - handed to HandForHandBanner as `paidPositions`, so hand-for-hand would
+ *     start at the wrong point;
+ *   - printed by Rewards as the "Money Bubble" figure;
+ *   - compared against each row's place to tag the bubble row, so on such a
+ *     structure the tag rendered on the wrong row or on none.
+ *
+ * The same class of bug as the range-row count fixed on 2026-08-26 and noted
+ * above parsePayoutStructure — one layer up, and it survived that fix because a
+ * length is exactly right for every contiguous structure, which is nearly all
+ * of them. It is wrong precisely where it matters and nowhere else.
+ */
+export function lastPaidPlace(raw: unknown): number {
+  const places = parsePayoutStructure(raw);
+  if (!places || places.length === 0) return 0;
+  // Sorted ascending by parsePayoutStructure, so the tail is the deepest place.
+  return places[places.length - 1].place;
 }
 
 /**

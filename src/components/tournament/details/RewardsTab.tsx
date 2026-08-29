@@ -74,6 +74,7 @@ import {
   chips,
   effectivePrizePool,
   isPlayerLive,
+  lastPaidPlace,
   ordinal,
   parsePayoutStructure,
   placePrize,
@@ -145,13 +146,62 @@ interface BountyLedger {
   /** Every head already claimed, from the tournament_bounties ledger. */
   claimedHeads: number[];
   loaded: boolean;
+  /**
+   * The read FAILED, as distinct from returning nothing.
+   *
+   * Without this the two are the same state and the panel renders "The Bounty
+   * Pool Is Not Funded Yet" -- a confident factual claim about a funded pool --
+   * whenever RLS, a network error or a bad column stopped the query. See the
+   * loader for why the failure was invisible.
+   */
+  failed: boolean;
 }
 
-const EMPTY_LEDGER: BountyLedger = { liveHeads: [], claimedHeads: [], loaded: false };
+const EMPTY_LEDGER: BountyLedger = {
+  liveHeads: [],
+  claimedHeads: [],
+  loaded: false,
+  failed: false,
+};
 
 /** Round money to cents so 20.000000001 and 20 are the same rung. */
 function cents(n: number): number {
   return Math.round(num(n) * 100) / 100;
+}
+
+/** PostgREST's default ceiling. A request without `.range()` stops here. */
+const PAGE = 1000;
+/** 100k heads is far past any real field; the cap stops a runaway loop. */
+const MAX_PAGES = 100;
+
+/**
+ * Read every row, not the first thousand.
+ *
+ * Both bounty queries were unbounded, which does not mean unlimited: PostgREST
+ * caps a request with no range at 1,000 rows and says nothing about it. This
+ * tab's own header cites 9,011 rows in `tournament_players.current_bounty` and
+ * 6,790 in `tournament_bounties`, and the branch these arrays exist to serve is
+ * exactly the one where `bounty_pool` is 0 and the totals are derived from the
+ * heads themselves. On a large mystery bounty the pool was silently understated
+ * and "Still Available" was simply wrong.
+ *
+ * Throwing on `error` is the other half of the fix, and the more important one:
+ * a query builder resolves with `{data: null, error}` rather than rejecting, so
+ * a caller that destructures only `.data` turns every failure into an empty
+ * result. See the catch in the loader.
+ */
+async function fetchAllRows<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: unknown; error: unknown }>
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < MAX_PAGES; i++) {
+    const { data, error } = await page(i * PAGE, (i + 1) * PAGE - 1);
+    if (error) throw error;
+    const rows = (data || []) as T[];
+    out.push(...rows);
+    if (rows.length < PAGE) return out;
+  }
+  return out;
 }
 
 /**
@@ -207,32 +257,41 @@ export default function RewardsTab({
     (async () => {
       try {
         const [live, claimed] = await Promise.all([
-          supabase
-            .from('tournament_players')
-            .select('current_bounty')
-            .eq('tournament_id', tournamentId)
-            .gt('current_bounty', 0),
-          supabase
-            .from('tournament_bounties')
-            .select('bounty_amount')
-            .eq('tournament_id', tournamentId),
+          fetchAllRows<{ current_bounty: unknown }>((from, to) =>
+            supabase
+              .from('tournament_players')
+              .select('current_bounty')
+              .eq('tournament_id', tournamentId)
+              .gt('current_bounty', 0)
+              .range(from, to)
+          ),
+          fetchAllRows<{ bounty_amount: unknown }>((from, to) =>
+            supabase
+              .from('tournament_bounties')
+              .select('bounty_amount')
+              .eq('tournament_id', tournamentId)
+              .range(from, to)
+          ),
         ]);
         if (cancelled) return;
 
         setLedger({
-          liveHeads: (live.data || []).map((r: { current_bounty: unknown }) =>
-            cents(num(r.current_bounty))
-          ),
-          claimedHeads: (claimed.data || []).map((r: { bounty_amount: unknown }) =>
-            cents(num(r.bounty_amount))
-          ),
+          liveHeads: live.map((r) => cents(num(r.current_bounty))),
+          claimedHeads: claimed.map((r) => cents(num(r.bounty_amount))),
           loaded: true,
+          failed: false,
         });
       } catch (e) {
         if (!cancelled) {
-          // A bounty panel that cannot load its ledger still renders from the
-          // tournament's own funded-pool columns. Degraded, never blank.
-          setLedger({ liveHeads: [], claimedHeads: [], loaded: true });
+          /* THE CATCH USED TO BE UNREACHABLE FOR A QUERY ERROR. A Supabase
+             query builder RESOLVES with `{data: null, error}`; it does not
+             reject. The old code destructured only `.data`, coalesced null to
+             `[]`, set `loaded: true` and reported nothing -- so an RLS denial
+             on a funded pool rendered "The Bounty Pool Is Not Funded Yet" as
+             fact, with no trace in Sentry. fetchAllRows throws on `error`, so
+             this branch now actually runs, and `failed` keeps the panel from
+             making that claim. */
+          setLedger({ liveHeads: [], claimedHeads: [], loaded: true, failed: true });
           reportError(e, 'RewardsTab.bounty_ledger_load_failed');
         }
       }
@@ -294,7 +353,21 @@ export default function RewardsTab({
 
   /* The money bubble is the LAST PAID PLACE. Players still to bust before it
      is how many must go out before the field is all in the money. */
-  const bubblePlace = paidPlaces > 0 ? paidPlaces : 0;
+  /**
+   * A COUNT AND A PLACE NUMBER ARE NOT THE SAME THING.
+   *
+   * This was `paidPlaces`, the LENGTH of the parsed ladder. `parsePayoutStructure`
+   * de-duplicates and sorts but does not require the places to run contiguously
+   * from 1, so a structure paying 1, 2, 3 and 5 has length 4 -- a place that is
+   * not paid at all. Three things then went wrong at once on such a structure:
+   * the "Money Bubble" tile printed 4th, `isBubbleRow` below matched the wrong
+   * band or none, and `toTheMoney` counted down to the wrong number.
+   *
+   * `paidPlaces` is still the right value for "N Paid Places" and for the
+   * percentage-of-field figure. It is only the BUBBLE that needs the deepest
+   * place, so the two now come from two different functions with two names.
+   */
+  const bubblePlace = useMemo(() => lastPaidPlace(t.payout_structure), [t.payout_structure]);
   const toTheMoney = bubblePlace > 0 ? Math.max(0, playersRemaining - bubblePlace) : 0;
   const inTheMoney = bubblePlace > 0 && playersRemaining <= bubblePlace;
   const onTheBubble = bubblePlace > 0 && playersRemaining === bubblePlace + 1;
@@ -437,7 +510,7 @@ export default function RewardsTab({
                 {chips(dbPool)} Of {chips(guarantee)}
               </span>
             </div>
-            <div className="tl-meter">
+            <div className="tl-meter" aria-hidden="true">
               <div
                 className="tl-meter__fill tl-meter__fill--under"
                 style={{ width: `${Math.min(100, (dbPool / guarantee) * 100)}%` }}
@@ -526,7 +599,19 @@ export default function RewardsTab({
           </div>
 
           {bounty.total <= 0 && !ledger.loaded ? (
-            <div className="tl-empty">Loading The Bounty Pool</div>
+            <div className="tl-empty" role="status" aria-live="polite">
+              Loading The Bounty Pool
+            </div>
+          ) : bounty.total <= 0 && ledger.failed ? (
+            /* A FAILED READ IS NOT AN EMPTY POOL. Without this branch the tab
+               told the player their bounty pool was unfunded whenever the query
+               was refused. Say what is actually known. */
+            <div className="tl-empty" role="alert">
+              The Bounty Pool Could Not Be Read
+              <span className="tl-empty__hint">
+                This Is A Display Problem, Not A Missing Pool. Try Again Shortly.
+              </span>
+            </div>
           ) : bounty.total <= 0 ? (
             <div className="tl-empty">
               The Bounty Pool Is Not Funded Yet
@@ -573,7 +658,7 @@ export default function RewardsTab({
                     {chips(bounty.available)} Of {chips(bounty.total)}
                   </span>
                 </div>
-                <div className="tl-meter">
+                <div className="tl-meter" aria-hidden="true">
                   <div className="tl-meter__fill" style={{ width: `${bounty.remainingPct}%` }} />
                 </div>
               </div>

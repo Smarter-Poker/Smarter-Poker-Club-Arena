@@ -208,6 +208,12 @@ begin
 end;
 $$;
 
+-- ONLY THE ENGINE FUNDS GUARANTEES. This is a SECURITY DEFINER writer that
+-- moves chips on a caller-supplied tournament id; a browser role reaching it
+-- could finalize pools at will. The engine connects as service_role.
+revoke all on function public.fn_apply_prize_guarantee(uuid, text) from public, anon, authenticated;
+grant execute on function public.fn_apply_prize_guarantee(uuid, text) to service_role;
+
 comment on function public.fn_apply_prize_guarantee(uuid, text) is
   'Fund a tournament overlay (guarantee minus pool) from the bank that owns the club: the UNION bank (union_wallets.chip_balance) for a union-affiliated club, the club''s own chip_treasury for a standalone club. Idempotent via the PK claim on tournament_guarantee_overlays; every union debit writes union_wallet_transactions; a negative bank raises one deduped critical alert per bank. The 2026-08-27f migration claimed this rule was already live - it was not, and Midway Union events were blocked by a club treasury that was never supposed to pay while the union bank held 136k.';
 

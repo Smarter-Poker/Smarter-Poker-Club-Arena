@@ -1528,7 +1528,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                             <div className="theme-asset__lock">
                               <span className="theme-asset__lock-icon">
                                 {activeTab === 'cards' && pricingState === 'ready'
-                                  ? `${cardBackPrices[asset.id] ?? '—'} ◆`
+                                  ? `${cardBackPrices[asset.id] ?? '-'} ◆`
                                   : 'VIP'}
                               </span>
                             </div>

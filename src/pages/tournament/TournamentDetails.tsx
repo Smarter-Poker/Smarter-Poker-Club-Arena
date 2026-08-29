@@ -626,8 +626,23 @@ export default function TournamentDetails({
       'BLIND_LEVEL_CHANGE',
       (event) => {
         if (event.payload.tournamentId !== tournamentId) return;
+        /**
+         * `- 1`: THE PAYLOAD IS THE DISPLAY LEVEL, THE COLUMN IS AN INDEX.
+         *
+         * This wrote the 1-based payload straight into `current_level`, which
+         * is contractually the 0-based index the engine uses on
+         * `blindStructure[]`. It is the worst of the three places that had this
+         * wrong, because it does not merely mis-render one component: it
+         * corrupts the shared `tournament` object that EVERY tab reads off this
+         * page, so between an advance and the next poll the Detail hero, the
+         * Blinds tab and anything else reading the row were all one level
+         * ahead, consistently, from a single bad write. See MasterBus's
+         * BLIND_LEVEL_CHANGE for the contract.
+         */
+        const displayLevel = Number(event.payload.level);
+        if (!Number.isFinite(displayLevel) || displayLevel < 1) return;
         setTournament((prev) =>
-          prev ? ({ ...prev, current_level: event.payload.level } as Tournament) : prev
+          prev ? ({ ...prev, current_level: displayLevel - 1 } as Tournament) : prev
         );
       },
       300

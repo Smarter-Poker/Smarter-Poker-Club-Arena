@@ -103,8 +103,27 @@ export default function TournamentResultsPage() {
   const deepLinkedRef = useRef(false);
   const [handHistory, setHandHistory] = useState<HandHistoryRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'mine'>('all');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
+  /* DEEP-LINKABLE FILTERS (2026-08-29, round 10). Other surfaces can now
+     send a player straight to a filtered view - the hamburger's "My Spin
+     Results" links `?filter=mine&type=spin`. Values are validated against
+     the same lists the buttons below render, so a bad param is just the
+     default view rather than an empty board. */
+  const VALID_TYPE_FILTERS = [
+    'all',
+    'freezeout',
+    'bounty',
+    'progressive_bounty',
+    'mystery_bounty',
+    'sng',
+    'spin',
+    'xmtt',
+  ];
+  const filterParam = searchParams.get('filter');
+  const typeParam = searchParams.get('type');
+  const [filter, setFilter] = useState<'all' | 'mine'>(filterParam === 'mine' ? 'mine' : 'all');
+  const [typeFilter, setTypeFilter] = useState<string>(
+    typeParam && VALID_TYPE_FILTERS.includes(typeParam) ? typeParam : 'all'
+  );
   const [activeTab, setActiveTab] = useState<'standings' | 'hands'>('standings');
   /**
    * Sections 42 and 44. Default is FINISH, because a tournament result is a
@@ -145,7 +164,12 @@ export default function TournamentResultsPage() {
         }
       }
 
-      const { data } = await query;
+      // ROUND 10 (2026-08-29): a resolved error slipped past the catch below
+      // (which only sees throws) and rendered as an empty results board with
+      // the spinner cleared - "no history" invented from a timeout. Throwing
+      // routes it to the existing report + toast.
+      const { data, error: listErr } = await query;
+      if (listErr) throw listErr;
       if (!isMounted.current) return;
       if (!data) return;
       let completedList = data as CompletedTournament[];
@@ -206,13 +230,21 @@ export default function TournamentResultsPage() {
     if (tournaments.length > 0 && !found) {
       // Tournament list loaded but ID not found — try direct load
       (async () => {
-        const { data } = await supabase
+        const { data, error: deepLinkErr } = await supabase
           .from('tournaments')
           .select(
             'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier'
           )
           .eq('id', tournamentId)
           .maybeSingle();
+        // ROUND 10 (2026-08-29): a failed deep-link read silently ignored the
+        // ?id= the player arrived with; deepLinkedRef stays false so a later
+        // list load can still resolve it, but the failure now reports.
+        if (deepLinkErr) {
+          reportError(deepLinkErr, 'TournamentResultsPage.deep_link_read_failed', {
+            tournamentId,
+          });
+        }
         if (!isMounted.current) return;
         if (!data) return;
         setSelectedTournament(data as CompletedTournament);
@@ -229,7 +261,9 @@ export default function TournamentResultsPage() {
     }
 
     try {
-      const { data } = await supabase
+      // ROUND 10 (2026-08-29): a resolved error rendered as an EMPTY standings
+      // table for a real event - throwing routes it to the report below.
+      const { data, error: standingsErr } = await supabase
         .from('tournament_players')
         /* bounty_winnings / bounties_collected are the record of record for
            EVERY bounty format, mystery included: fn_mystery_bounty_pay updates
@@ -246,6 +280,7 @@ export default function TournamentResultsPage() {
            one list; the ceiling is now stated as a rendering bound, not
            mistaken for the size of the field. */
         .limit(50000);
+      if (standingsErr) throw standingsErr;
 
       if (isMounted.current) {
         setResults(
@@ -303,7 +338,9 @@ export default function TournamentResultsPage() {
     }
 
     try {
-      const { data } = await supabase
+      // ROUND 10 (2026-08-29): same shape - a resolved error read as "no
+      // hands recorded". Throwing routes it to the report below.
+      const { data, error: handsErr } = await supabase
         .from('hand_history')
         .select(
           'id, hand_number, small_blind, big_blind, pot_size, game_variant, community_cards, winners, players, created_at'
@@ -311,6 +348,7 @@ export default function TournamentResultsPage() {
         .eq('tournament_id', selectedTournament!.id)
         .order('hand_number', { ascending: false })
         .limit(100);
+      if (handsErr) throw handsErr;
 
       if (isMounted.current) setHandHistory((data || []) as HandHistoryRecord[]);
     } catch (err) {
@@ -542,16 +580,9 @@ export default function TournamentResultsPage() {
 
         <span style={{ width: '1px', background: '#334155', margin: '0 4px' }} />
 
-        {[
-          'all',
-          'freezeout',
-          'bounty',
-          'progressive_bounty',
-          'mystery_bounty',
-          'sng',
-          'spin',
-          'xmtt',
-        ].map((t) => (
+        {/* One list, shared with the deep-link validation above - the two
+            cannot drift. */}
+        {VALID_TYPE_FILTERS.map((t) => (
           <button
             key={t}
             onClick={() => setTypeFilter(t)}

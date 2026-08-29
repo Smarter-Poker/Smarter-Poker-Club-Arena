@@ -52,8 +52,8 @@ import {
   clockText,
   effectivePrizePool,
   isPlayerLive,
+  lastPaidPlace,
   ordinal,
-  paidPlaceCount,
   parsePayoutStructure,
   placePrize,
 } from './types';
@@ -71,6 +71,7 @@ import {
   formatCents,
   topBountyCents,
 } from '../../../services/MysteryBountyService';
+import { useSatellites } from './useSatellites';
 import '../../../styles/tournament-lobby-3d.css';
 import './DetailOverviewTab.css';
 
@@ -148,35 +149,6 @@ interface InfoItem {
   tone?: 'accent' | 'danger';
 }
 
-function mapSupabaseRowToCard(sat: any) {
-  const tournType = String(sat.tournament_type || '').toLowerCase();
-  let type: any = 'mtt';
-  if (sat.is_satellite || tournType === 'satellite') type = 'satellite';
-  else if (tournType === 'spin') type = 'spin';
-  else if (tournType === 'sng') type = 'sng';
-  else if (sat.is_mystery_bounty) type = 'mystery';
-  else if (sat.is_pko) type = 'pko';
-  else if (sat.is_bounty) type = 'bounty';
-  let status: any = 'finished';
-  const rawStatus = String(sat.status || '').toUpperCase();
-  if (['ANNOUNCED', 'REGISTERING', 'LATE_REG'].includes(rawStatus)) status = 'registering';
-  else if (['RUNNING'].includes(rawStatus)) status = 'running';
-  else if (['CANCELLED', 'ABORTED'].includes(rawStatus)) status = 'cancelled';
-  return {
-    id: sat.id,
-    name: sat.name || 'Satellite',
-    type,
-    buyIn: Number(sat.buy_in) || 0,
-    prizePool: Number(sat.guarantee) || 0,
-    blindStructure: 'regular',
-    maxPlayers: Number(sat.max_players) || 0,
-    registeredPlayers: Number(sat.current_players) || 0,
-    startsAt: sat.start_time,
-    status,
-    blindDuration: Number(sat.blind_duration) || undefined,
-  };
-}
-
 export default function DetailOverviewTab({
   tournament,
   entries,
@@ -187,35 +159,17 @@ export default function DetailOverviewTab({
   mysteryBounty,
   onOpenTab,
 }: TournamentTabProps) {
-  const [satellites, setSatellites] = useState<any[]>([]);
-  const [satLoading, setSatLoading] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-    async function fetchSatellites() {
-      if (!tournament?.id) return;
-      try {
-        setSatLoading(true);
-        const { data, error: fetchErr } = await supabase
-          .from('tournaments')
-          .select('*')
-          .eq('satellite_target_id', tournament.id)
-          .in('status', ['ANNOUNCED', 'REGISTERING', 'LATE_REG', 'RUNNING'])
-          .order('start_time', { ascending: true });
-
-        if (fetchErr) throw fetchErr;
-        if (mounted) setSatellites(data || []);
-      } catch (err) {
-        reportError(err, 'DetailOverviewTab.fetchSatellites');
-      } finally {
-        if (mounted) setSatLoading(false);
-      }
-    }
-    void fetchSatellites();
-    return () => {
-      mounted = false;
-    };
-  }, [tournament?.id]);
+  /* Shared with SatellitesTab. This used to be a private copy of the fetch and
+     a byte-identical copy of the mapper, so both surfaces carried the same
+     three dead column reads, the same permanent-spinner guard and the same
+     one-query-per-card cost. See useSatellites for the full account. */
+  const {
+    cards: satellites,
+    registration: satRegistration,
+    loading: satLoading,
+    error: satError,
+    retry: satRetry,
+  } = useSatellites(tournament?.id, currentUserId);
 
   const toast = useToast();
 
@@ -253,6 +207,15 @@ export default function DetailOverviewTab({
     return () => clearInterval(id);
   }, [isCompleted, isRunning, startsWithinADay]);
 
+  /* Who is still in, counted ONCE. `field` below builds its figures from this
+     same list, so the deal gate and the displayed count cannot disagree -- and
+     the gate is needed up here, before the poll. */
+  const aliveList = useMemo(
+    () => (Array.isArray(entries) ? entries : []).filter(isPlayerLive),
+    [entries]
+  );
+  const aliveCount = aliveList.length;
+
   /* ── Final-table deal votes. Own state, own poll: the tab contract does not
         carry them and no other tab needs them. ── */
   const dealEnabled = Boolean(tournament?.final_table_deal_enabled) && isRunning;
@@ -260,15 +223,43 @@ export default function DetailOverviewTab({
   const [hasVotedDeal, setHasVotedDeal] = useState(false);
   const [votingDeal, setVotingDeal] = useState(false);
 
+  /**
+   * The poll only runs once the panel it feeds can actually appear.
+   *
+   * It used to be gated on `dealEnabled` alone -- `final_table_deal_enabled &&
+   * isRunning` -- while the PANEL additionally requires the field to be down to
+   * one table. So a 500-runner event with final-table deals turned on polled
+   * `tournament_deal_votes` every fifteen seconds from level one, for hours,
+   * for a number nothing on screen was reading. `dealPanel` is declared below
+   * this effect, so the gate is recomputed here rather than referenced.
+   */
+  const ftSize = Number(tournament?.table_size) || 9;
+  const dealPanelPossible = dealEnabled && aliveCount >= 2 && aliveCount <= ftSize;
+
   useEffect(() => {
-    if (!dealEnabled || !tournament?.id) return;
+    if (!dealPanelPossible || !tournament?.id) return;
     let alive = true;
+    /* Request ordering. Two loads can be in flight across a vote -- the
+       optimistic +1 in handleVoteForDeal and a poll issued just before the
+       insert landed -- and whichever RESOLVES last used to win. A sequence
+       number means a stale response is dropped instead of overwriting a fresher
+       count with an older one. */
+    let seq = 0;
     const load = async () => {
+      const mine = ++seq;
       const { data, error } = await supabase
         .from('tournament_deal_votes')
         .select('user_id')
         .eq('tournament_id', tournament.id);
-      if (!alive || error || !data) return;
+      if (!alive || mine !== seq) return;
+      if (error) {
+        /* Was `if (!alive || error || !data) return;` -- a permission failure
+           left the panel showing "0/6 Votes", which is a factual claim about a
+           real vote count, with nothing reported anywhere. */
+        reportError(error, 'DetailOverviewTab.dealVotes');
+        return;
+      }
+      if (!data) return;
       setDealVoteCount(data.length);
       setHasVotedDeal(Boolean(currentUserId && data.some((v) => v.user_id === currentUserId)));
     };
@@ -278,7 +269,7 @@ export default function DetailOverviewTab({
       alive = false;
       clearInterval(iv);
     };
-  }, [dealEnabled, tournament?.id, currentUserId]);
+  }, [dealPanelPossible, tournament?.id, currentUserId]);
 
   const handleVoteForDeal = useCallback(async () => {
     if (!currentUserId || !tournament?.id || votingDeal) return;
@@ -316,7 +307,7 @@ export default function DetailOverviewTab({
         (2026-08-26 audit). */
   const field = useMemo(() => {
     const list = Array.isArray(entries) ? entries : [];
-    const alive = list.filter(isPlayerLive);
+    const alive = aliveList;
     const eliminated = list.length - alive.length;
     const totalChips = alive.reduce((sum, e) => sum + (Number(e.chips) || 0), 0);
     const avgStack =
@@ -330,7 +321,7 @@ export default function DetailOverviewTab({
       totalChips,
       avgStack,
     };
-  }, [entries, tournament?.starting_chips]);
+  }, [entries, aliveList, tournament?.starting_chips]);
 
   /* ── Live level state. Recomputed every tick so the clock actually counts. ── */
   const level = useMemo(() => {
@@ -607,7 +598,9 @@ export default function DetailOverviewTab({
       .sort((a, b) => (a.position || 99) - (b.position || 99))
       .map((player) => {
         const row = structure.find((p) => p.place === player.position);
-        return { player, prizeValue: row ? placePrize(pool, row.percentage) : 0 };
+        // The whole structure, not one percentage: the last paid place absorbs
+        // the residual, so a place cannot be priced without the others.
+        return { player, prizeValue: row ? placePrize(pool, structure, row.place) : 0 };
       });
   }, [isCompleted, entries, tournament?.payout_structure, prize.effective]);
 
@@ -634,11 +627,23 @@ export default function DetailOverviewTab({
     const mySeat = currentUserId
       ? (entries || []).find((e) => e.user_id === currentUserId)
       : undefined;
-    return { amSeated: mySeat?.status === 'playing', remaining: field.alive };
+    /* TWO DEFINITIONS OF "STILL IN" ON ONE SCREEN (2026-08-29). `field.alive`
+       above counts with the shared `isPlayerLive`, this line used to test
+       `status === 'playing'`. A player sitting at a final table with status
+       `registered` was inside the denominator -- the panel rendered, and their
+       vote was one of the votes being counted towards unanimity -- but got no
+       vote button, so they could not cast it and the deal could never pass.
+       This is the exact divergence the comment above `field` says was fixed for
+       the Ranking tab; it was still live here. */
+    return { amSeated: mySeat ? isPlayerLive(mySeat) : false, remaining: field.alive };
   }, [dealEnabled, tournament?.table_size, field.alive, entries, currentUserId]);
 
+  /* The LAST PAID PLACE, not how many places are paid. See lastPaidPlace in
+     types.ts: on a structure whose places do not run contiguously from 1, the
+     count is a place that is not in the money, and hand-for-hand would start
+     at the wrong point. */
   const paidPositions = useMemo(
-    () => paidPlaceCount(tournament?.payout_structure),
+    () => lastPaidPlace(tournament?.payout_structure),
     [tournament?.payout_structure]
   );
 
@@ -763,7 +768,8 @@ export default function DetailOverviewTab({
               </div>
             </div>
           </div>
-          <div className="tl-meter dov-hero__meter">
+          {/* Decoration: the hero clock above it IS the value. */}
+          <div className="tl-meter dov-hero__meter" aria-hidden="true">
             <div
               className={`tl-meter__fill${urgent ? ' tl-meter__fill--under' : ''}`}
               style={{ width: `${levelProgress}%` }}
@@ -836,30 +842,31 @@ export default function DetailOverviewTab({
         </div>
       )}
 
-      {/* ── BAND 4 — the definition grid the long list became ── */}
-      <div className="tl-panel dov-info tl-scroll" style={{ padding: 0, overflow: 'hidden' }}>
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 1,
-            backgroundColor: 'rgba(255, 255, 255, 0.05)',
-          }}
-        >
+      {/* ── BAND 4 — the definition grid the long list became ──
+           Every value in this band used to be an inline style, and three of
+           them were broken:
+
+             padding: 0 on the panel overrode `.dov-info`'s own padding AND its
+             `@media (max-width: 400px)` override, so the band's mobile tuning
+             was dead;
+
+             backgroundColor: 'var(--surface)' on both inner panels referenced a
+             token that IS NOT DEFINED anywhere in this repo (grep --surface:
+             returns nothing), so they had no background and the wrapper's
+             rgba(255,255,255,0.05) -- meant to show through a 1px gap as a
+             hairline -- washed the whole band instead;
+
+             padding: 16 hardcoded on each inner panel, replacing the 9px the
+             mobile rule would have applied, squeezing a two-column grid of
+             nowrap values into ~161px at 375px.
+
+           It is all in DetailOverviewTab.css now, where the media queries can
+           reach it. */}
+      <div className="tl-panel dov-info tl-scroll dov-info--band">
+        <div className="dov-band">
           {/* TOURNAMENT DETAILS */}
-          <div style={{ padding: 16, backgroundColor: 'var(--surface)' }}>
-            <h3
-              style={{
-                fontSize: 13,
-                textTransform: 'uppercase',
-                letterSpacing: 1,
-                color: 'var(--text-muted)',
-                marginBottom: 16,
-                marginTop: 0,
-              }}
-            >
-              Tournament Details
-            </h3>
+          <div className="dov-band__section">
+            <h3 className="dov-band__title">Tournament Details</h3>
             <dl className="dov-info__grid">
               {info.map((item) => (
                 <div
@@ -887,29 +894,35 @@ export default function DetailOverviewTab({
           </div>
 
           {/* SATELLITE DETAILS */}
-          <div style={{ padding: 16, backgroundColor: 'var(--surface)' }}>
-            <h3
-              style={{
-                fontSize: 13,
-                textTransform: 'uppercase',
-                letterSpacing: 1,
-                color: 'var(--text-muted)',
-                marginBottom: 16,
-                marginTop: 0,
-              }}
-            >
-              Satellite Details
-            </h3>
+          <div className="dov-band__section">
+            <h3 className="dov-band__title">Satellite Details</h3>
             {satLoading ? (
-              <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading Satellites...</div>
-            ) : satellites.length === 0 ? (
-              <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                NO SATELITTES AVAILABLE FOR THIS TOURNAMENT
+              <div className="dov-band__note" role="status" aria-live="polite" aria-busy="true">
+                Loading Satellites...
               </div>
+            ) : satError ? (
+              /* There was no error branch at all: a failed fetch reported to
+                 Sentry and then rendered the empty state, telling the player
+                 as a fact that this event has no satellites. */
+              <div className="dov-band__note dov-band__note--error" role="alert">
+                <span>{satError}</span>
+                <button type="button" className="dov-band__retry" onClick={satRetry}>
+                  Try Again
+                </button>
+              </div>
+            ) : satellites.length === 0 ? (
+              /* Was "NO SATELITTES AVAILABLE FOR THIS TOURNAMENT" -- two
+                 misspellings, and shouted, against the Title Case rule this
+                 file follows everywhere else. */
+              <div className="dov-band__note">No Satellites Available For This Tournament</div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="dov-band__sats">
                 {satellites.map((sat) => (
-                  <TournamentLobbyCard key={sat.id} tournament={mapSupabaseRowToCard(sat)} />
+                  <TournamentLobbyCard
+                    key={sat.id}
+                    tournament={sat}
+                    knownRegistration={satRegistration ? Boolean(satRegistration[sat.id]) : null}
+                  />
                 ))}
               </div>
             )}

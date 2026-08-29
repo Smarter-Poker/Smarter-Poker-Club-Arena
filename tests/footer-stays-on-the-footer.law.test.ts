@@ -49,8 +49,22 @@ import { resolve, join } from 'node:path';
 
 const ROOT = resolve(__dirname, '..');
 
-/** Sheets that style the app shell, the page roots, or <body>. */
-const SCOPES = [join(ROOT, 'src/pages'), join(ROOT, 'src/styles'), join(ROOT, 'src/components/layouts')];
+/**
+ * Every sheet in the app.
+ *
+ * Widened from `src/pages` + `src/styles` + `src/components/layouts` on
+ * 2026-08-29, the same day the narrow version shipped. The narrow scope was
+ * drawn around "things that are ancestors of the bottom nav today", and within
+ * hours it had already missed one: `.lobby-table-wrap` in
+ * src/components/lobby/LobbyTable.css.
+ *
+ * That one happened to be harmless. The point is that the scope was a judgement
+ * about the component tree, and the component tree moves — a wrapper that is
+ * not an ancestor of the nav today is one refactor away from being one, and
+ * this bug is invisible in Chrome, invisible in jsdom, and only shows up on a
+ * phone after it ships. Cheaper to ban the declaration everywhere.
+ */
+const SCOPES = [join(ROOT, 'src')];
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
@@ -90,7 +104,7 @@ function offencesIn(file: string): Offence[] {
 }
 
 describe('the footer stays on the footer', () => {
-  it('no shell or page-root rule sets overflow-x: hidden without pairing it with clip', () => {
+  it('no rule anywhere in src sets overflow-x: hidden without pairing it with clip', () => {
     const offences = sheets().flatMap(offencesIn);
     expect(
       offences,

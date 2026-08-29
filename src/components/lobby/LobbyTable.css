@@ -728,7 +728,15 @@ abbr.lt-variant[title] {
      a flex container that wraps, which is a guarantee rather than a budget.
      ═══════════════════════════════════════════════════════════════════════ */
   .lobby-table-wrap {
+    /* clip, not hidden — full reasoning on the body rule in
+       src/styles/design-system.css. `hidden` on one axis computes the other to
+       `auto`, which makes this a scroll container nobody asked for. This
+       particular wrapper is not an ancestor of the fixed bottom nav today, so
+       it was not part of the 2026-08-29 footer bug — but "not an ancestor
+       today" is one refactor away from being wrong, and clipping is what this
+       rule actually wants either way. */
     overflow-x: hidden;
+    overflow-x: clip;
   }
 
   .lobby-table,

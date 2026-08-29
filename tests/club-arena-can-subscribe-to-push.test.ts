@@ -263,4 +263,34 @@ describe('the enrolment path is actually reachable', () => {
     // src/lib/pushClient.ts before they also point enrolment at it.
     expect(SW_BUS).not.toMatch(/addEventListener\(\s*['"]push['"]/);
   });
+
+  /**
+   * THE ASK IS THE SCARCE RESOURCE.
+   *
+   * The prompt fires once per account per browser and then never again. That
+   * is the right design and it is also a single point of failure: for the ten
+   * days the root service worker could not install, every ask was spent on a
+   * question that could not be answered yes. 1 subscribed user out of 1,023
+   * profiles, 2,437 pushes skipped for `no_subscription` in seven days.
+   *
+   * These two pins are what stop that from being re-armed silently.
+   */
+  it('only records the prompt as spent when it was actually answered', () => {
+    const PROMPT = read('src/components/notifications/FirstRunPushPrompt.tsx');
+    // A bare `markDone();` on its own line inside handleEnable is the bug:
+    // it burns the one prompt on a transient service-worker or network
+    // failure, for somebody who was in the middle of saying YES.
+    expect(PROMPT).toMatch(/if \(wasAnswered\) markDone\(\);/);
+    expect(PROMPT).toMatch(/result\.ok \|\| notificationPermission\(\) === 'denied'/);
+  });
+
+  it('keeps the first-run key in step with the World Hub', () => {
+    const PROMPT = read('src/components/notifications/FirstRunPushPrompt.tsx');
+    // Same origin, same device, ONE subscription behind both apps. If the two
+    // keys drift, a player is asked twice about the same thing - or, worse,
+    // one app re-offers after an outage and the other stays silent. The World
+    // Hub's copy lives in
+    // src/components/notifications/FirstRunNotificationPrompt.jsx.
+    expect(PROMPT).toContain("const KEY_PREFIX = 'sp_firstrun_notif_v2_'");
+  });
 });

@@ -134,6 +134,7 @@ import { useEngineTableState } from '../hooks/useEngineTableState';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
 import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
+import { isPreActionHonorable, PRE_ACTION_EXEC_GRACE_MS } from '../lib/preActionPanelGate';
 
 import { gameCode } from '../utils/gameCode';
 import { masterBus } from '../core/MasterBus';
@@ -15329,6 +15330,52 @@ export default function TablePage({
     tableState.isHandInProgress;
 
   /**
+   * ═══ AN ARMED PRE-ACTION MUST NOT FLASH THE ACTION PANEL (Dan 2026-08-29) ═══
+   *
+   * Dan, verbatim: "WHEN YOU ARE PLAYING IN THE LIVE PAGES, AND YOU CLICK A
+   * 'PRE SELECT OPTION' IT SHOULD JUST EXECUTE THAT OPTION ... IT CURRENTLY
+   * 'EXECUTES THE CHOICE' BUT THEN IT 'FLASHES THE ACTION TAB BACK UP' BEFORE
+   * IT CLOSES IT AGAIN. THAT SHOULDN'T HAPPEN."
+   *
+   * Pre-actions are executed by the ENGINE (Bible V8 §4.15 — the client's
+   * delayed executor was removed, see the P2-1 note below). So between the
+   * snapshot that hands the hero the turn and the snapshot that carries the
+   * engine's auto-executed action there is one network round trip — and the
+   * ActionPanel was mounting for exactly that gap, flashing up and closing.
+   *
+   * While the armed pre-action is one the engine CAN honor right now, the
+   * panel stays down for a short grace window:
+   *   - fold / check-fold and Call Any are always honorable;
+   *   - Check is honorable only when there is nothing to call;
+   *   - Call <N> is honorable only while the price still fits the cap the
+   *     player armed (the engine refuses past it — same rule, both halves).
+   *
+   * If the engine has NOT acted by the end of the grace window — engine down,
+   * clear lost, cap refused in a way the client could not predict — the panel
+   * appears and the player acts manually. The suppression can only ever cost
+   * the flash gap; it can never cost the player their turn.
+   */
+  const preActionCallDue = Math.max(
+    0,
+    (tableState.currentBet || 0) -
+      (tableState.heroSeat > 0 ? tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0 : 0)
+  );
+  const awaitingPreActionExec =
+    isHeroTurnContext &&
+    preAction !== null &&
+    isPreActionHonorable(preAction, preActionCallDue, preActionCallAmountRef.current);
+  const [preActionOverdue, setPreActionOverdue] = useState(false);
+  useEffect(() => {
+    if (!awaitingPreActionExec) {
+      setPreActionOverdue(false);
+      return;
+    }
+    const t = window.setTimeout(() => setPreActionOverdue(true), PRE_ACTION_EXEC_GRACE_MS);
+    return () => window.clearTimeout(t);
+  }, [awaitingPreActionExec]);
+  const suppressPanelForPreAction = awaitingPreActionExec && !preActionOverdue;
+
+  /**
    * ═══ ONE SLOT, ONE CONTROL (2026-08-27) ═══
    *
    * The bottom-left HUD corner holds the previous-hand card and ONE other
@@ -18623,7 +18670,19 @@ export default function TablePage({
                     tableState.heroSeat === seatNumber || pendingSeat === seatNumber
                   }
                   onAvatarClick={() => {
-                    if (player?.isHero) {
+                    /* Dan 2026-08-29: the check MUST read displayPlayer, not
+                       player. The seat renders displayPlayer, which synthesizes
+                       a hero placeholder while the hero is pending / waiting to
+                       be dealt in (see above) — in that window `player` is null,
+                       so checking `player?.isHero` sent the hero's own click
+                       down the villain branch and opened the throwable-only
+                       selector instead of the full tabbed Hero Hub. The
+                       id === userId check is the backstop for the other known
+                       failure of the same shape: a snapshot rebuild that drops
+                       the isHero stamp (see the isHero recovery effect above).
+                       Your own avatar opens YOUR hub, always, on every page
+                       and every variant. */
+                    if (displayPlayer?.isHero || (userId && displayPlayer?.id === userId)) {
                       /* Dan 2026-08-28: the hero's avatar opens the tabbed
                          HERO HUB — Throwables / Stats / Profile / Table
                          Settings. (It used to open the read-only profile
@@ -19197,7 +19256,12 @@ export default function TablePage({
             /* "only after all cards are dealt out does the action start" —
                released by DealAnimation.onComplete, or by the 2.6s ceiling in
                beginDealHold if the animation never reports back. */
-            !dealInFlight
+            !dealInFlight &&
+            /* Dan 2026-08-29: an armed pre-action the engine is about to
+               execute must not flash this panel up for the round-trip gap.
+               See suppressPanelForPreAction above — it self-releases if the
+               engine does not act inside the grace window. */
+            !suppressPanelForPreAction
               ? (() => {
                   // Bible V8 §1.4: Use SERVER-AUTHORITATIVE values, not local calculations
                   const heroPlayer = getPlayerAtSeat(tableState.heroSeat);

@@ -916,7 +916,13 @@ export default function TableConfigPage() {
     // DOUBLE-BOARD BOMB POT 2026-08-20 (legacy pair, kept in sync): the
     // engine used to read bomb_pot_double_board; board_count supersedes it.
     bomb_pot_double_board: config.bombPotEnabled && config.bombPotBoards >= 2,
-    double_board: config.bombPotEnabled && config.bombPotBoards >= 2,
+    // `double_board` is no longer written (2026-08-29), for the same reason
+    // `triple_board` stopped being written in 2026-08-27: it has ZERO readers.
+    // Verified across both repos — the lobby reads the settings-blob key of
+    // the same name, never the column, and the engine reads
+    // bomb_pot_double_board. Live proof: the column is `true` on 0 of 97,944
+    // rows despite this line writing it on every double-board table created.
+    // A write-only column is a promise to a reader that does not exist.
     // triple_board is no longer written (2026-08-27): the column has zero
     // readers, so the toggle that fed it promised a game that never existed.
     /**

@@ -20,6 +20,10 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+// 2026-08-29: the structure-bounded window extractor. A byte-count slice here
+// had turned main red under noFixedSizeSourceWindows, and it was the wrong
+// bound anyway — see the restart-path test below.
+import { sliceEnclosingBlock } from '../../../tests/helpers/sourceWindow';
 
 const svc = readFileSync(
   new URL('./ScheduledTournamentService.ts', import.meta.url).pathname,
@@ -41,8 +45,19 @@ describe('the pop-up wiring — a guarantee refusal must notify the owners', () 
   it('the restart path notifies too — a manual club event deserves the same pop-up', () => {
     const restartAt = svc.indexOf('ScheduledTournaments.restart_insert_failed');
     expect(restartAt).toBeGreaterThan(0);
-    const after = svc.slice(restartAt, restartAt + 1500);
-    expect(after).toContain('fn_notify_guarantee_bank_short');
+    /**
+     * 2026-08-29: this sliced `restartAt + 1500`, which noFixedSizeSourceWindows
+     * refuses and which had turned main red. The number is also the wrong tool
+     * for the job — the notify has to be in the SAME failure branch, and a byte
+     * count neither guarantees that (a comment added above it walks the code
+     * out of the window) nor rules out matching the NEXT branch's notify.
+     *
+     * The block that encloses the error tag is exactly the branch being
+     * asserted, so it is the window. It grows with the code it guards and it
+     * cannot reach into a sibling.
+     */
+    const branch = sliceEnclosingBlock(svc, 'ScheduledTournaments.restart_insert_failed');
+    expect(branch).toContain('fn_notify_guarantee_bank_short');
   });
 
   it('a notify failure is reported, never swallowed', () => {

@@ -12,6 +12,26 @@
 
 Lossless PNG masters are stored beside the runtime files and copied into `production-shells/desktop/`.
 
+## Premium game-card runtime families
+
+Each family has a lossless PNG master and a compressed WebP runtime shell for
+both desktop and mobile. The artwork contains only the premium chassis,
+engraved labels, hardware icons, and empty display/action bays; all game data,
+status text, rule tags, and buttons remain live DOM content.
+
+| Family   | Desktop runtime shell                                                  | Mobile runtime shell                                                  |
+| -------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| MTT      | `public/assets/club-buttons/game-cards/mtt/shell-desktop-v2.webp`      | `public/assets/club-buttons/game-cards/mtt/shell-mobile-v2.webp`      |
+| NLH cash | `public/assets/club-buttons/game-cards/nlh/shell-desktop-v2.webp`      | `public/assets/club-buttons/game-cards/nlh/shell-mobile-v2.webp`      |
+| PLO      | `public/assets/club-buttons/game-cards/plo/shell-desktop-v2.webp`      | `public/assets/club-buttons/game-cards/plo/shell-mobile-v2.webp`      |
+| Spins    | `public/assets/club-buttons/game-cards/spins/shell-desktop-v2.webp`    | `public/assets/club-buttons/game-cards/spins/shell-mobile-v2.webp`    |
+| Heads Up | `public/assets/club-buttons/game-cards/heads-up/shell-desktop-v2.webp` | `public/assets/club-buttons/game-cards/heads-up/shell-mobile-v2.webp` |
+
+The corresponding `.png` files beside each runtime shell are the lossless
+masters. All five V2 skins are the approved defaults in
+`arenaGameCardRegistry.ts`; V1 skins remain available only as explicit
+fallbacks for rollback and comparison.
+
 ## Generation method
 
 Built-in image generation was used with the high-authority BBJ and individual-wallet masters as material references. `06_STACK_SAFE_VARIED_COMPONENT_ARCHITECTURE.png` was used only for proportions and component architecture.

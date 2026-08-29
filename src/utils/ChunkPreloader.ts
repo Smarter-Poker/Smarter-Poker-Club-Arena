@@ -185,6 +185,10 @@ const warmedKeys = new Set<string>();
 
 export function preloadRoute(path: string): void {
   if (!path) return;
+  /* ROUND 10 (2026-08-29): menu links may carry a query string now (the
+     deep-linked results filters). The chunk is keyed by the PATH; a query
+     made every key miss and the prefetch silently did nothing. */
+  path = path.split('?')[0];
   let bestKey: string | null = null;
   for (const key of Object.keys(ROUTE_CHUNKS)) {
     /* SEGMENT BOUNDARIES, not a bare prefix. '/profile' also matched

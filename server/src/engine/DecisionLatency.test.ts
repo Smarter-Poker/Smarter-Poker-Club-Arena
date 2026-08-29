@@ -138,6 +138,22 @@ describe('the shipped wiring — an instrument nobody calls measures nothing', (
     expect(decideAt).toBeLessThan(noteAt);
   });
 
+  it('the scope is the LIVE hand variant, never a guess off the snapshot', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(
+      new URL('./ServerTableEngineTurns.ts', import.meta.url).pathname,
+      'utf8'
+    );
+    // Production, first hour of the measurement (2026-08-29): all 14,326
+    // samples landed in 'nlh' while 58 of 91 running tables dealt PLO —
+    // the horse snapshot has no `variant` field, so the old
+    // `(gameState as any)?.variant ?? 'nlh'` relabelled every decision and
+    // made the plo6 15ms budget unverifiable. The scope must come from
+    // activeHandVariant(), the accessor built for "read the live hand".
+    expect(src).toContain("noteDecisionMs(this.activeHandVariant() || 'nlh'");
+    expect(src).not.toContain('noteDecisionMs(String((gameState as any)?.variant');
+  });
+
   it('the flush drains latency separately from fires, so one outage cannot silently eat the other', async () => {
     const { readFileSync } = await import('node:fs');
     const src = readFileSync(

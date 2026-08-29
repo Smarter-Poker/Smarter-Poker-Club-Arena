@@ -44,8 +44,8 @@
   background: var(--card-surface, #3a3b3c);
   border: none;
   color: var(--off-white, #e4e6eb);
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   font-size: 18px;
   cursor: pointer;
@@ -197,7 +197,7 @@
 .tsp-overlay {
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.035), transparent 44%), #090f16;
   border: 1px solid rgba(161, 197, 224, 0.2);
-  border-radius: 18px;
+  border-radius: 4px;
   box-shadow:
     0 24px 70px rgba(0, 0, 0, 0.62),
     inset 0 1px rgba(255, 255, 255, 0.05);
@@ -233,11 +233,17 @@
   padding: 8px;
 }
 .tsp-item {
+  width: 100%;
   min-height: 56px;
   margin: 2px 0;
   padding: 10px 12px;
   border: 1px solid transparent;
-  border-radius: 11px;
+  border-radius: 3px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  font: inherit;
+  appearance: none;
 }
 .tsp-item--active {
   background: rgba(72, 191, 255, 0.035);
@@ -252,10 +258,9 @@
   font-size: 10px;
 }
 
-.tsp-toggle:focus-visible {
+.tsp-item:focus-visible {
   outline: 2px solid var(--tsp-accent);
-  outline-offset: 4px;
-  border-radius: 999px;
+  outline-offset: 2px;
 }
 .tsp-toggle__track {
   width: 46px;
@@ -285,12 +290,16 @@
 }
 
 .tsp-theme-link {
+  width: calc(100% - 16px);
   min-height: 52px;
   margin: 7px 8px 12px;
   padding: 11px 13px;
   background: linear-gradient(135deg, rgba(72, 191, 255, 0.13), rgba(72, 191, 255, 0.035));
   border-color: rgba(72, 191, 255, 0.22);
-  border-radius: 11px;
+  border-radius: 3px;
+  color: inherit;
+  text-align: left;
+  font: inherit;
 }
 .tsp-theme-link:focus-visible {
   background: linear-gradient(135deg, rgba(72, 191, 255, 0.2), rgba(72, 191, 255, 0.07));
@@ -304,4 +313,13 @@
 }
 .tsp-theme-link__arrow {
   color: #79d5ff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tsp-item,
+  .tsp-toggle__track,
+  .tsp-toggle__thumb,
+  .tsp-theme-link {
+    transition: none !important;
+  }
 }

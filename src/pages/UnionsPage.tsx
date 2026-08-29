@@ -4,11 +4,11 @@
  */
 
 import './UnionsPage.css';
-import PageSkeleton from '../components/common/PageSkeleton';
+import { EmptyState, ErrorState, LoadingState } from '../components/common/EmptyState';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 
-import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import CreateUnionModal from '../components/union/CreateUnionModal';
 import { unionService, type Union } from '../services/UnionService';
 import { getUnionLevel } from '../utils/clubLevels';
@@ -27,6 +27,13 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
   const [onlineDisplay, setOnlineDisplay] = useState(0);
 
   useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setMemberDisplay(union.memberCount);
+      setOnlineDisplay(union.onlineCount || 0);
+      return;
+    }
+
+    const frames = new Set<number>();
     const animateNumber = (start: number, end: number, setter: (n: number) => void) => {
       const duration = 500;
       const startTime = performance.now();
@@ -37,120 +44,96 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
         setter(Math.floor(start + (end - start) * progress));
 
         if (progress < 1) {
-          requestAnimationFrame(animate);
+          const frame = requestAnimationFrame(animate);
+          frames.add(frame);
         }
       };
 
-      requestAnimationFrame(animate);
+      const frame = requestAnimationFrame(animate);
+      frames.add(frame);
     };
 
     animateNumber(0, union.memberCount, setMemberDisplay);
     animateNumber(0, union.onlineCount || 0, setOnlineDisplay);
+    return () => frames.forEach(cancelAnimationFrame);
   }, [union.memberCount, union.onlineCount]);
 
-  const navigate = useNavigate();
+  const uLevel = getUnionLevel({
+    level: union.level,
+    playerLevel: union.playerLevel,
+    hierarchyLevel: union.hierarchyLevel,
+    totalPlayers: union.totalPlayers || union.memberCount,
+    hierarchyUnitsRoundedUp: union.hierarchyUnitsRoundedUp,
+    playerThresholdCurrent: union.playerThresholdCurrent,
+    playerThresholdNext: union.playerThresholdNext,
+    hierarchyThresholdCurrent: union.hierarchyThresholdCurrent,
+    hierarchyThresholdNext: union.hierarchyThresholdNext,
+  });
 
   return (
-    <div
-      key={union.id}
-      className="union-card"
-      onClick={() => navigate(`/unions/${union.id}`)}
-      style={{ ...unionCardAnimationStyle(idx), cursor: 'pointer' }}
-    >
-      <div className="union-header">
-        <span className="union-icon">{union.avatarUrl || ''}</span>
-        <h3>{union.name}</h3>
-      </div>
-      <p className="union-description">{union.description}</p>
-      {(() => {
-        const uLevel = getUnionLevel({
-          level: union.level,
-          playerLevel: union.playerLevel,
-          hierarchyLevel: union.hierarchyLevel,
-          totalPlayers: union.totalPlayers || union.memberCount,
-          hierarchyUnitsRoundedUp: union.hierarchyUnitsRoundedUp,
-          playerThresholdCurrent: union.playerThresholdCurrent,
-          playerThresholdNext: union.playerThresholdNext,
-          hierarchyThresholdCurrent: union.hierarchyThresholdCurrent,
-          hierarchyThresholdNext: union.hierarchyThresholdNext,
-        });
-        return (
-          <>
-            <div className="union-stats">
-              <div className="union-stat">
-                <span className="stat-value">{union.clubCount}</span>
-                <span className="stat-label">Clubs</span>
-              </div>
-              <div className="union-stat">
-                <span
-                  className="stat-value"
-                  style={{
-                    background: uLevel.gradient,
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    fontWeight: 800,
-                  }}
-                >
-                  Lv.{uLevel.level}
-                </span>
-                <span
-                  className="stat-label"
-                  style={{ color: uLevel.color, fontSize: '0.6rem', fontWeight: 600 }}
-                >
-                  {uLevel.tierLabel}
-                </span>
-              </div>
-              <div className="union-stat">
-                <span className="stat-value">{memberDisplay.toLocaleString()}</span>
-                <span className="stat-label">Members</span>
-              </div>
-              <div className="union-stat">
-                <span className="stat-value online">{onlineDisplay.toLocaleString()}</span>
-                <span className="stat-label">Online</span>
-              </div>
-            </div>
-            {/* Level Progress Bar */}
-            <div
-              style={{
-                width: '100%',
-                height: '4px',
-                background: 'rgba(255,255,255,0.08)',
-                borderRadius: '2px',
-                margin: '8px 0 4px',
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                style={{
-                  width: `${uLevel.progressPercent}%`,
-                  height: '100%',
-                  background: uLevel.gradient,
-                  borderRadius: '2px',
-                  transition: 'width 0.6s ease-out',
-                }}
-              />
-            </div>
-            <div
-              style={{
-                textAlign: 'right',
-                fontSize: '0.55rem',
-                color: 'rgba(255,255,255,0.4)',
-                marginBottom: '4px',
-              }}
-            >
-              {uLevel.progressPercent}% To Lv.{Math.min(uLevel.level + 1, 50)}
-            </div>
-          </>
-        );
-      })()}
+    <article className="union-card-shell" style={unionCardAnimationStyle(idx)}>
       <Link
         to={`/unions/${union.id}`}
-        className="btn btn-primary"
-        style={{ width: '100%', textAlign: 'center' }}
+        className="union-card"
+        aria-label={`Open ${union.name} union`}
       >
-        View Union
+        <div className="union-header">
+          <span className="union-icon" aria-hidden="true">
+            {union.avatarUrl ? (
+              <img src={union.avatarUrl} alt="" loading="lazy" />
+            ) : (
+              union.name.charAt(0).toUpperCase()
+            )}
+          </span>
+          <div>
+            <span className="union-kicker">Union Network</span>
+            <h2>{union.name}</h2>
+          </div>
+        </div>
+        <p className="union-description">
+          {union.description || 'A connected club network with shared games and events.'}
+        </p>
+        <div className="union-stats" aria-label={`${union.name} network statistics`}>
+          <div className="union-stat">
+            <span className="stat-value">{union.clubCount.toLocaleString()}</span>
+            <span className="stat-label">Clubs</span>
+          </div>
+          <div className="union-stat">
+            <span className="stat-value union-level" style={{ color: uLevel.color }}>
+              Lv.{uLevel.level}
+            </span>
+            <span className="stat-label" style={{ color: uLevel.color }}>
+              {uLevel.tierLabel}
+            </span>
+          </div>
+          <div className="union-stat">
+            <span className="stat-value">{memberDisplay.toLocaleString()}</span>
+            <span className="stat-label">Members</span>
+          </div>
+          <div className="union-stat">
+            <span className="stat-value online">{onlineDisplay.toLocaleString()}</span>
+            <span className="stat-label">Online</span>
+          </div>
+        </div>
+        <div
+          className="union-progress"
+          role="progressbar"
+          aria-label={`${union.name} level progress`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={uLevel.progressPercent}
+        >
+          <span style={{ width: `${uLevel.progressPercent}%`, background: uLevel.gradient }} />
+        </div>
+        <div className="union-progress-copy">
+          <span>{uLevel.progressPercent}% Complete</span>
+          <span>Next: Lv.{Math.min(uLevel.level + 1, 50)}</span>
+        </div>
+        <span className="union-card-action">
+          Open Union <span aria-hidden="true">›</span>
+        </span>
       </Link>
-    </div>
+    </article>
   );
 }
 
@@ -159,15 +142,15 @@ export default function UnionsPage() {
     document.title = 'Unions | Smarter Poker';
   }, []);
 
-  const navigate = useNavigate();
   const toast = useToast();
   const [unions, setUnions] = useState<Union[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  useVisibilityRefresh(() => loadUnions());
 
-  const loadUnions = () => {
+  const loadUnions = useCallback(() => {
     setLoading(true);
+    setLoadError(null);
     unionService
       .getUnions()
       .then((data) => {
@@ -177,9 +160,12 @@ export default function UnionsPage() {
       .catch((err: any) => {
         reportError(err, 'UnionsPage.Failed_to_load_unions');
         toast.error(err.message || 'Failed to load unions');
+        setLoadError('Club Arena could not load union networks right now.');
         setLoading(false);
       });
-  };
+  }, [toast]);
+
+  useVisibilityRefresh(loadUnions);
 
   useEffect(() => {
     loadUnions();
@@ -193,12 +179,20 @@ export default function UnionsPage() {
       unsubLeft();
       unsubUnion();
     };
-  }, []);
+  }, [loadUnions]);
 
   if (loading) {
     return (
       <div className="unions-page">
-        <PageSkeleton variant="default" />
+        <LoadingState message="Opening Union Networks" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="unions-page">
+        <ErrorState message={loadError} onRetry={loadUnions} />
       </div>
     );
   }
@@ -207,20 +201,25 @@ export default function UnionsPage() {
     <div className="unions-page">
       <header className="unions-header">
         <div>
-          <p>Join Club Networks For More Players And Bigger Games.</p>
+          <span className="unions-eyebrow">Connected Club Networks</span>
+          <h1>Union Command</h1>
+          <p>Coordinate Clubs, Shared Games And Network-Level Events.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setIsCreating(true)}>
-          + New Union
+        <button type="button" className="union-create-button" onClick={() => setIsCreating(true)}>
+          Create Union
         </button>
       </header>
 
       <div className="unions-grid">
         {unions.length === 0 ? (
-          <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '48px 16px' }}>
-            <span style={{ fontSize: '2rem', display: 'block', marginBottom: '12px' }}>◈</span>
-            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem' }}>
-              No Unions Found. Create One To Link Your Clubs!
-            </p>
+          <div className="unions-state">
+            <EmptyState
+              icon="UNION"
+              eyebrow="No Networks Yet"
+              title="Build The First Union"
+              description="Connect clubs under one network to coordinate games, liquidity and events."
+              action={{ label: 'Create Union', onClick: () => setIsCreating(true) }}
+            />
           </div>
         ) : (
           unions.map((union, idx) => <UnionCard key={union.id} union={union} idx={idx} />)
@@ -233,7 +232,11 @@ export default function UnionsPage() {
           Bring Together Multiple Clubs Under One Network For Shared Player Pools And Coordinated
           Events.
         </p>
-        <button className="btn btn-ghost btn-lg" onClick={() => setIsCreating(true)}>
+        <button
+          type="button"
+          className="union-secondary-button"
+          onClick={() => setIsCreating(true)}
+        >
           Start A Union
         </button>
       </section>

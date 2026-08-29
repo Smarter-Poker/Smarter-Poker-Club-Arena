@@ -19,6 +19,7 @@ import { fetchGameCreationAccess } from './GameAccessService';
 import { parseBlindStructure, parsePayoutStructure } from '../utils/parseBlindStructure';
 import type { Tournament, TournamentPlayer } from '../types/database.types';
 import { reportError } from '../utils/errorReporter';
+import { computePlacePrize } from '../lib/payoutMath';
 
 // AUDIT M19: fn_unregister_from_tournament returns a `reason` for ordinary
 // refusals rather than raising, so a player is told why - "you are already
@@ -89,13 +90,7 @@ export interface PayoutStructure {
  * - progressive_bounty: Half bounty to knocker, half added to their head
  */
 export type TournamentType =
-  | 'sng'
-  | 'mtt'
-  | 'satellite'
-  | 'spin'
-  | 'bounty'
-  | 'mystery_bounty'
-  | 'progressive_bounty';
+  'sng' | 'mtt' | 'satellite' | 'spin' | 'bounty' | 'mystery_bounty' | 'progressive_bounty';
 
 export interface BountyConfig {
   bountyType: 'fixed' | 'mystery' | 'progressive';
@@ -1474,12 +1469,11 @@ class TournamentService {
    * Get payout amount for a position
    */
   calculatePayout(prizePool: number, position: number, structure: PayoutStructure[]): number {
-    const entry = structure.find((p) => p.place === position);
-    if (!entry) return 0;
-    // Exact precision: multiply ×100, truncate, back to chips
-    // Formula: trunc(pool * percentage / 100 * 100) / 100
-    // Simplified: trunc(pool * percentage) / 100
-    return Math.trunc(prizePool * entry.percentage) / 100;
+    // 2026-08-29: was `Math.trunc(prizePool * entry.percentage) / 100`, which
+    // truncated where the engine rounds and had no residual rule, so its
+    // places did not sum to the pool. One rule now, shared with the engine
+    // byte for byte -- see src/lib/payoutMath.ts.
+    return computePlacePrize(prizePool, structure, position);
   }
 
   /**
@@ -2590,12 +2584,21 @@ class TournamentService {
    * Create final table (consolidate to 1 table when 9 or fewer players remain)
    */
   async createFinalTable(tournamentId: string): Promise<{ finalTableId: string | null }> {
-    const { count } = await supabase
+    const { count, error: playingCountErr } = await supabase
       .from('tournament_players')
       .select('*', { count: 'exact' })
       .eq('tournament_id', tournamentId)
       .eq('status', 'playing');
 
+    // ROUND 10 (2026-08-29): a failed count wore the same "more than nine
+    // still in" answer as a healthy big field. The null return is the safe
+    // no-op either way (the next consolidation tick retries); the failure
+    // now reports.
+    if (playingCountErr) {
+      reportError(playingCountErr, 'TournamentService.final_table_count_read_failed', {
+        tournamentId,
+      });
+    }
     if (!count || count > 9) return { finalTableId: null };
 
     // Get or create final table (look for a table named "Final Table")
@@ -2981,10 +2984,15 @@ class TournamentService {
     }
     if (!entry) return null;
 
-    const { count } = await supabase
+    const { count, error: totalErr } = await supabase
       .from('tournament_waitlists')
       .select('id', { count: 'exact', head: true })
       .eq('tournament_id', tournamentId);
+    // ROUND 10 (2026-08-29): display path; the 0 total stays as the
+    // fallback, the failure now reports instead of wearing it.
+    if (totalErr) {
+      reportError(totalErr, 'TournamentService.waitlist_total_read_failed', { tournamentId });
+    }
 
     return { position: entry.position, total: count || 0 };
   }

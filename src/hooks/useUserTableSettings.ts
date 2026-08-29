@@ -377,9 +377,7 @@ const SAVE_RETRY_DELAYS_MS = [400, 1500] as const;
 const SAVE_FAILED_TOAST = 'Setting Saved On This Device Only. We Could Not Reach The Server.';
 
 type PersistOutcome =
-  | { status: 'saved' }
-  | { status: 'superseded' }
-  | { status: 'failed'; error: unknown };
+  { status: 'saved' } | { status: 'superseded' } | { status: 'failed'; error: unknown };
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

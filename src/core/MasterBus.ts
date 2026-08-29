@@ -795,6 +795,11 @@ export interface BusPayloadMap {
   FLASH_PLAYER_JOINED: { poolId: string; playerId: string; poolSize: number };
   FLASH_PLAYER_SEATED: { poolId: string; playerId: string; tableId: string; seatCount: number };
   FLASH_TRANSITION: { poolId: string; playerId: string; fromTableId: string; direction: string };
+  /* DECLARED ONLY — no emitter and no subscriber anywhere in src/ (checked
+     2026-08-29). Kept rather than deleted because the two SEAT_* entries beside
+     it are kept for the same reason, and a payload type costs nothing; noted so
+     nobody spends time looking for the code that fires it. Its `poolId` shape
+     suggests it was drafted for the BBJ pool surface and never wired. */
   FLASH_SIT_OUT: { poolId: string; playerId: string };
   FLASH_SIT_BACK: { poolId: string; playerId: string };
   FLASH_PLAYER_LEFT: { poolId: string; playerId: string; cashout: number; handsPlayed: number };

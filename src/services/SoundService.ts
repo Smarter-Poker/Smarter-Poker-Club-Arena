@@ -409,12 +409,34 @@ class SoundService {
     return this.enabled && isSoundAllowed();
   }
 
-  /** Enable/disable a specific sound category (e.g. 'action', 'chat', 'win'). */
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  THE CATEGORY GATE IS REAL MACHINERY WITH NO CONTROL ATTACHED
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Stated plainly here, 2026-08-29, because the shape is misleading: both
+   * setters have ZERO callers in `src/`, so `categoryEnabled` is permanently
+   * all-`true`, so `shouldPlay`'s `if (category && !this.categoryEnabled[...])`
+   * and the win-sound check further down can never fire. Roughly forty category
+   * arguments are threaded through this file to feed a branch that is
+   * unreachable.
+   *
+   * Kept rather than deleted, deliberately: the gate itself is correct and the
+   * per-category preference (Chat Message Sounds, Win Sounds, Turn Alert...) is
+   * a control this product plausibly wants — deleting it means re-deriving the
+   * plumbing later. What was deleted was `restoreStoredConfig`, which read a
+   * localStorage key nothing has ever written and made this look wired when it
+   * is not.
+   *
+   * IF YOU ADD THE UI: drive it through `setCategoryStates` and give it an
+   * owner in `useTableSettings` like every other preference — not a fifth
+   * private localStorage key.
+   */
   setCategoryEnabled(category: SoundCategory, enabled: boolean) {
     this.categoryEnabled[category] = enabled;
   }
 
-  /** Bulk-update category gates from the SoundSettings config. */
+  /** Bulk-update category gates. See the note above: no caller yet. */
   setCategoryStates(states: Partial<Record<SoundCategory, boolean>>) {
     for (const key in states) {
       const k = key as SoundCategory;
@@ -1425,7 +1447,31 @@ class SoundService {
   private createGain(volume: number): GainNode {
     if (!this.ctx) throw new Error('[SoundService] createGain called without audio context');
     const gain = this.ctx.createGain();
-    gain.gain.value = volume * this.masterVolume * this.effectsVolume;
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  THE PER-VOICE AMOUNT ONLY. MASTER IS APPLIED ONCE, BY masterGain.
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * This read `volume * this.masterVolume * this.effectsVolume` and then
+     * connected to `this.out`, which IS `masterGain` — whose own gain is
+     * already `masterVolume * effectsVolume`. So every voice built through this
+     * helper was attenuated by masterVolume SQUARED:
+     *
+     *     slider 100  ->  1.00   (the only value that looked right)
+     *     slider  70  ->  0.49   the default: 30% quieter than it says
+     *     slider  50  ->  0.25   half the slider, a quarter of the sound
+     *     slider  20  ->  0.04
+     *
+     * The volume control was quadratic, the whole app was quieter than every
+     * number it displayed, and — because the other forty gain nodes in this
+     * file are hand-rolled and connect to `out` with a raw value — sounds made
+     * through this helper were quieter than sounds that were not, which is why
+     * it never read as a simple "everything is too quiet" bug.
+     *
+     * `setMasterVolume` writes `masterGain.gain.value`, so master and effects
+     * still take effect live, in the one place they belong.
+     */
+    gain.gain.value = volume;
     gain.connect(this.out);
     return gain;
   }

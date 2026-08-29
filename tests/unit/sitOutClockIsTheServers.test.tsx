@@ -223,3 +223,87 @@ describe('the footer cannot show the state without the clock', () => {
     expect(decl.length).toBeGreaterThan(0);
   });
 });
+
+describe('the multi-table surfaces can see the deadline too', () => {
+  const MULTI = strip(readRaw('src/pages/MultiTablePage.tsx'));
+  const TABBAR = strip(readRaw('src/components/table/TableTabBar.tsx'));
+  const TABBAR_CSS = readRaw('src/components/table/TableTabBar.css');
+
+  it('the owning table reports its deadline upward', () => {
+    /* A tab is the ONLY thing a multi-tabling player can see of a table they
+       are not looking at. One tap of Sit Out At All Tables can start six
+       five-minute eviction clocks, and not one surface outside the hidden
+       tables reported any of them. */
+    expect(TABLE_PAGE).toMatch(/sitOutDeadlineMs: heroTabSitOutDeadlineMs/);
+    expect(MULTI).toMatch(/sitOutDeadlineMs\?: number/);
+  });
+
+  it('the tab renders a countdown, precomputed like its siblings', () => {
+    /* Seconds in, not a deadline: this bar has no clock of its own and should
+       not grow one — `decisionSecondsLeft` and `timeBankSecondsLeft` are
+       already precomputed by the parent. */
+    expect(TABBAR).toMatch(/sitOutSecondsLeft\?: number/);
+    expect(MULTI).toMatch(/sitOutSecondsLeft:/);
+    expect(TABBAR).toMatch(/table-tab-bar__tab-name">SEAT</);
+  });
+
+  it('the tab bar clock keeps running while only a sit-out is live', () => {
+    /* The 1s tick was gated on a turn, a decision or a time bank. A sat-out
+       player has none of those — so the most important clock on the page was
+       the one that stopped. */
+    expect(MULTI).toMatch(/t\.sitOutDeadlineMs !== undefined\s*\)\s*;/);
+  });
+
+  it('the dock treats a seat about to be lost as urgent', () => {
+    /* It was gated on `isMyTurn` alone: a countdown, a title flip, a favicon
+       badge and a tick-tock for a TURN, and nothing for a seat. Losing a turn
+       costs a hand; losing a seat cashes out a stack. */
+    expect(MULTI).toMatch(/const urgentSeat = live/);
+    expect(MULTI).toMatch(/isSitOutUrgent\(t\.sitOutDeadlineMs/);
+  });
+
+  it('the urgent tab style exists, and is not amber', () => {
+    expect(TABBAR_CSS).toMatch(/\.table-tab-bar__tab-label--seat-urgent/);
+    const code = TABBAR_CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    const at = code.indexOf('--seat-urgent');
+    const block = code.slice(at, code.indexOf('}', at));
+    expect(block).not.toMatch(/orange|amber|gold/i);
+  });
+
+  it('the sit-out toast says what it just started', () => {
+    /* "Sitting Out" alone omits the only part with a consequence. */
+    expect(MULTI).toMatch(/Your Seat Is Held For Up To 5 Minutes/);
+    expect(MULTI).toMatch(/You Will Be Blinded Off/);
+  });
+});
+
+describe('one request at a time, and one wording', () => {
+  it('sit-out and sit-in are serialised', () => {
+    /* Rapid out -> in -> out issued three independent POSTs with no ordering
+       guarantee while every one updated the UI optimistically: the client could
+       settle showing "sitting out" over a server that had the player in the
+       game, being dealt in and blinded. */
+    expect(TABLE_PAGE).toMatch(/sitOutRequestInFlightRef/);
+  });
+
+  it('the footer asks the shared function for its wording instead of editing it', () => {
+    /* It used `.replace('Sitting Out', 'You Are Sitting Out')` — string surgery
+       on the output of the one function that exists so two surfaces cannot word
+       the same rule differently. */
+    expect(TABLE_PAGE).not.toMatch(/\.replace\('Sitting Out'/);
+    expect(TABLE_PAGE).toMatch(/'You Are Sitting Out'\s*\)/);
+  });
+
+  it('the read that owns the eviction clock reports its failures', () => {
+    expect(TABLE_PAGE).toMatch(/TablePage\.seat_sitout_poll_failed/);
+  });
+
+  it('the hero countdown is announced to a screen reader', () => {
+    /* The same file gives a bomb-pot flavour banner an aria-live and said
+       nothing at all about a seat thirty seconds from being cashed out. ONE
+       live region — three would read the same sentence three times a second. */
+    expect(TABLE_PAGE).toMatch(/spectator-footer-bar__label"\s*\n?\s*role="status"/);
+    const regions = (TABLE_PAGE.match(/seat__sitout-badge[\s\S]{0,200}aria-live/g) || []).length;
+    expect(regions, 'the seat badges must NOT each be a live region').toBe(0);
+  });
+});

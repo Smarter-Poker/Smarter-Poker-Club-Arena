@@ -43,6 +43,7 @@ import { startHorseDailyAudit } from './services/HorseDailyAudit.js';
 import { startBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
 import { startHorseLaneLoader } from './services/HorseLaneLoader.js';
 import { startGtoChartLoader } from './services/GtoChartLoader.js';
+import { startGtoPostflopLoader } from './services/GtoPostflopLoader.js';
 import { startHorseOverlayGuard } from './services/HorseOverlayGuard.js';
 import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 
@@ -302,6 +303,11 @@ httpServer.listen(PORT, () => {
   // this call the layer is inert and heuristics decide — which is the
   // fallback, not the plan.
   startGtoChartLoader();
+  // V29 solver flop cells (Dan 2026-08-29): the offline aggregation of the
+  // 8.8M-solution warehouse, preloaded so heads-up hold'em flops play the
+  // solver's mixes at zero I/O. Without this the layer is inert (heuristics
+  // decide) — which is the fallback, not the plan.
+  startGtoPostflopLoader();
   // Overlay guard (Dan 2026-08-27): Midway Union guaranteed events get topped
   // up with horses that are not already in them, so no overlay occurs.
   startHorseOverlayGuard();

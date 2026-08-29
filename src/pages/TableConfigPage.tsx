@@ -1615,7 +1615,18 @@ export default function TableConfigPage() {
                     onChange={(v) => updateConfig('bombPotAnteBB', v)}
                     min={1}
                     max={10}
-                    step={0.5}
+                    /* 2026-08-29: was 0.5, and it was a LIE. tables
+                       .bomb_pot_ante_multiplier is an INTEGER column (verified
+                       against the live schema), so a host who dragged this to
+                       2.5 had it silently stored as 3 and every player at the
+                       table was charged the larger ante. A control must not
+                       offer a value the database cannot hold.
+
+                       The half-step is not lost: the Fixed Ante above is
+                       `numeric` and takes any amount, which is the right home
+                       for "two and a half big blinds" anyway — it states the
+                       price in chips rather than in a multiple. */
+                    step={1}
                     suffix=" Big Blind"
                   />
                 )}

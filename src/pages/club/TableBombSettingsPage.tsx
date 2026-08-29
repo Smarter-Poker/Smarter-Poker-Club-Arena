@@ -155,7 +155,13 @@ export default function TableBombSettingsPage() {
       toast.error('Could Not Save These Settings');
       return;
     }
-    const res = data as { ok?: boolean; reason?: string; changed?: boolean } | null;
+    const res = data as {
+      ok?: boolean;
+      reason?: string;
+      changed?: boolean;
+      /** The column is an integer, so a fractional ante was rounded to store. */
+      ante_multiplier_rounded?: boolean;
+    } | null;
     if (!res?.ok) {
       // The RPC names WHY. Surfacing its reason beats a generic failure — a
       // host who set a 30-second timer should be told that, not told "error".
@@ -172,8 +178,17 @@ export default function TableBombSettingsPage() {
     }
     // The engine re-reads on its own throttle, so this is a promise the code
     // actually keeps — no restart, and no need to tell the host to do anything.
+    //
+    // If the ante was rounded, SAY SO. The column is an integer, and a host
+    // who asked for two and a half big blinds and silently got three would
+    // find out from the felt, after every player at the table had already
+    // been charged the larger amount.
     toast.success(
-      res.changed ? 'Saved. The Table Picks This Up Within A Minute.' : 'Nothing Changed'
+      !res.changed
+        ? 'Nothing Changed'
+        : res.ante_multiplier_rounded
+          ? `Saved. The Ante Was Rounded To ${draft.anteBB} Big Blinds. The Table Picks This Up Within A Minute.`
+          : 'Saved. The Table Picks This Up Within A Minute.'
     );
     navigate(`/clubs/${clubId}`);
   }, [draft, tableId, clubId, toast, navigate]);
@@ -275,14 +290,20 @@ export default function TableBombSettingsPage() {
 
           <label className={styles.field}>
             <span className={styles.label}>Ante</span>
+            {/* WHOLE BIG BLINDS ONLY. tables.bomb_pot_ante_multiplier is an
+                INTEGER column, so a half-step here would be a control offering
+                a value the database cannot hold — a host dragging to 2.5 would
+                have 3 stored and every player charged the larger ante. The
+                fractional case has a proper home in the Fixed Ante below,
+                which is `numeric` and states the price in chips. */}
             <input
               type="number"
               min={0}
-              step={0.5}
+              step={1}
               value={draft.anteBB}
-              onChange={(e) => set('anteBB', Math.max(0, Number(e.target.value) || 0))}
+              onChange={(e) => set('anteBB', Math.max(0, Math.round(Number(e.target.value) || 0)))}
             />
-            <span className={styles.suffix}>X BB</span>
+            <span className={styles.suffix}>X BB (Whole Blinds)</span>
           </label>
 
           <label className={styles.field}>

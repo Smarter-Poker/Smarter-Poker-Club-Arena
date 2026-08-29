@@ -130,7 +130,31 @@ async function trimCache(cacheName, maxEntries) {
  *  - When the background revalidation shows the shell has changed under a
  *    still-current SW, clients are told, so the app can refresh itself at a
  *    moment of its own choosing rather than mid-hand (see SHELL_UPDATED).
+ *
+ * ── THE BOUNDED FRESHNESS RACE (Dan 2026-08-29) ────────────────────────────
+ *
+ * Pure cache-first had a visible cost Dan ordered stopped: open Club Arena
+ * right after a deploy (which, at this repo's deploy cadence, is MOST opens)
+ * and the app boots the one-deploy-old shell, then SHELL_UPDATED lands and
+ * useShellUpdateGate hard-reloads the page seconds after it painted. Dan:
+ * "it like glitches and reloads... it looks like broken code."
+ *
+ * So the revalidation fetch — which was already being made on every
+ * navigation — is now given a short, fixed budget to answer BEFORE the
+ * cached shell is returned. If the network wins, the session boots the
+ * CURRENT shell and there is nothing to reload later: no glitch at all.
+ * If the budget expires first, the cached shell is served exactly as
+ * before and the gate remains the (verified) fallback.
+ *
+ * This is NOT the 2026-08-24 network-first regression coming back:
+ *  - the deadline is SHELL_FRESH_RACE_MS, not 3500ms, and on expiry the
+ *    answer is the instant cached shell, never a spinner;
+ *  - offline rejects the fetch immediately, so the offline path costs ~0ms;
+ *  - the request was already on the wire for revalidation — the race adds
+ *    no network traffic, only a bounded wait for work already in flight.
  */
+const SHELL_FRESH_RACE_MS = 300;
+
 async function shellFromCache(event) {
   const cache = await caches.open(CACHE_NAME);
   const cached = await cache.match(SHELL_KEY);
@@ -158,6 +182,19 @@ async function shellFromCache(event) {
     .catch(() => null);
 
   if (cached) {
+    // The bounded freshness race — see the block comment above. The fetch is
+    // already in flight for revalidation; give it SHELL_FRESH_RACE_MS to land
+    // so a post-deploy entry can boot the current shell instead of booting
+    // stale and being reloaded out from under the player seconds later.
+    const fresh = await Promise.race([
+      revalidate,
+      new Promise((resolve) => setTimeout(resolve, SHELL_FRESH_RACE_MS)),
+    ]);
+    if (fresh && fresh.ok) {
+      // revalidate has fully settled (compare + cache.put done); the response
+      // body itself is unconsumed — only clones were read. Serve it.
+      return fresh;
+    }
     // Keep the revalidation alive past the response we are about to return.
     event.waitUntil(revalidate);
     return cached;

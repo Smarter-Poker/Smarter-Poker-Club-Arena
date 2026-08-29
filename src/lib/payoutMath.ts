@@ -1,13 +1,28 @@
 /**
- * Tournament payout arithmetic.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  TOURNAMENT PAYOUT ARITHMETIC — THE CLIENT'S COPY (2026-08-29)
+ * ═══════════════════════════════════════════════════════════════════════════
  *
- * Deliberately a standalone module with NO imports. Both payout sites live in
- * TournamentManagerEliminations and the stuck-COMPLETING rescue lives in
- * tournamentRecovery, and TournamentManagerBase already imports
- * tournamentRecovery -- so hosting this in the eliminations module made the
- * import graph circular (recovery -> eliminations -> base -> recovery). ESM
- * hoisting would have saved it at runtime, but a cycle around money code is
- * not worth relying on. Keeping the arithmetic dependency-free removes it.
+ * A VERBATIM copy of server/src/tournament/payoutMath.ts, and it must stay
+ * verbatim: `tests/payout-one-rule-everywhere.law.test.ts` compares the two
+ * files and fails if they drift by a character.
+ *
+ * WHY A COPY RATHER THAN AN IMPORT. The engine is a separate package under
+ * server/ with its own tsconfig and its own build; nothing in src/ imports
+ * from it and nothing in it imports from src/. Reaching across that boundary
+ * to share one pure function would couple the two builds for no other reason.
+ * A copy plus a test that refuses to let it drift is the cheaper guarantee.
+ *
+ * WHY IT EXISTS AT ALL. The lobby used to price places with
+ * `Math.trunc(pool * pct) / 100` while the engine rounded and gave the
+ * residual to the last place. Measured on 2026-08-29 across the pool and
+ * structure combinations actually used in production: 13 of 78 showed the
+ * player a different number from the one that reached their wallet, and the
+ * client's places did not sum to the pool at all. The comment on the old
+ * client version even said it matched "the money" -- it matched a dead client
+ * duplicate, not the engine.
+ *
+ * A player must never be shown one number and paid another.
  */
 /**
  * The single rule for turning a prize pool + payout structure into one place's

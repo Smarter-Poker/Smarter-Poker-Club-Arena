@@ -549,7 +549,14 @@ export default function RewardsTab({
               const isPodium = band.fromPlace <= 3 && band.fromPlace === band.toPlace;
               const isBubbleRow = band.toPlace === bubblePlace;
               const isHeroRow = i === heroBandIndex;
-              const prize = effectivePool > 0 ? placePrize(effectivePool, band.percentage) : 0;
+              // Priced from the WHOLE structure: the last paid place absorbs the
+              // residual so the places sum to the pool, which a single
+              // percentage cannot express. A band shares one percentage, so its
+              // first place is representative of the band.
+              const prize =
+                effectivePool > 0 && parsedPlaces
+                  ? placePrize(effectivePool, parsedPlaces, band.fromPlace)
+                  : 0;
 
               return (
                 <li

@@ -330,8 +330,18 @@ const num = (s: Record<string, unknown>, ...keys: string[]): number | null => {
  *
  * The columns are also TRIPLICATED (`run_it_twice` / `run_it_twice_enabled` /
  * `allow_run_it_twice`; `straddle_enabled` / `allow_straddle` /
- * `enable_straddle`; `bomb_pot_enabled` / `bomb_pots`) and they DISAGREE on
- * live rows. So a card cannot pick a spelling and hope. Each predicate below
+ * `enable_straddle`) and they DISAGREE on live rows.
+ *
+ * 2026-08-29: the bomb-pot pair named here is GONE. This comment was the
+ * evidence that `bomb_pot_enabled` and `bomb_pots` disagreed, and measuring it
+ * settled the argument — `bomb_pots` was false on both of the only two
+ * bomb-pot tables on the platform and true on none of 97,944 rows, so it said
+ * "no bomb pots here" about every table that had them. Nothing wrote it and
+ * nothing read it, so it was DROPPED rather than repaired: a second spelling of
+ * a boolean has no correct value, only a currently-less-wrong one.
+ * `bomb_pot_enabled` is now the only spelling.
+ *
+ * So a card cannot pick a spelling and hope. Each predicate below
  * is the one the game server itself evaluates, cited to the line, because the
  * only defensible thing for a lobby to print is what the engine will actually
  * do when you sit down.

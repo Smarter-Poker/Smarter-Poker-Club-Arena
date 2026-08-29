@@ -3495,6 +3495,35 @@ export class GameServer {
             const id = String(t.id);
             const seats = Number(t.max_players) || 0;
             const paid = paidSeats.get(id) ?? 0;
+
+            /**
+             * ── A HUMAN IS NEVER LEFT WAITING (2026-08-29, round 13) ────────
+             *
+             * Dan, live, 18:06Z today: bought a seat in a held-empty Spin,
+             * sat alone for 24 seconds while nothing came, gave up — and the
+             * horses filled that exact game six minutes after he left.
+             * Production showed why the wait was so erratic: the fill lived
+             * only in discoverTournaments' past-start branch, and today's
+             * twenty engine deploys each opened a 3-13 minute window where
+             * that loop was not running (29 such windows in 12 hours). A
+             * human who sits during one waits it out with no fill at all.
+             *
+             * So the FAST lane — the lightest loop in the process, running
+             * from the first seconds of boot — now owns the human case too:
+             * a partially-paid seat-first game with a HUMAN in a seat is
+             * topped up immediately, per Dan's 2026-08-26 rule ("the moment
+             * one does, topUpWithHorses fills the remaining seats"). A
+             * partial game with only horses is left alone on purpose: that
+             * is the horse-opened board holding its last seat for a human
+             * (60-180s window), and the held-empty rotation — filling those
+             * here would erase both designs.
+             */
+            if (seats > 0 && paid > 0 && paid < seats) {
+              void this.fillHumanSeatFirstGame(id, seats, paid).catch((err) =>
+                reportError(err, 'GameServer.human_seat_first_fill_error')
+              );
+            }
+
             if (seats <= 0 || paid < seats) continue;
 
             const held = this.tournamentEngines.get(id);
@@ -3520,6 +3549,106 @@ export class GameServer {
         reportError(err, 'GameServer.seat_first_fast_start_error');
       }
       await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
+    }
+  }
+
+  /** Per-game throttle for fillHumanSeatFirstGame - one attempt per 12s. */
+  private lastHumanFillAt = new Map<string, number>();
+  /** Per-game throttle for the human-waiting alarm - one report per 60s. */
+  private lastHumanWaitReportAt = new Map<string, number>();
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  FILL A HUMAN'S GAME NOW (2026-08-29, round 13)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Called from the seat-first fast lane for any REGISTERING spin/heads-up
+   * with SOME seats paid but not all. If one of those seats belongs to a
+   * HUMAN, the game is committed (Dan 2026-08-26: "The moment one does,
+   * topUpWithHorses fills the remaining seats") and the remaining seats are
+   * filled immediately. If every occupant is a horse, this does nothing -
+   * that partial game is the horse-opened board deliberately holding its
+   * last seat for a human, and taking it here would erase that design.
+   *
+   * Every read is error-bound, and a fill that comes back short of the
+   * shortfall raises `seat_first_human_waiting` (throttled) - a human
+   * sitting in an unfillable game is precisely the situation that must
+   * never be silent again.
+   */
+  private async fillHumanSeatFirstGame(
+    tournamentId: string,
+    seats: number,
+    paid: number
+  ): Promise<void> {
+    const now = Date.now();
+    const last = this.lastHumanFillAt.get(tournamentId) ?? 0;
+    if (now - last < 12_000) return;
+    this.lastHumanFillAt.set(tournamentId, now);
+
+    const { data: primaryId, error: primErr } = await supabase.rpc('fn_tournament_primary_table', {
+      p_tournament_id: tournamentId,
+    });
+    if (primErr || !primaryId) {
+      if (primErr) {
+        reportError(
+          new Error(`[GameServer] human-fill primary-table read failed: ${primErr.message}`),
+          'GameServer.human_fill_primary_table_read_failed'
+        );
+      }
+      return;
+    }
+
+    const { data: occupants, error: occErr } = await supabase
+      .from('table_seats')
+      .select('user_id')
+      .eq('table_id', String(primaryId))
+      .is('left_at', null);
+    if (occErr) {
+      reportError(
+        new Error(`[GameServer] human-fill occupant read failed: ${occErr.message}`),
+        'GameServer.human_fill_occupant_read_failed'
+      );
+      return;
+    }
+    const ids = (occupants || [])
+      .map((o) => String((o as { user_id?: string }).user_id ?? ''))
+      .filter((v) => v.length > 0);
+    if (ids.length === 0) return;
+
+    const { data: profiles, error: profErr } = await supabase
+      .from('profiles')
+      .select('id, is_horse')
+      .in('id', ids);
+    if (profErr) {
+      reportError(
+        new Error(`[GameServer] human-fill profile read failed: ${profErr.message}`),
+        'GameServer.human_fill_profile_read_failed'
+      );
+      return;
+    }
+    const hasHuman = (profiles || []).some((p) => !Boolean((p as { is_horse?: boolean }).is_horse));
+    if (!hasHuman) return;
+
+    const added = await this.tournamentRecurring.topUpWithHorses(tournamentId, seats);
+    const shortfall = seats - paid;
+    if (added > 0) {
+      console.log(
+        `[GameServer] Human-priority fill: +${added} horse(s) into seat-first game ` +
+          `${tournamentId.slice(0, 8)} (${paid}/${seats} paid, a human is waiting)`
+      );
+    }
+    if (added < shortfall) {
+      const lastReport = this.lastHumanWaitReportAt.get(tournamentId) ?? 0;
+      if (now - lastReport >= 60_000) {
+        this.lastHumanWaitReportAt.set(tournamentId, now);
+        reportError(
+          new Error(
+            `[GameServer] A HUMAN IS WAITING in seat-first game ${tournamentId.slice(0, 8)}: ` +
+              `${paid}/${seats} paid, top-up added ${added} of ${shortfall} needed`
+          ),
+          'GameServer.seat_first_human_waiting'
+        );
+      }
     }
   }
 

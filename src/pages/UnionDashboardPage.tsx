@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { unionApi } from '../services/UnionApiService';
 import { masterBus } from '../core/MasterBus';
@@ -32,6 +32,7 @@ import UnionOpsPanel from '../components/union/UnionOpsPanel';
 import UnionClubGovernance from '../components/union/UnionClubGovernance';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { EmptyState, ErrorState } from '../components/common/EmptyState';
 // ── Helpers ─────────────────────────────────────────────────
 const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
 
@@ -134,6 +135,7 @@ interface SettlementPeriod {
 
 export default function UnionDashboardPage() {
   const navigate = useNavigate();
+  const { unionId: routeUnionId } = useParams<{ unionId?: string }>();
   const { user } = useAuthUser();
 
   const [tab, setTab] = useState<UnionTab>('overview');
@@ -143,7 +145,7 @@ export default function UnionDashboardPage() {
   const [processing, setProcessing] = useState(false);
 
   // Union data
-  const [unionId, setUnionId] = useState<string | null>(null);
+  const [unionId, setUnionId] = useState<string | null>(routeUnionId || null);
   const [union, setUnion] = useState<UnionRow | null>(null);
   const [adminRole, setAdminRole] = useState<string | null>(null);
   /**
@@ -295,6 +297,15 @@ export default function UnionDashboardPage() {
   }, [appsFilter]);
 
   const dashLoadingRef = useRef(false);
+
+  // The contextual route is authoritative. A user who moves between two union
+  // workspaces in the same session must never keep the first union's cached ID.
+  useEffect(() => {
+    if (!routeUnionId) return;
+    setUnionId(routeUnionId);
+    setUnion(null);
+    setAdminRole(null);
+  }, [routeUnionId]);
 
   // ── Load Dashboard ─────────────────────────────────────────
   const loadDashboard = useCallback(
@@ -513,7 +524,8 @@ export default function UnionDashboardPage() {
       if (cached) {
         const parsed = JSON.parse(cached);
         const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
-        if (age < SWR_TTL_MS && parsed.union) {
+        const cacheMatchesRoute = !routeUnionId || parsed.unionId === routeUnionId;
+        if (age < SWR_TTL_MS && parsed.union && cacheMatchesRoute) {
           setUnion(parsed.union);
           if (parsed.unionId) setUnionId(parsed.unionId);
           if (parsed.adminRole) setAdminRole(parsed.adminRole);
@@ -527,8 +539,8 @@ export default function UnionDashboardPage() {
       reportError(e, 'UnionDashboardPage.useEffect');
       /* corrupt cache */
     }
-    loadDashboard();
-  }, [user?.id, loadDashboard]);
+    loadDashboard(routeUnionId);
+  }, [user?.id, loadDashboard, routeUnionId]);
 
   // ── Load Applications ──────────────────────────────────────
   const loadApps = useCallback(async () => {
@@ -874,11 +886,22 @@ export default function UnionDashboardPage() {
   }
 
   if (error && !union) {
+    const accessRestricted = /not a union admin|not.*owner/i.test(error);
     return (
       <div className="admin-page">
-        <div className="admin-container">
-          <div className="admin-error-banner">{error}</div>
-        </div>
+        {accessRestricted ? (
+          <EmptyState
+            icon="UNION"
+            eyebrow="Union Permission Gate"
+            tone="permission"
+            title="No Union Workspace Is Available"
+            description="Union treasury, clubs, agents, and settlement controls are available only to a union owner or appointed administrator."
+            action={{ label: 'Browse Unions', onClick: () => navigate('/unions') }}
+            secondaryAction={{ label: 'Return To Arena', onClick: () => navigate('/') }}
+          />
+        ) : (
+          <ErrorState message={error} onRetry={() => void loadDashboard(unionId)} />
+        )}
       </div>
     );
   }
@@ -999,8 +1022,9 @@ export default function UnionDashboardPage() {
           </div>
           <div className="admin-header-actions">
             <button
-              onClick={() => navigate('/union-games')}
+              onClick={() => unionId && navigate(`/unions/${unionId}/games`)}
               className="admin-btn admin-btn-primary"
+              disabled={!unionId}
             >
               Games
             </button>

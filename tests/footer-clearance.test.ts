@@ -1,39 +1,8 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  FOOTER CLEARANCE — every page that mounts ClubBottomNav must reserve for it
- * ═══════════════════════════════════════════════════════════════════════════════
- *
- * ClubBottomNav is `position: fixed; bottom: 0` and is
- * `--bottom-nav-height` (74px) tall PLUS `env(safe-area-inset-bottom)`. A page
- * that renders it without reserving that space at the bottom loses its last row
- * of content underneath the bar - and the loss is invisible on a desktop
- * viewport, which is why it survived so long on seven pages at once.
- *
- * THE BUG THIS EXISTS TO STOP COMING BACK (found 2026-08-25, on seven pages):
- *
- *     padding-bottom: max(70px, env(safe-area-inset-bottom));
- *
- * The bar's height and the inset are ADDITIVE; `max()` picks one or the other.
- * So that line reserved 70px on a flat screen (4px short) and still 70px on a
- * notched phone (short by 74 + inset - 70, about 38px). It reads like a
- * safe-area-aware reservation and is neither.
- *
- * The correct form is the shared token, which is the same value the component
- * pins its own min-height to:
- *
- *     padding-bottom: var(--bottom-nav-clearance, 74px);
- *     padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
- *
- * This test is deliberately a STATIC READ of the source. Mounting each page to
- * measure it would need a real layout engine, and jsdom does not have one.
- */
-
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 const ROOT = resolve(__dirname, '..');
-const PAGES = join(ROOT, 'src/pages');
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
@@ -42,60 +11,72 @@ function walk(dir: string): string[] {
   });
 }
 
-/** Page files that render the bar. */
-function pagesMountingTheNav(): string[] {
-  return walk(PAGES).filter(
-    (f) => f.endsWith('.tsx') && readFileSync(f, 'utf8').includes('<ClubBottomNav')
-  );
-}
+describe('global Club Arena footer mounting and clearance', () => {
+  it('mounts ClubBottomNav once at the app root and nowhere in individual pages', () => {
+    const app = readFileSync(join(ROOT, 'src/App.tsx'), 'utf8');
+    const pageMounts = walk(join(ROOT, 'src/pages')).filter(
+      (file) => file.endsWith('.tsx') && readFileSync(file, 'utf8').includes('<ClubBottomNav')
+    );
 
-/**
- * The stylesheets a page could be reserving in: its own sibling CSS, plus the
- * shared layout every StandardContentLayout page inherits from.
- */
-function stylesheetsFor(pageFile: string): string[] {
-  const base = pageFile.replace(/\.tsx$/, '');
-  const candidates = [
-    `${base}.css`,
-    `${base}.module.css`,
-    join(ROOT, 'src/components/layouts/StandardContentLayout.module.css'),
-  ];
-  return candidates.filter((f) => {
-    try {
-      return statSync(f).isFile();
-    } catch {
-      return false;
-    }
-  });
-}
-
-describe('every page that mounts ClubBottomNav reserves space for it', () => {
-  const pages = pagesMountingTheNav();
-
-  it('finds the pages at all (a rename must not silently empty this suite)', () => {
-    expect(pages.length).toBeGreaterThan(15);
+    expect(app.match(/<ClubBottomNav/g)).toHaveLength(1);
+    expect(app).toContain('shouldShowClubFooter(location.pathname)');
+    expect(pageMounts).toEqual([]);
   });
 
-  it.each(pages.map((p) => [p.slice(ROOT.length + 1), p]))(
-    '%s reserves the bottom-nav clearance',
-    (_label, file) => {
-      const css = stylesheetsFor(file as string)
-        .map((f) => readFileSync(f, 'utf8'))
-        .join('\n');
-      expect(css).toMatch(/padding-bottom:[^;]*--bottom-nav-clearance/);
-    }
-  );
+  it('has no second generic fixed-bottom application footer implementation', () => {
+    const navigationFiles = walk(join(ROOT, 'src/components/navigation'));
+    const obsoleteTabBar = navigationFiles.filter((file) => /\/TabBar\.(tsx|css)$/.test(file));
+    const sourceFiles = walk(join(ROOT, 'src')).filter((file) => /\.(tsx|ts)$/.test(file));
+    const duplicateMounts = sourceFiles.filter((file) => {
+      const source = readFileSync(file, 'utf8');
+      return /<(?:ArenaFooter|ClubArenaFooter|BottomNav|BottomNavigation|MobileFooter|DesktopFooter|GlobalFooter)\b/.test(
+        source
+      );
+    });
 
-  /**
-   * Scoped to the stylesheets of pages that actually mount the bar. The same
-   * `max(70px, env(...))` line appears on plenty of pages that have no footer
-   * at all - there it reserves nothing that matters, and widening it to the
-   * nav clearance would only add dead space at the bottom of those screens.
-   */
-  it('no page that mounts the nav still uses the max(70px, env(...)) reservation', () => {
-    const offenders = [...new Set(pages.flatMap(stylesheetsFor))]
-      .filter((f) => /padding-bottom:\s*max\(\s*70px\s*,\s*env\(/.test(readFileSync(f, 'utf8')))
-      .map((f) => f.slice(ROOT.length + 1));
-    expect(offenders).toEqual([]);
+    expect(obsoleteTabBar).toEqual([]);
+    expect(duplicateMounts).toEqual([]);
+  });
+
+  it('shares a compact, touch-safe height and safe-area clearance', () => {
+    for (const sheet of [
+      'src/styles/club-engine.css',
+      'src/styles/globals.css',
+      'src/styles/design-system.css',
+    ]) {
+      const css = readFileSync(join(ROOT, sheet), 'utf8');
+      expect(css).toContain('--bottom-nav-height: clamp(44px, 9vw, 108px)');
+      expect(css).toContain(
+        '--bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px))'
+      );
+    }
+  });
+
+  it('always scales the complete artwork to the viewport without horizontal scrolling', () => {
+    const css = readFileSync(join(ROOT, 'src/components/club/ClubBottomNav.module.css'), 'utf8');
+
+    expect(css).toMatch(/\.viewport\s*\{[\s\S]*?overflow:\s*hidden/);
+    expect(css).toMatch(/\.artwork\s*\{[\s\S]*?width:\s*calc\(100% - 4px\)/);
+    expect(css).toMatch(/\.artwork\s*\{[\s\S]*?height:\s*var\(--bottom-nav-height/);
+    expect(css).not.toContain('overflow-x: auto');
+    expect(css).not.toContain('width: 640px');
+    expect(css).not.toContain('min-width: 640px');
+  });
+
+  it('reserves footer clearance on routed pages but not the footerless root lobby', () => {
+    const appLayout = readFileSync(
+      join(ROOT, 'src/components/layouts/AppLayout.module.css'),
+      'utf8'
+    );
+    const home = readFileSync(join(ROOT, 'src/pages/HomePage.module.css'), 'utf8');
+
+    expect(appLayout).toMatch(/\.main\s*\{[\s\S]*?padding-bottom:[^;]*--bottom-nav-clearance/);
+    expect(home).toMatch(/\.mainContent\s*\{[\s\S]*?padding:\s*0 16px 16px/);
+    expect(home.match(/\.mainContent\s*\{[\s\S]*?\}/)?.[0]).not.toContain('--bottom-nav-clearance');
+  });
+
+  it('keeps the approved production artwork lossless after the dist optimizer', () => {
+    const optimizer = readFileSync(join(ROOT, 'scripts/optimize-dist-media.mjs'), 'utf8');
+    expect(optimizer).toContain("{ prefix: 'images/club-footer/', maxDim: 0 }");
   });
 });

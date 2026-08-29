@@ -500,3 +500,27 @@
 .rules-modal__manual-bomb:active {
   filter: brightness(0.92);
 }
+
+/* EDIT BOMB SETTINGS (2026-08-29): the staff control beside the manual bomb.
+   Deliberately QUIETER than .rules-modal__manual-bomb — that one arms a forced
+   ante on the very next hand and should look like it; this one opens a form.
+   Same width and rhythm so the two read as a pair, neutral colour so the
+   dangerous one stays the loud one. */
+.rules-modal__edit-bomb {
+  margin-top: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: #cfd4dc;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+  /* A staff control on a phone still has to be hittable. */
+  min-height: 44px;
+}
+.rules-modal__edit-bomb:active {
+  filter: brightness(0.92);
+}

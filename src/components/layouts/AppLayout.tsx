@@ -11,35 +11,52 @@
 
 import { Outlet, useLocation } from 'react-router-dom';
 import RouteErrorBoundary from '../common/RouteErrorBoundary';
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import styles from './AppLayout.module.css';
 import ClubArenaWelcomeModal, { useClubArenaWelcome } from '../modals/ClubArenaWelcomeModal';
 import ClubAnnouncementBanner from '../club/ClubAnnouncementBanner';
 import GlobalHeader from '../navigation/GlobalHeader';
+import ArenaSectionRail from '../navigation/ArenaSectionRail';
+import ClubOperationsRail from '../navigation/ClubOperationsRail';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import { masterBus } from '../../core/MasterBus';
 import CompleteProfileModal, { useCompleteProfile } from '../modals/CompleteProfileModal';
+import { ClubWorkspaceProvider } from '../../contexts/ClubWorkspaceContext';
+import NavigationTelemetry from '../navigation/NavigationTelemetry';
 
-export default function AppLayout() {
+const ROUTE_ART = {
+  club: '/hub/club-arena/assets/club-buttons/club/club-identity-template-bbj-finish-v1.png',
+  tournament: '/hub/club-arena/assets/club-buttons/game-cards/mtt/desktop.png',
+  finance: '/hub/club-arena/assets/club-buttons/wallets/desktop/wallet-diamonds-v1.webp',
+  player: '/hub/club-arena/images/tiles/player-stats-v9.png',
+  union: '/hub/club-arena/assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp',
+  system: '/hub/club-arena/assets/club-buttons/lobby/lobby-command-chassis-v2.png',
+} as const;
+
+type CasinoZone = keyof typeof ROUTE_ART;
+type CasinoStageStyle = CSSProperties & { '--casino-route-art': string };
+
+function getCasinoZone(pathname: string): CasinoZone {
+  if (/^\/clubs\//.test(pathname) || ['/admin', '/data', '/players'].includes(pathname)) {
+    return 'club';
+  }
+  if (/^\/unions?/.test(pathname) || pathname.startsWith('/union-')) return 'union';
+  if (/tournament|xmtt|hand-history|session-history|leaderboard/.test(pathname)) {
+    return 'tournament';
+  }
+  if (
+    /wallet|cashier|marketplace|vip|rakeback|promotion|bonus|transaction|achievement|challenge/.test(
+      pathname
+    )
+  ) {
+    return 'finance';
+  }
+  if (/profile|stats|friend|search|invite/.test(pathname)) return 'player';
+  return 'system';
+}
+
+function AppLayoutContent() {
   const location = useLocation();
-
-  // Use state to ensure correct value after client-side hydration
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
-
-  // ── Offline / Online detection ──
-  useEffect(() => {
-    const handleOffline = () => setIsOffline(true);
-    const handleOnline = () => {
-      setIsOffline(false);
-      masterBus.emit('CONNECTION_RESTORED', { timestamp: Date.now() });
-    };
-    window.addEventListener('offline', handleOffline);
-    window.addEventListener('online', handleOnline);
-    return () => {
-      window.removeEventListener('offline', handleOffline);
-      window.removeEventListener('online', handleOnline);
-    };
-  }, []);
+  const mainRef = useRef<HTMLElement>(null);
 
   // User store for conditional rendering
   const { user } = useAuthUser();
@@ -59,6 +76,17 @@ export default function AppLayout() {
    * THE TOP TO BE ATTACHED TO THE GLOBAL HEADER."
    */
   const isFlushPage = location.pathname.replace(/\/+$/, '').endsWith('/notifications');
+  const casinoZone = getCasinoZone(location.pathname);
+  const casinoStageStyle: CasinoStageStyle = {
+    '--casino-route-art': `url("${ROUTE_ART[casinoZone]}")`,
+  };
+
+  // SPA navigation does not move browser focus by itself. Put keyboard and
+  // screen-reader users at the start of the new page without changing scroll.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => mainRef.current?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(frame);
+  }, [location.pathname]);
 
   return (
     <div className={styles.layout}>
@@ -78,33 +106,41 @@ export default function AppLayout() {
       {/* Global Announcement Banner (shows club announcements when in a club context) */}
       <ClubAnnouncementBanner />
 
-      {/* Offline Banner */}
-      {isOffline && (
-        <div
-          style={{
-            background: 'linear-gradient(135deg, #b91c1c, #991b1b)',
-            color: '#fff',
-            textAlign: 'center',
-            padding: '8px 16px',
-            fontSize: '13px',
-            fontWeight: 600,
-            letterSpacing: '0.3px',
-            zIndex: 9999,
-          }}
-        >
-          ⚠ You Are Offline - Changes Will Sync When Connection Is Restored
-        </div>
-      )}
+      {/* Route-family navigation keeps global sibling pages reachable without
+          reopening the hamburger or duplicating the exhaustive route registry. */}
+      {showGlobalHeader && <ArenaSectionRail />}
+
+      {/* Club staff pages share one permission-aware command rail. It renders
+          only inside the operations route family and leaves the live lobby,
+          table, tournament, and ordinary member pages untouched. */}
+      {showGlobalHeader && <ClubOperationsRail />}
 
       {/* Main Content */}
       <main
+        ref={mainRef}
         id="main-content"
-        className={isFlushPage ? `${styles.main} ${styles.mainFlush}` : styles.main}
+        tabIndex={-1}
+        className={
+          isFlushPage
+            ? `${styles.main} ${styles.mainFlush} ${styles.casinoStage}`
+            : `${styles.main} ${styles.casinoStage}`
+        }
+        data-casino-zone={casinoZone}
+        style={casinoStageStyle}
       >
         <RouteErrorBoundary>
           <Outlet />
         </RouteErrorBoundary>
       </main>
     </div>
+  );
+}
+
+export default function AppLayout() {
+  return (
+    <ClubWorkspaceProvider>
+      <NavigationTelemetry />
+      <AppLayoutContent />
+    </ClubWorkspaceProvider>
   );
 }

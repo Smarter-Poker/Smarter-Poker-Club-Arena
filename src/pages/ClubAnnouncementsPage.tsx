@@ -8,7 +8,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useToast } from '../components/common/Toast';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import ConfirmModal from '../components/common/ConfirmModal';
@@ -428,8 +427,6 @@ export default function ClubAnnouncementsPage() {
           ))
         )}
       </div>
-
-      {clubId && <ClubBottomNav clubId={clubId} />}
 
       {/* Confirm Modal */}
       <ConfirmModal

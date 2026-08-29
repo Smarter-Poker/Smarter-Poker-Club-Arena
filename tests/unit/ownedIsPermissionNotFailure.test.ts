@@ -71,12 +71,12 @@ describe('every paid tap has an in-flight latch', () => {
     expect(src).toContain('disabled={sending}');
   });
 
-  it('CardBackSelector checks busy on the CONFIRM path, not only on select', () => {
-    const src = read('components/customization/CardBackSelector.tsx');
-    const confirmAt = src.indexOf('const handleConfirmPurchase');
+  it('Table Studio checks its in-flight latch on the CONFIRM path', () => {
+    const src = read('components/table/ThemeSettingsModal.tsx');
+    const confirmAt = src.indexOf('const handleAssetPurchase');
     expect(confirmAt).toBeGreaterThan(-1);
     // The busy check must appear inside the handler, before the purchase.
-    const body = src.slice(confirmAt, src.indexOf('onPurchase?.', confirmAt));
-    expect(body).toContain('if (busy) return;');
+    const body = src.slice(confirmAt, src.indexOf("supabase.rpc('fn_purchase_feature'", confirmAt));
+    expect(body).toContain('purchaseBusyRef.current');
   });
 });

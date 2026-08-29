@@ -6,7 +6,7 @@
  * All pricing is server-authoritative; the client sends only plan keys.
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useToast } from '../../components/common/Toast';
 import { confirmDialog } from '../../components/common/confirmDialog';
 import { masterBus } from '../../core/MasterBus';
@@ -23,6 +23,7 @@ import {
 
 interface MembershipTabProps {
   clubId: string;
+  userId: string;
   wallet: WalletInfo;
   /** plan table served by /api/club-arena/store-catalog */
   plans: VipPlan[];
@@ -31,15 +32,34 @@ interface MembershipTabProps {
 
 export default function MembershipTab({
   clubId,
+  userId,
   wallet,
   plans,
   onWalletChanged,
 }: MembershipTabProps) {
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
+  // State does not latch two events fired in one React commit. Every membership
+  // path shares this ref so touch+click can create only one purchase intent.
+  const inFlightRef = useRef(false);
+  const intentKeyRef = useRef<string | null>(null);
+
+  const claimIntent = (key: string): boolean => {
+    if (inFlightRef.current) return false;
+    inFlightRef.current = true;
+    intentKeyRef.current = uuid();
+    setBusy(key);
+    return true;
+  };
+
+  const releaseIntent = () => {
+    inFlightRef.current = false;
+    intentKeyRef.current = null;
+    setBusy(null);
+  };
 
   const buyDailyPass = async (cost: number) => {
-    if (busy) return;
+    if (inFlightRef.current) return;
     if (!wallet.loaded) {
       toast.error('Your Diamond Balance Is Unavailable Right Now');
       return;
@@ -48,6 +68,7 @@ export default function MembershipTab({
       toast.error(`You Need ${fmt(cost)} Diamonds For A Daily Pass`);
       return;
     }
+    if (!claimIntent('vip-daily')) return;
     if (
       !(await confirmDialog({
         title: 'Daily VIP Pass',
@@ -57,43 +78,49 @@ export default function MembershipTab({
         confirmText: 'Activate',
         variant: 'default',
       }))
-    )
+    ) {
+      releaseIntent();
       return;
-    setBusy('vip-daily');
+    }
     try {
       const data = await storeFetch<{ success: true; expiresAt?: string; newBalance?: number }>(
         '/api/store/purchase-daily-vip',
-        { body: { idempotencyKey: uuid() } }
+        { body: { idempotencyKey: intentKeyRef.current } }
       );
       toast.success(
         data.expiresAt ? `VIP Active Until ${formatDate(data.expiresAt)}` : 'VIP Daily Pass Active'
       );
       masterBus.emit('BALANCE_UPDATED', { source: 'vip_daily' });
+      masterBus.emit('ENTITLEMENTS_CHANGED', {
+        userId,
+        category: 'vip',
+        source: 'vip-purchase',
+      });
       onWalletChanged();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Purchase failed');
     } finally {
-      setBusy(null);
+      releaseIntent();
     }
   };
 
   const buyWithCard = async (checkoutPlan: string) => {
-    if (busy) return;
-    setBusy(`card-${checkoutPlan}`);
+    if (!claimIntent(`card-${checkoutPlan}`)) return;
     try {
       await startCheckout(
         'subscription',
         [{ plan: checkoutPlan }],
-        `club=${encodeURIComponent(clubId)}&tab=membership`
+        `club=${encodeURIComponent(clubId)}&tab=membership`,
+        intentKeyRef.current || undefined
       );
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Could not start checkout');
-      setBusy(null);
+      releaseIntent();
     }
   };
 
   const buyWithDiamonds = async (planKey: 'monthly' | 'annual', priceDiamonds: number) => {
-    if (busy) return;
+    if (inFlightRef.current) return;
     if (!wallet.loaded) {
       toast.error('Your Diamond Balance Is Unavailable Right Now');
       return;
@@ -102,6 +129,7 @@ export default function MembershipTab({
       toast.error(`You Need ${fmt(priceDiamonds)} Diamonds For This Plan`);
       return;
     }
+    if (!claimIntent(`diamonds-${planKey}`)) return;
     if (
       !(await confirmDialog({
         title: `${planKey === 'monthly' ? 'Monthly' : 'Annual'} VIP`,
@@ -109,20 +137,26 @@ export default function MembershipTab({
         confirmText: 'Purchase',
         variant: 'default',
       }))
-    )
+    ) {
+      releaseIntent();
       return;
-    setBusy(`diamonds-${planKey}`);
+    }
     try {
       await storeFetch('/api/store/purchase-vip-with-diamonds', {
-        body: { plan: planKey, idempotencyKey: uuid() },
+        body: { plan: planKey, idempotencyKey: intentKeyRef.current },
       });
       toast.success('VIP Membership Activated');
       masterBus.emit('BALANCE_UPDATED', { source: 'vip_purchase' });
+      masterBus.emit('ENTITLEMENTS_CHANGED', {
+        userId,
+        category: 'vip',
+        source: 'vip-purchase',
+      });
       onWalletChanged();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Purchase failed');
     } finally {
-      setBusy(null);
+      releaseIntent();
     }
   };
 

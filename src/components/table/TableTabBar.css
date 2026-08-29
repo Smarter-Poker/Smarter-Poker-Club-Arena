@@ -1099,3 +1099,24 @@
     color: #fff;
   }
 }
+
+/* ─── SEAT COUNTDOWN, LAST MINUTE (2026-08-29) ───────────────────────────────
+   A tab renders "SEAT / 0:47" when the hero is sitting out on a cash table and
+   the seat is on its five-minute clock. This is the only warning a multi-tabling
+   player gets about a seat being reclaimed — the countdown lives inside the
+   hidden table otherwise — so in the last minute it has to be findable at a
+   glance across six pills.
+
+   Red, not the amber a countdown reaches for: .agent/workflows/design-guidelines
+   forbids gold/amber/orange, and red is what every other "you are about to lose
+   something" state on this bar already uses. No animation: the number is already
+   changing once a second, and an unmarked animation is collapsed to 1ms by
+   reducedMotion.css, which turns a pulse into a flicker. */
+.table-tab-bar__tab-label--seat-urgent .table-tab-bar__tab-name,
+.table-tab-bar__tab-label--seat-urgent .table-tab-bar__tab-sub {
+  color: #f85149;
+}
+
+.table-tab-bar__tab-label--seat-urgent .table-tab-bar__tab-sub {
+  font-weight: 800;
+}

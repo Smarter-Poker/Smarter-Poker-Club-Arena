@@ -228,7 +228,7 @@ function FriendListPanelInner({
       }
 
       // Check if already friends
-      const { data: existing } = await supabase
+      const { data: existing, error: existingErr } = await supabase
         .from('friendships')
         .select('id')
         .eq('user_id', user.id)
@@ -236,6 +236,19 @@ function FriendListPanelInner({
         .maybeSingle();
 
       if (!isMounted.current) return;
+
+      /* A FAILED CHECK IS NOT "NOT FRIENDS YET" (2026-08-29). Only `data` was
+         destructured, and a Supabase builder resolves with {data: null, error}
+         rather than rejecting -- so any failure of this lookup read as "no
+         friendship" and fell through to the insert below. The unique
+         constraint refuses the duplicate, so what the player actually saw was
+         a raw database error where "Already friends" was the truth. */
+      if (existingErr) {
+        reportError(existingErr, 'FriendListPanel.friendship_check');
+        setError('Could not check that friendship. Try again.');
+        setAddingFriend(false);
+        return;
+      }
 
       if (existing) {
         setError('Already friends');

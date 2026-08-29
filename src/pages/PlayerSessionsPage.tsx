@@ -21,6 +21,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { fmt, fmtChips, timeAgo } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import { EmptyState } from '../components/common/EmptyState';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 interface PlayerSession {
@@ -680,6 +681,25 @@ export default function PlayerSessionsPage() {
             <div key={i} className="admin-skeleton" style={{ height: '52px', marginTop: '8px' }} />
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (!clubId) {
+    return (
+      <div className="admin-page">
+        <EmptyState
+          icon="CLUB"
+          eyebrow="Operations Context Required"
+          tone="permission"
+          title="No Managed Club Is Available"
+          description={
+            error ||
+            'Player sessions, retention, and chip flow are available to club operators from a club workspace.'
+          }
+          action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
+          secondaryAction={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
+        />
       </div>
     );
   }

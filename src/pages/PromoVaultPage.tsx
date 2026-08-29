@@ -47,7 +47,7 @@ import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
-import ClubBottomNav from '../components/club/ClubBottomNav';
+import { ErrorState } from '../components/common/EmptyState';
 import RoleBadge from '../components/club/RoleBadge';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -172,6 +172,7 @@ export default function PromoVaultPage() {
   const [diamonds, setDiamonds] = useState(0);
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [tab, setTab] = useState<'items' | 'records'>('items');
   const [helpOpen, setHelpOpen] = useState(false);
@@ -197,6 +198,7 @@ export default function PromoVaultPage() {
       const live = () => (getIsMounted ? getIsMounted() : true) && isMountedRef.current;
 
       if (live()) setLoading(true);
+      if (live()) setLoadError(null);
       try {
         const uuid = await resolveClubUUID(clubId);
         if (!live()) return;
@@ -265,7 +267,10 @@ export default function PromoVaultPage() {
         }
       } catch (error) {
         reportError(error, 'PromoVaultPage.loadVault');
-        if (live()) toast.error('Failed To Load The Promo Vault');
+        if (live()) {
+          setLoadError('The live vault catalog could not be loaded. No diamonds were spent.');
+          toast.error('Failed To Load The Promo Vault');
+        }
       } finally {
         if (live()) setLoading(false);
       }
@@ -476,6 +481,8 @@ export default function PromoVaultPage() {
 
       {loading && items.length === 0 ? (
         <PageSkeleton variant="list" />
+      ) : loadError ? (
+        <ErrorState message={loadError} onRetry={() => void loadVault()} />
       ) : tab === 'items' ? (
         <div className="pv-body">
           <p className="pv-hint">Click An Item To Grant</p>
@@ -526,8 +533,6 @@ export default function PromoVaultPage() {
           onConfirm={handleGrant}
         />
       )}
-
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

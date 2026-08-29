@@ -170,6 +170,59 @@
   margin-top: 0.25rem;
 }
 
+.studioRow {
+  position: relative;
+  overflow: hidden;
+  margin: 0.25rem 0 0.75rem;
+  padding: 1rem;
+  border: 1px solid rgba(174, 185, 195, 0.28);
+  border-left: 3px solid #36b9ff;
+  border-radius: 4px;
+  background:
+    linear-gradient(110deg, rgba(54, 185, 255, 0.14), transparent 43%),
+    linear-gradient(145deg, #17212a, #090e13);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.06),
+    0 12px 30px rgba(0, 0, 0, 0.24);
+}
+
+.settingEyebrow {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #67caff;
+  font:
+    800 0.58rem/1 'JetBrains Mono',
+    ui-monospace,
+    monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.studioButton {
+  min-height: 44px;
+  flex: 0 0 auto;
+  padding: 0.65rem 1rem;
+  border: 1px solid #83d8ff;
+  border-radius: 3px;
+  color: #061019;
+  background: linear-gradient(#6ed1ff, #249bd3);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.58),
+    0 0 18px rgba(54, 185, 255, 0.18);
+  font:
+    800 0.76rem/1 'Rajdhani',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.studioButton:focus-visible {
+  outline: 2px solid #36b9ff;
+  outline-offset: 2px;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    TOGGLE — Cyan Glow Switch
    ───────────────────────────────────────────────────────────────────────────── */

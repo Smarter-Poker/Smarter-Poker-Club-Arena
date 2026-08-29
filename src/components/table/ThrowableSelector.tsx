@@ -32,6 +32,7 @@ import { useToast } from '../common/Toast';
 import { showDiamondTopUp } from '../common/DiamondTopUpToast';
 import './ThrowableSelector.css';
 import { haptic } from '../../services/SoundService';
+import { masterBus } from '../../core/MasterBus';
 
 interface ThrowableSelectorProps {
   userId: string;
@@ -80,6 +81,13 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
       setLoading(false);
     }
     load();
+  }, [userId]);
+
+  useEffect(() => {
+    return masterBus.subscribe('ENTITLEMENTS_CHANGED', (event) => {
+      if (event.payload.userId !== userId || event.payload.category !== 'throwable') return;
+      void throwableService.getThrowAllowance(userId).then(setAllowance);
+    });
   }, [userId]);
 
   /**
@@ -146,6 +154,11 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
               <span className="throwable-selector__free">
                 {' '}
                 {allowance.freeThrowsRemaining} Free
+              </span>
+            ) : allowance.packThrowsRemaining > 0 ? (
+              <span className="throwable-selector__free">
+                {' '}
+                {allowance.packThrowsRemaining} Pack
               </span>
             ) : (
               <span className="throwable-selector__cost"> {allowance.diamondCost} Each</span>

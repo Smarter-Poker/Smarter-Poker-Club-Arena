@@ -301,7 +301,15 @@ describe('loadEntitlements', () => {
   it('reads the SPECIFIC themes owned, deduped', async () => {
     ownershipTables({
       feature_purchases: { data: [], error: null },
-      avatar_unlocks: { data: [{ avatar_id: 'shark' }, { avatar_id: 'shark' }], error: null },
+      avatar_unlocks: {
+        data: [
+          { avatar_id: 'shark' },
+          { avatar_id: 'shark' },
+          { avatar_id: 'frame_gold' },
+          { avatar_id: 'gold_frame' },
+        ],
+        error: null,
+      },
       theme_unlocks: {
         data: [{ theme_id: 'midnight_a' }, { theme_id: 'royal_b' }, { theme_id: 'royal_b' }],
         error: null,
@@ -310,8 +318,11 @@ describe('loadEntitlements', () => {
     const ent = await loadEntitlements('u1');
     // The generic feature_purchases.theme_unlock flag cannot name a theme and
     // accumulates a row per redemption, so it can never be counted.
-    expect(ent.themes).toEqual(['midnight_a', 'royal_b']);
+    // Legacy receipts normalize to the real Table Studio presets they now
+    // unlock; showing dead aliases would double-count the backfilled receipt.
+    expect(ent.themes).toEqual(['carbon-ion', 'rustic-wood']);
     expect(ent.avatars).toEqual(['shark']);
+    expect(ent.avatarCosmetics).toEqual(['frame_gold']);
     expect(ent.themeUnlock).toBe(true);
   });
 

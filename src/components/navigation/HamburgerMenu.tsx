@@ -1,13 +1,13 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * HAMBURGER MENU — Facebook Dark Theme
+ * HAMBURGER MENU — Smarter Casino Realism Command Drawer
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Clean, classy navigation with complete page coverage
  * No emojis - professional Facebook-style design
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { identityDNA } from '../../core/IdentityDNA';
@@ -18,7 +18,6 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { STORAGE_KEYS } from '../../lib/storage';
-import { applyTableAppearance } from '../../lib/applyTableAppearance';
 import { persistIdentity } from '../../lib/cachedIdentity';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { preloadRoute } from '../../utils/ChunkPreloader';
@@ -29,9 +28,15 @@ import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
 import { soundService } from '../../services/SoundService';
+import { isSoundAllowed } from '../../utils/soundGate';
+import { isVibrationPreferred, setVibrationAllowed } from '../../utils/vibrationGate';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
-import { isCardBackUnlocked } from '../table/CardImage';
+import { CLUB_ARENA_SUPPORT_NAV, getClubArenaNavigation } from '../../config/clubArenaNavigation';
+import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
+import { capture } from '../../lib/analytics';
+import { fetchQuickLinkClubs, type QuickLinkClub } from '../../utils/clubQuickLink';
+import styles from './HamburgerMenu.module.css';
 
 interface HamburgerMenuProps {
   isOpen: boolean;
@@ -52,72 +57,23 @@ const colors = {
   danger: 'var(--danger)', // #F02849
 };
 
-/*
- * CANONICAL TOGGLE (Dan, 2026-08-25: "EVERY TOGGLE INSIDE THE CLUB ARENA ...
- * AND EVERY SINGLE HAMBURGER MENU.")
- *
- * PR #927 restyled every CLASS-BASED toggle through a global block in
- * styles/club-engine.css, and edited HamburgerMenu.module.css in place because
- * CSS Modules hash their class names. Neither reached these three switches:
- * HamburgerMenu.tsx never imports HamburgerMenu.module.css (that file is dead —
- * nothing in src imports it, and the build emits no CSS asset for it), and these
- * buttons carry INLINE styles, which no stylesheet can override. So Sounds,
- * Vibrations and Use Real Name were still the old 52x28 green pill in
- * production while everything around them was blue. Verified against the live
- * bundle: assets/HamburgerMenu-DzPe1C0c-v6.js contained #22c55e three times and
- * #1877f2 zero times.
- *
- * Same geometry and colours as the global block: 51x31 track, 27px thumb,
- * 20px travel, #1877F2 on / #39393D off. Behaviour, aria and handlers untouched.
- */
-const CANONICAL_TOGGLE_ON = '#1877f2';
-const CANONICAL_TOGGLE_OFF = '#39393d';
-
-function canonicalToggleTrackStyle(on: boolean): React.CSSProperties {
-  return {
-    width: 51,
-    height: 31,
-    borderRadius: 999,
-    border: 'none',
-    padding: 2,
-    cursor: 'pointer',
-    backgroundColor: on ? CANONICAL_TOGGLE_ON : CANONICAL_TOGGLE_OFF,
-    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.06)',
-    transition: 'background-color 180ms ease',
-    display: 'flex',
-    alignItems: 'center',
-    position: 'relative' as const,
-    flexShrink: 0,
-    boxSizing: 'border-box' as const,
-    WebkitTapHighlightColor: 'transparent',
-  };
-}
-
-function canonicalToggleThumbStyle(on: boolean): React.CSSProperties {
-  return {
-    width: 27,
-    height: 27,
-    borderRadius: '50%',
-    backgroundColor: '#ffffff',
-    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.28)',
-    /* 51px track - 27px thumb - (2px x 2) = 20px of travel. */
-    transform: on ? 'translateX(20px)' : 'translateX(0)',
-    transition: 'transform 180ms cubic-bezier(0.32, 0.72, 0, 1)',
-  };
-}
-
 export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
   const touchStartRef = useRef<number | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const previousBodyOverflowRef = useRef('');
+  const navigatingRef = useRef(false);
+  const dialogTitleId = useId();
+  const tableSettingsId = useId();
 
   /**
    * LAZY INITIALIZERS (2026-08-28, first-paint flash sweep): these four
    * toggles began at hard-coded defaults and read localStorage one tick
    * later in the load effect — so an open drawer could flash the wrong
    * switch positions. The read is synchronous; do it before the first
-   * paint, exactly as selectedCardColor below already does. The load
+   * paint, before any asynchronous profile refinement. The load
    * effect's async profile fetch still refines them afterwards.
    */
   const readStoredBool = (key: string, fallback: boolean): boolean => {
@@ -128,12 +84,15 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       return fallback;
     }
   };
-  const [soundsEnabled, setSoundsEnabled] = useState(() =>
-    readStoredBool(STORAGE_KEYS.SOUNDS, true)
-  );
-  const [vibrationsEnabled, setVibrationsEnabled] = useState(() =>
-    readStoredBool(STORAGE_KEYS.VIBRATIONS, true)
-  );
+  /* SEED FROM THE GATES, not from one of the two keys each gate reads.
+     `soundGate` and `vibrationGate` fail closed on EITHER of their keys; reading
+     only `club_arena_sounds` here meant a player who had muted IN-TABLE
+     ('ca_sound_enabled'='false') opened this menu to a Sounds switch reading ON
+     over a silent app. `useTableSound` was converted to `isSoundAllowed()` on
+     2026-08-29 for exactly this reason and this component was not — the fourth
+     hand-rolled copy of a two-key rule that lives in one place. */
+  const [soundsEnabled, setSoundsEnabled] = useState(() => isSoundAllowed());
+  const [vibrationsEnabled, setVibrationsEnabled] = useState(() => isVibrationPreferred());
   /* `showBBEnabled` state DELETED 2026-08-29: it was written in three places
      and READ IN NONE — no JSX, no condition. The switch a player sees lives in
      the expandable TableSettingsPanel and reads the hook directly. What
@@ -150,21 +109,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   );
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
   const [isVIP, setIsVIP] = useState(false);
-  /** Paid card backs this player has actually bought (feature_purchases). */
-  const [ownedCardBacks, setOwnedCardBacks] = useState<string[]>([]);
+  const [isPlatformStaff, setIsPlatformStaff] = useState(false);
   const { diamonds: diamondBalance } = useWalletStore();
-  const [selectedCardColor, setSelectedCardColor] = useState(() => {
-    try {
-      // 'default' was never one of the ids this menu offers, so a player who
-      // had not picked before saw NO tile highlighted at all - the same defect
-      // FIX-D7 fixed for the dealer button. classic_blue is the app default.
-      return localStorage.getItem(STORAGE_KEYS.CARD_COLOR) || 'classic_blue';
-    } catch (err) {
-      reportError(err, 'HamburgerMenu.Error');
-      return 'classic_blue';
-    }
-  });
-
   // Bible V8 §11.1: User table settings (12 toggles) from Supabase
   const {
     settings: tableSettings,
@@ -192,14 +138,84 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [showThemeSettings, setShowThemeSettings] = useState(false);
 
   const location = useLocation();
+  const workspace = useClubWorkspace();
   const [clubLevelInfo, setClubLevelInfo] = useState<ClubLevelInfo | null>(null);
+  const [clubChoices, setClubChoices] = useState<QuickLinkClub[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [attentionCount, setAttentionCount] = useState(0);
+  const recentStorageKey = `club_arena_nav_recents_v1:${user?.id || 'signed-out'}`;
+  const pinStorageKey = `club_arena_nav_pins_v1:${user?.id || 'signed-out'}`;
+  const [recentPaths, setRecentPaths] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(recentStorageKey) || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [pinnedPaths, setPinnedPaths] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(pinStorageKey) || '[]');
+    } catch {
+      return [];
+    }
+  });
 
   const match = location.pathname.match(/^\/clubs\/([a-zA-Z0-9-]+)/);
   const clubId = match ? match[1] : null;
+  const clubRole = clubId === workspace.routeClubId ? workspace.clubRole : null;
+  const effectivePlatformStaff = clubId ? workspace.isPlatformStaff : isPlatformStaff;
+  const navigationGroups = getClubArenaNavigation({
+    clubId,
+    clubRole,
+    isPlatformStaff: effectivePlatformStaff,
+  });
+  const allNavigationItems = useMemo(
+    () => navigationGroups.flatMap((group) => group.items),
+    [navigationGroups]
+  );
+  const filteredNavigationGroups = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return navigationGroups;
+    return navigationGroups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) =>
+          `${item.label} ${item.description}`.toLowerCase().includes(query)
+        ),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [navigationGroups, searchQuery]);
+  const recentItems = recentPaths
+    .map((path) => allNavigationItems.find((item) => item.path === path))
+    .filter((item): item is (typeof allNavigationItems)[number] => Boolean(item))
+    .slice(0, 3);
+  const pinnedItems = pinnedPaths
+    .map((path) => allNavigationItems.find((item) => item.path === path))
+    .filter((item): item is (typeof allNavigationItems)[number] => Boolean(item));
+
+  useEffect(() => {
+    try {
+      setRecentPaths(JSON.parse(localStorage.getItem(recentStorageKey) || '[]'));
+      setPinnedPaths(JSON.parse(localStorage.getItem(pinStorageKey) || '[]'));
+    } catch {
+      setRecentPaths([]);
+      setPinnedPaths([]);
+    }
+  }, [pinStorageKey, recentStorageKey]);
+
+  const isActivePath = (path: string) => {
+    const current = location.pathname.replace(/\/+$/, '') || '/';
+    const target = path.split('?')[0].replace(/\/+$/, '') || '/';
+    return target === '/'
+      ? current === '/'
+      : current === target || current.startsWith(`${target}/`);
+  };
 
   useEffect(() => {
     if (!isOpen || !clubId) {
-      if (!clubId) setClubLevelInfo(null);
+      if (!clubId) {
+        setClubLevelInfo(null);
+      }
       return;
     }
     let isMounted = true;
@@ -236,73 +252,127 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     return () => {
       isMounted = false;
     };
-  }, [isOpen, clubId]);
+  }, [isOpen, clubId, user?.id]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    capture('club_arena_menu_opened', {
+      route: location.pathname,
+      club_id: workspace.clubUUID,
+      club_role: clubRole,
+      offline: workspace.isOffline,
+    });
+  }, [clubRole, isOpen, location.pathname, workspace.clubUUID, workspace.isOffline]);
+
+  useEffect(() => {
+    if (!isOpen || !user?.id) return;
+    void fetchQuickLinkClubs(user.id).then(setClubChoices);
+  }, [isOpen, user?.id]);
+
+  useEffect(() => {
+    if (!isOpen || !workspace.clubUUID || !workspace.isClubStaff) {
+      setAttentionCount(0);
+      return;
+    }
+    let cancelled = false;
+    void supabase
+      .from('disputes')
+      .select('id', { count: 'exact', head: true })
+      .eq('club_id', workspace.clubUUID)
+      .in('status', ['open', 'under_review', 'escalated'])
+      .then(({ count, error }) => {
+        if (error) {
+          reportError(error, 'HamburgerMenu.Attention_count_failed');
+          return;
+        }
+        if (!cancelled) setAttentionCount(count || 0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, workspace.clubUUID, workspace.isClubStaff]);
 
   const drawerRef = useRef<HTMLDivElement>(null);
 
-  // Close on ESC key
+  // Lock background scroll, contain keyboard focus, and restore the opener.
   useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) onClose();
-    };
-    window.addEventListener('keydown', handleEsc);
-    return () => window.removeEventListener('keydown', handleEsc);
-  }, [isOpen, onClose]);
+    if (!isOpen) return;
 
-  // Prevent body scroll when menu is open + focus trap
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      // Focus trap: keep Tab cycling within the drawer
-      const drawer = drawerRef.current;
-      if (!drawer) return;
-      const focusable = drawer.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-      );
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    previousBodyOverflowRef.current = document.body.style.overflow;
+    navigatingRef.current = false;
+    document.body.style.overflow = 'hidden';
+
+    const drawer = drawerRef.current;
+    if (!drawer) return;
+
+    const getFocusable = () =>
+      Array.from(
+        drawer.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((element) => element.offsetParent !== null);
+
+    const containFocus = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const focusable = getFocusable();
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      const trapFocus = (e: KeyboardEvent) => {
-        if (e.key !== 'Tab') return;
-        if (e.shiftKey) {
-          if (document.activeElement === first) {
-            e.preventDefault();
-            last?.focus();
-          }
-        } else {
-          if (document.activeElement === last) {
-            e.preventDefault();
-            first?.focus();
-          }
-        }
-      };
-      drawer.addEventListener('keydown', trapFocus);
-      first?.focus();
-      return () => {
-        document.body.style.overflow = '';
-        drawer.removeEventListener('keydown', trapFocus);
-      };
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
+      if (!first || !last) {
+        event.preventDefault();
+        drawer.focus();
+        return;
+      }
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-  }, [isOpen]);
+
+    drawer.addEventListener('keydown', containFocus);
+    requestAnimationFrame(() => getFocusable()[0]?.focus());
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflowRef.current;
+      drawer.removeEventListener('keydown', containFocus);
+      if (!navigatingRef.current && previousFocusRef.current?.isConnected) {
+        previousFocusRef.current.focus();
+      }
+    };
+  }, [isOpen, onClose]);
 
   // Load user data and settings
   useEffect(() => {
-    const sounds = localStorage.getItem(STORAGE_KEYS.SOUNDS);
-    const vibrations = localStorage.getItem(STORAGE_KEYS.VIBRATIONS);
+    /* ── THE GATES, NOT ONE OF THEIR TWO KEYS ────────────────────────────
+       This read `STORAGE_KEYS.SOUNDS` ('club_arena_sounds') and
+       `STORAGE_KEYS.VIBRATIONS` ('vibrationsEnabled') RAW and unconditionally
+       — so it overwrote the gate-derived seed above one render later, and
+       undid the fix that seed exists to be. In the exact case that fix names
+       (`ca_sound_enabled='false'`, `club_arena_sounds='true'`) the switch went
+       back to reading ON over a silent app.
+
+       Both gates fail closed on EITHER of their two keys, so re-reading them
+       here is the only answer that agrees with the seed AND with the engine.
+       `useRealName` keeps its raw read: it has one key and no gate. */
+    setSoundsEnabled(isSoundAllowed());
+    setVibrationsEnabled(isVibrationPreferred());
     const useReal = localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME);
-    if (sounds !== null) setSoundsEnabled(sounds === 'true');
-    if (vibrations !== null) setVibrationsEnabled(vibrations === 'true');
     if (useReal !== null) setUseRealName(useReal === 'true');
 
     if (user?.id) {
       supabase
         .from('profiles')
         .select(
-          'avatar_url:arena_avatar_url, username, display_name, sounds_enabled, vibrations_enabled, is_vip, tier'
+          'avatar_url:arena_avatar_url, username, display_name, sounds_enabled, vibrations_enabled, is_vip, tier, role'
         )
         .eq('id', user.id)
         .maybeSingle()
@@ -329,18 +399,28 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               displayName: data.display_name || data.username || null,
               avatarUrl: data.avatar_url || null,
             });
-            // These columns may not exist on profiles — use optional chaining with defaults
-            if (data.sounds_enabled !== undefined && data.sounds_enabled !== null) {
-              setSoundsEnabled(data.sounds_enabled);
-              localStorage.setItem(STORAGE_KEYS.SOUNDS, String(data.sounds_enabled));
-            }
-            if (data.vibrations_enabled !== undefined && data.vibrations_enabled !== null) {
-              setVibrationsEnabled(data.vibrations_enabled);
-              localStorage.setItem(STORAGE_KEYS.VIBRATIONS, String(data.vibrations_enabled));
-            }
+            /* ── `profiles.sounds_enabled` / `vibrations_enabled` ARE NO LONGER
+                  READ BACK OVER THE GATES (2026-08-29) ──────────────────────
+               This used to `setState` from the profile row AND write the gate's
+               `club_arena_sounds` / `vibrationsEnabled` keys directly, bypassing
+               `persistSoundPreference` and `setVibrationAllowed` (which write
+               both of each gate's keys as a pair) and never calling
+               `soundService.setEnabled`.
+
+               That made `profiles` a SECOND DATABASE OWNER of "is sound on",
+               alongside `user_table_settings.sound_enabled`, with nothing
+               reconciling them — so muting at the table and then opening this
+               menu re-asserted the stale profile value over the gate on every
+               open. Only the gate's fail-closed rule stopped it actually
+               un-muting anyone.
+
+               The columns are still WRITTEN below (`updateSetting` mirrors to
+               them for older surfaces). They are simply not an input any more:
+               the gates are, and they are what the audio engine consults. */
             /* `profiles.show_stack_bb` is NOT read here any more — see the note
                where the second query used to be. */
             setIsVIP(data.is_vip || data.tier === 'vip' || false);
+            setIsPlatformStaff(data.role === 'admin' || data.role === 'super_admin');
           }
         });
 
@@ -372,23 +452,6 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
        * comment claimed it was "still WRITTEN ... for older surfaces". It was
        * not. `user_table_settings.show_stack_in_bb` is the only copy.
        */
-
-      // Card backs bought with diamonds. Needed because this menu decides
-      // whether a paid design is selectable — see the gate on the swatches.
-      supabase
-        .from('feature_purchases')
-        .select('feature')
-        .eq('user_id', user.id)
-        .like('feature', 'card_back_%')
-        .then(({ data, error }) => {
-          if (error) {
-            reportError(error, 'HamburgerMenu.Owned_card_backs_load_failed');
-            return;
-          }
-          setOwnedCardBacks(
-            (data || []).map((r: { feature: string }) => r.feature.replace('card_back_', ''))
-          );
-        });
     }
   }, [user?.id]);
 
@@ -413,8 +476,34 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   // Navigate and close
   const handleNavigate = (path: string) => {
+    const nextRecentPaths = [path, ...recentPaths.filter((item) => item !== path)].slice(0, 5);
+    setRecentPaths(nextRecentPaths);
+    try {
+      localStorage.setItem(recentStorageKey, JSON.stringify(nextRecentPaths));
+    } catch {
+      /* private mode */
+    }
+    capture('club_arena_navigation_selected', {
+      route: path,
+      from_route: location.pathname,
+      club_id: workspace.clubUUID,
+      source: 'hamburger',
+    });
+    navigatingRef.current = true;
     navigate(path);
     onClose();
+  };
+
+  const togglePinnedPath = (path: string) => {
+    const nextPinnedPaths = pinnedPaths.includes(path)
+      ? pinnedPaths.filter((item) => item !== path)
+      : [...pinnedPaths, path].slice(-6);
+    setPinnedPaths(nextPinnedPaths);
+    try {
+      localStorage.setItem(pinStorageKey, JSON.stringify(nextPinnedPaths));
+    } catch {
+      /* private mode */
+    }
   };
 
   // Prefetch page chunk on hover — so page loads instantly when clicked
@@ -484,6 +573,12 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     updateSetting(STORAGE_KEYS.VIBRATIONS, 'vibrations_enabled', newValue, () =>
       setVibrationsEnabled(!newValue)
     );
+    /* Through the GATE, which writes both of its keys. The sound sibling above
+       got `soundService.setEnabled` on 2026-08-27 for precisely this reason and
+       the haptic half was left behind: turning vibration ON here could not clear
+       a mute set by the in-table switch, because the gate fails closed on
+       `ca_vibration_enabled` and nothing here ever touched it. */
+    setVibrationAllowed(newValue);
     /* 2026-08-26: the key was `vibrationsEnabled`, which is NOT a field of
        useTableSettings — the store calls it `isHapticEnabled` — so the
        whitelist at useTableSettings dropped this event silently and an open
@@ -574,32 +669,14 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   };
 
   // Shared styles
-  const sectionHeaderStyle: React.CSSProperties = {
-    fontSize: 12,
-    fontWeight: 600,
-    color: colors.textSecondary,
-    margin: 0,
-    padding: '16px 16px 8px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-  };
-
-  const menuItemStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    padding: '12px 16px',
-    cursor: 'pointer',
-    borderRadius: 8,
-    margin: '0 8px',
-    transition: 'background-color 0.15s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
-  };
-
   const dividerStyle: React.CSSProperties = {
     height: 1,
     background: colors.divider,
     margin: '8px 16px',
   };
+
+  // Do not leave an off-canvas tree full of focusable controls in the tab order.
+  if (!isOpen) return null;
 
   return (
     <>
@@ -618,76 +695,43 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             `}</style>
 
       {/* Backdrop */}
-      {isOpen && (
-        <div
-          onClick={onClose}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.7)',
-            zIndex: 1100,
-          }}
-        />
-      )}
+      <div className={styles.backdrop} onClick={onClose} aria-hidden="true" />
 
       {/* Drawer */}
       <div
         ref={drawerRef}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          bottom: 0,
-          width: '100%',
-          maxWidth: 320,
-          backgroundColor: '#18191a' /* Solid background to prevent see-through */,
-          boxShadow: '4px 0 20px rgba(0, 0, 0, 0.5)',
-          zIndex: 1200,
-          transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
-          transition: 'transform 0.3s ease',
-          display: 'flex',
-          flexDirection: 'column',
-          overflowY: 'auto',
-          paddingBottom: 80,
-        }}
+        className={`${styles.drawer} ${styles.drawerOpen}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={dialogTitleId}
+        tabIndex={-1}
       >
-        {/* Close button */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '16px 12px 8px' }}>
-          <button
-            onClick={onClose}
-            style={{
-              background: colors.bgHover,
-              border: 'none',
-              padding: '8px 16px',
-              borderRadius: 8,
-              cursor: 'pointer',
-              fontSize: 14,
-              fontWeight: 600,
-              color: colors.text,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
+        <div className={styles.utilityRail}>
+          <div className={styles.brandLockup}>
+            <img
+              src="/hub/club-arena/images/diamond-icon.webp"
+              alt=""
+              className={styles.brandMark}
+            />
+            <span>
+              <span className={styles.brandEyebrow}>Smarter.Poker</span>
+              <span className={styles.brandTitle} id={dialogTitleId}>
+                Club Arena
+              </span>
+            </span>
+          </div>
+          <button type="button" onClick={onClose} className={styles.closeButton}>
             Close
           </button>
         </div>
 
         {/* User Profile Card */}
-        <div
+        <button
+          type="button"
           onClick={() => handleNavigate('/profile')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: '12px 16px',
-            margin: '0 12px 12px',
-            background: colors.bgSecondary,
-            borderRadius: 12,
-            cursor: 'pointer',
-          }}
+          className={styles.profilePlate}
         >
           {/* Wrapped so the equipped frame/aura has a positioned, radius-owning
               parent to fill. The <img> itself cannot be that parent: an
@@ -717,53 +761,78 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             />
             <AvatarCosmetics frame={equippedFrame} aura={equippedAura} />
           </div>
-          <div style={{ flex: 1 }}>
-            <div
-              style={{
-                fontWeight: 600,
-                fontSize: 16,
-                color: colors.text,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-              }}
-            >
+          <div>
+            <div className={styles.profileName}>
               {userName || 'Player'}
               {isVIP && (
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 800,
-                    color: '#fbbf24',
-                    letterSpacing: '0.05em',
-                  }}
-                  title="VIP Diamond Member"
-                >
+                <span className={styles.vipBadge} title="VIP Diamond Member">
                   VIP
                 </span>
               )}
             </div>
-            <div
-              style={{
-                fontSize: 13,
-                color: colors.textSecondary,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
+            <div className={styles.profileMeta}>
               <span>View Profile</span>
               {diamondBalance > 0 && (
-                <span style={{ color: '#60a5fa', fontWeight: 600 }}>
-                  {diamondBalance.toLocaleString()} DIA
-                </span>
+                <span className={styles.diamondBalance}>{diamondBalance.toLocaleString()} DIA</span>
               )}
             </div>
           </div>
-          <span style={{ color: colors.textSecondary, fontSize: 18 }}>›</span>
-        </div>
+          <span className={styles.navArrow}>›</span>
+        </button>
 
         <div style={dividerStyle} />
+
+        <section className={styles.contextDeck} aria-label="Current arena context">
+          <div className={styles.contextStatus}>
+            <span
+              className={`${styles.statusLamp} ${workspace.isOffline ? styles.statusLampOffline : ''}`}
+              aria-hidden="true"
+            />
+            <span>
+              {workspace.isOffline
+                ? 'Offline - queued actions remain protected'
+                : workspace.isStale
+                  ? 'Live circuit - refreshing context'
+                  : 'Live circuit connected'}
+            </span>
+            {clubRole && <strong>{clubRole.replace(/_/g, ' ')}</strong>}
+          </div>
+          {clubId && clubChoices.length > 1 && (
+            <label className={styles.contextSwitcher}>
+              <span>Club Context</span>
+              <select
+                value={workspace.clubUUID || ''}
+                onChange={(event) => handleNavigate(`/clubs/${event.target.value}`)}
+              >
+                {clubChoices.map((club) => (
+                  <option key={club.id} value={club.id}>
+                    {club.name || club.club_id || 'Club'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <form
+            className={styles.menuSearch}
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const query = searchQuery.trim();
+              if (query) handleNavigate(`/search?q=${encodeURIComponent(query)}`);
+            }}
+          >
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search destinations or the arena"
+              aria-label="Search destinations or the arena"
+            />
+            <button type="submit" aria-label="Search all players and clubs">
+              Search
+            </button>
+          </form>
+        </section>
 
         {/* ═══════════════════════════════════════════════════════════════
                     CLUB LEVEL & PROGRESSION
@@ -835,692 +904,313 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           </>
         )}
 
-        {/* ═══════════════════════════════════════════════════════════════
-                    GAME MODES
-                ═══════════════════════════════════════════════════════════════ */}
-        <div style={sectionHeaderStyle}>Game Modes</div>
-        {[
-          { label: 'Home', path: '/' },
-          { label: 'Tournaments', path: '/tournaments' },
-          { label: 'Tournament Lobby', path: '/tournament-lobby' },
-          { label: 'Tournament Results', path: '/tournament-results' },
-          /* ROUND 10 (2026-08-29): the results page has carried a Mine
-             filter and a Spin type filter for weeks with no way to arrive
-             at them - the filters became deep-linkable today and this is
-             the link. A spin player's own history, one tap. */
-          { label: 'My Spin Results', path: '/tournament-results?filter=mine&type=spin' },
-          { label: 'Hand History', path: '/hand-history' },
-          { label: 'Hand Replayer', path: '/hands' },
-          { label: 'Session History', path: '/history' },
-          { label: 'Player Sessions', path: '/player-sessions' },
-          { label: 'Leaderboard', path: '/leaderboard' },
-          { label: 'Marketplace', path: '/marketplace' },
-        ].map((item, i) => (
-          <div
-            key={`games-${i}`}
-            onClick={() => handleNavigate(item.path)}
-            style={{
-              ...menuItemStyle,
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 30}ms both`
-                : 'none',
-            }}
-            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
-                since 2026-08-29 no hover VISUALS anywhere either -- this
-                handler paints nothing, it warms the route chunk so the tap
-                that follows is instant. Touch and focus fire it too. */
-            onMouseEnter={() => handleItemHover(item.path)}
-          >
-            <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-              {item.label}
-            </span>
-            <span style={{ color: colors.textSecondary }}>›</span>
-          </div>
-        ))}
-
-        <div style={dividerStyle} />
-
-        {/* ═══════════════════════════════════════════════════════════════
-                    CLUBS
-                ═══════════════════════════════════════════════════════════════ */}
-        <div style={sectionHeaderStyle}>Clubs</div>
-        {[
-          { label: 'My Clubs', path: '/clubs' },
-          { label: 'Create Club', path: '/?create=club' },
-          { label: 'Find Player', path: '/search' },
-          { label: 'Messages', path: '/messages' },
-          { label: 'Club Messages', path: '/messages/clubs' },
-          { label: 'Players', path: '/players' },
-          { label: 'Cashier', path: '/cashier' },
-        ].map((item, i) => (
-          <div
-            key={`clubs-${i}`}
-            onClick={() => handleNavigate(item.path)}
-            style={{
-              ...menuItemStyle,
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 8) * 30}ms both`
-                : 'none',
-            }}
-            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
-                since 2026-08-29 no hover VISUALS anywhere either -- this
-                handler paints nothing, it warms the route chunk so the tap
-                that follows is instant. Touch and focus fire it too. */
-            onMouseEnter={() => handleItemHover(item.path)}
-          >
-            <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-              {item.label}
-            </span>
-            <span style={{ color: colors.textSecondary }}>›</span>
-          </div>
-        ))}
-
-        <div style={dividerStyle} />
-
-        {/* ═══════════════════════════════════════════════════════════════
-                    UNIONS
-                ═══════════════════════════════════════════════════════════════ */}
-        <div style={sectionHeaderStyle}>Unions</div>
-        {[
-          { label: 'Browse Unions', path: '/unions' },
-          { label: 'Create Union', path: '/unions/create' },
-        ].map((item, i) => (
-          <div
-            key={`unions-${i}`}
-            onClick={() => handleNavigate(item.path)}
-            style={{
-              ...menuItemStyle,
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 15) * 30}ms both`
-                : 'none',
-            }}
-            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
-                since 2026-08-29 no hover VISUALS anywhere either -- this
-                handler paints nothing, it warms the route chunk so the tap
-                that follows is instant. Touch and focus fire it too. */
-            onMouseEnter={() => handleItemHover(item.path)}
-          >
-            <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-              {item.label}
-            </span>
-            <span style={{ color: colors.textSecondary }}>›</span>
-          </div>
-        ))}
-
-        <div style={dividerStyle} />
-
-        {/* ═══════════════════════════════════════════════════════════════
-                    PLAYER
-                ═══════════════════════════════════════════════════════════════ */}
-        <div style={sectionHeaderStyle}>Player</div>
-        {[
-          { label: 'My Profile', path: '/profile' },
-          { label: 'My Wallet', path: '/wallet' },
-          { label: 'Achievements', path: '/achievements' },
-          { label: 'Player Stats', path: '/stats' },
-          { label: 'VIP Status', path: '/vip' },
-          { label: 'Rakeback', path: '/rakeback' },
-          { label: 'Promotions', path: '/promotions' },
-          { label: 'Bonuses', path: '/bonuses' },
-          { label: 'Transactions', path: '/transactions' },
-          { label: 'Friends', path: '/friends' },
-          { label: 'Waitlist', path: '/waitlist' },
-          { label: 'Invite Players', path: '/invite' },
-        ].map((item, i) => (
-          <div
-            key={`player-${i}`}
-            onClick={() => handleNavigate(item.path)}
-            style={{
-              ...menuItemStyle,
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 17) * 30}ms both`
-                : 'none',
-            }}
-            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
-                since 2026-08-29 no hover VISUALS anywhere either -- this
-                handler paints nothing, it warms the route chunk so the tap
-                that follows is instant. Touch and focus fire it too. */
-            onMouseEnter={() => handleItemHover(item.path)}
-          >
-            <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-              {item.label}
-            </span>
-            <span style={{ color: colors.textSecondary }}>›</span>
-          </div>
-        ))}
-
-        {/* Avatar Customization Trigger */}
-        <div
-          onClick={() => setShowAvatarGallery(true)}
-          style={{
-            ...menuItemStyle,
-            animation: isOpen
-              ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(12 + 17) * 30}ms both`
-              : 'none',
-          }}
-        >
-          <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-            Change Avatar
-          </span>
-          <span style={{ color: colors.textSecondary }}>›</span>
+        <div className={styles.quickActions} aria-label="Context actions">
+          {clubId && workspace.isClubStaff ? (
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => handleNavigate(`/clubs/${clubId}/create-table`)}
+            >
+              Create Table
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => handleNavigate('/?create=club')}
+            >
+              Create Club
+            </button>
+          )}
+          {clubId && workspace.canControlClub ? (
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => handleNavigate(`/invite/${clubId}`)}
+            >
+              Invite Players
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => handleNavigate('/unions/create')}
+            >
+              Create Union
+            </button>
+          )}
+          {clubId && workspace.canViewFinance && (
+            <button
+              type="button"
+              className={`${styles.quickAction} ${styles.quickActionWide}`}
+              onClick={() => handleNavigate(`/clubs/${clubId}/finance`)}
+            >
+              Open Finance & Risk
+            </button>
+          )}
         </div>
 
-        <div style={dividerStyle} />
+        {(pinnedItems.length > 0 || recentItems.length > 0) && !searchQuery && (
+          <section className={styles.memoryRail} aria-label="Pinned and recent destinations">
+            {pinnedItems.length > 0 && (
+              <div>
+                <h2 className={styles.sectionHeader}>Pinned</h2>
+                <div className={styles.memoryLinks}>
+                  {pinnedItems.map((item) => (
+                    <button key={item.path} type="button" onClick={() => handleNavigate(item.path)}>
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {recentItems.length > 0 && (
+              <div>
+                <h2 className={styles.sectionHeader}>Recent</h2>
+                <div className={styles.memoryLinks}>
+                  {recentItems.map((item) => (
+                    <button key={item.path} type="button" onClick={() => handleNavigate(item.path)}>
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
-        {/* ═══════════════════════════════════════════════════════════════
-                    AGENT & ADMIN
-                ═══════════════════════════════════════════════════════════════ */}
-        <div style={sectionHeaderStyle}>Agent & Admin</div>
-        {[
-          { label: 'Agent Management', path: '/agent-management' },
-          { label: 'Agent Dashboard', path: '/agent-dashboard' },
-          { label: 'Club Dashboard', path: '/data' },
-          { label: 'Club Settings', path: '/admin' },
-          { label: 'House Ads', path: '/house-ads' },
-          { label: 'Anti-Cheat', path: '/anti-cheat' },
-        ].map((item, i) => (
-          <div
-            key={`admin-${i}`}
-            onClick={() => handleNavigate(item.path)}
-            style={{
-              ...menuItemStyle,
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 29) * 30}ms both`
-                : 'none',
-            }}
-            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
-                since 2026-08-29 no hover VISUALS anywhere either -- this
-                handler paints nothing, it warms the route chunk so the tap
-                that follows is instant. Touch and focus fire it too. */
-            onMouseEnter={() => handleItemHover(item.path)}
-          >
-            <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-              {item.label}
-            </span>
-            <span style={{ color: colors.textSecondary }}>›</span>
-          </div>
+        {filteredNavigationGroups.map((group) => (
+          <section className={styles.navGroup} key={group.label} aria-label={group.label}>
+            <h2 className={styles.sectionHeader}>{group.label}</h2>
+            {group.items.map((item) => {
+              const active = isActivePath(item.path);
+              return (
+                <div className={styles.navItemRow} key={item.path}>
+                  <button
+                    type="button"
+                    className={`${styles.navItem} ${active ? styles.navItemActive : ''}`}
+                    onClick={() => handleNavigate(item.path)}
+                    onMouseEnter={() => handleItemHover(item.path)}
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    <span>
+                      <span className={styles.navLabel}>{item.label}</span>
+                      <span className={styles.navDescription}>{item.description}</span>
+                    </span>
+                    {attentionCount > 0 && item.path.endsWith('/disputes') && (
+                      <span className={styles.attentionBadge}>{attentionCount}</span>
+                    )}
+                    <span className={styles.navArrow}>{item.external ? '↗' : '›'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.pinButton} ${pinnedPaths.includes(item.path) ? styles.pinButtonActive : ''}`}
+                    onClick={() => togglePinnedPath(item.path)}
+                    aria-label={`${pinnedPaths.includes(item.path) ? 'Unpin' : 'Pin'} ${item.label}`}
+                    aria-pressed={pinnedPaths.includes(item.path)}
+                  >
+                    <span aria-hidden="true">◇</span>
+                  </button>
+                </div>
+              );
+            })}
+          </section>
         ))}
 
-        <div style={dividerStyle} />
+        {searchQuery && filteredNavigationGroups.length === 0 && (
+          <div className={styles.noResults} role="status">
+            <strong>No Menu Destination Matches.</strong>
+            <span>Press Search To Look Across Players And Clubs.</span>
+          </div>
+        )}
+
+        <button
+          type="button"
+          className={`${styles.quickAction} ${styles.quickActionFull}`}
+          onClick={() => setShowAvatarGallery(true)}
+        >
+          Change Avatar
+        </button>
+
+        <div className={styles.divider} />
 
         {/* ═══════════════════════════════════════════════════════════════
                     SETTINGS
                 ═══════════════════════════════════════════════════════════════ */}
-        <div style={sectionHeaderStyle}>Settings</div>
+        <section className={styles.settingsDeck} aria-label="Settings">
+          <h2 className={styles.sectionHeader}>Settings & Appearance</h2>
 
-        {/* Sounds Toggle */}
-        <div style={{ ...menuItemStyle, justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>Sounds</span>
-          <button
-            onClick={handleSoundsToggle}
-            aria-checked={soundsEnabled}
-            role="switch"
-            style={canonicalToggleTrackStyle(soundsEnabled)}
-          >
-            <span style={canonicalToggleThumbStyle(soundsEnabled)} />
-          </button>
-        </div>
-
-        {/* Vibrations Toggle */}
-        <div style={{ ...menuItemStyle, justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>Vibrations</span>
-          <button
-            onClick={handleVibrationsToggle}
-            aria-checked={vibrationsEnabled}
-            role="switch"
-            style={canonicalToggleTrackStyle(vibrationsEnabled)}
-          >
-            <span style={canonicalToggleThumbStyle(vibrationsEnabled)} />
-          </button>
-        </div>
-
-        {/* Use Real Name Toggle */}
-        <div style={{ ...menuItemStyle, justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>
-            Use Real Name (Vs Alias)
-          </span>
-          <button
-            onClick={handleUseRealNameToggle}
-            aria-checked={useRealName}
-            role="switch"
-            style={canonicalToggleTrackStyle(useRealName)}
-          >
-            <span style={canonicalToggleThumbStyle(useRealName)} />
-          </button>
-        </div>
-
-        {/* Bible V8 §11.1: Table Settings — 12 toggles (expandable) */}
-        <div
-          style={{
-            ...menuItemStyle,
-            justifyContent: 'space-between',
-          }}
-          onClick={() => setShowTableSettings(!showTableSettings)}
-        >
-          <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>Table Settings</span>
-          <span
-            style={{
-              color: colors.textSecondary,
-              fontSize: 18,
-              transform: showTableSettings ? 'rotate(90deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s ease',
-            }}
-          >
-            ›
-          </span>
-        </div>
-        {showTableSettings && (
-          <div style={{ padding: '0 0 8px' }}>
-            <TableSettingsPanel
-              settings={tableSettings}
-              loading={tableSettingsLoading}
-              onToggle={toggleTableSetting}
-              mode="inline"
-              onOpenThemeSettings={() => setShowThemeSettings(true)}
-            />
+          {/* Sounds Toggle */}
+          <div className={styles.settingRow}>
+            <span className={styles.settingLabel}>Sounds</span>
+            <button
+              type="button"
+              onClick={handleSoundsToggle}
+              aria-label="Sounds"
+              aria-checked={soundsEnabled}
+              role="switch"
+              className={styles.toggleButton}
+            >
+              <span className={styles.toggleTrack} aria-hidden="true">
+                <span className={styles.toggleThumb} />
+              </span>
+            </button>
           </div>
-        )}
 
-        {/* #6: Card Color Customization */}
-        <div style={sectionHeaderStyle}>Card Colors</div>
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 10,
-            padding: '8px 16px 12px',
-          }}
-        >
-          {/*
-            THE ONLY IDS THAT ARE REAL CARD BACKS.
+          {/* Vibrations Toggle */}
+          <div className={styles.settingRow}>
+            <span className={styles.settingLabel}>Vibrations</span>
+            <button
+              type="button"
+              onClick={handleVibrationsToggle}
+              aria-label="Vibrations"
+              aria-checked={vibrationsEnabled}
+              role="switch"
+              className={styles.toggleButton}
+            >
+              <span className={styles.toggleTrack} aria-hidden="true">
+                <span className={styles.toggleThumb} />
+              </span>
+            </button>
+          </div>
 
-            This list used to read default / emerald / crimson / royal / gold /
-            midnight / obsidian / neon. Six of those eight match NOTHING - not
-            CARD_BACK_IDS in CardImage.tsx, not CARD_BACK_ALIASES - so
-            normalizeCardBack sent every one of them to classic_blue. Every tile
-            painted the same navy back and picking any of them changed nothing
-            on the felt.
+          {/* Use Real Name Toggle */}
+          <div className={styles.settingRow}>
+            <span className={styles.settingLabel}>Use Real Name (Vs Alias)</span>
+            <button
+              type="button"
+              onClick={handleUseRealNameToggle}
+              aria-label="Use real name instead of poker alias"
+              aria-checked={useRealName}
+              role="switch"
+              className={styles.toggleButton}
+            >
+              <span className={styles.toggleTrack} aria-hidden="true">
+                <span className={styles.toggleThumb} />
+              </span>
+            </button>
+          </div>
 
-            That is the identical defect Dan recorded in ThemeSettingsModal on
-            2026-08-20 (standard-red / premium-gold / premium-platinum, same
-            outcome). It was fixed there and left standing here, because the two
-            menus keep their own copy of the catalogue.
-
-            Every id here is in CARD_BACK_IDS and has artwork on disk under
-            public/cards/backs/table/. neon, diamond, dragon and galaxy are real
-            designs this menu was never offering at all.
-            vipOnly mirrors it too, so this menu and the shop agree on what is
-            paid rather than offering a premium back as if it were free.
-          */}
-          {[
-            {
-              id: 'classic_blue',
-              name: 'Classic Blue',
-              bg: 'linear-gradient(135deg, #1e3a5f, #0d2137)',
-              vipOnly: false,
-            },
-            {
-              id: 'classic_red',
-              name: 'Classic Red',
-              bg: 'linear-gradient(135deg, #8b0000, #4a0000)',
-              vipOnly: false,
-            },
-            {
-              id: 'royal',
-              name: 'Royal',
-              bg: 'linear-gradient(135deg, #4a0080, #1a0030)',
-              vipOnly: false,
-            },
-            {
-              id: 'gold',
-              name: 'Premium Gold',
-              bg: 'linear-gradient(135deg, #ffd700, #b8860b)',
-              vipOnly: true,
-            },
-            {
-              id: 'holographic',
-              name: 'Holographic',
-              bg: 'linear-gradient(135deg, #d3d3d3, #a9a9a9)',
-              vipOnly: true,
-            },
-            {
-              id: 'carbon',
-              name: 'Carbon Fiber',
-              bg: 'linear-gradient(135deg, #434343, #000000)',
-              vipOnly: true,
-            },
-            {
-              id: 'neon',
-              name: 'Neon',
-              bg: 'linear-gradient(135deg, #00f0ff, #0066ff)',
-              vipOnly: true,
-            },
-            {
-              id: 'diamond',
-              name: 'Diamond',
-              bg: 'linear-gradient(135deg, #b9f2ff, #4aa3c7)',
-              vipOnly: true,
-            },
-            {
-              id: 'dragon',
-              name: 'Dragon',
-              bg: 'linear-gradient(135deg, #7a1f1f, #2b0808)',
-              vipOnly: true,
-            },
-            {
-              id: 'galaxy',
-              name: 'Galaxy',
-              bg: 'linear-gradient(135deg, #2b1055, #7597de)',
-              vipOnly: true,
-            },
-          ].map((preset) => {
-            const isSelected = selectedCardColor === preset.id;
-            /**
-             * vipOnly WAS DECLARED ON EVERY PRESET AND READ BY NOTHING.
-             *
-             * 2026-08-25. Seven of these ten designs are paid: the diamond
-             * store charges 75 to 300 for them and Theme Settings padlocks them
-             * behind VIP. This menu handed every one of them to every player
-             * for free, in one tap, with no lock and no check. Same rule here
-             * as everywhere else now: free, or VIP, or bought.
-             */
-            const locked = !isCardBackUnlocked(preset.id, {
-              isVip: isVIP,
-              owned: ownedCardBacks,
-            });
-            return (
-              <div
-                key={preset.id}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 4,
-                  cursor: locked ? 'not-allowed' : 'pointer',
-                  opacity: locked ? 0.5 : 1,
-                }}
-                onClick={async () => {
-                  if (locked) {
-                    toast.info('That Card Back Is A Premium Design. Unlock It In The Shop.');
-                    return;
-                  }
-                  /* Remembered so a rejected save can put the highlight back
-                     where it was, rather than leaving the menu ticking a
-                     design the felt is not dealing. */
-                  const previousCardId = selectedCardColor;
-                  setSelectedCardColor(preset.id);
-                  /* 2026-08-26: the highlight is persisted HERE now. Its only
-                     writer used to be a `CARD_COLOR_CHANGED` listener on
-                     HomePage, which is unmounted whenever you are at a table —
-                     precisely where this menu lives. So changing a card back
-                     from the felt never wrote the key, and the next time the
-                     menu opened it highlighted the previous design. */
-                  try {
-                    localStorage.setItem(STORAGE_KEYS.CARD_COLOR, preset.id);
-                  } catch {
-                    /* private mode — the highlight is cosmetic, never fatal */
-                  }
-                  /**
-                   * THE TRANSLATION TABLE OUTLIVED THE IDS IT TRANSLATED.
-                   *
-                   * 2026-08-25. The list above was corrected two days ago from
-                   * the invented ids (default / emerald / crimson / midnight /
-                   * obsidian) to the REAL designs — and this map, which existed
-                   * only to translate those invented ids, was left in place. It
-                   * has no entry for any of the new ids, so `|| 'black'` caught
-                   * them, and 'black' aliases to classic_blue:
-                   *
-                   *   classic_red  -> classic_blue      dragon  -> classic_blue
-                   *   royal        -> classic_blue      galaxy  -> classic_blue
-                   *   holographic  -> classic_blue      diamond -> classic_blue
-                   *   carbon       -> classic_blue      neon    -> royal
-                   *
-                   * Eight of the ten tiles saved a design other than the one
-                   * they showed. The fix made the menu offer real designs and
-                   * left it saving the wrong one, which is worse than before,
-                   * because it now looks right in the picker.
-                   *
-                   * These ids ARE the canonical ids. Nothing needs translating.
-                   */
-                  const realCardId = preset.id;
-
-                  masterBus.emit('CARD_COLOR_CHANGED', { preset: preset.id });
-
-                  /* 2026-08-26: this used to SELECT '*' and spread the whole
-                     row back into the upsert, re-sending `id`, `created_at`,
-                     `updated_at`, `user_id` and `game_type` to PostgREST —
-                     one generated or immutable column away from failing every
-                     save and reverting the tile for no visible reason. It now
-                     goes through the one canonical writer (lib/
-                     applyTableAppearance), which emits live first, writes ONLY
-                     the column being changed, and puts the felt back if the
-                     write is rejected. */
-                  const result = await applyTableAppearance(
-                    { cards_id: realCardId },
-                    { userId: user?.id, previous: { cards_id: previousCardId } }
-                  );
-
-                  if (result.ok) {
-                    toast.success('Card Back Applied');
-                  } else if (!user?.id) {
-                    toast.error('Please Sign In To Save That Card Back.');
-                    setSelectedCardColor(previousCardId);
-                  } else {
-                    reportError(result.error, 'HamburgerMenu.Card_color_save_failed');
-                    toast.error('Could Not Save That Card Back. Please Try Again.');
-                    setSelectedCardColor(previousCardId);
-                  }
-                }}
-              >
-                <div
-                  title={locked ? `${preset.name} (Premium)` : preset.name}
-                  style={{
-                    position: 'relative',
-                    width: 36,
-                    height: 36,
-                    borderRadius: '50%',
-                    background: preset.bg,
-                    border: isSelected
-                      ? '2px solid rgba(0, 212, 255, 0.8)'
-                      : '2px solid rgba(255, 255, 255, 0.1)',
-                    boxShadow: isSelected
-                      ? '0 0 8px rgba(0, 212, 255, 0.4)'
-                      : '0 2px 4px rgba(0,0,0,0.3)',
-                    transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {/* Text, not an emoji padlock. Without it the tile looked
-                      free and simply refused to work when tapped. */}
-                  {locked && (
-                    <span
-                      style={{
-                        fontSize: 8,
-                        fontWeight: 800,
-                        letterSpacing: '0.04em',
-                        color: '#0b0b0b',
-                        background: 'linear-gradient(135deg, #ffd700, #d4a017)',
-                        borderRadius: 5,
-                        padding: '1px 3px',
-                      }}
-                    >
-                      VIP
-                    </span>
-                  )}
-                </div>
-                <span
-                  style={{
-                    fontSize: 9,
-                    fontWeight: isSelected ? 700 : 500,
-                    color: isSelected ? colors.accent : colors.textSecondary,
-                    textAlign: 'center',
-                    lineHeight: 1.1,
-                    maxWidth: 50,
-                    transition: 'color 0.2s ease',
-                  }}
-                >
-                  {preset.name}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        {[
-          { label: 'App Settings', path: '/settings' },
-          { label: 'Notifications', path: '/notifications' },
-        ].map((item, i) => (
-          <div
-            key={`settings-${i}`}
-            onClick={() => handleNavigate(item.path)}
-            style={{
-              ...menuItemStyle,
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 32) * 30}ms both`
-                : 'none',
-            }}
-            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
-                since 2026-08-29 no hover VISUALS anywhere either -- this
-                handler paints nothing, it warms the route chunk so the tap
-                that follows is instant. Touch and focus fire it too. */
-            onMouseEnter={() => handleItemHover(item.path)}
+          <button
+            type="button"
+            className={styles.navItem}
+            onClick={() => setShowThemeSettings(true)}
+            aria-label="Open Table Studio"
           >
-            <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-              {item.label}
+            <span>
+              <span className={styles.navLabel}>Table Studio</span>
+              <span className={styles.navDescription}>
+                Themes, Tables, Buttons, Backgrounds, And Card Backs
+              </span>
             </span>
-            <span style={{ color: colors.textSecondary }}>›</span>
-          </div>
-        ))}
+            <span className={styles.navArrow} aria-hidden="true">
+              ›
+            </span>
+          </button>
 
-        <div style={dividerStyle} />
-
-        {/* ═══════════════════════════════════════════════════════════════
-                    KEYBOARD SHORTCUTS
-                ═══════════════════════════════════════════════════════════════ */}
-        <div style={sectionHeaderStyle}>Keyboard Shortcuts</div>
-        {[
-          { key: '?', desc: 'Show Shortcuts' },
-          { key: 'Esc', desc: 'Close Menu / Modal' },
-          { key: 'H', desc: 'Go Home' },
-          { key: 'L', desc: 'Go To Home' },
-          { key: 'T', desc: 'Go To Tournaments' },
-          { key: 'P', desc: 'Go To Profile' },
-          { key: 'S', desc: 'Go To Settings' },
-        ].map((shortcut, i) => (
-          <div
-            key={`shortcut-${i}`}
-            style={{
-              ...menuItemStyle,
-              cursor: 'default',
-              justifyContent: 'space-between',
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 34) * 30}ms both`
-                : 'none',
-            }}
+          {/* Bible V8 §11.1: Table Settings — 12 toggles (expandable) */}
+          <button
+            type="button"
+            className={styles.settingsDisclosure}
+            onClick={() => setShowTableSettings(!showTableSettings)}
+            aria-expanded={showTableSettings}
+            aria-controls={tableSettingsId}
           >
-            <span style={{ fontSize: 14, color: colors.textSecondary }}>{shortcut.desc}</span>
-            <kbd
+            <span className={styles.settingLabel}>Table Settings</span>
+            <span
+              aria-hidden="true"
               style={{
-                display: 'inline-block',
-                padding: '2px 8px',
-                fontSize: 12,
-                fontWeight: 700,
-                fontFamily: 'monospace',
-                color: colors.text,
-                background: colors.bgHover,
-                borderRadius: 6,
-                border: `1px solid ${colors.divider}`,
-                minWidth: 28,
-                textAlign: 'center',
+                color: colors.textSecondary,
+                fontSize: 18,
+                transform: showTableSettings ? 'rotate(90deg)' : 'rotate(0deg)',
+                transition: 'transform 0.2s ease',
               }}
             >
-              {shortcut.key}
-            </kbd>
-          </div>
-        ))}
-
-        <div style={dividerStyle} />
-
-        {/* ═══════════════════════════════════════════════════════════════
-                    SUPPORT & LEGAL
-                ═══════════════════════════════════════════════════════════════ */}
-        <div style={sectionHeaderStyle}>Support & Legal</div>
-        {[
-          { label: 'Help & FAQ', path: '/help' },
-          { label: 'Terms Of Service', path: '/legal/tos' },
-          { label: 'Privacy Policy', path: '/legal/privacy' },
-          { label: 'Fair Gaming', path: '/legal/fair-gaming' },
-          { label: 'Promotion Rules', path: '/legal/promotions' },
-        ].map((item, i) => (
-          <div
-            key={`support-${i}`}
-            onClick={() => handleNavigate(item.path)}
-            style={{
-              ...menuItemStyle,
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 41) * 30}ms both`
-                : 'none',
-            }}
-            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
-                since 2026-08-29 no hover VISUALS anywhere either -- this
-                handler paints nothing, it warms the route chunk so the tap
-                that follows is instant. Touch and focus fire it too. */
-            onMouseEnter={() => handleItemHover(item.path)}
-          >
-            <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-              {item.label}
+              ›
             </span>
-            <span style={{ color: colors.textSecondary }}>›</span>
-          </div>
-        ))}
+          </button>
+          {showTableSettings && (
+            <div id={tableSettingsId} style={{ padding: '0 0 8px' }}>
+              <TableSettingsPanel
+                settings={tableSettings}
+                loading={tableSettingsLoading}
+                onToggle={toggleTableSetting}
+                mode="inline"
+              />
+            </div>
+          )}
 
-        {/* Reset Tutorial */}
-        <div
-          onClick={handleResetTutorial}
-          style={{
-            ...menuItemStyle,
-            animation: isOpen
-              ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 1140ms both`
-              : 'none',
-          }}
-        >
-          <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
+          {[
+            {
+              label: 'App Settings',
+              path: '/settings',
+              description: 'Audio, gameplay, privacy, and account',
+            },
+            {
+              label: 'Notifications',
+              path: '/notifications',
+              description: 'Alerts and notification preferences',
+            },
+          ].map((item) => {
+            const active = isActivePath(item.path);
+            return (
+              <button
+                type="button"
+                key={item.path}
+                className={`${styles.navItem} ${active ? styles.navItemActive : ''}`}
+                onClick={() => handleNavigate(item.path)}
+                onMouseEnter={() => handleItemHover(item.path)}
+                aria-current={active ? 'page' : undefined}
+              >
+                <span>
+                  <span className={styles.navLabel}>{item.label}</span>
+                  <span className={styles.navDescription}>{item.description}</span>
+                </span>
+                <span className={styles.navArrow}>›</span>
+              </button>
+            );
+          })}
+        </section>
+
+        <div className={styles.divider} />
+
+        <section className={styles.navGroup} aria-label="Support and legal">
+          <h2 className={styles.sectionHeader}>Support & Legal</h2>
+          {CLUB_ARENA_SUPPORT_NAV.map((item) => {
+            const active = isActivePath(item.path);
+            return (
+              <button
+                type="button"
+                key={item.path}
+                className={`${styles.navItem} ${active ? styles.navItemActive : ''}`}
+                onClick={() => handleNavigate(item.path)}
+                onMouseEnter={() => handleItemHover(item.path)}
+                aria-current={active ? 'page' : undefined}
+              >
+                <span>
+                  <span className={styles.navLabel}>{item.label}</span>
+                  <span className={styles.navDescription}>{item.description}</span>
+                </span>
+                <span className={styles.navArrow}>›</span>
+              </button>
+            );
+          })}
+        </section>
+
+        <div className={styles.quickActions}>
+          <button type="button" className={styles.quickAction} onClick={handleResetTutorial}>
             Reset Tutorial
-          </span>
-          <span style={{ color: colors.textSecondary }}>›</span>
-        </div>
-
-        <div style={dividerStyle} />
-
-        {/* Log Out */}
-        <div
-          onClick={handleLogOut}
-          style={{
-            ...menuItemStyle,
-            marginBottom: 16,
-            animation: isOpen
-              ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 1170ms both`
-              : 'none',
-          }}
-        >
-          <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.danger }}>
+          </button>
+          <button
+            type="button"
+            className={`${styles.quickAction} ${styles.quickActionDanger}`}
+            onClick={handleLogOut}
+          >
             Log Out
-          </span>
+          </button>
         </div>
 
-        {/* Version Footer */}
-        <div
-          style={{
-            padding: '16px',
-            textAlign: 'center',
-            color: colors.textSecondary,
-            fontSize: 12,
-          }}
-        >
-          Club Arena V1.12
-        </div>
+        <div className={styles.footer}>Club Arena · Command Deck V1.12</div>
       </div>
 
       {/* Avatar Gallery Modal */}

@@ -11,5 +11,4 @@
  * The felt/theme pickers players actually use are the tabs in
  * `components/table/ThemeSettingsModal.tsx`.
  */
-export { CardBackSelector } from './CardBackSelector';
 export { AvatarCustomizer } from './AvatarCustomizer';

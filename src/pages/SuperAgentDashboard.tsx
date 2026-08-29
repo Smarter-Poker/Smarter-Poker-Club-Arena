@@ -16,7 +16,6 @@ import { useToast } from '../components/common/Toast';
 import CreditRequestWidget from '../components/agent/CreditRequestWidget';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import './SuperAgentDashboard.css';
 import { reportError } from '../utils/errorReporter';
@@ -542,7 +541,6 @@ export default function SuperAgentDashboard() {
           </div>
         )}
       </div>
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

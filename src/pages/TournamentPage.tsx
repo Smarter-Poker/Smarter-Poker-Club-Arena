@@ -19,7 +19,6 @@ import { tableService } from '../services/TableService';
 import { useToast } from '../components/common/Toast';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import MysteryBountyChest, {
   type MysteryChestData,
 } from '../components/tournament/MysteryBountyChest';
@@ -1740,9 +1739,6 @@ export default function TournamentPage() {
         queuedBehind={lobbyChestQueue.pending}
         onDone={lobbyChestQueue.complete}
       />
-
-      {/* Bottom Navigation */}
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

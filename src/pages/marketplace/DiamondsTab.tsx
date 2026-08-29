@@ -11,9 +11,10 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useToast } from '../../components/common/Toast';
-import { startCheckout, type DiamondPackage, type WalletInfo } from './marketplaceShared';
+import { startCheckout, uuid, type DiamondPackage, type WalletInfo } from './marketplaceShared';
 import styles from './DiamondsTab.module.css';
 
 /* ── Nav-tab destination URLs ────────────────────────────────────────────── */
@@ -36,20 +37,27 @@ interface DiamondsTabProps {
 export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabProps) {
   const toast = useToast();
   const [redirecting, setRedirecting] = useState<string | null>(null);
+  const checkoutInFlightRef = useRef(false);
+  const checkoutKeyRef = useRef<string | null>(null);
 
   /* ── Stripe checkout ───────────────────────────────────────────────────── */
   const handleBuy = async (pkg: DiamondPackage) => {
-    if (redirecting) return;
+    if (checkoutInFlightRef.current) return;
+    checkoutInFlightRef.current = true;
+    checkoutKeyRef.current = uuid();
     setRedirecting(pkg.id);
     try {
       await startCheckout(
         'diamonds',
         [{ packageId: pkg.id, quantity: 1 }],
-        `club=${encodeURIComponent(clubId)}&tab=diamonds`
+        `club=${encodeURIComponent(clubId)}&tab=diamonds`,
+        checkoutKeyRef.current
       );
       // startCheckout navigates away on success — the line below only runs on error.
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Could not start checkout');
+      checkoutInFlightRef.current = false;
+      checkoutKeyRef.current = null;
       setRedirecting(null);
     }
   };
@@ -107,25 +115,38 @@ export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabPro
     <div className={styles.root}>
       {/* ── Title ──────────────────────────────────────────────────────── */}
       <div className={styles.titleRow}>
-        <h1 className={styles.title}>Diamond Store</h1>
+        <span className={styles.eyebrow}>Secure Club Arena Currency</span>
+        <h2 className={styles.title}>Diamond Vault</h2>
+        <p className={styles.titleSub}>
+          Choose A Bundle. Your Wallet Updates After Payment Clears.
+        </p>
       </div>
 
       {/* ── Navigation tabs ────────────────────────────────────────────── */}
       <nav className={styles.navBar} aria-label="Diamond Store navigation">
-        {NAV_LINKS.map((link) => (
-          <a
-            key={link.href}
-            href={link.href}
-            className={styles.navTab}
-            /* internal links stay in-app; external links open in a new tab */
-            {...(link.href.startsWith('http')
-              ? { target: '_blank', rel: 'noopener noreferrer' }
-              : {})}
-          >
-            <span className={styles.navIcon}>{link.icon}</span>
-            <span className={styles.navLabel}>{link.label}</span>
-          </a>
-        ))}
+        {NAV_LINKS.map((link) => {
+          const content = (
+            <>
+              <span className={styles.navIcon}>{link.icon}</span>
+              <span className={styles.navLabel}>{link.label}</span>
+            </>
+          );
+          return link.href.startsWith('http') ? (
+            <a
+              key={link.href}
+              href={link.href}
+              className={styles.navTab}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {content}
+            </a>
+          ) : (
+            <Link key={link.href} to={link.href} className={styles.navTab}>
+              {content}
+            </Link>
+          );
+        })}
       </nav>
 
       {/* ── Promo banner ───────────────────────────────────────────────── */}
@@ -183,10 +204,10 @@ export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabPro
                 </div>
               </div>
 
-              {/* Add to Cart CTA */}
+              {/* Direct, secure checkout CTA */}
               <div className={styles.ctaRow}>
                 <span className={styles.ctaBtn}>
-                  {isRedirecting ? 'Opening Checkout…' : 'Add to Cart'}
+                  {isRedirecting ? 'Opening Checkout…' : 'Buy Securely'}
                 </span>
               </div>
             </button>
@@ -196,7 +217,7 @@ export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabPro
 
       {/* ── Footer note ────────────────────────────────────────────────── */}
       <p className={styles.footNote}>
-        1 Diamond = $0.01 · Secure Checkout Via Stripe · Balance Updates Automatically After Payment
+        Secure Checkout Via Stripe · Balance Updates Automatically After Payment
       </p>
     </div>
   );

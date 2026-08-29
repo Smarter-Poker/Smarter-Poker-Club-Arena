@@ -157,11 +157,13 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
                     <td className="feature-name">{feature.label}</td>
                     <td className="feature-vip">{vipFree ? ' Free' : vipValue || ''}</td>
                     <td className="feature-cost" data-pricing-revision={pricingRevision}>
-                      {!pricing
-                        ? '-'
-                        : !sellable
-                          ? 'Not For Sale'
-                          : `${pricing.cost.toLocaleString()}/${pricing.usageType.replace('per_', '').replace('_', ' ')}`}
+                      {feature.key === 'theme_unlock'
+                        ? 'Table Studio'
+                        : !pricing
+                          ? '-'
+                          : !sellable
+                            ? 'Not For Sale'
+                            : `${pricing.cost.toLocaleString()}/${pricing.usageType.replace('per_', '').replace('_', ' ')}`}
                     </td>
                   </tr>
                 );

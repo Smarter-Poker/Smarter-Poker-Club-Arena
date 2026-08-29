@@ -25,7 +25,6 @@ import { MembershipService } from '../services/MembershipService';
 import { AgentService, type Agent } from '../services/AgentService';
 import { useToast } from '../components/common/Toast';
 import { ClubsService } from '../services/ClubsService';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import ConfirmModal from '../components/common/ConfirmModal';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -1947,9 +1946,6 @@ export default function ClubDetailPage() {
           </div>
         </div>
       )}
-
-      {/* Fixed Bottom Navigation Bar */}
-      {clubId && <ClubBottomNav clubId={clubId} />}
 
       {/* Confirm Modal for Table Deletion */}
       <ConfirmModal

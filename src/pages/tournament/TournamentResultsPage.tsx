@@ -20,7 +20,6 @@ import {
   totalPayout,
   type ResultSort,
 } from '../../utils/tournamentPayout';
-import { fetchAllRows } from '../../utils/fetchAllRows';
 import {
   MysteryBountyService,
   formatCents,
@@ -136,6 +135,21 @@ export default function TournamentResultsPage() {
   const [mysteryTotals, setMysteryTotals] = useState<Map<string, MysteryBountyPlayerTotals>>(
     () => new Map()
   );
+  /* BIGGEST HITS (2026-08-29, round 11). The wheel's big draws are the
+     format's whole story and nothing surfaced them: who hit 25x, 50x, 100x,
+     at what stake, for how much. Loaded only when the Spin type filter is
+     active. HORSES ARE PLAYERS (CLAUDE.md 10.5): winners are shown whoever
+     they are, no is_horse filter. */
+  const [biggestHits, setBiggestHits] = useState<
+    Array<{
+      tournamentId: string;
+      multiplier: number;
+      buyIn: number;
+      prize: number;
+      winnerName: string;
+      endedAt: string;
+    }>
+  >([]);
 
   // Refs to avoid stale closures
   const loadTournamentsRef = useRef<() => void>(() => {});
@@ -147,14 +161,25 @@ export default function TournamentResultsPage() {
   const loadTournaments = async () => {
     setIsLoading(true);
     try {
+      /* MINE IS A JOIN, NOT A CLIENT SCAN (2026-08-29, round 12).
+         The old shape fetched EVERY tournament_players row the player ever
+         had - fetchAllRows, paged, thousands of rows for a regular - to
+         intersect against a 100-row list in the browser. Worse than slow, it
+         was WRONG for exactly the player it cost the most: the list is the
+         newest 100 completed events overall, so a spin regular whose games
+         age out of the top 100 saw their own history shrink toward empty.
+         The inner join pushes both problems into one query: the newest 100
+         completed events THE PLAYER WAS IN. */
+      const cols =
+        'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier';
+      const mine = filter === 'mine' && user?.id;
       let query = supabase
         .from('tournaments')
-        .select(
-          'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier'
-        )
+        .select(mine ? `${cols}, tournament_players!inner(user_id)` : cols)
         .eq('status', 'COMPLETED')
         .order('ended_at', { ascending: false })
         .limit(100);
+      if (mine) query = query.eq('tournament_players.user_id', user.id);
 
       if (typeFilter !== 'all') {
         if (typeFilter === 'xmtt') {
@@ -172,28 +197,12 @@ export default function TournamentResultsPage() {
       if (listErr) throw listErr;
       if (!isMounted.current) return;
       if (!data) return;
-      let completedList = data as CompletedTournament[];
-
-      // If "mine" filter, only show tournaments user participated in
-      if (filter === 'mine' && user?.id) {
-        /* "Tournaments I played" is a complete set - a player past 5,000
-           entries would have silently lost the oldest of their own history
-           (2026-08-27). */
-        const myEntries = await fetchAllRows<{ tournament_id: string }>(
-          (from, to) =>
-            supabase
-              .from('tournament_players')
-              .select('tournament_id')
-              .eq('user_id', user.id)
-              .order('tournament_id', { ascending: true })
-              .range(from, to),
-          { label: 'TournamentResults.myEntries' }
-        );
-
-        if (!isMounted.current) return;
-        const myTournamentIds = new Set((myEntries || []).map((e) => e.tournament_id));
-        completedList = completedList.filter((t) => myTournamentIds.has(t.id));
-      }
+      /* Strip the join column so the rest of the page keeps its exact shape.
+         The `unknown` hop is because supabase-js cannot statically parse a
+         ternary select string; the columns are the same literal both ways. */
+      const completedList = (
+        data as unknown as Array<CompletedTournament & { tournament_players?: unknown }>
+      ).map(({ tournament_players: _tp, ...t }) => t as CompletedTournament);
 
       setTournaments(completedList);
     } catch (err) {
@@ -211,6 +220,68 @@ export default function TournamentResultsPage() {
   useEffect(() => {
     loadTournaments();
   }, [filter, typeFilter, user?.id]);
+
+  /* ── BIGGEST HITS (round 11) ─────────────────────────────────────────────
+     The ten largest wheel draws that actually completed, 10x and up, most
+     recent first within a multiplier. Two reads, both error-bound (the
+     ratchet holds this file at zero discarded reads): the spins, then their
+     winners. The winner's prize comes from tournament_players.prize - the
+     column rounds 9-10 made trustworthy. */
+  useEffect(() => {
+    if (typeFilter !== 'spin') {
+      setBiggestHits([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: hits, error: hitsErr } = await supabase
+          .from('tournaments')
+          .select('id, buy_in_amount, spin_multiplier, ended_at')
+          .eq('variant', 'spin')
+          .eq('status', 'COMPLETED')
+          .gte('spin_multiplier', 10)
+          .order('spin_multiplier', { ascending: false })
+          .order('ended_at', { ascending: false })
+          .limit(10);
+        if (hitsErr) throw hitsErr;
+        if (cancelled || !isMounted.current || !hits || hits.length === 0) return;
+
+        const ids = hits.map((h) => h.id);
+        const { data: winners, error: winnersErr } = await supabase
+          .from('tournament_players')
+          .select('tournament_id, username, prize')
+          .in('tournament_id', ids)
+          .eq('position', 1);
+        if (winnersErr) throw winnersErr;
+        if (cancelled || !isMounted.current) return;
+
+        const winnerByTid = new Map(
+          (winners || []).map((w) => [String(w.tournament_id), w] as const)
+        );
+        setBiggestHits(
+          hits.map((h) => {
+            const w = winnerByTid.get(String(h.id));
+            return {
+              tournamentId: String(h.id),
+              multiplier: Number(h.spin_multiplier) || 0,
+              buyIn: Number(h.buy_in_amount) || 0,
+              prize:
+                Number(w?.prize) ||
+                (Number(h.buy_in_amount) || 0) * (Number(h.spin_multiplier) || 0),
+              winnerName: String(w?.username ?? 'Player'),
+              endedAt: String(h.ended_at ?? ''),
+            };
+          })
+        );
+      } catch (err) {
+        reportError(err, 'TournamentResultsPage.biggest_hits_load_failed');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [typeFilter]);
 
   // ── DEEP LINK: Auto-select tournament from ?id= query parameter ──
   useEffect(() => {
@@ -608,6 +679,87 @@ export default function TournamentResultsPage() {
           </button>
         ))}
       </div>
+
+      {/* ── BIGGEST HITS (round 11): the wheel's largest completed draws,
+          shown only on the Spin view. Horizontal scroll on 375px. ── */}
+      {typeFilter === 'spin' && biggestHits.length > 0 && (
+        <div style={{ marginBottom: '16px' }}>
+          <div
+            style={{
+              fontSize: '11px',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: '#64748b',
+              marginBottom: '8px',
+            }}
+          >
+            Biggest Hits
+          </div>
+          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+            {biggestHits.map((h) => (
+              <div
+                key={h.tournamentId}
+                onClick={() => {
+                  const t = tournaments.find((x) => x.id === h.tournamentId);
+                  if (t) {
+                    setSelectedTournament(t);
+                    return;
+                  }
+                  /* A hit older than the list's top 100 is not in
+                     `tournaments` - load its row directly, the same shape
+                     as the ?id= deep link. Error-bound per the ratchet. */
+                  void (async () => {
+                    const { data, error: hitRowErr } = await supabase
+                      .from('tournaments')
+                      .select(
+                        'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier'
+                      )
+                      .eq('id', h.tournamentId)
+                      .maybeSingle();
+                    if (hitRowErr) {
+                      reportError(hitRowErr, 'TournamentResultsPage.biggest_hit_open_failed', {
+                        tournamentId: h.tournamentId,
+                      });
+                      return;
+                    }
+                    if (data && isMounted.current) {
+                      setSelectedTournament(data as CompletedTournament);
+                    }
+                  })();
+                }}
+                style={{
+                  minWidth: '132px',
+                  background: '#0f172a',
+                  border: '1px solid #1e293b',
+                  borderRadius: '8px',
+                  padding: '10px 12px',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                <div style={{ fontSize: '20px', fontWeight: 800, color: '#fbbf24' }}>
+                  {h.multiplier}x
+                </div>
+                <div
+                  style={{
+                    fontSize: '12px',
+                    color: '#e2e8f0',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    maxWidth: '120px',
+                  }}
+                >
+                  {h.winnerName}
+                </div>
+                <div style={{ fontSize: '11px', color: '#64748b' }}>
+                  Won {h.prize.toLocaleString()} On A {h.buyIn.toLocaleString()} Spin
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div style={{ textAlign: 'center', color: '#64748b', padding: '40px' }}>

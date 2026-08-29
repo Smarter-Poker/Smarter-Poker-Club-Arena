@@ -133,15 +133,10 @@
 
   /* ─────────────── Layout ─────────────── */
   --header-height: 56px;
-  /* Dan 2026-08-20: this said 60px and the nav has never been 60px. Measured
-     in headless Chrome against the real ClubBottomNav markup: 74px (8px row
-     padding x2, 8px item padding x2, a 24px icon, a 4px gap and a ~12px
-     label). Every page that reserved `var(--bottom-nav-height)` was therefore
-     14px short and its last row of content sat UNDER the nav — which is the
-     "footer links are not at the bottom" symptom. .bottomNav now also carries
-     `min-height: var(--bottom-nav-height)` so the token and the component can
-     never silently disagree again. */
-  --bottom-nav-height: 74px;
+  /* The complete approved footer remains visible, but its display height is
+     intentionally compressed so fixed navigation never consumes a card row.
+     The 44px floor preserves touch targets; 108px is the desktop ceiling. */
+  --bottom-nav-height: clamp(44px, 9vw, 108px);
   /* What a page must actually reserve: the bar plus the phone's home-indicator
      inset, which the bar adds to its own padding on iOS. Reserving the bar
      alone is why content still hid behind it on notched devices. */
@@ -149,11 +144,8 @@
   /* WHERE THE TOP OF THE DRAWN BAR ACTUALLY IS (Dan 2026-08-25).
      --bottom-nav-clearance is what a page must RESERVE, and it is deliberately
      generous. It is the wrong number to stack a second fixed bar on, because
-     below 768px .bottomNav sets `padding-bottom: 0` and therefore occupies
-     exactly --bottom-nav-height - not height + inset. Anything anchored at the
-     clearance floats 34px above the nav on a notched iPhone, and page content
-     scrolls through the gap. That is what happened to the Cashier's action
-     footer. Anchor stacked bars on THIS. */
+     Anything anchored at the clearance floats above the nav on a notched
+     iPhone. Anchor stacked bars on THIS. */
   --bottom-nav-stack-base: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   --sidebar-width: 280px;
 
@@ -287,7 +279,21 @@ body {
 
 #root {
   min-height: 100vh;
-  min-height: 100dvh;
+  /**
+   * MINUS WHAT THE CHROME HAS ALREADY TAKEN (2026-08-29).
+   *
+   * When the pinned table bar is up, BODY spends 48px + the notch inset on
+   * `padding-top` to clear it (`body[data-ca-pinned-bar='1']`, MultiTablePage.css).
+   * A full `100dvh` inside a padded body makes the page taller than the screen
+   * by exactly that padding: measured on production at 375x812 with the bar
+   * up, body was 860px. Every page in Club Arena scrolled 48px for nothing.
+   *
+   * The fallback is 0px, so a page with no pinned bar is unchanged. `100vh`
+   * above stays as the pre-dvh fallback and is deliberately not touched: a
+   * browser without `dvh` is not one to trust `env()` arithmetic on, and an
+   * over-tall page beats a clipped one.
+   */
+  min-height: calc(100dvh - var(--ca-pinned-bar-offset, 0px));
   display: flex;
   flex-direction: column;
 }
@@ -824,14 +830,4 @@ html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
-}
-
-/* Mirrors ClubBottomNav.module.css's own `@media (max-width: 768px)` rule,
-   where the bar drops its safe-area padding and is exactly
-   --bottom-nav-height tall. Kept in lockstep with it: if that rule changes,
-   this one must change with it or stacked bars drift again. */
-@media (max-width: 768px) {
-  :root {
-    --bottom-nav-stack-base: var(--bottom-nav-height);
-  }
 }

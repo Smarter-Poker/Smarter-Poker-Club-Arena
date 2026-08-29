@@ -28,7 +28,6 @@ import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import haptic from '../services/HapticService';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 /* LOBBY V2 (Dan 2026-08-22): the large card grid (DynamicGameCard) is replaced
    by the dense line-based LobbyTable + the CasinoPlaque game lobby panel.
@@ -89,7 +88,7 @@ import {
   type LobbyViewPrefs,
 } from '../components/lobby/lobbyViewPrefs';
 import { useUserStore } from '../stores/useUserStore';
-import LobbyAdStrip from '../components/lobby/LobbyAdStrip';
+import ClubLobbyCommandTop from '../components/lobby/ClubLobbyCommandTop';
 import HouseAdCard from '../components/ads/HouseAdCard';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
@@ -117,6 +116,13 @@ import { preloadRoute } from '../utils/ChunkPreloader';
    art was thrown away by object-fit. shark-club-logo.jpg is the square
    emblem and fills the box as intended. */
 const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
+
+// Club Arena is deployed beneath /hub/club-arena/. Root-relative /assets URLs
+// bypass Vite's configured base path in production and silently 404, leaving
+// the live lobby DOM visible without its premium chassis or campaign artwork.
+const CLUB_LOBBY_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/lobby`;
+const CLUB_LOBBY_CHASSIS = `${CLUB_LOBBY_ASSET_ROOT}/lobby-approved-desktop-reference-v3.png`;
+const CLUB_LOBBY_CAMPAIGN = `${CLUB_LOBBY_ASSET_ROOT}/shark-club-championship-ad-v2.png`;
 
 /**
  * The order the Omaha tab groups its variants in (Dan 2026-08-25). Four cards
@@ -218,6 +224,7 @@ interface ClubData {
   description: string;
   avatar_url: string;
   logo_url?: string;
+  banner_url?: string | null;
   member_count: number;
   online_count: number;
   owner_id: string;
@@ -1547,7 +1554,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, slug, description, avatar_url, logo_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at, is_union, union_id'
+              'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at, is_union, union_id'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -3489,6 +3496,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         if (row) handleRegister(row);
         else openEntry(e);
       },
+      onUnregister: (e) => {
+        const row = filteredTournamentsRef.current.find((t) => t.id === e.id);
+        if (row) void handleUnregister(row);
+      },
+      actionBusy,
       /* SEAT-FIRST (Dan 2026-08-21, binding): a Spin or Heads-Up card's Sit
          Down opens the TABLE — the seat is bought there, by the tap that
          picks it. Same flow the game-lobby panel already runs; the card was
@@ -3557,12 +3569,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       currentUserId,
       handleToggleFavorite,
       handleRegister,
+      handleUnregister,
       handleJoinTable,
       openEntry,
       navigate,
       handleWaitlistToggle,
       openTournamentLobby,
       spinQuickJoin,
+      actionBusy,
     ]
   );
 
@@ -3989,87 +4003,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           )}
         </div>
 
-        {/* ── Editable Club Notice ── */}
-        {(club.description?.trim() || noticeEditable) && (
-          <div
-            className={`lobby-top__notice ${isOwner || isClubStaff(userRole) ? 'lobby-top__notice--editable' : ''}`}
-            /* Editable for staff, so it is a control for staff: it carried a
-               click handler and nothing else, which no keyboard and no screen
-               reader could reach. For everyone else it stays a paragraph. */
-            role={noticeEditable && !isEditingNotice ? 'button' : undefined}
-            tabIndex={noticeEditable && !isEditingNotice ? 0 : undefined}
-            aria-label={
-              noticeEditable && !isEditingNotice ? 'Edit Club Welcome Message' : undefined
-            }
-            onKeyDown={(e) => {
-              if (!noticeEditable || isEditingNotice) return;
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                setNoticeDraft(club.description || '');
-                setIsEditingNotice(true);
-              }
-            }}
-            onClick={() => {
-              if (noticeEditable && !isEditingNotice) {
-                setNoticeDraft(club.description || '');
-                setIsEditingNotice(true);
-              }
-            }}
-          >
-            {isEditingNotice ? (
-              <div className="lobby-top__notice-editor" onClick={(e) => e.stopPropagation()}>
-                <textarea
-                  value={noticeDraft}
-                  onChange={(e) => setNoticeDraft(e.target.value)}
-                  placeholder="Welcome To The Shark Club, All Fish Of All Shapes And Sizes Are Welcome!"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') setIsEditingNotice(false);
-                  }}
-                />
-                <div className="lobby-top__notice-actions">
-                  <button onClick={() => setIsEditingNotice(false)}>Cancel</button>
-                  <button
-                    onClick={() => {
-                      const newDesc = noticeDraft.trim();
-                      /* `club.id`, not `resolvedClubId`. The latter can still
-                         be null on a slug route, and `.eq('id', null)` matches
-                         zero rows and returns NO error - so the owner saw
-                         "Successfully Updated", the optimistic text stayed on
-                         screen, and the notice reverted on the next load with
-                         nothing ever having been written. `club` is non-null
-                         in this branch by construction. */
-                      const targetId = club.id;
-                      // Optimistic UI update
-                      setClub((prev) => (prev ? { ...prev, description: newDesc } : prev));
-                      setIsEditingNotice(false);
-
-                      void (async () => {
-                        const { error } = await supabase
-                          .from('clubs')
-                          .update({ description: newDesc })
-                          .eq('id', targetId);
-                        // The toast reports what HAPPENED. It used to fire
-                        // before the request was even sent.
-                        if (error) {
-                          reportError(error, 'ClubHomePage.Notice_save_failed');
-                          toast.error('Could Not Save The Welcome Message');
-                        } else {
-                          toast.success('Welcome Message Updated');
-                        }
-                      })();
-                    }}
-                  >
-                    Save
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <p>{club.description?.trim() || 'Click to add a welcome message...'}</p>
-            )}
-          </div>
-        )}
-
         {/* ── NO SEARCH BOX ────────────────────────────────────────────────
             Dan 2026-08-25 asked for the search-by-name field to be removed
             completely: nobody is ever typing the name of a game.
@@ -4170,39 +4103,119 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       {/* ═══════════════════════════════════════════════════════════════════
           GAME ACTION BAR — every game type, flat, plus explicit sorting
       ═══════════════════════════════════════════════════════════════════ */}
-      <section className="lobby-controls" aria-label="Browse games">
-        <div className="lobby-controls__heading">
-          <div>
-            <span className="lobby-controls__eyebrow">Live Club Schedule</span>
-            <strong className="lobby-controls__title">Find Your Game</strong>
-          </div>
-          <span className="lobby-controls__total">
-            <strong>
-              {totalGameCount.toLocaleString()}
-              {countsCapped ? '+' : ''}
-            </strong>{' '}
-            Games
-          </span>
-        </div>
-        <div className="game-bar">
-          <div className="game-bar__types" role="tablist" aria-label="Game type">
-            {GAME_TYPE_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                role="tab"
-                aria-selected={gameType === tab.key}
-                className={`game-bar__type ${gameType === tab.key ? 'is-active' : ''}`}
-                onClick={() => {
-                  haptic.selection();
-                  selectGameType(tab.key);
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+      <section className="club-lobby-machine" aria-label={`${club.name} Game Lobby`}>
+        <img
+          className="club-lobby-machine__chassis"
+          src={CLUB_LOBBY_CHASSIS}
+          alt=""
+          aria-hidden="true"
+        />
+        <ClubLobbyCommandTop
+          welcome={
+            <div
+              className={`lobby-top__notice ${isOwner || isClubStaff(userRole) ? 'lobby-top__notice--editable' : ''}`}
+              role={noticeEditable && !isEditingNotice ? 'button' : undefined}
+              tabIndex={noticeEditable && !isEditingNotice ? 0 : undefined}
+              aria-label={
+                noticeEditable && !isEditingNotice ? 'Edit Club Welcome Message' : undefined
+              }
+              onKeyDown={(e) => {
+                if (!noticeEditable || isEditingNotice) return;
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setNoticeDraft(club.description || '');
+                  setIsEditingNotice(true);
+                }
+              }}
+              onClick={() => {
+                if (noticeEditable && !isEditingNotice) {
+                  setNoticeDraft(club.description || '');
+                  setIsEditingNotice(true);
+                }
+              }}
+            >
+              {isEditingNotice ? (
+                <div className="lobby-top__notice-editor" onClick={(e) => e.stopPropagation()}>
+                  <textarea
+                    value={noticeDraft}
+                    onChange={(e) => setNoticeDraft(e.target.value)}
+                    placeholder="All Fish Of All Shapes And Sizes Are Welcome!"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') setIsEditingNotice(false);
+                    }}
+                  />
+                  <div className="lobby-top__notice-actions">
+                    <button onClick={() => setIsEditingNotice(false)}>Cancel</button>
+                    <button
+                      onClick={() => {
+                        const newDesc = noticeDraft.trim();
+                        const targetId = club.id;
+                        setClub((prev) => (prev ? { ...prev, description: newDesc } : prev));
+                        setIsEditingNotice(false);
+                        void (async () => {
+                          const { error } = await supabase
+                            .from('clubs')
+                            .update({ description: newDesc })
+                            .eq('id', targetId);
+                          if (error) {
+                            reportError(error, 'ClubHomePage.Notice_save_failed');
+                            toast.error('Could Not Save The Welcome Message');
+                          } else {
+                            toast.success('Welcome Message Updated');
+                          }
+                        })();
+                      }}
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="club-lobby-command-top__welcome-copy">
+                  <span className="club-lobby-command-top__welcome-eyebrow">Welcome To The</span>
+                  <h2 className="club-lobby-command-top__club-name">{club.name}</h2>
+                  <p>
+                    {club.description?.trim() || 'All Fish Of All Shapes And Sizes Are Welcome!'}
+                  </p>
+                </div>
+              )}
+            </div>
+          }
+          controls={
+            <section className="lobby-controls" aria-label="Browse games">
+              <div className="lobby-controls__heading">
+                <div>
+                  <span className="lobby-controls__eyebrow">Live Club Schedule</span>
+                  <strong className="lobby-controls__title">Find Your Game</strong>
+                </div>
+                <span className="lobby-controls__total">
+                  <strong>
+                    {totalGameCount.toLocaleString()}
+                    {countsCapped ? '+' : ''}
+                  </strong>{' '}
+                  Games
+                </span>
+              </div>
+              <div className="game-bar">
+                <div className="game-bar__types" role="tablist" aria-label="Game type">
+                  {GAME_TYPE_TABS.map((tab) => (
+                    <button
+                      key={tab.key}
+                      role="tab"
+                      aria-selected={gameType === tab.key}
+                      className={`game-bar__type ${gameType === tab.key ? 'is-active' : ''}`}
+                      onClick={() => {
+                        haptic.selection();
+                        selectGameType(tab.key);
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
 
-          {/* ON ALL THIS IS A SORT BUTTON, AND IT SAYS SO (Dan 2026-08-25).
+                {/* ON ALL THIS IS A SORT BUTTON, AND IT SAYS SO (Dan 2026-08-25).
             The comment that used to sit here claimed the button was "Hidden
             on ALL". It was not, and what it opened there was worse than
             hidden: AdvancedFilters retargets initialType 'ALL' to 'HOLDEM',
@@ -4217,27 +4230,27 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             to order. So the sheet opens in sortOnly mode instead: the game
             type row and every filter section are gone, Sort By is all that is
             left, and the button reads Sort. Every other tab is unchanged. */}
-          <button
-            className={`game-bar__filter-btn ${(() => {
-              if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
-              const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
-              const fVal = advFilters[gameType as FilterGameType];
-              const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
-              return isFilt || sortKey !== 'recommended' ? 'is-set' : '';
-            })()}`}
-            aria-label={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
-            title={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
-            onClick={() => {
-              haptic.light();
-              setFiltersOpen(true);
-            }}
-          >
-            <IconSort />
-            <span>{gameType === 'ALL' ? 'Sort' : 'Filters'}</span>
-          </button>
-        </div>
+                <button
+                  className={`game-bar__filter-btn ${(() => {
+                    if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
+                    const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+                    const fVal = advFilters[gameType as FilterGameType];
+                    const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
+                    return isFilt || sortKey !== 'recommended' ? 'is-set' : '';
+                  })()}`}
+                  aria-label={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
+                  title={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
+                  onClick={() => {
+                    haptic.light();
+                    setFiltersOpen(true);
+                  }}
+                >
+                  <IconSort />
+                  <span>{gameType === 'ALL' ? 'Sort' : 'Filters'}</span>
+                </button>
+              </div>
 
-        {/* ═══════════════════════════════════════════════════════════════════
+              {/* ═══════════════════════════════════════════════════════════════════
           QUICK PREFERENCES — the one-tap shortcuts under the action bar
           ───────────────────────────────────────────────────────────────────
           Dan 2026-08-21: "you never added the quick preference link under the
@@ -4249,32 +4262,35 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           two can never disagree, and the icon on the right opens that sheet
           for everything the row has no space for.
       ═══════════════════════════════════════════════════════════════════ */}
-        {gameType !== 'ALL' &&
-          (() => {
-            const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
-            if (!qSpec) return null;
-            const qVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
+              {gameType !== 'ALL' &&
+                (() => {
+                  const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+                  if (!qSpec) return null;
+                  const qVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
 
-            return (
-              <div className="quickprefs">
-                <div className="quickprefs__row quickprefs__row--status" aria-label="Game status">
-                  <button
-                    type="button"
-                    className={`quickprefs__chip ${qVal.statuses.length === 0 ? 'is-on' : ''}`}
-                    aria-pressed={qVal.statuses.length === 0}
-                    onClick={() => {
-                      haptic.selection();
-                      const next: FilterStore = {
-                        ...advFilters,
-                        [gameType]: { ...qVal, statuses: [] },
-                      };
-                      setAdvFilters(next);
-                      if (resolvedClubId) saveFilters(resolvedClubId, next);
-                    }}
-                  >
-                    All
-                  </button>
-                  {/* AUDIT 2026-08-21: these chips used to be a hand-written list
+                  return (
+                    <div className="quickprefs">
+                      <div
+                        className="quickprefs__row quickprefs__row--status"
+                        aria-label="Game status"
+                      >
+                        <button
+                          type="button"
+                          className={`quickprefs__chip ${qVal.statuses.length === 0 ? 'is-on' : ''}`}
+                          aria-pressed={qVal.statuses.length === 0}
+                          onClick={() => {
+                            haptic.selection();
+                            const next: FilterStore = {
+                              ...advFilters,
+                              [gameType]: { ...qVal, statuses: [] },
+                            };
+                            setAdvFilters(next);
+                            if (resolvedClubId) saveFilters(resolvedClubId, next);
+                          }}
+                        >
+                          All
+                        </button>
+                        {/* AUDIT 2026-08-21: these chips used to be a hand-written list
                     chosen by showsCash, which disagreed with the sheet on the
                     same screen - Spin-It offered Full/Empty/Open Seats inside
                     Advanced Filters and Running/Registering out here. Both now
@@ -4284,94 +4300,100 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     They also write the SAVED filter now rather than the local
                     sub-filter state, which is what makes them agree with the
                     sheet after a reload instead of resetting. */}
-                  {qSpec.statuses.map((sf) => {
-                    const on = qVal.statuses.includes(sf.key);
-                    return (
-                      <button
-                        key={sf.key}
-                        className={`quickprefs__chip ${on ? 'is-on' : ''}`}
-                        aria-pressed={on}
-                        onClick={() => {
-                          haptic.selection();
-                          const next: FilterStore = {
-                            ...advFilters,
-                            [gameType]: {
-                              ...qVal,
-                              statuses: on
-                                ? qVal.statuses.filter((k) => k !== sf.key)
-                                : [...qVal.statuses, sf.key],
-                            },
-                          };
-                          setAdvFilters(next);
-                          if (resolvedClubId) saveFilters(resolvedClubId, next);
-                        }}
-                      >
-                        {sf.label}
-                      </button>
-                    );
-                  })}
-                  {currentUserId && showsCash && (
-                    <button
-                      type="button"
-                      className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
-                      aria-pressed={favoritesOnly}
-                      onClick={() => {
-                        haptic.selection();
-                        selectFavoritesOnly(!favoritesOnly);
-                      }}
-                    >
-                      Favorites
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-      </section>
+                        {qSpec.statuses.map((sf) => {
+                          const on = qVal.statuses.includes(sf.key);
+                          return (
+                            <button
+                              key={sf.key}
+                              className={`quickprefs__chip ${on ? 'is-on' : ''}`}
+                              aria-pressed={on}
+                              onClick={() => {
+                                haptic.selection();
+                                const next: FilterStore = {
+                                  ...advFilters,
+                                  [gameType]: {
+                                    ...qVal,
+                                    statuses: on
+                                      ? qVal.statuses.filter((k) => k !== sf.key)
+                                      : [...qVal.statuses, sf.key],
+                                  },
+                                };
+                                setAdvFilters(next);
+                                if (resolvedClubId) saveFilters(resolvedClubId, next);
+                              }}
+                            >
+                              {sf.label}
+                            </button>
+                          );
+                        })}
+                        {currentUserId && showsCash && (
+                          <button
+                            type="button"
+                            className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
+                            aria-pressed={favoritesOnly}
+                            onClick={() => {
+                              haptic.selection();
+                              selectFavoritesOnly(!favoritesOnly);
+                            }}
+                          >
+                            Favorites
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+            </section>
+          }
+          campaign={
+            <button
+              type="button"
+              className="club-lobby-command-top__campaign-button"
+              aria-label={`Open ${club.name} Promotions`}
+              onClick={() => {
+                haptic.selection();
+                navigate(`/clubs/${clubId}/announcements`);
+              }}
+            >
+              <img
+                src={club.banner_url || CLUB_LOBBY_CAMPAIGN}
+                alt={
+                  club.banner_url
+                    ? `${club.name} Promotion`
+                    : 'Shark Club Championship Series, 250,000 Guaranteed Main Event'
+                }
+              />
+            </button>
+          }
+        />
 
-      {/* ═══════════════════════════════════════════════════════════════════
+        {/* ═══════════════════════════════════════════════════════════════════
           CLUB / UNION AD STRIP — directly under the action bar
       ═══════════════════════════════════════════════════════════════════ */}
-      {/* `club.id` is the fallback, not a second source of truth: this markup
+        {/* `club.id` is the fallback, not a second source of truth: this markup
           only renders past the `if (!club) return` guard, so it is always
           present, while resolvedClubId stays null forever if the slug lookup
           missed. Without it, Filters and Create Game set state, played a
           haptic and opened nothing, with no error to explain why. */}
-      {filtersOpen && (resolvedClubId || club?.id) && (
-        <AdvancedFilters
-          clubId={resolvedClubId || club!.id}
-          initialType={gameType as FilterGameType}
-          onClose={() => setFiltersOpen(false)}
-          onApply={setAdvFilters}
-          sortKey={sortKey}
-          onSortChange={selectSortKey}
-          sortOptions={SORT_OPTIONS}
-          sortOnly={gameType === 'ALL'}
-        />
-      )}
+        {filtersOpen && (resolvedClubId || club?.id) && (
+          <AdvancedFilters
+            clubId={resolvedClubId || club!.id}
+            initialType={gameType as FilterGameType}
+            onClose={() => setFiltersOpen(false)}
+            onApply={setAdvFilters}
+            sortKey={sortKey}
+            onSortChange={selectSortKey}
+            sortOptions={SORT_OPTIONS}
+            sortOnly={gameType === 'ALL'}
+          />
+        )}
 
-      <LobbyAdStrip
-        clubId={bbjScope.clubUuid || resolvedClubId}
-        unionId={bbjScope.unionId}
-        onOpen={() => {
-          haptic.selection();
-          navigate(`/clubs/${clubId}/announcements`);
-        }}
-        /* A house ad carries its own destination (2026-08-27). Without this
-           every promo would land on the club's announcements page, where the
-           thing it advertised is not. */
-        onNavigate={(path) => {
-          haptic.selection();
-          navigate(path);
-        }}
-      />
-
-      {/* The standalone STATUS REFINEMENT row was folded into the quick
+        {/* The standalone STATUS REFINEMENT row was folded into the quick
           preferences block above on 2026-08-21. Keeping both would have shown
           the same four chips twice, a few pixels apart, with the lower copy
           the only working one. */}
 
-      {/* ═══════════════════════════════════════════════════════════════════
+        {/* ═══════════════════════════════════════════════════════════════════
           RESULT COUNT
           ─────────────────────────────────────────────────────────────────
           The lobby runs 60 to 170 cards and three independent things narrow
@@ -4382,28 +4404,28 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           is actually narrowing, so it never implies a filter that is not set,
           and it carries the same one-tap clear the empty state uses.
       ═══════════════════════════════════════════════════════════════════ */}
-      {/* Dan 2026-08-24: "REMOVE THE 30 GAMES, WE DON'T NEED THAT." The bare
+        {/* Dan 2026-08-24: "REMOVE THE 30 GAMES, WE DON'T NEED THAT." The bare
           count is gone. What remains is the line that only renders when a
           filter or a search is actively hiding games — that one is not a
           statistic, it is the explanation for why the list looks short, and
           it carries the one-tap clear. */}
-      {(isOwner || userRole === 'admin') && club?.is_union === true && (
-        <div className="lobby-resultsbar lobby-resultsbar--create-only">
-          <button
-            type="button"
-            className="lobby-createbtn"
-            onClick={() => {
-              haptic.selection();
-              if (TOURNAMENT_TYPES.includes(gameType)) setShowCreateTournament(true);
-              else navigate(`/clubs/${clubId}/create-table`);
-            }}
-          >
-            + Create {TOURNAMENT_TYPES.includes(gameType) ? 'Tournament' : 'Cash Game'}
-          </button>
-        </div>
-      )}
+        {(isOwner || userRole === 'admin') && club?.is_union === true && (
+          <div className="lobby-resultsbar lobby-resultsbar--create-only">
+            <button
+              type="button"
+              className="lobby-createbtn"
+              onClick={() => {
+                haptic.selection();
+                if (TOURNAMENT_TYPES.includes(gameType)) setShowCreateTournament(true);
+                else navigate(`/clubs/${clubId}/create-table`);
+              }}
+            >
+              + Create {TOURNAMENT_TYPES.includes(gameType) ? 'Tournament' : 'Cash Game'}
+            </button>
+          </div>
+        )}
 
-      {/* ═══════════════════════════════════════════════════════════════════
+        {/* ═══════════════════════════════════════════════════════════════════
           LOBBY V2 — dense line-based game table + game lobby panel
           ─────────────────────────────────────────────────────────────────
           One compact row per game, columns adapted to the selected category.
@@ -4411,24 +4433,24 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           it never joins, registers, or spends. All commit actions live in
           the panel and reuse the existing platform flows.
       ═══════════════════════════════════════════════════════════════════ */}
-      <div className="club-home__games club-home__games--v2">
-        {/* Render while loading too: LobbyTable owns the skeleton rows, and
+        <div className="club-home__games club-home__games--v2">
+          {/* Render while loading too: LobbyTable owns the skeleton rows, and
             gating on entries>0 made them unreachable - first load flashed the
             empty state instead (review 2026-08-22). */}
-        {(lobbyEntries.length > 0 || loading) && (
-          <LobbyTable
-            entries={lobbyEntries}
-            clubId={resolvedClubId || clubId}
-            category={gameType as LobbyCategory}
-            selectedId={panelOpen ? selectedId : null}
-            onSelect={openEntry}
-            onActivate={openEntry}
-            loading={loading}
-            ctx={lobbyCtx}
-          />
-        )}
+          {(lobbyEntries.length > 0 || loading) && (
+            <LobbyTable
+              entries={lobbyEntries}
+              clubId={resolvedClubId || clubId}
+              category={gameType as LobbyCategory}
+              selectedId={panelOpen ? selectedId : null}
+              onSelect={openEntry}
+              onActivate={openEntry}
+              loading={loading}
+              ctx={lobbyCtx}
+            />
+          )}
 
-        {/* ═══════════════════════════════════════════════════════════════
+          {/* ═══════════════════════════════════════════════════════════════
             EMPTY STATE — say WHY, and offer the way out
             ───────────────────────────────────────────────────────────────
             AUDIT 2026-08-21. This said "No tables available / wait for the
@@ -4443,23 +4465,23 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             It now distinguishes the three real causes and, when the player
             caused it, clears the cause in one tap.
         ═══════════════════════════════════════════════════════════════ */}
-        {!loading &&
-          lobbyEntries.length === 0 &&
-          (() => {
-            // Same three causes the result count reads, from the same place.
-            const totalHere = totalGameCount;
-            const { filtered } = narrowing;
-            const narrowed = narrowing.any;
+          {!loading &&
+            lobbyEntries.length === 0 &&
+            (() => {
+              // Same three causes the result count reads, from the same place.
+              const totalHere = totalGameCount;
+              const { filtered } = narrowing;
+              const narrowed = narrowing.any;
 
-            return (
-              <div className="empty-tables">
-                {totalHere === 0 ? (
-                  <>
-                    <p>{showTournaments ? 'No Tournaments Yet' : 'No Tables Yet'}</p>
-                    <p className="empty-hint">
-                      Nothing Is Running Here Right Now. New Games Open All The Time.
-                    </p>
-                    {/* HOUSE ADS, `empty_state` (2026-08-28). Declared in Phase
+              return (
+                <div className="empty-tables">
+                  {totalHere === 0 ? (
+                    <>
+                      <p>{showTournaments ? 'No Tournaments Yet' : 'No Tables Yet'}</p>
+                      <p className="empty-hint">
+                        Nothing Is Running Here Right Now. New Games Open All The Time.
+                      </p>
+                      {/* HOUSE ADS, `empty_state` (2026-08-28). Declared in Phase
                         1 and wired to nothing until now.
 
                         Deliberately ONLY this branch. The other three empty
@@ -4469,18 +4491,18 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                         player has nothing to tap, which is the entire
                         justification for the slot: it fills space that is dead,
                         rather than displacing something somebody came for. */}
-                    <HouseAdCard
-                      slot="empty_state"
-                      clubId={resolvedClubId}
-                      onNavigate={(path) => {
-                        haptic.selection();
-                        navigate(path);
-                      }}
-                    />
-                  </>
-                ) : !narrowed ? (
-                  <>
-                    {/* ALL IS A SCOPE, NOT EVERYTHING (2026-08-26). The ALL tab
+                      <HouseAdCard
+                        slot="empty_state"
+                        clubId={resolvedClubId}
+                        onNavigate={(path) => {
+                          haptic.selection();
+                          navigate(path);
+                        }}
+                      />
+                    </>
+                  ) : !narrowed ? (
+                    <>
+                      {/* ALL IS A SCOPE, NOT EVERYTHING (2026-08-26). The ALL tab
                         deliberately carries cash and joinable MTTs only - never
                         a Spin, never a Heads Up, never a tournament that has
                         stopped registering. With no search and no filter set,
@@ -4489,61 +4511,63 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                         Right Now" with eight live games one tab away. The count
                         is the proof it was wrong, so the count is what it
                         says. */}
-                    <p>Nothing On This Tab Right Now</p>
-                    <p className="empty-hint">
-                      {totalHere.toLocaleString()}
-                      {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In This
-                      Club. Spins And Heads Up Have Their Own Tabs, And So Do Tournaments Already
-                      Under Way.
-                    </p>
-                  </>
-                ) : !filtered ? (
-                  <>
-                    {/* Tab (or Favorites) is the ONLY narrowing: blaming
+                      <p>Nothing On This Tab Right Now</p>
+                      <p className="empty-hint">
+                        {totalHere.toLocaleString()}
+                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
+                        This Club. Spins And Heads Up Have Their Own Tabs, And So Do Tournaments
+                        Already Under Way.
+                      </p>
+                    </>
+                  ) : !filtered ? (
+                    <>
+                      {/* Tab (or Favorites) is the ONLY narrowing: blaming
                         "filters" here sent players hunting for filters they
                         never set (QA 2026-08-22). Name the real cause. */}
-                    <p>Nothing Here On This Tab</p>
-                    <p className="empty-hint">
-                      {totalHere.toLocaleString()}
-                      {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In This
-                      Club, Just None Of This Type Right Now.
-                    </p>
-                    <div className="empty-actions">
-                      <button className="empty-action" onClick={clearAllNarrowing}>
-                        Show All Games
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <p>Nothing Matches Your Filters</p>
-                    <p className="empty-hint">
-                      {totalHere.toLocaleString()}
-                      {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In This
-                      Club, But The Filters On This Tab Hide {totalHere === 1 ? 'It' : 'Them All'}.
-                    </p>
-                    <div className="empty-actions">
-                      <button className="empty-action" onClick={clearAllNarrowing}>
-                        Show All Games
-                      </button>
-                      {filtered && (
-                        <button
-                          className="empty-action empty-action--ghost"
-                          onClick={() => {
-                            haptic.light();
-                            setFiltersOpen(true);
-                          }}
-                        >
-                          Edit Filters
+                      <p>Nothing Here On This Tab</p>
+                      <p className="empty-hint">
+                        {totalHere.toLocaleString()}
+                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
+                        This Club, Just None Of This Type Right Now.
+                      </p>
+                      <div className="empty-actions">
+                        <button className="empty-action" onClick={clearAllNarrowing}>
+                          Show All Games
                         </button>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })()}
-      </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p>Nothing Matches Your Filters</p>
+                      <p className="empty-hint">
+                        {totalHere.toLocaleString()}
+                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
+                        This Club, But The Filters On This Tab Hide{' '}
+                        {totalHere === 1 ? 'It' : 'Them All'}.
+                      </p>
+                      <div className="empty-actions">
+                        <button className="empty-action" onClick={clearAllNarrowing}>
+                          Show All Games
+                        </button>
+                        {filtered && (
+                          <button
+                            className="empty-action empty-action--ghost"
+                            onClick={() => {
+                              haptic.light();
+                              setFiltersOpen(true);
+                            }}
+                          >
+                            Edit Filters
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+        </div>
+      </section>
 
       {/* ═══════════════════════════════════════════════════════════════════
           SELECTED GAME LOBBY — CasinoPlaque panel (renders ONLY for the
@@ -4620,12 +4644,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           </div>
         </div>
       )}
-
-      {/* Unguarded. ClubBottomNav resolves its own club precisely so call
-          sites stop dropping the footer - its header comment says so - and
-          then this call site put the guard back. It renders null when it has
-          no tabs to show. */}
-      <ClubBottomNav clubId={clubId} />
 
       {/* Confirm Modal for Table Deletion */}
       <ConfirmModal

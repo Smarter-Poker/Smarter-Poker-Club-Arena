@@ -18,6 +18,8 @@ import { fmt } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
 import ShopAnalytics from './ShopAnalytics';
 import PurchaseLedger from './PurchaseLedger';
+import { THEME_PRESET_CATALOG } from '../../lib/tableTheme';
+import { avatarService, type Avatar } from '../../services/AvatarService';
 import {
   CATEGORIES,
   describeGrant,
@@ -57,6 +59,9 @@ interface EditDraft {
   stackable: boolean;
 }
 
+const MARKETPLACE_THEME_PRESETS = THEME_PRESET_CATALOG.filter((preset) => preset.tier === 'vip');
+const MARKETPLACE_THEME_IDS = new Set(MARKETPLACE_THEME_PRESETS.map((preset) => preset.id));
+
 export default function ManageTab({
   clubId,
   categories,
@@ -84,6 +89,10 @@ export default function ManageTab({
   const [imageUrl, setImageUrl] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
+  const [avatarOptions, setAvatarOptions] = useState<Avatar[]>([]);
+  const [avatarCatalogState, setAvatarCatalogState] = useState<
+    'idle' | 'loading' | 'ready' | 'error'
+  >('idle');
 
   const loadItems = useCallback(async () => {
     setLoadError(null);
@@ -119,6 +128,32 @@ export default function ManageTab({
 
   // What the selected category will grant when a member redeems it.
   const grantInfo = categories.find((c) => c.name === category);
+  const editGrantInfo = draft ? categories.find((c) => c.name === draft.category) : undefined;
+  const needsAvatarCatalog =
+    grantInfo?.grantType === 'avatar' || editGrantInfo?.grantType === 'avatar';
+
+  useEffect(() => {
+    if (!needsAvatarCatalog || avatarCatalogState !== 'idle') return undefined;
+    setAvatarCatalogState('loading');
+    avatarService
+      .getAvatarLibraryResult()
+      .then((result) => {
+        const presets = result.avatars.filter((avatar) => avatar.category !== 'custom');
+        if (result.presetsFailed || presets.length === 0) {
+          setAvatarCatalogState('error');
+          return;
+        }
+        setAvatarOptions(presets);
+        setAvatarCatalogState('ready');
+      })
+      .catch(() => {
+        setAvatarCatalogState('error');
+      });
+    return undefined;
+  }, [avatarCatalogState, needsAvatarCatalog]);
+
+  const isRealAvatarId = (avatarId: string) =>
+    avatarOptions.some((avatar) => avatar.id === avatarId);
   // Table skins and avatars need an id, or every one a club sells collapses to
   // the same theme/avatar (and avatar_unlocks dedupes, granting nothing).
   const secondsPerUse = categories.find((c) => c.grantType === 'time_bank')?.secondsPerUse ?? 20;
@@ -155,6 +190,14 @@ export default function ManageTab({
   const handleCreate = async () => {
     const numPrice = validate(name, price);
     if (numPrice == null) return;
+    if (grantInfo?.grantType === 'table_skin' && !MARKETPLACE_THEME_IDS.has(grantRef)) {
+      toast.error('Choose A Real Table Studio Theme For This Item');
+      return;
+    }
+    if (grantInfo?.grantType === 'avatar' && !isRealAvatarId(grantRef)) {
+      toast.error('Choose A Real Avatar From The 97-Avatar Library For This Item');
+      return;
+    }
     setProcessing(true);
     try {
       await callClubArenaApi('manage-shop', {
@@ -237,6 +280,15 @@ export default function ManageTab({
     if (!draft) return;
     const numPrice = validate(draft.name, draft.price);
     if (numPrice == null) return;
+    const nextGrant = categories.find((c) => c.name === draft.category);
+    if (nextGrant?.grantType === 'table_skin' && !MARKETPLACE_THEME_IDS.has(draft.grantRef)) {
+      toast.error('Choose A Real Table Studio Theme For This Item');
+      return;
+    }
+    if (nextGrant?.grantType === 'avatar' && !isRealAvatarId(draft.grantRef)) {
+      toast.error('Choose A Real Avatar From The 97-Avatar Library For This Item');
+      return;
+    }
     // club_shop_items_sale_price_valid enforces sale_price <= price. Without
     // this, lowering the price under an active sale surfaced as a bare 500.
     if (draft.salePrice.trim() !== '') {
@@ -253,7 +305,6 @@ export default function ManageTab({
       // The grant MUST travel with the category. Updating category alone left
       // e.g. a time-bank grant on a row now labelled "Avatars", so the card
       // advertised table time and redeeming granted time bank seconds.
-      const nextGrant = categories.find((c) => c.name === draft.category);
       await callClubArenaApi('manage-shop', {
         action: 'update',
         clubId,
@@ -505,21 +556,54 @@ export default function ManageTab({
         )}
         {grantNeedsRef && (
           <div className={styles.formRow}>
-            <input
-              value={grantRef}
-              onChange={(e) => setGrantRef(e.target.value)}
-              placeholder={
-                grantInfo?.grantType === 'avatar'
-                  ? 'Avatar Id (E.g. shark)'
-                  : 'Theme Id (E.g. royal_gold)'
-              }
-              aria-label={grantInfo?.grantType === 'avatar' ? 'Avatar id' : 'Theme id'}
-              className={styles.formInput}
-              maxLength={64}
-            />
+            {grantInfo?.grantType === 'table_skin' ? (
+              <select
+                value={grantRef}
+                onChange={(event) => setGrantRef(event.target.value)}
+                aria-label="Table Studio theme"
+                className={styles.formInput}
+              >
+                <option value="">Choose A Table Studio Theme</option>
+                {MARKETPLACE_THEME_PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <select
+                value={grantRef}
+                onChange={(event) => setGrantRef(event.target.value)}
+                aria-label="Avatar library selection"
+                className={styles.formInput}
+                disabled={avatarCatalogState === 'loading' || avatarCatalogState === 'error'}
+              >
+                <option value="">
+                  {avatarCatalogState === 'loading'
+                    ? 'Loading The 97-Avatar Library...'
+                    : avatarCatalogState === 'error'
+                      ? 'Avatar Library Unavailable - Try Again'
+                      : 'Choose An Avatar'}
+                </option>
+                {avatarOptions.map((avatar) => (
+                  <option key={avatar.id} value={avatar.id}>
+                    {avatar.name} ({avatar.category === 'vip' ? 'VIP' : 'Free'})
+                  </option>
+                ))}
+              </select>
+            )}
             <span className={styles.grantHint}>
               Unique Per Item - Two Items Sharing An ID Unlock The Same Thing.
             </span>
+            {grantInfo?.grantType === 'avatar' && avatarCatalogState === 'error' && (
+              <button
+                type="button"
+                className={styles.btnGhost}
+                onClick={() => setAvatarCatalogState('idle')}
+              >
+                Retry Avatar Library
+              </button>
+            )}
           </div>
         )}
         {grantInfo && !grantInfo.grantUnit && (
@@ -770,15 +854,63 @@ export default function ManageTab({
                             className={styles.formInput}
                           />
                         )}
-                        {(g.grantType === 'avatar' || g.grantType === 'table_skin') && (
-                          <input
+                        {g.grantType === 'table_skin' && (
+                          <select
                             value={draft.grantRef}
-                            onChange={(e) => setDraft({ ...draft, grantRef: e.target.value })}
-                            placeholder={g.grantType === 'avatar' ? 'Avatar Id' : 'Theme Id'}
-                            aria-label={g.grantType === 'avatar' ? 'Avatar id' : 'Theme id'}
+                            onChange={(event) =>
+                              setDraft({ ...draft, grantRef: event.target.value })
+                            }
+                            aria-label="Table Studio theme"
                             className={styles.formInput}
-                            maxLength={64}
-                          />
+                          >
+                            {!MARKETPLACE_THEME_IDS.has(draft.grantRef) && draft.grantRef && (
+                              <option value={draft.grantRef}>Legacy: {draft.grantRef}</option>
+                            )}
+                            <option value="">Choose A Table Studio Theme</option>
+                            {MARKETPLACE_THEME_PRESETS.map((preset) => (
+                              <option key={preset.id} value={preset.id}>
+                                {preset.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {g.grantType === 'avatar' && (
+                          <>
+                            <select
+                              value={draft.grantRef}
+                              onChange={(e) => setDraft({ ...draft, grantRef: e.target.value })}
+                              aria-label="Avatar library selection"
+                              className={styles.formInput}
+                              disabled={avatarCatalogState === 'loading'}
+                            >
+                              {!isRealAvatarId(draft.grantRef) && draft.grantRef && (
+                                <option value={draft.grantRef}>
+                                  Invalid Legacy Avatar: {draft.grantRef}
+                                </option>
+                              )}
+                              <option value="">
+                                {avatarCatalogState === 'loading'
+                                  ? 'Loading The 97-Avatar Library...'
+                                  : avatarCatalogState === 'error'
+                                    ? 'Avatar Library Unavailable - Try Again'
+                                    : 'Choose An Avatar'}
+                              </option>
+                              {avatarOptions.map((avatar) => (
+                                <option key={avatar.id} value={avatar.id}>
+                                  {avatar.name} ({avatar.category === 'vip' ? 'VIP' : 'Free'})
+                                </option>
+                              ))}
+                            </select>
+                            {avatarCatalogState === 'error' && (
+                              <button
+                                type="button"
+                                className={styles.btnGhost}
+                                onClick={() => setAvatarCatalogState('idle')}
+                              >
+                                Retry Avatar Library
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     );

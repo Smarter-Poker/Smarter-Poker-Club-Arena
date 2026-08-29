@@ -42,10 +42,8 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import { useTableSettings } from '../hooks/useTableSettings';
 import { soundService } from '../services/SoundService';
 import {
-  CARD_BACKS,
   DEFAULT_SETTINGS,
   fromTableSettings,
-  rollbackFailedCardBack,
   toTableSettings,
   validateSettings,
   type UserSettings,
@@ -57,8 +55,7 @@ import styles from './SettingsPage.module.css';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { useToast } from '../components/common/Toast';
 import { reportError } from '../utils/errorReporter';
-import { applyTableAppearance } from '../lib/applyTableAppearance';
-import { normalizeCardBack } from '../components/table/CardImage';
+import { ThemeSettingsModal } from '../components/table/ThemeSettingsModal';
 
 const settingsSectionAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -151,6 +148,8 @@ export default function SettingsPage() {
   const [hasChanges, setHasChanges] = useState(false);
   const [saving, setSaving] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
+  const [showThemeSettings, setShowThemeSettings] = useState(false);
+  const [isVip, setIsVip] = useState(false);
 
   // Account Action States
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -235,6 +234,29 @@ export default function SettingsPage() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!authUser?.id) {
+      setIsVip(false);
+      return;
+    }
+    let mounted = true;
+    supabase
+      .from('profiles')
+      .select('is_vip, tier')
+      .eq('id', authUser.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) {
+          reportError(error, 'SettingsPage.Vip_status_load_failed');
+          return;
+        }
+        if (mounted) setIsVip(data?.is_vip === true || data?.tier === 'vip');
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [authUser?.id]);
 
   // Bus listeners: re-read settings from localStorage when profile/settings change externally
   useEffect(() => {
@@ -338,8 +360,22 @@ export default function SettingsPage() {
       const [profiles, wallets, achievements, handHistory] = await Promise.all([
         supabase
           .from('profiles')
+          /**
+           * `streak_days` REMOVED FROM THIS EXPORT (2026-08-29).
+           *
+           * It is a dead column: 0 non-zero values across all 1,023 profiles,
+           * and nothing in the repo has ever written it. `login_streak` is the
+           * live one — `AchievementTriggerService.onLogin` maintains it against
+           * `last_login_date`. This export fetched `streak_days` and then never
+           * read it, which is harmless in itself but is exactly how a dead
+           * column stays alive: the next person greps, finds a reader, and
+           * assumes it means something.
+           *
+           * See the migration of the same date, which puts that fact in a
+           * COMMENT on the column where a schema reader will find it.
+           */
           .select(
-            'id, display_name, username, avatar_url:arena_avatar_url, bio, role, created_at, streak_days, last_login'
+            'id, display_name, username, avatar_url:arena_avatar_url, bio, role, created_at, last_login'
           )
           .eq('id', user.id)
           .maybeSingle(),
@@ -646,13 +682,7 @@ export default function SettingsPage() {
   const saveSettings = async () => {
     setSaving(true);
     try {
-      let settingsToPersist = settings;
-      let cardBackSyncFailed = false;
-      /* Capture before updateTableSettings schedules its local state update.
-         By the time getAuthUser resolves, tableSettingsRef may already point
-         at the optimistic new value; using it then would make a failed cloud
-         write "roll back" to the same unsaved card back. */
-      const previousCardBack = tableSettingsRef.current.cardBack;
+      const settingsToPersist = settings;
       // Save to localStorage
       localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
 
@@ -676,7 +706,10 @@ export default function SettingsPage() {
          persists BOTH gate keys (the HamburgerMenu path); volume is applied
          live for the same reason rather than waiting for a table mount. */
       soundService.setEnabled(settings.soundEnabled);
-      soundService.setMasterVolume(Math.max(0, Math.min(100, settings.soundVolume)) / 100);
+      /* Volume is NOT applied here. `updateTableSettings` above commits it to
+         the store, which applies it in `applyGateChanges` — this line applied
+         the same number a second time. `setEnabled` stays because the gate keys
+         are a different owner from the store and this page has to write both. */
 
       /* Sync theme to Zustand store so Shell.tsx applies it immediately.
          2026-08-26: "Auto (System)" was offered in the dropdown, accepted by
@@ -700,37 +733,6 @@ export default function SettingsPage() {
         data: { user },
       } = await getAuthUser();
 
-      /* ── Dan 2026-08-26: THIS DROPDOWN USED TO DO NOTHING TO THE FELT ──
-         "Card Back Style" wrote `useTableSettings.cardBack`, and the table
-         reads `v8Theme.cards_id || userSettings.cardBack`. `cards_id` is
-         never falsy — `toSelection()` fills it from DEFAULT_THEME — so the
-         right-hand side was unreachable and this control was decorative: it
-         persisted, said "Settings saved!", and the felt kept dealing the old
-         design forever.
-
-         It now writes the same column every other card-back picker writes,
-         through the one canonical writer, so the change is live on any open
-         table before this function returns. Deliberately AFTER the profile
-         fetch because it needs the user id, and deliberately non-fatal: a
-         failed appearance write must not fail the whole settings save. */
-      const appearance = await applyTableAppearance(
-        { cards_id: normalizeCardBack(settings.cardBack) },
-        {
-          userId: user?.id,
-          previous: { cards_id: normalizeCardBack(previousCardBack) },
-        }
-      );
-      if (!appearance.ok && user?.id) {
-        cardBackSyncFailed = true;
-        reportError(appearance.error, 'SettingsPage.cardBackSaveFailed');
-        /* The canonical writer already repainted every open table with the
-           previous card back. Keep this page and its local cache honest too:
-           a failed cloud write must not leave the dropdown claiming the new
-           design is equipped, nor write that claim into profiles.settings. */
-        settingsToPersist = rollbackFailedCardBack(settings, previousCardBack);
-        setSettings(settingsToPersist);
-        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settingsToPersist));
-      }
       if (user) {
         const { error: profileErr } = await supabase
           .from('profiles')
@@ -794,11 +796,7 @@ export default function SettingsPage() {
       masterBus.emit('SETTINGS_UPDATED', {
         settings: settingsToPersist as unknown as Record<string, unknown>,
       });
-      if (cardBackSyncFailed) {
-        toast.error('Settings Saved, But Card Back Could Not Sync. Choose It Again To Retry.');
-      } else {
-        toast.success('Settings saved!');
-      }
+      toast.success('Settings saved!');
     } catch (error) {
       reportError(error, 'SettingsPage.Failed_to_sync_settings');
       toast.error('Failed to save settings. Please try again.');
@@ -881,21 +879,21 @@ export default function SettingsPage() {
             </select>
           </div>
 
-          <div className={styles.settingRow}>
+          <div className={`${styles.settingRow} ${styles.studioRow}`}>
             <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Card Back Style</span>
+              <span className={styles.settingEyebrow}>Appearance Suite</span>
+              <span className={styles.settingLabel}>Table Studio</span>
+              <span className={styles.settingDesc}>
+                Tables, Backgrounds, Buttons And Card Backs In One Live Studio
+              </span>
             </div>
-            <select
-              className={styles.select}
-              value={settings.cardBack}
-              onChange={(e) => updateSetting('cardBack', e.target.value)}
+            <button
+              type="button"
+              className={styles.studioButton}
+              onClick={() => setShowThemeSettings(true)}
             >
-              {CARD_BACKS.map((back) => (
-                <option key={back.id} value={back.id}>
-                  {back.name}
-                </option>
-              ))}
-            </select>
+              Open Studio
+            </button>
           </div>
 
           <div className={styles.settingRow}>
@@ -1343,6 +1341,13 @@ export default function SettingsPage() {
       )}
 
       {/* Confirm Modal */}
+      <ThemeSettingsModal
+        isOpen={showThemeSettings}
+        onClose={() => setShowThemeSettings(false)}
+        userId={authUser?.id || ''}
+        isVip={isVip}
+      />
+
       <ConfirmModal
         isOpen={!!confirmAction}
         title={confirmAction?.title || 'Confirm'}

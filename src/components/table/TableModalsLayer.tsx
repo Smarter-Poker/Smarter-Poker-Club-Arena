@@ -31,6 +31,7 @@ import { BBJCelebration } from './BBJCelebration';
 import { ThrowableSelector } from './ThrowableSelector';
 import type { ThrowEvent } from '../../services/ThrowableService';
 import DiamondWalletModal from '../wallet/DiamondWalletModal';
+import { DiamondTopUpModal } from '../vip/DiamondTopUpModal';
 import CashierModal from './CashierModal';
 import BuyInModal from './BuyInModal';
 
@@ -55,15 +56,14 @@ import TournamentWinnerOverlay from './TournamentWinnerOverlay';
 import HandHistoryPanel, { type HandRecord } from './HandHistoryPanel';
 import { ConfettiCanvas } from './ConfettiCanvas';
 import { ParticleSystem } from './ParticleSystem';
-import { useWallet } from '../../hooks';
 // ChipAnimationManager is inline in TablePage — imported via parent
 import { HandReveal } from './HandReveal';
 import { BombPotOverlay } from './BombPotOverlay';
 import { FinalTableOverlay } from '../tournament/FinalTableOverlay';
 import { HeadsUpOverlay } from '../tournament/HeadsUpOverlay';
 import { TableErrorBoundary } from '../common/TableErrorBoundary';
-import { masterBus } from '../../core/MasterBus';
-import { setSitOut } from '../../services/GameServerAPI';
+/* `setSitOut` is no longer imported here: this component reports the intent and
+   TablePage owns the request. See `onReturn` below. */
 import { roomService } from '../../services/RoomService';
 import { reportError } from '../../utils/errorReporter';
 import { tournamentService } from '../../services/TournamentService';
@@ -74,10 +74,6 @@ import type { SeatPlayer } from './SeatSlot';
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 export interface TableModalsLayerProps {
-  currentCardBack?: string;
-  /* May be async and may reject: CardBackSelector only reports success once
-     this has resolved, so a failed write cannot render as a success. */
-  onCardBackChanged?: (id: string) => void | Promise<unknown>;
   // Core context
   tableId: string | undefined;
   userId: string;
@@ -157,6 +153,9 @@ export interface TableModalsLayerProps {
   showGameRules: boolean;
   isStraddleEnabled: boolean;
   /** Round 2 (double board): the table's bomb pot rules for the rules modal. */
+  /** 2026-08-29: staff-only link to the live-table bomb settings editor. */
+  canEditBombSettings?: boolean;
+  onEditBombSettings?: () => void;
   bombPotRules?: {
     enabled: boolean;
     frequency: number;
@@ -387,7 +386,6 @@ export interface TableModalsLayerProps {
       showStackInBB: boolean;
       confirmAllIn: boolean;
       sitOutNextHand: boolean;
-      tableTheme: string;
       hapticEnabled: boolean;
       /** Dan 2026-08-28: announcement ticker on/off. */
       showTicker: boolean;
@@ -463,14 +461,10 @@ export interface TableModalsLayerProps {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 import React from 'react';
-import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
 
 function TableModalsLayerImpl(props: TableModalsLayerProps) {
-  const { diamonds } = useWallet();
   const {
-    currentCardBack,
-    onCardBackChanged,
     tableId,
     userId,
     username,
@@ -505,6 +499,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     showGameRules,
     isStraddleEnabled,
     bombPotRules,
+    canEditBombSettings,
+    onEditBombSettings,
     canManualBombPot,
     onManualBombPot,
     onCloseGameRules,
@@ -661,96 +657,6 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
   } = props;
 
   const toast = useToast();
-  // We use local state for diamonds listening directly to MasterBus because useWalletStore is cached.
-  const [localDiamonds, setLocalDiamonds] = React.useState(0);
-  const [ownedCardBacks, setOwnedCardBacks] = React.useState<string[]>([]);
-
-  React.useEffect(() => {
-    if (!userId) return;
-    let mounted = true;
-
-    /* Audit 2026-08-25: both of these discarded `error`. A failed diamonds read
-       leaves the balance at its initial 0 and SettingsPanel then tells the
-       player they cannot afford a card back they CAN afford; a failed
-       feature_purchases read leaves `ownedCardBacks` empty and offers to sell
-       them a design they already own. Neither is recoverable from the UI, and
-       neither left a trace anywhere. They still degrade rather than block — the
-       panel is usable — but the failure is now reported. */
-    supabase
-      .from('profiles')
-      .select('diamonds')
-      .eq('id', userId)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (error) {
-          reportError(error, 'TableModalsLayer.diamondBalanceFetchFailed');
-          return;
-        }
-        if (mounted && data) setLocalDiamonds(Number(data.diamonds) || 0);
-      });
-
-    // Fetch owned card backs from feature_purchases
-    supabase
-      .from('feature_purchases')
-      .select('feature')
-      .eq('user_id', userId)
-      .like('feature', 'card_back_%')
-      .then(({ data, error }) => {
-        if (error) {
-          reportError(error, 'TableModalsLayer.ownedCardBacksFetchFailed');
-          return;
-        }
-        if (mounted && data) {
-          setOwnedCardBacks(data.map((r: any) => r.feature.replace('card_back_', '')));
-        }
-      });
-
-    // Listen to real-time diamond balance updates
-    const off = masterBus.subscribe('DIAMOND_BALANCE_CHANGED', (e) => {
-      const balance = (e as any).payload?.balance;
-      if (typeof balance === 'number' && mounted) {
-        setLocalDiamonds(balance);
-      }
-    });
-
-    return () => {
-      mounted = false;
-      off();
-    };
-  }, [userId]);
-
-  const handleCardBackPurchase = React.useCallback(
-    async (id: string, price: number) => {
-      if (!userId) return;
-
-      const { data, error } = await supabase.rpc('fn_purchase_feature', {
-        p_user_id: userId,
-        p_feature: `card_back_${id}`,
-        p_cost: price,
-      });
-
-      if (error || (data as any)?.success === false) {
-        // THROW, do not just return. The store awaits this call to decide
-        // whether to equip the design and congratulate the player; a silent
-        // return let a FAILED purchase equip a card back the player does not
-        // own and report it as bought.
-        reportError(
-          error || new Error('fn_purchase_feature returned success:false'),
-          'TableModalsLayer.cardBackPurchaseFailed'
-        );
-        throw error || new Error('Card back purchase failed');
-      }
-
-      setLocalDiamonds((prev: number) => Math.max(0, prev - price));
-      setOwnedCardBacks((prev: string[]) => [...prev, id]);
-      // The equip toast comes from the store once the change has landed, so
-      // this one only reports the purchase itself.
-      toast.success('Card Back Purchased');
-      await onCardBackChanged?.(id);
-    },
-    [userId, toast, onCardBackChanged]
-  );
-
   // The rake the engine will actually take at this table (table override ->
   // club default -> published schedule). Only queried while the Game Rules
   // modal is open, since this layer is mounted for the whole session.
@@ -791,6 +697,10 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
   // "Detailed Analytics" button. Local state — nothing outside this layer
   // needs to open it.
   const [showDetailedAnalytics, setShowDetailedAnalytics] = React.useState(false);
+  // The wallet's Buy action used to close the wallet and stop. Keep the live
+  // table mounted while handing the player to the same server-priced Stripe
+  // catalog used by VIP and Table Studio.
+  const [showDiamondTopUp, setShowDiamondTopUp] = React.useState(false);
 
   return (
     <>
@@ -866,6 +776,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         isStraddleEnabled={!isTournament && isStraddleEnabled}
         isRunItTwiceEnabled={runItTwice ?? true}
         bombPotRules={bombPotRules}
+        canEditBombSettings={canEditBombSettings}
+        onEditBombSettings={onEditBombSettings}
         canManualBombPot={canManualBombPot}
         onManualBombPot={onManualBombPot}
       />
@@ -884,29 +796,14 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
          * completely silent and the player was returned to a felt they were
          * still sitting out of. Close only after the server agrees.
          */
-        onReturn={() => {
-          if (!tableId) {
-            onReturnFromSitOut();
-            return;
-          }
-          void setSitOut(tableId, false).then((res) => {
-            if (res?.success) {
-              onReturnFromSitOut();
-            } else {
-              /* SAY IT OUT LOUD (2026-08-29). This branch reported to telemetry
-                 and stopped. The modal stayed open, the player stayed sitting
-                 out, and NOTHING on screen changed — on the one surface a
-                 sitting-out player is looking at, with a deadline running. Every
-                 other sit-out entry point in the app toasts its refusal; this
-                 one, the most important, did not. */
-              toast?.error?.(res?.error || 'Could Not Sit Back In. Please Try Again.');
-              reportError(
-                new Error(res?.error || 'setSitOut(false) rejected by engine'),
-                'TableModalsLayer.Return_failed'
-              );
-            }
-          });
-        }}
+        /* REPORTS THE INTENT; TablePage owns the request.
+           This used to issue its own `setSitOut(tableId, false)`, which made two
+           implementations of "sit back in" — and only the other one was behind
+           the in-flight guard, so the out -> in -> out race was still reachable
+           by alternating THIS button with the table menu's Sit Out. It also let
+           the two buttons' local cleanup and failure toasts drift apart, which
+           they had. `handleSitBackIn` is now the single path. */
+        onReturn={onReturnFromSitOut}
         /**
          * 2026-08-20: was `() => navigate('/')`. "Leave Table" navigated away
          * without ever leaving the table — no cash-out, no seat release. The
@@ -922,7 +819,6 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
            never fires. Heads-up cash is NOT exempt on either side of the wire —
            see src/lib/sitOutDeadline.ts. */
         isTournament={isTournament}
-        tableName={tableName}
       />
 
       {/* Wait List Modal */}
@@ -1152,7 +1048,15 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       {/* Leave Table Notice — see the effect above; it is a toast now. */}
 
       {/* Diamond Wallet Modal */}
-      <DiamondWalletModal isOpen={showDiamondWallet} onClose={onCloseDiamondWallet} />
+      <DiamondWalletModal
+        isOpen={showDiamondWallet}
+        onClose={onCloseDiamondWallet}
+        onBuyClick={() => {
+          onCloseDiamondWallet();
+          setShowDiamondTopUp(true);
+        }}
+      />
+      <DiamondTopUpModal isOpen={showDiamondTopUp} onClose={() => setShowDiamondTopUp(false)} />
 
       {/* Bust Rebuy Modal */}
 
@@ -1288,7 +1192,6 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           showTicker: userSettings.showTicker,
           confirmAllIn: userSettings.confirmAllIn,
           sitOutNextHand,
-          tableTheme: userSettings.theme,
         }}
         onSettingsChange={onSettingsChange}
         /* Dan 2026-08-28: the panel's avatar row rendered a generated
@@ -1296,11 +1199,6 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
            row could not update when the player changed their avatar. */
         currentAvatarUrl={heroAvatarUrl}
         userId={userId}
-        userDiamonds={localDiamonds}
-        ownedCardBacks={ownedCardBacks}
-        onCardBackPurchase={handleCardBackPurchase}
-        currentCardBack={currentCardBack}
-        onCardBackChanged={onCardBackChanged}
       />
 
       {/* Share Hand */}

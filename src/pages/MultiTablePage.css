@@ -244,7 +244,25 @@
  * the safe-area inset is added on top for the notch.
  */
 body[data-ca-pinned-bar='1'] {
-  padding-top: calc(48px + env(safe-area-inset-top, 0px));
+  /**
+   * NOW ACTUALLY A VARIABLE (2026-08-29).
+   *
+   * The comment above has always said the offset is "set as a variable on
+   * <body> ... so a single number drives both the offset and any page that
+   * wants to know". It was a literal, and nothing could read it — so the app
+   * shell went on claiming a full `100dvh` INSIDE a body that had already
+   * spent 48px of the viewport on this padding.
+   *
+   * Measured on production at 375x812 with the bar up: body 860px against an
+   * 812px viewport. Every page in Club Arena scrolled 48px it did not have to,
+   * and on the tournament page that is 48px taken off a content area already
+   * tight enough that the entries list sits near its floor.
+   *
+   * `AppLayout.module.css` subtracts it. Default 0px there, so a page rendered
+   * without the bar is unaffected.
+   */
+  --ca-pinned-bar-offset: calc(48px + env(safe-area-inset-top, 0px));
+  padding-top: var(--ca-pinned-bar-offset);
 }
 
 /* Full-screen surfaces that already position themselves from the viewport

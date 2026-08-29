@@ -6,7 +6,7 @@
  * Root application with routing, auth guards, and global providers
  */
 
-import { Routes, Route, Link, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { SessionSummaryHost } from './components/session/SessionSummaryHost';
 import TournamentRankingHost from './components/tournament/TournamentRankingHost';
 import TournamentStartingTicker from './components/tournament/TournamentStartingTicker';
@@ -32,10 +32,12 @@ import { useShellUpdateGate } from './hooks/useShellUpdateGate';
 
 // Layouts
 import AppLayout from './components/layouts/AppLayout';
+import LegacyClubToolRedirect from './components/navigation/LegacyClubToolRedirect';
 import { ToastProvider } from './components/common/Toast';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import RouteErrorBoundary from './components/common/RouteErrorBoundary';
 import { PageErrorBoundary } from './components/common/PageErrorBoundary';
+import { LoadingState } from './components/common/EmptyState';
 import OfflineQueueBadge from './components/common/OfflineQueueBadge';
 import NavigationProgress from './components/common/NavigationProgress';
 import ConnectionIndicator from './components/common/ConnectionIndicator';
@@ -46,6 +48,8 @@ import { ConfirmHost } from './components/common/confirmDialog';
 import { SignUpHost } from './components/tournament/signUpDialog';
 import MilestoneToast from './components/common/MilestoneToast';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
+import ClubBottomNav from './components/club/ClubBottomNav';
+import { shouldShowClubFooter } from './components/club/clubFooterVisibility';
 
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
@@ -61,6 +65,7 @@ const ClubsPage = lazyWithRetry(() => import('./pages/ClubsPage'));
 const ClubHomePage = lazyWithRetry(() => import('./pages/ClubHomePage'));
 const ClubDashboard = lazyWithRetry(() => import('./pages/club/ClubDashboard'));
 const ClubDataPage = lazyWithRetry(() => import('./pages/club/ClubDataPage'));
+const ClubOperationsPage = lazyWithRetry(() => import('./pages/club/ClubOperationsPage'));
 const CreateTablePage = lazyWithRetry(() => import('./pages/CreateTablePage'));
 const TableConfigPage = lazyWithRetry(() => import('./pages/TableConfigPage'));
 const AgentManagementPage = lazyWithRetry(() => import('./pages/AgentManagementPage'));
@@ -104,10 +109,13 @@ const PromotionsPage = lazyWithRetry(() => import('./pages/PromotionsPage'));
 const ClubSettingsPage = lazyWithRetry(() => import('./pages/ClubSettingsPage'));
 const TransactionHistoryPage = lazyWithRetry(() => import('./pages/TransactionHistoryPage'));
 const InvitePage = lazyWithRetry(() => import('./pages/InvitePage'));
+const NotFoundPage = lazyWithRetry(() => import('./pages/NotFoundPage'));
 const ReportPlayerPage = lazyWithRetry(() => import('./pages/ReportPlayerPage'));
 const ReportReviewPage = lazyWithRetry(() => import('./pages/ReportReviewPage'));
 // INSURANCE REPORT 2026-08-28: staff-facing funnel + P&L for all-in insurance.
 const ClubInsuranceReportPage = lazyWithRetry(() => import('./pages/club/ClubInsuranceReportPage'));
+const ClubBombPotReportPage = lazyWithRetry(() => import('./pages/club/ClubBombPotReportPage'));
+const TableBombSettingsPage = lazyWithRetry(() => import('./pages/club/TableBombSettingsPage'));
 const ClubAnnouncementsPage = lazyWithRetry(() => import('./pages/ClubAnnouncementsPage'));
 const VIPPage = lazyWithRetry(() => import('./pages/VIPPage'));
 const ClubFinancialsPage = lazyWithRetry(() => import('./pages/ClubFinancialsPage'));
@@ -118,6 +126,10 @@ const NotificationCenter = lazyWithRetry(() => import('./pages/NotificationCente
 const BusDevToolsPage = lazyWithRetry(() => import('./pages/BusDevToolsPage'));
 const ClubButtonsShowcasePage = lazyWithRetry(() => import('./pages/dev/ClubButtonsShowcasePage'));
 const ClubWalletPreviewPage = lazyWithRetry(() => import('./pages/dev/ClubWalletPreviewPage'));
+const ArenaGameCardsShowcasePage = lazyWithRetry(
+  () => import('./pages/dev/ArenaGameCardsShowcasePage')
+);
+const ClubFooterShowcasePage = lazyWithRetry(() => import('./pages/dev/ClubFooterShowcasePage'));
 const clubButtonsPreviewEnabled = import.meta.env.VITE_CLUB_BUTTONS_PREVIEW === 'true';
 const FinancialAlertsPage = lazyWithRetry(() => import('./pages/FinancialAlertsPage'));
 const DisputeManagementPage = lazyWithRetry(() => import('./pages/DisputeManagementPage'));
@@ -142,6 +154,26 @@ const AdminDashboardPage = lazyWithRetry(() => import('./pages/AdminDashboardPag
 const PlayerSessionsPage = lazyWithRetry(() => import('./pages/PlayerSessionsPage'));
 const AgentDashboardPage = lazyWithRetry(() => import('./pages/AgentDashboardPage'));
 const UnionDashboardPage = lazyWithRetry(() => import('./pages/UnionDashboardPage'));
+const RewardsWorkspacePage = lazyWithRetry(() =>
+  import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
+    default: module.RewardsWorkspacePage,
+  }))
+);
+const LegalWorkspacePage = lazyWithRetry(() =>
+  import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
+    default: module.LegalWorkspacePage,
+  }))
+);
+const ClubFinanceWorkspacePage = lazyWithRetry(() =>
+  import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
+    default: module.ClubFinanceWorkspacePage,
+  }))
+);
+const ClubControlWorkspacePage = lazyWithRetry(() =>
+  import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
+    default: module.ClubControlWorkspacePage,
+  }))
+);
 
 // Q3: Social, Messaging & Discovery Pages
 const PublicProfilePage = lazyWithRetry(() => import('./pages/PublicProfilePage'));
@@ -171,12 +203,7 @@ const HouseAdsPage = lazyWithRetry(() => import('./pages/admin/HouseAdsPage'));
 
 // Loading fallback
 function LoadingSpinner() {
-  return (
-    <div className="loading-container">
-      <div className="spinner" />
-      <p style={{ marginTop: '1rem', color: 'var(--text-secondary)' }}>Loading...</p>
-    </div>
-  );
+  return <LoadingState message="Preparing Club Arena" />;
 }
 
 /**
@@ -196,6 +223,7 @@ import { reportError } from './utils/errorReporter';
 import SlugEnforcer from './components/common/SlugEnforcer';
 
 export default function App() {
+  const location = useLocation();
   /* The listener the service worker has always been posting SHELL_UPDATED to
      and never had. Without it a cache-first shell — and the exact hashed
      chunks it names — is served for the life of the session, so a player can
@@ -452,6 +480,8 @@ export default function App() {
           {/* Offline Banner — subtle amber bar, only for navigator.onLine === false */}
           {isOffline && (
             <div
+              role="status"
+              aria-live="polite"
               style={{
                 position: 'fixed',
                 top: 0,
@@ -502,6 +532,19 @@ export default function App() {
 
               {/* Scenario Sim — deterministic UI regression playback, no auth */}
               <Route path="/sim" element={<SimPage />} />
+
+              {/* Approved footer visual harness — intentionally blank except
+                  for the one application-root footer mounted below Routes. */}
+              <Route
+                path="/dev/footer"
+                element={
+                  clubButtonsPreviewEnabled ? (
+                    <ClubFooterShowcasePage />
+                  ) : (
+                    <Navigate to="/" replace />
+                  )
+                }
+              />
 
               {/* ═══════════════════════════════════════════════════════════════
                     PROTECTED ROUTES (Auth Required)
@@ -631,6 +674,42 @@ export default function App() {
                   }
                 />
                 <Route
+                  path="clubs/:clubId/operations"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Operations">
+                          <ClubOperationsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/finance"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Finance And Risk">
+                          <ClubFinanceWorkspacePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/control"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Control">
+                          <ClubControlWorkspacePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
                   path="clubs/:clubId/dashboard-full"
                   element={
                     <AuthGuard>
@@ -700,16 +779,7 @@ export default function App() {
                     </AuthGuard>
                   }
                 />
-                <Route
-                  path="tournament-lobby"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Tournament Lobby">
-                        <TournamentLobbyPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
-                />
+                <Route path="tournament-lobby" element={<Navigate to="/tournaments" replace />} />
                 <Route
                   path="tournaments"
                   element={
@@ -745,7 +815,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Agent Management">
-                        <AgentManagementPage />
+                        <LegacyClubToolRedirect destination="agents" toolName="Agent Management" />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -778,6 +848,16 @@ export default function App() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Union Details">
                         <UnionDetailPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="unions/:unionId/operations"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Union Operations">
+                        <UnionDashboardPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -875,12 +955,13 @@ export default function App() {
                     </AuthGuard>
                   }
                 />
+                <Route path="history" element={<Navigate to="/hand-history" replace />} />
                 <Route
-                  path="history"
+                  path="rewards"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Hand History">
-                        <HandHistoryPage />
+                      <PageErrorBoundary pageName="Rewards Center">
+                        <RewardsWorkspacePage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -991,7 +1072,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Club Members">
-                        <ClubMembersPage />
+                        <LegacyClubToolRedirect destination="members" toolName="Players" />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -1004,7 +1085,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Club Data">
-                        <ClubDataPage />
+                        <LegacyClubToolRedirect destination="data" toolName="Club Data" />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -1079,16 +1160,7 @@ export default function App() {
                     </AuthGuard>
                   }
                 />
-                <Route
-                  path="hands"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Hand History">
-                        <HandHistoryPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
-                />
+                <Route path="hands" element={<Navigate to="/hand-history" replace />} />
                 <Route
                   path="clubs/:clubId/agent-dashboard"
                   element={
@@ -1270,7 +1342,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Invite">
-                        <InvitePage />
+                        <LegacyClubToolRedirect destination="invite" toolName="Club Invite" />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -1304,6 +1376,30 @@ export default function App() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Insurance Report">
                           <ClubInsuranceReportPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/tables/:tableId/bomb-settings"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Table Bomb Settings">
+                          <TableBombSettingsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/bomb-pot-report"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Bomb Pot Report">
+                          <ClubBombPotReportPage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>
@@ -1629,6 +1725,22 @@ export default function App() {
                     )
                   }
                 />
+                <Route
+                  path="dev/game-cards"
+                  element={
+                    clubButtonsPreviewEnabled ? (
+                      <PageErrorBoundary pageName="Arena Game Card Preview">
+                        <ArenaGameCardsShowcasePage />
+                      </PageErrorBoundary>
+                    ) : (
+                      <AuthGuard>
+                        <PageErrorBoundary pageName="Arena Game Card Laboratory">
+                          <ArenaGameCardsShowcasePage />
+                        </PageErrorBoundary>
+                      </AuthGuard>
+                    )
+                  }
+                />
 
                 {/* Health Check — public, no AuthGuard (for uptime monitors) */}
                 <Route
@@ -1641,6 +1753,14 @@ export default function App() {
                 />
 
                 {/* Legal Pages — public (no AuthGuard) so users can read terms before signup */}
+                <Route
+                  path="legal"
+                  element={
+                    <PageErrorBoundary pageName="Legal Center">
+                      <LegalWorkspacePage />
+                    </PageErrorBoundary>
+                  }
+                />
                 <Route
                   path="legal/tos"
                   element={
@@ -1707,65 +1827,11 @@ export default function App() {
                 />
 
                 {/* 404 catch-all */}
-                <Route
-                  path="*"
-                  element={
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        minHeight: '80vh',
-                        color: 'var(--off-white, #E4E6EB)',
-                        textAlign: 'center',
-                        padding: '2rem',
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: '6rem',
-                          fontWeight: 800,
-                          lineHeight: 1,
-                          background: 'linear-gradient(135deg, #1877F2 0%, #00d4ff 100%)',
-                          WebkitBackgroundClip: 'text',
-                          WebkitTextFillColor: 'transparent',
-                          marginBottom: '0.5rem',
-                        }}
-                      >
-                        404
-                      </div>
-                      <p
-                        style={{
-                          fontSize: '1.25rem',
-                          color: 'var(--soft-white, #B0B3B8)',
-                          marginBottom: '2rem',
-                        }}
-                      >
-                        This Page Doesn't Exist
-                      </p>
-                      <Link
-                        to="/"
-                        style={{
-                          padding: '12px 32px',
-                          background: 'linear-gradient(135deg, #1877F2 0%, #0D5DC7 100%)',
-                          color: '#fff',
-                          borderRadius: 12,
-                          fontWeight: 600,
-                          fontSize: '1rem',
-                          textDecoration: 'none',
-                          transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-                          boxShadow: '0 4px 12px rgba(24, 119, 242, 0.3)',
-                        }}
-                      >
-                        Back To Home
-                      </Link>
-                    </div>
-                  }
-                />
+                <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Routes>
           </Suspense>
+          {shouldShowClubFooter(location.pathname) && <ClubBottomNav />}
           {/* Persistent multi-table layer — mounted BESIDE <Routes>, it never
               unmounts on navigation: engine sockets for seated tables survive
               every route. Off /table/* it collapses to display:none and

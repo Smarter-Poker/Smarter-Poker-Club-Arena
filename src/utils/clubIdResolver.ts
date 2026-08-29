@@ -159,3 +159,21 @@ export async function resolveClubUUID(clubIdParam: string): Promise<string> {
   console.warn(`[clubIdResolver] Could not resolve club UUID for: ${clubIdParam}`);
   return clubIdParam;
 }
+
+/**
+ * Resolve a route-facing club identifier for authorization-sensitive reads.
+ *
+ * The legacy resolver deliberately preserves its original string fallback for
+ * hundreds of older call sites. Guards and workspace permissions cannot use
+ * that permissive contract: passing a slug or numeric code into a UUID column
+ * turns a lookup problem into a misleading membership denial. This strict
+ * variant keeps the compatibility surface while giving trust boundaries an
+ * explicit, fail-closed result.
+ */
+export async function resolveClubUUIDStrict(clubIdParam: string): Promise<string> {
+  const resolvedId = await resolveClubUUID(clubIdParam);
+  if (!isUUID(resolvedId)) {
+    throw new Error(`Club identity could not be resolved for "${clubIdParam}".`);
+  }
+  return resolvedId;
+}

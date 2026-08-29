@@ -197,12 +197,15 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           );
         }
         if (user?.id) {
-          const { data: membership } = await supabase
+          const { data: membership, error: membershipError } = await supabase
             .from('club_members')
             .select('role')
             .eq('club_id', resolvedId)
             .eq('user_id', user.id)
             .maybeSingle();
+          if (membershipError) {
+            reportError(membershipError, 'HamburgerMenu.Club_membership_load_failed');
+          }
           if (isMounted) setClubRole(membership?.role || null);
         }
       } catch {

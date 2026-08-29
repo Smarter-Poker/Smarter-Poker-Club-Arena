@@ -15,17 +15,14 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { sliceEnclosingBlock, sliceStatement } from '../helpers/sourceWindow';
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const root = join(__dirname, '..', '..');
 const RESULTS = readFileSync(
   join(root, 'src', 'pages', 'tournament', 'TournamentResultsPage.tsx'),
   'utf8'
 );
-const MENU = readFileSync(
-  join(root, 'src', 'components', 'navigation', 'HamburgerMenu.tsx'),
-  'utf8'
-);
+const NAVIGATION = readFileSync(join(root, 'src', 'config', 'clubArenaNavigation.ts'), 'utf8');
 const PRELOADER = readFileSync(join(root, 'src', 'utils', 'ChunkPreloader.ts'), 'utf8');
 
 describe('the results filters are deep-linkable', () => {
@@ -47,7 +44,12 @@ describe('the results filters are deep-linkable', () => {
 
 describe('the hamburger links a spin player to their own history', () => {
   it('carries the My Spin Results entry with both params', () => {
-    const entry = sliceStatement(MENU, "{ label: 'My Spin Results'");
+    // Navigation entries are centrally owned by clubArenaNavigation and the
+    // hamburger renders that registry. Pin the owning module so an IA cleanup
+    // cannot silently strand this route merely by moving the menu markup.
+    const start = NAVIGATION.indexOf("label: 'My Spin Results'");
+    expect(start).toBeGreaterThan(-1);
+    const entry = NAVIGATION.slice(start, start + 240);
     expect(entry).toContain('/tournament-results?filter=mine&type=spin');
   });
 

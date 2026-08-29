@@ -129,6 +129,14 @@ export class BombPotScheduler {
   private orbitAnchorSeat: number | null = null;
   /** once_per_orbit: the dealer seat of the previous hand. */
   private lastDealerSeat: number | null = null;
+  /**
+   * once_per_orbit: hands dealt since the anchor was set, and the size of the
+   * most recent field. Together they are the felt countdown — an orbit is one
+   * hand per player dealt in. Tracked rather than derived because the
+   * scheduler is never told the seat roster, only how many were dealt in.
+   */
+  private handsSinceAnchor = 0;
+  private lastDealtInCount = 0;
 
   /**
    * Call exactly once per hand, at the hand boundary, before HandConfig is
@@ -148,6 +156,11 @@ export class BombPotScheduler {
       this.reset();
       return { isBombPot: false };
     }
+
+    // The size of the field this hand — the length of an orbit, and so the
+    // denominator of the once_per_orbit countdown. Recorded for every mode
+    // because a table can be reconfigured between hands.
+    this.lastDealtInCount = dealtInCount;
 
     switch (s.triggerMode) {
       case 'bomb_pot_only': {
@@ -184,9 +197,13 @@ export class BombPotScheduler {
       }
 
       case 'once_per_orbit': {
+        // The felt countdown's numerator. Counted before the arc test so the
+        // hand that completes the orbit is included in the orbit it completes.
+        this.handsSinceAnchor++;
         if (this.orbitAnchorSeat === null) {
           // First hand of tracking: this dealer seat anchors the orbit.
           this.orbitAnchorSeat = dealerSeat;
+          this.handsSinceAnchor = 0;
         } else if (
           !this.pending &&
           this.lastDealerSeat !== null &&
@@ -213,6 +230,7 @@ export class BombPotScheduler {
       if (s.triggerMode === 'once_per_orbit') {
         // The bomb hand's dealer seat anchors the next orbit (§4.2).
         this.orbitAnchorSeat = dealerSeat;
+        this.handsSinceAnchor = 0;
       }
       return { isBombPot: true, triggerReason: reason };
     }
@@ -232,9 +250,32 @@ export class BombPotScheduler {
    */
   private buttonCrossedAnchor(from: number, to: number, anchor: number): boolean {
     if (from === to) {
-      // The button did not move (e.g. a single seat dealt around) — with one
-      // effective seat every hand completes an orbit.
-      return true;
+      /**
+       * THE BUTTON DID NOT MOVE, SO NO ORBIT COMPLETED (2026-08-29).
+       *
+       * This returned `true`, on the reasoning that "a single seat dealt
+       * around" completes an orbit every hand. That case cannot occur — a hand
+       * needs two players, and ServerTableEngineDealing forces the button
+       * across whenever `players.length > 2` precisely so it can never stand
+       * still. The branch never fired for the reason it was written.
+       *
+       * What DOES produce `from === to` is the SEPARATE BOMB BUTTON. On a bomb
+       * hand that policy rewinds the regular rotation (`this.lastButtonSeat =
+       * prevButtonSeat`) so normal play resumes where it would have been had
+       * the bomb not happened — by design. The next hand therefore recomputes
+       * the SAME dealer seat, and this branch read that as a completed orbit.
+       *
+       * The result on any table combining `once_per_orbit` with a separate
+       * bomb button — and `once_per_orbit` is what the "Classic Double Board"
+       * host preset selects — was a runaway: the bomb hand anchors the orbit
+       * on seat S and rewinds, the next hand deals S again, `from === to`
+       * arms the token immediately, that hand is a bomb, and it rewinds again.
+       * Steady state is a forced ante on EVERY hand, blinds that never post,
+       * and a regular button frozen on one seat for the life of the table.
+       *
+       * A button that has not moved has not passed anything. Say so.
+       */
+      return false;
     }
     if (to > from) return anchor > from && anchor <= to;
     // Wrapped around the top of the seat numbering.
@@ -249,8 +290,43 @@ export class BombPotScheduler {
   handsUntilDue(s: BombPotSchedulerSettings): number | null {
     if (!s.enabled) return null;
     if (s.triggerMode === 'bomb_pot_only') return 1;
-    if (s.triggerMode !== 'every_n_hands') return this.pending ? 1 : null;
     if (this.pending) return 1;
+    /**
+     * ONCE PER ORBIT NOW COUNTS DOWN TOO (2026-08-29).
+     *
+     * This returned `null` for every mode but `every_n_hands`, and the token
+     * is set and consumed inside the SAME noteHandStart call, so `this.pending`
+     * was only ever observably true while the min-players floor held it back.
+     * The felt pill renders only when `bombPotIn` or the timed clock is
+     * non-null — so an orbit-mode table showed a player nothing, ever, and the
+     * forced ante arrived unannounced.
+     *
+     * That is the mode the first host preset ("Classic Double Board") selects,
+     * and the pill exists specifically so "players see the forced ante coming
+     * instead of being ambushed by it".
+     *
+     * The bomb fires when the button next lands on or passes the anchor, so
+     * hands-until-due is the clockwise distance from the current button to the
+     * anchor, measured in SEATS DEALT IN — which is what one hand advances the
+     * button by. Before the first hand is tracked there is no anchor and no
+     * answer, which stays null rather than guessing.
+     */
+    if (s.triggerMode === 'once_per_orbit') {
+      /**
+       * An orbit is one hand per player dealt in — that is what "the button
+       * goes all the way round" means, and it is the only quantity here that
+       * is measured rather than inferred. The arc test in buttonCrossedAnchor
+       * stays the authority on when the bomb actually FIRES; this only decides
+       * what the pill says while it is coming.
+       *
+       * Both terms are live numbers: the roster can shrink or grow between
+       * hands, so a table that loses a player shortens its own countdown on
+       * the next hand rather than promising a bomb that already passed.
+       */
+      if (this.orbitAnchorSeat === null || this.lastDealtInCount === 0) return null;
+      return Math.max(1, this.lastDealtInCount - this.handsSinceAnchor);
+    }
+    if (s.triggerMode !== 'every_n_hands') return null;
     return Math.max(1, s.frequency - this.handsSinceBomb);
   }
 
@@ -297,6 +373,11 @@ export class BombPotScheduler {
       d: this.nextDueAtMs,
       a: this.orbitAnchorSeat,
       l: this.lastDealerSeat,
+      // 2026-08-29: the once_per_orbit countdown. Persisted with the rest so a
+      // deploy does not blank the felt pill for a whole orbit — the exact
+      // guarantee the every-N counter and the timed clock already had.
+      o: this.handsSinceAnchor,
+      n: this.lastDealtInCount,
     };
   }
 
@@ -328,6 +409,12 @@ export class BombPotScheduler {
     if (typeof o.l === 'number' && Number.isFinite(o.l) && o.l > 0) {
       this.lastDealerSeat = Math.floor(o.l);
     }
+    if (typeof o.o === 'number' && Number.isFinite(o.o) && o.o >= 0) {
+      this.handsSinceAnchor = Math.floor(o.o);
+    }
+    if (typeof o.n === 'number' && Number.isFinite(o.n) && o.n >= 0) {
+      this.lastDealtInCount = Math.floor(o.n);
+    }
   }
 
   private reset(): void {
@@ -337,5 +424,7 @@ export class BombPotScheduler {
     this.nextDueAtMs = null;
     this.orbitAnchorSeat = null;
     this.lastDealerSeat = null;
+    this.handsSinceAnchor = 0;
+    this.lastDealtInCount = 0;
   }
 }

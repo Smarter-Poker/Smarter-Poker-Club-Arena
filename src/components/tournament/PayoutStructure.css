@@ -156,10 +156,6 @@
   border-radius: 3px;
 }
 
-.payout-structure__table::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
 .payout-row {
   display: grid;
   grid-template-columns: 60px 1fr 60px 100px auto;
@@ -170,11 +166,6 @@
   border: 1px solid rgba(24, 119, 242, 0.1);
   border-radius: var(--radius-lg);
   transition: all 0.2s ease;
-}
-
-.payout-row:hover {
-  background: rgba(24, 119, 242, 0.08);
-  border-color: rgba(24, 119, 242, 0.25);
 }
 
 .payout-row.first {

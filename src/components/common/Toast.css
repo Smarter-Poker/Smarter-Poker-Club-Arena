@@ -162,11 +162,6 @@
   flex-shrink: 0;
 }
 
-.toast__close:hover {
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff;
-}
-
 /* Mobile responsive */
 @media (max-width: 480px) {
   .toast-container {

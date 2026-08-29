@@ -1,0 +1,48 @@
+--- src/components/table/BuyInModal.tsx
++++ src/components/table/BuyInModal.tsx
+@@ -53,6 +53,9 @@
+   const [displayAmount, setDisplayAmount] = useState(defaultBuyIn || minBuyIn);
+   const [autoRebuy, setAutoRebuy] = useState(true);
+   const [isConfirmPulsing, setIsConfirmPulsing] = useState(false);
++  
++  // 60-second kicker visual countdown
++  const [timeLeft, setTimeLeft] = useState(60);
+ 
+   const animationFrameRef = useRef<number>();
+   const countStartRef = useRef(displayAmount);
+@@ -107,6 +110,23 @@
+     }
+   }, [isOpen, minBuyIn, maxBuyIn]);
+ 
++  // Start 60-second countdown when modal opens
++  useEffect(() => {
++    if (!isOpen) {
++      setTimeLeft(60);
++      return;
++    }
++    
++    const timer = setInterval(() => {
++      setTimeLeft((prev) => {
++        if (prev <= 1) return 0;
++        return prev - 1;
++      });
++    }, 1000);
++    
++    return () => clearInterval(timer);
++  }, [isOpen]);
++
+   // Calculate quick amounts
+   const quickAmounts = useMemo(() => {
+     const quarter = Math.floor(maxBuyIn * 0.25);
+@@ -288,6 +308,12 @@
+                 <input type="checkbox" checked={autoRebuy} readOnly />
+                 <span className="slider round"></span>
+               </div>
++            </div>
++            
++            {/* 60s Buy-In Reservation Timer */}
++            <div className="buyin-timeout-warning" style={{ color: timeLeft <= 10 ? '#ff4444' : '#888', fontSize: '0.85rem', textAlign: 'center', marginTop: '1rem', fontVariantNumeric: 'tabular-nums' }}>
++              Seat held for {timeLeft}s
+             </div>
+ 
+             <button

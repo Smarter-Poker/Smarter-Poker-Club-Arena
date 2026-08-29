@@ -660,7 +660,10 @@ export default function SettingsPage() {
       // club-arena-table-settings and emits SETTINGS_CHANGED per key, which the
       // useTableSettings instance inside an open TablePage subscribes to — so a
       // table already on screen picks these up without a reload.
-      updateTableSettings(toTableSettings(settings));
+      /* Pass the CURRENT table settings so a speed this page cannot name (2, in
+         a scale of 0.5|1|1.5|2 rendered as three labels) survives a Save that
+         never touched the animation control. */
+      updateTableSettings(toTableSettings(settings, tableSettingsRef.current));
 
       /* Dan 2026-08-28: the Sound Effects switch on this page never reached
          the sound engine. It persisted soundEnabled into
@@ -968,18 +971,22 @@ export default function SettingsPage() {
               that does nothing is worse than no toggle. The stored field
               stays for compatibility with old saves. */}
 
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Auto-Muck My Winning Hand</span>
-              <span className={styles.settingDesc}>
-                Skip The Show-Or-Muck Prompt When You Win Without A Showdown
-              </span>
-            </div>
-            <Toggle
-              checked={settings.autoMuckWinners}
-              onChange={(v) => updateSetting('autoMuckWinners', v)}
-            />
-          </div>
+          {/* ── "Auto-Muck My Winning Hand" REMOVED 2026-08-29 ──────────────
+              It was a switch that could not do anything. It promised to "skip
+              the show-or-muck prompt when you win without a showdown", and that
+              prompt has been hard-disabled since 2026-08-23 on Dan's ruling
+              ("auto muck should be on by default, you should never ask if they
+              want to show cards"): TablePage's ASK_TO_SHOW_ON_UNCONTESTED_WIN is
+              a `const … = false`, so its only reader is unreachable code.
+
+              Flipping it wrote localStorage, the table-settings blob AND the
+              user_table_settings.auto_muck_winners column, and said "Settings
+              saved!" — the exact defect settingsBridge's own header says it
+              exists to eliminate: a control the user believes governs something.
+
+              The column and the bridge field stay: rows already hold values, and
+              removing a control must not drop a stored one. If the prompt ever
+              returns, restore the switch here rather than reviving it silently. */}
         </section>
 
         {/* Notifications */}

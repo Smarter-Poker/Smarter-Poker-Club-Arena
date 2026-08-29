@@ -122,12 +122,6 @@
     color 0.15s;
 }
 
-.hh-panel__export:hover,
-.hh-panel__close:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.9);
-}
-
 /* Session Stats Bar */
 .hh-panel__stats {
   display: flex;
@@ -192,10 +186,6 @@
   font-size: 0.75rem;
   text-align: left;
   transition: background 0.15s;
-}
-
-.hh-entry__summary:hover {
-  background: rgba(255, 255, 255, 0.04);
 }
 
 .hh-entry__num {

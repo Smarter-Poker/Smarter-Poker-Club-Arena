@@ -133,9 +133,6 @@ export interface SpinTierSpec {
   reserveThresholdX: number;
 }
 
-/** Denominator for `freq`. */
-export const SPIN_FREQ_DENOMINATOR = 10_000_000;
-
 /**
  * The ladder. Frequencies are Dan's spec verbatim.
  *
@@ -253,6 +250,23 @@ export const SPIN_TIERS: SpinTierSpec[] = [
 ];
 
 /**
+ * Denominator for `freq` — DERIVED FROM THE LADDER, never written by hand.
+ *
+ * It was the literal `10_000_000` while the tiers below actually sum to
+ * 10,000,099 (this file's own 500x-retirement note says so in as many words:
+ * "total freq 10,000,099 (unchanged)"). Anything dividing a `freq` by the
+ * literal therefore described a distribution totalling 100.00099%, and the
+ * only reason no money moved is that the one real consumer
+ * (TournamentService's SPEC_TOTAL_FREQ) re-totals the array itself and treats
+ * this as a fallback it never reaches.
+ *
+ * A hand-maintained total of a hand-maintained table is a drift waiting to
+ * happen, and this one had already drifted. Summing the ladder makes the two
+ * incapable of disagreeing: retune a tier and the denominator follows.
+ */
+export const SPIN_FREQ_DENOMINATOR: number = SPIN_TIERS.reduce((sum, t) => sum + t.freq, 0);
+
+/**
  * Blind ladder. Identical at every multiplier — only the starting stack
  * changes, which is what turns one structure into three.
  *
@@ -316,6 +330,36 @@ export type SpinGameType = (typeof SPIN_GAME_TYPES)[number];
 /** Look up a tier. */
 export function spinTier(multiplier: number): SpinTierSpec | undefined {
   return SPIN_TIERS.find((t) => t.multiplier === multiplier);
+}
+
+/**
+ * The ladder as a player-facing odds table (2026-08-29, spin buy-in sheet).
+ *
+ * DERIVED from SPIN_TIERS and nothing else, so a retuned tier reprices the
+ * display the moment it lands - a hand-written copy of this table is exactly
+ * the drift SPIN_FREQ_DENOMINATOR's own note warns about. `oneIn` is the
+ * everyday phrasing of the frequency ("1 In 9,921"); `payoutLabel` is the
+ * split by place, already formatted ("Winner Takes All" / "80% / 12% / 8%").
+ */
+export interface SpinOddsRow {
+  multiplier: number;
+  oneIn: number;
+  payoutLabel: string;
+}
+
+export function spinOddsTable(tiers: SpinTierSpec[] = SPIN_TIERS): SpinOddsRow[] {
+  const total = tiers.reduce((s, t) => s + t.freq, 0);
+  return tiers
+    .slice()
+    .sort((a, b) => a.multiplier - b.multiplier)
+    .map((t) => ({
+      multiplier: t.multiplier,
+      oneIn: total > 0 && t.freq > 0 ? Math.round(total / t.freq) : 0,
+      payoutLabel:
+        t.payouts.length <= 1
+          ? 'Winner Takes All'
+          : t.payouts.map((p) => `${Math.round(p * 100)}%`).join(' / '),
+    }));
 }
 
 /** Expected multiplier over a set of tiers (default: all of them). */

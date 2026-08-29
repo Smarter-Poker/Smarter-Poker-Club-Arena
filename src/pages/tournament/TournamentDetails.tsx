@@ -37,7 +37,13 @@
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useParams, useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
+import { useParams, useLocation, useSearchParams, Link } from 'react-router-dom';
+/* Dan 2026-08-28: this page renders BOTH as the /tournaments/:id route and
+   inside a MultiTablePage lobby tab (tournamentIdOverride). In the tab, a hop
+   to another tournament must stay in the tab. Its /table/:id navigations are
+   untouched - useAppNavigate deliberately only rewrites /tournaments/:id.
+   See InTabLobbyContext.tsx. */
+import { useAppNavigate } from '../../context/InTabLobbyContext';
 import { tournamentService } from '../../services/TournamentService';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -89,14 +95,39 @@ function getOrdinal(n: number): string {
 export default function TournamentDetails({
   tournamentIdOverride,
   suppressAutoOpenTable = false,
-}: { tournamentIdOverride?: string; suppressAutoOpenTable?: boolean } = {}) {
+  searchOverride,
+}: {
+  tournamentIdOverride?: string;
+  suppressAutoOpenTable?: boolean;
+  /**
+   * Dan 2026-08-28 round 2: the query string that came with an EMBEDDED
+   * destination, "?watch=1" and all.
+   *
+   * On the real route the query lives in `location.search`. In a lobby tab it
+   * cannot: the URL there belongs to /table/:tableId, so `location.search` is
+   * the TABLE's query (name / stakes / code) and has nothing to do with this
+   * tournament. Round 1 therefore lost `?watch=1` entirely and the WATCH
+   * button on a running MTT opened the details page and stopped — the one
+   * control whose whole job is to open the table.
+   *
+   * Passing it in keeps one rule for both mounts: `search` below is "the query
+   * that addressed THIS page", wherever the page is rendered.
+   */
+  searchOverride?: string;
+} = {}) {
   const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
 
   const { tournamentId: routeTournamentId } = useParams<{ tournamentId: string }>();
   const [searchParams] = useSearchParams();
   const tournamentId = tournamentIdOverride || routeTournamentId;
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
   const location = useLocation();
+  /**
+   * THE query for this page. Embedded: whatever drilled us in. Routed: the
+   * URL's own. Never mix the two — reading the table's `?name=` as if it were
+   * a tournament parameter is how the two mounts drift apart.
+   */
+  const search = searchOverride !== undefined ? searchOverride : location.search;
   const { user } = useAuthUser();
   const toast = useToast();
 
@@ -595,8 +626,23 @@ export default function TournamentDetails({
       'BLIND_LEVEL_CHANGE',
       (event) => {
         if (event.payload.tournamentId !== tournamentId) return;
+        /**
+         * `- 1`: THE PAYLOAD IS THE DISPLAY LEVEL, THE COLUMN IS AN INDEX.
+         *
+         * This wrote the 1-based payload straight into `current_level`, which
+         * is contractually the 0-based index the engine uses on
+         * `blindStructure[]`. It is the worst of the three places that had this
+         * wrong, because it does not merely mis-render one component: it
+         * corrupts the shared `tournament` object that EVERY tab reads off this
+         * page, so between an advance and the next poll the Detail hero, the
+         * Blinds tab and anything else reading the row were all one level
+         * ahead, consistently, from a single bad write. See MasterBus's
+         * BLIND_LEVEL_CHANGE for the contract.
+         */
+        const displayLevel = Number(event.payload.level);
+        if (!Number.isFinite(displayLevel) || displayLevel < 1) return;
         setTournament((prev) =>
-          prev ? ({ ...prev, current_level: event.payload.level } as Tournament) : prev
+          prev ? ({ ...prev, current_level: displayLevel - 1 } as Tournament) : prev
         );
       },
       300
@@ -972,18 +1018,33 @@ export default function TournamentDetails({
   const watchIntentDoneRef = useRef(false);
   useEffect(() => {
     if (watchIntentDoneRef.current) return;
-    const params = new URLSearchParams(location.search);
+    const params = new URLSearchParams(search);
     if (params.get('watch') !== '1') return;
     if (!isWatchable) return;
     if (!featuredTableId) return; // still resolving; try again when it lands
     watchIntentDoneRef.current = true;
-    // Consume the intent BEFORE acting on it, so the history entry we leave
-    // behind can never re-trigger it.
-    params.delete('watch');
-    const qs = params.toString();
-    navigate({ search: qs ? `?${qs}` : '' }, { replace: true });
+    /**
+     * Consume the intent BEFORE acting on it, so the history entry we leave
+     * behind can never re-trigger it.
+     *
+     * ONLY ON THE REAL ROUTE (round 2). Embedded, the URL is /table/:tableId
+     * and this `navigate({ search })` would resolve its missing pathname from
+     * the CURRENT location — rewriting the TABLE's url and wiping the
+     * `?name=&stakes=&code=` that MultiTablePage reads to name a tab it has
+     * not built yet. That would trade a working Watch button for a tab
+     * labelled "Table 1" with blank stakes after a reload.
+     *
+     * Nothing is lost by skipping it: `watchIntentDoneRef` already blocks a
+     * second fire, and `watchTable` sends the player to /table/:id, which
+     * converts this very lobby tab into that table and unmounts this page.
+     */
+    if (searchOverride === undefined) {
+      params.delete('watch');
+      const qs = params.toString();
+      navigate({ search: qs ? `?${qs}` : '' }, { replace: true });
+    }
     watchTable(featuredTableId);
-  }, [featuredTableId, isWatchable, location.search, watchTable, navigate]);
+  }, [featuredTableId, isWatchable, search, searchOverride, watchTable, navigate]);
 
   const handleUnregister = async () => {
     if (isProcessing || !tournament) return;
@@ -1129,9 +1190,18 @@ export default function TournamentDetails({
     return (
       <div className="tournament-details error">
         <h2>Tournament Not Found</h2>
-        <Link to="/clubs" className="btn btn-primary">
-          Back To Clubs
-        </Link>
+        {/* Dan 2026-08-28: "Back To Clubs" is a real anchor to a route OUTSIDE
+            /table/*, so in the in-tab lobby it did the exact thing this whole
+            change exists to stop - one 404 satellite and the action bar, the
+            tab strip and every running game's container were gone. In the tab
+            the way back is MultiTablePage's own "Lobby" pill, rendered
+            directly above this; offering a second, destructive one is worse
+            than offering none. On the real route the link is unchanged. */}
+        {!tournamentIdOverride && (
+          <Link to="/clubs" className="btn btn-primary">
+            Back To Clubs
+          </Link>
+        )}
       </div>
     );
   }

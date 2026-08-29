@@ -72,11 +72,6 @@
   transition: all 0.2s;
 }
 
-.alerts-header .refresh-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-}
-
 /* ── Filter Tabs ── */
 .filter-tabs {
   display: flex;
@@ -104,11 +99,6 @@
   white-space: nowrap;
   flex-shrink: 0;
   touch-action: manipulation;
-}
-
-.filter-tab:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
 }
 
 .filter-tab.active {
@@ -236,10 +226,6 @@
   font-size: 0.82rem;
   font-weight: 600;
   transition: all 0.2s;
-}
-
-.resolve-btn:hover {
-  background: rgba(34, 197, 94, 0.2);
 }
 
 .resolve-btn:disabled {

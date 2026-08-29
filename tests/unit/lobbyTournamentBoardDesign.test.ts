@@ -28,7 +28,10 @@ describe('Club Arena Tournament Board lobby design', () => {
     expect(identityCard).toContain('club-identity-template-bbj-finish-v1.png');
     expect(identityCard).toContain('Copy referral link');
     expect(identityCardCss).toContain('aspect-ratio: 1650 / 953');
-    expect(identityCardCss).toContain('transform: translateY(1.44cqw)');
+    expect(identityCardCss).toContain('line-height: 1.18');
+    expect(identityCardCss).toContain('transform: translateY(0.55cqw)');
+    expect(identityCardCss).toContain('margin-top: 1.4cqw');
+    expect(identityCardCss).not.toContain('translateY(1.44cqw)');
   });
 
   it('spells out Bad Beat Jackpot and opens the existing detail modal', () => {

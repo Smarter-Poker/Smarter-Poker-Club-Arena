@@ -12,6 +12,7 @@
  */
 
 import { PAYOUT_STRUCTURES } from '../config/blindStructures';
+import { computePlacePrize } from '../lib/payoutMath';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -243,22 +244,23 @@ class PayoutEngineClass {
    * Ensures total payouts never exceed prize pool due to rounding
    */
   calculateAmounts(payouts: PayoutEntry[], prizePool: number): PayoutEntry[] {
-    const amounts = payouts.map((p) => ({
+    /**
+     * 2026-08-29: this was a third payout rule, and the worst of them.
+     *
+     * It TRUNCATED each place (`Math.trunc(...)`) where the engine rounds, and
+     * then, if the truncated places somehow still exceeded the pool, it shaved
+     * the difference off FIRST PLACE -- the headline prize, the one number
+     * every player looks at. The engine's rule does the opposite on purpose:
+     * the adjustment lands on the smallest prize, never a headline one.
+     *
+     * There is one rule now, shared with the engine byte for byte. It already
+     * guarantees the places sum to the pool and never exceed it, so the
+     * shave-first-place fallback has nothing left to do and is gone with it.
+     */
+    return payouts.map((p) => ({
       ...p,
-      amount: Math.trunc(((prizePool * p.percentage) / 100) * 100) / 100,
+      amount: computePlacePrize(prizePool, payouts, p.place),
     }));
-
-    // Verify total doesn't exceed prize pool
-    const total = amounts.reduce((s, a) => s + (a.amount ?? 0), 0);
-    if (total > prizePool) {
-      // Adjust the first place payout down to fit
-      if (amounts.length > 0 && amounts[0].amount) {
-        amounts[0].amount = Math.max(0, amounts[0].amount - (total - prizePool));
-        amounts[0].amount = Math.round(amounts[0].amount * 100) / 100;
-      }
-    }
-
-    return amounts;
   }
 
   /**

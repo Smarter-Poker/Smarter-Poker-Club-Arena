@@ -77,10 +77,6 @@
   cursor: pointer;
 }
 
-.clear-btn:hover {
-  text-decoration: underline;
-}
-
 .close-btn {
   width: 28px;
   height: 28px;
@@ -93,11 +89,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.close-btn:hover {
-  background: rgba(248, 81, 73, 0.2);
-  color: #f85149;
 }
 
 /* List */
@@ -114,10 +105,6 @@
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   position: relative;
-}
-
-.notification-item:hover {
-  background: rgba(255, 255, 255, 0.02);
 }
 
 .notification-item.unread {

@@ -69,11 +69,6 @@
   transition: all 0.2s ease;
 }
 
-.admin-tab:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-primary, #e4e6eb);
-}
-
 .admin-tab.active {
   background: rgba(69, 153, 255, 0.15);
   color: #4599ff;
@@ -246,10 +241,6 @@
   background: linear-gradient(135deg, #4599ff, #2374e1);
   color: #fff;
 }
-
-.admin-btn-primary:hover:not(:disabled) {
-}
-
 .admin-btn-success {
   background: #31a24c;
   color: #fff;
@@ -266,11 +257,6 @@
   color: var(--text-secondary, #b0b3b8);
 }
 
-.admin-btn-ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-primary, #e4e6eb);
-}
-
 .admin-btn-sm {
   padding: 4px 12px;
   font-size: 12px;
@@ -284,10 +270,6 @@
   padding: 4px;
   transition: transform 0.15s ease;
 }
-
-.admin-icon-btn:hover {
-}
-
 /* ── Inputs ── */
 .admin-input {
   width: 100%;
@@ -355,10 +337,6 @@
 .admin-data-table td {
   padding: 10px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-}
-
-.admin-data-table tr:hover td {
-  background: rgba(255, 255, 255, 0.02);
 }
 
 /* ── Badges ── */

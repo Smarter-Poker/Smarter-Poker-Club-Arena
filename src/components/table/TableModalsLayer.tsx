@@ -18,7 +18,12 @@ import SitOutModal from './SitOutModal';
 import WaitListModal from './WaitListModal';
 import { waitlistService } from '../../services/WaitlistService';
 import InsuranceModal, { type InsuranceOffer } from './InsuranceModal';
-import { RunItTwicePrompt, type RitResultData } from './RunItTwice';
+import {
+  RunItTwicePrompt,
+  type RitResultData,
+  type RitPanelPlayer,
+  type Card as RitPanelCard,
+} from './RunItTwice';
 import BadBeatJackpot from './BadBeatJackpot';
 import { getBBJQualifyingInfo, getBBJPayoutPercentForBB } from '../../config/RakeConfig';
 import BBJInfoModal from '../bbj/BBJInfoModal';
@@ -216,9 +221,25 @@ export interface TableModalsLayerProps {
   ritIsChooser: boolean;
   ritOpponent: string;
   ritTimer: number;
-  ritChosenRuns: 2 | 3;
+  /** undefined until the chooser answers — that is the state that draws the
+   *  Run Once / Twice / 3 Times buttons. Never default it to a number. */
+  ritChosenRuns: 2 | 3 | undefined;
   ritMaxRuns: 2 | 3;
   ritPlayerCount: number;
+  /* ─── THE CONSENT SHEET'S OWN CONTENT (2026-08-28) ────────────────────────
+   * The six props below existed on RunItTwicePrompt and were never forwarded
+   * through this layer, so every one of them fell to its default: the board row
+   * drew five face-down slots over a flop that was already on the felt, the pot
+   * line did not render, and the per-player consent rows — the whole point of
+   * the 2026-08-26 parity pass — never appeared at all. `ritPanelPlayers` and
+   * `ritPanelBoardCards` are computed in TablePage on every render and were
+   * thrown away here. */
+  ritBoardCards: RitPanelCard[];
+  ritPanelPlayers: RitPanelPlayer[];
+  ritPotAmount: number | null;
+  ritTotalSeconds: number;
+  ritHeroAccepted: boolean;
+  ritCurrency: string;
   onRITChooserDecide: (runs: 1 | 2 | 3) => Promise<void>;
   onRITAccept: () => Promise<void>;
   onRITDecline: () => Promise<void>;
@@ -528,6 +549,12 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     ritChosenRuns,
     ritMaxRuns,
     ritPlayerCount,
+    ritBoardCards,
+    ritPanelPlayers,
+    ritPotAmount,
+    ritTotalSeconds,
+    ritHeroAccepted,
+    ritCurrency,
     onRITChooserDecide,
     onRITAccept,
     onRITDecline,
@@ -866,6 +893,13 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
             if (res?.success) {
               onReturnFromSitOut();
             } else {
+              /* SAY IT OUT LOUD (2026-08-29). This branch reported to telemetry
+                 and stopped. The modal stayed open, the player stayed sitting
+                 out, and NOTHING on screen changed — on the one surface a
+                 sitting-out player is looking at, with a deadline running. Every
+                 other sit-out entry point in the app toasts its refusal; this
+                 one, the most important, did not. */
+              toast?.error?.(res?.error || 'Could Not Sit Back In. Please Try Again.');
               reportError(
                 new Error(res?.error || 'setSitOut(false) rejected by engine'),
                 'TableModalsLayer.Return_failed'
@@ -882,6 +916,12 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
          */
         onLeaveTable={onConfirmLeaveTable}
         sitOutSince={sitOutSince}
+        /* The countdown applies to CASH only. Dan 2026-08-28: a tournament
+           player (a spin is one) may sit out "as long as they want" and is
+           blinded off instead, so they must see no clock rather than one that
+           never fires. Heads-up cash is NOT exempt on either side of the wire —
+           see src/lib/sitOutDeadline.ts. */
+        isTournament={isTournament}
         tableName={tableName}
       />
 
@@ -941,8 +981,14 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         />
       )}
 
-      {/* Bible V8 §4.19: Show/Muck prompt when hero wins without showdown */}
-      {showHandRevealModal && tableId && (
+      {/* Bible V8 §4.19: Show/Muck prompt when hero wins without showdown.
+
+          NEVER IN A TOURNAMENT (Dan 2026-08-28, binding): "IN SPINS, ITS A
+          TOURNAMENT, SO THE 'SHOW CARDS' POP UP SHOULD NEVER EVER APPEAR, ALL
+          CARDS ARE ALWAYS SHOWN AT SHOWDOWN." The opener in TablePage carries
+          the same refusal; this is the render site, so a tournament cannot
+          show this modal no matter which path set the flag. */}
+      {showHandRevealModal && tableId && !isTournament && (
         <HandReveal
           isOpen={showHandRevealModal}
           isWinner={handRevealWinnerId === userId}
@@ -975,6 +1021,12 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         maxRuns={ritMaxRuns}
         playerCount={ritPlayerCount}
         opponentName={_ritOpponent}
+        boardCards={ritBoardCards}
+        players={ritPanelPlayers}
+        potAmount={ritPotAmount ?? undefined}
+        totalSeconds={ritTotalSeconds}
+        heroAccepted={ritHeroAccepted}
+        currency={ritCurrency}
       />
 
       {/* Bad Beat Jackpot Display — per-variant qualifying rule (2026-08-18).

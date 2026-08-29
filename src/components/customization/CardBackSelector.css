@@ -57,10 +57,6 @@
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
-.card-back-item:hover:not(.cbs-locked) {
-  background: rgba(0, 0, 0, 0.3);
-  border-color: rgba(255, 255, 255, 0.2);
-}
 .card-back-item.cbs-selected {
   border-color: #ffd700;
   background: rgba(255, 215, 0, 0.1);
@@ -116,8 +112,6 @@
   border: 2px solid rgba(255, 255, 255, 0.2);
   transform: rotateY(-5deg);
   transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-.card-back-item:hover .card-shape {
 }
 .card-back-preview-img {
   width: 100%;
@@ -272,23 +266,13 @@
   background: rgba(255, 255, 255, 0.1);
   color: #8b949e;
 }
-.cbs-confirm__btn--cancel:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
 .cbs-confirm__btn--buy {
   background: linear-gradient(135deg, #1877f2 0%, #0d47a1 100%);
   color: #fff;
 }
-.cbs-confirm__btn--buy:hover {
-  filter: brightness(1.1);
-}
 .cbs-confirm__btn--disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-.cbs-confirm__btn--disabled:hover {
-  filter: none;
-  transform: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -51,10 +51,6 @@
   transition: background 0.2s;
 }
 
-.refd-copy-btn:hover {
-  background: rgba(0, 212, 255, 0.2);
-}
-
 .refd-stats {
   display: flex;
   gap: 0.75rem;
@@ -136,10 +132,6 @@
   font-size: 0.9rem;
   cursor: pointer;
   transition: opacity 0.2s;
-}
-
-.refd-share-btn:hover {
-  opacity: 0.9;
 }
 
 .refd-skeleton {

@@ -155,11 +155,6 @@
   text-transform: uppercase;
 }
 
-.toggle-btn:hover {
-  border-color: #4a5a6a;
-  color: #8a9aaa;
-}
-
 .toggle-btn.on {
   background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
   border-color: #00d4ff;
@@ -198,10 +193,6 @@
   position: relative;
   overflow: hidden;
 }
-
-.save-btn:hover:not(:disabled) {
-}
-
 .save-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -257,10 +248,6 @@
     0 0 10px rgba(239, 68, 68, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-
-.btn-danger:hover {
-}
-
 .btn-danger:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -345,10 +332,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.btn-secondary:hover {
-  border-color: #4a5a6a;
-  color: #fff;
-}
 /* ─────────────────────────────────────────────────────────────────────────────
    MOBILE RESPONSIVE
    ───────────────────────────────────────────────────────────────────────────── */

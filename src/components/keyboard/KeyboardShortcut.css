@@ -28,10 +28,6 @@ kbd {
     transform var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.15s,
     box-shadow var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.15s;
 }
-
-kbd:hover {
-}
-
 .plus {
   color: rgba(255, 255, 255, 0.4);
   font-size: 0.8rem;

@@ -92,6 +92,61 @@ export const DEFAULT_TABLE_SETTINGS: TableSettings = {
   showTicker: true,
 };
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  RESET TO DEFAULTS MAY ONLY WRITE WHAT THIS PANEL OFFERS A CONTROL FOR
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * 2026-08-29. `handleReset` sent the WHOLE `DEFAULT_TABLE_SETTINGS` object, and
+ * TablePage's `onSettingsChange` acts on any key that is `!== undefined`. Three
+ * things came along that nobody asked to reset:
+ *
+ *   confirmAllIn, autoMuckWinners — no control on this panel. Their toggles
+ *     were deliberately removed; the values were still being written, so the
+ *     one button that promises to restore what you can see silently rewrote two
+ *     things you cannot.
+ *
+ *   sitOutNextHand — the serious one. It is not a display preference. Sending
+ *     `false` fires a real `setSitOut(tableId, false)` round trip, so a player
+ *     who was sitting out and tapped Reset To Defaults to tidy up their card
+ *     colours was PUT BACK IN THE GAME, blinds and all, as a side effect.
+ *
+ * The same shape as tests/settings-only-write-what-they-offer.test.ts, which is
+ * about the notifications upsert on /settings: a save path grew a key that no
+ * control on the page governs.
+ *
+ * So the payload is built from an explicit list. A new toggle must be added
+ * here to be resettable, which is the right way round — a control you can see
+ * is the thing Reset is promising to restore.
+ */
+const RESETTABLE_KEYS = [
+  'autoMuckLosers',
+  'autoPostBlinds',
+  'showPotOdds',
+  'fourColorDeck',
+  'showBetSizePresets',
+  'showTicker',
+  'animationSpeed',
+  'tableTheme',
+  'soundEnabled',
+  'soundVolume',
+  'hapticEnabled',
+] as const satisfies readonly (keyof TableSettings)[];
+
+/**
+ * `sitOutNextHand` has a control on this panel and is still EXCLUDED, on
+ * purpose. Sitting out is a live table action with a server round trip, not a
+ * preference — see the note above. Restoring appearance defaults must never
+ * seat or unseat anybody.
+ */
+export function resetPayload(): Partial<TableSettings> {
+  const out: Partial<TableSettings> = {};
+  for (const key of RESETTABLE_KEYS) {
+    (out as Record<string, unknown>)[key] = DEFAULT_TABLE_SETTINGS[key];
+  }
+  return out;
+}
+
 /** Available table themes from design-tokens.css */
 const TABLE_THEMES = [
   { value: 'green', label: 'Classic Green' },
@@ -200,7 +255,7 @@ export function SettingsPanel({
 
   // Reset to defaults
   const handleReset = useCallback(() => {
-    onSettingsChange(DEFAULT_TABLE_SETTINGS);
+    onSettingsChange(resetPayload());
   }, [onSettingsChange]);
 
   if (!isOpen) return null;

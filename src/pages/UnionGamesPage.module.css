@@ -105,9 +105,6 @@
   gap: 6px;
   transition: all 0.15s;
 }
-.tab:hover {
-  color: #e4e6eb;
-}
 .tabActive {
   color: #4599ff;
   border-bottom-color: #4599ff;
@@ -169,9 +166,6 @@
   border: 1px solid #3a3b3c;
   transition: border-color 0.15s;
 }
-.tournCard:hover {
-  border-color: #4599ff44;
-}
 .tournHeader {
   display: flex;
   justify-content: space-between;
@@ -215,9 +209,6 @@
   color: inherit;
   display: block;
   transition: border-color 0.15s;
-}
-.tableCard:hover {
-  border-color: #31a24c;
 }
 .tableCardHeader {
   display: flex;
@@ -311,9 +302,6 @@
   cursor: pointer;
   text-decoration: none;
 }
-.btnPrimary:hover {
-  background: #357ce6;
-}
 .btnGhost {
   padding: 8px 16px;
   background: transparent;
@@ -325,10 +313,6 @@
   cursor: pointer;
   text-decoration: none;
 }
-.btnGhost:hover {
-  border-color: #4599ff;
-  color: #4599ff;
-}
 .btnRegister {
   padding: 8px 16px;
   background: #31a24c;
@@ -338,9 +322,6 @@
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
-}
-.btnRegister:hover {
-  background: #2a8a40;
 }
 
 /* Empty State */

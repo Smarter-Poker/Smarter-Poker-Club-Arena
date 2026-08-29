@@ -295,10 +295,6 @@
   white-space: nowrap;
 }
 
-.theme-modal__tab:hover {
-  color: var(--off-white, #e4e6eb);
-}
-
 .theme-modal__tab--active {
   color: var(--royal-blue, #1877f2);
   border-bottom-color: var(--royal-blue, #1877f2);
@@ -340,10 +336,6 @@
   cursor: pointer;
   transition: transform 0.15s ease;
 }
-
-.theme-asset:hover {
-}
-
 .theme-asset--locked {
   opacity: 0.6;
 }
@@ -445,17 +437,9 @@
   color: var(--off-white, #e4e6eb);
 }
 
-.theme-modal__btn--reset:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
 .theme-modal__btn--save {
   background: var(--royal-blue, #1877f2);
   color: white;
-}
-
-.theme-modal__btn--save:hover {
-  background: var(--royal-blue-dark, #0d5dc7);
 }
 
 .theme-modal__btn--save:disabled {
@@ -550,17 +534,9 @@
   color: #1a1a1e;
 }
 
-.theme-vip-prompt__btn--upgrade:hover {
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
-}
-
 .theme-vip-prompt__btn--cancel {
   background: var(--card-surface, #3a3b3c);
   color: var(--soft-white, #b0b3b8);
-}
-
-.theme-vip-prompt__btn--cancel:hover {
-  background: rgba(255, 255, 255, 0.12);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -765,7 +741,6 @@
   transition: 160ms ease;
 }
 
-.theme-modal__close:hover,
 .theme-modal__close:focus-visible {
   color: white;
   background: rgba(72, 191, 255, 0.13);
@@ -1034,10 +1009,6 @@
   font-size: 12px;
   font-weight: 700;
 }
-.theme-modal__tab:hover {
-  color: #d5e8f5;
-  background: rgba(255, 255, 255, 0.035);
-}
 .theme-modal__tab--active {
   color: #eaf8ff;
   background: linear-gradient(180deg, rgba(72, 191, 255, 0.19), rgba(72, 191, 255, 0.07));
@@ -1232,9 +1203,6 @@
   opacity: 0.35;
   cursor: default;
 }
-.theme-asset:hover {
-  border-color: rgba(116, 183, 226, 0.38);
-}
 .theme-asset:focus-visible {
   outline: 2px solid var(--studio-cobalt);
   outline-offset: 2px;
@@ -1332,9 +1300,6 @@
   box-shadow:
     0 8px 24px rgba(41, 162, 222, 0.22),
     inset 0 1px rgba(255, 255, 255, 0.54);
-}
-.theme-modal__btn--save:hover {
-  background: linear-gradient(180deg, #8bdcff, #48b7ef);
 }
 
 /* Mobile is the source layout. Wider viewports progressively add density. */
@@ -1465,8 +1430,5 @@
   .theme-asset,
   .theme-modal__close {
     transition: none;
-  }
-  .theme-asset:hover {
-    transform: none;
   }
 }

@@ -237,7 +237,7 @@ const RankRow = React.memo(function RankRow({
         </span>
         <span className="tl-sub rk-sub">{subText}</span>
         {!out && (
-          <span className="tl-meter rk-meter">
+          <span className="tl-meter rk-meter" aria-hidden="true">
             <span
               className={`tl-meter__fill${underAverage ? ' tl-meter__fill--under' : ''}`}
               style={{ width: `${fillPct}%` }}

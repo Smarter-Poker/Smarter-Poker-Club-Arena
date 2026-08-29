@@ -42,10 +42,6 @@
   cursor: not-allowed;
 }
 
-.tab-button:hover:not(:disabled) {
-  color: rgba(255, 255, 255, 0.9);
-}
-
 .tab-button.active {
   color: #ffd700;
 }

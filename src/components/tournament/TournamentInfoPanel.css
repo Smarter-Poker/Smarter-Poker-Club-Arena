@@ -69,9 +69,6 @@
   line-height: 1;
   cursor: pointer;
 }
-.tip__close:hover {
-  background: rgba(148, 163, 184, 0.2);
-}
 
 /* The header numbers — the reference lobby leads with these. */
 .tip__statGrid {

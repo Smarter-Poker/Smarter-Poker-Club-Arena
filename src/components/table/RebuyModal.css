@@ -167,10 +167,6 @@
     left: 150%;
   }
 }
-
-.rebuyConfirmBtn:hover:not(:disabled) {
-}
-
 .rebuyConfirmBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;

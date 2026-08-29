@@ -100,7 +100,29 @@ describe('one rounding rule, shared by every payout site', () => {
 
   it('the last paid place absorbs the residual, so places sum to the pool', () => {
     expect(PAYOUT_MATH).toMatch(/lastPlace/);
-    expect(code(PAYOUT_MATH)).toMatch(/safePool\s*-\s*others/);
+    // 2026-08-29: this pinned `safePool - others`, dollars subtracted from
+    // dollars. The residual RULE is unchanged and still pinned; what changed
+    // is that the whole ladder is now built at once in integer cents, so the
+    // pool is spent DOWN and can never be overspent -- pricing one place in
+    // isolation clamped a negative last place at zero and paid out more than
+    // the pool. Moved to the new mechanism in the same commit that shipped
+    // it, as the house rule asks. See the note in payoutMath.ts.
+    expect(code(PAYOUT_MATH)).toMatch(/remaining/);
+    expect(code(PAYOUT_MATH)).toMatch(/isLast\s*\?\s*remaining/);
+  });
+
+  it('the money is integer cents, never a binary float', () => {
+    // Dan 2026-08-29, binding: exact to the cent, always. `513 * 3.5 / 100`
+    // is 17.954999999999998 in a double, which rounded DOWN to 17.95 while
+    // Postgres numeric made it 17.96 -- and the reconciler then "topped up"
+    // the difference, pushing a 513.00 pool to 513.01 on every run of that
+    // event. There is no epsilon that fixes that; the arithmetic has to be
+    // integers.
+    const src = code(PAYOUT_MATH);
+    expect(src).toMatch(/poolCents/);
+    expect(src).toMatch(/basis points|\bbp\(/);
+    // No dollar-scale rounding helper survives in the money path.
+    expect(src).not.toMatch(/const round2 =/);
   });
 
   it('both payout sites use it, and neither rounds on its own', () => {

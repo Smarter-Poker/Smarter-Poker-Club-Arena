@@ -3,9 +3,12 @@
  *
  * Rake is generated continuously, and an agent needs to watch it as it happens
  * rather than waiting for the weekly statement. These reads go straight at
- * rake_records and use the SAME even-split attribution as
- * fn_rakeback_recompute_periods, so the live figure an agent sees is the figure
- * they are eventually paid on.
+ * rake_records and use the SAME attribution as fn_rakeback_recompute_periods —
+ * WEIGHTED CONTRIBUTED rake (Dan 2026-08-29): each player's credit is
+ * proportional to their eligible contribution to the rakeable pot, with
+ * historical DEALT_EQUAL rows still reported under their historical equal
+ * split. So the live figure an agent sees is the figure they are eventually
+ * paid on.
  *
  * Every function here is role-gated in the database: a plain player calling
  * them gets `not_an_agent`, and an agent asking for a peer's book gets

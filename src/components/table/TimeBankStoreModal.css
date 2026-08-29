@@ -106,11 +106,6 @@
   z-index: 1;
 }
 
-.tbs-close:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-}
-
 .tbs-title,
 .tbs-body,
 .tbs-price-row,
@@ -200,10 +195,6 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.tbs-preset:hover {
-  background: rgba(255, 255, 255, 0.09);
-}
-
 .tbs-preset:active {
   transform: scale(0.95);
 }
@@ -269,10 +260,6 @@
   border: 2px solid rgba(196, 210, 228, 0.4);
 }
 
-.tbs-btn--ghost:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
 .tbs-btn--buy {
   background: var(--sp-silver);
   color: #16202e;
@@ -280,8 +267,4 @@
   box-shadow:
     0 4px 12px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.85);
-}
-
-.tbs-btn--buy:hover:not(:disabled) {
-  background: linear-gradient(180deg, #ffffff 0%, #dbe1e8 48%, #b7c0ca 100%);
 }

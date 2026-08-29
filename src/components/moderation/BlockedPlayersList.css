@@ -43,10 +43,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.blocked-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
 .blocked-avatar {
   width: 40px;
   height: 40px;
@@ -96,12 +92,6 @@
   font-size: 0.85rem;
   cursor: pointer;
   transition: all 0.2s;
-}
-
-.unblock-btn:hover:not(:disabled) {
-  background: rgba(74, 222, 128, 0.2);
-  border-color: rgba(74, 222, 128, 0.4);
-  color: #4ade80;
 }
 
 .unblock-btn:disabled {

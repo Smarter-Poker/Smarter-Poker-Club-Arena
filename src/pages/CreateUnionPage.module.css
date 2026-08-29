@@ -58,10 +58,6 @@
   cursor: pointer;
   transition: all 0.2s ease;
 }
-
-.createClubBtn:hover {
-}
-
 .header {
   display: flex;
   align-items: center;
@@ -75,10 +71,6 @@
   color: var(--text-muted);
   font-size: 0.9rem;
   cursor: pointer;
-}
-
-.backButton:hover {
-  color: #fff;
 }
 
 .header h1 {
@@ -503,25 +495,12 @@
   color: var(--text-muted);
 }
 
-.backBtn:hover {
-  border-color: rgba(255, 255, 255, 0.4);
-  color: #fff;
-}
-
 .nextBtn,
 .createBtn {
   background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
   border: none;
   color: #fff;
 }
-
-.backBtn:hover {
-}
-
-.nextBtn:hover,
-.createBtn:hover:not(:disabled) {
-}
-
 .backBtn,
 .nextBtn,
 .createBtn {

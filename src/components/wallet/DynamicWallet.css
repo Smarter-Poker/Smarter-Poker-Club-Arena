@@ -83,10 +83,6 @@
   cursor: pointer;
   min-height: 44px;
 }
-
-.dw__bbj[role='button']:hover {
-}
-
 /* Shimmer sweep across the BBJ banner */
 .dw__bbj::after {
   content: '';
@@ -164,10 +160,6 @@
   background: linear-gradient(180deg, rgba(60, 60, 80, 0.6) 0%, rgba(40, 40, 60, 0.6) 100%);
   border: 1px solid rgba(255, 255, 255, 0.08);
   transition: background 0.2s ease;
-}
-
-.dw__row:hover {
-  background: linear-gradient(180deg, rgba(70, 70, 95, 0.7) 0%, rgba(50, 50, 70, 0.7) 100%);
 }
 
 /* Icon — inline SVG on currentColor (was an emoji glyph until 2026-08-20).
@@ -280,11 +272,6 @@
   min-height: 44px;
 }
 
-.dw__row--actionable:hover {
-  border-color: rgba(0, 180, 230, 0.5);
-  background: linear-gradient(180deg, rgba(42, 60, 86, 0.9) 0%, rgba(25, 35, 52, 0.9) 100%);
-}
-
 .dw__row--actionable:active {
   transform: scale(0.995);
 }
@@ -342,10 +329,6 @@
     transform 0.15s ease,
     box-shadow 0.15s ease;
 }
-
-.dw__plus:hover {
-}
-
 .dw__plus:active {
   transform: scale(0.95);
 }
@@ -427,11 +410,6 @@
   transition:
     background 0.2s ease,
     border-color 0.2s ease;
-}
-
-.dw__error-badge:hover {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.5);
 }
 
 /* A warning-triangle emoji used to carry this message's urgency. Text does it
@@ -535,11 +513,6 @@
   transition:
     transform 0.12s ease,
     border-color 0.15s ease;
-}
-
-.dw--lobby-board .dw__row:hover {
-  border-color: #438ed3;
-  background: #10223a;
 }
 
 .dw--lobby-board .dw__row--actionable {
@@ -662,9 +635,7 @@
   isolation: isolate;
 }
 
-.dw__row--wallet-art:hover,
-.dw__row--wallet-art.dw__row--actionable,
-.dw__row--wallet-art.dw__row--actionable:hover {
+.dw__row--wallet-art.dw__row--actionable {
   min-height: 0;
   border: 0;
   background: transparent;
@@ -765,12 +736,6 @@
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-}
-
-.dw--lobby-board .dw__row--wallet-art:hover,
-.dw--lobby-board .dw__row--wallet-art.dw__row--actionable:hover {
-  border: 0;
-  background: transparent;
 }
 
 .dw--lobby-board .dw__row--wallet-art.dw__row--actionable:active {

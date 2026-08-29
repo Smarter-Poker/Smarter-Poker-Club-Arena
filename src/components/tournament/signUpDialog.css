@@ -140,11 +140,6 @@
     transform 0.18s ease;
 }
 
-.signup-modal .modal-close:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-}
-
 /* THE ROW. `gap` is what puts the space after every colon — see the header. */
 .signup-row {
   display: flex;
@@ -252,10 +247,6 @@
     0 6px 18px rgba(37, 99, 235, 0.35);
 }
 
-.signup-actions .btn:hover:not(:disabled) {
-  filter: brightness(1.08);
-}
-
 .signup-actions .btn:active:not(:disabled) {
   transform: translateY(3px);
   box-shadow:
@@ -287,9 +278,6 @@
   .signup-overlay,
   .signup-modal {
     animation: none;
-  }
-  .signup-modal .modal-close:hover {
-    transform: none;
   }
 }
 

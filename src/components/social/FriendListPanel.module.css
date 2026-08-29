@@ -89,10 +89,6 @@
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
   box-shadow: 0 0 12px rgba(251, 191, 36, 0.3);
 }
-
-.addBtn:hover {
-}
-
 /* Add Friend Row */
 .addFriendRow {
   display: flex;
@@ -134,10 +130,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
   box-sizing: border-box;
 }
-
-.addFriendRow button:hover {
-}
-
 .addFriendRow button:disabled {
   opacity: 0.5;
 }
@@ -173,11 +165,6 @@
   gap: 12px;
   padding: 10px 16px;
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
-}
-
-.friendRow:hover {
-  background: rgba(255, 255, 255, 0.03);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 /* Avatar */
@@ -255,8 +242,4 @@
   cursor: pointer;
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
-}
-
-.iconBtn:hover {
-  background: rgba(255, 255, 255, 0.1);
 }

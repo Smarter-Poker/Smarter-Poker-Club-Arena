@@ -140,19 +140,11 @@
   color: #fff;
   box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
 }
-
-.btn-start:hover {
-}
-
 .btn-stop {
   background: linear-gradient(135deg, #ef4444, #dc2626);
   color: #fff;
   box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
 }
-
-.btn-stop:hover {
-}
-
 .btn-secondary {
   background: rgba(255, 255, 255, 0.1);
   color: #94a3b8;

@@ -98,6 +98,24 @@ describe('the CSS behind the tag', () => {
     expect(css).not.toMatch(/\.seat--sitting_out \.seat__info::after/);
   });
 
+  it('the badge is declared exactly once', () => {
+    /* ADDED 2026-08-29, and it is the assertion that matters most here.
+       This file carried TWO `.seat__sitout-badge` rules at identical
+       specificity, ~2600 lines apart. The LATER one won, and it dropped
+       `max-width` and added `white-space: nowrap` — so on a 375px phone, where
+       a seat is 58-66px wide, the badge overflowed onto its neighbours.
+
+       The case below could not see any of that: `sliceCssRule` is
+       `css.indexOf(selector)`, i.e. FIRST match, so it happily asserted against
+       the rule the browser was ignoring and passed for as long as the bug
+       shipped. A second declaration is the failure; assert on the count. */
+    const declarations = css.match(/^\.seat__sitout-badge\s*\{/gm) || [];
+    expect(
+      declarations.length,
+      'a second declaration silently overrides the first — that is how the mobile cap was lost'
+    ).toBe(1);
+  });
+
   it('the badge is styled and cannot swallow taps', () => {
     const block = sliceCssRule(css, '.seat__sitout-badge');
     // A seat is 58-66px wide on a 375px phone; the badge must not grow past it.

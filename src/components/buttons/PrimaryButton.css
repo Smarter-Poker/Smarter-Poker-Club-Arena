@@ -41,27 +41,15 @@
   background: linear-gradient(135deg, #ffd700, #ff8c00);
   color: #000;
 }
-
-.primary-button.variant-filled:hover:not(:disabled) {
-}
-
 .primary-button.variant-outline {
   background: transparent;
   border: 2px solid #ffd700;
   color: #ffd700;
 }
 
-.primary-button.variant-outline:hover:not(:disabled) {
-  background: rgba(255, 215, 0, 0.1);
-}
-
 .primary-button.variant-ghost {
   background: transparent;
   color: #ffd700;
-}
-
-.primary-button.variant-ghost:hover:not(:disabled) {
-  background: rgba(255, 215, 0, 0.1);
 }
 
 .btn-icon {

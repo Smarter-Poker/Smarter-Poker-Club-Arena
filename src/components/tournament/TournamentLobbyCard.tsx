@@ -6,7 +6,12 @@
  */
 
 import { useState, useEffect, memo } from 'react';
-import { useNavigate } from 'react-router-dom';
+/* Dan 2026-08-28: this card is the SatellitesTab of TournamentDetails, which
+   MultiTablePage renders inside a lobby tab. All three of its navigate calls
+   target /tournaments/:id, and every one of them used to drop a seated player
+   off /table/* - action bar and all. useAppNavigate keeps them in the tab and
+   is plain useNavigate everywhere else. See InTabLobbyContext.tsx. */
+import { useAppNavigate } from '../../context/InTabLobbyContext';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import styles from './TournamentLobbyCard.module.css';
@@ -59,6 +64,23 @@ interface Tournament {
 interface TournamentLobbyCardProps {
   tournament: Tournament;
   onRegister?: (tournamentId: string) => void;
+  /**
+   * Whether the viewer is already registered, when the CALLER already knows.
+   *
+   * Every card otherwise runs its own `tournament_players` lookup on mount, so
+   * a list of ten satellites cost eleven round trips while the parent was
+   * holding the viewer's id the whole time. `useSatellites` answers all of them
+   * with a single `.in()` query and hands the answer down here.
+   *
+   * Three states, and the third one matters: `undefined` means the caller does
+   * not know, so the card queries for itself exactly as before (this is what
+   * TournamentLobbyPage does). `true`/`false` is a real answer. `null` means
+   * the caller's batch query FAILED — which is NOT "not registered". Rendering
+   * a live Register button at an already-registered player is a second entry
+   * attempt against real money, so a null falls back to the card's own lookup
+   * and, if that fails too, to the refuses-to-guess branch below.
+   */
+  knownRegistration?: boolean | null;
 }
 
 /** Under five minutes to the gun. Exported so it can be pinned by a test. */
@@ -126,11 +148,15 @@ export function lateRegState(opts: {
   return { active: false, label: '' };
 }
 
-function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCardProps) {
-  const navigate = useNavigate();
+function TournamentLobbyCardInner({
+  tournament,
+  onRegister,
+  knownRegistration,
+}: TournamentLobbyCardProps) {
+  const navigate = useAppNavigate();
   const { user } = useAuthUser();
   const [registering, setRegistering] = useState(false);
-  const [isRegistered, setIsRegistered] = useState(false);
+  const [isRegistered, setIsRegistered] = useState(knownRegistration === true);
   /**
    * A FAILED REGISTRATION CHECK IS NOT "NOT REGISTERED" (2026-08-25).
    *
@@ -160,13 +186,21 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
   }, []);
 
   useEffect(() => {
-    checkRegistration();
+    /* Only query when the caller has not already told us. `undefined` is "I
+       do not know, go and look"; `null` is "my batch query failed", which is
+       also a reason to look rather than to guess. See knownRegistration. */
+    if (typeof knownRegistration === 'boolean') {
+      setIsRegistered(knownRegistration);
+      setRegCheckFailed(false);
+    } else {
+      checkRegistration();
+    }
     if (tournament.startsAt) {
       updateCountdown();
       const interval = setInterval(updateCountdown, 1000);
       return () => clearInterval(interval);
     }
-  }, [tournament.id, tournament.startsAt]);
+  }, [tournament.id, tournament.startsAt, knownRegistration]);
 
   // See lateRegState() above for why these two are not one variable.
   const lateRegLevels = tournament.late_reg_levels ?? 0;

@@ -70,10 +70,6 @@
   transition: background 0.2s;
 }
 
-.cancel-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
 .confirm-btn {
   flex: 1;
   padding: 14px;
@@ -83,7 +79,4 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.confirm-btn:hover {
 }

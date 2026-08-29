@@ -341,10 +341,6 @@ a {
   transition: color var(--duration-fast) var(--ease-out);
 }
 
-a:hover {
-  color: var(--pure-white);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    BUTTONS
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -374,18 +370,10 @@ a:hover {
   background: var(--gradient-blue);
   color: var(--pure-white);
 }
-
-.btn-primary:hover:not(:disabled) {
-}
-
 .btn-success {
   background: var(--gradient-success);
   color: var(--pure-white);
 }
-
-.btn-success:hover:not(:disabled) {
-}
-
 .btn-danger {
   background: var(--gradient-danger);
   color: var(--pure-white);
@@ -397,19 +385,9 @@ a:hover {
   border: 1px solid var(--border-subtle);
 }
 
-.btn-ghost:hover:not(:disabled) {
-  background: var(--elevated-surface);
-  color: var(--text-primary);
-  border-color: var(--royal-blue);
-}
-
 .btn-white {
   background: var(--pure-white);
   color: var(--near-black);
-}
-
-.btn-white:hover:not(:disabled) {
-  background: var(--off-white);
 }
 
 /* Sizes */
@@ -433,10 +411,6 @@ a:hover {
   border-radius: var(--radius-xl);
   padding: var(--space-6);
   transition: all var(--duration-normal) var(--ease-out);
-}
-
-.card:hover {
-  border-color: var(--border-blue);
 }
 
 .card-glass {
@@ -693,10 +667,6 @@ a:hover {
 .spring-hover {
   transition: transform var(--duration-fast) var(--ease-spring);
 }
-
-.spring-hover:hover {
-}
-
 .press-scale {
   transition: transform var(--duration-fast) var(--ease-out);
 }
@@ -735,13 +705,6 @@ a:hover {
   background: var(--royal-blue);
   border-radius: var(--radius-full);
   box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--royal-blue-light);
-  box-shadow:
-    inset 0 0 6px rgba(0, 0, 0, 0.5),
-    0 0 12px var(--royal-blue-glow);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

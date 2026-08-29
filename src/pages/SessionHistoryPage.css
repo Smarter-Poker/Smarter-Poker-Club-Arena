@@ -32,11 +32,6 @@
   transition: all 0.15s;
 }
 
-.sh-back:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
 .sh-title {
   font-size: 1.3rem;
   font-weight: 700;
@@ -162,11 +157,6 @@
   border-radius: 12px;
   padding: 0.8rem;
   transition: all 0.15s;
-}
-
-.sh-session-row:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .sh-session-info {

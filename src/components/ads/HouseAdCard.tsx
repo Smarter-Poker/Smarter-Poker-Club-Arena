@@ -33,7 +33,13 @@
  */
 
 import { useEffect, useState } from 'react';
-import { AdService, isSafeAdImage, type AdSlot, type HouseAd } from '../../services/AdService';
+import {
+  AdService,
+  isSafeAdImage,
+  isSafeAdTarget,
+  type AdSlot,
+  type HouseAd,
+} from '../../services/AdService';
 import './HouseAdCard.css';
 
 interface HouseAdCardProps {
@@ -78,7 +84,10 @@ export default function HouseAdCard({ slot, clubId = null, onNavigate }: HouseAd
 
   if (!ad) return null;
 
-  const activatable = Boolean(ad.targetUrl) && Boolean(onNavigate);
+  /* isSafeAdTarget, not Boolean(): `target_url` is unvalidated admin-entered
+     text, and this made the whole card a link to wherever it pointed. An
+     unsafe target now renders as a plain, non-activatable card. */
+  const activatable = isSafeAdTarget(ad.targetUrl) && Boolean(onNavigate);
 
   /* The click is recorded BEFORE navigating. The alternative is losing the
      event to the unmount, which is how a working click path ends up looking

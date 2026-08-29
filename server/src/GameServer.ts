@@ -1213,8 +1213,7 @@ export class GameServer {
         return;
       }
       const row = (Array.isArray(data) ? data[0] : data) as
-        | { table_leases_deleted?: number; tournament_leases_deleted?: number }
-        | undefined;
+        { table_leases_deleted?: number; tournament_leases_deleted?: number } | undefined;
       const tables = row?.table_leases_deleted ?? 0;
       const tourneys = row?.tournament_leases_deleted ?? 0;
       if (tables > 0 || tourneys > 0) {

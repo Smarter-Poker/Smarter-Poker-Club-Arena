@@ -626,8 +626,7 @@ async function relinkRakeRecord(row: HandHistoryRow, handId: string): Promise<nu
  * dead tables alive and fire into torn-down state.
  */
 let recoveredHandler:
-  | ((info: { tableId: string; handNumber: number; handId: string }) => void)
-  | null = null;
+  ((info: { tableId: string; handNumber: number; handId: string }) => void) | null = null;
 
 export function onHandHistoryRecovered(
   fn: ((info: { tableId: string; handNumber: number; handId: string }) => void) | null

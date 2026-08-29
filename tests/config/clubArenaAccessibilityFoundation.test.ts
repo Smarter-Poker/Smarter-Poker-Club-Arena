@@ -1,0 +1,88 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
+
+describe('Club Arena accessibility foundation', () => {
+  it('removes the closed command menu from the focus tree and restores its opener', () => {
+    const source = read('src/components/navigation/HamburgerMenu.tsx');
+
+    expect(source).toContain('if (!isOpen) return null');
+    expect(source).toContain('previousFocusRef.current.focus()');
+    expect(source).toContain("event.key === 'Escape'");
+    expect(source).toContain("event.key !== 'Tab'");
+    expect(source).toContain('role="dialog"');
+    expect(source).toContain('aria-modal="true"');
+  });
+
+  it('gives switches, disclosures, and card choices semantic keyboard controls', () => {
+    const source = read('src/components/navigation/HamburgerMenu.tsx');
+    const tableSettingsSource = read('src/components/table/TableSettingsPanel.tsx');
+
+    expect(source).toContain('aria-label="Sounds"');
+    expect(source).toContain('aria-label="Vibrations"');
+    expect(source).toContain('role="switch"');
+    expect(source).toContain('aria-expanded={showTableSettings}');
+    expect(source).toContain('aria-controls={tableSettingsId}');
+    expect(source).toContain('aria-pressed={isSelected}');
+    expect(tableSettingsSource).toContain('role="switch"');
+    expect(tableSettingsSource).toContain('aria-labelledby={labelId}');
+    expect(tableSettingsSource).toContain('<button type="button" className="tsp-theme-link"');
+  });
+
+  it('provides skip navigation and moves focus to routed page content', () => {
+    const appSource = read('src/App.tsx');
+    const source = read('src/components/layouts/AppLayout.tsx');
+    const mainSource = read('src/main.tsx');
+    const engineStyles = read('src/styles/club-engine.css');
+
+    expect(appSource).toContain('href="#main-content"');
+    expect(source).toContain('ref={mainRef}');
+    expect(source).toContain('tabIndex={-1}');
+    expect(source).toContain('mainRef.current?.focus({ preventScroll: true })');
+    expect(mainSource).toContain("import './styles/club-engine.css'");
+    expect(engineStyles).toContain('.skip-link {');
+    expect(engineStyles).toContain('transform: translateY(calc(-100% - 16px))');
+    expect(engineStyles).toContain('.skip-link:focus-visible');
+  });
+
+  it('uses live-region semantics for loading and recovery states', () => {
+    const source = read('src/components/common/EmptyState.tsx');
+
+    expect(source).toContain('role={liveRole}');
+    expect(source).toContain("aria-live={tone === 'error' ? 'assertive' : 'polite'}");
+    expect(source).toContain('role="status"');
+    expect(source).toContain('PermissionState');
+  });
+
+  it('keeps the fixed club rail semantic, permission-aware, and canonically routed', () => {
+    const source = read('src/components/club/ClubBottomNav.tsx');
+
+    expect(source).toContain('getClubNavigationCapabilities');
+    expect(source).toContain("masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED'");
+    expect(source).toContain("label: 'Settings'");
+    expect(source).toContain('club ? `/clubs/${club}/data` : null');
+    expect(source).toContain('aria-label="Club Sections"');
+  });
+
+  it('uses a keyboard-native union card and explicit union loading/error states', () => {
+    const source = read('src/pages/UnionsPage.tsx');
+
+    expect(source).not.toContain('onClick={() => navigate(`/unions/${union.id}`)}');
+    expect(source).toContain('aria-label={`Open ${union.name} union`}');
+    expect(source).toContain('role="progressbar"');
+    expect(source).toContain('<LoadingState message="Opening Union Networks" />');
+    expect(source).toContain('<ErrorState message={loadError} onRetry={loadUnions} />');
+  });
+
+  it('exposes contextual route families as a labelled current-page navigation rail', () => {
+    const source = read('src/components/navigation/ArenaSectionRail.tsx');
+    const layoutSource = read('src/components/layouts/AppLayout.tsx');
+
+    expect(source).toContain('aria-label={`${section.label} sections`}');
+    expect(source).toContain("aria-current={isActive ? 'page' : undefined}");
+    expect(source).toContain('<ul className={styles.items}>');
+    expect(layoutSource).toContain('{showGlobalHeader && <ArenaSectionRail />}');
+  });
+});

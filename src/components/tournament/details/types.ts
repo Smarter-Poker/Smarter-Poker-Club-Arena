@@ -37,14 +37,7 @@ import { computePlacePrize } from '../../../lib/payoutMath';
  * Rewards. See RewardsTab.
  */
 export type TabId =
-  | 'detail'
-  | 'blinds'
-  | 'ranking'
-  | 'entries'
-  | 'unions'
-  | 'tables'
-  | 'rewards'
-  | 'satellites';
+  'detail' | 'blinds' | 'ranking' | 'entries' | 'unions' | 'tables' | 'rewards' | 'satellites';
 
 export const TAB_IDS: readonly TabId[] = [
   'detail',

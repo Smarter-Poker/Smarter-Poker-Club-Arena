@@ -767,8 +767,7 @@ export abstract class ServerTableEngineBase {
   }> = [];
   // Hand complete callback for tournament chip sync
   protected handCompleteCallback:
-    | ((tableId: string, players: { user_id: string; stack: number }[]) => void)
-    | null = null;
+    ((tableId: string, players: { user_id: string; stack: number }[]) => void) | null = null;
   // Hand-for-hand pause: set by tournament manager, checked between hands
   protected handForHandPaused: boolean = false;
   /** Wall-clock when the current by-design pause began; 0 when not paused. */

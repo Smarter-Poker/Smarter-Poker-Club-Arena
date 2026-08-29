@@ -242,8 +242,7 @@
 .lt-row.is-mine {
   box-shadow: inset 3px 0 0 #2ed573;
 }
-2,
-0) {
+.lt-row.is-mine:focus-within {
   background: rgba(65, 105, 225, 0.07);
 }
 .lt-row.is-mine.is-selected {

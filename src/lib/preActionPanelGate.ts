@@ -26,8 +26,36 @@ export type ArmedPreAction = 'fold' | 'check' | 'call' | 'callAny' | null;
  * down, clear lost, a refusal the client could not predict — the panel
  * appears and the player acts manually. Suppression can only ever cost the
  * flash gap; it must never cost the player their turn.
+ *
+ * ── THE TIMING CONTRACT WITH THE ENGINE (2026-08-29 hardening) ─────────────
+ *
+ * This number is NOT free. The engine deliberately holds a pre-action for a
+ * visible beat before landing it (`preActionVisibleMs` in
+ * server/src/engine/ServerTableEngineTurns.ts — Dan 2026-08-20: "a
+ * pre-action is still an ACTION and must be seen", so a street of armed
+ * seats does not resolve in one tick). The grace here must therefore cover
+ * that whole beat PLUS a realistic broadcast round trip, or the panel would
+ * flash up mid-beat on every pre-action — the exact bug this module fixes.
+ * The relationship is pinned by tests/unit/preActionPanelGate.test.ts, which
+ * reads BOTH files: raise the engine's beat and that test forces this grace
+ * up with it, in the same commit.
+ *
+ * Why the engine does not simply TELL the hero's client "I will act": the
+ * only live channel is the table-wide broadcast, and announcing an armed
+ * pre-action there before it lands would hand every villain a tell the
+ * visible beat exists to mask. The client instead mirrors the engine's own
+ * honorability rule (same inputs, snapshotted at the same arm moment), so
+ * the deterministic refusal cases — a bet under an armed Check, a raise past
+ * an armed Call's price — never suppress at all, and this grace only ever
+ * covers the engine's beat plus the wire.
  */
 export const PRE_ACTION_EXEC_GRACE_MS = 2500;
+
+/**
+ * The margin the grace must keep over the engine's visible beat, covering a
+ * slow broadcast round trip on a phone. Pinned with the contract test.
+ */
+export const PRE_ACTION_GRACE_RTT_MARGIN_MS = 1000;
 
 /**
  * Can the engine honor this armed pre-action at the current price?

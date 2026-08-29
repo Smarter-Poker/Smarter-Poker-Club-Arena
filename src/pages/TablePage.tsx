@@ -135,6 +135,7 @@ import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
 import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
 import { isPreActionHonorable, PRE_ACTION_EXEC_GRACE_MS } from '../lib/preActionPanelGate';
+import { seatTapTarget } from '../lib/heroSeatTap';
 
 import { gameCode } from '../utils/gameCode';
 import { masterBus } from '../core/MasterBus';
@@ -15669,6 +15670,33 @@ export default function TablePage({
   const suppressPanelForPreAction = awaitingPreActionExec && !preActionOverdue;
 
   /**
+   * ═══ THE DISARM THAT CANNOT UNMOUNT (2026-08-29 hardening pass) ═══════════
+   *
+   * PreActionBar clears an armed pre-action the moment it stops being
+   * honorable (a raise past the armed Call price, a bet arriving under an
+   * armed Check) — but PreActionBar only RENDERS while it is NOT the hero's
+   * turn, so its clearing effects die at the exact boundary where they matter
+   * most: the snapshot that both hands the hero the turn AND carries the
+   * raise. In that window the bar has unmounted, nothing cleared the arm,
+   * and the stale arm sat there for the engine to refuse.
+   *
+   * So the disarm ALSO lives here, on the page, which never unmounts during
+   * a hand. Same rule (isPreActionHonorable — one rule, both halves), same
+   * path out (setPreAction(null) → the server-clear effect above tells the
+   * engine). Clearing twice is idempotent, so PreActionBar keeping its own
+   * copy for the pre-turn window costs nothing.
+   */
+  useEffect(() => {
+    if (preAction === null) return;
+    if (!isPreActionHonorable(preAction, preActionCallDue, preActionCallAmountRef.current)) {
+      setPreAction(null);
+    }
+    // preActionCallDue is derived from tableState fields each render; the
+    // values below are exactly what it is built from.
+     
+  }, [preAction, preActionCallDue]);
+
+  /**
    * ═══ ONE SLOT, ONE CONTROL (2026-08-27) ═══
    *
    * The bottom-left HUD corner holds the previous-hand card and ONE other
@@ -18981,19 +19009,17 @@ export default function TablePage({
                     tableState.heroSeat === seatNumber || pendingSeat === seatNumber
                   }
                   onAvatarClick={() => {
-                    /* Dan 2026-08-29: the check MUST read displayPlayer, not
-                       player. The seat renders displayPlayer, which synthesizes
-                       a hero placeholder while the hero is pending / waiting to
-                       be dealt in (see above) — in that window `player` is null,
-                       so checking `player?.isHero` sent the hero's own click
-                       down the villain branch and opened the throwable-only
-                       selector instead of the full tabbed Hero Hub. The
-                       id === userId check is the backstop for the other known
-                       failure of the same shape: a snapshot rebuild that drops
-                       the isHero stamp (see the isHero recovery effect above).
-                       Your own avatar opens YOUR hub, always, on every page
-                       and every variant. */
-                    if (displayPlayer?.isHero || (userId && displayPlayer?.id === userId)) {
+                    /* Dan 2026-08-29: the hero/villain decision is the pure
+                       rule in src/lib/heroSeatTap.ts, pinned by
+                       tests/hero-avatar-opens-hero-hub.law.test.ts. It MUST
+                       read displayPlayer, not the raw snapshot player — the
+                       seat renders displayPlayer, whose synthesized
+                       placeholder window is exactly where reading the raw
+                       player's isHero flag used to send the hero's own tap
+                       down the villain branch (throwable-only selector, no
+                       Stats/Profile/Table tabs). Your own avatar opens YOUR
+                       hub, always, on every page and variant. */
+                    if (seatTapTarget(displayPlayer, userId) === 'hero-hub') {
                       /* Dan 2026-08-28: the hero's avatar opens the tabbed
                          HERO HUB — Throwables / Stats / Profile / Table
                          Settings. (It used to open the read-only profile

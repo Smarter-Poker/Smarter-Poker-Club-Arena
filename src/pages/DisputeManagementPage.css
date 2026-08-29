@@ -10,13 +10,6 @@
   color: #edf5fb;
   font-family: 'Roboto Condensed', system-ui, sans-serif;
 }
-.dispute-management-page::before {
-  content: '';
-  position: fixed;
-  z-index: -1;
-  inset: 0;
-  background: #05070a;
-}
 .dispute-header {
   display: flex;
   align-items: flex-end;

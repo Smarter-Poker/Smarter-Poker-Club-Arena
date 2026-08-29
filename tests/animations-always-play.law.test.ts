@@ -130,6 +130,113 @@ describe('LAW: no animation may be skipped by state plumbing', () => {
     expect(TABLE_PAGE).toContain('lastSeatOfUserRef');
   });
 
+  it('the busted seat FLINCHES, on this table, on the impact beat', () => {
+    // Dan 2026-08-29: the first cut of the seat knockout did nothing at all to
+    // the seat, so a punch landed on a photograph. The mechanism is the one
+    // ThrowAnimation has used since 2026-08-15 and it carries that component's
+    // hard-won lesson: a bare document.querySelector('[data-seat-num="3"]')
+    // hits the FIRST seat 3 in DOM order, which in a multi-table view is
+    // somebody else's table.
+    expect(KO).toContain("rootRef.current?.closest('.table-page')");
+    expect(KO, 'data-seat-num is 1-based; hit.seatIndex is 0-based').toContain(
+      'data-seat-num="${hit.seatIndex + 1}"'
+    );
+    expect(KO).toContain("classList.add('seat--ko-flinch')");
+    // Its own class and its own keyframe. The throwable flinch is 450ms and is
+    // pinned at 600 * getAnimationSpeed() two describes down; neither may
+    // retune the other.
+    expect(KO_CSS).toContain('skoSeatFlinch calc(0.2s * var(--animation-speed, 1))');
+    // INDIVIDUAL `translate` / `rotate`, never `transform`. `.seat` states
+    // carry their own `transform: scale(...)` (hero, active, winner) and a
+    // transform keyframe stomps that scale for the whole flinch — three times
+    // per knockout, on the seat everyone is looking at. throwable-seat-flinch
+    // learned this first and says so in ThrowAnimation.css.
+    const flinch = KO_CSS.slice(
+      KO_CSS.indexOf('@keyframes skoSeatFlinch'),
+      KO_CSS.indexOf('}', KO_CSS.indexOf('100% {', KO_CSS.indexOf('@keyframes skoSeatFlinch')))
+    );
+    expect(flinch).toContain('translate:');
+    expect(flinch, 'a transform keyframe would stomp the seat scale').not.toContain('transform:');
+    // Once per LANDING, not once per knockout.
+    expect(KO).toContain('for (const at of SKO_PUNCH_AT_MS)');
+    expect(KO, 'and it must not borrow the throwable one').not.toContain(
+      "classList.add('seat--throw-flinch')"
+    );
+    // A class added by a timer must be removed by one, or it is stranded on a
+    // seat that outlives the animation that added it.
+    expect(KO).toContain("classList.remove('seat--ko-flinch')");
+  });
+
+  it('the KO stamp does not depend on a font the device may not have', () => {
+    // 'Arial Black' is not installed on Android. The one element in this
+    // animation that carries INFORMATION rather than drama was falling back to
+    // something much lighter for a large share of the userbase — a correctness
+    // bug wearing a taste bug's clothes. Two hand-authored glyph paths render
+    // identically everywhere, need no font load and cannot FOUT.
+    expect(KO_CSS, 'the stamp must not name a font').not.toMatch(
+      /\.sko__stamp\s*\{[^}]*font-family/
+    );
+    expect(KO).toContain('function StampArt');
+    // #FC0000 is the measured red off the capture; #ff1f1f (the first cut) is
+    // visibly pinker.
+    expect(KO).toContain('#fc0000');
+  });
+
+  it("the gloves are Dan's art, and they are warm in the cache before the first bust", () => {
+    // Dan 2026-08-29 supplied two branded renders. The FIRST cut of this
+    // component drew the glove as vector precisely because "a lazily-fetched
+    // PNG cannot promise the FIRST knockout of a session animates" — a real
+    // constraint, and the answer is a preload at module scope rather than
+    // hand-drawing a boxing glove. TablePage imports this module, so both
+    // decodes start when a table opens.
+    expect(KO).toContain("mediaUrl('images/knockout/glove-left.webp')");
+    expect(KO).toContain("mediaUrl('images/knockout/glove-right.webp')");
+    expect(KO, 'preloaded, or the first knockout of a session pops').toContain('new Image()');
+    expect(KO).toContain('img.decoding');
+    // The fist, not the image centre, lands on the seat. If these margins ever
+    // go symmetric the punches land beside the player.
+    expect(KO_CSS).toContain('--sko-fist-x: 29.2%');
+    expect(KO_CSS).toContain('--sko-fist-x: 65.8%');
+  });
+
+  it('the boxing-glove THROWABLE is the same flurry, minus the knockout', () => {
+    // Dan 2026-08-29: "THIS ANIMATION SHOULD ALSO REPLACE THE BOXING GLOVE
+    // ANIMATION INSIDE THE CLUB ARENA THROWABLE. SAME ANIMATION, SAME SOUND
+    // EFFECTS (MINUS THE K.O. AT THE END)."
+    //
+    // ONE implementation, two callers. A second copy of the flurry would drift
+    // from this one the first time either is tuned, and every fix would have
+    // to be made twice.
+    const THROW = read('src/components/table/ThrowAnimation.tsx');
+    expect(THROW).toContain("import { KnockoutFlurry } from './SeatKnockout'");
+    expect(THROW).toContain("event.throwable.id === 'boxing_glove'");
+    // MINUS the knockout: no stamp on a seat that is still occupied, no called
+    // "K.O." for a player who has not been eliminated, and no caption or
+    // spoken line saying one has.
+    expect(THROW).toContain('showStamp={false}');
+    expect(THROW).toContain('withCall: false');
+    expect(THROW, 'the K.O. caption is gone').not.toMatch(/boxing_glove: 'K\.O\.'/);
+    expect(read('src/services/ThrowableVoice.ts'), 'and the spoken line').not.toMatch(
+      /boxing_glove: \{ text:/
+    );
+    // It still scales with the player's Animation Speed, like everything else.
+    expect(THROW).toContain('speed: getAnimationSpeed()');
+    // The flurry sizes off the THROWABLE's own impact size, not the seat token
+    // it cannot see from outside the seat ring.
+    expect(THROW).toContain("'--sko-unit': `${Math.round(impactSize * 1.15)}px`");
+  });
+
+  it('every SVG gradient id is instance-scoped — a multi-table view mounts several', () => {
+    // <defs> ids are global to the DOCUMENT. The FIRST cut of this component
+    // dodged that by having no gradients at all, which is precisely why Dan
+    // called the art what he called it. useId() is what makes gradients safe
+    // here, and this stops the next agent "simplifying" it back out.
+    expect(KO).toContain('useId');
+    expect(KO, 'ids are built from the instance id, never written literally').toMatch(
+      /const g = \(n: string\) => `sko-\$\{n\}-\$\{uid\}`/
+    );
+  });
+
   it('the bounty ships on the same beat as the stamp, summed once per winner', () => {
     // Busting two players pays two bounties and the reference shows ONE
     // number. Two floats stacked on one seat is the bug this prevents; the
@@ -193,10 +300,25 @@ describe('LAW: animations land where they aim, at the speed the player chose', (
     // The knockout is the newest pair and the easiest to break: the glove, the
     // star and the stamp are three CSS animations whose delays have to stay in
     // step with SKO_IMPACT_AT_MS / SKO_STAMP_AT_MS on the JS side.
-    expect(KO_CSS).toContain('skoGloveStrike calc(0.93s * var(--animation-speed, 1))');
+    // Moved 2026-08-29 with the mechanisms, twice and in the same commits as
+    // the changes: the burst was twelve `.sko__ray` divs and is now one
+    // irregular path, and the single `skoGloveStrike` became a TWO-GLOVE
+    // flurry after Dan supplied branded art and a capture of one.
+    expect(KO_CSS).toContain('skoPunchRight calc(0.93s * var(--animation-speed, 1))');
+    expect(KO_CSS).toContain('skoPunchLeft calc(0.93s * var(--animation-speed, 1))');
+    expect(KO_CSS).toContain('skoFlurryHit calc(0.93s * var(--animation-speed, 1))');
+    expect(KO_CSS).toContain('skoStarBurst calc(0.24s * var(--animation-speed, 1))');
+    expect(KO_CSS, 'the ray divs are retired').not.toContain('skoRay ');
+    expect(KO_CSS, 'and the single-glove strike with them').not.toContain('skoGloveStrike');
     expect(KO_CSS).toContain('calc(0.46s * var(--animation-speed, 1))'); // impact delay
     expect(KO_CSS).toContain('calc(0.93s * var(--animation-speed, 1))'); // stamp delay
-    expect(KO).toContain('SKO_IMPACT_AT_MS) * speed');
+    // The audio is no longer a setTimeout at the impact beat — it is ONE cue
+    // that carries the whole flurry and schedules it on the AudioContext
+    // clock. What still has to scale is the beat table it is handed, and the
+    // per-landing seat flinch.
+    expect(KO).toContain('SKO_PUNCH_AT_MS');
+    expect(KO).toContain('at * speed');
+    expect(KO).toMatch(/punchesAtMs: reduced \? \[0\] : SKO_PUNCH_AT_MS/);
   });
 
   it('throw flinch and shake are scoped to their own table', () => {
@@ -232,6 +354,12 @@ describe('LAW: reduced motion removes motion, never meaning', () => {
     const reduced = KO_CSS.slice(KO_CSS.indexOf('prefers-reduced-motion'));
     expect(reduced).toMatch(/\.sko__glove[\s\S]*animation:\s*none/);
     expect(reduced).toContain('skoStampReduced');
+    // The seat jolt is motion with no information in it, so it is DROPPED
+    // rather than collapsed: a 1ms shake is one displaced frame, which is
+    // worse than none at all.
+    expect(reduced).toContain('.seat--ko-flinch');
+    expect(reduced, 'the gloves go too').toContain('.sko__glove');
+    expect(reduced, 'and the flurry bursts with them').toContain('.sko__hit');
   });
 });
 

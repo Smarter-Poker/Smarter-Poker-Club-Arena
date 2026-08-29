@@ -1838,68 +1838,189 @@ class SoundService {
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
-   *  THE KNOCKOUT, IN TWO CUES (2026-08-28)
+   *  THE KNOCKOUT — a two-glove FLURRY, in ONE cue (2026-08-29)
    * ═══════════════════════════════════════════════════════════════════════
    *
-   * Dan's PokerBros capture has TWO separate bursts of audio per knockout,
-   * not one: a wind-up from the frame the glove appears (t0..+250ms) and the
-   * hit itself (+460ms..+1000ms). Firing a single cue on impact leaves the
-   * 460ms the glove spends travelling completely silent, and the swing is
-   * what makes the hit land — the ear is told something is coming before the
-   * eye has finished reading it.
+   * Replaces playKnockoutSwing / playKnockoutImpact, which were built for a
+   * single glove that crept in and struck once. Dan supplied a second capture
+   * showing two gloves alternating, so the visual is a flurry now and the
+   * audio has to be one.
    *
-   * These pair with SeatKnockout.tsx: SKO_IMPACT_AT_MS schedules the second.
+   * EVERYTHING BELOW IS MEASURED, not guessed. I cannot hear Dan's capture,
+   * but the audio track can be analysed, and it was: onset detection plus a
+   * short-time Fourier transform over KO KNOCKOUT.MOV gave
+   *
+   *   - SEVEN onsets between 2.87s and 3.77s — gaps of 64, 180, 215, 99 and
+   *     75ms. That is a flurry, and it is why the visual lands three punches
+   *     inside 280ms rather than one after a long creep.
+   *   - decays of 46-186ms per landing, so every hit is SHORT;
+   *   - two flavours of hit: a body thump whose strongest partials sit at 86,
+   *     129 and 172Hz, and a brighter crack peaking at 1.4kHz or 3.7kHz;
+   *   - band energy: 26% in 120-400Hz, 22% in 400Hz-1.2kHz, 35% in 1.2-4kHz
+   *     and only 8% above 4kHz. Leather and body, not cymbal.
+   *
+   * ONE CUE, SCHEDULED ON THE AUDIO CLOCK. Not four setTimeouts. A main thread
+   * busy re-laying-out a table that just lost a seat drifts a timer by tens of
+   * milliseconds, and the 50ms priority window then eats the late arrival
+   * outright — the same reasoning playDealSequence is built on.
+   *
+   * `speed` is the player's Animation Speed. Every offset multiplies by it, so
+   * the audio and the CSS stretch together; the retired overlay scaled only
+   * its JS half and drifted apart from its own visuals at 0.5x.
    */
-
-  /** The wind-up — air moving past a glove, before it connects. */
-  playKnockoutSwing() {
-    // 'showdown' rather than 'big_win': the swing must never win a frame
-    // against the hit it is announcing, and it is a lead-in, not a payoff.
-    if (!this.shouldPlay('showdown', 'event') || !this.ensureContext()) return;
-    const t = this.ctx!.currentTime;
-
-    // Band-limited noise, opening as it comes through — a whoosh is a filter
-    // sweep, and two short bursts read as one moving object.
-    this.createNoiseBurst(t, 0.16, 0.09, 900);
-    this.createNoiseBurst(t + 0.09, 0.14, 0.07, 1900);
-
-    // The body behind the air, dropping in pitch as it passes.
-    this.playTone(210.0, 0.22, 0.1, 'sine', 0.0);
-    this.playTone(140.0, 0.26, 0.08, 'sine', 0.12);
-  }
-
-  /**
-   * The hit, and the stamp that lands after it.
-   *
-   * The stamp's tick is scheduled HERE, on the AudioContext clock, rather than
-   * as a third cue behind a setTimeout. Same reasoning as playDealSequence:
-   * a main thread busy laying out a table that just lost a seat will drift a
-   * timer by tens of milliseconds, and the 50ms priority window then eats the
-   * late arrival outright. The audio clock does not drift and does not care
-   * what React is doing.
-   *
-   * @param isHero true when the viewer threw the punch — louder, not different.
-   */
-  playKnockoutImpact(isHero = false) {
+  playKnockoutFlurry(
+    opts: {
+      isHero?: boolean;
+      /** The player's animation-speed multiplier (a DURATION multiplier). */
+      speed?: number;
+      /** When each glove lands, ms from t0. The last one is the finisher. */
+      punchesAtMs?: readonly number[];
+      /** When the KO stamp slams on, ms from t0. */
+      stampAtMs?: number;
+      /**
+       * The called "K.O." and the stamp's tick. TRUE for a real knockout;
+       * FALSE for the `boxing_glove` throwable, which is the same punches
+       * thrown at somebody who has not been eliminated — Dan 2026-08-29:
+       * "SAME ANIMATION, SAME SOUND EFFECTS (MINUS THE K.O. AT THE END)".
+       * Calling a knockout that did not happen would be worse than silence.
+       */
+      withCall?: boolean;
+    } = {}
+  ) {
+    const {
+      isHero = false,
+      speed = 1,
+      punchesAtMs = [180, 320, 460],
+      stampAtMs = 930,
+      withCall = true,
+    } = opts;
     if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
-    const t = this.ctx!.currentTime;
+    const t0 = this.ctx!.currentTime;
+    // A speed of 0 would collapse the whole cue onto one instant and stack
+    // every oscillator on the same sample. Clamp rather than trust the caller.
+    const s = Math.min(4, Math.max(0.1, speed));
+    const punches = punchesAtMs.length ? punchesAtMs : [0];
 
-    // The crack: broadband and very short, over a body thump low enough to be
-    // felt on a phone speaker that cannot reproduce it.
-    this.createNoiseBurst(t, 0.09, isHero ? 0.34 : 0.26, 3600);
-    this.playTone(70.0, 0.34, isHero ? 0.36 : 0.28, 'sine', 0.0);
-    this.playTone(112.0, 0.2, 0.2, 'triangle', 0.01);
+    // THE WIND-UP — air moving past the first glove before it connects. A
+    // whoosh is a filter sweep, and the first landing is only ~180ms away, so
+    // this is short and it opens rather than closes.
+    const lead = Math.max(0.05, (punches[0] ?? 180) / 1000) * s;
+    this.createSweptNoiseBurst(t0, lead * 0.95, 0.07, 800, 2600, 0.9);
 
-    // The KO stamp slamming on, 470ms later — the same offset as the
-    // skoStampLife delay in SeatKnockout.css. Keep the two together.
-    this.playTone(880.0, 0.14, 0.22, 'square', 0.47);
-    this.playTone(440.0, 0.2, 0.16, 'triangle', 0.48);
+    punches.forEach((ms, i) => {
+      const at = t0 + (ms / 1000) * s;
+      const last = i === punches.length - 1;
+      // The two jabs sit UNDER the finish. Three hits at equal weight is a
+      // drum roll; two and a full stop is a combination.
+      const g = last ? (isHero ? 1 : 0.85) : 0.5;
+
+      // BODY — 86Hz and 129Hz were the strongest partials under every landing
+      // in the capture, and they are low enough to be FELT on a phone speaker
+      // that cannot actually reproduce them.
+      this.scheduleTone(at, 86, 0.13 * s, 0.34 * g, 'sine');
+      this.scheduleTone(at, 129, 0.1 * s, 0.2 * g, 'sine');
+      // LEATHER — the crack. Measured decays ran 46-186ms; the jabs are at the
+      // short end of that and the finish at the long end.
+      this.createNoiseBurst(at, (last ? 0.12 : 0.055) * s, 0.24 * g, last ? 2600 : 1500);
+      if (last) {
+        // Only the two-fisted finish gets the bright 3.7kHz snap — in the
+        // capture the brightest onsets are the ones that end a flurry.
+        this.createSweptNoiseBurst(at, 0.07 * s, 0.2 * g, 3800, 1500, 1.2);
+      }
+    });
+
+    // THE CALL. In the capture a human voice says "K.O." and it lands ON THE
+    // IMPACT, not on the stamp: the voiced segment runs t0+420ms to t0+650ms
+    // (and identically, to the millisecond, on the hero knockout 47 seconds
+    // later — it is one recorded asset played twice).
+    if (withCall) {
+      const impactMs = punches[punches.length - 1] ?? 460;
+      this.scheduleKnockoutCall(t0 + ((impactMs - 40) / 1000) * s, 0.3 * s, isHero ? 0.3 : 0.24);
+
+      // THE STAMP slamming on. Same clock, so it cannot drift away from the
+      // skoStampLife delay in SeatKnockout.css. It goes with the call: a
+      // throwable has no stamp, so a tick for one would be a sound with
+      // nothing on screen making it.
+      const stampAt = t0 + (stampAtMs / 1000) * s;
+      this.scheduleTone(stampAt, 880, 0.14 * s, 0.22, 'square');
+      this.scheduleTone(stampAt + 0.01, 440, 0.2 * s, 0.16, 'triangle');
+    }
 
     if (isHero) {
       haptic.strong();
     } else {
       haptic.medium();
     }
+  }
+
+  /**
+   * A synthesised "K.O." call.
+   *
+   * HONEST LABEL: this is NOT a human voice and it is not pretending to be
+   * one. It is a source-and-formant approximation of the one in Dan's
+   * capture, built from measurements of it:
+   *
+   *   F0 falls 342Hz -> 157Hz across ~300ms (about 1.1 octaves — that FALL is
+   *   the shape the ear reads as a called knockout); periodicity 0.75-0.82,
+   *   so strongly voiced and close-mic'd; spectral centroid 1.7-2.0kHz, so
+   *   warm with no sibilance; first formant ~640Hz drifting to ~215Hz and
+   *   second ~1000Hz drifting to ~640Hz, which is the vowel moving from the
+   *   "ay" of K to the "oh" of O.
+   *
+   * WHY IT IS SYNTHESISED RATHER THAN SAMPLED. The recording in the capture
+   * is PokerBros' audio asset. Lifting it into this product would be copying
+   * someone else's sound recording, so it is not on the table however good it
+   * sounds. Replace this with a REAL voice by recording one to the numbers
+   * above — 300ms, falling, close-mic'd, no reverb — dropping it in as
+   * `public/images/knockout/ko-call.webm` and pointing KO_VOICE_URL at it.
+   * The synth stays as the fallback for browsers that cannot decode it.
+   */
+  private scheduleKnockoutCall(at: number, duration: number, volume: number) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const end = at + duration;
+
+    // The plosive: the hard "K". Very short, quite bright, and it is what
+    // stops the call sounding like a slide whistle.
+    this.createNoiseBurst(at, 0.035, volume * 0.5, 3200);
+
+    // A voiced source — sawtooth for harmonic richness — gliding down.
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(342, at);
+    osc.frequency.exponentialRampToValueAtTime(157, end);
+
+    // Two bandpass "formants" in parallel. One filter is a buzz; two is a
+    // vowel, and moving them is what turns "K" into "O".
+    const mk = (f0: number, f1: number, q: number, gain: number) => {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.Q.value = q;
+      bp.frequency.setValueAtTime(f0, at);
+      bp.frequency.exponentialRampToValueAtTime(f1, end);
+      const g = ctx.createGain();
+      g.gain.value = gain;
+      osc.connect(bp);
+      bp.connect(g);
+      return g;
+    };
+    const f1 = mk(640, 230, 6, 1);
+    const f2 = mk(1000, 650, 8, 0.7);
+
+    // The envelope: a fast attack, a held shout, then a tail. Measured rms
+    // climbs to peak inside 60ms and holds for ~150ms before falling away.
+    const amp = ctx.createGain();
+    amp.gain.setValueAtTime(0.0001, at);
+    amp.gain.exponentialRampToValueAtTime(volume, at + 0.055);
+    amp.gain.setValueAtTime(volume, at + duration * 0.55);
+    amp.gain.exponentialRampToValueAtTime(0.0001, end);
+
+    f1.connect(amp);
+    f2.connect(amp);
+    amp.connect(this.out);
+
+    osc.start(at);
+    osc.stop(end + 0.02);
   }
 
   /**

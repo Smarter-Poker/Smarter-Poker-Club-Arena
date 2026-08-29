@@ -371,12 +371,27 @@ describe('Item 7 - amounts default to actual totals, never BB', () => {
 
   it('the hamburger toggle writes the key the felt actually reads', () => {
     const src = code(read('src/components/navigation/HamburgerMenu.tsx'));
-    // The hamburger now calls the same ordered hook as the table panel. That
-    // hook owns the optimistic bus event, persistence ordering and rollback;
-    // a second direct upsert here would reintroduce the race this test guards.
-    expect(src).toMatch(/toggleTableSetting\('show_stack_in_bb'\)/);
-    expect(src).not.toMatch(/toggleTableSetting\('showStackInBB'\)/);
+    /* Dan 2026-08-25: "tournaments and cash games should always be defaulted to
+       actual totals unless the user changes the setting to BB." What this
+       guards is that the value the FELT reads is the value that gets written.
+
+       REAIMED 2026-08-29 (second pass). It used to pin
+       `toggleTableSetting('show_stack_in_bb')` inside `handleShowBBToggle` —
+       and that call was real, but the function had never had a caller, so the
+       assertion described a code path no player could reach. The hamburger's
+       BB switch is the one in the expandable TableSettingsPanel, which writes
+       through `useUserTableSettings` directly.
+
+       What must hold is now stated positively: the canonical column is the only
+       one this component touches, it never writes the legacy `profiles` mirror,
+       and it never opens a second direct upsert that would race the ordered
+       hook. The wrong-key bug (`showStackInBB`, which no store accepts) stays
+       pinned because that one is easy to reintroduce by autocomplete. */
+    expect(src).not.toMatch(/'showStackInBB'/);
+    expect(src).not.toMatch(/show_stack_bb/);
     expect(src).not.toMatch(/from\('user_table_settings'\)[\s\S]{0,200}\.upsert/);
+    // The canonical value still reaches the first-paint seed the felt reads.
+    expect(src).toMatch(/STORAGE_KEYS\.SHOW_STACK_BB, String\(tableSettings\.show_stack_in_bb\)/);
   });
 });
 

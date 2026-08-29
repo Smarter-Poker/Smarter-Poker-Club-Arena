@@ -1215,6 +1215,7 @@
     "find_srid",
     "flag_venue_review",
     "fn_accept_friend_request",
+    "fn_achievement_record_progress",
     "fn_action_player_report",
     "fn_actor_can_manage_club_treasury",
     "fn_ad_conversions",

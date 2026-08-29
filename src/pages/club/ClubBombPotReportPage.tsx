@@ -203,8 +203,8 @@ export default function ClubBombPotReportPage() {
         <p className={styles.empty}>{error}</p>
       ) : !rows || rows.length === 0 ? (
         <p className={styles.empty}>
-          No Bomb Pots Ran At This Club In The Last {days} Days. Turn Them On From A Table&apos;s
-          Settings To Start.
+          No Bomb Pots Ran At This Club In The Last {days} Days. Turn Them On From A Table Settings
+          Page To Start.
         </p>
       ) : (
         <>

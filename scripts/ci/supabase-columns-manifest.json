@@ -6555,7 +6555,9 @@
       "attempts",
       "last_attempt_at",
       "last_error",
-      "resolved_at"
+      "resolved_at",
+      "rake_method",
+      "returned_uncalled"
     ],
     "personas": [
       "id",
@@ -7600,7 +7602,17 @@
       "player_id",
       "rake_amount",
       "agent_id",
-      "created_at"
+      "created_at",
+      "rake_record_id",
+      "table_id",
+      "club_id",
+      "gross_contribution",
+      "returned_uncalled",
+      "eligible_contribution",
+      "contribution_weight",
+      "weighted_rake_credit",
+      "bbj_attributed_contribution",
+      "rake_method"
     ],
     "rake_distribution_legs": [
       "leg_key",
@@ -7647,7 +7659,9 @@
       "is_tournament",
       "tournament_id",
       "source",
-      "metadata"
+      "metadata",
+      "rake_method",
+      "returned_uncalled"
     ],
     "rakeback_distributions": [
       "id",

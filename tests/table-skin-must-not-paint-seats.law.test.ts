@@ -45,7 +45,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import zlib from 'zlib';
+import { decodePng, type DecodedPng } from './helpers/png';
 
 /** x,y as percentages of the skin frame — SEAT_POSITIONS_9MAX, side rails. */
 const LEFT_RAIL_X = 8;
@@ -74,103 +74,8 @@ const SKIN_DIR = path.join(process.cwd(), 'src/assets/tables');
 
 const FINAL_TABLE = 'skin_final_table.png';
 
-// ── A PNG reader, because a test may not add a dependency for this ──────────
-//
-// All fourteen skins are 8-bit RGBA, non-interlaced, which is the only shape
-// this handles. Anything else throws rather than guessing — a skin that is not
-// in that format is itself worth knowing about.
-interface Decoded {
-  width: number;
-  height: number;
-  pixels: Buffer; // RGBA, width*height*4
-}
-
-function decodePng(buf: Buffer): Decoded {
-  if (buf.readUInt32BE(0) !== 0x89504e47) throw new Error('not a PNG');
-
-  let pos = 8;
-  let width = 0;
-  let height = 0;
-  let bitDepth = 0;
-  let colorType = 0;
-  let interlace = 0;
-  const idat: Buffer[] = [];
-
-  while (pos < buf.length) {
-    const len = buf.readUInt32BE(pos);
-    const type = buf.toString('ascii', pos + 4, pos + 8);
-    const data = buf.subarray(pos + 8, pos + 8 + len);
-    if (type === 'IHDR') {
-      width = data.readUInt32BE(0);
-      height = data.readUInt32BE(4);
-      bitDepth = data[8];
-      colorType = data[9];
-      interlace = data[12];
-    } else if (type === 'IDAT') {
-      idat.push(data);
-    } else if (type === 'IEND') {
-      break;
-    }
-    pos += 12 + len; // length + type + data + crc
-  }
-
-  if (bitDepth !== 8 || colorType !== 6 || interlace !== 0) {
-    throw new Error(
-      `unsupported PNG: depth ${bitDepth}, colorType ${colorType}, interlace ${interlace}`
-    );
-  }
-
-  const raw = zlib.inflateSync(Buffer.concat(idat));
-  const bpp = 4;
-  const stride = width * bpp;
-  const out = Buffer.alloc(height * stride);
-
-  // Un-filter, per PNG spec 9.2. `prev` is the already-reconstructed line above.
-  for (let y = 0; y < height; y++) {
-    const filter = raw[y * (stride + 1)];
-    const line = raw.subarray(y * (stride + 1) + 1, y * (stride + 1) + 1 + stride);
-    const cur = out.subarray(y * stride, (y + 1) * stride);
-    const prev = y > 0 ? out.subarray((y - 1) * stride, y * stride) : null;
-
-    for (let i = 0; i < stride; i++) {
-      const a = i >= bpp ? cur[i - bpp] : 0;
-      const b = prev ? prev[i] : 0;
-      const c = prev && i >= bpp ? prev[i - bpp] : 0;
-      const x = line[i];
-      let v: number;
-      switch (filter) {
-        case 0:
-          v = x;
-          break;
-        case 1:
-          v = x + a;
-          break;
-        case 2:
-          v = x + b;
-          break;
-        case 3:
-          v = x + ((a + b) >> 1);
-          break;
-        case 4: {
-          const p = a + b - c;
-          const pa = Math.abs(p - a);
-          const pb = Math.abs(p - b);
-          const pc = Math.abs(p - c);
-          v = x + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
-          break;
-        }
-        default:
-          throw new Error(`unknown PNG filter ${filter} on row ${y}`);
-      }
-      cur[i] = v & 0xff;
-    }
-  }
-
-  return { width, height, pixels: out };
-}
-
 /** Mean luminance of a PATCH_RADIUS square centred on a percentage position. */
-function patchLuminance(img: Decoded, xPct: number, yPct: number): number {
+function patchLuminance(img: DecodedPng, xPct: number, yPct: number): number {
   const cx = Math.round((xPct / 100) * img.width);
   const cy = Math.round((yPct / 100) * img.height);
   const x0 = Math.max(0, cx - PATCH_RADIUS);
@@ -199,7 +104,7 @@ interface RailReading {
   midpointDeviation: number;
 }
 
-function readRails(img: Decoded): RailReading {
+function readRails(img: DecodedPng): RailReading {
   let step = 0;
   let mid = 0;
   for (const x of [LEFT_RAIL_X, RIGHT_RAIL_X]) {

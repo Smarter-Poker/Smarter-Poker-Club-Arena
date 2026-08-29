@@ -132,7 +132,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0 16px max(16px, var(--bottom-nav-clearance, 86px)) 16px;
+  /* The root lobby is intentionally footerless. Reserving the global footer
+     here still removed a card row even after the footer itself was hidden. */
+  padding: 0 16px 16px;
   box-sizing: border-box;
   z-index: 10;
   position: relative;

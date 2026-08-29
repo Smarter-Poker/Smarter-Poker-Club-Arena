@@ -22,9 +22,9 @@
 .artwork {
   position: relative;
   width: calc(100% - 4px);
+  height: var(--bottom-nav-height, 44px);
   max-width: 1916px;
   margin: 0 auto;
-  aspect-ratio: 1916 / 256;
   background: #000;
 }
 

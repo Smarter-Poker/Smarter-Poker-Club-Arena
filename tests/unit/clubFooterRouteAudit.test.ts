@@ -16,7 +16,6 @@ describe('Club Arena global footer route audit', () => {
   });
 
   it.each([
-    '/',
     '/clubs/:clubId',
     '/clubs/:clubId/lobby',
     '/clubs/:clubId/tournaments',
@@ -37,6 +36,8 @@ describe('Club Arena global footer route audit', () => {
   });
 
   it.each([
+    '/',
+    '',
     '/auth',
     '/share/hand/:handId',
     '/replay',

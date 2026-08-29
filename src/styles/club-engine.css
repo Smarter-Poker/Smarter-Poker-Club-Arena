@@ -143,6 +143,12 @@
   --duration-slow: 500ms;
   --duration-slower: 800ms;
 
+  /* Runtime chrome dimensions. This is the entry stylesheet imported by
+     main.tsx, so shared layout components resolve these values in production. */
+  --bottom-nav-height: clamp(44px, 9vw, 108px);
+  --bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
+  --bottom-nav-stack-base: var(--bottom-nav-clearance);
+
   /* ─────────────── Z-Layers ─────────────── */
   --z-base: 0;
   --z-table: 10;

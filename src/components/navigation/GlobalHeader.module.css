@@ -7,6 +7,8 @@
  */
 
 .header {
+  --global-header-height: clamp(44px, 7.64vw, 84px);
+
   position: sticky;
   top: 0;
   z-index: 130;
@@ -23,10 +25,12 @@
 .desktopArtwork {
   display: block;
   width: calc(100% - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
-  height: auto;
+  height: var(--global-header-height);
   margin-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
   aspect-ratio: 1648 / 168;
-  object-fit: contain;
+  /* Fill the full-width header box while honoring the user-requested compact
+     height; contain would shrink the artwork sideways and leave dead gutters. */
+  object-fit: fill;
   object-position: center;
   user-select: none;
   pointer-events: none;
@@ -37,6 +41,7 @@
   top: env(safe-area-inset-top, 0px);
   right: env(safe-area-inset-right, 0px);
   left: env(safe-area-inset-left, 0px);
+  height: var(--global-header-height);
   aspect-ratio: 1648 / 168;
 }
 
@@ -51,11 +56,11 @@
 
 .artButton {
   position: absolute;
-  top: 13%;
+  top: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 74%;
+  height: 100%;
   margin: 0;
   padding: 0;
   overflow: visible;

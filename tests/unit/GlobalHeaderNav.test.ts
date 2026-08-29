@@ -76,6 +76,14 @@ describe('the bar stretches across the top', () => {
     expect(TSX).toContain('height={168}');
   });
 
+  it('caps the chrome height while keeping full-height click regions', () => {
+    expect(CSS).toContain('--global-header-height: clamp(44px, 7.64vw, 84px)');
+    expect(ruleBody(CSS, '.desktopArtwork')).toContain('height: var(--global-header-height)');
+    expect(ruleBody(CSS, '.desktopArtwork')).toContain('object-fit: fill');
+    expect(ruleBody(CSS, '.headerControls')).toContain('height: var(--global-header-height)');
+    expect(ruleBody(CSS, '.artButton')).toContain('height: 100%');
+  });
+
   it('is not capped by a max-width anywhere in the file', () => {
     // A max-width on .header would reinstate the floating pill by another route.
     expect(ruleBody(CSS, '.header')).not.toContain('max-width');

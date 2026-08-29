@@ -47,9 +47,7 @@ describe('the hamburger links a spin player to their own history', () => {
     // Navigation entries are centrally owned by clubArenaNavigation and the
     // hamburger renders that registry. Pin the owning module so an IA cleanup
     // cannot silently strand this route merely by moving the menu markup.
-    const start = NAVIGATION.indexOf("label: 'My Spin Results'");
-    expect(start).toBeGreaterThan(-1);
-    const entry = NAVIGATION.slice(start, start + 240);
+    const entry = sliceEnclosingBlock(NAVIGATION, "label: 'My Spin Results'");
     expect(entry).toContain('/tournament-results?filter=mine&type=spin');
   });
 

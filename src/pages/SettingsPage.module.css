@@ -75,11 +75,6 @@
   transition: all 0.2s ease;
 }
 
-.resetButton:hover {
-  border-color: #00d4ff;
-  color: #00d4ff;
-}
-
 /* ─────────────────────────────────────────────────────────────────────────────
    CONTENT LAYOUT
    ───────────────────────────────────────────────────────────────────────────── */
@@ -328,10 +323,6 @@
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
-.colorOption:hover {
-  border-color: #6a7a8a;
-}
-
 .colorOption.selected {
   border-color: #00d4ff;
   box-shadow:
@@ -357,11 +348,6 @@
   -webkit-backdrop-filter: blur(4px);
 }
 
-.actionButton:hover {
-  border-color: #00d4ff;
-  color: #00d4ff;
-}
-
 .actionButtonSecondary {
   padding: 0.6rem 1.25rem;
   background: transparent;
@@ -374,11 +360,6 @@
   transition: all 0.2s ease;
 }
 
-.actionButtonSecondary:hover {
-  border-color: #00d4ff;
-  color: #00d4ff;
-}
-
 .dangerButton {
   padding: 0.6rem 1.25rem;
   background: rgba(255, 107, 107, 0.1);
@@ -389,12 +370,6 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
-}
-
-.dangerButton:hover {
-  background: rgba(255, 107, 107, 0.2);
-  border-color: #ff6b6b;
-  box-shadow: 0 0 15px rgba(255, 107, 107, 0.3);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -615,19 +590,10 @@
   color: #c3cbd8;
 }
 
-.cancelBtn:hover {
-  color: #fff;
-  border-color: #4a5a6a;
-}
-
 .saveBtn {
   background: linear-gradient(145deg, #1877f2 0%, #0f5bc4 100%);
   border: 2px solid #4599ff;
   color: #fff;
-}
-
-.saveBtn:hover:not(:disabled) {
-  filter: brightness(1.15);
 }
 
 /* Disabled until the field is filled, so it must look unavailable rather

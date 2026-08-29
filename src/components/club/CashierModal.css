@@ -199,10 +199,6 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.cashier-presets button:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
 .cashier-submit-btn {
   width: 100%;
   padding: 14px;
@@ -225,16 +221,8 @@
   background: #238636;
 }
 
-.cashier-submit-btn.deposit:hover {
-  background: #2ea043;
-}
-
 .cashier-submit-btn.withdraw {
   background: #da3633;
-}
-
-.cashier-submit-btn.withdraw:hover {
-  background: #f85149;
 }
 
 .cashier-note {

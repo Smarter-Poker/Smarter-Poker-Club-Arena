@@ -33,11 +33,6 @@
   transition: all 0.2s ease;
 }
 
-.bsb-preset-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-}
-
 .bsb-preset-btn.active {
   background: rgba(59, 130, 246, 0.2);
   border-color: rgba(59, 130, 246, 0.5);
@@ -135,10 +130,6 @@
   transition: background 0.15s;
 }
 
-.bsb-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.02);
-}
-
 .bsb-row td {
   padding: 8px 12px;
   color: rgba(255, 255, 255, 0.85);
@@ -206,17 +197,6 @@
   transition: all 0.15s;
 }
 
-.bsb-btn-move:hover,
-.bsb-btn-break:hover {
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
-}
-
-.bsb-btn-remove:hover {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
-
 .bsb-btn-move:disabled {
   opacity: 0.3;
   cursor: not-allowed;
@@ -233,11 +213,6 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
-}
-
-.bsb-add-level:hover {
-  background: rgba(59, 130, 246, 0.2);
-  border-color: rgba(59, 130, 246, 0.5);
 }
 
 /* ── Column Widths ── */

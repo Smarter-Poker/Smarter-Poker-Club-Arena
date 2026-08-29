@@ -243,11 +243,6 @@
   transition: all 0.3s ease;
 }
 
-.break-screen__stat:hover {
-  border-color: rgba(255, 184, 0, 0.3);
-  background: linear-gradient(135deg, rgba(255, 184, 0, 0.08) 0%, rgba(0, 255, 255, 0.05) 100%);
-}
-
 .break-screen__stat-label {
   font-size: 0.7rem;
   color: #8b949e;
@@ -536,11 +531,6 @@
   cursor: pointer;
   transition: all 0.2s ease;
   min-height: 44px;
-}
-
-.break-screen__minimize-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.9);
 }
 
 .break-screen__minimized {

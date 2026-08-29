@@ -98,14 +98,11 @@
   border-radius: 8px;
 }
 
-.navItem:hover {
-  color: rgba(0, 200, 255, 0.9);
-  background: rgba(0, 180, 255, 0.1);
-}
-
-/* Keyboard focus has to be visible on its own. :hover alone left a
-   keyboard-only user with no idea which tab they were on, and the tab that
-   would have told them (the active one) is deliberately not rendered. */
+/* Keyboard focus is now the ONLY interaction state this bar draws: hover was
+   removed estate-wide on 2026-08-29. It already had to stand on its own -- a
+   keyboard-only user had no idea which tab they were on, and the tab that
+   would have told them (the active one) is deliberately not rendered -- so
+   nothing here changes except that it no longer has a sibling. */
 .navItem:focus-visible {
   outline: 2px solid #00d4ff;
   outline-offset: -2px;
@@ -118,16 +115,6 @@
   width: 24px;
   height: 24px;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-/* THE LIFT LIVES HERE, ON THE ICON. It used to be `.navItem:hover
-   { transform: translateY(-2px) }`, which never fired: useStaggerAnimation
-   returns `{opacity, transform, transition}` and it is applied as an INLINE
-   style on the link, and an inline transform beats any non-!important
-   stylesheet rule. The icon carries no inline style, so one transform here
-   does both jobs and the reduced-motion rule below can actually reach it. */
-.navItem:hover .icon {
-  filter: drop-shadow(0 0 4px rgba(0, 212, 255, 0.3));
 }
 
 /* Label styling */
@@ -176,10 +163,6 @@
   .navItem,
   .icon {
     transition: none;
-  }
-
-  .navItem:hover .icon {
-    transform: none;
   }
 }
 

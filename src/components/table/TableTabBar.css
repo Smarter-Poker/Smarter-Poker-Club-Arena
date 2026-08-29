@@ -132,12 +132,6 @@
   overflow: hidden;
 }
 
-.table-tab-bar__tab:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.8);
-}
-
 /* Active Tab — DARK blue (Dan 2026-08-26 mobile pass, item 1: "background
    should be dark blue, not the blue that it currently is"). The electric
    action-button gradient washed out the white mini cards; a deep navy keeps
@@ -150,12 +144,6 @@
     0 2px 8px rgba(13, 39, 73, 0.55),
     0 4px 0 #04101f,
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
-}
-
-.table-tab-bar__tab--active:hover {
-  background: linear-gradient(180deg, #1a4272 0%, #103058 45%, #0a2140 100%);
-  border-color: #3a6ca8;
-  color: #ffffff;
 }
 
 /* Turn Indicator Tab (action on you at another table) — spec §9.3 gold pulse-glow */
@@ -443,10 +431,6 @@
      ever goes non-square. The SVG fallback ignores object-fit harmlessly. */
   object-fit: contain;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
-}
-
-.table-tab-bar__add:hover .table-tab-bar__add-icon {
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55)) brightness(1.15);
 }
 
 .table-tab-bar__add:active {
@@ -1017,10 +1001,6 @@
   cursor: pointer;
 }
 
-.table-tab-bar__qmenu-item:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-}
-
 .table-tab-bar__qmenu-item:disabled {
   opacity: 0.35;
   cursor: default;
@@ -1028,10 +1008,6 @@
 
 .table-tab-bar__qmenu-item--danger {
   color: #f87171;
-}
-
-.table-tab-bar__qmenu-item--danger:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.12);
 }
 
 .table-tab-bar__qmenu-sep {

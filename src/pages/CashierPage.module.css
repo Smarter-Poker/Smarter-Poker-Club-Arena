@@ -55,11 +55,6 @@
   text-transform: capitalize;
 }
 
-.tab:hover {
-  color: #e4e6eb;
-  background: rgba(24, 119, 242, 0.06);
-}
-
 .tabActive {
   color: #fff;
   background: linear-gradient(180deg, rgba(24, 119, 242, 0.2) 0%, rgba(10, 93, 194, 0.1) 100%);
@@ -88,10 +83,6 @@
   font-weight: 600;
   text-decoration: none;
   transition: all 0.15s ease;
-}
-
-.quickLink:hover {
-  filter: brightness(1.2);
 }
 
 .quickLinkWarning {
@@ -258,12 +249,6 @@
   text-align: center;
 }
 
-.presetBtn:hover {
-  border-color: rgba(24, 119, 242, 0.4);
-  color: #1877f2;
-  background: rgba(24, 119, 242, 0.06);
-}
-
 /* ═══ Buttons ═══ */
 .btnPrimary {
   width: 100%;
@@ -279,10 +264,6 @@
   box-shadow: 0 2px 12px rgba(24, 119, 242, 0.25);
   text-transform: capitalize;
   letter-spacing: 0.5px;
-}
-
-.btnPrimary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #357ce6 0%, #1d4ed8 100%);
 }
 
 .btnPrimary:disabled {
@@ -304,12 +285,6 @@
   transition: all 0.2s ease;
 }
 
-.btnGhost:hover:not(:disabled) {
-  border-color: rgba(24, 119, 242, 0.4);
-  color: #1877f2;
-  background: rgba(24, 119, 242, 0.04);
-}
-
 .btnGhost:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -326,10 +301,6 @@
   cursor: pointer;
   width: 100%;
   transition: all 0.15s ease;
-}
-
-.btnSuccess:hover {
-  background: rgba(63, 208, 122, 0.18);
 }
 
 .btnRow {
@@ -564,11 +535,6 @@
   flex-shrink: 0;
 }
 
-.txFilterBtn:hover {
-  border-color: rgba(24, 119, 242, 0.3);
-  color: #b0b3b8;
-}
-
 .txFilterActive {
   border-color: rgba(24, 119, 242, 0.4);
   background: rgba(24, 119, 242, 0.1);
@@ -588,11 +554,6 @@
   text-transform: capitalize;
   letter-spacing: 0.5px;
   transition: all 0.15s ease;
-}
-
-.txExportBtn:hover {
-  background: rgba(49, 162, 76, 0.15);
-  border-color: rgba(49, 162, 76, 0.5);
 }
 
 .txLoading,
@@ -675,11 +636,6 @@
   to {
     opacity: 1;
   }
-}
-
-.txRow:hover {
-  background: rgba(24, 119, 242, 0.03);
-  border-left-color: rgba(24, 119, 242, 0.3);
 }
 
 .txIcon {
@@ -1057,11 +1013,6 @@
   transition: all 0.15s ease;
 }
 
-.btnSecondary:hover {
-  background: rgba(58, 59, 60, 0.6);
-  color: #e4e6eb;
-}
-
 .btnDanger {
   flex: 1;
   padding: 12px 16px;
@@ -1074,11 +1025,6 @@
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: 0 2px 12px rgba(239, 68, 68, 0.25);
-}
-
-.btnDanger:hover {
-  background: linear-gradient(135deg, #ef4444 0%, #c62828 100%);
-  box-shadow: 0 4px 20px rgba(239, 68, 68, 0.35);
 }
 
 /* ═══ Load More Button ═══ */
@@ -1095,11 +1041,6 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
-}
-
-.loadMoreBtn:hover {
-  background: rgba(24, 119, 242, 0.12);
-  border-color: rgba(24, 119, 242, 0.4);
 }
 
 /* ═══ Connection Status Banner ═══ */

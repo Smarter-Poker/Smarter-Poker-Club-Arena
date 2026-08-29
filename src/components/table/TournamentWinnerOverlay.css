@@ -176,9 +176,6 @@
     filter 0.16s ease;
 }
 
-.winnerDismissBtn:hover {
-  filter: brightness(1.05);
-}
 .winnerDismissBtn:active {
   transform: translateY(0);
 }

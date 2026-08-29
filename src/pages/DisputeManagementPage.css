@@ -94,9 +94,6 @@
   margin-bottom: 10px;
   transition: all 0.2s;
 }
-.dispute-card:hover {
-  border-color: rgba(255, 255, 255, 0.12);
-}
 .dispute-card.status-escalated {
   border-color: rgba(255, 59, 48, 0.2);
 }

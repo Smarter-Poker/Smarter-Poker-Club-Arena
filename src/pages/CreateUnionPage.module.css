@@ -73,10 +73,6 @@
   cursor: pointer;
 }
 
-.backButton:hover {
-  color: #fff;
-}
-
 .header h1 {
   flex: 1;
   font-size: 1.5rem;
@@ -497,11 +493,6 @@
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: var(--text-muted);
-}
-
-.backBtn:hover {
-  border-color: rgba(255, 255, 255, 0.4);
-  color: #fff;
 }
 
 .nextBtn,

@@ -86,11 +86,6 @@
   justify-content: center;
 }
 
-.jackpot-close:hover {
-  background: rgba(248, 81, 73, 0.2);
-  color: #f85149;
-}
-
 /* Content */
 .jackpot-content {
   flex: 1;
@@ -123,10 +118,6 @@
   font-size: 0.875rem;
   color: #e4e6eb;
   vertical-align: middle;
-}
-
-.jackpot-table tr:hover {
-  background: rgba(163, 113, 247, 0.05);
 }
 
 .col-date {
@@ -174,12 +165,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   font-size: 0.75rem;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.replay-btn:hover {
-  background: #1877f2;
-  border-color: #1877f2;
-  color: #fff;
 }
 
 .table-empty {

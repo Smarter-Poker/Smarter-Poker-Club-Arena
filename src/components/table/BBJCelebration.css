@@ -421,11 +421,6 @@
     border-color 0.2s ease;
 }
 
-.bbj-dismiss:hover {
-  background: rgba(24, 32, 48, 0.9);
-  border-color: rgba(213, 218, 226, 0.75);
-}
-
 .bbj-dismiss:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px rgba(213, 218, 226, 0.6);

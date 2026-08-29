@@ -70,10 +70,6 @@
   transition: background 0.2s;
 }
 
-.cancel-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
 .confirm-btn {
   flex: 1;
   padding: 14px;

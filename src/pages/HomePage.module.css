@@ -507,9 +507,6 @@
   pointer-events: none;
   z-index: 20;
 }
-.carouselCardFeatured:hover::after {
-  opacity: 1;
-}
 
 /* Keyboard focus indicator */
 .carouselCardFeatured:focus-visible {
@@ -867,16 +864,6 @@
 
 /* (noClubsMessage removed — replaced with auto-dismiss toast) */
 
-/* ── CTA Card Hover/Focus States ──────────────────────────────────────── */
-
-.ctaCard:hover {
-  border-color: rgba(0, 212, 255, 0.5);
-  transition:
-    transform 0.25s ease,
-    border-color 0.25s ease,
-    box-shadow 0.25s ease;
-}
-
 .ctaCard:focus-visible {
   outline: 2px solid rgba(0, 212, 255, 0.6);
   outline-offset: 3px;
@@ -887,13 +874,6 @@
 .ctaCard:active {
   transform: scale(0.97);
   transition-duration: 0.1s;
-}
-
-.ctaCard:hover .ctaCardIcon {
-  border-color: rgba(0, 212, 255, 0.6);
-  background: radial-gradient(circle, rgba(0, 212, 255, 0.25) 0%, transparent 70%);
-  color: rgba(0, 212, 255, 1);
-  transition: all 0.25s ease;
 }
 
 /* ── Carousel Scroll Fade Indicators (mobile) ─────────────────────────── */
@@ -1104,17 +1084,6 @@
 }
 
 /* Hover lift on desktop — bevel intensifies as card rises */
-@media (hover: hover) {
-  .tileCard:hover {
-    filter: brightness(1.08);
-  }
-  .tileCard:hover .tileImageWrapper {
-    box-shadow:
-      0 16px 36px rgba(0, 0, 0, 0.7),
-      0 6px 24px rgba(0, 0, 0, 0.6);
-  }
-}
-
 /* Enhancement #2: Staggered entrance delays per tile */
 .tileCard:nth-child(1) {
   animation-delay: 400ms;
@@ -1503,11 +1472,6 @@
     color 0.2s ease;
 }
 
-.staleCacheBadge:hover {
-  color: rgba(0, 212, 255, 0.6);
-  border-color: rgba(0, 212, 255, 0.15);
-}
-
 .staleCacheDot {
   width: 5px;
   height: 5px;
@@ -1690,10 +1654,6 @@
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.modalButtonPrimary:hover {
-  background: linear-gradient(135deg, #33ddff, #33aaff);
-}
-
 .modalButtonPrimary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -1718,12 +1678,6 @@
   text-transform: uppercase;
   letter-spacing: 2px;
   transition: all 0.3s ease;
-}
-
-.modalButtonSecondary:hover {
-  border-color: rgba(255, 255, 255, 0.5);
-  color: #fff;
-  background: rgba(255, 255, 255, 0.06);
 }
 
 .modalButtonSecondary:active {
@@ -2021,10 +1975,6 @@
   text-align: left;
 }
 
-.contextMenuItem:hover {
-  background: rgba(0, 212, 255, 0.08);
-}
-
 .contextMenuDivider {
   height: 1px;
   background: rgba(0, 212, 255, 0.1);
@@ -2284,11 +2234,6 @@
 .modalButtonDanger {
   background: linear-gradient(135deg, #ff4444, #cc2222) !important;
   color: #fff !important;
-}
-
-.modalButtonDanger:hover {
-  background: linear-gradient(135deg, #ff6666, #dd3333) !important;
-  box-shadow: 0 12px 30px rgba(255, 0, 0, 0.3) !important;
 }
 
 /* #2: Pinned Club Badge */
@@ -2560,10 +2505,6 @@
     transform 0.2s ease;
 }
 
-.cashierSwitchBtn:hover {
-  background: rgba(0, 212, 255, 0.2);
-}
-
 .cashierSwitchBtn:focus-visible {
   outline: 2px solid rgba(0, 212, 255, 0.7);
   outline-offset: 2px;
@@ -2669,10 +2610,6 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-}
-
-.cashierSwitchItem:hover {
-  background: rgba(0, 212, 255, 0.15);
 }
 
 .cashierSwitchItemActive {

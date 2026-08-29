@@ -36,9 +36,6 @@
   cursor: pointer;
   transition: all 0.2s;
 }
-.fh-refresh-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
 
 /* Section */
 .fh-section {
@@ -111,9 +108,6 @@
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s;
-}
-.fh-action-btn:hover:not(:disabled) {
-  background: rgba(24, 119, 242, 0.2);
 }
 .fh-action-btn:disabled {
   opacity: 0.5;
@@ -209,10 +203,6 @@
   cursor: pointer;
   transition: all 0.2s;
   text-align: center;
-}
-.fh-nav-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
 }
 
 /* Empty state */

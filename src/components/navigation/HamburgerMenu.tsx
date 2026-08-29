@@ -856,10 +856,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 30}ms both`
                 : 'none',
             }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
+            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
+                since 2026-08-29 no hover VISUALS anywhere either -- this
+                handler paints nothing, it warms the route chunk so the tap
+                that follows is instant. Touch and focus fire it too. */
+            onMouseEnter={() => handleItemHover(item.path)}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
               {item.label}
@@ -892,10 +893,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 8) * 30}ms both`
                 : 'none',
             }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
+            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
+                since 2026-08-29 no hover VISUALS anywhere either -- this
+                handler paints nothing, it warms the route chunk so the tap
+                that follows is instant. Touch and focus fire it too. */
+            onMouseEnter={() => handleItemHover(item.path)}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
               {item.label}
@@ -923,10 +925,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 15) * 30}ms both`
                 : 'none',
             }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
+            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
+                since 2026-08-29 no hover VISUALS anywhere either -- this
+                handler paints nothing, it warms the route chunk so the tap
+                that follows is instant. Touch and focus fire it too. */
+            onMouseEnter={() => handleItemHover(item.path)}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
               {item.label}
@@ -964,10 +967,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 17) * 30}ms both`
                 : 'none',
             }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
+            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
+                since 2026-08-29 no hover VISUALS anywhere either -- this
+                handler paints nothing, it warms the route chunk so the tap
+                that follows is instant. Touch and focus fire it too. */
+            onMouseEnter={() => handleItemHover(item.path)}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
               {item.label}
@@ -1015,10 +1019,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 29) * 30}ms both`
                 : 'none',
             }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
+            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
+                since 2026-08-29 no hover VISUALS anywhere either -- this
+                handler paints nothing, it warms the route chunk so the tap
+                that follows is instant. Touch and focus fire it too. */
+            onMouseEnter={() => handleItemHover(item.path)}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
               {item.label}
@@ -1367,10 +1372,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 32) * 30}ms both`
                 : 'none',
             }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
+            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
+                since 2026-08-29 no hover VISUALS anywhere either -- this
+                handler paints nothing, it warms the route chunk so the tap
+                that follows is instant. Touch and focus fire it too. */
+            onMouseEnter={() => handleItemHover(item.path)}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
               {item.label}
@@ -1448,10 +1454,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 41) * 30}ms both`
                 : 'none',
             }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              /* Dan 2026-08-28: no hover popouts anywhere. Row slide removed. */
-            }}
+            /* Prefetch only. Dan 2026-08-28: no hover popouts anywhere, and
+                since 2026-08-29 no hover VISUALS anywhere either -- this
+                handler paints nothing, it warms the route chunk so the tap
+                that follows is instant. Touch and focus fire it too. */
+            onMouseEnter={() => handleItemHover(item.path)}
           >
             <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
               {item.label}

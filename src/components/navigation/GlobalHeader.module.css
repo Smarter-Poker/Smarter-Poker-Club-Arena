@@ -101,10 +101,6 @@
     opacity 0.15s ease;
 }
 
-.headerImgBtn:hover {
-  opacity: 0.85;
-}
-
 .headerImgBtn:active {
   transform: scale(0.95);
 }
@@ -131,10 +127,6 @@
   transition:
     transform 0.1s ease,
     opacity 0.15s ease;
-}
-
-.hamburgerBtn:hover {
-  opacity: 0.8;
 }
 
 .hamburgerBtn:active {
@@ -164,10 +156,6 @@
     opacity 0.15s ease;
 }
 
-.orbBtn:hover {
-  opacity: 0.8;
-}
-
 .orbBtn:active {
   transform: scale(0.95);
 }
@@ -185,10 +173,6 @@
   transition:
     transform 0.1s ease,
     opacity 0.15s ease;
-}
-
-.orbLink:hover {
-  opacity: 0.8;
 }
 
 .orbLink:active {
@@ -251,10 +235,6 @@
    32px on a 40px circle and swallow the face entirely. */
 .profileOrb :global(.sp-cosmetic) {
   font-size: 9px;
-}
-
-.profileOrb:hover {
-  opacity: 0.85;
 }
 
 .profileOrb:active {

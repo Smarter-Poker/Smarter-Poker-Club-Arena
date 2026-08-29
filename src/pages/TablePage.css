@@ -442,7 +442,6 @@
   border-radius: 7px 7px 0 0;
 }
 
-.header-btn:hover,
 .header-btn:active {
   background: rgba(255, 255, 255, 0.15);
   color: #e2e8f0;
@@ -2186,12 +2185,6 @@
   transform: scale(0.96);
 }
 
-.control-strip__btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.9);
-  border-color: rgba(255, 255, 255, 0.15);
-}
-
 .control-strip__icon {
   font-size: 0.8125rem;
   line-height: 1;
@@ -2351,10 +2344,6 @@
   text-align: left;
   cursor: pointer;
   transition: all 0.15s ease;
-}
-
-.menu-item:hover {
-  background: rgba(255, 255, 255, 0.05);
 }
 
 .menu-item.exit {
@@ -3652,9 +3641,6 @@ button.post-bb-overlay-button {
   cursor: pointer;
   animation: post-bb-pulse 1.6s ease-in-out infinite alternate;
 }
-button.post-bb-overlay-button:hover {
-  background: linear-gradient(180deg, #374151 0%, #1f2937 100%);
-}
 /* The notice: informational, not tappable. Calmer than the old pulsing pill,
    because nothing is being asked of the player — they are already seated and
    will be dealt in free. */
@@ -3744,10 +3730,6 @@ button.post-bb-overlay-button:hover {
   border: 1px solid rgba(255, 255, 255, 0.25);
   background: transparent;
   color: rgba(255, 255, 255, 0.85);
-}
-.post-or-wait__wait:hover,
-.post-or-wait__post:not(:disabled):hover {
-  filter: brightness(1.12);
 }
 @keyframes post-bb-pulse {
   from {
@@ -3897,19 +3879,11 @@ button.post-bb-overlay-button:hover {
   padding: 10px 20px;
 }
 
-.menu-item--embed:hover {
-  background: transparent;
-}
-
 /* Disabled menu rows (e.g. Tip Dealer while not seated) must read as
    unavailable rather than silently doing nothing when tapped. */
 .menu-item:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-}
-
-.menu-item:disabled:hover {
-  background: transparent;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -4370,11 +4344,6 @@ button.post-bb-overlay-button:hover {
   box-shadow: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-}
-.control-strip__btn--icon-img:hover,
-.add-chips-icon-btn:hover {
-  background: transparent !important;
-  filter: brightness(1.1);
 }
 
 /* Dan 2026-08-28 (icon backgrounds sweep): two leftovers the 2026-08-26 pass

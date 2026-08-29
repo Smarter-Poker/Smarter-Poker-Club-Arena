@@ -127,10 +127,6 @@
   transition: all 0.2s;
 }
 
-.remove-btn:hover {
-  background: rgba(239, 68, 68, 0.25);
-}
-
 .waitlist-loading,
 .waitlist-empty {
   padding: 24px;

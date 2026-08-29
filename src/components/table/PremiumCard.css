@@ -13,11 +13,6 @@
   transition: transform 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.premium-card-wrapper:hover {
-  z-index: 10;
-  filter: drop-shadow(0 0 16px rgba(255, 215, 0, 0.3));
-}
-
 .premium-card-wrapper.dealing {
   opacity: 0;
   transform: translateX(-100px) translateY(-50px) rotate(-20deg) scale(0.5);

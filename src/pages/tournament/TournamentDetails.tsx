@@ -95,7 +95,26 @@ function getOrdinal(n: number): string {
 export default function TournamentDetails({
   tournamentIdOverride,
   suppressAutoOpenTable = false,
-}: { tournamentIdOverride?: string; suppressAutoOpenTable?: boolean } = {}) {
+  searchOverride,
+}: {
+  tournamentIdOverride?: string;
+  suppressAutoOpenTable?: boolean;
+  /**
+   * Dan 2026-08-28 round 2: the query string that came with an EMBEDDED
+   * destination, "?watch=1" and all.
+   *
+   * On the real route the query lives in `location.search`. In a lobby tab it
+   * cannot: the URL there belongs to /table/:tableId, so `location.search` is
+   * the TABLE's query (name / stakes / code) and has nothing to do with this
+   * tournament. Round 1 therefore lost `?watch=1` entirely and the WATCH
+   * button on a running MTT opened the details page and stopped — the one
+   * control whose whole job is to open the table.
+   *
+   * Passing it in keeps one rule for both mounts: `search` below is "the query
+   * that addressed THIS page", wherever the page is rendered.
+   */
+  searchOverride?: string;
+} = {}) {
   const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
 
   const { tournamentId: routeTournamentId } = useParams<{ tournamentId: string }>();
@@ -103,6 +122,12 @@ export default function TournamentDetails({
   const tournamentId = tournamentIdOverride || routeTournamentId;
   const navigate = useAppNavigate();
   const location = useLocation();
+  /**
+   * THE query for this page. Embedded: whatever drilled us in. Routed: the
+   * URL's own. Never mix the two — reading the table's `?name=` as if it were
+   * a tournament parameter is how the two mounts drift apart.
+   */
+  const search = searchOverride !== undefined ? searchOverride : location.search;
   const { user } = useAuthUser();
   const toast = useToast();
 
@@ -978,18 +1003,33 @@ export default function TournamentDetails({
   const watchIntentDoneRef = useRef(false);
   useEffect(() => {
     if (watchIntentDoneRef.current) return;
-    const params = new URLSearchParams(location.search);
+    const params = new URLSearchParams(search);
     if (params.get('watch') !== '1') return;
     if (!isWatchable) return;
     if (!featuredTableId) return; // still resolving; try again when it lands
     watchIntentDoneRef.current = true;
-    // Consume the intent BEFORE acting on it, so the history entry we leave
-    // behind can never re-trigger it.
-    params.delete('watch');
-    const qs = params.toString();
-    navigate({ search: qs ? `?${qs}` : '' }, { replace: true });
+    /**
+     * Consume the intent BEFORE acting on it, so the history entry we leave
+     * behind can never re-trigger it.
+     *
+     * ONLY ON THE REAL ROUTE (round 2). Embedded, the URL is /table/:tableId
+     * and this `navigate({ search })` would resolve its missing pathname from
+     * the CURRENT location — rewriting the TABLE's url and wiping the
+     * `?name=&stakes=&code=` that MultiTablePage reads to name a tab it has
+     * not built yet. That would trade a working Watch button for a tab
+     * labelled "Table 1" with blank stakes after a reload.
+     *
+     * Nothing is lost by skipping it: `watchIntentDoneRef` already blocks a
+     * second fire, and `watchTable` sends the player to /table/:id, which
+     * converts this very lobby tab into that table and unmounts this page.
+     */
+    if (searchOverride === undefined) {
+      params.delete('watch');
+      const qs = params.toString();
+      navigate({ search: qs ? `?${qs}` : '' }, { replace: true });
+    }
     watchTable(featuredTableId);
-  }, [featuredTableId, isWatchable, location.search, watchTable, navigate]);
+  }, [featuredTableId, isWatchable, search, searchOverride, watchTable, navigate]);
 
   const handleUnregister = async () => {
     if (isProcessing || !tournament) return;

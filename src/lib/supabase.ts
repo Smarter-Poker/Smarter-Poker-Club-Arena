@@ -140,7 +140,22 @@ export async function getAuthUser(timeoutMs = 5000) {
     return await Promise.race([userPromise, timeoutPromise]);
   } catch (err) {
     console.warn('[getAuthUser] getUser() also failed:', err);
-    return { data: { user: null }, error: err };
+    /**
+     * `failed: true` distinguishes "THE READ BROKE" from "there is no user"
+     * (Dan 2026-08-28 round 2).
+     *
+     * Both outcomes previously arrived as `{ data: { user: null } }`, and
+     * callers cannot tell a signed-out visitor from a five-second timeout by
+     * looking at a null. ClubHomePage acted on that null by navigating to
+     * `/invite/:clubId` — so a slow network, on a client that had a perfectly
+     * good session, threw a SEATED PLAYER off /table/* with no gesture at all,
+     * taking the action bar and every running table's container with it.
+     *
+     * A missing user is a fact. A failed read is not evidence of anything, and
+     * nothing destructive should be built on it. Existing callers reading only
+     * `data` / `error` are unaffected.
+     */
+    return { data: { user: null }, error: err, failed: true as const };
   }
 }
 

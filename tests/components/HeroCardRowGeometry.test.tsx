@@ -306,16 +306,28 @@ describe('hero hole-card row geometry', () => {
       `the floor is ${floorPx}px. 44px is the pre-#1571 hold'em card Dan rejected on ` +
         '2026-08-27; anything at or below it reinstates that card on an iPhone SE, ' +
         'both landscapes, a 1280x800 laptop, and on the first frame of every table'
-    ).toBeGreaterThanOrEqual(51);
+    ).toBeGreaterThanOrEqual(50);
 
-    // The floor must be a floor, not the whole rule: if it ever passed the
-    // canonical felt's own answer, every phone would be pinned to one size and
-    // the proportional rule would be decorative.
+    /* THE FLOOR MUST STAY UNDER THE CANONICAL DEVICE'S OWN ANSWER, and this is
+       the half that is easy to get wrong in the "helpful" direction.
+
+       The canonical felt is the iPhone 12/13/14's 366px, so the fraction gives
+       366 x 0.139 = 50.87px there. A floor at 51 would bind on that device — by
+       0.13px, invisibly on screen — and `floorBinds` in
+       tests/e2e/table-proportions.spec.ts excuses any floor-bound device from
+       every flatness assertion in that file, because a floor is by definition
+       what stops a proportion. Raising the floor past this line therefore buys
+       nothing a player can see and costs the estate's most-reviewed device its
+       coverage. If the card needs to be bigger, raise the FRACTION. */
+    const CANONICAL_FELT_W = 366;
     expect(
       floorPx,
-      'the floor has overtaken the canonical iPhone 12/13/14 card (366 x 0.139 = 50.9px); ' +
-        'it is now the size, and nothing scales'
-    ).toBeLessThanOrEqual(52);
+      `the floor (${floorPx}px) has reached the canonical iPhone 12/13/14 card ` +
+        `(${CANONICAL_FELT_W} x ${fraction} = ${(CANONICAL_FELT_W * fraction).toFixed(2)}px). ` +
+        'That device is now governed by the floor rather than by the proportion, and ' +
+        'table-proportions.spec.ts will silently stop measuring it. Raise the fraction ' +
+        'instead.'
+    ).toBeLessThan(CANONICAL_FELT_W * fraction);
 
     // A `.seat` rendered before the ResizeObserver reports, or outside the
     // scaler entirely, must land ON the fraction rather than on top of the

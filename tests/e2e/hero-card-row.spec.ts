@@ -101,13 +101,15 @@ const BREAKPOINTS = [
  *  so a change to either fails against this file's own arithmetic rather than
  *  silently re-baselining it. */
 const CARD_FRACTION_OF_FELT = 0.139;
-/* 2026-08-28: 44 -> 51. 44px was the pre-#1571 hold'em card Dan had rejected
+/* 2026-08-28: 44 -> 50. 44px was the pre-#1571 hold'em card Dan had rejected
    that morning, so wherever the floor bound it silently reinstated the exact
    size he had just had fixed — on an iPhone SE, both landscapes, a 1280x800
    laptop, and on the first frame of EVERY table (scalerSize starts at 320px).
-   51px is the size he approved, and is what the fraction itself yields on the
-   canonical iPhone 12/13/14 felt. See the note on --sp-card2-w. */
-const CARD_FLOOR_PX = 51;
+   50 rather than 51 so the crossover sits just UNDER what the canonical iPhone
+   12/13/14 felt yields from the fraction (366 x 0.139 = 50.87), which keeps that
+   device governed by the proportion instead of by the floor. See the note on
+   --sp-card2-w, and CARD_FLOOR in table-proportions.spec.ts. */
+const CARD_FLOOR_PX = 50;
 const expectedCardW = (feltW: number) => Math.max(CARD_FLOOR_PX, feltW * CARD_FRACTION_OF_FELT);
 
 async function measure(
@@ -289,11 +291,28 @@ for (const bp of BREAKPOINTS) {
         ).toBeGreaterThan(BEFORE[bp.label][n]);
 
         const want = expectedCardW(m.feltW) * HAND_FACTOR[n];
+        /* ONE PIXEL, because `m.cardW` is `offsetWidth` and offsetWidth is
+           ROUNDED TO AN INTEGER by definition, while `want` is a product of two
+           fractions and lands anywhere.
+
+           This was `toBeCloseTo(want, 0)` — a difference strictly under 0.5 —
+           which is a tolerance the measurement cannot honour: whenever `want`
+           falls on an exact half, the integer offsetWidth is 0.5 away from it
+           and the assertion fails on arithmetic rather than on layout. Raising
+           the card floor to 50 made PLO5 at the small-phone felt land on exactly
+           47.5 (offsetWidth 48) and turned that latent flaw into a red test.
+
+           The row is measured by its layout box on purpose — see the note in
+           `measure()`, the arc rotates the visual bbox — so the integer is not
+           negotiable and the tolerance has to be. 1px still catches every real
+           regression here: the sizes this pins are 26-100px apart, and the thing
+           that breaks them is a reintroduced breakpoint, which moves a card by
+           six pixels or more, never by one. */
         expect(
-          m.cardW,
+          Math.abs(m.cardW - want),
           `PLO${n} at ${bp.label}: card is ${m.cardW}px on a ${m.feltW}px felt ` +
             `(${((m.cardW / m.feltW) * 100).toFixed(1)}%), expected ~${want.toFixed(1)}px`
-        ).toBeCloseTo(want, 0);
+        ).toBeLessThanOrEqual(1);
 
         // The 2.5:3.5 playing-card ratio, exact so the art is never resampled.
         expect(m.cardH / m.cardW, `PLO${n} at ${bp.label} is not the 2.5:3.5 card`).toBeCloseTo(

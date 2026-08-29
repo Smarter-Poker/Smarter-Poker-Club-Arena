@@ -135,7 +135,7 @@
      Height and step are DERIVED (1.4 and 0.72 were already the ratios at all
      four old rungs, to the pixel), so the pair can never drift apart.
 
-     ── 2026-08-28, LATER THE SAME DAY: THE FLOOR IS 51px, NOT 44px ───────────
+     ── 2026-08-28, LATER THE SAME DAY: THE FLOOR IS 50px, NOT 44px ───────────
      Dan, on a phone: "the size of the cards in NLH have regressed back to the
      smaller sized hero cards ... make them the same size as the PLO cards, then
      prevent them from regressing again."
@@ -157,18 +157,32 @@
      cannot report before layout — 320 x 0.139 = 44.5px, i.e. the floor. A player
      who watched a hand start watched it start at the rejected size.
 
-     51px is the value Dan approved in #1571 for a phone and the value the
-     canonical iPhone 12/13/14 felt produces from the fraction itself
-     (366 x 0.139 = 50.9). Making it the floor means the proportional rule can
-     only ever make a card BIGGER than what he approved, never smaller, on any
-     device and at any point in the frame. The fallback moves 360 -> 380 for the
-     same reason: a `.seat` rendered outside the scaler now lands above the floor
-     on the fraction rather than on top of it.
+     50px, and the choice of 50 over 51 is deliberate. 51px is the rung Dan
+     approved in #1571, and it is what the canonical iPhone 12/13/14 felt
+     produces from the fraction itself: 366 x 0.139 = 50.87. A floor AT 51 would
+     therefore bind on the canonical device — by 0.13px, invisibly — and
+     `tests/e2e/table-proportions.spec.ts` excuses a floor-bound device from its
+     flatness assertions, because a floor is by definition the thing that stops
+     the proportion. That would drop the most-reviewed device in the estate out
+     of the guard that proves the proportion still holds, to buy one pixel
+     nobody can see.
 
-     THE GUARD: tests/components/HeroCardRowGeometry.test.tsx pins the floor at
-     >= 51px and pins hold'em to the same token as PLO4. Lowering either one
-     fails there rather than on Dan's phone. */
-  --sp-card2-w: clamp(51px, calc(var(--table-w, 380px) * 0.139), 100px);
+     So the crossover sits JUST BELOW the canonical answer: the iPhone 12/13/14
+     stays governed by the fraction and inside the guard, and every felt smaller
+     than 359.7px — where 44px used to be — is lifted to 50. The floor's job is
+     to stop the rejected card, and it does that; it is not the place to re-state
+     the size.
+
+     The fallback moves 360 -> 380 for the same family of reasons: a `.seat`
+     rendered outside the scaler lands on the fraction (52.8px) rather than on
+     top of the floor, and 380 is the measured desktop felt rather than a guess.
+
+     THE GUARDS. tests/components/HeroCardRowGeometry.test.tsx pins the floor
+     above 44 AND below the canonical felt's own answer, so neither direction can
+     drift. CARD_FLOOR is restated in tests/e2e/hero-card-row.spec.ts and
+     tests/e2e/table-proportions.spec.ts; all three move together or CI stops
+     you. */
+  --sp-card2-w: clamp(50px, calc(var(--table-w, 380px) * 0.139), 100px);
   --sp-card2-h: calc(var(--sp-card2-w) * 1.4);
   --sp-card2-step: calc(var(--sp-card2-w) * 0.72);
 

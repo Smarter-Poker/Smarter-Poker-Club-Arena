@@ -61,8 +61,22 @@ const css = buildCss(ROOT);
  *  fails against this file's arithmetic rather than silently re-baselining it. */
 const CARD_FRACTION = 0.139;
 const AVATAR_FRACTION = 0.158;
-/** Legibility floors, the one place a proportion is deliberately overruled. */
-const CARD_FLOOR = 44;
+/** Legibility floors, the one place a proportion is deliberately overruled.
+ *
+ *  2026-08-28: CARD_FLOOR 44 -> 50. Dan, from a phone that evening: "the size of
+ *  the cards in NLH have regressed back to the smaller sized hero cards." 44px
+ *  was not a neutral safety net — it is the exact pre-#1571 hold'em card he had
+ *  rejected that morning, so wherever it bound (iPhone SE, both landscapes, a
+ *  1280x800 laptop, and the first frame of every table, where --table-w is still
+ *  the 320px initial guess) the fix he had just signed off was silently undone.
+ *
+ *  50 rather than 51 on purpose: 51 is the rung he approved, and the canonical
+ *  iPhone 12/13/14 felt yields 366 x 0.139 = 50.87 from the fraction. A floor at
+ *  51 would bind there by 0.13px, and `floorBinds` below would then excuse the
+ *  most-reviewed device in the estate from every flatness assertion in this
+ *  file. The crossover belongs just UNDER the canonical answer, not on top of
+ *  it. See the note on --sp-card2-w. */
+const CARD_FLOOR = 50;
 const AVATAR_FLOOR = 50;
 
 /** A device whose felt is small enough that a floor binds cannot be compared on

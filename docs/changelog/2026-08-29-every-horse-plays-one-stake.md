@@ -1,0 +1,101 @@
+# 2026-08-29 — A horse now plays one stake, because 64 of them were playing several
+
+Dan: _"EACH HORSE SHOULD HAVE A SPECIFIC STAKES THEY'RE PLAYING. A HORSE
+PLAYING 5/10 OR 10/25 SHOULD NEVER BE SEEN ON A 50 CENT ONE DOLLAR GAME OR
+1/2 DOLLAR GAME, THAT JUST LOOKS SUSPICIOUS."_
+
+## He was right, and it was measurable
+
+Over the 48 hours before this change, 210 horses took a cash seat and **64 of
+them — nearly a third — sat at more than one stake level.** The worst were not
+marginal:
+
+| horse                | stakes played                     | spread   |
+| -------------------- | --------------------------------- | -------- |
+| `yankee`             | 0.10/0.20 and 25.00/50.00         | **250x** |
+| `mixedgame max`      | 0.10/0.20, 1.00/2.00, 10.00/25.00 | 125x     |
+| `ronald calabrese 2` | 0.10/0.20, 2.00/4.00, 10.00/25.00 | 125x     |
+| `duckcall`           | 0.05/0.10 and 2.00/4.00           | 40x      |
+
+No human bankroll moves like that. A regular who knows a name from the 10/25
+game sees it instantly in their 0.10/0.20 game.
+
+## Why it happened
+
+**Stakes were never an input to horse selection.** `HorseFleetManager` picked
+from every enabled horse, filtered only by game lane and how many tables it
+already sat at, then weighted the pick by `Math.random() / (1 + tables)`.
+`small_blind` and `big_blind` were read in exactly one place — to compute a
+buy-in amount. Nothing anywhere in the seating path had an opinion about which
+game a given horse belonged in.
+
+## The fix
+
+A stake band is an **identity**, in the same sense a game lane is: assigned
+once, stored in `profiles.horse_profile`, stable across days.
+
+```
+micro   0.05/0.10, 0.10/0.20, 0.25/0.50
+low     0.50/1.00, 1.00/2.00              <- the fleet's own configs
+mid     2.00/4.00, 2.00/5.00, 3.00/6.00
+high    5.00/10.00, 10.00/25.00, 25.00/50.00
+```
+
+The boundaries are the real ladder, not round numbers picked in the abstract —
+every live cash table falls inside one with nothing straddling an edge. Within
+a band a horse still moves freely, because a mid-stakes regular playing both
+2/4 and 3/6 is ordinary, and multi-tabling one's own stake is what real players
+actually do.
+
+`stakeBandAllows(horseId, bigBlind)` is consulted in the candidate filter,
+before the weighted pick. That is the first time blinds have ever influenced
+_which_ horse is chosen.
+
+### No escape hatch, deliberately
+
+The existing rescue path widens the _activity hour_ when a human is waiting and
+the active pool ran dry. It now widens the hour and never the band. A human
+waiting at 0.50/1 can pull an off-hours low-stakes horse out of bed, which is
+believable; it can never summon the 25/50 regular, which is not. **A quiet
+high-stakes table is ordinary. The wrong name in a micro game is the tell.**
+
+When a band genuinely runs out, the log says so by name rather than looking
+like the fleet is broken.
+
+### Assigned, not hashed
+
+Same reason lanes are assigned: `horseHash` is a weak multiply-add and a
+low-bit modulo of it clusters on UUIDs — the lane hash aimed at 33/33/34 and
+measured 32.0/39.0/28.9 across the real fleet. Here a skew is worse than
+cosmetic, because a short band is a stake level with too few horses to fill its
+tables, and the band is strict.
+
+`fn_assign_horse_stake_bands()` takes contiguous slices of the id-ordered fleet,
+so the split is exact at any size. `ORDER BY id`, never `random()` — a re-run
+must not let a horse be a micro grinder on Tuesday.
+
+Weights follow live seat demand (micro 83 seats, low 220, mid 36, high 26):
+**22 / 52 / 15 / 11**. A third of the roster is events-only, but each horse may
+hold four tables, so every band clears its seats several times over.
+
+Applied to production. Measured after: 21.9 / 52.1 / 14.9 / 11.1, and
+cash-eligible horses per band 79 / 211 / 57 / 45 against 83 / 220 / 36 / 26
+seats. The `lane` assignment survived the jsonb merge on all 584 horses, which
+the migration asserts rather than assumes.
+
+## What this does not do
+
+**It does not evict a horse already sitting at the wrong stake.** Existing
+seats age out through the normal session rotator rather than being yanked
+mid-hand; every _new_ seating from the moment the engine redeploys obeys the
+band. The visible mixed-stakes names should be gone within a session cycle.
+
+## Verification
+
+`npx tsc --noEmit` exit 0. 24 new tests, 462 passing across `server/src/services`.
+The pins include the headline rule (a 10/25 horse refused at 0.50/1), the exact
+`yankee` case (no horse may be allowed at both 0.10/0.20 and 25.00/50.00),
+exactly-one-band-per-table, garbage band values falling back rather than being
+stored, the fallback hash populating all four bands, and three wiring pins that
+fail if the filter is moved after the pick or if the rescue path is ever
+widened past the band.

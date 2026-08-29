@@ -16,6 +16,7 @@ import {
 } from '../services/VIPService';
 import { useAuthUser } from './useAuthUser';
 import { reportError } from '../utils/errorReporter';
+import { masterBus } from '../core/MasterBus';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -78,6 +79,14 @@ export function VIPProvider({ children }: { children: ReactNode }) {
     }
     setIsLoading(false);
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    return masterBus.subscribe('ENTITLEMENTS_CHANGED', (event) => {
+      if (event.payload.userId !== user.id || event.payload.category !== 'vip') return;
+      void checkVIPStatus();
+    });
+  }, [checkVIPStatus, user?.id]);
 
   const checkFeature = useCallback(
     async (feature: VIPFeature): Promise<FeatureAccess> => {
@@ -170,8 +179,12 @@ export function useVIPStatus() {
     };
 
     check();
+    const unsubscribe = masterBus.subscribe('ENTITLEMENTS_CHANGED', (event) => {
+      if (event.payload.userId === user?.id && event.payload.category === 'vip') void check();
+    });
     return () => {
       mounted = false;
+      unsubscribe();
     };
   }, [user?.id]);
 

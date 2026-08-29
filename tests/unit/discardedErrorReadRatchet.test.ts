@@ -61,7 +61,7 @@ const countsByFile = (): Map<string, number> => {
   return map;
 };
 
-/** Frozen 2026-08-29 (round 10). 291 occurrences. Only ever shrink. */
+/** Frozen 2026-08-29 (round 10). 290 occurrences. Only ever shrink. */
 const BASELINE = new Map<string, number>([
   ['src/services/HorseOrchestrator.ts', 13],
   ['src/services/AgentService.ts', 13],
@@ -105,7 +105,7 @@ const BASELINE = new Map<string, number>([
   ['src/services/WalletService.ts', 2],
   ['src/services/WaitlistService.ts', 2],
   ['src/services/TournamentTimerService.ts', 2],
-  ['src/services/ThrowableService.ts', 2],
+  ['src/services/ThrowableService.ts', 1],
   ['src/services/ReferralService.ts', 2],
   ['src/services/NotificationService.ts', 2],
   ['src/services/MembershipService.ts', 2],

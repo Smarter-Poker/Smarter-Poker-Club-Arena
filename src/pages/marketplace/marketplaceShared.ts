@@ -19,6 +19,7 @@ import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
 import { normalizeThemePresetId } from '../../lib/tableTheme';
 import { ALL_COSMETICS, normalizeCosmeticToken } from '../../cosmetics/avatarCosmetics';
+import { uuid } from '../../utils/uuid';
 
 /* ═══ Types ═══ */
 
@@ -161,6 +162,8 @@ export interface InventoryRow {
   price_paid: number;
   status: string;
   acquired_at: string;
+  /** Non-null once the benefit has actually reached its entitlement ledger. */
+  redeemed_at?: string | null;
 }
 
 export interface WalletInfo {
@@ -198,6 +201,28 @@ export function isOwnedRow(row: { status?: string | null }): boolean {
   // explicitly spent still belongs to the player, so the Store can never offer
   // to re-sell something My Items is calling Owned.
   return !SPENT_STATUSES.has(String(row.status ?? 'owned'));
+}
+
+/**
+ * Permanent grants stay owned after activation. Derive ownership from the
+ * entitlement ledger as well as inventory, otherwise a redeemed avatar/theme
+ * becomes purchasable again even though the picker still knows it is owned.
+ */
+export function isMarketplaceItemOwned(item: MarketplaceItem, entitlements: Entitlements): boolean {
+  if (!entitlements.loaded || !item.grant_spec) return false;
+  const spec = item.grant_spec;
+  if (spec.type === 'table_skin' && spec.theme_id) {
+    const themeId = normalizeThemePresetId(spec.theme_id);
+    return !!themeId && entitlements.themes.includes(themeId);
+  }
+  if (spec.type === 'avatar' && spec.avatar_id) {
+    const wanted = normalizeCosmeticToken(spec.avatar_id);
+    return [...entitlements.avatars, ...entitlements.avatarCosmetics].some(
+      (owned) => normalizeCosmeticToken(owned) === wanted
+    );
+  }
+  if (spec.type === 'emote_pack') return entitlements.emotePack;
+  return false;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -241,19 +266,11 @@ export function safeImageUrl(raw?: string | null): string | null {
   }
 }
 
-export { uuid } from '../../utils/uuid';
+export { uuid };
 
 /* ═══ Club shop categories (must match WH shop-items.js VALID_CATEGORIES) ═══ */
 
-export const CATEGORIES = [
-  'All',
-  'Time Banks',
-  'Table Skins',
-  'Throwables',
-  'Emotes',
-  'Avatars',
-  'Exclusive',
-];
+export const CATEGORIES = ['All', 'Time Banks', 'Table Skins', 'Throwables', 'Emotes', 'Avatars'];
 
 export type SortMode = 'newest' | 'price-low' | 'price-high' | 'popular';
 
@@ -534,7 +551,8 @@ export async function loadWalletInfo(): Promise<WalletInfo> {
 export async function startCheckout(
   type: 'diamonds' | 'subscription',
   items: Record<string, unknown>[],
-  returnParams: string
+  returnParams: string,
+  idempotencyKey: string = uuid()
 ): Promise<void> {
   const base = `${window.location.origin}${window.location.pathname}`;
   const data = await storeFetch<{ success: true; data: { url: string } }>(
@@ -543,6 +561,7 @@ export async function startCheckout(
       body: {
         type,
         items,
+        idempotencyKey,
         successUrl: `${base}?${returnParams}&purchase=success`,
         cancelUrl: `${base}?${returnParams}&purchase=canceled`,
       },
@@ -581,7 +600,6 @@ const FALLBACK_SHOP_CATEGORIES: ShopCategoryInfo[] = [
   { name: 'Throwables', grantType: 'throwable', grantUnit: 'throws' },
   { name: 'Emotes', grantType: 'emote_pack', grantUnit: null },
   { name: 'Avatars', grantType: 'avatar', grantUnit: null },
-  { name: 'Exclusive', grantType: 'none', grantUnit: null },
 ];
 
 /** Shape guards — the server response is `any` until proven otherwise. */
@@ -602,6 +620,13 @@ const isCategory = (c: unknown): c is ShopCategoryInfo =>
   !!c &&
   typeof (c as ShopCategoryInfo).name === 'string' &&
   typeof (c as ShopCategoryInfo).grantType === 'string';
+
+const pickFulfillableCategories = (raw: unknown): ShopCategoryInfo[] => {
+  const picked = pick(raw, isCategory, FALLBACK_SHOP_CATEGORIES).filter(
+    (category) => category.grantType !== 'none'
+  );
+  return picked.length > 0 ? picked : FALLBACK_SHOP_CATEGORIES;
+};
 
 function pick<T>(raw: unknown, guard: (v: unknown) => v is T, fallback: T[]): T[] {
   if (!Array.isArray(raw)) return fallback;
@@ -636,7 +661,9 @@ export async function loadStoreCatalog(): Promise<StoreCatalog> {
     catalogCache = {
       diamondPackages: pick(data.diamondPackages, isDiamondPkg, FALLBACK_DIAMOND_PACKAGES),
       vipPlans: pick(data.vipPlans, isVipPlan, FALLBACK_VIP_PLANS),
-      shopCategories: pick(data.shopCategories, isCategory, FALLBACK_SHOP_CATEGORIES),
+      // A category with `grantType: none` is not a product. It creates a paid
+      // receipt with no executable fulfillment path, so it is never offered.
+      shopCategories: pickFulfillableCategories(data.shopCategories),
       fromServer: true,
     };
     catalogFetchedAt = Date.now();

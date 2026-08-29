@@ -198,6 +198,7 @@ export type BusEventType =
   | 'SETTINGS_CHANGED'
   | 'DIAMOND_SPENT'
   | 'COSMETIC_OWNERSHIP_CHANGED'
+  | 'ENTITLEMENTS_CHANGED'
   // Gamification engagement events (Session Build)
   | 'SETTLEMENT_RECEIPT_COPIED'
   | 'CHALLENGE_PROGRESS_UPDATED'
@@ -830,7 +831,29 @@ export interface BusPayloadMap {
     userId: string;
     category: 'theme_id' | 'table_id' | 'button_id' | 'background_id' | 'cards_id' | 'avatar';
     assetId?: string;
-    source: 'diamond-purchase' | 'club-redemption' | 'vip-reward' | 'ownership-reconciled';
+    source:
+      | 'diamond-purchase'
+      | 'club-purchase'
+      | 'club-redemption'
+      | 'vip-reward'
+      | 'ownership-reconciled';
+  };
+  /**
+   * A paid entitlement was durably delivered. Unlike the cosmetic-only event,
+   * this also covers consumable balances and VIP membership. It is broadcast
+   * cross-tab so an open table updates in the purchase response frame.
+   */
+  ENTITLEMENTS_CHANGED: {
+    userId: string;
+    category: 'time_bank' | 'throwable' | 'emote_pack' | 'table_skin' | 'avatar' | 'vip';
+    assetId?: string;
+    quantity?: number;
+    source:
+      | 'diamond-purchase'
+      | 'club-purchase'
+      | 'club-redemption'
+      | 'vip-purchase'
+      | 'vip-reward';
   };
   // Gamification engagement events (Session Build)
   SETTLEMENT_RECEIPT_COPIED: { receiptId: string };
@@ -1288,6 +1311,9 @@ class MasterBusCore {
     // A receipt must unlock every mounted picker, even when two rewards grant
     // the same bundle inside the fingerprint window.
     'COSMETIC_OWNERSHIP_CHANGED',
+    // Two distinct purchases may legitimately grant the same quantity inside
+    // 500ms. A ledger delivery event must never be fingerprint-deduplicated.
+    'ENTITLEMENTS_CHANGED',
     // ANIMATION AUDIT 2026-08-27: gameplay-animation events added. These are
     // engine-fact relays whose payloads can legitimately repeat within 500ms
     // (two identical antes, an engine re-emit after reconnect, back-to-back

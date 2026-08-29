@@ -41,6 +41,10 @@ export default function VIPPage() {
   const [showTopUpModal, setShowTopUpModal] = useState(false);
   const [showDiamondHistory, setShowDiamondHistory] = useState(false);
   const [purchasing, setPurchasing] = useState<string | null>(null);
+  // React state is not synchronous: two taps in the same frame can both see
+  // `purchasing === null`. This ref closes that mobile double-tap window before
+  // the first network request leaves the device.
+  const purchaseInFlightRef = useRef(false);
   const [vipEntranceComplete, setVIPEntranceComplete] = useState(false);
 
   // VIP Points System
@@ -188,21 +192,58 @@ export default function VIPPage() {
   };
 
   const handlePurchase = async (feature: VIPFeature) => {
-    if (!user?.id) return;
+    if (!user?.id || purchaseInFlightRef.current) return;
 
+    purchaseInFlightRef.current = true;
     setPurchasing(feature);
     try {
       const result = await vipService.purchaseFeature(user.id, feature);
       if (result.success) {
-        toast.success(`Purchased ${feature} for ${result.charged} `);
-        setDiamonds((prev) => prev - result.charged);
+        const nextBalance = Math.max(0, diamonds - result.charged);
+        toast.success(`Purchased ${feature.replace(/_/g, ' ')} for ${result.charged} Diamonds`);
+        setDiamonds(nextBalance);
+        masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+          newBalance: nextBalance,
+          delta: -result.charged,
+          source: 'vip_feature_purchase',
+        });
+
+        const category =
+          feature === 'emoji_pack'
+            ? 'emote_pack'
+            : feature === 'throwable'
+              ? 'throwable'
+              : feature === 'time_bank_seconds' || feature === 'auto_time_bank'
+                ? 'time_bank'
+                : null;
+        if (category) {
+          masterBus.emit('ENTITLEMENTS_CHANGED', {
+            userId: user.id,
+            category,
+            assetId: feature,
+            quantity: 1,
+            source: 'vip-purchase',
+          });
+        }
+      } else if (result.alreadyOwned) {
+        toast.success(`You already own ${feature.replace(/_/g, ' ')}`);
+        if (feature === 'emoji_pack') {
+          masterBus.emit('ENTITLEMENTS_CHANGED', {
+            userId: user.id,
+            category: 'emote_pack',
+            assetId: feature,
+            source: 'vip-purchase',
+          });
+        }
       } else {
         toast.error(result.error || 'Purchase failed');
       }
     } catch (error) {
       toast.error('Purchase failed');
+    } finally {
+      purchaseInFlightRef.current = false;
+      setPurchasing(null);
     }
-    setPurchasing(null);
   };
 
   if (loading) {
@@ -284,6 +325,12 @@ export default function VIPPage() {
               masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
                 userId: user.id,
                 category: granted?.type === 'avatar' ? 'avatar' : 'theme_id',
+                assetId: granted?.avatar_id || granted?.theme_id,
+                source: 'vip-reward',
+              });
+              masterBus.emit('ENTITLEMENTS_CHANGED', {
+                userId: user.id,
+                category: granted?.type === 'avatar' ? 'avatar' : 'table_skin',
                 assetId: granted?.avatar_id || granted?.theme_id,
                 source: 'vip-reward',
               });

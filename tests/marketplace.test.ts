@@ -14,6 +14,7 @@ import { describe, it, expect } from 'vitest';
 import {
   describeGrant,
   isOwnedRow,
+  isMarketplaceItemOwned,
   isUuid,
   safeImageUrl,
   uuid,
@@ -181,7 +182,7 @@ describe('FALLBACK_CATALOG — used when /store-catalog is unreachable', () => {
     expect(byName['Emotes'].grantType).toBe('emote_pack');
     expect(byName['Table Skins'].grantType).toBe('table_skin');
     expect(byName['Avatars'].grantType).toBe('avatar');
-    expect(byName['Exclusive'].grantType).toBe('none');
+    expect(Object.values(byName).every((category) => category.grantType !== 'none')).toBe(true);
   });
 
   it('marks itself as NOT server-truth so callers can avoid asserting a grant', () => {
@@ -214,6 +215,73 @@ describe('FALLBACK_CATALOG — used when /store-catalog is unreachable', () => {
       ['time_bank', 'throwable'].includes(c.grantType)
     );
     expect(qtyCats.every((c) => !!c.grantUnit)).toBe(true);
+  });
+});
+
+describe('permanent marketplace ownership', () => {
+  const entitlements = {
+    ...EMPTY_ENTITLEMENTS,
+    loaded: true,
+    emotePack: true,
+    themes: ['neon-blue'],
+    avatars: ['vip-people-007'],
+  };
+
+  it('blocks a theme already present in the category entitlement ledger', () => {
+    expect(
+      isMarketplaceItemOwned(
+        {
+          id: 'theme-item',
+          club_id: 'club',
+          name: 'Neon',
+          price: 100,
+          grant_spec: { type: 'table_skin', theme_id: 'neon' },
+        },
+        entitlements
+      )
+    ).toBe(true);
+  });
+
+  it('blocks an owned avatar and permanent emote pack after activation', () => {
+    expect(
+      isMarketplaceItemOwned(
+        {
+          id: 'avatar-item',
+          club_id: 'club',
+          name: 'Avatar',
+          price: 100,
+          grant_spec: { type: 'avatar', avatar_id: 'vip-people-007' },
+        },
+        entitlements
+      )
+    ).toBe(true);
+    expect(
+      isMarketplaceItemOwned(
+        {
+          id: 'emoji-item',
+          club_id: 'club',
+          name: 'Emoji',
+          price: 100,
+          grant_spec: { type: 'emote_pack' },
+        },
+        entitlements
+      )
+    ).toBe(true);
+  });
+
+  it('does not mistake consumable balances for permanent ownership', () => {
+    expect(
+      isMarketplaceItemOwned(
+        {
+          id: 'throws',
+          club_id: 'club',
+          name: 'Throws',
+          price: 10,
+          grant_spec: { type: 'throwable', qty: 5 },
+        },
+        { ...entitlements, throwables: 5 }
+      )
+    ).toBe(false);
   });
 });
 

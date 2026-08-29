@@ -11,9 +11,9 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useToast } from '../../components/common/Toast';
-import { startCheckout, type DiamondPackage, type WalletInfo } from './marketplaceShared';
+import { startCheckout, uuid, type DiamondPackage, type WalletInfo } from './marketplaceShared';
 import styles from './DiamondsTab.module.css';
 
 /* ── Nav-tab destination URLs ────────────────────────────────────────────── */
@@ -36,20 +36,27 @@ interface DiamondsTabProps {
 export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabProps) {
   const toast = useToast();
   const [redirecting, setRedirecting] = useState<string | null>(null);
+  const checkoutInFlightRef = useRef(false);
+  const checkoutKeyRef = useRef<string | null>(null);
 
   /* ── Stripe checkout ───────────────────────────────────────────────────── */
   const handleBuy = async (pkg: DiamondPackage) => {
-    if (redirecting) return;
+    if (checkoutInFlightRef.current) return;
+    checkoutInFlightRef.current = true;
+    checkoutKeyRef.current = uuid();
     setRedirecting(pkg.id);
     try {
       await startCheckout(
         'diamonds',
         [{ packageId: pkg.id, quantity: 1 }],
-        `club=${encodeURIComponent(clubId)}&tab=diamonds`
+        `club=${encodeURIComponent(clubId)}&tab=diamonds`,
+        checkoutKeyRef.current
       );
       // startCheckout navigates away on success — the line below only runs on error.
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Could not start checkout');
+      checkoutInFlightRef.current = false;
+      checkoutKeyRef.current = null;
       setRedirecting(null);
     }
   };

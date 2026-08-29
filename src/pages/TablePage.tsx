@@ -16038,6 +16038,19 @@ export default function TablePage({
     };
   }, [userId]);
 
+  // Club-shop time banks are delivered in the purchase transaction. Broadcast
+  // the exact granted quantity so every mounted table (and every browser tab)
+  // updates its counter without waiting for a re-seat or engine reconnect.
+  useMasterBusSubscription('ENTITLEMENTS_CHANGED', (payload) => {
+    if (
+      payload.userId !== userId ||
+      payload.category !== 'time_bank' ||
+      !Number.isFinite(payload.quantity)
+    )
+      return;
+    setTimeBanksRemaining((current) => (current ?? 0) + Math.max(1, payload.quantity || 1));
+  });
+
   /**
    * Buy one time-bank extension with diamonds.
    *
@@ -16144,7 +16157,12 @@ export default function TablePage({
         const bought = result.quantity ?? quantity;
         /* `?? 0` because the count is null until the true balance loads —
            a purchase landing in that window must not turn it into NaN. */
-        setTimeBanksRemaining((n) => (n ?? 0) + bought);
+        masterBus.emit('ENTITLEMENTS_CHANGED', {
+          userId,
+          category: 'time_bank',
+          quantity: bought,
+          source: 'diamond-purchase',
+        });
         const remaining = Number(result.diamonds_remaining);
         if (Number.isFinite(remaining)) setDiamondBalance(remaining);
         const cost = result.total_cost ?? 0;

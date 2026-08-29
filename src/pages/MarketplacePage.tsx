@@ -44,6 +44,7 @@ import {
   EMPTY_WALLET,
   FALLBACK_CATALOG,
   isOwnedRow,
+  isMarketplaceItemOwned,
   isUuid,
   loadEntitlements,
   loadStoreCatalog,
@@ -158,10 +159,14 @@ export default function MarketplacePage() {
         if (!mountedRef.current || myReq !== reqRef.current) return;
 
         setItems(
-          (data.items || []).map((i: MarketplaceItem) => ({
-            ...i,
-            purchase_count: i.purchase_count || 0,
-          }))
+          (data.items || [])
+            // Rolling-deploy guard: a paid row with no executable grant must
+            // never reach a Buy button, even before the DB migration lands.
+            .filter((i: MarketplaceItem) => !!i.grant_spec && i.grant_spec.type !== 'none')
+            .map((i: MarketplaceItem) => ({
+              ...i,
+              purchase_count: i.purchase_count || 0,
+            }))
         );
         setPurchases(data.purchases || []);
         setBalance(data.balance || 0);
@@ -219,9 +224,11 @@ export default function MarketplacePage() {
     }
   }, [user?.id, secondsPerUse, mountedRef]);
 
+  // Ownership drives Store buttons, so entitlements are eager rather than
+  // waiting for the member to visit My Items.
   useEffect(() => {
-    if (tab === 'my_items') loadEnt();
-  }, [tab, loadEnt]);
+    loadEnt();
+  }, [loadEnt]);
 
   /* ═══ Delivered inventory (loaded eagerly — ownership state depends on it) ═══ */
   const invReqRef = useRef(0);
@@ -236,7 +243,9 @@ export default function MarketplacePage() {
         // "you own nothing" and invited the user to re-buy what they already had.
         const { data, error } = await supabase
           .from('club_shop_inventory')
-          .select('id, item_id, purchase_id, item_name, category, price_paid, status, acquired_at')
+          .select(
+            'id, item_id, purchase_id, item_name, category, price_paid, status, acquired_at, redeemed_at'
+          )
           .eq('club_id', target)
           .eq('user_id', user.id)
           .order('acquired_at', { ascending: false });
@@ -357,7 +366,17 @@ export default function MarketplacePage() {
       // changed that key, so the cleanup killed every timer within ~10ms and
       // the buyer was left staring at a stale balance.
       pollTimersRef.current = [1500, 5000, 12000].map((ms) =>
-        setTimeout(() => loadWalletRef.current(), ms)
+        setTimeout(() => {
+          void loadWalletRef.current().then(() => {
+            if (qTabParam === 'membership' && user?.id) {
+              masterBus.emit('ENTITLEMENTS_CHANGED', {
+                userId: user.id,
+                category: 'vip',
+                source: 'vip-purchase',
+              });
+            }
+          });
+        }, ms)
       );
     } else if (purchaseResult === 'canceled') {
       toast.error('Checkout canceled. You have not been charged.');
@@ -382,9 +401,19 @@ export default function MarketplacePage() {
       masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refresh, 500),
       masterBus.subscribeDebounced('BALANCE_UPDATED', refresh, 500),
       masterBus.subscribeDebounced('CASHIER_BALANCE_CHANGED', refresh, 500),
+      masterBus.subscribeDebounced(
+        'ENTITLEMENTS_CHANGED',
+        (event) => {
+          if (event.payload.userId !== user?.id) return;
+          loadInventory(clubId, true);
+          loadEnt();
+          refresh();
+        },
+        100
+      ),
     ];
     return () => unsubs.forEach((u) => u());
-  }, [clubId, loadShop, loadWallet]);
+  }, [clubId, loadShop, loadWallet, loadInventory, loadEnt, user?.id]);
 
   useVisibilityRefresh(async () => {
     if (clubId) {
@@ -405,8 +434,13 @@ export default function MarketplacePage() {
   // something the inventory list is calling "Owned".
   const ownedItemIds = useMemo(
     () =>
-      new Set(inventory.filter((r) => isOwnedRow(r) && r.item_id).map((r) => r.item_id as string)),
-    [inventory]
+      new Set([
+        ...inventory.filter((r) => isOwnedRow(r) && r.item_id).map((r) => r.item_id as string),
+        ...items
+          .filter((item) => isMarketplaceItemOwned(item, entitlements))
+          .map((item) => item.id),
+      ]),
+    [inventory, items, entitlements]
   );
   const ownedCount = useMemo(() => inventory.filter(isOwnedRow).length, [inventory]);
   const isAdmin = ['owner', 'co_owner', 'admin'].includes(role);
@@ -634,6 +668,7 @@ export default function MarketplacePage() {
         {tab === 'store' && clubId && (
           <StoreTab
             clubId={clubId}
+            userId={user?.id || ''}
             items={items}
             ownedItemIds={ownedItemIds}
             balance={wallet.loaded ? wallet.diamonds : balance}
@@ -653,6 +688,7 @@ export default function MarketplacePage() {
                 setWallet((prev) => (prev.loaded ? { ...prev, diamonds: newBalance } : prev));
               }
               loadInventory(clubId);
+              loadEnt();
             }}
           />
         )}
@@ -670,6 +706,7 @@ export default function MarketplacePage() {
         {tab === 'membership' && (
           <MembershipTab
             clubId={clubId || ''}
+            userId={user?.id || ''}
             wallet={wallet}
             plans={catalog.vipPlans}
             onWalletChanged={loadWallet}

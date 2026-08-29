@@ -26,7 +26,7 @@
  * The audited surfaces (TournamentService, TableService, TablePage,
  * ClubHomePage) are pinned at ZERO and must stay there.
  *
- * The remaining baseline entries are inherited debt, not endorsement - 291
+ * The remaining baseline entries are inherited debt, not endorsement - 275
  * occurrences existed when this was frozen. Shrink them as files get
  * touched.
  */
@@ -61,7 +61,7 @@ const countsByFile = (): Map<string, number> => {
   return map;
 };
 
-/** Frozen 2026-08-29 (round 10). 291 occurrences. Only ever shrink. */
+/** Frozen 2026-08-29 (round 10). 275 occurrences. Only ever shrink. */
 const BASELINE = new Map<string, number>([
   ['src/services/HorseOrchestrator.ts', 11],
   ['src/services/AgentService.ts', 13],
@@ -105,7 +105,7 @@ const BASELINE = new Map<string, number>([
   ['src/services/WalletService.ts', 2],
   ['src/services/WaitlistService.ts', 1],
   ['src/services/TournamentTimerService.ts', 2],
-  ['src/services/ThrowableService.ts', 2],
+  ['src/services/ThrowableService.ts', 1],
   ['src/services/ReferralService.ts', 1],
   ['src/services/NotificationService.ts', 2],
   ['src/services/MembershipService.ts', 2],

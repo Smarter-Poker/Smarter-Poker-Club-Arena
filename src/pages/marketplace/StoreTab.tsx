@@ -25,6 +25,7 @@ import {
 
 interface StoreTabProps {
   clubId: string;
+  userId: string;
   items: MarketplaceItem[];
   ownedItemIds: Set<string>;
   /** the buyer's DIAMOND balance (global wallet) — all prices are in diamonds */
@@ -49,6 +50,7 @@ interface StoreTabProps {
 
 export default function StoreTab({
   clubId,
+  userId,
   items,
   ownedItemIds,
   balance,
@@ -205,6 +207,26 @@ export default function StoreTab({
       );
       toast.success(`Purchased ${buyTarget.name}`);
       masterBus.emit('BALANCE_UPDATED', { source: 'marketplace_purchase', clubId });
+      const grant = buyTarget.grant_spec;
+      if (grant && grant.type !== 'none') {
+        const quantity = Math.max(1, Math.floor(Number(grant.qty) || 1));
+        const assetId = grant.theme_id || grant.avatar_id;
+        masterBus.emit('ENTITLEMENTS_CHANGED', {
+          userId,
+          category: grant.type,
+          assetId,
+          quantity,
+          source: 'club-purchase',
+        });
+        if (grant.type === 'table_skin' || grant.type === 'avatar') {
+          masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
+            userId,
+            category: grant.type === 'avatar' ? 'avatar' : 'theme_id',
+            assetId,
+            source: 'club-purchase',
+          });
+        }
+      }
       closeBuy();
       onPurchased(typeof data.newBalance === 'number' ? data.newBalance : null);
     } catch (err: unknown) {
@@ -298,7 +320,9 @@ export default function StoreTab({
                 <div className={styles.itemName}>{buyTarget.name}</div>
                 <div className={styles.itemDesc}>{buyTarget.description}</div>
                 {grantText(buyTarget) && (
-                  <div className={styles.grantLine}>Grants On Redeem: {grantText(buyTarget)}</div>
+                  <div className={styles.grantLine}>
+                    Delivered Instantly: {grantText(buyTarget)}
+                  </div>
                 )}
               </div>
             </div>

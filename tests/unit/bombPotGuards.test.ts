@@ -731,6 +731,29 @@ describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
     expect(MIG).toMatch(/security_invoker = true/);
   });
 
+  it('the ante control cannot offer half blinds an integer column will not hold', () => {
+    // tables.bomb_pot_ante_multiplier is an INTEGER column (live schema).
+    // Both forms offered `step 0.5`, so a host dragging to 2.5 had 3 stored
+    // and every player at the table was charged the larger ante with nothing
+    // said. Found by probing the edit RPC's happy path inside a rolled-back
+    // transaction: it answered ok:true and echoed 3.
+    //
+    // The fractional case is not lost - bomb_pot_ante_fixed is `numeric` and
+    // prices the ante in chips, which is the honest way to say "two and a half
+    // big blinds" anyway.
+    const CONFIG_PAGE = read('src/pages/TableConfigPage.tsx');
+    const anteSlider = sliceEnclosingBlock(CONFIG_PAGE, 'label="Bomb Pot Ante"');
+    expect(anteSlider).toMatch(/step=\{1\}/);
+    expect(blankNonCode(anteSlider)).not.toMatch(/step=\{0\.5\}/);
+
+    const SETTINGS = read('src/pages/club/TableBombSettingsPage.tsx');
+    // The editor rounds on the way in rather than letting Postgres do it.
+    expect(SETTINGS).toMatch(/set\('anteBB', Math\.max\(0, Math\.round\(/);
+    // And the RPC says when it rounded, so the host is told rather than
+    // discovering it from the felt after everyone has been charged.
+    expect(SETTINGS).toMatch(/ante_multiplier_rounded/);
+  });
+
   it('editing a table clears the bomb LIVE state', () => {
     const MIG = read('supabase/migrations/20260829_a_host_can_change_a_running_table.sql');
     // A host moving from every-10-hands to timed is starting a new schedule,

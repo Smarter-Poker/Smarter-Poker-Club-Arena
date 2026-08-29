@@ -787,9 +787,17 @@ export abstract class TournamentManagerBase {
     const { data: freshRow } = await supabase
       .from('tournaments')
       .select(
+        // mystery_bounty_top_percent 2026-08-29: it was READ fourteen lines
+        // below and never selected, so `fresh.mystery_bounty_top_percent` was
+        // always undefined, `undefined == null` is true, and EVERY event built
+        // its chest at the 20% default. That is the exact defect
+        // mysteryBountySpec.ts says it fixed -- "an event configured at 25%
+        // would advertise 25% and pay 20%" -- fixed in the spec and never
+        // wired to the query. On a 25,000 mystery pool configured at 30% the
+        // lobby advertises 7,500 and the chest holds 5,000.
         'bounty_pool, bounty_pool_paid, prize_pool_finalized, mystery_bounty_stage, mystery_bounty_pool_percent, ' +
           'mystery_bounty_regular_pool_percent, mystery_bounty_profile, mystery_bounty_activation, ' +
-          'mystery_bounty_activation_value, payout_structure, current_players'
+          'mystery_bounty_activation_value, mystery_bounty_top_percent, payout_structure, current_players'
       )
       .eq('id', this.tournamentId)
       .maybeSingle();

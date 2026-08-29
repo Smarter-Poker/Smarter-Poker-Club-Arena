@@ -407,10 +407,26 @@ export async function recoverStuckCompletingTournaments(
          * and guessing moves money. Report and leave the tournament COMPLETING
          * for the reconciler or a human; every caller re-runs this watchdog.
          */
+        /* 2026-08-29: this tested `status === 'eliminated'` only, and
+           finishTournament stamps the champion `status: 'winner', position: 1`.
+           So if the process died between that stamp and the COMPLETED flip --
+           the exact window this watchdog exists for -- the winner was INVISIBLE
+           to the collision check, place 1 read as free, and the lone surviving
+           player was handed it. The credit dedupes against the real winner's
+           payment under the same place-scoped key, so nobody is paid twice;
+           what happens instead is worse to diagnose: the survivor is stamped
+           'winner' with first prize and receives NOTHING, and the place they
+           actually finished in is never paid to anybody.
+
+           Any row holding a finishing place claims it, whatever its status. */
         const claimed = new Map<number, string>();
         for (const r of rows) {
           const pos = Number(r.position);
-          if (r.status === 'eliminated' && Number.isFinite(pos) && pos > 0) {
+          if (
+            (r.status === 'eliminated' || r.status === 'winner') &&
+            Number.isFinite(pos) &&
+            pos > 0
+          ) {
             claimed.set(pos, r.user_id);
           }
         }

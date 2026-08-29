@@ -232,23 +232,31 @@ export function assignedStakeBandCount(): number {
 }
 
 /**
- * Weights follow live seat demand, with headroom. Seats by band on the day the
- * bands were introduced: micro 83, low 220, mid 36, high 26. A third of the
- * fleet is events-only and never sits at cash at all, so the eligible pool is
- * roughly two thirds of the roster - and each horse may hold up to four tables.
- * Every band still clears its seats several times over, which is what keeps a
- * strict band from emptying a table.
+ * A BAND IS EARNED (Dan 2026-08-29): micro is the worst-performing horses, low
+ * the second worst, mid the good winners, high the best. The ranking is done in
+ * the database by `fn_assign_horse_stake_bands`, on bb/100 - winnings over the
+ * big blinds actually faced, which is the only measure comparable across a
+ * stake ladder, since 500 chips is a career at 0.05/0.10 and a rounding error
+ * at 25/50. Measured after the first merit run: micro -35.6 bb/100, low -12.0,
+ * mid +1.7, high +22.9.
+ *
+ * The proportions (22/52/15/11) still follow live seat demand, so merit decides
+ * WHO is in a band and demand decides HOW MANY - no stake level ends up without
+ * enough horses to fill it.
  */
 export function stakeBandFor(horseId: string): HorseStakeBand {
   const assigned = assignedStakeBands.get(horseId);
   if (assigned) return assigned;
-  // Fallback for a horse created since the last assignment run, so it has a
-  // band the moment it is dealt in. Not the source of truth - see above.
-  const roll = horseHash(`${horseId}:stakeBand`) % 100;
-  if (roll < 22) return 'micro';
-  if (roll < 74) return 'low';
-  if (roll < 89) return 'mid';
-  return 'high';
+  /**
+   * A HORSE WITH NO RECORD STARTS AT THE BOTTOM. There is no hash fallback here
+   * and there must not be one: a band is a claim about results, and a brand-new
+   * horse has none. Hashing it into 'high' would seat an unproven player in the
+   * 25/50 game on the strength of its uuid, which is precisely the arbitrary
+   * assignment this replaced. Starting in the smallest game and earning the way
+   * up is both the realistic answer and the safe one - and it is temporary, the
+   * loader re-ranks every 30 minutes.
+   */
+  return 'micro';
 }
 
 /**

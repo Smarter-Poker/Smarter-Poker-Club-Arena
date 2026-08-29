@@ -117,17 +117,23 @@ describe('assignment beats the hash, and the hash still covers a brand-new horse
     expect(stakeBandFor(id)).toBe('high');
   });
 
-  it('a horse with no stored band still gets one, and the same one every time', () => {
-    const fresh = uuid(999);
-    const band = stakeBandFor(fresh);
-    expect(['micro', 'low', 'mid', 'high']).toContain(band);
-    for (let i = 0; i < 25; i++) expect(stakeBandFor(fresh)).toBe(band);
+  /**
+   * A BAND IS EARNED (Dan 2026-08-29): micro = worst performers, low = second
+   * worst, mid = good winners, high = the best. So an unproven horse cannot be
+   * hashed into a band — a band is a claim about results and it has none.
+   */
+  it('a horse with no record starts at the BOTTOM, never at a hashed band', () => {
+    for (let i = 0; i < 500; i++) {
+      expect(stakeBandFor(`brand-new-${i}`)).toBe('micro');
+    }
   });
 
-  it('the fallback populates every band — a band nobody lands in is a stake level nobody can fill', () => {
+  it('no unranked horse can reach the high band by luck of its uuid', () => {
     const seen = new Set<HorseStakeBand>();
     for (let i = 0; i < 4000; i++) seen.add(stakeBandFor(`fallback-${i}`));
-    expect([...seen].sort()).toEqual(['high', 'low', 'micro', 'mid']);
+    // Exactly one outcome. Seating an unproven player in the 25/50 game on the
+    // strength of its id is the arbitrary assignment this replaced.
+    expect([...seen]).toEqual(['micro']);
   });
 });
 

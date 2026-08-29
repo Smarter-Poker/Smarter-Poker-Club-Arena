@@ -62,7 +62,64 @@ high-stakes table is ordinary. The wrong name in a micro game is the tell.**
 When a band genuinely runs out, the log says so by name rather than looking
 like the fleet is broken.
 
-### Assigned, not hashed
+### The band is EARNED
+
+Dan, on reading the first version: _"THEY CAN PLAY MORE THAN ONE STAKE, BUT YOU
+SHOULD CLASSIFY THEM... A MICRO PLAYER ONLY PLAYS MICRO STAKES (WORST
+PERFORMING HORSES). SMALL STAKES IS FOR SMALL PLAYERS (2ND WORST). MED WOULD BE
+GOOD WINNING HORSES, AND HIGH FOR THE BEST HORSES."_
+
+The mechanism was right; the **assignment** was arbitrary. It took contiguous
+slices of the fleet ordered by uuid — reproducible, exactly balanced, and
+meaningless. A horse bleeding 80 big blinds per hundred could hold a seat in the
+25/50 game because its id sorted late.
+
+A real card room sorts itself by results, and that is what makes a stake ladder
+legible to anyone watching it. `fn_assign_horse_stake_bands` now ranks on
+**bb/100** — winnings over the big blinds actually faced, the only measure
+comparable across a ladder where 500 chips is a career at 0.05/0.10 and a
+rounding error at 25/50.
+
+The fleet had real signal to rank on: 584 horses, average 9,273 hands each,
+576 of them past 2,000 hands. Spread from **-80.71 to +68.29 bb/100**, median
+-12.60, 146 winners against 438 losers.
+
+After the first merit run:
+
+| band  | horses | avg bb/100 | winners |
+| ----- | ------ | ---------- | ------- |
+| micro | 127    | **-35.62** | 13      |
+| low   | 336    | **-11.96** | 35      |
+| mid   | 73     | **+1.65**  | 59      |
+| high  | 48     | **+22.86** | 39      |
+
+Monotonic, which the migration asserts rather than assumes: if the high band
+does not out-earn the micro band, the migration aborts, because bands that are
+not merit-ordered make the whole feature decorative.
+
+Two guards that are not optional:
+
+**A hands floor.** A winrate over a few hundred hands is noise, and promoting
+noise to the 25/50 game is how a losing horse arrives there by luck. Below
+1,000 hands a horse is unproven and starts at `micro` — a new player begins in
+the smallest game and earns his way up. There is deliberately **no hash
+fallback** for an unranked horse: a band is a claim about results, and hashing
+a brand-new horse into `high` would seat an unproven player in the biggest game
+on the strength of its uuid, which is the arbitrary assignment this replaced.
+
+**Hysteresis.** The ranking re-runs. Without a margin, a horse on a band
+boundary flips every time its winrate wobbles — and a regular who plays 10/25
+today, 0.10/0.20 tomorrow and 10/25 on Sunday is _exactly the tell the bands
+exist to remove_. A horse moves only when it is more than five percentile
+points past the boundary it would cross. That is why the counts above are
+127/336/73/48 rather than the exact 128/304/88/64: the first merit run held
+near-boundary horses where they were, and it converges over subsequent runs.
+
+The proportions stay demand-based, so **merit decides who is in a band and
+demand decides how many** — no stake level is left without enough horses to
+fill it. The two constraints are independent and both hold.
+
+### Balanced, not hashed
 
 Same reason lanes are assigned: `horseHash` is a weak multiply-add and a
 low-bit modulo of it clusters on UUIDs — the lane hash aimed at 33/33/34 and

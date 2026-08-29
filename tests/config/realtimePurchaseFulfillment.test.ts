@@ -10,6 +10,7 @@ const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8'
 const MIGRATION = read(
   'supabase/migrations/20260829213000_realtime_shop_fulfillment_and_purchase_intents.sql'
 );
+const RPC_LOCK = read('supabase/migrations/20260829220000_lock_shop_fulfillment_rpcs.sql');
 const STORE = read('src/pages/marketplace/StoreTab.tsx');
 const MARKET = read('src/pages/MarketplacePage.tsx');
 const MEMBERSHIP = read('src/pages/marketplace/MembershipTab.tsx');
@@ -46,6 +47,14 @@ describe('atomic club-shop fulfillment', () => {
     );
     expect(MIGRATION).toContain('v_inv.redeemed_at IS NOT NULL');
     expect(MARKET).toContain('isMarketplaceItemOwned');
+  });
+
+  it('keeps fulfillment and refund writers behind trusted server paths', () => {
+    expect(RPC_LOCK).toContain('FROM PUBLIC, anon, authenticated');
+    expect(RPC_LOCK).toMatch(
+      /fn_refund_shop_purchase\(uuid, uuid, uuid, text\)[\s\S]*TO service_role/
+    );
+    expect(RPC_LOCK).toContain('shop refund writer is still browser-callable');
   });
 });
 

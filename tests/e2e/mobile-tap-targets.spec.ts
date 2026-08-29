@@ -48,6 +48,40 @@ interface Miss {
 
 test.use({ hasTouch: true, isMobile: true });
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE WELCOME MODAL MUST NOT BE IN FRONT OF WHAT THIS MEASURES (2026-08-29)
+
+   The first complete run of the post-deploy tier reported three controls as
+   unreachable on production, including a "Challenge" button with ZERO reachable
+   pixels. Probed live, none of them was a tap-target defect: `ClubArenaWelcomeModal`
+   was open, and `document.elementFromPoint` was returning its overlay
+   (_overlay_ > _modal_ > _content_) for every point on the page. A suite that
+   reports every control on every route as unreachable is not a guard, it is a
+   wolf-crier, and a wolf-crier gets muted - which would have quietly undone the
+   whole reason this spec was given a job to run in.
+
+   global-setup writes STORAGE_KEYS.WELCOME_ACCEPTED into the storageState it
+   captures, and that is correct and stays. It is not sufficient here: these
+   specs open their own context (`test.use({ isMobile })`), and any route that
+   boots before the key is read - or any session where the app rewrites its own
+   storage on entry - puts the overlay back. An init script runs before every
+   document in this context, so the flag is set no matter how the page arrives.
+   Cheap, local, and it cannot affect any other spec.
+
+   If a control genuinely cannot be reached, this now says so about the control.
+   ───────────────────────────────────────────────────────────────────────────── */
+const WELCOME_ACCEPTED_KEY = 'club_arena_welcome_accepted'; // src/lib/storage.ts
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript((k) => {
+    try {
+      localStorage.setItem(k, 'true');
+    } catch {
+      /* storage blocked - the spec will surface the overlay as a real miss */
+    }
+  }, WELCOME_ACCEPTED_KEY);
+});
+
 test('every control answers to a thumb at 375px', async ({ page }) => {
   test.setTimeout(ROUTES.length * 15_000 + 60_000);
   await page.setViewportSize({ width: 375, height: 812 });

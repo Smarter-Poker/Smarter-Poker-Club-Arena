@@ -4907,6 +4907,21 @@ export default function TablePage({
     variant: string | null;
     /** ANNOUNCE WINDOW (spec §3): clock shows within this many seconds; 0 = always. */
     announceSeconds: number;
+    /**
+     * FIXED ANTE (2026-08-29): chips, not big blinds. The engine prefers this
+     * over the multiplier whenever it is above zero, and TableConfigPage
+     * writes the multiplier in BOTH modes — so reading only the multiplier
+     * described a fixed-ante table with a number it does not charge.
+     */
+    anteFixed: number;
+    /**
+     * MIN PLAYERS (2026-08-29): below this the engine holds the bomb rather
+     * than firing it, silently. Surfaced so a promised bomb that does not
+     * arrive has a visible reason.
+     */
+    minPlayers: number;
+    /** BUTTON POLICY (2026-08-29): 'regular' | 'separate'. */
+    buttonPolicy: string;
   } | null>(null);
 
   /**
@@ -8245,6 +8260,24 @@ export default function TablePage({
         bomb_pot_interval_seconds: number | null;
         bomb_pot_variant: string | null;
         bomb_pot_announce_seconds: number | null;
+        /* 2026-08-29: the three columns the table could not see.
+           - bomb_pot_ante_fixed is what the ENGINE charges when the host chose
+             a fixed ante (ServerTableEngineDealing: `anteFixed > 0 ? anteFixed
+             : undefined`), and TableConfigPage writes bomb_pot_ante_multiplier
+             regardless of mode. Without this column the rules panel described a
+             "Fixed Ante 25" table as "2x BB" while the LOBBY, which does read
+             it, said 25 - the two surfaces contradicting each other about the
+             price of a hand.
+           - bomb_pot_min_players is why a promised bomb sometimes does not
+             arrive. The engine holds the token below the floor and says
+             nothing, so the pill read BOMB POT NEXT HAND and then nothing
+             happened, hand after hand, with no explanation available anywhere.
+           - bomb_pot_button_policy changes who acts last on every street of a
+             bomb hand. A player watching the button not move deserves to be
+             able to find out why. */
+        bomb_pot_ante_fixed: number | null;
+        bomb_pot_min_players: number | null;
+        bomb_pot_button_policy: string | null;
       };
       let table: TableBootstrapRow | null = null;
       let error: unknown = null;
@@ -8256,7 +8289,7 @@ export default function TablePage({
         const res = await supabase
           .from('tables')
           .select(
-            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_announce_seconds'
+            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_announce_seconds, bomb_pot_ante_fixed, bomb_pot_min_players, bomb_pot_button_policy'
           )
           .eq('id', tableId)
           .maybeSingle();
@@ -8412,6 +8445,28 @@ export default function TablePage({
                   Number(table.bomb_pot_announce_seconds) ||
                   Number(settings.bomb_pot_announce_seconds) ||
                   0,
+                // FIXED ANTE (2026-08-29): same precedence the ENGINE uses —
+                // a fixed amount above zero wins over the BB multiplier
+                // (ServerTableEngineDealing: `anteFixed > 0 ? anteFixed :
+                // undefined`). The lobby already read it this way; the table
+                // did not, so the two disagreed about the price of a hand.
+                anteFixed:
+                  Number(table.bomb_pot_ante_fixed) || Number(settings.bomb_pot_ante_fixed) || 0,
+                // MIN PLAYERS: the engine clamps to at least 2 and defaults to
+                // 3 (BombPotScheduler.bombPotSettingsFromTable). Mirror that
+                // here so the panel never states a floor the engine ignores.
+                minPlayers: Math.max(
+                  2,
+                  Math.floor(
+                    Number(table.bomb_pot_min_players) || Number(settings.bomb_pot_min_players) || 3
+                  )
+                ),
+                buttonPolicy:
+                  (typeof table.bomb_pot_button_policy === 'string' &&
+                    table.bomb_pot_button_policy) ||
+                  (typeof settings.bomb_pot_button_policy === 'string' &&
+                    settings.bomb_pot_button_policy) ||
+                  'regular',
               }
             : null
         );
@@ -12710,7 +12765,15 @@ export default function TablePage({
                 // A late label must never land on a newer hand's felt.
                 if ((tableStateRef.current.handNumber ?? 0) !== scoopHand) return;
                 setScoopBanner({
-                  text: label!,
+                  // 2026-08-29: through formatPopupText like every other felt
+                  // banner (the RIT one already does this). These two strings
+                  // are all-caps with no dashes, so the transform is a no-op on
+                  // them today — which is the point of doing it here rather
+                  // than trusting it. Dan's popup rule (CLAUDE.md §5.7) is
+                  // enforced in the render path precisely because a style that
+                  // depends on the next author remembering it does not hold,
+                  // and this was the one felt banner outside that path.
+                  text: formatPopupText(label!),
                   name: scooper?.name || '',
                   handNumber: scoopHand,
                 });
@@ -17574,6 +17637,36 @@ export default function TablePage({
                       )}
                     </>
                   )}
+
+                  {/* SCOOP LABELS (spec §9.2/§13.3): one player swept the
+                      multi-board bomb pot — announced only after the awards
+                      have pushed, never before.
+
+                      2026-08-29: MOVED INSIDE .community-area. As a sibling of
+                      it, absolutely positioned at top:21% of the whole table
+                      surface, this banner landed ON the boards. It only ever
+                      appears on a multi-board hand — the one case where the
+                      stack is tall enough to reach it — so the celebration for
+                      the biggest moment in the feature reliably covered the
+                      board that proved it. At 375px the three-board stack spans
+                      roughly 17.5%..69% of the surface and the banner occupied
+                      21%..33%: squarely over board 1.
+
+                      Anchoring it to the community area instead of to the felt
+                      makes the collision impossible rather than unlikely. It
+                      now hangs off the stack's own bottom edge (top: 100% in
+                      CSS), so it sits under the last board for one, two or
+                      three boards, at any width, without a single magic
+                      percentage to go stale the next time the stack is
+                      resized. */}
+                  {scoopBanner && scoopBanner.handNumber === tableState.handNumber && (
+                    <div className="bomb-scoop-banner" aria-live="polite">
+                      <span className="bomb-scoop-banner__label">{scoopBanner.text}</span>
+                      {scoopBanner.name && (
+                        <span className="bomb-scoop-banner__name">{scoopBanner.name}</span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* ROUND 3 (2026-08-20): bomb pot countdown — players see the
@@ -17587,7 +17680,15 @@ export default function TablePage({
                 {(tableState.bombPotIn != null || bombClockLabel != null) && !bombPotActive && (
                   <div
                     className={`bomb-pot-eta ${
-                      tableState.bombPotIn === 1 || bombClockLabel === 'NEXT HAND'
+                      // URGENCY IS NOT A STEADY STATE (2026-08-29). The pulse
+                      // marks "the next hand is the bomb". On a bomb_pot_only
+                      // table the scheduler reports 1 forever, because every
+                      // hand is a bomb — so this pill pulsed for the entire
+                      // session on the one table where the fact is ordinary
+                      // rather than urgent, and the animation stopped meaning
+                      // anything on every other table by association.
+                      bombPotRules?.triggerMode !== 'bomb_pot_only' &&
+                      (tableState.bombPotIn === 1 || bombClockLabel === 'NEXT HAND')
                         ? 'bomb-pot-eta--next'
                         : ''
                     }`}
@@ -17607,18 +17708,6 @@ export default function TablePage({
                         : tableState.bombPotIn === 1
                           ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
                           : `BOMB POT IN ${tableState.bombPotIn}`}
-                  </div>
-                )}
-
-                {/* SCOOP LABELS (spec §9.2/§13.3): one player swept the
-                    multi-board bomb pot — announced only after the awards
-                    have pushed, never before. */}
-                {scoopBanner && scoopBanner.handNumber === tableState.handNumber && (
-                  <div className="bomb-scoop-banner" aria-live="polite">
-                    <span className="bomb-scoop-banner__label">{scoopBanner.text}</span>
-                    {scoopBanner.name && (
-                      <span className="bomb-scoop-banner__name">{scoopBanner.name}</span>
-                    )}
                   </div>
                 )}
 

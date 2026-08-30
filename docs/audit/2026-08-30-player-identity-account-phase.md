@@ -110,4 +110,10 @@ No route was deleted and no redirect was required.
 
 ## Validation
 
-Validation results are recorded in the publishing commit after typecheck, targeted regression suites, production build, responsive browser checks, protected-branch CI, and production smoke tests complete.
+- TypeScript: `npm run typecheck` passed.
+- Changed-file quality gate: ESLint passed with zero warnings and zero errors; Prettier and `git diff --check` passed.
+- Account/navigation regression pack: 12 files and 136 tests passed, including identity dialogs, settings ownership/write contracts, push subscription, information architecture, navigation, waterfall, avatar-boundary, and no-hover interaction laws.
+- Full Vitest suite: 620 files and 9,262 tests passed.
+- Production bundle: `npm run build` passed on current `origin/main`; stamped provenance reported `behind-main=0`.
+- Responsive implementation coverage: dedicated desktop/tablet/phone rules are present for all four retained pages and both dialogs; constrained grids use `minmax(0, 1fr)`, long content is wrapped, mobile form controls remain at least 44px high and 16px where text input could trigger iOS zoom, and the global no-hover law passes.
+- Protected CI and authenticated production route/overflow smoke checks run after the protected merge and are reported in the release handoff, because the local E2E environment intentionally has no account credentials.

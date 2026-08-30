@@ -184,6 +184,45 @@ describe('the club arena background is one black', () => {
     expect(wrap).not.toMatch(/backdrop-filter/);
   });
 
+  it('every page GROUND is the same black, not four near-blacks', () => {
+    // Dan 2026-08-30, round 2. These are grounds - the shell behind the felt,
+    // the three full-bleed states that replace it, and the lobby strip holding
+    // the club card and wallet. Not raised surfaces: `.lobby-club`, the tiles
+    // and the panels keep their own colours, which is what a raised surface is
+    // FOR. #0a0c12 and #02060b are invisible on their own and obviously a
+    // different black once everything around them is #000.
+    // Comments stripped: the rule explains which black it replaced, by value.
+    expect(MULTI_TABLE_CSS.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/#0a0c12/);
+    const lobby = read('src/pages/ClubHomePage.css');
+    const topAt = lobby.indexOf('.lobby-top {');
+    expect(topAt).toBeGreaterThan(-1);
+    const top = lobby.slice(topAt, lobby.indexOf('\n}', topAt));
+    expect(top).toMatch(/background:\s*#000/);
+    // And no white seam between the strip and the page under it.
+    expect(top).not.toMatch(/border-bottom:[^;]*rgba\(255/);
+    // The 1px stays DECLARED: it is part of this rule's height, and the
+    // "1 pixel under the ticker" geometry was measured with it in place.
+    expect(top).toMatch(/border-bottom:\s*1px solid #000/);
+  });
+
+  it('the dead route-art machinery is deleted, not left running into nothing', () => {
+    // The classifier picked a PNG for a pseudo-element that no longer exists.
+    // Left in place it computes an answer nobody reads on every navigation,
+    // and the next reader has to prove it is dead before touching it.
+    // Comments stripped first: the file DESCRIBES what it used to do, by name,
+    // and a naive grep would fail on the explanation of the deletion.
+    const layout = read('src/components/layouts/AppLayout.tsx')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    expect(layout).not.toMatch(/ROUTE_ART/);
+    expect(layout).not.toMatch(/getCasinoZone/);
+    expect(layout).not.toMatch(/--casino-route-art/);
+    expect(layout).not.toMatch(/data-casino-zone/);
+    // The shell class itself stays - it still carries the typography, focus
+    // and table rules the pages depend on.
+    expect(layout).toMatch(/styles\.casinoStage/);
+  });
+
   it('the route shell carries no artwork or side borders', () => {
     // "YOU CAN SEE SOME OLD BORDER IMAGES ON THE SIDES" - the route art bled
     // in from the right edge of .casinoStage, with inset highlights down both

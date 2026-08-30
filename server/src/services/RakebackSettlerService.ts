@@ -1712,6 +1712,46 @@ export class RakebackSettlerService {
     console.log(
       `[RakebackSettler] Settled ${upserts}/${buckets.size} period rows from ${rows.length} hand records in ${elapsedMs}ms (failures: ${failures})`
     );
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A FAILED RECOMPUTE MUST NOT ADVANCE THE WATERMARK (2026-08-29)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * `failures` was counted, logged, and then thrown away: the durable cursor
+     * moved past those rake_records regardless, and the cycle returned
+     * 'idle'/'more' rather than 'halted' -- even though this file defines
+     * 'halted' as "a read failed: the cursor did NOT advance" and already uses
+     * it for exactly that, twice.
+     *
+     * Why that is not self-healing. `fn_rakeback_recompute_periods` rebuilds a
+     * (club, week) period FROM SOURCE, so a failure repairs itself only if
+     * another rake record happens to land in the SAME club and the SAME ISO
+     * week before that week closes. A failure on a week's last batch is
+     * permanent, and it compounds: `rake_generated` is what selects the tier
+     * band (5/10/15/20/30%), so a period computed from partial data can pay a
+     * whole tier low. That is the failure mode the note above this method
+     * records as having understated one player 16x and dropped them a tier.
+     *
+     * Not advancing means the next cycle re-reads the same window and tries
+     * again, which is precisely what the two read-failure sites already do.
+     * The work is idempotent -- recompute rebuilds from source and
+     * player_stats applies are keyed -- so a retry costs a re-read, not a
+     * double-credit.
+     */
+    if (failures > 0) {
+      reportError(
+        new Error(
+          `[RakebackSettler] ${failures} period recompute(s) failed across ${buckets.size} bucket(s) — ` +
+            `holding the watermark at ${this.cursor?.createdAt ?? 'start'} so the next cycle retries them. ` +
+            `Advancing would leave those rake_records permanently unsettled, and rake_generated selects the ` +
+            `rakeback tier, so a partial period can pay a whole band low.`
+        ),
+        'RakebackSettler.period_recompute_failures_hold_cursor'
+      );
+      return 'halted';
+    }
+
     this.cursor = nextCursor;
     await this.saveHighWaterMark(nextCursor);
     return hitLimit ? 'more' : 'idle';

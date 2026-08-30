@@ -142,3 +142,109 @@ commit — the test working exactly as intended.
 - **A split pot shares the mystery chest but not the regular/PKO bounty.**
   Carried over from the previous pass — splitting a PKO head is a rule, not
   arithmetic, and is Dan's to make. It is no longer silent.
+
+---
+
+## Two more, found by finishing the sweep
+
+**The guard caught the next asset, from a different author, one day later.**
+The final table art was redrawn on main today and it fixes the seat-plate
+misalignment properly — `sideRailStep` 113 → 20.7, better than my own
+machine-cleaned attempt, so main's version is the one kept and mine was
+dropped. But the new export arrived carrying the white matte Dan said must
+never be there: **83.2 against a limit of 20**. Run through
+`scripts/dev/table-skin-defringe.py`: 83.2 → 0.3, alpha untouched, dimensions
+unchanged. This is exactly what the guard was written for.
+
+**A failed rakeback recompute no longer advances the watermark.**
+`_runSettlementInner` counted `failures` from `fn_rakeback_recompute_periods`,
+logged the number, and then moved the durable cursor past those `rake_records`
+anyway, returning `'idle'`/`'more'` — although this same file defines
+`'halted'` as _"a read failed: the cursor did NOT advance"_ and already uses it
+for precisely that, twice.
+
+It does not self-heal. Recompute rebuilds a (club, week) period from source, so
+a failed batch only repairs itself if another rake record lands in the same
+club and the same ISO week before that week closes. A failure on a week's last
+batch is permanent — and it compounds, because `rake_generated` selects the
+tier band (5/10/15/20/30%), so a period built from partial data can pay a
+player a whole band low. That is the failure mode this service's own notes
+record as having understated one player 16× and dropped them a tier.
+
+Retrying is safe: recompute rebuilds from source and the `player_stats` applies
+are keyed, so holding the cursor costs a re-read, never a double-credit.
+
+Worth recording: there are **two** cursor advances in that method and only one
+was wrong. The first sits in the `buckets.size === 0` branch — no eligible
+credits, nothing to recompute, nothing that can fail — and advancing there is
+correct. My first guard test matched that one and failed; the fix was to make
+the test precise, not to widen the code.
+
+---
+
+## A live overpayment, found by conservation check
+
+The most important find of the whole sweep, and it came from a **query against
+production**, not from reading code. Eight mystery bounty events completed in
+one afternoon paid out **more than their bounty pool held**:
+
+| event                  |   pool |   paid |   over |
+| ---------------------- | -----: | -----: | -----: |
+| Evening Mystery Bounty | 180.00 | 191.00 | +11.00 |
+| Union Mystery Bounty   | 420.00 | 445.00 | +25.00 |
+| Evening Mystery Bounty | 174.00 | 192.00 | +18.00 |
+| Union Mystery Bounty   | 420.00 | 439.00 | +19.00 |
+| Evening Mystery Bounty | 180.00 | 189.50 |  +9.50 |
+| Union Mystery Bounty   | 420.00 | 459.00 | +39.00 |
+| Evening Mystery Bounty | 180.00 | 189.60 |  +9.60 |
+| Evening Mystery Bounty | 180.00 | 189.50 |  +9.50 |
+
+**140.60 of chips created from nothing in about four hours** — roughly 840 a
+day at that rate. And `bounty_pool_paid` agreed with the ledger throughout, so
+the counter was not merely wrong: it had been _updated to match_ the
+overpayment, and nothing objected.
+
+### The mechanism
+
+Taking the 180.00 event apart: 30 entrants × 6.00 = 180.00 funded, and the
+knockers received **exactly 180.00** — the whole pool, correctly, with
+`fn_collect_bounty`'s cap doing its job. The champion was then paid 11.00 on
+top as an "unclaimed" residual.
+
+`fn_finalize_bounty_pool` computed that residual as
+
+```sql
+v_residual := bounty_pool - bounty_pool_paid;
+```
+
+under a `FOR UPDATE` lock on `tournaments`. **The lock is real but it guards
+the wrong thing.** `bounty_pool_paid` is a _counter_ that `fn_collect_bounty`
+increments as knockouts settle, and finalisation runs while collections are
+still landing. It read a stale 169.00, called 11.00 unclaimed, paid it — and
+the outstanding collections then took the pool to 180.00 anyway.
+
+### The fix
+
+The residual is measured from the **ledger**, which is the only record that
+cannot be stale relative to the money, because it _is_ the money: sum every
+`bounty` wallet transaction already written for that tournament, signed off
+`type` (a debit is not a payment — the rule the tournament reconciler learned
+on the 28th). Residual is what remains of the pool after that, floored at zero.
+The counter is reconciled to the ledger at the same time so the next reader is
+not misled the way this function was.
+
+Verified: re-running the finaliser on all eight overpaid events now returns
+**residual 0** on every one. The overpayment cannot repeat.
+
+### What this does not fix, stated plainly
+
+It makes **overpayment impossible**, in any ordering. It does not guarantee the
+residual reaches the right player: if finalisation still runs before the last
+collections, the champion takes a residual those knockouts would have claimed,
+and they find the pool empty. That is a **shortfall** — visible, correctable,
+and with the money still inside the pool — rather than chips minted. The
+ordering question (finalise only after the reveal queue drains) is the
+follow-up; this closes the minting.
+
+The 140.60 already paid is in players' wallets. Reversing it is a clawback, and
+clawbacks are Dan's call.

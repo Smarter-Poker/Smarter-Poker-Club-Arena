@@ -88,8 +88,17 @@
      showing it. One rule at the base now, no breakpoint override, so the club
      card and the wallet start directly under the ticker at every width. */
   padding: 1px 1rem 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: #02060b;
+  /* 2026-08-30, Dan: "THE WHOLE BACKGROUND SHOULD BE SOLID BLACK AND ALL THE
+     SAME COLOR." This strip carries the club card and the wallet and sits
+     immediately under the ticker, so it is the first thing the eye compares
+     against everything around it - and it was doing two things wrong at once:
+     #02060b is a different black from `.club-home` (#000) directly beneath it,
+     and the white 6% bottom border drew a visible seam across the page between
+     the two. Both go. The border stays DECLARED, in black, because that 1px is
+     part of this rule's height and the "1 pixel under the ticker" geometry
+     above was measured with it in place. */
+  border-bottom: 1px solid #000;
+  background: #000;
 }
 
 /* The legacy full-width ticker is gone. The compact Bad Beat Jackpot tile now

@@ -2442,6 +2442,10 @@ export class HorseLogic {
         // and it knows the size the solver actually bet. v1 offers exactly
         // one bet size everywhere - b16, 16% of pot - so V30 cannot express a
         // large turn bet at all, while the v2 turn bet averages 246.8% of pot.
+        // NULL when the layer is ablated off, never a synthetic miss: a
+        // disabled layer that reports `empty_store` teaches the counters to
+        // lie about the table being empty, and those counters are the whole
+        // point of the attribution below.
         const v31 =
           (opts.v31GtoSuitAware ?? true) !== false
             ? gtoStreetAdviceV31({
@@ -2453,10 +2457,14 @@ export class HorseLogic {
                 hand: hand29,
                 holeCards: player.cards,
               })
-            : ({ hit: false, miss: 'empty_store' } as const);
-        if (v31.hit) {
+            : null;
+        if (v31?.hit) {
           const pick31 = rollMix(v31.mix, fastRandom);
-          if (pick31) {
+          if (!pick31) {
+            // A cell whose mix carries no mass. Counted on its own, because
+            // it is a DATA problem in a cell that exists — not a miss.
+            if (telemetryOn(opts)) noteFire('v31_gto_empty_mix');
+          } else {
             if (pick31 === 'check') {
               if (telemetryOn(opts)) noteFire('v31_gto_open');
               return { action: 'check', thinkTime: 0 };
@@ -2487,21 +2495,23 @@ export class HorseLogic {
           board: gs.communityCards,
           hand: hand29,
         });
-        if (!advice29 && telemetryOn(opts)) {
+        if (!advice29 && telemetryOn(opts) && v31 && !v31.hit) {
           // OBSERVABILITY (2026-08-30): the gate was passed and NEITHER layer
           // answered. Until now that was silent, so "the solver layer fires on
           // 0.08% of decisions" could not be attributed to the gate, a missing
           // cell, or a missing holding inside a cell. Literal labels, so the
           // dead-layer grep audit can still see them.
-          if (!v31.hit) {
-            if (v31.miss === 'no_cell') noteFire('gto_miss_no_cell');
-            else if (v31.miss === 'hand_not_in_cell') noteFire('gto_miss_hand_not_in_cell');
-            else if (v31.miss === 'no_texture') noteFire('gto_miss_no_texture');
-            else if (v31.miss === 'no_hand') noteFire('gto_miss_no_hand');
-            else noteFire('gto_miss_empty_store');
-          } else {
-            noteFire('gto_miss_no_cell');
-          }
+          //
+          // Only fired when V31 actually LOOKED AND MISSED. If it hit and was
+          // merely unusable, v31_gto_empty_mix or v31_gto_no_size already
+          // recorded that, and adding a `no_cell` on top would claim a cell
+          // was absent when one was found — corrupting the very attribution
+          // this exists to provide.
+          if (v31.miss === 'no_cell') noteFire('gto_miss_no_cell');
+          else if (v31.miss === 'hand_not_in_cell') noteFire('gto_miss_hand_not_in_cell');
+          else if (v31.miss === 'no_texture') noteFire('gto_miss_no_texture');
+          else if (v31.miss === 'no_hand') noteFire('gto_miss_no_hand');
+          else noteFire('gto_miss_empty_store');
         }
         if (advice29) {
           const pick = rollMix(advice29.mix, fastRandom);

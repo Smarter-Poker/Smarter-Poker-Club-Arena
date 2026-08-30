@@ -1102,6 +1102,11 @@
       "name",
       "description"
     ],
+    "daily_challenge_milestones": [
+      "days",
+      "reward_chips",
+      "label"
+    ],
     "daily_spins": [
       "user_id",
       "reward_type"
@@ -3339,7 +3344,14 @@
     ],
     "user_daily_challenges": [
       "user_id",
-      "challenge_id"
+      "challenge_id",
+      "challenge_name_snapshot",
+      "challenge_description_snapshot",
+      "challenge_type_snapshot",
+      "tier_snapshot",
+      "requirement_snapshot",
+      "chip_reward_snapshot",
+      "diamond_reward_snapshot"
     ],
     "user_daily_rewards": [
       "user_id"

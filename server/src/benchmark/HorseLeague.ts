@@ -856,15 +856,43 @@ let leagueRunning = false;
  */
 const CLAIM_STALE_MS = 60 * 60 * 1000;
 
+/**
+ * Where each nightly job leaves its evidence.
+ *
+ * ── 2026-08-30, found by the daily analysis it was supposed to enable ──
+ * This map used to hold only the two league jobs, with every other job
+ * "asked to prove nothing". That sounds conservative. It is the opposite:
+ * `claimNightlyJob` treats a null answer as "cannot be judged" and DECLINES
+ * the takeover, so the liveness test above - the whole point of this block -
+ * was switched off for exactly the jobs that had no other retry.
+ *
+ * What that cost, measured: 'daily_audit' claimed 2026-08-29 at 06:09 UTC and
+ * the container was replaced mid-run. Nothing took it over, the orphaned claim
+ * permanently satisfied the INSERT lock, and the day's audit did not exist
+ * until an agent generated it by hand ~28 hours later. 'self_tuner' lost
+ * 2026-08-26 the same way. The engine restarts several times a day
+ * (RestartCount 7, six boots in 30h as this was written), so a restart inside
+ * a job window is routine, not exotic - which is precisely the reasoning in
+ * the comment above that this map failed to apply.
+ *
+ * A job belongs here the moment it writes a row somewhere. Anything genuinely
+ * unjudgeable still returns null and keeps the old all-or-nothing claim.
+ */
+const CLAIM_EVIDENCE: Record<string, { table: string; column: string; dateColumn: string }> = {
+  league: { table: 'horse_league_results', column: 'matchup', dateColumn: 'run_date' },
+  league_pm: { table: 'horse_league_results', column: 'matchup', dateColumn: 'run_date' },
+  daily_audit: { table: 'horse_daily_audit', column: 'day', dateColumn: 'day' },
+  self_tuner: { table: 'horse_self_tune_log', column: 'id', dateColumn: 'run_date' },
+};
+
 /** Rows already written for this job+date - the proof a claim did work. */
 async function claimProducedRows(job: string, date: string): Promise<boolean | null> {
-  // Only the league jobs write horse_league_results; anything else is asked
-  // to prove nothing and keeps the old all-or-nothing claim.
-  if (job !== 'league' && job !== 'league_pm') return null;
+  const evidence = CLAIM_EVIDENCE[job];
+  if (evidence === undefined) return null;
   const { data, error } = await supabase
-    .from('horse_league_results')
-    .select('matchup')
-    .eq('run_date', date)
+    .from(evidence.table)
+    .select(evidence.column)
+    .eq(evidence.dateColumn, date)
     .limit(1);
   if (error) throw new Error(error.message);
   return (data?.length ?? 0) > 0;

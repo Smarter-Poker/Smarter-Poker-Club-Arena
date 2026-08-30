@@ -422,15 +422,36 @@ describe('the client asks the right server', () => {
     }
   });
 
-  it('a push goes out on request, on approval and on a decline', () => {
-    expect(SERVICE).toContain("'Cash Out Requested'");
-    expect(SERVICE).toContain("'Cash Out Approved'");
-    expect(SERVICE).toContain("'Cash Out Declined'");
-    expect(SERVICE).toContain('pushNotificationService.sendToUser');
+  it('the notification for each cash-out leg is raised by the RPC, not the client', () => {
+    // REWRITTEN 2026-08-30 (#1498). This used to assert the client called
+    // pushNotificationService.sendToUser on request, approval and decline.
+    //
+    // It was asserting a duplicate. The cash-out RPCs write the notification
+    // themselves, inside the money transaction -- fn_cashout_approve emits
+    // 'cashout_approved', fn_cashout_release 'cashout_cancelled' /
+    // 'cashout_denied', fn_cashout_request 'cashout_request_escrow',
+    // fn_expire_stale_cashouts 'cashout_expired_refund' -- and
+    // trg_mirror_notification_to_push_outbox turns every one into a push. The
+    // client call was a SECOND push over the same event; OneSignal's retirement
+    // on 2026-08-19 only made the duplication invisible by killing the
+    // transport it went through.
+    //
+    // So what matters now is that the client calls the RPC that owns the rule,
+    // and does NOT send its own push on top.
+    for (const rpc of ['fn_cashout_request', 'fn_cashout_approve', 'fn_cashout_release']) {
+      expect(SERVICE).toContain(`'${rpc}'`);
+    }
+    expect(SERVICE).not.toContain('pushNotificationService.sendToUser');
   });
 
-  it('and a failed push can never fail the money that already moved', () => {
+  it('pushQuietly stays a no-op that cannot be repointed at a dead transport', () => {
+    // The old assertion here was `expect(push).toContain('catch')` -- a proxy
+    // for "a failed push can never fail the money that already moved". The
+    // stronger version of that promise is that there is no push here at all to
+    // fail: the shim is empty, and the RPC's own notification is inside the
+    // transaction that moved the chips.
     const push = sliceMethod(SERVICE, 'async function pushQuietly');
-    expect(push).toContain('catch');
+    expect(push).not.toContain('sendToUser');
+    expect(push).not.toContain('await');
   });
 });

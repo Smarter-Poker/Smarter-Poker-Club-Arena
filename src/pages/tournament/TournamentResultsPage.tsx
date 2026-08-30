@@ -90,6 +90,34 @@ interface HandHistoryRecord {
   created_at: string;
 }
 
+/* Row chrome shared by both spin leaderboards. Extracted rather than inlined
+   twice: the two boards carry different row TYPES (a net row has `net`, a
+   volume row does not), so they render as separate maps - casting one to the
+   other is exactly the unsound `as` tsc rejects. Shared styling keeps them
+   looking like one component regardless. */
+const SPIN_BOARD_NAME_STYLE: React.CSSProperties = {
+  flex: 1,
+  color: '#e2e8f0',
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+};
+
+const spinBoardRowStyle = (i: number): React.CSSProperties => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '10px',
+  padding: '8px 12px',
+  borderTop: i === 0 ? 'none' : '1px solid #1e293b',
+  fontSize: '12px',
+});
+
+const spinBoardRankStyle = (i: number): React.CSSProperties => ({
+  width: 20,
+  color: i < 3 ? '#fbbf24' : '#475569',
+  fontWeight: i < 3 ? 700 : 400,
+});
+
 export default function TournamentResultsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -150,6 +178,16 @@ export default function TournamentResultsPage() {
       endedAt: string;
     }>
   >([]);
+  /* SPIN LEADERBOARDS (2026-08-29, round 15). Three boards a spin player
+     actually wants, aggregated server-side by fn_spin_leaderboards - at
+     ~1,800 spins a day the browser has no business paging that to rank ten
+     names. HORSES ARE PLAYERS (10.5): the RPC applies no is_horse filter and
+     neither does this. */
+  const [spinBoards, setSpinBoards] = useState<{
+    mostSpins: Array<{ username: string; spins: number }>;
+    bestNet: Array<{ username: string; net: number; spins: number }>;
+  } | null>(null);
+  const [spinBoardTab, setSpinBoardTab] = useState<'volume' | 'net'>('net');
 
   // Refs to avoid stale closures
   const loadTournamentsRef = useRef<() => void>(() => {});
@@ -276,6 +314,47 @@ export default function TournamentResultsPage() {
         );
       } catch (err) {
         reportError(err, 'TournamentResultsPage.biggest_hits_load_failed');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [typeFilter]);
+
+  /* ── SPIN LEADERBOARDS (round 15) ────────────────────────────────────────
+     One RPC, one read, Spin view only. Error-bound per the ratchet; a
+     failure leaves the boards hidden rather than showing an empty podium
+     that would read as "nobody has played". */
+  useEffect(() => {
+    if (typeFilter !== 'spin') {
+      setSpinBoards(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error: boardsErr } = await supabase.rpc('fn_spin_leaderboards', {
+          p_days: 7,
+        });
+        if (boardsErr) throw boardsErr;
+        if (cancelled || !isMounted.current) return;
+        const r = data as {
+          most_spins?: Array<{ username?: string; spins?: number }>;
+          best_net?: Array<{ username?: string; net?: number; spins?: number }>;
+        } | null;
+        setSpinBoards({
+          mostSpins: (r?.most_spins ?? []).map((x) => ({
+            username: String(x?.username ?? 'Player'),
+            spins: Number(x?.spins) || 0,
+          })),
+          bestNet: (r?.best_net ?? []).map((x) => ({
+            username: String(x?.username ?? 'Player'),
+            net: Number(x?.net) || 0,
+            spins: Number(x?.spins) || 0,
+          })),
+        });
+      } catch (err) {
+        reportError(err, 'TournamentResultsPage.spin_leaderboards_load_failed');
       }
     })();
     return () => {
@@ -760,6 +839,86 @@ export default function TournamentResultsPage() {
           </div>
         </div>
       )}
+
+      {/* ── SPIN LEADERBOARDS (round 15): 7-day volume and net, Spin view
+          only. Horses rank alongside humans (CLAUDE.md 10.5). ── */}
+      {typeFilter === 'spin' &&
+        spinBoards &&
+        (spinBoards.mostSpins.length > 0 || spinBoards.bestNet.length > 0) && (
+          <div style={{ marginBottom: '16px' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginBottom: '8px',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: '11px',
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: '#64748b',
+                }}
+              >
+                Spin Leaders
+              </span>
+              <span style={{ fontSize: '10px', color: '#475569' }}>Last 7 Days</span>
+              <span style={{ flex: 1 }} />
+              {(['net', 'volume'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setSpinBoardTab(tab)}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    fontSize: '11px',
+                    minHeight: 32,
+                    cursor: 'pointer',
+                    touchAction: 'manipulation',
+                    background: spinBoardTab === tab ? '#3b82f6' : '#1e293b',
+                    color: spinBoardTab === tab ? '#fff' : '#94a3b8',
+                  }}
+                >
+                  {tab === 'net' ? 'Best Net' : 'Most Spins'}
+                </button>
+              ))}
+            </div>
+            <div
+              style={{
+                background: '#0f172a',
+                border: '1px solid #1e293b',
+                borderRadius: '8px',
+                overflow: 'hidden',
+              }}
+            >
+              {spinBoardTab === 'net'
+                ? spinBoards.bestNet.map((row, i) => (
+                    <div key={`net-${row.username}-${i}`} style={spinBoardRowStyle(i)}>
+                      <span style={spinBoardRankStyle(i)}>{i + 1}</span>
+                      <span style={SPIN_BOARD_NAME_STYLE}>{row.username}</span>
+                      <span style={{ color: '#64748b', fontSize: '11px' }}>
+                        {row.spins.toLocaleString()} Spins
+                      </span>
+                      <span style={{ color: '#34d399', fontWeight: 700 }}>
+                        +{Math.round(row.net).toLocaleString()}
+                      </span>
+                    </div>
+                  ))
+                : spinBoards.mostSpins.map((row, i) => (
+                    <div key={`vol-${row.username}-${i}`} style={spinBoardRowStyle(i)}>
+                      <span style={spinBoardRankStyle(i)}>{i + 1}</span>
+                      <span style={SPIN_BOARD_NAME_STYLE}>{row.username}</span>
+                      <span style={{ color: '#e2e8f0', fontWeight: 700 }}>
+                        {row.spins.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+            </div>
+          </div>
+        )}
 
       {isLoading ? (
         <div style={{ textAlign: 'center', color: '#64748b', padding: '40px' }}>

@@ -618,12 +618,83 @@ export default function ActionPanel({
     host.classList.toggle('ca-raising', isRaiseMode);
     return () => host.classList.remove('ca-raising');
   }, [isRaiseMode]);
+
+  /* ─── TAP ANYWHERE ABOVE THE PANEL TO GET THE THREE HOT KEYS BACK ─────────
+   *
+   * Dan 2026-08-29: "you should be able to click the back button or anywhere
+   * on the top of the screen to close the action bar and go back to the 3 hot
+   * keys."
+   *
+   * The sizing overlay is tall and `position: fixed`, so on a phone it stands
+   * over the bottom of the felt - including, at some stack sizes, the hero's
+   * own cards. Until now the ways out were the Back button at the top of the
+   * overlay and the Raise button behind it: both small, both at the bottom,
+   * and neither is where a thumb goes when the reflex is "get this out of my
+   * way". A player who taps the felt to dismiss it got nothing, or worse got
+   * whatever the felt does with a tap.
+   *
+   * So a pointerdown outside the panel closes it. Three details, each
+   * load-bearing:
+   *
+   *   - CAPTURE PHASE, and the event is stopped. The tap that dismisses must
+   *     not ALSO reach the felt underneath - otherwise dismissing the panel
+   *     over an open seat would try to seat the player, which is the kind of
+   *     surprise that costs money. First tap closes, second tap acts.
+   *   - SCOPED TO THIS TABLE'S ROOT, not the document. Four tables can be
+   *     painted at once in tile view (see the note above on why the
+   *     `ca-raising` flag moved off `document.body`); a document-level
+   *     listener would let a tap on table two dismiss table one's slider.
+   *   - `pointerdown`, not `click`. A click fires after the gesture completes,
+   *     which on a slider drag that ends outside the panel would close it on
+   *     release. Pointerdown is the moment the player commits to the tap.
+   *
+   * Escape does the same on a desktop, which is what a keyboard user expects
+   * from anything modal-shaped and costs one listener — but NOT while the
+   * amount field is being typed into. Escape already means "throw away this
+   * draft and put the previous amount back" in that input (see its onKeyDown),
+   * and stealing it would make the panel vanish mid-correction. The first
+   * version of this did exactly that and
+   * tests/actionpanel-bet-granularity.test.tsx caught it. One Escape, two
+   * meanings, innermost wins — which is how every nested dismissible behaves.
+   */
+  const amountTypingRef = useRef(false);
+  useEffect(() => {
+    if (!isRaiseMode) return;
+    const panel = panelRootRef.current;
+    const host = panel?.closest('.table-page') ?? document.body;
+
+    const onPointerDown = (e: Event) => {
+      const target = e.target as Node | null;
+      // Inside the panel (slider, presets, Back, the amount field) - leave it.
+      if (!target || (panel && panel.contains(target))) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setIsRaiseMode(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (amountTypingRef.current) return; // the input owns Escape while it is open
+      setIsRaiseMode(false);
+    };
+
+    host.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      host.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isRaiseMode]);
   // Phase 2 T1-03: spec §5.2 — tapping the amount opens a numeric keyboard.
   // amountTyping toggles the inline input; amountDraft holds the raw text
   // while the user types so we don't fight their cursor mid-edit. Commit on
   // Enter / blur — parse, clamp to [minRaise, maxRaise], over-stack snaps
   // to all-in (= maxRaise per spec).
   const [amountTyping, setAmountTyping] = useState(false);
+  /* Read by the Escape handler above, which is declared before this state and
+     must not close the panel while the inline editor owns the key. */
+  useEffect(() => {
+    amountTypingRef.current = amountTyping;
+  }, [amountTyping]);
   const [amountDraft, setAmountDraft] = useState<string>('');
   const amountInputRef = useRef<HTMLInputElement | null>(null);
   const [windowWidth, setWindowWidth] = useState(

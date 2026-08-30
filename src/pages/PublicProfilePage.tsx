@@ -68,6 +68,12 @@ export default function PublicProfilePage() {
 
   const loadingRef = useRef(false);
 
+  useEffect(() => {
+    document.title = profile
+      ? `${profile.displayName || profile.username} | Smarter Poker`
+      : 'Player Profile | Smarter Poker';
+  }, [profile]);
+
   useVisibilityRefresh(() => loadProfile());
   const loadProfile = useCallback(async () => {
     if (!userId || !user?.id) return;
@@ -105,7 +111,7 @@ export default function PublicProfilePage() {
       loadingRef.current = false;
       if (isMounted.current) setLoading(false);
     }
-  }, [userId, user?.id]);
+  }, [isMounted, navigate, toast, userId, user?.id]);
 
   useEffect(() => {
     loadProfile();
@@ -179,19 +185,27 @@ export default function PublicProfilePage() {
     myId: string,
     theirId: string
   ): Promise<'none' | 'pending_sent' | 'pending_received' | 'friends'> {
-    const { data, error } = await supabase
+    const { data: friendshipRows, error } = await supabase
       .from('friendships')
       .select('status, user_id')
       .or(
         `and(user_id.eq.${myId},friend_id.eq.${theirId}),and(user_id.eq.${theirId},friend_id.eq.${myId})`
       )
-      .maybeSingle();
-    if (error) reportError(error, 'PublicProfilePage.Friendship_check_failed');
+      // Accepted relationships can be stored in both directions. Asking
+      // PostgREST for maybeSingle() turns that valid reciprocal pair into a
+      // PGRST116 error, so inspect the bounded pair instead.
+      .limit(2);
+    if (error) {
+      reportError(error, 'PublicProfilePage.Friendship_check_failed');
+      return 'none';
+    }
 
-    if (!data) return 'none';
-    if (data.status === 'accepted') return 'friends';
-    if (data.status === 'pending') {
-      return data.user_id === myId ? 'pending_sent' : 'pending_received';
+    if (!friendshipRows?.length) return 'none';
+    if (friendshipRows.some((row) => row.status === 'accepted')) return 'friends';
+
+    const pending = friendshipRows.find((row) => row.status === 'pending');
+    if (pending) {
+      return pending.user_id === myId ? 'pending_sent' : 'pending_received';
     }
     return 'none';
   }
@@ -303,10 +317,12 @@ export default function PublicProfilePage() {
   });
 
   return (
-    <div className="public-profile-page">
+    <article className="public-profile-page">
       {/* Header with avatar & name */}
-      <div className="public-profile-header">
+      <header className="public-profile-header">
+        <div className="public-profile-artwork" aria-hidden="true" />
         <div className="profile-hero">
+          <span className="public-profile-eyebrow">Player Network // Public Credential</span>
           <PlayerAvatar
             src={profile.avatarUrl || generateDefaultAvatar()}
             name={profile.username}
@@ -329,21 +345,24 @@ export default function PublicProfilePage() {
           </div>
 
           {/* Q3: Playing-At & Status */}
-          {playerStatus?.playingAt && (
-            <div
+          {playerStatus?.playingAt && playerStatus.playingAtTableId ? (
+            <button
+              type="button"
               className="playing-at-badge"
-              onClick={() =>
-                playerStatus.playingAtTableId && navigate(`/table/${playerStatus.playingAtTableId}`)
-              }
+              onClick={() => navigate(`/table/${playerStatus.playingAtTableId}`)}
             >
               Playing At <strong>{playerStatus.playingAt}</strong>
+            </button>
+          ) : playerStatus?.playingAt ? (
+            <div className="playing-at-badge playing-at-badge--static">
+              Playing At <strong>{playerStatus.playingAt}</strong>
             </div>
-          )}
+          ) : null}
           {playerStatus?.statusText && (
             <p className="player-status-text">{playerStatus.statusText}</p>
           )}
         </div>
-      </div>
+      </header>
 
       {/* Action Buttons */}
       <div className="profile-actions">
@@ -390,10 +409,14 @@ export default function PublicProfilePage() {
               onClick={handleMessage}
               disabled={actionLoading}
             >
-              ✉ Message
+              Message
             </button>
-            <button className="action-btn block-btn" onClick={() => setShowBlockModal(true)}>
-              ⊘
+            <button
+              className="action-btn block-btn"
+              onClick={() => setShowBlockModal(true)}
+              aria-label={`Block ${profile.username}`}
+            >
+              Block
             </button>
             <button
               className="action-btn share-btn"
@@ -447,7 +470,8 @@ export default function PublicProfilePage() {
           </h3>
           <div className="mutual-friends-list">
             {mutualFriends.slice(0, 6).map((friend) => (
-              <div
+              <button
+                type="button"
                 key={friend.id}
                 className="mutual-friend-chip"
                 onClick={() => navigate(`/profile/${friend.id}`)}
@@ -461,7 +485,7 @@ export default function PublicProfilePage() {
                   }}
                 />
                 <span>{friend.username}</span>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -503,6 +527,6 @@ export default function PublicProfilePage() {
           onCancel={() => setShowBlockModal(false)}
         />
       )}
-    </div>
+    </article>
   );
 }

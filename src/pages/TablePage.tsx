@@ -253,7 +253,7 @@ import SpectatorBadge from '../components/table/SpectatorBadge';
 // FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay
 // import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
 import { horseBugReporter } from '../services/HorseBugReporter';
-import { useUserTableSettings } from '../hooks/useUserTableSettings';
+import { useUserTableSettings, TABLE_SETTINGS_META } from '../hooks/useUserTableSettings';
 import { useUserThemeSettings } from '../hooks/useUserThemeSettings';
 import PineappleDiscard from '../components/table/PineappleDiscard';
 import GameServerAPI, {
@@ -567,6 +567,10 @@ interface TableState {
   // rotate. The hero sees a "Post BB to enter" button when their userId
   // is in this list. Walkthrough Step 4 fix 2026-04-29.
   waitingForBBUserIds?: string[];
+  // Dan 2026-08-29 — the subset of the above who have already agreed to post
+  // and are held out only by their seat. The hero is never asked again while
+  // their own id is in here; the engine posts for them when the seat clears.
+  postBBDeferredUserIds?: string[];
   // Phase 8: Action timer state
   actionTimerDeadline?: number;
   /** Wall-clock turn start (server-authoritative). Drives the CSS ring
@@ -2128,6 +2132,7 @@ export default function TablePage({
         engineWinners: mapped.winners,
         // Walkthrough Step 4 fix 2026-04-29: waiting-for-BB user IDs.
         waitingForBBUserIds: mapped.waitingForBBUserIds,
+        postBBDeferredUserIds: mapped.postBBDeferredUserIds,
       };
     });
   }, [engineSnapshot, USE_ENGINE_WS, userId, tableState.maxPlayers]);
@@ -2598,6 +2603,18 @@ export default function TablePage({
             if (!res?.success) {
               throw new Error(`network/preaction-arm: ${res?.error || 'engine refused'}`);
             }
+            /* ADOPT THE ENGINE'S OWN NUMBER (2026-08-30). The engine records
+               `toCallAtSet` from its authoritative state and now returns it.
+               Until this line the panel-suppression rule judged "can the
+               engine still honour this?" against a price the BROWSER
+               snapshotted at tap time — two snapshots of one number, taken at
+               two moments on two machines. They agree almost always, and the
+               "almost" is a visible flash on a hand the engine was going to
+               act, or no panel on a hand where the arm was already dead.
+               There is now one number, and it is the engine's. */
+            if (typeof res.armedToCall === 'number' && Number.isFinite(res.armedToCall)) {
+              preActionCallAmountRef.current = res.armedToCall;
+            }
             return res;
           },
           2,
@@ -2888,6 +2905,18 @@ export default function TablePage({
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   // Guards the entry-post overlay against a double tap billing two big blinds.
   const [isPostingBB, setIsPostingBB] = useState(false);
+  /* Dan 2026-08-29, binding: "that shouldn't happen because you already
+     agreed to post bb... it currently makes you hit the button again, or it
+     simply won't deal you in at all."
+
+     The engine holds the agreement (postBBWhenClear) and republishes it as
+     postBBDeferredUserIds, which is the durable answer and survives a reload.
+     This flag is the OPTIMISTIC half, and it exists because the snapshot that
+     carries the durable answer is up to one poll behind the tap: without it
+     the button reappears for a beat between the toast and the next snapshot,
+     which is a re-prompt as far as a thumb is concerned. Cleared the moment
+     the engine stops holding the hero at all. */
+  const [bbPostAgreed, setBBPostAgreed] = useState(false);
   /* Dan 2026-08-26, binding: "as soon as you confirm your buy in at a cash
      table, the next pop up must be Post Or Wait For BB. Then that decides if
      the player will be dealt in or is waiting." Opened by the buy-in success
@@ -3800,29 +3829,31 @@ export default function TablePage({
     if (seatFirstConfirm === null) setSpinOddsOpen(false);
   }, [seatFirstConfirm]);
 
-  // Buy-in 60s timeout enforcement
-  useEffect(() => {
-    if (!showBuyInModal && seatFirstConfirm === null) return;
-
-    const timer = setTimeout(() => {
-      if (showBuyInModal) {
-        setShowBuyInModal(false);
-        setPendingSeat(null);
-        setSelectedSeat(null);
-        if (buyInIdempotencyKeyRef.current) {
-          buyInIdempotencyKeyRef.current = null;
-        }
-      }
-      if (seatFirstConfirm !== null) {
-        setSeatFirstConfirm(null);
-      }
-
-      toast?.error?.('Buy-in timed out. You have been removed from the table.');
-      navigate('/hub/club-arena');
-    }, 60000);
-
-    return () => clearTimeout(timer);
-  }, [showBuyInModal, seatFirstConfirm, navigate, toast]);
+  /* ── THE DUPLICATE BUY-IN TIMER IS DELETED (2026-08-29, round 14) ─────────
+   *
+   * A second 60-second timer used to live here, and it is the "never registers
+   * without errors" Dan reported. It did three things wrong, all of them
+   * visible to a player sitting on the Spin buy-in sheet:
+   *
+   *   1. `navigate('/hub/club-arena')` — the router's basename ALREADY is
+   *      '/hub/club-arena' (src/main.tsx), so this resolved to
+   *      '/hub/club-arena/hub/club-arena', a route that does not exist. A
+   *      player who lingered on the sheet was thrown to a dead URL.
+   *   2. It raised a red ERROR toast ("Buy-in timed out. You have been removed
+   *      from the table.") for a timeout that is not an error and for a
+   *      removal from a table the player had never sat at.
+   *   3. On a CASH table it fired ALONGSIDE the real timer below, so both a
+   *      red error and a calm info toast appeared, and two navigations raced.
+   *
+   * It also used a bare setTimeout, which a background tab throttles, so it
+   * could fire late against a sheet the player had already dealt with.
+   *
+   * The window itself is Dan's rule and is KEPT — it is enforced by the one
+   * timer below, which is wall-clock based, shows a live countdown, releases
+   * the optimistic seat, closes the tab and routes to the real lobby. That
+   * timer now covers the seat-first sheet too, so Spins are governed by the
+   * same correct clock instead of a broken second one.
+   */
   /**
    * Synchronous twin of `seatFirstPending`, mirroring `buyInProcessingRef` on
    * the cash path. State updates are batched, so two Buy In presses landing in
@@ -6695,6 +6726,26 @@ export default function TablePage({
     }
   }, [postOrWaitOpen, tableState.heroSeat, tableState.players]);
 
+  /* Dan 2026-08-29 — the optimistic "I already agreed" flag lives exactly as
+     long as the engine is still holding the hero out.
+
+     HOSTILE STATE, which is the reason this effect exists rather than a bare
+     setter at the call site: the flag hides the post prompt, so a stale one
+     would hide a prompt the hero genuinely needs to answer — after they stand
+     up and sit back down, or after the engine restarts and no longer knows
+     about the agreement. Clearing it the moment the hero is no longer in
+     waitingForBBUserIds makes it impossible to outlive the hold. The durable
+     answer is postBBDeferredUserIds, which comes from the engine and can be
+     trusted across a reload; this only covers the poll in between. */
+  useEffect(() => {
+    if (!bbPostAgreed) return;
+    const held =
+      !!userId &&
+      Array.isArray(tableState.waitingForBBUserIds) &&
+      tableState.waitingForBBUserIds.includes(userId);
+    if (!held) setBBPostAgreed(false);
+  }, [bbPostAgreed, userId, tableState.waitingForBBUserIds]);
+
   /**
    * `rebuyProcessing` readable from a timer's closure. The 120s backstop must
    * not cancel a rebuy that is mid-flight — see its use below.
@@ -7047,7 +7098,57 @@ export default function TablePage({
    * because `onConfirmBuyIn` closes the modal before the RPC resolves.
    */
   useEffect(() => {
-    if (!showBuyInModal) {
+    /* ROUND 14: the seat-first (Spin / Heads-Up) confirm sheet is governed by
+       THIS clock now. It used to have a second, broken timer of its own; see
+       the note where that was deleted. One window, one implementation. */
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  THE CLOCK STOPS WHEN THE MONEY MOVES, NOT WHEN THE RPC ANSWERS
+     *  (Dan, live, 2026-08-30 — round 16)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Dan: "IT DID SPIN ABOUT 20 SECONDS LATER, NEVER FINISH ... THEN BOOTED
+     * ME OFF THE TABLE, CLOSED THE GAME AND SENT ME BACK TO THE LOBBY!"
+     *
+     * That is this effect, and the bug was mine (round 14). Production shows
+     * the seat was BOUGHT — `tournament_players.registered_at` 07:33:41.366Z,
+     * seat 3 of "20 Chip Spin PLO4", stack still on the felt, the game still
+     * running without him. And Sentry has ZERO client events in that window,
+     * which is the tell: nothing threw. A deliberate code path decided to
+     * leave, and this is the only one that closes the tab and navigates with
+     * no error of any kind.
+     *
+     * HOW IT FIRES AGAINST A PAID SEAT. The guard below used to be exactly
+     * `showBuyInModal || seatFirstConfirm !== null`. On the seat-first path
+     * `seatFirstConfirm` is cleared only AFTER `fn_take_seat_and_buy_in`
+     * RESOLVES, so the whole in-flight window — pressing Buy In, the RPC, the
+     * round trip — is still "sheet open" and the clock is still running. The
+     * old comment claimed "there is no path where this fires against a
+     * completed buy-in, because onConfirmBuyIn closes the modal before the RPC
+     * resolves". True of the CASH modal. Never true of the seat-first sheet
+     * this effect was handed in round 14, and I wrote that line.
+     *
+     * The odds ladder (round 9) made it likelier by design: it gives a player
+     * something to READ on this sheet, so deliberating 50-odd seconds and then
+     * confirming is now the normal way to use it. Add one slow RPC — the
+     * engine was restarting at 07:34, hand throughput fell 182 -> 88/min — and
+     * the timer wins the race against a purchase that already succeeded.
+     *
+     * TWO GUARDS, because the second one makes the whole CLASS impossible:
+     *
+     *   1. A commit in flight is not an open sheet. `seatFirstPending` means
+     *      the player has pressed the button and chips are moving; the
+     *      decision window is over whatever the network does next.
+     *   2. A SEATED PLAYER IS NEVER SENT TO THE LOBBY BY A DECISION CLOCK.
+     *      `heroSeat` above zero means the seat is held and paid for. No
+     *      timeout about *deciding* to buy in may eject someone who has
+     *      already bought in — whatever else races, that stays true.
+     */
+    const commitInFlight = seatFirstPending || seatFirstPendingRef.current;
+    const alreadySeated = tableState.heroSeat > 0 || heroSeatRef.current > 0;
+    const sheetOpen =
+      (showBuyInModal || seatFirstConfirm !== null) && !commitInFlight && !alreadySeated;
+    if (!sheetOpen) {
       setBuyInSecondsLeft(null);
       return;
     }
@@ -7064,8 +7165,18 @@ export default function TablePage({
       window.clearInterval(id);
       setBuyInSecondsLeft(null);
 
+      /* LAST LOOK, AT FIRE TIME (round 16). The guard above is evaluated when
+         the effect runs; this one is evaluated in the instant it would eject.
+         Between the two sits a whole second in which the RPC can land — which
+         is precisely the race that took Dan off a seat he had paid for. Refs,
+         not state: a value committed during this tick is visible here and the
+         re-rendered state is not. */
+      if (seatFirstPendingRef.current || heroSeatRef.current > 0) return;
+
       // Release the sheet and the optimistic seat, exactly as a cancel does.
       setShowBuyInModal(false);
+      // ROUND 14: and the seat-first sheet, which this clock now owns.
+      setSeatFirstConfirm(null);
       setPendingSeat(null);
       setSelectedSeat(null);
       buyInIdempotencyKeyRef.current = null;
@@ -7087,8 +7198,12 @@ export default function TablePage({
     }, 1000);
 
     return () => window.clearInterval(id);
+    /* `seatFirstPending` and `heroSeat` are DEPENDENCIES, not just reads: the
+       guard above is what stops the clock, and a guard that is never
+       re-evaluated is not a guard. Pressing Buy In flips `seatFirstPending`
+       true and must tear this interval down in that same commit. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showBuyInModal, tableId]);
+  }, [showBuyInModal, seatFirstConfirm, tableId, seatFirstPending, tableState.heroSeat]);
 
   const handleLeaveTable = async () => {
     if (!tableId || !userId) return;
@@ -11296,7 +11411,7 @@ export default function TablePage({
     });
   }, []);
 
-  useSeatedProfileSync(tableId, seatedUserIds, handleSeatedProfileChange);
+  const seatedProfileSync = useSeatedProfileSync(tableId, seatedUserIds, handleSeatedProfileChange);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // WAITLIST → HORSE YIELD — When a real player is waiting & table full, remove a horse
@@ -14749,6 +14864,51 @@ export default function TablePage({
       return;
     }
 
+    /* ═══════════════════════════════════════════════════════════════════════
+       A TOURNAMENT SEAT IS NEVER FOR SALE AT A CASH PRICE (2026-08-30)
+       ═══════════════════════════════════════════════════════════════════════
+
+       Everything below this line is the CASH path: it opens the buy-in modal
+       priced off `minBuyIn`/`maxBuyIn`, which are computed from the table's
+       BLINDS. On a tournament table those fields are whatever the row happens
+       to carry, and the modal that appears has no relationship to the game.
+
+       CAUGHT IN A REAL BROWSER, 2026-08-30, on `1 Chip Spin PLO5` — a spin
+       whose buy-in is ONE chip. Clicking its open seat produced the cash
+       modal offering 800 to 4,000 chips, with 40BB/93BB/146BB shortcuts and
+       an account balance. Nothing on that sheet was true of the game, and
+       whatever the player did next could only fail: `fn_take_seat_and_buy_in`
+       is the only sanctioned entry to a seat-first game, and this path does
+       not call it.
+
+       It is reached whenever `seatFirstBuyIn` is null while the seats are
+       still rendering as sittable — most often because the game FILLED between
+       the lobby click and the seat click (spins fill in seconds and are
+       recycled roughly ten a minute), and also on every path the recovery
+       effect above documents: an RLS-denied or failed tournament read, a
+       mount that beat the row to REGISTERING.
+
+       This is Dan's report, in its exact words: "I STILL CAN'T EVEN SIT DOWN
+       AND PLAY, IT NEVER WORKS, NEVER REGISTERS WITHOUT ERRORS." A cash
+       prompt on a one-chip spin is precisely what that feels like from the
+       chair.
+
+       So the cash path is now closed to tournament tables. Say what is true —
+       the seat is not for sale here — rather than quoting a price from a
+       different game. `isTournament` is set from `game_type === 'tournament'
+       || !!tournament_id`, so a table that is a tournament by either measure
+       is covered, and a genuine cash table is untouched. */
+    if (tableState.isTournament || tableState.tournamentId) {
+      console.debug('[Seat] Tournament seat with no seat-first sale - refusing the cash path');
+      reportError(
+        new Error('cash buy-in path reached on a tournament table'),
+        'TablePage.cash_path_on_tournament_seat',
+        { tableId, tournamentId: tableState.tournamentId, seatNumber }
+      );
+      toast?.info?.('This Seat Is Not For Sale Right Now');
+      return;
+    }
+
     console.debug('[Seat] Opening buy-in modal for seat', seatNumber);
     // Paint the seat as taken THIS FRAME, before any network work starts.
     setPendingSeat(seatNumber);
@@ -15795,6 +15955,19 @@ export default function TablePage({
       bigBlindsWon: s?.bigBlindsWon ?? null,
     };
   })();
+
+  /**
+   * The Table tab's inline switches (2026-08-30). Derived from the SAME meta
+   * list that drives the full settings panel, filtered by its `quick` flag —
+   * so adding or removing one is a single edit next to the setting itself,
+   * and this can never drift into a second hand-maintained list of keys.
+   */
+  const heroHubQuickSettings = TABLE_SETTINGS_META.filter((m) => m.quick).map((m) => ({
+    key: m.key as string,
+    label: m.label,
+    description: m.description,
+    value: !!v8Settings[m.key as keyof typeof v8Settings],
+  }));
 
   const hudSlotControl: 'timebank' | 'rabbit' | null = isHeroTurnContext
     ? 'timebank'
@@ -17278,6 +17451,10 @@ export default function TablePage({
          the bottom bar on [data-hero-action="none"]; do not rename either the
          attribute or any of the three values. */
       data-hero-action={heroActionState}
+      /* Operational truth for connection diagnostics and real browser tests.
+         An outage now self-recovers and reconciles, but exposing the current
+         state prevents avatar health from being hidden behind table-art health. */
+      data-player-appearance-sync={seatedProfileSync.state}
       /* Dan 2026-08-18 — the page never shows the skin composite's scene:
          the table is .table-art inside the aspect-locked scaler, and the
          page behind it is a standalone designed background (style below). */
@@ -19280,6 +19457,21 @@ export default function TablePage({
             <div className="seat-buyin-confirm__note">
               This {seatFirstBuyIn.label} Starts When All {seatFirstBuyIn.seats} Seats Are Bought
             </div>
+            {/* ROUND 14: the 60-second window, made VISIBLE. It has always
+                applied to this sheet, but nothing on it said so - the player
+                simply vanished to the lobby mid-decision, which is precisely
+                the "it never works" surprise. Counting down is the honest
+                version, and it matters more now that the odds ladder below
+                gives a player something to read. Last ten seconds go amber. */}
+            {buyInSecondsLeft !== null && (
+              <div
+                className="seat-buyin-confirm__meta"
+                style={buyInSecondsLeft <= 10 ? { color: '#fbbf24' } : undefined}
+                aria-live="polite"
+              >
+                Seat Held For {buyInSecondsLeft}s
+              </div>
+            )}
             {/* ENHANCEMENT 2026-08-29: the multiplier ladder, priced at THIS
                 stake. Spins only - a Heads-Up has no wheel. Every number is
                 derived from the one canonical ladder (spinOddsTable), so the
@@ -19424,9 +19616,49 @@ export default function TablePage({
              contradicted the reserved seat + "Post BB to Enter" CTA on felt. */
           <div className="spectator-footer-bar" data-state="reserved">
             <span className="spectator-footer-bar__label">
-              {tableState.isTournament
-                ? 'Spectating'
-                : "Seat Reserved, You'll Be Dealt In Next Hand"}
+              {(() => {
+                /* ═══ SAY WHICH STATE YOU ARE ACTUALLY IN (Dan 2026-08-30) ═══
+                   This read "Seat Reserved, You'll Be Dealt In Next Hand" for
+                   every non-tournament seat, unconditionally — including the
+                   one case where it is FALSE and the felt was already saying
+                   so two inches higher up.
+
+                   In the screenshot Dan sent on 2026-08-29 the overlay says
+                   "Post Big Blind To Enter" and this bar says "you'll be dealt
+                   in next hand" AT THE SAME TIME. They cannot both be right,
+                   and this one is the wrong one: a player between the blinds
+                   waits for the button to pass, which is two or three hands,
+                   not one. Of the two the footer sounds the more authoritative
+                   because it is not a button, so it is what people believe.
+
+                   Three honest states, in the order they can be true. */
+                if (tableState.isTournament) return 'Spectating';
+
+                const held =
+                  !!userId &&
+                  Array.isArray(tableState.waitingForBBUserIds) &&
+                  tableState.waitingForBBUserIds.includes(userId);
+                if (!held) {
+                  // Not held by the engine at all — the seat is theirs and the
+                  // next deal includes them. The original sentence, now only
+                  // said when it is true.
+                  return "Seat Reserved, You'll Be Dealt In Next Hand";
+                }
+
+                const agreed =
+                  bbPostAgreed || (tableState.postBBDeferredUserIds ?? []).includes(userId!);
+                if (agreed) {
+                  // They answered. The engine holds the agreement and posts it
+                  // the moment the seat clears, so nothing is being asked of
+                  // them and the bar must not imply otherwise.
+                  return 'Posting The Big Blind, You Are Dealt In When The Button Passes';
+                }
+
+                // Held and unanswered: the overlay above is asking a real
+                // question, and this bar now agrees with it instead of
+                // contradicting it.
+                return 'Seat Reserved, Post The Big Blind Or Wait For It';
+              })()}
             </span>
           </div>
         ) : seatFirstBuyIn && tableState.heroSeat > 0 ? (
@@ -19952,15 +20184,24 @@ export default function TablePage({
                        post left the player waiting. One call, three honest
                        outcomes. */
                     const res = await serverPostBBToEnter(tableId);
-                    if (res?.success) {
+                    if (res?.deferred) {
+                      /* Dan 2026-08-29: HELD, NOT REFUSED. They are in
+                         between the blinds. The agreement is kept by the
+                         engine and posted for them the moment the button is
+                         past, so this says what happens next and never asks
+                         again. */
+                      setBBPostAgreed(true);
+                      toast.info(
+                        res?.error ||
+                          'You Are In Between The Blinds, And Will Be Dealt In When The Button Passes.'
+                      );
+                    } else if (res?.success) {
                       toast.success('Posting The Big Blind. You Are Dealt Into The Next Hand.');
                     } else if (res?.error === 'Player is not waiting for BB') {
                       // Already known to the engine and not held out: they
                       // are in the rotation and post blinds like everyone.
                       toast.info('You Are Already In The Hand Rotation.');
                     } else {
-                      // Positional refusal (SB or button incoming): the wait
-                      // is mandatory there and cannot be bought.
                       toast.info(
                         res?.error || 'Could Not Post The Big Blind. You Will Wait For It Instead.'
                       );
@@ -19993,7 +20234,16 @@ export default function TablePage({
         tableId &&
         !tableState.isTournament &&
         Array.isArray(tableState.waitingForBBUserIds) &&
-        tableState.waitingForBBUserIds.includes(userId) && (
+        tableState.waitingForBBUserIds.includes(userId) &&
+        /* Dan 2026-08-29, binding: ASK ONCE. A hero who has already agreed to
+           post is not asked again while the seat clears — not on the next
+           snapshot, and not after a reload, because the engine republishes
+           the agreement in postBBDeferredUserIds and the local flag covers
+           the poll between the tap and that snapshot. They keep their place,
+           the engine posts for them, and the two positional house rules are
+           still what decides WHEN. */
+        !bbPostAgreed &&
+        !(tableState.postBBDeferredUserIds ?? []).includes(userId) && (
           /* Dan 2026-08-26, binding: a cash entrant either waits for the big
              blind or posts it. There is no free hand and no coming in behind
              the blinds, so this is a real choice again rather than the notice
@@ -20013,7 +20263,15 @@ export default function TablePage({
               setIsPostingBB(true);
               try {
                 const res = await serverPostBBToEnter(tableId);
-                if (res?.success) {
+                if (res?.deferred) {
+                  // Dan 2026-08-29 — see the identical branch on the
+                  // post-or-wait modal above. Held, not refused.
+                  setBBPostAgreed(true);
+                  toast.info(
+                    res?.error ||
+                      'You Are In Between The Blinds, And Will Be Dealt In When The Button Passes.'
+                  );
+                } else if (res?.success) {
                   toast.success('Posting The Big Blind. You Are Dealt Into The Next Hand.');
                 } else if (res?.error === 'Player is not waiting for BB') {
                   toast.info('You Are Already In The Hand Rotation.');
@@ -21117,6 +21375,14 @@ export default function TablePage({
           heroAvatarUrl={heroAvatarUrl || undefined}
           stats={heroHubStats}
           isHeroTurn={isHeroTurnContext}
+          /* 2026-08-30: the quick toggles come from TABLE_SETTINGS_META's
+             `quick` flag — one list, beside the settings' single owner — and
+             write through the same toggleSetting the full panel uses. The hub
+             adds a surface, never a second owner. */
+          quickSettings={heroHubQuickSettings}
+          onToggleQuickSetting={(key) => {
+            void toggleV8Setting(key as keyof typeof v8Settings);
+          }}
         />
       )}
 

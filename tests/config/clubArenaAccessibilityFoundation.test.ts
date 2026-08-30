@@ -8,7 +8,8 @@ describe('Club Arena accessibility foundation', () => {
   it('removes the closed command menu from the focus tree and restores its opener', () => {
     const source = read('src/components/navigation/HamburgerMenu.tsx');
 
-    expect(source).toContain('if (!isOpen) return null');
+    expect(source).toContain('if (!isOpen) {');
+    expect(source).toContain('return showThemeSettings ? (');
     expect(source).toContain('previousFocusRef.current.focus()');
     expect(source).toContain("event.key === 'Escape'");
     expect(source).toContain("event.key !== 'Tab'");

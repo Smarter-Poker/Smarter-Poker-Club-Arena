@@ -7,11 +7,11 @@
  */
 
 .header {
-  --global-header-height: clamp(44px, 7.64vw, 84px);
-
   position: sticky;
   top: 0;
-  z-index: 130;
+  /* The global header is the topmost navigation surface. The persistent table
+     action bar deliberately sits one layer below it at z-index 380. */
+  z-index: 390;
   width: 100%;
   align-self: stretch;
   box-sizing: border-box;
@@ -25,12 +25,10 @@
 .desktopArtwork {
   display: block;
   width: calc(100% - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
-  height: var(--global-header-height);
+  height: auto;
   margin-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
   aspect-ratio: 1648 / 168;
-  /* Fill the full-width header box while honoring the user-requested compact
-     height; contain would shrink the artwork sideways and leave dead gutters. */
-  object-fit: fill;
+  object-fit: contain;
   object-position: center;
   user-select: none;
   pointer-events: none;
@@ -41,7 +39,6 @@
   top: env(safe-area-inset-top, 0px);
   right: env(safe-area-inset-right, 0px);
   left: env(safe-area-inset-left, 0px);
-  height: var(--global-header-height);
   aspect-ratio: 1648 / 168;
 }
 
@@ -56,11 +53,11 @@
 
 .artButton {
   position: absolute;
-  top: 0;
+  top: 13%;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
+  height: 74%;
   margin: 0;
   padding: 0;
   overflow: visible;
@@ -116,19 +113,41 @@
 .profileBtn {
   left: 66.5%;
   width: 7.5%;
+  position: absolute !important;
+  overflow: hidden;
+  contain: layout paint;
+  isolation: isolate;
 }
 
-.profileAvatar {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 56%;
+.profileAvatarSlot {
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  z-index: 1;
+  display: block;
+  width: 58%;
   height: auto;
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
+  aspect-ratio: 0.78;
+  transform: translate(-50%, -50%) !important;
+  overflow: hidden;
   border-radius: 50%;
-  background: #05070a;
-  object-fit: cover;
+  background: #020305;
+  pointer-events: none;
+}
+
+.profileAvatarSlot > .profileAvatar {
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  aspect-ratio: auto !important;
+  transform: none !important;
+  border-radius: inherit !important;
+  background: #020305;
+  object-fit: cover !important;
+  object-position: center !important;
   opacity: 1 !important;
   pointer-events: none;
 }
@@ -171,6 +190,15 @@
   font:
     800 11px/1 system-ui,
     sans-serif;
+}
+
+/* These semantic anchors make each count belong to its own control. A generic
+   absolute badge must never fall back to the header control plane, where the
+   notification count previously appeared over Profile. */
+.messageBadge,
+.notificationBadge {
+  top: 3px;
+  right: 8%;
 }
 
 .brandArtwork {

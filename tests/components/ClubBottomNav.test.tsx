@@ -2,6 +2,7 @@ import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ClubBottomNav from '../../src/components/club/ClubBottomNav';
+import { clubIdFromPath } from '../../src/components/club/clubIdFromPath';
 import { activeTabForPath } from '../../src/components/club/clubBottomNavTabs';
 import { STORAGE_KEYS } from '../../src/lib/storage';
 
@@ -84,6 +85,14 @@ describe('activeTabForPath', () => {
   });
 });
 
+describe('clubIdFromPath', () => {
+  it('extracts and decodes the current route club immediately', () => {
+    expect(clubIdFromPath(`/clubs/${CLUB}/cashier`)).toBe(CLUB);
+    expect(clubIdFromPath('/clubs/my%20club/members')).toBe('my club');
+    expect(clubIdFromPath('/marketplace')).toBeNull();
+  });
+});
+
 describe('ClubBottomNav approved footer contract', () => {
   beforeEach(() => localStorage.clear());
 
@@ -120,6 +129,21 @@ describe('ClubBottomNav approved footer contract', () => {
   it('resolves the last valid club from the lobby cache', async () => {
     seedClubs([OTHER], CLUB);
     await renderAt('/stats');
+
+    expect(hrefs()).toContain(`/clubs/${OTHER}/settings`);
+    expect(hrefs().some((href) => href?.includes(CLUB))).toBe(false);
+  });
+
+  it('uses the current route club before a stale cached club', async () => {
+    seedClubs([OTHER], OTHER);
+    await renderAt(`/clubs/${CLUB}/cashier`);
+
+    expect(hrefs()).toContain(`/clubs/${CLUB}/settings`);
+    expect(hrefs().some((href) => href?.includes(OTHER))).toBe(false);
+  });
+
+  it('keeps an explicit club override ahead of the current route', async () => {
+    await renderAt(`/clubs/${CLUB}/cashier`, OTHER);
 
     expect(hrefs()).toContain(`/clubs/${OTHER}/settings`);
     expect(hrefs().some((href) => href?.includes(CLUB))).toBe(false);

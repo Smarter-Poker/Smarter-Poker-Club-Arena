@@ -7,33 +7,24 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, Suspense, type KeyboardEvent } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
-import { useAuthUser } from '../hooks/useAuthUser';
 import { LoadingState } from '../components/common/EmptyState';
-import DailyBonusWheel from '../components/bonus/DailyBonusWheel';
 import FriendListPanel from '../components/social/FriendListPanel';
 import { VIPStatusCard } from '../components/vip/VIPStatusCard';
 import { VIPProgressRing } from '../components/vip/VIPProgressRing';
 import UserProfileEdit, { UserProfileData } from '../components/social/UserProfileEdit';
-import { profileService } from '../services/ProfileService';
 import { DiamondService } from '../services/DiamondService';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import { bonusService } from '../services/BonusService';
 import { masterBus } from '../core/MasterBus';
 import { StreakFire } from '../components/gamification/StreakFire';
 import StreakMultiplier from '../components/gamification/StreakMultiplier';
 import FinancialAchievementBadge from '../components/gamification/FinancialAchievementBadge';
 import CircularGauge from '../components/common/CircularGauge';
 import DiamondRainEffect from '../components/effects/DiamondRainEffect';
-import GamificationLeaderboard from '../components/gamification/GamificationLeaderboard';
 import PlayerActivityFeed from '../components/social/PlayerActivityFeed';
 import ReferralDashboard from '../components/social/ReferralDashboard';
-import PerformanceTrends from '../components/stats/PerformanceTrends';
-import StakeLevelComparison from '../components/stats/StakeLevelComparison';
-import PlayerStyleRadar from '../components/stats/PlayerStyleRadar';
-import PromotionsList from '../components/promotions/PromotionsList';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import { useToast } from '../components/common/Toast';
 import { retryFetch } from '../utils/retryFetch';
@@ -47,6 +38,13 @@ import { lazyWithRetry } from '../utils/lazyWithRetry';
 
 // #5: Lazy-load Recharts (387KB) — only imported when History tab is opened
 const LazyProfitChart = lazyWithRetry(() => import('../components/profile/ProfitChart'));
+
+const PROFILE_TABS = ['stats', 'achievements', 'history', 'social'] as const;
+type ProfileTab = (typeof PROFILE_TABS)[number];
+
+function isProfileTab(value: string | null): value is ProfileTab {
+  return PROFILE_TABS.includes(value as ProfileTab);
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -144,13 +142,11 @@ const StatCard = ({
   value,
   label,
   positive,
-  index,
   isVisible,
 }: {
   value: string | number;
   label: string;
   positive?: boolean | null;
-  index?: number;
   isVisible?: boolean;
 }) => (
   <div
@@ -217,11 +213,11 @@ export default function ProfilePage() {
   }, []);
 
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isMountedRef = useIsMounted();
 
   const toast = useToast();
   const [showProfileEdit, setShowProfileEdit] = useState(false);
-  const { user: storeUser } = useAuthUser();
   useVisibilityRefresh(async () => {
     const {
       data: { user: au },
@@ -239,18 +235,49 @@ export default function ProfilePage() {
       // stats column doesn't exist in profiles DB table — stats will be loaded separately
     }
   });
-  const [activeTab, setActiveTab] = useState<'stats' | 'achievements' | 'history' | 'social'>(
-    'stats'
+  const [activeTab, setActiveTab] = useState<ProfileTab>(() => {
+    const requested = searchParams.get('tab');
+    return isProfileTab(requested) ? requested : 'stats';
+  });
+
+  useEffect(() => {
+    const requested = searchParams.get('tab');
+    if (isProfileTab(requested) && requested !== activeTab) setActiveTab(requested);
+  }, [activeTab, searchParams]);
+
+  const selectTab = useCallback(
+    (tab: ProfileTab) => {
+      setActiveTab(tab);
+      const next = new URLSearchParams(searchParams);
+      if (tab === 'stats') next.delete('tab');
+      else next.set('tab', tab);
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams]
   );
 
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const nextIndex =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? PROFILE_TABS.length - 1
+          : (index + (event.key === 'ArrowRight' ? 1 : -1) + PROFILE_TABS.length) %
+            PROFILE_TABS.length;
+    const nextTab = PROFILE_TABS[nextIndex];
+    selectTab(nextTab);
+    requestAnimationFrame(() => document.getElementById(`profile-tab-${nextTab}`)?.focus());
+  };
+
   const swipeHandlers = useSwipeTabs({
-    tabs: ['stats', 'achievements', 'history', 'social'],
+    tabs: [...PROFILE_TABS],
     activeTab,
-    onTabChange: (tab) => setActiveTab(tab as any),
+    onTabChange: (tab) => selectTab(tab as ProfileTab),
   });
 
   const [isLoading, setIsLoading] = useState(true);
-  const [showBonusWheel, setShowBonusWheel] = useState(false);
   const [showDiamondRain, setShowDiamondRain] = useState(false);
 
   // Real data from database
@@ -283,7 +310,9 @@ export default function ProfilePage() {
     const timers: ReturnType<typeof setTimeout>[] = [];
     if (!isLoading && user) {
       setVisibleStats(new Set());
-      const statCount = 11; // Update based on actual stat count
+      // Three gauges plus ten stat cards. The old count stopped at index 10,
+      // leaving Bounty KOs and tournament Win Rate permanently at opacity 0.
+      const statCount = 13;
       for (let i = 0; i < statCount; i++) {
         timers.push(setTimeout(() => setVisibleStats((prev) => new Set(prev).add(i)), i * 50));
       }
@@ -503,7 +532,7 @@ export default function ProfilePage() {
       isMounted = false;
       clearTimeout(safetyTimer);
     };
-  }, []);
+  }, [isMountedRef, toast]);
 
   // ── Bus Listeners: cross-page profile reactivity ──
   useEffect(() => {
@@ -762,6 +791,13 @@ export default function ProfilePage() {
     <StandardContentLayout className={styles.page}>
       {/* Profile Header */}
       <section className={styles.profileHeader}>
+        <div className={styles.heroArtwork} aria-hidden="true" />
+        <div className={styles.heroCopy}>
+          <span className={styles.heroEyebrow}>Player Identity // Live Credential</span>
+          <span className={styles.heroStatus} role="status">
+            <span aria-hidden="true" /> Profile Synced
+          </span>
+        </div>
         <div className={styles.avatarContainer}>
           {user.avatarUrl ? (
             <img
@@ -847,12 +883,8 @@ export default function ProfilePage() {
           <button className={styles.editButton} onClick={() => setShowProfileEdit(true)}>
             Edit Profile
           </button>
-          <button
-            className={styles.editButton}
-            onClick={() => navigate('/vip')}
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            ◆ {diamonds.toLocaleString()} {isVIP && <span style={{ fontSize: 12 }}>♛ VIP</span>}
+          <button className={styles.editButton} onClick={() => navigate('/vip')}>
+            {diamonds.toLocaleString()} DIA {isVIP && <span className={styles.vipAction}>VIP</span>}
           </button>
         </div>
       </section>
@@ -877,8 +909,8 @@ export default function ProfilePage() {
           const nextTierName = nextTierData?.tier;
 
           return (
-            <section className={styles.contentSection}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <section className={`${styles.contentSection} ${styles.vipSection}`}>
+              <div className={styles.vipContent}>
                 <VIPProgressRing
                   current={diamonds}
                   total={nextTierPoints || diamonds}
@@ -905,135 +937,53 @@ export default function ProfilePage() {
           );
         })()}
 
-      {/* Daily Bonus */}
-      <section className={styles.contentSection}>
-        <button className={styles.bonusButton} onClick={() => setShowBonusWheel(true)}>
-          Daily Bonus
-        </button>
-      </section>
-
-      {/* Daily Challenges — single source of truth lives at /challenges.
-          This page used to render a full MissionsPanel with its own copy of the
-          load + claim logic, duplicating the widget on ClubDetailPage and the
-          dedicated page. Three surfaces meant three independent claim guards
-          over the same rows and three sets of queries per visit. */}
-      <section className={styles.contentSection}>
-        <button
-          className={styles.bonusButton}
-          onClick={() => navigate('/challenges')}
-          style={{ width: '100%' }}
-        >
-          Daily Challenges
-        </button>
-      </section>
-
-      {/* Gamification Leaderboard */}
-      <section className={styles.contentSection}>
-        <GamificationLeaderboard />
-      </section>
-
-      {/* Player Activity Feed */}
-      {user?.id && (
-        <section className={styles.contentSection}>
-          <PlayerActivityFeed userId={user.id} />
-        </section>
-      )}
-
-      {/* Referral Program Dashboard */}
-      {user?.id && (
-        <section className={styles.contentSection}>
-          <ReferralDashboard userId={user.id} />
-        </section>
-      )}
-
-      {/* Player Intelligence — Analytics Dashboard */}
-      {user?.id && (
-        <section className={styles.contentSection}>
-          <PerformanceTrends userId={user.id} />
-        </section>
-      )}
-      {user?.id && (
-        <section className={styles.contentSection}>
-          <PlayerStyleRadar userId={user.id} />
-        </section>
-      )}
-      {user?.id && (
-        <section className={styles.contentSection}>
-          <StakeLevelComparison userId={user.id} />
-        </section>
-      )}
-      {user?.id && (
-        <section className={styles.contentSection}>
-          <PromotionsList userId={user.id} />
-        </section>
-      )}
+      {/* Dedicated workspaces own reward claims, deep analytics, promotions,
+          and ranking. Profile is their identity index, not a second copy of
+          their data loaders and mutation guards. */}
+      <nav className={styles.destinationGrid} aria-label="Player workspaces">
+        {[
+          { label: 'Player Analytics', meta: 'Deep stats and leak analysis', path: '/stats' },
+          { label: 'Bonus Center', meta: 'Daily and special claims', path: '/bonuses' },
+          { label: 'Challenges', meta: 'Missions and progress', path: '/challenges' },
+          { label: 'Leaderboards', meta: 'Circuit rankings', path: '/leaderboard' },
+          { label: 'Promotions', meta: 'Live offers and eligibility', path: '/promotions' },
+          { label: 'VIP Status', meta: 'Tier progress and benefits', path: '/vip' },
+        ].map((destination) => (
+          <button
+            type="button"
+            key={destination.path}
+            className={styles.destination}
+            onClick={() => navigate(destination.path)}
+          >
+            <span>{destination.label}</span>
+            <small>{destination.meta}</small>
+            <i aria-hidden="true">↗</i>
+          </button>
+        ))}
+      </nav>
 
       {/* Achievement Showcase — always visible */}
       {achievements.filter((a) => a.unlockedAt).length > 0 && (
         <section className={styles.contentSection}>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 8,
-            }}
-          >
-            <h3 style={{ margin: 0, fontSize: '0.875rem', color: '#8a9aaa', fontWeight: 600 }}>
-              Top Achievements
-            </h3>
+          <div className={styles.sectionHeading}>
+            <h3>Recent Distinctions</h3>
             <button
-              onClick={() => setActiveTab('achievements')}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#00d4ff',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                padding: '2px 6px',
-              }}
-              /* 2026-08-23: 2px of padding made this 18px tall — the smallest
-                 tap target measured anywhere in the app. It has no class of
-                 its own to style, so it opts into the shared touch utility,
-                 which adds an invisible 44px hit area without changing how
-                 the link looks. */
-              className="tap-target"
+              type="button"
+              onClick={() => selectTab('achievements')}
+              className={styles.textAction}
             >
-              View All
+              Inspect All
             </button>
           </div>
-          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+          <div className={styles.achievementStrip}>
             {achievements
               .filter((a) => a.unlockedAt)
               .sort((a, b) => new Date(b.unlockedAt!).getTime() - new Date(a.unlockedAt!).getTime())
               .slice(0, 5)
               .map((a) => (
-                <div
-                  key={a.id}
-                  style={{
-                    flex: '0 0 auto',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '6px 10px',
-                    background: 'rgba(255,255,255,0.04)',
-                    border: '1px solid rgba(0,212,255,0.15)',
-                    borderRadius: 8,
-                    minWidth: 0,
-                  }}
-                >
-                  <span style={{ fontSize: '1.25rem' }}>{a.icon || '★'}</span>
-                  <span
-                    style={{
-                      fontSize: '0.7rem',
-                      color: '#ccc',
-                      fontWeight: 600,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {a.name}
-                  </span>
+                <div key={a.id} className={styles.achievementChip}>
+                  <span aria-hidden="true">{a.icon || '★'}</span>
+                  <span>{a.name}</span>
                 </div>
               ))}
           </div>
@@ -1041,35 +991,40 @@ export default function ProfilePage() {
       )}
 
       {/* Tab Navigation */}
-      <nav className={styles.tabNav}>
-        <button
-          className={`${styles.tab} ${activeTab === 'stats' ? styles.activeTab : ''}`}
-          onClick={() => setActiveTab('stats')}
-        >
-          Stats
-        </button>
-        <button
-          className={`${styles.tab} ${activeTab === 'achievements' ? styles.activeTab : ''}`}
-          onClick={() => setActiveTab('achievements')}
-        >
-          Achievements
-        </button>
-        <button
-          className={`${styles.tab} ${activeTab === 'history' ? styles.activeTab : ''}`}
-          onClick={() => setActiveTab('history')}
-        >
-          History
-        </button>
-        <button
-          className={`${styles.tab} ${activeTab === 'social' ? styles.activeTab : ''}`}
-          onClick={() => setActiveTab('social')}
-        >
-          Friends
-        </button>
+      <nav className={styles.tabNav} role="tablist" aria-label="Profile details">
+        {PROFILE_TABS.map((tab, index) => (
+          <button
+            type="button"
+            id={`profile-tab-${tab}`}
+            key={tab}
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls="profile-tabpanel"
+            tabIndex={activeTab === tab ? 0 : -1}
+            className={`${styles.tab} ${activeTab === tab ? styles.activeTab : ''}`}
+            onClick={() => selectTab(tab)}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
+          >
+            {tab === 'stats'
+              ? 'Snapshot'
+              : tab === 'history'
+                ? 'Activity'
+                : tab === 'social'
+                  ? 'Network'
+                  : 'Achievements'}
+          </button>
+        ))}
       </nav>
 
       {/* Tab Content */}
-      <section className={styles.tabContent} {...swipeHandlers}>
+      <section
+        id="profile-tabpanel"
+        className={styles.tabContent}
+        role="tabpanel"
+        aria-labelledby={`profile-tab-${activeTab}`}
+        tabIndex={0}
+        {...swipeHandlers}
+      >
         {activeTab === 'stats' && (
           <div className={styles.statsContainer}>
             <div className={styles.statsGroup}>
@@ -1113,19 +1068,16 @@ export default function ProfilePage() {
                 <StatCard
                   value={stats.totalHands.toLocaleString()}
                   label="Hands Played"
-                  index={3}
                   isVisible={visibleStats.has(3)}
                 />
                 <StatCard
                   value={`${stats.threeBet}%`}
                   label="3-Bet"
-                  index={4}
                   isVisible={visibleStats.has(4)}
                 />
                 <StatCard
                   value={stats.aggression.toFixed(1)}
                   label="Aggression"
-                  index={5}
                   isVisible={visibleStats.has(5)}
                 />
               </div>
@@ -1138,20 +1090,17 @@ export default function ProfilePage() {
                   value={`${stats.bbPer100 > 0 ? '+' : ''}${stats.bbPer100}`}
                   label="BB/100"
                   positive={stats.bbPer100 > 0 ? true : stats.bbPer100 < 0 ? false : null}
-                  index={6}
                   isVisible={visibleStats.has(6)}
                 />
                 <StatCard
                   value={stats.biggestPot.toLocaleString()}
                   label="Biggest Pot"
-                  index={7}
                   isVisible={visibleStats.has(7)}
                 />
                 <StatCard
                   value={`${stats.totalProfit > 0 ? '+' : ''}${stats.totalProfit.toLocaleString()}`}
                   label="Total Profit"
                   positive={stats.totalProfit > 0}
-                  index={8}
                   isVisible={visibleStats.has(8)}
                 />
               </div>
@@ -1163,19 +1112,16 @@ export default function ProfilePage() {
                 <StatCard
                   value={stats.tournamentsPlayed}
                   label="Played"
-                  index={9}
                   isVisible={visibleStats.has(9)}
                 />
                 <StatCard
                   value={stats.tournamentsWon}
                   label="Won"
-                  index={10}
                   isVisible={visibleStats.has(10)}
                 />
                 <StatCard
                   value={stats.bountyKOs}
                   label="Bounty KOs"
-                  index={11}
                   isVisible={visibleStats.has(11)}
                 />
                 <StatCard
@@ -1185,11 +1131,17 @@ export default function ProfilePage() {
                       : '0%'
                   }
                   label="Win Rate"
-                  index={12}
                   isVisible={visibleStats.has(12)}
                 />
               </div>
             </div>
+            <button
+              type="button"
+              className={styles.workspaceCta}
+              onClick={() => navigate('/stats')}
+            >
+              Open Full Player Analytics <span aria-hidden="true">→</span>
+            </button>
           </div>
         )}
 
@@ -1214,18 +1166,9 @@ export default function ProfilePage() {
             )}
 
             {/* Financial Achievement Badges */}
-            <div style={{ marginTop: 16 }}>
-              <h3
-                style={{
-                  margin: '0 0 8px',
-                  fontSize: '0.875rem',
-                  color: '#8a9aaa',
-                  fontWeight: 600,
-                }}
-              >
-                Financial Milestones
-              </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div className={styles.milestones}>
+              <h3>Financial Milestones</h3>
+              <div className={styles.milestoneGrid}>
                 <FinancialAchievementBadge
                   type="first_cashout"
                   unlocked={stats.totalProfit > 0}
@@ -1248,6 +1191,13 @@ export default function ProfilePage() {
                 />
               </div>
             </div>
+            <button
+              type="button"
+              className={styles.workspaceCta}
+              onClick={() => navigate('/achievements')}
+            >
+              Open Achievement Vault <span aria-hidden="true">→</span>
+            </button>
           </div>
         )}
 
@@ -1256,67 +1206,28 @@ export default function ProfilePage() {
             {transactions.length > 0 ? (
               <>
                 {/* #5: Lazy-loaded Profit Graph */}
-                <Suspense
-                  fallback={
-                    <div
-                      style={{
-                        height: 200,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: '#6a7a8a',
-                      }}
-                    >
-                      Loading Chart...
-                    </div>
-                  }
-                >
+                <Suspense fallback={<div className={styles.chartLoading}>Loading Chart...</div>}>
                   <LazyProfitChart transactions={transactions} />
                 </Suspense>
 
                 {/* Transaction List */}
-                <h3 style={{ color: '#8a9aaa', fontSize: '0.8rem', marginBottom: 8 }}>
-                  Recent Transactions
-                </h3>
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 6,
-                    maxHeight: 300,
-                    overflowY: 'auto',
-                  }}
-                >
+                <h3 className={styles.historyHeading}>Recent Transactions</h3>
+                <div className={styles.transactionList}>
                   {[...transactions]
                     .reverse()
-                    .slice(0, 50)
+                    .slice(0, 10)
                     .map((tx) => (
-                      <div
-                        key={tx.id}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '8px 12px',
-                          background: 'rgba(255,255,255,0.03)',
-                          borderRadius: 8,
-                          border: '1px solid rgba(255,255,255,0.06)',
-                        }}
-                      >
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          <span style={{ color: '#ccc', fontSize: '0.8rem', fontWeight: 600 }}>
-                            {tx.description || tx.type}
-                          </span>
-                          <span style={{ color: '#4a5a6a', fontSize: '0.7rem' }}>
-                            {new Date(tx.created_at).toLocaleDateString()}
-                          </span>
+                      <div key={tx.id} className={styles.transactionRow}>
+                        <div>
+                          <span>{tx.description || tx.type}</span>
+                          <small>{new Date(tx.created_at).toLocaleDateString()}</small>
                         </div>
                         <span
-                          style={{
-                            color: tx.type === 'credit' ? '#22c55e' : '#ef4444',
-                            fontWeight: 700,
-                            fontSize: '0.85rem',
-                          }}
+                          className={
+                            tx.type === 'credit'
+                              ? styles.transactionCredit
+                              : styles.transactionDebit
+                          }
                         >
                           {tx.type === 'credit' ? '+' : '-'}
                           {(tx.amount || 0).toLocaleString()}
@@ -1324,6 +1235,13 @@ export default function ProfilePage() {
                       </div>
                     ))}
                 </div>
+                <button
+                  type="button"
+                  className={styles.workspaceCta}
+                  onClick={() => navigate('/transactions')}
+                >
+                  Open Complete Transaction History <span aria-hidden="true">→</span>
+                </button>
               </>
             ) : (
               <div className={styles.emptyHistory}>
@@ -1340,47 +1258,11 @@ export default function ProfilePage() {
         {activeTab === 'social' && (
           <div className={styles.socialContainer}>
             <FriendListPanel />
+            {user.id && <PlayerActivityFeed userId={user.id} />}
+            {user.id && <ReferralDashboard userId={user.id} />}
           </div>
         )}
       </section>
-
-      {/* Daily Bonus Wheel Modal */}
-      {showBonusWheel && (
-        <div className={styles.bonusWheelOverlay} onClick={() => setShowBonusWheel(false)}>
-          <div className={styles.bonusWheelModal} onClick={(e) => e.stopPropagation()}>
-            <button className={styles.modalClose} onClick={() => setShowBonusWheel(false)}>
-              ✕
-            </button>
-            <DailyBonusWheel
-              onSpin={async () => {
-                // The SERVER decides what a daily bonus pays — fn_claim_daily_bonus
-                // reads a fixed 7-day ladder out of daily_bonus_rewards; there is
-                // no randomness anywhere in it. Hand the real outcome back so the
-                // wheel stops on the day that was actually credited instead of a
-                // segment picked by Math.random() in the browser.
-                try {
-                  const res = await bonusService.claimDailyBonus(user!.id);
-                  toast.success(
-                    res.rewardType === 'vip_points'
-                      ? `Daily bonus: ${res.reward.toLocaleString()} VIP points (day ${res.day})`
-                      : `Daily bonus: ${res.reward.toLocaleString()} chips (day ${res.day})`
-                  );
-                  return {
-                    day: res.day,
-                    reward: res.reward,
-                    rewardType:
-                      res.rewardType === 'vip_points' ? ('vip' as const) : ('chips' as const),
-                  };
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : 'Could not claim daily bonus');
-                  setShowBonusWheel(false);
-                  return null;
-                }
-              }}
-            />
-          </div>
-        </div>
-      )}
 
       {/* Diamond Rain Gamification Effect */}
       <DiamondRainEffect active={showDiamondRain} onComplete={() => setShowDiamondRain(false)} />
@@ -1423,9 +1305,11 @@ export default function ProfilePage() {
                 bio: data.bio,
                 player_tags: data.tags,
               });
-              setShowProfileEdit(false);
+              toast.success('Profile saved');
             } catch (err) {
-              console.error('Failed to update profile:', err);
+              reportError(err, 'ProfilePage.Profile_update_failed');
+              toast.error('Profile could not be saved. Please try again.');
+              throw err;
             }
           }}
         />

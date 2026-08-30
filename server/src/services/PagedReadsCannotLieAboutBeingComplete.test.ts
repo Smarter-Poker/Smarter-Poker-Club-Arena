@@ -29,8 +29,8 @@
  * raising a ceiling only moves the day it is hit.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 const read = (p: string) => readFileSync(join(process.cwd(), 'src', p), 'utf8');
 /** Strip comments so prose describing the old ceilings cannot satisfy a pin. */
@@ -82,17 +82,52 @@ describe('horseLoadMap counts every horse, or admits it cannot', () => {
 });
 
 describe('the waitlist offer walks the queue instead of peeking at ten', () => {
-  const src = code(read('services/supabase/seats.ts'));
+  /* THE RULE IS UNCHANGED. WHERE IT LIVES CHANGED (2026-08-30).
+   *
+   * This used to pin a paging loop in TypeScript: `QUEUE_PAGE`, `.range(page *
+   * QUEUE_PAGE ...)`, walking until a human turned up. That loop existed
+   * because the original code read the ten oldest rows and gave up if all ten
+   * were horses — on a deliberately horse-seeded queue, the expected shape.
+   *
+   * The whole sequence is now `fn_offer_open_seat`, one transaction, for a
+   * reason paging never addressed: between reading the queue head and claiming
+   * it, a concurrent opener could take the same row and the loser's seat went
+   * UNOFFERED in silence. In SQL there is no page to get wrong — `ORDER BY
+   * created_at ... FOR UPDATE SKIP LOCKED LIMIT 1` walks the whole queue by
+   * construction and hands a concurrent caller the next person instead of a
+   * collision.
+   *
+   * So the assertions follow the rule into the migration rather than being
+   * deleted. Both halves of the original are still pinned: no ceiling, and no
+   * ambiguous embed.
+   */
+  const ts = code(read('services/supabase/seats.ts'));
+  // process.cwd() is server/ when vitest runs here, matching `read` above.
+  const MIGRATIONS = resolve(process.cwd(), '../supabase/migrations');
+  const file = readdirSync(MIGRATIONS).find((f) => f.includes('offer_open_seat'));
+  const sql = file ? readFileSync(join(MIGRATIONS, file), 'utf8') : '';
 
-  it('no longer takes only the oldest ten and hopes a human is among them', () => {
-    expect(src).toMatch(/QUEUE_PAGE/);
-    expect(src).toMatch(/\.range\(page \* QUEUE_PAGE/);
+  it('the offer is one transaction, not a read the caller can lose a race on', () => {
+    expect(ts).toMatch(/rpc\('fn_offer_open_seat'/);
+    expect(ts).not.toMatch(/QUEUE_PAGE/);
+    expect(ts).not.toMatch(/from\('table_waitlist'\)/);
   });
 
-  it('keeps the two-query form - an ambiguous embed could silence offers entirely', () => {
+  it('no longer takes only the oldest ten and hopes a human is among them', () => {
+    expect(sql, 'the offer migration is missing').not.toBe('');
+    expect(sql).toMatch(/ORDER BY w\.created_at/);
+    expect(sql).toMatch(/FOR UPDATE OF w SKIP LOCKED/);
+    // The claim takes ONE row after ordering the whole queue. A ceiling on the
+    // rows CONSIDERED is what the old bug was.
+    expect(sql).not.toMatch(/LIMIT 10\b/);
+  });
+
+  it('keeps the unambiguous join - an ambiguous embed could silence offers entirely', () => {
     // table_waitlist.user_id has FKs to BOTH profiles and auth.users, so
     // `profiles!inner(...)` is ambiguous; a 400 there would return null data
-    // and stop every seat offer silently.
-    expect(src).not.toMatch(/profiles!inner/);
+    // and stop every seat offer silently. In SQL the join is explicit, which
+    // is why the two-query dance is no longer needed.
+    expect(ts).not.toMatch(/profiles!inner/);
+    expect(sql).toMatch(/JOIN public\.profiles p ON p\.id = w\.user_id/);
   });
 });

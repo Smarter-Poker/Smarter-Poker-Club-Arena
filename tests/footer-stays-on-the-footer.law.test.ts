@@ -132,6 +132,15 @@ describe('the footer stays on the footer', () => {
   it('ClubBottomNav is still the fixed bar this law is about', () => {
     const css = readFileSync(join(ROOT, 'src/components/club/ClubBottomNav.module.css'), 'utf8');
     expect(css).toMatch(/position:\s*fixed/);
+    expect(css).toMatch(/top:\s*auto/);
+    expect(css).toMatch(/right:\s*0/);
     expect(css).toMatch(/bottom:\s*0/);
+    expect(css).toMatch(/left:\s*0/);
+    expect(css).toMatch(/width:\s*100%/);
+    expect(css).toMatch(/max-width:\s*100vw/);
+    expect(css).toMatch(/transform:\s*none/);
+    expect(css).toMatch(/translate:\s*none/);
+    expect(css).toMatch(/transition:\s*none/);
+    expect(css).toMatch(/animation:\s*none/);
   });
 });

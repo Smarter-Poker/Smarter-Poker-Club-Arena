@@ -28,6 +28,7 @@
 
 import { supabase } from './supabase';
 import { masterBus } from '../core/MasterBus';
+import { capture } from './analytics';
 
 /** The five columns of `user_theme_settings` the felt actually paints from. */
 export interface AppearancePatch {
@@ -63,6 +64,30 @@ const latestFieldRevision = new Map<string, number>();
 const durableFieldValue = new Map<string, string>();
 const pendingWriteCount = new Map<string, number>();
 let appearanceRevision = 0;
+
+function nowMs(): number {
+  return globalThis.performance?.now?.() ?? Date.now();
+}
+
+function recordAppearanceResult(
+  outcome: 'saved' | 'failed' | 'guest' | 'empty',
+  startedAt: number,
+  gameType: string,
+  patch: AppearancePatch,
+  signedIn: boolean
+): void {
+  const fields = APPEARANCE_FIELDS.filter((field) => Boolean(patch[field]));
+  capture('table_appearance_apply', {
+    outcome,
+    game_type: gameType,
+    fields,
+    field_count: fields.length,
+    signed_in: signedIn,
+    // End-to-end time deliberately includes time waiting behind a rapid-tap
+    // write. That is the latency the player actually experiences.
+    duration_ms: Math.max(0, Math.round(nowMs() - startedAt)),
+  });
+}
 
 function emitAppearance(
   gameType: string,
@@ -103,6 +128,7 @@ export async function applyTableAppearance(
   patch: AppearancePatch,
   opts: { userId?: string | null; gameType?: string; previous?: AppearancePatch }
 ): Promise<ApplyAppearanceResult> {
+  const startedAt = nowMs();
   const gameType = opts.gameType || 'ALL';
   const cleanPatch: AppearancePatch = {};
   for (const field of APPEARANCE_FIELDS) {
@@ -110,6 +136,7 @@ export async function applyTableAppearance(
     if (typeof value === 'string' && value) cleanPatch[field] = value;
   }
   if (!Object.keys(cleanPatch).length) {
+    recordAppearanceResult('empty', startedAt, gameType, cleanPatch, Boolean(opts.userId));
     return { ok: false, error: new Error('appearance patch is empty') };
   }
 
@@ -152,6 +179,7 @@ export async function applyTableAppearance(
       mutationId,
       state: 'rolled-back',
     });
+    recordAppearanceResult('guest', startedAt, gameType, cleanPatch, false);
     return { ok: false, error: new Error('not signed in'), reverted };
   }
 
@@ -215,6 +243,7 @@ export async function applyTableAppearance(
       state: 'rolled-back',
     });
     pendingWriteCount.set(scope, Math.max(0, (pendingWriteCount.get(scope) ?? 1) - 1));
+    recordAppearanceResult('failed', startedAt, gameType, cleanPatch, true);
     return { ok: false, error, reverted };
   }
 
@@ -230,5 +259,6 @@ export async function applyTableAppearance(
     state: 'confirmed',
   });
 
+  recordAppearanceResult('saved', startedAt, gameType, cleanPatch, true);
   return { ok: true };
 }

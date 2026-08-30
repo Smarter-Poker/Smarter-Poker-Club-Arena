@@ -157,23 +157,27 @@ describe('CashoutService', () => {
       expect(args.p_op_id).toMatch(/^[0-9a-f-]{36}$/i);
     });
 
-    it('notifies the agent by push as well as the in-app row the RPC wrote', async () => {
+    it('leaves the agent notification to the RPC and does not double-push', async () => {
+      // REWRITTEN 2026-08-30 (#1498). The old name said it: "by push as well as
+      // the in-app row the RPC wrote". That extra push was a duplicate --
+      // tr_notify_agent_on_cashout raises 'cashout_request' on the INSERT and
+      // trg_mirror_notification_to_push_outbox turns it into a push. The client
+      // was sending a second one over the same event, through a transport that
+      // OneSignal's retirement had already killed, so nobody noticed.
       accept({ cashout_id: 'c1', agent_id: 'agent-9', amount: 250, player_name: 'Dana' });
       await cashoutService.requestCashout('p1', 'club-1', 250);
-      expect(pushNotificationService.sendToUser).toHaveBeenCalledWith(
-        'agent-9',
-        expect.objectContaining({ title: 'Cash Out Requested' })
-      );
+      expect(rpc.mock.calls[0][0]).toBe('fn_cashout_request');
+      expect(pushNotificationService.sendToUser).not.toHaveBeenCalled();
     });
 
-    it('approveCashout calls fn_cashout_approve and pushes the player', async () => {
+    it('approveCashout calls fn_cashout_approve, which is what notifies the player', async () => {
+      // fn_cashout_approve writes the notification itself, inside the money
+      // transaction, with type 'cashout_approved'. The client must not add a
+      // second push over the same event.
       accept({ cashout_id: 'c1', player_id: 'p1', club_id: 'club-1', amount: 250 });
       await cashoutService.approveCashout('c1', 'a1');
       expect(rpc.mock.calls[0][0]).toBe('fn_cashout_approve');
-      expect(pushNotificationService.sendToUser).toHaveBeenCalledWith(
-        'p1',
-        expect.objectContaining({ title: 'Cash Out Approved' })
-      );
+      expect(pushNotificationService.sendToUser).not.toHaveBeenCalled();
     });
 
     it('rejectCashout and cancelCashout share fn_cashout_release', async () => {

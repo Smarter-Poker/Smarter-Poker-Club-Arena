@@ -2491,10 +2491,41 @@ export abstract class TournamentManagerBase {
    *
    *   - NO ANCHOR (a freeroll Spin, whose paid gate never runs because there is
    *     nothing to pay): fall back to the old behaviour, `Date.now()`.
-   *   - THE WORK OVERRAN: if less than a countdown's worth of the animation is
-   *     left, honouring the stamp would show a wheel that is already over. The
-   *     reveal is re-stamped from now, and the overrun is REPORTED — this is
-   *     the measurement the audit found missing.
+   *   - THE WORK OVERRAN: the stamp is in the past by more than the lead-in,
+   *     so honouring it would hand the client a sequence that has already
+   *     partly run. The reveal is re-stamped from now, and the overrun is
+   *     REPORTED.
+   *
+   * ─── WHY THE THRESHOLD IS NOT "A COUNTDOWN'S WORTH" (round 16) ────────────
+   *
+   * Dan, live 2026-08-30: "IT DID SPIN ABOUT 20 SECONDS LATER, NEVER FINISH
+   * AND 'ANNOUNCE THE AMOUNT'."
+   *
+   * The old test was `spinHoldUntil - now < COUNTDOWN_MS` — re-anchor only
+   * once fewer than 3 of the 14.8 seconds remained. Everything between those
+   * two numbers was shipped to the client as a PARTIALLY ELAPSED reveal, and
+   * the client honours it exactly as told:
+   *
+   *     const elapsed = Math.max(0, Date.now() - data.revealAtMs);
+   *     const at = (offsetMs) => Math.max(0, offsetMs - elapsed);
+   *
+   * so every beat already behind `elapsed` fires at once. A start 10s late
+   * put `revealAt` ~9s in the past: the countdown, the chase and the flash
+   * all collapsed into the same instant and the player saw a blur and a
+   * result card — a wheel that "spun" and never announced. It was worst
+   * exactly when it mattered most, because a late start is the case a player
+   * is already annoyed about.
+   *
+   * ANIMATION LAW (CLAUDE.md 10.6, binding): "Every animation and its sound
+   * plays every time it is owed, FOR ITS FULL DURATION." A wheel shortened
+   * because the SERVER was slow is the law's plainest violation — the player
+   * is charged for the engine's lateness in the one moment the format sells.
+   *
+   * So the rule is now the honest one: if the hold cannot still cover the
+   * WHOLE sequence, re-anchor to now. The catch-up arithmetic on the client
+   * stays exactly as it is, and keeps doing the job it was written for — a
+   * player who refreshes mid-spin rejoins the shared moment already in
+   * progress. What it no longer has to absorb is the engine's own delay.
    */
   protected resolveSpinReveal(): { revealAt: number; holdUntil: number } {
     const now = Date.now();
@@ -2505,10 +2536,12 @@ export abstract class TournamentManagerBase {
       return { revealAt: this.spinRevealAt, holdUntil: this.spinHoldUntil };
     }
     this.spinRevealLagMs = Math.max(0, now - this.spinRevealAt);
-    if (this.spinHoldUntil - now < SPIN_REVEAL.COUNTDOWN_MS) {
+    /* The full sequence must still fit between now and the deal. Anything
+       less and some beat is being cut, so the wheel starts here instead. */
+    if (this.spinHoldUntil - now < spinRevealToDealMs()) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Spin start overran its own reveal window by ${this.spinRevealLagMs}ms — the wheel is being re-anchored to now, so the three players see it start late`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Spin start overran its own reveal window by ${this.spinRevealLagMs}ms — the wheel is being re-anchored to now so it plays in full, and the three players see it start late`
         ),
         'Tournament.spin_reveal_window_overrun'
       );

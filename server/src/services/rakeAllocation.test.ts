@@ -12,6 +12,7 @@ import {
   allocateWeightedShareCents,
   allocateEqualShareCents,
   sharesForRakeRecord,
+  sharesForRakeRecordWithLedger,
   WEIGHTED_CONTRIBUTED,
   DEALT_EQUAL,
 } from './rakeAllocation.js';
@@ -211,3 +212,74 @@ function shares2obj(m: Map<string, number>): Record<string, number> {
   for (const [k, v] of [...m.entries()].sort()) o[k] = v;
   return o;
 }
+
+describe('POLISH 4 — ledger-first shares (sharesForRakeRecordWithLedger)', () => {
+  const HAND = '11111111-2222-3333-4444-555555555555';
+
+  it('prefers the stored ledger over recomputation', () => {
+    // A ledger that deliberately disagrees with what the allocator would
+    // produce: the stored value must win, because it is what was banked.
+    const ledger = new Map([
+      [
+        HAND,
+        new Map([
+          [A, 3.33],
+          [B, 1.67],
+        ]),
+      ],
+    ]);
+    const shares = sharesForRakeRecordWithLedger(
+      {
+        hand_id: HAND,
+        rake_amount: 5,
+        player_contributions: { [A]: 50, [B]: 50 },
+        rake_method: WEIGHTED_CONTRIBUTED,
+      },
+      ledger
+    );
+    expect(shares.get(A)).toBe(3.33);
+    expect(shares.get(B)).toBe(1.67);
+  });
+
+  it('falls back to the allocator when the hand has no ledger rows', () => {
+    const shares = sharesForRakeRecordWithLedger(
+      {
+        hand_id: HAND,
+        rake_amount: 5,
+        player_contributions: { [A]: 75, [B]: 25 },
+        rake_method: WEIGHTED_CONTRIBUTED,
+      },
+      new Map()
+    );
+    expect(shares.get(A)).toBe(3.75);
+    expect(shares.get(B)).toBe(1.25);
+  });
+
+  it('falls back for a null-hand row (tournament fee shape)', () => {
+    const shares = sharesForRakeRecordWithLedger(
+      {
+        hand_id: null,
+        rake_amount: 4,
+        player_contributions: { [A]: 50, [B]: 50 },
+        rake_method: WEIGHTED_CONTRIBUTED,
+      },
+      new Map([[HAND, new Map([[A, 99]])]])
+    );
+    expect(shares.get(A)).toBe(2);
+    expect(shares.get(B)).toBe(2);
+  });
+
+  it('an empty ledger entry is not mistaken for an answer', () => {
+    const shares = sharesForRakeRecordWithLedger(
+      {
+        hand_id: HAND,
+        rake_amount: 6,
+        player_contributions: { [A]: 50, [B]: 50 },
+        rake_method: WEIGHTED_CONTRIBUTED,
+      },
+      new Map([[HAND, new Map()]])
+    );
+    expect(shares.get(A)).toBe(3);
+    expect(shares.get(B)).toBe(3);
+  });
+});

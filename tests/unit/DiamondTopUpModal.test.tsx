@@ -74,6 +74,23 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     );
   });
 
+  it('returns Stripe to the requesting customization surface', async () => {
+    render(<DiamondTopUpModal isOpen onClose={mocks.close} returnParams="from=table-studio" />);
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Buy First Stack, 550 diamonds for $3.99',
+      })
+    );
+
+    await waitFor(() =>
+      expect(mocks.startCheckout).toHaveBeenCalledWith(
+        'diamonds',
+        [{ packageId: 'starter', quantity: 1 }],
+        'from=table-studio'
+      )
+    );
+  });
+
   it('closes on Escape without leaving page scroll locked', async () => {
     const { unmount } = render(<DiamondTopUpModal isOpen onClose={mocks.close} />);
     await screen.findByRole('button', {

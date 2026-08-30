@@ -162,4 +162,44 @@ test.describe('mobile-first customization studios', () => {
       await page.screenshot({ path: 'test-results/table-loadout-locker-mobile.png' });
     }
   });
+
+  test('Stripe return restores a touch-safe design confirmation above the Studio', async ({
+    page,
+  }) => {
+    await page.setContent(`
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <style>${studioCss}</style>
+      <div class="theme-modal-overlay">
+        <section class="theme-modal">
+          <header class="theme-modal__header"><div><span class="theme-modal__eyebrow">PLAYER TABLE STUDIO</span><h1 class="theme-modal__title">Make The Table Yours</h1></div><button class="theme-modal__close">×</button></header>
+          <div class="theme-modal__studio-bar"><span class="theme-modal__game-label">Apply To</span><span class="theme-modal__autosave"><span class="theme-modal__autosave-dot"></span>Syncing diamond balance</span></div>
+        </section>
+        <div class="theme-vip-prompt-overlay">
+          <section class="theme-vip-prompt" role="dialog" aria-label="Unlock Neon City">
+            <div class="theme-vip-prompt__icon">◆</div>
+            <h2 class="theme-vip-prompt__title">Unlock Neon City</h2>
+            <p class="theme-vip-prompt__text">Purchase This Design For 350 Diamonds. It Will Unlock Permanently And Apply To The Live Table Immediately.</p>
+            <div class="theme-purchase-balance"><span>Syncing Your Balance</span><strong>100 ◆</strong></div>
+            <div class="theme-vip-prompt__actions"><button class="theme-vip-prompt__btn theme-vip-prompt__btn--upgrade" disabled>Syncing Diamond Balance...</button><button class="theme-vip-prompt__btn theme-vip-prompt__btn--cancel">Cancel</button></div>
+          </section>
+        </div>
+      </div>
+    `);
+
+    const prompt = page.getByRole('dialog', { name: 'Unlock Neon City' });
+    await expect(prompt).toBeVisible();
+    const promptBox = await prompt.boundingBox();
+    expect(promptBox?.width).toBeLessThanOrEqual(390);
+    for (const button of await prompt.locator('button').all()) {
+      expect((await button.boundingBox())?.height).toBeGreaterThanOrEqual(43.9);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+
+    await page.setViewportSize({ width: 390, height: 667 });
+    await expect(prompt).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(667);
+    if (process.env.CAPTURE_CUSTOMIZATION_VISUALS) {
+      await page.screenshot({ path: 'test-results/table-studio-checkout-resume-mobile.png' });
+    }
+  });
 });

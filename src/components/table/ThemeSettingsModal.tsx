@@ -54,6 +54,14 @@ import {
   useTableStudioCollections,
   type TableStudioLoadout,
 } from '../../hooks/useTableStudioCollections';
+import {
+  TABLE_STUDIO_CHECKOUT_RETURN_PARAMS,
+  clearTableStudioCheckoutIntent,
+  clearTableStudioCheckoutReturnUrl,
+  readTableStudioCheckoutIntent,
+  rememberTableStudioCheckoutIntent,
+  type TableStudioCheckoutResult,
+} from '../../lib/tableStudioCheckoutResume';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -65,6 +73,8 @@ export interface ThemeSettingsModalProps {
   userId: string;
   /** Whether the user is a VIP member (binary: free or VIP) */
   isVip: boolean;
+  /** Set only by the global Stripe-return owner; hidden modal copies stay idle. */
+  checkoutReturnResult?: TableStudioCheckoutResult | null;
 }
 
 type ThemeSelection = Omit<TableStudioLoadout, 'name' | 'saved_at'>;
@@ -561,7 +571,13 @@ function renderLoadoutPreview(loadout: ThemeSelection) {
   );
 }
 
-export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSettingsModalProps) {
+export function ThemeSettingsModal({
+  isOpen,
+  onClose,
+  userId,
+  isVip,
+  checkoutReturnResult = null,
+}: ThemeSettingsModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const vipPromptRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
@@ -581,6 +597,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   const [ownedThemeAssets, setOwnedThemeAssets] = useState<string[]>([]);
   const [assetPrices, setAssetPrices] = useState<Record<string, number>>({});
   const [pricingState, setPricingState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [pricingRevision, setPricingRevision] = useState(0);
   const [pendingAssetPurchase, setPendingAssetPurchase] = useState<PendingAssetPurchase | null>(
     null
   );
@@ -596,6 +613,15 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     'idle'
   );
   const [ownershipRevision, setOwnershipRevision] = useState(0);
+  const [entitlementRealtimeState, setEntitlementRealtimeState] = useState<
+    'local' | 'connecting' | 'live' | 'error'
+  >('local');
+  const [entitlementRealtimeRevision, setEntitlementRealtimeRevision] = useState(0);
+  const [checkoutReturn, setCheckoutReturn] = useState<TableStudioCheckoutResult | null>(
+    checkoutReturnResult
+  );
+  const [checkoutBalanceSyncing, setCheckoutBalanceSyncing] = useState(false);
+  const checkoutPollTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const [modeSaving, setModeSaving] = useState(false);
   const uiMode = useSettingsStore((state) => state.theme);
   const setUiMode = useSettingsStore((state) => state.setTheme);
@@ -608,12 +634,21 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   // back if the write fails.
   const selectionRef = useRef(selection);
   const gameTypeRef = useRef(gameType);
+  gameTypeRef.current = gameType;
   const userIdRef = useRef(userId);
   userIdRef.current = userId;
   const pendingSavesRef = useRef(0);
   useEffect(() => {
     selectionRef.current = selection;
   }, [selection]);
+
+  const stopCheckoutBalancePolling = useCallback(() => {
+    checkoutPollTimersRef.current.forEach(clearTimeout);
+    checkoutPollTimersRef.current = [];
+    setCheckoutBalanceSyncing(false);
+  }, []);
+
+  useEffect(() => stopCheckoutBalancePolling, [stopCheckoutBalancePolling]);
 
   const replaceSelection = useCallback((next: ThemeSelection) => {
     selectionRef.current = next;
@@ -819,7 +854,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     return () => {
       mounted = false;
     };
-  }, [isOpen]);
+  }, [isOpen, pricingRevision]);
 
   useEffect(() => {
     if (!isOpen || !userId) return undefined;
@@ -856,9 +891,11 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   // trg_deliver_card_back_entitlement, so one channel covers every category.
   useEffect(() => {
     if (!isOpen || !userId || typeof (supabase as { channel?: unknown }).channel !== 'function') {
+      setEntitlementRealtimeState(userId ? 'error' : 'local');
       return undefined;
     }
 
+    setEntitlementRealtimeState('connecting');
     const channel = supabase
       .channel(`table-studio-entitlements:${userId}`)
       .on(
@@ -895,7 +932,10 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
         }
       )
       .subscribe((status) => {
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        if (status === 'SUBSCRIBED') {
+          setEntitlementRealtimeState('live');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setEntitlementRealtimeState('error');
           reportError(
             new Error(`Table Studio entitlement channel ${status.toLowerCase()}`),
             'ThemeSettingsModal.Entitlement_realtime_failed'
@@ -906,7 +946,104 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [isOpen, userId]);
+  }, [entitlementRealtimeRevision, isOpen, userId]);
+
+  // Stripe Checkout is a full-page redirect. Restore the exact design that
+  // sent this player to the Diamond Store, but rebuild its price and feature
+  // from the live catalog instead of trusting session storage. Webhook credit
+  // can trail the redirect by several seconds, so refresh the server-owned
+  // balance on the same bounded cadence used by the Marketplace return path.
+  useEffect(() => {
+    if (!isOpen || !checkoutReturn || !userId) return;
+    const intent = readTableStudioCheckoutIntent(userId);
+    if (!intent) {
+      clearTableStudioCheckoutReturnUrl();
+      setCheckoutReturn(null);
+      toast.error('Your Previous Design Could Not Be Restored. Choose It Again To Continue.');
+      return;
+    }
+    if (pricingState !== 'ready' || ownershipState !== 'ready') return;
+
+    const asset = THEME_ASSETS[intent.tab].find((item) => item.id === intent.assetId);
+    const feature = storefrontFeature(intent.tab, intent.assetId);
+    const price = assetPrices[feature];
+    if (!asset || !asset.vipOnly || !Number.isFinite(price) || price <= 0) {
+      clearTableStudioCheckoutIntent();
+      clearTableStudioCheckoutReturnUrl();
+      setCheckoutReturn(null);
+      toast.error('This Design Is No Longer Available For Purchase.');
+      return;
+    }
+
+    setActiveTab(intent.tab);
+    setAssetSearch('');
+    if (intent.tab === 'background') {
+      setBackgroundGroup(BACKGROUND_SKIN_IDS.has(intent.assetId) ? 'skins' : 'places-rooms');
+    }
+
+    if (
+      canAccessAsset(
+        intent.tab,
+        intent.assetId,
+        isVip,
+        asset.vipOnly,
+        ownedCardBacks,
+        ownedThemeAssets
+      )
+    ) {
+      clearTableStudioCheckoutIntent();
+      clearTableStudioCheckoutReturnUrl();
+      setCheckoutReturn(null);
+      toast.info(`${asset.name} Is Already Unlocked And Ready To Equip.`);
+      return;
+    }
+
+    setPendingAssetPurchase({
+      id: intent.assetId,
+      name: asset.name,
+      price,
+      tab: intent.tab,
+      feature,
+    });
+    clearTableStudioCheckoutIntent();
+    clearTableStudioCheckoutReturnUrl();
+    setCheckoutReturn(null);
+
+    if (checkoutReturn === 'canceled') {
+      toast.info('Checkout Canceled. No Charge Was Made; Your Design Is Still Waiting.');
+      return;
+    }
+
+    setCheckoutBalanceSyncing(true);
+    toast.success(`Payment Received. Restoring ${asset.name}.`);
+    const refresh = () => void loadDiamonds(userId, { force: true });
+    refresh();
+    checkoutPollTimersRef.current = [1_500, 5_000, 12_000].map((delay, index) =>
+      setTimeout(() => {
+        void loadDiamonds(userId, { force: true }).finally(() => {
+          if (index === 2) setCheckoutBalanceSyncing(false);
+        });
+      }, delay)
+    );
+  }, [
+    assetPrices,
+    checkoutReturn,
+    isOpen,
+    isVip,
+    loadDiamonds,
+    ownedCardBacks,
+    ownedThemeAssets,
+    ownershipState,
+    pricingState,
+    toast,
+    userId,
+  ]);
+
+  useEffect(() => {
+    if (checkoutBalanceSyncing && pendingAssetPurchase && diamonds >= pendingAssetPurchase.price) {
+      stopCheckoutBalancePolling();
+    }
+  }, [checkoutBalanceSyncing, diamonds, pendingAssetPurchase, stopCheckoutBalancePolling]);
 
   // Load existing theme for selected game type
   useEffect(() => {
@@ -1148,6 +1285,22 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     ]
   );
 
+  const openDiamondStoreForPending = useCallback(() => {
+    if (!pendingAssetPurchase || !userId) return;
+    rememberTableStudioCheckoutIntent({
+      userId,
+      tab: pendingAssetPurchase.tab,
+      assetId: pendingAssetPurchase.id,
+    });
+    setDiamondStoreOpen(true);
+  }, [pendingAssetPurchase, userId]);
+
+  const cancelPendingAssetPurchase = useCallback(() => {
+    stopCheckoutBalancePolling();
+    clearTableStudioCheckoutIntent();
+    setPendingAssetPurchase(null);
+  }, [stopCheckoutBalancePolling]);
+
   const handleAssetPurchase = useCallback(async () => {
     const pending = pendingAssetPurchase;
     if (!pending || !userId || purchaseBusyRef.current) return;
@@ -1166,6 +1319,11 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
         if (reason.toLowerCase().includes('insufficient')) {
           toast.info('Add Diamonds To Finish Unlocking This Design.');
           void loadDiamonds(userId, { force: true });
+          rememberTableStudioCheckoutIntent({
+            userId,
+            tab: pending.tab,
+            assetId: pending.id,
+          });
           setDiamondStoreOpen(true);
         } else {
           toast.error('Design Purchase Failed. Please Try Again.');
@@ -1192,6 +1350,8 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
         });
       }
       setOwnershipState('ready');
+      clearTableStudioCheckoutIntent();
+      stopCheckoutBalancePolling();
       setPendingAssetPurchase(null);
       masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
         userId,
@@ -1225,7 +1385,14 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
       purchaseBusyRef.current = false;
       setPurchaseBusy(false);
     }
-  }, [applyAccessibleAsset, loadDiamonds, pendingAssetPurchase, toast, userId]);
+  }, [
+    applyAccessibleAsset,
+    loadDiamonds,
+    pendingAssetPurchase,
+    stopCheckoutBalancePolling,
+    toast,
+    userId,
+  ]);
 
   /**
    * RESET DID NOTHING (2026-08-25). It set local state and stopped: no write,
@@ -1391,6 +1558,13 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     collections.syncState === 'error' || collections.realtimeState === 'error';
   const collectionSyncing =
     collections.syncState === 'loading' || collections.realtimeState === 'connecting';
+  const studioNeedsAttention =
+    collectionNeedsAttention || entitlementRealtimeState === 'error' || pricingState === 'error';
+  const studioSyncing =
+    collectionSyncing ||
+    entitlementRealtimeState === 'connecting' ||
+    pricingState === 'loading' ||
+    checkoutBalanceSyncing;
   const collectionStatus = collectionNeedsAttention
     ? 'error'
     : collectionSyncing
@@ -1447,16 +1621,18 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             </select>
           </div>
           <span
-            className={`theme-modal__autosave ${collectionNeedsAttention ? 'theme-modal__autosave--error' : ''}`}
+            className={`theme-modal__autosave ${studioNeedsAttention ? 'theme-modal__autosave--error' : ''}`}
             aria-live="polite"
           >
             <span className="theme-modal__autosave-dot" />
             {saving || modeSaving
               ? 'Saving selection'
-              : collectionSyncing
-                ? 'Syncing your collection'
-                : collectionNeedsAttention
-                  ? 'Saved here · cloud sync needs retry'
+              : studioSyncing
+                ? checkoutBalanceSyncing
+                  ? 'Syncing diamond balance'
+                  : 'Syncing Studio data'
+                : studioNeedsAttention
+                  ? 'Saved here · Studio sync needs retry'
                   : 'All changes saved'}
           </span>
         </div>
@@ -1676,6 +1852,36 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                   </div>
                   <button type="button" onClick={() => setOwnershipRevision((value) => value + 1)}>
                     Try Again
+                  </button>
+                </div>
+              )}
+              {pricingState === 'error' && (
+                <div className="theme-modal__state theme-modal__state--error" role="alert">
+                  <div>
+                    <strong>Purchase Prices Could Not Be Loaded</strong>
+                    <span>Owned And Free Designs Still Work. Paid Designs Stay Unavailable.</span>
+                  </div>
+                  <button type="button" onClick={() => setPricingRevision((value) => value + 1)}>
+                    Try Again
+                  </button>
+                </div>
+              )}
+              {userId && entitlementRealtimeState === 'error' && (
+                <div className="theme-modal__state theme-modal__state--error" role="alert">
+                  <div>
+                    <strong>Live Unlock Updates Are Disconnected</strong>
+                    <span>
+                      Your Purchases Stay Safe. Reconnect To Receive Other-Device Unlocks.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOwnershipRevision((value) => value + 1);
+                      setEntitlementRealtimeRevision((value) => value + 1);
+                    }}
+                  >
+                    Reconnect
                   </button>
                 </div>
               )}
@@ -1946,7 +2152,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
           <div
             className="theme-vip-prompt-overlay"
             onClick={() => {
-              if (!purchaseBusyRef.current) setPendingAssetPurchase(null);
+              if (!purchaseBusyRef.current) cancelPendingAssetPurchase();
             }}
           >
             <div
@@ -1969,17 +2175,17 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                 Will Unlock Permanently And Apply To The Live Table Immediately.
               </p>
               <div className="theme-purchase-balance" aria-live="polite">
-                <span>Your Balance</span>
+                <span>{checkoutBalanceSyncing ? 'Syncing Your Balance' : 'Your Balance'}</span>
                 <strong>{diamonds.toLocaleString()} ◆</strong>
               </div>
               <div className="theme-vip-prompt__actions">
                 <button
                   type="button"
                   className="theme-vip-prompt__btn theme-vip-prompt__btn--upgrade"
-                  disabled={purchaseBusy}
+                  disabled={purchaseBusy || checkoutBalanceSyncing}
                   onClick={() => {
                     if (diamonds < pendingAssetPurchase.price) {
-                      setDiamondStoreOpen(true);
+                      openDiamondStoreForPending();
                       return;
                     }
                     void handleAssetPurchase();
@@ -1987,15 +2193,17 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                 >
                   {purchaseBusy
                     ? 'Processing...'
-                    : diamonds < pendingAssetPurchase.price
-                      ? `Add ${(pendingAssetPurchase.price - diamonds).toLocaleString()} Diamonds`
-                      : `Buy For ${pendingAssetPurchase.price.toLocaleString()} ◆`}
+                    : checkoutBalanceSyncing
+                      ? 'Syncing Diamond Balance...'
+                      : diamonds < pendingAssetPurchase.price
+                        ? `Add ${(pendingAssetPurchase.price - diamonds).toLocaleString()} Diamonds`
+                        : `Buy For ${pendingAssetPurchase.price.toLocaleString()} ◆`}
                 </button>
                 <button
                   type="button"
                   className="theme-vip-prompt__btn theme-vip-prompt__btn--cancel"
                   disabled={purchaseBusy}
-                  onClick={() => setPendingAssetPurchase(null)}
+                  onClick={cancelPendingAssetPurchase}
                 >
                   Cancel
                 </button>
@@ -2005,8 +2213,10 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
         )}
         <DiamondTopUpModal
           isOpen={diamondStoreOpen}
+          returnParams={TABLE_STUDIO_CHECKOUT_RETURN_PARAMS}
           onClose={() => {
             setDiamondStoreOpen(false);
+            clearTableStudioCheckoutIntent();
             if (userId) void loadDiamonds(userId, { force: true });
           }}
         />

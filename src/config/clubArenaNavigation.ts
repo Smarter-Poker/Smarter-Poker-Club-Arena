@@ -247,4 +247,9 @@ export const CLUB_ARENA_SUPPORT_NAV: ClubArenaNavItem[] = [
     path: '/legal/privacy',
     description: 'Data collection, use, and controls',
   },
+  {
+    label: 'Promotion Rules',
+    path: '/legal/promotions',
+    description: 'Eligibility and live campaign governance',
+  },
 ];

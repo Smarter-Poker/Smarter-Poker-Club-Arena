@@ -100,7 +100,15 @@ describe('the entry hold is written down', () => {
     // acting on it. And a tournament seat has no cash entry hold to record.
     const body = sliceMethod(BASE, 'protected persistEntryHold(');
     expect(body).toMatch(/if \(this\.isTournamentTable\(\)\) return;/);
-    expect(body).toMatch(/void supabase/);
+    /* `void Promise.resolve(supabase...)`, not `void supabase...`. A PostgREST
+       query builder is a THENABLE, not a Promise — it has `.then` and no
+       `.catch` — so the fire-and-forget form the house style requires
+       (`.then().catch()`, pinned by noUnhandledRejections.test.ts) does not
+       typecheck against the builder directly. Promise.resolve is what gives it
+       both halves; without it CI fails TS2339 on the missing `.catch`, which
+       is exactly what happened on the first push of this change. */
+    expect(body).toMatch(/void Promise\.resolve\(\s*supabase/);
+    expect(body).toMatch(/\.catch\(/);
     expect(body).not.toMatch(/await /);
   });
 

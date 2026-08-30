@@ -3476,12 +3476,20 @@ export abstract class ServerTableEngineBase {
     if (this.isTournamentTable()) return;
     const patch: Record<string, unknown> = { entry_hold: state.hold };
     if (state.agreed !== undefined) patch.entry_post_agreed = state.agreed;
-    void supabase
-      .from('table_seats')
-      .update(patch)
-      .eq('table_id', this.tableId)
-      .eq('user_id', userId)
-      .is('left_at', null)
+    /* Promise.resolve() around the builder, deliberately. A PostgREST query
+       builder is a THENABLE, not a Promise: it has `.then` and no `.catch`, so
+       `void builder.then(...).catch(...)` does not compile — and without the
+       `.catch` an unhandled rejection takes the engine down (that is what
+       noUnhandledRejections.test.ts pins). Promise.resolve turns the thenable
+       into a real Promise, which is the only shape that has both. */
+    void Promise.resolve(
+      supabase
+        .from('table_seats')
+        .update(patch)
+        .eq('table_id', this.tableId)
+        .eq('user_id', userId)
+        .is('left_at', null)
+    )
       .then(({ error }) => {
         if (error) {
           console.warn(
@@ -3494,7 +3502,7 @@ export abstract class ServerTableEngineBase {
       // network blip killing the engine to protect a durability nicety. The
       // in-memory set is still authoritative for the running process, so a
       // lost write costs only restart fidelity.
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.warn(
           `[ServerTableEngine:${this.tableId}] entry hold write threw for ${userId.slice(0, 8)}:`,
           err

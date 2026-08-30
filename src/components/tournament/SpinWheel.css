@@ -668,3 +668,60 @@
     animation: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TIERED CELEBRATION (2026-08-29, round 15)
+   ═══════════════════════════════════════════════════════════════════════════
+   A 100x lands about once in 9,921 games; a 2x lands about every other game.
+   The burst SIZE is data (spinCelebration in spinSpec drives the piece count),
+   and these rules give each band its own character on top of it. Purely
+   additive per the Animation Law: every band that celebrated before still
+   celebrates, and `mid` is new. Motion here is decoration, so it collapses
+   under reduced motion while the banner text stays readable.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.sw__hype--mid {
+  color: #7dd3fc;
+  text-shadow: 0 0 10px rgba(125, 211, 252, 0.45);
+}
+.sw__hype--big {
+  color: #fbbf24;
+  text-shadow: 0 0 14px rgba(251, 191, 36, 0.55);
+}
+.sw__hype--mega {
+  color: #fff1a8;
+  text-shadow:
+    0 0 10px rgba(255, 241, 168, 0.9),
+    0 0 30px rgba(255, 190, 60, 0.75);
+  animation: swMegaPulse 900ms ease-in-out infinite alternate;
+}
+
+@keyframes swMegaPulse {
+  from {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  to {
+    transform: scale(1.06);
+    filter: brightness(1.25);
+  }
+}
+
+/* The rarer the draw, the longer and wider its confetti falls. */
+.sw__confetti--mid .sw__conf {
+  animation-duration: calc(1500ms / var(--animation-speed, 1));
+}
+.sw__confetti--big .sw__conf {
+  animation-duration: calc(1900ms / var(--animation-speed, 1));
+}
+.sw__confetti--mega .sw__conf {
+  animation-duration: calc(2400ms / var(--animation-speed, 1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Meaning is kept, motion is not (Animation Law: reduced motion collapses
+     motion, never the message). The banner still names the tier. */
+  .sw__hype--mega {
+    animation: none;
+  }
+}

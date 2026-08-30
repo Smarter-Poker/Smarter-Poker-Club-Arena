@@ -26,8 +26,13 @@ type Row = { job: string; run_date: string; claimed_at: string; claimed_by: stri
 const state: {
   jobRuns: Row[];
   leagueRows: Array<{ run_date: string; matchup: string }>;
+  // 2026-08-30: the evidence tables for the two jobs that used to be
+  // unjudgeable. Same shape as leagueRows - a date column and a payload
+  // column - because that is all claimProducedRows ever asks for.
+  auditRows: Array<{ day: string }>;
+  selfTuneRows: Array<{ run_date: string; id: number }>;
   updateAttempts: number;
-} = { jobRuns: [], leagueRows: [], updateAttempts: 0 };
+} = { jobRuns: [], leagueRows: [], auditRows: [], selfTuneRows: [], updateAttempts: 0 };
 
 vi.mock('../services/supabase.js', () => {
   const api = {
@@ -84,7 +89,13 @@ vi.mock('../services/supabase.js', () => {
           },
         };
       }
-      // horse_league_results
+      // Every evidence table claimProducedRows can consult.
+      const rowsFor = (): Array<Record<string, unknown>> => {
+        if (table === 'horse_daily_audit') return state.auditRows as Array<Record<string, unknown>>;
+        if (table === 'horse_self_tune_log')
+          return state.selfTuneRows as Array<Record<string, unknown>>;
+        return state.leagueRows as Array<Record<string, unknown>>;
+      };
       return {
         select() {
           const filters: Array<[string, string]> = [];
@@ -94,8 +105,8 @@ vi.mock('../services/supabase.js', () => {
               return self;
             },
             limit() {
-              const rows = state.leagueRows.filter((r) =>
-                filters.every(([c, v]) => (r as unknown as Record<string, string>)[c] === v)
+              const rows = rowsFor().filter((r) =>
+                filters.every(([c, v]) => (r as Record<string, unknown>)[c] === v)
               );
               return Promise.resolve({ data: rows.slice(0, 1), error: null });
             },
@@ -121,6 +132,8 @@ const DAY = '2026-08-28';
 beforeEach(() => {
   state.jobRuns = [];
   state.leagueRows = [];
+  state.auditRows = [];
+  state.selfTuneRows = [];
   state.updateAttempts = 0;
   process.env.HOSTNAME = 'container-A';
 });
@@ -169,19 +182,97 @@ describe('claimNightlyJob — the 2026-08-28 crash', () => {
     expect(state.jobRuns[0].claimed_by).toBe('container-B');
   });
 
-  it('a non-league job keeps the old all-or-nothing claim', async () => {
-    // self_tuner writes no horse_league_results, so it can never be judged
-    // by that table and must not be stolen on those grounds.
+  it('an unknown job with no evidence table keeps the all-or-nothing claim', async () => {
+    // A job nobody has mapped writes nowhere this function knows about, so it
+    // genuinely cannot be judged and must not be stolen on those grounds.
+    state.jobRuns.push({
+      job: 'some_future_job',
+      run_date: DAY,
+      claimed_at: new Date(Date.now() - 5 * HOUR).toISOString(),
+      claimed_by: 'container-B',
+    });
+    expect(await claimNightlyJob('some_future_job', DAY)).toBe(false);
+    expect(state.jobRuns[0].claimed_by).toBe('container-B');
+  });
+});
+
+/**
+ * ── 2026-08-30: the same crash, on the jobs the map forgot ──
+ *
+ * REPLACES the old 'a non-league job keeps the all-or-nothing claim' case,
+ * which pinned self_tuner as unjudgeable. That was not a safety property, it
+ * was the bug: claimProducedRows listed only the two league jobs, so
+ * 'daily_audit' and 'self_tuner' returned null, the takeover declined, and an
+ * orphaned claim burned the day permanently.
+ *
+ * MEASURED on production:
+ *   horse_job_runs  daily_audit  2026-08-29  claimed 06:09  by c5220cddafaf
+ *   horse_daily_audit for 2026-08-29: NO ROW, ~28 hours later.
+ *   horse_job_runs  self_tuner   2026-08-26  claimed 08:03  by 6f03494b94b4
+ *   horse_self_tune_log for 2026-08-26: NO ROWS, ever.
+ */
+describe('claimNightlyJob — daily_audit and self_tuner recovery', () => {
+  it('a dead daily_audit claim that wrote no audit row is taken over', async () => {
+    state.jobRuns.push({
+      job: 'daily_audit',
+      run_date: DAY,
+      claimed_at: new Date(Date.now() - 2 * HOUR).toISOString(),
+      claimed_by: 'c5220cddafaf',
+    });
+    expect(await claimNightlyJob('daily_audit', DAY)).toBe(true);
+    expect(state.jobRuns[0].claimed_by).toBe('container-A');
+  });
+
+  it('a daily_audit claim that DID write its row is left alone', async () => {
+    state.jobRuns.push({
+      job: 'daily_audit',
+      run_date: DAY,
+      claimed_at: new Date(Date.now() - 2 * HOUR).toISOString(),
+      claimed_by: 'container-B',
+    });
+    state.auditRows.push({ day: DAY });
+    expect(await claimNightlyJob('daily_audit', DAY)).toBe(false);
+    expect(state.jobRuns[0].claimed_by).toBe('container-B');
+  });
+
+  it('a dead self_tuner claim that wrote no tune rows is taken over', async () => {
+    state.jobRuns.push({
+      job: 'self_tuner',
+      run_date: DAY,
+      claimed_at: new Date(Date.now() - 5 * HOUR).toISOString(),
+      claimed_by: '6f03494b94b4',
+    });
+    expect(await claimNightlyJob('self_tuner', DAY)).toBe(true);
+    expect(state.jobRuns[0].claimed_by).toBe('container-A');
+  });
+
+  it('a self_tuner claim that DID write tune rows is left alone', async () => {
     state.jobRuns.push({
       job: 'self_tuner',
       run_date: DAY,
       claimed_at: new Date(Date.now() - 5 * HOUR).toISOString(),
       claimed_by: 'container-B',
     });
+    state.selfTuneRows.push({ run_date: DAY, id: 1 });
     expect(await claimNightlyJob('self_tuner', DAY)).toBe(false);
     expect(state.jobRuns[0].claimed_by).toBe('container-B');
   });
 
+  it('a FRESH daily_audit claim is respected even with no rows yet', async () => {
+    // The run takes minutes; not having written yet is normal, not death.
+    state.jobRuns.push({
+      job: 'daily_audit',
+      run_date: DAY,
+      claimed_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+      claimed_by: 'container-B',
+    });
+    expect(await claimNightlyJob('daily_audit', DAY)).toBe(false);
+    expect(state.jobRuns[0].claimed_by).toBe('container-B');
+  });
+
+});
+
+describe('claimNightlyJob — concurrency and window independence', () => {
   it('two rescuers race and exactly ONE wins', async () => {
     state.jobRuns.push({
       job: 'league',

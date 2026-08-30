@@ -946,12 +946,25 @@ export class TournamentManager extends TournamentManagerEliminations {
         // the pre-credited early-bird bonus (fn_register_for_tournament writes
         // it at registration). Seating ADDS the starting stack to it — never
         // overwrites it.
+        /**
+         * A ZERO-CHIP 'playing' ENTRANT IS NOT SEATABLE (2026-08-30).
+         *
+         * That state now has a precise meaning: they busted and their rebuy
+         * decision window is open (the bust vacates the seat immediately —
+         * Dan 2026-08-30 — and the elimination sweep holds their entry for
+         * REBUY_DECISION_GRACE_MS). The old fallback here handed such a
+         * player a FREE startingChips stack, which was unreachable while
+         * busted players kept their seats and becomes a chip mint the moment
+         * they do not. A landed rebuy raises their chips and the next pass
+         * seats them normally; a declined/expired window eliminates them.
+         */
+        if (player.status !== 'registered' && Number(player.chips || 0) <= 0) {
+          continue;
+        }
         const playerChips =
           player.status === 'registered'
             ? startingChips + Math.max(0, Math.floor(Number(player.chips) || 0))
-            : Number(player.chips || 0) <= 0
-              ? startingChips
-              : Number(player.chips);
+            : Number(player.chips);
 
         if (!best) {
           // All tables full — promote to 'playing' so expansion counts them;

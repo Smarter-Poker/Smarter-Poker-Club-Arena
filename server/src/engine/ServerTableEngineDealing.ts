@@ -909,6 +909,62 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                       `[ServerTableEngine:${this.tableId}] Tournament bust — rebuy window open, table does NOT pause (Dan 2026-08-30); elimination grace covers the decision`
                     );
                   }
+
+                  /**
+                   * BUSTED PLAYERS DO NOT LINGER (Dan 2026-08-30, verbatim):
+                   * "THE PLAYER WITH NO CHIPS INSTANTLY REMOVED FROM THE
+                   * TOURNAMENT, AND 'OFFERED THE REBUY' ON THERE SCREEN.
+                   * BUSTED PLAYERS ARE 'LINGERING' WAY TO LONG ON THE TABLE,
+                   * PREVENTING THE NEXT HAND FROM MOVING ON..."
+                   *
+                   * The seat is vacated the moment the hand that busted them
+                   * settles — the felt is clear for the next deal. Their
+                   * TOURNAMENT life is untouched here: the elimination
+                   * sweep's rebuy grace still holds their entry open, the
+                   * client's rebuy offer still stands, and a taken rebuy is
+                   * seatless by design (process_tournament_rebuy) — the
+                   * seating sweep places them wherever a player is needed,
+                   * same table and seat included.
+                   *
+                   * `.lte('stack', 0)` is the race guard: a rebuy that landed
+                   * on this seat between the bust and this write raised the
+                   * stack, and that seat stays exactly where it is.
+                   */
+                  try {
+                    const bustedIds = justBustedPlayers
+                      .map((p) => p.user_id)
+                      .filter(Boolean) as string[];
+                    if (bustedIds.length > 0) {
+                      const { error: vacateErr } = await supabase
+                        .from('table_seats')
+                        .update({ left_at: new Date().toISOString() })
+                        .eq('table_id', this.tableId)
+                        .in('user_id', bustedIds)
+                        .is('left_at', null)
+                        .lte('stack', 0);
+                      if (vacateErr) {
+                        reportError(
+                          new Error(
+                            `[ServerTableEngine:${this.tableId}] busted-seat vacate failed: ${vacateErr.message} — the seat lingers one sweep instead`
+                          ),
+                          'ServerTableEngine.busted_seat_vacate_failed'
+                        );
+                      } else {
+                        for (const p of justBustedPlayers) {
+                          if (!p.user_id) continue;
+                          this.hub?.emitEvent(this.tableId, {
+                            type: 'seat_left',
+                            table_id: this.tableId,
+                            user_id: p.user_id,
+                            reason: 'busted_awaiting_rebuy_decision',
+                            timestamp: Date.now(),
+                          } as never);
+                        }
+                      }
+                    }
+                  } catch (vacateThrew) {
+                    reportError(vacateThrew, 'ServerTableEngine.busted_seat_vacate_threw');
+                  }
                 }
               } catch (err) {
                 /* FAIL OPEN, not closed (2026-08-27). This read decides whether

@@ -159,20 +159,9 @@ const PLAYER_SORTS: Array<{ id: PlayerSort; label: string }> = [
 ];
 
 const REFRESH_MS = 60_000;
-const REQUEST_TIMEOUT_MS = 15_000;
 
 /** What a money tile shows when there is no figure to show. Never "0.00". */
 const NO_VALUE = '-';
-
-function withTimeout<T>(request: PromiseLike<T>, message: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), REQUEST_TIMEOUT_MS);
-  });
-  return Promise.race([Promise.resolve(request), timeout]).finally(() => {
-    if (timer) clearTimeout(timer);
-  });
-}
 
 /**
  * Every other timestamp on this page is UTC and the range chip is badged UTC.
@@ -258,9 +247,20 @@ function rowsToCsv(rows: SnapshotRow[]): string {
 
 function playersToCsv(rows: PlayerRow[]): string {
   const esc = csvEscape;
-  const head = ['user_id', 'username', 'hands', 'rake', 'net', 'cash_net', 'tournament_net'];
+  const head = [
+    'user_id',
+    'username',
+    'is_horse',
+    'hands',
+    'rake',
+    'net',
+    'cash_net',
+    'tournament_net',
+  ];
   const lines = rows.map((r) =>
-    [r.user_id, r.username, r.hands, r.rake, r.net, r.cash_net, r.tournament_net].map(esc).join(',')
+    [r.user_id, r.username, r.is_horse, r.hands, r.rake, r.net, r.cash_net, r.tournament_net]
+      .map(esc)
+      .join(',')
   );
   return [head.join(','), ...lines].join('\n');
 }
@@ -340,7 +340,7 @@ export default function ClubDataPage() {
       setClubUuid(clubParam);
       return;
     }
-    withTimeout(resolveClubUUID(clubParam), 'Club lookup timed out')
+    resolveClubUUID(clubParam)
       .then((uuid) => {
         if (cancelled) return;
         // isUUID, not truthiness: resolveClubUUID returns the INPUT unchanged
@@ -408,18 +408,15 @@ export default function ClubDataPage() {
       const stale = () => cancelledRef.current || loadVersion.current !== myVersion;
       if (showSpinner) setLoading(true);
       try {
-        const { data, error: rpcError } = await withTimeout(
-          supabase.rpc('ca_club_data_snapshot', {
-            p_club_id: clubUuid,
-            p_start: startDate,
-            p_end: endDate,
-            p_game: game,
-            p_stakes: stakes,
-            p_search: search || null,
-            p_limit: 200,
-          }),
-          'Club data request timed out'
-        );
+        const { data, error: rpcError } = await supabase.rpc('ca_club_data_snapshot', {
+          p_club_id: clubUuid,
+          p_start: startDate,
+          p_end: endDate,
+          p_game: game,
+          p_stakes: stakes,
+          p_search: search || null,
+          p_limit: 200,
+        });
         if (stale()) return;
         if (rpcError) {
           if (isAuthzError(rpcError)) {
@@ -439,11 +436,6 @@ export default function ClubDataPage() {
           setError(null);
           setSnapshot(data as Snapshot);
         }
-      } catch (err) {
-        if (stale()) return;
-        reportError(err, 'ClubDataPage.snapshot_request');
-        setError('Club data took too long to respond. Try again.');
-        setSnapshot(null);
       } finally {
         // Only the newest request may clear the skeleton. A background poll that
         // finished first used to pull it out from under a load the user had just
@@ -466,15 +458,12 @@ export default function ClubDataPage() {
     const stale = () => cancelledRef.current || playersVersion.current !== myVersion;
     setPlayersLoading(true);
     try {
-      const { data, error: rpcError } = await withTimeout(
-        supabase.rpc('ca_club_player_breakdown', {
-          p_club_id: clubUuid,
-          p_start: startDate,
-          p_end: endDate,
-          p_limit: 500,
-        }),
-        'Player data request timed out'
-      );
+      const { data, error: rpcError } = await supabase.rpc('ca_club_player_breakdown', {
+        p_club_id: clubUuid,
+        p_start: startDate,
+        p_end: endDate,
+        p_limit: 500,
+      });
       if (stale()) return;
       if (rpcError) {
         if (isAuthzError(rpcError)) {
@@ -492,11 +481,6 @@ export default function ClubDataPage() {
         setPlayersError(null);
         setPlayers(data as PlayerBreakdown);
       }
-    } catch (err) {
-      if (stale()) return;
-      reportError(err, 'ClubDataPage.players_request');
-      setPlayersError('Player data took too long to respond. Try again.');
-      setPlayers(null);
     } finally {
       if (!stale()) setPlayersLoading(false);
     }
@@ -552,10 +536,7 @@ export default function ClubDataPage() {
   useEffect(() => {
     if (!clubUuid) return;
     let cancelled = false;
-    withTimeout(
-      supabase.rpc('ca_club_union_invoices', { p_club_id: clubUuid, p_limit: 8 }),
-      'Union statement request timed out'
-    ).then(
+    supabase.rpc('ca_club_union_invoices', { p_club_id: clubUuid, p_limit: 8 }).then(
       ({ data, error: invErr }) => {
         if (cancelled) return;
         if (invErr) {
@@ -720,7 +701,7 @@ export default function ClubDataPage() {
     );
   };
 
-  if (isHydrating && !user) {
+  if (isHydrating) {
     return (
       <div className={styles.page}>
         <LoadingState message="Opening Club Data" />
@@ -762,130 +743,69 @@ export default function ClubDataPage() {
       <header className={styles.header}>
         <button
           type="button"
-          className={`${styles.headerBtn} ${styles.backButton}`}
+          className={styles.headerBtn}
           onClick={() => navigate(-1)}
           aria-label="Go back"
         >
-          <span aria-hidden="true">&#8592;</span>
-          <span>Back</span>
+          &laquo;
         </button>
-        <span className={styles.headerIdentity}>Club Intelligence</span>
-        <div className={styles.headerActions}>
-          <button
-            type="button"
-            className={styles.headerBtn}
-            onClick={() => {
-              if (tab === 'players') void loadPlayers();
-              else void load(true);
-            }}
-            disabled={loading || playersLoading}
-          >
-            Refresh
-          </button>
-          <button
-            type="button"
-            className={`${styles.headerBtn} ${styles.exportButton}`}
-            onClick={() => {
-              void exportCsv();
-            }}
-            disabled={tab === 'players' ? !sortedPlayers.length : !snapshot?.rows?.length}
-            aria-label="Export as CSV"
-            title="Export as CSV"
-          >
-            Export CSV
-          </button>
-        </div>
+        <h1 className={styles.title}>Club Data</h1>
+        <button
+          type="button"
+          className={styles.headerBtn}
+          onClick={() => {
+            void exportCsv();
+          }}
+          disabled={tab === 'players' ? !sortedPlayers.length : !snapshot?.rows?.length}
+          aria-label="Export as CSV"
+          title="Export as CSV"
+        >
+          CSV
+        </button>
       </header>
 
-      <section className={styles.hero} aria-labelledby="club-data-title">
-        <img
-          className={styles.heroArt}
-          src="/hub/club-arena/images/club-data/data-vault-hero-v1.webp"
-          alt=""
-          width="1600"
-          height="901"
-          fetchPriority="high"
-          decoding="async"
-        />
-        <div className={styles.heroShade} aria-hidden="true" />
-        <div className={styles.heroContent}>
-          <div className={styles.heroEyebrow}>
-            <span className={styles.statusLight} aria-hidden="true" />
-            {loading ? 'Synchronizing Ledger' : 'Live Club Ledger'}
-          </div>
-          <h1 className={styles.title} id="club-data-title">
-            Read The Room.
-            <span>Own The Numbers.</span>
-          </h1>
-          <p className={styles.heroCopy}>
-            Track Every Game, Fee, Player Result, And Union Square-Up From One Operator-Grade View.
-          </p>
-          <div className={styles.heroMeta}>
-            <span>{clubName || 'Club Data'}</span>
-            <span>
-              {snapshot?.data_updated_at
-                ? `Cash Updated ${utcTime(snapshot.data_updated_at)}`
-                : loading
-                  ? 'Loading Live Records'
-                  : 'Live Records Ready'}
-            </span>
-          </div>
+      <div className={styles.rangeBar}>
+        <button
+          type="button"
+          className={styles.arrow}
+          onClick={() => shiftRange(-1)}
+          aria-label="Previous period"
+        >
+          &#9664;
+        </button>
+        <div className={styles.rangeChip}>
+          <span>{startDate}</span>
+          <span>&mdash;</span>
+          <span>{endDate}</span>
+          <span className={styles.rangeTz}>UTC</span>
         </div>
-      </section>
+        <button
+          type="button"
+          className={styles.arrow}
+          onClick={() => shiftRange(1)}
+          disabled={isToday}
+          aria-label="Next period"
+        >
+          &#9654;
+        </button>
+      </div>
 
-      <section className={styles.controlDeck} aria-label="Reporting period">
-        <div className={styles.controlLabel}>Reporting Window</div>
-        <div className={styles.rangeBar}>
-          <button
-            type="button"
-            className={styles.arrow}
-            onClick={() => shiftRange(-1)}
-            aria-label="Previous period"
-          >
-            &#8592;
-          </button>
-          <div className={styles.rangeChip}>
-            <span>{startDate}</span>
-            <span className={styles.rangeDivider}>&mdash;</span>
-            <span>{endDate}</span>
-            <span className={styles.rangeTz}>UTC</span>
-          </div>
-          <button
-            type="button"
-            className={styles.arrow}
-            onClick={() => shiftRange(1)}
-            disabled={isToday}
-            aria-label="Next period"
-          >
-            &#8594;
-          </button>
-        </div>
-
-        {/* role="group" + aria-pressed, not a tablist. These control no tabpanel,
+      {/* role="group" + aria-pressed, not a tablist. These control no tabpanel,
           and the stakes row is a TOGGLE - tapping the active chip clears it,
           which is impossible for a tab and leaves a tablist with nothing
           selected. A screen reader was told "tab 3 of 6" for a filter. */}
-        <div className={styles.presets} role="group" aria-label="Date Range">
-          {([1, 7, 14] as PresetId[]).map((p) => (
-            <button
-              key={p}
-              type="button"
-              aria-pressed={preset === p}
-              className={`${styles.preset} ${preset === p ? styles.active : ''}`}
-              onClick={() => setPreset(p)}
-            >
-              {p === 1 ? '1 day' : `${p} days`}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <div className={styles.sectionThreshold}>
-        <div>
-          <span>Performance Ledger</span>
-          <h2>Club Pulse</h2>
-        </div>
-        <span className={styles.thresholdStatus}>{loading ? 'Syncing' : 'Live'}</span>
+      <div className={styles.presets} role="group" aria-label="Date Range">
+        {([1, 7, 14] as PresetId[]).map((p) => (
+          <button
+            key={p}
+            type="button"
+            aria-pressed={preset === p}
+            className={`${styles.preset} ${preset === p ? styles.active : ''}`}
+            onClick={() => setPreset(p)}
+          >
+            {p === 1 ? '1 day' : `${p} days`}
+          </button>
+        ))}
       </div>
 
       <div className={styles.tabs} role="tablist" aria-label="View">
@@ -1134,26 +1054,6 @@ export default function ClubDataPage() {
             ))}
           </div>
 
-          {filtersActive && (
-            <div className={styles.filterUtility}>
-              <span>
-                {compactInt(snapshot?.row_count || 0)} Matching Game
-                {Number(snapshot?.row_count || 0) === 1 ? '' : 's'}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setGame('ALL');
-                  setStakes('ALL');
-                  setSearchInput('');
-                  setSearch('');
-                }}
-              >
-                Reset Filters
-              </button>
-            </div>
-          )}
-
           <div className={styles.list}>
             {loading && !snapshot && !error && (
               <>
@@ -1165,14 +1065,7 @@ export default function ClubDataPage() {
 
             {error && (
               <div className={`${styles.state} ${styles.error}`} role="alert">
-                <span>{error}</span>
-                <button
-                  type="button"
-                  className={styles.retryButton}
-                  onClick={() => void load(true)}
-                >
-                  Try Again
-                </button>
+                {error}
               </div>
             )}
 
@@ -1319,14 +1212,7 @@ export default function ClubDataPage() {
 
             {playersError && (
               <div className={`${styles.state} ${styles.error}`} role="alert">
-                <span>{playersError}</span>
-                <button
-                  type="button"
-                  className={styles.retryButton}
-                  onClick={() => void loadPlayers()}
-                >
-                  Try Again
-                </button>
+                {playersError}
               </div>
             )}
 
@@ -1361,6 +1247,7 @@ export default function ClubDataPage() {
                   <div className={styles.rowMain}>
                     <div className={styles.rowName} title={pl.username}>
                       {pl.username}
+                      {pl.is_horse && <span className={styles.horseTag}>HORSE</span>}
                     </div>
                     <div className={styles.rowBlinds}>
                       {compactInt(pl.hands)} Hands &middot; {money(pl.rake)} Rake

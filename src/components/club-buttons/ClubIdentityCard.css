@@ -112,6 +112,24 @@
 }
 
 button.club-identity__line {
+  /* ── IT HAS TO WIN ITS OWN BOX (2026-08-30) ───────────────────────────────
+     Found by the post-deploy sweep, measured live at 375px: a tap on the
+     centre of this button was answered by `P.club-identity__alias` — the
+     SIBLING above it — and by the details grid itself. These rows are laid
+     out by `grid-template-rows: 1.2fr 1fr 1fr 1fr` with no row-gap and the
+     line carries a `translateY(0.55cqw)`, so the boxes touch and the later
+     painter takes the hit test. The player was tapping a copy button and the
+     tap was landing on a paragraph.
+
+     `position: relative` plus a z-index puts each line on top of its own
+     box, which is the part that can be fixed here without touching the
+     card's proportions. It does NOT make the control a 44px target — see the
+     note in tests/e2e/mobile-tap-targets.spec.ts: two 11px controls 14px
+     apart cannot both carry a 44px band centred on themselves, and spacing
+     them apart is a change to a card Dan approved. This is the honest half:
+     the button is now reliably tappable ON ITSELF. */
+  position: relative;
+  z-index: 1;
   cursor: copy;
 }
 

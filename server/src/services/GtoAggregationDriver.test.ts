@@ -38,21 +38,23 @@ beforeEach(() => {
 
 describe('GtoAggregationDriver', () => {
   it('folds several batches per tick, bounded, always at the measured batch size', async () => {
-    rpc.mockResolvedValue(ok(200));
+    rpc.mockResolvedValue(ok(100));
     const rows = await gtoAggregationTick();
-    expect(rpc.mock.calls.length).toBe(4); // the hard per-tick cap
+    expect(rpc.mock.calls.length).toBe(8); // the hard per-tick cap
     expect(rows).toBe(800);
-    // THE BATCH IS FIXED. 200 is the largest that fits the API's statement
-    // budget (measured 3.5s; 300+ is cancelled) and also the SQL's own
-    // floor — there is nothing to adapt to, and the adaptive version
-    // oscillated straight back into a timeout.
+    // THE BATCH IS FIXED, AND IT IS NOT THE LARGEST THAT FITS. Measured
+    // 2026-08-30 on the engine's own path: 100 rows costs ~0.9s, 200 costs
+    // ~8s and is cancelled outright a third of the time. Cost is
+    // super-linear, so the big batch is both slower per row and the one
+    // that gets thrown away. If this ever reads 200 again, the driver has
+    // regressed to ~10 rows/s.
     for (const [, args] of rpc.mock.calls) {
-      expect((args as { p_batch: number }).p_batch).toBe(200);
+      expect((args as { p_batch: number }).p_batch).toBe(100);
     }
   });
 
   it('starts on the turn and only moves to the river when the turn is done', async () => {
-    rpc.mockResolvedValueOnce(ok(200, true)).mockResolvedValue(ok(200));
+    rpc.mockResolvedValueOnce(ok(100, true)).mockResolvedValue(ok(100));
     await gtoAggregationTick();
     const streets = rpc.mock.calls.map((c) => (c[1] as { p_street: string }).p_street);
     expect(streets[0]).toBe('turn');
@@ -60,9 +62,9 @@ describe('GtoAggregationDriver', () => {
   });
 
   it('a timeout ends the tick quietly — it is a rolled-back no-op, not an incident', async () => {
-    rpc.mockResolvedValueOnce(ok(200)).mockResolvedValueOnce(timeout).mockResolvedValue(ok(200));
+    rpc.mockResolvedValueOnce(ok(100)).mockResolvedValueOnce(timeout).mockResolvedValue(ok(100));
     const rows = await gtoAggregationTick();
-    expect(rows).toBe(200); // stopped at the timeout, did not hammer on
+    expect(rows).toBe(100); // stopped at the timeout, did not hammer on
     expect(rpc.mock.calls.length).toBe(2);
     expect(reported).toHaveLength(0);
   });

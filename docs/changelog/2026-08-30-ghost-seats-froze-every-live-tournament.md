@@ -23,13 +23,13 @@ the field plays on").
 The Hetzner engine discovers tables with `status IN ('waiting','running')`.
 With every tournament table closed it discovered **zero**:
 
-| signal | before repair | after repair |
-| --- | --- | --- |
-| `activeTables` (engine `/health`) | 0 | 70 |
-| `activeTournaments` | 1 | 23 |
-| `tablesExpectedDealing` | 0 | 20-22 |
-| `discoveryStaleMs` | 43,181 (stalled) | ~4,000 (healthy) |
-| hands/minute | ~0.2 | 27 and climbing |
+| signal                            | before repair    | after repair     |
+| --------------------------------- | ---------------- | ---------------- |
+| `activeTables` (engine `/health`) | 0                | 70               |
+| `activeTournaments`               | 1                | 23               |
+| `tablesExpectedDealing`           | 0                | 20-22            |
+| `discoveryStaleMs`                | 43,181 (stalled) | ~4,000 (healthy) |
+| hands/minute                      | ~0.2             | 27 and climbing  |
 
 Hands had decayed 7,455/hr (11:00) -> 847/hr (18:00) -> ~1 per 15 minutes.
 
@@ -41,9 +41,9 @@ Hands had decayed 7,455/hr (11:00) -> 847/hr (18:00) -> ~1 per 15 minutes.
   four-table limit by a dead seat, so the seating loop retried forever:
   **10,738 `FOUR TABLE LIMIT` rejections in two hours**. That storm, on top of
   the legacy engine's own write flood (204,345 `UPDATE tables SET settings,
-  status` calls, 6.5M ms of DB time), saturated PostgREST. Reads timed out and
+status` calls, 6.5M ms of DB time), saturated PostgREST. Reads timed out and
   the database intermittently answered `FATAL 57P03: the database system is not
-  accepting connections`, which is the exact error the lobby's catch block
+accepting connections`, which is the exact error the lobby's catch block
   reports as "Could Not Load Your Clubs".
 
 ## The repair
@@ -53,7 +53,7 @@ Hands had decayed 7,455/hr (11:00) -> 847/hr (18:00) -> ~1 per 15 minutes.
 Moves `closed -> running` for tables whose tournament is still RUNNING and
 which still hold an open seat, and resyncs `current_players` from the real
 seat count. It touches **no seats, no chips, no wallet** -- reopening is safe
-because `fn_on_table_status_change` releases seats only on transitions *into*
+because `fn_on_table_status_change` releases seats only on transitions _into_
 a terminal status, and `trg_tables_auto_cashout_on_close` fires only on the way
 to closed. Every changed row is recorded in `zz_reopen_20260830_backup` for
 rollback, with pre-flight and post-apply assertions.
@@ -101,3 +101,26 @@ it on a real table inside the migration and reverting the probe.
 - `smarter.poker/api/health` 200 in 0.22-0.54s.
 - Dan's clubs query: 3 rows, 1.678 ms execution.
 - Ghost seats on closed tables: 416 -> 5.
+
+## Follow-up, same session: the new alarm was crying wolf
+
+Within four minutes of going live the repaired alarm logged five events, every
+one with `seats_protected = 0`. Those are not incidents -- a tournament
+consolidates as players bust, and an empty table closing under a RUNNING
+tournament is table balancing working correctly.
+
+An alarm that fires on routine consolidation is one nobody reads, which is
+exactly how the original became worthless. `20260830193500` tightens it to fire
+only when the close strands a SEATED field (`seats_protected > 0`), which is the
+2026-08-30 shape. The seat-protection logic is untouched and still runs on every
+close; only the logging is conditional. The five consolidation rows were
+deleted, and the migration self-tests both directions.
+
+## A note on hand rate after recovery
+
+Hands recovered to a 38/min peak and then eased back. That is the tournaments
+consolidating, not a relapse: 33 distinct tables dealt 176 hands in the ten
+minutes after the repair, none of the 71 reopened tables were re-closed
+(`reopened_then_reclosed = 0`), and 89 MTT tables remain live across 25 running
+tournaments. The engine reports `stalledTableCount: 0` and a stable uptime,
+so it is no longer restarting.

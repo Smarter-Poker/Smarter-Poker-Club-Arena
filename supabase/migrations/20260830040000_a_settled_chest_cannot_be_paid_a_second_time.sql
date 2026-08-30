@@ -297,6 +297,21 @@ BEGIN
 END;
 $function$;
 
+-- NOBODY IN A BROWSER CALLS EITHER OF THESE. Both are SECURITY DEFINER money
+-- writers driven by the engine: the engine reveals and pays awards, and the
+-- engine settles the event. Production already held exactly these grants --
+-- CREATE OR REPLACE preserves an ACL -- and they are restated here so the
+-- migration cannot be read as widening them. PUBLIC is named as well as the
+-- roles: revoking one role while PUBLIC still holds it reads as a fix and does
+-- nothing.
+REVOKE ALL ON FUNCTION public.fn_mystery_bounty_pay(uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_mystery_bounty_pay(uuid) TO service_role;
+
+REVOKE ALL ON FUNCTION public.fn_mystery_bounty_settle(uuid, uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_mystery_bounty_settle(uuid, uuid) TO service_role;
+
 -- The assumptions this migration is built on, asserted rather than assumed.
 DO $do$
 BEGIN

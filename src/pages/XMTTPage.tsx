@@ -221,7 +221,6 @@ export default function XMTTPage() {
       // (levels arrive on the snapshot), so this refresh never fired.
       // Phase 13: Waitlist position changes trigger tournament card refresh
       masterBus.subscribeDebounced('WAITLIST_POSITION_CHANGED', refresh, 500),
-      masterBus.subscribeDebounced('WAITLIST_PROMOTED', refresh, 500),
     ];
     return () => unsubs.forEach((u) => u());
   }, [clubId, selectedTournament, loadTournaments, loadDetail]);

@@ -81,6 +81,17 @@ describe('Community Command Center interaction contracts', () => {
     expect(FRIENDS).toContain("exportToCSV(filteredFriends, 'friends_list.csv'");
   });
 
+  it('keeps every relationship tab fully visible and tappable on phones', () => {
+    const friendsCss = read('src/pages/FriendsPage.css');
+
+    expect(friendsCss).toMatch(
+      /@media \(max-width: 500px\)[\s\S]*?\.friends-tab-rail button \{[\s\S]*?flex: 1 1 0;[\s\S]*?min-width: 0;/
+    );
+    expect(friendsCss).toMatch(
+      /@media \(max-width: 500px\)[\s\S]*?\.friends-tab-rail \{[\s\S]*?overflow-x: clip;/
+    );
+  });
+
   it('pages the complete relationship set and resolves profiles without Unknown identities', () => {
     expect(FRIENDS).toContain('readCompleteSocialSet<FriendshipEdge>');
     expect(FRIENDS).toContain('chunkSocialProfileIds(allProfileIds)');

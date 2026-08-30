@@ -3800,29 +3800,31 @@ export default function TablePage({
     if (seatFirstConfirm === null) setSpinOddsOpen(false);
   }, [seatFirstConfirm]);
 
-  // Buy-in 60s timeout enforcement
-  useEffect(() => {
-    if (!showBuyInModal && seatFirstConfirm === null) return;
-
-    const timer = setTimeout(() => {
-      if (showBuyInModal) {
-        setShowBuyInModal(false);
-        setPendingSeat(null);
-        setSelectedSeat(null);
-        if (buyInIdempotencyKeyRef.current) {
-          buyInIdempotencyKeyRef.current = null;
-        }
-      }
-      if (seatFirstConfirm !== null) {
-        setSeatFirstConfirm(null);
-      }
-
-      toast?.error?.('Buy-in timed out. You have been removed from the table.');
-      navigate('/hub/club-arena');
-    }, 60000);
-
-    return () => clearTimeout(timer);
-  }, [showBuyInModal, seatFirstConfirm, navigate, toast]);
+  /* ── THE DUPLICATE BUY-IN TIMER IS DELETED (2026-08-29, round 14) ─────────
+   *
+   * A second 60-second timer used to live here, and it is the "never registers
+   * without errors" Dan reported. It did three things wrong, all of them
+   * visible to a player sitting on the Spin buy-in sheet:
+   *
+   *   1. `navigate('/hub/club-arena')` — the router's basename ALREADY is
+   *      '/hub/club-arena' (src/main.tsx), so this resolved to
+   *      '/hub/club-arena/hub/club-arena', a route that does not exist. A
+   *      player who lingered on the sheet was thrown to a dead URL.
+   *   2. It raised a red ERROR toast ("Buy-in timed out. You have been removed
+   *      from the table.") for a timeout that is not an error and for a
+   *      removal from a table the player had never sat at.
+   *   3. On a CASH table it fired ALONGSIDE the real timer below, so both a
+   *      red error and a calm info toast appeared, and two navigations raced.
+   *
+   * It also used a bare setTimeout, which a background tab throttles, so it
+   * could fire late against a sheet the player had already dealt with.
+   *
+   * The window itself is Dan's rule and is KEPT — it is enforced by the one
+   * timer below, which is wall-clock based, shows a live countdown, releases
+   * the optimistic seat, closes the tab and routes to the real lobby. That
+   * timer now covers the seat-first sheet too, so Spins are governed by the
+   * same correct clock instead of a broken second one.
+   */
   /**
    * Synchronous twin of `seatFirstPending`, mirroring `buyInProcessingRef` on
    * the cash path. State updates are batched, so two Buy In presses landing in
@@ -7047,7 +7049,11 @@ export default function TablePage({
    * because `onConfirmBuyIn` closes the modal before the RPC resolves.
    */
   useEffect(() => {
-    if (!showBuyInModal) {
+    /* ROUND 14: the seat-first (Spin / Heads-Up) confirm sheet is governed by
+       THIS clock now. It used to have a second, broken timer of its own; see
+       the note where that was deleted. One window, one implementation. */
+    const sheetOpen = showBuyInModal || seatFirstConfirm !== null;
+    if (!sheetOpen) {
       setBuyInSecondsLeft(null);
       return;
     }
@@ -7066,6 +7072,8 @@ export default function TablePage({
 
       // Release the sheet and the optimistic seat, exactly as a cancel does.
       setShowBuyInModal(false);
+      // ROUND 14: and the seat-first sheet, which this clock now owns.
+      setSeatFirstConfirm(null);
       setPendingSeat(null);
       setSelectedSeat(null);
       buyInIdempotencyKeyRef.current = null;
@@ -7088,7 +7096,7 @@ export default function TablePage({
 
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showBuyInModal, tableId]);
+  }, [showBuyInModal, seatFirstConfirm, tableId]);
 
   const handleLeaveTable = async () => {
     if (!tableId || !userId) return;
@@ -19280,6 +19288,21 @@ export default function TablePage({
             <div className="seat-buyin-confirm__note">
               This {seatFirstBuyIn.label} Starts When All {seatFirstBuyIn.seats} Seats Are Bought
             </div>
+            {/* ROUND 14: the 60-second window, made VISIBLE. It has always
+                applied to this sheet, but nothing on it said so - the player
+                simply vanished to the lobby mid-decision, which is precisely
+                the "it never works" surprise. Counting down is the honest
+                version, and it matters more now that the odds ladder below
+                gives a player something to read. Last ten seconds go amber. */}
+            {buyInSecondsLeft !== null && (
+              <div
+                className="seat-buyin-confirm__meta"
+                style={buyInSecondsLeft <= 10 ? { color: '#fbbf24' } : undefined}
+                aria-live="polite"
+              >
+                Seat Held For {buyInSecondsLeft}s
+              </div>
+            )}
             {/* ENHANCEMENT 2026-08-29: the multiplier ladder, priced at THIS
                 stake. Spins only - a Heads-Up has no wheel. Every number is
                 derived from the one canonical ladder (spinOddsTable), so the

@@ -15,7 +15,11 @@
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  background: var(--club-black);
+  /* #000, not --club-black (#050507). Five points of grey is invisible on its
+     own and obvious against the true black of .club-home and .casinoStage
+     beside it - which is the "not all the same color" Dan photographed on
+     2026-08-30. One black for the whole shell. */
+  background: #000;
 }
 
 .pinnedActionBarClearance {
@@ -56,57 +60,37 @@
 
 /* #SmarterCasinoRealism route shell. The live page remains the source of all
    data and controls; this supplies the shared physical environment around it. */
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE STAGE IS BLACK (Dan 2026-08-30)
+   ═══════════════════════════════════════════════════════════════════════════
+
+   "NOTICE THE BACKGROUND OF THE CLUB ARENA. ITS NOT ALL THE SAME COLOR AND YOU
+   CAN SEE SOME OLD BORDER IMAGES ON THE SIDES. THE WHOLE BACKGROUND SHOULD BE
+   SOLID BLACK AND ALL THE SAME COLOR."
+
+   This shell is what he was looking at, and it was three things at once - all
+   of them visible in the gutter either side of the 1400px content column,
+   which is exactly where `.club-home`'s own #000 stops:
+
+     - a vault photograph under a translucent wash, so the gutter read as a
+       dark blue-grey that never quite matched the page;
+     - `::before`, the ROUTE ART: a club / wallet / tile PNG bleeding in from
+       the right edge at 0.28 opacity. That is the "old border images on the
+       sides";
+     - `inset 1px` highlights down both edges, plus `::after`, a blue hairline
+       across the top - two more borders drawn on the background he asked to be
+       one colour.
+
+   All of it is gone for one opaque black, the same black as `.club-home`,
+   `.layout`, the body and the action bar, so there is no seam left to notice.
+   `--casino-route-art` (set in AppLayout.tsx) is deliberately left unread: it
+   is the one line to restore if a themed stage ever comes back, and it costs
+   nothing meanwhile. */
 .casinoStage {
   position: relative;
   isolation: isolate;
   overflow-x: clip;
-  background:
-    linear-gradient(180deg, rgba(2, 5, 8, 0.86), rgba(2, 5, 8, 0.97)),
-    url('/hub/club-arena/images/bg-vault.jpg') center top / cover fixed;
-  box-shadow:
-    inset 1px 0 rgba(196, 211, 226, 0.08),
-    inset -1px 0 rgba(196, 211, 226, 0.08);
-}
-
-.casinoStage::before {
-  content: '';
-  position: absolute;
-  z-index: -2;
-  inset: 0;
-  min-height: min(760px, 100dvh);
-  pointer-events: none;
-  background-image:
-    linear-gradient(90deg, #030609 0%, rgba(3, 6, 9, 0.82) 39%, rgba(3, 6, 9, 0.08) 82%),
-    linear-gradient(180deg, rgba(3, 6, 9, 0.12) 0%, #030609 70%), var(--casino-route-art);
-  background-repeat: no-repeat;
-  background-position:
-    center,
-    center,
-    right -32px top 8px;
-  background-size:
-    cover,
-    cover,
-    min(56vw, 760px) auto;
-  opacity: 0.28;
-  filter: saturate(0.78) contrast(1.12);
-}
-
-.casinoStage::after {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  inset: 0 0 auto;
-  height: 1px;
-  pointer-events: none;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(188, 207, 224, 0.46) 15%,
-    rgba(46, 155, 255, 0.78) 50%,
-    rgba(188, 207, 224, 0.46) 85%,
-    transparent
-  );
-  box-shadow: 0 0 14px rgba(46, 155, 255, 0.28);
+  background: #000;
 }
 
 .casinoStage > * {
@@ -190,17 +174,8 @@
        it put a dead band under it on every tablet-width page. */
   }
 
-  .casinoStage::before {
-    background-position:
-      center,
-      center,
-      right -100px top 10px;
-    background-size:
-      cover,
-      cover,
-      min(74vw, 680px) auto;
-    opacity: 0.22;
-  }
+  /* The tablet re-placement of the route art went with the art itself
+     (2026-08-30, "SOLID BLACK AND ALL THE SAME COLOR"). */
 }
 
 @media (max-width: 600px) {
@@ -248,22 +223,10 @@
     overflow-x: clip;
   }
 
-  .casinoStage::before {
-    min-height: 520px;
-    background-image:
-      linear-gradient(180deg, rgba(3, 6, 9, 0.16), #030609 68%), var(--casino-route-art);
-    background-position:
-      center,
-      center top 10px;
-    background-size:
-      cover,
-      115vw auto;
-    opacity: 0.18;
-  }
+  /* The phone re-placement of the route art went with the art itself
+     (2026-08-30, "SOLID BLACK AND ALL THE SAME COLOR"). */
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .casinoStage {
-    background-attachment: scroll;
-  }
-}
+/* The reduced-motion override is gone with the parallax it was correcting:
+   `background-attachment: fixed` is what made the stage drift under the
+   content, and a flat colour cannot drift. */

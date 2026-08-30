@@ -45,6 +45,7 @@ import { startHorseLaneLoader } from './services/HorseLaneLoader.js';
 import { startGtoChartLoader } from './services/GtoChartLoader.js';
 import { startGtoPostflopLoader } from './services/GtoPostflopLoader.js';
 import { startGtoAggregationDriver } from './services/GtoAggregationDriver.js';
+import { startGtoAggregationDriverV31 } from './services/GtoAggregationDriverV31.js';
 import { startHorseOverlayGuard } from './services/HorseOverlayGuard.js';
 import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 
@@ -313,6 +314,12 @@ httpServer.listen(PORT, () => {
   // small batches off the deal path. Restart-safe (cursor in
   // gto_agg_progress); permanently silent once both streets are done.
   startGtoAggregationDriver();
+  // V31 (2026-08-30): the SECOND solver export, strategy_matrix_v2, which is
+  // DISJOINT from the one V30 reads - zero of 9,584 sampled turn rows carry
+  // both - so this is the other 59% of the turn rather than a re-run. It
+  // gates itself on V30 reporting every street done, because both walk the
+  // same 79 GB table and V30 is the one with a consult already reading it.
+  startGtoAggregationDriverV31();
   // Overlay guard (Dan 2026-08-27): Midway Union guaranteed events get topped
   // up with horses that are not already in them, so no overlay occurs.
   startHorseOverlayGuard();

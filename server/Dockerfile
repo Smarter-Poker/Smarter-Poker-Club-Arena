@@ -20,6 +20,12 @@ RUN npm prune --production
 
 # Run
 ENV NODE_ENV=production
+# 2026-08-30: Node tried IPv6 first to Supabase on a host with no IPv6 route,
+# burning ~40s per fresh connection while the client's deadline was 15s —
+# every request on a new socket aborted as supabase_timeout and the platform
+# stopped dealing. Measured in-container: 43,121ms default vs 82ms with this
+# flag. Baked here so the fix survives any .env rewrite.
+ENV NODE_OPTIONS=--dns-result-order=ipv4first
 EXPOSE 8080
 
 # 2026-08-15 DEPLOY VERIFIABILITY.

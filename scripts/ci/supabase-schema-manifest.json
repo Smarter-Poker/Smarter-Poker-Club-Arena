@@ -285,6 +285,7 @@
     "daemon_state",
     "daily_bonus_rewards",
     "daily_challenge_catalog",
+    "daily_challenge_milestones",
     "daily_challenges",
     "daily_spins",
     "daily_trivia_plays",
@@ -928,6 +929,7 @@
     "wishlists",
     "youtube_embed_failures",
     "zz_reopen2_20260830_backup",
+    "zz_reopen3_20260830_backup",
     "zz_reopen_20260830_backup"
   ],
   "functions": [
@@ -1931,6 +1933,7 @@
     "fn_shop_item_availability",
     "fn_short_formats_never_break",
     "fn_snapshot_chip_supply",
+    "fn_snapshot_daily_challenge_contract",
     "fn_snapshot_health",
     "fn_snapshot_index_usage",
     "fn_snapshot_player_stats",
@@ -2319,6 +2322,7 @@
     "get_commander_access_details",
     "get_current_settlement_period",
     "get_daily_challenge",
+    "get_daily_challenge_dashboard",
     "get_daily_chip_summary",
     "get_daily_commission_summary",
     "get_daily_tournaments_unified",

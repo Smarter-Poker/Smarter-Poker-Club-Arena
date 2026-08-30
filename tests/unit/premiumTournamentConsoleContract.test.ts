@@ -37,7 +37,7 @@ describe('approved premium tournament console contract', () => {
   it('fills the complete tab rail instead of leaving a dead right side', () => {
     const rail = PREMIUM.slice(
       PREMIUM.indexOf('.tournament-details .details-tabs {'),
-      PREMIUM.indexOf('.tournament-details .details-tabs .tab:hover')
+      PREMIUM.indexOf('.tournament-details .details-tabs .tab.active')
     );
     expect(rail).toContain('display: flex');
     expect(rail).toContain('flex-wrap: wrap');

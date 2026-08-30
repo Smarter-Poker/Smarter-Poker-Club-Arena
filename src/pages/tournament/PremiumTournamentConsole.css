@@ -171,11 +171,6 @@
   background: rgba(101, 217, 255, 0.15);
 }
 
-.tournament-details .details-tabs .tab:hover:not(.active) {
-  color: #e8f6ff;
-  border-color: #738292;
-}
-
 .tournament-details .details-tabs .tab.active {
   color: #f7fbff;
   border-color: #74dfff;

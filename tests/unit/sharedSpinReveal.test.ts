@@ -101,7 +101,13 @@ describe('the ENGINE names the moment and holds the deal', () => {
   });
 
   it('every table is held for the full reveal', () => {
-    expect(BASE).toMatch(/holdDealingUntil\(holdUntil\)/);
+    /* UPDATED 2026-08-30, round 18, house rule 8. The engine is handed
+       `effectiveHold` now — `Math.max(holdUntil, now + spinPostRevealMs())`,
+       a ONE-SIDED extension of the stamped deal time. See spinPostReveal for
+       the full reasoning; the rule here is unchanged: every table is held,
+       and the hold can only ever be longer than the stamped one. */
+    expect(BASE).toMatch(/holdDealingUntil\(effectiveHold\)/);
+    expect(BASE).toMatch(/const effectiveHold = Math\.max\(holdUntil,/);
     expect(BASE).toMatch(/spinRevealTotalMs\(\)/);
   });
 

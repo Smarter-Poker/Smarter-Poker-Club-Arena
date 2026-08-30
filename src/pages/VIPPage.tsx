@@ -26,6 +26,7 @@ import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import './VIPPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 export default function VIPPage() {
   const { user } = useAuthUser();
@@ -258,6 +259,18 @@ export default function VIPPage() {
 
   return (
     <div className="vip-page">
+      <RewardsSurfaceHeader
+        eyebrow="Rewards Circuit / VIP"
+        title="VIP Command Deck"
+        description="Track live tier progress, review earned privileges, and redeem VIP rewards through the existing protected reward services."
+        art="vip"
+        status="VIP TELEMETRY // LIVE"
+        metrics={[
+          { label: 'Current Points', value: vipPoints.current.toLocaleString(), tone: 'attention' },
+          { label: 'Monthly', value: vipPoints.monthly.toLocaleString(), tone: 'live' },
+          { label: 'Active Streak', value: `${vipPoints.activeStreak} days` },
+        ]}
+      />
       {/* VIP Stats Header */}
       {vipEntranceComplete && (
         <VIPStatsHeader

@@ -30,6 +30,7 @@ import { reportError } from '../utils/errorReporter';
 import { ConfettiEffect } from '../components/effects/ConfettiEffect';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './DailyChallengesPage.module.css';
+import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -670,20 +671,35 @@ export default function DailyChallengesPage() {
   }
 
   return (
-    <StandardContentLayout className={styles.container} title="Daily Missions">
-      <header className={styles.header}>
-        <div className={styles.headerTitles}>
-          <h1 className={styles.title}>Daily Challenges</h1>
-          <p className={styles.subtitle}>Complete Goals To Earn Chips And Diamonds</p>
-        </div>
-        <button
-          className={styles.closeButton}
-          onClick={() => navigate('/')}
-          aria-label="Close challenges"
-        >
-          {'\u2715'}
-        </button>
-      </header>
+    <StandardContentLayout className={styles.container}>
+      <RewardsSurfaceHeader
+        eyebrow="Rewards Circuit / Missions"
+        title="Daily Mission Grid"
+        description="Complete live daily, weekly, and monthly objectives, then claim each server-verified reward without leaving the mission command surface."
+        art="missions"
+        status="MISSION ROTATION // LIVE"
+        metrics={[
+          { label: 'Ready To Claim', value: unclaimed.count, tone: 'attention' },
+          {
+            label: 'Completed',
+            value: stats?.totalCompleted.toLocaleString() || '0',
+            tone: 'live',
+          },
+          {
+            label: 'Current Streak',
+            value: `${streak?.streak ?? stats?.currentStreak ?? 0} days`,
+          },
+        ]}
+        actions={
+          <button
+            className={styles.closeButton}
+            onClick={() => navigate('/')}
+            aria-label="Close challenges"
+          >
+            {'\u2715'}
+          </button>
+        }
+      />
 
       {/* Streak banner */}
       <section className={styles.streakBanner}>

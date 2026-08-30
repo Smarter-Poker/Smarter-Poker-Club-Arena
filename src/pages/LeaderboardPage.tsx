@@ -28,6 +28,7 @@ import { exportToCSV } from '../lib/export';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import ConfirmModal from '../components/common/ConfirmModal';
+import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { PlayerAvatar } from '../components/avatars/PlayerAvatar';
 import type { VipTier } from '../components/avatars/PlayerAvatar';
 import './LeaderboardPage.css';
@@ -700,7 +701,19 @@ export default function LeaderboardPage() {
   })();
 
   return (
-    <div className="leaderboard-page">
+    <div className="leaderboard-page" data-arena-surface="play">
+      <CasinoSurfaceHeader
+        eyebrow="Play & Review / Rankings"
+        title="Leaderboard Array"
+        description="Compare club and global performance across live ranking periods, tournament statistics, and payout views without replacing the real-profit ranking pipeline."
+        artPath="assets/club-buttons/lobby/shark-club-championship-ad-v2.png"
+        status="RANKING SIGNAL // LIVE"
+        metrics={[
+          { label: 'Ranked', value: totalRanked?.toLocaleString() || entries.length },
+          { label: 'Your Rank', value: userRank ? getRankLabel(userRank.rank) : 'Unranked' },
+          { label: 'Scope', value: scope === 'global' ? 'Global' : 'My Clubs', tone: 'live' },
+        ]}
+      />
       {/* Live Indicator */}
       <div className="live-indicator">
         <span className="live-dot"></span>

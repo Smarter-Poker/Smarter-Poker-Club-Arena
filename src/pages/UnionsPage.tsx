@@ -7,7 +7,7 @@ import './UnionsPage.css';
 import { EmptyState, ErrorState, LoadingState } from '../components/common/EmptyState';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import CreateUnionModal from '../components/union/CreateUnionModal';
 import { unionService, type Union } from '../services/UnionService';
@@ -15,6 +15,7 @@ import { getUnionLevel } from '../utils/clubLevels';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import { reportError } from '../utils/errorReporter';
+import { mediaUrl } from '../utils/mediaBase';
 
 const unionCardAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -198,7 +199,14 @@ export default function UnionsPage() {
   }
 
   return (
-    <div className="unions-page">
+    <div
+      className="unions-page"
+      style={
+        {
+          '--union-network-art': `url("${mediaUrl('assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp')}")`,
+        } as CSSProperties
+      }
+    >
       <header className="unions-header">
         <div>
           <span className="unions-eyebrow">Connected Club Networks</span>

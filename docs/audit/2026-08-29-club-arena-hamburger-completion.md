@@ -27,6 +27,7 @@ Deep tools were reachable, but rewards, finance, club control, union administrat
 
 ### Play
 
+- `/play` — canonical Play & Review overview
 - `/` — club arena and live game entry
 - `/tournaments` — tournament lobby
 - `/tournament-results` — results, including the existing spin filter
@@ -36,6 +37,7 @@ Deep tools were reachable, but rewards, finance, club control, union administrat
 
 ### Community
 
+- `/community` — canonical community overview
 - `/search` — players and clubs
 - `/messages` — Messenger handoff
 - `/friends` — friends, requests, and challenges
@@ -87,6 +89,8 @@ Deep tools were reachable, but rewards, finance, club control, union administrat
 
 ### Added
 
+- `/play`
+- `/community`
 - `/rewards`
 - `/legal`
 - `/clubs/:clubId/finance`

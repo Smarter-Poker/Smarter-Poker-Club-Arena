@@ -2,17 +2,14 @@
  * DAILY CHALLENGES PAGE — Futuristic Metal UI
  * ═══════════════════════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700;900&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Exo+2:ital,wght@0,400;0,600;0,700;0,900;1,400&display=swap');
-
 :root {
-  --metal-dark: #0a0a15;
-  --metal-base: #0d1117;
-  --metal-mid: #161b22;
-  --metal-highlight: #21262d;
-  --neon-cyan: #00f0ff;
-  --neon-cyan-dim: rgba(0, 240, 255, 0.2);
-  --neon-cyan-glow: rgba(0, 240, 255, 0.6);
+  --metal-dark: #020407;
+  --metal-base: #080d12;
+  --metal-mid: #111820;
+  --metal-highlight: #26333d;
+  --neon-cyan: #3aa8ff;
+  --neon-cyan-dim: rgba(58, 168, 255, 0.18);
+  --neon-cyan-glow: rgba(58, 168, 255, 0.46);
   --metal-gradient: linear-gradient(145deg, var(--metal-mid) 0%, var(--metal-base) 100%);
   --glow-cyan: 0 0 10px var(--neon-cyan-glow), inset 0 0 10px var(--neon-cyan-dim);
   --glow-intense: 0 0 20px var(--neon-cyan), inset 0 0 20px var(--neon-cyan-glow);
@@ -30,7 +27,7 @@
   padding: 16px 12px 48px;
   color: #e2e8f0;
   text-transform: uppercase;
-  font-family: 'Rajdhani', 'Exo 2', sans-serif;
+  font-family: Rajdhani, Inter, sans-serif;
   min-height: 100dvh;
   position: relative;
   z-index: 1;
@@ -1018,4 +1015,21 @@
   .footer {
     padding: 16px;
   }
+}
+
+/* Engineered surfaces: shallow machined corners instead of arcade capsules. */
+.header,
+.streakBanner,
+.statItem,
+.challengeCard,
+.summaryTile,
+.tabs,
+.milestoneTracker,
+.celebrateCard,
+.emptyState {
+  border-radius: 4px;
+}
+
+.celebrateOverlay {
+  backdrop-filter: none;
 }

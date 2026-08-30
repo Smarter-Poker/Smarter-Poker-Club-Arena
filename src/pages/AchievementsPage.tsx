@@ -26,6 +26,7 @@ import { retryFetch } from '../utils/retryFetch';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { reportError } from '../utils/errorReporter';
 import { ErrorState } from '../components/common/EmptyState';
+import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 type SortMode = 'default' | 'rarity' | 'progress' | 'recent';
 const RARITY_ORDER: Record<string, number> = { legendary: 0, epic: 1, rare: 2, common: 3 };
@@ -585,7 +586,19 @@ export default function AchievementsPage() {
   };
 
   return (
-    <StandardContentLayout className="achievements-page" title="Achievements">
+    <StandardContentLayout className="achievements-page">
+      <RewardsSurfaceHeader
+        eyebrow="Rewards Circuit / Achievements"
+        title="Achievement Archive"
+        description="A live record of milestones earned across play, competition, community, loyalty, and special events—with every badge still driven by the existing achievement services."
+        art="diamonds"
+        status="MILESTONE INDEX // LIVE"
+        metrics={[
+          { label: 'Unlocked', value: animatedUnlocked, tone: 'live' },
+          { label: 'Total', value: animatedTotal },
+          { label: 'Login Streak', value: `${dailyStreak} days`, tone: 'attention' },
+        ]}
+      />
       {/* ═══════════════════════════════════════════════════════════════════════
                  STREAK & ACTIVITY HEADER (Initiative 14)
           ═══════════════════════════════════════════════════════════════════════ */}

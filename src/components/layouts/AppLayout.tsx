@@ -61,7 +61,12 @@ function AppLayoutContent() {
   // User store for conditional rendering
   const { user } = useAuthUser();
   const { showWelcome, isReady, acceptWelcome } = useClubArenaWelcome();
-  const { showProfileModal, isReady: profileReady, finishProfile } = useCompleteProfile(user);
+  const {
+    showProfileModal,
+    isReady: profileReady,
+    profileStatus,
+    finishProfile,
+  } = useCompleteProfile(user);
 
   // Hide global header on table and tournament play pages
   const isTablePage =
@@ -89,7 +94,7 @@ function AppLayoutContent() {
   }, [location.pathname]);
 
   return (
-    <div className={styles.layout}>
+    <div className={styles.layout} data-profile-gate-status={profileStatus}>
       {/* First-time Welcome Modal */}
       {isReady && <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />}
 

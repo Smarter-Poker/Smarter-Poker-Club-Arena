@@ -1,25 +1,35 @@
 import type { Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensurePlayableProfile } from '../e2e/support/ensurePlayableProfile';
 
-function playablePage(options: { gateOpen?: boolean; gateReturnsAfterReload?: boolean } = {}) {
+const source = (path: string) => readFileSync(resolve(__dirname, '../..', path), 'utf8');
+
+function playablePage(
+  options: {
+    gateOpen?: boolean;
+    gateReturnsAfterReload?: boolean;
+    decisionUnavailable?: boolean;
+  } = {}
+) {
   const gateOpen = options.gateOpen ?? true;
-  const gateWaitFor = vi.fn();
-
-  if (!gateOpen) {
-    gateWaitFor.mockRejectedValue(new Error('not visible'));
-  } else {
-    gateWaitFor
-      .mockResolvedValueOnce(undefined) // initial visible gate
-      .mockResolvedValueOnce(undefined); // gate hidden after Enter Arena
-    if (options.gateReturnsAfterReload) {
-      gateWaitFor.mockResolvedValueOnce(undefined);
-    } else {
-      gateWaitFor.mockRejectedValueOnce(new Error('persisted gate is absent'));
-    }
-  }
-
-  const gate = { waitFor: gateWaitFor };
+  const gate = {
+    waitFor: vi.fn().mockResolvedValue(undefined),
+  };
+  const initialStatus = options.decisionUnavailable
+    ? 'unavailable'
+    : gateOpen
+      ? 'incomplete'
+      : 'complete';
+  const persistedStatus = options.gateReturnsAfterReload ? 'incomplete' : 'complete';
+  const decision = {
+    waitFor: vi.fn().mockResolvedValue(undefined),
+    getAttribute: vi
+      .fn()
+      .mockResolvedValueOnce(initialStatus)
+      .mockResolvedValueOnce(persistedStatus),
+  };
   const selectAvatar = { click: vi.fn().mockResolvedValue(undefined) };
   const freeAvatar = {
     waitFor: vi.fn().mockResolvedValue(undefined),
@@ -40,10 +50,11 @@ function playablePage(options: { gateOpen?: boolean; gateReturnsAfterReload?: bo
       if (locatorOptions.name === 'Enter Arena') return enterArena;
       return selectAvatar;
     }),
+    locator: vi.fn(() => decision),
     reload: vi.fn().mockResolvedValue(undefined),
   };
 
-  return { page, gate, selectAvatar, freeAvatar, apply, gallery, enterArena };
+  return { page, gate, decision, selectAvatar, freeAvatar, apply, gallery, enterArena };
 }
 
 describe('authenticated production account preflight', () => {
@@ -59,6 +70,10 @@ describe('authenticated production account preflight', () => {
     const fixture = playablePage({ gateOpen: false });
 
     await expect(ensurePlayableProfile(fixture.page as unknown as Page)).resolves.toBe(false);
+    expect(fixture.decision.waitFor).toHaveBeenCalledWith({
+      state: 'attached',
+      timeout: 60_000,
+    });
     expect(fixture.selectAvatar.click).not.toHaveBeenCalled();
     expect(fixture.page.reload).not.toHaveBeenCalled();
   });
@@ -72,10 +87,8 @@ describe('authenticated production account preflight', () => {
     expect(fixture.apply.click).toHaveBeenCalledOnce();
     expect(fixture.enterArena.click).toHaveBeenCalledOnce();
     expect(fixture.page.reload).toHaveBeenCalledOnce();
-    expect(fixture.gate.waitFor).toHaveBeenLastCalledWith({
-      state: 'visible',
-      timeout: 12_000,
-    });
+    expect(fixture.decision.waitFor).toHaveBeenCalledTimes(2);
+    expect(fixture.decision.getAttribute).toHaveBeenCalledTimes(2);
   });
 
   it('fails loudly when successful-looking onboarding did not persist', async () => {
@@ -83,6 +96,25 @@ describe('authenticated production account preflight', () => {
 
     await expect(ensurePlayableProfile(fixture.page as unknown as Page)).rejects.toThrow(
       'Profile onboarding appeared again after its writes reported success.'
+    );
+  });
+
+  it('fails once with the real cause when the profile query did not answer', async () => {
+    const fixture = playablePage({ gateOpen: false, decisionUnavailable: true });
+
+    await expect(ensurePlayableProfile(fixture.page as unknown as Page)).rejects.toThrow(
+      'The production profile query did not answer; onboarding state is unknown.'
+    );
+    expect(fixture.selectAvatar.click).not.toHaveBeenCalled();
+  });
+
+  it('probes a protected layout route and exposes the server-backed decision', () => {
+    expect(source('tests/e2e/global-setup.ts')).toContain("new URL('notifications', baseURL)");
+    expect(source('tests/e2e/production-customization-realtime.spec.ts')).toContain(
+      "new URL('notifications', baseURL)"
+    );
+    expect(source('src/components/layouts/AppLayout.tsx')).toContain(
+      'data-profile-gate-status={profileStatus}'
     );
   });
 });

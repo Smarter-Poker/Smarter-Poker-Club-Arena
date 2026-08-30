@@ -150,7 +150,10 @@ async function signIn(context: BrowserContext, baseURL: string) {
     await page.waitForURL((url) => !url.pathname.includes('/auth'), { timeout: 45_000 });
   }
   await page.evaluate(() => localStorage.setItem('club_arena_welcome_accepted', 'true'));
-  await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  await page.goto(new URL('notifications', baseURL).toString(), {
+    waitUntil: 'domcontentloaded',
+    timeout: 60_000,
+  });
   await ensurePlayableProfile(page);
   await expect(page.getByRole('button', { name: 'Open Menu' }).first()).toBeVisible({
     timeout: 30_000,

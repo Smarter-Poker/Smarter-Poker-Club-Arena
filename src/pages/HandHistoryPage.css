@@ -605,33 +605,3 @@
   border: 1px solid rgba(239, 68, 68, 0.25);
   text-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
 }
-.hh-stats-drilldown {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 0 0 16px;
-  padding: 11px 13px;
-  border: 1px solid rgba(64, 169, 255, 0.35);
-  border-radius: 4px;
-  background: rgba(4, 18, 31, 0.9);
-  color: #b9d9f4;
-  font-size: 0.78rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.hh-stats-drilldown button {
-  min-height: 44px;
-  border: 1px solid rgba(143, 196, 238, 0.38);
-  border-radius: 3px;
-  background: #07111b;
-  color: #dcefff;
-}
-
-@media (max-width: 620px) {
-  .hh-stats-drilldown {
-    align-items: stretch;
-    flex-direction: column;
-  }
-}

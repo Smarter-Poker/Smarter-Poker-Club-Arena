@@ -25,7 +25,6 @@ interface BriefVariant {
 
 interface BriefDailyPoint {
   date: string;
-  hands: number;
   profit: number;
 }
 
@@ -37,8 +36,7 @@ export interface IntelligenceBriefItem {
   tone: 'neutral' | 'positive' | 'negative';
 }
 
-const MIN_TOTAL_CASH_HANDS = 1_000;
-const MIN_SEGMENT_HANDS = 500;
+const MIN_SEGMENT_HANDS = 50;
 
 function signed(value: number, digits = 1): string {
   return `${value > 0 ? '+' : ''}${value.toFixed(digits)}`;
@@ -49,8 +47,6 @@ export function buildStatsIntelligenceBrief(input: {
   positions?: BriefPosition[] | null;
   variants?: BriefVariant[] | null;
   daily?: BriefDailyPoint[] | null;
-  /** Injectable so calendar-window claims are deterministic in tests. */
-  asOf?: Date;
 }): IntelligenceBriefItem[] {
   const { overall } = input;
   const positions = input.positions ?? [];
@@ -60,7 +56,6 @@ export function buildStatsIntelligenceBrief(input: {
   const sampleValue =
     sampleHands < 1_000 ? 'Early Read' : sampleHands < 5_000 ? 'Developing' : 'Established';
 
-  const sampleIsReliable = overall.cash_hands >= MIN_TOTAL_CASH_HANDS;
   const qualifiedPositions = positions
     .filter((row) => row.hands_played >= MIN_SEGMENT_HANDS && Number.isFinite(row.bb100))
     .sort((a, b) => b.bb100 - a.bb100);
@@ -71,34 +66,19 @@ export function buildStatsIntelligenceBrief(input: {
     .sort((a, b) => b.bb100 - a.bb100);
   const bestVariant = qualifiedVariants[0];
 
-  const asOf = Number.isFinite(input.asOf?.getTime()) ? new Date(input.asOf as Date) : new Date();
-  const end = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate()));
-  const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - 6);
-  const dayKey = (date: Date) => date.toISOString().slice(0, 10);
-  const recent = daily.filter((row) => row.date >= dayKey(start) && row.date <= dayKey(end));
-  const recentHands = recent.reduce(
-    (sum, row) => sum + (Number.isFinite(row.hands) ? row.hands : 0),
-    0
-  );
+  const recent = daily.slice(-7);
   const recentProfit = recent.reduce(
     (sum, row) => sum + (Number.isFinite(row.profit) ? row.profit : 0),
     0
   );
   const trendValue =
     recent.length === 0
-      ? 'No Recent Play'
+      ? 'No Results'
       : recentProfit > 0
         ? 'Positive'
         : recentProfit < 0
           ? 'Negative'
           : 'Flat';
-
-  const formatDay = (date: Date) =>
-    new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
-      date
-    );
-  const recentRange = `${formatDay(start)}–${formatDay(end)}`;
 
   return [
     {
@@ -110,39 +90,21 @@ export function buildStatsIntelligenceBrief(input: {
     },
     {
       id: 'position',
-      label: 'Position Evidence',
-      value: !sampleIsReliable ? 'Not Yet Reliable' : bestPosition?.position || 'Building Sample',
-      detail: !sampleIsReliable
-        ? `Needs ${MIN_TOTAL_CASH_HANDS.toLocaleString()} cash hands before ranking positions.`
-        : bestPosition
-          ? `${signed(bestPosition.bb100)} BB/100 across ${bestPosition.hands_played.toLocaleString()} hands.`
-          : `Needs ${MIN_SEGMENT_HANDS.toLocaleString()} hands in one position.`,
-      tone:
-        !sampleIsReliable || !bestPosition
-          ? 'neutral'
-          : bestPosition.bb100 >= 0
-            ? 'positive'
-            : 'negative',
+      label: 'Best-Supported Position',
+      value: bestPosition?.position || 'Building Sample',
+      detail: bestPosition
+        ? `${signed(bestPosition.bb100)} BB/100 across ${bestPosition.hands_played.toLocaleString()} hands.`
+        : `Needs ${MIN_SEGMENT_HANDS.toLocaleString()} hands in one position.`,
+      tone: !bestPosition ? 'neutral' : bestPosition.bb100 >= 0 ? 'positive' : 'negative',
     },
     {
       id: 'game',
-      label: 'Game Evidence',
-      value: !sampleIsReliable
-        ? 'Not Yet Reliable'
-        : bestVariant?.variant
-          ? bestVariant.variant.toUpperCase()
-          : 'Building Sample',
-      detail: !sampleIsReliable
-        ? `Needs ${MIN_TOTAL_CASH_HANDS.toLocaleString()} cash hands before ranking games.`
-        : bestVariant
-          ? `${signed(bestVariant.bb100)} BB/100 across ${bestVariant.hands.toLocaleString()} hands.`
-          : `Needs ${MIN_SEGMENT_HANDS.toLocaleString()} hands in one game.`,
-      tone:
-        !sampleIsReliable || !bestVariant
-          ? 'neutral'
-          : bestVariant.bb100 >= 0
-            ? 'positive'
-            : 'negative',
+      label: 'Best-Supported Game',
+      value: bestVariant?.variant ? bestVariant.variant.toUpperCase() : 'Building Sample',
+      detail: bestVariant
+        ? `${signed(bestVariant.bb100)} BB/100 across ${bestVariant.hands.toLocaleString()} hands.`
+        : `Needs ${MIN_SEGMENT_HANDS.toLocaleString()} hands in one game.`,
+      tone: !bestVariant ? 'neutral' : bestVariant.bb100 >= 0 ? 'positive' : 'negative',
     },
     {
       id: 'trend',
@@ -150,8 +112,8 @@ export function buildStatsIntelligenceBrief(input: {
       value: trendValue,
       detail:
         recent.length > 0
-          ? `${signed(recentProfit, 0)} across ${recentHands.toLocaleString()} hands, ${recentRange}.`
-          : `No cash results recorded from ${recentRange}.`,
+          ? `${signed(recentProfit, 0)} over the latest ${recent.length.toLocaleString()} recorded ${recent.length === 1 ? 'day' : 'days'}.`
+          : 'No recorded cash results in this window.',
       tone: recentProfit > 0 ? 'positive' : recentProfit < 0 ? 'negative' : 'neutral',
     },
   ];

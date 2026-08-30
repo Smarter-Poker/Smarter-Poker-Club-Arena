@@ -783,7 +783,8 @@ export default function CreateTournamentModal({
             <input
               className={styles.input}
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              maxLength={44}
+              onChange={(e) => setName(e.target.value.slice(0, 44))}
               placeholder="E.g. Saturday Night Turbo"
               required
               style={!name.trim() ? { borderColor: '#ef4444' } : undefined}

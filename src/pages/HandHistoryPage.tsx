@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { handHistoryService } from '../services/HandHistoryService';
 import type { HandRecord } from '../services/HandHistoryService';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -23,7 +23,6 @@ import { retryFetch } from '../utils/retryFetch';
 import './HandHistoryPage.css';
 import { reportError } from '../utils/errorReporter';
 import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
-import { filterHandsByStatsDrilldown, readStatsDrilldown } from '../lib/handHistoryDrilldown';
 
 // ── SWR Cache ──
 const HH_CACHE_KEY = 'hh_cache_';
@@ -77,14 +76,7 @@ export default function HandHistoryPage() {
   }, []);
 
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { user } = useAuthUser();
-  const drilldownKey = searchParams.toString();
-  const statsDrilldown = useMemo(
-    () => readStatsDrilldown(new URLSearchParams(drilldownKey)),
-    [drilldownKey]
-  );
-  const hasStatsDrilldown = Object.keys(statsDrilldown).length > 0;
   const toast = useToast();
   useVisibilityRefresh(() => loadHands(true));
   const [hands, setHands] = useState<HandRecord[]>([]);
@@ -111,13 +103,13 @@ export default function HandHistoryPage() {
 
   // SWR: show cached hands instantly on mount
   useEffect(() => {
-    if (!user?.id || hasStatsDrilldown) return;
+    if (!user?.id) return;
     const cached = getCachedHands(user.id);
     if (cached && cached.length > 0) {
       setHands(cached);
       setLoading(false);
     }
-  }, [user?.id, hasStatsDrilldown]);
+  }, [user?.id]);
 
   /* Safety timeout: prevent an infinite skeleton if auth/Supabase hangs.
      This used to drop `loading` and nothing else, so a slow-but-healthy fetch
@@ -152,7 +144,7 @@ export default function HandHistoryPage() {
     return () => {
       isMounted = false;
     };
-  }, [user?.id, filter, drilldownKey]);
+  }, [user?.id, filter]);
 
   // ── Realtime backstop ──
   // Removed postgres_changes subscription on public.hand_history (Phase 2 cost
@@ -229,12 +221,11 @@ export default function HandHistoryPage() {
         } else if (filter === 'big-pots') {
           filtered = data.filter((h) => h.main_pot >= 1000);
         }
-        filtered = filterHandsByStatsDrilldown(filtered, statsDrilldown, user.id);
 
         setHands(filtered);
         setHasMore(data.length === PAGE_SIZE * currentPage);
         // Update SWR cache with latest data
-        if (reset && user?.id && !hasStatsDrilldown) setCachedHands(user.id, filtered);
+        if (reset && user?.id) setCachedHands(user.id, filtered);
       } catch (error) {
         reportError(error, 'HandHistoryPage.Failed_to_load_hands');
         if (!getIsMounted || getIsMounted()) {
@@ -373,20 +364,6 @@ export default function HandHistoryPage() {
           </button>
         ))}
       </div>
-
-      {hasStatsDrilldown && (
-        <div className="hh-stats-drilldown" role="status">
-          <span>
-            Showing Stats Evidence
-            {statsDrilldown.variant ? ` · ${statsDrilldown.variant.toUpperCase()}` : ''}
-            {statsDrilldown.position ? ` · ${statsDrilldown.position}` : ''}
-            {statsDrilldown.bigBlind ? ` · ${statsDrilldown.bigBlind} BB` : ''}
-          </span>
-          <button type="button" onClick={() => navigate('/hand-history', { replace: true })}>
-            Clear Evidence Filter
-          </button>
-        </div>
-      )}
 
       {/* Stats Summary */}
       {!loading && hands.length > 0 && (

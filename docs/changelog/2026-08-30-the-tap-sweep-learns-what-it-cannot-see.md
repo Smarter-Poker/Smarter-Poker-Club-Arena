@@ -77,3 +77,36 @@ which lives only as a CI secret, and a signed-out run finds no controls and
 asserts nothing (it says so, and failed that way here rather than passing
 emptily). The change is verified by the live measurements above and by the
 post-deploy tier's own next run against production.
+
+## Addendum — the rule is now tested without a login
+
+The verification note above said the updated sweep could not be run
+authenticated locally. That was true and it was not good enough: the rule I had
+just written ("excuse a control under fixed chrome when the page still
+scrolls") is exactly the shape that rots into "excuse everything", and leaving
+it unpinned would have been the same mistake as a comment asserting a
+measurement no spec checks.
+
+`tests/e2e/tap-sweep-rules.spec.ts` builds the DOM by hand — no login, no live
+site, about a second — and pins four cases, two of which must still FAIL:
+
+    1. nothing over it                      -> fine
+    2. under fixed chrome, page scrolls     -> excused
+    3. under fixed chrome, page cannot scroll -> REPORTED
+    4. overlapped by an ordinary sibling    -> REPORTED
+
+Cases 3 and 4 are the file's point: the exclusion must not reach a control
+pinned with nowhere to scroll, and must never reach a sibling overlap — which
+is the club-identity case exactly. A fifth beat reads the real sweep and fails
+if the expressions that make the rule are gone, because the rule lives inside a
+`page.evaluate` callback and cannot be imported, so the two copies could
+otherwise drift apart silently.
+
+Writing it corrected something I had believed and not checked. The first draft
+asserted that a plain 21px control with nothing over it is reported as a miss.
+It is not, and should not be: the sweep's ownership test counts a point landing
+on an ANCESTOR as the control's own, so a small button inside a larger row is
+fully reachable — a thumb landing just above or below it hits nothing that
+would steal the tap. **The sweep measures occlusion, not smallness.** That is
+now written down in the beat, because it is the single most misreadable thing
+about this suite and I misread it while holding its source open.

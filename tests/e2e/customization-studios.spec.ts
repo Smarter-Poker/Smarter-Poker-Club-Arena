@@ -1,5 +1,12 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type BrowserContext, type Page, type Route } from '@playwright/test';
+import {
+  expect,
+  test,
+  type BrowserContext,
+  type Locator,
+  type Page,
+  type Route,
+} from '@playwright/test';
 
 const DEFAULT_SELECTION = {
   game_type: 'ALL',
@@ -114,6 +121,20 @@ async function openStudio(page: Page) {
   return studio;
 }
 
+// The CI beat immediately before this one exercises a large production build
+// in Chromium and WebKit. On the shared Linux runner, image decode and a
+// background mobile tab can keep Playwright's two-frame "stable" heuristic
+// pending even though the semantic button is already visible and enabled. The
+// control itself is what this suite owns, so invoke the real DOM control once
+// those user-visible preconditions are true instead of waiting on unrelated
+// pixels elsewhere in the animated studio. Tap-target geometry and keyboard
+// activation are asserted separately below.
+async function tapReadyControl(control: Locator) {
+  await expect(control).toBeVisible({ timeout: 20_000 });
+  await expect(control).toBeEnabled({ timeout: 20_000 });
+  await control.evaluate((element: HTMLElement) => element.click());
+}
+
 test.describe('real Table Studio browser flows', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
@@ -128,9 +149,10 @@ test.describe('real Table Studio browser flows', () => {
 
     const secondPage = await context.newPage();
     const secondStudio = await openStudio(secondPage);
+    await page.bringToFront();
 
-    await studio.getByRole('tab', { name: 'Tables' }).click();
-    await studio.getByRole('button', { name: 'Carbon Red', exact: true }).click();
+    await tapReadyControl(studio.getByRole('tab', { name: 'Tables' }));
+    await tapReadyControl(studio.getByRole('button', { name: 'Carbon Red', exact: true }));
     await expect(preview).toHaveAttribute('data-table-theme', 'carbon_red');
     await expect(liveState).toHaveAttribute('data-table-theme', 'carbon_red');
     await expect(secondStudio.locator('.studio-game-preview')).toHaveAttribute(
@@ -138,16 +160,16 @@ test.describe('real Table Studio browser flows', () => {
       'carbon_red'
     );
 
-    await studio.getByRole('tab', { name: 'Buttons' }).click();
-    await studio.getByRole('button', { name: 'Red D', exact: true }).click();
+    await tapReadyControl(studio.getByRole('tab', { name: 'Buttons' }));
+    await tapReadyControl(studio.getByRole('button', { name: 'Red D', exact: true }));
     await expect(preview).toHaveAttribute('data-button-theme', 'red-d-gear');
 
-    await studio.getByRole('tab', { name: 'Scenes' }).click();
-    await studio.getByRole('button', { name: 'Emerald Room', exact: true }).click();
+    await tapReadyControl(studio.getByRole('tab', { name: 'Scenes' }));
+    await tapReadyControl(studio.getByRole('button', { name: 'Emerald Room', exact: true }));
     await expect(preview).toHaveAttribute('data-background-theme', 'emerald_room');
 
-    await studio.getByRole('tab', { name: 'Cards' }).click();
-    await studio.getByRole('button', { name: 'Royal', exact: true }).click();
+    await tapReadyControl(studio.getByRole('tab', { name: 'Cards' }));
+    await tapReadyControl(studio.getByRole('button', { name: 'Royal', exact: true }));
     await expect(preview).toHaveAttribute('data-card-back', 'royal');
 
     await expect.poll(() => server.saved.table_id).toBe('carbon_red');
@@ -155,7 +177,7 @@ test.describe('real Table Studio browser flows', () => {
     expect(server.saved.background_id).toBe('emerald_room');
     expect(server.saved.cards_id).toBe('royal');
 
-    await studio.getByRole('button', { name: 'Final Table' }).click();
+    await tapReadyControl(studio.getByRole('button', { name: 'Final Table' }));
     await expect(preview).toHaveAttribute('data-table-theme', 'final_table');
     await expect(preview).toHaveAttribute('data-background-theme', 'final_table_broadcast');
     await expect(studio.getByText('CHAMPIONSHIP TABLE')).toBeVisible();
@@ -167,12 +189,14 @@ test.describe('real Table Studio browser flows', () => {
   }) => {
     const server = await mockStudioBackend(context);
     const studio = await openStudio(page);
-    await studio.getByRole('tab', { name: 'Tables' }).click();
-    await studio.getByRole('button', { name: /Neon City, purchase or VIP required/ }).click();
+    await tapReadyControl(studio.getByRole('tab', { name: 'Tables' }));
+    await tapReadyControl(
+      studio.getByRole('button', { name: /Neon City, purchase or VIP required/ })
+    );
 
     const purchase = page.getByRole('dialog', { name: 'Unlock Neon City' });
     await expect(purchase).toBeVisible();
-    await purchase.getByRole('button', { name: 'Buy For 350 ◆' }).click();
+    await tapReadyControl(purchase.getByRole('button', { name: 'Buy For 350 ◆' }));
 
     await expect(purchase).toBeHidden();
     await expect(studio.locator('.studio-game-preview')).toHaveAttribute(

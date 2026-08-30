@@ -1192,8 +1192,8 @@ jobs:
       - name: Install Dependencies
         run: npm ci --ignore-scripts
 
-      - name: Install Chromium
-        run: npx playwright install chromium --with-deps
+      - name: Install Chromium and WebKit
+        run: npx playwright install chromium webkit --with-deps
 
       - name: Build this commit
         run: npm run build
@@ -1211,6 +1211,7 @@ jobs:
       - name: Run the beats against this commit's CSS
         env:
           ARENA_BASE_URL: http://127.0.0.1:4173/hub/club-arena
+          BASE_URL: http://127.0.0.1:4173/hub/club-arena/
         # hero-card-row.spec.ts was written to gate bug list item 11 and then
         # ran in NO job at all - 40 pure-geometry assertions that nobody ever
         # executed, which is why PR #178 could sit for 39 commits proposing
@@ -1262,7 +1263,7 @@ jobs:
         # mobile-chrome-occlusion, mobile-input-zoom, mobile-tap-targets,
         # club-lobby, tournament-buy-in-dialog) need a login or a deployed URL
         # and belong to the post-deploy tier, not this gate.
-        run: npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/customization-studios.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts --reporter=line --retries=1
+        run: npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/customization-studios.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 5: AUTO-REVERT — DISABLED (was causing revert loops during migration)

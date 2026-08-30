@@ -545,16 +545,7 @@ export default function App() {
 
               {/* Approved footer visual harness — intentionally blank except
                   for the one application-root footer mounted below Routes. */}
-              <Route
-                path="/dev/footer"
-                element={
-                  clubButtonsPreviewEnabled ? (
-                    <ClubFooterShowcasePage />
-                  ) : (
-                    <Navigate to="/" replace />
-                  )
-                }
-              />
+              <Route path="/dev/footer" element={<ClubFooterShowcasePage />} />
 
               {/* ═══════════════════════════════════════════════════════════════
                     PROTECTED ROUTES (Auth Required)

@@ -881,10 +881,16 @@ export default function MultiTablePage() {
           void (async () => {
             try {
               const tabIds = tablesRef.current.filter((t) => !isLobbyTab(t)).map((t) => t.id);
-              const { data: rows } = await supabase
+              const { data: rows, error: rowsErr } = await supabase
                 .from('tables')
                 .select('id, name, game_variant, game_type, max_players, small_blind, big_blind, tournament_id')
                 .in('id', [newId, ...tabIds]);
+              if (rowsErr) {
+                /* Cannot identify the move - the rebuild path re-reads server
+                   truth with its own guards rather than guessing here. */
+                setSeatResyncToken((n) => n + 1);
+                return;
+              }
               const newRow = rows?.find((r) => r.id === newId);
               const tourId = newRow?.tournament_id as string | null | undefined;
               const oldTab = tourId

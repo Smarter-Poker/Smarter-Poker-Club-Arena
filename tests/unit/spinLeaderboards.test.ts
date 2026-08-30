@@ -45,8 +45,26 @@ const PAGE = readFileSync(
   join(root, 'src', 'pages', 'tournament', 'TournamentResultsPage.tsx'),
   'utf8'
 );
+/**
+ * TWO migrations, and the SECOND one is the live definition.
+ *
+ * The first cut collected its window into a temp table and read it three
+ * times. `check-definer-authorization` blocked the push and it was right to:
+ * what it saw was a SECURITY DEFINER function a browser role can execute,
+ * running INSERT and DELETE, that never asks auth.uid() who is calling. The
+ * guard cannot tell a temp table from a real one, and the shape it looks for
+ * was genuinely there.
+ *
+ * The fix was not an allowlist entry. A leaderboard has no business writing
+ * anything, so it is CTEs now, `language sql stable`, and Postgres itself
+ * enforces the claim.
+ */
 const MIGRATION = readFileSync(
   join(root, 'supabase', 'migrations', '20260830053746_spin_leaderboards.sql'),
+  'utf8'
+);
+const READ_ONLY = readFileSync(
+  join(root, 'supabase', 'migrations', '20260830064500_spin_leaderboards_read_only.sql'),
   'utf8'
 );
 
@@ -69,20 +87,47 @@ describe('the aggregation happens server-side', () => {
 
   it('the RPC exists in a committed migration, not applied by hand', () => {
     expect(MIGRATION).toMatch(/create or replace function public\.fn_spin_leaderboards/i);
-    expect(MIGRATION).toMatch(/security definer/i);
-    expect(MIGRATION).toMatch(/set search_path/i);
+    expect(READ_ONLY).toMatch(/create or replace function public\.fn_spin_leaderboards/i);
+    expect(READ_ONLY).toMatch(/security definer/i);
+    expect(READ_ONLY).toMatch(/set search_path/i);
   });
 
   it('the RPC is not reachable by anon', () => {
-    expect(MIGRATION).toMatch(/revoke[\s\S]*?anon/i);
-    expect(MIGRATION).toMatch(/grant execute[\s\S]*?authenticated/i);
+    expect(READ_ONLY).toMatch(/revoke[\s\S]*?anon/i);
+    expect(READ_ONLY).toMatch(/grant execute[\s\S]*?authenticated/i);
+  });
+});
+
+describe('a leaderboard writes nothing', () => {
+  it('the live definition is declared STABLE, so Postgres enforces it', () => {
+    expect(READ_ONLY).toMatch(/language sql\s+stable/i);
+  });
+
+  it('it asserts its own volatility on apply, rather than trusting the DDL', () => {
+    /* `stable` in the source is a claim; provolatile is the fact. The
+       migration reads it back and refuses to land if it disagrees. */
+    expect(READ_ONLY).toContain('provolatile');
+    expect(READ_ONLY).toMatch(/must be STABLE/);
+  });
+
+  it('the temp table, and both statements that wrote to it, are gone', () => {
+    const sql = READ_ONLY.replace(/--.*$/gm, '');
+    expect(sql).not.toMatch(/create temp table/i);
+    expect(sql).not.toMatch(/insert\s+into/i);
+    expect(sql).not.toMatch(/delete\s+from/i);
+  });
+
+  it('and it still answers, checked on apply against real data', () => {
+    expect(READ_ONLY).toMatch(/fn_spin_leaderboards\(7\)/);
+    expect(READ_ONLY).toMatch(/did not return ok/);
   });
 });
 
 describe('HORSES ARE PLAYERS - they rank alongside humans', () => {
   it('the migration carries no is_horse exclusion anywhere', () => {
-    const sql = MIGRATION.replace(/--.*$/gm, '');
-    expect(sql).not.toMatch(/is_horse/i);
+    for (const sql of [MIGRATION, READ_ONLY]) {
+      expect(sql.replace(/--.*$/gm, '')).not.toMatch(/is_horse/i);
+    }
   });
 
   it('the client does not filter horses out of the boards', () => {

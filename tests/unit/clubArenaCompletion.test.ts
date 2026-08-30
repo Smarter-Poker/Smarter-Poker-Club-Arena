@@ -68,7 +68,11 @@ describe('club workspace capability contract', () => {
 });
 
 describe('consolidated route families', () => {
-  it('makes overview routes the first stop in rewards and legal rails', () => {
+  it('makes overview routes the first stop in play, rewards, community, and legal rails', () => {
+    expect(getArenaSectionNavigation('/play')?.items[0]).toEqual({
+      label: 'Overview',
+      path: '/play',
+    });
     expect(getArenaSectionNavigation('/rewards')?.items[0]).toEqual({
       label: 'Overview',
       path: '/rewards',
@@ -76,6 +80,10 @@ describe('consolidated route families', () => {
     expect(getArenaSectionNavigation('/legal')?.items).toContainEqual({
       label: 'Legal Center',
       path: '/legal',
+    });
+    expect(getArenaSectionNavigation('/community')?.items[0]).toEqual({
+      label: 'Overview',
+      path: '/community',
     });
   });
 
@@ -97,7 +105,9 @@ describe('consolidated route families', () => {
   it('registers every new workspace without replacing legacy route handlers', () => {
     const app = readFileSync('src/App.tsx', 'utf8');
     for (const route of [
+      'path="play"',
       'path="rewards"',
+      'path="community"',
       'path="legal"',
       'path="clubs/:clubId/finance"',
       'path="clubs/:clubId/control"',

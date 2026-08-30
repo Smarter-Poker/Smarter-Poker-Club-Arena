@@ -16,7 +16,16 @@ import { exportToCSV } from '../lib/export';
 import { supabase } from '../lib/supabase';
 import { generateAvatarSvg, sizedStorageUrl } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
+import { fetchAllRows, type PagedResult } from '../utils/fetchAllRows';
+import { PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { retryFetch } from '../utils/retryFetch';
+import {
+  chunkSocialProfileIds,
+  formatSocialLastSeen,
+  isSocialProfileOnline,
+  resolveSocialProfile,
+  type SocialGraphProfile,
+} from '../utils/socialGraph';
 import './FriendsPage.css';
 
 interface Friend {
@@ -25,6 +34,19 @@ interface Friend {
   username: string;
   avatar_url?: string;
   is_online: boolean;
+  source_online: boolean;
+  last_seen?: string;
+  profile_available: boolean;
+}
+
+interface FriendshipEdge {
+  id: string;
+  friend_id?: string;
+  user_id?: string;
+}
+
+interface ConnectionDiagnostics {
+  unavailableProfiles: number;
 }
 
 type FriendsTab = 'friends' | 'requests' | 'activity' | 'challenges';
@@ -36,10 +58,42 @@ const FRIEND_TABS: Array<{ id: FriendsTab; label: string }> = [
   { id: 'challenges', label: 'Challenges' },
 ];
 
-const FR_CACHE_PREFIX = 'fr_cache_';
-const FR_CACHE_TS_PREFIX = 'fr_cache_ts_';
+const FR_CACHE_PREFIX = 'fr_cache_v2_';
+const FR_CACHE_TS_PREFIX = 'fr_cache_v2_ts_';
 const FR_CACHE_TTL = 5 * 60 * 1000;
 const FRIENDS_PAGE_SIZE = 40;
+const SOCIAL_GRAPH_FETCH_SIZE = 500;
+
+async function readCompleteSocialSet<T>(
+  label: string,
+  makePageQuery: (from: number, to: number) => PromiseLike<PagedResult<T>>,
+  isMounted: { current: boolean }
+): Promise<T[]> {
+  const result = await retryFetch(
+    async () => {
+      try {
+        return {
+          data: await fetchAllRows<T>(makePageQuery, {
+            pageSize: SOCIAL_GRAPH_FETCH_SIZE,
+            label,
+          }),
+          error: null,
+        };
+      } catch (error) {
+        return {
+          data: null,
+          error: {
+            message: error instanceof Error ? error.message : String(error),
+          },
+        };
+      }
+    },
+    { maxRetries: 2, isMountedRef: isMounted }
+  );
+
+  if (result.error) throw new Error(result.error.message);
+  return result.data || [];
+}
 
 function getFriendsTab(value: string | null): FriendsTab {
   if (value === 'pending') return 'requests';
@@ -85,6 +139,9 @@ export default function FriendsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [visibleFriendCount, setVisibleFriendCount] = useState(FRIENDS_PAGE_SIZE);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [connectionDiagnostics, setConnectionDiagnostics] = useState<ConnectionDiagnostics>({
+    unavailableProfiles: 0,
+  });
   const [challengeTarget, setChallengeTarget] = useState<{ id: string; name: string } | null>(null);
   const [removeTarget, setRemoveTarget] = useState<Friend | null>(null);
   const [removingFriend, setRemovingFriend] = useState(false);
@@ -120,6 +177,9 @@ export default function FriendsPage() {
     const cached = getCachedFriends(user.id);
     if (cached && cached.length > 0) {
       setFriends(cached);
+      setConnectionDiagnostics({
+        unavailableProfiles: cached.filter((friend) => !friend.profile_available).length,
+      });
       hasDataRef.current = true;
       setLoading(false);
     }
@@ -210,76 +270,83 @@ export default function FriendsPage() {
       if (!hasDataRef.current) setLoading(true);
 
       try {
-        const [sentResult, receivedResult, pendingResult] = await Promise.all([
-          retryFetch(
-            () =>
+        const [sentRows, receivedRows, pendingRows] = await Promise.all([
+          readCompleteSocialSet<FriendshipEdge>(
+            'FriendsPage.accepted_sent',
+            (from, to) =>
               supabase
                 .from('friendships')
                 .select('id, friend_id, status')
                 .eq('user_id', user.id)
                 .eq('status', 'accepted')
                 .order('created_at', { ascending: false })
-                .limit(200)
-                .then((result) => result),
-            { maxRetries: 2, isMountedRef: isMounted }
+                .range(from, to),
+            isMounted
           ),
-          retryFetch(
-            () =>
+          readCompleteSocialSet<FriendshipEdge>(
+            'FriendsPage.accepted_received',
+            (from, to) =>
               supabase
                 .from('friendships')
                 .select('id, user_id, status')
                 .eq('friend_id', user.id)
                 .eq('status', 'accepted')
                 .order('created_at', { ascending: false })
-                .limit(200)
-                .then((result) => result),
-            { maxRetries: 2, isMountedRef: isMounted }
+                .range(from, to),
+            isMounted
           ),
-          retryFetch(
-            () =>
+          readCompleteSocialSet<FriendshipEdge>(
+            'FriendsPage.pending_received',
+            (from, to) =>
               supabase
                 .from('friendships')
                 .select('id, user_id')
                 .eq('friend_id', user.id)
                 .eq('status', 'pending')
                 .order('created_at', { ascending: false })
-                .limit(100)
-                .then((result) => result),
-            { maxRetries: 2, isMountedRef: isMounted }
+                .range(from, to),
+            isMounted
           ),
         ]);
 
-        if (sentResult.error) throw sentResult.error;
-        if (receivedResult.error) throw receivedResult.error;
-        if (pendingResult.error) throw pendingResult.error;
-
-        const sentFriendIds = (sentResult.data || []).map((item) => item.friend_id);
-        const receivedFriendIds = (receivedResult.data || []).map((item) => item.user_id);
-        const pendingUserIds = (pendingResult.data || []).map((item) => item.user_id);
+        const sentFriendIds = sentRows.map((item) => item.friend_id).filter(Boolean) as string[];
+        const receivedFriendIds = receivedRows
+          .map((item) => item.user_id)
+          .filter(Boolean) as string[];
+        const pendingUserIds = pendingRows.map((item) => item.user_id).filter(Boolean) as string[];
         const allProfileIds = [
           ...new Set([...sentFriendIds, ...receivedFriendIds, ...pendingUserIds]),
         ];
-        const profileMap: Record<string, { username?: string; avatar_url?: string }> = {};
+        const profileMap = new Map<string, SocialGraphProfile>();
 
         if (allProfileIds.length > 0) {
-          const { data: profiles, error: profileError } = await supabase
-            .from('profiles')
-            .select('id, username, avatar_url')
-            .in('id', allProfileIds);
-          if (profileError) reportError(profileError, 'FriendsPage.profile_lookup');
-          for (const profile of profiles || []) {
-            profileMap[profile.id] = {
-              username: profile.username,
-              avatar_url: profile.avatar_url,
-            };
+          const batches = await Promise.all(
+            chunkSocialProfileIds(allProfileIds).map((ids) =>
+              retryFetch(
+                () =>
+                  supabase
+                    .from('profiles')
+                    .select(
+                      `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, is_online, last_seen`
+                    )
+                    .in('id', ids),
+                { maxRetries: 2, isMountedRef: isMounted }
+              )
+            )
+          );
+          for (const batch of batches) {
+            if (batch.error) throw batch.error;
+            for (const profile of batch.data || []) {
+              profileMap.set(profile.id, profile as SocialGraphProfile);
+            }
           }
         }
 
-        const sentMapped = (sentResult.data || []).map((friendship) => ({
+        const sentMapped = sentRows.map((friendship) => ({
           id: friendship.id,
           friendId: friendship.friend_id,
         }));
-        const receivedMapped = (receivedResult.data || []).map((friendship) => ({
+        const receivedMapped = receivedRows.map((friendship) => ({
           id: friendship.id,
           friendId: friendship.user_id,
         }));
@@ -287,12 +354,21 @@ export default function FriendsPage() {
 
         [...sentMapped, ...receivedMapped].forEach((friendship) => {
           if (!friendship.friendId || unique.has(friendship.friendId)) return;
+          const resolved = resolveSocialProfile(profileMap.get(friendship.friendId));
           unique.set(friendship.friendId, {
             id: friendship.id,
             user_id: friendship.friendId,
-            username: profileMap[friendship.friendId]?.username || 'Unknown',
-            avatar_url: profileMap[friendship.friendId]?.avatar_url,
-            is_online: onlineUserIds.has(friendship.friendId),
+            username: resolved.name,
+            avatar_url: resolved.avatarUrl,
+            last_seen: resolved.lastSeen,
+            source_online: resolved.sourceOnline,
+            profile_available: resolved.available,
+            is_online: isSocialProfileOnline(
+              friendship.friendId,
+              onlineUserIds,
+              resolved.sourceOnline,
+              resolved.lastSeen
+            ),
           });
         });
 
@@ -300,15 +376,32 @@ export default function FriendsPage() {
         const nextFriends = Array.from(unique.values());
         setFriends(nextFriends);
         setCachedFriends(user.id, nextFriends);
+        setConnectionDiagnostics({
+          unavailableProfiles: nextFriends.filter((friend) => !friend.profile_available).length,
+        });
         hasDataRef.current = nextFriends.length > 0;
         setPendingRequests(
-          (pendingResult.data || []).map((request) => ({
-            id: request.id,
-            user_id: request.user_id,
-            username: profileMap[request.user_id]?.username || 'Unknown',
-            avatar_url: profileMap[request.user_id]?.avatar_url,
-            is_online: onlineUserIds.has(request.user_id),
-          }))
+          pendingRows
+            .filter((request) => request.user_id)
+            .map((request) => {
+              const requestUserId = request.user_id as string;
+              const resolved = resolveSocialProfile(profileMap.get(requestUserId));
+              return {
+                id: request.id,
+                user_id: requestUserId,
+                username: resolved.name,
+                avatar_url: resolved.avatarUrl,
+                last_seen: resolved.lastSeen,
+                source_online: resolved.sourceOnline,
+                profile_available: resolved.available,
+                is_online: isSocialProfileOnline(
+                  requestUserId,
+                  onlineUserIds,
+                  resolved.sourceOnline,
+                  resolved.lastSeen
+                ),
+              };
+            })
         );
       } catch (error) {
         reportError(error, 'FriendsPage.Failed_to_load_friends');
@@ -385,7 +478,12 @@ export default function FriendsPage() {
 
   const friendsWithStatus = friends.map((friend) => ({
     ...friend,
-    is_online: onlineUserIds.has(friend.user_id),
+    is_online: isSocialProfileOnline(
+      friend.user_id,
+      onlineUserIds,
+      friend.source_online,
+      friend.last_seen
+    ),
   }));
   const filteredFriends = friendsWithStatus.filter((friend) =>
     friend.username.toLowerCase().includes(searchQuery.trim().toLowerCase())
@@ -510,6 +608,19 @@ export default function FriendsPage() {
               </div>
             </div>
 
+            {connectionDiagnostics.unavailableProfiles > 0 && (
+              <div className="friends-integrity-notice" role="status">
+                <strong>
+                  {connectionDiagnostics.unavailableProfiles} Relationship
+                  {connectionDiagnostics.unavailableProfiles === 1 ? '' : 's'} Need Profile Repair
+                </strong>
+                <span>
+                  These Records Remain Removable, But Profile, Message, And Challenge Actions Stay
+                  Disabled Until A Valid Player Profile Resolves.
+                </span>
+              </div>
+            )}
+
             {loading ? (
               <div className="friends-skeleton-list" role="status" aria-label="Loading friends">
                 {Array.from({ length: 5 }).map((_, index) => (
@@ -608,7 +719,10 @@ export default function FriendsPage() {
                     <button
                       className="friends-request-profile"
                       type="button"
-                      onClick={() => navigate(`/profile/${request.user_id}`)}
+                      disabled={!request.profile_available}
+                      onClick={() =>
+                        request.profile_available && navigate(`/profile/${request.user_id}`)
+                      }
                     >
                       <FriendAvatar friend={request} />
                       <span>
@@ -620,6 +734,7 @@ export default function FriendsPage() {
                       <button
                         className="is-accept"
                         type="button"
+                        disabled={!request.profile_available}
                         onClick={() => acceptRequest(request.id)}
                       >
                         Accept
@@ -732,21 +847,35 @@ function FriendGroup({
             <button
               className="friend-profile"
               type="button"
-              onClick={() => navigate(`/profile/${friend.user_id}`)}
+              disabled={!friend.profile_available}
+              onClick={() => friend.profile_available && navigate(`/profile/${friend.user_id}`)}
             >
               <FriendAvatar friend={friend} />
               <span className="friend-copy">
                 <strong>{friend.username}</strong>
-                <small>{friend.is_online ? 'Online now' : 'Offline'}</small>
+                <small>
+                  {!friend.profile_available
+                    ? 'Connection record only'
+                    : friend.is_online
+                      ? 'Online now'
+                      : formatSocialLastSeen(friend.last_seen)}
+                </small>
               </span>
             </button>
-            <div className="friend-actions" aria-label={`Actions for ${friend.username}`}>
-              <button className="is-primary" type="button" onClick={() => onMessage(friend)}>
-                Message
-              </button>
-              <button type="button" onClick={() => onChallenge(friend)}>
-                Challenge
-              </button>
+            <div
+              className={`friend-actions ${friend.profile_available ? '' : 'is-unavailable'}`}
+              aria-label={`Actions for ${friend.username}`}
+            >
+              {friend.profile_available && (
+                <>
+                  <button className="is-primary" type="button" onClick={() => onMessage(friend)}>
+                    Message
+                  </button>
+                  <button type="button" onClick={() => onChallenge(friend)}>
+                    Challenge
+                  </button>
+                </>
+              )}
               <button className="is-danger" type="button" onClick={() => onRemove(friend)}>
                 Remove
               </button>

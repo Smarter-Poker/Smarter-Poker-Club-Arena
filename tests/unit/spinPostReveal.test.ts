@@ -79,7 +79,28 @@ describe('the hold covers the whole sequence, not just the wheel', () => {
     expect(MANAGER).toMatch(
       /return \{ revealAt: this\.spinRevealAt, holdUntil: this\.spinHoldUntil \}/
     );
-    expect(MANAGER).toMatch(/engine\.holdDealingUntil\(holdUntil\)/);
+    /* UPDATED 2026-08-30, round 18, house rule 8 again. The engine is now
+       handed `effectiveHold`, not `holdUntil` directly, and the RULE this pin
+       exists for is unchanged and still checked: the hold is the DEAL time,
+       never the wheel time.
+
+       Why the indirection exists. The reveal is broadcast the instant the draw
+       resolves now, so `holdUntil` is decided BEFORE the settle, the row write
+       and the table build rather than after them. Freezing it that early means
+       a pathologically slow start could in principle consume the whole hold,
+       and the re-anchor that used to catch that is deliberately disabled once
+       the moment is public (three wheels are already turning on those exact
+       numbers). So the HOLD is extended instead of the reveal being moved.
+
+       It is ONE-SIDED by construction — `Math.max(holdUntil, ...)` — so it can
+       only ever be later than the stamped deal time, never earlier. A client
+       is allowed to finish early and wait; it must never be dealt over. */
+    expect(MANAGER).toMatch(
+      /const effectiveHold = Math\.max\(holdUntil, Date\.now\(\) \+ spinPostRevealMs\(\)\);/
+    );
+    expect(MANAGER).toMatch(/engine\.holdDealingUntil\(effectiveHold\)/);
+    // The wheel time may not sneak in through the new expression either.
+    expect(MANAGER).not.toMatch(/effectiveHold[^;]*spinRevealTotalMs\(\)/);
   });
 
   it('both post-reveal beats have real duration, or the order is decorative', () => {

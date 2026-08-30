@@ -5,7 +5,10 @@ import type {
   LobbyTournamentRow,
   RuleMedallion,
 } from '../src/components/lobby/lobbyEntries';
-import { arenaGameCardDataFromEntry } from '../src/components/lobby/game-cards/arenaGameCardAdapter';
+import {
+  arenaGameCardDataFromEntry,
+  compactCashBuyInLabel,
+} from '../src/components/lobby/game-cards/arenaGameCardAdapter';
 import { arenaGameCardActionsForEntry } from '../src/components/lobby/game-cards/ArenaLobbyGameCard';
 import {
   ARENA_GAME_CARD_TEMPLATE_REGISTRY,
@@ -137,6 +140,12 @@ describe('Arena game-card creation', () => {
     expect(
       arenaGameCardDataFromEntry(tournamentEntry('mtt', 200)).rules.map(({ key }) => key)
     ).toEqual(['pko', 'rebuy']);
+  });
+
+  it('compacts four-digit cash buy-ins without rounding away useful hundreds', () => {
+    expect(compactCashBuyInLabel('1,000 - 5,000')).toBe('1K - 5K');
+    expect(compactCashBuyInLabel('400 - 1,200')).toBe('400 - 1.2K');
+    expect(compactCashBuyInLabel('80 - 400')).toBe('80 - 400');
   });
 
   it('keeps one central desktop/mobile hardware definition for every family', () => {

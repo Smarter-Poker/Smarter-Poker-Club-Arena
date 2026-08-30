@@ -30,6 +30,7 @@ import { reportError } from '../utils/errorReporter';
 import { downloadCsv, csvEscape } from '../utils/downloadCsv';
 import { useToast } from '../components/common/Toast';
 import styles from './UnionStatementsPage.module.css';
+import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 interface BoardClub {
   club_id: string;
@@ -420,27 +421,39 @@ export default function UnionStatementsPage() {
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <button
-          type="button"
-          className={styles.headerBtn}
-          onClick={() => navigate(-1)}
-          aria-label="Go back"
-        >
-          &laquo;
-        </button>
-        <h1 className={styles.title}>Union Statements</h1>
-        <button
-          type="button"
-          className={styles.headerBtn}
-          onClick={exportCsv}
-          disabled={!board?.clubs?.length}
-          title="Export as CSV"
-          aria-label="Export as CSV"
-        >
-          CSV
-        </button>
-      </header>
+      <CasinoSurfaceHeader
+        eyebrow="Union Network / Finance"
+        title="Union Statements"
+        description="Audit every member club for the selected period, including issued, delivered, paid, outstanding, and missing statements."
+        artPath="assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp"
+        status="STATEMENT BOARD // AUTHORITATIVE"
+        metrics={[
+          { label: 'Clubs', value: totals?.clubs || 0 },
+          { label: 'Issued', value: totals?.issued || 0, tone: 'live' },
+          { label: 'Missing', value: totals?.missing || 0, tone: 'attention' },
+        ]}
+        actions={
+          <>
+            <button
+              type="button"
+              className={styles.headerBtn}
+              onClick={() => navigate(-1)}
+              aria-label="Go back"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              className={styles.headerBtn}
+              onClick={exportCsv}
+              disabled={!board?.clubs?.length}
+              aria-label="Export as CSV"
+            >
+              Export CSV
+            </button>
+          </>
+        }
+      />
 
       <div className={styles.periodBar}>
         <div className={styles.periodLabel}>{periodLabel}</div>

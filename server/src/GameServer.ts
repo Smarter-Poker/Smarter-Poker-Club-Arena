@@ -222,6 +222,8 @@ export class GameServer {
   private seatFirstFullSince: Map<string, number> = new Map();
   /** Last fn_sweep_unsettled_tournament_rake pass (2026-08-26 settlement integrity). */
   private lastRakeSweepAt = 0;
+  /** One seat-first finish sweep per minute — see the call site for why. */
+  private lastSeatFirstFinishSweepAt = 0;
   /** Last fn_tournament_money_conservation pass (2026-08-27 phase 3). */
   private lastConservationAt = 0;
   /** Last fn_backpay_hu_winner_shortfalls pass (2026-08-27 phase 3d). */
@@ -778,6 +780,42 @@ export class GameServer {
       (discoveryLoopStalledMs > 900_000 ||
         (discoveryLoopStalledMs > 60_000 && !anyTableProgressedRecently));
 
+    /**
+     * ── A BARREN LEADER IS DEAD, HOWEVER BUSY ITS LOOP LOOKS (2026-08-30) ───
+     *
+     * Every fix above moved liveness from "did discovery SUCCEED" to "is the
+     * loop RUNNING", each time for a good reason: a slow database must not
+     * kill an engine that is dealing. Correct — but it left a hole with no
+     * detector in it. A discovery loop that ATTEMPTS every few seconds and
+     * FAILS every single time is, to `discoveryLoopStalledMs`, perfectly
+     * healthy: the attempt clock keeps getting stamped. So the process owns no
+     * tables, deals no hands, reports liveness 'ok', and — because it is the
+     * leader — holds the lease that would let a working instance take over.
+     *
+     * OBSERVED IN PRODUCTION 2026-08-30, the whole fleet dark for 20 minutes:
+     *   role=leader status=ok uptime=175s activeTables=0 totalHandsDealt=0
+     *   discoveryLoopStalledMs=4496      <- loop ticking, so "alive"
+     *   discoveryStaleMs=101563          <- not one success in 101s
+     * Nineteen RUNNING tournaments with ~3,000 seated players, zero hands.
+     * Docker saw 'ok' and left it alone; the lease stayed held; it could only
+     * be cleared by hand. `discoveryStaleMs` was RIGHT there in the payload and
+     * nothing was allowed to read it, because reading it used to be the bug.
+     *
+     * So read it again — but only in the one state where it cannot be confused
+     * with a slow database, and where acting on it costs nothing:
+     *
+     *   - the loop has not SUCCEEDED once in ten minutes, so this is not a
+     *     blip and not an idle fleet (an idle fleet's discovery still SUCCEEDS
+     *     and finds nothing, which keeps this clock at zero); and
+     *   - we own ZERO tables, so a restart voids no hand and drops no player.
+     *
+     * That second clause is what makes this safe where its predecessors were
+     * not: every regression above was harmful because it killed an engine with
+     * live tables. This one is unreachable unless there is nothing to lose.
+     */
+    const barrenLeaderDead =
+      !stillBooting && this.tableEngines.size === 0 && discoveryStaleMs > 600_000;
+
     let totalHands = 0;
     // FIX 153: Aggregate telemetry from all table engines for health endpoint
     const tableMetrics: any[] = [];
@@ -840,7 +878,7 @@ export class GameServer {
        */
       liveness: !isLeader()
         ? 'standby'
-        : deadStalledCount > 0 || discoveryLoopDead || dealRate.dbConfirmedDead
+        : deadStalledCount > 0 || discoveryLoopDead || barrenLeaderDead || dealRate.dbConfirmedDead
           ? 'dead'
           : 'ok',
       /**
@@ -863,6 +901,12 @@ export class GameServer {
        * engine. `discoveryLoopStalledMs` can.
        */
       discoveryLoopStalledMs,
+      /**
+       * True when this leader owns no tables and discovery has not succeeded
+       * for ten minutes — the barren-leader verdict above. Surfaced so the
+       * reason a container was restarted is readable after the fact.
+       */
+      barrenLeaderDead,
       /**
        * C20 adoption budget. At ENGINE_START_BUDGET_MAX the database is coping;
        * lower means engine starts have been failing and the loop has throttled
@@ -980,7 +1024,20 @@ export class GameServer {
       // keys on whether the loop RAN, not on whether its last answer was good.
       // Alerting on poker_discovery_stale_ms is still correct and still wired;
       // it just must not be what declares the engine dead.
-      `poker_engine_liveness ${stalled.length === 0 && Date.now() - this.lastDiscoveryAttemptAt <= 60_000 ? 1 : 0}`,
+      //
+      // 2026-08-30: the ONE exception, mirroring `barrenLeaderDead` in
+      // getStatus(). A loop that runs and fails forever keeps the RAN clock
+      // fresh, so with zero tables adopted this gauge reported a healthy
+      // engine through twenty minutes of a completely dark fleet. Owning no
+      // tables makes the ok-clock safe to read here: there is no in-flight
+      // hand for a restart to void, which is the only reason it was banned.
+      `poker_engine_liveness ${
+        stalled.length === 0 &&
+        Date.now() - this.lastDiscoveryAttemptAt <= 60_000 &&
+        !(this.tableEngines.size === 0 && Date.now() - this.lastDiscoveryOkAt > 600_000)
+          ? 1
+          : 0
+      }`,
       '# HELP poker_table_ms_since_progress Milliseconds since this table last made observable progress',
       '# TYPE poker_table_ms_since_progress gauge',
       ...liveness.map(
@@ -2801,6 +2858,55 @@ export class GameServer {
           }
         }
 
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  A SPIN THAT IS OVER MUST END (round 18, 2026-08-30)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * Found by sweeping production rather than by reading code. EVERY
+         * RUNNING spin older than five minutes was stuck — nine of nine:
+         *
+         *     live stacks <= 1 on all nine (a winner IS determinable)
+         *     no hand dealt for 17 to 450 minutes
+         *     1,093 chips of prize_pool unpaid
+         *     average 147 minutes stuck, worst 7.7 hours
+         *
+         * A healthy spin never appears in that list; it finishes in minutes.
+         * So the shape is unambiguous and had zero false positives across the
+         * whole live board.
+         *
+         * WHY IT HAPPENS. Players LEAVE the felt — `table_seats.left_at` is
+         * set — while `tournament_players.status` stays `playing`. The engine
+         * therefore counts a player who is gone as still in the game, waits
+         * for an action that is never coming, and never reaches the "one
+         * player left" that would finish it. The chips sit on the table and
+         * the prize sits unpaid.
+         *
+         * WHY THE EXISTING SWEEP DOES NOT CATCH IT. There is one, and it is
+         * startup-only with a TWELVE HOUR threshold plus a no-hands-in-the-
+         * last-hour test. Twelve hours is a reasonable floor for an MTT and
+         * meaningless for a format designed to last minutes.
+         *
+         * WHAT THIS DOES. It never cancels — Dan 2026-08-19, "TOURNAMENTS
+         * RUN. THEY DO NOT CANCEL." It claims the row with the same
+         * CAS-guarded RUNNING -> COMPLETING flip the 12-hour path uses, so a
+         * live engine mid-finish always wins the race, then hands it to
+         * `recoverStuckCompletingTournaments`, which ranks the remaining
+         * players by chips, assigns the places and pays the structure. The
+         * money reaches whoever earned it.
+         *
+         * The thresholds are deliberately well clear of a healthy game: the
+         * reveal alone holds dealing for 16.6s, so "no hand for three
+         * minutes" cannot fire during a start, and `started_at` older than
+         * five minutes puts another wall in front of it.
+         */
+        if (Date.now() - this.lastSeatFirstFinishSweepAt > 60 * 1000) {
+          this.lastSeatFirstFinishSweepAt = Date.now();
+          void this.finishSeatFirstGamesThatAreOver().catch((err) =>
+            reportError(err, 'GameServer.seat_first_finish_sweep_error')
+          );
+        }
+
         // ── TOURNAMENT RAKE SWEEP (2026-08-26) ──
         // The last line of the settlement-integrity fix: any terminal
         // tournament whose fee ledger has no tournament_rake_settlements row
@@ -3618,6 +3724,105 @@ export class GameServer {
       /* ONE SECOND, not five. See SEAT_FIRST_START_INTERVAL: Dan's rule is a
          number, and four fifths of the old floor was this line. */
       await this.sleep(SEAT_FIRST_START_INTERVAL);
+    }
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  FINISH THE SEAT-FIRST GAMES THAT ARE ALREADY OVER (round 18)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * See the call site for the production evidence. The test is deliberately
+   * three conditions that must ALL hold, each one wide of a healthy game:
+   *
+   *   1. RUNNING and started more than STUCK_MIN_AGE_MS ago — a start, with
+   *      its 16.6s reveal hold, is nowhere near this;
+   *   2. no hand dealt for STUCK_NO_HAND_MS — a live table deals constantly,
+   *      and every stuck game in production had been silent for 17+ minutes;
+   *   3. at most ONE seat still holds chips — which is the definition of the
+   *      game being decided.
+   *
+   * Any one of them alone would be a guess. Together they described exactly
+   * the nine broken games on the live board and none of the healthy ones.
+   */
+  private async finishSeatFirstGamesThatAreOver(): Promise<void> {
+    /** Old enough that a start, and its reveal hold, cannot be in progress. */
+    const STUCK_MIN_AGE_MS = 5 * 60 * 1000;
+    /** Silent long enough that the table has genuinely stopped dealing. */
+    const STUCK_NO_HAND_MS = 3 * 60 * 1000;
+    const now = Date.now();
+
+    const { data: running, error: runningErr } = await supabase
+      .from('tournaments')
+      .select('id, name, variant, max_players, started_at')
+      .eq('status', 'RUNNING')
+      .in('variant', ['spin', 'sng'])
+      .lt('started_at', new Date(now - STUCK_MIN_AGE_MS).toISOString());
+    if (runningErr) {
+      reportError(
+        new Error(`[GameServer] seat-first finish sweep board read failed: ${runningErr.message}`),
+        'GameServer.seat_first_finish_board_read_failed'
+      );
+      return;
+    }
+
+    const candidates = (running || []).filter(
+      (t) => t.variant === 'spin' || (t.variant === 'sng' && Number(t.max_players) <= 2)
+    );
+    if (candidates.length === 0) return;
+
+    for (const t of candidates) {
+      const id = String(t.id);
+      try {
+        const { data: tables, error: tablesErr } = await supabase
+          .from('tables')
+          .select('id')
+          .eq('tournament_id', id);
+        if (tablesErr) throw tablesErr;
+        const tableIds = (tables || []).map((r) => String(r.id));
+        if (tableIds.length === 0) continue;
+
+        /* Is anything still being dealt? One row is enough to answer it. */
+        const { data: recentHand, error: handErr } = await supabase
+          .from('hand_history')
+          .select('id')
+          .in('table_id', tableIds)
+          .gte('created_at', new Date(now - STUCK_NO_HAND_MS).toISOString())
+          .limit(1);
+        if (handErr) throw handErr;
+        if (recentHand && recentHand.length > 0) continue; // still playing
+
+        /* How many seats still hold chips? Two or more and the game is not
+           decided, however quiet it is — leave it alone. */
+        const { data: seats, error: seatsErr } = await supabase
+          .from('table_seats')
+          .select('user_id, stack')
+          .in('table_id', tableIds)
+          .is('left_at', null)
+          .gt('stack', 0);
+        if (seatsErr) throw seatsErr;
+        const liveStacks = new Set((seats || []).map((s) => String(s.user_id))).size;
+        if (liveStacks > 1) continue;
+
+        /* CAS: only the holder of RUNNING may move it on, so a live engine
+           finishing this game right now always wins and this becomes a
+           no-op. Same claim the 12-hour path uses. */
+        const { data: claim, error: claimErr } = await supabase
+          .from('tournaments')
+          .update({ status: 'COMPLETING' })
+          .eq('id', id)
+          .eq('status', 'RUNNING')
+          .select('id');
+        if (claimErr) throw claimErr;
+        if (!claim || claim.length === 0) continue; // somebody else has it
+
+        console.warn(
+          `[GameServer] Seat-first game ${id.slice(0, 8)} "${t.name}" is over but never finished (${liveStacks} live stack(s), no hand for >${Math.round(STUCK_NO_HAND_MS / 60000)}m) — settling and paying out`
+        );
+        await recoverStuckCompletingTournaments('seat-first-finish-sweep', id);
+      } catch (err) {
+        reportError(err, 'GameServer.seat_first_finish_sweep_failed', { tournamentId: id });
+      }
     }
   }
 

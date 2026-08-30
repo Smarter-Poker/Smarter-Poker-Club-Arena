@@ -1,0 +1,41 @@
+.admin-page[data-arena-surface='union-operations'] {
+  color: #eaf3f9;
+  background:
+    radial-gradient(circle at 82% 5%, rgba(58, 168, 255, 0.08), transparent 28rem),
+    linear-gradient(180deg, #05080c, #020407);
+}
+
+.admin-page[data-arena-surface='union-operations']
+  :is(
+    .admin-card,
+    .admin-stat-card,
+    .admin-health-card,
+    .admin-panel-soft,
+    .admin-announcement-card,
+    .admin-data-table,
+    .admin-period-row
+  ) {
+  border: 1px solid #26333d;
+  border-radius: 4px;
+  background: linear-gradient(112deg, #101820, #080d12 72%, #05080c);
+  box-shadow:
+    inset 0 1px 0 rgba(221, 243, 255, 0.055),
+    0 14px 34px rgba(0, 0, 0, 0.24);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.admin-page[data-arena-surface='union-operations']
+  :is(.admin-btn, .admin-tab, .admin-input, .admin-textarea, .admin-icon-btn) {
+  min-height: 44px;
+  border-radius: 3px;
+}
+
+.admin-page[data-arena-surface='union-operations'] :is(.admin-input, .admin-textarea) {
+  border-color: #26333d;
+  background: #080d12;
+}
+
+.admin-page[data-arena-surface='union-operations'] .admin-tabs {
+  border-color: #26333d;
+}

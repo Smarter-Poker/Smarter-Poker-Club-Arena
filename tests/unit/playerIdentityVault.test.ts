@@ -88,11 +88,12 @@ describe('Player Identity Vault interaction semantics', () => {
 describe('#SmarterCasinoRealism account surfaces', () => {
   it('uses one shared cinematic vault anchor and engineered visual tokens', () => {
     const hero = read('src/components/account/AccountSurfaceHeader.module.css');
+    const heroComponent = read('src/components/account/AccountSurfaceHeader.tsx');
     const profileCss = read('src/pages/ProfilePage.module.css');
     const settingsCss = read('src/pages/SettingsPage.module.css');
     const notificationsCss = read('src/pages/NotificationsPage.css');
 
-    expect(hero).toContain("url('/images/bg-vault.jpg')");
+    expect(heroComponent).toContain("mediaUrl('images/bg-vault.jpg')");
     expect(hero).toContain('#030609');
     expect(hero).toContain('#3aa8ff');
     expect(profileCss).toContain('--identity-gunmetal: #26333d');

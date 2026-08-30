@@ -639,8 +639,33 @@ export default function SettlementPage() {
         return;
       }
 
-      // Execute real payouts via SettlementService
+      /**
+       * ═════════════════════════════════════════════════════════════════════
+       * THIS BUTTON COULD NOT DO ANYTHING, AND SAID NOTHING ABOUT IT.
+       * ═════════════════════════════════════════════════════════════════════
+       *
+       * `executeMondayPayouts` is a RETIRED NO-OP (SettlementService, 2026-07-21):
+       * it read two tables deliberately removed from the schema and always
+       * returns zeroes. The success branch below is gated on
+       * `agentsPaid > 0 || playersWithRakeback > 0`, which can therefore never
+       * be true — so the button spun, moved nothing, and showed NO toast at
+       * all. No success, no error, no explanation, on a money screen.
+       *
+       * The live payout paths are named in that service's note: agent
+       * commissions settle through credit_invoices, and player rakeback
+       * through the engine's RakebackSettlerService daemon. Nothing here can
+       * or should move money. So the button now SAYS that, instead of
+       * pretending, and the branch stays as a tripwire: if a future
+       * implementation ever returns real numbers, the existing success path
+       * still runs.
+       */
       const result = await SettlementService.executeMondayPayouts(period.id);
+
+      if (result.agentsPaid === 0 && result.playersWithRakeback === 0) {
+        toast.info(
+          'Nothing To Pay Out Here. Agent Commissions Settle Through Credit Invoices, And Player Rakeback Through The Engine Settler.'
+        );
+      }
 
       // Only update state if payouts succeeded
       if (result.agentsPaid > 0 || result.playersWithRakeback > 0) {

@@ -20,9 +20,7 @@ test.describe('Club Operations', () => {
 
        Target something that is actually a link to a club, and bound the click
        so a failure names this step rather than a locator. */
-    const clubCard = page
-      .locator('a[href*="/clubs/"], [data-testid="club-card"], [class*="club-card"]')
-      .first();
+    const clubCard = page.getByRole('button', { name: /Click to enter lobby/i }).first();
     if ((await clubCard.count()) > 0 && (await clubCard.isVisible())) {
       await clubCard.click({ timeout: 8000 });
       await expect(page).toHaveURL(/.*clubs\/.+/, { timeout: 10000 });

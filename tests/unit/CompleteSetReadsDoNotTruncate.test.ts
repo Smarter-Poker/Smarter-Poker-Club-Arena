@@ -47,6 +47,7 @@ const COMPLETE_SET_READS: Array<[string, string]> = [
   ['src/components/agent/AgentPromoPanel.tsx', 'players an agent can promo'],
   ['src/components/agent/AgentAssignmentPanel.tsx', 'club roster for agent assignment'],
   ['src/pages/ClubDetailPage.tsx', 'club member list'],
+  ['src/pages/FriendsPage.tsx', 'complete bidirectional friend network'],
 ];
 
 describe('complete-set reads page instead of capping', () => {
@@ -88,6 +89,14 @@ describe('complete-set reads page instead of capping', () => {
     );
   });
 
+  it('the friend network no longer stops at 200 edges in either direction', () => {
+    const src = code(read('src/pages/FriendsPage.tsx'));
+    expect(src).not.toMatch(/\.limit\((?:100|200)\)/);
+    expect(src).toContain('FriendsPage.accepted_sent');
+    expect(src).toContain('FriendsPage.accepted_received');
+    expect(src).toContain('FriendsPage.pending_received');
+  });
+
   it("a player's own tournament history is not capped at 5000", () => {
     /* PIN MOVED (2026-08-29, round 12): the mechanism changed, the invariant
        did not. The page no longer fetches the player's complete entry set
@@ -106,14 +115,36 @@ describe('complete-set reads page instead of capping', () => {
 describe('paged complete-set reads stay ordered', () => {
   // Paging an UNORDERED query lets Postgres serve a row twice or skip it
   // between pages - the defect the club_members house rule exists for.
-  it.each(COMPLETE_SET_READS)('%s orders its paged query', (file) => {
-    const src = code(read(file));
-    const idx = src.search(/fetchAllRows\s*[<(]/);
-    expect(idx, 'expected a fetchAllRows call').toBeGreaterThan(-1);
-    // The factory body follows the call; it must contain an .order() before
-    // its .range().
-    const body = sliceCall(src.slice(idx), 'fetchAllRows');
-    expect(body).toMatch(/\.order\(/);
-    expect(body).toMatch(/\.range\(/);
+  it.each(COMPLETE_SET_READS.filter(([file]) => file !== 'src/pages/FriendsPage.tsx'))(
+    '%s orders its paged query',
+    (file) => {
+      const src = code(read(file));
+      const idx = src.search(/fetchAllRows\s*[<(]/);
+      expect(idx, 'expected a fetchAllRows call').toBeGreaterThan(-1);
+      // The factory body follows the call; it must contain an .order() before
+      // its .range().
+      const body = sliceCall(src.slice(idx), 'fetchAllRows');
+      expect(body).toMatch(/\.order\(/);
+      expect(body).toMatch(/\.range\(/);
+    }
+  );
+
+  it('the three friend-network directions are each ordered before their range', () => {
+    const src = code(read('src/pages/FriendsPage.tsx'));
+    const queryBodies = [
+      src.slice(
+        src.indexOf('FriendsPage.accepted_sent'),
+        src.indexOf('FriendsPage.accepted_received')
+      ),
+      src.slice(
+        src.indexOf('FriendsPage.accepted_received'),
+        src.indexOf('FriendsPage.pending_received')
+      ),
+      src.slice(src.indexOf('FriendsPage.pending_received'), src.indexOf('const sentFriendIds')),
+    ];
+    for (const query of queryBodies) {
+      expect(query.indexOf('.order(')).toBeGreaterThan(-1);
+      expect(query.indexOf('.range(')).toBeGreaterThan(query.indexOf('.order('));
+    }
   });
 });

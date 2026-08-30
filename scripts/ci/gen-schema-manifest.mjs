@@ -30,6 +30,7 @@
 import { writeFileSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import process from 'node:process';
+import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
 
 /**
  * Write a manifest, and refuse to do it unless the file is exempt from Prettier.
@@ -84,7 +85,7 @@ if (!URL || !KEY) {
 async function callRpc(fn) {
   const res = await fetch(`${URL}/rest/v1/rpc/${fn}`, {
     method: 'POST',
-    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+    headers: supabaseServerHeaders(KEY, { 'Content-Type': 'application/json' }),
     body: '{}',
   });
   if (!res.ok) {
@@ -111,7 +112,11 @@ console.log(
 // 2) column manifest (phantom-column gate)
 const COLS_OUT = join(process.cwd(), 'scripts/ci/supabase-columns-manifest.json');
 const colsData = await callRpc('fn_columns_manifest');
-const sortedCols = Object.fromEntries(Object.keys(colsData).sort().map((k) => [k, colsData[k]]));
+const sortedCols = Object.fromEntries(
+  Object.keys(colsData)
+    .sort()
+    .map((k) => [k, colsData[k]])
+);
 const colsManifest = {
   _comment:
     'Live public schema COLUMN snapshot {table: [columns]}. Source of truth for the phantom-column CI gate. Do NOT hand-edit.',
@@ -143,7 +148,11 @@ console.log(`Wrote ${COLS_OUT}: ${Object.keys(sortedCols).length} tables' column
 // including it would produce noise that teaches people to ignore the gate.
 const REQ_OUT = join(process.cwd(), 'scripts/ci/supabase-required-columns-manifest.json');
 const reqData = await callRpc('fn_required_columns_manifest');
-const sortedReq = Object.fromEntries(Object.keys(reqData).sort().map((k) => [k, reqData[k]]));
+const sortedReq = Object.fromEntries(
+  Object.keys(reqData)
+    .sort()
+    .map((k) => [k, reqData[k]])
+);
 const reqManifest = {
   _comment:
     'Live public schema REQUIRED-COLUMN snapshot {table: [columns an INSERT must supply]}. ' +

@@ -8,6 +8,26 @@ import type {
 import { ArenaGameRuleBadge } from './ArenaGameRuleIcon';
 import './ArenaGameCard.css';
 
+const CASH_CARD_TITLE_LIMIT = 30;
+const TOURNAMENT_CARD_TITLE_LIMIT = 44;
+
+function constrainedTitle(value: string, limit: number): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= limit) return normalized;
+  const candidate = normalized.slice(0, Math.max(1, limit - 1));
+  const wordBreak = candidate.lastIndexOf(' ');
+  return `${candidate.slice(0, wordBreak > limit * 0.62 ? wordBreak : candidate.length).trimEnd()}…`;
+}
+
+function tournamentDisplayTitle(data: ArenaGameCardData): string {
+  const title = constrainedTitle(data.title, TOURNAMENT_CARD_TITLE_LIMIT);
+  if (!data.guarantee) return title;
+  const normalizedGuarantee = data.guarantee.replace(/\s+/g, ' ').trim();
+  const guaranteeNumber = normalizedGuarantee.replace(/\s*GTD$/i, '').trim();
+  if (title.toLowerCase().includes('gtd') || title.includes(guaranteeNumber)) return title;
+  return constrainedTitle(`${normalizedGuarantee} • ${title}`, TOURNAMENT_CARD_TITLE_LIMIT);
+}
+
 function ActionIcon({ label }: { label: string }) {
   const normalized = label.toLowerCase();
   if (normalized.includes('detail')) {
@@ -134,12 +154,19 @@ function PremiumStatus({ data }: { data: ArenaGameCardData }) {
   );
 }
 
-function PremiumHeader({ data }: { data: ArenaGameCardData }) {
+function PremiumHeader({
+  data,
+  showSubtitle = true,
+}: {
+  data: ArenaGameCardData;
+  showSubtitle?: boolean;
+}) {
+  const title = constrainedTitle(data.title, CASH_CARD_TITLE_LIMIT);
   return (
     <header className="agc-premium-header">
       <div className="agc-premium-heading" data-zone="title">
-        <h3 title={data.title}>{data.title}</h3>
-        {data.subtitle && <p>{data.subtitle}</p>}
+        <h3 title={data.title}>{title}</h3>
+        {showSubtitle && data.subtitle && <p>{data.subtitle}</p>}
       </div>
       <PremiumStatus data={data} />
     </header>
@@ -151,14 +178,19 @@ function LiveValue({
   value,
   zone,
   children,
+  icon,
 }: {
   className: string;
   value?: string;
   zone: string;
   children?: ReactNode;
+  icon?: 'stakes' | 'players' | 'buy-in';
 }) {
   return (
     <div className={`agc-premium-value ${className}`} data-zone={zone}>
+      {icon && (
+        <span className={`agc-value-medallion agc-value-medallion--${icon}`} aria-hidden="true" />
+      )}
       {children || <strong>{value || '-'}</strong>}
     </div>
   );
@@ -166,14 +198,15 @@ function LiveValue({
 
 function MttMachine({ data, actions }: ArenaGameCardProps) {
   const visibleRules = data.rules.slice(0, 2);
+  const displayTitle = tournamentDisplayTitle(data);
   return (
     <div className="agc-machine agc-machine--mtt">
+      <span className="agc-mtt-club-chip" aria-hidden="true" />
       <header className="agc-mtt-header">
         <h3 data-zone="title" title={data.title}>
-          {data.title}
+          {displayTitle}
         </h3>
         <div className="agc-mtt-meta">
-          {data.guarantee && <strong data-zone="guaranteeHero">{data.guarantee}</strong>}
           <span data-zone="startsIn">{data.startsIn || data.statusLabel}</span>
         </div>
         <div className="agc-mtt-badge-rail">
@@ -224,14 +257,29 @@ function MttMachine({ data, actions }: ArenaGameCardProps) {
 function NlhMachine({ data, actions }: ArenaGameCardProps) {
   return (
     <div className="agc-machine agc-machine--nlh">
-      <PremiumHeader data={data} />
+      <PremiumHeader data={data} showSubtitle={false} />
       <span className="agc-semantic-only" data-zone="gameType">
         {data.gameType}
       </span>
       <Rules data={data} className="agc-premium-rules agc-premium-rules--nlh" limit={3} />
-      <LiveValue className="agc-premium-value--stakes" value={data.stakes} zone="stakes" />
-      <LiveValue className="agc-premium-value--players" value={data.players} zone="players" />
-      <LiveValue className="agc-premium-value--buy-in" value={data.buyIn} zone="buyIn" />
+      <LiveValue
+        className="agc-premium-value--stakes"
+        value={data.stakes}
+        zone="stakes"
+        icon="stakes"
+      />
+      <LiveValue
+        className="agc-premium-value--players"
+        value={data.players}
+        zone="players"
+        icon="players"
+      />
+      <LiveValue
+        className="agc-premium-value--buy-in"
+        value={data.buyIn}
+        zone="buyIn"
+        icon="buy-in"
+      />
       <Actions actions={actions} />
     </div>
   );

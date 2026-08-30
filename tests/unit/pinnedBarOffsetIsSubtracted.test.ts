@@ -50,7 +50,15 @@ describe('the global header owns viewport y=0', () => {
 
   it('positions the action bar at the measured bottom of GlobalHeader', () => {
     const pinned = ruleBody(multi, '.multi-table-page__tab-bar-wrapper--pinned');
-    expect(pinned).toMatch(new RegExp(`top:\\s*var\\(\\s*${HEADER_HEIGHT}\\s*,\\s*0px\\s*\\)`));
+    /* Header height PLUS the MTT ticker, which took the band directly under
+       the header on 2026-08-30 (Dan: "THE 'ACTION TAB' SHOULD NEVER BE ABOVE
+       IT"). `--mtt-ticker-h` is absent with no ticker on screen, so this is
+       still the header's measured bottom edge on a quiet schedule. */
+    expect(pinned).toMatch(
+      new RegExp(
+        `top:\\s*calc\\(\\s*var\\(\\s*${HEADER_HEIGHT}\\s*,\\s*0px\\s*\\)\\s*\\+\\s*var\\(\\s*--mtt-ticker-h\\s*,\\s*0px\\s*\\)\\s*\\)`
+      )
+    );
     expect(pinned).toMatch(/padding-top:\s*0/);
     expect(header).toMatch(new RegExp(`root\\.style\\.setProperty\\(\\s*['"]${HEADER_HEIGHT}['"]`));
     expect(header).toContain('new ResizeObserver(publishHeight)');
@@ -67,7 +75,10 @@ describe('the global header owns viewport y=0', () => {
 
   it('publishes the action bar height without padding the body', () => {
     const body = ruleBody(multi, "body[data-ca-pinned-bar='1']");
-    expect(body).toMatch(/--ca-pinned-bar-offset:\s*48px/);
+    /* 48px of bar, plus the ticker above it (2026-08-30): content has to clear
+       BOTH fixed strips or the first rows of the lobby end up underneath them.
+       Still exactly 48px whenever no ticker is on screen. */
+    expect(body).toMatch(/--ca-pinned-bar-offset:\s*calc\(48px \+ var\(--mtt-ticker-h, 0px\)\)/);
     expect(body).not.toMatch(/padding-top\s*:/);
   });
 

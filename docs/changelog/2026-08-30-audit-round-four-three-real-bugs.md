@@ -67,6 +67,12 @@ Replaced with `sliceEnclosingBlock(MANAGER, 'held_from_this_satellite === false'
 extension, which `TournamentFixes.guard.test.ts` requires of every relative
 import in `server/` (caught on the second run, fixed before shipping).
 
+**Then PR #1975 landed the same fix independently**, importing the extractor
+from a server-local `../testHelpers/sourceWindow.js` rather than reaching up
+into `tests/`. That is the better home for it, so on the merge this branch took
+THEIRS and dropped its own copy. Recorded because the diff no longer shows the
+work: main was red, it is green, and it took two of us to notice.
+
 ## Pins
 
 `tests/unit/mttTickerAnchor.test.ts` gains three, and

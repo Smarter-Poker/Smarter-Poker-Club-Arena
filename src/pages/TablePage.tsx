@@ -131,6 +131,7 @@ import { parseBlindStructure } from '../utils/parseBlindStructure';
 // Supabase Realtime game-state path stays wired in parallel until PR-5 deletes
 // it, so flipping the flag is a pure rollout switch.
 import { useEngineTableState } from '../hooks/useEngineTableState';
+import TableConnectionBanner from '../components/table/TableConnectionBanner';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
 import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
@@ -18197,6 +18198,18 @@ export default function TablePage({
           TABLE AREA
           ═══════════════════════════════════════════════════════════════════════ */}
       <div className="table-container">
+        {/* Dan 2026-08-30, from a live tournament seat: "if its 'reconnecting'
+            it should say that as a pop up on the table". The status was
+            already known and already passed down - but only to TableMenu,
+            which shows it in the DRAWER HEADER, so the one way to learn why
+            your table had gone blank was to open the hamburger menu. When the
+            engine socket is down the felt still paints from the last snapshot
+            (seats and badges, no stacks, no pot, nothing animating) and looks
+            almost exactly like a table that is merely quiet. Say it on the
+            felt. The banner self-delays so a 300ms blip never strobes it, and
+            it is pointer-events: none so it cannot eat a tap on an action
+            button mid-hand. */}
+        <TableConnectionBanner status={engineWsStatus} isActive={isActive} />
         {/* --table-w: the table's MEASURED width, published to CSS.
             Dan 2026-08-25 (item 8): the dealer button and the chips are sized
             as a proportion of this in TableVisualHotfix.css, so one table size

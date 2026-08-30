@@ -98,7 +98,7 @@ describe('daily challenge rerolls', () => {
 
 describe('reroll integrity is enforced below the UI', () => {
   const migration = readFileSync(
-    resolve(__dirname, '../supabase/migrations/20260830120000_atomic_daily_challenge_reroll.sql'),
+    resolve(__dirname, '../supabase/migrations/20260830220000_atomic_daily_challenge_reroll.sql'),
     'utf8'
   );
   const body = migration.slice(migration.indexOf('CREATE OR REPLACE FUNCTION'));

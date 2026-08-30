@@ -10,7 +10,6 @@
 
 import { supabase, getAuthUser } from '../lib/supabase';
 import { achievementService, ACHIEVEMENTS, type Achievement } from './AchievementService';
-import { pushNotificationService } from './PushNotificationService';
 import { dailyChallengeService, handRankScore } from './DailyChallengeService';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
@@ -169,9 +168,27 @@ class AchievementTriggerServiceClass {
         icon: ach.icon,
         ...(ach.chipReward ? { reward: { chips: ach.chipReward } } : {}),
       });
-      pushNotificationService
-        .notifyAchievement(userId, ach.name)
-        .catch((err) => reportError(err, 'AchievementTriggerService.Push_notification_failed'));
+      /* THE PUSH IS RAISED SERVER-SIDE NOW (2026-08-30, issue #1498).
+       *
+       * This called pushNotificationService.notifyAchievement, which has
+       * delivered nothing since 2026-08-19, when OneSignal was removed from
+       * the platform. Issue #1498 lists EIGHT such flows; this is a NINTH it
+       * missed, because the call was split across lines and every
+       * `pushNotificationService\.(...)` grep used to build that list walked
+       * straight past it.
+       *
+       * It cannot simply be repointed at a working transport from here. The
+       * browser has no write access to `notifications` or `push_outbox` (RLS,
+       * service_role only), and granting it one would be the
+       * arbitrary-recipient spam vector World Hub closed on 2026-07-25.
+       *
+       * `trg_notify_achievement_unlocked` now fires on the NULL to non-NULL
+       * transition of `training_user_achievements.unlocked_at` — the trusted
+       * context that already performs the action. It covers every writer of
+       * that table rather than this one call site, so the next path that
+       * unlocks something cannot forget it, and push-dispatch applies the
+       * consent gate to what it enqueues. Nothing is needed here.
+       */
     }
 
     // 6. Update Daily Challenge progress (fire-and-forget, non-blocking)

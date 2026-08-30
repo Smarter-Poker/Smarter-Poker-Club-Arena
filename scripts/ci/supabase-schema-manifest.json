@@ -1908,6 +1908,7 @@
     "fn_rotate_guest_invite_code",
     "fn_run_horse_daily_audit",
     "fn_run_pending_rakeback_settlement",
+    "fn_satellite_conservation_audit",
     "fn_save_leaderboard_reward_setup",
     "fn_schema_manifest",
     "fn_search_messages",

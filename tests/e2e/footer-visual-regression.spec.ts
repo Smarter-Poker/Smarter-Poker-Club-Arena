@@ -30,7 +30,7 @@ test.describe('Club Arena footer visual contract', () => {
         <head>
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <style>
-          :root { --bottom-nav-height: clamp(44px, 7vw, 84px); }
+          :root { --bottom-nav-height: clamp(44px, 13.72vw, 263px); }
           html, body { margin: 0; min-height: 200vh; background: #07101d; }
           ${footerCss}
         </style>
@@ -73,7 +73,14 @@ test.describe('Club Arena footer visual contract', () => {
       expect(Math.abs(navBox!.y + navBox!.height - viewport.height)).toBeLessThanOrEqual(1);
       expect(navBox!.width).toBeLessThanOrEqual(viewport.width + 1);
       expect(navBox!.height).toBeGreaterThanOrEqual(44);
-      expect(navBox!.height).toBeLessThanOrEqual(84);
+      expect(navBox!.height).toBeLessThanOrEqual(263);
+      const expectedHeight = Math.min(263, Math.max(44, viewport.width * 0.1372));
+      expect(Math.abs(navBox!.height - expectedHeight)).toBeLessThanOrEqual(1);
+
+      const artworkBox = await page.locator('.artworkImage').boundingBox();
+      expect(artworkBox).not.toBeNull();
+      expect(artworkBox!.x).toBeLessThan(0);
+      expect(artworkBox!.x + artworkBox!.width).toBeGreaterThan(viewport.width);
 
       const links = page.locator('[data-footer-control]');
       await expect(links).toHaveCount(6);

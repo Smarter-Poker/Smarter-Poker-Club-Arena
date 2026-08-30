@@ -297,6 +297,16 @@ export default function GlobalHeader() {
                   }}
                 />
               </span>
+              {/* The complete header raster supplies the frame's base pixels.
+                  Re-layer the exact approved crop above the live avatar, with
+                  its stock blue person masked out in CSS, so the user's image
+                  can never paint over the chrome rim. */}
+              <img
+                src={`${APPROVED_HEADER_ASSET}profile.png`}
+                alt=""
+                className={styles.profileFrameOverlay}
+                aria-hidden="true"
+              />
             </button>
 
             <button

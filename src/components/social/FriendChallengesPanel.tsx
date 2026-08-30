@@ -282,7 +282,7 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
                 <article className="challenge-card is-history" key={row.id}>
                   <ChallengeHeader row={row} />
                   <p>
-                    <strong>{result}</strong> · {myProgress}–{theirProgress}
+                    <strong>{result}</strong> · {myProgress}-{theirProgress}
                   </p>
                 </article>
               );

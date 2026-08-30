@@ -82,10 +82,28 @@ import in `server/` (caught on the second run, fixed before shipping).
 - the banner spec now requires the `calc(var(--sp-brand-top, 58%) - 6%)` form
   and explicitly rejects the old literal `52%`.
 
+## 5. Dead code the audit turned up in today's own files
+
+`eslint` on the files this work touched reported four unused bindings, all of
+them left behind by earlier changes rather than by anything today:
+
+- `RabbitHunt.tsx` — `toCardImage` and `normalizeRank`, plus the `CardImage`
+  value import that fed them. POKERBROS PARITY 2026-08-26 moved the reveal onto
+  the CommunityCards board; the component has drawn no card since, so the pair
+  had no call site and the import was pulling the CardImage module into the
+  Rabbit Hunt chunk for nothing.
+- `RabbitHunt.tsx` — `revealedCards` was read nowhere. The state is write-only
+  BY DESIGN (TablePage renders the reveal via `rabbitCards`), and the setter
+  still matters because clearing it on a new hand is what stops the previous
+  hand's cards being offered again. Now `const [, setRevealedCards]`, with the
+  reason written down instead of looking like an oversight.
+- `TournamentStartingTicker.tsx` — the `OverlayState` interface, unreferenced.
+
 ## Verification
 
-- Client suite: **9693 passed / 9693**.
-- Server suite: **1456 passed / 1456**.
+- Client suite: **9693 passed / 9693** (668 files).
+- Server suite: **2701 passed / 2701** (241 files).
+- `eslint` clean on every file this work touched.
 - `tsc --noEmit` clean.
 
 A note for whoever runs the suite in a worktree: symlinking `node_modules` from

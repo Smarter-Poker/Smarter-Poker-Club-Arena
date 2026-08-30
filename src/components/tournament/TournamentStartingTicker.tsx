@@ -58,10 +58,6 @@ const DISMISS_KEY = 'ca_mtt_ticker_dismissed';
    "starts in 2:14" has not said anything about "8,400 overlay". */
 const OVERLAY_DISMISS_KEY = 'ca_overlay_ticker_dismissed';
 
-interface OverlayState {
-  items: OverlayAnnouncement[];
-}
-
 interface UpcomingTournament {
   id: string;
   name: string;

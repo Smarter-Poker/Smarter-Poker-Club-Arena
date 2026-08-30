@@ -33,11 +33,15 @@ club.
 
 - Focused roster, privacy, resolver, class-ownership, and resilience suites:
   72 tests passed.
+- Complete client regression suite: 9,696 tests passed across 667 files.
+- The complete-suite run exposed a newly landed fixed-byte source-window pin;
+  its satellite payout guard now uses the shared structural source-window
+  helper. The targeted server guard passes all 6 tests.
 - Client TypeScript check: passed.
 - Changed-file ESLint: passed.
-- Production build completed; the provenance guard then correctly refused the
-  stale artifact after `origin/main` advanced. The branch must be rebased and
-  rebuilt before publication.
+- Production build: passed with 2,530 modules transformed, 439 media assets
+  optimized, zero media failures, and build provenance stamped from a branch
+  reporting zero commits behind `origin/main`.
 
 No database migration, money mutation, generated image, or game-engine behavior
 is part of this phase.

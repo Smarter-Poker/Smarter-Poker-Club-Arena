@@ -13,7 +13,6 @@
 
 import { supabase } from '../lib/supabase';
 import { reportError } from './errorReporter';
-import { runRosterReadWithRetry } from './rosterReadReliability';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -196,6 +195,7 @@ export async function resolveClubUUIDStrict(clubIdParam: string): Promise<string
 
   let data: { id: string } | null;
   try {
+    const { runRosterReadWithRetry } = await import('./rosterReadReliability');
     data = await runRosterReadWithRetry(
       async (signal) => {
         let request = supabase

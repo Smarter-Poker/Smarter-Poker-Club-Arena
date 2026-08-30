@@ -108,6 +108,7 @@ import {
   scoreOmahaLow,
   straightTop,
 } from './HorseEval.js';
+import { anteOrbitCostBB } from './AnteMath.js';
 
 // BUG 020 FIX (2026-04-15) — round chip amounts to whole cents so horse decisions
 // don't pollute hand_history.actions with 15-digit floats. Bible V8 §2.6.
@@ -587,6 +588,10 @@ export interface HorseGameStateV2 extends HorseGameState {
   gameMode?: 'cash' | 'tournament';
   /** V11: table ante (0/undefined = no ante). Antes widen preflop ranges. */
   ante?: number;
+  /** The ante is a BIG BLIND ANTE: the big blind posts it once for the whole
+   *  table, rather than every player posting it every hand. Changes what an
+   *  orbit COSTS, which is what Harrington M divides by — see AnteMath.ts. */
+  bigBlindAnte?: boolean;
   /** V18: the table allows a UTG straddle (2xBB). Straddle posts are not
    *  ActionRecords, so the brain needs this to read a straddled pot as
    *  UNOPENED dead money rather than an open raise. */
@@ -1455,7 +1460,19 @@ export class HorseLogic {
       // V20 M-ZONES: the real per-orbit cost needs the ante SIZE and the
       // table size, not just "an ante exists". Undefined when the layer is
       // ablated so the preflop engine keeps exact legacy behavior.
-      anteBB: (opts.v20Mzone ?? true) !== false && bb > 0 ? (gs.ante ?? 0) / bb : undefined,
+      // The ORBIT cost, resolved for the table's ante style. Previously this
+      // shipped a per-player figure that HorsePreflop multiplied by the seat
+      // count — which read a big-blind-ante structure as seat-count times too
+      // expensive, collapsed M, and turned tournaments into jam-or-fold.
+      anteOrbitBB:
+        (opts.v20Mzone ?? true) !== false
+          ? anteOrbitCostBB(
+              gs.ante ?? 0,
+              gs.players.filter((p) => !p.is_sitting_out).length,
+              bb,
+              gs.bigBlindAnte === true
+            )
+          : undefined,
       tableSize:
         (opts.v20Mzone ?? true) !== false
           ? gs.players.filter((p) => !p.is_sitting_out).length

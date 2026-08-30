@@ -93,10 +93,13 @@ export interface PreflopCtx {
    *  folds 70% to 3-bets gets 3-bet-bluffed relentlessly; one who never
    *  folds gets bluffed at all only with real equity. */
   raiserFoldTo3Bet?: number | null;
-  /** V20 M-ZONES (2026-08-27): per-player ante in BB units (0 = no ante).
+  /** V20 M-ZONES (2026-08-27): ante cost of ONE ORBIT in BB units, already
+   *  resolved for the table's ante style by AnteMath.anteOrbitCostBB (0 = no
+   *  ante). NOT per-player: multiplying this by the seat count is the bug of
+   *  2026-08-30.
    *  Undefined = layer off — every M computation degrades to legacy
    *  stackBB-only behavior. */
-  anteBB?: number;
+  anteOrbitBB?: number;
   /** V20 M-ZONES: players dealt in (for the orbit cost and Harrington's
    *  effective-M table-size scaling). Undefined = layer off. */
   tableSize?: number;
@@ -144,6 +147,10 @@ export interface PreflopCtx {
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 
 /** Open-raise strength floors by position (percentile space). */
+/** No stack deeper than this plays jam-or-fold, however burnt its M is.
+ *  Matches the cap the V20 reshove branches already use. */
+const PUSH_FOLD_MAX_BB = 22;
+
 const OPEN_THRESH: Record<PreflopPosition, number> = {
   early: 0.62,
   middle: 0.54,
@@ -379,9 +386,16 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   // Effective M scales by table size over 10 (short tables burn orbits
   // faster). Layer off (anteBB undefined) = legacy behavior everywhere.
   const players20 = ctx.tableSize ?? Math.max(2, ctx.oppsLeft + 1);
-  const orbitBB20 = 1.5 + Math.max(0, ctx.anteBB ?? 0) * players20;
-  const mzOn = isTourney && ctx.anteBB !== undefined;
+  // `anteOrbitBB` is the ante cost of a WHOLE ORBIT, already resolved by
+  // AnteMath for the table's ante style. It used to be a per-player figure
+  // multiplied by the seat count right here, which read a big-blind-ante
+  // structure as seat-count times too expensive and made a 39bb stack look
+  // like an M of 3 — every tournament became jam-or-fold.
+  const orbitBB20 = 1.5 + Math.max(0, ctx.anteOrbitBB ?? 0);
+  const mzOn = isTourney && ctx.anteOrbitBB !== undefined;
   let effM = mzOn ? (stackBB / orbitBB20) * Math.min(1, players20 / 10) : Infinity;
+  /** stackBB as the NEXT level will see it — see the blind clock below. */
+  let effStackBB = stackBB;
   // ═══ V23 BLIND CLOCK (2026-08-28) ═══ the M that matters is the one the
   // NEXT level gives you. Within three minutes of a level that raises the
   // blinds, play the shrunken M now — the fold that "waits for a better
@@ -394,8 +408,13 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     (ctx.nextBlindMult ?? 1) > 1.15
   ) {
     effM = effM / (ctx.nextBlindMult ?? 1);
+    // ...and the DEPTH moves with it. A 30bb stack two minutes from a level
+    // that doubles the blinds is a 15bb stack, and the push/fold depth cap
+    // has to be read in the same currency as the M it guards, or the cap
+    // silently repeals the blind clock.
+    effStackBB = stackBB / (ctx.nextBlindMult ?? 1);
   }
-  const v20Wired = ctx.anteBB !== undefined; // layer on (cash or tournament)
+  const v20Wired = ctx.anteOrbitBB !== undefined; // layer on (cash or tournament)
 
   // ═══ V25 PLO TOURNAMENTS ARE NOT PUSH/FOLD (Dan 2026-08-28) ═════════════
   // THE STRUCTURAL FACT the brain did not model: POT LIMIT MEANS YOU CANNOT
@@ -481,7 +500,24 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     return { a: 'fold' };
   }
 
-  const pushFoldNlh = !ctx.isOmaha && (stackBB <= 12 || (mzOn && effM < 6));
+  // PUSH/FOLD IS A SHORT-STACK STRATEGY, AT ANY M (2026-08-30). The M-zone
+  // disjunct below used to carry no depth cap at all, so a table with a large
+  // ante could put a stack of ANY size into jam-or-fold. Both later jam
+  // branches were written with `stackBB <= 22` and comments saying exactly
+  // why ("so a big-ante deep stack does not jam 30 blinds") — this, the gate
+  // that decides whether the WHOLE strategy is jam-or-fold, was the one
+  // without it.
+  //
+  // Measured in production before the fix, over 40 minutes of tournaments:
+  //     open jams              416,   182 of them deeper than 25bb (max 72bb)
+  //     3-bets                 254,   85.4% of them all-in (max 184bb)
+  // Cash, where the ante bug could not reach, ran 3.7% and 0.0%.
+  //
+  // 22bb is not a new number: it is the one the sibling branches already
+  // chose for this exact failure, and inventing a second convention here
+  // would be worse than reusing theirs.
+  const pushFoldNlh =
+    !ctx.isOmaha && (stackBB <= 12 || (mzOn && effM < 6 && effStackBB <= PUSH_FOLD_MAX_BB));
   // V25: the old Omaha gate (<=8bb / M<4) is superseded by the commitment
   // zone above, which triggers on the pot-limit arithmetic rather than a bb
   // count. It stays for the ablation path (ploTourney off).

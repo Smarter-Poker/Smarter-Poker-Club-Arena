@@ -186,7 +186,9 @@ function ploCtx(extra: Record<string, unknown> = {}) {
     riskAdd: 0.12, // near the money
     mode: 'tournament' as const,
     anteInPlay: true,
-    anteBB: 0.125,
+    // 0.125/player x 8 seats = a 1.0bb ante per ORBIT (orbit total 2.5bb),
+    // the same figure the old per-player field produced here.
+    anteOrbitBB: 1.0,
     tableSize: 8,
     ploPriceDefense: true,
     v13: true,

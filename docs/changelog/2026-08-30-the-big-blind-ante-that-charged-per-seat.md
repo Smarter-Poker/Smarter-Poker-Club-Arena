@@ -81,6 +81,30 @@ double. That is a documented, deliberate feature. So the cap is read in the
 level's depth too. A 30bb stack two minutes from doubled blinds is a 15bb
 stack, and still jams. A 60bb stack does not.
 
+## The A/B, through the full decide path
+
+400 randomly dealt hands per cell, 8-handed, BB 1,000, big blind ante on:
+
+| open-jam rate        | 39bb                   | 50bb                   | 72bb | 9bb   |
+| -------------------- | ---------------------- | ---------------------- | ---- | ----- |
+| **the shipped code** | **19.3%, zero raises** | **19.8%, zero raises** | 0%   | 19.3% |
+| **fixed**            | 0%, 66 raises          | 0%, 77 raises          | 0%   | 19.0% |
+
+At 39-50bb every voluntary open was a shove and there was not a single sized
+raise — which is precisely what Dan reported. The 9bb column is the control:
+push/fold is untouched.
+
+The 72bb column is the accidental proof. Pre-fix, effM at 72bb is
+`(72 / 9.5) x 0.8 = 6.06`, a hair ABOVE the `effM < 6` gate, so 72bb is the
+deepest stack the bug could reach — and 72bb is exactly the deepest open jam
+production recorded. The arithmetic and the hand histories agree to the blind.
+
+**One honest note on method.** The first attempt at this A/B restored both
+defects and reported no change, because `BBA_CEILING_BB` still clamped 8,000
+to 2,000 and the run never reproduced the original at all. A mutation that
+does not reproduce the bug proves nothing. The table above uses the faithful
+pre-fix formula: `(ante x seats) / bb`, no total-detection and no ceiling.
+
 ## Verification
 
 - `npx tsc --noEmit` clean.

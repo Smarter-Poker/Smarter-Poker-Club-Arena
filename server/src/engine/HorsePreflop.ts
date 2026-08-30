@@ -100,6 +100,10 @@ export interface PreflopCtx {
    *  Undefined = layer off — every M computation degrades to legacy
    *  stackBB-only behavior. */
   anteOrbitBB?: number;
+  /** ALL-IN-OR-FOLD table: the preflop menu is fold or shove, nothing else.
+   *  The brain must KNOW this — see the AoF block for why coercing its answer
+   *  downstream is not the same thing. */
+  allInOrFold?: boolean;
   /** V20 M-ZONES: players dealt in (for the orbit cost and Harrington's
    *  effective-M table-size scaling). Undefined = layer off. */
   tableSize?: number;
@@ -149,6 +153,10 @@ const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 /** Open-raise strength floors by position (percentile space). */
 /** No stack deeper than this plays jam-or-fold, however burnt its M is.
  *  Matches the cap the V20 reshove branches already use. */
+/** AoF shove bar tightens above the depth where push/fold is already tuned. */
+const AOF_TIGHTEN_PER_BB = 0.006;
+const AOF_MAX_TIGHTEN = 0.3;
+
 const PUSH_FOLD_MAX_BB = 22;
 
 const OPEN_THRESH: Record<PreflopPosition, number> = {
@@ -451,6 +459,53 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   // everything hero started with. Past ~30% a fold surrenders a stake big
   // enough that folding is worse than the worst call.
   const investedShare = stack + toCall > 0 ? (currentBet - toCall) / (stack + currentBet) : 0;
+
+  // ═══ ALL-IN-OR-FOLD (2026-08-30) ══════════════════════════════════════
+  // At an AoF table the preflop menu is fold or shove. The engine enforced
+  // that by COERCING the horse's answer — "any non-fold intent becomes the
+  // all-in" — while the brain went on choosing from a normal menu. So every
+  // hand it would have opened for 2.5bb, and every hand it would have called
+  // a raise with, was silently converted into a shove of the entire stack.
+  // Its OPENING range became its SHOVING range.
+  //
+  // Same shape as the big blind ante bug fixed earlier today: the brain does
+  // not know a rule, and a downstream layer rewrites its answer into
+  // something strategically wrong. A coercion cannot fix a range.
+  //
+  // The thresholds are the push/fold block's own, deliberately, so AoF does
+  // not invent a second set of numbers — plus one depth term, because a shove
+  // risks the whole stack to win the blinds and that price rises with depth.
+  // It is anchored at 12bb, where the push/fold numbers are already tuned, so
+  // a short AoF table behaves exactly as push/fold does today.
+  //
+  // The downstream coercion stays as the legality guarantee. This makes it a
+  // no-op instead of a strategy.
+  if (ctx.allInOrFold === true) {
+    const aofDepth = Math.min(AOF_MAX_TIGHTEN, Math.max(0, stackBB - 12) * AOF_TIGHTEN_PER_BB);
+    if (unopened) {
+      let bar = position === 'late' || position === 'sb' ? 0.5 : 0.6;
+      if (ctx.isOmaha) bar += 0.08;
+      if (isTourney) {
+        bar -= anteWiden + (stackBB <= 7 ? 0.08 : 0.03);
+        if (mzOn && effM < 5) bar -= effM < 3 ? 0.1 : 0.05;
+      }
+      bar += aofDepth;
+      if (strength >= t(bar)) return { a: 'jam' };
+      if (toCall === 0) return { a: 'check' };
+      return { a: 'fold' };
+    }
+    // Calling a shove buys no fold equity, so it needs the hand outright.
+    let callBar = raises >= 2 ? 0.85 : 0.72;
+    if (ctx.mode !== undefined && guardOdds <= 0.35) callBar -= 0.12;
+    if (isTourney) callBar -= anteWiden * 0.5;
+    if (v20Wired && callers >= 1) callBar += Math.min(0.1, callers * 0.05);
+    if (mzOn && effM >= 5) callBar += ctx.riskAdd;
+    if (ctx.isOmaha) callBar += 0.03;
+    callBar += aofDepth;
+    if (strength >= t(callBar)) return { a: 'jam' };
+    if (toCall === 0) return { a: 'check' };
+    return { a: 'fold' };
+  }
 
   // ── Short stacks: push/fold and reshove stacks ──
   // V20: the gate is M-based in tournaments (red zone M<5 and most of

@@ -1989,6 +1989,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // Which ante STYLE — the brain's M depends on what an orbit costs, and
       // a big blind ante costs the table one ante per orbit, not one each.
       bigBlindAnte: this.tableInfo?.big_blind_ante_enabled === true,
+      // AoF: tell the brain, instead of rewriting its answer afterwards. The
+      // coercion below stays as the legality guarantee.
+      allInOrFold: this.tableInfo?.all_in_or_fold === true,
       // V18 STRADDLE (2026-08-26): straddle posts are not ActionRecords, so
       // a straddled pot's preflop currentBet (2xBB) with an empty history
       // read as an OPEN RAISE and the fleet folded to dead money. Tell the

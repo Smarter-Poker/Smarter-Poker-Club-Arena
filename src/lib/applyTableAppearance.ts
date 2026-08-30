@@ -29,6 +29,7 @@
 import { supabase } from './supabase';
 import { masterBus } from '../core/MasterBus';
 import { capture } from './analytics';
+import { recordCustomizationOperation } from '../services/CustomizationOperationsTelemetry';
 
 /** The five columns of `user_theme_settings` the felt actually paints from. */
 export interface AppearancePatch {
@@ -74,9 +75,11 @@ function recordAppearanceResult(
   startedAt: number,
   gameType: string,
   patch: AppearancePatch,
-  signedIn: boolean
+  userId: string | null | undefined
 ): void {
   const fields = APPEARANCE_FIELDS.filter((field) => Boolean(patch[field]));
+  const durationMs = Math.max(0, Math.round(nowMs() - startedAt));
+  const signedIn = Boolean(userId);
   capture('table_appearance_apply', {
     outcome,
     game_type: gameType,
@@ -85,8 +88,18 @@ function recordAppearanceResult(
     signed_in: signedIn,
     // End-to-end time deliberately includes time waiting behind a rapid-tap
     // write. That is the latency the player actually experiences.
-    duration_ms: Math.max(0, Math.round(nowMs() - startedAt)),
+    duration_ms: durationMs,
   });
+  if (outcome === 'saved' || outcome === 'failed') {
+    recordCustomizationOperation({
+      userId,
+      event: outcome === 'saved' ? 'appearance_saved' : 'appearance_failed',
+      surface: 'table-studio',
+      category: fields.join(':'),
+      durationMs,
+      reasonCode: outcome === 'failed' ? 'persistence_write' : undefined,
+    });
+  }
 }
 
 function emitAppearance(
@@ -136,7 +149,7 @@ export async function applyTableAppearance(
     if (typeof value === 'string' && value) cleanPatch[field] = value;
   }
   if (!Object.keys(cleanPatch).length) {
-    recordAppearanceResult('empty', startedAt, gameType, cleanPatch, Boolean(opts.userId));
+    recordAppearanceResult('empty', startedAt, gameType, cleanPatch, opts.userId);
     return { ok: false, error: new Error('appearance patch is empty') };
   }
 
@@ -179,7 +192,7 @@ export async function applyTableAppearance(
       mutationId,
       state: 'rolled-back',
     });
-    recordAppearanceResult('guest', startedAt, gameType, cleanPatch, false);
+    recordAppearanceResult('guest', startedAt, gameType, cleanPatch, opts.userId);
     return { ok: false, error: new Error('not signed in'), reverted };
   }
 
@@ -229,6 +242,15 @@ export async function applyTableAppearance(
         reverted[field] = previous;
       }
     }
+    if (Object.keys(reverted).length < Object.keys(cleanPatch).length) {
+      recordCustomizationOperation({
+        userId: opts.userId,
+        event: 'conflict_suppressed',
+        surface: 'table-runtime',
+        category: APPEARANCE_FIELDS.filter((field) => Boolean(cleanPatch[field])).join(':'),
+        reasonCode: 'newer_optimistic_write',
+      });
+    }
     masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
       kind: 'table-appearance',
       scope,
@@ -243,7 +265,7 @@ export async function applyTableAppearance(
       state: 'rolled-back',
     });
     pendingWriteCount.set(scope, Math.max(0, (pendingWriteCount.get(scope) ?? 1) - 1));
-    recordAppearanceResult('failed', startedAt, gameType, cleanPatch, true);
+    recordAppearanceResult('failed', startedAt, gameType, cleanPatch, opts.userId);
     return { ok: false, error, reverted };
   }
 
@@ -259,6 +281,6 @@ export async function applyTableAppearance(
     state: 'confirmed',
   });
 
-  recordAppearanceResult('saved', startedAt, gameType, cleanPatch, true);
+  recordAppearanceResult('saved', startedAt, gameType, cleanPatch, opts.userId);
   return { ok: true };
 }

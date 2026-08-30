@@ -181,22 +181,6 @@ export default function UnionsPage() {
     };
   }, [loadUnions]);
 
-  if (loading) {
-    return (
-      <div className="unions-page">
-        <LoadingState message="Opening Union Networks" />
-      </div>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <div className="unions-page">
-        <ErrorState message={loadError} onRetry={loadUnions} />
-      </div>
-    );
-  }
-
   return (
     <div className="unions-page">
       <header className="unions-header">
@@ -211,7 +195,15 @@ export default function UnionsPage() {
       </header>
 
       <div className="unions-grid">
-        {unions.length === 0 ? (
+        {loading ? (
+          <div className="unions-state">
+            <LoadingState message="Opening Union Networks" />
+          </div>
+        ) : loadError ? (
+          <div className="unions-state">
+            <ErrorState message={loadError} onRetry={loadUnions} />
+          </div>
+        ) : unions.length === 0 ? (
           <div className="unions-state">
             <EmptyState
               icon="UNION"

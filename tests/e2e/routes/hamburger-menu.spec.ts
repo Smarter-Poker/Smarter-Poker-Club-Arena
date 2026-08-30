@@ -225,11 +225,7 @@ test.describe('Hamburger Menu — Settings Toggles', () => {
     await expect(tableSettingsRow).toBeVisible({ timeout: 5000 });
     await tableSettingsRow.click();
 
-    const bbLabel = page.locator('.tsp-item__label:text-is("Show Stack in Big Blinds")').first();
-    await expect(bbLabel).toBeVisible({ timeout: 15000 });
-
-    // The toggle is a sibling of the label's wrapper, not of the label itself.
-    const bbToggle = bbLabel.locator('../..').locator('button').first();
+    const bbToggle = page.getByRole('switch', { name: 'Show Stack In Big Blinds' }).first();
     await expect(bbToggle).toBeVisible();
     await bbToggle.click();
     await page.waitForTimeout(200);
@@ -279,7 +275,8 @@ test.describe('Hamburger Menu — Version Footer', () => {
     // "Club Arena V1.12" (capital V — house Title Case), and the original
     // lower-case regex could never match it. It never had to: signed out this
     // spec skipped, so the assertion was first evaluated on 2026-08-23.
-    const version = page.locator('text=/Club Arena v/i');
+    const version = page.getByText(/Club Arena .* Command Deck V\d/i).first();
+    await version.scrollIntoViewIfNeeded();
     await expect(version).toBeVisible({ timeout: 3000 });
   });
 });

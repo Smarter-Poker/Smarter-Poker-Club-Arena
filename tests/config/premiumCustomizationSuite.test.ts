@@ -39,4 +39,14 @@ describe('premium customization suite', () => {
     expect(collections).toContain('table-studio-favorites:');
     expect(collections).toContain(".from('user_table_studio_preferences')");
   });
+
+  it('prioritizes the selected gameplay art while catalog art stays progressive', () => {
+    const css = read('src/components/table/ThemeSettingsModal.css');
+    expect(preview.match(/fetchPriority="high"/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(preview.match(/loading="eager"/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(modal).toContain('loading="lazy"');
+    expect(assets).toContain('TABLE_SKIN_THUMBNAILS');
+    expect(assets).toContain('TABLE_BACKGROUND_THUMBNAILS');
+    expect(css).toContain('content-visibility: auto');
+  });
 });

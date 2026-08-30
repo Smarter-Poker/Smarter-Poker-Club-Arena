@@ -249,6 +249,11 @@ export default function VIPPage() {
   if (loading) {
     return (
       <div className="vip-page">
+        <header className="vip-page__hero">
+          <span>Rewards Circuit</span>
+          <h1>VIP Rewards</h1>
+          <p>Track Your Status, Benefits, And Exclusive Rewards.</p>
+        </header>
         <div className="loading-state">
           <PageSkeleton variant="stats" />
         </div>
@@ -258,6 +263,11 @@ export default function VIPPage() {
 
   return (
     <div className="vip-page">
+      <header className="vip-page__hero">
+        <span>Rewards Circuit</span>
+        <h1>VIP Rewards</h1>
+        <p>Track Your Status, Benefits, And Exclusive Rewards.</p>
+      </header>
       {/* VIP Stats Header */}
       {vipEntranceComplete && (
         <VIPStatsHeader

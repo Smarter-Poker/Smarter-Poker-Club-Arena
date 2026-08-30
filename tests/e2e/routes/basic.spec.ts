@@ -2,42 +2,43 @@ import { test, expect } from '@playwright/test';
 import { expectRoute, assertRendered } from './utils';
 
 test.describe('Authentication Flow', () => {
-    test('should allow guest access to clubs page', async ({ page }) => {
-        await page.goto('clubs');
+  test('should route the retired clubs index to the canonical lobby', async ({ page }) => {
+    await page.goto('clubs');
 
-        // App allows guest access to clubs page
-        await expect(page).toHaveURL(/.*clubs/);
-        await assertRendered(page, 'clubs');
-    });
+    await expect
+      .poll(() => new URL(page.url()).pathname, { timeout: 10000 })
+      .toMatch(/^(?:\/hub\/club-arena)?\/$/);
+    await assertRendered(page, 'canonical lobby');
+  });
 
-    test('should show home page', async ({ page }) => {
-        await page.goto('');
+  test('should show home page', async ({ page }) => {
+    await page.goto('');
 
-        // Home page should load
-        await assertRendered(page, '');
-    });
+    // Home page should load
+    await assertRendered(page, '');
+  });
 });
 
 test.describe('Navigation', () => {
-    test('should navigate to clubs page', async ({ page }) => {
-        await expectRoute(page, 'clubs');
-    });
+  test('should navigate to clubs page', async ({ page }) => {
+    await expectRoute(page, 'clubs');
+  });
 
-    test('should navigate to tournaments page', async ({ page }) => {
-        await expectRoute(page, 'tournaments');
-    });
+  test('should navigate to tournaments page', async ({ page }) => {
+    await expectRoute(page, 'tournaments');
+  });
 
-    test('should navigate to leaderboard page', async ({ page }) => {
-        await expectRoute(page, 'leaderboard');
-    });
+  test('should navigate to leaderboard page', async ({ page }) => {
+    await expectRoute(page, 'leaderboard');
+  });
 });
 
 test.describe('VIP Page', () => {
-    test('should allow guest access to VIP page', async ({ page }) => {
-        await page.goto('vip');
+  test('should allow guest access to VIP page', async ({ page }) => {
+    await page.goto('vip');
 
-        // App allows guest access to VIP page
-        await expect(page).toHaveURL(/.*vip/);
-        await assertRendered(page, 'vip');
-    });
+    // App allows guest access to VIP page
+    await expect(page).toHaveURL(/.*vip/);
+    await assertRendered(page, 'vip');
+  });
 });

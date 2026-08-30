@@ -40,7 +40,6 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 // The file is PushNotificationService.ts. macOS resolves './push...' anyway and
 // Linux CI does not, which is exactly how a red test reached main on 2026-08-21.
-import { pushNotificationService } from './PushNotificationService';
 
 /**
  * crypto.randomUUID is not in every embedded webview; fall back rather than throw.
@@ -87,27 +86,33 @@ function unwrap(data: unknown): CashoutRpcResult | null {
 }
 
 /**
- * A push is a courtesy on top of the in-app notification the RPC already wrote
- * inside the money transaction. It must never be able to fail the operation the
- * chips already completed, so every call is swallowed and reported.
+ * RETIRED 2026-08-30 (#1498). This is now a no-op that the compiler will not
+ * let anyone quietly re-point at a dead transport.
+ *
+ * The comment this replaces was right about the important part: the cash-out
+ * RPCs already write an in-app notification INSIDE the money transaction --
+ * fn_cashout_approve ('cashout_approved'), fn_cashout_release
+ * ('cashout_cancelled' / 'cashout_denied'), fn_cashout_request
+ * ('cashout_request_escrow'), fn_expire_stale_cashouts
+ * ('cashout_expired_refund') -- and trg_mirror_notification_to_push_outbox
+ * turns every one of those into a push. Cash-out notifications have been
+ * working server-side the whole time.
+ *
+ * What this function added on top was a SECOND push over the same event, sent
+ * from the browser through a transport that OneSignal's retirement on
+ * 2026-08-19 had already killed. So it delivered nothing, and if it had been
+ * repointed rather than removed it would have delivered everything twice.
+ *
+ * Kept as an empty shim rather than deleted so the three call sites below stay
+ * readable as "the RPC notifies here" instead of losing the marker entirely.
  */
 async function pushQuietly(
-  userId: string,
-  title: string,
-  message: string,
-  url: string
+  _userId: string,
+  _title: string,
+  _message: string,
+  _url: string
 ): Promise<void> {
-  if (!userId) return;
-  try {
-    await pushNotificationService.sendToUser(userId, {
-      title,
-      message,
-      category: 'settlement',
-      url,
-    });
-  } catch (e) {
-    reportError(e, 'CashoutService.push', { userId, title });
-  }
+  // Intentionally empty. See above: the RPC already notified.
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

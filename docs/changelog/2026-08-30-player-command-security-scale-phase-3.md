@@ -34,13 +34,17 @@ The Club Arena Players surface now uses a role-shaped server contract instead of
 
 No new generated image was added. The accepted physical ledger hero remains, while the phase-three identity comes from the pit-tape console and roster hardware. The composition and its no-reuse rule are recorded in `docs/VISUAL-COMPOSITION-REGISTRY.md`.
 
-## Verification recorded before publication
+## Verification and production evidence
 
 - TypeScript compiler: passed.
-- Targeted roster regressions: 51 passed.
+- Targeted roster regressions: 54 passed.
+- Full repository suite: 655 files and 9,591 tests passed.
+- Production build: passed from the current branch with `behind-main=0`; the Player Command chunk is 17.28 kB (6.17 kB gzip).
 - Transactional migration compile: passed and rolled back.
 - Transactional role simulation: player, staff, agent-downline, and outsider contracts passed and rolled back.
+- Production migration: applied and committed to `kuklfnapbkmacvwxktbh`.
+- Live authorization probes: anonymous/internal-helper denial, ordinary-player redaction/export denial, staff export, recursive agent visibility, outsider denial, and direct-note-write guard all passed.
+- Live audited write probes: selected export and atomic nickname/remark RPC both passed; the audit rows were verified and the probe transaction was rolled back so member data was not changed.
 - Production-scale rollback probe on SHARK CLUB: summary 17.142 ms; first 80-row page 252.290 ms.
 - Payload probe: summary 361 bytes; first page 81,556 bytes, versus the previous full roster measurement of 516,154 bytes.
-
-Live migration application, full repository tests, build, protected push, publication, and cold production verification are recorded in the delivery commit/PR evidence rather than claimed in advance.
+- Protected merge, World Hub publication, and cold production verification are recorded by their immutable commit/PR and `build-info.json` evidence.

@@ -8,7 +8,6 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { pushNotificationService } from './PushNotificationService';
 import { retryAsync } from '../utils/retryAsync';
 import { masterBus } from '../core/MasterBus';
 import { QUERY_LIMITS } from '../lib/constants';
@@ -207,12 +206,7 @@ class CreditRequestServiceClass {
     });
     // Notify requester
     try {
-      await pushNotificationService.sendToUser(request.requester_id, {
-        title: 'Credit Line Increased',
-        message: `Your credit line was raised to ${amount.toLocaleString()} chips`,
-        category: 'wallet_credit',
-        url: '/wallet',
-      });
+      // Notification removed 2026-08-30 (#1498) - trg_notify_credit_request fires on status -> 'approved'.
     } catch (e: unknown) {
       reportError(e, 'CreditRequestService.approveRequest.notify', {
         requesterId: request.requester_id,
@@ -253,11 +247,7 @@ class CreditRequestServiceClass {
 
     // Notify requester
     try {
-      await pushNotificationService.sendToUser(request.requester_id, {
-        title: ' Credit Request Denied',
-        message: notes || 'Your credit request was not approved',
-        category: 'wallet_credit',
-      });
+      // Notification removed 2026-08-30 (#1498) - trg_notify_credit_request fires on status -> 'denied'.
     } catch (e: unknown) {
       reportError(e, 'CreditRequestService.denyRequest.notify', {
         requesterId: request.requester_id,
@@ -343,12 +333,7 @@ class CreditRequestServiceClass {
     requesterName: string,
     amount: number
   ): Promise<void> {
-    await pushNotificationService.sendToUser(approverId, {
-      title: 'Credit Request',
-      message: `${requesterName} requested ${amount.toLocaleString()} chips credit`,
-      category: 'wallet_credit',
-      url: '/agent/credit-requests',
-    });
+    // Notification removed 2026-08-30 (#1498) - trg_notify_credit_request fires on INSERT.
   }
 
   /** Resolve id -> username for requester/approver display (no FK to embed). */

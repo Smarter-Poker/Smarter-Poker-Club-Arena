@@ -3,6 +3,11 @@
 --  Read-only. Nothing here writes, so it is safe to run against production.
 -- ═══════════════════════════════════════════════════════════════════════════
 --
+--  SEE ALSO: scripts/dev/money-conservation.sql -- does the money add up.
+--  This file asks whether the GAME is stuck; that one asks whether the MONEY
+--  is right. Every money bug found on 2026-08-29/30 was found by one of its
+--  queries, and none by reading code first.
+--
 -- WHY THIS FILE EXISTS. The deadlock check that agents have been passing to
 -- each other in handoff notes reads:
 --

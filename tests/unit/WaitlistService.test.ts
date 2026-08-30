@@ -29,9 +29,7 @@ vi.mock('../../src/lib/supabase', () => {
       // service could run any query. Returning a real signed-in user keeps the
       // authenticated path under test instead of short-circuiting on null.
       auth: {
-        getUser: vi.fn(() =>
-          Promise.resolve({ data: { user: { id: 'user-1' } }, error: null })
-        ),
+        getUser: vi.fn(() => Promise.resolve({ data: { user: { id: 'user-1' } }, error: null })),
         getSession: vi.fn(() => Promise.resolve({ data: { session: null }, error: null })),
       },
       from: () => buildChain(),
@@ -169,9 +167,24 @@ describe('waitlist table name', () => {
   });
 
   it('the engine seat-offer path uses the canonical table', () => {
-    const src = readFileSync('server/src/services/supabase/seats.ts', 'utf8');
-    // If this file ever points elsewhere, joining a queue silently stops
-    // leading to a seat offer -- the exact bug this replaced.
-    expect(src).toContain("from('table_waitlist')");
+    /* The rule is unchanged: if the offer path ever points at a different
+       table, joining a queue silently stops leading to a seat offer — which is
+       the exact bug this replaced (the engine read `table_waitlists` while
+       every client wrote `table_waitlist`, so no offer could ever fire).
+
+       WHERE it is enforced moved on 2026-08-30. The whole sequence became
+       `fn_offer_open_seat` — one transaction, so the queue-head claim stops
+       racing a concurrent opener and losing the seat in silence — and the
+       engine no longer names any table at all. So the assertion follows it
+       into the migration rather than being deleted. */
+    const ts = readFileSync('server/src/services/supabase/seats.ts', 'utf8');
+    expect(ts).toContain("rpc('fn_offer_open_seat'");
+
+    const dir = 'supabase/migrations';
+    const file = readdirSync(dir).find((f) => f.includes('offer_open_seat'));
+    expect(file, 'the offer migration is missing').toBeTruthy();
+    const sql = readFileSync(`${dir}/${file}`, 'utf8');
+    expect(sql).toMatch(/FROM public\.table_waitlist w/);
+    expect(sql).not.toMatch(/table_waitlists\b/);
   });
 });

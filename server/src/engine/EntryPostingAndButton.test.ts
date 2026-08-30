@@ -44,7 +44,12 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { sliceBlockAfter, sliceEnclosingBlock, sliceMethod, sliceStatement } from '../testHelpers/sourceWindow.js';
+import {
+  sliceBlockAfter,
+  sliceEnclosingBlock,
+  sliceMethod,
+  sliceStatement,
+} from '../testHelpers/sourceWindow.js';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
@@ -167,6 +172,94 @@ describe('a cash entrant either waits for the big blind or posts it', () => {
     expect(replayBody).toMatch(/waitingForBB\.has/);
     expect(replayBody).toMatch(/this\.postBBToEnter\(/);
   });
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * AGREEING TO POST IS ANSWERED ONCE (Dan 2026-08-29, binding)
+   *
+   *   "in cash games when you click POST BB but you are IN BETWEEN THE
+   *    BLINDS you get this pop up... that shouldn't happen because you
+   *    already agreed to post bb, it should be a pop up that says, 'You Are
+   *    In Between The Blinds, And Will Be Dealt In When The Button Passes.'
+   *    and auto post the blind then. it currently makes you hit the button
+   *    again, or it simply won't deal you in at all."
+   *
+   * The positional refusal was correct and stays. What it did to the PLAYER
+   * was the bug: the answer was thrown away, TablePage re-rendered the same
+   * prompt off `waitingForBBUserIds`, and tapping again from the same seat
+   * was refused again — so the only route through was to keep tapping until
+   * the button happened to move.
+   *
+   * These pin the repair without weakening either house rule. The seat check
+   * still runs on every replay, so nothing here posts from the small blind or
+   * the button; the agreement only stops the WAIT from costing the answer.
+   * ═══════════════════════════════════════════════════════════════════════
+   */
+  it('a positional hold-out KEEPS the answer instead of discarding it', () => {
+    const seating = strip(read('src/engine/ServerTableEngineSeating.ts'));
+    const body = sliceMethod(seating, 'public postBBToEnter');
+    // The refusal branch banks the agreement...
+    const guard = body.indexOf('seat.seat_number === buttonSeatIndex');
+    const held = body.indexOf('this.postBBWhenClear.add(userId)');
+    expect(guard, 'the positional guard is gone').toBeGreaterThan(-1);
+    expect(held, 'a positional hold-out no longer records the agreement').toBeGreaterThan(-1);
+    expect(held).toBeGreaterThan(guard);
+    // ...and reports it as HELD, not as a failure, so the client can tell the
+    // two apart and stop asking.
+    expect(body).toMatch(/deferred: true/);
+    expect(body).toMatch(/You Are In Between The Blinds/);
+  });
+
+  it('the held agreement never buys past the small blind or the button', () => {
+    // The whole point: this is a way past the WAIT only. The replay re-enters
+    // the same guarded method, so the seat is re-checked on every single pass
+    // rather than being decided once at the moment of the tap.
+    const seating = strip(read('src/engine/ServerTableEngineSeating.ts'));
+    const body = sliceMethod(seating, 'public postBBToEnter');
+    const guard = body.indexOf('getSBSeatIndex');
+    const release = body.indexOf('this.waitingForBB.delete(userId)');
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(release);
+
+    const dealing = strip(read('src/engine/ServerTableEngineDealing.ts'));
+    const replay = sliceBlockAfter(dealing, 'if (this.postBBWhenClear.size > 0) {');
+    expect(replay).toMatch(/this\.postBBToEnter\(/);
+    expect(replay).not.toMatch(/waitingForBB\.delete/);
+    expect(replay).not.toMatch(/postingBBToEnter\.add/);
+  });
+
+  it('the loop replays the agreement AFTER the natural-BB release', () => {
+    // Same double-charge guard as the queued-post replay above: a waiter whose
+    // seat has just become the big blind is released first and posts it as
+    // their own blind, so the agreement must be dropped rather than billed.
+    const dealing = strip(read('src/engine/ServerTableEngineDealing.ts'));
+    const release = dealing.indexOf('p.seat_number === bbSeatIndex');
+    const replay = dealing.indexOf('postBBWhenClear.size > 0');
+    expect(release).toBeGreaterThan(-1);
+    expect(replay, 'the loop must replay held agreements').toBeGreaterThan(-1);
+    expect(replay).toBeGreaterThan(release);
+  });
+
+  it('membership is not consumed on the attempt, and cannot outlive the seat', () => {
+    // Consuming it on the first pass would throw the answer away exactly as
+    // the old refusal did. It is retried instead, and ended on precisely
+    // three outcomes: posted, released, or gone from the table.
+    const dealing = strip(read('src/engine/ServerTableEngineDealing.ts'));
+    const replay = sliceBlockAfter(dealing, 'if (this.postBBWhenClear.size > 0) {');
+    expect(replay).toMatch(/seatedPlayers\.some/);
+    expect(replay).toMatch(/!this\.waitingForBB\.has\(userId\)/);
+    expect(replay).toMatch(/postBBWhenClear\.delete/);
+    // And the leaver sweep prunes it beside the other per-table sets.
+    expect(dealing).toMatch(/for \(const id of this\.postBBWhenClear\)/);
+  });
+
+  it('the engine publishes the agreement so the client stops asking', () => {
+    // Without this the overlay returns on the very next snapshot and after
+    // every reload, which IS the reported bug. The optimistic client flag only
+    // covers the poll in between; this is the durable answer.
+    const engine = strip(read('src/engine/ServerTableEngine.ts'));
+    expect(engine).toMatch(/post_bb_deferred_user_ids: Array\.from\(this\.postBBWhenClear\)/);
+  });
 });
 
 describe('a new player never receives the button', () => {
@@ -196,7 +289,9 @@ describe('a new player never receives the button', () => {
     // roster after every deploy and the rule is unenforceable for an orbit.
     const at = DEALING.indexOf('if (this.dealingLoopFirstIteration)');
     expect(at).toBeGreaterThan(-1);
-    expect(sliceBlockAfter(DEALING, 'if (this.dealingLoopFirstIteration)')).toMatch(/this\.dealtInUserIds\.add\(p\.user_id\)/);
+    expect(sliceBlockAfter(DEALING, 'if (this.dealingLoopFirstIteration)')).toMatch(
+      /this\.dealtInUserIds\.add\(p\.user_id\)/
+    );
   });
 
   it('the rotation itself walks the eligible roster, not the raw deal roster', () => {
@@ -212,7 +307,9 @@ describe('a new player never receives the button', () => {
     // it buttonEligible returns [] and the rotation has nothing to choose.
     const at = BASE.indexOf('protected buttonEligible');
     expect(at, 'buttonEligible not found').toBeGreaterThan(-1);
-    expect(sliceMethod(BASE, 'protected buttonEligible')).toMatch(/veterans\.length > 0 \? veterans : roster/);
+    expect(sliceMethod(BASE, 'protected buttonEligible')).toMatch(
+      /veterans\.length > 0 \? veterans : roster/
+    );
   });
 
   it('taking the seat the button is about to reach cannot hand it to a new player', () => {
@@ -259,7 +356,9 @@ describe('a new player never receives the button', () => {
     // balanced table is mostly players this set has never seen.
     const at = BASE.indexOf('protected buttonEligible');
     expect(at).toBeGreaterThan(-1);
-    expect(sliceMethod(BASE, 'protected buttonEligible')).toMatch(/if \(this\.isTournamentTable\(\)\) return roster;/);
+    expect(sliceMethod(BASE, 'protected buttonEligible')).toMatch(
+      /if \(this\.isTournamentTable\(\)\) return roster;/
+    );
   });
 
   it('the button always moves, so nobody posts the same blind twice', () => {
@@ -281,6 +380,8 @@ describe('a new player never receives the button', () => {
     // makes a returning player a new joiner again, consistent with knownPlayerIds.
     const at = DEALING.indexOf('for (const id of this.dealtInUserIds)');
     expect(at, 'dealtInUserIds pruning not found').toBeGreaterThan(-1);
-    expect(sliceBlockAfter(DEALING, 'for (const id of this.dealtInUserIds)')).toMatch(/currentIds\.has\(id\)/);
+    expect(sliceBlockAfter(DEALING, 'for (const id of this.dealtInUserIds)')).toMatch(
+      /currentIds\.has\(id\)/
+    );
   });
 });

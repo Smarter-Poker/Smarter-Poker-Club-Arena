@@ -76,6 +76,7 @@ import './PlayerStatsPage.css';
 import { reportError } from '../utils/errorReporter';
 import DownlineRakePanel from '../components/agent/DownlineRakePanel';
 import { AgentRakeService, type AgentRoleRow } from '../services/AgentRakeService';
+import { StatsFactsService, type PlayerRakeStats } from '../services/StatsFactsService';
 
 // ── SWR Cache helpers (localStorage for cross-session persistence) ──
 const STATS_CACHE_KEY = STATS_CACHE_PREFIX;
@@ -842,6 +843,37 @@ export default function PlayerStatsPage() {
     };
   }, [isOwnProfile, user?.id]);
 
+  // POLISH 1 (Dan 2026-08-30): the player's OWN weighted rake. Cent-exact,
+  // from the same allocator the money pipeline uses. Own profile only — the
+  // RPC derives identity from auth.uid() and would refuse anyone else anyway.
+  const [rakeStats, setRakeStats] = useState<PlayerRakeStats | null>(null);
+  useEffect(() => {
+    if (!isOwnProfile || !user?.id) {
+      setRakeStats(null);
+      return;
+    }
+    let cancelled = false;
+    // Defensive by doctrine: a stale cached bundle (or any build where this
+    // method is absent) must degrade to "no rake panel", never take the whole
+    // stats page down with it.
+    const load = StatsFactsService?.getRakeStats;
+    if (typeof load !== 'function') {
+      setRakeStats(null);
+      return;
+    }
+    void load
+      .call(StatsFactsService, null)
+      .then((r) => {
+        if (!cancelled) setRakeStats(r);
+      })
+      .catch(() => {
+        if (!cancelled) setRakeStats(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOwnProfile, user?.id]);
+
   const canSeeRake = (agentRoles?.length ?? 0) > 0;
   const TABS = useMemo<StatCategory[]>(() => {
     // Owner-only tabs are spliced in next to the tab they belong with, so the
@@ -852,7 +884,7 @@ export default function PlayerStatsPage() {
       if (isOwnProfile && t === 'positions') out.push('hands');
       if (isOwnProfile && t === 'analysis') out.push('trophies');
     }
-    return canSeeRake ? [...out, 'rake'] : out;
+    return canSeeRake || isOwnProfile ? [...out, 'rake'] : out;
   }, [canSeeRake, isOwnProfile]);
 
   // If the tab disappears (role revoked, or navigating to another profile),
@@ -862,8 +894,8 @@ export default function PlayerStatsPage() {
   }, [TABS, category]);
 
   useEffect(() => {
-    if (category === 'rake' && !canSeeRake) setCategory('overview');
-  }, [category, canSeeRake]);
+    if (category === 'rake' && !canSeeRake && !isOwnProfile) setCategory('overview');
+  }, [category, canSeeRake, isOwnProfile]);
   const statsSwipeHandlers = useSwipeTabs({
     tabs: TABS,
     activeTab: category,
@@ -1619,6 +1651,50 @@ export default function PlayerStatsPage() {
           {!hasData && category !== 'rake' && emptyState}
 
           {/* ── RAKE TAB — live downline earnings, agents only ── */}
+          {showTab('rake') && isOwnProfile && rakeStats && rakeStats.hands > 0 && (
+            <PanelBoundary name="Your Rake">
+              <div className="stats-grid">
+                <StatRow
+                  label="Rake Paid"
+                  value={rakeStats.rake_paid.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                  color="#f59e0b"
+                  highlight
+                />
+                <StatRow
+                  label="Rake Per 100 Hands"
+                  value={rakeStats.rake_per_100.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                  color="#00d4ff"
+                />
+                <StatRow
+                  label="Rake In Big Blinds"
+                  value={rakeStats.rake_in_bb.toFixed(2)}
+                  color="#8b5cf6"
+                />
+                <StatRow
+                  label="Raked Hands"
+                  value={rakeStats.raked_hands.toLocaleString()}
+                  color="#22c55e"
+                />
+                <StatRow
+                  label="Average Per Raked Hand"
+                  value={rakeStats.avg_rake_per_raked_hand.toFixed(4)}
+                  color="#06b6d4"
+                />
+                <StatRow
+                  label="Cash Hands Counted"
+                  value={rakeStats.hands.toLocaleString()}
+                  color="#4169E1"
+                />
+              </div>
+            </PanelBoundary>
+          )}
+
           {showTab('rake') && agentRoles && agentRoles.length > 0 && (
             <PanelBoundary name="Downline Rake">
               <DownlineRakePanel roles={agentRoles} />

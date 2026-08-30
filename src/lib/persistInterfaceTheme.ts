@@ -9,9 +9,9 @@ export interface PersistInterfaceThemeResult {
 
 /*
  * Persist the interface mode selected inside Table Studio without replacing
- * the rest of profiles.settings. SettingsPage writes the complete settings
- * object, while the studio owns only this one key; reading and merging keeps
- * notification and gameplay preferences intact.
+ * the rest of profiles.settings. The database function applies jsonb_set in a
+ * single UPDATE, so another device can save notification/gameplay preferences
+ * at the same time without either client writing an older whole-object copy.
  *
  * Writes are serialized per account. A fast Light -> Dark tap sequence must
  * finish in tap order instead of allowing the slower first request to become
@@ -28,26 +28,8 @@ export async function persistInterfaceTheme(
   const previousTail = writeTails.get(userId) ?? Promise.resolve();
   const task = previousTail.then(async (): Promise<unknown | undefined> => {
     try {
-      const { data, error: readError } = await supabase
-        .from('profiles')
-        .select('settings')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (readError) return readError;
-
-      const stored = data?.settings;
-      const currentSettings =
-        stored && typeof stored === 'object' && !Array.isArray(stored)
-          ? (stored as Record<string, unknown>)
-          : {};
-
-      const { error: writeError } = await supabase
-        .from('profiles')
-        .update({ settings: { ...currentSettings, theme } })
-        .eq('id', userId);
-
-      return writeError ?? undefined;
+      const { error } = await supabase.rpc('fn_set_interface_theme', { p_theme: theme });
+      return error ?? undefined;
     } catch (error) {
       return error;
     }

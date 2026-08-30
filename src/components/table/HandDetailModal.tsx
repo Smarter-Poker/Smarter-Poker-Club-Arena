@@ -53,6 +53,7 @@ import HandDetailView from '../handdetail/HandDetailView';
 import { useHandReplayModel } from '../../hooks/useHandReplayModel';
 import './HandDetailModal.css';
 import { gameTypeLabel } from '../../utils/handFormat';
+import { StatsFactsService, type HandRakeShare } from '../../services/StatsFactsService';
 
 export interface HandDetailModalProps {
   isOpen: boolean;
@@ -81,6 +82,57 @@ export interface HandDetailModalProps {
   onReplay?: (hand: HandRecord) => void;
   /** Open the share modal for THE HAND PASSED IN. Same trap as onReplay. */
   onShare?: (hand: HandRecord) => void;
+}
+
+/**
+ * POLISH 1 (Dan 2026-08-30): "your rake share" for this hand.
+ *
+ * Weighted contributed rake means a player's rake is proportional to what
+ * they actually put in the pot, so the honest thing is to show them their own
+ * number rather than the table's. Read from the authoritative per-player
+ * ledger (rake_attributions) via an RPC that derives identity from
+ * auth.uid(); it never exposes anyone else's contribution. Purely additive:
+ * it renders in HandDetailView's existing footer slot and touches no
+ * animation-bearing surface.
+ */
+function HandRakeShareBlock({ share }: { share: HandRakeShare }) {
+  if (!share?.found || (share.your_contribution ?? 0) <= 0) return null;
+  const n = (v: number | undefined, dp = 2) => Number(v ?? 0).toFixed(dp);
+  return (
+    <div className="hdm-rake-share">
+      <div className="hdm-rake-share__title">Your Rake On This Hand</div>
+      <div className="hdm-rake-share__rows">
+        <div className="hdm-rake-share__row">
+          <span>Your Contribution</span>
+          <strong>{n(share.your_contribution)}</strong>
+        </div>
+        {(share.your_returned_uncalled ?? 0) > 0 && (
+          <div className="hdm-rake-share__row">
+            <span>Returned To You (Uncalled)</span>
+            <strong>{n(share.your_returned_uncalled)}</strong>
+          </div>
+        )}
+        <div className="hdm-rake-share__row">
+          <span>Your Share Of The Pot</span>
+          <strong>{n(share.your_share_pct, 1)}%</strong>
+        </div>
+        <div className="hdm-rake-share__row is-primary">
+          <span>Your Rake</span>
+          <strong>
+            {n(share.your_rake)} Of {n(share.hand_rake)}
+          </strong>
+        </div>
+        {(share.hand_bbj ?? 0) > 0 && (
+          <div className="hdm-rake-share__row">
+            <span>Your Jackpot Drop</span>
+            <strong>
+              {n(share.your_bbj)} Of {n(share.hand_bbj)}
+            </strong>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 const SUIT_GLYPH: Record<string, string> = { s: '♠', h: '♥', d: '♦', c: '♣' };
@@ -292,6 +344,32 @@ export function HandDetailModal({
 
   // The raw row behind the hand on screen, rebuilt by the shared reconstruction.
   const { model: replay, state: replayState } = useHandReplayModel(isOpen && hand ? hand.id : null);
+
+  // POLISH 1: the viewer's own rake for THIS hand. Fetched per open hand and
+  // cleared between hands, so paging never shows the previous hand's figure.
+  // A failure is silent by design — the block simply does not render.
+  const [rakeShare, setRakeShare] = useState<HandRakeShare | null>(null);
+  useEffect(() => {
+    if (!isOpen || !hand?.id || !heroId) {
+      setRakeShare(null);
+      return;
+    }
+    let cancelled = false;
+    setRakeShare(null);
+    const load = StatsFactsService?.getHandRakeShare;
+    if (typeof load !== 'function') return;
+    void load
+      .call(StatsFactsService, hand.id)
+      .then((r) => {
+        if (!cancelled) setRakeShare(r);
+      })
+      .catch(() => {
+        if (!cancelled) setRakeShare(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, hand?.id, heroId]);
 
   const positionOf = useMemo(() => {
     const m = new Map<string, string>();
@@ -535,6 +613,7 @@ export function HandDetailModal({
               currentUserId={heroId}
               currentUserName={currentUserName}
               badge={gameTypeLabel(hand.gameType)}
+              footer={rakeShare ? <HandRakeShareBlock share={rakeShare} /> : null}
             />
           ) : tab === 'detail' && (replayState === 'loading' || replayState === 'idle') ? (
             <>

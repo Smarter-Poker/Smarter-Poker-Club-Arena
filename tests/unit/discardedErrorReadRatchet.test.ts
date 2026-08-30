@@ -61,7 +61,7 @@ const countsByFile = (): Map<string, number> => {
   return map;
 };
 
-/** Frozen 2026-08-29 (round 10). 275 occurrences. Only ever shrink. */
+/** Frozen 2026-08-30 (Community Command Center). 266 occurrences. Only ever shrink. */
 const BASELINE = new Map<string, number>([
   ['src/services/HorseOrchestrator.ts', 11],
   ['src/services/AgentService.ts', 13],
@@ -76,7 +76,6 @@ const BASELINE = new Map<string, number>([
   ['src/services/FriendSuggestionService.ts', 4],
   ['src/services/CreditRequestService.ts', 4],
   ['src/services/ChipFlowService.ts', 4],
-  ['src/pages/SearchPage.tsx', 4],
   ['src/pages/HomePage.tsx', 4],
   ['src/pages/BadBeatJackpotPage.tsx', 4],
   ['src/components/social/PlayerActivityFeed.tsx', 4],
@@ -125,8 +124,6 @@ const BASELINE = new Map<string, number>([
   ['src/components/tournament/TournamentStartingTicker.tsx', 2],
   ['src/components/social/OnlineFriendsPill.tsx', 2],
   ['src/components/social/FriendListPanel.tsx', 1],
-  ['src/components/social/FriendChallengesPanel.tsx', 2],
-  ['src/components/social/FriendActivityFeed.tsx', 2],
   ['src/components/gameplay/PlayerNotesPanel.tsx', 1],
   ['src/components/common/UnionSkinGuard.tsx', 2],
   ['src/components/bbj/BBJTicker.tsx', 2],
@@ -164,7 +161,6 @@ const BASELINE = new Map<string, number>([
   ['src/pages/MemberManagementPage.tsx', 1],
   ['src/pages/MarketplacePage.tsx', 1],
   ['src/pages/InvitePage.tsx', 1],
-  ['src/pages/FriendsPage.tsx', 1],
   ['src/pages/CreateUnionPage.tsx', 1],
   ['src/pages/ClubMembersPage.tsx', 1],
   ['src/pages/ClubFinancialsPage.tsx', 1],

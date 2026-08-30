@@ -101,3 +101,50 @@ describe('the money-path migrations that guard the bounty chests', () => {
     expect(latest).toMatch(/v_refused/);
   });
 });
+
+describe('a promotion cannot advertise a prize nobody can win, silently', () => {
+  /**
+   * `promotion_leaderboards.prize` is read and rendered to players. NOTHING
+   * writes it: updateLeaderboardScore upserts `score` only, and
+   * recalculate_leaderboard_ranks writes `rank` and `updated_at` only. There is
+   * no high-hand scorer, no rake-race settler and no leaderboard payout job
+   * anywhere in the repo.
+   *
+   * So a club can advertise a prize pool on a leaderboard / high_hand /
+   * rake_race promotion, players can enter and qualify, and nobody can ever be
+   * paid. Measured 2026-08-29: four promotions carrying 9,500 of advertised
+   * pool, zero leaderboard entries, zero prizes written.
+   *
+   * The payout itself is NOT built here on purpose -- how a pool splits by
+   * rank and what qualifies are product rules, and inventing them is the
+   * mistake that had fn_settle_tournament_rake paying nobody for 39 events.
+   * The guard makes the gap loud instead of silent.
+   *
+   * WHEN THE PAYOUT IS BUILT: delete the trigger and this test together.
+   */
+  const MIGRATIONS = path.join(process.cwd(), 'supabase', 'migrations');
+
+  it('warns when an unpayable promotion type goes active with a prize pool', () => {
+    const owning = fs
+      .readdirSync(MIGRATIONS)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()
+      .map((f) => fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'))
+      .filter((b) => b.includes('trg_promotion_prize_has_no_payout_path'));
+
+    expect(owning.length, 'the no-payout-path guard migration is missing').toBeGreaterThan(0);
+    const latest = owning[owning.length - 1];
+    expect(latest).toMatch(/'leaderboard', 'high_hand', 'rake_race'/);
+    expect(latest).toMatch(/promotions\.no_payout_path/);
+    // It must WARN, never block: refusing the insert would break a club
+    // mid-setup for a feature gap that is not their fault.
+    expect(latest).not.toMatch(/RAISE EXCEPTION[^;]*no_payout_path/);
+  });
+
+  it('still has no writer for promotion_leaderboards.prize — the guard is not vacuous', () => {
+    // If this ever fails, the payout was built: delete the trigger and this
+    // whole describe block.
+    const svc = read('src/services/PromotionService.ts');
+    expect(svc).not.toMatch(/promotion_leaderboards[\s\S]{0,300}?prize:/);
+  });
+});

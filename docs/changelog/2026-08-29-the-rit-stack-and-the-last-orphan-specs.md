@@ -99,3 +99,61 @@ production is serving, records which sha it is about to test (and says plainly
 in the summary whether that is this run's commit or a newer one that overtook
 it), and runs. About three minutes instead of thirteen, and cancellation only
 dedupes a burst instead of starving the job.
+
+## 4. What the post-deploy tier found on its very first complete run
+
+23 passed, 3 failed, 4.8 minutes, against the live site. Every failure was
+worth having, and only one of them is a defect.
+
+**Two were the tier crying wolf, and that was the more urgent thing to fix.**
+It reported controls as unreachable on /friends and on the club home, including
+a "Challenge" button with ZERO reachable pixels. Probed live, none of them was a
+tap-target problem: `ClubArenaWelcomeModal` was open and
+`document.elementFromPoint` was returning its overlay for every point on the
+page. A suite that reports every control on every route as unreachable gets
+muted, and a muted suite is the thing this whole workstream exists to prevent —
+so the two mobile specs now set `STORAGE_KEYS.WELCOME_ACCEPTED` from an
+`addInitScript`, which runs before every document in their own context. The
+storageState global-setup captures is correct and stays; it is simply not
+sufficient for a spec that opens its own `isMobile` context.
+
+**One is a real accessibility defect, and it needs a design decision rather
+than a patch.** `.club-identity__line` — the club identity card's two ID lines,
+which are real buttons that copy the id — paints 11px tall with no hit area at
+all. The repo's established remedy is an invisible 44px `::after`, and it
+provably cannot work here: the two lines are adjacent rows of a
+`grid-template-rows: 1.2fr 1fr 1fr 1fr` with no row-gap, so two 44px bands
+centred ~14px apart overlap almost completely, the later-painted one wins the
+overlap, and the upper line still fails. That is trap #1 in club-engine.css's
+own notes ("the container needs a row-gap of at least 12px, not the ::after a
+smaller height"), and adding that row-gap changes the proportions of a card
+Dan approved.
+
+I wrote the ::after fix, measured that it would not actually fix it, and took
+it back out rather than ship a change that looks like a repair. The options are
+real ones for Dan: give the identity card's detail rows enough separation to
+carry two thumb targets, or stop making both lines buttons and copy the id from
+one control. Until then the post-deploy job stays red on this single, named,
+genuine finding — which is what an open bug should look like, and it cannot
+block anyone's merge.
+
+## 5. The orphan sweep had its own blind spot: it only globbed one level
+
+The sweep that wired sixteen orphans into jobs used `tests/e2e/*.spec.ts`, and
+`tests/e2e/routes/` is one level down. Nine route suites — admin, basic,
+cashier-deep, clubs, features, financial-flows, hamburger-menu, operations,
+social — stayed invisible to the very audit that existed to find them, and the
+report that said "20 of 20" was counting 20 of 29.
+
+They are wired now, and named as a DIRECTORY (`tests/e2e/routes`) rather than
+nine filenames, so a tenth file added beside them cannot arrive orphaned.
+
+`diamond-checkout-mobile.spec.ts` was also missing — it landed from another
+branch the same afternoon and arrived with no job, which is the trap operating
+in real time while the fix for it was being written. It is self-contained
+(readFileSync + setContent), so it joined the merge gate: 12 specs, 108 beats.
+
+Final state: **30 spec files, every one of them named in a job.** This morning
+it was 4. The verification is stricter now too — the check confirms every spec
+NAMED in a workflow actually exists on disk, because a typo'd filename in a job
+is a silent orphan wearing a green tick.

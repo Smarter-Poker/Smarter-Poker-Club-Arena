@@ -7,7 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
   friendSuggestionService,
   type FriendSuggestion,
@@ -22,7 +22,6 @@ import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
 
 export default function FriendSuggestions() {
-  const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
 
@@ -86,9 +85,11 @@ export default function FriendSuggestions() {
         friend_id: userId,
         status: 'pending',
       });
-      if (error) throw error;
+      if (error && error.code !== '23505') throw error;
       if (!isMounted.current) return;
-      toast.success('Friend request sent!');
+      toast.success(
+        error?.code === '23505' ? 'Friend request already sent' : 'Friend request sent!'
+      );
       setDismissed((prev) => new Set(prev).add(userId));
       // Emit bus event so other components react too
       masterBus.emit('FRIEND_REQUEST_SENT', { fromUserId: user.id, toUserId: userId });
@@ -108,17 +109,27 @@ export default function FriendSuggestions() {
   if (loading || visible.length === 0) return null;
 
   return (
-    <div className={styles.container}>
-      <h3 className={styles.title}>People You May Know</h3>
+    <section className={styles.container} aria-labelledby="friend-suggestions-title">
+      <div className={styles.heading}>
+        <div>
+          <span>Discovery Signal</span>
+          <h3 id="friend-suggestions-title" className={styles.title}>
+            Players You May Know
+          </h3>
+        </div>
+        <small>{visible.length} Matches</small>
+      </div>
       <div className={styles.scrollContainer}>
         {visible.map((suggestion) => (
-          <div key={suggestion.userId} className={styles.card}>
+          <article key={suggestion.userId} className={styles.card}>
             <button
               className={styles.dismissBtn}
               onClick={(e) => {
                 e.stopPropagation();
                 handleDismiss(suggestion.userId);
               }}
+              type="button"
+              aria-label={`Dismiss ${suggestion.displayName || suggestion.username}`}
             >
               ✕
             </button>
@@ -145,12 +156,13 @@ export default function FriendSuggestions() {
               className={styles.addBtn}
               onClick={() => handleAddFriend(suggestion.userId)}
               disabled={sendingRequest === suggestion.userId}
+              type="button"
             >
-              {sendingRequest === suggestion.userId ? '...' : '+ Add Friend'}
+              {sendingRequest === suggestion.userId ? 'Sending…' : 'Add Friend'}
             </button>
-          </div>
+          </article>
         ))}
       </div>
-    </div>
+    </section>
   );
 }

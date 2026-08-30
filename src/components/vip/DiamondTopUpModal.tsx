@@ -43,6 +43,12 @@ interface DiamondTopUpModalProps {
   isOpen: boolean;
   onClose: () => void;
   /**
+   * Identifies the surface that should regain control after Stripe returns.
+   * The default keeps every existing VIP/wallet caller unchanged; Table Studio
+   * supplies its own marker so it can restore the exact locked design.
+   */
+  returnParams?: string;
+  /**
    * Kept so callers compile unchanged, but NOT invoked: the balance now moves
    * at Stripe, after a redirect, so there is no in-modal moment at which a new
    * balance is known. Announcing one here is how the old modal reported a
@@ -51,7 +57,11 @@ interface DiamondTopUpModalProps {
   onPurchaseComplete?: (newBalance: number) => void;
 }
 
-export function DiamondTopUpModal({ isOpen, onClose }: DiamondTopUpModalProps) {
+export function DiamondTopUpModal({
+  isOpen,
+  onClose,
+  returnParams = 'from=vip',
+}: DiamondTopUpModalProps) {
   const toast = useToast();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [redirecting, setRedirecting] = useState<string | null>(null);
@@ -122,7 +132,7 @@ export function DiamondTopUpModal({ isOpen, onClose }: DiamondTopUpModalProps) {
     try {
       // The server re-decides the price from the id. On success this never
       // returns — it navigates to Stripe.
-      await startCheckout('diamonds', [{ packageId: pkg.id, quantity: 1 }], 'from=vip');
+      await startCheckout('diamonds', [{ packageId: pkg.id, quantity: 1 }], returnParams);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Could Not Start Checkout');
       setRedirecting(null);

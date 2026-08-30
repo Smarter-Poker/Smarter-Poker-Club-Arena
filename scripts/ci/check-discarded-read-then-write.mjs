@@ -45,14 +45,14 @@
  *         exit 1 on a finding.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const files = execFileSync('git', ['ls-files', 'src/**/*.ts', 'src/**/*.tsx'], {
   encoding: 'utf8',
 })
   .trim()
   .split('\n')
-  .filter(Boolean);
+  .filter((file) => file && existsSync(file));
 
 /** Comment bodies blanked, length preserved, so line numbers stay true. */
 function maskComments(src) {

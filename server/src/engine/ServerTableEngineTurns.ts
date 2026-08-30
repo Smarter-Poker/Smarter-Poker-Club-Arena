@@ -1044,12 +1044,32 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
   /**
    * POST /preaction — Bible V8 §4.15: Set or clear a pre-action
+   *
+   * ── THE ARM IS ACKNOWLEDGED WITH THE ENGINE'S OWN NUMBER (2026-08-30) ────
+   *
+   * The response now carries `armedToCall`: the price the ENGINE recorded at
+   * set time (`toCallAtSet`), computed from its own authoritative state.
+   *
+   * Why this matters, and why it is not a broadcast. The client suppresses
+   * the ActionPanel while an armed pre-action is one the engine can still
+   * honour (src/lib/preActionPanelGate.ts), and until now it judged that
+   * against a price IT snapshotted in the browser at the moment of the tap.
+   * Two independent snapshots of the same number, taken at two moments, on
+   * two machines — they agree almost always, and the "almost" is a player
+   * seeing the panel flash on a hand where the engine was going to act, or
+   * (worse) not seeing it on a hand where the engine had already invalidated
+   * the arm. Handing back the engine's number collapses that to ONE number.
+   *
+   * It is returned in the reply to the hero's OWN request, so no other seat
+   * learns anything: this is deliberately not the table-wide broadcast that
+   * would hand villains the tell the engine's visible pre-action beat exists
+   * to mask.
    */
   public setPreAction(
     userId: string,
     action: string,
     maxCallAmount?: number
-  ): { success: boolean; error?: string } {
+  ): { success: boolean; error?: string; armedToCall?: number } {
     if (!this.handController) {
       return { success: false, error: 'No active hand' };
     }
@@ -1130,7 +1150,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       }
     }
 
-    return { success: true };
+    /* The engine's own recorded price rides back to the hero (see the note on
+       this method). One number, not two snapshots that can disagree. */
+    return { success: true, armedToCall: toCallAtSet };
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════

@@ -1368,27 +1368,11 @@ export class HandController {
   public finalizeRunout(skipDistribution: boolean = false): void {
     this.transitionStage('showdown');
     if (skipDistribution) {
-      // RIT or other caller already distributed pots — just emit completion events
-      const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
-      const rake = calculateRake(
-        this.state.pot,
-        this.state.sawFlop,
-        this.config.rakeConfig,
-        playerCount
-      );
-      let bbjFee = 0;
-      const bbjCfg = this.config.bbjConfig;
-      // Dan 2026-08-29 (BINDING): "POT DOESN'T NEED TO BE 10 BB FOR THE BBJ TO
-      // BE TAKEN OUT... IF THERE IS A FLOP, BBJ SHOULD BE RAKED (3 OR MORE
-      // PLAYERS DEALT INTO THE HAND). BAD BEAT JACKPOT IS ONLY PAID OUT IF
-      // THERE IS MORE THAN 10 BB IN THE POT." COLLECTION = flop + 3+ dealt;
-      // the 10BB minimum gates the PAYOUT only (detectBBJHit, unchanged).
-      if (bbjCfg && bbjCfg.enabled && this.state.sawFlop) {
-        const playersDealt = this.state.players.filter((p) => !p.is_sitting_out).length;
-        if (playersDealt >= bbjCfg.minPlayersDealt) {
-          bbjFee = Math.round(this.config.bigBlind * bbjCfg.feeBB * 100) / 100;
-        }
-      }
+      // RIT or other caller already distributed pots — just emit completion
+      // events. Priced by the ONE canonical helper (priceDeductions): this
+      // path used to hand-copy the arithmetic and was missing the pot-overage
+      // clamp entirely.
+      const { rake, bbjFee } = this.priceDeductions(this.state.sawFlop, this.state.pot);
       this.emit({ type: 'WINNERS', winners: [] });
       this.handFSM.transition('settlement');
       this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake, bbjFee });
@@ -1943,40 +1927,11 @@ export class HandController {
       }
     }
 
-    const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
-    const rake = calculateRake(
-      this.state.pot,
-      this.state.sawFlop,
-      this.config.rakeConfig,
-      playerCount
-    );
-
-    // Bible V8 §1.9 / Appendix A: BBJ fee deducted SIMULTANEOUSLY with rake before distribution.
-    // Dan 2026-08-29 (BINDING): COLLECTION requires only a flop and 3+ players
-    // dealt in — "POT DOESN'T NEED TO BE 10 BB FOR THE BBJ TO BE TAKEN OUT...
-    // IF THERE IS A FLOP, BBJ SHOULD BE RAKED." The 10BB minimum is a PAYOUT
-    // qualification only (detectBBJHit keeps it). Big difference.
-    let bbjFee = 0;
-    const bbjCfg = this.config.bbjConfig;
-    if (bbjCfg && bbjCfg.enabled && this.state.sawFlop) {
-      const playersDealt = this.state.players.filter((p) => !p.is_sitting_out).length;
-      if (playersDealt >= bbjCfg.minPlayersDealt) {
-        // BBJ fee = BB × feeBB, rounded to nearest cent
-        bbjFee = Math.round(this.config.bigBlind * bbjCfg.feeBB * 100) / 100;
-      }
-    }
-
-    // Guard: total deductions cannot exceed pot (prevent negative winnings)
-    // If rake + BBJ > pot, reduce BBJ first, then rake if still over
-    if (rake + bbjFee > this.state.pot) {
-      const overage = rake + bbjFee - this.state.pot;
-      if (overage <= bbjFee) {
-        bbjFee = bbjFee - overage;
-      } else {
-        bbjFee = 0;
-        // This should never happen since rake is capped, but just in case
-      }
-    }
+    // Bible V8 §1.9 / Appendix A: BBJ fee deducted SIMULTANEOUSLY with rake
+    // before distribution. Priced by the ONE canonical helper
+    // (priceDeductions), which owns the collection rule AND the pot-overage
+    // clamp. Do not inline this arithmetic again — every copy of it drifted.
+    const { rake, bbjFee } = this.priceDeductions(this.state.sawFlop, this.state.pot);
     const totalWinnings = this.state.pot - rake - bbjFee;
     const totalWinnerAmount = winners.reduce((sum, w) => sum + w.amount, 0);
 
@@ -2785,6 +2740,54 @@ export class HandController {
     return calculatePots(this.state.players);
   }
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * THE ONE PLACE RAKE AND THE BBJ DROP ARE PRICED (Dan 2026-08-29)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Every settlement path — completeHand, finalizeRunout (RIT / skip-
+   * distribution), and the insurance/EV pricing path — MUST call this.
+   * Three hand-copied versions of this arithmetic existed and had already
+   * drifted apart twice:
+   *
+   *   1. all three carried `potInBB >= minPotBB` on the FEE, which is the
+   *      PAYOUT rule — 49% of raked hands fed the jackpot nothing until
+   *      2026-08-29;
+   *   2. finalizeRunout was missing the pot-overage clamp the other two had,
+   *      so a small RIT pot could be charged more than it held and mint
+   *      chips. Caught by the post-fix hardening sweep before it bit.
+   *
+   * COLLECTION RULE (Dan, verbatim): "IF THERE IS A FLOP, BBJ SHOULD BE
+   * RAKED (3 OR MORE PLAYERS DEALT INTO THE HAND)... BAD BEAT JACKPOT IS
+   * ONLY PAID OUT IF THERE IS MORE THEN 10 BB IN THE POT." Pot size never
+   * gates the drop; BBJ_RULES.minPotBB gates detectBBJHit only.
+   *
+   * INVARIANT, enforced here and nowhere else: rake + bbjFee <= pot, with
+   * the BBJ drop yielding first (the pot is the only source of both).
+   */
+  public priceDeductions(flopSeen: boolean, pot: number): { rake: number; bbjFee: number } {
+    const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
+    const rake = calculateRake(pot, flopSeen, this.config.rakeConfig, playerCount);
+
+    let bbjFee = 0;
+    const bbjCfg = this.config.bbjConfig;
+    if (bbjCfg && bbjCfg.enabled && flopSeen && playerCount >= bbjCfg.minPlayersDealt) {
+      bbjFee = Math.round(this.config.bigBlind * bbjCfg.feeBB * 100) / 100;
+    }
+
+    // Total deductions can never exceed the pot. BBJ yields first, then rake.
+    if (rake + bbjFee > pot) {
+      const overage = Math.round((rake + bbjFee - pot) * 100) / 100;
+      if (overage <= bbjFee) {
+        bbjFee = Math.round((bbjFee - overage) * 100) / 100;
+      } else {
+        bbjFee = 0;
+        return { rake: Math.max(0, Math.min(rake, pot)), bbjFee: 0 };
+      }
+    }
+    return { rake, bbjFee };
+  }
+
   /** Rake + BBJ fee for the current pot, using the same rules as completeHand.
    *
    * PREFLOP INSURANCE FIX 2026-08-28: `assumeFlop` prices the deductions as
@@ -2793,23 +2796,7 @@ export class HandController {
    * and overstated "For Winning" by the full rake + BBJ drop. Default false
    * keeps every other caller (RIT settlement, etc.) exactly as before. */
   public computeRakeAndBBJ(assumeFlop: boolean = false): { rake: number; bbjFee: number } {
-    const flopSeen = this.state.sawFlop || assumeFlop;
-    const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
-    const rake = calculateRake(this.state.pot, flopSeen, this.config.rakeConfig, playerCount);
-    let bbjFee = 0;
-    const bbjCfg = this.config.bbjConfig;
-    // Dan 2026-08-29: collection = flop + 3+ dealt; 10BB gates payout only.
-    if (bbjCfg && bbjCfg.enabled && flopSeen) {
-      const playersDealt = this.state.players.filter((p) => !p.is_sitting_out).length;
-      if (playersDealt >= bbjCfg.minPlayersDealt) {
-        bbjFee = Math.round(this.config.bigBlind * bbjCfg.feeBB * 100) / 100;
-      }
-    }
-    if (rake + bbjFee > this.state.pot) {
-      const overage = rake + bbjFee - this.state.pot;
-      bbjFee = overage <= bbjFee ? bbjFee - overage : 0;
-    }
-    return { rake, bbjFee };
+    return this.priceDeductions(this.state.sawFlop || assumeFlop, this.state.pot);
   }
 
   /** Dealer seat (for odd-chip allocation in RIT). */

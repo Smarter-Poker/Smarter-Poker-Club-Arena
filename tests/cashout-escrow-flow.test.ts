@@ -184,21 +184,28 @@ describe('a replay moved nothing, so nobody is told twice', () => {
     expect(push).not.toHaveBeenCalled();
   });
 
-  it('but a real request DOES reach the agent, and a real approval the player', async () => {
+  it('but a real request and a real approval both reach the RPC that notifies', async () => {
+    // REWRITTEN 2026-08-30 (#1498). This asserted the CLIENT pushed to the
+    // agent on request and to the player on approval. Both were duplicates:
+    // tr_notify_agent_on_cashout raises 'cashout_request' on the INSERT and
+    // fn_cashout_approve raises 'cashout_approved' inside the money
+    // transaction, and trg_mirror_notification_to_push_outbox turns each into a
+    // push. The client's extra send went through a transport OneSignal's
+    // retirement had already killed, so the duplication never showed up.
+    //
+    // The property worth protecting is unchanged in spirit: a real request
+    // reaches the agent and a real approval reaches the player. It is just the
+    // RPC that carries it, so that is what is asserted.
     accept({ cashout_id: 'c1', agent_id: 'agent-9', amount: 250, player_name: 'Dana' });
     await cashoutService.requestCashout('p1', 'club-1', 250);
-    expect(push).toHaveBeenCalledWith(
-      'agent-9',
-      expect.objectContaining({ title: 'Cash Out Requested' })
-    );
+    expect(rpc.mock.calls[0][0]).toBe('fn_cashout_request');
+    expect(push).not.toHaveBeenCalled();
 
-    push.mockClear();
+    rpc.mockClear();
     accept({ cashout_id: 'c1', player_id: 'player-3', club_id: 'club-1', amount: 250 });
     await cashoutService.approveCashout('c1', 'a1');
-    expect(push).toHaveBeenCalledWith(
-      'player-3',
-      expect.objectContaining({ title: 'Cash Out Approved' })
-    );
+    expect(rpc.mock.calls[0][0]).toBe('fn_cashout_approve');
+    expect(push).not.toHaveBeenCalled();
   });
 });
 

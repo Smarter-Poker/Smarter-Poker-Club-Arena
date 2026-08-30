@@ -82,6 +82,38 @@ const TABLE_DISCOVERY_INTERVAL = 5000; // Check for new tables every 5 seconds
 const TOURNAMENT_DISCOVERY_INTERVAL = 5000; // Check for tournaments every 5 seconds
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE SEAT-FIRST START LANE RUNS AT ONE SECOND (Dan 2026-08-30, round 16)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan, verbatim: "THE MOMENT THE 3RD SEAT IS BOUGHT AND PAID FOR THE SPIN
+ * ANIMATION MUST START 1 SECOND LATER!"
+ *
+ * That is a hard number, and on a 5-second sleep it is unreachable by
+ * construction. Measured against production over six hours, 524 spins, from
+ * the third paid seat to `started_at`:
+ *
+ *     p50 5.4s   p90 7.7s   max 73.8s   299 of 524 over five seconds
+ *
+ * Dan's own game on 2026-08-30 took 39.6s (paid 07:33:41.4, started
+ * 07:34:21.0) because the engine happened to be restarting in that minute.
+ *
+ * A whole second of it was just this sleep. The lane is deliberately the
+ * cheapest loop in the process — two bounded reads per pass, `tables` and
+ * `table_seats`, both keyed by ids it already holds — and the per-game fill
+ * throttle (12s) and the start's own synchronous engine-map check mean a
+ * faster cadence adds no work per GAME, only the two reads per second. That
+ * is a trivial load next to the ~200 hands a minute this database already
+ * takes, and it buys the difference between Dan's rule and a shrug.
+ *
+ * It stays a POLL rather than a LISTEN on purpose: the engine holds no direct
+ * Postgres connection (supabase-js only, see server/package.json), so
+ * NOTIFY would mean a new dependency and a new failure mode on the one path
+ * that must never silently stop. A one-second poll cannot miss an edge.
+ */
+const SEAT_FIRST_START_INTERVAL = 1000;
+
+/**
  * Lease reaping. An hour is 120x the 30-second staleness window, so a row this
  * old has already lost every claim it could ever win and deleting it cannot
  * race a live engine. The server-side function refuses anything under 600s.
@@ -3473,8 +3505,11 @@ export class GameServer {
     while (this.running) {
       try {
         const { data: registering, error: registeringErr } = await supabase
+          // start_time is selected for the window rule below: for a seat-first
+          // game the recycler sets it to "when the human window ends" (see
+          // seatFirstHumanWindowMs in TournamentRecurringService).
           .from('tournaments')
-          .select('id, name, max_players, variant')
+          .select('id, name, max_players, variant, start_time')
           .eq('status', 'REGISTERING')
           .in('variant', ['spin', 'sng']);
         if (registeringErr) {
@@ -3496,6 +3531,32 @@ export class GameServer {
             const seats = Number(t.max_players) || 0;
             const paid = paidSeats.get(id) ?? 0;
 
+            /**
+             * ── AND THE WINDOW IS A WINDOW, NOT A WAIT (round 15) ───────────
+             *
+             * A horse-opened board holds its LAST seat for a human for 60-180
+             * randomised seconds (seatFirstHumanWindowMs), and `start_time` is
+             * the instant that window closes. After it closes the board is
+             * supposed to fill itself immediately. Measured over 6 hours it
+             * did not: median partial dwell 296s, p90 1,608s, worst 115
+             * MINUTES, with 222 of 330 spins (67%) overshooting the 180s
+             * ceiling and 89 sitting longer than ten minutes.
+             *
+             * The reason is the same one round 13 found for humans: the only
+             * steady-state filler for a partial board lived in
+             * discoverTournaments' past-start branch, the loop most disturbed
+             * by an engine restart. So a board whose window had closed simply
+             * waited for that loop to come back.
+             *
+             * A stale 2/3 board is not harmless: it still COVERS its price
+             * point for ensureBoardOpen, so no replacement is created, and the
+             * lobby fills with games that look joinable and never deal.
+             *
+             * The rule is therefore: fill a partial seat-first board when a
+             * human is in it (round 13) OR when its human window has closed.
+             * The window itself is untouched - it is honoured exactly, and
+             * only the lateness is removed.
+             */
             /**
              * ── A HUMAN IS NEVER LEFT WAITING (2026-08-29, round 13) ────────
              *
@@ -3519,7 +3580,13 @@ export class GameServer {
              * here would erase both designs.
              */
             if (seats > 0 && paid > 0 && paid < seats) {
-              void this.fillHumanSeatFirstGame(id, seats, paid).catch((err) =>
+              /* Has the human window closed? A missing or unparseable
+                 start_time is treated as NOT closed, so a malformed row can
+                 never cause a board to be filled early - it simply waits for
+                 the human, which is the safe direction. */
+              const startMs = t.start_time ? Date.parse(String(t.start_time)) : NaN;
+              const windowClosed = Number.isFinite(startMs) && startMs <= Date.now();
+              void this.fillPartialSeatFirstGame(id, seats, paid, windowClosed).catch((err) =>
                 reportError(err, 'GameServer.human_seat_first_fill_error')
               );
             }
@@ -3548,11 +3615,13 @@ export class GameServer {
       } catch (err) {
         reportError(err, 'GameServer.seat_first_fast_start_error');
       }
-      await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
+      /* ONE SECOND, not five. See SEAT_FIRST_START_INTERVAL: Dan's rule is a
+         number, and four fifths of the old floor was this line. */
+      await this.sleep(SEAT_FIRST_START_INTERVAL);
     }
   }
 
-  /** Per-game throttle for fillHumanSeatFirstGame - one attempt per 12s. */
+  /** Per-game throttle for fillPartialSeatFirstGame - one attempt per 12s. */
   private lastHumanFillAt = new Map<string, number>();
   /** Per-game throttle for the human-waiting alarm - one report per 60s. */
   private lastHumanWaitReportAt = new Map<string, number>();
@@ -3575,15 +3644,26 @@ export class GameServer {
    * sitting in an unfillable game is precisely the situation that must
    * never be silent again.
    */
-  private async fillHumanSeatFirstGame(
+  private async fillPartialSeatFirstGame(
     tournamentId: string,
     seats: number,
-    paid: number
+    paid: number,
+    windowClosed: boolean
   ): Promise<void> {
     const now = Date.now();
     const last = this.lastHumanFillAt.get(tournamentId) ?? 0;
     if (now - last < 12_000) return;
     this.lastHumanFillAt.set(tournamentId, now);
+
+    /* ROUND 15 OPTIMISATION. When the human window has already closed the
+       board fills regardless of WHO is sitting in it, so the two reads that
+       exist purely to answer "is one of them a human" are pure waste. Skip
+       straight to the top-up and spend nothing. Only a board still inside its
+       window has to ask, because there the answer decides. */
+    if (windowClosed) {
+      await this.topUpPartialSeatFirst(tournamentId, seats, paid, 'window closed');
+      return;
+    }
 
     const { data: primaryId, error: primErr } = await supabase.rpc('fn_tournament_primary_table', {
       p_tournament_id: tournamentId,
@@ -3629,22 +3709,39 @@ export class GameServer {
     const hasHuman = (profiles || []).some((p) => !Boolean((p as { is_horse?: boolean }).is_horse));
     if (!hasHuman) return;
 
+    await this.topUpPartialSeatFirst(tournamentId, seats, paid, 'a human is waiting');
+  }
+
+  /**
+   * The top-up itself, shared by both triggers (a human is seated, or the
+   * human window has closed). A fill that comes back short raises
+   * `seat_first_human_waiting`, throttled per game — a board that cannot be
+   * filled is exactly the situation that must never be silent, whichever
+   * trigger asked for it.
+   */
+  private async topUpPartialSeatFirst(
+    tournamentId: string,
+    seats: number,
+    paid: number,
+    why: string
+  ): Promise<void> {
     const added = await this.tournamentRecurring.topUpWithHorses(tournamentId, seats);
     const shortfall = seats - paid;
     if (added > 0) {
       console.log(
-        `[GameServer] Human-priority fill: +${added} horse(s) into seat-first game ` +
-          `${tournamentId.slice(0, 8)} (${paid}/${seats} paid, a human is waiting)`
+        `[GameServer] Seat-first fill: +${added} horse(s) into ${tournamentId.slice(0, 8)} ` +
+          `(${paid}/${seats} paid, ${why})`
       );
     }
     if (added < shortfall) {
+      const now = Date.now();
       const lastReport = this.lastHumanWaitReportAt.get(tournamentId) ?? 0;
       if (now - lastReport >= 60_000) {
         this.lastHumanWaitReportAt.set(tournamentId, now);
         reportError(
           new Error(
-            `[GameServer] A HUMAN IS WAITING in seat-first game ${tournamentId.slice(0, 8)}: ` +
-              `${paid}/${seats} paid, top-up added ${added} of ${shortfall} needed`
+            `[GameServer] SEAT-FIRST BOARD CANNOT FILL ${tournamentId.slice(0, 8)}: ` +
+              `${paid}/${seats} paid, top-up added ${added} of ${shortfall} needed (${why})`
           ),
           'GameServer.seat_first_human_waiting'
         );

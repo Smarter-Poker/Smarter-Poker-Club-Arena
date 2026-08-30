@@ -22,6 +22,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const emit = vi.fn();
 const upsert = vi.fn();
+const capture = vi.fn();
 
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
@@ -35,10 +36,15 @@ vi.mock('../../src/lib/supabase', () => ({
   },
 }));
 
+vi.mock('../../src/lib/analytics', () => ({
+  capture: (...args: unknown[]) => capture(...args),
+}));
+
 import { applyTableAppearance } from '../../src/lib/applyTableAppearance';
 
 beforeEach(() => {
   emit.mockClear();
+  capture.mockClear();
   upsert.mockReset();
   upsert.mockResolvedValue({ error: null });
 });
@@ -73,6 +79,23 @@ describe('the felt repaints before the network', () => {
   it('a felt/button/background change does NOT touch the card-back setting', async () => {
     await applyTableAppearance({ table_id: 'neon_city' }, { userId: 'u1' });
     expect(emitsOf('SETTINGS_CHANGED')).toHaveLength(0);
+  });
+
+  it('records one privacy-safe timing result after persistence settles', async () => {
+    await applyTableAppearance({ table_id: 'neon_city' }, { userId: 'private-user-id' });
+
+    expect(capture).toHaveBeenCalledWith(
+      'table_appearance_apply',
+      expect.objectContaining({
+        outcome: 'saved',
+        game_type: 'ALL',
+        fields: ['table_id'],
+        field_count: 1,
+        signed_in: true,
+        duration_ms: expect.any(Number),
+      })
+    );
+    expect(JSON.stringify(capture.mock.calls)).not.toContain('private-user-id');
   });
 });
 
@@ -214,6 +237,10 @@ describe('a rejected write puts the felt back', () => {
     const result = await applyTableAppearance({ table_id: 'x' }, { userId: 'u1' });
     expect(result.ok).toBe(false);
     expect(result.error).toBeTruthy();
+    expect(capture).toHaveBeenCalledWith(
+      'table_appearance_apply',
+      expect.objectContaining({ outcome: 'failed', fields: ['table_id'] })
+    );
   });
 });
 

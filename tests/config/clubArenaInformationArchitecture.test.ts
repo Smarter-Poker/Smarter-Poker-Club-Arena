@@ -66,7 +66,14 @@ describe('Club Arena information architecture', () => {
     expect(playerPaths).not.toContain('/admin');
     expect(staffPaths).toContain('/house-ads');
     expect(staffPaths).toContain('/admin');
-    expect(CLUB_ARENA_SUPPORT_NAV.map((item) => item.path)).toContain('/legal/privacy');
+    expect(CLUB_ARENA_SUPPORT_NAV.map((item) => item.path)).toEqual([
+      '/help',
+      '/legal',
+      '/legal/fair-gaming',
+      '/legal/tos',
+      '/legal/privacy',
+      '/legal/promotions',
+    ]);
   });
 
   it('does not advertise operator tools to ordinary club members', () => {
@@ -213,6 +220,8 @@ describe('Club Arena information architecture', () => {
     expect(getArenaSectionNavigation('/marketplace')).toBeNull();
     expect(getArenaSectionNavigation('/stats')).toBeNull();
     expect(getArenaSectionNavigation('/notifications')).toBeNull();
+    expect(getArenaSectionNavigation('/profile')?.label).toBe('Player Identity');
+    expect(getArenaSectionNavigation('/profile/player-1')).toBeNull();
   });
 
   it('connects conduct reports, financial disputes, and exclusions as one permission-aware workflow', () => {

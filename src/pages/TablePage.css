@@ -781,6 +781,17 @@
    (min-height 48 / 42 sits under both sums, so the sum is what wins.) Erring
    LARGE is the safe direction - it under-states the space available, and
    under-stating only makes the oval smaller, never off-ratio. */
+/* THE TICKER IS NOT IN THIS SUM, DELIBERATELY (2026-08-30).
+   The MTT ticker sits above the tab bar now (Dan: "THE 'ACTION TAB' SHOULD
+   NEVER BE ABOVE IT"), so on /table/* it does take a band off the top of the
+   viewport, and subtracting `--mtt-ticker-h` here was the obvious move. It is
+   the wrong one: that property is written by JavaScript and the ticker comes
+   and goes MID-HAND, so putting it in this expression would rescale the felt,
+   the seat ring, the pot and every chip on the table the moment an MTT entered
+   its five-minute window. That is the exact class of bug
+   tests/unit/feltReserveIsStatic.test.ts exists to refuse, and its closing
+   instruction is the answer here too: reserve in CSS and let what varies
+   OVERLAY the felt. The tab bar moves for the ticker; the felt does not. */
 .table-page--embedded .table-container {
   --sp-page-h: calc(100dvh - var(--sp-tabbar-h, calc(49px + env(safe-area-inset-top, 0px))));
   --sp-page-inset-top: 0px;

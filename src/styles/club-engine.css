@@ -188,7 +188,15 @@ body {
   font-weight: 400;
   line-height: 1.6;
   color: var(--text-primary);
-  background: var(--club-black);
+  /* Dan 2026-08-30: "THE WHOLE BACKGROUND SHOULD BE SOLID BLACK AND ALL THE
+     SAME COLOR." --club-black is #050507; five points of grey is invisible on
+     its own and plainly a different black next to the true #000 that
+     .club-home, the shell and the action bar paint. This sheet owns the LIVE
+     body rule - globals.css and design-system.css are not imported by
+     main.tsx, as the note further down this file already records - so this is
+     the declaration that decides the page ground. The token stays defined for
+     the raised surfaces that want it. */
+  background: #000;
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   /* clip, not hidden — the full reasoning is on the body rule in

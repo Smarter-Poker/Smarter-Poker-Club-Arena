@@ -322,7 +322,15 @@ describe('the bar outlives the route', () => {
       CSS.indexOf('body[data-ca-pinned-bar')
     );
     expect(block).toMatch(/position:\s*fixed/);
-    expect(block).toMatch(/top:\s*var\(--ca-global-header-height,\s*0px\)/);
+    /* The header still owns y=0 and this bar still starts at its bottom edge.
+       What changed on 2026-08-30 is that the MTT ticker takes the band in
+       between - Dan: "THE TICKER MUST ALWAYS BE AT THE VERY TOP OF THE PAGE,
+       DIRECTLY UNDER THE GLOBAL HEADER, THE 'ACTION TAB' SHOULD NEVER BE ABOVE
+       IT." `--mtt-ticker-h` is absent unless a ticker is actually on screen, so
+       this still resolves to exactly the header height on a quiet schedule. */
+    expect(block).toMatch(
+      /top:\s*calc\(\s*var\(--ca-global-header-height,\s*0px\)\s*\+\s*var\(--mtt-ticker-h,\s*0px\)\s*\)/
+    );
     expect(block).toMatch(/padding-top:\s*0/);
     expect(block).not.toMatch(/padding-top:\s*env\(safe-area-inset-top/);
   });

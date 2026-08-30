@@ -62,7 +62,7 @@
  * the defaults exactly once, then never again.
  */
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { getLocalStorage, setLocalStorage } from '../lib/storage';
@@ -288,23 +288,33 @@ export function __inFlightThemeReadCount(): number {
 
 const THEME_ROWS_CACHE_PREFIX = 'ca_user_theme_rows:';
 
+export type UserThemeRealtimeState = 'local' | 'connecting' | 'live' | 'error';
+
+type ThemeRealtimeListener = (
+  state: Exclude<UserThemeRealtimeState, 'local'>,
+  recovered: boolean
+) => void;
+
 type ThemeRealtimeEntry = {
   refs: number;
-  channel: ReturnType<typeof supabase.channel>;
+  channel: ReturnType<typeof supabase.channel> | null;
+  state: Exclude<UserThemeRealtimeState, 'local'>;
+  listeners: Set<ThemeRealtimeListener>;
+  everLive: boolean;
+  generation: number;
 };
 
 const themeRealtimeByUser = new Map<string, ThemeRealtimeEntry>();
 
-/** One database channel per account, even when four persistent tables mount. */
-function acquireThemeRealtime(userId: string): () => void {
-  const existing = themeRealtimeByUser.get(userId);
-  if (existing) {
-    existing.refs += 1;
-    return () => releaseThemeRealtime(userId);
-  }
+function notifyThemeRealtime(entry: ThemeRealtimeEntry, recovered = false): void {
+  entry.listeners.forEach((listener) => listener(entry.state, recovered));
+}
 
-  // Several unit suites intentionally provide a minimal PostgREST-only mock.
-  if (typeof (supabase as { channel?: unknown }).channel !== 'function') return () => undefined;
+function startThemeRealtime(userId: string, entry: ThemeRealtimeEntry): void {
+  entry.generation += 1;
+  const generation = entry.generation;
+  entry.state = 'connecting';
+  notifyThemeRealtime(entry);
 
   const channel = supabase
     .channel(`user-theme-settings:${userId}`)
@@ -317,40 +327,132 @@ function acquireThemeRealtime(userId: string): () => void {
         filter: `user_id=eq.${userId}`,
       },
       (payload) => {
-        const raw =
-          payload.eventType === 'DELETE' ? (payload.old as ThemeRow) : (payload.new as ThemeRow);
+        if (entry.generation !== generation || themeRealtimeByUser.get(userId) !== entry) return;
+        if (payload.eventType === 'DELETE') {
+          // Deleting a per-game row does not mean "paint defaults"; it means
+          // resolve the remaining rows again (usually falling back to ALL).
+          // Realtime carries no replacement row, so use the same authoritative
+          // reconciliation path as a recovered connection.
+          notifyThemeRealtime(entry, true);
+          return;
+        }
+        const raw = payload.new as ThemeRow;
         if (!raw || typeof raw !== 'object') return;
-        const value =
-          payload.eventType === 'DELETE'
-            ? { ...DEFAULT_THEME }
-            : Object.fromEntries(
-                THEME_FIELDS.flatMap((field) =>
-                  typeof raw[field] === 'string' && raw[field] ? [[field, raw[field]]] : []
-                )
-              );
+        const value = Object.fromEntries(
+          THEME_FIELDS.flatMap((field) =>
+            typeof raw[field] === 'string' && raw[field] ? [[field, raw[field]]] : []
+          )
+        );
         masterBus.emit('UI_THEME_CHANGED', {
           key: canonicalGameType(raw.game_type),
           value,
           userId,
+          updatedAt: typeof raw.updated_at === 'string' ? raw.updated_at : undefined,
         });
       }
     )
-    .subscribe();
-  themeRealtimeByUser.set(userId, { refs: 1, channel });
-  return () => releaseThemeRealtime(userId);
+    .subscribe((status) => {
+      if (entry.generation !== generation || themeRealtimeByUser.get(userId) !== entry) return;
+      if (status === 'SUBSCRIBED') {
+        const recovered = entry.everLive && entry.state !== 'live';
+        entry.state = 'live';
+        entry.everLive = true;
+        notifyThemeRealtime(entry, recovered);
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        entry.state = 'error';
+        notifyThemeRealtime(entry);
+      }
+    });
+  entry.channel = channel;
 }
 
-function releaseThemeRealtime(userId: string): void {
+/** One database channel per account, even when four persistent tables mount. */
+function acquireThemeRealtime(userId: string, listener: ThemeRealtimeListener): () => void {
+  const existing = themeRealtimeByUser.get(userId);
+  if (existing) {
+    existing.refs += 1;
+    existing.listeners.add(listener);
+    listener(existing.state, false);
+    return () => releaseThemeRealtime(userId, listener);
+  }
+
+  // Several unit suites intentionally provide a minimal PostgREST-only mock.
+  if (typeof (supabase as { channel?: unknown }).channel !== 'function') {
+    listener('error', false);
+    return () => undefined;
+  }
+
+  const entry: ThemeRealtimeEntry = {
+    refs: 1,
+    channel: null,
+    state: 'connecting',
+    listeners: new Set([listener]),
+    everLive: false,
+    generation: 0,
+  };
+  themeRealtimeByUser.set(userId, entry);
+  startThemeRealtime(userId, entry);
+  return () => releaseThemeRealtime(userId, listener);
+}
+
+function releaseThemeRealtime(userId: string, listener: ThemeRealtimeListener): void {
   const entry = themeRealtimeByUser.get(userId);
   if (!entry) return;
+  entry.listeners.delete(listener);
   entry.refs -= 1;
   if (entry.refs > 0) return;
   themeRealtimeByUser.delete(userId);
-  void supabase.removeChannel(entry.channel);
+  entry.generation += 1;
+  if (entry.channel) void supabase.removeChannel(entry.channel);
 }
 
 export function __themeRealtimeChannelCount(): number {
   return themeRealtimeByUser.size;
+}
+
+/**
+ * Shared health + recovery handle for the account-scoped table-art channel.
+ * A recovered channel increments `reconciliationRevision`: callers use that
+ * revision to re-read the authoritative rows because Realtime does not replay
+ * changes that occurred while the device was offline.
+ */
+export function useUserThemeRealtime(
+  userId: string | null | undefined,
+  enabled = true
+): {
+  state: UserThemeRealtimeState;
+  reconciliationRevision: number;
+  retry: () => void;
+} {
+  const [state, setState] = useState<UserThemeRealtimeState>(
+    userId && enabled ? (themeRealtimeByUser.get(userId)?.state ?? 'connecting') : 'local'
+  );
+  const [reconciliationRevision, setReconciliationRevision] = useState(0);
+
+  useEffect(() => {
+    if (!userId || !enabled) {
+      setState('local');
+      return undefined;
+    }
+    const listener: ThemeRealtimeListener = (next, recovered) => {
+      setState(next);
+      if (recovered) setReconciliationRevision((revision) => revision + 1);
+    };
+    return acquireThemeRealtime(userId, listener);
+  }, [enabled, userId]);
+
+  const retry = useCallback(() => {
+    if (!userId || !enabled) return;
+    const entry = themeRealtimeByUser.get(userId);
+    if (!entry) return;
+    const oldChannel = entry.channel;
+    entry.generation += 1;
+    entry.channel = null;
+    if (oldChannel) void supabase.removeChannel(oldChannel);
+    startThemeRealtime(userId, entry);
+  }, [enabled, userId]);
+
+  return { state, reconciliationRevision, retry };
 }
 
 function themeRowsCacheKey(userId: string): string {
@@ -385,15 +487,16 @@ export function resolveCachedTheme(
 function mergeCachedThemeRow(
   userId: string | null | undefined,
   bucket: CanonicalGameType,
-  patch: Partial<UserThemeSelection>
+  patch: Partial<UserThemeSelection>,
+  updatedAt?: string
 ): void {
-  if (!userId || !Object.keys(patch).length) return;
+  if (!userId || (!Object.keys(patch).length && !updatedAt)) return;
   const rows = readCachedThemeRows(userId);
   const index = rows.findIndex((r) => (r.game_type || '') === bucket);
   if (index >= 0) {
-    rows[index] = { ...rows[index], ...patch };
+    rows[index] = { ...rows[index], ...patch, ...(updatedAt ? { updated_at: updatedAt } : {}) };
   } else {
-    rows.push({ game_type: bucket, ...patch });
+    rows.push({ game_type: bucket, ...patch, ...(updatedAt ? { updated_at: updatedAt } : {}) });
   }
   writeCachedThemeRows(userId, rows);
 }
@@ -423,6 +526,7 @@ export function useUserThemeSettings(
    */
   const [error, setError] = useState<string | null>(null);
   const pendingMutationsRef = useRef(new Map<CanonicalGameType, Set<string>>());
+  const realtime = useUserThemeRealtime(userId);
 
   /**
    * null while a tournament's format is unresolved: the bucket is not yet
@@ -432,11 +536,6 @@ export function useUserThemeSettings(
     () => resolveThemeBucket(gameVariant, isTournament, tournamentType),
     [gameVariant, isTournament, tournamentType]
   );
-
-  useEffect(() => {
-    if (!userId) return undefined;
-    return acquireThemeRealtime(userId);
-  }, [userId]);
 
   useEffect(() => {
     if (!userId) {
@@ -501,7 +600,7 @@ export function useUserThemeSettings(
     return () => {
       mounted = false;
     };
-  }, [userId, gameType]);
+  }, [userId, gameType, realtime.reconciliationRevision]);
 
   useEffect(() => {
     // A persisted hook can survive logout/login in the same shell. Pending
@@ -541,6 +640,13 @@ export function useUserThemeSettings(
         const pending = pendingMutationsRef.current.get(savedBucket);
         pending?.delete(event.payload.mutationId);
         if (pending?.size === 0) pendingMutationsRef.current.delete(savedBucket);
+        // The optimistic patch already updated the cached artwork. Only a
+        // successful durable write may advance its precedence timestamp; doing
+        // this on the first tap would make a failed ALL save outrank a valid
+        // per-game row after refresh.
+        if (event.payload.state === 'confirmed') {
+          mergeCachedThemeRow(userId, savedBucket, {}, new Date().toISOString());
+        }
       }
     });
 
@@ -554,6 +660,7 @@ export function useUserThemeSettings(
       const selection = (body as { value?: Partial<UserThemeSelection> })?.value;
       const eventUserId = (body as { userId?: string })?.userId;
       const mutationId = (body as { mutationId?: string })?.mutationId;
+      const updatedAt = (body as { updatedAt?: string })?.updatedAt;
       if (!mounted || !selection) return;
       if (eventUserId && eventUserId !== userId) return;
       // AUDIT 2026-08-19: UI_THEME_CHANGED is a SHARED event — useSettingsStore
@@ -594,7 +701,7 @@ export function useUserThemeSettings(
       setTheme((prev) => ({ ...prev, ...clean }));
       // Keep the first-paint cache current, so a page change or refresh
       // immediately after a change still opens wearing it — no flash back.
-      mergeCachedThemeRow(userId, canonicalGameType(savedFor), clean);
+      mergeCachedThemeRow(userId, canonicalGameType(savedFor), clean, updatedAt);
     });
 
     return () => {
@@ -608,5 +715,11 @@ export function useUserThemeSettings(
     };
   }, [gameType, userId]);
 
-  return { theme, loading, error };
+  return {
+    theme,
+    loading,
+    error,
+    realtimeState: realtime.state,
+    retryRealtime: realtime.retry,
+  };
 }

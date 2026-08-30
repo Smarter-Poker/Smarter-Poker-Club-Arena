@@ -25,7 +25,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sliceBlockAfter } from '../../../tests/helpers/sourceWindow.js';
+import { sliceBlockAfter } from '../testHelpers/sourceWindow.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MANAGER = fs.readFileSync(path.join(HERE, 'TournamentManager.ts'), 'utf8');

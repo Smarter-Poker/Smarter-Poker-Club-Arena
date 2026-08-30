@@ -731,7 +731,10 @@
 .seat__name {
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
-  color: var(--text-primary);
+  /* --seat-text, not --text-primary: the plate is dark in EVERY interface
+     theme (see the light-mode note in design-tokens.css), so its text must
+     not flip dark when the chrome does. */
+  color: var(--seat-text, #f3f4f6);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

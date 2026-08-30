@@ -174,8 +174,11 @@ vi.mock('../../src/components/common/Toast', () => ({
 }));
 
 import PlayerStatsPage from '../../src/pages/PlayerStatsPage';
+import { clearStatsRangeMemo } from '../../src/lib/statsCache';
 
 beforeEach(() => {
+  localStorage.clear();
+  clearStatsRangeMemo();
   rpcPayload = {
     user_id: 'user-1',
     overall: EMPTY_OVERALL,
@@ -260,7 +263,16 @@ describe('PlayerStatsPage mounts', () => {
       expect(screen.getByText(/Overview/i)).toBeInTheDocument();
       expect(screen.getByRole('heading', { name: /Player Intelligence/i })).toBeInTheDocument();
       expect(screen.getByRole('group', { name: /Analysis Range/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /Evidence At A Glance/i })).toBeInTheDocument();
+      expect(screen.getByText('Established')).toBeInTheDocument();
     });
+
+    expect(document.querySelector('.stats-hero-art')).toHaveAttribute(
+      'src',
+      expect.stringContaining('player-intelligence-dossier-v2.webp')
+    );
+
+    expect(screen.getByRole('button', { name: 'Open Deep Analysis' })).toBeInTheDocument();
   });
 
   it('survives a completely malformed RPC payload', async () => {

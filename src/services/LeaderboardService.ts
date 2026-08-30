@@ -66,11 +66,43 @@ export type LeaderboardMetric =
   | 'bb100'
   | 'tournaments_won';
 
+export interface LeaderboardPrize {
+  rank: number;
+  amount: number;
+}
+
+export type LeaderboardPrizePlanKey = 'balanced' | 'top_heavy' | 'even' | 'custom';
+
 export interface LeaderboardSettings {
   club_id: string;
-  payout_currency: 'diamonds' | 'chips';
-  weekly_prizes: { rank: number; amount: number }[];
-  monthly_prizes: { rank: number; amount: number }[];
+  club_name: string;
+  union_id: string | null;
+  union_name: string | null;
+  funding_owner_type: 'union' | 'club';
+  funding_source: 'union_promo_wallet' | 'club_promo_balance';
+  funding_label: string;
+  available_balance: number | null;
+  can_manage: boolean;
+  setup_complete: boolean;
+  rewards_enabled: boolean;
+  payout_currency: 'chips';
+  payout_metric: Extract<LeaderboardMetric, 'profit' | 'hands_played' | 'tournaments_won' | 'roi'>;
+  weekly_prizes: LeaderboardPrize[];
+  monthly_prizes: LeaderboardPrize[];
+  suggestion_key: LeaderboardPrizePlanKey;
+  setup_completed_at: string | null;
+  updated_at: string | null;
+}
+
+export interface LeaderboardRewardContext {
+  club_id: string;
+  club_name: string;
+  union_id: string | null;
+  union_name: string | null;
+  funding_owner_type: 'union' | 'club';
+  funding_source: 'union_promo_wallet' | 'club_promo_balance';
+  setup_complete: boolean;
+  rewards_enabled: boolean;
 }
 
 export interface LeaderboardPayout {
@@ -806,35 +838,50 @@ export const LeaderboardService = {
    * Get period date boundaries
    */
 
-  async getLeaderboardSettings(clubId: string): Promise<LeaderboardSettings | null> {
+  async getManageableRewardContexts(): Promise<LeaderboardRewardContext[]> {
     try {
-      const { data, error } = await supabase
-        .from('club_leaderboard_settings')
-        .select('*')
-        .eq('club_id', clubId)
-        .maybeSingle();
+      const { data, error } = await supabase.rpc('fn_leaderboard_reward_contexts');
       if (error) throw error;
-      return data as LeaderboardSettings;
+      return (data as LeaderboardRewardContext[]) || [];
     } catch (err) {
-      reportError(err, 'LeaderboardService.getLeaderboardSettings');
-      return null;
+      reportError(err, 'LeaderboardService.getManageableRewardContexts');
+      return [];
     }
   },
 
-  async updateLeaderboardSettings(
-    clubId: string,
-    updates: Partial<LeaderboardSettings>
-  ): Promise<boolean> {
-    try {
-      const { error } = await supabase
-        .from('club_leaderboard_settings')
-        .upsert({ club_id: clubId, ...updates }, { onConflict: 'club_id' });
-      if (error) throw error;
-      return true;
-    } catch (err) {
-      reportError(err, 'LeaderboardService.updateLeaderboardSettings');
-      return false;
+  async getLeaderboardRewardSetup(clubId: string): Promise<LeaderboardSettings> {
+    const { data, error } = await supabase.rpc('fn_get_leaderboard_reward_setup', {
+      p_club_id: clubId,
+    });
+    if (error) {
+      reportError(error, 'LeaderboardService.getLeaderboardRewardSetup');
+      throw error;
     }
+    if (!data || typeof data !== 'object') throw new Error('Prize Setup Returned No Data');
+    return data as LeaderboardSettings;
+  },
+
+  async saveLeaderboardRewardSetup(
+    clubId: string,
+    setup: Pick<
+      LeaderboardSettings,
+      'rewards_enabled' | 'payout_metric' | 'weekly_prizes' | 'monthly_prizes' | 'suggestion_key'
+    >
+  ): Promise<LeaderboardSettings> {
+    const { data, error } = await supabase.rpc('fn_save_leaderboard_reward_setup', {
+      p_club_id: clubId,
+      p_rewards_enabled: setup.rewards_enabled,
+      p_metric: setup.payout_metric,
+      p_weekly_prizes: setup.weekly_prizes,
+      p_monthly_prizes: setup.monthly_prizes,
+      p_suggestion_key: setup.suggestion_key,
+    });
+    if (error) {
+      reportError(error, 'LeaderboardService.saveLeaderboardRewardSetup');
+      throw error;
+    }
+    if (!data || typeof data !== 'object') throw new Error('Prize Setup Could Not Be Saved');
+    return data as LeaderboardSettings;
   },
 
   async getPayoutsForPeriod(
@@ -856,29 +903,6 @@ export const LeaderboardService = {
     } catch (err) {
       reportError(err, 'LeaderboardService.getPayoutsForPeriod');
       return [];
-    }
-  },
-
-  async payoutLeaderboardPeriod(
-    clubId: string,
-    period: string,
-    metric: string,
-    startDate: string,
-    endDate: string
-  ): Promise<boolean> {
-    try {
-      const { error } = await supabase.rpc('fn_payout_leaderboard', {
-        p_club_id: clubId,
-        p_period: period,
-        p_metric: metric,
-        p_start_date: startDate,
-        p_end_date: endDate,
-      });
-      if (error) throw error;
-      return true;
-    } catch (err) {
-      reportError(err, 'LeaderboardService.payoutLeaderboardPeriod');
-      throw err;
     }
   },
 

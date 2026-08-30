@@ -81,6 +81,60 @@ describe('LeaderboardService', () => {
       expect(typeof LeaderboardService.getClubLeaderboard).toBe('function');
     });
   });
+
+  describe('leaderboard prize setup', () => {
+    it('loads only server-authorized owner contexts', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+      rpc.mockResolvedValueOnce({
+        data: [
+          {
+            club_id: 'club-1',
+            club_name: 'River Room',
+            union_id: 'union-1',
+            union_name: 'North Circuit',
+            funding_owner_type: 'union',
+            funding_source: 'union_promo_wallet',
+            setup_complete: false,
+            rewards_enabled: false,
+          },
+        ],
+        error: null,
+      });
+
+      const contexts = await LeaderboardService.getManageableRewardContexts();
+
+      expect(rpc).toHaveBeenCalledWith('fn_leaderboard_reward_contexts');
+      expect(contexts[0].funding_source).toBe('union_promo_wallet');
+    });
+
+    it('saves plans without accepting a client-selected funding source', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+      rpc.mockResolvedValueOnce({
+        data: { club_id: 'club-1', setup_complete: true },
+        error: null,
+      });
+
+      await LeaderboardService.saveLeaderboardRewardSetup('club-1', {
+        rewards_enabled: true,
+        payout_metric: 'profit',
+        weekly_prizes: [{ rank: 1, amount: 50 }],
+        monthly_prizes: [{ rank: 1, amount: 200 }],
+        suggestion_key: 'balanced',
+      });
+
+      expect(rpc).toHaveBeenCalledWith('fn_save_leaderboard_reward_setup', {
+        p_club_id: 'club-1',
+        p_rewards_enabled: true,
+        p_metric: 'profit',
+        p_weekly_prizes: [{ rank: 1, amount: 50 }],
+        p_monthly_prizes: [{ rank: 1, amount: 200 }],
+        p_suggestion_key: 'balanced',
+      });
+      expect(rpc.mock.calls.at(-1)?.[1]).not.toHaveProperty('p_funding_source');
+    });
+  });
 });
 
 /**

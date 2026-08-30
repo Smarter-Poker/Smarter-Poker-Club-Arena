@@ -292,9 +292,9 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
           <div className="tl-stat">
             <span className="tl-stat__label">Players</span>
             <span className="tl-stat__value">{totals.uniquePlayers.toLocaleString()}</span>
-            <span className="tl-stat__sub">
-              {(ordered.length - totals.uniquePlayers).toLocaleString()} Re-Entry
-            </span>
+            {/* Dan 2026-08-30: "IT SHOULD NEVER HAVE 'RE ENTRY' AS A FIELD,
+                ONLY REBUYS." The re-entry delta is not a stat this platform
+                surfaces; entries vs players plus the Rebuys card says it all. */}
           </div>
         )}
 

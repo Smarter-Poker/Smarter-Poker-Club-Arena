@@ -29,6 +29,7 @@ import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
 import { DealRateVerifier } from './services/DealRateVerifier.js';
 import {
   renewLeadership,
+  LEADERSHIP_STALE_SECONDS,
   startLeadershipRenewal,
   stopLeadershipRenewal,
   releaseLeadership,
@@ -383,8 +384,40 @@ export class GameServer {
      * Fail-open on error, and a standby retains standby -- see
      * services/leadership.ts for why that asymmetry matters.
      */
-    const role = await renewLeadership();
+    let role = await renewLeadership();
     startLeadershipRenewal();
+    /**
+     * THE BOOT CLAIM RETRIES THROUGH ONE STALENESS WINDOW (2026-08-30).
+     *
+     * A single boot-time claim decided leader-or-standby, and on 2026-08-30
+     * that one answer was wrong five containers in a row: the claim either
+     * timed out against a degraded database, or lost to the fresh lease the
+     * process's own DEAD predecessor had written seconds before exiting.
+     * Either way the process booted standby, was promoted a window later,
+     * and exited to "restart as a real leader" — whose own boot claim then
+     * met the lease ITS predecessor just wrote. A full container restart per
+     * staleness window, dealing nothing, for as long as the trouble lasted.
+     *
+     * So the boot claim now retries for one staleness window plus margin.
+     * A dead predecessor's lease goes stale INSIDE that window and the claim
+     * is granted in-boot — no restart, no promotion dance. A REAL live
+     * leader keeps its heartbeat fresh the whole way through, the deadline
+     * expires, and this process stands down exactly as before. A database
+     * that stays unreachable exhausts the deadline the same way, and the
+     * PROMOTE_AFTER_UNKNOWN path in leadership.ts remains the fallback.
+     */
+    if (role === 'standby') {
+      const bootClaimDeadline = Date.now() + (LEADERSHIP_STALE_SECONDS + 15) * 1000;
+      while (role === 'standby' && Date.now() < bootClaimDeadline) {
+        await new Promise((r) => setTimeout(r, 5000));
+        role = await renewLeadership();
+      }
+      if (role === 'leader') {
+        console.log(
+          '[GameServer] Boot claim granted on retry — the previous lease went stale inside the window. Booting as leader.'
+        );
+      }
+    }
     if (role === 'standby') {
       /**
        * Tell leadership.ts that this process never started the fleet, so that

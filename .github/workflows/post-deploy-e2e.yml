@@ -84,8 +84,8 @@ jobs:
       - name: Install Dependencies
         run: npm ci --ignore-scripts
 
-      - name: Install Chromium
-        run: npx playwright install chromium --with-deps
+      - name: Install Chromium and WebKit
+        run: npx playwright install chromium webkit --with-deps
 
       # Production must be reachable and serving a bundle before any of this
       # means anything. This is a readiness check, NOT a sha match: see the
@@ -147,6 +147,7 @@ jobs:
             tests/e2e/club-lobby.spec.ts \
             tests/e2e/tournament-buy-in-dialog.spec.ts \
             tests/e2e/tournament-watch.spec.ts \
+            tests/e2e/footer-route.spec.ts \
             tests/e2e/routes \
             --reporter=line --retries=1
 

@@ -60,6 +60,11 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'webkit-footer',
+      testMatch: /footer-(?:visual-regression|route)\.spec\.ts$/,
+      use: { ...devices['iPhone 13'] },
+    },
   ],
   // Skip local dev server in CI — tests run against production (BASE_URL)
   ...(isCI

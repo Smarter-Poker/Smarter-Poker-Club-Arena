@@ -41,10 +41,7 @@ import { resolve } from 'node:path';
 const ROOT = resolve(__dirname, '../..');
 const SRC = readFileSync(resolve(ROOT, 'src/pages/CashierTradePage.tsx'), 'utf8');
 const SQL = readFileSync(
-  resolve(
-    ROOT,
-    'supabase/migrations/20260825_role_scoped_cashier_agent_wallet_and_cashout_escrow.sql'
-  ),
+  resolve(ROOT, 'supabase/migrations/20260830235990_cashier_claim_back_cent_integrity.sql'),
   'utf8'
 );
 
@@ -87,7 +84,7 @@ describe('the client asks for a claim it is allowed to make', () => {
 
   it('identifies ONE originating send, not a member and a number', () => {
     expect(CLAIM_CALL).toContain('p_transaction_id: row.transaction_id');
-    expect(CLAIM_CALL).toContain('p_amount: row.remaining');
+    expect(CLAIM_CALL).toContain('p_amount: null');
     expect(CLAIM_CALL).not.toContain('p_from_user_id');
   });
 
@@ -149,8 +146,9 @@ describe('and the server is what actually decides', () => {
   });
 
   it('records what has already been taken, so the rest cannot be taken twice', () => {
-    expect(claim).toContain("jsonb_build_object('claimed_back', v_claimed + v_take)");
-    expect(claim).toContain('is_reversed = ((v_claimed + v_take) >= v_src.amount)');
+    expect(claim).toContain("jsonb_build_object('claimed_back', v_claimed_after)");
+    expect(claim).toContain('v_complete := (v_src.amount - v_claimed_after) < 0.01');
+    expect(claim).toContain('is_reversed = v_complete');
   });
 
   it('is idempotent on p_op_id, settled by the unique index rather than a pre-check', () => {
@@ -159,9 +157,15 @@ describe('and the server is what actually decides', () => {
     expect(claim).toContain("'replayed', true");
   });
 
+  it('refuses sub-cent claims and retry keys reused for another send', () => {
+    expect(claim).toContain('p_amount <> round(p_amount, 2)');
+    expect(claim).toContain("metadata ->> 'original_transaction_id'");
+    expect(claim).toContain('That Retry Key Belongs To A Different Claim Back');
+  });
+
   it('and the chips land back in the AGENT WALLET, with a ledger row', () => {
     expect(claim).toMatch(
-      /update agents\s+set agent_wallet_balance = coalesce\(agent_wallet_balance, 0\) \+ v_take/
+      /update public\.agents\s+set agent_wallet_balance = coalesce\(agent_wallet_balance, 0\) \+ v_take/
     );
     expect(claim).toContain("'agent_wallet_claim_back'");
   });

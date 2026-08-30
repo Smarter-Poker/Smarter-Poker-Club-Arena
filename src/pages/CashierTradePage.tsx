@@ -724,10 +724,6 @@ export default function CashierTradePage() {
     }
   }, [user?.id, clubUuid]);
 
-  useEffect(() => {
-    loadClub();
-  }, [loadClub]);
-
   // Refresh on any balance event
   useEffect(() => {
     // AUDIT 2026-08-21: BALANCE_UPDATED alone missed mints, distributions and
@@ -772,8 +768,16 @@ export default function CashierTradePage() {
   }, [roleResolved, myRole, tab]);
 
   // ── Trade record tab data ──────────────────────────────────────────────────
-  // Cleared on every club change: the previous club's trades used to stay on
+  // Cleared BEFORE every club load: the previous club's trades used to stay on
   // screen until the new query landed.
+  //
+  // This reset used to be a later effect than `loadClub()`. React runs passive
+  // effects in source order, so the load took version N and this effect
+  // immediately advanced `loadVersion` to N + 1. The successful response and
+  // its finally block were both discarded as stale, leaving the first tab on
+  // "Loading Members..." forever. Reset and start now form one ordered effect:
+  // invalidate the old club, clear every club-scoped view, then give the new
+  // request the next version.
   useEffect(() => {
     ++loadVersion.current;
     ++pendingCountVersion.current;
@@ -817,7 +821,8 @@ export default function CashierTradePage() {
     setInvoices([]);
     setInvoicesError(null);
     requestOpIdRef.current = null;
-  }, [clubUuid]);
+    void loadClub();
+  }, [clubUuid, loadClub]);
 
   useEffect(() => {
     if (tab !== 'record' || !user?.id || !clubUuid) return;
@@ -1591,7 +1596,11 @@ export default function CashierTradePage() {
       const { data, error } = await supabase.rpc('fn_agent_wallet_claim_back', {
         p_club_id: clubUuid,
         p_transaction_id: row.transaction_id,
-        p_amount: row.remaining,
+        // Ask the database for the maximum whole-cent remainder. Historical
+        // rows can contain a sub-cent claimed_back value from the pre-Phase-1
+        // RPC; echoing that fractional remainder would now be refused. Null is
+        // the explicit "all safely claimable cents" contract.
+        p_amount: null,
         p_reason: 'Claimed Back From The Trade Grid',
         // Retain the key when the response is uncertain. If the server committed
         // and the response was lost, retrying replays the receipt instead of
@@ -1603,12 +1612,14 @@ export default function CashierTradePage() {
         success?: boolean;
         error?: string;
         replayed?: boolean;
+        amount?: number;
       } | null;
       if (!res?.success) throw new Error(res?.error || 'Those Chips Could Not Be Claimed Back');
+      const claimedAmount = Number(res.amount) || 0;
       toast?.success?.(
         res.replayed
-          ? `That Claim Had Already Gone Through. ${fmt(row.remaining)} Chips Are Back In Your Agent Wallet`
-          : `Claimed ${fmt(row.remaining)} Back From ${row.to_name}`
+          ? `That Claim Had Already Gone Through. ${fmt(claimedAmount)} Chips Are Back In Your Agent Wallet`
+          : `Claimed ${fmt(claimedAmount)} Back From ${row.to_name}`
       );
       claimOpIdsRef.current.delete(row.transaction_id);
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade_claim', userId: user?.id || '' });

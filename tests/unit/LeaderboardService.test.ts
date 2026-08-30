@@ -34,7 +34,12 @@ vi.mock('../../src/utils/retryAsync', () => ({
 import { LeaderboardService } from '../../src/services/LeaderboardService';
 
 describe('LeaderboardService', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const { supabase } = await import('../../src/lib/supabase');
+    const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+    rpc.mockReset().mockResolvedValue({ data: null, error: null });
+  });
 
   describe('getPlayerStats', () => {
     it('should return null when no data found', async () => {
@@ -133,6 +138,101 @@ describe('LeaderboardService', () => {
         p_suggestion_key: 'balanced',
       });
       expect(rpc.mock.calls.at(-1)?.[1]).not.toHaveProperty('p_funding_source');
+    });
+  });
+
+  describe('canonical leaderboard periods', () => {
+    const canonicalWeek = {
+      period: 'weekly',
+      period_offset: -1,
+      timezone: 'UTC',
+      start_date: '2026-08-16',
+      end_date: '2026-08-23',
+      start_at: '2026-08-16T00:00:00+00:00',
+      end_at: '2026-08-23T00:00:00+00:00',
+      is_current: false,
+      label: 'Aug 16 - Aug 22',
+    };
+
+    it('loads UTC calendar boundaries from the database instead of browser-local dates', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+      rpc.mockResolvedValueOnce({ data: [canonicalWeek], error: null });
+
+      const window = await LeaderboardService.getPeriodWindow('weekly', -1);
+
+      expect(rpc).toHaveBeenCalledWith('fn_leaderboard_period_window', {
+        p_period: 'weekly',
+        p_period_offset: -1,
+      });
+      expect(window).toEqual(canonicalWeek);
+    });
+
+    it('uses the server-owned window for historical club rankings', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+      rpc.mockImplementation(async (name: string) => {
+        if (name === 'fn_leaderboard_period_window') {
+          return { data: [canonicalWeek], error: null };
+        }
+        if (name === 'fn_club_leaderboard_by_dates') {
+          return { data: [], error: null };
+        }
+        return { data: null, error: null };
+      });
+
+      await LeaderboardService.getClubLeaderboard(
+        'a0000000-0000-0000-0000-000000000001',
+        'profit',
+        'weekly',
+        50,
+        0,
+        -1,
+        true
+      );
+
+      expect(rpc).toHaveBeenCalledWith('fn_club_leaderboard_by_dates', {
+        p_club_id: 'a0000000-0000-0000-0000-000000000001',
+        p_metric: 'profit',
+        p_start_date: canonicalWeek.start_date,
+        p_end_date: canonicalWeek.end_date,
+        p_limit: 50,
+        p_offset: 0,
+      });
+    });
+
+    it('normalizes the historical personal-rank table row returned by PostgREST', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+      rpc.mockImplementation(async (name: string) => {
+        if (name === 'fn_leaderboard_period_window') {
+          return { data: [canonicalWeek], error: null };
+        }
+        if (name === 'fn_user_rank_by_dates') {
+          return { data: [{ rank: 4, total: 88, value: 125.5, found: true }], error: null };
+        }
+        return { data: null, error: null };
+      });
+
+      const rank = await LeaderboardService.getUserRank(
+        'b0000000-0000-0000-0000-000000000002',
+        'a0000000-0000-0000-0000-000000000001',
+        'profit',
+        'weekly',
+        -1
+      );
+
+      expect(rank).toEqual({ rank: 4, total: 88, value: 125.5 });
+    });
+
+    it('fails closed when the canonical window cannot be loaded', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+      rpc.mockResolvedValueOnce({ data: null, error: { message: 'window unavailable' } });
+
+      await expect(LeaderboardService.getPeriodWindow('monthly', 0)).rejects.toMatchObject({
+        message: 'window unavailable',
+      });
     });
   });
 });

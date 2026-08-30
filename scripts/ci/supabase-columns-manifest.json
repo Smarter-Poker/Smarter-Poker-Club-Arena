@@ -1525,7 +1525,15 @@
       "weekly_prizes",
       "monthly_prizes",
       "created_at",
-      "updated_at"
+      "updated_at",
+      "rewards_enabled",
+      "payout_metric",
+      "funding_owner_type",
+      "funding_union_id",
+      "suggestion_key",
+      "setup_completed_at",
+      "setup_completed_by",
+      "updated_by"
     ],
     "club_level_thresholds": [
       "level",
@@ -4903,6 +4911,14 @@
       "updated_at",
       "last_id"
     ],
+    "gto_agg_progress_v31": [
+      "only_row",
+      "last_at",
+      "last_id",
+      "rows_done",
+      "done",
+      "updated_at"
+    ],
     "gto_combo_map": [
       "combo_idx",
       "card_a",
@@ -4920,6 +4936,16 @@
       "depth_bucket",
       "texture_class",
       "facing",
+      "hand_matrix",
+      "source_rows",
+      "built_at"
+    ],
+    "gto_postflop_v31": [
+      "street",
+      "game_family",
+      "position",
+      "depth_bucket",
+      "texture_class",
       "hand_matrix",
       "source_rows",
       "built_at"
@@ -12500,6 +12526,13 @@
       "first_seen_at",
       "last_seen_at",
       "resolved"
+    ],
+    "zz_reopen2_20260830_backup": [
+      "table_id",
+      "tournament_id",
+      "old_status",
+      "open_seats",
+      "captured_at"
     ],
     "zz_reopen_20260830_backup": [
       "table_id",

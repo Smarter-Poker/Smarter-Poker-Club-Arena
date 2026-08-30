@@ -36,3 +36,13 @@ describe('the premium console restates the scroll contract at its own specificit
     expect(rule).not.toMatch(/overflow-y: hidden/);
   });
 });
+
+describe('the entry register stays live while the event does', () => {
+  it('re-runs the one detail query on a cadence for live events only', () => {
+    expect(ENTRIES).toMatch(/tournamentLive/);
+    expect(ENTRIES).toMatch(/20_000/);
+    expect(ENTRIES).toMatch(/visibilityState === 'visible'/);
+    // History does not poll: the schedule stands down for finished events.
+    expect(ENTRIES).toMatch(/if \(cancelled \|\| !tournamentLive\) return;/);
+  });
+});

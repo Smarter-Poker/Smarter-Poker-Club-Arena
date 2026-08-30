@@ -1361,6 +1361,16 @@
     "gto_agg_progress": [
       "street"
     ],
+    "gto_combo_map": [
+      "combo_idx",
+      "card_a",
+      "card_b",
+      "rank_a",
+      "rank_b",
+      "suit_a",
+      "suit_b",
+      "hand_class"
+    ],
     "gto_postflop_compact": [
       "street",
       "game_family",
@@ -1370,6 +1380,14 @@
       "facing",
       "hand_matrix",
       "source_rows"
+    ],
+    "gto_postflop_v31": [
+      "street",
+      "game_family",
+      "position",
+      "depth_bucket",
+      "texture_class",
+      "hand_matrix"
     ],
     "gto_scenarios": [
       "id",
@@ -3658,6 +3676,9 @@
     ],
     "youtube_embed_failures": [
       "video_id"
+    ],
+    "zz_reopen_20260830_backup": [
+      "table_id"
     ]
   }
 }

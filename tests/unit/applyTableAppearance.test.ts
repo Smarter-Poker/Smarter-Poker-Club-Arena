@@ -18,7 +18,7 @@
  *   3. a rejected write PUTS THE FELT BACK, because a table showing a choice
  *      the database refused is worse than one that never changed.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const emit = vi.fn();
 const upsert = vi.fn();
@@ -47,6 +47,10 @@ beforeEach(() => {
   capture.mockClear();
   upsert.mockReset();
   upsert.mockResolvedValue({ error: null });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 const emitsOf = (name: string) => emit.mock.calls.filter((c) => c[0] === name).map((c) => c[1]);
@@ -196,17 +200,58 @@ describe('a rejected write puts the felt back', () => {
     expect(emitsOf('UI_THEME_CHANGED')).toHaveLength(2);
   });
 
-  it('turns a thrown network failure into a stale-safe rollback result', async () => {
+  it('retries a thrown network failure before rolling anything back', async () => {
     upsert.mockRejectedValueOnce(new Error('network down'));
     const result = await applyTableAppearance(
       { background_id: 'vegas' },
       { userId: 'u1', previous: { background_id: 'midnight' } }
     );
+
+    expect(result.ok).toBe(true);
+    expect(upsert).toHaveBeenCalledTimes(2);
+    expect(emitsOf('UI_THEME_CHANGED')).toHaveLength(1);
+  });
+
+  it('turns exhausted network retries into a stale-safe rollback result', async () => {
+    upsert.mockRejectedValue(new Error('network down'));
+    const result = await applyTableAppearance(
+      { background_id: 'vegas' },
+      { userId: 'u1', previous: { background_id: 'midnight' } }
+    );
+
     expect(result.ok).toBe(false);
+    expect(upsert).toHaveBeenCalledTimes(2);
     expect(result.reverted).toEqual({ background_id: 'midnight' });
     expect(emitsOf('UI_THEME_CHANGED').at(-1)).toMatchObject({
       key: 'ALL',
       value: { background_id: 'midnight' },
+    });
+  });
+
+  it('aborts two hung attempts instead of wedging the row write queue', async () => {
+    vi.useFakeTimers();
+    upsert.mockImplementation(() => ({
+      abortSignal: (signal: AbortSignal) =>
+        new Promise<never>((_resolve, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => reject(new DOMException('appearance write aborted', 'AbortError')),
+            { once: true }
+          );
+        }),
+    }));
+
+    const pending = applyTableAppearance(
+      { table_id: 'hung' },
+      { userId: 'u1', previous: { table_id: 'durable' } }
+    );
+    await vi.advanceTimersByTimeAsync(50_000);
+    const result = await pending;
+
+    expect(upsert).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ ok: false, reverted: { table_id: 'durable' } });
+    expect(emitsOf('UI_THEME_CHANGED').at(-1)).toMatchObject({
+      value: { table_id: 'durable' },
     });
   });
 

@@ -11,7 +11,7 @@
 
 import { Outlet, useLocation } from 'react-router-dom';
 import RouteErrorBoundary from '../common/RouteErrorBoundary';
-import { useEffect, useRef, type CSSProperties } from 'react';
+import { useEffect, useRef } from 'react';
 import styles from './AppLayout.module.css';
 import ClubArenaWelcomeModal, { useClubArenaWelcome } from '../modals/ClubArenaWelcomeModal';
 import ClubAnnouncementBanner from '../club/ClubAnnouncementBanner';
@@ -23,36 +23,24 @@ import CompleteProfileModal, { useCompleteProfile } from '../modals/CompleteProf
 import { ClubWorkspaceProvider } from '../../contexts/ClubWorkspaceContext';
 import NavigationTelemetry from '../navigation/NavigationTelemetry';
 
-const ROUTE_ART = {
-  club: '/hub/club-arena/assets/club-buttons/club/club-identity-template-bbj-finish-v1.png',
-  tournament: '/hub/club-arena/assets/club-buttons/game-cards/mtt/desktop.png',
-  finance: '/hub/club-arena/assets/club-buttons/wallets/desktop/wallet-diamonds-v1.webp',
-  player: '/hub/club-arena/images/tiles/player-stats-v9.png',
-  union: '/hub/club-arena/assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp',
-  system: '/hub/club-arena/assets/club-buttons/lobby/lobby-command-chassis-v2.png',
-} as const;
-
-type CasinoZone = keyof typeof ROUTE_ART;
-type CasinoStageStyle = CSSProperties & { '--casino-route-art': string };
-
-function getCasinoZone(pathname: string): CasinoZone {
-  if (/^\/clubs\//.test(pathname) || ['/admin', '/data', '/players'].includes(pathname)) {
-    return 'club';
-  }
-  if (/^\/unions?/.test(pathname) || pathname.startsWith('/union-')) return 'union';
-  if (/tournament|xmtt|hand-history|session-history|leaderboard/.test(pathname)) {
-    return 'tournament';
-  }
-  if (
-    /wallet|cashier|marketplace|vip|rakeback|promotion|bonus|transaction|achievement|challenge/.test(
-      pathname
-    )
-  ) {
-    return 'finance';
-  }
-  if (/profile|stats|friend|search|invite/.test(pathname)) return 'player';
-  return 'system';
-}
+/*
+ * THE ROUTE ART IS GONE (2026-08-30).
+ *
+ * A six-entry ROUTE_ART map, a `getCasinoZone(pathname)` classifier and a
+ * `--casino-route-art` custom property used to run on every navigation to pick
+ * a club / wallet / tile PNG for `.casinoStage::before`, which washed it across
+ * the page at 0.28 opacity. Dan, with a screenshot: "YOU CAN SEE SOME OLD
+ * BORDER IMAGES ON THE SIDES. THE WHOLE BACKGROUND SHOULD BE SOLID BLACK AND
+ * ALL THE SAME COLOR." The pseudo-element that consumed the property was
+ * deleted from AppLayout.module.css earlier the same day.
+ *
+ * All of it is deleted here rather than left running into nothing: a
+ * classifier that computes an answer nobody reads is a trap for the next
+ * reader, who has to prove it is dead before touching anything near it. The
+ * stylesheet keeps the note describing what a themed stage would need if one
+ * ever comes back. No asset was removed - bg-vault.jpg alone still has eight
+ * other consumers.
+ */
 
 function AppLayoutContent() {
   const location = useLocation();
@@ -61,7 +49,12 @@ function AppLayoutContent() {
   // User store for conditional rendering
   const { user } = useAuthUser();
   const { showWelcome, isReady, acceptWelcome } = useClubArenaWelcome();
-  const { showProfileModal, isReady: profileReady, finishProfile } = useCompleteProfile(user);
+  const {
+    showProfileModal,
+    isReady: profileReady,
+    profileStatus,
+    finishProfile,
+  } = useCompleteProfile(user);
 
   // Hide global header on table and tournament play pages
   const isTablePage =
@@ -76,10 +69,6 @@ function AppLayoutContent() {
    * THE TOP TO BE ATTACHED TO THE GLOBAL HEADER."
    */
   const isFlushPage = location.pathname.replace(/\/+$/, '').endsWith('/notifications');
-  const casinoZone = getCasinoZone(location.pathname);
-  const casinoStageStyle: CasinoStageStyle = {
-    '--casino-route-art': `url("${ROUTE_ART[casinoZone]}")`,
-  };
 
   // SPA navigation does not move browser focus by itself. Put keyboard and
   // screen-reader users at the start of the new page without changing scroll.
@@ -89,7 +78,7 @@ function AppLayoutContent() {
   }, [location.pathname]);
 
   return (
-    <div className={styles.layout}>
+    <div className={styles.layout} data-profile-gate-status={profileStatus}>
       {/* First-time Welcome Modal */}
       {isReady && <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />}
 
@@ -131,8 +120,6 @@ function AppLayoutContent() {
             ? `${styles.main} ${styles.mainFlush} ${styles.casinoStage}`
             : `${styles.main} ${styles.casinoStage}`
         }
-        data-casino-zone={casinoZone}
-        style={casinoStageStyle}
       >
         <RouteErrorBoundary>
           <Outlet />

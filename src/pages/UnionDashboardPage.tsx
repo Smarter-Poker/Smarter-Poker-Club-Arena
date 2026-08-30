@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { unionApi } from '../services/UnionApiService';
 import { masterBus } from '../core/MasterBus';
@@ -48,6 +48,23 @@ type UnionTab =
   | 'applications'
   | 'operations'
   | 'settings';
+
+const UNION_TABS = new Set<UnionTab>([
+  'overview',
+  'clubs',
+  'players',
+  'agents',
+  'wallet',
+  'treasury',
+  'analytics',
+  'applications',
+  'operations',
+  'settings',
+]);
+
+function requestedUnionTab(value: string | null): UnionTab {
+  return value && UNION_TABS.has(value as UnionTab) ? (value as UnionTab) : 'overview';
+}
 
 // ── Union Dashboard Types ────────────────────────────────────
 interface UnionRow {
@@ -136,10 +153,30 @@ interface SettlementPeriod {
 
 export default function UnionDashboardPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { unionId: routeUnionId } = useParams<{ unionId?: string }>();
   const { user } = useAuthUser();
 
-  const [tab, setTab] = useState<UnionTab>('overview');
+  const [tab, setTabState] = useState<UnionTab>(() => requestedUnionTab(searchParams.get('tab')));
+  const setTab = useCallback(
+    (next: UnionTab) => {
+      setTabState(next);
+      setSearchParams(
+        (current) => {
+          const updated = new URLSearchParams(current);
+          if (next === 'overview') updated.delete('tab');
+          else updated.set('tab', next);
+          return updated;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
+
+  useEffect(() => {
+    setTabState(requestedUnionTab(searchParams.get('tab')));
+  }, [searchParams]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -1056,7 +1093,29 @@ export default function UnionDashboardPage() {
         </div>
 
         {/* Tabs */}
-        <div className="admin-tabs">
+        <div
+          className="admin-tabs"
+          role="tablist"
+          aria-label="Union Operations"
+          onKeyDown={(event) => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            const tabs = Array.from(
+              event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+            );
+            const index = Math.max(0, tabs.indexOf(event.target as HTMLButtonElement));
+            const next =
+              event.key === 'Home'
+                ? tabs[0]
+                : event.key === 'End'
+                  ? tabs[tabs.length - 1]
+                  : event.key === 'ArrowRight'
+                    ? tabs[(index + 1) % tabs.length]
+                    : tabs[(index - 1 + tabs.length) % tabs.length];
+            event.preventDefault();
+            next?.click();
+            next?.focus();
+          }}
+        >
           {(
             [
               { id: 'overview' as UnionTab, label: 'Overview' },
@@ -1077,6 +1136,11 @@ export default function UnionDashboardPage() {
           ).map((t) => (
             <button
               key={t.id}
+              id={`union-tab-${t.id}`}
+              role="tab"
+              aria-selected={tab === t.id}
+              aria-controls={`union-panel-${t.id}`}
+              tabIndex={tab === t.id ? 0 : -1}
               className={`admin-tab ${tab === t.id ? 'active' : ''}`}
               onClick={() => setTab(t.id)}
             >
@@ -1099,116 +1163,122 @@ export default function UnionDashboardPage() {
           ))}
         </div>
 
-        {/* ══════ TAB: OVERVIEW ══════ */}
-        {tab === 'overview' && (
-          <div className="admin-tab-content">
-            <div className="admin-stats-grid">
-              <div className="admin-stat-card">
-                <div className="admin-stat-value" style={{ color: '#4599FF' }}>
-                  {fmt(clubs.length)}
+        <div
+          id={`union-panel-${tab}`}
+          role="tabpanel"
+          aria-labelledby={`union-tab-${tab}`}
+          tabIndex={0}
+        >
+          {/* ══════ TAB: OVERVIEW ══════ */}
+          {tab === 'overview' && (
+            <div className="admin-tab-content">
+              <div className="admin-stats-grid">
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value" style={{ color: '#4599FF' }}>
+                    {fmt(clubs.length)}
+                  </div>
+                  <div className="admin-stat-label">Clubs</div>
                 </div>
-                <div className="admin-stat-label">Clubs</div>
-              </div>
-              <div className="admin-stat-card">
-                <div className="admin-stat-value">
-                  {fmt(clubs.reduce((s, c) => s + (c.member_count || 0), 0))}
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value">
+                    {fmt(clubs.reduce((s, c) => s + (c.member_count || 0), 0))}
+                  </div>
+                  <div className="admin-stat-label">Total Members</div>
                 </div>
-                <div className="admin-stat-label">Total Members</div>
-              </div>
-              <div className="admin-stat-card">
-                <div className="admin-stat-value" style={{ color: '#31A24C' }}>
-                  {fmt(agents.length)}
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value" style={{ color: '#31A24C' }}>
+                    {fmt(agents.length)}
+                  </div>
+                  <div className="admin-stat-label">Active Agents</div>
                 </div>
-                <div className="admin-stat-label">Active Agents</div>
               </div>
-            </div>
 
-            {/* Wallet Summary */}
-            {wallets && (
-              <div className="admin-stats-grid" style={{ marginTop: '16px' }}>
-                {(
-                  [
-                    {
-                      key: 'chips',
-                      label: 'Chip Balance',
-                      color: '#4599FF',
-                      value: wallets.chip_balance,
-                    },
-                    {
-                      key: 'rake',
-                      label: 'Rake Treasury',
-                      color: '#31A24C',
-                      value: wallets.rake_wallet,
-                      detail: 'rake',
-                    },
-                    {
-                      key: 'bbj',
-                      label: `BBJ Pool${bbjPool ? ` (${bbjPool.hit_count} hits)` : ''}`,
-                      color: '#F7C52A',
-                      value: bbjPool?.main_balance ?? 0,
-                      detail: 'bbj',
-                    },
-                    {
-                      key: 'promo',
-                      label: 'Promo Wallet',
-                      color: '#C084FC',
-                      value: wallets.promo_wallet,
-                    },
-                  ] as {
-                    key: UnionWalletKey;
-                    label: string;
-                    color: string;
-                    value: number;
-                    /**
-                     * Tiles WITH a detail mode open the data panel; tiles
-                     * without open the send-to-member flow directly. Rake and
-                     * BBJ are the two the operator reads before spending, so
-                     * they lead with the numbers and offer Send inside.
-                     */
-                    detail?: TreasuryDetailMode;
-                  }[]
-                ).map((w) => (
-                  <button
-                    key={w.key}
-                    className="admin-stat-card"
-                    style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
-                    aria-label={`Open ${w.label}`}
-                    onClick={() =>
-                      w.detail
-                        ? setTreasuryModal(w.detail)
-                        : setWalletModal({ key: w.key, label: w.label, balance: w.value || 0 })
-                    }
-                  >
-                    <div className="admin-stat-value" style={{ color: w.color }}>
-                      {fmt(w.value)}
-                    </div>
-                    <div className="admin-stat-label">{w.label} ›</div>
-                  </button>
-                ))}
-                {/* BACKUP JACKPOT (Dan 2026-08-24). bbj_pools.backup_balance is
+              {/* Wallet Summary */}
+              {wallets && (
+                <div className="admin-stats-grid" style={{ marginTop: '16px' }}>
+                  {(
+                    [
+                      {
+                        key: 'chips',
+                        label: 'Chip Balance',
+                        color: '#4599FF',
+                        value: wallets.chip_balance,
+                      },
+                      {
+                        key: 'rake',
+                        label: 'Rake Treasury',
+                        color: '#31A24C',
+                        value: wallets.rake_wallet,
+                        detail: 'rake',
+                      },
+                      {
+                        key: 'bbj',
+                        label: `BBJ Pool${bbjPool ? ` (${bbjPool.hit_count} hits)` : ''}`,
+                        color: '#F7C52A',
+                        value: bbjPool?.main_balance ?? 0,
+                        detail: 'bbj',
+                      },
+                      {
+                        key: 'promo',
+                        label: 'Promo Wallet',
+                        color: '#C084FC',
+                        value: wallets.promo_wallet,
+                      },
+                    ] as {
+                      key: UnionWalletKey;
+                      label: string;
+                      color: string;
+                      value: number;
+                      /**
+                       * Tiles WITH a detail mode open the data panel; tiles
+                       * without open the send-to-member flow directly. Rake and
+                       * BBJ are the two the operator reads before spending, so
+                       * they lead with the numbers and offer Send inside.
+                       */
+                      detail?: TreasuryDetailMode;
+                    }[]
+                  ).map((w) => (
+                    <button
+                      key={w.key}
+                      className="admin-stat-card"
+                      style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                      aria-label={`Open ${w.label}`}
+                      onClick={() =>
+                        w.detail
+                          ? setTreasuryModal(w.detail)
+                          : setWalletModal({ key: w.key, label: w.label, balance: w.value || 0 })
+                      }
+                    >
+                      <div className="admin-stat-value" style={{ color: w.color }}>
+                        {fmt(w.value)}
+                      </div>
+                      <div className="admin-stat-label">{w.label} ›</div>
+                    </button>
+                  ))}
+                  {/* BACKUP JACKPOT (Dan 2026-08-24). bbj_pools.backup_balance is
                     a real bank holding money — 12,055.65 at the time this was
                     added — and it had no tile anywhere in the product, so there
                     was no way to see it and no way to move it. Distinct from
                     union_wallets.bbj_wallet on the Wallet tab: that is a wallet
                     column, this is the pool's backup bank, different money. */}
-                <button
-                  className="admin-stat-card"
-                  style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
-                  aria-label="Open Backup Jackpot"
-                  onClick={() => setTreasuryModal('backup')}
-                >
-                  <div className="admin-stat-value" style={{ color: '#4599FF' }}>
-                    {fmt(bbjPool?.backup_balance ?? 0)}
-                  </div>
-                  <div className="admin-stat-label">Backup Jackpot ›</div>
-                </button>
-                {/* Spin reserve. It is NOT a send source - the pool is priced on
+                  <button
+                    className="admin-stat-card"
+                    style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                    aria-label="Open Backup Jackpot"
+                    onClick={() => setTreasuryModal('backup')}
+                  >
+                    <div className="admin-stat-value" style={{ color: '#4599FF' }}>
+                      {fmt(bbjPool?.backup_balance ?? 0)}
+                    </div>
+                    <div className="admin-stat-label">Backup Jackpot ›</div>
+                  </button>
+                  {/* Spin reserve. It is NOT a send source - the pool is priced on
                     being net-neutral over volume, and a manual withdrawal would
                     break that silently - but it was the only tile on the page
                     you could not open, which meant the wallet that funds the
                     entire Spin economy had no ledger anywhere in the product.
                     It opens read-only: balance and full history, no send flow. */}
-                {/* THE DEPLOYED pool. The tile below shows
+                  {/* THE DEPLOYED pool. The tile below shows
                     union_wallets.spin_reserve_wallet, which is capital
                     earmarked for Spins but NOT yet in play; this is the float
                     every multiplier is actually paid from. They never
@@ -1216,35 +1286,35 @@ export default function UnionDashboardPage() {
                     tile anywhere in the product. Opens the Spins tab, where
                     the activation panel explains the seed and the repayment
                     plan behind this number. */}
-                <button
-                  className="admin-stat-card"
-                  style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
-                  aria-label="Open Spins Wallet"
-                  onClick={() => setTab('settings')}
-                >
-                  <div className="admin-stat-value" style={{ color: '#39d17a' }}>
-                    {unionSpins.state === null ? '-' : fmt(unionSpins.balance)}
-                  </div>
-                  <div className="admin-stat-label">Spins Wallet ›</div>
-                </button>
-                <button
-                  className="admin-stat-card"
-                  style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
-                  aria-label="Open Spin Reserve"
-                  onClick={() =>
-                    setWalletModal({
-                      key: 'spin_reserve',
-                      label: 'Spin Reserve',
-                      balance: wallets.spin_reserve_wallet || 0,
-                    })
-                  }
-                >
-                  <div className="admin-stat-value" style={{ color: '#39d17a' }}>
-                    {fmt(wallets.spin_reserve_wallet)}
-                  </div>
-                  <div className="admin-stat-label">Spin Reserve ›</div>
-                </button>
-                {/* SPINS TREASURY (Dan 2026-08-24: "the wallet is still missing
+                  <button
+                    className="admin-stat-card"
+                    style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                    aria-label="Open Spins Wallet"
+                    onClick={() => setTab('settings')}
+                  >
+                    <div className="admin-stat-value" style={{ color: '#39d17a' }}>
+                      {unionSpins.state === null ? '-' : fmt(unionSpins.balance)}
+                    </div>
+                    <div className="admin-stat-label">Spins Wallet ›</div>
+                  </button>
+                  <button
+                    className="admin-stat-card"
+                    style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                    aria-label="Open Spin Reserve"
+                    onClick={() =>
+                      setWalletModal({
+                        key: 'spin_reserve',
+                        label: 'Spin Reserve',
+                        balance: wallets.spin_reserve_wallet || 0,
+                      })
+                    }
+                  >
+                    <div className="admin-stat-value" style={{ color: '#39d17a' }}>
+                      {fmt(wallets.spin_reserve_wallet)}
+                    </div>
+                    <div className="admin-stat-label">Spin Reserve ›</div>
+                  </button>
+                  {/* SPINS TREASURY (Dan 2026-08-24: "the wallet is still missing
                     the spins treasury"). The two tiles above are the halves:
                     Spin Reserve is capital earmarked but NOT in play, Spins
                     Wallet is the deployed pool float every multiplier is paid
@@ -1252,1166 +1322,102 @@ export default function UnionDashboardPage() {
                     count, so the treasury is their sum — and until now the
                     union could see both halves and never the whole. Opens the
                     reserve ledger, the only one of the two with a history. */}
-                <button
-                  className="admin-stat-card"
-                  style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
-                  aria-label="Open Spins Treasury"
-                  onClick={() =>
-                    setWalletModal({
-                      key: 'spin_reserve',
-                      label: 'Spin Reserve',
-                      balance: wallets.spin_reserve_wallet || 0,
-                    })
-                  }
-                >
-                  <div className="admin-stat-value" style={{ color: '#39d17a' }}>
-                    {unionSpins.state === null
-                      ? '-'
-                      : fmt((wallets.spin_reserve_wallet || 0) + unionSpins.balance)}
-                  </div>
-                  <div className="admin-stat-label">Spins Treasury ›</div>
-                </button>
-              </div>
-            )}
-
-            {/* Broadcast (Lead only) */}
-            {isLead && (
-              <div className="admin-card" style={{ marginTop: '16px', padding: '16px' }}>
-                <h3 className="admin-card-title">Broadcast Announcement</h3>
-                <textarea
-                  className="admin-input"
-                  value={annMsg}
-                  onChange={(e) => setAnnMsg(e.target.value)}
-                  maxLength={500}
-                  placeholder="Announcement To All Clubs..."
-                  rows={3}
-                  style={{ resize: 'vertical' }}
-                />
-                <div
-                  style={{ display: 'flex', gap: '8px', marginTop: '12px', alignItems: 'center' }}
-                >
-                  <select
-                    className="admin-input"
-                    style={{ maxWidth: '200px' }}
-                    value={annClub}
-                    onChange={(e) => setAnnClub(e.target.value)}
-                  >
-                    <option value="">All Clubs</option>
-                    {clubs.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
                   <button
-                    className="admin-btn admin-btn-primary"
-                    disabled={processing || !annMsg.trim()}
-                    onClick={async () => {
-                      setProcessing(true);
-                      setError(null);
-                      try {
-                        // UNION AUDIT FIX 2026-07-21: union_announcements was a
-                        // write-only dead table (nothing reads it). The
-                        // manage-union API posts into club_announcements — the
-                        // feed members actually see — for every club in the
-                        // union (or one targeted club).
-                        await unionApi.announce(unionId!, annMsg, annClub || undefined);
-                        masterBus.emit('ANNOUNCEMENT_CHANGED', {
-                          clubId: annClub || unionId || '',
-                          action: 'created',
-                        });
-                        setSuccess('Announcement sent');
-                        setAnnMsg('');
-                        loadDashboard(unionId);
-                      } catch (err: any) {
-                        setError(safeErrorMessage(err));
-                      } finally {
-                        setProcessing(false);
-                      }
-                    }}
-                  >
-                    Send
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ══════ TAB: CLUBS ══════ */}
-        {tab === 'clubs' && (
-          <div className="admin-tab-content">
-            <input
-              className="admin-input"
-              value={clubSearch}
-              onChange={(e) => setClubSearch(e.target.value)}
-              placeholder="Search Clubs..."
-              style={{ marginBottom: '16px', maxWidth: '300px' }}
-            />
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                gap: '12px',
-              }}
-            >
-              {filteredClubs.map((club) => (
-                <div key={club.id} className="admin-card" style={{ padding: '14px 16px' }}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      marginBottom: '8px',
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: '14px' }}>{club.name}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                        ID: {club.club_id}
-                      </div>
-                    </div>
-                    <span className="admin-badge">{pct(club.club_commission_rate)} Comm</span>
-                  </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      gap: '12px',
-                      fontSize: '12px',
-                      color: 'var(--text-secondary)',
-                    }}
-                  >
-                    <span>{fmt(club.member_count)} Members</span>
-                    <span>{fmt(club.active_tables)} Tables</span>
-                    <span>{fmt(club.total_rake)} Rake</span>
-                  </div>
-                  {isLead && (
-                    <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
-                      <button
-                        className="admin-btn admin-btn-ghost admin-btn-sm"
-                        onClick={() => {
-                          setEditCommClub(club);
-                          setEditCommRate(String((club.club_commission_rate || 0.9) * 100));
-                        }}
-                      >
-                        Edit Rate
-                      </button>
-                      {/* Removal reads the exit blockers first. The previous
-                          button called unionApi.removeClub straight from a
-                          confirm dialog, so a club could be dropped while its
-                          players were still seated in union games and its rake
-                          and agent credit were unsettled. */}
-                      {unionId && (
-                        <UnionClubGovernance
-                          unionId={unionId}
-                          clubId={club.id}
-                          clubName={club.name ?? 'this club'}
-                          onExpelled={(id) => {
-                            masterBus.emit('CLUB_UPDATED', { clubId: id });
-                            loadDashboard(unionId);
-                          }}
-                        />
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            {filteredClubs.length === 0 && (
-              <div className="admin-empty-state">
-                <span className="admin-empty-icon">◆</span>
-                <span>{clubSearch ? 'No clubs match' : 'No clubs yet'}</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ══════ TAB: AGENTS ══════ */}
-        {tab === 'agents' && (
-          <div className="admin-tab-content">
-            <div className="admin-stats-grid" style={{ marginBottom: '16px' }}>
-              <div className="admin-stat-card">
-                <div className="admin-stat-value" style={{ color: '#31A24C' }}>
-                  {fmt(agents.filter((a) => a.status === 'active').length)}
-                </div>
-                <div className="admin-stat-label">Active</div>
-              </div>
-              <div className="admin-stat-card">
-                <div className="admin-stat-value" style={{ color: '#FA383E' }}>
-                  {fmt(agents.filter((a) => a.status === 'suspended').length)}
-                </div>
-                <div className="admin-stat-label">Suspended</div>
-              </div>
-              <div className="admin-stat-card">
-                <div className="admin-stat-value">{fmt(agents.length)}</div>
-                <div className="admin-stat-label">Total Agents</div>
-              </div>
-            </div>
-
-            <div
-              style={{ display: 'flex', gap: '8px', marginBottom: '12px', alignItems: 'center' }}
-            >
-              <input
-                className="admin-input"
-                value={agentSearch}
-                onChange={(e) => setAgentSearch(e.target.value)}
-                placeholder="Search Agents..."
-                style={{ maxWidth: '300px' }}
-              />
-              <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={exportAgents}>
-                Export CSV
-              </button>
-            </div>
-
-            <div className="admin-table-scroll">
-              <table className="admin-data-table">
-                <thead>
-                  <tr>
-                    <th>Agent</th>
-                    <th>Club</th>
-                    <th>Role</th>
-                    <th>Commission</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredAgents.map((agent) => {
-                    const club = clubs.find((c) => c.id === agent.club_id);
-                    return (
-                      <tr key={agent.id || agent.user_id}>
-                        <td>
-                          {agent.profiles?.display_name ||
-                            agent.profiles?.username ||
-                            agent.user_id?.slice(0, 8)}
-                        </td>
-                        <td>{club?.name || 'Unknown'}</td>
-                        <td>{agent.role}</td>
-                        <td>{pct(agent.commission_rate)}</td>
-                        <td>
-                          <span
-                            className="admin-badge"
-                            style={
-                              agent.status === 'active'
-                                ? { background: 'rgba(49,162,76,0.15)', color: '#31A24C' }
-                                : { background: 'rgba(250,56,62,0.15)', color: '#FA383E' }
-                            }
-                          >
-                            {agent.status}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            {filteredAgents.length === 0 && (
-              <div className="admin-empty-state">
-                <span className="admin-empty-icon">◉</span>
-                <span>{agentSearch ? 'No agents match' : 'No agents found'}</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ══════ TAB: PLAYERS — the union-wide roster ══════ */}
-        {tab === 'players' && (
-          <div className="admin-tab-content">
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              <input
-                className="admin-input"
-                style={{ flex: 1 }}
-                placeholder="Search Players By Name, Club Or Role…"
-                value={rosterSearch}
-                onChange={(e) => setRosterSearch(e.target.value)}
-              />
-              <span style={{ alignSelf: 'center', color: '#888', fontSize: 12 }}>
-                {fmt(filteredRoster.length)} Players
-              </span>
-              <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={exportRoster}>
-                Export CSV
-              </button>
-            </div>
-            {rosterLoading ? (
-              <div className="admin-empty">Loading Roster…</div>
-            ) : filteredRoster.length === 0 ? (
-              <div className="admin-empty">
-                <span className="admin-empty-icon">◉</span>
-                <span>{rosterSearch ? 'No players match' : 'No players found'}</span>
-              </div>
-            ) : (
-              <div className="admin-table-wrap">
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Player</th>
-                      <th>Club</th>
-                      <th>Role</th>
-                      <th>Status</th>
-                      <th>Seated</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRoster.slice(0, 500).map((r) => (
-                      <tr key={`${r.user_id}-${r.club_name}`}>
-                        <td style={{ color: '#fff', fontWeight: 600 }}>
-                          {r.display_name || r.username || r.user_id.slice(0, 8)}
-                        </td>
-                        <td>{r.club_name || ''}</td>
-                        <td>
-                          <span
-                            style={{
-                              fontSize: 11,
-                              fontWeight: 700,
-                              color:
-                                r.member_role === 'owner'
-                                  ? '#F7C52A'
-                                  : r.member_role === 'co_owner' || r.member_role === 'admin'
-                                    ? '#4599FF'
-                                    : r.member_role === 'agent' || r.member_role === 'super_agent'
-                                      ? '#31A24C'
-                                      : '#aaa',
-                            }}
-                          >
-                            {(r.member_role || 'member').replace('_', ' ').toUpperCase()}
-                          </span>
-                        </td>
-                        <td>{r.member_status || ''}</td>
-                        <td>{r.currently_seated ? '● at table' : ''}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ══════ TAB: WALLET ══════ */}
-        {tab === 'wallet' && (
-          <div className="admin-tab-content">
-            {wallets && (
-              <div className="admin-stats-grid" style={{ marginBottom: '16px' }}>
-                {(
-                  [
-                    {
-                      key: 'chips',
-                      label: 'Chip Balance',
-                      color: '#4599FF',
-                      value: wallets.chip_balance,
-                    },
-                    {
-                      key: 'rake',
-                      label: 'Weekly Rake Wallet',
-                      color: '#31A24C',
-                      value: wallets.rake_wallet,
-                    },
-                    {
-                      // union_wallets.bbj_wallet, NOT bbj_pools.backup_balance.
-                      // This tile read "Backup BBJ Wallet", which is the same
-                      // words as the Backup Jackpot tile on the Overview tab
-                      // and a different balance — two numbers under one name is
-                      // how an operator moves the wrong money. Renamed to the
-                      // column it actually shows.
-                      key: 'bbj',
-                      label: 'BBJ Reserve Wallet',
-                      color: '#F7C52A',
-                      value: wallets.bbj_wallet,
-                    },
-                    {
-                      key: 'promo',
-                      label: 'Promo Wallet',
-                      color: '#C084FC',
-                      value: wallets.promo_wallet,
-                    },
-                  ] as { key: UnionWalletKey; label: string; color: string; value: number }[]
-                ).map((w) => (
-                  <button
-                    key={w.key}
                     className="admin-stat-card"
                     style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
-                    aria-label={`Open ${w.label}`}
+                    aria-label="Open Spins Treasury"
                     onClick={() =>
-                      setWalletModal({ key: w.key, label: w.label, balance: w.value || 0 })
+                      setWalletModal({
+                        key: 'spin_reserve',
+                        label: 'Spin Reserve',
+                        balance: wallets.spin_reserve_wallet || 0,
+                      })
                     }
                   >
-                    <div className="admin-stat-value" style={{ color: w.color }}>
-                      {fmt(w.value)}
+                    <div className="admin-stat-value" style={{ color: '#39d17a' }}>
+                      {unionSpins.state === null
+                        ? '-'
+                        : fmt((wallets.spin_reserve_wallet || 0) + unionSpins.balance)}
                     </div>
-                    <div className="admin-stat-label">{w.label} ›</div>
-                  </button>
-                ))}
-                {/* Spin reserve. It is NOT a send source - the pool is priced on
-                    being net-neutral over volume, and a manual withdrawal would
-                    break that silently - but it was the only tile on the page
-                    you could not open, which meant the wallet that funds the
-                    entire Spin economy had no ledger anywhere in the product.
-                    It opens read-only: balance and full history, no send flow. */}
-                {/* THE DEPLOYED pool. The tile below shows
-                    union_wallets.spin_reserve_wallet, which is capital
-                    earmarked for Spins but NOT yet in play; this is the float
-                    every multiplier is actually paid from. They never
-                    double-count, and until now only the undeployed half had a
-                    tile anywhere in the product. Opens the Spins tab, where
-                    the activation panel explains the seed and the repayment
-                    plan behind this number. */}
-                <button
-                  className="admin-stat-card"
-                  style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
-                  aria-label="Open Spins Wallet"
-                  onClick={() => setTab('settings')}
-                >
-                  <div className="admin-stat-value" style={{ color: '#39d17a' }}>
-                    {unionSpins.state === null ? '-' : fmt(unionSpins.balance)}
-                  </div>
-                  <div className="admin-stat-label">Spins Wallet ›</div>
-                </button>
-                <button
-                  className="admin-stat-card"
-                  style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
-                  aria-label="Open Spin Reserve"
-                  onClick={() =>
-                    setWalletModal({
-                      key: 'spin_reserve',
-                      label: 'Spin Reserve',
-                      balance: wallets.spin_reserve_wallet || 0,
-                    })
-                  }
-                >
-                  <div className="admin-stat-value" style={{ color: '#39d17a' }}>
-                    {fmt(wallets.spin_reserve_wallet)}
-                  </div>
-                  <div className="admin-stat-label">Spin Reserve ›</div>
-                </button>
-              </div>
-            )}
-
-            {/* DEPOSIT TO UNION BANK — Move chips from owner's player wallet to union bank */}
-            {isLead && (
-              <div
-                className="admin-card"
-                style={{ padding: '16px', marginBottom: '16px', borderLeft: '3px solid #22c55e' }}
-              >
-                <h3 className="admin-card-title" style={{ color: '#22c55e' }}>
-                  Deposit To Union Bank
-                </h3>
-                <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
-                  Move Chips From Your Player Wallet Into The Union Main Bank
-                </p>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <input
-                    className="admin-input"
-                    style={{ flex: '0 0 150px' }}
-                    type="number"
-                    min="1"
-                    placeholder="Amount"
-                    value={depositForm.amount}
-                    onChange={(e) => setDepositForm((f) => ({ ...f, amount: e.target.value }))}
-                  />
-                  <input
-                    className="admin-input"
-                    style={{ flex: '1 1 150px' }}
-                    placeholder="Notes (Optional)"
-                    value={depositForm.notes}
-                    onChange={(e) => setDepositForm((f) => ({ ...f, notes: e.target.value }))}
-                  />
-                  <button
-                    className="admin-btn admin-btn-primary"
-                    style={{ background: '#22c55e' }}
-                    disabled={processing}
-                    onClick={async () => {
-                      setProcessing(true);
-                      setError(null);
-                      try {
-                        const amt = parseInt(depositForm.amount || '0', 10);
-                        if (isNaN(amt) || amt <= 0) {
-                          setError('Enter a valid amount');
-                          setProcessing(false);
-                          return;
-                        }
-
-                        // UNION AUDIT FIX 2026-07-21: was a two-step client-side
-                        // chain (wallet debit succeeded, union credit RLS-blocked)
-                        // that could strand the owner's chips. Now one atomic
-                        // SECURITY DEFINER RPC — debit + credit + ledger in a
-                        // single transaction, union-lead check inside.
-                        const { data: depRes, error: depErr } = await supabase.rpc(
-                          'fn_union_deposit_from_wallet',
-                          {
-                            p_union_id: unionId,
-                            p_amount: amt,
-                            p_notes: depositForm.notes || 'Union funding',
-                          }
-                        );
-                        if (depErr) throw new Error(depErr.message || 'Deposit failed');
-                        if (depRes && (depRes as any).success === false) {
-                          throw new Error((depRes as any).error || 'Deposit failed');
-                        }
-
-                        setSuccess(`Deposited ${amt.toLocaleString()} chips to Union Bank`);
-                        masterBus.emit('BALANCE_UPDATED', {
-                          source: 'union_deposit',
-                          userId: user!.id,
-                        });
-                        setDepositForm({ amount: '', notes: '' });
-                        loadDashboard(unionId);
-                      } catch (err: any) {
-                        setError(safeErrorMessage(err, 'Deposit failed'));
-                      } finally {
-                        setProcessing(false);
-                      }
-                    }}
-                  >
-                    Deposit
+                    <div className="admin-stat-label">Spins Treasury ›</div>
                   </button>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* FUND SPIN RESERVE — union wallet -> spin_reserve_wallet (2026-08-22)
-                The reserve is the capital every Spin bonus pool this union owns is
-                seeded from, and a 100x is paid out of it. Before this control the
-                only way in was the RPC typed by hand, which is why the live pool
-                had been seeded 20,000 out of promo_wallet. */}
-            {isLead && (
-              <div
-                className="admin-card"
-                style={{ padding: '16px', marginBottom: '16px', borderLeft: '3px solid #39d17a' }}
-              >
-                <h3 className="admin-card-title" style={{ color: '#39d17a' }}>
-                  Fund Spin Reserve
-                </h3>
-                <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
-                  Move Chips Into The Wallet That Seeds Every Spin Bonus Pool This Union Owns.
-                  {wallets ? ` Reserve holds ${fmt(wallets.spin_reserve_wallet)}.` : ''}
-                </p>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <select
+              {/* Broadcast (Lead only) */}
+              {isLead && (
+                <div className="admin-card" style={{ marginTop: '16px', padding: '16px' }}>
+                  <h3 className="admin-card-title">Broadcast Announcement</h3>
+                  <textarea
                     className="admin-input"
-                    style={{ flex: '1 1 160px' }}
-                    value={spinReserveForm.from}
-                    onChange={(e) => setSpinReserveForm((f) => ({ ...f, from: e.target.value }))}
-                  >
-                    <option value="promo_wallet">From Promo Wallet</option>
-                    <option value="rake_wallet">From Rake Wallet</option>
-                    <option value="chip_balance">From Chip Balance</option>
-                  </select>
-                  <input
-                    className="admin-input"
-                    style={{ flex: '0 0 150px' }}
-                    type="number"
-                    min="1"
-                    placeholder="Amount"
-                    value={spinReserveForm.amount}
-                    onChange={(e) => setSpinReserveForm((f) => ({ ...f, amount: e.target.value }))}
+                    value={annMsg}
+                    onChange={(e) => setAnnMsg(e.target.value)}
+                    maxLength={500}
+                    placeholder="Announcement To All Clubs..."
+                    rows={3}
+                    style={{ resize: 'vertical' }}
                   />
-                  <button
-                    className="admin-btn admin-btn-primary"
-                    style={{ background: '#39d17a', color: '#000' }}
-                    disabled={processing || !spinReserveForm.amount}
-                    onClick={async () => {
-                      setProcessing(true);
-                      setError(null);
-                      try {
-                        const amt = parseInt(spinReserveForm.amount || '0', 10);
-                        if (isNaN(amt) || amt <= 0) {
-                          setError('Enter a valid amount');
-                          setProcessing(false);
-                          return;
-                        }
-                        await unionApi.fundSpinReserve(
-                          unionId!,
-                          amt,
-                          spinReserveForm.from as 'promo_wallet' | 'rake_wallet' | 'chip_balance'
-                        );
-                        setSuccess(`${amt.toLocaleString()} chips moved to the Spin reserve`);
-                        setSpinReserveForm((f) => ({ ...f, amount: '' }));
-                        masterBus.emit('BALANCE_UPDATED', { source: 'spin_reserve_fund' });
-                        loadDashboard(unionId);
-                      } catch (err: any) {
-                        setError(safeErrorMessage(err, 'Spin reserve funding failed'));
-                      } finally {
-                        setProcessing(false);
-                      }
-                    }}
+                  <div
+                    style={{ display: 'flex', gap: '8px', marginTop: '12px', alignItems: 'center' }}
                   >
-                    Fund Reserve
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* FUND BBJ POOL — union bank -> shared jackpot (BBJ unification 2026-07-21) */}
-            {isLead && (
-              <div
-                className="admin-card"
-                style={{ padding: '16px', marginBottom: '16px', borderLeft: '3px solid #F7C52A' }}
-              >
-                <h3 className="admin-card-title" style={{ color: '#F7C52A' }}>
-                  Fund BBJ Pool
-                </h3>
-                <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
-                  Move Chips From The Union Bank Into The Shared Bad Beat Jackpot. Split Across
-                  Main/Backup/Promo Per Your Union BBJ Settings.
-                  {bbjPool
-                    ? ` Current pool: ${fmt(bbjPool.main_balance)} main / ${fmt(bbjPool.backup_balance)} backup / ${fmt(bbjPool.promo_balance)} promo.`
-                    : ' No active pool found.'}
-                </p>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <input
-                    className="admin-input"
-                    style={{ flex: '0 0 150px' }}
-                    type="number"
-                    min="1"
-                    placeholder="Amount"
-                    value={bbjFundAmount}
-                    onChange={(e) => setBbjFundAmount(e.target.value)}
-                  />
-                  <button
-                    className="admin-btn admin-btn-primary"
-                    style={{ background: '#F7C52A', color: '#000' }}
-                    disabled={processing || !bbjFundAmount}
-                    onClick={async () => {
-                      setProcessing(true);
-                      setError(null);
-                      try {
-                        const amt = parseInt(bbjFundAmount || '0', 10);
-                        if (isNaN(amt) || amt <= 0) {
-                          setError('Enter a valid amount');
-                          setProcessing(false);
-                          return;
-                        }
-                        await unionApi.fundBbjPool(unionId!, amt);
-                        setSuccess(`${amt.toLocaleString()} chips moved to the BBJ pool`);
-                        setBbjFundAmount('');
-                        masterBus.emit('BALANCE_UPDATED', { source: 'bbj_fund' });
-                        loadDashboard(unionId);
-                      } catch (err: any) {
-                        setError(safeErrorMessage(err, 'BBJ funding failed'));
-                      } finally {
-                        setProcessing(false);
-                      }
-                    }}
-                  >
-                    Fund Jackpot
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* CLAWBACK — Recall chips from any wallet (club, agent, player) back to union */}
-            {isLead && (
-              <div
-                className="admin-card"
-                style={{ padding: '16px', marginBottom: '16px', borderLeft: '3px solid #ef4444' }}
-              >
-                <h3 className="admin-card-title" style={{ color: '#ef4444' }}>
-                  Clawback Chips
-                </h3>
-                <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
-                  Recall Chips From Any Club Treasury, Agent Wallet, Or Player Wallet Back To Union
-                  Bank
-                </p>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <select
-                    className="admin-input"
-                    style={{ flex: '1 1 200px' }}
-                    value={clawbackForm.target}
-                    onChange={(e) => setClawbackForm((f) => ({ ...f, target: e.target.value }))}
-                  >
-                    <option value="">Select Target...</option>
-                    <optgroup label="Club Treasuries">
+                    <select
+                      className="admin-input"
+                      style={{ maxWidth: '200px' }}
+                      value={annClub}
+                      onChange={(e) => setAnnClub(e.target.value)}
+                    >
+                      <option value="">All Clubs</option>
                       {clubs.map((c) => (
-                        <option key={`club-${c.id}`} value={`club:${c.id}`}>
-                          {c.name} (Treasury)
+                        <option key={c.id} value={c.id}>
+                          {c.name}
                         </option>
                       ))}
-                    </optgroup>
-                  </select>
-                  <input
-                    className="admin-input"
-                    style={{ flex: '0 0 120px' }}
-                    type="number"
-                    min="1"
-                    placeholder="Amount"
-                    value={clawbackForm.amount}
-                    onChange={(e) => setClawbackForm((f) => ({ ...f, amount: e.target.value }))}
-                  />
-                  <input
-                    className="admin-input"
-                    style={{ flex: '1 1 150px' }}
-                    placeholder="Reason"
-                    value={clawbackForm.reason}
-                    onChange={(e) => setClawbackForm((f) => ({ ...f, reason: e.target.value }))}
-                  />
-                  <button
-                    className="admin-btn"
-                    style={{ background: '#ef4444', color: '#fff' }}
-                    disabled={processing}
-                    onClick={async () => {
-                      setProcessing(true);
-                      setError(null);
-                      try {
-                        const target = clawbackForm.target;
-                        const amt = parseInt(clawbackForm.amount || '0', 10);
-                        const reason = clawbackForm.reason || 'Union clawback';
-
-                        if (!target) {
-                          setError('Select a target');
+                    </select>
+                    <button
+                      className="admin-btn admin-btn-primary"
+                      disabled={processing || !annMsg.trim()}
+                      onClick={async () => {
+                        setProcessing(true);
+                        setError(null);
+                        try {
+                          // UNION AUDIT FIX 2026-07-21: union_announcements was a
+                          // write-only dead table (nothing reads it). The
+                          // manage-union API posts into club_announcements — the
+                          // feed members actually see — for every club in the
+                          // union (or one targeted club).
+                          await unionApi.announce(unionId!, annMsg, annClub || undefined);
+                          masterBus.emit('ANNOUNCEMENT_CHANGED', {
+                            clubId: annClub || unionId || '',
+                            action: 'created',
+                          });
+                          setSuccess('Announcement sent');
+                          setAnnMsg('');
+                          loadDashboard(unionId);
+                        } catch (err: any) {
+                          setError(safeErrorMessage(err));
+                        } finally {
                           setProcessing(false);
-                          return;
                         }
-                        if (isNaN(amt) || amt <= 0) {
-                          setError('Enter a valid amount');
-                          setProcessing(false);
-                          return;
-                        }
-
-                        const [targetType, targetId] = target.split(':');
-
-                        if (targetType === 'club') {
-                          // UNION AUDIT FIX 2026-07-21: was a two-step chain
-                          // (treasury debit + separate union credit) that could
-                          // strand chips if the second call failed. Now one
-                          // atomic SECURITY DEFINER RPC with the union-lead
-                          // check and both ledger rows inside.
-                          const { data: clubName } = await supabase
-                            .from('clubs')
-                            .select('name')
-                            .eq('id', targetId)
-                            .maybeSingle();
-                          const { data: cbRes, error: cbErr } = await supabase.rpc(
-                            'fn_union_clawback_from_club',
-                            {
-                              p_union_id: unionId,
-                              p_club_id: targetId,
-                              p_amount: amt,
-                              p_notes: reason,
-                            }
-                          );
-                          if (cbErr) throw new Error(cbErr.message || 'Clawback failed');
-                          if (cbRes && (cbRes as any).success === false) {
-                            const msg = (cbRes as any).error || 'Clawback failed';
-                            setError(
-                              msg.includes('insufficient')
-                                ? 'Club has insufficient treasury balance'
-                                : msg
-                            );
-                            setProcessing(false);
-                            return;
-                          }
-
-                          setSuccess(
-                            `Clawed back ${amt.toLocaleString()} chips from ${clubName?.name || 'club'}`
-                          );
-                        }
-
-                        masterBus.emit('BALANCE_UPDATED', { source: 'clawback' });
-                        masterBus.emit('CLUB_UPDATED', { clubId: targetId });
-                        setClawbackForm({ target: '', amount: '', reason: '' });
-                        loadDashboard(unionId);
-                      } catch (err: any) {
-                        setError(safeErrorMessage(err, 'Clawback failed'));
-                      } finally {
-                        setProcessing(false);
-                      }
-                    }}
-                  >
-                    Clawback
-                  </button>
+                      }}
+                    >
+                      Send
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
-
-            {isLead && (
-              <div className="admin-card" style={{ padding: '16px', marginBottom: '16px' }}>
-                <h3 className="admin-card-title">Send Chips To Club</h3>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <select
-                    className="admin-input"
-                    style={{ flex: '1 1 200px' }}
-                    value={transferForm.clubId}
-                    onChange={(e) => setTransferForm((f) => ({ ...f, clubId: e.target.value }))}
-                  >
-                    <option value="">Select Club...</option>
-                    {clubs.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    className="admin-input"
-                    style={{ flex: '0 0 120px' }}
-                    type="number"
-                    min="1"
-                    value={transferForm.amount}
-                    onChange={(e) => setTransferForm((f) => ({ ...f, amount: e.target.value }))}
-                    placeholder="Amount"
-                  />
-                  <input
-                    className="admin-input"
-                    style={{ flex: '1 1 150px' }}
-                    value={transferForm.notes}
-                    onChange={(e) => setTransferForm((f) => ({ ...f, notes: e.target.value }))}
-                    placeholder="Notes"
-                  />
-                  <button
-                    className="admin-btn admin-btn-primary"
-                    disabled={processing || !transferForm.clubId || !transferForm.amount}
-                    onClick={async () => {
-                      setProcessing(true);
-                      setError(null);
-                      try {
-                        const chipAmount = parseInt(transferForm.amount, 10);
-                        if (isNaN(chipAmount) || chipAmount <= 0) {
-                          setError('Enter a valid chip amount');
-                          setProcessing(false);
-                          return;
-                        }
-                        // UNION AUDIT FIX 2026-07-21: fn_union_send_chips_to_club
-                        // is not SECURITY DEFINER, so calling it as a browser
-                        // user was RLS-blocked (silent no-op). Route through the
-                        // hardened union-wallet API (service role, idempotency
-                        // key, debit->credit with rollback).
-                        await unionApi.sendToClub(
-                          unionId!,
-                          transferForm.clubId,
-                          chipAmount,
-                          transferForm.notes || undefined
-                        );
-                        setSuccess(`Sent ${chipAmount.toLocaleString()} chips to club`);
-                        masterBus.emit('BALANCE_UPDATED', { source: 'union_transfer' });
-                        setTransferForm({ clubId: '', amount: '', notes: '' });
-                        loadDashboard(unionId);
-                      } catch (err: any) {
-                        setError(safeErrorMessage(err));
-                      } finally {
-                        setProcessing(false);
-                      }
-                    }}
-                  >
-                    Send
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* TRANSACTION HISTORY from chip_ledger */}
-            <TransactionLedgerView unionId={unionId || undefined} userId={user?.id || ''} />
-          </div>
-        )}
-
-        {/* ══════ TAB: TREASURY ══════ */}
-        {tab === 'treasury' && (
-          <div className="admin-tab-content">
-            <h3 className="admin-section-title">Club Treasury Breakdown</h3>
-            {clubs.length === 0 ? (
-              <div className="admin-empty-state">
-                <span className="admin-empty-icon">▦</span>
-                <span>No Clubs Yet</span>
-              </div>
-            ) : (
-              <div className="admin-table-scroll">
-                <table className="admin-data-table">
-                  <thead>
-                    <tr>
-                      <th>Club</th>
-                      <th>Treasury</th>
-                      <th>Agents</th>
-                      <th>Members</th>
-                      <th>Health</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {clubs.map((c) => {
-                      const treasury = c.chip_treasury || 0;
-                      const agentCount = agents.filter((a) => a.club_id === c.id).length;
-                      const health =
-                        treasury > 100000
-                          ? 'Excellent'
-                          : treasury > 10000
-                            ? 'Good'
-                            : treasury > 0
-                              ? 'Low'
-                              : 'Empty';
-                      const healthColor =
-                        treasury > 100000
-                          ? '#31A24C'
-                          : treasury > 10000
-                            ? '#4599FF'
-                            : treasury > 0
-                              ? '#F7C52A'
-                              : '#FA383E';
-                      return (
-                        <tr key={c.id}>
-                          <td style={{ fontWeight: 600 }}>{c.name}</td>
-                          <td style={{ fontWeight: 700, color: '#31A24C' }}>{fmt(treasury)}</td>
-                          <td>{agentCount}</td>
-                          <td>{fmt(c.member_count)}</td>
-                          <td>
-                            <span style={{ color: healthColor, fontWeight: 600 }}>{health}</span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            <div className="admin-stats-grid" style={{ marginTop: '16px' }}>
-              <div className="admin-stat-card">
-                <div className="admin-stat-value" style={{ color: '#31A24C' }}>
-                  {fmt(clubs.reduce((s, c) => s + (c.chip_treasury || 0), 0))}
-                </div>
-                <div className="admin-stat-label">Total Treasury</div>
-              </div>
-              <div className="admin-stat-card">
-                <div className="admin-stat-value" style={{ color: '#4599FF' }}>
-                  {fmt(agents.length)}
-                </div>
-                <div className="admin-stat-label">Total Agents</div>
-              </div>
-              <div className="admin-stat-card">
-                <div className="admin-stat-value">
-                  {fmt(clubs.reduce((s, c) => s + (c.member_count || 0), 0))}
-                </div>
-                <div className="admin-stat-label">Total Members</div>
-              </div>
+              )}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* ══════ TAB: ANALYTICS ══════ */}
-        {tab === 'analytics' && (
-          <div className="admin-tab-content">
-            <div className="admin-stats-grid" style={{ marginBottom: '16px' }}>
-              <div className="admin-stat-card">
-                <div className="admin-stat-value" style={{ color: '#4599FF' }}>
-                  {fmt(clubs.length)}
-                </div>
-                <div className="admin-stat-label">Total Clubs</div>
-              </div>
-              <div className="admin-stat-card">
-                <div className="admin-stat-value" style={{ color: '#31A24C' }}>
-                  {fmt(agents.length)}
-                </div>
-                <div className="admin-stat-label">Active Agents</div>
-              </div>
-              <div className="admin-stat-card">
-                <div className="admin-stat-value">
-                  {fmt(clubs.reduce((s, c) => s + (c.member_count || 0), 0))}
-                </div>
-                <div className="admin-stat-label">Total Members</div>
-              </div>
-              <div className="admin-stat-card">
-                <div className="admin-stat-value" style={{ color: '#F7C52A' }}>
-                  {fmt(recentPeriods.filter((p) => p.status === 'open').length)}
-                </div>
-                <div className="admin-stat-label">Open Periods</div>
-              </div>
-            </div>
-
-            {/* Union Rakeback Distribution */}
-            <h3 className="admin-section-title">Weekly Rakeback</h3>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '12px',
-                flexWrap: 'wrap',
-                marginBottom: '16px',
-              }}
-            >
-              <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Distribute Each Club&apos;S Share Of Last Week&apos;S Rake From The Union Wallet.
-                Runs Are Idempotent - A Week Can&apos;T Be Paid Twice.
-              </span>
-              <button
-                className="admin-action-btn"
-                onClick={runUnionRakeback}
-                disabled={rakebackRunning}
-              >
-                {rakebackRunning ? 'Distributing…' : 'Distribute Weekly Rakeback'}
-              </button>
-            </div>
-            {rakebackHistory.length > 0 && (
-              <div className="admin-table-scroll" style={{ marginBottom: '20px' }}>
-                <table className="admin-data-table">
-                  <thead>
-                    <tr>
-                      <th>Period</th>
-                      <th>Total Rakeback</th>
-                      <th>Executed</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rakebackHistory.map((r) => (
-                      <tr key={r.id}>
-                        <td style={{ fontSize: '12px' }}>
-                          {new Date(r.period_start).toLocaleDateString()} -{' '}
-                          {new Date(r.period_end).toLocaleDateString()}
-                        </td>
-                        <td style={{ color: '#31A24C' }}>{fmt(r.total_rakeback)}</td>
-                        <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          {timeAgo(r.executed_at)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* ── Weekly Player P&L Settlement (added 2026-08-19) ──
-                The club<->union square-up for player wins and losses. This is
-                the only place it is visible; before this it ran with no
-                surface at all. A period shown as "Review" moved NO chips on
-                purpose: the club nets did not prove zero-sum, so the
-                settlement refused to pay rather than pay a wrong number. */}
-            <h3 className="admin-section-title">Weekly Player P&amp;L Settlement</h3>
-            {pnlSettlements.length === 0 ? (
-              <div className="admin-empty-state">
-                <span className="admin-empty-icon">▦</span>
-                <span>No Player P&amp;L Settlement Has Run Yet</span>
-              </div>
-            ) : (
-              <div className="admin-table-scroll">
-                <table className="admin-data-table">
-                  <thead>
-                    <tr>
-                      <th>Week Of</th>
-                      <th>Status</th>
-                      <th>Collected</th>
-                      <th>Paid</th>
-                      <th>Outstanding</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pnlSettlements.map((s: any) => {
-                      const settled = s.status === 'settled';
-                      const review = s.status === 'needs_review';
-                      return (
-                        <tr key={s.id}>
-                          <td>{new Date(s.period_start).toLocaleDateString()}</td>
-                          <td>
-                            <span
-                              className="admin-badge"
-                              style={{
-                                background: review
-                                  ? 'rgba(245,158,11,0.15)'
-                                  : settled
-                                    ? 'rgba(34,197,94,0.15)'
-                                    : 'rgba(148,163,184,0.15)',
-                                color: review ? '#f59e0b' : settled ? '#22c55e' : '#94a3b8',
-                              }}
-                              title={
-                                review
-                                  ? 'Club nets did not balance to zero across the union - no chips were moved, pending review.'
-                                  : undefined
-                              }
-                            >
-                              {review ? 'Review' : settled ? 'Settled' : s.status}
-                            </span>
-                          </td>
-                          <td>{Number(s.total_collected || 0).toLocaleString()}</td>
-                          <td>{Number(s.total_paid || 0).toLocaleString()}</td>
-                          <td>
-                            {Number(s.total_unpaid || 0) > 0
-                              ? Number(s.total_unpaid).toLocaleString()
-                              : '-'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* Settlement Periods */}
-            <h3 className="admin-section-title">Recent Settlement Periods</h3>
-            {recentPeriods.length === 0 ? (
-              <div className="admin-empty-state">
-                <span className="admin-empty-icon">▦</span>
-                <span>No Settlement Data Yet</span>
-              </div>
-            ) : (
-              <div className="admin-table-scroll">
-                <table className="admin-data-table">
-                  <thead>
-                    <tr>
-                      <th>Club</th>
-                      <th>Period</th>
-                      <th>Rake</th>
-                      <th>Hands</th>
-                      <th>Status</th>
-                      <th>Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentPeriods.slice(0, 20).map((p) => {
-                      const club = clubs.find((c) => c.id === p.club_id);
-                      return (
-                        <tr key={p.id}>
-                          <td>{club?.name || 'Unknown'}</td>
-                          <td>#{p.period_number}</td>
-                          <td style={{ color: '#31A24C' }}>{fmt(p.total_rake_collected)}</td>
-                          <td>{fmt(p.total_hands_dealt)}</td>
-                          <td>
-                            <span className="admin-badge">{p.status}</span>
-                          </td>
-                          <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                            {timeAgo(p.created_at)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ══════ TAB: APPLICATIONS ══════ */}
-        {tab === 'applications' && (
-          <div className="admin-tab-content">
-            {!appsLoaded && (
-              <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
-                Loading Applications...
-              </div>
-            )}
-            <div
-              style={{ display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'center' }}
-            >
-              <select
+          {/* ══════ TAB: CLUBS ══════ */}
+          {tab === 'clubs' && (
+            <div className="admin-tab-content">
+              <input
                 className="admin-input"
-                style={{ maxWidth: '200px' }}
-                value={appsFilter}
-                onChange={(e) => {
-                  setAppsFilter(e.target.value);
-                  setAppsLoaded(false);
-                }}
-              >
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-                <option value="all">All</option>
-              </select>
-              <button
-                className="admin-btn admin-btn-ghost"
-                onClick={() => {
-                  setAppsLoaded(false);
-                  loadApps();
-                }}
-              >
-                Refresh
-              </button>
-            </div>
-
-            {apps.length > 0 ? (
+                value={clubSearch}
+                onChange={(e) => setClubSearch(e.target.value)}
+                placeholder="Search Clubs..."
+                style={{ marginBottom: '16px', maxWidth: '300px' }}
+              />
               <div
                 style={{
                   display: 'grid',
@@ -2419,8 +1425,8 @@ export default function UnionDashboardPage() {
                   gap: '12px',
                 }}
               >
-                {apps.map((app) => (
-                  <div key={app.id} className="admin-card" style={{ padding: '14px 16px' }}>
+                {filteredClubs.map((club) => (
+                  <div key={club.id} className="admin-card" style={{ padding: '14px 16px' }}>
                     <div
                       style={{
                         display: 'flex',
@@ -2428,197 +1434,1269 @@ export default function UnionDashboardPage() {
                         marginBottom: '8px',
                       }}
                     >
-                      <div style={{ fontWeight: 600 }}>{app.club_name}</div>
-                      <span className="admin-badge">{app.status}</span>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '14px' }}>{club.name}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          ID: {club.club_id}
+                        </div>
+                      </div>
+                      <span className="admin-badge">{pct(club.club_commission_rate)} Comm</span>
                     </div>
-                    {app.notes && (
-                      <div
-                        style={{
-                          fontSize: '13px',
-                          color: 'var(--text-secondary)',
-                          fontStyle: 'italic',
-                          marginBottom: '6px',
-                        }}
-                      >
-                        "{app.notes}"
-                      </div>
-                    )}
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      Applied {timeAgo(app.applied_at || app.created_at)}
-                    </div>
-                    {app.status === 'pending' && isLead && (
-                      <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
-                        <button
-                          className="admin-btn admin-btn-success admin-btn-sm"
-                          disabled={processing}
-                          onClick={async () => {
-                            setProcessing(true);
-                            setError(null);
-                            try {
-                              // UNION AUDIT FIX 2026-07-21: the direct upsert
-                              // wrote a non-existent column (commission_rate)
-                              // and was RLS-blocked anyway. The union-application
-                              // API approves + integrates the club server-side
-                              // (union_clubs upsert with the correct
-                              // club_commission_rate, clubs.union_id link,
-                              // application status) after a union-lead check.
-                              const defaultCommRate =
-                                Number(union?.settings?.default_club_commission_rate) || 0.9;
-                              await unionApi.approveApplication(unionId!, app.id, defaultCommRate);
-                              if (app.club_id) {
-                                masterBus.emit('CLUB_UPDATED', { clubId: app.club_id });
-                              }
-
-                              setSuccess(`${app.club_name} approved and joined the union`);
-                              setAppsLoaded(false);
-                              loadApps();
-                              loadDashboard(unionId);
-                            } catch (err: any) {
-                              setError(safeErrorMessage(err));
-                            } finally {
-                              setProcessing(false);
-                            }
-                          }}
-                        >
-                          Approve
-                        </button>
-                        <button
-                          className="admin-btn admin-btn-danger admin-btn-sm"
-                          disabled={processing}
-                          onClick={async () => {
-                            if (
-                              !(await confirmDialog({
-                                message: `Reject ${app.club_name}?`,
-                                variant: 'danger',
-                              }))
-                            )
-                              return;
-                            setProcessing(true);
-                            setError(null);
-                            try {
-                              // UNION AUDIT FIX 2026-07-21: routed through the
-                              // union-application API (RLS blocked the direct
-                              // update for union leads).
-                              await unionApi.rejectApplication(unionId!, app.id);
-                              setSuccess(`${app.club_name} rejected`);
-                              setAppsLoaded(false);
-                              loadApps();
-                            } catch (err: any) {
-                              setError(safeErrorMessage(err));
-                            } finally {
-                              setProcessing(false);
-                            }
-                          }}
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="admin-empty-state">
-                <span className="admin-empty-icon">▤</span>
-                <span>No {appsFilter} Applications</span>
-              </div>
-            )}
-
-            {/* LEAVE REQUESTS — clubs asking to exit the union (IMPROVE 2026-07-21) */}
-            <h3 className="admin-section-title" style={{ marginTop: '24px' }}>
-              Leave Requests
-            </h3>
-            {leaveReqs.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {leaveReqs.map((lr) => (
-                  <div key={lr.id} className="admin-card" style={{ padding: '14px' }}>
-                    <div style={{ fontWeight: 600 }}>{lr.club_name || 'Club'}</div>
-                    {lr.reason && (
-                      <div
-                        style={{
-                          fontSize: '13px',
-                          color: 'var(--text-secondary)',
-                          fontStyle: 'italic',
-                          margin: '4px 0',
-                        }}
-                      >
-                        "{lr.reason}"
-                      </div>
-                    )}
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      Requested {timeAgo(lr.requested_at)}
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: '12px',
+                        fontSize: '12px',
+                        color: 'var(--text-secondary)',
+                      }}
+                    >
+                      <span>{fmt(club.member_count)} Members</span>
+                      <span>{fmt(club.active_tables)} Tables</span>
+                      <span>{fmt(club.total_rake)} Rake</span>
                     </div>
                     {isLead && (
                       <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
                         <button
-                          className="admin-btn admin-btn-success admin-btn-sm"
-                          disabled={processing}
-                          onClick={async () => {
-                            if (
-                              !(await confirmDialog({
-                                message: `Approve ${lr.club_name}'s exit from the union?`,
-                                variant: 'danger',
-                              }))
-                            )
-                              return;
-                            setProcessing(true);
-                            setError(null);
-                            try {
-                              await unionApi.approveLeave(unionId!, lr.id);
-                              setSuccess(`${lr.club_name} has left the union`);
-                              loadLeaveReqs();
+                          className="admin-btn admin-btn-ghost admin-btn-sm"
+                          onClick={() => {
+                            setEditCommClub(club);
+                            setEditCommRate(String((club.club_commission_rate || 0.9) * 100));
+                          }}
+                        >
+                          Edit Rate
+                        </button>
+                        {/* Removal reads the exit blockers first. The previous
+                          button called unionApi.removeClub straight from a
+                          confirm dialog, so a club could be dropped while its
+                          players were still seated in union games and its rake
+                          and agent credit were unsettled. */}
+                        {unionId && (
+                          <UnionClubGovernance
+                            unionId={unionId}
+                            clubId={club.id}
+                            clubName={club.name ?? 'this club'}
+                            onExpelled={(id) => {
+                              masterBus.emit('CLUB_UPDATED', { clubId: id });
                               loadDashboard(unionId);
-                            } catch (err: any) {
-                              setError(safeErrorMessage(err));
-                            } finally {
-                              setProcessing(false);
-                            }
-                          }}
-                        >
-                          Approve Exit
-                        </button>
-                        <button
-                          className="admin-btn admin-btn-danger admin-btn-sm"
-                          disabled={processing}
-                          onClick={async () => {
-                            setProcessing(true);
-                            setError(null);
-                            try {
-                              await unionApi.denyLeave(unionId!, lr.id);
-                              setSuccess(`${lr.club_name}'s leave request denied`);
-                              loadLeaveReqs();
-                            } catch (err: any) {
-                              setError(safeErrorMessage(err));
-                            } finally {
-                              setProcessing(false);
-                            }
-                          }}
-                        >
-                          Deny
-                        </button>
+                            }}
+                          />
+                        )}
                       </div>
                     )}
                   </div>
                 ))}
               </div>
-            ) : (
-              <div className="admin-empty-state">
-                <span>No Pending Leave Requests</span>
+              {filteredClubs.length === 0 && (
+                <div className="admin-empty-state">
+                  <span className="admin-empty-icon">◆</span>
+                  <span>{clubSearch ? 'No clubs match' : 'No clubs yet'}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══════ TAB: AGENTS ══════ */}
+          {tab === 'agents' && (
+            <div className="admin-tab-content">
+              <div className="admin-stats-grid" style={{ marginBottom: '16px' }}>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value" style={{ color: '#31A24C' }}>
+                    {fmt(agents.filter((a) => a.status === 'active').length)}
+                  </div>
+                  <div className="admin-stat-label">Active</div>
+                </div>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value" style={{ color: '#FA383E' }}>
+                    {fmt(agents.filter((a) => a.status === 'suspended').length)}
+                  </div>
+                  <div className="admin-stat-label">Suspended</div>
+                </div>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value">{fmt(agents.length)}</div>
+                  <div className="admin-stat-label">Total Agents</div>
+                </div>
               </div>
-            )}
-          </div>
-        )}
 
-        {/* ══════ TAB: SETTINGS ══════ */}
-        {tab === 'operations' && (
-          <div style={{ padding: '16px' }}>
-            <UnionOpsPanel unionId={unionId ?? undefined} canRun={isLead} />
-          </div>
-        )}
+              <div
+                style={{ display: 'flex', gap: '8px', marginBottom: '12px', alignItems: 'center' }}
+              >
+                <input
+                  className="admin-input"
+                  value={agentSearch}
+                  onChange={(e) => setAgentSearch(e.target.value)}
+                  placeholder="Search Agents..."
+                  style={{ maxWidth: '300px' }}
+                />
+                <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={exportAgents}>
+                  Export CSV
+                </button>
+              </div>
 
-        {tab === 'settings' && (
-          <div className="admin-tab-content">
-            {/* SPINS - the union half of the owner menu.
+              <div className="admin-table-scroll">
+                <table className="admin-data-table">
+                  <thead>
+                    <tr>
+                      <th>Agent</th>
+                      <th>Club</th>
+                      <th>Role</th>
+                      <th>Commission</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredAgents.map((agent) => {
+                      const club = clubs.find((c) => c.id === agent.club_id);
+                      return (
+                        <tr key={agent.id || agent.user_id}>
+                          <td>
+                            {agent.profiles?.display_name ||
+                              agent.profiles?.username ||
+                              agent.user_id?.slice(0, 8)}
+                          </td>
+                          <td>{club?.name || 'Unknown'}</td>
+                          <td>{agent.role}</td>
+                          <td>{pct(agent.commission_rate)}</td>
+                          <td>
+                            <span
+                              className="admin-badge"
+                              style={
+                                agent.status === 'active'
+                                  ? { background: 'rgba(49,162,76,0.15)', color: '#31A24C' }
+                                  : { background: 'rgba(250,56,62,0.15)', color: '#FA383E' }
+                              }
+                            >
+                              {agent.status}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {filteredAgents.length === 0 && (
+                <div className="admin-empty-state">
+                  <span className="admin-empty-icon">◉</span>
+                  <span>{agentSearch ? 'No agents match' : 'No agents found'}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══════ TAB: PLAYERS — the union-wide roster ══════ */}
+          {tab === 'players' && (
+            <div className="admin-tab-content">
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                <input
+                  className="admin-input"
+                  style={{ flex: 1 }}
+                  placeholder="Search Players By Name, Club Or Role…"
+                  value={rosterSearch}
+                  onChange={(e) => setRosterSearch(e.target.value)}
+                />
+                <span style={{ alignSelf: 'center', color: '#888', fontSize: 12 }}>
+                  {fmt(filteredRoster.length)} Players
+                </span>
+                <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={exportRoster}>
+                  Export CSV
+                </button>
+              </div>
+              {rosterLoading ? (
+                <div className="admin-empty">Loading Roster…</div>
+              ) : filteredRoster.length === 0 ? (
+                <div className="admin-empty">
+                  <span className="admin-empty-icon">◉</span>
+                  <span>{rosterSearch ? 'No players match' : 'No players found'}</span>
+                </div>
+              ) : (
+                <div className="admin-table-wrap">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Player</th>
+                        <th>Club</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Seated</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredRoster.slice(0, 500).map((r) => (
+                        <tr key={`${r.user_id}-${r.club_name}`}>
+                          <td style={{ color: '#fff', fontWeight: 600 }}>
+                            {r.display_name || r.username || r.user_id.slice(0, 8)}
+                          </td>
+                          <td>{r.club_name || ''}</td>
+                          <td>
+                            <span
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 700,
+                                color:
+                                  r.member_role === 'owner'
+                                    ? '#F7C52A'
+                                    : r.member_role === 'co_owner' || r.member_role === 'admin'
+                                      ? '#4599FF'
+                                      : r.member_role === 'agent' || r.member_role === 'super_agent'
+                                        ? '#31A24C'
+                                        : '#aaa',
+                              }}
+                            >
+                              {(r.member_role || 'member').replace('_', ' ').toUpperCase()}
+                            </span>
+                          </td>
+                          <td>{r.member_status || ''}</td>
+                          <td>{r.currently_seated ? '● at table' : ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══════ TAB: WALLET ══════ */}
+          {tab === 'wallet' && (
+            <div className="admin-tab-content">
+              {wallets && (
+                <div className="admin-stats-grid" style={{ marginBottom: '16px' }}>
+                  {(
+                    [
+                      {
+                        key: 'chips',
+                        label: 'Chip Balance',
+                        color: '#4599FF',
+                        value: wallets.chip_balance,
+                      },
+                      {
+                        key: 'rake',
+                        label: 'Weekly Rake Wallet',
+                        color: '#31A24C',
+                        value: wallets.rake_wallet,
+                      },
+                      {
+                        // union_wallets.bbj_wallet, NOT bbj_pools.backup_balance.
+                        // This tile read "Backup BBJ Wallet", which is the same
+                        // words as the Backup Jackpot tile on the Overview tab
+                        // and a different balance — two numbers under one name is
+                        // how an operator moves the wrong money. Renamed to the
+                        // column it actually shows.
+                        key: 'bbj',
+                        label: 'BBJ Reserve Wallet',
+                        color: '#F7C52A',
+                        value: wallets.bbj_wallet,
+                      },
+                      {
+                        key: 'promo',
+                        label: 'Promo Wallet',
+                        color: '#C084FC',
+                        value: wallets.promo_wallet,
+                      },
+                    ] as { key: UnionWalletKey; label: string; color: string; value: number }[]
+                  ).map((w) => (
+                    <button
+                      key={w.key}
+                      className="admin-stat-card"
+                      style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                      aria-label={`Open ${w.label}`}
+                      onClick={() =>
+                        setWalletModal({ key: w.key, label: w.label, balance: w.value || 0 })
+                      }
+                    >
+                      <div className="admin-stat-value" style={{ color: w.color }}>
+                        {fmt(w.value)}
+                      </div>
+                      <div className="admin-stat-label">{w.label} ›</div>
+                    </button>
+                  ))}
+                  {/* Spin reserve. It is NOT a send source - the pool is priced on
+                    being net-neutral over volume, and a manual withdrawal would
+                    break that silently - but it was the only tile on the page
+                    you could not open, which meant the wallet that funds the
+                    entire Spin economy had no ledger anywhere in the product.
+                    It opens read-only: balance and full history, no send flow. */}
+                  {/* THE DEPLOYED pool. The tile below shows
+                    union_wallets.spin_reserve_wallet, which is capital
+                    earmarked for Spins but NOT yet in play; this is the float
+                    every multiplier is actually paid from. They never
+                    double-count, and until now only the undeployed half had a
+                    tile anywhere in the product. Opens the Spins tab, where
+                    the activation panel explains the seed and the repayment
+                    plan behind this number. */}
+                  <button
+                    className="admin-stat-card"
+                    style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                    aria-label="Open Spins Wallet"
+                    onClick={() => setTab('settings')}
+                  >
+                    <div className="admin-stat-value" style={{ color: '#39d17a' }}>
+                      {unionSpins.state === null ? '-' : fmt(unionSpins.balance)}
+                    </div>
+                    <div className="admin-stat-label">Spins Wallet ›</div>
+                  </button>
+                  <button
+                    className="admin-stat-card"
+                    style={{ cursor: 'pointer', textAlign: 'center', border: 'none' }}
+                    aria-label="Open Spin Reserve"
+                    onClick={() =>
+                      setWalletModal({
+                        key: 'spin_reserve',
+                        label: 'Spin Reserve',
+                        balance: wallets.spin_reserve_wallet || 0,
+                      })
+                    }
+                  >
+                    <div className="admin-stat-value" style={{ color: '#39d17a' }}>
+                      {fmt(wallets.spin_reserve_wallet)}
+                    </div>
+                    <div className="admin-stat-label">Spin Reserve ›</div>
+                  </button>
+                </div>
+              )}
+
+              {/* DEPOSIT TO UNION BANK — Move chips from owner's player wallet to union bank */}
+              {isLead && (
+                <div
+                  className="admin-card"
+                  style={{ padding: '16px', marginBottom: '16px', borderLeft: '3px solid #22c55e' }}
+                >
+                  <h3 className="admin-card-title" style={{ color: '#22c55e' }}>
+                    Deposit To Union Bank
+                  </h3>
+                  <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
+                    Move Chips From Your Player Wallet Into The Union Main Bank
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <input
+                      className="admin-input"
+                      style={{ flex: '0 0 150px' }}
+                      type="number"
+                      min="1"
+                      placeholder="Amount"
+                      value={depositForm.amount}
+                      onChange={(e) => setDepositForm((f) => ({ ...f, amount: e.target.value }))}
+                    />
+                    <input
+                      className="admin-input"
+                      style={{ flex: '1 1 150px' }}
+                      placeholder="Notes (Optional)"
+                      value={depositForm.notes}
+                      onChange={(e) => setDepositForm((f) => ({ ...f, notes: e.target.value }))}
+                    />
+                    <button
+                      className="admin-btn admin-btn-primary"
+                      style={{ background: '#22c55e' }}
+                      disabled={processing}
+                      onClick={async () => {
+                        setProcessing(true);
+                        setError(null);
+                        try {
+                          const amt = parseInt(depositForm.amount || '0', 10);
+                          if (isNaN(amt) || amt <= 0) {
+                            setError('Enter a valid amount');
+                            setProcessing(false);
+                            return;
+                          }
+
+                          // UNION AUDIT FIX 2026-07-21: was a two-step client-side
+                          // chain (wallet debit succeeded, union credit RLS-blocked)
+                          // that could strand the owner's chips. Now one atomic
+                          // SECURITY DEFINER RPC — debit + credit + ledger in a
+                          // single transaction, union-lead check inside.
+                          const { data: depRes, error: depErr } = await supabase.rpc(
+                            'fn_union_deposit_from_wallet',
+                            {
+                              p_union_id: unionId,
+                              p_amount: amt,
+                              p_notes: depositForm.notes || 'Union funding',
+                            }
+                          );
+                          if (depErr) throw new Error(depErr.message || 'Deposit failed');
+                          if (depRes && (depRes as any).success === false) {
+                            throw new Error((depRes as any).error || 'Deposit failed');
+                          }
+
+                          setSuccess(`Deposited ${amt.toLocaleString()} chips to Union Bank`);
+                          masterBus.emit('BALANCE_UPDATED', {
+                            source: 'union_deposit',
+                            userId: user!.id,
+                          });
+                          setDepositForm({ amount: '', notes: '' });
+                          loadDashboard(unionId);
+                        } catch (err: any) {
+                          setError(safeErrorMessage(err, 'Deposit failed'));
+                        } finally {
+                          setProcessing(false);
+                        }
+                      }}
+                    >
+                      Deposit
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* FUND SPIN RESERVE — union wallet -> spin_reserve_wallet (2026-08-22)
+                The reserve is the capital every Spin bonus pool this union owns is
+                seeded from, and a 100x is paid out of it. Before this control the
+                only way in was the RPC typed by hand, which is why the live pool
+                had been seeded 20,000 out of promo_wallet. */}
+              {isLead && (
+                <div
+                  className="admin-card"
+                  style={{ padding: '16px', marginBottom: '16px', borderLeft: '3px solid #39d17a' }}
+                >
+                  <h3 className="admin-card-title" style={{ color: '#39d17a' }}>
+                    Fund Spin Reserve
+                  </h3>
+                  <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
+                    Move Chips Into The Wallet That Seeds Every Spin Bonus Pool This Union Owns.
+                    {wallets ? ` Reserve holds ${fmt(wallets.spin_reserve_wallet)}.` : ''}
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <select
+                      className="admin-input"
+                      style={{ flex: '1 1 160px' }}
+                      value={spinReserveForm.from}
+                      onChange={(e) => setSpinReserveForm((f) => ({ ...f, from: e.target.value }))}
+                    >
+                      <option value="promo_wallet">From Promo Wallet</option>
+                      <option value="rake_wallet">From Rake Wallet</option>
+                      <option value="chip_balance">From Chip Balance</option>
+                    </select>
+                    <input
+                      className="admin-input"
+                      style={{ flex: '0 0 150px' }}
+                      type="number"
+                      min="1"
+                      placeholder="Amount"
+                      value={spinReserveForm.amount}
+                      onChange={(e) =>
+                        setSpinReserveForm((f) => ({ ...f, amount: e.target.value }))
+                      }
+                    />
+                    <button
+                      className="admin-btn admin-btn-primary"
+                      style={{ background: '#39d17a', color: '#000' }}
+                      disabled={processing || !spinReserveForm.amount}
+                      onClick={async () => {
+                        setProcessing(true);
+                        setError(null);
+                        try {
+                          const amt = parseInt(spinReserveForm.amount || '0', 10);
+                          if (isNaN(amt) || amt <= 0) {
+                            setError('Enter a valid amount');
+                            setProcessing(false);
+                            return;
+                          }
+                          await unionApi.fundSpinReserve(
+                            unionId!,
+                            amt,
+                            spinReserveForm.from as 'promo_wallet' | 'rake_wallet' | 'chip_balance'
+                          );
+                          setSuccess(`${amt.toLocaleString()} chips moved to the Spin reserve`);
+                          setSpinReserveForm((f) => ({ ...f, amount: '' }));
+                          masterBus.emit('BALANCE_UPDATED', { source: 'spin_reserve_fund' });
+                          loadDashboard(unionId);
+                        } catch (err: any) {
+                          setError(safeErrorMessage(err, 'Spin reserve funding failed'));
+                        } finally {
+                          setProcessing(false);
+                        }
+                      }}
+                    >
+                      Fund Reserve
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* FUND BBJ POOL — union bank -> shared jackpot (BBJ unification 2026-07-21) */}
+              {isLead && (
+                <div
+                  className="admin-card"
+                  style={{ padding: '16px', marginBottom: '16px', borderLeft: '3px solid #F7C52A' }}
+                >
+                  <h3 className="admin-card-title" style={{ color: '#F7C52A' }}>
+                    Fund BBJ Pool
+                  </h3>
+                  <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
+                    Move Chips From The Union Bank Into The Shared Bad Beat Jackpot. Split Across
+                    Main/Backup/Promo Per Your Union BBJ Settings.
+                    {bbjPool
+                      ? ` Current pool: ${fmt(bbjPool.main_balance)} main / ${fmt(bbjPool.backup_balance)} backup / ${fmt(bbjPool.promo_balance)} promo.`
+                      : ' No active pool found.'}
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <input
+                      className="admin-input"
+                      style={{ flex: '0 0 150px' }}
+                      type="number"
+                      min="1"
+                      placeholder="Amount"
+                      value={bbjFundAmount}
+                      onChange={(e) => setBbjFundAmount(e.target.value)}
+                    />
+                    <button
+                      className="admin-btn admin-btn-primary"
+                      style={{ background: '#F7C52A', color: '#000' }}
+                      disabled={processing || !bbjFundAmount}
+                      onClick={async () => {
+                        setProcessing(true);
+                        setError(null);
+                        try {
+                          const amt = parseInt(bbjFundAmount || '0', 10);
+                          if (isNaN(amt) || amt <= 0) {
+                            setError('Enter a valid amount');
+                            setProcessing(false);
+                            return;
+                          }
+                          await unionApi.fundBbjPool(unionId!, amt);
+                          setSuccess(`${amt.toLocaleString()} chips moved to the BBJ pool`);
+                          setBbjFundAmount('');
+                          masterBus.emit('BALANCE_UPDATED', { source: 'bbj_fund' });
+                          loadDashboard(unionId);
+                        } catch (err: any) {
+                          setError(safeErrorMessage(err, 'BBJ funding failed'));
+                        } finally {
+                          setProcessing(false);
+                        }
+                      }}
+                    >
+                      Fund Jackpot
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* CLAWBACK — Recall chips from any wallet (club, agent, player) back to union */}
+              {isLead && (
+                <div
+                  className="admin-card"
+                  style={{ padding: '16px', marginBottom: '16px', borderLeft: '3px solid #ef4444' }}
+                >
+                  <h3 className="admin-card-title" style={{ color: '#ef4444' }}>
+                    Clawback Chips
+                  </h3>
+                  <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
+                    Recall Chips From Any Club Treasury, Agent Wallet, Or Player Wallet Back To
+                    Union Bank
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <select
+                      className="admin-input"
+                      style={{ flex: '1 1 200px' }}
+                      value={clawbackForm.target}
+                      onChange={(e) => setClawbackForm((f) => ({ ...f, target: e.target.value }))}
+                    >
+                      <option value="">Select Target...</option>
+                      <optgroup label="Club Treasuries">
+                        {clubs.map((c) => (
+                          <option key={`club-${c.id}`} value={`club:${c.id}`}>
+                            {c.name} (Treasury)
+                          </option>
+                        ))}
+                      </optgroup>
+                    </select>
+                    <input
+                      className="admin-input"
+                      style={{ flex: '0 0 120px' }}
+                      type="number"
+                      min="1"
+                      placeholder="Amount"
+                      value={clawbackForm.amount}
+                      onChange={(e) => setClawbackForm((f) => ({ ...f, amount: e.target.value }))}
+                    />
+                    <input
+                      className="admin-input"
+                      style={{ flex: '1 1 150px' }}
+                      placeholder="Reason"
+                      value={clawbackForm.reason}
+                      onChange={(e) => setClawbackForm((f) => ({ ...f, reason: e.target.value }))}
+                    />
+                    <button
+                      className="admin-btn"
+                      style={{ background: '#ef4444', color: '#fff' }}
+                      disabled={processing}
+                      onClick={async () => {
+                        setProcessing(true);
+                        setError(null);
+                        try {
+                          const target = clawbackForm.target;
+                          const amt = parseInt(clawbackForm.amount || '0', 10);
+                          const reason = clawbackForm.reason || 'Union clawback';
+
+                          if (!target) {
+                            setError('Select a target');
+                            setProcessing(false);
+                            return;
+                          }
+                          if (isNaN(amt) || amt <= 0) {
+                            setError('Enter a valid amount');
+                            setProcessing(false);
+                            return;
+                          }
+
+                          const [targetType, targetId] = target.split(':');
+
+                          if (targetType === 'club') {
+                            // UNION AUDIT FIX 2026-07-21: was a two-step chain
+                            // (treasury debit + separate union credit) that could
+                            // strand chips if the second call failed. Now one
+                            // atomic SECURITY DEFINER RPC with the union-lead
+                            // check and both ledger rows inside.
+                            const { data: clubName } = await supabase
+                              .from('clubs')
+                              .select('name')
+                              .eq('id', targetId)
+                              .maybeSingle();
+                            const { data: cbRes, error: cbErr } = await supabase.rpc(
+                              'fn_union_clawback_from_club',
+                              {
+                                p_union_id: unionId,
+                                p_club_id: targetId,
+                                p_amount: amt,
+                                p_notes: reason,
+                              }
+                            );
+                            if (cbErr) throw new Error(cbErr.message || 'Clawback failed');
+                            if (cbRes && (cbRes as any).success === false) {
+                              const msg = (cbRes as any).error || 'Clawback failed';
+                              setError(
+                                msg.includes('insufficient')
+                                  ? 'Club has insufficient treasury balance'
+                                  : msg
+                              );
+                              setProcessing(false);
+                              return;
+                            }
+
+                            setSuccess(
+                              `Clawed back ${amt.toLocaleString()} chips from ${clubName?.name || 'club'}`
+                            );
+                          }
+
+                          masterBus.emit('BALANCE_UPDATED', { source: 'clawback' });
+                          masterBus.emit('CLUB_UPDATED', { clubId: targetId });
+                          setClawbackForm({ target: '', amount: '', reason: '' });
+                          loadDashboard(unionId);
+                        } catch (err: any) {
+                          setError(safeErrorMessage(err, 'Clawback failed'));
+                        } finally {
+                          setProcessing(false);
+                        }
+                      }}
+                    >
+                      Clawback
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {isLead && (
+                <div className="admin-card" style={{ padding: '16px', marginBottom: '16px' }}>
+                  <h3 className="admin-card-title">Send Chips To Club</h3>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <select
+                      className="admin-input"
+                      style={{ flex: '1 1 200px' }}
+                      value={transferForm.clubId}
+                      onChange={(e) => setTransferForm((f) => ({ ...f, clubId: e.target.value }))}
+                    >
+                      <option value="">Select Club...</option>
+                      {clubs.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      className="admin-input"
+                      style={{ flex: '0 0 120px' }}
+                      type="number"
+                      min="1"
+                      value={transferForm.amount}
+                      onChange={(e) => setTransferForm((f) => ({ ...f, amount: e.target.value }))}
+                      placeholder="Amount"
+                    />
+                    <input
+                      className="admin-input"
+                      style={{ flex: '1 1 150px' }}
+                      value={transferForm.notes}
+                      onChange={(e) => setTransferForm((f) => ({ ...f, notes: e.target.value }))}
+                      placeholder="Notes"
+                    />
+                    <button
+                      className="admin-btn admin-btn-primary"
+                      disabled={processing || !transferForm.clubId || !transferForm.amount}
+                      onClick={async () => {
+                        setProcessing(true);
+                        setError(null);
+                        try {
+                          const chipAmount = parseInt(transferForm.amount, 10);
+                          if (isNaN(chipAmount) || chipAmount <= 0) {
+                            setError('Enter a valid chip amount');
+                            setProcessing(false);
+                            return;
+                          }
+                          // UNION AUDIT FIX 2026-07-21: fn_union_send_chips_to_club
+                          // is not SECURITY DEFINER, so calling it as a browser
+                          // user was RLS-blocked (silent no-op). Route through the
+                          // hardened union-wallet API (service role, idempotency
+                          // key, debit->credit with rollback).
+                          await unionApi.sendToClub(
+                            unionId!,
+                            transferForm.clubId,
+                            chipAmount,
+                            transferForm.notes || undefined
+                          );
+                          setSuccess(`Sent ${chipAmount.toLocaleString()} chips to club`);
+                          masterBus.emit('BALANCE_UPDATED', { source: 'union_transfer' });
+                          setTransferForm({ clubId: '', amount: '', notes: '' });
+                          loadDashboard(unionId);
+                        } catch (err: any) {
+                          setError(safeErrorMessage(err));
+                        } finally {
+                          setProcessing(false);
+                        }
+                      }}
+                    >
+                      Send
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* TRANSACTION HISTORY from chip_ledger */}
+              <TransactionLedgerView unionId={unionId || undefined} userId={user?.id || ''} />
+            </div>
+          )}
+
+          {/* ══════ TAB: TREASURY ══════ */}
+          {tab === 'treasury' && (
+            <div className="admin-tab-content">
+              <h3 className="admin-section-title">Club Treasury Breakdown</h3>
+              {clubs.length === 0 ? (
+                <div className="admin-empty-state">
+                  <span className="admin-empty-icon">▦</span>
+                  <span>No Clubs Yet</span>
+                </div>
+              ) : (
+                <div className="admin-table-scroll">
+                  <table className="admin-data-table">
+                    <thead>
+                      <tr>
+                        <th>Club</th>
+                        <th>Treasury</th>
+                        <th>Agents</th>
+                        <th>Members</th>
+                        <th>Health</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clubs.map((c) => {
+                        const treasury = c.chip_treasury || 0;
+                        const agentCount = agents.filter((a) => a.club_id === c.id).length;
+                        const health =
+                          treasury > 100000
+                            ? 'Excellent'
+                            : treasury > 10000
+                              ? 'Good'
+                              : treasury > 0
+                                ? 'Low'
+                                : 'Empty';
+                        const healthColor =
+                          treasury > 100000
+                            ? '#31A24C'
+                            : treasury > 10000
+                              ? '#4599FF'
+                              : treasury > 0
+                                ? '#F7C52A'
+                                : '#FA383E';
+                        return (
+                          <tr key={c.id}>
+                            <td style={{ fontWeight: 600 }}>{c.name}</td>
+                            <td style={{ fontWeight: 700, color: '#31A24C' }}>{fmt(treasury)}</td>
+                            <td>{agentCount}</td>
+                            <td>{fmt(c.member_count)}</td>
+                            <td>
+                              <span style={{ color: healthColor, fontWeight: 600 }}>{health}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="admin-stats-grid" style={{ marginTop: '16px' }}>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value" style={{ color: '#31A24C' }}>
+                    {fmt(clubs.reduce((s, c) => s + (c.chip_treasury || 0), 0))}
+                  </div>
+                  <div className="admin-stat-label">Total Treasury</div>
+                </div>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value" style={{ color: '#4599FF' }}>
+                    {fmt(agents.length)}
+                  </div>
+                  <div className="admin-stat-label">Total Agents</div>
+                </div>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value">
+                    {fmt(clubs.reduce((s, c) => s + (c.member_count || 0), 0))}
+                  </div>
+                  <div className="admin-stat-label">Total Members</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ══════ TAB: ANALYTICS ══════ */}
+          {tab === 'analytics' && (
+            <div className="admin-tab-content">
+              <div className="admin-stats-grid" style={{ marginBottom: '16px' }}>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value" style={{ color: '#4599FF' }}>
+                    {fmt(clubs.length)}
+                  </div>
+                  <div className="admin-stat-label">Total Clubs</div>
+                </div>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value" style={{ color: '#31A24C' }}>
+                    {fmt(agents.length)}
+                  </div>
+                  <div className="admin-stat-label">Active Agents</div>
+                </div>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value">
+                    {fmt(clubs.reduce((s, c) => s + (c.member_count || 0), 0))}
+                  </div>
+                  <div className="admin-stat-label">Total Members</div>
+                </div>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value" style={{ color: '#F7C52A' }}>
+                    {fmt(recentPeriods.filter((p) => p.status === 'open').length)}
+                  </div>
+                  <div className="admin-stat-label">Open Periods</div>
+                </div>
+              </div>
+
+              {/* Union Rakeback Distribution */}
+              <h3 className="admin-section-title">Weekly Rakeback</h3>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  flexWrap: 'wrap',
+                  marginBottom: '16px',
+                }}
+              >
+                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Distribute Each Club&apos;S Share Of Last Week&apos;S Rake From The Union Wallet.
+                  Runs Are Idempotent - A Week Can&apos;T Be Paid Twice.
+                </span>
+                <button
+                  className="admin-action-btn"
+                  onClick={runUnionRakeback}
+                  disabled={rakebackRunning}
+                >
+                  {rakebackRunning ? 'Distributing…' : 'Distribute Weekly Rakeback'}
+                </button>
+              </div>
+              {rakebackHistory.length > 0 && (
+                <div className="admin-table-scroll" style={{ marginBottom: '20px' }}>
+                  <table className="admin-data-table">
+                    <thead>
+                      <tr>
+                        <th>Period</th>
+                        <th>Total Rakeback</th>
+                        <th>Executed</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rakebackHistory.map((r) => (
+                        <tr key={r.id}>
+                          <td style={{ fontSize: '12px' }}>
+                            {new Date(r.period_start).toLocaleDateString()} -{' '}
+                            {new Date(r.period_end).toLocaleDateString()}
+                          </td>
+                          <td style={{ color: '#31A24C' }}>{fmt(r.total_rakeback)}</td>
+                          <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                            {timeAgo(r.executed_at)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* ── Weekly Player P&L Settlement (added 2026-08-19) ──
+                The club<->union square-up for player wins and losses. This is
+                the only place it is visible; before this it ran with no
+                surface at all. A period shown as "Review" moved NO chips on
+                purpose: the club nets did not prove zero-sum, so the
+                settlement refused to pay rather than pay a wrong number. */}
+              <h3 className="admin-section-title">Weekly Player P&amp;L Settlement</h3>
+              {pnlSettlements.length === 0 ? (
+                <div className="admin-empty-state">
+                  <span className="admin-empty-icon">▦</span>
+                  <span>No Player P&amp;L Settlement Has Run Yet</span>
+                </div>
+              ) : (
+                <div className="admin-table-scroll">
+                  <table className="admin-data-table">
+                    <thead>
+                      <tr>
+                        <th>Week Of</th>
+                        <th>Status</th>
+                        <th>Collected</th>
+                        <th>Paid</th>
+                        <th>Outstanding</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pnlSettlements.map((s: any) => {
+                        const settled = s.status === 'settled';
+                        const review = s.status === 'needs_review';
+                        return (
+                          <tr key={s.id}>
+                            <td>{new Date(s.period_start).toLocaleDateString()}</td>
+                            <td>
+                              <span
+                                className="admin-badge"
+                                style={{
+                                  background: review
+                                    ? 'rgba(245,158,11,0.15)'
+                                    : settled
+                                      ? 'rgba(34,197,94,0.15)'
+                                      : 'rgba(148,163,184,0.15)',
+                                  color: review ? '#f59e0b' : settled ? '#22c55e' : '#94a3b8',
+                                }}
+                                title={
+                                  review
+                                    ? 'Club nets did not balance to zero across the union - no chips were moved, pending review.'
+                                    : undefined
+                                }
+                              >
+                                {review ? 'Review' : settled ? 'Settled' : s.status}
+                              </span>
+                            </td>
+                            <td>{Number(s.total_collected || 0).toLocaleString()}</td>
+                            <td>{Number(s.total_paid || 0).toLocaleString()}</td>
+                            <td>
+                              {Number(s.total_unpaid || 0) > 0
+                                ? Number(s.total_unpaid).toLocaleString()
+                                : '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Settlement Periods */}
+              <h3 className="admin-section-title">Recent Settlement Periods</h3>
+              {recentPeriods.length === 0 ? (
+                <div className="admin-empty-state">
+                  <span className="admin-empty-icon">▦</span>
+                  <span>No Settlement Data Yet</span>
+                </div>
+              ) : (
+                <div className="admin-table-scroll">
+                  <table className="admin-data-table">
+                    <thead>
+                      <tr>
+                        <th>Club</th>
+                        <th>Period</th>
+                        <th>Rake</th>
+                        <th>Hands</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentPeriods.slice(0, 20).map((p) => {
+                        const club = clubs.find((c) => c.id === p.club_id);
+                        return (
+                          <tr key={p.id}>
+                            <td>{club?.name || 'Unknown'}</td>
+                            <td>#{p.period_number}</td>
+                            <td style={{ color: '#31A24C' }}>{fmt(p.total_rake_collected)}</td>
+                            <td>{fmt(p.total_hands_dealt)}</td>
+                            <td>
+                              <span className="admin-badge">{p.status}</span>
+                            </td>
+                            <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                              {timeAgo(p.created_at)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══════ TAB: APPLICATIONS ══════ */}
+          {tab === 'applications' && (
+            <div className="admin-tab-content">
+              {!appsLoaded && (
+                <div
+                  style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}
+                >
+                  Loading Applications...
+                </div>
+              )}
+              <div
+                style={{ display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'center' }}
+              >
+                <select
+                  className="admin-input"
+                  style={{ maxWidth: '200px' }}
+                  value={appsFilter}
+                  onChange={(e) => {
+                    setAppsFilter(e.target.value);
+                    setAppsLoaded(false);
+                  }}
+                >
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="all">All</option>
+                </select>
+                <button
+                  className="admin-btn admin-btn-ghost"
+                  onClick={() => {
+                    setAppsLoaded(false);
+                    loadApps();
+                  }}
+                >
+                  Refresh
+                </button>
+              </div>
+
+              {apps.length > 0 ? (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                    gap: '12px',
+                  }}
+                >
+                  {apps.map((app) => (
+                    <div key={app.id} className="admin-card" style={{ padding: '14px 16px' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          marginBottom: '8px',
+                        }}
+                      >
+                        <div style={{ fontWeight: 600 }}>{app.club_name}</div>
+                        <span className="admin-badge">{app.status}</span>
+                      </div>
+                      {app.notes && (
+                        <div
+                          style={{
+                            fontSize: '13px',
+                            color: 'var(--text-secondary)',
+                            fontStyle: 'italic',
+                            marginBottom: '6px',
+                          }}
+                        >
+                          "{app.notes}"
+                        </div>
+                      )}
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                        Applied {timeAgo(app.applied_at || app.created_at)}
+                      </div>
+                      {app.status === 'pending' && isLead && (
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
+                          <button
+                            className="admin-btn admin-btn-success admin-btn-sm"
+                            disabled={processing}
+                            onClick={async () => {
+                              setProcessing(true);
+                              setError(null);
+                              try {
+                                // UNION AUDIT FIX 2026-07-21: the direct upsert
+                                // wrote a non-existent column (commission_rate)
+                                // and was RLS-blocked anyway. The union-application
+                                // API approves + integrates the club server-side
+                                // (union_clubs upsert with the correct
+                                // club_commission_rate, clubs.union_id link,
+                                // application status) after a union-lead check.
+                                const defaultCommRate =
+                                  Number(union?.settings?.default_club_commission_rate) || 0.9;
+                                await unionApi.approveApplication(
+                                  unionId!,
+                                  app.id,
+                                  defaultCommRate
+                                );
+                                if (app.club_id) {
+                                  masterBus.emit('CLUB_UPDATED', { clubId: app.club_id });
+                                }
+
+                                setSuccess(`${app.club_name} approved and joined the union`);
+                                setAppsLoaded(false);
+                                loadApps();
+                                loadDashboard(unionId);
+                              } catch (err: any) {
+                                setError(safeErrorMessage(err));
+                              } finally {
+                                setProcessing(false);
+                              }
+                            }}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            className="admin-btn admin-btn-danger admin-btn-sm"
+                            disabled={processing}
+                            onClick={async () => {
+                              if (
+                                !(await confirmDialog({
+                                  message: `Reject ${app.club_name}?`,
+                                  variant: 'danger',
+                                }))
+                              )
+                                return;
+                              setProcessing(true);
+                              setError(null);
+                              try {
+                                // UNION AUDIT FIX 2026-07-21: routed through the
+                                // union-application API (RLS blocked the direct
+                                // update for union leads).
+                                await unionApi.rejectApplication(unionId!, app.id);
+                                setSuccess(`${app.club_name} rejected`);
+                                setAppsLoaded(false);
+                                loadApps();
+                              } catch (err: any) {
+                                setError(safeErrorMessage(err));
+                              } finally {
+                                setProcessing(false);
+                              }
+                            }}
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="admin-empty-state">
+                  <span className="admin-empty-icon">▤</span>
+                  <span>No {appsFilter} Applications</span>
+                </div>
+              )}
+
+              {/* LEAVE REQUESTS — clubs asking to exit the union (IMPROVE 2026-07-21) */}
+              <h3 className="admin-section-title" style={{ marginTop: '24px' }}>
+                Leave Requests
+              </h3>
+              {leaveReqs.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {leaveReqs.map((lr) => (
+                    <div key={lr.id} className="admin-card" style={{ padding: '14px' }}>
+                      <div style={{ fontWeight: 600 }}>{lr.club_name || 'Club'}</div>
+                      {lr.reason && (
+                        <div
+                          style={{
+                            fontSize: '13px',
+                            color: 'var(--text-secondary)',
+                            fontStyle: 'italic',
+                            margin: '4px 0',
+                          }}
+                        >
+                          "{lr.reason}"
+                        </div>
+                      )}
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                        Requested {timeAgo(lr.requested_at)}
+                      </div>
+                      {isLead && (
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
+                          <button
+                            className="admin-btn admin-btn-success admin-btn-sm"
+                            disabled={processing}
+                            onClick={async () => {
+                              if (
+                                !(await confirmDialog({
+                                  message: `Approve ${lr.club_name}'s exit from the union?`,
+                                  variant: 'danger',
+                                }))
+                              )
+                                return;
+                              setProcessing(true);
+                              setError(null);
+                              try {
+                                await unionApi.approveLeave(unionId!, lr.id);
+                                setSuccess(`${lr.club_name} has left the union`);
+                                loadLeaveReqs();
+                                loadDashboard(unionId);
+                              } catch (err: any) {
+                                setError(safeErrorMessage(err));
+                              } finally {
+                                setProcessing(false);
+                              }
+                            }}
+                          >
+                            Approve Exit
+                          </button>
+                          <button
+                            className="admin-btn admin-btn-danger admin-btn-sm"
+                            disabled={processing}
+                            onClick={async () => {
+                              setProcessing(true);
+                              setError(null);
+                              try {
+                                await unionApi.denyLeave(unionId!, lr.id);
+                                setSuccess(`${lr.club_name}'s leave request denied`);
+                                loadLeaveReqs();
+                              } catch (err: any) {
+                                setError(safeErrorMessage(err));
+                              } finally {
+                                setProcessing(false);
+                              }
+                            }}
+                          >
+                            Deny
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="admin-empty-state">
+                  <span>No Pending Leave Requests</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══════ TAB: SETTINGS ══════ */}
+          {tab === 'operations' && (
+            <div style={{ padding: '16px' }}>
+              <UnionOpsPanel unionId={unionId ?? undefined} canRun={isLead} />
+            </div>
+          )}
+
+          {tab === 'settings' && (
+            <div className="admin-tab-content">
+              {/* SPINS - the union half of the owner menu.
                 A union OWNS the Spin wallet for every club inside it
                 (fn_spin_reserve_owner resolves COALESCE(clubs.union_id,
                 club_id)), so this is the only place its lead can switch Spins
@@ -2630,350 +2708,356 @@ export default function UnionDashboardPage() {
                 route who may act and shows a read-only view to anyone else -
                 a union admin should be able to SEE where the multiplier money
                 comes from without being able to spend it. */}
-            {unionId && (
-              <div className="admin-card" style={{ padding: '20px', marginBottom: '16px' }}>
-                <SpinActivationPanel clubId={unionId} />
-              </div>
-            )}
-
-            {isLead ? (
-              <div className="admin-card" style={{ padding: '20px' }}>
-                <h3 className="admin-card-title">Union Settings</h3>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-                    gap: '12px',
-                    marginBottom: '16px',
-                  }}
-                >
-                  <div>
-                    <label className="admin-label">Union Name</label>
-                    <input
-                      className="admin-input"
-                      value={settingsForm.name ?? union?.name ?? ''}
-                      onChange={(e) => setSettingsForm((f) => ({ ...f, name: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="admin-label">Rake Hold (%)</label>
-                    <input
-                      className="admin-input"
-                      type="number"
-                      min="0"
-                      max="50"
-                      step="0.1"
-                      value={
-                        settingsForm.union_rake_hold ??
-                        (Number(union?.settings?.union_rake_hold) || 0.1) * 100
-                      }
-                      onChange={(e) =>
-                        setSettingsForm((f) => ({ ...f, union_rake_hold: e.target.value }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="admin-label">Default Agent Comm (%)</label>
-                    <input
-                      className="admin-input"
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      value={
-                        settingsForm.default_agent_commission ??
-                        (Number(union?.settings?.default_agent_commission) || 0.5) * 100
-                      }
-                      onChange={(e) =>
-                        setSettingsForm((f) => ({ ...f, default_agent_commission: e.target.value }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="admin-label">Default Club Comm (%)</label>
-                    <input
-                      className="admin-input"
-                      type="number"
-                      min="1"
-                      max="100"
-                      step="0.1"
-                      value={
-                        settingsForm.default_club_commission_rate ??
-                        (Number(union?.settings?.default_club_commission_rate) || 0.9) * 100
-                      }
-                      onChange={(e) =>
-                        setSettingsForm((f) => ({
-                          ...f,
-                          default_club_commission_rate: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-                <textarea
-                  className="admin-input"
-                  value={settingsForm.description ?? union?.description ?? ''}
-                  onChange={(e) => setSettingsForm((f) => ({ ...f, description: e.target.value }))}
-                  placeholder="Description..."
-                  rows={3}
-                  style={{ marginBottom: '12px', resize: 'vertical' }}
-                />
-                <button
-                  className="admin-btn admin-btn-primary"
-                  disabled={processing}
-                  onClick={async () => {
-                    setProcessing(true);
-                    setError(null);
-                    try {
-                      const updates: Record<
-                        string,
-                        string | Record<string, number | string | boolean>
-                      > = {};
-                      if (settingsForm.name) updates.name = settingsForm.name;
-                      if (settingsForm.description !== undefined)
-                        updates.description = settingsForm.description;
-                      const settings: Record<string, number | string | boolean> = {};
-                      if (settingsForm.union_rake_hold) {
-                        const v = parseFloat(settingsForm.union_rake_hold) / 100;
-                        if (isNaN(v)) {
-                          setError('Invalid rake hold value');
-                          setProcessing(false);
-                          return;
-                        }
-                        settings.union_rake_hold = v;
-                      }
-                      if (settingsForm.default_agent_commission) {
-                        const v = parseFloat(settingsForm.default_agent_commission) / 100;
-                        if (isNaN(v)) {
-                          setError('Invalid agent commission value');
-                          setProcessing(false);
-                          return;
-                        }
-                        settings.default_agent_commission = v;
-                      }
-                      if (settingsForm.default_club_commission_rate) {
-                        const v = parseFloat(settingsForm.default_club_commission_rate) / 100;
-                        if (isNaN(v)) {
-                          setError('Invalid club commission value');
-                          setProcessing(false);
-                          return;
-                        }
-                        settings.default_club_commission_rate = v;
-                      }
-                      if (Object.keys(settings).length > 0)
-                        updates.settings = { ...(union?.settings || {}), ...settings };
-                      // UNION AUDIT FIX 2026-07-21: direct unions.update was
-                      // RLS-blocked for browser users (silent no-op). Route
-                      // through manage-union update_settings, which also
-                      // validates the financial settings server-side.
-                      await unionApi.updateSettings(unionId!, {
-                        name: updates.name as string | undefined,
-                        description: updates.description as string | undefined,
-                        settings: updates.settings as Record<string, unknown> | undefined,
-                      });
-                      masterBus.emit('CLUB_UPDATED', { clubId: unionId || '' });
-                      setSuccess('Settings saved');
-                      loadDashboard(unionId);
-                    } catch (err: any) {
-                      setError(safeErrorMessage(err));
-                    } finally {
-                      setProcessing(false);
-                    }
-                  }}
-                >
-                  Save Settings
-                </button>
-              </div>
-            ) : (
-              <div className="admin-card" style={{ padding: '20px' }}>
-                <h3 className="admin-card-title">Union Settings (Read Only)</h3>
-                <div className="admin-text-secondary">
-                  <div>Rake Hold: {pct(Number(union?.settings?.union_rake_hold))}</div>
-                  <div>
-                    Agent Commission: {pct(Number(union?.settings?.default_agent_commission))}
-                  </div>
-                  <div>
-                    Club Commission: {pct(Number(union?.settings?.default_club_commission_rate))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Admin Management */}
-            <div className="admin-card" style={{ padding: '20px', marginTop: '16px' }}>
-              <h3 className="admin-card-title">Union Admins</h3>
-              <div className="admin-table-scroll">
-                <table className="admin-data-table">
-                  <thead>
-                    <tr>
-                      <th>Admin</th>
-                      <th>Role</th>
-                      <th>Since</th>
-                      {isLead && <th>Actions</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {admins.map((admin) => (
-                      <tr key={admin.user_id}>
-                        <td style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {admin.profile?.avatar_url && (
-                            <img
-                              src={admin.profile.avatar_url}
-                              alt=""
-                              style={{ width: 28, height: 28, borderRadius: '50%' }}
-                            />
-                          )}
-                          {admin.profile?.display_name ||
-                            admin.profile?.username ||
-                            admin.user_id?.slice(0, 8)}
-                        </td>
-                        <td>
-                          <span
-                            className="admin-badge"
-                            style={
-                              admin.role === 'union_lead'
-                                ? { background: 'rgba(245,166,35,0.15)', color: '#F5A623' }
-                                : undefined
-                            }
-                          >
-                            {admin.role}
-                          </span>
-                        </td>
-                        <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          {timeAgo(admin.created_at)}
-                        </td>
-                        {isLead && (
-                          <td>
-                            {admin.role !== 'union_lead' && (
-                              <button
-                                className="admin-btn admin-btn-danger admin-btn-sm"
-                                disabled={processing}
-                                onClick={async () => {
-                                  if (
-                                    !(await confirmDialog({
-                                      title: 'Remove admin',
-                                      message: 'Remove this admin?',
-                                      confirmText: 'Remove',
-                                      variant: 'danger',
-                                    }))
-                                  )
-                                    return;
-                                  setProcessing(true);
-                                  setError(null);
-                                  try {
-                                    // UNION AUDIT FIX 2026-07-21: RLS-blocked
-                                    // direct delete -> manage-union remove_admin.
-                                    await unionApi.removeAdmin(unionId!, admin.user_id);
-                                    masterBus.emit('CLUB_UPDATED', { clubId: unionId || '' });
-                                    setSuccess('Admin removed');
-                                    loadDashboard(unionId);
-                                  } catch (err: any) {
-                                    setError(safeErrorMessage(err));
-                                  } finally {
-                                    setProcessing(false);
-                                  }
-                                }}
-                              >
-                                Remove
-                              </button>
-                            )}
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Add Admin */}
-              {isLead && (
-                <div style={{ marginTop: '16px' }}>
-                  <label className="admin-label">Add Admin</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <input
-                      className="admin-input"
-                      value={adminSearch}
-                      onChange={(e) => setAdminSearch(e.target.value)}
-                      placeholder="Search By Username..."
-                    />
-                    <button
-                      className="admin-btn admin-btn-ghost"
-                      disabled={processing || adminSearch.length < 2}
-                      onClick={async () => {
-                        setProcessing(true);
-                        setError(null);
-                        try {
-                          const { data: users } = await supabase
-                            .from('profiles')
-                            .select('id, display_name, username')
-                            .ilike('username', `%${adminSearch}%`)
-                            .limit(5);
-                          setAdminResults(users || []);
-                        } catch (err: any) {
-                          setError(safeErrorMessage(err));
-                        } finally {
-                          setProcessing(false);
-                        }
-                      }}
-                    >
-                      Search
-                    </button>
-                  </div>
-                  {adminResults.length > 0 && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '6px',
-                        marginTop: '8px',
-                      }}
-                    >
-                      {adminResults.map((u) => (
-                        <div
-                          key={u.id}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '8px 12px',
-                            background: 'var(--bg-secondary)',
-                            borderRadius: '8px',
-                          }}
-                        >
-                          <span>{u.display_name || u.username || u.id.slice(0, 8)}</span>
-                          <button
-                            className="admin-btn admin-btn-success admin-btn-sm"
-                            disabled={processing}
-                            onClick={async () => {
-                              setProcessing(true);
-                              setError(null);
-                              try {
-                                // UNION AUDIT FIX 2026-07-21: RLS-blocked direct
-                                // insert -> manage-union add_admin.
-                                await unionApi.addAdmin(unionId!, u.id);
-                                masterBus.emit('CLUB_UPDATED', { clubId: unionId || '' });
-                                setSuccess(`${u.display_name || u.username} added as admin`);
-                                setAdminResults([]);
-                                setAdminSearch('');
-                                loadDashboard(unionId);
-                              } catch (err: any) {
-                                setError(safeErrorMessage(err));
-                              } finally {
-                                setProcessing(false);
-                              }
-                            }}
-                          >
-                            Add
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+              {unionId && (
+                <div className="admin-card" style={{ padding: '20px', marginBottom: '16px' }}>
+                  <SpinActivationPanel clubId={unionId} />
                 </div>
               )}
+
+              {isLead ? (
+                <div className="admin-card" style={{ padding: '20px' }}>
+                  <h3 className="admin-card-title">Union Settings</h3>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+                      gap: '12px',
+                      marginBottom: '16px',
+                    }}
+                  >
+                    <div>
+                      <label className="admin-label">Union Name</label>
+                      <input
+                        className="admin-input"
+                        value={settingsForm.name ?? union?.name ?? ''}
+                        onChange={(e) => setSettingsForm((f) => ({ ...f, name: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="admin-label">Rake Hold (%)</label>
+                      <input
+                        className="admin-input"
+                        type="number"
+                        min="0"
+                        max="50"
+                        step="0.1"
+                        value={
+                          settingsForm.union_rake_hold ??
+                          (Number(union?.settings?.union_rake_hold) || 0.1) * 100
+                        }
+                        onChange={(e) =>
+                          setSettingsForm((f) => ({ ...f, union_rake_hold: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="admin-label">Default Agent Comm (%)</label>
+                      <input
+                        className="admin-input"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={
+                          settingsForm.default_agent_commission ??
+                          (Number(union?.settings?.default_agent_commission) || 0.5) * 100
+                        }
+                        onChange={(e) =>
+                          setSettingsForm((f) => ({
+                            ...f,
+                            default_agent_commission: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="admin-label">Default Club Comm (%)</label>
+                      <input
+                        className="admin-input"
+                        type="number"
+                        min="1"
+                        max="100"
+                        step="0.1"
+                        value={
+                          settingsForm.default_club_commission_rate ??
+                          (Number(union?.settings?.default_club_commission_rate) || 0.9) * 100
+                        }
+                        onChange={(e) =>
+                          setSettingsForm((f) => ({
+                            ...f,
+                            default_club_commission_rate: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                  <textarea
+                    className="admin-input"
+                    value={settingsForm.description ?? union?.description ?? ''}
+                    onChange={(e) =>
+                      setSettingsForm((f) => ({ ...f, description: e.target.value }))
+                    }
+                    placeholder="Description..."
+                    rows={3}
+                    style={{ marginBottom: '12px', resize: 'vertical' }}
+                  />
+                  <button
+                    className="admin-btn admin-btn-primary"
+                    disabled={processing}
+                    onClick={async () => {
+                      setProcessing(true);
+                      setError(null);
+                      try {
+                        const updates: Record<
+                          string,
+                          string | Record<string, number | string | boolean>
+                        > = {};
+                        if (settingsForm.name) updates.name = settingsForm.name;
+                        if (settingsForm.description !== undefined)
+                          updates.description = settingsForm.description;
+                        const settings: Record<string, number | string | boolean> = {};
+                        if (settingsForm.union_rake_hold) {
+                          const v = parseFloat(settingsForm.union_rake_hold) / 100;
+                          if (isNaN(v)) {
+                            setError('Invalid rake hold value');
+                            setProcessing(false);
+                            return;
+                          }
+                          settings.union_rake_hold = v;
+                        }
+                        if (settingsForm.default_agent_commission) {
+                          const v = parseFloat(settingsForm.default_agent_commission) / 100;
+                          if (isNaN(v)) {
+                            setError('Invalid agent commission value');
+                            setProcessing(false);
+                            return;
+                          }
+                          settings.default_agent_commission = v;
+                        }
+                        if (settingsForm.default_club_commission_rate) {
+                          const v = parseFloat(settingsForm.default_club_commission_rate) / 100;
+                          if (isNaN(v)) {
+                            setError('Invalid club commission value');
+                            setProcessing(false);
+                            return;
+                          }
+                          settings.default_club_commission_rate = v;
+                        }
+                        if (Object.keys(settings).length > 0)
+                          updates.settings = { ...(union?.settings || {}), ...settings };
+                        // UNION AUDIT FIX 2026-07-21: direct unions.update was
+                        // RLS-blocked for browser users (silent no-op). Route
+                        // through manage-union update_settings, which also
+                        // validates the financial settings server-side.
+                        await unionApi.updateSettings(unionId!, {
+                          name: updates.name as string | undefined,
+                          description: updates.description as string | undefined,
+                          settings: updates.settings as Record<string, unknown> | undefined,
+                        });
+                        masterBus.emit('CLUB_UPDATED', { clubId: unionId || '' });
+                        setSuccess('Settings saved');
+                        loadDashboard(unionId);
+                      } catch (err: any) {
+                        setError(safeErrorMessage(err));
+                      } finally {
+                        setProcessing(false);
+                      }
+                    }}
+                  >
+                    Save Settings
+                  </button>
+                </div>
+              ) : (
+                <div className="admin-card" style={{ padding: '20px' }}>
+                  <h3 className="admin-card-title">Union Settings (Read Only)</h3>
+                  <div className="admin-text-secondary">
+                    <div>Rake Hold: {pct(Number(union?.settings?.union_rake_hold))}</div>
+                    <div>
+                      Agent Commission: {pct(Number(union?.settings?.default_agent_commission))}
+                    </div>
+                    <div>
+                      Club Commission: {pct(Number(union?.settings?.default_club_commission_rate))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Admin Management */}
+              <div className="admin-card" style={{ padding: '20px', marginTop: '16px' }}>
+                <h3 className="admin-card-title">Union Admins</h3>
+                <div className="admin-table-scroll">
+                  <table className="admin-data-table">
+                    <thead>
+                      <tr>
+                        <th>Admin</th>
+                        <th>Role</th>
+                        <th>Since</th>
+                        {isLead && <th>Actions</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {admins.map((admin) => (
+                        <tr key={admin.user_id}>
+                          <td style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {admin.profile?.avatar_url && (
+                              <img
+                                src={admin.profile.avatar_url}
+                                alt=""
+                                style={{ width: 28, height: 28, borderRadius: '50%' }}
+                              />
+                            )}
+                            {admin.profile?.display_name ||
+                              admin.profile?.username ||
+                              admin.user_id?.slice(0, 8)}
+                          </td>
+                          <td>
+                            <span
+                              className="admin-badge"
+                              style={
+                                admin.role === 'union_lead'
+                                  ? { background: 'rgba(245,166,35,0.15)', color: '#F5A623' }
+                                  : undefined
+                              }
+                            >
+                              {admin.role}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                            {timeAgo(admin.created_at)}
+                          </td>
+                          {isLead && (
+                            <td>
+                              {admin.role !== 'union_lead' && (
+                                <button
+                                  className="admin-btn admin-btn-danger admin-btn-sm"
+                                  disabled={processing}
+                                  onClick={async () => {
+                                    if (
+                                      !(await confirmDialog({
+                                        title: 'Remove admin',
+                                        message: 'Remove this admin?',
+                                        confirmText: 'Remove',
+                                        variant: 'danger',
+                                      }))
+                                    )
+                                      return;
+                                    setProcessing(true);
+                                    setError(null);
+                                    try {
+                                      // UNION AUDIT FIX 2026-07-21: RLS-blocked
+                                      // direct delete -> manage-union remove_admin.
+                                      await unionApi.removeAdmin(unionId!, admin.user_id);
+                                      masterBus.emit('CLUB_UPDATED', { clubId: unionId || '' });
+                                      setSuccess('Admin removed');
+                                      loadDashboard(unionId);
+                                    } catch (err: any) {
+                                      setError(safeErrorMessage(err));
+                                    } finally {
+                                      setProcessing(false);
+                                    }
+                                  }}
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Add Admin */}
+                {isLead && (
+                  <div style={{ marginTop: '16px' }}>
+                    <label className="admin-label">Add Admin</label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        className="admin-input"
+                        value={adminSearch}
+                        onChange={(e) => setAdminSearch(e.target.value)}
+                        placeholder="Search By Username..."
+                      />
+                      <button
+                        className="admin-btn admin-btn-ghost"
+                        disabled={processing || adminSearch.length < 2}
+                        onClick={async () => {
+                          setProcessing(true);
+                          setError(null);
+                          try {
+                            const { data: users } = await supabase
+                              .from('profiles')
+                              .select('id, display_name, username')
+                              .ilike('username', `%${adminSearch}%`)
+                              .limit(5);
+                            setAdminResults(users || []);
+                          } catch (err: any) {
+                            setError(safeErrorMessage(err));
+                          } finally {
+                            setProcessing(false);
+                          }
+                        }}
+                      >
+                        Search
+                      </button>
+                    </div>
+                    {adminResults.length > 0 && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px',
+                          marginTop: '8px',
+                        }}
+                      >
+                        {adminResults.map((u) => (
+                          <div
+                            key={u.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '8px 12px',
+                              background: 'var(--bg-secondary)',
+                              borderRadius: '8px',
+                            }}
+                          >
+                            <span>{u.display_name || u.username || u.id.slice(0, 8)}</span>
+                            <button
+                              className="admin-btn admin-btn-success admin-btn-sm"
+                              disabled={processing}
+                              onClick={async () => {
+                                setProcessing(true);
+                                setError(null);
+                                try {
+                                  // UNION AUDIT FIX 2026-07-21: RLS-blocked direct
+                                  // insert -> manage-union add_admin.
+                                  await unionApi.addAdmin(unionId!, u.id);
+                                  masterBus.emit('CLUB_UPDATED', { clubId: unionId || '' });
+                                  setSuccess(`${u.display_name || u.username} added as admin`);
+                                  setAdminResults([]);
+                                  setAdminSearch('');
+                                  loadDashboard(unionId);
+                                } catch (err: any) {
+                                  setError(safeErrorMessage(err));
+                                } finally {
+                                  setProcessing(false);
+                                }
+                              }}
+                            >
+                              Add
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {walletModal && unionId && (

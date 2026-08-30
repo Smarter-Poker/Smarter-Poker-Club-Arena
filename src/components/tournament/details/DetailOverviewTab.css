@@ -29,7 +29,10 @@
   flex-direction: column;
   gap: 8px;
   min-height: 0;
-  max-height: 100%;
+  /* `max-height: 100%` used to close this rule. It capped the tab at the height
+     of its box while the bands inside shrank to fit, which is how the Detail
+     tab managed to be un-scrollable AND cut off at the same time. The panel
+     scrolls now, so the tab is allowed to be as tall as its content. */
 }
 
 .dov-empty {
@@ -288,7 +291,14 @@
    ───────────────────────────────────────────────────────────────────────── */
 .dov-info--band {
   padding: 0;
-  overflow: hidden;
+  /* `overflow: hidden` used to sit here, on the very element that carries
+     `.tl-scroll`, and beat it on source order (this file is imported after
+     tournament-lobby-3d.css). It was the single reason the Detail tab could
+     not be scrolled by one pixel: the band that absorbs a short viewport was
+     also the band that clipped whatever did not fit. `.details-content` owns
+     the scroll for every tab now (Dan 2026-08-30) - do not re-introduce a
+     clip here, and do not "restore" it as overflow-y either. */
+  overflow: visible;
 }
 
 .dov-band {

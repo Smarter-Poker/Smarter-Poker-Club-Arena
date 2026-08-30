@@ -157,7 +157,7 @@ describe('one op id per target, held across a failure', () => {
 // ───────────────────────────────────────────────────────────────────────────
 describe('the recipient list is the one the server will accept', () => {
   it('comes from fn_club_cashier_members, not a hand-scoped club_members page', () => {
-    expect(PAGE).toContain("supabase.rpc('fn_club_cashier_members'");
+    expect(PAGE).toMatch(/supabase\s*\.rpc\(\s*'fn_club_cashier_members_v2'/);
     // The old path paged club_members and scoped it three different ways, one of
     // which handed a super agent every UNASSIGNED member of the club - people
     // fn_agent_wallet_send would then refuse.

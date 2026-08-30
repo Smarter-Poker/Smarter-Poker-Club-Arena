@@ -97,25 +97,40 @@ describe('the entries list fits inside its panel on a phone', () => {
     expect(body).toMatch(/grid-template-columns:\s*repeat\(3,/);
   });
 
-  it('lowers the list floor below the desktop one', () => {
-    // The base floor is right for a desktop panel and too tall for a phone
-    // one. If these two ever match again, the phone override has stopped
-    // doing anything.
+  it('gives the list no floor at all, on any width (2026-08-30)', () => {
+    /**
+     * THIS USED TO ASSERT A LOWER FLOOR ON PHONES, and that was the right
+     * shape while `.et-scroll` was itself the scroller: the list needed a
+     * height, and the phone one had to be shorter than the desktop one.
+     *
+     * `.details-content` owns the scroll for every tab now, so the list is
+     * free to be exactly as tall as its rows and a floor can only push the
+     * panel's own content off the bottom. The old comment had already
+     * reached the diagnosis - "a floor taller than the space available is
+     * not a floor, it is an overflow" - and no floor is simply the whole of
+     * that fix rather than half.
+     *
+     * So the guarantee is strictly stronger than the one it replaces: not
+     * "the phone floor is lower" but "there is no floor to be too tall".
+     */
     const base = px(
       minHeightOf(code.slice(0, code.indexOf('@media (max-width: 480px)')), '.et-scroll')
     );
+    // A floor of 0 is the same statement as no floor; anything above it is
+    // the regression.
+    expect(Number.isFinite(base) ? base : 0).toBe(0);
+
+    // And the phone block must not quietly reintroduce one.
     const onPhone = px(minHeightOf(phone, '.et-scroll'));
-    expect(Number.isFinite(base), 'no base .et-scroll min-height').toBe(true);
-    expect(Number.isFinite(onPhone), 'no phone .et-scroll min-height').toBe(true);
-    expect(onPhone).toBeLessThan(base);
-    // Still a list, not a letterbox: two rows of 48px plus padding.
-    expect(onPhone).toBeGreaterThanOrEqual(96);
+    expect(Number.isFinite(onPhone) ? onPhone : 0).toBe(0);
   });
 
-  it('keeps the flex fill that the floor exists to backstop', () => {
-    // The floor is a backstop for a panel with no imposed height. Remove the
-    // fill and the floor becomes the only sizing, which is the 160px bug in a
-    // different costume.
+  it('keeps the flex fill that used to need a floor behind it', () => {
+    // With the floor gone (see above) the fill is the only thing sizing this
+    // list inside its panel, which makes it MORE load-bearing than before,
+    // not less. `max-height: none` matters for the same reason: the old
+    // `min(58vh, 520px)` cap measured the viewport rather than the modal
+    // sheet the list is rendered in.
     // The BASE rule, not the phone override. `lastIndexOf` finds the override,
     // which carries only a min-height -- the first draft of this case asserted
     // against that and failed for the wrong reason.

@@ -317,6 +317,8 @@ export default function WalletCashierModal({
    * A ref, not state: a re-render must not mint a new key mid-flight.
    */
   const opIdRef = useRef<string>(newOpId());
+  const claimOpIdsRef = useRef<Map<string, string>>(new Map());
+  const reverseOpIdsRef = useRef<Map<string, string>>(new Map());
   /** Beats the double tap that lands before `sending` has re-rendered. */
   const busyRef = useRef(false);
 
@@ -991,12 +993,14 @@ export default function WalletCashierModal({
     busyRef.current = true;
     setClaimingId(row.transaction_id);
     try {
+      const opId = claimOpIdsRef.current.get(row.transaction_id) || newOpId();
+      claimOpIdsRef.current.set(row.transaction_id, opId);
       const { data, error } = await supabase.rpc('fn_agent_wallet_claim_back', {
         p_club_id: clubUuid,
         p_transaction_id: row.transaction_id,
         p_amount: row.remaining,
         p_reason: 'Claimed Back From The Agent Wallet Cashier',
-        p_op_id: newOpId(),
+        p_op_id: opId,
       });
       if (error) throw error;
       const res = (Array.isArray(data) ? data[0] : data) as {
@@ -1015,6 +1019,7 @@ export default function WalletCashierModal({
         source: 'agent_wallet_claim',
         userId: row.to_user_id,
       });
+      claimOpIdsRef.current.delete(row.transaction_id);
       refresh();
     } catch (e) {
       reportError(e, 'WalletCashierModal.claimBack');
@@ -1030,10 +1035,12 @@ export default function WalletCashierModal({
     busyRef.current = true;
     setReversingId(row.id);
     try {
+      const opId = reverseOpIdsRef.current.get(row.id) || newOpId();
+      reverseOpIdsRef.current.set(row.id, opId);
       const { data, error } = await supabase.rpc('fn_club_bank_reverse', {
         p_transaction_id: row.id,
         p_reason: 'Reversed From The Club Bank Cashier',
-        p_op_id: newOpId(),
+        p_op_id: opId,
       });
       if (error) throw error;
       const res = (Array.isArray(data) ? data[0] : data) as {
@@ -1043,6 +1050,7 @@ export default function WalletCashierModal({
       if (!res?.success) throw new Error(res?.error || 'That Send Could Not Be Reversed');
       toast?.success?.(`Reversed ${fmtWhole(row.amount)} Chips Back Into The Club Bank`);
       masterBus.emit('BALANCE_UPDATED', { source: 'club_bank_reverse', userId: user?.id || '' });
+      reverseOpIdsRef.current.delete(row.id);
       refresh();
     } catch (e) {
       reportError(e, 'WalletCashierModal.reverse');

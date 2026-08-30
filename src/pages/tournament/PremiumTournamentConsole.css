@@ -662,3 +662,395 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ========================================================================
+   APPROVED ASSET-BACKED MACHINE
+
+   The first premium pass painted another set of CSS boxes. That was the
+   visual mismatch: Club Arena's approved lobby is manufactured artwork, not
+   a collection of gradients. This final layer makes the real chassis and
+   empty hardware shells the source of every major edge and clickable bay.
+   Live DOM remains above the art for accessibility, data and actions.
+   ======================================================================== */
+
+.tournament-details {
+  position: relative;
+  width: min(100%, 1086px);
+  margin-inline: auto;
+  padding: clamp(22px, 3vw, 36px) clamp(34px, 6.3vw, 68px) clamp(38px, 5.4vw, 62px);
+  overflow: hidden;
+  color: #eef3f7;
+  font-family: 'Roboto Condensed', 'Rajdhani', var(--font-sans, system-ui, sans-serif);
+  background: #000 url('/hub/club-arena/assets/club-buttons/lobby/lobby-command-chassis-v2.png')
+    center / 100% 100% no-repeat;
+  border: 0;
+  border-radius: 0;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 82%);
+}
+
+/* Mask the chassis' fixed inner divider locations; the outer rails and club
+   chip remain visible while each responsive live band supplies its own exact
+   hardware frame. */
+.tournament-details::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: clamp(34px, 4vw, 48px) clamp(48px, 7vw, 76px) clamp(52px, 6vw, 70px);
+  display: block;
+  pointer-events: none;
+  border: 0;
+  clip-path: none;
+  background:
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 1%) 0 1px, transparent 1px 4px), #020507;
+  box-shadow: inset 0 0 44px #000;
+}
+
+.tournament-details::after {
+  display: none;
+}
+
+.tournament-details > * {
+  position: relative;
+  z-index: 2;
+}
+
+.tournament-details .details-header,
+.tournament-details .details-title,
+.tournament-details .details-tabs,
+.tournament-details .details-content,
+.tournament-details .details-footer {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.tournament-details .details-header {
+  min-height: 76px;
+  padding: 18px clamp(38px, 7vw, 70px) 13px;
+  justify-content: center;
+  background: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114%
+    no-repeat;
+  clip-path: none;
+}
+
+.tournament-details .details-header::before {
+  top: 17px;
+  left: clamp(42px, 8vw, 78px);
+  color: #65d9ff;
+  font:
+    800 8px/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.24em;
+  text-shadow: 0 0 8px rgb(22 139 255 / 56%);
+}
+
+.tournament-details .details-header h1 {
+  margin-top: 12px;
+  color: #f2f4f6;
+  font:
+    800 clamp(21px, 3vw, 30px) / 1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.045em;
+  background: none;
+  filter: none;
+  text-shadow:
+    0 2px 0 #000,
+    0 4px 8px #000;
+}
+
+.tournament-details .details-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 12px clamp(34px, 6.2vw, 62px);
+  overflow: visible;
+  background: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114%
+    no-repeat;
+}
+
+.tournament-details .details-tabs .tab {
+  position: relative;
+  flex: 1 1 110px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 9px 7px;
+  border: 0;
+  border-radius: 0;
+  color: #aeb8c2;
+  font:
+    800 11px/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114%
+    no-repeat;
+  box-shadow: none;
+  clip-path: none;
+  text-shadow: 0 2px 2px #000;
+}
+
+.tournament-details .details-tabs .tab::after {
+  content: '';
+  position: absolute;
+  inset: 17% 7%;
+  left: 7%;
+  right: 7%;
+  bottom: 17%;
+  height: auto;
+  pointer-events: none;
+  background: transparent;
+  box-shadow: inset 0 0 10px rgb(0 0 0 / 72%);
+}
+
+.tournament-details .details-tabs .tab.active {
+  color: #fff;
+  background:
+    linear-gradient(180deg, rgb(28 139 240 / 28%), rgb(3 38 78 / 40%)),
+    url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114% no-repeat;
+  filter: drop-shadow(0 0 7px #168bff);
+  box-shadow: inset 0 0 13px rgb(43 165 255 / 34%);
+  text-shadow:
+    0 2px 2px #000,
+    0 0 8px #168bff;
+}
+
+.tournament-details .details-title {
+  min-height: 76px;
+  margin: -1px 0 0;
+  padding: 17px clamp(42px, 7.4vw, 76px) 15px;
+  overflow: hidden;
+  background: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 128%
+    no-repeat;
+}
+
+.tournament-details .tournament-title h2 {
+  color: #f2f4f6;
+  font:
+    800 clamp(17px, 2.4vw, 24px) / 1.02 'Roboto Condensed',
+    sans-serif;
+  background: none;
+  filter: none;
+  text-shadow:
+    0 2px 0 #000,
+    0 4px 7px #000;
+}
+
+.tournament-details .qr-btn {
+  min-width: 44px;
+  min-height: 42px;
+  border: 0;
+  border-radius: 0;
+  color: #65d9ff;
+  background: url('/hub/club-arena/assets/club-buttons/club-utility-shell.webp') center / 100% 100%
+    no-repeat;
+  box-shadow: none;
+}
+
+.tournament-details .details-content {
+  min-height: 0;
+  margin: -1px 0 0;
+  padding: clamp(34px, 5vw, 54px) clamp(32px, 5.2vw, 56px);
+  background:
+    url('/hub/club-arena/assets/club-buttons/club-utility-shell.webp') center top / 100% 112%
+      no-repeat,
+    #020507;
+}
+
+.tournament-details .details-content::before,
+.tournament-details .details-content::after {
+  display: none;
+}
+
+.tournament-details .details-content > * {
+  padding: 1px 7px 1px 1px;
+}
+
+.tournament-details .tl-panel,
+.tournament-details .tl-stat,
+.tournament-details .tl-row {
+  border-radius: 0;
+  background-color: #03070a;
+  background-image: linear-gradient(180deg, rgb(25 37 48 / 90%), rgb(2 7 11 / 96%));
+  box-shadow:
+    inset 0 0 0 2px #020406,
+    inset 0 1px 0 rgb(255 255 255 / 15%),
+    0 5px 11px rgb(0 0 0 / 52%);
+  clip-path: polygon(
+    7px 0,
+    calc(100% - 7px) 0,
+    100% 7px,
+    100% calc(100% - 7px),
+    calc(100% - 7px) 100%,
+    7px 100%,
+    0 calc(100% - 7px),
+    0 7px
+  );
+}
+
+.tournament-details .details-footer {
+  position: relative;
+  z-index: 4;
+  gap: clamp(58px, 10vw, 108px);
+  margin: -1px 0 0;
+  padding: 14px clamp(28px, 5vw, 52px) calc(15px + env(safe-area-inset-bottom, 0px));
+  background: transparent;
+}
+
+.tournament-details .details-footer:has(> :nth-child(3)) {
+  gap: 5px;
+}
+
+.tournament-details .details-footer button,
+.tournament-details .details-footer .btn-enter-table,
+.tournament-details .details-footer .tournament-status-badge {
+  min-width: 0;
+  min-height: 56px;
+  padding: 12px clamp(20px, 4vw, 42px);
+  border: 0;
+  border-radius: 0;
+  color: #eef3f7;
+  font:
+    800 14px/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.11em;
+  background: url('/hub/club-arena/assets/club-buttons/action-primary-shell.webp') center / 100%
+    100% no-repeat;
+  box-shadow: none;
+  clip-path: none;
+  text-shadow:
+    0 2px 0 #000,
+    0 4px 6px #000;
+}
+
+.tournament-details .details-footer .btn-share,
+.tournament-details .details-footer .btn-watch {
+  color: #eef3f7;
+  border: 0;
+  background: url('/hub/club-arena/assets/club-buttons/action-primary-shell.webp') center / 100%
+    100% no-repeat;
+  box-shadow: none;
+}
+
+.tournament-details .details-footer .btn-register,
+.tournament-details .details-footer .btn-enter-table {
+  border: 0;
+  background:
+    linear-gradient(180deg, rgb(32 145 244 / 22%), rgb(1 45 94 / 30%)),
+    url('/hub/club-arena/assets/club-buttons/action-primary-shell.webp') center / 100% 100%
+      no-repeat;
+  filter: drop-shadow(0 0 7px rgb(22 139 255 / 70%));
+  box-shadow: none;
+}
+
+.tournament-details .details-footer .btn-unregister {
+  border: 0;
+  background:
+    linear-gradient(180deg, rgb(242 57 69 / 30%), rgb(95 3 13 / 42%)),
+    url('/hub/club-arena/assets/club-buttons/action-primary-shell.webp') center / 100% 100%
+      no-repeat;
+  filter: drop-shadow(0 0 7px rgb(239 61 79 / 52%));
+  box-shadow: none;
+}
+
+.tournament-details .details-footer .tournament-status-badge.running {
+  border: 0;
+  color: #bdfbd6;
+  background:
+    linear-gradient(180deg, rgb(50 210 122 / 25%), rgb(3 67 31 / 42%)),
+    url('/hub/club-arena/assets/club-buttons/action-primary-shell.webp') center / 100% 100%
+      no-repeat;
+}
+
+@media (max-width: 720px) {
+  .tournament-details {
+    width: 100%;
+    padding: max(8px, env(safe-area-inset-top, 0px)) 0 0;
+    background-size: 100% 100%;
+    box-shadow: none;
+  }
+
+  .tournament-details::before {
+    inset: 3.2% 5.5% 4.4%;
+  }
+
+  .tournament-details .details-header {
+    min-height: 68px;
+    padding: 15px 9% 10px;
+  }
+
+  .tournament-details .details-header::before {
+    top: 15px;
+    left: 10%;
+  }
+
+  .tournament-details .details-tabs {
+    gap: 1px;
+    padding: 10px 7.2%;
+  }
+
+  .tournament-details .details-tabs .tab {
+    flex-basis: 24%;
+    min-height: 44px;
+    padding-inline: 4px;
+    font-size: 10px;
+  }
+
+  .tournament-details .details-title {
+    min-height: 72px;
+    padding: 14px 9%;
+  }
+
+  .tournament-details .tournament-title h2 {
+    display: -webkit-box;
+    overflow: hidden;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .tournament-details .details-content {
+    padding: 30px 7.2%;
+  }
+
+  .tournament-details .details-footer {
+    flex-direction: row;
+    gap: clamp(45px, 11vw, 70px);
+    padding: 10px 6.5% calc(13px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .tournament-details .details-footer:has(> :nth-child(3)) {
+    gap: 3px;
+  }
+
+  .tournament-details .details-footer button,
+  .tournament-details .details-footer .btn-enter-table,
+  .tournament-details .details-footer .tournament-status-badge {
+    min-height: 50px;
+    padding: 9px 8px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 420px) {
+  .tournament-details .details-tabs {
+    padding-inline: 6%;
+  }
+
+  .tournament-details .details-tabs .tab {
+    font-size: 9px;
+    letter-spacing: 0.055em;
+  }
+
+  .tournament-details .details-title {
+    padding-inline: 8%;
+  }
+
+  .tournament-details .details-content {
+    padding: 26px 6%;
+  }
+
+  .tournament-details .details-footer {
+    gap: 42px;
+    padding-inline: 5.5%;
+  }
+}

@@ -1102,6 +1102,11 @@
       "name",
       "description"
     ],
+    "daily_challenge_milestones": [
+      "days",
+      "reward_chips",
+      "label"
+    ],
     "daily_spins": [
       "user_id",
       "reward_type"
@@ -1361,6 +1366,16 @@
     "gto_agg_progress": [
       "street"
     ],
+    "gto_combo_map": [
+      "combo_idx",
+      "card_a",
+      "card_b",
+      "rank_a",
+      "rank_b",
+      "suit_a",
+      "suit_b",
+      "hand_class"
+    ],
     "gto_postflop_compact": [
       "street",
       "game_family",
@@ -1370,6 +1385,14 @@
       "facing",
       "hand_matrix",
       "source_rows"
+    ],
+    "gto_postflop_v31": [
+      "street",
+      "game_family",
+      "position",
+      "depth_bucket",
+      "texture_class",
+      "hand_matrix"
     ],
     "gto_scenarios": [
       "id",
@@ -3321,7 +3344,14 @@
     ],
     "user_daily_challenges": [
       "user_id",
-      "challenge_id"
+      "challenge_id",
+      "challenge_name_snapshot",
+      "challenge_description_snapshot",
+      "challenge_type_snapshot",
+      "tier_snapshot",
+      "requirement_snapshot",
+      "chip_reward_snapshot",
+      "diamond_reward_snapshot"
     ],
     "user_daily_rewards": [
       "user_id"
@@ -3658,6 +3688,15 @@
     ],
     "youtube_embed_failures": [
       "video_id"
+    ],
+    "zz_reopen2_20260830_backup": [
+      "table_id"
+    ],
+    "zz_reopen3_20260830_backup": [
+      "table_id"
+    ],
+    "zz_reopen_20260830_backup": [
+      "table_id"
     ]
   }
 }

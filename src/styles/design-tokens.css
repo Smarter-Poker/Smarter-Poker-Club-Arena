@@ -194,6 +194,9 @@
   /* ─── Seat Info Box ─── */
   --seat-bg: rgba(15, 20, 35, 0.92);
   --seat-border: rgba(255, 255, 255, 0.08);
+  /* Seat plate text is ALWAYS light-on-dark: it must not follow the interface
+     theme's --text-primary (which goes dark in light mode). */
+  --seat-text: #f3f4f6;
   --seat-active-border: var(--timer-color);
   --seat-allin-border: var(--color-danger);
   /* Dan 2026-08-15: all table avatars 50% larger (was 56px).
@@ -354,12 +357,16 @@
   --border-default: rgba(0, 0, 0, 0.08);
   --border-active: rgba(0, 0, 0, 0.15);
   --border-strong: rgba(0, 0, 0, 0.25);
-  --felt-color: #1a7a4a;
-  --rail-highlight: rgba(255, 255, 255, 0.12);
-  --seat-bg: rgba(255, 255, 255, 0.94);
-  --seat-border: rgba(0, 0, 0, 0.1);
-  --timer-color: #d97706;
-  --timer-glow: rgba(217, 119, 6, 0.5);
+  /* TABLE TOKENS DO NOT BELONG HERE (Dan 2026-08-30, binding).
+     `data-theme` on <html> is the INTERFACE mode (dark/light chrome for the
+     lobby and menus), but the same attribute namespace also carries the table
+     color themes above. When this block declared the seat-plate, felt and
+     timer tokens it turned every seat plate on a live table WHITE the moment
+     the interface was in light mode, while the image-based felt stayed dark:
+     dark table, white "action boxes" on every player. The game
+     table always keeps its dark plates regardless of interface mode, so the
+     light theme may only restyle chrome tokens. Enforced by
+     tests/seat-plates-stay-dark.law.test.ts — do not re-add table tokens. */
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.1);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.15);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);

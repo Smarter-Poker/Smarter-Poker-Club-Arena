@@ -45,11 +45,44 @@ describe('approved premium tournament console contract', () => {
     expect(rail).not.toMatch(/width:\s*(?:fit-content|max-content)/);
   });
 
+  it('uses the approved Club Arena chassis and hardware assets instead of a CSS imitation', () => {
+    expect(PREMIUM).toContain('lobby-command-chassis-v2.png');
+    expect(PREMIUM).toContain('club-nav-shell.webp');
+    expect(PREMIUM).toContain('action-primary-shell.webp');
+  });
+
   it('keeps every tab vertically scrollable inside the fixed chassis', () => {
-    expect(PREMIUM).toContain('.tournament-details .details-content > *');
-    expect(read('src/pages/tournament/TournamentDetails.css')).toMatch(
-      /\.details-content\s*>\s*\*\s*{[^}]*overflow-y:\s*auto/s
-    );
+    /**
+     * THE SCROLLER MOVED UP ONE ELEMENT (2026-08-30), and the guarantee this
+     * case exists to defend is unchanged: every tab scrolls.
+     *
+     * It used to require `.details-content > *` to be the scroller, on the
+     * theory that a tab wanting two independently scrolling regions could
+     * still have them. In practice that asks eight separate tab stylesheets
+     * to get the same four-property incantation right, and eight of eight
+     * got it wrong in three different ways: `.dov-info--band` set
+     * `overflow: hidden` on the very element carrying the scroller and, being
+     * imported later, won; `.dov`, `.blinds-tab` and `.rw` are flex columns
+     * that shrink rather than overflow, so there was never anything to
+     * scroll; and `.rk-list` / `.et-scroll` capped themselves against `vh`
+     * while rendered inside a 75dvh modal sheet. The contract passed the
+     * whole time. Every tab was still broken.
+     *
+     * One scroller, owned by the chassis, cannot be got wrong by a tab that
+     * forgets — so that is what is pinned now.
+     */
+    const css = read('src/pages/tournament/TournamentDetails.css');
+    expect(css).toMatch(/\.details-content\s*{[^}]*overflow-y:\s*auto/s);
+
+    // The two properties without which `overflow-y: auto` scrolls nothing:
+    // a flex child defaults to `min-height: auto` and refuses to shrink below
+    // its content, so the box grows instead of scrolling.
+    expect(css).toMatch(/\.details-content\s*{[^}]*min-height:\s*0/s);
+    expect(css).toMatch(/\.details-content\s*{[^}]*flex:\s*1 1 auto/s);
+
+    // And the chassis must not hand the scroll back to the children it just
+    // took it from — that is the exact arrangement that failed above.
+    expect(css).not.toMatch(/\.details-content\s*>\s*\*\s*{[^}]*overflow-y:\s*auto/s);
   });
 
   it('keeps dynamic blue, green and red action states in the machine footer', () => {
@@ -62,7 +95,10 @@ describe('approved premium tournament console contract', () => {
 describe('approved premium cash-table machine contract', () => {
   it('scopes the premium machine to cash lobbies', () => {
     expect(GAME_PANEL).toContain("className={`glp${isCash ? ' glp--cash' : ''}`}");
-    expect(GAME_PREMIUM).toContain('.glp--cash .cplaque');
+    expect(GAME_PANEL).toContain('className="glp__arena-card"');
+    expect(GAME_PANEL).toContain('arenaGameCardDataFromEntry(entry)');
+    expect(GAME_PREMIUM).toContain('lobby-command-chassis-v2.png');
+    expect(GAME_PREMIUM).toContain('.glp--cash .glp__arena-card');
   });
 
   it('retains real join and observe actions', () => {

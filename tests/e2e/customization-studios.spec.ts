@@ -34,7 +34,10 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, headers: jsonHeaders, body: JSON.stringify(body) });
 }
 
-async function mockStudioBackend(context: BrowserContext): Promise<MockStudioServer> {
+async function mockStudioBackend(
+  context: BrowserContext,
+  options: { unlockAllLooks?: boolean } = {}
+): Promise<MockStudioServer> {
   const server: MockStudioServer = { saved: { ...DEFAULT_SELECTION }, purchases: [] };
   let favorites: string[] = [];
   let loadouts: unknown[] = [null, null, null];
@@ -98,7 +101,27 @@ async function mockStudioBackend(context: BrowserContext): Promise<MockStudioSer
       await fulfillJson(route, { favorites, loadouts, revision: 0 });
       return;
     }
-    if (path.endsWith('/feature_purchases') || path.endsWith('/theme_asset_unlocks')) {
+    if (path.endsWith('/theme_asset_unlocks')) {
+      await fulfillJson(
+        route,
+        options.unlockAllLooks
+          ? [
+              'default-dark',
+              'classic-brown',
+              'neon-blue',
+              'rustic-wood',
+              'casino-green',
+              'ocean-depths',
+              'crimson-club',
+              'arctic-suite',
+              'amethyst-night',
+              'carbon-ion',
+            ].map((asset_id) => ({ category: 'theme_id', asset_id }))
+          : []
+      );
+      return;
+    }
+    if (path.endsWith('/feature_purchases')) {
       await fulfillJson(route, []);
       return;
     }
@@ -253,5 +276,85 @@ test.describe('real Table Studio browser flows', () => {
 
     await page.emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' });
     await expect(studio.getByRole('button', { name: 'Done' })).toBeVisible();
+  });
+
+  test('all ten coordinated looks retain their mobile, tablet, light, dark, and final-table visuals', async ({
+    context,
+    page,
+  }) => {
+    test.slow();
+    await mockStudioBackend(context, { unlockAllLooks: true });
+    const studio = await openStudio(page);
+    const shell = studio.locator('.theme-modal__preview-shell');
+    const looks = [
+      'House Classic',
+      'Carbon Club',
+      'Neon Ice',
+      'Golden Dusk',
+      'Jade Casino',
+      'Ocean Suite',
+      'Crimson Club',
+      'Arctic Suite',
+      'Amethyst Night',
+      'Carbon Ion',
+    ];
+
+    await page.addStyleTag({
+      content: '*,*::before,*::after{animation:none!important;transition:none!important}',
+    });
+
+    const settleArtwork = async () => {
+      await shell.evaluate(async (preview) => {
+        await document.fonts.ready;
+        await Promise.all(
+          Array.from(
+            preview.querySelectorAll<HTMLImageElement>(
+              '.studio-game-preview__background-ambient, .studio-game-preview__background, .studio-game-preview__table'
+            )
+          ).map((image) => image.decode?.().catch(() => undefined))
+        );
+      });
+    };
+    const capture = async (name: string) => {
+      await settleArtwork();
+      await shell.scrollIntoViewIfNeeded();
+      const bounds = await shell.boundingBox();
+      expect(bounds, `preview bounds for ${name}`).not.toBeNull();
+      const clip = {
+        x: Math.floor(bounds!.x),
+        y: Math.floor(bounds!.y),
+        width: Math.ceil(bounds!.x + bounds!.width) - Math.floor(bounds!.x),
+        height: Math.ceil(bounds!.y + bounds!.height) - Math.floor(bounds!.y),
+      };
+      const screenshot = await page.screenshot({
+        animations: 'disabled',
+        caret: 'hide',
+        clip,
+        scale: 'css',
+      });
+      expect(screenshot).toMatchSnapshot(name, { maxDiffPixelRatio: 0.02 });
+    };
+
+    for (const look of looks) {
+      const slug = look.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      await tapReadyControl(studio.getByRole('button', { name: look, exact: true }));
+      await expect(studio.getByRole('button', { name: look, exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      );
+
+      await page.setViewportSize({ width: 390, height: 844 });
+      await tapReadyControl(studio.getByRole('button', { name: 'Dark', exact: true }));
+      await tapReadyControl(studio.getByRole('button', { name: 'Standard', exact: true }));
+      await capture(`${slug}-mobile-dark-standard.png`);
+
+      await tapReadyControl(studio.getByRole('button', { name: 'Final Table', exact: true }));
+      await capture(`${slug}-mobile-dark-final.png`);
+
+      await page.setViewportSize({ width: 768, height: 1024 });
+      await tapReadyControl(studio.getByRole('button', { name: 'Light', exact: true }));
+      await tapReadyControl(studio.getByRole('button', { name: 'Standard', exact: true }));
+      await capture(`${slug}-tablet-light-standard.png`);
+    }
   });
 });

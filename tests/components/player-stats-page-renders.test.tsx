@@ -14,7 +14,7 @@
  * cheapest possible guard against shipping a blank page again.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
 
 // ── Network and platform boundaries ──────────────────────────────────────────
 
@@ -174,8 +174,11 @@ vi.mock('../../src/components/common/Toast', () => ({
 }));
 
 import PlayerStatsPage from '../../src/pages/PlayerStatsPage';
+import { clearStatsRangeMemo } from '../../src/lib/statsCache';
 
 beforeEach(() => {
+  localStorage.clear();
+  clearStatsRangeMemo();
   rpcPayload = {
     user_id: 'user-1',
     overall: EMPTY_OVERALL,
@@ -260,6 +263,39 @@ describe('PlayerStatsPage mounts', () => {
       expect(screen.getByText(/Overview/i)).toBeInTheDocument();
       expect(screen.getByRole('heading', { name: /Player Intelligence/i })).toBeInTheDocument();
       expect(screen.getByRole('group', { name: /Analysis Range/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /Evidence At A Glance/i })).toBeInTheDocument();
+      expect(screen.getByText('Established')).toBeInTheDocument();
+    });
+
+    expect(document.querySelector('.stats-hero-art')).toHaveAttribute(
+      'src',
+      expect.stringContaining('player-intelligence-dossier-v2.webp')
+    );
+
+    expect(screen.getByRole('button', { name: 'Open Deep Analysis' })).toBeInTheDocument();
+  });
+
+  it('completes a dossier shortcut by selecting, focusing, and revealing its destination', async () => {
+    rpcPayload = {
+      ...rpcPayload,
+      overall: { ...EMPTY_OVERALL, total_hands: 2_000, cash_hands: 2_000 },
+    };
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+
+    render(<PlayerStatsPage />);
+    const shortcut = await screen.findByRole('button', { name: 'Open Deep Analysis' });
+    fireEvent.click(shortcut);
+
+    const analysisTab = screen.getByRole('tab', { name: 'Analysis' });
+    await waitFor(() => {
+      expect(analysisTab).toHaveAttribute('aria-selected', 'true');
+      expect(analysisTab).toHaveFocus();
+      expect(screen.getByRole('tabpanel')).toHaveAttribute('id', 'stats-panel-analysis');
+      expect(scrollIntoView).toHaveBeenCalled();
     });
   });
 

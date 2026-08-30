@@ -189,6 +189,14 @@ type TabKey = 'trade' | 'record' | 'leaderboard' | 'request' | 'tickets';
 const fmt = (n: number) =>
   n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/**
+ * Add batch values in chip cents, not binary floating point. `0.10 * 3` is
+ * 0.30000000000000004 in JavaScript, which used to reject a send from a wallet
+ * holding exactly 0.30 even though every individual RPC amount was valid.
+ */
+const batchAmount = (amountPerTarget: number, targetCount: number) =>
+  (Math.round(amountPerTarget * 100) * targetCount) / 100;
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 /**
@@ -234,6 +242,9 @@ export default function CashierTradePage() {
   const [clubUuid, setClubUuid] = useState<string | null>(null);
   const [clubResolveFailed, setClubResolveFailed] = useState(false);
   const [memberships, setMemberships] = useState<Membership[]>([]);
+  const [membershipsLoading, setMembershipsLoading] = useState(true);
+  const [membershipsError, setMembershipsError] = useState<string | null>(null);
+  const [membershipsReload, setMembershipsReload] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [tab, setTab] = useState<TabKey>('trade');
 
@@ -268,6 +279,7 @@ export default function CashierTradePage() {
   const [recordDirection, setRecordDirection] = useState<'all' | 'in' | 'out'>('all');
   const [recordsLimit, setRecordsLimit] = useState(50);
   const [recordsHasMore, setRecordsHasMore] = useState(false);
+  const [recordsReload, setRecordsReload] = useState(0);
   // Dan 2026-08-21: the three tabs/buttons that used to say "coming soon" are
   // real features now (chip_requests + tournament_tickets, migration 20260821).
   const [requests, setRequests] = useState<ChipRequestRow[]>([]);
@@ -384,6 +396,13 @@ export default function CashierTradePage() {
    * This is `opIdRef` from WalletCashierModal, generalised to a batch.
    */
   const opIdsRef = useRef<Map<string, string>>(new Map());
+  /** One idempotency key per claim intent, retained across an uncertain retry. */
+  const claimOpIdsRef = useRef<Map<string, string>>(new Map());
+  const pickerRef = useRef<HTMLDivElement | null>(null);
+  const entityButtonRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const dialogTriggerRef = useRef<HTMLElement | null>(null);
+  const dialogWasOpenRef = useRef(false);
   const isMounted = useRef(true);
   useEffect(() => {
     isMounted.current = true;
@@ -425,47 +444,91 @@ export default function CashierTradePage() {
 
   // ── Load every membership (the entity switcher) ────────────────────────────
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setMemberships([]);
+      setMembershipsLoading(false);
+      setMembershipsError(null);
+      return;
+    }
     let live = true;
+    setMembershipsLoading(true);
+    setMembershipsError(null);
+    setMemberships([]);
     (async () => {
-      const { data, error } = await supabase
-        .from('club_members')
-        .select('club_id, role, chip_balance, clubs:club_id (name, club_id, logo_url)')
-        .eq('user_id', user.id)
-        .in('status', MEMBER_IN_CLUB);
-      if (error) {
+      try {
+        const { data, error } = await supabase
+          .from('club_members')
+          .select('club_id, role, chip_balance, clubs:club_id (name, club_id, logo_url)')
+          .eq('user_id', user.id)
+          .in('status', MEMBER_IN_CLUB);
+        if (error) throw error;
+        if (!live) return;
+        const rows: Membership[] = (data || [])
+          .map((r) => {
+            const c = (Array.isArray(r.clubs) ? r.clubs[0] : r.clubs) as {
+              name?: string;
+              club_id?: number;
+              logo_url?: string;
+            } | null;
+            return {
+              clubUuid: r.club_id as string,
+              clubCode: c?.club_id ?? null,
+              name: c?.name || 'Club',
+              logoUrl: c?.logo_url || null,
+              role: (r.role as string) || 'player',
+              chipBalance: Number(r.chip_balance) || 0,
+            };
+          })
+          .sort((a, b) => b.chipBalance - a.chipBalance);
+        setMemberships(rows);
+      } catch (error) {
         reportError(error, 'CashierTradePage.memberships');
-        return;
+        if (live) {
+          setMemberships([]);
+          setMembershipsError('Could not load your club cashiers.');
+        }
+      } finally {
+        if (live) setMembershipsLoading(false);
       }
-      if (!live) return;
-      const rows: Membership[] = (data || [])
-        .map((r) => {
-          const c = (Array.isArray(r.clubs) ? r.clubs[0] : r.clubs) as {
-            name?: string;
-            club_id?: number;
-            logo_url?: string;
-          } | null;
-          return {
-            clubUuid: r.club_id as string,
-            clubCode: c?.club_id ?? null,
-            name: c?.name || 'Club',
-            logoUrl: c?.logo_url || null,
-            role: (r.role as string) || 'player',
-            chipBalance: Number(r.chip_balance) || 0,
-          };
-        })
-        .sort((a, b) => b.chipBalance - a.chipBalance);
-      setMemberships(rows);
     })();
     return () => {
       live = false;
     };
-  }, [user?.id]);
+  }, [user?.id, membershipsReload]);
 
   const currentClub = useMemo(
     () => memberships.find((m) => m.clubUuid === clubUuid) || null,
     [memberships, clubUuid]
   );
+
+  // The club switcher is a real popup control: focus enters it, Escape returns
+  // to the trigger, and a click elsewhere closes it. Previously it remained
+  // open over every tab until the user selected another club.
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      const picker = pickerRef.current;
+      (picker?.querySelector<HTMLElement>('[role="option"]') || picker)?.focus();
+    });
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (pickerRef.current?.contains(target) || entityButtonRef.current?.contains(target)) return;
+      setPickerOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setPickerOpen(false);
+      entityButtonRef.current?.focus();
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [pickerOpen]);
 
   // ── Load my role/balance + downline for the selected club ─────────────────
   /**
@@ -724,6 +787,7 @@ export default function CashierTradePage() {
     // server refuses - after the user has already tapped it.
     setReversible([]);
     setReversibleError(null);
+    claimOpIdsRef.current = new Map();
     setClaimOpen(false);
     // Was NOT reset. The checkbox is disabled when mineCount is 0, so switching
     // to a club where you have no assigned players left the filter stuck ON
@@ -761,10 +825,16 @@ export default function CashierTradePage() {
           if (r.from_user_id) ids.add(r.from_user_id);
           if (r.to_user_id) ids.add(r.to_user_id);
         }
-        const { data: profs } = await supabase
-          .from('profiles')
-          .select('id, display_name, username')
-          .in('id', Array.from(ids));
+        const { data: profs, error: profilesError } = ids.size
+          ? await supabase
+              .from('profiles')
+              .select('id, display_name, username')
+              .in('id', Array.from(ids))
+          : { data: [], error: null };
+        // The ledger itself is authoritative. A profile outage must not hide
+        // the money rows, but it should still reach monitoring rather than
+        // silently renaming every counterparty "Club".
+        if (profilesError) reportError(profilesError, 'CashierTradePage.recordProfiles');
         const nameOf = new Map((profs || []).map((p) => [p.id, p.display_name || p.username]));
         if (!live) return;
         setRecordsHasMore((data || []).length > recordsLimit);
@@ -795,7 +865,7 @@ export default function CashierTradePage() {
     return () => {
       live = false;
     };
-  }, [tab, user?.id, clubUuid, recordsLimit]);
+  }, [tab, user?.id, clubUuid, recordsLimit, recordsReload]);
 
   // ── Chip requests (Chip Request tab) ───────────────────────────────────────
   const reqSeqRef = useRef(0);
@@ -1270,7 +1340,7 @@ export default function CashierTradePage() {
      * here: an owner with a large treasury and an unfunded agent wallet sailed
      * past the old check and collected N server refusals instead.
      */
-    const total = value * targets.length;
+    const total = batchAmount(value, targets.length);
     if (kind === 'send' && agentWallet !== null && total > agentWallet) {
       toast?.error?.(
         `Insufficient Chips: Sending ${fmt(total)} Needs More Than Your Agent Wallet Holds, ${fmt(agentWallet)}`
@@ -1477,15 +1547,17 @@ export default function CashierTradePage() {
     busyRef.current = true;
     setClaimingId(row.transaction_id);
     try {
+      const heldOpId = claimOpIdsRef.current.get(row.transaction_id) || newOpId();
+      claimOpIdsRef.current.set(row.transaction_id, heldOpId);
       const { data, error } = await supabase.rpc('fn_agent_wallet_claim_back', {
         p_club_id: clubUuid,
         p_transaction_id: row.transaction_id,
         p_amount: row.remaining,
         p_reason: 'Claimed Back From The Trade Grid',
-        // A fresh op id per attempt, exactly as WalletCashierModal does: the
-        // claim is already anchored on one transaction, and the server records
-        // what has been taken off it, so a replay cannot double-collect.
-        p_op_id: newOpId(),
+        // Retain the key when the response is uncertain. If the server committed
+        // and the response was lost, retrying replays the receipt instead of
+        // turning a successful claim into "already claimed" ambiguity.
+        p_op_id: heldOpId,
       });
       if (error) throw error;
       const res = (Array.isArray(data) ? data[0] : data) as {
@@ -1499,6 +1571,7 @@ export default function CashierTradePage() {
           ? `That Claim Had Already Gone Through. ${fmt(row.remaining)} Chips Are Back In Your Agent Wallet`
           : `Claimed ${fmt(row.remaining)} Back From ${row.to_name}`
       );
+      claimOpIdsRef.current.delete(row.transaction_id);
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade_claim', userId: user?.id || '' });
       void loadReversible();
     } catch (e) {
@@ -1554,27 +1627,81 @@ export default function CashierTradePage() {
    * The busy guards mirror the overlay-click guards exactly - Escape must never
    * be an escape hatch out of an in-flight batch.
    */
+  const dialogOpen = Boolean(amountModal || askOpen || claimOpen);
+
   useEffect(() => {
-    if (!amountModal && !askOpen && !claimOpen) return;
+    if (!dialogOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      const dialog = dialogRef.current;
+      if (dialog && !dialog.contains(document.activeElement)) dialog.focus();
+    });
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (amountModal && !busy) {
-        setAmountModal(null);
-        setTransferFailures([]);
+      if (e.key === 'Escape') {
+        if (amountModal && !busy) {
+          setAmountModal(null);
+          setTransferFailures([]);
+        }
+        if (askOpen && !asking) setAskOpen(false);
+        if (claimOpen && !claimingId) setClaimOpen(false);
+        return;
       }
-      if (askOpen && !asking) setAskOpen(false);
-      if (claimOpen && !claimingId) setClaimOpen(false);
+      if (e.key !== 'Tab' || !dialogRef.current) return;
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+        )
+      );
+      if (!focusable.length) {
+        e.preventDefault();
+        dialogRef.current.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (
+        e.shiftKey &&
+        (document.activeElement === first || document.activeElement === dialogRef.current)
+      ) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
+      window.cancelAnimationFrame(frame);
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [amountModal, askOpen, claimOpen, busy, asking, claimingId]);
+  }, [dialogOpen, amountModal, askOpen, claimOpen, busy, asking, claimingId]);
+
+  useEffect(() => {
+    if (dialogWasOpenRef.current && !dialogOpen) {
+      window.requestAnimationFrame(() => dialogTriggerRef.current?.focus());
+    }
+    dialogWasOpenRef.current = dialogOpen;
+  }, [dialogOpen]);
 
   const initial = (name: string) => (name || '?').charAt(0).toUpperCase();
+
+  const cashierNeedsAttention = Boolean(loadError || clubResolveFailed || agentWallet === null);
+  const cashierSyncMessage =
+    loading || isHydrating
+      ? 'Synchronizing cashier balances'
+      : clubResolveFailed
+        ? 'Club could not be resolved'
+        : loadError
+          ? 'Cashier sync requires attention'
+          : agentWallet === null
+            ? 'Agent wallet could not be verified'
+            : 'Balances synchronized';
+  const currentClubLabel = membershipsLoading
+    ? 'Loading Club'
+    : currentClub?.name || 'Club Cashier';
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -1594,18 +1721,20 @@ export default function CashierTradePage() {
         <div className={styles.header}>
           <span className={styles.title}>Secure Cashier · Live Ledger</span>
           <button
+            ref={entityButtonRef}
             className={styles.entityBtn}
             onClick={() => setPickerOpen((open) => !open)}
             aria-expanded={pickerOpen}
             aria-haspopup="listbox"
-            aria-label={`Open another club cashier. Current club: ${currentClub?.name || 'Loading'}`}
+            aria-controls="cashier-club-picker"
+            aria-label={`Open another club cashier. Current club: ${currentClubLabel}`}
           >
             {currentClub?.logoUrl ? (
               <img src={currentClub.logoUrl} alt="" className={styles.entityLogo} />
             ) : (
-              <span className={styles.entityInitial}>{initial(currentClub?.name || 'C')}</span>
+              <span className={styles.entityInitial}>{initial(currentClubLabel)}</span>
             )}
-            <span className={styles.entityName}>{currentClub?.name || 'Loading Club'}</span>
+            <span className={styles.entityName}>{currentClubLabel}</span>
             <span className={styles.entityCaret} aria-hidden="true">
               &#9662;
             </span>
@@ -1624,8 +1753,11 @@ export default function CashierTradePage() {
             Ledger Entry From One Secure Desk.
           </p>
           <div className={styles.securityLine} role="status">
-            <span className={styles.securityDot} aria-hidden="true" />
-            {loading || isHydrating ? 'Synchronizing cashier balances' : 'Balances synchronized'}
+            <span
+              className={`${styles.securityDot} ${cashierNeedsAttention && !loading && !isHydrating ? styles.securityDotWarning : ''}`}
+              aria-hidden="true"
+            />
+            {cashierSyncMessage}
           </div>
         </div>
 
@@ -1644,37 +1776,87 @@ export default function CashierTradePage() {
           </div>
           <div className={styles.heroMetric}>
             <span className={styles.heroMetricLabel}>Access</span>
-            <strong className={styles.heroRole}>{roleLabel(myRole as ClubRole)}</strong>
+            <strong className={styles.heroRole}>
+              {loading || isHydrating
+                ? 'Synchronizing'
+                : loadError || clubResolveFailed
+                  ? 'Unavailable'
+                  : roleLabel(myRole as ClubRole)}
+            </strong>
           </div>
         </div>
       </section>
 
       {/* Entity picker */}
       {pickerOpen && (
-        <div className={styles.picker} role="listbox" aria-label="Club cashiers">
+        <div
+          ref={pickerRef}
+          id="cashier-club-picker"
+          className={styles.picker}
+          role="region"
+          tabIndex={-1}
+          aria-label="Club cashier switcher"
+          onKeyDown={(event) => {
+            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+            const options = Array.from(
+              pickerRef.current?.querySelectorAll<HTMLElement>('[role="option"]') || []
+            );
+            if (!options.length) return;
+            event.preventDefault();
+            const activeIndex = Math.max(0, options.indexOf(document.activeElement as HTMLElement));
+            const nextIndex =
+              event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                  ? options.length - 1
+                  : event.key === 'ArrowDown'
+                    ? (activeIndex + 1) % options.length
+                    : (activeIndex - 1 + options.length) % options.length;
+            options[nextIndex]?.focus();
+          }}
+        >
           <div className={styles.pickerLabel}>OPEN CASHIER FOR</div>
-          {memberships.map((m) => (
-            <button
-              key={m.clubUuid}
-              className={`${styles.pickerRow} ${m.clubUuid === clubUuid ? styles.pickerRowActive : ''}`}
-              role="option"
-              aria-selected={m.clubUuid === clubUuid}
-              onClick={() => {
-                setPickerOpen(false);
-                if (m.clubUuid !== clubUuid) {
-                  navigate(`/clubs/${m.clubCode ?? m.clubUuid}/cashier`);
-                }
-              }}
-            >
-              {m.logoUrl ? (
-                <img src={m.logoUrl} alt="" className={styles.entityLogo} />
-              ) : (
-                <span className={styles.entityInitial}>{initial(m.name)}</span>
-              )}
-              <span className={styles.pickerName}>{m.name}</span>
-              <span className={styles.pickerBalance}>{fmt(m.chipBalance)} Chips</span>
-            </button>
-          ))}
+          {membershipsLoading && (
+            <div className={styles.pickerStatus}>Loading Club Cashiers...</div>
+          )}
+          {!membershipsLoading && membershipsError && (
+            <div className={styles.pickerStatus} role="alert">
+              {membershipsError}{' '}
+              <button
+                type="button"
+                className={styles.retryBtn}
+                onClick={() => setMembershipsReload((value) => value + 1)}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+          {!membershipsLoading && !membershipsError && (
+            <div role="listbox" aria-label="Club cashiers">
+              {memberships.map((m) => (
+                <button
+                  key={m.clubUuid}
+                  className={`${styles.pickerRow} ${m.clubUuid === clubUuid ? styles.pickerRowActive : ''}`}
+                  role="option"
+                  aria-selected={m.clubUuid === clubUuid}
+                  onClick={() => {
+                    setPickerOpen(false);
+                    if (m.clubUuid !== clubUuid) {
+                      navigate(`/clubs/${m.clubCode ?? m.clubUuid}/cashier`);
+                    }
+                  }}
+                >
+                  {m.logoUrl ? (
+                    <img src={m.logoUrl} alt="" className={styles.entityLogo} />
+                  ) : (
+                    <span className={styles.entityInitial}>{initial(m.name)}</span>
+                  )}
+                  <span className={styles.pickerName}>{m.name}</span>
+                  <span className={styles.pickerBalance}>{fmt(m.chipBalance)} Chips</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1707,6 +1889,7 @@ export default function CashierTradePage() {
             role="tab"
             className={`${styles.tab} ${tab === key ? styles.tabActive : ''}`}
             aria-selected={tab === key}
+            aria-controls={`cashier-panel-${key}`}
             tabIndex={tab === key ? 0 : -1}
             onClick={() => setTab(key)}
           >
@@ -1729,7 +1912,13 @@ export default function CashierTradePage() {
       </nav>
 
       {tab === 'trade' && (
-        <section className={styles.sectionShell} aria-labelledby="trade-workspace-title">
+        <section
+          id="cashier-panel-trade"
+          className={styles.sectionShell}
+          role="tabpanel"
+          aria-labelledby="cashier-tab-trade"
+          tabIndex={0}
+        >
           <div className={styles.sectionHeading}>
             <div>
               <span className={styles.sectionEyebrow}>Distribution Desk</span>
@@ -1870,7 +2059,7 @@ export default function CashierTradePage() {
               list.slice(0, visibleCount).map((r) => (
                 <div
                   key={r.userId}
-                  className={`${styles.row} ${selected.has(r.userId) ? styles.rowSelected : ''}`}
+                  className={`${styles.row} ${styles.selectableRow} ${selected.has(r.userId) ? styles.rowSelected : ''}`}
                   onClick={() => toggleSelect(r.userId)}
                   onKeyDown={(e) => {
                     // role="checkbox" + tabIndex advertises a control. Without
@@ -1959,21 +2148,30 @@ export default function CashierTradePage() {
             <button
               className={styles.footerBtn}
               disabled={busy || claimingId !== null}
-              onClick={() => setClaimOpen(true)}
+              onClick={(event) => {
+                dialogTriggerRef.current = event.currentTarget;
+                setClaimOpen(true);
+              }}
             >
               Claim Back
             </button>
             <button
               className={styles.footerBtn}
               disabled={selected.size === 0 || busy}
-              onClick={() => setAmountModal('ticket')}
+              onClick={(event) => {
+                dialogTriggerRef.current = event.currentTarget;
+                setAmountModal('ticket');
+              }}
             >
               Send Ticket
             </button>
             <button
               className={styles.footerBtn}
               disabled={selected.size === 0 || busy}
-              onClick={() => setAmountModal('send')}
+              onClick={(event) => {
+                dialogTriggerRef.current = event.currentTarget;
+                setAmountModal('send');
+              }}
             >
               Send Out
             </button>
@@ -1982,7 +2180,14 @@ export default function CashierTradePage() {
       )}
 
       {tab === 'record' && (
-        <section className={styles.sectionShell} aria-labelledby="ledger-title">
+        <section
+          id="cashier-panel-record"
+          className={styles.sectionShell}
+          role="tabpanel"
+          aria-labelledby="cashier-tab-record"
+          aria-busy={recordsLoading}
+          tabIndex={0}
+        >
           <div className={styles.sectionHeading}>
             <div>
               <span className={styles.sectionEyebrow}>Auditable History</span>
@@ -2045,37 +2250,49 @@ export default function CashierTradePage() {
             {recordsLoading && <div className={styles.empty}>Loading Trades...</div>}
             {!recordsLoading && recordsError && (
               <div className={styles.empty} role="alert">
-                {recordsError}
+                {recordsError}{' '}
+                <button
+                  type="button"
+                  className={styles.retryBtn}
+                  onClick={() => setRecordsReload((value) => value + 1)}
+                >
+                  Retry
+                </button>
               </div>
             )}
             {!recordsLoading && !recordsError && filteredRecords.length === 0 && (
-              <div className={styles.empty}>No Trades Recorded Yet.</div>
+              <div className={styles.empty}>
+                {records.length === 0
+                  ? 'No Trades Recorded Yet.'
+                  : 'No Ledger Entries Match Those Filters.'}
+              </div>
             )}
-            {filteredRecords.map((r) => (
-              <div key={r.id} className={styles.row}>
-                <div className={styles.rowInfo}>
-                  <span className={styles.rowName}>
-                    {r.direction === 'out' ? 'To ' : 'From '}
-                    {r.counterparty}
-                  </span>
-                  <span className={styles.rowSub}>
-                    {txLabel(r.type)} &middot;{' '}
-                    {new Date(r.createdAt).toLocaleString([], {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+            {!recordsError &&
+              filteredRecords.map((r) => (
+                <div key={r.id} className={styles.row}>
+                  <div className={styles.rowInfo}>
+                    <span className={styles.rowName}>
+                      {r.direction === 'out' ? 'To ' : 'From '}
+                      {r.counterparty}
+                    </span>
+                    <span className={styles.rowSub}>
+                      {txLabel(r.type)} &middot;{' '}
+                      {new Date(r.createdAt).toLocaleString([], {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                  <span
+                    className={`${styles.rowBalance} ${r.direction === 'in' ? styles.amtIn : styles.amtOut}`}
+                  >
+                    {r.direction === 'in' ? '+' : '-'}
+                    {fmt(r.amount)}
                   </span>
                 </div>
-                <span
-                  className={`${styles.rowBalance} ${r.direction === 'in' ? styles.amtIn : styles.amtOut}`}
-                >
-                  {r.direction === 'in' ? '+' : '-'}
-                  {fmt(r.amount)}
-                </span>
-              </div>
-            ))}
+              ))}
             {!recordsLoading && recordsHasMore && recordDirection === 'all' && !recordQuery && (
               <button
                 type="button"
@@ -2091,7 +2308,14 @@ export default function CashierTradePage() {
       )}
 
       {tab === 'leaderboard' && (
-        <section className={styles.sectionShell} aria-labelledby="settlement-title">
+        <section
+          id="cashier-panel-leaderboard"
+          className={styles.sectionShell}
+          role="tabpanel"
+          aria-labelledby="cashier-tab-leaderboard"
+          aria-busy={invoicesLoading}
+          tabIndex={0}
+        >
           <div className={styles.sectionHeading}>
             <div>
               <span className={styles.sectionEyebrow}>Weekly Close</span>
@@ -2147,7 +2371,14 @@ export default function CashierTradePage() {
       )}
 
       {tab === 'request' && (
-        <section className={styles.sectionShell} aria-labelledby="requests-title">
+        <section
+          id="cashier-panel-request"
+          className={styles.sectionShell}
+          role="tabpanel"
+          aria-labelledby="cashier-tab-request"
+          aria-busy={requestsLoading}
+          tabIndex={0}
+        >
           <div className={styles.sectionHeading}>
             <div>
               <span className={styles.sectionEyebrow}>Funding Queue</span>
@@ -2158,7 +2389,13 @@ export default function CashierTradePage() {
             <span className={styles.sectionMeta}>{pendingCount.toLocaleString()} Waiting</span>
           </div>
           <div className={styles.list}>
-            <button className={styles.classicLink} onClick={() => setAskOpen(true)}>
+            <button
+              className={styles.classicLink}
+              onClick={(event) => {
+                dialogTriggerRef.current = event.currentTarget;
+                setAskOpen(true);
+              }}
+            >
               Request Chips From Your Agent
             </button>
             {requestsLoading && <div className={styles.empty}>Loading Requests...</div>}
@@ -2225,7 +2462,14 @@ export default function CashierTradePage() {
       )}
 
       {tab === 'tickets' && (
-        <section className={styles.sectionShell} aria-labelledby="tickets-title">
+        <section
+          id="cashier-panel-tickets"
+          className={styles.sectionShell}
+          role="tabpanel"
+          aria-labelledby="cashier-tab-tickets"
+          aria-busy={ticketsLoading}
+          tabIndex={0}
+        >
           <div className={styles.sectionHeading}>
             <div>
               <span className={styles.sectionEyebrow}>Tournament Value</span>
@@ -2315,10 +2559,12 @@ export default function CashierTradePage() {
           }}
         >
           <div
+            ref={dialogRef}
             className={styles.modal}
             role="dialog"
             aria-modal="true"
             aria-labelledby="cashier-ask-title"
+            tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
           >
             <div className={styles.modalTitle} id="cashier-ask-title">
@@ -2382,10 +2628,12 @@ export default function CashierTradePage() {
           }}
         >
           <div
+            ref={dialogRef}
             className={styles.modal}
             role="dialog"
             aria-modal="true"
             aria-labelledby="cashier-amount-title"
+            tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
           >
             <div className={styles.modalTitle} id="cashier-amount-title">
@@ -2436,7 +2684,7 @@ export default function CashierTradePage() {
               </div>
             )}
             <div className={styles.modalHint}>
-              Total: {fmt((Number(amount) || 0) * picked.length)} &middot;{' '}
+              Total: {fmt(batchAmount(Number(amount) || 0, picked.length))} &middot;{' '}
               {/* THE ACCOUNT EACH ACTION SPENDS. Send Out debits the agent
                   wallet; a ticket escrows the caller's own chip balance. They
                   are different accounts and quoting the wrong one tells the
@@ -2499,10 +2747,12 @@ export default function CashierTradePage() {
           }}
         >
           <div
+            ref={dialogRef}
             className={styles.modal}
             role="dialog"
             aria-modal="true"
             aria-labelledby="cashier-claim-title"
+            tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
           >
             <div className={styles.modalTitle} id="cashier-claim-title">

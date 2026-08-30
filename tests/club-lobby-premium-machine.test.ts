@@ -7,6 +7,10 @@ const PAGE = readFileSync(resolve(ROOT, 'src/pages/ClubHomePage.tsx'), 'utf8');
 const TOP = readFileSync(resolve(ROOT, 'src/components/lobby/ClubLobbyCommandTop.tsx'), 'utf8');
 const CSS = readFileSync(resolve(ROOT, 'src/components/lobby/ClubLobbyCommandTop.css'), 'utf8');
 const TABLE_CSS = readFileSync(resolve(ROOT, 'src/components/lobby/LobbyTable.css'), 'utf8');
+const CARD_CSS = readFileSync(
+  resolve(ROOT, 'src/components/lobby/game-cards/ArenaGameCard.css'),
+  'utf8'
+);
 
 describe('premium single-frame club lobby', () => {
   it('mounts the approved reference chassis around both the command top and game results', () => {
@@ -142,6 +146,15 @@ describe('premium single-frame club lobby', () => {
     );
     expect(TABLE_CSS).toMatch(
       /\.arena-lobby-card-list \+ \.lobby-table-wrap\s*\{\s*display:\s*none/s
+    );
+    expect(CSS).toMatch(
+      /@media \(max-width: 900px\)[\s\S]*?\.club-lobby-machine\s*\{[^}]*width:\s*calc\(100vw - 4px\)/s
+    );
+    expect(CSS).not.toMatch(
+      /@media \(max-width: 900px\)[\s\S]*?\.club-lobby-machine\s*\{[^}]*520px/s
+    );
+    expect(CARD_CSS).toMatch(
+      /\.arena-game-card\[data-presentation='mobile'\]\s*\{[^}]*width:\s*100%[^}]*max-width:\s*none/s
     );
   });
 });

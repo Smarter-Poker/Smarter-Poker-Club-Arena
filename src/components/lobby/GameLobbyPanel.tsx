@@ -30,6 +30,7 @@ import type { Tournament, BlindLevel } from '../../types/database.types';
 import { parsePayoutStructure } from '../tournament/details/types';
 import type { PayoutPlace } from '../tournament/details/types';
 import './GameLobbyPanel.css';
+import './PremiumGameLobbyPanel.css';
 
 export interface GameLobbyPanelProps {
   entry: LobbyEntry;
@@ -521,17 +522,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       )}
       {cta.note && <span className="cplaque__cta-note">{cta.note}</span>}
       {isCash && (
-        <Link
-          className="cplaque__observe-link"
-          to={`/table/${entry.id}`}
-          style={{
-            marginTop: '0.5rem',
-            display: 'block',
-            textAlign: 'center',
-            fontSize: '0.9rem',
-            color: 'var(--text-muted)',
-          }}
-        >
+        <Link className="cplaque__observe-link" to={`/table/${entry.id}`}>
           Observe Table
         </Link>
       )}
@@ -545,7 +536,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     <div className="glp-backdrop" onClick={onClose} role="presentation">
       <aside
         ref={panelRef}
-        className="glp"
+        className={`glp${isCash ? ' glp--cash' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label={`${entry.name} lobby`}
@@ -553,7 +544,8 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       >
         <header className="glp__head">
           <span className="glp__head-title" title={entry.name}>
-            {entry.name}
+            {isCash && <small>Table Lobby</small>}
+            <b>{entry.name}</b>
           </span>
           <button
             type="button"

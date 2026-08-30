@@ -70,6 +70,26 @@ describe('all three chart components are lazy, and wrapped in Suspense', () => {
   });
 });
 
+describe('off-tab work stays off the Overview critical path', () => {
+  const OFF_TAB_COMPONENTS = [
+    'PositionWinRates',
+    'PositionalRadar',
+    'HoleCardHeatmap',
+    'NemesisPanel',
+    'BenchmarkPanel',
+    'TrophyRoom',
+    'StatsShareCard',
+    'SessionHistory',
+    'AdvancedStatsSummary',
+    'DownlineRakePanel',
+  ];
+
+  it.each(OFF_TAB_COMPONENTS)('%s is loaded with lazy(() => import(...))', (component) => {
+    expect(CODE).not.toMatch(new RegExp(`^import\\s+${component}\\s+from`, 'm'));
+    expect(CODE).toMatch(new RegExp(`const ${component}\\s*=\\s*lazy\\(\\(\\)\\s*=>\\s*import\\(`));
+  });
+});
+
 describe('the extracted chart component owns the recharts dependency', () => {
   const CHARTS = readFileSync(
     resolve(__dirname, '../src/components/stats/StatsCharts.tsx'),

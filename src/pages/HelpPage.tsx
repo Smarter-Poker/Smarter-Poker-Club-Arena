@@ -25,6 +25,17 @@ const FAQ_ITEMS: FAQItem[] = [
   },
   {
     category: 'Account',
+    // 2026-08-28: this said 2FA was "Coming Soon" for a feature that SHIPPED —
+    // SettingsPage implements enrol / challenge / verify / unenrol against
+    // Supabase MFA, with a QR modal. Telling a player a security feature does
+    // not exist yet, while it sits two taps away, is a false statement about
+    // their account security.
+    question: 'Is Two-Factor Authentication Available?',
+    answer:
+      'Yes. Go To Settings → Account → Account Security And Choose Enable Two-Factor Authentication. Scan The QR Code With Your Authenticator App, Then Enter The Six-Digit Code To Confirm.',
+  },
+  {
+    category: 'Account',
     question: 'How Do I Delete My Account?',
     answer:
       'Open Settings And Find Danger Zone. Delete Account Starts The Permanent Deletion Confirmation And Explains What Will Be Removed.',

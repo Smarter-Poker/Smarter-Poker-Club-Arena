@@ -61,7 +61,7 @@ const countsByFile = (): Map<string, number> => {
   return map;
 };
 
-/** Frozen 2026-08-30 (Community Command Center). 266 occurrences. Only ever shrink. */
+/** Frozen 2026-08-30 (Community Command Center). 265 occurrences. Only ever shrink. */
 const BASELINE = new Map<string, number>([
   ['src/services/HorseOrchestrator.ts', 11],
   ['src/services/AgentService.ts', 13],
@@ -95,7 +95,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/PlayerSessionsPage.tsx', 3],
   ['src/pages/NotificationsPage.tsx', 3],
   ['src/pages/ClubRulesPage.tsx', 3],
-  ['src/pages/CashierTradePage.tsx', 3],
+  ['src/pages/CashierTradePage.tsx', 2],
   ['src/pages/AntiCheatPage.tsx', 3],
   ['src/components/wallet/ChipMintModal.tsx', 3],
   ['src/components/agent/AgentCommissionDashboard.tsx', 3],

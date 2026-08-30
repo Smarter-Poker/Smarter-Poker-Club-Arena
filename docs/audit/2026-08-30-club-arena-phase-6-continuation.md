@@ -157,9 +157,10 @@ Union Network
 
 ## Validation
 
-- Focused information architecture, complete-set read, community integrity, cinematic route-family, and route-contract tests: pending final release run.
-- TypeScript: pending final release run.
-- Static route-target checker: pending final release run.
-- Full Vitest suite: pending final release run.
-- Production build and asset inventory: pending final release run.
-- Authenticated desktop/tablet/mobile route, overflow, broken-link, and interaction verification: pending publication.
+- Focused information architecture, complete-set read, community integrity, cinematic route-family, and route-contract tests: **76 passed across 7 files**.
+- TypeScript: **passed** (`tsc --noEmit`).
+- Static route-target checker: **126 declared routes and 64 programmatic navigation targets; 0 invalid targets**.
+- Title-case policy: **passed**.
+- Full Vitest regression: **638 files and 9,446 tests passed**.
+- Production build and asset pipeline: **passed** on current `origin/main`; 434 media assets optimized, 0 failed, and build provenance reported `behind-main=0`.
+- Authenticated desktop/tablet/mobile route, overflow, broken-link, and interaction verification: pending publication so it can be exercised against the exact immutable production artifact.

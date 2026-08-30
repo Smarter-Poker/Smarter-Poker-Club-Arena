@@ -113,16 +113,32 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
 
   const tournamentId = tournament?.id;
 
-  /* One query. Whole field. Cancelled on unmount, tolerant of an empty result. */
+  /* One query. Whole field. Cancelled on unmount, tolerant of an empty result.
+
+     LIVE REGISTER (2026-08-30): the query used to run exactly once, so a
+     register left open during a running event froze — new entries appeared
+     (props refresh) but their numbers, rebuys and add-ons never did, and the
+     rebuy total sat stale while the field rebought around it. While the event
+     can still change (REGISTERING/RUNNING) the same one query re-runs every
+     20s, and only while the tab is actually visible — a background tab costs
+     nothing. A finished event runs it once, as before: its register is
+     history and history does not poll. */
+  const tournamentLive = ((tournament ?? {}) as { status?: string | null }).status
+    ? ['REGISTERING', 'RUNNING', 'ANNOUNCED'].includes(
+        String((tournament as { status?: string | null }).status).toUpperCase()
+      )
+    : false;
+
   useEffect(() => {
     if (!tournamentId) {
       setDetailState('unknown');
       return;
     }
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     setDetailState('loading');
 
-    (async () => {
+    const run = async () => {
       try {
         const { data, error } = await supabase
           .from('tournament_players')
@@ -168,12 +184,26 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
         reportError(e, 'EntriesTab.Failed_to_load_entry_detail');
         setDetailState('unknown');
       }
-    })();
+    };
+
+    const schedule = () => {
+      if (cancelled || !tournamentLive) return;
+      timer = setTimeout(async () => {
+        /* Hidden tab: skip the round trip, keep the cadence. */
+        if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+          await run();
+        }
+        schedule();
+      }, 20_000);
+    };
+
+    void run().then(schedule);
 
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
-  }, [tournamentId]);
+  }, [tournamentId, tournamentLive]);
 
   const rules = (tournament ?? {}) as unknown as EntryRules;
 

@@ -590,7 +590,7 @@ export default function AchievementsPage() {
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Achievements"
         title="Achievement Archive"
-        description="A live record of milestones earned across play, competition, community, loyalty, and special events—with every badge still driven by the existing achievement services."
+        description="A live record of milestones earned across play, competition, community, loyalty, and special events, with every badge still driven by the existing achievement services."
         art="diamonds"
         status="MILESTONE INDEX // LIVE"
         metrics={[

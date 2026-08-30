@@ -30,19 +30,23 @@
 
 .artwork {
   position: relative;
-  width: calc(100% - 4px);
+  width: 100%;
   height: var(--bottom-nav-height, 44px);
-  max-width: 1916px;
-  margin: 0 auto;
+  margin: 0;
   background: #000;
 }
 
 .artworkImage {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 50%;
   display: block;
-  width: 100%;
+  /* The source has a 25px built-in black gutter on each 1916px edge. This
+     exact overscan places its visible chrome at viewport x=0 without moving
+     any of the six full-width semantic hit targets off-screen. */
+  width: 102.68%;
   height: 100%;
+  transform: translateX(-50%);
   pointer-events: none;
   user-select: none;
 }

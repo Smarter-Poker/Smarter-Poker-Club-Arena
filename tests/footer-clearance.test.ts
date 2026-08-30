@@ -38,14 +38,14 @@ describe('global Club Arena footer mounting and clearance', () => {
     expect(duplicateMounts).toEqual([]);
   });
 
-  it('shares a compact, touch-safe height and safe-area clearance', () => {
+  it('shares the lossless artwork ratio, touch-safe minimum, and safe-area clearance', () => {
     for (const sheet of [
       'src/styles/club-engine.css',
       'src/styles/globals.css',
       'src/styles/design-system.css',
     ]) {
       const css = readFileSync(join(ROOT, sheet), 'utf8');
-      expect(css).toContain('--bottom-nav-height: clamp(44px, 7vw, 84px)');
+      expect(css).toContain('--bottom-nav-height: clamp(44px, 13.72vw, 263px)');
       expect(css).toContain(
         '--bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px))'
       );
@@ -56,8 +56,10 @@ describe('global Club Arena footer mounting and clearance', () => {
     const css = readFileSync(join(ROOT, 'src/components/club/ClubBottomNav.module.css'), 'utf8');
 
     expect(css).toMatch(/\.viewport\s*\{[\s\S]*?overflow:\s*hidden/);
-    expect(css).toMatch(/\.artwork\s*\{[\s\S]*?width:\s*calc\(100% - 4px\)/);
+    expect(css).toMatch(/\.artwork\s*\{[\s\S]*?width:\s*100%/);
     expect(css).toMatch(/\.artwork\s*\{[\s\S]*?height:\s*var\(--bottom-nav-height/);
+    expect(css).toMatch(/\.artworkImage\s*\{[\s\S]*?width:\s*102\.68%/);
+    expect(css).toMatch(/\.artworkImage\s*\{[\s\S]*?transform:\s*translateX\(-50%\)/);
     expect(css).not.toContain('overflow-x: auto');
     expect(css).not.toContain('width: 640px');
     expect(css).not.toContain('min-width: 640px');

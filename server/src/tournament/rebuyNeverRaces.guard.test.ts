@@ -14,7 +14,7 @@
  * SEAT, ITS ALLOWED."
  */
 import { describe, expect, it } from 'vitest';
-import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
+import { sliceBetween } from '../testHelpers/sourceWindow.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,13 +30,11 @@ describe('the elimination CAS re-checks the chips, not just the status', () => {
   it('eliminatePlayer refuses a row whose chips came back above zero', () => {
     // A rebuy leaves status 'playing', so the status CAS alone cannot catch
     // the race; the chips guard is what makes the landed rebuy win.
-    /* Bounded by the BLOCK the comment sits in, not by a byte count. The
-       comment itself is ~900 characters of incident detail, so a fixed window
-       is one added paragraph away from excluding the very line it pins.
-       (`sliceStatement` is the wrong tool here: this anchor is inside a block
-       comment, and that extractor scans forward from the anchor for the
-       statement's own semicolon.) */
-    const window = sliceEnclosingBlock(ELIM, 'A LANDED REBUY OUTRANKS A STALE BUST SNAPSHOT');
+    const window = sliceBetween(
+      ELIM,
+      'A LANDED REBUY OUTRANKS A STALE BUST SNAPSHOT',
+      'if (updateErr)'
+    );
     expect(window).toMatch(/\.lte\('chips', 0\)/);
   });
 });
@@ -46,7 +44,7 @@ describe('a busted player holds an open decision window, and the felt rolls on',
     expect(ELIM).toMatch(/REBUY_DECISION_GRACE_MS/);
     expect(ELIM).toMatch(/rebuyDecisionGraceUntil/);
     // The window closes with the rebuy period: no window, no deferral.
-    const block = sliceEnclosingBlock(ELIM, 'THE REBUY DECISION WINDOW');
+    const block = sliceBetween(ELIM, 'THE REBUY DECISION WINDOW', 'bustedOrdered');
     expect(block).toMatch(/windowOpen/);
     expect(block).toMatch(/prize_pool_finalized/);
   });
@@ -62,10 +60,7 @@ describe('a busted player holds an open decision window, and the felt rolls on',
       DEALING.indexOf('REBUYS IN A TOURNAMENT SHOULD'),
       "Dan's ruling must be quoted at the site it governs"
     ).toBeGreaterThan(-1);
-    /* A NEGATIVE pin especially must not be bounded by a byte count: a window
-       that stops short passes by looking at nothing. The enclosing block is
-       the whole branch the ruling governs, however it grows. */
-    const block = sliceEnclosingBlock(DEALING, 'REBUYS IN A TOURNAMENT SHOULD');
+    const block = sliceBetween(DEALING, 'REBUYS IN A TOURNAMENT SHOULD', 'catch (err)');
     expect(block).not.toMatch(/needsRebuyPause = true/);
     // The CASH pause survives untouched — section 10.5 still applies there.
     expect(DEALING).toMatch(/setLoopPhase\('rebuy_pause'\)/);

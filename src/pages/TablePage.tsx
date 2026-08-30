@@ -6210,6 +6210,9 @@ export default function TablePage({
   const [allInEquities, setAllInEquities] = useState<
     Array<{ userId: string; username: string; equity: number; seat: number }>
   >([]);
+  /* True from the first all_in_equity broadcast of a hand until the next hand
+     starts. Read by the tournament Show Hand suppression (Dan 2026-08-30). */
+  const handHadAllInRef = useRef(false);
 
   // POKERBROS PARITY 2026-08-26: consent-panel rows — one per all-in player,
   // requester first, with hole cards (face up during the runout pause),
@@ -8657,6 +8660,13 @@ export default function TablePage({
         }>;
         if (equities && equities.length > 0) {
           setAllInEquities(equities);
+          /* Dan 2026-08-30: "ANYTIME THERE IS AN ALL IN, ALL CARDS ARE ALWAYS
+             SHOW[N]" in a tournament — so the voluntary Show Hand button must
+             never render on an all-in showdown there. The equities themselves
+             clear half a second after HAND_COMPLETE; this flag survives until
+             the NEXT hand starts so the button cannot pop in late during the
+             post-hand hold. */
+          handHadAllInRef.current = true;
         }
         return; // Don't process as regular state
       }
@@ -12339,6 +12349,7 @@ export default function TablePage({
         setWinnerParticle((prev) => ({ ...prev, active: false }));
         setIsAllInMode(false);
         setAllInEquities([]);
+        handHadAllInRef.current = false;
         // Hold the action panel from this instant — the button beat below is
         // part of the deal, and a player must not act into it.
         beginDealHold();
@@ -13060,6 +13071,14 @@ export default function TablePage({
         );
         // CA-22: track so unmount can cancel — prevents setTableState on dead page
         if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
+        /* Dan 2026-08-30: "ONCE THE HAND IS COMPLETED, THE 0% 100% SHOULD
+           DISAPPEAR AFTER HALF A SECOND." The equity overlay used to live
+           through the whole post-hand hold; now it gets exactly the half
+           second. Clearing an already-empty array is a no-op, and a NEW
+           hand's equities cannot arrive before its own all-in. */
+        window.setTimeout(() => {
+          setAllInEquities([]);
+        }, 500);
         handCompleteResetAtRef.current = Date.now() + holdMs;
         /* Captured so POT_WIN can re-arm exactly this work at a later time
            without duplicating any of it. */
@@ -20250,6 +20269,11 @@ export default function TablePage({
             {tableState.boardStage === 'showdown' &&
               tableState.heroSeat > 0 &&
               tableId &&
+              /* Dan 2026-08-30, verbatim: "A PLAYER NEVER NEEDS TO 'SHOW HIS
+                 CARDS' IN A TOURNAMENT, ANYTIME THERE IS AN ALL IN, ALL CARDS
+                 ARE ALWAYS SHOW[N]" — an all-in tournament showdown is already
+                 public, so the voluntary-show button has nothing to offer. */
+              !(tableState.isTournament && handHadAllInRef.current) &&
               getPlayerAtSeat(tableState.heroSeat)?.status !== 'folded' && (
                 <div className="footer-action-bar">
                   <button

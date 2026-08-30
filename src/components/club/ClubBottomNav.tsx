@@ -14,6 +14,7 @@ import {
   readCachedQuickLinkClubs,
   resolveTargetClub,
 } from '../../utils/clubQuickLink';
+import { clubIdFromPath } from './clubIdFromPath';
 import { activeTabForPath, type TabKey } from './clubBottomNavTabs';
 import styles from './ClubBottomNav.module.css';
 
@@ -29,14 +30,14 @@ interface FooterDestination {
 
 const APPROVED_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer.webp`;
 
-function useResolvedClubId(explicit?: string): string | null {
+function useResolvedClubId(explicit?: string, routeClubId?: string | null): string | null {
   const { user } = useAuthUser();
   const [resolved, setResolved] = useState<string | null>(
-    () => resolveTargetClub(readCachedQuickLinkClubs())?.id ?? null
+    () => explicit || routeClubId || resolveTargetClub(readCachedQuickLinkClubs())?.id || null
   );
 
   useEffect(() => {
-    if (explicit) return;
+    if (explicit || routeClubId) return;
 
     const fromCache = resolveTargetClub(readCachedQuickLinkClubs())?.id ?? null;
     if (fromCache) {
@@ -52,14 +53,15 @@ function useResolvedClubId(explicit?: string): string | null {
     return () => {
       cancelled = true;
     };
-  }, [explicit, user?.id]);
+  }, [explicit, routeClubId, user?.id]);
 
-  return explicit || resolved;
+  return explicit || routeClubId || resolved;
 }
 
 export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
   const location = useLocation();
-  const resolvedClubId = useResolvedClubId(clubId);
+  const routeClubId = useMemo(() => clubIdFromPath(location.pathname), [location.pathname]);
+  const resolvedClubId = useResolvedClubId(clubId, routeClubId);
   const activeTab = useMemo(() => activeTabForPath(location.pathname), [location.pathname]);
 
   const destinations = useMemo<FooterDestination[]>(() => {

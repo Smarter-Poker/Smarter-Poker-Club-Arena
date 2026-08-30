@@ -30,7 +30,7 @@ import { reportError } from '../utils/errorReporter';
 import { ConfettiEffect } from '../components/effects/ConfettiEffect';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './DailyChallengesPage.module.css';
-import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
+import { mediaUrl } from '../utils/mediaBase';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -129,16 +129,24 @@ function ChallengeCard({
   challenge,
   tier,
   claiming,
+  rerolling,
+  confirmingReroll,
   celebrating,
   onClaim,
-  onReroll,
+  onRequestReroll,
+  onCancelReroll,
+  onConfirmReroll,
 }: {
   challenge: TieredChallenge;
   tier: Tier;
   claiming: boolean;
+  rerolling: boolean;
+  confirmingReroll: boolean;
   celebrating: boolean;
   onClaim: (c: TieredChallenge) => void;
-  onReroll?: (c: TieredChallenge) => void;
+  onRequestReroll: (c: TieredChallenge) => void;
+  onCancelReroll: () => void;
+  onConfirmReroll: (c: TieredChallenge) => void;
 }) {
   const c = challenge.challenge;
   const pct = c.requirement > 0 ? Math.min((challenge.progress / c.requirement) * 100, 100) : 0;
@@ -151,7 +159,7 @@ function ChallengeCard({
   };
 
   return (
-    <div
+    <article
       className={`
         ${styles.challengeCard}
         ${done ? styles.cardCompleted : ''}
@@ -160,57 +168,114 @@ function ChallengeCard({
       `}
       style={{ '--card-tier-color': TIER_COLORS[tier] } as React.CSSProperties}
     >
+      <div className={styles.cardTopline}>
+        <span>{TIER_LABELS[tier]} Mission</span>
+        <span className={styles.cardState}>
+          {claimed ? 'Reward Collected' : done ? 'Ready To Claim' : 'In Progress'}
+        </span>
+      </div>
+
       <div className={styles.cardHeader}>
-        <div className={styles.iconBox} aria-hidden="true">
-          {TYPE_GLYPHS[c.type] || '\u2605'}
+        <div className={styles.iconAssembly} aria-hidden="true">
+          <span className={styles.iconBox}>{TYPE_GLYPHS[c.type] || '\u2605'}</span>
+          <span className={styles.iconPulse} />
         </div>
         <div className={styles.cardTitles}>
           <h3 className={styles.cardName}>{c.name}</h3>
           <p className={styles.cardDesc}>{c.description}</p>
         </div>
-        {done && !claimed && (
-          <button
-            className={styles.claimButton}
-            onClick={handleClaim}
-            disabled={claiming}
-            aria-label={`Claim reward for ${c.name}`}
-          >
-            {claiming ? 'Claiming' : 'Claim'}
-          </button>
-        )}
-        {claimed && (
-          <div className={styles.claimedBadge} aria-label="Already claimed">
-            {'\u2713'} Claimed
-          </div>
-        )}
+        <div className={styles.rewardReadout} aria-label="Challenge rewards">
+          <span className={styles.rewardLabel}>Reward</span>
+          <strong>{c.chipReward.toLocaleString()} Chips</strong>
+          {c.diamondReward > 0 && (
+            <strong className={styles.diamondReward}>◆ {c.diamondReward}</strong>
+          )}
+        </div>
       </div>
 
-      <div className={styles.progressTrack} aria-hidden="true">
-        <motion.div
-          className={styles.progressFill}
-          initial={{ width: 0 }}
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 1, ease: 'easeOut' }}
-        />
-        <span className={styles.progressText}>
-          {Math.min(challenge.progress, c.requirement).toLocaleString()} /{' '}
-          {c.requirement.toLocaleString()}
-        </span>
-      </div>
-
-      {!done && onReroll && (
-        <button
-          className={styles.rerollButton}
-          onClick={(e) => {
-            e.stopPropagation();
-            onReroll(challenge);
-          }}
-          title="Swap this challenge for a new one"
+      <div className={styles.progressBlock}>
+        <div className={styles.progressLabels}>
+          <span>Mission Progress</span>
+          <strong>
+            {Math.min(challenge.progress, c.requirement).toLocaleString()} /{' '}
+            {c.requirement.toLocaleString()}
+          </strong>
+        </div>
+        <div
+          className={styles.progressTrack}
+          role="progressbar"
+          aria-label={`${c.name} progress`}
+          aria-valuemin={0}
+          aria-valuemax={c.requirement}
+          aria-valuenow={Math.min(challenge.progress, c.requirement)}
         >
-          Reroll (10 Diamonds)
-        </button>
-      )}
-    </div>
+          <motion.div
+            className={styles.progressFill}
+            initial={{ width: 0 }}
+            animate={{ width: `${pct}%` }}
+            transition={{ duration: 0.8, ease: 'easeOut' }}
+          />
+        </div>
+      </div>
+
+      <div className={styles.cardFooter}>
+        <span className={styles.completionReadout}>{Math.round(pct)}% Complete</span>
+        <div className={styles.cardActions}>
+          {claimed && (
+            <div className={styles.claimedBadge} aria-label="Already claimed">
+              {'\u2713'} Claimed
+            </div>
+          )}
+          {done && !claimed && (
+            <button
+              type="button"
+              className={styles.claimButton}
+              onClick={handleClaim}
+              disabled={claiming}
+              aria-label={`Claim reward for ${c.name}`}
+            >
+              {claiming ? 'Claiming...' : 'Claim Reward'}
+            </button>
+          )}
+          {!done && !confirmingReroll && (
+            <button
+              type="button"
+              className={styles.rerollButton}
+              onClick={() => onRequestReroll(challenge)}
+              disabled={rerolling}
+              aria-label={`Reroll ${c.name} for 10 diamonds`}
+            >
+              Reroll <span>◆ 10</span>
+            </button>
+          )}
+          {!done && confirmingReroll && (
+            <div
+              className={styles.rerollConfirm}
+              role="group"
+              aria-label={`Confirm reroll for ${c.name}`}
+            >
+              <span>Replace This Mission For ◆ 10?</span>
+              <button
+                type="button"
+                className={styles.cancelButton}
+                onClick={onCancelReroll}
+                disabled={rerolling}
+              >
+                Keep It
+              </button>
+              <button
+                type="button"
+                className={styles.confirmButton}
+                onClick={() => onConfirmReroll(challenge)}
+                disabled={rerolling}
+              >
+                {rerolling ? 'Replacing...' : 'Replace'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -230,10 +295,13 @@ export default function DailyChallengesPage() {
   const [challenges, setChallenges] = useState<TieredChallenge[]>([]);
   const [stats, setStats] = useState<ChallengeStats | null>(null);
   const [streak, setStreak] = useState<StreakInfo | null>(null);
+  const [diamondBalance, setDiamondBalance] = useState(0);
 
   // Claiming state
   const [claimingIds, setClaimingIds] = useState<Set<string>>(new Set());
   const [claimingAll, setClaimingAll] = useState(false);
+  const [rerollingIds, setRerollingIds] = useState<Set<string>>(new Set());
+  const [confirmingRerollId, setConfirmingRerollId] = useState<string | null>(null);
   const claimGuardRef = useRef(new Set<string>()); // Prevent double-clicks bypassing React state
 
   // Celebration state
@@ -255,16 +323,19 @@ export default function DailyChallengesPage() {
     async (uid: string, withSpinner: boolean) => {
       if (withSpinner) setIsLoading(true);
       try {
-        const [{ daily, weekly, monthly }, challengeStats, streakInfo] = await Promise.all([
-          dailyChallengeService.getAllChallenges(uid),
-          dailyChallengeService.getStats(uid),
-          dailyChallengeService.getStreak(uid),
-        ]);
+        const [{ daily, weekly, monthly }, challengeStats, streakInfo, spendableDiamonds] =
+          await Promise.all([
+            dailyChallengeService.getAllChallenges(uid),
+            dailyChallengeService.getStats(uid),
+            dailyChallengeService.getStreak(uid),
+            dailyChallengeService.getDiamondBalance(uid),
+          ]);
         if (!isMountedRef.current) return;
 
         setChallenges([...daily, ...weekly, ...monthly]);
         setStats(challengeStats);
         setStreak(streakInfo);
+        setDiamondBalance(spendableDiamonds);
       } catch (err: any) {
         reportError(err, 'DailyChallengesPage.load_failed');
         if (isMountedRef.current) toast.error('Could not load challenges. Please try again.');
@@ -291,7 +362,7 @@ export default function DailyChallengesPage() {
         }
         setUserId(authUser.id);
         await loadChallenges(authUser.id, true);
-      } catch (err) {
+      } catch {
         if (!cancelled) setIsLoading(false);
       }
     })();
@@ -419,6 +490,7 @@ export default function DailyChallengesPage() {
         if (paid.alreadyClaimed) {
           toast.info('You already claimed this one');
         } else if (paid.claimed) {
+          setDiamondBalance(paid.diamondBalance);
           setReward({
             name: challenge.challenge.name,
             chips: paid.chips,
@@ -484,53 +556,71 @@ export default function DailyChallengesPage() {
   const [buyingFreeze, setBuyingFreeze] = useState(false);
   const handleBuyFreeze = useCallback(async () => {
     if (!userId || buyingFreeze) return;
-    if ((stats?.totalDiamondsEarned || 0) < 5000) {
+    if (diamondBalance < 5000) {
       toast.error('Not enough diamonds. You need 5,000 Diamonds to buy a freeze.');
       return;
     }
 
     setBuyingFreeze(true);
-    // Optimistic UI
-    setStats((prev) =>
-      prev ? { ...prev, totalDiamondsEarned: prev.totalDiamondsEarned - 5000 } : prev
-    );
+    setDiamondBalance((prev) => Math.max(0, prev - 5000));
     setStreak((prev) => (prev ? { ...prev, freezesAvailable: prev.freezesAvailable + 1 } : prev));
 
     try {
       const res = await dailyChallengeService.buyStreakFreeze(userId);
       if (res.success) {
         toast.success('Streak Freeze purchased.');
+        const currentBalance = await dailyChallengeService.getDiamondBalance(userId);
+        if (isMountedRef.current) setDiamondBalance(currentBalance);
       } else {
         toast.error(res.error || 'Failed to buy freeze');
         // Revert UI on fail
         loadChallenges(userId, false);
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to buy freeze');
       loadChallenges(userId, false);
     } finally {
       if (isMountedRef.current) setBuyingFreeze(false);
     }
-  }, [userId, buyingFreeze, stats?.totalDiamondsEarned, toast, loadChallenges]);
+  }, [userId, buyingFreeze, diamondBalance, toast, loadChallenges, isMountedRef]);
 
   const handleReroll = useCallback(
     async (challenge: TieredUserChallenge) => {
       if (!userId) return;
-      if ((stats?.totalDiamondsEarned || 0) < 10) {
+      if (rerollingIds.has(challenge.id)) return;
+      if (diamondBalance < 10) {
         toast.error('Not enough diamonds. 10 Diamonds required.');
         return;
       }
-      const confirmSwap = window.confirm('Pay 10 Diamonds to swap this challenge for a new one?');
-      if (!confirmSwap) return;
 
-      // Mocking for UX: deduct 10 diamonds and simulate a reload
-      setStats((prev) =>
-        prev ? { ...prev, totalDiamondsEarned: prev.totalDiamondsEarned - 10 } : prev
-      );
-      toast.success('Challenge swapped! (Mocked)');
-      setTimeout(() => loadChallenges(userId, true), 800);
+      setRerollingIds((prev) => new Set(prev).add(challenge.id));
+      try {
+        const result = await dailyChallengeService.rerollChallenge(
+          userId,
+          challenge.id,
+          challenge.challengeId
+        );
+        if (!result.success) {
+          toast.error(result.error || 'Challenge reroll failed');
+          return;
+        }
+        if (result.diamondBalance != null) setDiamondBalance(result.diamondBalance);
+        setConfirmingRerollId(null);
+        toast.success(
+          result.alreadyRerolled ? 'Challenge already replaced.' : 'New mission online.'
+        );
+        await loadChallenges(userId, false);
+      } finally {
+        if (isMountedRef.current) {
+          setRerollingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(challenge.id);
+            return next;
+          });
+        }
+      }
     },
-    [userId, stats, loadChallenges, toast]
+    [userId, rerollingIds, diamondBalance, loadChallenges, toast, isMountedRef]
   );
 
   const handleClaimAll = useCallback(async () => {
@@ -591,6 +681,7 @@ export default function DailyChallengesPage() {
       triggerHaptic('success');
     }
     if (chips > 0 || diamonds > 0) {
+      setDiamondBalance(balance);
       setReward({
         name: `${claimedIds.length} challenge${claimedIds.length === 1 ? '' : 's'}`,
         chips,
@@ -646,10 +737,12 @@ export default function DailyChallengesPage() {
     monthly: formatCountdown(msUntilNextMonthUtc()),
   };
 
-  const visible = useMemo(
-    () => challenges.filter((c) => c.tier === activeTier && !c.claimed),
-    [challenges, activeTier]
-  );
+  const visible = useMemo(() => {
+    const stateRank = (c: TieredChallenge) => (c.claimed ? 2 : c.completed ? 0 : 1);
+    return challenges
+      .filter((c) => c.tier === activeTier)
+      .sort((a, b) => stateRank(a) - stateRank(b));
+  }, [challenges, activeTier]);
 
   // ── Render ──
 
@@ -672,50 +765,68 @@ export default function DailyChallengesPage() {
 
   return (
     <StandardContentLayout className={styles.container}>
-      <RewardsSurfaceHeader
-        eyebrow="Rewards Circuit / Missions"
-        title="Daily Mission Grid"
-        description="Complete live daily, weekly, and monthly objectives, then claim each server-verified reward without leaving the mission command surface."
-        art="missions"
-        status="MISSION ROTATION // LIVE"
-        metrics={[
-          { label: 'Ready To Claim', value: unclaimed.count, tone: 'attention' },
-          {
-            label: 'Completed',
-            value: stats?.totalCompleted.toLocaleString() || '0',
-            tone: 'live',
-          },
-          {
-            label: 'Current Streak',
-            value: `${streak?.streak ?? stats?.currentStreak ?? 0} days`,
-          },
-        ]}
-        actions={
-          <button
-            className={styles.closeButton}
-            onClick={() => navigate('/')}
-            aria-label="Close challenges"
-          >
-            {'\u2715'}
-          </button>
-        }
-      />
+      <main className={styles.page} id="daily-missions" data-arena-surface="missions">
+        <section className={styles.hero} aria-labelledby="missions-title">
+          <img
+            className={styles.heroArtwork}
+            src={mediaUrl('images/challenges/daily-missions-vault-v1.webp')}
+            alt=""
+            width="1774"
+            height="887"
+            loading="eager"
+            decoding="async"
+            fetchPriority="high"
+            aria-hidden="true"
+          />
+          <div className={styles.heroShade} />
+          <div className={styles.heroCopy}>
+            <span className={styles.eyebrow}>Club Arena // Mission Control</span>
+            <h1 id="missions-title">Daily Missions</h1>
+            <p>
+              Complete Live Poker Objectives, Protect Your Streak, And Unlock Real Chip And Diamond
+              Rewards.
+            </p>
+            <div className={styles.heroMeters}>
+              <div>
+                <span>Mission Cycle</span>
+                <strong>{tierCountdown.daily}</strong>
+                <small>Until Daily Reset</small>
+              </div>
+              <div>
+                <span>Available Diamonds</span>
+                <strong>◆ {diamondBalance.toLocaleString()}</strong>
+                <small>Spendable Balance</small>
+              </div>
+            </div>
+            <button type="button" className={styles.backButton} onClick={() => navigate('/')}>
+              Back To Arena
+            </button>
+          </div>
+          <div className={styles.heroSeal} aria-hidden="true">
+            <span>Live</span>
+            <strong>
+              {tierCounts.daily.done}/{tierCounts.daily.total}
+            </strong>
+            <small>Complete Today</small>
+          </div>
+        </section>
 
-      {/* Streak banner */}
-      <section className={styles.streakBanner}>
-        <div className={styles.streakLeft}>
-          <StreakFire streakCount={streak?.streak ?? stats?.currentStreak ?? 0} size="md" />
-          <div className={styles.streakInfo}>
-            <span className={styles.streakCount}>
-              {(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()} Day Streak
-            </span>
-            <span className={styles.streakDesc}>Play Every Day To Earn Streak Bonuses.</span>
+        <section className={styles.commandDeck} aria-label="Challenge status">
+          <div className={styles.streakConsole}>
+            <div className={styles.streakCore}>
+              <StreakFire streakCount={streak?.streak ?? stats?.currentStreak ?? 0} size="md" />
+              <div className={styles.streakInfo}>
+                <span className={styles.panelLabel}>Current Run</span>
+                <strong className={styles.streakCount}>
+                  {(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()} Day Streak
+                </strong>
+                <span className={styles.streakDesc}>Play Every Day To Keep The Circuit Alive.</span>
+              </div>
+            </div>
             <div className={styles.milestoneTracker}>
               <div className={styles.milestoneLabels}>
-                <span>
-                  Current: {(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()}
-                </span>
-                <span>Next: {stats?.nextMilestone.toLocaleString()}</span>
+                <span>{(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()} Days</span>
+                <span>Next Reward At {stats?.nextMilestone.toLocaleString()}</span>
               </div>
               <div className={styles.milestoneBar}>
                 <motion.div
@@ -724,205 +835,228 @@ export default function DailyChallengesPage() {
                   animate={{
                     width: `${Math.min((((streak?.streak ?? stats?.currentStreak ?? 0) % 7) / 7) * 100, 100)}%`,
                   }}
-                  transition={{ duration: 1.5, ease: 'easeOut' }}
+                  transition={{ duration: 1, ease: 'easeOut' }}
                 />
               </div>
             </div>
-          </div>
-        </div>
-        <div className={styles.streakRight}>
-          {streak && (
-            <div className={styles.freezeLine}>
-              <div className={styles.freezeInfo}>
-                {streak.freezesAvailable > 0
-                  ? `${streak.freezesAvailable} streak freeze${streak.freezesAvailable === 1 ? '' : 's'} banked`
-                  : 'No streak freeze banked'}
-                {streak.nextFreezeIn != null
-                  ? ` - next in ${streak.nextFreezeIn} day${streak.nextFreezeIn === 1 ? '' : 's'}`
-                  : ''}
+            {streak && (
+              <div className={styles.freezeLine}>
+                <div className={styles.freezeInfo}>
+                  <span>{streak.freezesAvailable} Banked</span>
+                  <small>
+                    {streak.nextFreezeIn != null
+                      ? `Next Free Freeze In ${streak.nextFreezeIn} Day${streak.nextFreezeIn === 1 ? '' : 's'}`
+                      : 'Freeze Inventory Ready'}
+                  </small>
+                </div>
+                <button
+                  type="button"
+                  className={styles.buyFreezeBtn}
+                  onClick={handleBuyFreeze}
+                  disabled={buyingFreeze || diamondBalance < 5000 || streak.freezesAvailable >= 3}
+                >
+                  {buyingFreeze ? 'Securing...' : 'Buy Streak Freeze'}
+                  <span>◆ 5,000</span>
+                </button>
               </div>
+            )}
+          </div>
+
+          <div className={styles.summaryGrid}>
+            <div className={styles.summaryTile}>
+              <span className={styles.summaryLabel}>Today</span>
+              <strong className={styles.summaryValue}>
+                {tierCounts.daily.done}/{tierCounts.daily.total}
+              </strong>
+              <small>Completed</small>
+            </div>
+            <div className={styles.summaryTile}>
+              <span className={styles.summaryLabel}>Career</span>
+              <strong className={styles.summaryValue}>
+                {(stats?.totalCompleted || 0).toLocaleString()}
+              </strong>
+              <small>Missions Cleared</small>
+            </div>
+            <div className={styles.summaryTile}>
+              <span className={styles.summaryLabel}>Earned Here</span>
+              <strong className={`${styles.summaryValue} ${styles.diamond}`}>
+                ◆ {(stats?.totalDiamondsEarned || 0).toLocaleString()}
+              </strong>
+              <small>Lifetime Diamonds</small>
+            </div>
+            <div className={styles.summaryTile}>
+              <span className={styles.summaryLabel}>Next Milestone</span>
+              <strong className={`${styles.summaryValue} ${styles.gold}`}>
+                +{(stats?.milestoneReward || 0).toLocaleString()}
+              </strong>
+              <small>Bonus Chips</small>
+            </div>
+          </div>
+        </section>
+
+        {unclaimed.count > 0 && (
+          <aside className={styles.unclaimedBar} aria-label="Unclaimed challenge rewards">
+            <div>
+              <span className={styles.panelLabel}>Reward Vault Open</span>
+              <strong>
+                {unclaimed.count} Mission{unclaimed.count === 1 ? '' : 's'} Ready
+              </strong>
+              <small>
+                +{unclaimed.chips.toLocaleString()} Chips
+                {unclaimed.diamonds > 0 ? ` + ◆ ${unclaimed.diamonds.toLocaleString()}` : ''}
+              </small>
+            </div>
+            <button
+              type="button"
+              className={styles.claimAllButton}
+              onClick={handleClaimAll}
+              disabled={claimingAll}
+            >
+              {claimingAll ? 'Claiming Rewards...' : `Claim All ${unclaimed.count}`}
+            </button>
+          </aside>
+        )}
+
+        <section className={styles.missionBoard} aria-labelledby="mission-board-title">
+          <header className={styles.boardHeader}>
+            <div>
+              <span className={styles.eyebrow}>Active Contracts</span>
+              <h2 id="mission-board-title">Choose Your Mission Cycle</h2>
+            </div>
+            <div className={styles.resetReadout} aria-live="polite">
+              <span>{TIER_LABELS[activeTier]} Reset</span>
+              <strong>{tierCountdown[activeTier]}</strong>
+            </div>
+          </header>
+
+          <nav className={styles.tabs} role="tablist" aria-label="Challenge period">
+            {(['daily', 'weekly', 'monthly'] as Tier[]).map((tier) => (
               <button
-                className={styles.buyFreezeBtn}
-                onClick={handleBuyFreeze}
-                disabled={buyingFreeze || (stats?.totalDiamondsEarned || 0) < 5000}
-                style={{
-                  marginLeft: '12px',
-                  padding: '6px 12px',
-                  background: 'rgba(255,255,255,0.1)',
-                  borderRadius: '6px',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  color: '#fff',
-                  cursor: 'pointer',
+                key={tier}
+                type="button"
+                role="tab"
+                aria-selected={activeTier === tier}
+                className={`${styles.tab} ${activeTier === tier ? styles.tabActive : ''}`}
+                style={{ '--tier-color': TIER_COLORS[tier] } as React.CSSProperties}
+                onClick={() => {
+                  setActiveTier(tier);
+                  setConfirmingRerollId(null);
                 }}
               >
-                {buyingFreeze ? 'Buying...' : 'Buy Streak Freeze (5K Diamonds)'}
+                <span className={styles.tabLabel}>{TIER_LABELS[tier]}</span>
+                <span className={styles.tabCount}>
+                  {tierCounts[tier].done}/{tierCounts[tier].total} Complete
+                </span>
               </button>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Summary tiles */}
-      <section className={styles.summaryRow}>
-        <div className={styles.summaryTile}>
-          <span className={styles.summaryValue}>
-            {tierCounts.daily.done}/{tierCounts.daily.total}
-          </span>
-          <span className={styles.summaryLabel}>Today</span>
-        </div>
-        <div className={styles.summaryTile}>
-          <span className={styles.summaryValue}>
-            {(stats?.totalCompleted || 0).toLocaleString()}
-          </span>
-          <span className={styles.summaryLabel}>All-Time Completed</span>
-        </div>
-        <div className={styles.summaryTile}>
-          <span className={`${styles.summaryValue} ${styles.diamond}`}>
-            {'◆'} {(stats?.totalDiamondsEarned || 0).toLocaleString()}
-          </span>
-          <span className={styles.summaryLabel}>Diamonds Earned</span>
-        </div>
-      </section>
-
-      {/* Unclaimed rewards callout */}
-      {unclaimed.count > 0 && (
-        <div className={styles.unclaimedBar}>
-          <span>
-            {[
-              unclaimed.chips > 0 ? `+${unclaimed.chips.toLocaleString()}` : '',
-              unclaimed.diamonds > 0 ? `${'◆'} ${unclaimed.diamonds.toLocaleString()}` : '',
-            ]
-              .filter(Boolean)
-              .join('  +  ')}{' '}
-            Ready To Claim
-          </span>
-          <button className={styles.claimAllButton} onClick={handleClaimAll} disabled={claimingAll}>
-            {claimingAll
-              ? 'Claiming...'
-              : `Claim ${unclaimed.count === 1 ? 'It' : `All ${unclaimed.count}`}`}
-          </button>
-        </div>
-      )}
-
-      {/* Tier tabs */}
-      <nav className={styles.tabs} role="tablist" aria-label="Challenge period">
-        {(['daily', 'weekly', 'monthly'] as Tier[]).map((tier) => (
-          <button
-            key={tier}
-            role="tab"
-            aria-selected={activeTier === tier}
-            className={`${styles.tab} ${activeTier === tier ? styles.tabActive : ''}`}
-            style={{ '--tier-color': TIER_COLORS[tier] } as React.CSSProperties}
-            onClick={() => setActiveTier(tier)}
-          >
-            <span className={styles.tabLabel}>{TIER_LABELS[tier]}</span>
-            <span className={styles.tabCount}>
-              {tierCounts[tier].done}/{tierCounts[tier].total}
-            </span>
-          </button>
-        ))}
-      </nav>
-
-      <p className={styles.tierReset}>
-        {TIER_LABELS[activeTier]} Challenges Reset In {tierCountdown[activeTier]}
-      </p>
-
-      {/* Challenge list */}
-      <section className={styles.list}>
-        {visible.length === 0 ? (
-          <div className={styles.emptyState}>
-            <p>No {TIER_LABELS[activeTier].toLowerCase()} Challenges Available Right Now.</p>
-          </div>
-        ) : (
-          <AnimatePresence>
-            {visible.map((c, i) => (
-              <motion.div
-                key={c.id}
-                initial={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, x: -50, scale: 0.95 }}
-                transition={{ duration: 0.3, delay: i * 0.05 }}
-                layout
-              >
-                <ChallengeCard
-                  challenge={c}
-                  tier={c.tier}
-                  claiming={claimingIds.has(c.id)}
-                  celebrating={celebratingIds.has(c.id)}
-                  onClaim={handleClaim}
-                  onReroll={handleReroll}
-                />
-              </motion.div>
             ))}
-          </AnimatePresence>
-        )}
-      </section>
+          </nav>
 
-      {/* Celebration — the payoff moment. Deliberately a full overlay rather
+          <section className={styles.list} aria-label={`${TIER_LABELS[activeTier]} challenges`}>
+            {visible.length === 0 ? (
+              <div className={styles.emptyState}>
+                <h3>No Missions Assigned</h3>
+                <p>Your Next {TIER_LABELS[activeTier]} Mission Set Is Being Prepared.</p>
+              </div>
+            ) : (
+              <AnimatePresence mode="popLayout">
+                {visible.map((c, i) => (
+                  <motion.div
+                    key={c.id}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.98 }}
+                    transition={{ duration: 0.22, delay: Math.min(i * 0.035, 0.14) }}
+                    layout
+                  >
+                    <ChallengeCard
+                      challenge={c}
+                      tier={c.tier}
+                      claiming={claimingIds.has(c.id)}
+                      rerolling={rerollingIds.has(c.id)}
+                      confirmingReroll={confirmingRerollId === c.id}
+                      celebrating={celebratingIds.has(c.id)}
+                      onClaim={handleClaim}
+                      onRequestReroll={(challenge) => setConfirmingRerollId(challenge.id)}
+                      onCancelReroll={() => setConfirmingRerollId(null)}
+                      onConfirmReroll={handleReroll}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            )}
+          </section>
+        </section>
+
+        {/* Celebration — the payoff moment. Deliberately a full overlay rather
           than a corner toast: the whole point of a daily loop is that finishing
           one FEELS like something, and a 3-second slide-in at the edge of the
           screen does not. Dismisses on tap or after 5s. */}
-      {reward && (
-        <div
-          className={styles.celebrateOverlay}
-          role="dialog"
-          aria-modal="true"
-          aria-live="assertive"
-          aria-label={[
-            `Challenge complete: ${reward.name}.`,
-            reward.diamonds > 0 ? `You earned ${reward.diamonds} diamonds.` : '',
-          ]
-            .filter(Boolean)
-            .join(' ')}
-          onClick={() => setReward(null)}
-        >
-          <ConfettiEffect
-            isActive={true}
-            intensity="heavy"
-            colors={['#00f0ff', '#0ff', '#ffffff']}
-            duration={4000}
-          />
-          <div className={styles.celebrateCard} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.celebrateBurst} aria-hidden="true">
-              {'\u25C6'}
-            </div>
-            <h2 className={styles.celebrateTitle}>Challenge Complete</h2>
-            <p className={styles.celebrateName}>{reward.name}</p>
-
-            {reward.diamonds > 0 && (
-              <div className={styles.celebrateDiamonds}>
-                <span className={styles.celebrateDiamondValue}>
-                  +{reward.diamonds.toLocaleString()}
-                </span>
-                <span className={styles.celebrateDiamondLabel}>
-                  {reward.diamonds === 1 ? 'Diamond' : 'Diamonds'}
-                </span>
+        {reward && (
+          <div
+            className={styles.celebrateOverlay}
+            role="dialog"
+            aria-modal="true"
+            aria-live="assertive"
+            aria-label={[
+              `Challenge complete: ${reward.name}.`,
+              reward.diamonds > 0 ? `You earned ${reward.diamonds} diamonds.` : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            onClick={() => setReward(null)}
+          >
+            <ConfettiEffect
+              isActive={true}
+              intensity="heavy"
+              colors={['#00f0ff', '#0ff', '#ffffff']}
+              duration={4000}
+            />
+            <div className={styles.celebrateCard} onClick={(e) => e.stopPropagation()}>
+              <div className={styles.celebrateBurst} aria-hidden="true">
+                {'\u25C6'}
               </div>
-            )}
+              <h2 className={styles.celebrateTitle}>Challenge Complete</h2>
+              <p className={styles.celebrateName}>{reward.name}</p>
 
-            {reward.diamonds > 0 && (
-              <p className={styles.celebrateBalance}>
-                New Balance: {reward.diamondBalance.toLocaleString()} Diamonds
-              </p>
-            )}
+              {reward.diamonds > 0 && (
+                <div className={styles.celebrateDiamonds}>
+                  <span className={styles.celebrateDiamondValue}>
+                    +{reward.diamonds.toLocaleString()}
+                  </span>
+                  <span className={styles.celebrateDiamondLabel}>
+                    {reward.diamonds === 1 ? 'Diamond' : 'Diamonds'}
+                  </span>
+                </div>
+              )}
 
-            <button className={styles.celebrateButton} onClick={() => setReward(null)} autoFocus>
-              Nice
-            </button>
+              {reward.diamonds > 0 && (
+                <p className={styles.celebrateBalance}>
+                  New Balance: {reward.diamondBalance.toLocaleString()} Diamonds
+                </p>
+              )}
+
+              <button className={styles.celebrateButton} onClick={() => setReward(null)} autoFocus>
+                Nice
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* How it works */}
-      <footer className={styles.footer}>
-        <p>
-          A New Set Of Daily Challenges Arrives Every Day At Midnight UTC. Weekly Challenges Reset
-          Each Monday, Monthly Challenges On The 1St. Play Hands, Win Pots, Hit Showdowns, And Enter
-          Tournaments To Make Progress Automatically.
-        </p>
-        <button className={styles.playButton} onClick={() => navigate('/')}>
-          Go Play
-        </button>
-      </footer>
+        <footer className={styles.footer}>
+          <div>
+            <span className={styles.eyebrow}>Automatic Tracking</span>
+            <h2>Play Poker. The Mission System Does The Rest.</h2>
+            <p>
+              Hand Results, Pots, Showdowns, Tournaments, And Social Goals Update Automatically.
+              Daily Missions Reset At Midnight UTC, Weekly Missions Each Monday, And Monthly
+              Missions On The First.
+            </p>
+          </div>
+          <button type="button" className={styles.playButton} onClick={() => navigate('/')}>
+            Go Play
+          </button>
+        </footer>
+      </main>
     </StandardContentLayout>
   );
 }

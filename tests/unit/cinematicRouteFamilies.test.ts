@@ -9,7 +9,6 @@ const REWARD_PAGES = [
   'src/pages/PromotionsPage.tsx',
   'src/pages/BonusPage.tsx',
   'src/pages/AchievementsPage.tsx',
-  'src/pages/DailyChallengesPage.tsx',
   'src/pages/MarketplacePage.tsx',
 ];
 
@@ -47,6 +46,15 @@ describe('cinematic retained route families', () => {
     expect(existsSync('public/images/leaderboard/championship-machine.jpg')).toBe(true);
   });
 
+  it('preserves the mission-native Daily Challenges visual authority', () => {
+    const source = readFileSync('src/pages/DailyChallengesPage.tsx', 'utf8');
+    expect(source).toContain('data-arena-surface="missions"');
+    expect(source).toContain('className={styles.hero}');
+    expect(source).toContain('Club Arena // Mission Control');
+    expect(source).toContain("mediaUrl('images/challenges/daily-missions-vault-v1.webp')");
+    expect(existsSync('public/images/challenges/daily-missions-vault-v1.webp')).toBe(true);
+  });
+
   it.each(UNION_PAGES)('%s uses the Union Network visual anchor', (path) => {
     const source = readFileSync(path, 'utf8');
     expect(source).toContain('CasinoSurfaceHeader');
@@ -58,14 +66,16 @@ describe('cinematic retained route families', () => {
     const account = readFileSync('src/components/account/AccountSurfaceHeader.tsx', 'utf8');
     const community = readFileSync('src/components/community/CommunitySurfaceHeader.tsx', 'utf8');
     const workspaces = readFileSync('src/pages/workspaces/ArenaWorkspacePages.tsx', 'utf8');
+    const missions = readFileSync('src/pages/DailyChallengesPage.tsx', 'utf8');
 
-    for (const source of [header, account, community, workspaces]) {
+    for (const source of [header, account, community, workspaces, missions]) {
       expect(source).toContain('mediaUrl(');
     }
     for (const path of [
       'public/assets/club-buttons/wallets/desktop/wallet-diamonds-v1.webp',
       'public/assets/club-buttons/lobby/shark-club-championship-ad-v2.png',
       'public/images/community/community-network-v1.webp',
+      'public/images/challenges/daily-missions-vault-v1.webp',
       'public/images/bg-vault.jpg',
     ]) {
       expect(existsSync(path), `${path} must ship with the build`).toBe(true);

@@ -174,6 +174,14 @@ const CALL_VS: Record<PreflopPosition, number> = {
 };
 
 /**
+ * The floor for limping BEHIND another limper, set at the single-raise
+ * calling threshold on purpose: a hand that cannot call a raise has no
+ * business putting a chip in, because the only thing it can do next is fold.
+ * See the no-open-limp note in the unopened branch.
+ */
+const LIMP_BEHIND_MIN = 0.5;
+
+/**
  * ── V13 (2026-08-23): THE PRICE-IN GUARD WAS EATING EVERY RAISE ────────────
  *
  * V11 added a guard so a horse can NEVER fold when the pot lays a price any
@@ -216,7 +224,39 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
     (guardOdds <= 0.15 ||
       (effCall <= bb && guardOdds <= 0.22) ||
       (isTourney && stackBB <= 2 && guardOdds <= 0.34));
-  return pricedIn ? { a: 'call' } : out;
+  if (!pricedIn) return out;
+
+  // ── THE PRICE IS ONLY REAL WHEN THE CALL CLOSES THE ACTION ──────────────
+  //
+  // (Dan 2026-08-30.) V13 stopped this guard from eating raises. It went on
+  // eating FOLDS in unopened pots, and with a big blind ante that is every
+  // fold, because the ante alone makes the price look irresistible:
+  //
+  //     hand #3761806, blinds 75/150, big blind ante 1,200
+  //     pot before the action 1,425, toCall 150
+  //     guardOdds = 150 / (1425 + 150) = 0.095  ->  <= 0.15, priced in
+  //
+  // So every hand the range wanted to fold called instead. Six seats limped,
+  // the big blind raised to 1,125, and five of the six folded. Measured over
+  // 596 tournament hands: 852 open-limps against 214 open-raises (35% of all
+  // unraised first actions), and of the 458 limps that later faced a raise,
+  // 419 FOLDED - 91.5%.
+  //
+  // The arithmetic is not wrong, the premise is. Pot odds justify a call
+  // when calling CLOSES the action. In an unopened pot it never does: the
+  // big blind still has the option and everyone behind can raise, so the
+  // horse is not being laid 9.5% on a showdown, it is paying to enter a pot
+  // it will be blown out of. That is why the same guard is harmless in cash
+  // (no ante: pot 1.5bb, toCall 1bb, odds 0.4 - never triggers) and ruinous
+  // in an ante tournament.
+  //
+  // The one survivor is the call that ends the decision anyway: if calling
+  // puts the stack in, there is no later fold to regret and no limp to
+  // punish. That keeps the desperate <=2bb case the guard was widened for.
+  const unopenedForGuard = ctx.raises === 0 && ctx.currentBet <= bb * 1.05;
+  const callIsAllIn = effCall >= stack * 0.99;
+  if (unopenedForGuard && !callIsAllIn) return out;
+  return { a: 'call' };
 }
 
 function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
@@ -566,7 +606,13 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       // start jamming its whole opening range.
       if (mzOn && effM < 10 && stackBB <= 22 && !ctx.isOmaha) return { a: 'jam' };
       // Trap mix with true premiums (cheap to see a flop disguised).
-      if (strength > 0.93 && rand() < ctx.slowplayFreq * 0.4 && toCall <= bb) {
+      //
+      // `limpers >= 1` added 2026-08-30: an open-limp with aces is still an
+      // open-limp. It surrenders the dead money the same way, and on screen
+      // it teaches every watching player that limping is normal here. Over-
+      // limping a monster BEHIND other limpers is a real trap and survives;
+      // opening the pot by calling does not.
+      if (limpers >= 1 && strength > 0.93 && rand() < ctx.slowplayFreq * 0.4 && toCall <= bb) {
         if (toCall === 0) return { a: 'check' };
         return { a: 'call' };
       }
@@ -590,17 +636,38 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       return { a: 'call' };
     }
     if (toCall === 0) return { a: 'check' };
+
+    // ── NO OPEN-LIMP: first in, it is raise or fold (Dan 2026-08-30) ───────
+    //
+    // Two branches used to call here. One limped anything within 0.12 of the
+    // opening bar 70% of the time; the other limped ANY hand of strength
+    // >= 0.3 for up to 1.5bb, from any position, unconditionally. Neither
+    // asked whether a single player had actually limped first, so both
+    // OPENED pots by calling - the play that fed the 91.5% limp-fold rate
+    // measured above the price-in guard.
+    //
+    // Limping BEHIND survives, because real players do it, under two rules
+    // that make it honest:
+    //   - somebody must have limped first, so this can never open a pot; and
+    //   - the hand must be able to CONTINUE against a raise. Anything weaker
+    //     is limping in order to fold, which is the whole disease.
+    // Because a hand at or above the opening bar RAISES, the surviving band
+    // is [LIMP_BEHIND_MIN, openThresh) - empty in late position until several
+    // limpers widen it. Late position isolating limpers instead of joining
+    // them is correct, and the V10 isolation layer above already does it.
+    const canLimpBehind = limpers >= 1 && strength >= LIMP_BEHIND_MIN;
     const limpable = strength >= openThresh - 0.12;
     // V28 AUDIT FIX: `|| position === 'sb'` short-circuited the strength test
     // entirely — the SB completed with ANY two cards 70% of the time and was
     // play-visible as "the small blind never folds". The SB still completes
-    // wider than other seats (good price, closes half the action), but from a
-    // real range: a deeper shelf below the open bar, not all 169 hands.
+    // wider than other seats, but from a real range. It is now also subject
+    // to the limpers-first rule: with the pot unopened, the small blind has
+    // the big blind still to act behind it, so completing is an open-limp
+    // like any other.
     const sbCompletable = position === 'sb' && strength >= openThresh - 0.22;
-    if (toCall <= bb && (limpable || sbCompletable) && rand() < 0.7) {
+    if (canLimpBehind && toCall <= bb && (limpable || sbCompletable) && rand() < 0.7) {
       return { a: 'call' };
     }
-    if (toCall <= bb * 1.5 && strength >= 0.3) return { a: 'call' };
     return { a: 'fold' };
   }
 

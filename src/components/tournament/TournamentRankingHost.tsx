@@ -47,6 +47,7 @@ import {
   type SessionSummaryPayload,
 } from '../../services/pendingSessionSummary';
 import { supabase } from '../../lib/supabase';
+import { readLocalSession } from '../../lib/authUtils';
 import { tableService } from '../../services/TableService';
 import { reportError } from '../../utils/errorReporter';
 import TournamentRankingCard from './TournamentRankingCard';
@@ -63,6 +64,95 @@ export function TournamentRankingHost() {
   const close = useCallback(() => clearSessionSummary(), []);
 
   const tournamentId = payload?.tournament?.tournamentId;
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  THE CARD SAYS WHERE YOU FINISHED (Dan 2026-08-30, round 17)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Dan: "THE RESULTS CARD NEEDS TO SAY THE PLACE YOU FINISHED. MINE SHOULD
+   * SAY 3RD PLACE." His card said "Finished".
+   *
+   * The place was not missing — it was EARLY. `tournament_players` for that
+   * game reads `position: 3, status: eliminated`, exactly as he said; the
+   * engine had recorded it correctly. But the card is published at the instant
+   * the player leaves the felt, and on the bust path that is BEFORE the engine
+   * has written the row. `finishPlace` is `position || full?.finishPlace ||
+   * null`, all three were empty at that moment, and the card renders `place !=
+   * null ? ordinal(place) : 'Finished'`. So it printed the fallback and then
+   * never asked again.
+   *
+   * A card that is a few hundred milliseconds early is not a reason to show a
+   * player less than the app knows. This asks once the card is up, and briefly
+   * retries, because the write is in flight rather than absent. It only ever
+   * FILLS IN a missing place — it can never overwrite one the exit already
+   * carried, which is the authoritative one when it exists.
+   */
+  const placeFilledRef = useRef<string | null>(null);
+  useEffect(() => {
+    const t = payload?.tournament;
+    if (!tournamentId || !t) return;
+    if (t.finishPlace != null) return; // already known — never second-guess it
+    if (placeFilledRef.current === tournamentId) return; // one fill per card
+    placeFilledRef.current = tournamentId;
+
+    let cancelled = false;
+    (async () => {
+      /* Six looks over ~9s. The row is being written as we ask, so this is a
+         short wait on an in-flight commit, not a poll for something absent. */
+      for (let attempt = 0; attempt < 6 && !cancelled; attempt++) {
+        try {
+          /* `readLocalSession()` rather than the auth round trip — a house rule
+             the pre-push hook enforces, and the better call here anyway: this
+             runs on a card already on screen, so the identity is known locally
+             and there is no reason to spend a network hop on it inside a retry
+             loop. (The hook greps for the banned call as a STRING, so naming it
+             here even to say "not this" is enough to trip it — which is the
+             same prose-matching trap the source pins in this repo are written
+             around.) */
+          const uid = readLocalSession()?.userId;
+          if (!uid) return;
+          const { data, error } = await supabase
+            .from('tournament_players')
+            .select('position, prize')
+            .eq('tournament_id', tournamentId)
+            .eq('user_id', uid)
+            .maybeSingle();
+          if (error) throw error;
+          const place = Number(data?.position) || 0;
+          if (place > 0) {
+            if (cancelled) return;
+            setPayload((prev) =>
+              prev && prev.tournament && prev.tournament.finishPlace == null
+                ? {
+                    ...prev,
+                    tournament: {
+                      ...prev.tournament,
+                      finishPlace: place,
+                      /* The prize follows the place: a card that has just
+                         learned the player came 3rd should not still be
+                         claiming the 0 it was published with if the row says
+                         otherwise. Only ever raises a zero. */
+                      prize: prev.tournament.prize || Number(data?.prize) || 0,
+                    },
+                  }
+                : prev
+            );
+            return;
+          }
+        } catch (err) {
+          reportError(err, 'TournamentRankingHost.finish_place_backfill_failed', {
+            tournamentId,
+          });
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tournamentId, payload?.tournament]);
 
   const playAgain = useCallback(() => {
     /* The card's own fallback (tournaments list) handles the no-id case. */

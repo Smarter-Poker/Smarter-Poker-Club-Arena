@@ -24,6 +24,7 @@ import { reportError } from '../../utils/errorReporter';
 import { totalBuyIn } from '../../utils/buyIn';
 import { relayTournamentEvent } from '../../services/tournamentEventBridge';
 import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
+import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
 
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
@@ -708,7 +709,19 @@ export default function TournamentLobbyPage() {
   const runningCount = tournaments.filter((t) => t.status === 'RUNNING').length;
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-arena-surface="play">
+      <CasinoSurfaceHeader
+        eyebrow="Play & Review / Tournament Lobby"
+        title="Tournament Command"
+        description="Discover scheduled fields, inspect live events, and enter registration through the existing tournament service and server-authoritative buy-in flow."
+        artPath="assets/club-buttons/lobby/shark-club-championship-ad-v2.png"
+        status="TOURNAMENT NETWORK // LIVE"
+        metrics={[
+          { label: 'Upcoming', value: upcomingCount, tone: 'attention' },
+          { label: 'Live Now', value: runningCount, tone: 'live' },
+          { label: 'Loaded', value: tournaments.length },
+        ]}
+      />
       {/* Quick Stats */}
       <div className={styles.quickStats}>
         <div className={styles.stat}>

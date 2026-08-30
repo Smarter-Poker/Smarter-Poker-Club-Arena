@@ -1,0 +1,101 @@
+/*
+ * TableConnectionBanner — a status pill centred over the felt.
+ *
+ * pointer-events: none is LOAD BEARING. This sits above the table surface, and
+ * a banner that swallowed a tap on a card, a seat or the fold button would be
+ * a worse bug than the silence it replaces.
+ */
+.table-conn-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  max-width: min(92%, 420px);
+  padding: 7px 14px;
+  border-radius: 999px;
+
+  background: rgba(14, 18, 28, 0.92);
+  border: 1px solid rgba(249, 115, 22, 0.55);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  pointer-events: none;
+  animation: table-conn-banner-in 180ms ease-out;
+}
+
+/* Lost and auth_failed are a harder failure than a routine reconnect. */
+.table-conn-banner--failed,
+.table-conn-banner--auth_failed {
+  border-color: rgba(248, 113, 113, 0.65);
+}
+
+.table-conn-banner__dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f97316;
+  animation: table-conn-banner-pulse 1.1s ease-in-out infinite;
+}
+
+.table-conn-banner--failed .table-conn-banner__dot,
+.table-conn-banner--auth_failed .table-conn-banner__dot {
+  background: #f87171;
+}
+
+@keyframes table-conn-banner-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes table-conn-banner-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/*
+ * Reduced motion collapses the MOTION, never the MEANING: the banner and its
+ * dot stay fully visible and legible, they simply stop moving.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .table-conn-banner {
+    animation: none;
+  }
+  .table-conn-banner__dot {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+@media (max-width: 420px) {
+  .table-conn-banner {
+    font-size: 12px;
+    padding: 6px 12px;
+    top: 8px;
+  }
+}

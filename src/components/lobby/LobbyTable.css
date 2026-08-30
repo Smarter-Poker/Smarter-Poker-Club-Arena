@@ -1912,15 +1912,15 @@ abbr.lt-variant[title] {
   .arena-lobby-card-list {
     width: 100%;
     display: grid;
-    justify-items: center;
+    justify-items: stretch;
     gap: 14px;
-    padding: 8px 4px 28px;
+    padding: 8px 2px 28px;
   }
 
   .arena-lobby-card-list > div {
     width: 100%;
     display: grid;
-    justify-items: center;
+    justify-items: stretch;
   }
 
   .arena-lobby-card-list + .lobby-table-wrap {

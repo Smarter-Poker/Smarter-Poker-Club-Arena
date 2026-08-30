@@ -154,6 +154,15 @@ export interface ClaimResult {
   diamondBalance: number;
 }
 
+/** What the atomic reroll RPC actually changed and charged. */
+export interface RerollResult {
+  success: boolean;
+  alreadyRerolled: boolean;
+  challengeId?: string;
+  diamondBalance?: number;
+  error?: string;
+}
+
 export interface UserDailyChallenge {
   id: string;
   challengeId: string;
@@ -984,6 +993,87 @@ class DailyChallengeServiceClass {
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err?.message || 'Purchase failed' };
+    }
+  }
+
+  /**
+   * Read the spendable diamond balance shown by challenge economy controls.
+   *
+   * This is deliberately not `getStats().totalDiamondsEarned`: that statistic
+   * is lifetime challenge payout, while purchases and rerolls spend the live
+   * profiles.diamonds balance. Confusing the two made an account with 5,000
+   * historical rewards look able to buy a freeze even after spending them.
+   */
+  async getDiamondBalance(userId: string): Promise<number> {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('diamonds')
+      .eq('id', userId)
+      .maybeSingle();
+    if (error) {
+      reportError(error, 'DailyChallengeService.getDiamondBalance_failed');
+      throw new Error('Could not load your diamond balance');
+    }
+    return Math.max(0, Number(data?.diamonds) || 0);
+  }
+
+  /**
+   * Atomically replace one unfinished challenge and spend the reroll price.
+   *
+   * `expectedChallengeId` is the replay key. If a response is lost after the
+   * database commits, retrying the request sees that the row has already moved
+   * away from this id and returns `alreadyRerolled` without charging again.
+   */
+  async rerollChallenge(
+    userId: string,
+    challengeRowId: string,
+    expectedChallengeId: string
+  ): Promise<RerollResult> {
+    try {
+      const { data, error } = await supabase.rpc('reroll_daily_challenge', {
+        p_user_id: userId,
+        p_challenge_row_id: challengeRowId,
+        p_expected_challenge_id: expectedChallengeId,
+        p_cost: 10,
+      });
+      if (error) throw error;
+
+      const result = data as {
+        success?: boolean;
+        alreadyRerolled?: boolean;
+        challengeId?: string;
+        diamondBalance?: number;
+        error?: string;
+      } | null;
+
+      if (!result?.success) {
+        return {
+          success: false,
+          alreadyRerolled: result?.alreadyRerolled === true,
+          error: result?.error || 'Challenge reroll was not confirmed',
+        };
+      }
+
+      const diamondBalance = Math.max(0, Number(result.diamondBalance) || 0);
+      masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+        newBalance: diamondBalance,
+        delta: result.alreadyRerolled ? 0 : -10,
+        source: 'daily_challenge_reroll',
+      });
+
+      return {
+        success: true,
+        alreadyRerolled: result.alreadyRerolled === true,
+        challengeId: result.challengeId,
+        diamondBalance,
+      };
+    } catch (err: any) {
+      reportError(err, 'DailyChallengeService.rerollChallenge_failed');
+      return {
+        success: false,
+        alreadyRerolled: false,
+        error: err?.message || 'Challenge reroll failed',
+      };
     }
   }
 

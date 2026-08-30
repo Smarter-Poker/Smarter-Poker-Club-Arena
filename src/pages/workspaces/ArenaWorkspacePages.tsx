@@ -1,6 +1,7 @@
 import { Link, useParams } from 'react-router-dom';
 import { getClubOperationGroups } from '../../config/clubOperationsNavigation';
 import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
+import { mediaUrl } from '../../utils/mediaBase';
 import styles from './ArenaWorkspacePages.module.css';
 
 interface WorkspaceLink {
@@ -35,7 +36,7 @@ function WorkspacePage({
           </span>
         </div>
         <div className={styles.artFrame} aria-hidden="true">
-          <img src={art} alt="" />
+          <img src={mediaUrl(art)} alt="" />
         </div>
       </header>
 
@@ -64,7 +65,7 @@ export function RewardsWorkspacePage() {
       eyebrow="Player Value Circuit"
       title="Rewards Center"
       description="A single route into every live balance, benefit, offer, and earned milestone."
-      art="/hub/club-arena/assets/club-buttons/wallets/square/wallet-diamonds-square-v1.webp"
+      art="assets/club-buttons/wallets/square/wallet-diamonds-square-v1.webp"
       links={[
         { label: 'Wallet', description: 'Balances, transfers, and ledger', path: '/wallet' },
         {
@@ -82,6 +83,104 @@ export function RewardsWorkspacePage() {
           path: '/achievements',
         },
         { label: 'Challenges', description: 'Daily objectives and progress', path: '/challenges' },
+        {
+          label: 'Marketplace',
+          description: 'Diamonds, membership, cosmetics, and owned items',
+          path: '/marketplace',
+        },
+      ]}
+    />
+  );
+}
+
+export function CommunityWorkspacePage() {
+  return (
+    <WorkspacePage
+      eyebrow="Community Network"
+      title="Community Center"
+      description="Discover players and clubs, manage trusted connections, follow shared activity, and move into conversation from one network map."
+      art="images/community/community-network-v1.webp"
+      links={[
+        {
+          label: 'Discover',
+          description: 'Search live players, clubs, tables, and tournaments',
+          path: '/search',
+          signal: 'Live',
+        },
+        {
+          label: 'Friends',
+          description: 'Trusted connections, presence, and direct actions',
+          path: '/friends',
+        },
+        {
+          label: 'Requests',
+          description: 'Review incoming connection requests',
+          path: '/friends?tab=requests',
+        },
+        {
+          label: 'Activity',
+          description: 'Shared achievements, hands, and network discovery',
+          path: '/friends?tab=activity',
+        },
+        {
+          label: 'Challenges',
+          description: 'Head-to-head social missions and progress',
+          path: '/friends?tab=challenges',
+        },
+        {
+          label: 'Messages',
+          description: 'Continue in Smarter.Poker Messenger',
+          path: '/messages',
+        },
+        {
+          label: 'Union Network',
+          description: 'Browse and operate connected club networks',
+          path: '/unions',
+        },
+      ]}
+    />
+  );
+}
+
+export function PlayWorkspacePage() {
+  return (
+    <WorkspacePage
+      eyebrow="Poker Command Circuit"
+      title="Play & Review"
+      description="Move from live competition into results, hands, sessions, and rankings without crossing disconnected history surfaces."
+      art="assets/club-buttons/lobby/shark-club-championship-ad-v2.png"
+      links={[
+        {
+          label: 'Tournaments',
+          description: 'Scheduled, registering, and live events',
+          path: '/tournaments',
+          signal: 'Live',
+        },
+        {
+          label: 'Tournament Results',
+          description: 'Finishes, prizes, and completed fields',
+          path: '/tournament-results',
+        },
+        {
+          label: 'My Spin Results',
+          description: 'Your Spin finishes and prizes',
+          path: '/tournament-results?filter=mine&type=spin',
+        },
+        {
+          label: 'Hand History',
+          description: 'Review, replay, and share completed hands',
+          path: '/hand-history',
+        },
+        {
+          label: 'Session History',
+          description: 'Session-level results and performance',
+          path: '/session-history',
+        },
+        {
+          label: 'Leaderboards',
+          description: 'Club and global competitive rankings',
+          path: '/leaderboard',
+        },
       ]}
     />
   );
@@ -93,7 +192,7 @@ export function LegalWorkspacePage() {
       eyebrow="Trust & Rules"
       title="Legal Center"
       description="The current platform rules, privacy commitments, integrity standards, and promotion terms."
-      art="/hub/club-arena/images/bg-vault.jpg"
+      art="images/bg-vault.jpg"
       links={[
         {
           label: 'Fair Gaming',
@@ -130,7 +229,7 @@ export function ClubFinanceWorkspacePage() {
       eyebrow="Ledger Circuit"
       title="Finance & Risk"
       description="Live club economics, cashier operations, settlement, and exposure without duplicate dashboards."
-      art="/hub/club-arena/assets/club-buttons/wallets/desktop/wallet-club-bank-v1.webp"
+      art="assets/club-buttons/wallets/desktop/wallet-club-bank-v1.webp"
       links={(finance?.items || [])
         .filter((item) => item.id !== 'finance-overview')
         .map((item) => ({
@@ -151,7 +250,7 @@ export function ClubControlWorkspacePage() {
       eyebrow="House Circuit"
       title="Club Control"
       description="Policy, communications, campaigns, identity, and permissions in one governed workspace."
-      art="/hub/club-arena/assets/club-buttons/lobby/lobby-command-chassis-v2.png"
+      art="assets/club-buttons/lobby/lobby-command-chassis-v2.png"
       links={(control?.items || [])
         .filter((item) => item.id !== 'control-overview')
         .map((item) => ({

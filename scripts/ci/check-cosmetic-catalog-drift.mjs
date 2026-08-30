@@ -27,6 +27,7 @@
  * Exit:  0 agree (or skipped) · 1 drift · 2 script error
  */
 import { readFileSync } from 'node:fs';
+import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
 
 const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -112,7 +113,7 @@ const code = {
 const res = await fetch(
   `${url.replace(/\/+$/, '')}/rest/v1/cosmetic_catalog?select=category,asset_id,tier`,
   {
-    headers: { apikey: key, Authorization: `Bearer ${key}` },
+    headers: supabaseServerHeaders(key),
   }
 );
 if (!res.ok) {

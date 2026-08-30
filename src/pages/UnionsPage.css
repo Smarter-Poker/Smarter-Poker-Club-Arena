@@ -17,8 +17,7 @@
   color: #e7eef5;
   background:
     linear-gradient(90deg, rgba(5, 9, 13, 0.96), rgba(5, 9, 13, 0.7) 58%, rgba(5, 9, 13, 0.94)),
-    url('/hub/club-arena/assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp')
-      right -120px top 20px / min(700px, 68vw) auto no-repeat,
+    var(--union-network-art, none) right -120px top 20px / min(700px, 68vw) auto no-repeat,
     #05090d;
 }
 

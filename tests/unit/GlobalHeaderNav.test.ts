@@ -219,12 +219,20 @@ describe('the profile frame contains the live profile picture', () => {
     expect(TSX_CODE).toContain('avatarUrl');
     expect(TSX).toContain('className={styles.profileAvatarSlot}');
     expect(TSX).toContain('className={styles.profileAvatar}');
+    expect(TSX).toContain('className={styles.profileFrameOverlay}');
+    expect(TSX.indexOf('className={styles.profileAvatarSlot}')).toBeLessThan(
+      TSX.indexOf('className={styles.profileFrameOverlay}')
+    );
     expect(CSS).toContain('.profileAvatarSlot');
     expect(CSS).toContain('.profileAvatar');
+    expect(CSS).toContain('.profileFrameOverlay');
     expect(ruleBody(CSS, '.profileBtn')).toContain('contain: layout paint');
-    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('width: 58%');
-    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('aspect-ratio: 0.78');
+    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('width: 54%');
+    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('height: 64%');
     expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('border-radius: 50%');
+    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('z-index: 1');
+    expect(ruleBody(CSS, '.profileFrameOverlay')).toContain('z-index: 2');
+    expect(ruleBody(CSS, '.profileFrameOverlay')).toContain('mask-image: radial-gradient');
     expect(ruleBody(CSS, '.profileAvatarSlot > .profileAvatar')).toContain(
       'width: 100% !important'
     );

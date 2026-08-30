@@ -49,7 +49,7 @@
  * that lets a member tell a horse from a human. Do not reintroduce one.
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useDeferredValue, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { sizedStorageUrl } from '../utils/avatarGenerator';
@@ -116,6 +116,15 @@ const SORT_LABEL: Record<SortKey, string> = {
 const AGENT_ROLE_SET: readonly ClubRole[] = AGENT_ROLES;
 const STAFF_ROLE_SET: readonly ClubRole[] = STAFF_ROLES;
 
+const ROSTER_VAULT_ART = `${import.meta.env.BASE_URL}images/club-members/roster-vault.webp`;
+const ROSTER_CACHE_VERSION = 3;
+const ROSTER_CACHE_MAX_CHARACTERS = 1_250_000;
+
+interface RosterCacheEnvelope {
+  version: number;
+  rows: unknown[];
+}
+
 /** Chips, fees and balances all read the same way. Never padStart. */
 function chips(value: number): string {
   return (value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -140,6 +149,7 @@ export default function ClubMembersPage() {
   const [filter, setFilter] = useState<MemberFilter>('all');
   const [sortKey, setSortKey] = useState<SortKey>('hierarchy');
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
 
@@ -206,24 +216,27 @@ export default function ClubMembersPage() {
         // SWR: paint the previous roster instantly, then replace it. The cache
         // holds the whole row now rather than a trimmed copy, because the row IS
         // the screen - wallets, downlines and fees included.
-        // v2: the key is versioned and every cached row goes through
+        // v3: the key is versioned and every cached row goes through
         // mapRosterRow, the same defaulting the network path uses. This was a
         // raw `as RosterMember[]` cast of untrusted JSON - a blob from an older
         // build reached `member.downline_total.toLocaleString()` and threw.
-        const swrKey = `roster_cache_v2_${resolvedId}`;
+        const swrKey = `roster_cache_v3_${resolvedId}`;
         try {
           const cached = sessionStorage.getItem(swrKey);
           if (cached) {
-            const parsed = JSON.parse(cached);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              const rows = parsed
+            const parsed = JSON.parse(cached) as RosterCacheEnvelope;
+            if (
+              parsed?.version === ROSTER_CACHE_VERSION &&
+              Array.isArray(parsed.rows) &&
+              parsed.rows.length > 0
+            ) {
+              const rows = parsed.rows
                 .filter((r: unknown): r is Record<string, unknown> => !!r && typeof r === 'object')
                 .map(mapRosterRow);
               // Liveness BEFORE the write, not after it.
               if (!live()) return;
               if (rows.length > 0) {
                 setMembers(rows);
-                setLoading(false);
               }
             }
           }
@@ -239,7 +252,15 @@ export default function ClubMembersPage() {
         setMembers(roster);
 
         try {
-          sessionStorage.setItem(swrKey, JSON.stringify(roster.slice(0, 300)));
+          const serialised = JSON.stringify({ version: ROSTER_CACHE_VERSION, rows: roster });
+          // A partial cache looked complete: summary totals were wrong and an
+          // owner could export only the first 300 people. Cache all or nothing.
+          // Oversized union rosters stay in memory and come from the one RPC.
+          if (serialised.length <= ROSTER_CACHE_MAX_CHARACTERS) {
+            sessionStorage.setItem(swrKey, serialised);
+          } else {
+            sessionStorage.removeItem(swrKey);
+          }
         } catch {
           /* quota; the roster is already on screen */
         }
@@ -363,7 +384,7 @@ export default function ClubMembersPage() {
   /* ── Filter, search, sort ─────────────────────────────────────────────── */
 
   const filteredMembers = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = deferredSearchQuery.trim().toLowerCase();
     const matched = members.filter((m) => {
       if (filter === 'online' && !m.is_online) return false;
       if (filter === 'mine' && m.upline_user_id !== user?.id) return false;
@@ -405,7 +426,7 @@ export default function ClubMembersPage() {
     // and the mineCount memo beside it disagreed: an auth write that changed
     // `user` without changing `members` updated the "Direct (12)" chip while
     // the list it filters stayed stale.
-  }, [members, filter, searchQuery, sortKey, user?.id]);
+  }, [members, filter, deferredSearchQuery, sortKey, user?.id]);
 
   const virtualScroll = useVirtualScroll(filteredMembers, { initialCount: 30, pageSize: 20 });
 
@@ -462,78 +483,117 @@ export default function ClubMembersPage() {
 
   /* ── Render ───────────────────────────────────────────────────────────── */
 
+  const hasPaintedRoster = members.length > 0;
+  const isSyncingCachedRoster = loading && hasPaintedRoster;
+  const stat = (value: number) => (loading && !hasPaintedRoster ? '...' : value.toLocaleString());
+
   return (
-    <div className="club-members-page">
-      <div className="members-summary">
-        <div className="summary-stat">
-          <span className="stat-value">{members.length.toLocaleString()}</span>
-          <span className="stat-label">Total Members</span>
-        </div>
-        <div className="summary-stat summary-stat--online">
-          <span className="stat-value">{onlineCount.toLocaleString()}</span>
-          <span className="stat-label">Online Now</span>
-        </div>
-        {agentCount > 0 && (
-          <div className="summary-stat summary-stat--agents">
-            <span className="stat-value">{agentCount.toLocaleString()}</span>
-            <span className="stat-label">Agents</span>
-          </div>
-        )}
-      </div>
-
-      <div className="members-search">
-        <input
-          type="text"
-          placeholder={titleCase('search name or number')}
-          aria-label="Search Club Members"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+    <div className="club-members-page" aria-busy={loading}>
+      <section className="members-hero" aria-labelledby="members-page-title">
+        <img
+          className="members-hero__art"
+          src={ROSTER_VAULT_ART}
+          alt=""
+          aria-hidden="true"
+          width="1536"
+          height="1024"
+          loading="eager"
+          decoding="async"
+          fetchPriority="high"
         />
-      </div>
+        <div className="members-hero__content">
+          <div className="members-hero__copy">
+            <span className="members-eyebrow">Club Personnel Vault</span>
+            <h1 id="members-page-title">Player Command</h1>
+            <p>
+              Find Any Member, Read Their Live Club Status, And Open The Controls Behind Their Seat.
+            </p>
+          </div>
 
-      <div className="members-controls">
-        <div className="members-filters">
-          {(Object.keys(FILTER_LABEL) as MemberFilter[])
-            .filter((f) => f !== 'mine' || mineCount > 0)
-            .map((f) => (
-              <button
-                key={f}
-                type="button"
-                className={filter === f ? 'active' : ''}
-                aria-pressed={filter === f}
-                onClick={() => setFilter(f)}
-              >
-                {FILTER_LABEL[f]}
-                {/* Counts are over the WHOLE roster, so with a search active the
+          <dl className="members-summary" aria-label="Roster Summary">
+            <div className="summary-stat">
+              <dd className="stat-value">{stat(members.length)}</dd>
+              <dt className="stat-label">Total Members</dt>
+            </div>
+            <div className="summary-stat summary-stat--online">
+              <dd className="stat-value">{stat(onlineCount)}</dd>
+              <dt className="stat-label">Online Now</dt>
+            </div>
+            <div className="summary-stat summary-stat--agents">
+              <dd className="stat-value">{stat(agentCount)}</dd>
+              <dt className="stat-label">Agents</dt>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <section className="members-console" aria-labelledby="members-directory-title">
+        <div className="members-console__heading">
+          <div>
+            <span className="members-eyebrow">Roster Directory</span>
+            <h2 id="members-directory-title">Find A Player</h2>
+          </div>
+          <span className="members-result-count" aria-live="polite">
+            {filteredMembers.length.toLocaleString()} Results
+          </span>
+        </div>
+
+        <label className="members-search">
+          <span>Search The Roster</span>
+          <input
+            type="search"
+            placeholder={titleCase('search name or number')}
+            aria-label="Search Club Members"
+            value={searchQuery}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </label>
+
+        <div className="members-controls">
+          <div className="members-filters">
+            {(Object.keys(FILTER_LABEL) as MemberFilter[])
+              .filter((f) => f !== 'mine' || mineCount > 0)
+              .map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  className={filter === f ? 'active' : ''}
+                  aria-pressed={filter === f}
+                  onClick={() => setFilter(f)}
+                >
+                  {FILTER_LABEL[f]}
+                  {/* Counts are over the WHOLE roster, so with a search active the
                   chip said "Agents (412)" and clicking it showed two. Drop the
                   count while searching rather than print a number that is
                   about to be contradicted. */}
-                {!searchQuery && f === 'agents' && agentCount > 0
-                  ? ` (${agentCount.toLocaleString()})`
-                  : ''}
-                {!searchQuery && f === 'mine' && mineCount > 0
-                  ? ` (${mineCount.toLocaleString()})`
-                  : ''}
-                {!searchQuery && f === 'online' && onlineCount > 0
-                  ? ` (${onlineCount.toLocaleString()})`
-                  : ''}
-              </button>
-            ))}
-        </div>
-
-        <div className="members-toolbar">
-          <label className="members-sort">
-            <span className="members-sort__label">Sort By</span>
-            <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)}>
-              {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
-                <option key={k} value={k}>
-                  {SORT_LABEL[k]}
-                </option>
+                  {!searchQuery && f === 'agents' && agentCount > 0
+                    ? ` (${agentCount.toLocaleString()})`
+                    : ''}
+                  {!searchQuery && f === 'mine' && mineCount > 0
+                    ? ` (${mineCount.toLocaleString()})`
+                    : ''}
+                  {!searchQuery && f === 'online' && onlineCount > 0
+                    ? ` (${onlineCount.toLocaleString()})`
+                    : ''}
+                </button>
               ))}
-            </select>
-          </label>
+          </div>
 
-          {/* THE REFRESH THIS PAGE ALREADY ASSUMED IT HAD (Dan 2026-08-25).
+          <div className="members-toolbar">
+            <label className="members-sort">
+              <span className="members-sort__label">Sort By</span>
+              <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)}>
+                {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
+                  <option key={k} value={k}>
+                    {SORT_LABEL[k]}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {/* THE REFRESH THIS PAGE ALREADY ASSUMED IT HAD (Dan 2026-08-25).
               The comment above loadMembers justifies refusing to refresh on
               wallet events and tab focus with "pull-to-refresh is right there
               when it matters" - and there was no pull-to-refresh and no button.
@@ -541,38 +601,43 @@ export default function ClubMembersPage() {
               change, so an owner who had just funded five agents in the Cashier
               switched to Players, saw stale wallets, and had no way to ask for
               current ones short of reloading the page. */}
-          <button
-            type="button"
-            className="members-refresh"
-            onClick={refresh}
-            disabled={loading || isRefreshing}
-          >
-            {isRefreshing ? 'Refreshing...' : 'Refresh'}
-          </button>
+            <button
+              type="button"
+              className="members-refresh"
+              onClick={refresh}
+              disabled={loading || isRefreshing}
+              aria-busy={isRefreshing}
+            >
+              {isRefreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
 
-          {/* Export is a CSV of every member's wallets, chip balance and fee
+            {/* Export is a CSV of every member's wallets, chip balance and fee
               totals. `userRole` was resolved on every load - including an extra
               club_members round trip in the critical path - and then read
               nowhere at all, so this was offered to ordinary players. */}
-          {filteredMembers.length > 0 && canExport && (
-            <button
-              type="button"
-              className="members-export"
-              // The SWR cache is a 300-row slice. Exporting while it is still
-              // on screen handed someone 300 rows of a 34,000-member union
-              // believing it was the whole roster.
-              disabled={loading || isRefreshing}
-              onClick={handleExport}
-            >
-              Export CSV
-            </button>
-          )}
+            {filteredMembers.length > 0 && canExport && (
+              <button
+                type="button"
+                className="members-export"
+                // Cached rows paint immediately, but export stays disabled until
+                // the live all-or-nothing roster request has completed.
+                disabled={loading || isRefreshing}
+                onClick={handleExport}
+              >
+                Export CSV
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="members-refreshing" role="status" aria-live="polite">
-        {isRefreshing ? 'Refreshing...' : ''}
-      </div>
+        <div className="members-refreshing" role="status" aria-live="polite">
+          {isRefreshing
+            ? 'Refreshing The Live Roster...'
+            : isSyncingCachedRoster
+              ? 'Showing Saved Results While The Live Roster Syncs...'
+              : ''}
+        </div>
+      </section>
 
       {/* NO containerRef here (Dan 2026-08-25). .members-list has no overflow and
           no height - it is not a scroll container - so passing it as the
@@ -582,7 +647,7 @@ export default function ClubMembersPage() {
           a 34,000-member union was permanently capped at 50 rows with
           "Showing 50 Of 34,138" glued underneath. Leaving containerRef null
           roots the observer on the viewport, which is what actually scrolls. */}
-      <div className="members-list">
+      <div className="members-list" aria-label="Club Member Directory">
         {loading && members.length === 0 ? (
           <PageSkeleton variant="list" />
         ) : notFound ? (
@@ -658,9 +723,15 @@ function MemberRow({ member, onOpen }: { member: RosterMember; onOpen: (userId: 
          reader - a list of names and nothing else. Fold the essentials in. */
       aria-label={`${member.alias}, ${roleLabel(member.role)}${
         member.is_seated ? ', At A Table' : member.is_online ? ', Online' : ''
+      }${member.player_number ? `, Number ${member.player_number}` : ''}${
+        member.home_club_name ? `, ${member.home_club_name}` : ''
       }${member.upline_name ? `, Under ${member.upline_name}` : ''}, ${chips(
         member.downline_total
-      )} Downlines. Open Member Management`}
+      )} Downlines, ${chips(member.agent_wallet)} Agent Wallet, ${chips(
+        member.player_wallet
+      )} Player Wallet, ${chips(member.total_fees)} Individual Fees, ${chips(
+        member.downline_fees
+      )} Total Fees. Open Member Management`}
     >
       <span className="member-avatar">
         {member.avatar_url ? (
@@ -669,7 +740,7 @@ function MemberRow({ member, onOpen }: { member: RosterMember; onOpen: (userId: 
                raw object URL was observed intermittently failing (HTTP 544)
                while /render/image/ stayed up, and a 44px box does not need a
                1MB original. Non-storage URLs pass through unchanged. */
-            src={sizedStorageUrl(member.avatar_url, 44)}
+            src={sizedStorageUrl(member.avatar_url, 64)}
             alt=""
             loading="lazy"
             /* A dead avatar URL (revoked storage object, offline fetch) left a
@@ -711,6 +782,7 @@ function MemberRow({ member, onOpen }: { member: RosterMember; onOpen: (userId: 
               name on this list. */}
           {member.upline_name && <span className="member-upline">Under {member.upline_name}</span>}
           {member.is_seated && <span className="member-seated">At Table</span>}
+          {!member.is_seated && member.is_online && <span className="member-online">Online</span>}
           {/* last_login was also fetched and dropped. An owner pruning a
               roster, or an agent finding who has gone quiet, had no dormancy
               signal anywhere in the product. */}
@@ -751,7 +823,9 @@ function Metric({
 }) {
   return (
     <span className={`member-metric${accent ? ' member-metric--accent' : ''}`}>
-      <span className="member-metric__value">{value}</span>
+      <span className="member-metric__value" title={value}>
+        {value}
+      </span>
       <span className="member-metric__label">{label}</span>
     </span>
   );

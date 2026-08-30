@@ -222,6 +222,8 @@ export class GameServer {
   private seatFirstFullSince: Map<string, number> = new Map();
   /** Last fn_sweep_unsettled_tournament_rake pass (2026-08-26 settlement integrity). */
   private lastRakeSweepAt = 0;
+  /** One seat-first finish sweep per minute — see the call site for why. */
+  private lastSeatFirstFinishSweepAt = 0;
   /** Last fn_tournament_money_conservation pass (2026-08-27 phase 3). */
   private lastConservationAt = 0;
   /** Last fn_backpay_hu_winner_shortfalls pass (2026-08-27 phase 3d). */
@@ -2801,6 +2803,55 @@ export class GameServer {
           }
         }
 
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  A SPIN THAT IS OVER MUST END (round 18, 2026-08-30)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * Found by sweeping production rather than by reading code. EVERY
+         * RUNNING spin older than five minutes was stuck — nine of nine:
+         *
+         *     live stacks <= 1 on all nine (a winner IS determinable)
+         *     no hand dealt for 17 to 450 minutes
+         *     1,093 chips of prize_pool unpaid
+         *     average 147 minutes stuck, worst 7.7 hours
+         *
+         * A healthy spin never appears in that list; it finishes in minutes.
+         * So the shape is unambiguous and had zero false positives across the
+         * whole live board.
+         *
+         * WHY IT HAPPENS. Players LEAVE the felt — `table_seats.left_at` is
+         * set — while `tournament_players.status` stays `playing`. The engine
+         * therefore counts a player who is gone as still in the game, waits
+         * for an action that is never coming, and never reaches the "one
+         * player left" that would finish it. The chips sit on the table and
+         * the prize sits unpaid.
+         *
+         * WHY THE EXISTING SWEEP DOES NOT CATCH IT. There is one, and it is
+         * startup-only with a TWELVE HOUR threshold plus a no-hands-in-the-
+         * last-hour test. Twelve hours is a reasonable floor for an MTT and
+         * meaningless for a format designed to last minutes.
+         *
+         * WHAT THIS DOES. It never cancels — Dan 2026-08-19, "TOURNAMENTS
+         * RUN. THEY DO NOT CANCEL." It claims the row with the same
+         * CAS-guarded RUNNING -> COMPLETING flip the 12-hour path uses, so a
+         * live engine mid-finish always wins the race, then hands it to
+         * `recoverStuckCompletingTournaments`, which ranks the remaining
+         * players by chips, assigns the places and pays the structure. The
+         * money reaches whoever earned it.
+         *
+         * The thresholds are deliberately well clear of a healthy game: the
+         * reveal alone holds dealing for 16.6s, so "no hand for three
+         * minutes" cannot fire during a start, and `started_at` older than
+         * five minutes puts another wall in front of it.
+         */
+        if (Date.now() - this.lastSeatFirstFinishSweepAt > 60 * 1000) {
+          this.lastSeatFirstFinishSweepAt = Date.now();
+          void this.finishSeatFirstGamesThatAreOver().catch((err) =>
+            reportError(err, 'GameServer.seat_first_finish_sweep_error')
+          );
+        }
+
         // ── TOURNAMENT RAKE SWEEP (2026-08-26) ──
         // The last line of the settlement-integrity fix: any terminal
         // tournament whose fee ledger has no tournament_rake_settlements row
@@ -3618,6 +3669,105 @@ export class GameServer {
       /* ONE SECOND, not five. See SEAT_FIRST_START_INTERVAL: Dan's rule is a
          number, and four fifths of the old floor was this line. */
       await this.sleep(SEAT_FIRST_START_INTERVAL);
+    }
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  FINISH THE SEAT-FIRST GAMES THAT ARE ALREADY OVER (round 18)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * See the call site for the production evidence. The test is deliberately
+   * three conditions that must ALL hold, each one wide of a healthy game:
+   *
+   *   1. RUNNING and started more than STUCK_MIN_AGE_MS ago — a start, with
+   *      its 16.6s reveal hold, is nowhere near this;
+   *   2. no hand dealt for STUCK_NO_HAND_MS — a live table deals constantly,
+   *      and every stuck game in production had been silent for 17+ minutes;
+   *   3. at most ONE seat still holds chips — which is the definition of the
+   *      game being decided.
+   *
+   * Any one of them alone would be a guess. Together they described exactly
+   * the nine broken games on the live board and none of the healthy ones.
+   */
+  private async finishSeatFirstGamesThatAreOver(): Promise<void> {
+    /** Old enough that a start, and its reveal hold, cannot be in progress. */
+    const STUCK_MIN_AGE_MS = 5 * 60 * 1000;
+    /** Silent long enough that the table has genuinely stopped dealing. */
+    const STUCK_NO_HAND_MS = 3 * 60 * 1000;
+    const now = Date.now();
+
+    const { data: running, error: runningErr } = await supabase
+      .from('tournaments')
+      .select('id, name, variant, max_players, started_at')
+      .eq('status', 'RUNNING')
+      .in('variant', ['spin', 'sng'])
+      .lt('started_at', new Date(now - STUCK_MIN_AGE_MS).toISOString());
+    if (runningErr) {
+      reportError(
+        new Error(`[GameServer] seat-first finish sweep board read failed: ${runningErr.message}`),
+        'GameServer.seat_first_finish_board_read_failed'
+      );
+      return;
+    }
+
+    const candidates = (running || []).filter(
+      (t) => t.variant === 'spin' || (t.variant === 'sng' && Number(t.max_players) <= 2)
+    );
+    if (candidates.length === 0) return;
+
+    for (const t of candidates) {
+      const id = String(t.id);
+      try {
+        const { data: tables, error: tablesErr } = await supabase
+          .from('tables')
+          .select('id')
+          .eq('tournament_id', id);
+        if (tablesErr) throw tablesErr;
+        const tableIds = (tables || []).map((r) => String(r.id));
+        if (tableIds.length === 0) continue;
+
+        /* Is anything still being dealt? One row is enough to answer it. */
+        const { data: recentHand, error: handErr } = await supabase
+          .from('hand_history')
+          .select('id')
+          .in('table_id', tableIds)
+          .gte('created_at', new Date(now - STUCK_NO_HAND_MS).toISOString())
+          .limit(1);
+        if (handErr) throw handErr;
+        if (recentHand && recentHand.length > 0) continue; // still playing
+
+        /* How many seats still hold chips? Two or more and the game is not
+           decided, however quiet it is — leave it alone. */
+        const { data: seats, error: seatsErr } = await supabase
+          .from('table_seats')
+          .select('user_id, stack')
+          .in('table_id', tableIds)
+          .is('left_at', null)
+          .gt('stack', 0);
+        if (seatsErr) throw seatsErr;
+        const liveStacks = new Set((seats || []).map((s) => String(s.user_id))).size;
+        if (liveStacks > 1) continue;
+
+        /* CAS: only the holder of RUNNING may move it on, so a live engine
+           finishing this game right now always wins and this becomes a
+           no-op. Same claim the 12-hour path uses. */
+        const { data: claim, error: claimErr } = await supabase
+          .from('tournaments')
+          .update({ status: 'COMPLETING' })
+          .eq('id', id)
+          .eq('status', 'RUNNING')
+          .select('id');
+        if (claimErr) throw claimErr;
+        if (!claim || claim.length === 0) continue; // somebody else has it
+
+        console.warn(
+          `[GameServer] Seat-first game ${id.slice(0, 8)} "${t.name}" is over but never finished (${liveStacks} live stack(s), no hand for >${Math.round(STUCK_NO_HAND_MS / 60000)}m) — settling and paying out`
+        );
+        await recoverStuckCompletingTournaments('seat-first-finish-sweep', id);
+      } catch (err) {
+        reportError(err, 'GameServer.seat_first_finish_sweep_failed', { tournamentId: id });
+      }
     }
   }
 

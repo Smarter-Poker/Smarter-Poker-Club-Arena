@@ -248,3 +248,98 @@ pre-push-js-safety.sh` CHECK 5 uses Babel when `@babel/parser` resolves and
    aggregate telemetry (day, counts, percentages, page age), no user data, so
    this is low risk and was left alone rather than breaking a status page that
    may read them anonymously.
+
+---
+
+# Part three: closing out the open items
+
+## The boot-strand bug is now conditional, instrumented, and quiet
+
+Two controlled restarts settled what code-reading could not:
+
+| restart   | database state                        | live-tournament closes            |
+| --------- | ------------------------------------- | --------------------------------- |
+| 20:00 UTC | still recovering, PostgREST saturated | **50** (28 at 20:02, 22 at 20:03) |
+| 20:20 UTC | healthy                               | **0**                             |
+
+So a boot is not destructive by itself — it is destructive when a boot-time read
+fails. That is why every candidate path reads as correctly guarded:
+
+- `GameServer.ts:1698/1711` — cash only (`.is('tournament_id', null)`)
+- `GameServer.ts:1984` — orphan sweep, COMPLETED/CANCELLED only, and its
+  swallowed errors fail CLOSED (an empty set closes nothing)
+- `GameServer.ts:1908-1966` — stale sweep: >12h only, assumes active on error,
+  and settles through COMPLETING rather than cancelling (Dan 2026-08-19,
+  "TOURNAMENTS RUN. THEY DO NOT CANCEL.")
+- `TournamentManager.ts:204` — table break, closes only after ALL players moved
+- `fn_table_lifecycle_pass` — excludes tournament tables throughout
+
+Rather than guess, `20260830202000` makes the alarm record **who**:
+`application_name`, `db_role`, `session_role`, `client_addr` and `txid`.
+`ca_seat_stack_exits` already does this for seat exits; the table-close alarm now
+matches it. The next occurrence names its own culprit:
+
+```sql
+SELECT detail::jsonb->>'application_name', detail::jsonb->>'db_role',
+       detail::jsonb->>'client_addr', count(DISTINCT detail::jsonb->>'txid')
+  FROM engine_recovery_events
+ WHERE event = 'table_closed_under_live_tournament'
+ GROUP BY 1,2,3;
+```
+
+`txid` is the useful one: it separates "one statement hit 50 rows" from "50
+statements in a loop", i.e. bulk SQL versus an application for-loop.
+
+**Residual ghosts are benign.** Of the 5 that remain, only one maps to a roster
+row at all — and that player is the tournament WINNER, whose seat was simply
+never released. No live player is stranded.
+
+## The BBJ "unlinkable rake" alarm is mostly a false alarm
+
+`FeeReconciler` warns that `rake_records` rows with no `hand_id` mean
+`logHandHistory` is failing. Measured over 10 hours, the overwhelming majority
+of those rows are **legitimately hand-less**: `fn_register_horse_for_tournament`,
+`process_tournament_rebuy`, `fn_spin_settle_game`, `fn_award_satellite_seat` —
+tournament entry and settlement fees, which have no hand by definition. The
+alarm counts them and misreports the cause.
+
+The genuine subset is small and precisely one source:
+
+```
+atomic_distribute_rake | cash | 150 rows | 70.00 BBJ chips | hand_id NULL
+```
+
+Mechanism: `ServerTableEngineSettlement` passes `p_hand_id: v_handHistoryId`,
+which is null when the inline `hand_history` insert failed. That is already
+designed for — the row goes to `enqueueHandHistory()` and `relinkRakeRecord()`
+repairs the link when the queue drains, and `GameServer.ts:646` drains the queue
+on shutdown. But `pendingHands` is an **in-memory array**, so the repair only
+survives if the drain can reach the database. During a total outage neither the
+inline insert nor the shutdown drain can, and the link is lost for good.
+
+So the design is sound and the residue is bounded by outages, not by a routine
+defect. **Not changed.** Making the queue durable means writing it somewhere
+during the exact incident where the database is unreachable — a real design
+decision, and 70 chips does not justify making it unilaterally. Recorded here so
+the next person starts from the measurement rather than the misleading alarm
+text. Worth fixing the alarm's wording so it stops blaming `logHandHistory` for
+tournament entry fees.
+
+## Fixed: the pre-push gate blocked valid JSX
+
+`scripts/hooks/pre-push-js-safety.sh` CHECK 5 falls back to `node -c` when
+`@babel/parser` does not resolve — which is every `git worktree` and every fresh
+clone, because a worktree shares `.git` but not `node_modules`. `node -c` is
+JSX-blind: it does not merely miss broken JSX, it REJECTS VALID JSX. It blocked a
+push here on `vendor/commander-shared/src/components/seo/SEOHead.js`, a valid
+file unrelated to the change.
+
+That matters more than it looks: the documented escape is `--no-verify`, which
+skips every OTHER check in the file, including the `.single()`, auth-pattern and
+conflict-marker guards. A gate that blocks correct code trains people to disable
+all the gates.
+
+World Hub PR #1036: in the no-Babel branch only, JSX-shaped files are SKIPPED and
+reported as unverified instead of failed, with a message saying coverage is
+reduced and how to restore it. Verified both ways, and the PR itself was pushed
+from a worktree with no `node_modules` — the exact condition that used to fail.

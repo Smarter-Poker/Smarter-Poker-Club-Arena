@@ -201,3 +201,88 @@ describe('limping behind is allowed, but only with a hand that can call a raise'
     expect(calls).toBe(0);
   });
 });
+
+/**
+ * EVERY GAME, NOT JUST HOLD'EM (Dan 2026-08-30: "ALL GAMES HAVE THIS SAME
+ * BUG IM SURE").
+ *
+ * He was right. Measured in production before the fix, open-limps as a share
+ * of every unraised first action:
+ *
+ *     nlh        tourney   40.3%      plo4  cash     35.5%
+ *     pineapple  cash      31.8%      nlh   cash     30.9%
+ *     plo4       tourney   21.5%      plo5  cash     15.9%
+ *
+ * Cash has no ante, so the price-in guard never fired there — the cash
+ * limping came from the other branches, which were not mode-gated. One fix
+ * covered both, and this pins that it stays covered in every game, at every
+ * depth, in cash and tournament alike. A variant added later that reaches
+ * the unopened branch is caught here rather than in a screenshot.
+ */
+describe('no open-limp holds in every variant, mode and depth', () => {
+  const HOLES: Record<string, string[]> = {
+    nlh: ['9c4d', 'Jc7d', 'Ks6c', 'Qd8s', '7h5c', 'Td9c', 'As5s', 'AcTd'],
+    short_deck: ['9c8d', 'Jc7d', 'Ks6c', 'Qd8s', 'Th9c', 'AcTd'],
+    pineapple: ['9c4d7h', 'JcTd8h', 'AsKd9c', 'Qh7s5d', '8h6d4s', 'Ac2d3h'],
+    plo4: ['9c4d7h2s', 'JcTd8h3s', 'AsKd9c4h', 'Qh7s5d2c', '8h6d4s3c', 'Ac2d3h5s'],
+    plo5: ['9c4d7h2s5c', 'JcTd8h3s6d', 'AsKd9c4h2h', 'Qh7s5d2c9d', '8h6d4s3c7c'],
+    plo6: ['9c4d7h2s5c8d', 'JcTd8h3s6d2h', 'AsKd9c4h2h7s', 'Qh7s5d2c9d3h'],
+    plo8: ['9c4d7h2s', 'JcTd8h3s', 'AsKd9c4h', 'Qh7s5d2c', 'Ac2d3h5s'],
+  };
+
+  for (const [variant, holes] of Object.entries(HOLES)) {
+    for (const mode of ['cash', 'tourney'] as const) {
+      for (const stackBB of [10, 40, 150]) {
+        it(`${variant} / ${mode} / ${stackBB}bb never opens a pot by calling`, () => {
+          let calls = 0;
+          let acted = 0;
+          for (const hole of holes) {
+            for (let heroSeat = 3; heroSeat <= 8; heroSeat++) {
+              for (let trial = 0; trial < 6; trial++) {
+                const players = Array.from({ length: 8 }, (_, i) => ({
+                  seat: i + 1,
+                  user_id: i + 1 === heroSeat ? 'hero' : `h${i + 1}`,
+                  stack: stackBB * BB,
+                  bet: 0,
+                  is_folded: false,
+                  is_sitting_out: false,
+                  cards: i + 1 === heroSeat ? cards(hole) : [],
+                }));
+                const st: Record<string, unknown> = {
+                  players,
+                  communityCards: [],
+                  // a big blind ante pot in tournaments — the exact condition
+                  // that made the price-in guard rescue every fold
+                  pot: mode === 'tourney' ? BB * 1.5 + BB * 8 : BB * 1.5,
+                  currentBet: BB,
+                  minRaise: BB,
+                  stage: 'preflop',
+                  gameVariant: variant,
+                  bigBlind: BB,
+                  smallBlind: BB / 2,
+                  dealerSeat: 8,
+                  actionHistory: [...BLINDS],
+                };
+                if (mode === 'tourney') {
+                  st.format = 'mtt';
+                  st.tournament = { id: 't1' };
+                }
+                const d = HorseLogic.decide(
+                  players[heroSeat - 1] as never,
+                  st as never,
+                  'balanced',
+                  {},
+                  {} as never
+                );
+                acted++;
+                if (d.action === 'call') calls++;
+              }
+            }
+          }
+          expect(acted).toBeGreaterThan(100);
+          expect(calls).toBe(0);
+        });
+      }
+    }
+  }
+});

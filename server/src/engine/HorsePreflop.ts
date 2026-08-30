@@ -501,9 +501,16 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       }
       if (strength >= t(jamThresh)) return { a: 'jam' };
       if (toCall === 0) return { a: 'check' };
-      // V11: never open-limp/call off a push/fold stack — jam or fold. The
-      // price-in guard above already caught every call that math forces.
-      if (!isTourney && toCall <= bb && strength >= 0.3) return { a: 'call' };
+      // V11: never open-limp/call off a push/fold stack — jam or fold.
+      //
+      // The line that used to sit here did the opposite of what that sentence
+      // says: `!isTourney && toCall <= bb && strength >= 0.3` OPEN-LIMPED a
+      // cash push/fold stack with any hand of strength 0.3. It is unreachable
+      // in practice today - measured across 7 hands x 6 seats x 2 depths, a
+      // <=12bb cash stack jams or folds every time, because the jam bar
+      // catches everything at 0.3 or better first - but a rule that reads
+      // "never" must not carry its own exception, and the surrounding
+      // thresholds move.
       return { a: 'fold' };
     }
     // Facing action short-stacked: jam on real strength; the threshold eases

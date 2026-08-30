@@ -58,3 +58,5 @@
   reserved Auth users or signup-error fixtures behind.
 - Wired the certification into the post-publish production workflow and pinned
   that wiring with a source contract test.
+- Repaired two malformed comments in the newly landed multi-table shell that
+  were being parsed as CSS and emitted six production minifier warnings.

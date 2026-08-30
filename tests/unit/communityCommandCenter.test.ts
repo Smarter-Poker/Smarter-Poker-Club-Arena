@@ -88,7 +88,7 @@ describe('Community Command Center interaction contracts', () => {
       /@media \(max-width: 500px\)[\s\S]*?\.friends-tab-rail button \{[\s\S]*?flex: 1 1 0;[\s\S]*?min-width: 0;/
     );
     expect(friendsCss).toMatch(
-      /@media \(max-width: 500px\)[\s\S]*?\.friends-tab-rail \{[\s\S]*?overflow-x: hidden;/
+      /@media \(max-width: 500px\)[\s\S]*?\.friends-tab-rail \{[\s\S]*?overflow-x: clip;/
     );
   });
 

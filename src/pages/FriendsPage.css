@@ -625,7 +625,7 @@
 
 @media (max-width: 500px) {
   .friends-tab-rail {
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   .friends-tab-rail button {

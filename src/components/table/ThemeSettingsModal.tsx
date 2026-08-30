@@ -67,7 +67,7 @@ export interface ThemeSettingsModalProps {
   isVip: boolean;
 }
 
-type ThemeSelection = TableStudioLoadout;
+type ThemeSelection = Omit<TableStudioLoadout, 'name' | 'saved_at'>;
 
 type ThemeTab = 'themes' | 'table' | 'button' | 'background' | 'cards';
 type BackgroundGroup = 'places-rooms' | 'skins';
@@ -516,6 +516,51 @@ function renderAssetPreview(tab: ThemeTab, asset: ThemeAsset) {
   );
 }
 
+/** A saved look should be recognizable before it is equipped. The locker uses
+ * the same production artwork and button tokens as the full gameplay preview,
+ * compressed into a casino plaque-sized cartridge rather than a generic color
+ * chip or numbered database slot. */
+function renderLoadoutPreview(loadout: ThemeSelection) {
+  const backgroundId = normalizeBackgroundId(loadout.background_id);
+  const tableId = normalizeFeltId(loadout.table_id);
+  const background =
+    TABLE_BACKGROUND_THUMBNAILS[backgroundId] ||
+    TABLE_BACKGROUNDS[backgroundId] ||
+    TABLE_BACKGROUND_THUMBNAILS.midnight ||
+    TABLE_BACKGROUNDS.midnight;
+  const table =
+    TABLE_SKIN_THUMBNAILS[tableId] ||
+    TABLE_SKINS[tableId] ||
+    TABLE_SKIN_THUMBNAILS.classic_green ||
+    TABLE_SKINS.classic_green;
+  const buttonFinish =
+    BUTTON_ASSETS.find((asset) => asset.id === loadout.button_id)?.thumbnail ||
+    BUTTON_ASSETS[0].thumbnail;
+
+  return (
+    <div
+      className="theme-loadout__scene"
+      data-button-theme={loadout.button_id}
+      style={{ '--loadout-dealer-bg': buttonFinish } as React.CSSProperties}
+    >
+      {background && (
+        <>
+          <img className="theme-loadout__ambient" src={background} alt="" decoding="async" />
+          <img className="theme-loadout__background" src={background} alt="" decoding="async" />
+        </>
+      )}
+      {table && <img className="theme-loadout__table" src={table} alt="" decoding="async" />}
+      <span className="theme-loadout__dealer" aria-hidden="true">
+        D
+      </span>
+      <span className="theme-loadout__cards" aria-hidden="true">
+        <CardBack style={normalizeCardBack(loadout.cards_id)} size="sm" />
+        <CardBack style={normalizeCardBack(loadout.cards_id)} size="sm" />
+      </span>
+    </div>
+  );
+}
+
 export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSettingsModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const vipPromptRef = useRef<HTMLDivElement>(null);
@@ -541,6 +586,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   );
   const [purchaseBusy, setPurchaseBusy] = useState(false);
   const [diamondStoreOpen, setDiamondStoreOpen] = useState(false);
+  const [pendingLoadoutClear, setPendingLoadoutClear] = useState<number | null>(null);
   const purchaseBusyRef = useRef(false);
   const [themeLoadState, setThemeLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
     'idle'
@@ -666,6 +712,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
     if (isOpen) return;
     setDiamondStoreOpen(false);
     setPendingAssetPurchase(null);
+    setPendingLoadoutClear(null);
   }, [isOpen]);
 
   // The preview uses the same production library as AvatarGallery. No preview-
@@ -1226,10 +1273,33 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   const saveLoadout = useCallback(
     (slot: number) => {
       if (themeLoadState !== 'ready') return;
-      collections.saveLoadout(slot, selectionRef.current);
-      toast.success(`Loadout ${slot + 1} Saved`);
+      const existing = collections.loadouts[slot];
+      collections.saveLoadout(slot, {
+        ...selectionRef.current,
+        name: existing?.name || `Look ${slot + 1}`,
+        saved_at: new Date().toISOString(),
+      });
+      toast.success(
+        existing ? `${existing.name || `Look ${slot + 1}`} Updated` : `Look ${slot + 1} Saved`
+      );
     },
     [collections, themeLoadState, toast]
+  );
+
+  const renameLoadout = useCallback(
+    (slot: number, name: string) => {
+      collections.renameLoadout(slot, name);
+    },
+    [collections]
+  );
+
+  const clearLoadout = useCallback(
+    (slot: number) => {
+      collections.clearLoadout(slot);
+      setPendingLoadoutClear(null);
+      toast.success(`Look ${slot + 1} Cleared`);
+    },
+    [collections, toast]
   );
 
   const applyLoadout = useCallback(
@@ -1317,6 +1387,20 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
       ?.name || 'Midnight';
   const selectedButtonName =
     BUTTON_ASSETS.find((asset) => asset.id === selection.button_id)?.name || 'White D';
+  const collectionNeedsAttention =
+    collections.syncState === 'error' || collections.realtimeState === 'error';
+  const collectionSyncing =
+    collections.syncState === 'loading' || collections.realtimeState === 'connecting';
+  const collectionStatus = collectionNeedsAttention
+    ? 'error'
+    : collectionSyncing
+      ? 'loading'
+      : collections.syncState;
+
+  const activateTab = (tab: ThemeTab) => {
+    setActiveTab(tab);
+    setAssetSearch('');
+  };
 
   return (
     <div className="theme-modal-overlay" onClick={onClose}>
@@ -1363,15 +1447,15 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             </select>
           </div>
           <span
-            className={`theme-modal__autosave ${collections.syncState === 'error' ? 'theme-modal__autosave--error' : ''}`}
+            className={`theme-modal__autosave ${collectionNeedsAttention ? 'theme-modal__autosave--error' : ''}`}
             aria-live="polite"
           >
             <span className="theme-modal__autosave-dot" />
             {saving || modeSaving
               ? 'Saving selection'
-              : collections.syncState === 'loading'
+              : collectionSyncing
                 ? 'Syncing your collection'
-                : collections.syncState === 'error'
+                : collectionNeedsAttention
                   ? 'Saved here · cloud sync needs retry'
                   : 'All changes saved'}
           </span>
@@ -1465,7 +1549,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                   key={tab.key}
                   id={`theme-tab-${tab.key}`}
                   className={`theme-modal__tab ${activeTab === tab.key ? 'theme-modal__tab--active' : ''}`}
-                  onClick={() => setActiveTab(tab.key)}
+                  onClick={() => activateTab(tab.key)}
                   onKeyDown={(event) => {
                     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
                     event.preventDefault();
@@ -1477,7 +1561,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                           ? TABS.length - 1
                           : (current + (event.key === 'ArrowRight' ? 1 : -1) + TABS.length) %
                             TABS.length;
-                    setActiveTab(TABS[next].key);
+                    activateTab(TABS[next].key);
                     document.getElementById(`theme-tab-${TABS[next].key}`)?.focus();
                   }}
                   role="tab"
@@ -1707,41 +1791,132 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                 })}
               </div>
 
-              <div className="theme-modal__loadouts" aria-label="Saved table loadouts">
-                <span className="theme-modal__loadout-note">
-                  {userId
-                    ? collections.syncState === 'error'
-                      ? 'Available Here · Cloud Sync Will Retry'
-                      : 'Favorites And Loadouts Sync Across Your Devices'
-                    : 'Sign In To Sync Favorites And Loadouts'}
-                </span>
-                <button
-                  type="button"
-                  className="theme-modal__randomize"
-                  disabled={themeLoadState !== 'ready'}
-                  onClick={randomizeAccessibleLook}
-                >
-                  Shuffle Look
-                </button>
-                {[0, 1, 2].map((slot) => (
-                  <div key={slot} className="theme-modal__loadout">
-                    <button
-                      type="button"
-                      onClick={() => saveLoadout(slot)}
-                      disabled={themeLoadState !== 'ready'}
-                    >
-                      Save {slot + 1}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => applyLoadout(slot)}
-                      disabled={themeLoadState !== 'ready' || !savedLoadouts[slot]}
-                    >
-                      Use
-                    </button>
+              <section className="theme-modal__loadouts" aria-labelledby="theme-loadout-title">
+                <div className="theme-modal__loadout-header">
+                  <div>
+                    <span>TABLE PIT RACK</span>
+                    <strong id="theme-loadout-title">Loadout Locker</strong>
+                    <small>Keep Three Complete Looks Ready To Deal.</small>
                   </div>
-                ))}
-              </div>
+                  <button
+                    type="button"
+                    className="theme-modal__randomize"
+                    disabled={themeLoadState !== 'ready'}
+                    onClick={randomizeAccessibleLook}
+                  >
+                    Shuffle Look
+                  </button>
+                </div>
+
+                <div className="theme-modal__loadout-rack" role="list">
+                  {[0, 1, 2].map((slot) => {
+                    const stored = collections.loadouts[slot];
+                    const look = savedLoadouts[slot];
+                    const tableName = look
+                      ? TABLE_ASSETS.find((asset) => asset.id === look.table_id)?.name || 'Table'
+                      : '';
+                    const backgroundName = look
+                      ? BACKGROUND_ASSETS.find((asset) => asset.id === look.background_id)?.name ||
+                        'Room'
+                      : '';
+                    return (
+                      <article
+                        key={slot}
+                        role="listitem"
+                        className={`theme-modal__loadout${look ? '' : ' theme-modal__loadout--empty'}`}
+                      >
+                        <div className="theme-loadout__slotline">
+                          <span>LOOK {String(slot + 1).padStart(2, '0')}</span>
+                          <b>{look ? 'READY' : 'OPEN SLOT'}</b>
+                        </div>
+                        {look ? (
+                          <>
+                            {renderLoadoutPreview(look)}
+                            <label className="theme-loadout__name">
+                              <span className="sr-only">Name For Look {slot + 1}</span>
+                              <input
+                                key={`${slot}:${stored?.name || ''}`}
+                                defaultValue={stored?.name || `Look ${slot + 1}`}
+                                maxLength={32}
+                                onBlur={(event) => renameLoadout(slot, event.currentTarget.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter') event.currentTarget.blur();
+                                }}
+                              />
+                            </label>
+                            <span className="theme-loadout__summary">
+                              {tableName} · {backgroundName}
+                            </span>
+                            {pendingLoadoutClear === slot ? (
+                              <div className="theme-loadout__confirm" role="alert">
+                                <span>Clear This Look?</span>
+                                <button type="button" onClick={() => setPendingLoadoutClear(null)}>
+                                  Keep
+                                </button>
+                                <button type="button" onClick={() => clearLoadout(slot)}>
+                                  Clear
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="theme-loadout__actions">
+                                <button
+                                  type="button"
+                                  className="theme-loadout__equip"
+                                  onClick={() => applyLoadout(slot)}
+                                  disabled={themeLoadState !== 'ready'}
+                                >
+                                  Equip
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => saveLoadout(slot)}
+                                  disabled={themeLoadState !== 'ready'}
+                                >
+                                  Update
+                                </button>
+                                <button type="button" onClick={() => setPendingLoadoutClear(slot)}>
+                                  Clear
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="theme-loadout__empty-action"
+                            onClick={() => saveLoadout(slot)}
+                            disabled={themeLoadState !== 'ready'}
+                          >
+                            <span aria-hidden="true">+</span>
+                            <strong>Save Current Look</strong>
+                            <small>Table · Room · Buttons · Cards</small>
+                          </button>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+
+                <div
+                  className={`theme-modal__loadout-sync theme-modal__loadout-sync--${collectionStatus}`}
+                  aria-live="polite"
+                >
+                  <span>
+                    {userId
+                      ? collectionNeedsAttention
+                        ? 'Cloud Sync Needs Attention. Your Looks Are Safe On This Device.'
+                        : collectionSyncing
+                          ? 'Syncing Favorites And Looks...'
+                          : 'Favorites And Looks Sync Across Your Devices.'
+                      : 'Sign In To Sync Favorites And Looks.'}
+                  </span>
+                  {userId && collectionNeedsAttention && (
+                    <button type="button" onClick={collections.retrySync}>
+                      Retry Sync
+                    </button>
+                  )}
+                </div>
+              </section>
             </div>
 
             {/* Footer */}

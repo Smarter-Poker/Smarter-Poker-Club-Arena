@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -22,6 +22,19 @@ const mocks = vi.hoisted(() => ({
   themeListeners: new Set<(event: { payload: unknown }) => void>(),
   entitlementInsert: null as null | ((payload: { new: Record<string, unknown> }) => void),
   removeChannel: vi.fn(),
+  collections: {
+    favorites: [] as string[],
+    loadouts: [null, null, null] as Array<Record<string, string> | null>,
+    recent: [] as string[],
+    syncState: 'synced' as 'local' | 'loading' | 'synced' | 'error',
+    realtimeState: 'live' as 'local' | 'connecting' | 'live' | 'error',
+    toggleFavorite: vi.fn(),
+    saveLoadout: vi.fn(),
+    renameLoadout: vi.fn(),
+    clearLoadout: vi.fn(),
+    retrySync: vi.fn(),
+    rememberRecent: vi.fn(),
+  },
   toast: {
     success: vi.fn(),
     error: vi.fn(),
@@ -63,15 +76,7 @@ vi.mock('../../src/services/AvatarService', () => ({
 }));
 
 vi.mock('../../src/hooks/useTableStudioCollections', () => ({
-  useTableStudioCollections: () => ({
-    favorites: [],
-    loadouts: [null, null, null],
-    recent: [],
-    syncState: 'synced',
-    toggleFavorite: vi.fn(),
-    saveLoadout: vi.fn(),
-    rememberRecent: vi.fn(),
-  }),
+  useTableStudioCollections: () => mocks.collections,
 }));
 
 vi.mock('../../src/components/table/TableStudioGameplayPreview', () => ({
@@ -184,6 +189,21 @@ describe('ThemeSettingsModal hardening', () => {
     mocks.navigate.mockReset();
     mocks.entitlementInsert = null;
     mocks.removeChannel.mockReset();
+    mocks.collections.favorites = [];
+    mocks.collections.loadouts = [null, null, null];
+    mocks.collections.recent = [];
+    mocks.collections.syncState = 'synced';
+    mocks.collections.realtimeState = 'live';
+    for (const method of [
+      mocks.collections.toggleFavorite,
+      mocks.collections.saveLoadout,
+      mocks.collections.renameLoadout,
+      mocks.collections.clearLoadout,
+      mocks.collections.retrySync,
+      mocks.collections.rememberRecent,
+    ]) {
+      method.mockReset();
+    }
     for (const method of Object.values(mocks.toast)) method.mockReset();
     useSettingsStore.setState({ theme: 'dark' });
     useWalletStore.setState({
@@ -211,6 +231,62 @@ describe('ThemeSettingsModal hardening', () => {
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
     expect(screen.queryByText('Loading Your Saved Design')).not.toBeInTheDocument();
+  });
+
+  it('renders a named visual loadout and wires equip, rename, and guarded clear', async () => {
+    mocks.collections.loadouts = [
+      {
+        theme_id: 'default-dark',
+        table_id: 'classic_green',
+        button_id: 'classic-white',
+        background_id: 'midnight',
+        cards_id: 'classic_red',
+        name: 'Main Event',
+        saved_at: '2026-08-29T22:00:00.000Z',
+      },
+      null,
+      null,
+    ];
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+
+    const locker = screen.getByRole('region', { name: 'Loadout Locker' });
+    const firstLook = within(locker).getAllByRole('listitem')[0];
+    const name = within(firstLook).getByRole('textbox', { name: 'Name For Look 1' });
+    expect(name).toHaveValue('Main Event');
+
+    fireEvent.click(within(firstLook).getByRole('button', { name: 'Equip' }));
+    await waitFor(() =>
+      expect(mocks.applyAppearance).toHaveBeenCalledWith(
+        expect.objectContaining({ table_id: 'classic_green', background_id: 'midnight' }),
+        expect.objectContaining({ userId: 'user-1', gameType: 'ALL' })
+      )
+    );
+
+    fireEvent.change(name, { target: { value: 'Sunday Final' } });
+    fireEvent.blur(name);
+    expect(mocks.collections.renameLoadout).toHaveBeenCalledWith(0, 'Sunday Final');
+
+    fireEvent.click(within(firstLook).getByRole('button', { name: 'Clear' }));
+    expect(within(firstLook).getByText('Clear This Look?')).toBeVisible();
+    fireEvent.click(within(firstLook).getByRole('button', { name: 'Clear' }));
+    expect(mocks.collections.clearLoadout).toHaveBeenCalledWith(0);
+  });
+
+  it('surfaces a failed collection channel and reconnects it from the locker', async () => {
+    mocks.collections.realtimeState = 'error';
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+
+    expect(screen.getByText('Saved here · cloud sync needs retry')).toBeVisible();
+    const retry = screen.getByRole('button', { name: 'Retry Sync' });
+    fireEvent.click(retry);
+
+    expect(mocks.collections.retrySync).toHaveBeenCalledTimes(1);
   });
 
   it('does not present a purchased card back as VIP-locked while ownership loads', async () => {

@@ -146,6 +146,7 @@ test.describe('Hamburger Menu — Navigation Links', () => {
     { label: 'Terms Of Service', path: '/legal/tos' },
     { label: 'Privacy Policy', path: '/legal/privacy' },
     { label: 'Fair Gaming', path: '/legal/fair-gaming' },
+    { label: 'Promotion Rules', path: '/legal/promotions' },
   ];
 
   for (const link of allNavLinks) {

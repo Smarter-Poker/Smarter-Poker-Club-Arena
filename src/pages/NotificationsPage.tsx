@@ -503,7 +503,7 @@ export default function NotificationsPage() {
       <AccountSurfaceHeader
         eyebrow="Signal Inbox // Live Player Network"
         title="Notifications"
-        description="Seat calls, tournament movement, messages, rewards, and club operations—resolved by the same canonical destination service used across Smarter.Poker."
+        description="Seat calls, tournament movement, messages, rewards, and club operations, resolved by the same canonical destination service used across Smarter.Poker."
         status={loading ? 'Synchronizing' : 'Live Feed'}
       >
         <span className="ca-notif__heroMetric">

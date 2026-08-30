@@ -250,6 +250,18 @@ export default function VIPPage() {
   if (loading) {
     return (
       <div className="vip-page">
+        <RewardsSurfaceHeader
+          eyebrow="Rewards Circuit / VIP"
+          title="VIP Command Deck"
+          description="Track live tier progress, review earned privileges, and redeem VIP rewards through the existing protected reward services."
+          art="vip"
+          status="VIP TELEMETRY // SYNCING"
+          metrics={[
+            { label: 'Current Points', value: 'Syncing', tone: 'attention' },
+            { label: 'Monthly', value: 'Syncing', tone: 'live' },
+            { label: 'Active Streak', value: 'Syncing' },
+          ]}
+        />
         <div className="loading-state">
           <PageSkeleton variant="stats" />
         </div>

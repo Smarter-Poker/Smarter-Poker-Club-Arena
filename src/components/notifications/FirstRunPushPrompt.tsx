@@ -180,11 +180,23 @@ export default function FirstRunPushPrompt() {
 
     void (async () => {
       const perm = notificationPermission();
+      // A denied browser permission cannot be repaired from inside the app.
+      // Raising a modal here only blocks the lobby with instructions the
+      // player cannot act on in context, and it used to interrupt every
+      // authenticated production E2E journey after twenty seconds. The
+      // Notifications page keeps the persistent, non-blocking recovery path
+      // through PushEnableBanner, so record this one-time ask as settled and
+      // let the player keep playing.
+      if (perm === 'denied') {
+        markDone();
+        answered.current = true;
+        return;
+      }
       if (perm === 'granted' && (await hasLocalSubscription())) {
         markDone(); // nothing to ask for
         return;
       }
-      if (mounted.current) setPending(perm === 'denied' ? 'blocked' : 'ask');
+      if (mounted.current) setPending('ask');
     })();
   }, [userId, markDone]);
 

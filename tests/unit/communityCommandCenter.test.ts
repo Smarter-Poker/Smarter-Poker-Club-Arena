@@ -17,6 +17,8 @@ describe('Community Command Center information architecture', () => {
     expect(SEARCH).toContain("next.set('q', nextQuery.trim())");
     expect(SEARCH).toContain('role="tablist"');
     expect(SEARCH).toContain('role="tabpanel"');
+    expect(SEARCH).toContain("next.delete('tab')");
+    expect(SEARCH).toContain('setSearchParams(next, { replace: true })');
   });
 
   it('queries independent community indexes concurrently and exposes failures', () => {
@@ -24,6 +26,14 @@ describe('Community Command Center information architecture', () => {
     expect(SEARCH).toContain('setSearchError(');
     expect(SEARCH).toContain('role="alert"');
     expect(SEARCH).not.toContain('setRecentSearches((prev)');
+  });
+
+  it('resolves Club Arena handles and falls back to a recent snapshot on total failure', () => {
+    expect(SEARCH).toContain('PLAYER_NAME_COLUMNS');
+    expect(SEARCH).toContain("playerDisplayName(player, 'arena')");
+    expect(SEARCH).toContain('readSearchCache(normalized, category)');
+    expect(SEARCH).toContain('writeSearchCache(normalized, category, liveResults)');
+    expect(SEARCH).toContain("searchFreshness === 'cached'");
   });
 
   it('gives every friends state a canonical shareable query while preserving aliases', () => {
@@ -71,6 +81,23 @@ describe('Community Command Center interaction contracts', () => {
     expect(FRIENDS).toContain("exportToCSV(filteredFriends, 'friends_list.csv'");
   });
 
+  it('pages the complete relationship set and resolves profiles without Unknown identities', () => {
+    expect(FRIENDS).toContain('readCompleteSocialSet<FriendshipEdge>');
+    expect(FRIENDS).toContain('chunkSocialProfileIds(allProfileIds)');
+    expect(FRIENDS).toContain('PLAYER_NAME_COLUMNS');
+    expect(FRIENDS).toContain('resolveSocialProfile(');
+    expect(FRIENDS).not.toContain(
+      "username: profileMap[friendship.friendId]?.username || 'Unknown'"
+    );
+    expect(FRIENDS).toContain('profile_available: resolved.available');
+  });
+
+  it('combines realtime and fresh persisted presence without trusting stale online flags', () => {
+    expect(FRIENDS).toContain('isSocialProfileOnline(');
+    expect(FRIENDS).toContain('formatSocialLastSeen(friend.last_seen)');
+    expect(FRIENDS).toContain('is_online, last_seen');
+  });
+
   it('keeps challenge and activity data live while making failure states recoverable', () => {
     expect(CHALLENGE_PANEL).toContain("supabase.rpc('fn_respond_friend_challenge'");
     expect(CHALLENGE_PANEL).toContain('if (challengeError) throw challengeError');
@@ -91,11 +118,12 @@ describe('Community Command Center interaction contracts', () => {
 describe('#SmarterCasinoRealism community surfaces', () => {
   it('shares one cinematic network anchor and avoids glassmorphism', () => {
     const hero = read('src/components/community/CommunitySurfaceHeader.module.css');
+    const heroComponent = read('src/components/community/CommunitySurfaceHeader.tsx');
     const searchCss = read('src/pages/SearchPage.css');
     const friendsCss = read('src/pages/FriendsPage.css');
     const modalCss = read('src/components/social/FriendChallengeModal.css');
 
-    expect(hero).toContain("url('/images/community/community-network-v1.webp')");
+    expect(heroComponent).toContain("mediaUrl('images/community/community-network-v1.webp')");
     expect(hero).toContain('#030609');
     expect(hero).toContain('#3aa8ff');
     expect(searchCss).toContain('border-radius: 3px');

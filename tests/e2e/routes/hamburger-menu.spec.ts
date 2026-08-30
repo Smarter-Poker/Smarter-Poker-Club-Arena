@@ -121,6 +121,7 @@ test.describe('Hamburger Menu — Navigation Links', () => {
   // Canonical global navigation links in the cleaned information architecture.
   const allNavLinks = [
     // Play
+    { label: 'Play & Review', path: '/play' },
     { label: 'Club Arena', path: '/' },
     { label: 'Tournaments', path: '/tournaments' },
     { label: 'Tournament Results', path: '/tournament-results' },
@@ -128,10 +129,12 @@ test.describe('Hamburger Menu — Navigation Links', () => {
     { label: 'Session History', path: '/session-history' },
     { label: 'Leaderboards', path: '/leaderboard' },
     // Community
+    { label: 'Community Center', path: '/community' },
     { label: 'Find Players & Clubs', path: '/search' },
     { label: 'Friends', path: '/friends' },
     { label: 'Unions', path: '/unions' },
     // Wallet & Rewards
+    { label: 'Rewards Center', path: '/rewards' },
     { label: 'Wallet', path: '/wallet' },
     { label: 'Cashier', path: '/cashier' },
     { label: 'Marketplace', path: '/marketplace' },

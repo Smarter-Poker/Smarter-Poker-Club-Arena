@@ -1311,3 +1311,20 @@
     animation: none;
   }
 }
+
+/* Engineered surfaces: shallow machined corners instead of arcade capsules. */
+.header,
+.streakBanner,
+.statItem,
+.challengeCard,
+.summaryTile,
+.tabs,
+.milestoneTracker,
+.celebrateCard,
+.emptyState {
+  border-radius: 4px;
+}
+
+.celebrateOverlay {
+  backdrop-filter: none;
+}

@@ -37,6 +37,18 @@
   isolation: isolate;
 }
 
+.marketStatusBar {
+  display: flex;
+  align-items: center;
+  min-height: 54px;
+  margin: 0 0 18px;
+  padding: 10px 14px;
+  border: 1px solid #26333d;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #080d12, #03070b);
+  box-shadow: inset 2px 0 0 #3aa8ff;
+}
+
 .page,
 .page * {
   box-sizing: border-box;

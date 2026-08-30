@@ -759,7 +759,7 @@ export default function LeaderboardPage() {
   };
 
   return (
-    <div className="leaderboard-page">
+    <div className="leaderboard-page" data-arena-surface="championship">
       <section className="lb-hero" aria-labelledby="leaderboard-title">
         <div className="lb-hero-art" aria-hidden="true" />
         <div className="lb-hero-copy">

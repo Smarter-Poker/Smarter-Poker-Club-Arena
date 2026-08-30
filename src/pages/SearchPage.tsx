@@ -9,6 +9,7 @@ import { STORAGE_KEYS } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { formatBuyInShort } from '../utils/buyIn';
 import { reportError } from '../utils/errorReporter';
+import { PLAYER_NAME_COLUMNS, playerDisplayName } from '../utils/playerDisplayName';
 import './SearchPage.css';
 
 type SearchCategory = 'all' | 'clubs' | 'players' | 'tables' | 'tournaments';
@@ -21,6 +22,13 @@ interface SearchResult {
   avatar?: string;
 }
 
+interface SearchCacheRecord {
+  cachedAt: number;
+  results: SearchResult[];
+}
+
+type SearchFreshness = 'live' | 'partial' | 'cached';
+
 const CATEGORIES: Array<{ id: SearchCategory; label: string }> = [
   { id: 'all', label: 'All' },
   { id: 'players', label: 'Players' },
@@ -28,6 +36,37 @@ const CATEGORIES: Array<{ id: SearchCategory; label: string }> = [
   { id: 'tables', label: 'Tables' },
   { id: 'tournaments', label: 'Tournaments' },
 ];
+
+const SEARCH_CACHE_PREFIX = 'community_search_v1:';
+const SEARCH_CACHE_TTL = 10 * 60 * 1000;
+
+function getSearchCacheKey(query: string, category: SearchCategory): string {
+  return `${SEARCH_CACHE_PREFIX}${category}:${query.trim().toLocaleLowerCase()}`;
+}
+
+function readSearchCache(query: string, category: SearchCategory): SearchResult[] | null {
+  try {
+    const raw = sessionStorage.getItem(getSearchCacheKey(query, category));
+    if (!raw) return null;
+    const record = JSON.parse(raw) as SearchCacheRecord;
+    if (Date.now() - record.cachedAt > SEARCH_CACHE_TTL || !Array.isArray(record.results)) {
+      sessionStorage.removeItem(getSearchCacheKey(query, category));
+      return null;
+    }
+    return record.results;
+  } catch {
+    return null;
+  }
+}
+
+function writeSearchCache(query: string, category: SearchCategory, results: SearchResult[]): void {
+  try {
+    const record: SearchCacheRecord = { cachedAt: Date.now(), results };
+    sessionStorage.setItem(getSearchCacheKey(query, category), JSON.stringify(record));
+  } catch {
+    // Search remains fully usable when session storage is unavailable or full.
+  }
+}
 
 function getSearchCategory(value: string | null): SearchCategory {
   return CATEGORIES.some((category) => category.id === value) ? (value as SearchCategory) : 'all';
@@ -57,6 +96,7 @@ export default function SearchPage() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchFreshness, setSearchFreshness] = useState<SearchFreshness>('live');
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [friendAdded, setFriendAdded] = useState<Set<string>>(new Set());
   const searchRequestIdRef = useRef(0);
@@ -68,6 +108,18 @@ export default function SearchPage() {
   useEffect(() => {
     setQuery(queryFromUrl);
   }, [queryFromUrl]);
+
+  useEffect(() => {
+    const legacyCategory = searchParams.get('tab');
+    if (!legacyCategory) return;
+    const next = new URLSearchParams(searchParams);
+    if (!next.has('type')) {
+      const resolved = getSearchCategory(legacyCategory);
+      if (resolved !== 'all') next.set('type', resolved);
+    }
+    next.delete('tab');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.RECENT_SEARCHES);
@@ -110,6 +162,7 @@ export default function SearchPage() {
         if (!getIsMounted || getIsMounted()) {
           setResults([]);
           setSearchError(null);
+          setSearchFreshness('live');
           setLoading(false);
         }
         return;
@@ -121,7 +174,14 @@ export default function SearchPage() {
         setSearchError(null);
       }
 
-      const sanitized = normalized.replace(/[%_]/g, '');
+      const sanitized = normalized.replace(/[%_(),]/g, '').trim();
+      if (!sanitized) {
+        setResults([]);
+        setSearchError(null);
+        setSearchFreshness('live');
+        setLoading(false);
+        return;
+      }
       const tasks: Array<Promise<SearchResult[]>> = [];
 
       if (category === 'all' || category === 'clubs') {
@@ -149,14 +209,16 @@ export default function SearchPage() {
           (async () => {
             const { data, error } = await supabase
               .from('profiles')
-              .select('id, username, avatar_url:arena_avatar_url')
-              .ilike('username', `%${sanitized}%`)
+              .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
+              .or(
+                `username.ilike.%${sanitized}%,alias.ilike.%${sanitized}%,display_name.ilike.%${sanitized}%`
+              )
               .limit(10);
             if (error) throw error;
             return (data || []).map((player) => ({
               id: player.id,
               type: 'player' as const,
-              name: player.username,
+              name: playerDisplayName(player, 'arena'),
               avatar: player.avatar_url,
             }));
           })()
@@ -218,15 +280,28 @@ export default function SearchPage() {
       );
       const failed = settled.filter((entry) => entry.status === 'rejected');
       failed.forEach((entry) => reportError(entry.reason, 'SearchPage.Search_failed'));
-      setResults(successful.flatMap((entry) => entry.value));
+      const liveResults = successful.flatMap((entry) => entry.value);
       if (failed.length === settled.length) {
+        const cached = readSearchCache(normalized, category);
+        setResults(cached || []);
+        setSearchFreshness(cached ? 'cached' : 'partial');
         setSearchError(
-          'The community index is temporarily unavailable. Your query is safe to retry.'
+          cached
+            ? 'The live index is temporarily unavailable. A recent local snapshot is shown below.'
+            : 'The community index is temporarily unavailable. Your query is safe to retry.'
         );
       } else if (failed.length > 0) {
+        setResults(liveResults);
+        setSearchFreshness('partial');
         setSearchError(
           'Some community records could not be reached. The results below are partial.'
         );
+        writeSearchCache(normalized, category, liveResults);
+      } else {
+        setResults(liveResults);
+        setSearchFreshness('live');
+        setSearchError(null);
+        writeSearchCache(normalized, category, liveResults);
       }
       setLoading(false);
     },
@@ -323,7 +398,13 @@ export default function SearchPage() {
             <p className="search-section-kicker">Network Scanner</p>
             <h2 id="search-console-title">Community Search</h2>
           </div>
-          <span className="search-index-status">LIVE DATA</span>
+          <span className="search-index-status" data-state={searchFreshness}>
+            {searchFreshness === 'cached'
+              ? 'RECENT SNAPSHOT'
+              : searchFreshness === 'partial'
+                ? 'PARTIAL INDEX'
+                : 'LIVE DATA'}
+          </span>
         </div>
 
         <form className="search-form" role="search" onSubmit={submitSearch}>
@@ -378,7 +459,11 @@ export default function SearchPage() {
           {searchError && (
             <div className="search-error" role="alert">
               <div>
-                <strong>Index Connection Interrupted</strong>
+                <strong>
+                  {searchFreshness === 'cached'
+                    ? 'Showing Recent Results'
+                    : 'Index Connection Interrupted'}
+                </strong>
                 <span>{searchError}</span>
               </div>
               <button type="button" onClick={() => search(query)}>

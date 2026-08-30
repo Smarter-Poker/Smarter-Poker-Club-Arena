@@ -30,6 +30,7 @@ import { reportError } from '../utils/errorReporter';
 import { ConfettiEffect } from '../components/effects/ConfettiEffect';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './DailyChallengesPage.module.css';
+import { mediaUrl } from '../utils/mediaBase';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -764,11 +765,11 @@ export default function DailyChallengesPage() {
 
   return (
     <StandardContentLayout className={styles.container}>
-      <main className={styles.page} id="daily-missions">
+      <main className={styles.page} id="daily-missions" data-arena-surface="missions">
         <section className={styles.hero} aria-labelledby="missions-title">
           <img
             className={styles.heroArtwork}
-            src="/hub/club-arena/images/challenges/daily-missions-vault-v1.webp"
+            src={mediaUrl('images/challenges/daily-missions-vault-v1.webp')}
             alt=""
             width="1774"
             height="887"

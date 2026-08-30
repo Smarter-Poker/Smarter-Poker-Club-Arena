@@ -22,6 +22,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import './HandHistoryPage.css';
 import { reportError } from '../utils/errorReporter';
+import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 // ── SWR Cache ──
 const HH_CACHE_KEY = 'hh_cache_';
@@ -338,7 +339,19 @@ export default function HandHistoryPage() {
   };
 
   return (
-    <div className="hand-history-page">
+    <div className="hand-history-page" data-arena-surface="play">
+      <CasinoSurfaceHeader
+        eyebrow="Play & Review / Hands"
+        title="Hand Archive"
+        description="Filter, replay, export, share, or send loaded hands into Jarvis analysis while the existing hand-history service remains the record authority."
+        artPath="assets/club-buttons/lobby/lobby-command-chassis-v2.png"
+        status="HAND INDEX // SYNCHRONIZED"
+        metrics={[
+          { label: 'Loaded', value: hands.length },
+          { label: 'Won', value: stats.wins, tone: 'live' },
+          { label: 'Biggest Pot', value: stats.biggestPot.toLocaleString(), tone: 'attention' },
+        ]}
+      />
       {/* Filters — Pill Chips (Initiative 5) */}
       <div className="hh-filters">
         {(['all', 'won', 'lost', 'big-pots'] as HistoryFilter[]).map((f) => (

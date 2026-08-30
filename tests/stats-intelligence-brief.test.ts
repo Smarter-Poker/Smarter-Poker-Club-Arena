@@ -33,7 +33,7 @@ describe('buildStatsIntelligenceBrief', () => {
         expect.objectContaining({
           id: 'trend',
           value: 'Positive',
-          detail: '+25 across 200 hands, Aug 24–Aug 30.',
+          detail: '+25 across 200 hands, Aug 24 to Aug 30.',
         }),
       ])
     );
@@ -70,7 +70,7 @@ describe('buildStatsIntelligenceBrief', () => {
 
     expect(brief.find((item) => item.id === 'trend')).toMatchObject({
       value: 'No Recent Play',
-      detail: 'No cash results recorded from Aug 24–Aug 30.',
+      detail: 'No cash results recorded from Aug 24 to Aug 30.',
       tone: 'neutral',
     });
   });

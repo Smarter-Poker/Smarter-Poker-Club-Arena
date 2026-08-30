@@ -185,19 +185,27 @@ export default function PublicProfilePage() {
     myId: string,
     theirId: string
   ): Promise<'none' | 'pending_sent' | 'pending_received' | 'friends'> {
-    const { data, error } = await supabase
+    const { data: friendshipRows, error } = await supabase
       .from('friendships')
       .select('status, user_id')
       .or(
         `and(user_id.eq.${myId},friend_id.eq.${theirId}),and(user_id.eq.${theirId},friend_id.eq.${myId})`
       )
-      .maybeSingle();
-    if (error) reportError(error, 'PublicProfilePage.Friendship_check_failed');
+      // Accepted relationships can be stored in both directions. Asking
+      // PostgREST for maybeSingle() turns that valid reciprocal pair into a
+      // PGRST116 error, so inspect the bounded pair instead.
+      .limit(2);
+    if (error) {
+      reportError(error, 'PublicProfilePage.Friendship_check_failed');
+      return 'none';
+    }
 
-    if (!data) return 'none';
-    if (data.status === 'accepted') return 'friends';
-    if (data.status === 'pending') {
-      return data.user_id === myId ? 'pending_sent' : 'pending_received';
+    if (!friendshipRows?.length) return 'none';
+    if (friendshipRows.some((row) => row.status === 'accepted')) return 'friends';
+
+    const pending = friendshipRows.find((row) => row.status === 'pending');
+    if (pending) {
+      return pending.user_id === myId ? 'pending_sent' : 'pending_received';
     }
     return 'none';
   }

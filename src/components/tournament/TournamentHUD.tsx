@@ -46,6 +46,13 @@ interface TournamentHUDProps {
   averageStack?: number;
   /** Hide the HUD entirely (e.g. between hands) without unmounting. */
   hidden?: boolean;
+  /**
+   * Dan 2026-08-30: "IF YOU CLICK THE LEVEL TAB BUTTON IT WILL OPEN TO THE
+   * TOURNAMENT LOBBY INSTANTLY." When provided, the whole bar is a button
+   * that opens the in-game tournament lobby popup. The stats icon that used
+   * to sit beside the bar is gone - the bar itself is the entry point.
+   */
+  onOpen?: () => void;
 }
 
 function fmtClock(totalSeconds: number): string {
@@ -67,6 +74,7 @@ export function TournamentHUD({
   playersRemaining,
   averageStack,
   hidden = false,
+  onOpen,
 }: TournamentHUDProps) {
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [tick, setTick] = useState(0); // forces a 1s re-render for the countdown
@@ -291,6 +299,7 @@ export function TournamentHUD({
         color: '#e8f0f4',
         userSelect: 'none',
         lineHeight: 1.1,
+        cursor: onOpen ? 'pointer' : 'default',
       }}
       /* NOT `role="status"`. That is an aria-live=polite region, and this
          element re-renders every second for the countdown — so a screen reader
@@ -299,8 +308,20 @@ export function TournamentHUD({
          with a label keeps it navigable and reachable without narrating it
          continuously; the countdown itself is hidden from the accessibility
          tree below, since a value that changes every second is noise there. */
-      role="group"
-      aria-label="Tournament clock"
+      role={onOpen ? 'button' : 'group'}
+      tabIndex={onOpen ? 0 : undefined}
+      aria-label={onOpen ? 'Tournament clock - open tournament lobby' : 'Tournament clock'}
+      onClick={onOpen}
+      onKeyDown={
+        onOpen
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onOpen();
+              }
+            }
+          : undefined
+      }
     >
       {/* Level / break badge */}
       <div

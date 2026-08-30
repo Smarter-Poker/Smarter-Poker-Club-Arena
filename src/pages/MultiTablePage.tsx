@@ -320,6 +320,13 @@ const isLobbyTab = (t: TableInstance) => t.kind === 'lobby' || t.id.startsWith(L
  * Read once at module load: a mid-session rotation cannot strand open tables,
  * and the server still has the final say on every buy-in.
  */
+/* Dan 2026-08-30: the 4-square (tile view) artwork - brushed-metal icon Dan
+   supplied, served from the same buttons bucket as every other table icon.
+   One artwork for both button skins: the metal piece is skin-neutral. */
+const fourScreenIcon = `${
+  import.meta.env.VITE_SUPABASE_URL || 'https://kuklfnapbkmacvwxktbh.supabase.co'
+}/storage/v1/object/public/assets/buttons/black/icon-fourscreen.webp`;
+
 const MAX_TABLES = typeof window !== 'undefined' && window.innerWidth >= 1024 ? 6 : 4;
 
 /**
@@ -1521,6 +1528,32 @@ export default function MultiTablePage() {
   } | null>(null);
   const [showSessionAgg, setShowSessionAgg] = useState(false);
 
+  /* Dan 2026-08-30: "MULTI TABLE PROFIT TRACKING" is a switch the player owns.
+     OFF kills the chip and the aggregation loop entirely; ON restores it.
+     Persisted per device - a preference, not account data. Also togglable by
+     right-click / long-press on the chip itself. */
+  const [profitTracking, setProfitTracking] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('ca-multi-table-profit-tracking') !== 'off';
+    } catch {
+      return true;
+    }
+  });
+  const toggleProfitTracking = useCallback(() => {
+    setProfitTracking((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('ca-multi-table-profit-tracking', next ? 'on' : 'off');
+      } catch {
+        /* preference only */
+      }
+      return next;
+    });
+    setShowSessionAgg(false);
+  }, []);
+  /* Long-press (mobile) support for turning the chip off. */
+  const pnlPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     /* Dan 2026-08-28: the P&L tracker "should only appear once a user is
        playing MULTIPLE tables. It should never engage while playing 1 table."
@@ -1529,13 +1562,20 @@ export default function MultiTablePage() {
        single-table play. Count actual game tables only, here AND inside
        compute() (a tab closing between ticks must retire the chip too). */
     const liveTableCount = tables.filter((t) => !isLobbyTab(t)).length;
-    if (hidden || liveTableCount < 2) {
+    /* Dan 2026-08-30: "THE PROFIT COUNTER NUMBER SHOULD NEVER WORK OR ENGAGE
+       OR TRACK ANYTHING FOR TOURNAMENTS, THIS IS A 'CASHGAME ONLY FEATURE'."
+       Tournament tables are excluded from the aggregation entirely - a
+       tournament stack is not a cash result, and mixing the two printed a
+       meaningless number. The chip therefore renders only when at least one
+       CASH table is being tracked, and the whole feature obeys the
+       Multi Table Profit Tracking switch. */
+    if (hidden || liveTableCount < 2 || !profitTracking) {
       setSessionAgg(null);
       return;
     }
     const compute = () => {
-      const live = tablesRef.current.filter((t) => !isLobbyTab(t));
-      if (live.length < 2) {
+      const live = tablesRef.current.filter((t) => !isLobbyTab(t) && !t.isTournament);
+      if (live.length < 1 || tablesRef.current.filter((t) => !isLobbyTab(t)).length < 2) {
         setSessionAgg(null);
         return;
       }
@@ -1569,7 +1609,7 @@ export default function MultiTablePage() {
     return () => clearInterval(iv);
     // `tables`, not `tables.length`: a lobby tab converting into a game table
     // keeps the length constant while the live-table count changes.
-  }, [hidden, tables]);
+  }, [hidden, tables, profitTracking]);
 
   // ─── Batch 4: playable tile view ──────────────────────────────────────
   // Fold / Check / Call directly from a 2x2 tile - true simultaneous play on
@@ -3029,6 +3069,8 @@ export default function MultiTablePage() {
             onQuickAction={handleQuickAction}
             onSitOutAll={handleSitOutAll}
             onBackAll={handleBackAll}
+            profitTrackingEnabled={profitTracking}
+            onToggleProfitTracking={toggleProfitTracking}
           />
         </div>
       )}
@@ -3077,6 +3119,8 @@ export default function MultiTablePage() {
               onQuickAction={handleQuickAction}
               onSitOutAll={handleSitOutAll}
               onBackAll={handleBackAll}
+              profitTrackingEnabled={profitTracking}
+              onToggleProfitTracking={toggleProfitTracking}
             />
             {/* Batch 5: live multi-table P&L chip -> session breakdown */}
             {sessionAgg && sessionAgg.rows.some((r) => r.tracked) && (
@@ -3090,73 +3134,67 @@ export default function MultiTablePage() {
                       : ''
                 }`}
                 onClick={() => setShowSessionAgg((v) => !v)}
-                title="Session across all tables"
-                aria-label="Session across all tables"
+                /* Dan 2026-08-30: "IF YOU RIGHT CLICK OR HOLD DOWN AND MOBILE,
+                   YOU SHOULD BE ABLE TO TURN IT OFF." Right-click and a 600ms
+                   long-press both flip the same switch the hamburger owns. */
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  toggleProfitTracking();
+                }}
+                onTouchStart={() => {
+                  pnlPressTimerRef.current = setTimeout(() => {
+                    pnlPressTimerRef.current = null;
+                    toggleProfitTracking();
+                  }, 600);
+                }}
+                onTouchEnd={() => {
+                  if (pnlPressTimerRef.current) {
+                    clearTimeout(pnlPressTimerRef.current);
+                    pnlPressTimerRef.current = null;
+                  }
+                }}
+                onTouchMove={() => {
+                  if (pnlPressTimerRef.current) {
+                    clearTimeout(pnlPressTimerRef.current);
+                    pnlPressTimerRef.current = null;
+                  }
+                }}
+                title="Session across cash tables (right-click or hold to turn off)"
+                aria-label="Session across cash tables"
               >
                 {sessionAgg.net > 0 ? '+' : ''}
                 {sessionAgg.net.toLocaleString('en-US')}
               </button>
             )}
-            {tables.length > 1 && (
-              <button
-                className="tile-toggle-btn"
-                onClick={() => setIsTileView((prev) => !prev)}
-                title={isTileView ? 'Single view' : 'Tile view'}
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  {isTileView ? (
-                    <rect
-                      x="2"
-                      y="2"
-                      width="12"
-                      height="12"
-                      rx="2"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                    />
-                  ) : (
-                    <>
-                      <rect
-                        x="2"
-                        y="2"
-                        width="5"
-                        height="5"
-                        rx="1"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                      />
-                      <rect
-                        x="9"
-                        y="2"
-                        width="5"
-                        height="5"
-                        rx="1"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                      />
-                      <rect
-                        x="2"
-                        y="9"
-                        width="5"
-                        height="5"
-                        rx="1"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                      />
-                      <rect
-                        x="9"
-                        y="9"
-                        width="5"
-                        height="5"
-                        rx="1"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                      />
-                    </>
-                  )}
-                </svg>
-              </button>
-            )}
+            {/* Dan 2026-08-30: the 4-square multi-table button. FIXED on the
+                right edge - the opposite side from the hamburger - the same
+                40px size as the hamburger trigger, wearing Dan's brushed-metal
+                four-screen artwork. Rendered always so the position is stable,
+                but it only ENGAGES with 2+ tables open (4 max); with one
+                table it is inert and dimmed. Positioning lives in
+                MultiTablePage.css (.tile-toggle-btn). */}
+            <button
+              className={`tile-toggle-btn${tables.length > 1 ? '' : ' tile-toggle-btn--inert'}`}
+              onClick={() => {
+                if (tables.length > 1) setIsTileView((prev) => !prev);
+              }}
+              aria-disabled={tables.length <= 1}
+              title={
+                tables.length > 1
+                  ? isTileView
+                    ? 'Single view'
+                    : 'Tile view'
+                  : 'Open a second table to use tile view'
+              }
+              aria-label={isTileView ? 'Single view' : 'Tile view'}
+            >
+              <img
+                className="tile-toggle-btn__img"
+                src={fourScreenIcon}
+                alt=""
+                draggable={false}
+              />
+            </button>
           </div>
         )}
 

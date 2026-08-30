@@ -295,7 +295,6 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
 // Bible V8 §11: 4-Corner Table HUD Components
 import { TableHUD } from '../components/table/TableHUD';
-import { MiniStatsCard } from '../components/table/MiniStatsCard';
 import { TournamentLobbyModal } from '../components/table/TournamentLobbyModal';
 import TournamentInfoPanel from '../components/tournament/TournamentInfoPanel';
 import HeroHubPanel from '../components/table/HeroHubPanel';
@@ -855,32 +854,99 @@ interface TablePageProps {
   muted?: boolean;
 }
 
+/* MastheadLevelClock removed 2026-08-30: the round-end countdown left the
+   masthead with it - MastheadNextInfo below carries the felt's clock now. */
+
 /**
- * The ticking half of masthead line 2 (Dan 2026-08-20: "Level #, Blinds, and
- * the clock"). Its own component so the 1-second tick re-renders ~40 bytes of
- * DOM instead of the whole table page. Shows mm:ss remaining in the level;
- * clamps at 0:00 while waiting for the engine's level_up broadcast rather than
- * counting negative.
+ * Dan 2026-08-30: "REMOVE THE ROUND END TIMER ON THE TABLE, AND REPLACE THAT
+ * WITH 'NEXT BLINDS' AND A 'BREAK STARTS IN' CLOCK INSTEAD."
+ *
+ * Two lines under the tournament masthead:
+ *   - NEXT BLINDS <sb>/<bb>   (the next playing level, breaks skipped)
+ *   - BREAK STARTS IN m:ss    (only when the structure has a break ahead -
+ *     the remainder of this level plus every full level until the break)
+ * The per-second tick stays inside this component, exactly like the
+ * MastheadLevelClock it replaces, so the page never re-renders for a clock.
  */
-function MastheadLevelClock({
+function MastheadNextInfo({
   startedAtMs,
   durationSec,
+  struct,
+  levelIdx,
 }: {
   startedAtMs: number;
   durationSec: number;
+  struct: Array<{
+    level?: number;
+    smallBlind?: number;
+    small_blind?: number;
+    bigBlind?: number;
+    big_blind?: number;
+    isBreak?: boolean;
+    is_break?: boolean;
+    duration?: number;
+    duration_minutes?: number;
+    durationMinutes?: number;
+  }>;
+  levelIdx: number;
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
+
+  type Entry = (typeof struct)[number];
+  const sb = (l: Entry) => Number(l.smallBlind ?? l.small_blind ?? 0);
+  const bbOf = (l: Entry) => Number(l.bigBlind ?? l.big_blind ?? 0);
+  const isBreakLevel = (l: Entry) => !!(l.isBreak ?? l.is_break) || (sb(l) === 0 && bbOf(l) === 0);
+  const durOf = (l: Entry) =>
+    Number(l.duration) || (Number(l.duration_minutes ?? l.durationMinutes) || 0) * 60;
+
   const remaining = Math.max(0, durationSec - Math.floor((now - startedAtMs) / 1000));
-  const mm = Math.floor(remaining / 60);
-  const ss = String(remaining % 60).padStart(2, '0');
+
+  // The next PLAYING level's blinds, breaks skipped.
+  let nextBlinds: string | null = null;
+  for (let i = levelIdx + 1; i < struct.length; i++) {
+    if (!isBreakLevel(struct[i])) {
+      nextBlinds = formatBlindPair(sb(struct[i]), bbOf(struct[i]));
+      break;
+    }
+  }
+
+  // Seconds until the next BREAK entry, when one exists ahead of us.
+  let breakInSec: number | null = null;
+  if (levelIdx >= 0 && levelIdx < struct.length && !isBreakLevel(struct[levelIdx])) {
+    let acc = remaining;
+    for (let i = levelIdx + 1; i < struct.length; i++) {
+      if (isBreakLevel(struct[i])) {
+        breakInSec = acc;
+        break;
+      }
+      acc += durOf(struct[i]);
+    }
+  }
+
+  const fmtSecs = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const ss2 = String(secs % 60).padStart(2, '0');
+    return `${m}:${ss2}`;
+  };
+
+  if (nextBlinds === null && breakInSec === null) return null;
   return (
-    <span className="table-brand__clock">
-      {mm}:{ss}
-    </span>
+    <>
+      {nextBlinds !== null && (
+        <span className="table-brand__line table-brand__line--round">
+          Next Blinds <span className="table-brand__clock">{nextBlinds}</span>
+        </span>
+      )}
+      {breakInSec !== null && (
+        <span className="table-brand__line table-brand__line--round">
+          Break Starts In <span className="table-brand__clock">{fmtSecs(breakInSec)}</span>
+        </span>
+      )}
+    </>
   );
 }
 
@@ -18086,39 +18152,20 @@ export default function TablePage({
              it had no corner to be in and nothing anchored it on screen. Both
              now live here, stacked, in the corner Dan is pointing at. */
           <div className="hud-ur-column">
+            {/* Dan 2026-08-30: "REMOVE THE STATS BUTTON AND MAKE IT THAT IF
+                YOU CLICK THE LEVEL TAB BUTTON IT WILL OPEN TO THE TOURNAMENT
+                LOBBY INSTANTLY." The bar itself is the button now - one
+                control, no separate stats icon - on every MTT, Spin and
+                heads-up match alike (isTournament covers all three). */}
             {tableState.isTournament && tableState.tournamentId && (
-              <TournamentHUD tournamentId={tableState.tournamentId} />
-            )}
-            {/* Dan 2026-08-28: "REMOVE THE STATS BUTTON FROM THE UPPER LEFT
-                HAND CORNER, AND MOVE IT TO THE HERO AVATAR." The cash stats
-                icon is gone — session stats live in the hero hub's Stats tab
-                (tap your own avatar) and remain in the hamburger menu.
-
-                Dan, same day, on what is LEFT in this corner: "ALL TOURNAMENTS
-                NEED THE STATS ICON IN THE UPPER RIGHT HAND CORNER. IT SHOULDN'T
-                SHOW THE STATS, BUT OPEN TO THE TOURNAMENT LOBBY PAGE AS A IN
-                GAME 3/4 POP UP", and "STATS SHOULD LIVE INSIDE THE HERO AVATAR
-                ... USE THE EXACT BUTTON AS IT IS."
-
-                So on a tournament this is ONE button, the existing artwork
-                untouched, and it opens the real tournament lobby
-                (TournamentDetails) as a 3/4 overlay. It no longer opens
-                TournamentInfoPanel — that four-tab summary is a subset of the
-                lobby and is still reachable from the hero hub's Stats tab. The
-                four-figure Stack/Hands/VPIP/Won bar this corner carried since
-                2026-08-25 is gone with it: those are stats, and stats now live
-                behind the hero's own avatar. */}
-            {tableState.isTournament && (
-              <MiniStatsCard
-                currentStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
-                totalBuyIn={totalBuyInRef.current}
-                isSeated={tableState.heroSeat > 0}
-                isTournament={tableState.isTournament}
-                onTap={() =>
-                  tableState.tournamentId ? setShowTournamentLobby(true) : setShowSessionStats(true)
-                }
+              <TournamentHUD
+                tournamentId={tableState.tournamentId}
+                onOpen={() => setShowTournamentLobby(true)}
               />
             )}
+            {/* The MiniStatsCard stats icon that used to sit under the bar is
+                REMOVED (Dan 2026-08-30): the level bar itself opens the
+                tournament lobby, so a second button here was a duplicate. */}
           </div>
         }
         bottomLeft={
@@ -18400,34 +18447,20 @@ export default function TablePage({
                                 </span>
                               )}
                             </span>
-                            {/* \u2500\u2500 LINE 3: TIME LEFT IN THE ROUND \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-                                Dan 2026-08-28: "ON MTT'S SPINS AND HEADS UP
-                                TABLES UNDER THE 2ND LINE, A 3RD LINE SHOULD
-                                APPEAR WITH THE AMOUNT OF TIME LEFT IN THE
-                                ROUND (COUNT DOWN CLOCK)."
-
-                                It used to be a dot-separated tail on line 2,
-                                behind the level and the blinds \u2014 the first
-                                thing to ellipsize on a 375px screen, which is
-                                the width this table is designed for, so the
-                                number a player most wants between hands was
-                                the one most likely to be cut. On its own line
-                                it always fits and always reads.
-
-                                Rendered only when a level clock exists: a
-                                seat-first game before it starts has no round
-                                running, and inventing a countdown there is the
-                                phantom "LEVEL 1 - 3:00" that restarted on
-                                every reload (fixed the same day). The clock
-                                starts when the round does. */}
+                            {/* Dan 2026-08-30: the round-end countdown is GONE from the
+                                felt. In its place: the NEXT BLINDS, and a
+                                BREAK STARTS IN clock computed from the blind
+                                structure - the two numbers a player actually
+                                plans around between hands. Renders only while
+                                a level clock exists, same guard as before (no
+                                phantom clocks pre-start or post-finish). */}
                             {levelClock && (
-                              <span className="table-brand__line table-brand__line--round">
-                                Round Ends In{' '}
-                                <MastheadLevelClock
-                                  startedAtMs={levelClock.startedAtMs}
-                                  durationSec={levelClock.durationSec}
-                                />
-                              </span>
+                              <MastheadNextInfo
+                                startedAtMs={levelClock.startedAtMs}
+                                durationSec={levelClock.durationSec}
+                                struct={blindStructRef.current}
+                                levelIdx={(tableState.currentLevel || 1) - 1}
+                              />
                             )}
                           </>
                         );

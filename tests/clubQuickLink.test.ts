@@ -19,6 +19,8 @@ vi.mock('@/lib/supabase', () => ({
 
 import {
   eligibleQuickLinkClubs,
+  eligibleCashierWallets,
+  resolveCashierWallet,
   isUnionEntity,
   resolveTargetClub,
   readLastClubId,
@@ -79,6 +81,19 @@ describe('eligibleQuickLinkClubs', () => {
 
   it('returns empty for empty input', () => {
     expect(eligibleQuickLinkClubs([])).toEqual([]);
+  });
+});
+
+describe('eligibleCashierWallets', () => {
+  it('includes every club wallet and only an owned union wallet', () => {
+    expect(
+      eligibleCashierWallets([A, { ...U_FLAG, is_owner: false }, { ...U, is_owner: true }, B])
+    ).toEqual([A, { ...U, is_owner: true }, B]);
+  });
+
+  it('resolves an owned union when it is the requested wallet', () => {
+    const owned = { ...U_FLAG, is_owner: true };
+    expect(resolveCashierWallet([A, owned], owned.id)).toEqual(owned);
   });
 });
 

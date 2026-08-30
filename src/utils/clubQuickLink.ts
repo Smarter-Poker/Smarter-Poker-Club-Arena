@@ -34,6 +34,8 @@ export interface QuickLinkClub {
   is_union?: boolean;
   /** Lobby-derived label; kept for callers that only have the mapped shape. */
   entity_type?: 'club' | 'union';
+  /** Lobby membership mapping: only an owner may open a union treasury. */
+  is_owner?: boolean;
   [key: string]: unknown;
 }
 
@@ -60,6 +62,26 @@ export function isUnionEntity(club: QuickLinkClub): boolean {
 /** Clubs eligible for cashier/marketplace quick links (unions excluded). */
 export function eligibleQuickLinkClubs<T extends QuickLinkClub>(clubs: T[]): T[] {
   return clubs.filter((c) => !isUnionEntity(c));
+}
+
+/**
+ * Wallet destinations shown by the Cashier tile. Every active club membership
+ * has its own club wallet; a union is additionally eligible only for its owner.
+ * Co-owners/admins/agents still see all of their club wallets, but never a
+ * union treasury they do not own.
+ */
+export function eligibleCashierWallets<T extends QuickLinkClub>(clubs: T[]): T[] {
+  return clubs.filter((c) => !isUnionEntity(c) || c.is_owner === true);
+}
+
+/** Resolve the Cashier tile without applying the clubs-only marketplace rule. */
+export function resolveCashierWallet<T extends QuickLinkClub>(
+  clubs: T[],
+  lastClubId?: string | null
+): T | null {
+  const eligible = eligibleCashierWallets(clubs);
+  const last = lastClubId !== undefined ? lastClubId : readLastClubId();
+  return eligible.find((c) => c.id === last) || eligible[0] || null;
 }
 
 /** Read the last-visited club UUID, null when unset or storage is unavailable. */

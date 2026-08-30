@@ -129,10 +129,9 @@ const MEMBER_IN_CLUB = ['active', 'approved'];
 
 /**
  * PostgREST caps a response at 1,000 rows, and `.in('id', [...])` with ten
- * thousand ids is a URL no proxy will carry. The horse flag is the one field
- * fn_club_cashier_members does not return, so it is fetched in slices.
+ * thousand ids is a URL no proxy will carry. The v2 roster RPC joins the horse
+ * flag server-side so the cashier paints from a single scoped response.
  */
-const PROFILE_CHUNK = 300;
 
 interface TradeRecordRow {
   id: string;
@@ -249,6 +248,7 @@ export default function CashierTradePage() {
   const [tab, setTab] = useState<TabKey>('trade');
 
   const [myRole, setMyRole] = useState<string>('player');
+  const [roleResolved, setRoleResolved] = useState(false);
   const [myBalance, setMyBalance] = useState(0);
   /**
    * agents.agent_wallet_balance for the viewer IN THIS CLUB - the account
@@ -267,6 +267,10 @@ export default function CashierTradePage() {
   // can land last and paint its balances under the club you are now looking
   // at. On a page that moves chips that is not a cosmetic race.
   const loadVersion = useRef(0);
+  const pendingCountVersion = useRef(0);
+  const heldTicketCountVersion = useRef(0);
+  const reqSeqRef = useRef(0);
+  const ticketSeqRef = useRef(0);
 
   const [search, setSearch] = useState('');
   const [groupByRole, setGroupByRole] = useState(false);
@@ -398,6 +402,8 @@ export default function CashierTradePage() {
   const opIdsRef = useRef<Map<string, string>>(new Map());
   /** One idempotency key per claim intent, retained across an uncertain retry. */
   const claimOpIdsRef = useRef<Map<string, string>>(new Map());
+  /** One request intent survives an uncertain network retry. */
+  const requestOpIdRef = useRef<string | null>(null);
   const pickerRef = useRef<HTMLDivElement | null>(null);
   const entityButtonRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -541,6 +547,8 @@ export default function CashierTradePage() {
       setPendingCount(0);
       return;
     }
+    const requestedClub = clubUuid;
+    const version = ++pendingCountVersion.current;
     let q = supabase
       .from('chip_requests')
       .select('id', { count: 'exact', head: true })
@@ -554,7 +562,8 @@ export default function CashierTradePage() {
       q = q.or(`approver_id.eq.${user.id},requester_id.eq.${user.id}`);
     }
     const { count, error } = await q;
-    if (!isMounted.current) return;
+    if (!isMounted.current || version !== pendingCountVersion.current || requestedClub !== clubUuid)
+      return;
     // A failed count must not claim zero. Leave the previous value alone.
     if (!error) setPendingCount(count ?? 0);
   }, [clubUuid, myRole, user?.id]);
@@ -565,13 +574,20 @@ export default function CashierTradePage() {
       setHeldTicketCount(0);
       return;
     }
+    const requestedClub = clubUuid;
+    const version = ++heldTicketCountVersion.current;
     const { count, error } = await supabase
       .from('tournament_tickets')
       .select('id', { count: 'exact', head: true })
       .eq('club_id', clubUuid)
       .eq('holder_id', user.id)
       .eq('status', 'issued');
-    if (!isMounted.current) return;
+    if (
+      !isMounted.current ||
+      version !== heldTicketCountVersion.current ||
+      requestedClub !== clubUuid
+    )
+      return;
     if (!error) setHeldTicketCount(count ?? 0);
   }, [clubUuid, user?.id]);
 
@@ -638,32 +654,20 @@ export default function CashierTradePage() {
        */
       const dl: Array<Record<string, unknown>> = [];
       if (role !== 'player') {
-        const { data: memberRows, error: dlErr } = await supabase.rpc('fn_club_cashier_members', {
-          p_club_id: clubUuid,
-        });
-        if (dlErr) throw dlErr;
-        if (stale()) return;
-        dl.push(...((memberRows || []) as Array<Record<string, unknown>>));
-      }
-
-      // The horse flag is the ONE field fn_club_cashier_members does not
-      // return, and `.in('id', ids)` with a whole club in it is both a URL no
-      // proxy will carry and a response PostgREST truncates at 1,000 rows.
-      const ids = dl.map((r) => String(r.user_id));
-      const horses = new Set<string>();
-      for (let i = 0; i < ids.length; i += PROFILE_CHUNK) {
-        const slice = ids.slice(i, i + PROFILE_CHUNK);
-        const { data: profs, error: profErr } = await supabase
-          .from('profiles')
-          .select('id, is_horse')
-          .in('id', slice);
-        if (stale()) return;
-        // A horse tag is decoration; losing it must not fail the whole cashier.
-        if (profErr) {
-          reportError(profErr, 'CashierTradePage.horseFlags');
-          break;
+        // PostgREST caps a response at 1,000 rows. Stable server ordering plus
+        // explicit ranges keeps a 1,001+ member club complete without bringing
+        // back the old per-profile request waterfall.
+        const rosterPageSize = 1000;
+        for (let offset = 0; ; offset += rosterPageSize) {
+          const { data: memberRows, error: dlErr } = await supabase
+            .rpc('fn_club_cashier_members_v2', { p_club_id: clubUuid })
+            .range(offset, offset + rosterPageSize - 1);
+          if (dlErr) throw dlErr;
+          if (stale()) return;
+          const page = (memberRows || []) as Array<Record<string, unknown>>;
+          dl.push(...page);
+          if (page.length < rosterPageSize) break;
         }
-        for (const pr of profs || []) if (pr.is_horse) horses.add(pr.id as string);
       }
 
       /**
@@ -692,7 +696,7 @@ export default function CashierTradePage() {
             avatarUrl: (r.avatar_url as string) || null,
             role: (r.role as string) || 'player',
             chipBalance: Number(r.chip_balance) || 0,
-            isHorse: horses.has(uid),
+            isHorse: r.is_horse === true,
             depth,
             // depth 1 is a DIRECT assignee. Deeper rows belong to an agent
             // beneath this one, and are still transactable - just not "mine".
@@ -703,17 +707,16 @@ export default function CashierTradePage() {
 
       if (!isMounted.current || stale()) return;
       setMyRole(role);
+      setRoleResolved(true);
       setMyBalance(bal);
       setAgentWallet(float);
       setDownline(rows);
-      setSelected(new Set());
     } catch (e) {
       reportError(e, 'CashierTradePage.loadClub');
       // An empty list used to be the only symptom of a failed load, so the
       // owner of a 588-member club was told they had no downline.
       if (isMounted.current && !stale()) {
         setDownline([]);
-        setSelected(new Set());
         setLoadError('Could not load this club. Check your connection and try again.');
       }
     } finally {
@@ -765,13 +768,20 @@ export default function CashierTradePage() {
    * of the tab they were typing in.
    */
   useEffect(() => {
-    if (myRole === 'player' && tab === 'trade') setTab('record');
-  }, [myRole, tab]);
+    if (roleResolved && myRole === 'player' && tab === 'trade') setTab('record');
+  }, [roleResolved, myRole, tab]);
 
   // ── Trade record tab data ──────────────────────────────────────────────────
   // Cleared on every club change: the previous club's trades used to stay on
   // screen until the new query landed.
   useEffect(() => {
+    ++loadVersion.current;
+    ++pendingCountVersion.current;
+    ++heldTicketCountVersion.current;
+    ++reqSeqRef.current;
+    ++ticketSeqRef.current;
+    setTab('trade');
+    setRoleResolved(false);
     setRecords([]);
     setRecordsError(null);
     // Chips are PER CLUB. These were left at the previous club's values for the
@@ -781,6 +791,7 @@ export default function CashierTradePage() {
     setAgentWallet(null);
     setDownline([]);
     setSelected(new Set());
+    setVisibleCount(25);
     setTransferFailures([]);
     // The claimable list belongs to the club it was read from. Leaving it up
     // would offer a claim against a send made in a DIFFERENT club, which the
@@ -797,6 +808,15 @@ export default function CashierTradePage() {
     setRecordDirection('all');
     setRecordsLimit(50);
     setRecordsHasMore(false);
+    setRequests([]);
+    setRequestsError(null);
+    setPendingCount(0);
+    setTickets([]);
+    setTicketsError(null);
+    setHeldTicketCount(0);
+    setInvoices([]);
+    setInvoicesError(null);
+    requestOpIdRef.current = null;
   }, [clubUuid]);
 
   useEffect(() => {
@@ -868,7 +888,6 @@ export default function CashierTradePage() {
   }, [tab, user?.id, clubUuid, recordsLimit, recordsReload]);
 
   // ── Chip requests (Chip Request tab) ───────────────────────────────────────
-  const reqSeqRef = useRef(0);
   /** Open chip requests in this club. Drives the tab badge. */
   const [pendingCount, setPendingCount] = useState(0);
 
@@ -878,13 +897,14 @@ export default function CashierTradePage() {
     setRequestsLoading(true);
     setRequestsError(null);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('chip_requests')
         .select('id, requester_id, approver_id, amount, note, status, created_at')
         .eq('club_id', clubUuid)
-        .in('status', ['pending'])
-        .order('created_at', { ascending: false })
-        .limit(100);
+        .in('status', ['pending']);
+      const agentTier = ['super_agent', 'agent', 'sub_agent'].includes(myRole);
+      if (agentTier) query = query.or(`requester_id.eq.${user.id},approver_id.eq.${user.id}`);
+      const { data, error } = await query.order('created_at', { ascending: false }).limit(100);
       if (error) throw error;
       // NEVER OFFER AN APPROVE THE SERVER WILL REFUSE (audit 2026-08-26).
       // fn_respond_chip_request lets agent-tier roles answer only requests
@@ -892,7 +912,6 @@ export default function CashierTradePage() {
       // request in the club with live Approve buttons - each tap a
       // guaranteed "this request is not addressed to you". Staff keep the
       // whole queue; agents see their own requests and their own inbox.
-      const agentTier = ['super_agent', 'agent', 'sub_agent'].includes(myRole);
       const visible = (data || []).filter(
         (r) => !agentTier || r.requester_id === user.id || r.approver_id === user.id
       );
@@ -939,7 +958,6 @@ export default function CashierTradePage() {
   }, [tab, loadRequests]);
 
   // ── Tickets tab data (audit 2026-08-26) ────────────────────────────────────
-  const ticketSeqRef = useRef(0);
   const loadTickets = useCallback(async () => {
     if (!user?.id || !clubUuid) return;
     const seq = ++ticketSeqRef.current;
@@ -1104,10 +1122,12 @@ export default function CashierTradePage() {
     askingRef.current = true;
     setAsking(true);
     try {
+      if (!requestOpIdRef.current) requestOpIdRef.current = newOpId();
       const { data, error } = await supabase.rpc('fn_request_chips', {
         p_club_id: clubUuid,
         p_amount: v,
         p_note: askNote || null,
+        p_op_id: requestOpIdRef.current,
       });
       if (error) throw error;
       const res = data as { success?: boolean; error?: string } | null;
@@ -1116,6 +1136,7 @@ export default function CashierTradePage() {
       setAskOpen(false);
       setAskAmount('');
       setAskNote('');
+      requestOpIdRef.current = null;
       loadRequests();
     } catch (e) {
       reportError(e, 'CashierTradePage.askForChips');
@@ -1125,6 +1146,10 @@ export default function CashierTradePage() {
       if (isMounted.current) setAsking(false);
     }
   };
+
+  useEffect(() => {
+    requestOpIdRef.current = null;
+  }, [askAmount, askNote, clubUuid]);
 
   // ── Settlement invoices (Leaderboard Record tab) ───────────────────────────
   useEffect(() => {
@@ -1237,10 +1262,14 @@ export default function CashierTradePage() {
       ['request', 'Chip Requests'],
       ['tickets', 'Tickets'],
     ];
-    return myRole === 'player'
+    return roleResolved && myRole === 'player'
       ? all.filter(([key]) => key === 'record' || key === 'request' || key === 'tickets')
       : all;
-  }, [myRole]);
+  }, [roleResolved, myRole]);
+
+  useEffect(() => {
+    setVisibleCount(25);
+  }, [clubUuid, search, mineOnly, groupByRole, sortKey]);
 
   // A selection had no relationship to what was on screen. Select three
   // players, type a search, select a fourth, press Send Out - and chips went
@@ -1296,6 +1325,10 @@ export default function CashierTradePage() {
   // ── Money actions ──────────────────────────────────────────────────────────
   const runTransfers = async (kind: 'send' | 'ticket') => {
     if (!user?.id || !clubUuid) return;
+    if (loading || !roleResolved || loadError) {
+      toast?.error?.('Cashier Is Still Synchronizing. Try Again In A Moment');
+      return;
+    }
     const raw = Number(amount);
     if (!Number.isFinite(raw) || raw <= 0) {
       toast?.error?.('Enter A Positive Amount');
@@ -1385,7 +1418,7 @@ export default function CashierTradePage() {
     let ok = 0;
     const failed: Array<{ userId: string; name: string; message: string }> = [];
     try {
-      for (const t of targets) {
+      const transferOne = async (t: DownlineRow) => {
         try {
           if (kind === 'send') {
             /**
@@ -1454,6 +1487,12 @@ export default function CashierTradePage() {
             message: (e as Error)?.message || 'Transfer Failed',
           });
         }
+      };
+      // Bound concurrency: a large roster no longer waits for one complete
+      // browser round-trip per recipient, while six lanes avoid flooding the
+      // database connection pool. Wallet row locks still preserve ordering.
+      for (let offset = 0; offset < targets.length; offset += 6) {
+        await Promise.all(targets.slice(offset, offset + 6).map(transferOne));
       }
     } finally {
       // A throw between here and the end used to leave `busy` true forever,
@@ -2157,7 +2196,7 @@ export default function CashierTradePage() {
             </button>
             <button
               className={styles.footerBtn}
-              disabled={selected.size === 0 || busy}
+              disabled={selected.size === 0 || busy || loading || !roleResolved || !!loadError}
               onClick={(event) => {
                 dialogTriggerRef.current = event.currentTarget;
                 setAmountModal('ticket');
@@ -2167,7 +2206,7 @@ export default function CashierTradePage() {
             </button>
             <button
               className={styles.footerBtn}
-              disabled={selected.size === 0 || busy}
+              disabled={selected.size === 0 || busy || loading || !roleResolved || !!loadError}
               onClick={(event) => {
                 dialogTriggerRef.current = event.currentTarget;
                 setAmountModal('send');
@@ -2724,7 +2763,7 @@ export default function CashierTradePage() {
               </button>
               <button
                 className={styles.modalConfirm}
-                disabled={busy || picked.length === 0}
+                disabled={busy || picked.length === 0 || loading || !roleResolved || !!loadError}
                 onClick={() => runTransfers(amountModal)}
               >
                 {busy ? 'Working...' : 'Confirm'}

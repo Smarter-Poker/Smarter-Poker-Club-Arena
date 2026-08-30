@@ -28,6 +28,7 @@ import {
   fetchClubChipBalances,
   clearClubChipBalanceCache,
   CHIP_BALANCE_EVENTS,
+  isUnionEntity,
   type QuickLinkClub,
 } from '../../utils/clubQuickLink';
 import styles from '../../pages/HomePage.module.css';
@@ -36,7 +37,7 @@ const LONG_PRESS_MS = 500;
 
 interface ClubQuickLinkTileProps<T extends QuickLinkClub> {
   tile: LobbyTile;
-  /** Eligible clubs (already union-filtered). */
+  /** Eligible wallet entities. Cashier may include an owner-only union. */
   clubs: T[];
   /** Club the tile opens on tap; null when the user has no eligible clubs. */
   targetClub: T | null;
@@ -70,7 +71,10 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
   const longPressFired = useRef(false);
   const preloaded = useRef(false);
 
-  const hasSwitch = clubs.length > 1;
+  // The gesture is a wallet directory, not merely a multi-club switcher. Keep
+  // it available for one eligible wallet too so every permitted role can use
+  // the exact right-click / hold interaction the Cashier tile advertises.
+  const hasSwitch = clubs.length > 0;
 
   // Warm the destination chunk the first time the user shows intent
   const handlePreload = useCallback(() => {
@@ -212,11 +216,20 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
             openMenu();
           }
         }}
+        onKeyDown={(e) => {
+          if (
+            hasSwitch &&
+            (e.key === 'ArrowDown' || e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10'))
+          ) {
+            e.preventDefault();
+            openMenu();
+          }
+        }}
         aria-haspopup={hasSwitch ? 'menu' : undefined}
         aria-expanded={hasSwitch ? menuOpen : undefined}
         aria-label={
           clubName
-            ? `${tile.alt} for ${clubName} (press ${tile.shortcutKey}${hasSwitch ? ', hold to switch clubs' : ''})`
+            ? `${tile.alt} for ${clubName} (press ${tile.shortcutKey}${hasSwitch ? ', hold to choose a wallet' : ''})`
             : `${tile.alt} (press ${tile.shortcutKey})`
         }
         title={clubName ? `${tile.alt} - ${clubName}` : tile.alt}
@@ -236,7 +249,7 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
 
       {menuOpen && (
         <>
-          <div className={styles.cashierSwitchOverlay} onClick={() => closeMenu(false)} />
+          <div className={styles.cashierSwitchOverlay} onClick={() => closeMenu(true)} />
           <div
             className={styles.cashierSwitchMenu}
             role="menu"
@@ -277,7 +290,10 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
                   <span className={styles.cashierSwitchItemName}>
                     {club.name || 'Unnamed Club'}
                   </span>
-                  {balances?.has(club.id) && (
+                  {isUnionEntity(club) && (
+                    <span className={styles.cashierSwitchItemBalance}>Union Wallet</span>
+                  )}
+                  {!isUnionEntity(club) && balances?.has(club.id) && (
                     <span className={styles.cashierSwitchItemBalance}>
                       {(balances.get(club.id) as number).toLocaleString()} Chips
                     </span>

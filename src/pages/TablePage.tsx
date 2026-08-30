@@ -14794,6 +14794,51 @@ export default function TablePage({
       return;
     }
 
+    /* ═══════════════════════════════════════════════════════════════════════
+       A TOURNAMENT SEAT IS NEVER FOR SALE AT A CASH PRICE (2026-08-30)
+       ═══════════════════════════════════════════════════════════════════════
+
+       Everything below this line is the CASH path: it opens the buy-in modal
+       priced off `minBuyIn`/`maxBuyIn`, which are computed from the table's
+       BLINDS. On a tournament table those fields are whatever the row happens
+       to carry, and the modal that appears has no relationship to the game.
+
+       CAUGHT IN A REAL BROWSER, 2026-08-30, on `1 Chip Spin PLO5` — a spin
+       whose buy-in is ONE chip. Clicking its open seat produced the cash
+       modal offering 800 to 4,000 chips, with 40BB/93BB/146BB shortcuts and
+       an account balance. Nothing on that sheet was true of the game, and
+       whatever the player did next could only fail: `fn_take_seat_and_buy_in`
+       is the only sanctioned entry to a seat-first game, and this path does
+       not call it.
+
+       It is reached whenever `seatFirstBuyIn` is null while the seats are
+       still rendering as sittable — most often because the game FILLED between
+       the lobby click and the seat click (spins fill in seconds and are
+       recycled roughly ten a minute), and also on every path the recovery
+       effect above documents: an RLS-denied or failed tournament read, a
+       mount that beat the row to REGISTERING.
+
+       This is Dan's report, in its exact words: "I STILL CAN'T EVEN SIT DOWN
+       AND PLAY, IT NEVER WORKS, NEVER REGISTERS WITHOUT ERRORS." A cash
+       prompt on a one-chip spin is precisely what that feels like from the
+       chair.
+
+       So the cash path is now closed to tournament tables. Say what is true —
+       the seat is not for sale here — rather than quoting a price from a
+       different game. `isTournament` is set from `game_type === 'tournament'
+       || !!tournament_id`, so a table that is a tournament by either measure
+       is covered, and a genuine cash table is untouched. */
+    if (tableState.isTournament || tableState.tournamentId) {
+      console.debug('[Seat] Tournament seat with no seat-first sale - refusing the cash path');
+      reportError(
+        new Error('cash buy-in path reached on a tournament table'),
+        'TablePage.cash_path_on_tournament_seat',
+        { tableId, tournamentId: tableState.tournamentId, seatNumber }
+      );
+      toast?.info?.('This Seat Is Not For Sale Right Now');
+      return;
+    }
+
     console.debug('[Seat] Opening buy-in modal for seat', seatNumber);
     // Paint the seat as taken THIS FRAME, before any network work starts.
     setPendingSeat(seatNumber);

@@ -64,6 +64,7 @@
 import { reportError } from '../utils/errorReporter';
 import { isVibrationAllowed, fireVibration } from '../utils/vibrationGate';
 import { isSoundAllowed, persistSoundPreference } from '../utils/soundGate';
+import { spinCelebration } from '../config/spinSpec';
 export const haptic = {
   /** Check if vibrations are enabled (reads from localStorage) */
   // AUDIT 2026-08-19: the in-table vibration switch writes
@@ -2314,7 +2315,12 @@ class SoundService {
     this.createNoiseBurst(t, 0.08, 0.26, 2200);
     this.playTone(150, 0.16, 0.26, 'sine', 0.0);
 
-    const level = multiplier >= 100 ? 1 : multiplier >= 25 ? 0.9 : multiplier >= 5 ? 0.8 : 0.72;
+    /* ROUND 15: the level comes from spinCelebration, the one place that
+       decides how loudly a draw celebrates, so the wheel's burst and this
+       chord can never disagree about how rare the moment was. The ladder it
+       replaces was hand-written here and had already drifted from the wheel's
+       own bands (it stepped at 5x; the wheel steps at 10x). */
+    const level = spinCelebration(multiplier).soundLevel;
 
     const bus = ctx.createGain();
     bus.gain.setValueAtTime(0.0001, t);

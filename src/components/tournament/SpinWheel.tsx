@@ -42,6 +42,7 @@ import { fireVibration } from '../../utils/vibrationGate';
 import {
   SPIN_TIERS,
   spinTier,
+  spinCelebration,
   SPIN_REVEAL,
   spinRevealTotalMs,
   spinPostRevealMs,
@@ -592,6 +593,10 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
 
   const currency = data.currency ?? '';
   const won = order[targetIndex];
+  /* How loudly this draw celebrates - see spinCelebration. One source for the
+     banner, the burst size and the audio level, so the wheel and the sound
+     can never disagree about how rare this moment was. */
+  const celebration = spinCelebration(data.multiplier);
 
   return (
     <div
@@ -799,18 +804,20 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
                 </span>
               ))}
             </div>
-            {data.multiplier >= 25 && (
-              <div className="sw__hype">
-                {data.multiplier >= 100 ? 'MEGA JACKPOT' : 'JACKPOT SPIN'}
-              </div>
+            {/* ROUND 15: the banner text and the burst below both come from
+                spinCelebration, the one place that decides how loudly a draw
+                celebrates - so 25x, 50x and 100x stop sharing one treatment
+                and a 10x stops getting none. */}
+            {celebration.label && (
+              <div className={`sw__hype sw__hype--${celebration.band}`}>{celebration.label}</div>
             )}
           </div>
         )}
       </div>
 
-      {phase === 'result' && data.multiplier >= 25 && (
-        <div className="sw__confetti" aria-hidden="true">
-          {Array.from({ length: 24 }, (_, i) => (
+      {phase === 'result' && celebration.confettiPieces > 0 && (
+        <div className={`sw__confetti sw__confetti--${celebration.band}`} aria-hidden="true">
+          {Array.from({ length: celebration.confettiPieces }, (_, i) => (
             <span key={i} className="sw__conf" style={{ ['--sw-c' as string]: i }} />
           ))}
         </div>

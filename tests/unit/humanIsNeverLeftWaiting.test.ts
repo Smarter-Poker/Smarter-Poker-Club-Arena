@@ -36,7 +36,7 @@ describe('the fast lane owns the human case', () => {
 
   it('hands every partially-paid seat-first game to the human fill', () => {
     expect(lane).toContain('paid > 0 && paid < seats');
-    expect(lane).toContain('fillHumanSeatFirstGame(id, seats, paid)');
+    expect(lane).toContain('fillPartialSeatFirstGame(id, seats, paid, windowClosed)');
   });
 
   it('still fast-starts full games exactly as before', () => {
@@ -46,7 +46,7 @@ describe('the fast lane owns the human case', () => {
 });
 
 describe('fillHumanSeatFirstGame', () => {
-  const fill = sliceBlockAfter(GAME_SERVER, 'private async fillHumanSeatFirstGame(');
+  const fill = sliceBlockAfter(GAME_SERVER, 'private async fillPartialSeatFirstGame(');
 
   it('fills only when a HUMAN holds a seat - horse-only partials keep their designs', () => {
     expect(fill).toContain('if (!hasHuman) return');
@@ -64,9 +64,9 @@ describe('fillHumanSeatFirstGame', () => {
   });
 
   it('a short fill raises the human-waiting alarm, throttled', () => {
-    expect(fill).toContain('seat_first_human_waiting');
-    expect(fill).toContain('lastHumanWaitReportAt');
-    expect(fill).toContain('A HUMAN IS WAITING');
+    expect(GAME_SERVER).toContain('seat_first_human_waiting');
+    expect(GAME_SERVER).toContain('lastHumanWaitReportAt');
+    expect(GAME_SERVER).toContain('SEAT-FIRST BOARD CANNOT FILL');
   });
 
   it('resolves the table through the same occupancy election as everything else', () => {

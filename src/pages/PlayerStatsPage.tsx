@@ -77,6 +77,7 @@ import { reportError } from '../utils/errorReporter';
 import DownlineRakePanel from '../components/agent/DownlineRakePanel';
 import { AgentRakeService, type AgentRoleRow } from '../services/AgentRakeService';
 import { StatsFactsService, type PlayerRakeStats } from '../services/StatsFactsService';
+import { buildStatsIntelligenceBrief } from '../components/stats/statsIntelligenceBrief';
 
 // ── SWR Cache helpers (localStorage for cross-session persistence) ──
 const STATS_CACHE_KEY = STATS_CACHE_PREFIX;
@@ -1290,6 +1291,17 @@ export default function PlayerStatsPage() {
       .join(', ')}.`;
   }, [positionPie]);
 
+  const intelligenceBrief = useMemo(
+    () =>
+      buildStatsIntelligenceBrief({
+        overall,
+        positions: full?.positions,
+        variants: full?.variants,
+        daily: full?.daily,
+      }),
+    [overall, full?.positions, full?.variants, full?.daily]
+  );
+
   // AdvancedStatsSummary expects a player_stats-like object (fractions)
   const advancedInitialData = useMemo(
     () => ({
@@ -1456,7 +1468,7 @@ export default function PlayerStatsPage() {
         <section className="stats-command-deck stats-command-deck-loading">
           <img
             className="stats-hero-art"
-            src={`${import.meta.env.BASE_URL}images/stats/player-intelligence-console-v1.webp`}
+            src={`${import.meta.env.BASE_URL}images/stats/player-intelligence-dossier-v2.webp`}
             alt=""
             aria-hidden="true"
             fetchPriority="high"
@@ -1530,7 +1542,7 @@ export default function PlayerStatsPage() {
       <section className="stats-command-deck" aria-labelledby="stats-page-title">
         <img
           className="stats-hero-art"
-          src={`${import.meta.env.BASE_URL}images/stats/player-intelligence-console-v1.webp`}
+          src={`${import.meta.env.BASE_URL}images/stats/player-intelligence-dossier-v2.webp`}
           alt=""
           aria-hidden="true"
           fetchPriority="high"
@@ -1643,6 +1655,38 @@ export default function PlayerStatsPage() {
           </div>
         )}
       </div>
+
+      {hasData && (
+        <section className="stats-intelligence-brief" aria-labelledby="stats-brief-title">
+          <div className="stats-brief-head">
+            <div>
+              <span className="stats-section-kicker">Range Dossier // Verified Readout</span>
+              <h2 id="stats-brief-title">Evidence At A Glance</h2>
+            </div>
+            <p>Sample-Aware Facts From This Window. Coaching Stays In Your Personal Assistant.</p>
+          </div>
+
+          <div className="stats-brief-grid">
+            {intelligenceBrief.map((item, index) => (
+              <article className={`stats-brief-item tone-${item.tone}`} key={item.id}>
+                <span className="stats-brief-index">{String(index + 1).padStart(2, '0')}</span>
+                <span className="stats-brief-label">{item.label}</span>
+                <strong>{item.value}</strong>
+                <p>{item.detail}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="stats-brief-actions" aria-label="Dossier shortcuts">
+            <button type="button" onClick={() => setCategory('analysis')}>
+              Open Deep Analysis
+            </button>
+            <button type="button" onClick={() => setCategory(isOwnProfile ? 'hands' : 'positions')}>
+              {isOwnProfile ? 'Review Hand Patterns' : 'Inspect Positions'}
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* ── PILL TABS ── */}
       {/* A real tablist. This was eight buttons whose active state lived only in

@@ -588,6 +588,8 @@ export interface HorseGameStateV2 extends HorseGameState {
   gameMode?: 'cash' | 'tournament';
   /** V11: table ante (0/undefined = no ante). Antes widen preflop ranges. */
   ante?: number;
+  /** ALL-IN-OR-FOLD table: preflop is fold or shove and nothing else. */
+  allInOrFold?: boolean;
   /** The ante is a BIG BLIND ANTE: the big blind posts it once for the whole
    *  table, rather than every player posting it every hand. Changes what an
    *  orbit COSTS, which is what Harrington M divides by — see AnteMath.ts. */
@@ -1457,6 +1459,7 @@ export class HorseLogic {
       // the preflop layer keeps exact legacy behavior in ablation runs).
       mode: opts.v11 !== false ? (isTournamentMode(gs) ? 'tournament' : 'cash') : undefined,
       anteInPlay: opts.v11 !== false && (gs.ante ?? 0) > 0,
+      allInOrFold: gs.allInOrFold === true,
       // V20 M-ZONES: the real per-orbit cost needs the ante SIZE and the
       // table size, not just "an ante exists". Undefined when the layer is
       // ablated so the preflop engine keeps exact legacy behavior.

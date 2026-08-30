@@ -2098,6 +2098,7 @@
     "fn_view_story",
     "fn_wallet_claim_back",
     "fn_wallet_type_transfer",
+    "fn_warn_promotion_has_no_payout_path",
     "fn_welcome_new_approved_member",
     "follow_venue",
     "force_close_table_and_refund",

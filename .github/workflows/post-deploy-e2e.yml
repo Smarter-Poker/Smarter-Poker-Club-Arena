@@ -54,9 +54,22 @@ on:
 # below check routes, layout and touch targets on the live site, and any deploy
 # that reaches production is a fair subject. So it tests whatever is serving
 # when it starts, names that sha in the summary, and finishes in about three
-# minutes instead of thirteen. Cancellation now only dedupes a burst.
+# minutes instead of thirteen.
+#
+# GitHub evaluates concurrency BEFORE the job-level `if`. That means a failed
+# or cancelled Build for World Hub Sync still starts this workflow, takes the
+# concurrency lock, cancels a genuine manual/production run, and only THEN
+# skips its own job. Give those no-op invocations a unique group. Successful
+# deploys and manual runs continue sharing the production group, where newest
+# wins and the stateful authenticated suite remains strictly one at a time.
 concurrency:
-  group: post-deploy-e2e
+  group: >-
+    post-deploy-e2e-${{
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion != 'success' &&
+      format('noop-{0}', github.run_id) ||
+      'production'
+    }}
   cancel-in-progress: true
 
 jobs:

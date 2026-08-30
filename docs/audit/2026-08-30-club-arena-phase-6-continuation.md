@@ -161,6 +161,6 @@ Union Network
 - TypeScript: **passed** (`tsc --noEmit`).
 - Static route-target checker: **126 declared routes and 64 programmatic navigation targets; 0 invalid targets**.
 - Title-case policy: **passed**.
-- Full Vitest regression: **638 files and 9,446 tests passed**.
+- Full Vitest regression: **641 files and 9,465 tests passed** on the fully integrated release head.
 - Production build and asset pipeline: **passed** on current `origin/main`; 434 media assets optimized, 0 failed, and build provenance reported `behind-main=0`.
 - Authenticated desktop/tablet/mobile route, overflow, broken-link, and interaction verification: pending publication so it can be exercised against the exact immutable production artifact.

@@ -143,6 +143,13 @@ jobs:
           # one player without ever leaking into another player's settings.
           SP_EMAIL_2: ${{ secrets.SP_EMAIL_2 }}
           SP_PASS_2: ${{ secrets.SP_PASS_2 }}
+          # The commerce certification never touches either standing player
+          # above. It creates, funds and hard-deletes reserved temporary Auth
+          # users so every live SKU can traverse checkout safely.
+          CUSTOMIZATION_COMMERCE_CERTIFICATION: '1'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           # The mode mobile-fit-audit.spec.ts was built for and has never been
           # run in. Without it the spec logs a report and passes regardless.
           MOBILE_FIT_STRICT: '1'
@@ -169,6 +176,7 @@ jobs:
             tests/e2e/tournament-buy-in-dialog.spec.ts \
             tests/e2e/tournament-watch.spec.ts \
             tests/e2e/production-customization-realtime.spec.ts \
+            tests/e2e/production-customization-commerce.spec.ts \
             tests/e2e/footer-route.spec.ts \
             tests/e2e/routes \
             --reporter=line --retries=1

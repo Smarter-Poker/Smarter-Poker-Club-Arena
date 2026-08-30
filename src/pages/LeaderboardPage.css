@@ -354,12 +354,6 @@
   border-color: rgba(215, 170, 67, 0.48);
 }
 
-.lb-action-btn:disabled,
-.leaderboard-page .modal-content button:disabled {
-  opacity: 0.46;
-  cursor: default;
-}
-
 .leaderboard-filters {
   position: relative;
   z-index: 4;
@@ -900,54 +894,6 @@
 
 /* Loading, empty, tournament states -------------------------------------- */
 
-.lb-refresh-warning {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  margin-top: 12px;
-  padding: 12px 16px;
-  color: #d4dde2;
-  background: linear-gradient(90deg, rgba(109, 70, 12, 0.34), rgba(12, 17, 22, 0.96));
-  border: 1px solid rgba(226, 170, 62, 0.44);
-  border-radius: 3px;
-}
-
-.lb-refresh-warning > div {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.lb-refresh-warning strong {
-  color: #f0cc78;
-  font-family: 'Rajdhani', 'Arial Narrow', sans-serif;
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.lb-refresh-warning span {
-  color: #84939d;
-  font-size: 0.72rem;
-}
-
-.lb-refresh-warning button {
-  min-height: 36px;
-  flex: 0 0 auto;
-  padding: 0 14px;
-  color: #e9f5fa;
-  background: #0b1820;
-  border: 1px solid rgba(53, 191, 248, 0.48);
-  border-radius: 3px;
-  font-family: 'Rajdhani', 'Arial Narrow', sans-serif;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
 .lb-skeleton-wrapper {
   display: flex;
   flex-direction: column;
@@ -1018,18 +964,6 @@
 .empty-sub {
   color: #66747e;
   font-size: 0.8rem;
-}
-
-.lb-error-state .empty-icon {
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  color: #ffd27a;
-  border: 1px solid rgba(226, 170, 62, 0.52);
-  border-radius: 50%;
-  font-family: 'Rajdhani', 'Arial Narrow', sans-serif;
-  font-size: 1.25rem;
 }
 
 .join-club-btn {
@@ -1258,8 +1192,7 @@
 .leaderboard-entry:focus-visible,
 .tournament-stats-entry:focus-visible,
 .join-club-btn:focus-visible,
-.lb-load-more:focus-visible,
-.lb-refresh-warning button:focus-visible {
+.lb-load-more:focus-visible {
   outline: 2px solid var(--lb-blue);
   outline-offset: 3px;
 }
@@ -1482,14 +1415,6 @@
   }
   .user-rank-card {
     margin-top: 10px;
-  }
-  .lb-refresh-warning,
-  .lb-refresh-warning > div {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .lb-refresh-warning button {
-    width: 100%;
   }
 }
 

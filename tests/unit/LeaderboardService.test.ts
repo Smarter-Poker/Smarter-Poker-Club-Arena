@@ -67,12 +67,6 @@ describe('LeaderboardService', () => {
       expect(Array.isArray(daily)).toBe(true);
       expect(Array.isArray(monthly)).toBe(true);
     });
-
-    it('surfaces a failed primary load when strict mode is requested', async () => {
-      await expect(
-        LeaderboardService.getClubLeaderboard('club-1', 'profit', 'weekly', 10, 0, 0, true)
-      ).rejects.toThrow('Club leaderboard returned no data');
-    });
   });
 
   describe('export shape', () => {

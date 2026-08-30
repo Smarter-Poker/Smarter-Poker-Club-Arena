@@ -268,8 +268,7 @@ export const LeaderboardService = {
     period: LeaderboardPeriod = 'weekly',
     limit: number = 10,
     offset: number = 0,
-    periodOffset: number = 0,
-    strict: boolean = false
+    periodOffset: number = 0
   ): Promise<LeaderboardEntry[]> {
     try {
       const resolvedClubId = await resolveClubUUID(clubId);
@@ -330,7 +329,6 @@ export const LeaderboardService = {
           .range(offset, offset + limit - 1);
         if (error || !data) {
           reportError(error, 'LeaderboardService.getClubLeaderboard_direct');
-          if (strict) throw error || new Error('Club leaderboard returned no data');
           return [];
         }
         statsData = data as PlayerStatsRow[];
@@ -339,7 +337,6 @@ export const LeaderboardService = {
       return await decorateWithProfiles(statsData, metric);
     } catch (err: unknown) {
       reportError(err, 'LeaderboardService.getClubLeaderboard_err');
-      if (strict) throw err;
       return [];
     }
   },
@@ -354,8 +351,7 @@ export const LeaderboardService = {
     period: LeaderboardPeriod = 'weekly',
     limit: number = 50,
     offset: number = 0,
-    periodOffset: number = 0,
-    strict: boolean = false
+    periodOffset: number = 0
   ): Promise<LeaderboardEntry[]> {
     try {
       if (metric === 'vpip' || metric === 'pfr') return [];
@@ -383,13 +379,11 @@ export const LeaderboardService = {
       }
       if (error || !data) {
         reportError(error, 'LeaderboardService.getGlobalLeaderboard');
-        if (strict) throw error || new Error('Global leaderboard returned no data');
         return [];
       }
       return await decorateWithProfiles(data as PlayerStatsRow[], metric);
     } catch (err: unknown) {
       reportError(err, 'LeaderboardService.getGlobalLeaderboard_err');
-      if (strict) throw err;
       return [];
     }
   },
@@ -646,8 +640,7 @@ export const LeaderboardService = {
   async getClubTournamentStats(
     clubId: string,
     limit: number = 50,
-    offset: number = 0,
-    strict: boolean = false
+    offset: number = 0
   ): Promise<TournamentStats[]> {
     try {
       /* Server-side first. The fallback below aggregates in the browser from
@@ -708,7 +701,6 @@ export const LeaderboardService = {
 
       if (resultsError || !playerResults) {
         reportError(resultsError, 'LeaderboardService.getClubTournamentStats');
-        if (strict) throw resultsError || new Error('Tournament leaderboard returned no data');
         return [];
       }
 
@@ -797,7 +789,6 @@ export const LeaderboardService = {
         .slice(offset, offset + limit);
     } catch (err: unknown) {
       reportError(err, 'LeaderboardService.getClubTournamentStats');
-      if (strict) throw err;
       return [];
     }
   },

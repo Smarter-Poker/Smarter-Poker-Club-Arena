@@ -148,8 +148,18 @@ export function TournamentStartingTicker() {
      The rule was never "sit under the header", it is "sit under whatever top
      chrome this route actually has". So measure every candidate and start
      below the lowest one. A hidden or absent element contributes nothing, so
-     the home page still gets top: 0. */
+     the home page still gets top: 0.
+
+     2026-08-30 — AND THEN IT WENT BACK. Dan, with a screenshot of the lobby:
+     "THE TICKER MUST ALWAYS BE AT THE VERY TOP OF THE PAGE, DIRECTLY UNDER THE
+     GLOBAL HEADER, THE 'ACTION TAB' SHOULD NEVER BE ABOVE IT." Measuring the
+     tab bar protected the "+" by moving the TICKER; it moves the BAR now.
+     `.table-tab-bar` is out of TOP_CHROME_SELECTORS and this strip publishes
+     `--mtt-ticker-h` instead, which the bar starts below. The "+" is safer for
+     it: the two never occupy the same pixels on any route now, rather than
+     depending on a measurement catching a bar that mounts late. */
   const [headerBottom, setHeaderBottom] = useState(0);
+  const tickerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const measure = () => {
       setHeaderBottom(measureTopChromeBottom((sel) => document.querySelector(sel)));
@@ -490,14 +500,79 @@ export function TournamentStartingTicker() {
     });
   }, []);
 
-  if (live.length === 0 && liveOverlays.length === 0) return null;
+  /* ── IS THE BAR ACTUALLY ON SCREEN? ────────────────────────────────────────
+     One boolean, computed above every early return, because two things now
+     need the same answer: the render below, and the effect that publishes this
+     strip's height for the table tab bar to start under. Three separate
+     `return null`s used to answer it, which is fine for a render and useless
+     to a hook — a hook cannot live after a conditional return.
 
-  // Outside a club there is nothing to announce: /clubs and /table only.
-  if (!insideClub) return null;
+       - nothing to announce;
+       - outside a club: /clubs and /table only, there is nothing to say
+         anywhere else (Dan 2026-08-21: "THE BANNER ONLY PLAYS WHILE YOUR
+         INSIDE THE CLUB");
+       - the player turned the ticker off in table or Club Arena settings
+         (Dan 2026-08-28, one shared store). */
+  const barVisible =
+    (live.length > 0 || liveOverlays.length > 0) &&
+    insideClub &&
+    tickerSettings.showTicker !== false;
 
-  // Dan 2026-08-28: the player turned the ticker off (table settings or
-  // Club Arena settings — one shared store).
-  if (tickerSettings.showTicker === false) return null;
+  /* ── PUBLISH THE HEIGHT SO THE ACTION TAB CAN START BELOW IT ───────────────
+     Dan 2026-08-30: "THE TICKER MUST ALWAYS BE AT THE VERY TOP OF THE PAGE,
+     DIRECTLY UNDER THE GLOBAL HEADER, THE 'ACTION TAB' SHOULD NEVER BE ABOVE
+     IT."
+
+     This strip is `position: fixed`, so nothing below it moves on its own. It
+     measures itself and writes the number to the document element;
+     MultiTablePage.css and TableTabBar.css read `--mtt-ticker-h` and start
+     there. The property is REMOVED, not set to 0, when no bar is up — so the
+     `var(--mtt-ticker-h, 0px)` fallback in those files is what applies on a
+     quiet schedule and nothing moves for a ticker that is not there.
+
+     `--sp-tabbar-inset` is the notch. Whichever strip actually touches y = 0
+     pays `env(safe-area-inset-top)`, and only that one: when this bar is
+     topmost (no global header, i.e. /table/*) it has paid, so the tab bar's
+     own inset is zeroed. Paying it twice is the ~47px band that was fixed on
+     notched iPhones once already, in this same relationship. */
+  useEffect(() => {
+    const root = document.documentElement;
+    const clear = () => {
+      root.style.removeProperty('--mtt-ticker-h');
+      root.style.removeProperty('--sp-tabbar-inset');
+    };
+
+    if (!barVisible) {
+      clear();
+      return clear;
+    }
+
+    const publish = () => {
+      const h = tickerRef.current?.offsetHeight ?? 0;
+      root.style.setProperty('--mtt-ticker-h', `${h}px`);
+      if (headerBottom > 0) root.style.removeProperty('--sp-tabbar-inset');
+      else root.style.setProperty('--sp-tabbar-inset', '0px');
+    };
+    publish();
+
+    /* The strip's height is not a constant: the flag wraps at narrow widths
+       and the notch inset changes on rotation. Observe it rather than trusting
+       the first frame. */
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && tickerRef.current) {
+      ro = new ResizeObserver(publish);
+      ro.observe(tickerRef.current);
+    }
+    window.addEventListener('resize', publish);
+
+    return () => {
+      window.removeEventListener('resize', publish);
+      ro?.disconnect();
+      clear();
+    };
+  }, [barVisible, headerBottom]);
+
+  if (!barVisible) return null;
 
   /* ONE BAR, AND THE OVERLAY WINS IT.
      Dan 2026-08-26 asked for overlay announcements "to jump in and play", and
@@ -540,6 +615,7 @@ export function TournamentStartingTicker() {
 
   return (
     <div
+      ref={tickerRef}
       className="mtt-ticker"
       role="status"
       aria-live="polite"

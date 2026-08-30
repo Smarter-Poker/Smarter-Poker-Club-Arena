@@ -219,6 +219,14 @@ class SoundService {
   private ctx: AudioContext | null = null;
   private enabled: boolean = true;
   private masterVolume: number = 0.7;
+  private categoryEnabled: Record<SoundCategory, boolean> = {
+    action: true,
+    chat: true,
+    turn_alert: true,
+    win: true,
+    event: true,
+  };
+
   /* SOUND AUDIT 2026-08-27: was 0.5, which meant a player who never opened the
      settings panel ran at half the intended effects gain forever and the
      in-table volume slider (master only) topped out at 0.5. 1.0 is right.

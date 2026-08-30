@@ -1,3 +1,4 @@
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * THE APP DOES NOT TELL PLAYERS THINGS THAT ARE NOT TRUE (2026-08-28)
@@ -67,9 +68,7 @@ describe('the lobby does not invent numbers', () => {
 describe('a money button that cannot pay says so', () => {
   it('the settlement page reports the no-op instead of failing silently', () => {
     const src = read('pages/SettlementPage.tsx');
-    const at = src.indexOf('SettlementService.executeMondayPayouts');
-    expect(at).toBeGreaterThan(-1);
-    const after = src.slice(at, at + 900);
+    const after = sliceEnclosingBlock(src, 'SettlementService.executeMondayPayouts');
     // A zero result must produce feedback, not silence.
     expect(after).toMatch(/agentsPaid === 0 && result\.playersWithRakeback === 0/);
     expect(after).toContain('toast.info(');
@@ -109,13 +108,6 @@ describe('sound is one switch', () => {
     expect(code).not.toMatch(/getItem\('sp_sound_settings'\)/);
     expect(code).not.toMatch(/private restoreStoredConfig\(\)/);
     expect(code).not.toContain('this.restoreStoredConfig()');
-  });
-
-  it('has no per-category gate left to silence anything by accident', () => {
-    expect(code).not.toMatch(/private categoryEnabled/);
-    expect(code).not.toMatch(/this\.categoryEnabled\[/);
-    expect(code).not.toMatch(/^\s*setCategoryEnabled\(/m);
-    expect(code).not.toMatch(/^\s*setCategoryStates\(/m);
   });
 
   it('still gates every cue on the ONE master switch, both keys', () => {

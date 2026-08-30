@@ -26,6 +26,7 @@
 import { supabase } from '../lib/supabase';
 import { normaliseRole, type ClubRole } from '../types/clubRoles';
 import { reportError } from '../utils/errorReporter';
+import { runRosterReadWithRetry } from '../utils/rosterReadReliability';
 
 /** PostgREST hands back `numeric` as a string. Make it a number, exactly once. */
 function num(value: unknown): number {
@@ -273,57 +274,67 @@ export interface DownlineMember {
 
 export const ClubRosterService = {
   async getSummary(clubId: string, signal?: AbortSignal): Promise<RosterSummary | null> {
-    let request = supabase.rpc('ca_club_members_summary', { p_club_id: clubId });
-    if (signal && typeof (request as any).abortSignal === 'function') {
-      request = (request as any).abortSignal(signal);
-    }
-    const { data, error } = await request;
-    if (error) throw error;
-    if (!data) return null;
-    const d = data as Record<string, any>;
-    return {
-      viewer_role: normaliseRole(d.viewer_role),
-      capabilities: {
-        can_view_financials: d.capabilities?.can_view_financials === true,
-        can_export: d.capabilities?.can_export === true,
-        can_manage_members: d.capabilities?.can_manage_members === true,
-        can_view_notes: d.capabilities?.can_view_notes === true,
+    return runRosterReadWithRetry(
+      async (attemptSignal) => {
+        let request = supabase.rpc('ca_club_members_summary', { p_club_id: clubId });
+        if (typeof (request as any).abortSignal === 'function') {
+          request = (request as any).abortSignal(attemptSignal);
+        }
+        const { data, error } = await request;
+        if (error) throw error;
+        if (!data) return null;
+        const d = data as Record<string, any>;
+        return {
+          viewer_role: normaliseRole(d.viewer_role),
+          capabilities: {
+            can_view_financials: d.capabilities?.can_view_financials === true,
+            can_export: d.capabilities?.can_export === true,
+            can_manage_members: d.capabilities?.can_manage_members === true,
+            can_view_notes: d.capabilities?.can_view_notes === true,
+          },
+          counts: {
+            total: num(d.counts?.total),
+            online: num(d.counts?.online),
+            seated: num(d.counts?.seated),
+            agents: num(d.counts?.agents),
+            admins: num(d.counts?.admins),
+          },
+          data_version: d.data_version ?? null,
+          page_size: Math.max(20, Math.min(num(d.page_size) || 80, 200)),
+        };
       },
-      counts: {
-        total: num(d.counts?.total),
-        online: num(d.counts?.online),
-        seated: num(d.counts?.seated),
-        agents: num(d.counts?.agents),
-        admins: num(d.counts?.admins),
-      },
-      data_version: d.data_version ?? null,
-      page_size: Math.max(20, Math.min(num(d.page_size) || 80, 200)),
-    };
+      { signal, timeoutMs: 8_000 }
+    );
   },
 
   async getRosterPage(clubId: string, query: RosterQuery = {}): Promise<RosterPage> {
-    let request = supabase.rpc('ca_club_members_page', {
-      p_club_id: clubId,
-      p_search: query.search?.trim() ?? '',
-      p_filter: query.filter ?? 'all',
-      p_sort: query.sort ?? 'hierarchy',
-      p_cursor: query.cursor ?? null,
-      p_limit: query.limit ?? 80,
-    });
-    if (query.signal && typeof (request as any).abortSignal === 'function') {
-      request = (request as any).abortSignal(query.signal);
-    }
-    const { data, error } = await request;
-    if (error) throw error;
-    const d = (data ?? {}) as Record<string, any>;
-    return {
-      items: Array.isArray(d.items)
-        ? d.items.map((row: Record<string, unknown>) => mapRosterRow(row))
-        : [],
-      next_cursor: d.next_cursor && typeof d.next_cursor === 'object' ? d.next_cursor : null,
-      has_more: d.has_more === true,
-      filtered_total: num(d.filtered_total),
-    };
+    return runRosterReadWithRetry(
+      async (attemptSignal) => {
+        let request = supabase.rpc('ca_club_members_page', {
+          p_club_id: clubId,
+          p_search: query.search?.trim() ?? '',
+          p_filter: query.filter ?? 'all',
+          p_sort: query.sort ?? 'hierarchy',
+          p_cursor: query.cursor ?? null,
+          p_limit: query.limit ?? 80,
+        });
+        if (typeof (request as any).abortSignal === 'function') {
+          request = (request as any).abortSignal(attemptSignal);
+        }
+        const { data, error } = await request;
+        if (error) throw error;
+        const d = (data ?? {}) as Record<string, any>;
+        return {
+          items: Array.isArray(d.items)
+            ? d.items.map((row: Record<string, unknown>) => mapRosterRow(row))
+            : [],
+          next_cursor: d.next_cursor && typeof d.next_cursor === 'object' ? d.next_cursor : null,
+          has_more: d.has_more === true,
+          filtered_total: num(d.filtered_total),
+        };
+      },
+      { signal: query.signal, timeoutMs: 8_000 }
+    );
   },
 
   /**

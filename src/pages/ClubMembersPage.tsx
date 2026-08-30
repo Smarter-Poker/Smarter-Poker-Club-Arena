@@ -9,9 +9,14 @@ import { useToast } from '../components/common/Toast';
 import { useVirtualScroll } from '../hooks/useVirtualScroll';
 import PageSkeleton from '../components/common/PageSkeleton';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
+import RosterConnectionStatus from '../components/club/RosterConnectionStatus';
 import { exportToCSV } from '../lib/export';
-import { resolveClubUUID, isUUID } from '../utils/clubIdResolver';
+import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
+import {
+  computeRosterRetryDelay,
+  type RosterConnectionState,
+} from '../utils/rosterReadReliability';
 import { titleCase } from '../utils/titleCase';
 import { AGENT_ROLES, roleLabel } from '../types/clubRoles';
 import ClubRosterService, {
@@ -119,12 +124,27 @@ export default function ClubMembersPage() {
   const [loadError, setLoadError] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [dataFreshness, setDataFreshness] = useState<'loading' | 'fresh' | 'stale' | 'failed'>(
+    'loading'
+  );
+  const [realtimeConnection, setRealtimeConnection] = useState<'connecting' | 'live' | 'degraded'>(
+    'connecting'
+  );
+  const [browserOnline, setBrowserOnline] = useState(
+    () => typeof navigator === 'undefined' || navigator.onLine !== false
+  );
+  const [lastSuccessfulSyncAt, setLastSuccessfulSyncAt] = useState<number | null>(null);
+  const [resolutionAttempt, setResolutionAttempt] = useState(0);
 
   const debouncedSearch = useDebounce(searchQuery, 260);
   const requestEpochRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const moreAbortRef = useRef<AbortController | null>(null);
   const moreRef = useRef(false);
+  const membersRef = useRef<RosterMember[]>([]);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recoveryAttemptRef = useRef(0);
+  const realtimeConnectionRef = useRef<'connecting' | 'live' | 'degraded'>('connecting');
   const latestLoadRef = useRef<() => Promise<void>>(async () => undefined);
 
   useEffect(() => {
@@ -139,9 +159,12 @@ export default function ClubMembersPage() {
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
     abortRef.current?.abort();
+    moreAbortRef.current?.abort();
     requestEpochRef.current += 1;
     setResolvedClubId(null);
+    membersRef.current = [];
     setMembers([]);
     setSummary(DEFAULT_SUMMARY);
     setSelected(new Set());
@@ -152,23 +175,23 @@ export default function ClubMembersPage() {
     setNotFound(false);
     setAccessDenied(false);
     setSearchQuery('');
+    setDataFreshness('loading');
+    setLastSuccessfulSyncAt(null);
+    realtimeConnectionRef.current = 'connecting';
+    setRealtimeConnection('connecting');
 
     if (!routeClub) {
       setLoading(false);
       setNotFound(true);
+      setDataFreshness('failed');
       return () => {
         active = false;
       };
     }
 
-    void resolveClubUUID(routeClub)
+    void resolveClubUUIDStrict(routeClub)
       .then((id) => {
         if (!active) return;
-        if (!isUUID(id)) {
-          setNotFound(true);
-          setLoading(false);
-          return;
-        }
         setResolvedClubId(id);
         if (user?.id) {
           try {
@@ -178,9 +201,12 @@ export default function ClubMembersPage() {
             if (filter === 'all' && sortKey === 'hierarchy' && !savedSearch) {
               const cached = readRosterCache(user.id, id);
               if (cached) {
+                membersRef.current = cached.rows;
                 setMembers(cached.rows);
                 setSummary(cached.summary);
                 setFilteredTotal(cached.summary.counts.total);
+                setLastSuccessfulSyncAt(cached.cachedAt);
+                setDataFreshness('stale');
               }
             }
           } catch {
@@ -191,7 +217,9 @@ export default function ClubMembersPage() {
       .catch((error) => {
         reportError(error, 'ClubMembersPage.resolveClub');
         if (active) {
-          setLoadError(true);
+          if (error instanceof ClubNotFoundError) setNotFound(true);
+          else setLoadError(true);
+          setDataFreshness('failed');
           setLoading(false);
         }
       });
@@ -201,7 +229,7 @@ export default function ClubMembersPage() {
     };
     // Filter and sort are intentionally not reset when the same URL re-resolves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeClub, user?.id]);
+  }, [resolutionAttempt, routeClub, user?.id]);
 
   useEffect(() => {
     if (!resolvedClubId || !user?.id) return;
@@ -220,10 +248,12 @@ export default function ClubMembersPage() {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    moreAbortRef.current?.abort();
     setLoading(true);
     setLoadError(false);
     setLoadSlow(false);
     setSelected(new Set());
+    setDataFreshness('loading');
 
     try {
       const [nextSummary, page] = await Promise.all([
@@ -239,25 +269,34 @@ export default function ClubMembersPage() {
       if (controller.signal.aborted || epoch !== requestEpochRef.current) return;
       if (!nextSummary) {
         setAccessDenied(true);
+        membersRef.current = [];
         setMembers([]);
+        setDataFreshness('fresh');
+        setLastSuccessfulSyncAt(Date.now());
         return;
       }
       setNotFound(false);
       setAccessDenied(false);
       setSummary(nextSummary);
+      membersRef.current = page.items;
       setMembers(page.items);
       setCursor(page.next_cursor);
       setHasMore(page.has_more);
       setFilteredTotal(page.filtered_total);
+      setLoadError(false);
+      setDataFreshness('fresh');
+      setLastSuccessfulSyncAt(Date.now());
+      recoveryAttemptRef.current = 0;
       if (user?.id && !debouncedSearch && filter === 'all' && sortKey === 'hierarchy') {
         writeRosterCache(user.id, resolvedClubId, page.items, nextSummary);
       }
       ClubRosterService.touchFeeRollup();
     } catch (error) {
+      controller.abort();
       if (!abortLike(error) && epoch === requestEpochRef.current) {
         reportError(error, 'ClubMembersPage.loadFirstPage');
         setLoadError(true);
-        toast.error('Failed To Load Members');
+        setDataFreshness(membersRef.current.length > 0 ? 'stale' : 'failed');
       }
     } finally {
       if (epoch === requestEpochRef.current) {
@@ -266,11 +305,34 @@ export default function ClubMembersPage() {
         setLoadSlow(false);
       }
     }
-  }, [debouncedSearch, filter, resolvedClubId, sortKey, toast, user?.id]);
+  }, [debouncedSearch, filter, resolvedClubId, sortKey, user?.id]);
 
   useEffect(() => {
     latestLoadRef.current = loadFirstPage;
   }, [loadFirstPage]);
+
+  useEffect(() => {
+    const handleOffline = () => {
+      setBrowserOnline(false);
+      realtimeConnectionRef.current = 'degraded';
+      setRealtimeConnection('degraded');
+      abortRef.current?.abort();
+      moreAbortRef.current?.abort();
+      setDataFreshness(membersRef.current.length > 0 ? 'stale' : 'failed');
+    };
+    const handleOnline = () => {
+      setBrowserOnline(true);
+      realtimeConnectionRef.current = 'connecting';
+      setRealtimeConnection('connecting');
+      setResolutionAttempt((current) => current + 1);
+    };
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, []);
 
   useEffect(() => {
     if (!resolvedClubId) return;
@@ -294,6 +356,17 @@ export default function ClubMembersPage() {
     await latestLoadRef.current();
   }, [resolvedClubId, user?.id]);
 
+  const retryLiveSync = useCallback(() => {
+    if (resolvedClubId) {
+      void refresh();
+      return;
+    }
+    setLoadError(false);
+    setNotFound(false);
+    setLoading(true);
+    setResolutionAttempt((current) => current + 1);
+  }, [refresh, resolvedClubId]);
+
   const scheduleStructuralRefresh = useCallback(() => {
     if (!resolvedClubId || refreshTimerRef.current) return;
     if (user?.id) purgeRosterCache(user.id, resolvedClubId);
@@ -303,9 +376,22 @@ export default function ClubMembersPage() {
     }, 1200);
   }, [resolvedClubId, user?.id]);
 
+  const scheduleConnectionRecovery = useCallback(() => {
+    if (!resolvedClubId || refreshTimerRef.current || !browserOnline) return;
+    if (user?.id) purgeRosterCache(user.id, resolvedClubId);
+    const delay = computeRosterRetryDelay(recoveryAttemptRef.current, 1_200, 30_000);
+    recoveryAttemptRef.current += 1;
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = null;
+      void latestLoadRef.current();
+    }, delay);
+  }, [browserOnline, resolvedClubId, user?.id]);
+
   useEffect(
     () => () => {
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      abortRef.current?.abort();
+      moreAbortRef.current?.abort();
     },
     []
   );
@@ -331,7 +417,18 @@ export default function ClubMembersPage() {
       )
         scheduleStructuralRefresh();
     },
-    onSubscriptionError: scheduleStructuralRefresh,
+    onSubscriptionStatus: (status) => {
+      if (status !== 'SUBSCRIBED') return;
+      const recovered = realtimeConnectionRef.current === 'degraded';
+      realtimeConnectionRef.current = 'live';
+      setRealtimeConnection('live');
+      if (recovered) scheduleStructuralRefresh();
+    },
+    onSubscriptionError: () => {
+      realtimeConnectionRef.current = 'degraded';
+      setRealtimeConnection('degraded');
+      scheduleConnectionRecovery();
+    },
     enabled: !!resolvedClubId,
   });
 
@@ -340,6 +437,9 @@ export default function ClubMembersPage() {
     moreRef.current = true;
     setIsLoadingMore(true);
     const epoch = requestEpochRef.current;
+    const controller = new AbortController();
+    moreAbortRef.current?.abort();
+    moreAbortRef.current = controller;
     try {
       const page = await ClubRosterService.getRosterPage(resolvedClubId, {
         search: debouncedSearch,
@@ -347,18 +447,23 @@ export default function ClubMembersPage() {
         sort: sortKey,
         cursor,
         limit: PAGE_SIZE,
+        signal: controller.signal,
       });
-      if (epoch !== requestEpochRef.current) return;
+      if (controller.signal.aborted || epoch !== requestEpochRef.current) return;
       setMembers((current) => {
         const known = new Set(current.map((row) => row.user_id));
-        return [...current, ...page.items.filter((row) => !known.has(row.user_id))];
+        const next = [...current, ...page.items.filter((row) => !known.has(row.user_id))];
+        membersRef.current = next;
+        return next;
       });
       setCursor(page.next_cursor);
       setHasMore(page.has_more);
       setFilteredTotal(page.filtered_total);
     } catch (error) {
-      reportError(error, 'ClubMembersPage.loadMore');
-      toast.error('Could Not Load More Players');
+      if (!abortLike(error)) {
+        reportError(error, 'ClubMembersPage.loadMore');
+        toast.error('Could Not Load More Players');
+      }
     } finally {
       moreRef.current = false;
       setIsLoadingMore(false);
@@ -454,6 +559,15 @@ export default function ClubMembersPage() {
 
   const hasPaintedRoster = members.length > 0;
   const stat = (value: number) => (loading && !hasPaintedRoster ? '...' : value.toLocaleString());
+  const connectionState: RosterConnectionState = !browserOnline
+    ? 'offline'
+    : dataFreshness === 'stale'
+      ? 'stale'
+      : realtimeConnection === 'degraded'
+        ? 'reconnecting'
+        : dataFreshness === 'loading'
+          ? 'connecting'
+          : 'live';
 
   return (
     <div className="club-members-page" aria-busy={loading}>
@@ -586,15 +700,14 @@ export default function ClubMembersPage() {
           )}
         </div>
 
-        <div className="members-refreshing" role="status" aria-live="polite">
-          {isRefreshing
-            ? 'Refreshing The Live Roster...'
-            : loading && hasPaintedRoster
-              ? 'Showing Identity-Only Saved Results While The Live Roster Syncs...'
-              : loadSlow
-                ? 'The Live Roster Is Taking Longer Than Expected. It Is Still Connecting...'
-                : ''}
-        </div>
+        <RosterConnectionStatus
+          state={connectionState}
+          hasData={hasPaintedRoster}
+          lastSuccessfulSyncAt={lastSuccessfulSyncAt}
+          isRefreshing={isRefreshing}
+          isSlow={loadSlow}
+          onRetry={retryLiveSync}
+        />
       </section>
 
       {summary.capabilities.can_export && selected.size > 0 && (
@@ -632,7 +745,7 @@ export default function ClubMembersPage() {
         ) : loadError && members.length === 0 ? (
           <div className="members-error" role="alert">
             Could Not Load The Roster.
-            <button type="button" className="members-export" onClick={() => void refresh()}>
+            <button type="button" className="members-export" onClick={retryLiveSync}>
               Try Again
             </button>
           </div>

@@ -13,6 +13,7 @@
 
 import { supabase } from '../lib/supabase';
 import { reportError } from './errorReporter';
+import { runRosterReadWithRetry } from './rosterReadReliability';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -123,6 +124,23 @@ export function clearClubUUIDCache(): void {
   persistedLoaded = false;
 }
 
+export class ClubNotFoundError extends Error {
+  constructor(clubIdParam: string) {
+    super(`Club "${clubIdParam}" was not found.`);
+    this.name = 'ClubNotFoundError';
+  }
+}
+
+export class ClubResolutionError extends Error {
+  readonly cause: unknown;
+
+  constructor(clubIdParam: string, cause: unknown) {
+    super(`Club identity could not be resolved for "${clubIdParam}".`);
+    this.name = 'ClubResolutionError';
+    this.cause = cause;
+  }
+}
+
 export async function resolveClubUUID(clubIdParam: string): Promise<string> {
   // Already a UUID — return as-is
   if (isUUID(clubIdParam)) return clubIdParam;
@@ -171,9 +189,36 @@ export async function resolveClubUUID(clubIdParam: string): Promise<string> {
  * explicit, fail-closed result.
  */
 export async function resolveClubUUIDStrict(clubIdParam: string): Promise<string> {
-  const resolvedId = await resolveClubUUID(clubIdParam);
-  if (!isUUID(resolvedId)) {
-    throw new Error(`Club identity could not be resolved for "${clubIdParam}".`);
+  if (isUUID(clubIdParam)) return clubIdParam;
+  const cached = resolveClubUUIDSync(clubIdParam);
+  if (cached) return cached;
+  const filter = resolveClubIdFilter(clubIdParam);
+
+  let data: { id: string } | null;
+  try {
+    data = await runRosterReadWithRetry(
+      async (signal) => {
+        let request = supabase
+          .from('clubs')
+          .select('id')
+          .eq(filter.column, filter.value)
+          .maybeSingle();
+        if (typeof (request as any).abortSignal === 'function') {
+          request = (request as any).abortSignal(signal);
+        }
+        const result = await request;
+        if (result.error) throw result.error;
+        return result.data as { id: string } | null;
+      },
+      { attempts: 3, timeoutMs: 8_000 }
+    );
+  } catch (error) {
+    reportError(error, 'clubIdResolver.resolveClubUUIDStrict', { clubIdParam });
+    throw new ClubResolutionError(clubIdParam, error);
   }
-  return resolvedId;
+
+  if (!data?.id || !isUUID(data.id)) throw new ClubNotFoundError(clubIdParam);
+  uuidCache.set(clubIdParam, data.id);
+  persistMap();
+  return data.id;
 }

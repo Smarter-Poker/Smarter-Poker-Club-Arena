@@ -355,12 +355,37 @@ describe('the showdown highlight follows the card, not the slot', () => {
     }
   });
 
-  it('leaves the order alone when a slot is null, because position means something there', () => {
-    // null = the per-card show picker kept this one face down. Moving it would
-    // separate it from the card it belongs beside.
+  /**
+   * UPDATED WITH THE BEHAVIOUR, IN THE SAME COMMIT (round 17, CLAUDE.md §8).
+   *
+   * This used to require the WHOLE hand to stay in dealt order the moment any
+   * slot was null. Dan, 2026-08-30, with a screenshot of his own PLO6 hand
+   * reading J-8-4-7-7-4: "PLO HANDS NEED TO BE ORGANIZED... HIGHEST CARDS TO
+   * LOWEST, LEFT TO RIGHT AS WELL."
+   *
+   * The half of the old rule that was right is kept and still pinned below: a
+   * null is the per-card show picker holding a card face down, so its SLOT
+   * must not move. The half that was wrong is that one face-down card
+   * scrambled every other card in the hand.
+   */
+  it('a null keeps its slot, and the cards around it still sort high to low', () => {
+    // DEALT is 6h As 9c Ad; hide the ace of spades in slot 1.
     const withHidden = [DEALT[0], null, DEALT[2], DEALT[3]];
     const shown = displayOrderWithDealtIndex(withHidden);
-    expect(shown.map((c) => c.dealtIndex)).toEqual([0, 1, 2, 3]);
+
+    // The hidden slot has not moved.
+    expect(shown[1].card).toBeNull();
+    expect(shown[1].dealtIndex).toBe(1);
+
+    // The three visible cards fill the remaining slots in rank order: Ad 9c 6h.
+    const visible = shown.filter((c) => c.card != null);
+    expect(visible.map((c) => c.card!.rank)).toEqual(['A', '9', '6']);
+
+    // And every one still points at the card the ENGINE numbered, which is the
+    // invariant the showdown highlight depends on.
+    for (const { card, dealtIndex } of shown) {
+      expect(card).toEqual(withHidden[dealtIndex]);
+    }
   });
 
   it('lights the ace of spades when the engine says index 1, not the ace of diamonds', () => {

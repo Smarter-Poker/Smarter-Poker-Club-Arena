@@ -361,6 +361,34 @@ class SoundService {
    *
    * Idempotent: installUnlockListeners() guards on unlockInstalled.
    */
+  /**
+   * Why a cue would be inaudible right now, or null if it would be heard.
+   *
+   * Dan, 2026-08-30: "ANIMATION STARTED WHEN BOUGHT IN, BUT WITH NO SOUND
+   * EFFECTS." Every gate in this service was read line by line that day and
+   * each one was individually correct — master on, category on, `muted` false
+   * by default, context constructed at import, unlock listeners armed. Which
+   * left nothing to fix and nothing to blame, and a silent wheel.
+   *
+   * That is the failure this accessor exists to end. `ensureContext()`
+   * deliberately lets a sound through while `resume()` is still settling (see
+   * its comment — the alternative silences the app permanently), so a cue CAN
+   * be dropped with no error and no trace. The spin reveal is the one place
+   * where losing the first cue is losing the moment, so it asks first and
+   * reports rather than guessing again.
+   *
+   * Returns a short reason string for telemetry, never anything user-facing.
+   */
+  inaudibleReason(): string | null {
+    if (!this.enabled) return 'engine_disabled';
+    if (!isSoundAllowed()) return 'preference_off';
+    if (!this.ctx) return 'no_audio_context';
+    if (this.ctx.state !== 'running') return `context_${this.ctx.state}`;
+    if (!this.masterGain) return 'no_master_gain';
+    if (this.masterGain.gain.value <= 0) return 'master_gain_zero';
+    return null;
+  }
+
   primeAudioUnlock(): void {
     this.installUnlockListeners();
     // A context that is already allowed to run should just run, rather than

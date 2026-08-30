@@ -39,6 +39,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { soundService } from '../../services/SoundService';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import { fireVibration } from '../../utils/vibrationGate';
+import { reportError } from '../../utils/errorReporter';
 import {
   SPIN_TIERS,
   spinTier,
@@ -458,6 +459,22 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
 
     if (playSounds) {
       try {
+        /* ── SILENCE IS A DEFECT, AND IT MUST LEAVE A TRACE (round 17) ─────
+           Dan, 2026-08-30: "ANIMATION STARTED WHEN BOUGHT IN, BUT WITH NO
+           SOUND EFFECTS." Every gate in SoundService was read line by line
+           that day and each was individually correct, which left nothing to
+           blame and a silent wheel — the worst kind of bug report to answer.
+           So the wheel now ASKS why it would be inaudible, at the instant it
+           tries, and reports it once. The next time this happens it is a
+           searchable event with a reason on it instead of a guess. */
+        const reason = soundService.inaudibleReason();
+        if (reason) {
+          reportError(
+            new Error(`spin reveal had no audio: ${reason}`),
+            'SpinWheel.reveal_inaudible',
+            { reason, multiplier: data.multiplier }
+          );
+        }
         soundService.playSpinStart();
       } catch {
         /* audio is best-effort */

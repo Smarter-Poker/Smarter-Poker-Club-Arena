@@ -78,10 +78,36 @@ export function displayOrderWithDealtIndex(
 ): DealtCard[] {
   if (!cards || cards.length === 0) return [];
   const paired: DealtCard[] = cards.map((card, dealtIndex) => ({ card: card ?? null, dealtIndex }));
-  if (paired.some((p) => p.card == null)) return paired;
-  return [...paired].sort(
+  /**
+   * ── NULLS HOLD THEIR SLOT; EVERY VISIBLE CARD STILL SORTS (round 17) ─────
+   *
+   * Dan, 2026-08-30, with a screenshot of his own PLO6 hand reading
+   * J-8-4-7-7-4: "PLO HANDS NEED TO BE ORGANIZED... HIGHEST CARDS TO LOWEST,
+   * LEFT TO RIGHT AS WELL."
+   *
+   * This used to `return paired` — DEALT ORDER, unsorted — the moment ANY slot
+   * was null. The reasoning above it is still right: a null is the per-card
+   * show picker saying "this one stays face down", so its POSITION carries
+   * meaning and must not move. But bailing out entirely made one face-down
+   * card scramble the other five, which is the strictly worse reading of the
+   * same rule.
+   *
+   * So the nulls keep their exact slots and the cards are sorted high-to-low
+   * INTO the slots that remain. With no nulls this is precisely the old
+   * behaviour; with nulls it is the old behaviour for the picker and Dan's
+   * rule for everything the player can actually see.
+   */
+  const visible = paired.filter((p) => p.card != null);
+  if (visible.length === paired.length) {
+    return [...paired].sort(
+      (a, b) => (RANK_ORDER[b.card!.rank] ?? 0) - (RANK_ORDER[a.card!.rank] ?? 0)
+    );
+  }
+  const sortedVisible = [...visible].sort(
     (a, b) => (RANK_ORDER[b.card!.rank] ?? 0) - (RANK_ORDER[a.card!.rank] ?? 0)
   );
+  let next = 0;
+  return paired.map((slot) => (slot.card == null ? slot : sortedVisible[next++]));
 }
 
 export const GAME_VARIANT_LABELS: Record<string, string> = {

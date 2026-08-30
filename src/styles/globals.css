@@ -133,10 +133,9 @@
 
   /* ─────────────── Layout ─────────────── */
   --header-height: 56px;
-  /* The complete approved footer remains visible, but its display height is
-     intentionally compressed so fixed navigation never consumes a card row.
-     The 44px floor preserves touch targets; 108px is the desktop ceiling. */
-  --bottom-nav-height: clamp(44px, 9vw, 108px);
+  /* Match the compact 84px desktop header ceiling while keeping a full 44px
+     touch target on narrow phones. All six controls scale together. */
+  --bottom-nav-height: clamp(44px, 7vw, 84px);
   /* What a page must actually reserve: the bar plus the phone's home-indicator
      inset, which the bar adds to its own padding on iOS. Reserving the bar
      alone is why content still hid behind it on notched devices. */

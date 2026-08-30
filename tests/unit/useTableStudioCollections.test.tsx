@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   cloud: { data: null as null | { favorites: string[]; loadouts: unknown[] }, error: null },
   upsert: vi.fn(),
   realtime: undefined as undefined | ((payload: { new: unknown }) => void),
+  realtimeStatus: undefined as undefined | ((status: string) => void),
   removeChannel: vi.fn(),
 }));
 
@@ -16,7 +17,11 @@ vi.mock('../../src/lib/supabase', () => {
       mocks.realtime = callback;
       return channel;
     }),
-    subscribe: vi.fn(() => channel),
+    subscribe: vi.fn((callback?: (status: string) => void) => {
+      mocks.realtimeStatus = callback;
+      callback?.('SUBSCRIBED');
+      return channel;
+    }),
   };
   return {
     supabase: {
@@ -51,11 +56,38 @@ function Harness() {
     <div>
       <output data-testid="favorites">{value.favorites.join(',')}</output>
       <output data-testid="loadout">{value.loadouts[0]?.table_id || 'empty'}</output>
+      <output data-testid="loadout-name">{value.loadouts[0]?.name || 'unnamed'}</output>
       <output data-testid="state">{value.syncState}</output>
+      <output data-testid="realtime-state">{value.realtimeState}</output>
       <button onClick={() => value.toggleFavorite('table:classic_green')}>Favorite</button>
+      <button onClick={() => value.toggleFavorite('background:place_paris')}>
+        Favorite Background
+      </button>
       <button onClick={() => value.saveLoadout(0, loadout)}>Save Loadout</button>
+      <button
+        onClick={() =>
+          value.saveLoadout(0, {
+            ...loadout,
+            name: '  Friday   Night  ',
+            saved_at: '2026-08-29T22:00:00.000Z',
+          })
+        }
+      >
+        Save Named Loadout
+      </button>
+      <button onClick={() => value.renameLoadout(0, '  Main   Event  ')}>Rename Loadout</button>
+      <button onClick={() => value.clearLoadout(0)}>Clear Loadout</button>
+      <button onClick={value.retrySync}>Retry Sync</button>
     </div>
   );
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
 }
 
 describe('useTableStudioCollections', () => {
@@ -66,6 +98,7 @@ describe('useTableStudioCollections', () => {
     mocks.upsert.mockResolvedValue({ error: null });
     mocks.removeChannel.mockReset();
     mocks.realtime = undefined;
+    mocks.realtimeStatus = undefined;
   });
 
   it('uses local cache for first paint then reconciles the signed-in cloud row', async () => {
@@ -145,5 +178,88 @@ describe('useTableStudioCollections', () => {
 
     expect(screen.getByTestId('favorites')).toHaveTextContent('background:place_paris');
     expect(screen.getByTestId('loadout')).toHaveTextContent('classic_green');
+  });
+
+  it('stores a clean player-facing name and lets the owner rename or clear the cartridge', async () => {
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Named Loadout' }));
+    expect(screen.getByTestId('loadout-name')).toHaveTextContent('Friday Night');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Loadout' }));
+    expect(screen.getByTestId('loadout-name')).toHaveTextContent('Main Event');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear Loadout' }));
+    expect(screen.getByTestId('loadout')).toHaveTextContent('empty');
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
+  });
+
+  it('keeps a stale realtime echo from rolling back a newer local tap', async () => {
+    const firstWrite = deferred<{ error: null }>();
+    const secondWrite = deferred<{ error: null }>();
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
+    mocks.upsert
+      .mockImplementationOnce(() => firstWrite.promise)
+      .mockImplementationOnce(() => secondWrite.promise);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Favorite' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Favorite Background' }));
+    expect(screen.getByTestId('favorites')).toHaveTextContent(
+      'background:place_paris,table:classic_green'
+    );
+
+    act(() => {
+      mocks.realtime?.({
+        new: { favorites: ['table:classic_green'], loadouts: [null, null, null] },
+      });
+    });
+    expect(screen.getByTestId('favorites')).toHaveTextContent(
+      'background:place_paris,table:classic_green'
+    );
+
+    firstWrite.resolve({ error: null });
+    await waitFor(() => expect(mocks.upsert).toHaveBeenCalledTimes(2));
+    secondWrite.resolve({ error: null });
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
+
+    act(() => {
+      mocks.realtime?.({
+        new: { favorites: ['table:classic_green'], loadouts: [null, null, null] },
+      });
+    });
+    expect(screen.getByTestId('favorites')).toHaveTextContent(
+      'background:place_paris,table:classic_green'
+    );
+  });
+
+  it('provides the retry promised by the sync error state', async () => {
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
+    mocks.upsert.mockResolvedValueOnce({ error: new Error('offline') });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Favorite' }));
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('error'));
+
+    mocks.upsert.mockResolvedValueOnce({ error: null });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Sync' }));
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
+    expect(mocks.upsert).toHaveBeenLastCalledWith(
+      expect.objectContaining({ favorites: ['table:classic_green'] }),
+      { onConflict: 'user_id' }
+    );
+  });
+
+  it('reconnects a failed realtime channel when the player retries sync', async () => {
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('realtime-state')).toHaveTextContent('live'));
+
+    act(() => mocks.realtimeStatus?.('CHANNEL_ERROR'));
+    expect(screen.getByTestId('realtime-state')).toHaveTextContent('error');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Sync' }));
+    await waitFor(() => expect(screen.getByTestId('realtime-state')).toHaveTextContent('live'));
+    expect(mocks.removeChannel).toHaveBeenCalled();
   });
 });

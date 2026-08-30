@@ -70,7 +70,7 @@ test.describe('mobile-first customization studios', () => {
         <div class="theme-modal__studio-bar"><label class="theme-modal__game-type"><span class="theme-modal__game-label">Apply To</span><select class="theme-modal__game-select"><option>All Games</option></select></label><span class="theme-modal__autosave"><span class="theme-modal__autosave-dot"></span>All changes saved</span></div>
         <div class="theme-modal__workspace">
           <aside class="theme-modal__visual-rail"><fieldset class="theme-modal__mode"><legend>Interface</legend><div class="theme-modal__mode-options"><button class="theme-modal__mode-option">Light</button><button class="theme-modal__mode-option theme-modal__mode-option--active">Dark</button></div><span class="theme-modal__mode-note">Mode note</span></fieldset><div class="theme-modal__preview-shell"><div class="theme-modal__preview-switch"><button>Standard</button><button class="active">Final Table</button></div><div class="theme-modal__live-preview"><div class="studio-game-preview studio-game-preview--final"><img class="studio-game-preview__background-ambient" src="${finalBackground}" /><img class="studio-game-preview__background" src="${finalBackground}" /><div class="studio-game-preview__scrim"></div><img class="studio-game-preview__table" src="${finalTable}" />${['Maya', 'Daniel', 'Ari', 'Nico', 'Jordan', 'Tiffany'].map((name, index) => `<div class="studio-game-preview__seat studio-game-preview__seat--${index + 1}"><img src="${previewAvatar}" /><span class="studio-game-preview__plate"><strong>${name}</strong><b>${188 + index * 41}K</b></span></div>`).join('')}<div class="studio-game-preview__pot">POT 24,800</div><div class="studio-game-preview__board"><span class="red">A♥</span><span>10♣</span><span class="red">7♦</span><span>6♠</span><span>4♣</span></div><div class="studio-game-preview__dealer">D</div><div class="studio-game-preview__actions"><span>FOLD</span><span>CHECK</span><span>RAISE</span></div><div class="studio-game-preview__broadcast"><span>CHAMPIONSHIP TABLE</span><strong>FINAL 6</strong></div></div><div class="theme-modal__live-caption"><span>AUTOMATIC MTT EVENT</span><strong>Classic Red · MTT</strong></div></div></div><div class="theme-modal__selection-ledger">${['Table', 'Background', 'Buttons', 'Card Back'].map((label) => `<div class="theme-modal__selection-item"><span>${label}</span><strong>Selected</strong></div>`).join('')}</div></aside>
-          <section class="theme-modal__catalog"><div class="theme-modal__tabs">${['Themes', 'Table', 'Buttons', 'Background', 'Cards'].map((label) => `<button class="theme-modal__tab">${label}</button>`).join('')}</div><div class="theme-modal__catalog-scroll"><div class="theme-modal__discovery"><label><input placeholder="Search Themes" /></label><div class="theme-modal__filters"><button>All</button><button>Free</button><button>VIP</button></div></div><div class="theme-modal__grid">${Array.from({ length: 8 }, (_, i) => `<div class="theme-asset-wrap"><button class="theme-asset"><span class="theme-asset__preview"></span><span class="theme-asset__name">Design ${i + 1}</span></button><button class="theme-asset__favorite">Favorite</button></div>`).join('')}</div></div><footer class="theme-modal__footer"><button class="theme-modal__btn">Restore</button><button class="theme-modal__btn">Done</button></footer></section>
+          <section class="theme-modal__catalog"><div class="theme-modal__tabs">${['Themes', 'Table', 'Buttons', 'Background', 'Cards'].map((label) => `<button class="theme-modal__tab">${label}</button>`).join('')}</div><div class="theme-modal__catalog-scroll"><div class="theme-modal__discovery"><label><input placeholder="Search Themes" /></label><div class="theme-modal__filters"><button>All</button><button>Free</button><button>VIP</button></div></div><div class="theme-modal__grid">${Array.from({ length: 8 }, (_, i) => `<div class="theme-asset-wrap"><button class="theme-asset"><span class="theme-asset__preview"></span><span class="theme-asset__name">Design ${i + 1}</span></button><button class="theme-asset__favorite">Favorite</button></div>`).join('')}</div><section class="theme-modal__loadouts"><div class="theme-modal__loadout-header"><div><span>TABLE PIT RACK</span><strong>Loadout Locker</strong><small>Keep Three Complete Looks Ready To Deal.</small></div><button class="theme-modal__randomize">Shuffle Look</button></div><div class="theme-modal__loadout-rack">${[0, 1, 2].map((slot) => `<article class="theme-modal__loadout"><div class="theme-loadout__slotline"><span>LOOK 0${slot + 1}</span><b>READY</b></div><div class="theme-loadout__scene"><img class="theme-loadout__ambient" src="${finalBackground}" /><img class="theme-loadout__background" src="${finalBackground}" /><img class="theme-loadout__table" src="${finalTable}" /><span class="theme-loadout__dealer">D</span></div><label class="theme-loadout__name"><input value="${['Main Event', 'Midnight Club', 'Sunday Final'][slot]}" /></label><span class="theme-loadout__summary">Carbon Black · Monte Carlo</span><div class="theme-loadout__actions"><button class="theme-loadout__equip">Equip</button><button>Update</button><button>Clear</button></div></article>`).join('')}</div><div class="theme-modal__loadout-sync theme-modal__loadout-sync--synced"><span>Favorites And Looks Sync Across Your Devices.</span></div></section></div><footer class="theme-modal__footer"><button class="theme-modal__btn">Restore</button><button class="theme-modal__btn">Done</button></footer></section>
         </div>
       </section></div>
     `);
@@ -122,18 +122,44 @@ test.describe('mobile-first customization studios', () => {
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
     const previewTop = (await page.locator('.theme-modal__visual-rail').boundingBox())?.y;
+    if (process.env.CAPTURE_CUSTOMIZATION_VISUALS) {
+      // The preview layers use transforms and overflow clipping. Give Chromium
+      // one compositor frame before capturing the initial fixed stage, just as
+      // we do after the nested catalog scroll below.
+      await page.waitForTimeout(100);
+      await page.screenshot({ path: 'test-results/table-studio-mobile.png' });
+    }
     const catalog = page.locator('.theme-modal__catalog-scroll');
     expect(await catalog.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
     await catalog.evaluate((node) => {
-      node.scrollTop = node.scrollHeight;
+      const locker = node.querySelector<HTMLElement>('.theme-modal__loadouts');
+      node.scrollTop = Math.max(
+        0,
+        locker ? locker.offsetTop - (node as HTMLElement).offsetTop - 8 : node.scrollHeight
+      );
     });
+    // Give Chromium one compositor frame after the nested scroller jumps so
+    // the visual artifact captures the fixed live stage, not a stale blank
+    // layer from the preceding scroll position.
+    await page.waitForTimeout(100);
     expect((await page.locator('.theme-modal__visual-rail').boundingBox())?.y).toBe(previewTop);
     await expect(page.locator('.theme-modal__footer')).toBeVisible();
-    await catalog.evaluate((node) => {
-      node.scrollTop = 0;
-    });
+    await expect(page.getByText('Loadout Locker')).toBeVisible();
+    const loadoutRack = page.locator('.theme-modal__loadout-rack');
+    expect(await loadoutRack.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+    const firstLoadout = await page.locator('.theme-modal__loadout').first().boundingBox();
+    expect(firstLoadout?.width).toBeGreaterThanOrEqual(260);
+    for (const selector of [
+      '.theme-modal__randomize',
+      '.theme-loadout__name input',
+      '.theme-loadout__actions button',
+    ]) {
+      const box = await page.locator(selector).first().boundingBox();
+      expect(box?.height).toBeGreaterThanOrEqual(43.9);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
     if (process.env.CAPTURE_CUSTOMIZATION_VISUALS) {
-      await page.screenshot({ path: 'test-results/table-studio-mobile.png' });
+      await page.screenshot({ path: 'test-results/table-loadout-locker-mobile.png' });
     }
   });
 });

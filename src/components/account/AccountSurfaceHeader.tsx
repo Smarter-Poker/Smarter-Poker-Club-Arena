@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { mediaUrl } from '../../utils/mediaBase';
 import styles from './AccountSurfaceHeader.module.css';
 
 interface AccountSurfaceHeaderProps {
@@ -24,7 +25,11 @@ export default function AccountSurfaceHeader({
 }: AccountSurfaceHeaderProps) {
   return (
     <header className={styles.hero}>
-      <div className={styles.image} aria-hidden="true" />
+      <div
+        className={styles.image}
+        style={{ backgroundImage: `url("${mediaUrl('images/bg-vault.jpg')}")` }}
+        aria-hidden="true"
+      />
       <div className={styles.scanline} aria-hidden="true" />
       <div className={styles.content}>
         <div className={styles.copy}>

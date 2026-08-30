@@ -48,7 +48,10 @@ const CSS = readFileSync(resolve(__dirname, '../../src/pages/ClubMembersPage.css
  */
 const CSS_RULES = CSS.replace(/\/\*[\s\S]*?\*\//g, ' ');
 const SERVICE = readFileSync(resolve(__dirname, '../../src/services/ClubRosterService.ts'), 'utf8');
-const ROSTER_VAULT_ART = resolve(__dirname, '../../public/images/club-members/roster-vault.webp');
+const ROSTER_OPERATIONS_ART = resolve(
+  __dirname,
+  '../../public/images/club-members/roster-ledger-desk-v2.webp'
+);
 const MIGRATION = readFileSync(
   resolve(__dirname, '../../supabase/migrations/20260823_03_club_members_overview.sql'),
   'utf8'
@@ -167,9 +170,10 @@ describe('Players tab palette', () => {
 
 describe('Players tab #smarterCasinoRealism presentation', () => {
   it('ships the purpose-built roster vault as an optimized local asset', () => {
-    expect(existsSync(ROSTER_VAULT_ART)).toBe(true);
-    expect(statSync(ROSTER_VAULT_ART).size).toBeLessThan(180_000);
-    expect(PAGE).toContain('images/club-members/roster-vault.webp');
+    expect(existsSync(ROSTER_OPERATIONS_ART)).toBe(true);
+    expect(statSync(ROSTER_OPERATIONS_ART).size).toBeLessThan(180_000);
+    expect(PAGE).toContain('images/club-members/roster-ledger-desk-v2.webp');
+    expect(PAGE).not.toContain('images/club-members/roster-vault.webp');
     expect(PAGE).toContain('fetchPriority="high"');
   });
 
@@ -200,6 +204,48 @@ describe('Players tab large-roster performance and cache integrity', () => {
   it('keeps export locked until the live roster replaces cached data', () => {
     expect(PAGE).toMatch(/className="members-export"[\s\S]*disabled=\{loading \|\| isRefreshing\}/);
   });
+
+  it('scopes financial roster caches to the signed-in viewer and club', () => {
+    expect(PAGE_CODE).toContain('roster_cache_v4_${user.id}_${resolvedId}');
+    expect(PAGE_CODE).toContain('if (swrKey && serialised.length');
+    expect(PAGE_CODE).toContain('sessionStorage.removeItem(`roster_cache_v3_${resolvedId}`)');
+  });
+
+  it('never treats the slow-request warning as request completion', () => {
+    expect(PAGE_CODE).toContain('setLoadSlow(true)');
+    expect(PAGE_CODE).not.toMatch(/setTimeout\(\(\)\s*=>\s*setLoading\(false\)/);
+  });
+
+  it('coalesces invalidations received during an in-flight roster request', () => {
+    expect(PAGE_CODE).toContain('pendingRefreshRef.current = true');
+    expect(PAGE_CODE).toContain('queueMicrotask(() => void loadMembers())');
+    expect(PAGE_CODE).toContain('requestEpoch === requestEpochRef.current');
+  });
+
+  it('resets the render window when search, filter or sort context changes', () => {
+    expect(PAGE_CODE).toContain('resetVirtualScroll()');
+    expect(PAGE_CODE).toMatch(/deferredSearchQuery, filter, resetVirtualScroll, sortKey/);
+  });
+});
+
+describe('Players tab operational continuity', () => {
+  it('restores roster context from the URL and updates it without history spam', () => {
+    expect(PAGE_CODE).toContain("readFilter(searchParams.get('view'))");
+    expect(PAGE_CODE).toContain("readSort(searchParams.get('sort'))");
+    expect(PAGE_CODE).toContain("searchParams.get('q')");
+    expect(PAGE_CODE).toContain('setSearchParams(next, { replace: true })');
+  });
+
+  it('distinguishes members at tables from members who are merely online', () => {
+    expect(PAGE_CODE).toContain("filter === 'seated' && !m.is_seated");
+    expect(PAGE).toContain('At Tables');
+    expect(PAGE).toContain('seatedCount');
+  });
+
+  it('searches the visible club and upline fields as well as identity', () => {
+    expect(PAGE_CODE).toContain("(m.home_club_name ?? '').toLowerCase().includes(q)");
+    expect(PAGE_CODE).toContain("(m.upline_name ?? '').toLowerCase().includes(q)");
+  });
 });
 
 /**
@@ -225,9 +271,9 @@ describe('Players tab shows what the brief asked for', () => {
 
   it('offers every sort the brief listed, hierarchy first', () => {
     expect(PAGE).toMatch(
-      /'hierarchy'\s*\|\s*'name'\s*\|\s*'downlines'\s*\|\s*'wallet'\s*\|\s*'fees'/
+      /'hierarchy'\s*\|\s*'activity'\s*\|\s*'name'\s*\|\s*'downlines'\s*\|\s*'wallet'\s*\|\s*'fees'/
     );
-    expect(PAGE).toContain("useState<SortKey>('hierarchy')");
+    expect(PAGE).toContain("readSort(searchParams.get('sort'))");
   });
 
   it('title-cases the search placeholder rather than hard-coding it', () => {

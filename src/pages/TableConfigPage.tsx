@@ -1388,7 +1388,8 @@ export default function TableConfigPage() {
           type="text"
           placeholder="Enter Table Name Here..."
           value={config.name}
-          onChange={(e) => updateConfig('name', e.target.value)}
+          maxLength={30}
+          onChange={(e) => updateConfig('name', e.target.value.slice(0, 30))}
         />
       </div>
 

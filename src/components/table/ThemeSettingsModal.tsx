@@ -66,6 +66,7 @@ import {
   rememberTableStudioCheckoutIntent,
   type TableStudioCheckoutResult,
 } from '../../lib/tableStudioCheckoutResume';
+import { recordCustomizationOperation } from '../../services/CustomizationOperationsTelemetry';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -1316,6 +1317,7 @@ export function ThemeSettingsModal({
   const handleAssetPurchase = useCallback(async () => {
     const pending = pendingAssetPurchase;
     if (!pending || !userId || purchaseBusyRef.current) return;
+    const purchaseStartedAt = globalThis.performance?.now?.() ?? Date.now();
     purchaseBusyRef.current = true;
     setPurchaseBusy(true);
     try {
@@ -1328,6 +1330,16 @@ export function ThemeSettingsModal({
       const alreadyOwned = data?.error === 'already_owned' || data?.already_owned === true;
       if (!data?.success && !alreadyOwned) {
         const reason = String(data?.error || 'Purchase failed');
+        recordCustomizationOperation({
+          userId,
+          event: 'purchase_failed',
+          surface: 'table-studio',
+          category: pending.tab,
+          durationMs: (globalThis.performance?.now?.() ?? Date.now()) - purchaseStartedAt,
+          reasonCode: reason.toLowerCase().includes('insufficient')
+            ? 'insufficient_balance'
+            : 'server_refused',
+        });
         if (reason.toLowerCase().includes('insufficient')) {
           toast.info('Add Diamonds To Finish Unlocking This Design.');
           void loadDiamonds(userId, { force: true });
@@ -1378,6 +1390,14 @@ export function ThemeSettingsModal({
           category: 'table_studio',
         });
       }
+      recordCustomizationOperation({
+        userId,
+        event: 'purchase_succeeded',
+        surface: 'table-studio',
+        category: pending.tab,
+        durationMs: (globalThis.performance?.now?.() ?? Date.now()) - purchaseStartedAt,
+        reasonCode: alreadyOwned ? 'ownership_reconciled' : 'diamond_purchase',
+      });
       // The purchase completes the user's original selection. Do not make them
       // tap the same card a second time after checkout.
       const applied = await applyAccessibleAsset(pending.tab, pending.id);
@@ -1391,6 +1411,14 @@ export function ThemeSettingsModal({
             : `${pending.name} Purchased`
       );
     } catch (error) {
+      recordCustomizationOperation({
+        userId,
+        event: 'purchase_failed',
+        surface: 'table-studio',
+        category: pending.tab,
+        durationMs: (globalThis.performance?.now?.() ?? Date.now()) - purchaseStartedAt,
+        reasonCode: 'transport_or_rpc_error',
+      });
       toast.error('Design Purchase Failed. Please Try Again.');
       reportError(error, 'ThemeSettingsModal.Asset_purchase_failed');
     } finally {

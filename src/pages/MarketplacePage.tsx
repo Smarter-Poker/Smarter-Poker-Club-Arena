@@ -64,6 +64,7 @@ import ManageTab from './marketplace/ManageTab';
 // Case / em-dash transform. They are the only user-facing strings on this page
 // that render raw server text.
 import { formatPopupText } from '../utils/popupStyle';
+import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 type TabKey = 'store' | 'diamonds' | 'membership' | 'my_items' | 'manage';
 const VALID_TABS: TabKey[] = ['store', 'diamonds', 'membership', 'my_items', 'manage'];
@@ -536,61 +537,75 @@ export default function MarketplacePage() {
 
   return (
     <div className={styles.page}>
-      {/* Header */}
-      <header className={styles.header}>
-        <div className={styles.headerLeft}>
-          <span className={styles.eyebrow}>Club Arena // Player Exchange</span>
-          <h1 className={styles.title}>Club Marketplace</h1>
-          <p className={styles.headerSubtitle}>
-            Table Upgrades, Player Perks, And Club Exclusives - Delivered Live To Your Account.
-          </p>
-          <div className={styles.walletBar}>
-            {/* One wallet, one currency: diamonds. The shop API and the VIP
+      <RewardsSurfaceHeader
+        eyebrow="Rewards Circuit / Marketplace"
+        title="Club Marketplace"
+        description="Acquire table upgrades, player perks, club exclusives, diamond packages, and VIP access through the existing server-priced storefront."
+        art="market"
+        status="PLAYER EXCHANGE // LIVE"
+        metrics={[
+          {
+            label: 'Diamonds',
+            value: wallet.loaded ? fmt(wallet.diamonds) : 'Checking',
+            tone: 'attention',
+          },
+          {
+            label: 'Store Items',
+            value: loading && items.length === 0 ? 'Checking' : items.length,
+          },
+          { label: 'Owned', value: ownedCount, tone: 'live' },
+        ]}
+        actions={
+          <>
+            <Link to="/" className={styles.btnGhost}>
+              Back To Lobby
+            </Link>
+            <button
+              onClick={refreshAll}
+              className={styles.btnGhost}
+              disabled={refreshing}
+              aria-busy={refreshing}
+            >
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </>
+        }
+      />
+
+      <div className={styles.marketStatusBar} aria-label="Marketplace wallet status">
+        <div className={styles.walletBar}>
+          {/* One wallet, one currency: diamonds. The shop API and the VIP
                 status API both report the same profiles.diamonds balance. */}
-            {/* Never assert a balance we do not have. `balance` initialises to 0
+          {/* Never assert a balance we do not have. `balance` initialises to 0
                 and resetClubState puts it back to 0, so with no club - or with
                 both the wallet and the shop failing - this pill confidently
                 read "0 Diamonds", which is the one thing it must never say. */}
-            <span className={styles.walletPillDiamond} aria-live="polite">
-              {wallet.loaded
-                ? `${fmt(wallet.diamonds)} Diamonds`
-                : !wallet.error && clubId && !shopError
-                  ? `${fmt(balance)} Diamonds`
-                  : 'Diamonds Unavailable'}
-            </span>
-            {/* vipExpiresAt is fetched by loadWalletInfo and rendered ONLY inside
+          <span className={styles.walletPillDiamond} aria-live="polite">
+            {wallet.loaded
+              ? `${fmt(wallet.diamonds)} Diamonds`
+              : !wallet.error && clubId && !shopError
+                ? `${fmt(balance)} Diamonds`
+                : 'Diamonds Unavailable'}
+          </span>
+          {/* vipExpiresAt is fetched by loadWalletInfo and rendered ONLY inside
                 the Membership tab, so someone who bought a 24-hour pass had no
                 idea when it lapses unless they opened a tab they have no reason
                 to open. `title` alone is useless on touch, so the short form is
                 visible and the full date stays in the title. Dan 2026-08-25. */}
-            {wallet.isVip && (
-              <span
-                className={styles.vipPill}
-                title={
-                  wallet.vipExpiresAt
-                    ? `Expires ${new Date(wallet.vipExpiresAt).toLocaleString()}`
-                    : undefined
-                }
-              >
-                VIP{vipRemaining ? ` \u00b7 ${vipRemaining}` : ''}
-              </span>
-            )}
-          </div>
+          {wallet.isVip && (
+            <span
+              className={styles.vipPill}
+              title={
+                wallet.vipExpiresAt
+                  ? `Expires ${new Date(wallet.vipExpiresAt).toLocaleString()}`
+                  : undefined
+              }
+            >
+              VIP{vipRemaining ? ` \u00b7 ${vipRemaining}` : ''}
+            </span>
+          )}
         </div>
-        <div className={styles.headerActions}>
-          <Link to="/" className={styles.btnGhost}>
-            Back To Lobby
-          </Link>
-          <button
-            onClick={refreshAll}
-            className={styles.btnGhost}
-            disabled={refreshing}
-            aria-busy={refreshing}
-          >
-            {refreshing ? 'Refreshing...' : 'Refresh'}
-          </button>
-        </div>
-      </header>
+      </div>
 
       {/* Tabs */}
       <nav

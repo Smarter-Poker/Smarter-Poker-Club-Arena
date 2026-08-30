@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { TABLE_BACKGROUND_IDS } from '../../src/assets/tableAssets';
 import { BUTTON_ASSETS, THEME_PRESETS } from '../../src/components/table/ThemeSettingsModal';
+import { TABLE_SETTINGS_META } from '../../src/hooks/useUserTableSettings';
 
 const read = (file: string) => readFileSync(resolve(process.cwd(), file), 'utf8');
 
@@ -34,6 +35,7 @@ describe('Table Studio is the one owner of selectable table appearance', () => {
     expect(TOGGLES).not.toContain('Theme Settings Link');
     expect(HAMBURGER).not.toContain('Card Colors');
     expect(HAMBURGER).not.toContain('selectedCardColor');
+    expect(TABLE_SETTINGS_META.map((setting) => setting.key)).not.toContain('blue_buttons_enabled');
   });
 
   it('gives each host a premium launcher into the same studio', () => {

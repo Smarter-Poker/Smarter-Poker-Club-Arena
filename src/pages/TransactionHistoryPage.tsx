@@ -16,6 +16,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { formatDateTime as formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 interface Transaction {
   id: string;
@@ -345,6 +346,22 @@ export default function TransactionHistoryPage() {
 
   return (
     <div className="transaction-history-page">
+      <RewardsSurfaceHeader
+        eyebrow="Rewards Circuit / Ledger"
+        title="Transaction Ledger"
+        description="Audit deposits, withdrawals, transfers, rake, and settlements from one filterable record. Exported results preserve the active date and transaction filters."
+        art="vault"
+        status="TRANSACTION INDEX // LIVE"
+        metrics={[
+          { label: 'Inflow', value: `+${totals.deposits.toLocaleString()}`, tone: 'live' },
+          { label: 'Outflow', value: `-${totals.withdrawals.toLocaleString()}` },
+          {
+            label: 'Net Flow',
+            value: `${netFlow >= 0 ? '+' : ''}${netFlow.toLocaleString()}`,
+            tone: netFlow >= 0 ? 'attention' : 'default',
+          },
+        ]}
+      />
       {/* Summary */}
       <div className="tx-summary">
         <div className="summary-card">

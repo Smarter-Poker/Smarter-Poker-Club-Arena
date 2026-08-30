@@ -81,7 +81,7 @@ import ClubRosterService, { mapRosterRow, type RosterMember } from '../services/
    FILTERS AND SORTS
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-type MemberFilter = 'all' | 'mine' | 'online' | 'agents' | 'admins';
+type MemberFilter = 'all' | 'mine' | 'seated' | 'online' | 'agents' | 'admins';
 
 const FILTER_LABEL: Record<MemberFilter, string> = {
   all: 'All',
@@ -90,6 +90,7 @@ const FILTER_LABEL: Record<MemberFilter, string> = {
      for a one-hop filter is how you get a support ticket about missing
      players. The agent's own downline_total is the honest full number. */
   mine: 'Direct',
+  seated: 'At Tables',
   online: 'Online',
   agents: 'Agents',
   admins: 'Admins',
@@ -100,10 +101,11 @@ const FILTER_LABEL: Record<MemberFilter, string> = {
  * is a no-op rather than a re-sort - which is why it is the default and why
  * every other option is a stable sort layered on top of that order.
  */
-type SortKey = 'hierarchy' | 'name' | 'downlines' | 'wallet' | 'fees';
+type SortKey = 'hierarchy' | 'activity' | 'name' | 'downlines' | 'wallet' | 'fees';
 
 const SORT_LABEL: Record<SortKey, string> = {
   hierarchy: 'Role Hierarchy',
+  activity: 'Recent Activity',
   name: 'Name (A To Z)',
   downlines: 'Downlines',
   wallet: 'Wallet Balance',
@@ -116,9 +118,20 @@ const SORT_LABEL: Record<SortKey, string> = {
 const AGENT_ROLE_SET: readonly ClubRole[] = AGENT_ROLES;
 const STAFF_ROLE_SET: readonly ClubRole[] = STAFF_ROLES;
 
-const ROSTER_VAULT_ART = `${import.meta.env.BASE_URL}images/club-members/roster-vault.webp`;
-const ROSTER_CACHE_VERSION = 3;
+const ROSTER_OPERATIONS_ART = `${import.meta.env.BASE_URL}images/club-members/roster-ledger-desk-v2.webp`;
+const ROSTER_CACHE_VERSION = 4;
 const ROSTER_CACHE_MAX_CHARACTERS = 1_250_000;
+
+const MEMBER_FILTERS = Object.keys(FILTER_LABEL) as MemberFilter[];
+const MEMBER_SORTS = Object.keys(SORT_LABEL) as SortKey[];
+
+function readFilter(value: string | null): MemberFilter {
+  return value && MEMBER_FILTERS.includes(value as MemberFilter) ? (value as MemberFilter) : 'all';
+}
+
+function readSort(value: string | null): SortKey {
+  return value && MEMBER_SORTS.includes(value as SortKey) ? (value as SortKey) : 'hierarchy';
+}
 
 interface RosterCacheEnvelope {
   version: number;
@@ -135,7 +148,7 @@ function chips(value: number): string {
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 export default function ClubMembersPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { clubId: routeClubId } = useParams();
   const clubId = routeClubId || searchParams.get('club') || undefined;
   const { user } = useAuthUser();
@@ -146,9 +159,9 @@ export default function ClubMembersPage() {
   const [members, setMembers] = useState<RosterMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [filter, setFilter] = useState<MemberFilter>('all');
-  const [sortKey, setSortKey] = useState<SortKey>('hierarchy');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [filter, setFilter] = useState<MemberFilter>(() => readFilter(searchParams.get('view')));
+  const [sortKey, setSortKey] = useState<SortKey>(() => readSort(searchParams.get('sort')));
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') ?? '');
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
@@ -156,25 +169,40 @@ export default function ClubMembersPage() {
   const canExport = isClubStaff(userRole);
 
   const loadingRef = useRef(false);
+  const requestEpochRef = useRef(0);
+  const pendingRefreshRef = useRef(false);
+  const activeClubRef = useRef(clubId);
+  const previousClubRef = useRef(clubId);
   const [loadError, setLoadError] = useState(false);
+  const [loadSlow, setLoadSlow] = useState(false);
   const [notFound, setNotFound] = useState(false);
 
-  // Safety net: never leave a skeleton on screen forever if auth or the network
-  // hangs. The empty state is a better answer than a spinner that never stops.
+  // Tell the reader when a request is slow without pretending it has finished.
+  // The previous timer set `loading` false after eight seconds while the RPC was
+  // still in flight, which unlocked an export of stale cached financial data.
   useEffect(() => {
-    const timeout = setTimeout(() => setLoading(false), 8000);
+    if (!loading) {
+      setLoadSlow(false);
+      return;
+    }
+    const timeout = setTimeout(() => setLoadSlow(true), 8000);
     return () => clearTimeout(timeout);
-    // Per club: with [] this protected only the FIRST club viewed in a session.
-  }, [clubId]);
+  }, [clubId, loading]);
 
   // Navigating between clubs must not show the previous club's filters.
   useEffect(() => {
+    activeClubRef.current = clubId;
+    if (previousClubRef.current === clubId) return;
+    previousClubRef.current = clubId;
+    requestEpochRef.current += 1;
+    pendingRefreshRef.current = false;
     setUserRole('player');
     setFilter('all');
     setSortKey('hierarchy');
     setSearchQuery('');
     setIsRefreshing(false);
     setLoadError(false);
+    setLoadSlow(false);
     setNotFound(false);
     // Was NOT reset, so navigating A -> B left A's UUID in state for the whole
     // resolve and useMasterBusChannel subscribed with channel B / filter A.
@@ -182,19 +210,42 @@ export default function ClubMembersPage() {
     loadingRef.current = false;
   }, [clubId]);
 
+  // Roster context belongs in the URL: opening a member and going back should
+  // return an operator to the same search, filter and sort, not the top of an
+  // unrelated 592-person list. Replace avoids one history entry per keystroke.
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (searchQuery) next.set('q', searchQuery);
+    else next.delete('q');
+    if (filter === 'all') next.delete('view');
+    else next.set('view', filter);
+    if (sortKey === 'hierarchy') next.delete('sort');
+    else next.set('sort', sortKey);
+    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
+  }, [filter, searchParams, searchQuery, setSearchParams, sortKey]);
+
   const loadMembers = useCallback(
     async (getIsMounted?: () => boolean) => {
       if (!clubId) return;
-      const live = () => (getIsMounted ? getIsMounted() : true) && isMountedRef.current;
+      const requestClub = clubId;
 
-      // READ the re-entrancy flag. Four independent triggers call this (three
-      // bus events, two realtime handlers, the mount effect), and two in-flight
-      // getRoster calls resolve in completion order, not request order - so an
-      // older response could win and overwrite a newer roster.
-      if (loadingRef.current) return;
+      // Realtime invalidations that arrive during a request are news, not
+      // duplicates. Coalesce them into exactly one follow-up request instead of
+      // dropping them or launching a response-order race.
+      if (loadingRef.current) {
+        pendingRefreshRef.current = true;
+        return;
+      }
       loadingRef.current = true;
+      const requestEpoch = ++requestEpochRef.current;
+      const live = () =>
+        (getIsMounted ? getIsMounted() : true) &&
+        isMountedRef.current &&
+        requestEpoch === requestEpochRef.current &&
+        activeClubRef.current === requestClub;
       if (live()) {
         setLoading(true);
+        setLoadSlow(false);
         setLoadError(false);
       }
       try {
@@ -220,9 +271,14 @@ export default function ClubMembersPage() {
         // mapRosterRow, the same defaulting the network path uses. This was a
         // raw `as RosterMember[]` cast of untrusted JSON - a blob from an older
         // build reached `member.downline_total.toLocaleString()` and threw.
-        const swrKey = `roster_cache_v3_${resolvedId}`;
+        // Wallet and fee rows are permission-shaped. A club-only cache allowed
+        // the next account using the same browser tab to see the previous
+        // viewer's roster while its own RPC loaded. v4 scopes the cache to both
+        // the authenticated viewer and club; no authenticated viewer, no cache.
+        const swrKey = user?.id ? `roster_cache_v4_${user.id}_${resolvedId}` : null;
         try {
-          const cached = sessionStorage.getItem(swrKey);
+          sessionStorage.removeItem(`roster_cache_v3_${resolvedId}`);
+          const cached = swrKey ? sessionStorage.getItem(swrKey) : null;
           if (cached) {
             const parsed = JSON.parse(cached) as RosterCacheEnvelope;
             if (
@@ -256,9 +312,9 @@ export default function ClubMembersPage() {
           // A partial cache looked complete: summary totals were wrong and an
           // owner could export only the first 300 people. Cache all or nothing.
           // Oversized union rosters stay in memory and come from the one RPC.
-          if (serialised.length <= ROSTER_CACHE_MAX_CHARACTERS) {
+          if (swrKey && serialised.length <= ROSTER_CACHE_MAX_CHARACTERS) {
             sessionStorage.setItem(swrKey, serialised);
-          } else {
+          } else if (swrKey) {
             sessionStorage.removeItem(swrKey);
           }
         } catch {
@@ -295,8 +351,20 @@ export default function ClubMembersPage() {
           toast.error('Failed To Load Members');
         }
       } finally {
-        loadingRef.current = false;
-        if (live()) setLoading(false);
+        // A request from the previous club must never unlock the current club's
+        // request. Only the latest epoch owns the shared loading flag.
+        if (requestEpoch === requestEpochRef.current) {
+          loadingRef.current = false;
+          if (live()) {
+            setLoading(false);
+            setLoadSlow(false);
+          }
+
+          if (pendingRefreshRef.current && activeClubRef.current === requestClub && live()) {
+            pendingRefreshRef.current = false;
+            queueMicrotask(() => void loadMembers());
+          }
+        }
       }
     },
     [clubId, user?.id, isMountedRef, toast]
@@ -386,6 +454,7 @@ export default function ClubMembersPage() {
   const filteredMembers = useMemo(() => {
     const q = deferredSearchQuery.trim().toLowerCase();
     const matched = members.filter((m) => {
+      if (filter === 'seated' && !m.is_seated) return false;
       if (filter === 'online' && !m.is_online) return false;
       if (filter === 'mine' && m.upline_user_id !== user?.id) return false;
       if (filter === 'agents' && !AGENT_ROLE_SET.includes(m.role)) return false;
@@ -396,7 +465,9 @@ export default function ClubMembersPage() {
       return (
         m.alias.toLowerCase().includes(q) ||
         m.username.toLowerCase().includes(q) ||
-        (m.player_number ?? '').toLowerCase().includes(q)
+        (m.player_number ?? '').toLowerCase().includes(q) ||
+        (m.home_club_name ?? '').toLowerCase().includes(q) ||
+        (m.upline_name ?? '').toLowerCase().includes(q)
       );
     });
 
@@ -404,6 +475,15 @@ export default function ClubMembersPage() {
 
     const sorted = [...matched];
     switch (sortKey) {
+      case 'activity':
+        sorted.sort((a, b) => {
+          const aPresence = a.is_seated ? 2 : a.is_online ? 1 : 0;
+          const bPresence = b.is_seated ? 2 : b.is_online ? 1 : 0;
+          const aSeen = a.last_login ? new Date(a.last_login).getTime() || 0 : 0;
+          const bSeen = b.last_login ? new Date(b.last_login).getTime() || 0 : 0;
+          return bPresence - aPresence || bSeen - aSeen || b.role_rank - a.role_rank;
+        });
+        break;
       case 'name':
         sorted.sort((a, b) => a.alias.localeCompare(b.alias, undefined, { sensitivity: 'base' }));
         break;
@@ -429,8 +509,17 @@ export default function ClubMembersPage() {
   }, [members, filter, deferredSearchQuery, sortKey, user?.id]);
 
   const virtualScroll = useVirtualScroll(filteredMembers, { initialCount: 30, pageSize: 20 });
+  const resetVirtualScroll = virtualScroll.reset;
+
+  // A long session may have rendered hundreds of rows. Changing to a different
+  // search or ordering should begin with a small window again even when the new
+  // result set happens to have the same length.
+  useEffect(() => {
+    resetVirtualScroll();
+  }, [deferredSearchQuery, filter, resetVirtualScroll, sortKey]);
 
   const onlineCount = useMemo(() => members.filter((m) => m.is_online).length, [members]);
+  const seatedCount = useMemo(() => members.filter((m) => m.is_seated).length, [members]);
   const agentCount = useMemo(
     () => members.filter((m) => AGENT_ROLE_SET.includes(m.role)).length,
     [members]
@@ -492,11 +581,11 @@ export default function ClubMembersPage() {
       <section className="members-hero" aria-labelledby="members-page-title">
         <img
           className="members-hero__art"
-          src={ROSTER_VAULT_ART}
+          src={ROSTER_OPERATIONS_ART}
           alt=""
           aria-hidden="true"
-          width="1536"
-          height="1024"
+          width="1774"
+          height="887"
           loading="eager"
           decoding="async"
           fetchPriority="high"
@@ -518,6 +607,10 @@ export default function ClubMembersPage() {
             <div className="summary-stat summary-stat--online">
               <dd className="stat-value">{stat(onlineCount)}</dd>
               <dt className="stat-label">Online Now</dt>
+            </div>
+            <div className="summary-stat summary-stat--seated">
+              <dd className="stat-value">{stat(seatedCount)}</dd>
+              <dt className="stat-label">At Tables</dt>
             </div>
             <div className="summary-stat summary-stat--agents">
               <dd className="stat-value">{stat(agentCount)}</dd>
@@ -542,7 +635,7 @@ export default function ClubMembersPage() {
           <span>Search The Roster</span>
           <input
             type="search"
-            placeholder={titleCase('search name or number')}
+            placeholder={titleCase('search name, number, club, or upline')}
             aria-label="Search Club Members"
             value={searchQuery}
             autoComplete="off"
@@ -576,6 +669,9 @@ export default function ClubMembersPage() {
                     : ''}
                   {!searchQuery && f === 'online' && onlineCount > 0
                     ? ` (${onlineCount.toLocaleString()})`
+                    : ''}
+                  {!searchQuery && f === 'seated' && seatedCount > 0
+                    ? ` (${seatedCount.toLocaleString()})`
                     : ''}
                 </button>
               ))}
@@ -635,7 +731,9 @@ export default function ClubMembersPage() {
             ? 'Refreshing The Live Roster...'
             : isSyncingCachedRoster
               ? 'Showing Saved Results While The Live Roster Syncs...'
-              : ''}
+              : loadSlow
+                ? 'The Live Roster Is Taking Longer Than Expected. It Is Still Connecting...'
+                : ''}
         </div>
       </section>
 
@@ -649,7 +747,17 @@ export default function ClubMembersPage() {
           roots the observer on the viewport, which is what actually scrolls. */}
       <div className="members-list" aria-label="Club Member Directory">
         {loading && members.length === 0 ? (
-          <PageSkeleton variant="list" />
+          <>
+            <PageSkeleton variant="list" />
+            {loadSlow && (
+              <div className="members-slow" role="status">
+                <span>The Roster Is Still Connecting.</span>
+                <button type="button" className="members-export" onClick={refresh}>
+                  Retry After This Request
+                </button>
+              </div>
+            )}
+          </>
         ) : notFound ? (
           <div className="members-error" role="alert">
             <span>We Could Not Find That Club.</span>

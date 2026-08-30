@@ -17,6 +17,7 @@ import { retryAsync } from '../utils/retryAsync';
 import { formatDateShort as formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import { ErrorState } from '../components/common/EmptyState';
+import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 interface RakebackPeriod {
   id: string;
@@ -251,6 +252,18 @@ export default function RakebackPage() {
 
   return (
     <div className="rakeback-page">
+      <RewardsSurfaceHeader
+        eyebrow="Rewards Circuit / Rakeback"
+        title="Rakeback Engine"
+        description="See the value returning from completed play, inspect every earning period, and claim eligible funds through the existing settlement workflow."
+        art="diamonds"
+        status="RAKEBACK ENGINE // LIVE"
+        metrics={[
+          { label: 'Total Earned', value: totalEarned.toLocaleString(), tone: 'live' },
+          { label: 'Current Rate', value: `${(currentRate * 100).toFixed(1)}%` },
+          { label: 'Ready To Claim', value: pendingAmount.toLocaleString(), tone: 'attention' },
+        ]}
+      />
       {/* Promotional Banner — WPT-style */}
       {currentRate > 0 && (
         <div className="rakeback-promo-banner">

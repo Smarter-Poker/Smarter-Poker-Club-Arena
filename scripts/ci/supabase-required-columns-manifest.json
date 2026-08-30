@@ -1079,6 +1079,11 @@
     "custom_avatar_gallery": [
       "image_url"
     ],
+    "customization_operations": [
+      "user_id",
+      "event",
+      "surface"
+    ],
     "daemon_state": [
       "daemon",
       "high_water_mark"
@@ -3444,6 +3449,20 @@
       "scrape_html_hash",
       "scrape_timestamp"
     ],
+    "venue_directory_enrichment_log": [
+      "venue_id",
+      "reason",
+      "source_url",
+      "confidence",
+      "before_record",
+      "after_record"
+    ],
+    "venue_duplicate_retirement_log": [
+      "retired_venue_id",
+      "canonical_venue_id",
+      "reason",
+      "before_record"
+    ],
     "venue_game_alerts": [
       "user_id",
       "venue_name",
@@ -3472,6 +3491,15 @@
       "integrity_reason",
       "before_record",
       "after_record"
+    ],
+    "venue_location_integrity_state": [
+      "venue_id",
+      "name",
+      "city",
+      "state",
+      "revision",
+      "location_status",
+      "location_reason"
     ],
     "venue_news": [
       "venue_id",

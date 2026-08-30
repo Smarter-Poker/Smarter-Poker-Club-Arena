@@ -24,6 +24,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { reportError } from '../utils/errorReporter';
 import { ErrorState } from '../components/common/EmptyState';
+import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 interface Promotion {
   id: string;
@@ -307,7 +308,19 @@ export default function PromotionsPage() {
   };
 
   return (
-    <StandardContentLayout className="promotions-page" title="Promotions">
+    <StandardContentLayout className="promotions-page">
+      <RewardsSurfaceHeader
+        eyebrow="Rewards Circuit / Promotions"
+        title="Promotion Exchange"
+        description="Discover active club offers, scheduled events, referral rewards, and leaderboard opportunities without losing the live eligibility and claim workflows beneath them."
+        art="market"
+        status="OFFER INDEX // LIVE"
+        metrics={[
+          { label: 'Visible Offers', value: filteredPromos.length, tone: 'live' },
+          { label: 'View', value: filter.toUpperCase() },
+          { label: 'Daily Bonus', value: 'Ready', tone: 'attention' },
+        ]}
+      />
       {/* Daily Bonus Button */}
       <div className="daily-bonus-banner" onClick={() => setShowBonusWheel(true)}>
         <span className="bonus-icon">▦</span>

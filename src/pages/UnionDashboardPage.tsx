@@ -33,6 +33,7 @@ import UnionClubGovernance from '../components/union/UnionClubGovernance';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { EmptyState, ErrorState } from '../components/common/EmptyState';
+import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 // ── Helpers ─────────────────────────────────────────────────
 const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
 
@@ -909,10 +910,23 @@ export default function UnionDashboardPage() {
   const pendingAppsCount = apps.filter((a) => a.status === 'pending').length;
 
   return (
-    <div className="admin-page">
+    <div className="admin-page" data-arena-surface="union-operations">
       <div className="admin-container">
         {error && <div className="admin-error-banner">{error}</div>}
         {success && <div className="admin-success-banner">{success}</div>}
+
+        <CasinoSurfaceHeader
+          eyebrow="Union Network / Operations"
+          title={union?.name || 'Union Operations'}
+          description="Govern member clubs, agents, treasury, applications, analytics, and network controls from one permission-backed command deck."
+          artPath="assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp"
+          status="UNION OPERATIONS // AUTHORIZED"
+          metrics={[
+            { label: 'Clubs', value: clubs.length, tone: 'live' },
+            { label: 'Agents', value: agents.length },
+            { label: 'Applications', value: pendingAppsCount, tone: 'attention' },
+          ]}
+        />
 
         {/* Edit Commission Modal */}
         {editCommClub && (

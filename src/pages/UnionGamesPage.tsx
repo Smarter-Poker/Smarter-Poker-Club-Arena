@@ -20,6 +20,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { fmt, fmtChips } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
+import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 const formatDate = (ts: string | null) => {
   if (!ts) return '-';
@@ -360,24 +361,42 @@ export default function UnionGamesPage() {
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <div className={styles.headerLeft}>
-          <h1 className={styles.title}> {unionName} - Games</h1>
-        </div>
-        <div className={styles.headerActions}>
-          {unionId && (
-            <Link to={`/unions/${unionId}`} className={styles.btnGhost}>
-              Union
+      <CasinoSurfaceHeader
+        eyebrow="Union Network / Games"
+        title={`${unionName || 'Union'} Games`}
+        description="Enter active union tables, register for network tournaments, and inspect the shared bad-beat pool through the existing game services."
+        artPath="assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp"
+        status="UNION GAMES // LIVE"
+        metrics={[
+          {
+            label: 'Active Events',
+            value: tournaments.filter((t) =>
+              ['registering', 'running'].includes(t.status?.toLowerCase())
+            ).length,
+            tone: 'attention',
+          },
+          { label: 'Live Tables', value: activeTables.length, tone: 'live' },
+          {
+            label: 'Seated',
+            value: tables.reduce((sum, table) => sum + (table.current_players || 0), 0),
+          },
+        ]}
+        actions={
+          <>
+            {unionId && (
+              <Link to={`/unions/${unionId}`} className={styles.btnGhost}>
+                Union
+              </Link>
+            )}
+            <Link to="/" className={styles.btnGhost}>
+              Lobby
             </Link>
-          )}
-          <Link to="/" className={styles.btnGhost}>
-            Lobby
-          </Link>
-          <button onClick={() => loadUnionData(unionId || undefined)} className={styles.btnGhost}>
-            ↻ Refresh
-          </button>
-        </div>
-      </header>
+            <button onClick={() => loadUnionData(unionId || undefined)} className={styles.btnGhost}>
+              Refresh
+            </button>
+          </>
+        }
+      />
 
       {/* Stats Row */}
       <div className={styles.statsGrid}>

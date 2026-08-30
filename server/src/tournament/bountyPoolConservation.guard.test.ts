@@ -88,3 +88,65 @@ describe('fn_finalize_bounty_pool', () => {
     expect(latest).toMatch(/IF v_residual <= 0/);
   });
 });
+
+describe('fn_collect_bounty', () => {
+  /**
+   * The finaliser fix alone was NOT enough, and production said so within five
+   * hours: Saturday Mystery, pool 776.00, paid 783.20, with the last bounty
+   * payment landing seven seconds after the event ended.
+   *
+   * There are TWO payers. fn_collect_bounty decided what was left with the
+   * identical stale read the finaliser had just stopped using:
+   *
+   *     v_available := bounty_pool - bounty_pool_paid;
+   *
+   * FOR UPDATE on `tournaments` serialises the two against each other, so this
+   * is not a classic lost update. It is simpler: a counter is only as good as
+   * every writer keeping it current, and fixing one reader while the other
+   * still trusts it just moves which payer overpays.
+   *
+   * Both now subtract the ledger from the pool. Whatever order collection and
+   * finalisation run in, neither can hand out a chip the pool does not hold.
+   */
+  function collectDefinitions(): string[] {
+    return fs
+      .readdirSync(MIGRATIONS)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()
+      .map((f) => fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'))
+      .filter((b) => b.includes('fn_collect_bounty'));
+  }
+
+  it('has a migration that moves it onto the ledger', () => {
+    const defs = collectDefinitions().map(sql);
+    expect(defs.length).toBeGreaterThan(0);
+    const onLedger = defs.filter(
+      (d) =>
+        d.includes('INTO v_available FROM wallet_transactions') ||
+        d.includes('FROM wallet_transactions wt')
+    );
+    expect(
+      onLedger.length,
+      'no migration moves fn_collect_bounty off the bounty_pool_paid counter'
+    ).toBeGreaterThan(0);
+  });
+
+  it('the patch refuses to run blind rather than restating the whole function', () => {
+    // Re-stating fn_collect_bounty in full would risk silently dropping the
+    // hybrid tripwire, the mystery-phase handoff or the already-collected
+    // dedupe. The migration patches one line and RAISEs if that line is not
+    // where it expects, then asserts every guard survived.
+    const defs = collectDefinitions();
+    const patcher = defs.filter((d) => d.includes('refusing to patch blind'));
+    expect(patcher.length).toBeGreaterThan(0);
+    const latest = patcher[patcher.length - 1];
+    for (const guard of [
+      'bounty_pool_exhausted',
+      'undefined_pko_mystery_hybrid',
+      'mystery_phase_active',
+      'already_collected',
+    ]) {
+      expect(latest, `the migration does not assert ${guard} survived`).toContain(guard);
+    }
+  });
+});

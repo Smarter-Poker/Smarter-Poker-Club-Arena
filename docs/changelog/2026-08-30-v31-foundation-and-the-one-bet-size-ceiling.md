@@ -200,19 +200,85 @@ assertion that caught it is pinned in the migration. The failed attempt
 rolled back atomically; verified afterwards that neither object existed
 before re-applying.
 
-## 8. Next, precisely
+## 8. The aggregator, built and proven
 
-Build `fn_aggregate_gto_v31_next` and `gto_postflop_v31`:
+Migration `20260830d_v31_aggregator`, applied. `gto_postflop_v31`,
+`gto_agg_progress_v31`, and `fn_aggregate_gto_v31_next(p_batch)` — walking
+the `solved_v2_at` partial index, so no row is read and discarded; street
+comes from the data, so one cursor covers everything; depth from
+`eff_stack_bb`; hand keys `CLASS:flushSuitCount`; size buckets from the
+real `size_pct` (`bet_small` < 60, `bet_mid` 60-110, `bet_big` >= 110).
 
-- walk the **`solved_v2_at` partial index**, not the id order;
-- cells keyed as V30's are, plus a real **size bucket** from `size_pct`
-  (`bet_small` < 60, `bet_mid` 60-110, `bet_big` >= 110 — a split the
-  measured flop 33-75 and turn 64-263 actually populate);
-- depth from **`eff_stack_bb`**;
-- hand keys `CLASS:flushSuitCount` via `gto_combo_map`, 169 x 3;
-- turn and flop only. There is no river to build.
+There is deliberately **no `facing` column**. V30 needs a `facing = 'open'`
+guard in three places because its table can hold a facing cell. This one
+cannot, so the guard is unnecessary rather than merely satisfied, and a
+future contaminated import has nowhere to land. A post-apply assertion
+fails the migration if the column ever appears.
 
-Pace it the way V30 is paced, and measure the batch against the same 8s
-API budget through the engine's own RPC path before choosing a number —
-the cost was super-linear last time and there is no reason to expect
-otherwise here.
+**Two performance facts, both measured rather than reasoned.**
+
+`fn_gto_texture_class_any` is PL/pgSQL and cannot be inlined, so with
+ordinary CTEs the planner re-evaluated it once per expanded combo row —
+~2,652 times per solve instead of once — and a 25-row batch **timed out**.
+With `materialized` it is 657ms. The keyword is load-bearing; removing it
+does not slow the function down, it stops it working.
+
+The one-pass window form (`sum/min/max OVER (partition by id, combo_idx)`)
+replaced a two-pass `GROUP BY ... HAVING` plus join-back: **2,615ms to
+657ms, 4x**. Per the standing rule that an optimisation is proven by
+throughput and not by a plan node, the two were also proven to produce the
+same answer — `EXCEPT` in both directions over all 2,030 output rows,
+zero difference either way.
+
+**The output is right, and it is the thing that was missing.** 225 rows
+folded into 24 cells (20 turn, 4 flop), 186 distinct hand keys, zero
+malformed, 168 kB:
+
+    street  hand entries  freq sum        check  bet_small  bet_mid  bet_big
+    turn           3,456  1.0000-1.0001   3,456          0        0    3,456
+    flop             526  0.9999-1.0001     526        526      526        0
+
+Every mix normalises to 1. And the turn now carries **`bet_big` on every
+entry** — the 262%-pot overbet that section 3 showed the v1 layer
+structurally cannot represent — while the flop carries small and mid,
+matching its measured 33-75% sizes. The action vocabulary finally differs
+by street because the underlying solves do.
+
+**The suit bucket earns its cost, measured on the built cells rather than
+on a sample.** Within one cell and one 169-class, comparing bet frequency
+across suit buckets:
+
+    street   classes w/ >1 suit bucket   avg spread   max     over 0.10
+    turn                          1,596        0.334   1.000   1,065 (67%)
+    flop                            154        0.042   0.422      24 (16%)
+
+A turn class whose two suit buckets bet 100% and 0% is one cell in the old
+design, averaged to 50% and wrong for both holdings. The predicted spread
+was 0.238 from sampling; the built cells show 0.334.
+
+## 9. What is NOT proven, and what is deliberately not running
+
+**The RPC-path measurement is not done.** The rule here is to call the RPC
+the way the ENGINE calls it, because a privileged SQL session hides
+PostgREST failures — and this attempt hit two of exactly that kind. First
+`PGRST202`: the function was invisible until the schema cache was
+reloaded, so a driver shipped in the same breath would have failed on its
+first tick for reasons no SQL test could show. Then the host's own
+credentials failed (`PGRST303`, then a gateway 520); `.env` now holds
+new-style `sb_secret_`/`sb_publishable_` keys, so the handoff's curl recipe
+for diagnosing the V30 cursor no longer works as written. The cursor
+confirms none of those calls executed. So the 657ms figure is SQL-session
+timing, and the batch size is **not** yet validated against the API's ~8s
+budget. That must be measured before any driver ships, exactly as V30's
+was — its cost turned out super-linear, and 25 is a guess until proven.
+
+**Nothing drives V31 yet, on purpose.** V30 is still aggregating the same
+79 GB table; a second walker would contend with it for the same buffers,
+and V30 is the one with users waiting on it. The driver starts when
+`gto_agg_progress` reports both streets done. 225 of ~1.89M rows are
+folded — enough to prove the shape, and the cursor resumes from there.
+
+Still to build after that: the driver, the loader, and the engine-side
+lookup, which needs the hero's flush-suit count computed against the live
+board to form `CLASS:n` — the mirror of `fn_gto_board_flush_suit`, and the
+same mirroring obligation `textureClass()` already carries.

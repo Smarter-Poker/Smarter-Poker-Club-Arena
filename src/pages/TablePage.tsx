@@ -3728,6 +3728,10 @@ export default function TablePage({
     cost: number;
     seats: number;
     label: string;
+    /* The stack every seat receives when the draw resolves. Known from the
+       tournament row at creation, and shown on the felt before the wheel so a
+       seated player is not looking at a table of zeroes (Dan, round 17). */
+    startingChips: number;
   } | null>(null);
   /* Mirror for the early dead-table effects — see seatFirstOpenRef where it
      is declared, next to the heartbeat machinery it silences. Render-time
@@ -9155,7 +9159,7 @@ export default function TablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, buy_in_amount, buy_in_fee, max_players, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, final_table_triggered'
+              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, final_table_triggered'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -9307,6 +9311,7 @@ export default function TablePage({
                   cost,
                   seats: maxP || (fmt === 'spin' ? 3 : 2),
                   label: fmt === 'spin' ? 'Spin' : 'Heads Up',
+                  startingChips: Number(tournData.starting_chips ?? 0),
                 });
               } else {
                 setSeatFirstBuyIn(null);
@@ -15262,7 +15267,9 @@ export default function TablePage({
       attempts += 1;
       const { data, error } = await supabase
         .from('tournaments')
-        .select('status, variant, tournament_type, max_players, buy_in_amount, buy_in_fee')
+        .select(
+          'status, variant, tournament_type, max_players, buy_in_amount, buy_in_fee, starting_chips'
+        )
         .eq('id', tournId)
         .maybeSingle();
       if (cancelled) return;
@@ -15284,6 +15291,7 @@ export default function TablePage({
         max_players?: number;
         buy_in_amount?: number;
         buy_in_fee?: number;
+        starting_chips?: number;
       } | null;
       if (!row) return; // no such tournament: nothing to recover, stop asking.
 
@@ -15329,6 +15337,7 @@ export default function TablePage({
         cost: Number(row.buy_in_amount ?? 0) + Number(row.buy_in_fee ?? 0),
         seats: maxP || (isSpin ? 3 : 2),
         label: isSpin ? 'Spin' : 'Heads Up',
+        startingChips: Number(row.starting_chips ?? 0),
       });
     };
 
@@ -15535,7 +15544,29 @@ export default function TablePage({
             id: seat.user_id,
             name: profile?.display_name || profile?.username || `Player ${seat.seat_number}`,
             avatar: profile?.avatar_url || '',
-            stack: Number(seat.stack || 0),
+            /**
+             * ── SHOW WHAT THEY WILL BE PLAYING WITH (Dan 2026-08-30, r17) ──
+             *
+             * "THE PLAYERS SITTING ALREADY SHOULD HAVE THE DEFAULT STARTING
+             * STACKS IN THEIR PLAYER BANKS, IT SHOULDN'T SAY ZERO."
+             *
+             * A seat-first seat really does hold zero until the wheel lands —
+             * `fn_take_seat_and_buy_in` writes `stack = 0` because the seat is
+             * a reservation, and the engine withholds the credit so the chips
+             * arrive as part of the reveal. Both are right, and both are
+             * invisible to a player looking at a table of zeroes wondering
+             * whether anybody has actually paid.
+             *
+             * So before the draw, a SEATED player is shown the stack they are
+             * about to receive. It is not a guess: `starting_chips` is on the
+             * tournament row from creation, the same number the engine credits.
+             * The moment real chips exist this stops applying — `playHasBegun`
+             * latches on the first dealer, hand, or non-zero stack.
+             */
+            stack:
+              Number(seat.stack || 0) > 0 || playHasBegun
+                ? Number(seat.stack || 0)
+                : Number(seatFirstBuyIn?.startingChips || 0),
             status: 'active' as const,
             isHero,
             showCards: isHero,

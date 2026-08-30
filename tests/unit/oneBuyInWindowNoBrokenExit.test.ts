@@ -61,8 +61,39 @@ describe('the duplicate buy-in timer is gone from executable code', () => {
 });
 
 describe('the surviving timer governs the seat-first sheet too', () => {
-  it('arms when either sheet is open', () => {
-    expect(CODE).toContain('const sheetOpen = showBuyInModal || seatFirstConfirm !== null');
+  /**
+   * UPDATED IN THE SAME COMMIT THAT CHANGED THE BEHAVIOUR (round 16).
+   *
+   * This pin used to require, verbatim:
+   *
+   *     const sheetOpen = showBuyInModal || seatFirstConfirm !== null
+   *
+   * and that line is the bug Dan hit on 2026-08-30. `seatFirstConfirm` is
+   * cleared only AFTER `fn_take_seat_and_buy_in` resolves, so the in-flight
+   * RPC counted as an open sheet and the 60-second clock ran straight through
+   * a purchase that had already succeeded — closing the tab and sending him to
+   * the lobby off a seat he owned, with nothing logged anywhere.
+   *
+   * So the pin now requires the two guards that make that impossible, rather
+   * than the line that allowed it. CLAUDE.md section 8: replace the pinned
+   * behaviour and the pin together, and say so.
+   */
+  it('arms only while the sheet is a DECISION - not while money is moving', () => {
+    expect(CODE).toContain(
+      'const commitInFlight = seatFirstPending || seatFirstPendingRef.current'
+    );
+    expect(CODE).toContain(
+      'const alreadySeated = tableState.heroSeat > 0 || heroSeatRef.current > 0'
+    );
+    expect(CODE).toMatch(
+      /const sheetOpen =\s*\(showBuyInModal \|\| seatFirstConfirm !== null\) && !commitInFlight && !alreadySeated;/
+    );
+  });
+
+  it('the old unguarded form can never come back', () => {
+    expect(CODE).not.toMatch(
+      /const sheetOpen = showBuyInModal \|\| seatFirstConfirm !== null;\s*$/m
+    );
   });
 
   /* The expiry branch, bounded by the block it lives in - never a byte count
@@ -75,8 +106,19 @@ describe('the surviving timer governs the seat-first sheet too', () => {
     expect(expiry).toContain('setShowBuyInModal(false)');
   });
 
-  it('re-arms when the seat-first sheet opens (dependency present)', () => {
-    expect(CODE).toContain('[showBuyInModal, seatFirstConfirm, tableId]');
+  it('re-arms when the seat-first sheet opens, and DISARMS when it must', () => {
+    /* The guards above are only guards if the effect re-runs when they
+       change: pressing Buy In flips `seatFirstPending` and must tear the
+       interval down in that same commit. Round 16 added both. */
+    expect(CODE).toContain(
+      '[showBuyInModal, seatFirstConfirm, tableId, seatFirstPending, tableState.heroSeat]'
+    );
+  });
+
+  it('and checks once more in the instant it would eject', () => {
+    /* A whole second separates the guard from the fire. The RPC can land
+       inside it - which is exactly the race that cost Dan his seat. */
+    expect(expiry).toContain('if (seatFirstPendingRef.current || heroSeatRef.current > 0) return;');
   });
 
   it('exits to the real lobby, never a hard-coded path', () => {

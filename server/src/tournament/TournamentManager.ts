@@ -389,6 +389,19 @@ export class TournamentManager extends TournamentManagerEliminations {
           .select('id');
 
         let seatWriteErr: { message?: string } | null = reuseErr;
+
+        if (!seatWriteErr && reusedRows && reusedRows.length > 0) {
+          // Un-assign the old occupant whose seat we just reused, avoiding the ghost seat bug
+          // (which can crash the engine with deck_capacity_exceeded if 11 players point to a 9-max table).
+          await supabase
+            .from('tournament_players')
+            .update({ table_id: null, seat_number: null })
+            .eq('tournament_id', this.tournamentId)
+            .eq('table_id', move.toTableId)
+            .eq('seat_number', move.toSeat)
+            .neq('user_id', move.playerId);
+        }
+
         if (!seatWriteErr && (!reusedRows || reusedRows.length === 0)) {
           const { error: insErr } = await supabase.from('table_seats').insert({
             table_id: move.toTableId,
@@ -1009,9 +1022,27 @@ export class TournamentManager extends TournamentManagerEliminations {
         }
         occ.taken.add(seatNumber);
 
+        if (reusedRows && reusedRows.length > 0) {
+          // The old occupant has been overwritten in `table_seats`, but their `tournament_players`
+          // row still falsely points to this table. This is how 11 players can get assigned to
+          // a 9-max table and crash the Table Engine with `deck_capacity_exceeded`. Clear it.
+          await supabase
+            .from('tournament_players')
+            .update({ table_id: null, seat_number: null })
+            .eq('tournament_id', this.tournamentId)
+            .eq('table_id', best.tableId)
+            .eq('seat_number', seatNumber)
+            .neq('user_id', player.user_id);
+        }
+
         await supabase
           .from('tournament_players')
-          .update({ status: 'playing', chips: playerChips, table_id: best.tableId })
+          .update({
+            status: 'playing',
+            chips: playerChips,
+            table_id: best.tableId,
+            seat_number: seatNumber,
+          })
           .eq('tournament_id', this.tournamentId)
           .eq('user_id', player.user_id);
         await supabase

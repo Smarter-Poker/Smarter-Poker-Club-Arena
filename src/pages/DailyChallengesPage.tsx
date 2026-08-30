@@ -328,6 +328,7 @@ export default function DailyChallengesPage() {
   const [confirmingRerollId, setConfirmingRerollId] = useState<string | null>(null);
   const claimGuardRef = useRef(new Set<string>()); // Prevent double-clicks bypassing React state
   const rerollGuardRef = useRef(new Set<string>());
+  const buyFreezeGuardRef = useRef(false);
 
   // Celebration state
   const [celebratingIds, setCelebratingIds] = useState<Set<string>>(new Set());
@@ -647,12 +648,13 @@ export default function DailyChallengesPage() {
 
   const [buyingFreeze, setBuyingFreeze] = useState(false);
   const handleBuyFreeze = useCallback(async () => {
-    if (!userId || buyingFreeze) return;
+    if (!userId || buyingFreeze || buyFreezeGuardRef.current) return;
     if (diamondBalance < 5000) {
       toast.error('Not enough diamonds. You need 5,000 Diamonds to buy a freeze.');
       return;
     }
 
+    buyFreezeGuardRef.current = true;
     setBuyingFreeze(true);
     setDiamondBalance((prev) => Math.max(0, prev - 5000));
     setStreak((prev) => (prev ? { ...prev, freezesAvailable: prev.freezesAvailable + 1 } : prev));
@@ -660,9 +662,17 @@ export default function DailyChallengesPage() {
     try {
       const res = await dailyChallengeService.buyStreakFreeze(userId);
       if (res.success) {
-        toast.success('Streak Freeze purchased.');
-        const currentBalance = await dailyChallengeService.getDiamondBalance(userId);
-        if (isMountedRef.current) setDiamondBalance(currentBalance);
+        toast.success(
+          res.alreadyPurchased ? 'Streak Freeze Purchase Confirmed.' : 'Streak Freeze Purchased.'
+        );
+        if (isMountedRef.current) {
+          if (res.diamondBalance != null) setDiamondBalance(res.diamondBalance);
+          if (res.freezesAvailable != null) {
+            setStreak((prev) =>
+              prev ? { ...prev, freezesAvailable: res.freezesAvailable as number } : prev
+            );
+          }
+        }
       } else {
         toast.error(res.error || 'Failed to buy freeze');
         // Revert UI on fail
@@ -672,6 +682,7 @@ export default function DailyChallengesPage() {
       toast.error('Failed to buy freeze');
       loadChallenges(userId, false);
     } finally {
+      buyFreezeGuardRef.current = false;
       if (isMountedRef.current) setBuyingFreeze(false);
     }
   }, [userId, buyingFreeze, diamondBalance, toast, loadChallenges, isMountedRef]);

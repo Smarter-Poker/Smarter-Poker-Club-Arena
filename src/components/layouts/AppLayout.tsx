@@ -103,6 +103,12 @@ function AppLayoutContent() {
           depth to tell it about. */}
       {showGlobalHeader && <GlobalHeader />}
 
+      {/* The persistent table action bar is fixed immediately below the
+          responsive GlobalHeader. This zero-height flow slot expands only
+          while that bar is present, so announcements, rails, and page content
+          all begin below it without ever pushing the global header off y=0. */}
+      {showGlobalHeader && <div className={styles.pinnedActionBarClearance} aria-hidden="true" />}
+
       {/* Global Announcement Banner (shows club announcements when in a club context) */}
       <ClubAnnouncementBanner />
 

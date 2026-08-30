@@ -706,3 +706,40 @@
     padding-top: calc(12px + max(env(safe-area-inset-top, 0px), 24px));
   }
 }
+
+/* POLISH 1 (Dan 2026-08-30): "your rake on this hand" — weighted contributed
+   rake made per-player rake a real, cent-exact number, so the player can see
+   their own. Additive block in HandDetailView's footer slot; no existing rule
+   is modified and nothing animated is touched. */
+.hdm-rake-share {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.hdm-rake-share__title {
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  margin-bottom: 6px;
+}
+.hdm-rake-share__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hdm-rake-share__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.86rem;
+}
+.hdm-rake-share__row span {
+  opacity: 0.75;
+}
+.hdm-rake-share__row.is-primary strong {
+  color: #f59e0b;
+}

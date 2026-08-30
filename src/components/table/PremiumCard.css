@@ -59,7 +59,7 @@
    CARD FRONT - Premium white gradient with subtle texture
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.card-front {
+.premium-card__front {
   position: absolute;
   inset: 0;
   background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 50%, #eef0f2 100%);
@@ -73,16 +73,12 @@
   overflow: hidden;
 }
 
-/* Card front image - digital deck card faces */
-.card-front-image {
+/* The canonical renderers carry their own fallback and theme behavior. Their
+   catalog sizes are overridden only inside this fixed cinematic shell. */
+.premium-card__canonical {
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  border-radius: 8px;
-  /* See CardImage.css: crisp-edges stair-steps a downscaled card. */
-  image-rendering: auto;
-  transform: translateZ(0);
-  backface-visibility: hidden;
+  border-radius: inherit;
 }
 
 /* Card corners */
@@ -148,9 +144,7 @@
    CARD BACK - Custom image design
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* Scoped to .premium-card to avoid collision with CardReveal.css and
-   CommunityCards.css which each define their own .card-back rules */
-.premium-card .card-back {
+.premium-card__back {
   position: absolute;
   inset: 0;
   border-radius: 8px;
@@ -162,15 +156,15 @@
   overflow: hidden;
 }
 
-.card-back-image {
+.premium-card__back > .premium-card__canonical {
   width: 100%;
   height: 100%;
-  object-fit: contain;
   border-radius: 8px;
-  /* See CardImage.css: crisp-edges stair-steps a downscaled card. */
-  image-rendering: auto;
-  transform: translateZ(0);
   backface-visibility: hidden;
+}
+
+.premium-card__back .card-back {
+  transform: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

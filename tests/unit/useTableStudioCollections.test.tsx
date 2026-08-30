@@ -5,7 +5,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   cloud: { data: null as null | { favorites: string[]; loadouts: unknown[] }, error: null },
   upsert: vi.fn(),
+  rpc: vi.fn(),
+  readCloud: vi.fn(),
   realtime: undefined as undefined | ((payload: { new: unknown }) => void),
+  realtimeStatus: undefined as undefined | ((status: string) => void),
   removeChannel: vi.fn(),
 }));
 
@@ -16,7 +19,11 @@ vi.mock('../../src/lib/supabase', () => {
       mocks.realtime = callback;
       return channel;
     }),
-    subscribe: vi.fn(() => channel),
+    subscribe: vi.fn((callback?: (status: string) => void) => {
+      mocks.realtimeStatus = callback;
+      callback?.('SUBSCRIBED');
+      return channel;
+    }),
   };
   return {
     supabase: {
@@ -24,11 +31,12 @@ vi.mock('../../src/lib/supabase', () => {
         const builder = {
           select: vi.fn(() => builder),
           eq: vi.fn(() => builder),
-          maybeSingle: vi.fn(() => Promise.resolve(mocks.cloud)),
+          maybeSingle: mocks.readCloud,
           upsert: mocks.upsert,
         };
         return builder;
       }),
+      rpc: mocks.rpc,
       channel: vi.fn(() => channel),
       removeChannel: mocks.removeChannel,
     },
@@ -51,11 +59,38 @@ function Harness() {
     <div>
       <output data-testid="favorites">{value.favorites.join(',')}</output>
       <output data-testid="loadout">{value.loadouts[0]?.table_id || 'empty'}</output>
+      <output data-testid="loadout-name">{value.loadouts[0]?.name || 'unnamed'}</output>
       <output data-testid="state">{value.syncState}</output>
+      <output data-testid="realtime-state">{value.realtimeState}</output>
       <button onClick={() => value.toggleFavorite('table:classic_green')}>Favorite</button>
+      <button onClick={() => value.toggleFavorite('background:place_paris')}>
+        Favorite Background
+      </button>
       <button onClick={() => value.saveLoadout(0, loadout)}>Save Loadout</button>
+      <button
+        onClick={() =>
+          value.saveLoadout(0, {
+            ...loadout,
+            name: '  Friday   Night  ',
+            saved_at: '2026-08-29T22:00:00.000Z',
+          })
+        }
+      >
+        Save Named Loadout
+      </button>
+      <button onClick={() => value.renameLoadout(0, '  Main   Event  ')}>Rename Loadout</button>
+      <button onClick={() => value.clearLoadout(0)}>Clear Loadout</button>
+      <button onClick={value.retrySync}>Retry Sync</button>
     </div>
   );
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
 }
 
 describe('useTableStudioCollections', () => {
@@ -64,8 +99,13 @@ describe('useTableStudioCollections', () => {
     mocks.cloud = { data: null, error: null };
     mocks.upsert.mockReset();
     mocks.upsert.mockResolvedValue({ error: null });
+    mocks.rpc.mockReset();
+    mocks.rpc.mockResolvedValue({ data: [], error: null });
+    mocks.readCloud.mockReset();
+    mocks.readCloud.mockImplementation(() => Promise.resolve(mocks.cloud));
     mocks.removeChannel.mockReset();
     mocks.realtime = undefined;
+    mocks.realtimeStatus = undefined;
   });
 
   it('uses local cache for first paint then reconciles the signed-in cloud row', async () => {
@@ -93,21 +133,22 @@ describe('useTableStudioCollections', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Favorite' }));
     await waitFor(() =>
-      expect(mocks.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          user_id: 'user-1',
-          favorites: ['table:classic_green'],
-        }),
-        { onConflict: 'user_id' }
-      )
+      expect(mocks.rpc).toHaveBeenCalledWith('fn_mutate_table_studio_preferences', {
+        p_favorite_enabled: true,
+        p_favorite_key: 'table:classic_green',
+        p_loadout: null,
+        p_loadout_slot: null,
+      })
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Save Loadout' }));
     await waitFor(() =>
-      expect(mocks.upsert).toHaveBeenLastCalledWith(
-        expect.objectContaining({ user_id: 'user-1', loadouts: [loadout, null, null] }),
-        { onConflict: 'user_id' }
-      )
+      expect(mocks.rpc).toHaveBeenLastCalledWith('fn_mutate_table_studio_preferences', {
+        p_favorite_enabled: null,
+        p_favorite_key: null,
+        p_loadout: loadout,
+        p_loadout_slot: 0,
+      })
     );
   });
 
@@ -121,14 +162,10 @@ describe('useTableStudioCollections', () => {
     render(<Harness />);
 
     await waitFor(() =>
-      expect(mocks.upsert).toHaveBeenCalledWith(
-        {
-          user_id: 'user-1',
-          favorites: ['table:carbon_red'],
-          loadouts: [{ ...loadout, table_id: 'carbon_red' }, null, null],
-        },
-        { onConflict: 'user_id' }
-      )
+      expect(mocks.rpc).toHaveBeenCalledWith('fn_seed_table_studio_preferences', {
+        p_favorites: ['table:carbon_red'],
+        p_loadouts: [{ ...loadout, table_id: 'carbon_red' }, null, null],
+      })
     );
     expect(screen.getByTestId('state')).toHaveTextContent('synced');
   });
@@ -145,5 +182,95 @@ describe('useTableStudioCollections', () => {
 
     expect(screen.getByTestId('favorites')).toHaveTextContent('background:place_paris');
     expect(screen.getByTestId('loadout')).toHaveTextContent('classic_green');
+  });
+
+  it('stores a clean player-facing name and lets the owner rename or clear the cartridge', async () => {
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Named Loadout' }));
+    expect(screen.getByTestId('loadout-name')).toHaveTextContent('Friday Night');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Loadout' }));
+    expect(screen.getByTestId('loadout-name')).toHaveTextContent('Main Event');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear Loadout' }));
+    expect(screen.getByTestId('loadout')).toHaveTextContent('empty');
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
+  });
+
+  it('keeps a stale realtime echo from rolling back a newer local tap', async () => {
+    const firstWrite = deferred<{ error: null }>();
+    const secondWrite = deferred<{ error: null }>();
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
+    mocks.rpc
+      .mockImplementationOnce(() => firstWrite.promise)
+      .mockImplementationOnce(() => secondWrite.promise);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Favorite' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Favorite Background' }));
+    expect(screen.getByTestId('favorites')).toHaveTextContent(
+      'background:place_paris,table:classic_green'
+    );
+
+    act(() => {
+      mocks.realtime?.({
+        new: { favorites: ['table:classic_green'], loadouts: [null, null, null] },
+      });
+    });
+    expect(screen.getByTestId('favorites')).toHaveTextContent(
+      'background:place_paris,table:classic_green'
+    );
+
+    firstWrite.resolve({ error: null });
+    await waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(2));
+    secondWrite.resolve({ error: null });
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
+
+    act(() => {
+      mocks.realtime?.({
+        new: { favorites: ['table:classic_green'], loadouts: [null, null, null] },
+      });
+    });
+    expect(screen.getByTestId('favorites')).toHaveTextContent(
+      'background:place_paris,table:classic_green'
+    );
+  });
+
+  it('provides the retry promised by the sync error state', async () => {
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: new Error('offline') });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Favorite' }));
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('error'));
+
+    mocks.cloud = {
+      data: { favorites: ['cards:gold'], loadouts: [null, null, null] },
+      error: null,
+    };
+    mocks.rpc.mockResolvedValueOnce({ data: [], error: null });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Sync' }));
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
+    expect(screen.getByTestId('favorites')).toHaveTextContent('table:classic_green,cards:gold');
+    expect(mocks.rpc).toHaveBeenLastCalledWith('fn_mutate_table_studio_preferences', {
+      p_favorite_enabled: true,
+      p_favorite_key: 'table:classic_green',
+      p_loadout: null,
+      p_loadout_slot: null,
+    });
+  });
+
+  it('reconnects a failed realtime channel when the player retries sync', async () => {
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('realtime-state')).toHaveTextContent('live'));
+
+    act(() => mocks.realtimeStatus?.('CHANNEL_ERROR'));
+    expect(screen.getByTestId('realtime-state')).toHaveTextContent('error');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Sync' }));
+    await waitFor(() => expect(screen.getByTestId('realtime-state')).toHaveTextContent('live'));
+    expect(mocks.removeChannel).toHaveBeenCalled();
   });
 });

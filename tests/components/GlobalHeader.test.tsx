@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import GlobalHeader from '@/components/navigation/GlobalHeader';
 
@@ -11,15 +11,17 @@ vi.mock('@/stores/useWalletStore', () => ({
   }),
 }));
 
+const headerData = vi.hoisted(() => ({
+  avatarUrl: '/avatars/test-user.png',
+  notificationCount: 0,
+  unreadMessages: 0,
+  loadOnce: vi.fn(),
+  setAvatarUrl: vi.fn(),
+  setUnreadMessages: vi.fn(),
+}));
+
 vi.mock('@/stores/useHeaderDataStore', () => ({
-  useHeaderDataStore: () => ({
-    avatarUrl: '/avatars/test-user.png',
-    notificationCount: 0,
-    unreadMessages: 0,
-    loadOnce: vi.fn(),
-    setAvatarUrl: vi.fn(),
-    setUnreadMessages: vi.fn(),
-  }),
+  useHeaderDataStore: () => headerData,
 }));
 
 vi.mock('@/hooks/useAuthUser', () => ({
@@ -41,6 +43,11 @@ vi.mock('@/hooks/useMasterBusSubscription', () => ({
 }));
 
 describe('GlobalHeader Component', () => {
+  beforeEach(() => {
+    headerData.notificationCount = 0;
+    headerData.unreadMessages = 0;
+  });
+
   it('renders the brand text image', () => {
     render(
       <MemoryRouter>
@@ -135,5 +142,22 @@ describe('GlobalHeader Component', () => {
     expect(screen.getByRole('button', { name: /Open Menu/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Go back/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Go to the Hub/i })).toBeInTheDocument();
+  });
+
+  it('keeps the notification count inside Notifications and out of Profile', () => {
+    headerData.notificationCount = 5;
+    render(
+      <MemoryRouter>
+        <GlobalHeader />
+      </MemoryRouter>
+    );
+
+    const notifications = screen.getByRole('link', { name: /^Notifications$/i });
+    const profile = screen.getByRole('button', { name: /My Profile/i });
+    const badge = within(notifications).getByLabelText('5 unread notifications');
+
+    expect(badge).toHaveTextContent('5');
+    expect(profile).not.toContainElement(badge);
+    expect(within(profile).queryByLabelText(/unread notifications/i)).not.toBeInTheDocument();
   });
 });

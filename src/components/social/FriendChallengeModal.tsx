@@ -4,8 +4,9 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
@@ -62,6 +63,24 @@ export default function FriendChallengeModal({
   const [sending, setSending] = useState(false);
   const isMounted = useIsMounted();
   const toast = useToast();
+  const trapRef = useFocusTrap(isOpen);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedType(null);
+      return;
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !sending) onClose();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen, onClose, sending]);
 
   if (!isOpen) return null;
 
@@ -109,14 +128,36 @@ export default function FriendChallengeModal({
   };
 
   return (
-    <div className="fcm-overlay" onClick={onClose}>
-      <div className="fcm-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="fcm-overlay" onClick={sending ? undefined : onClose}>
+      <div
+        ref={trapRef}
+        className="fcm-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="friend-challenge-title"
+        aria-describedby="friend-challenge-description"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="fcm-header">
-          <h3>Challenge {challengeeName}</h3>
-          <button className="fcm-close" onClick={onClose}>
+          <div>
+            <span>Head-To-Head Protocol</span>
+            <h3 id="friend-challenge-title">Challenge {challengeeName}</h3>
+          </div>
+          <button
+            className="fcm-close"
+            type="button"
+            onClick={onClose}
+            aria-label="Close challenge dialog"
+            disabled={sending}
+          >
             ✕
           </button>
         </div>
+
+        <p id="friend-challenge-description" className="fcm-description">
+          Select A Verified Challenge Format. Progress Stays Connected To Live Play And Mission
+          Data.
+        </p>
 
         <div className="fcm-types">
           {CHALLENGE_TYPES.map((type) => (
@@ -124,6 +165,8 @@ export default function FriendChallengeModal({
               key={type.id}
               className={`fcm-type-card ${selectedType === type.id ? 'fcm-selected' : ''}`}
               onClick={() => setSelectedType(type.id)}
+              type="button"
+              aria-pressed={selectedType === type.id}
             >
               <span className="fcm-type-icon">{type.icon}</span>
               <div className="fcm-type-info">
@@ -135,7 +178,12 @@ export default function FriendChallengeModal({
           ))}
         </div>
 
-        <button className="fcm-send-btn" disabled={!selectedType || sending} onClick={handleSend}>
+        <button
+          className="fcm-send-btn"
+          type="button"
+          disabled={!selectedType || sending}
+          onClick={handleSend}
+        >
           {sending ? 'Sending...' : 'Send Challenge'}
         </button>
       </div>

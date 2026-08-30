@@ -39,8 +39,12 @@ describe('the canonical allocator exists and is the single JS source of shares',
     expect(allocationCode).toMatch(/WEIGHTED_CONTRIBUTED/);
   });
 
-  it('the settler consumes sharesForRakeRecord and no longer owns a private equal split', () => {
-    expect(settler).toMatch(/import \{ sharesForRakeRecord \} from '\.\/rakeAllocation\.js'/);
+  it('the settler consumes the canonical allocator and no longer owns a private equal split', () => {
+    // POLISH 4 (2026-08-30): it now imports the ledger-first helper too, and
+    // prefers stored rake_attributions over recomputation. Either import
+    // satisfies the law; owning its own split never does.
+    expect(settler).toMatch(/from '\.\/rakeAllocation\.js'/);
+    expect(settler).toMatch(/sharesForRakeRecordWithLedger/);
     expect(settler).not.toMatch(/function equalShareCents/);
     // The retired formula shape must not reappear in any form:
     expect(settler).not.toMatch(/rake_amount\s*\/\s*dealt/i);
@@ -93,6 +97,46 @@ describe('reconciliation watchdog is wired', () => {
     expect(reconciler).toMatch(/export async function auditRakeAttributionDrift/);
     const gameServer = stripComments(read('server/src/GameServer.ts'));
     expect(gameServer).toMatch(/auditRakeAttributionDrift\(/);
+  });
+});
+
+describe('BBJ collection law (Dan 2026-08-29) — collection is not payout', () => {
+  const hc = stripComments(read('server/src/engine/HandController.ts'));
+  const serverCfg = stripComments(read('server/src/config/RakeConfig.ts'));
+  const clientCfg = stripComments(read('src/config/RakeConfig.ts'));
+
+  it('the engine prices deductions in exactly one place', () => {
+    expect(hc).toMatch(/public priceDeductions\(/);
+    expect((hc.match(/bbjCfg\.feeBB/g) ?? []).length).toBe(1);
+    expect((hc.match(/this\.priceDeductions\(/g) ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('no fee path may gate on pot size — that is the PAYOUT rule', () => {
+    expect(hc).not.toMatch(/minPotBB/);
+    expect(hc).not.toMatch(/potInBB/);
+  });
+
+  it('both calculateBBJFee copies take flopSeen, never potSize', () => {
+    for (const src of [serverCfg, clientCfg]) {
+      const sig = src.match(/export function calculateBBJFee\(([\s\S]*?)\):/)?.[1] ?? '';
+      expect(sig).toMatch(/flopSeen/);
+      expect(sig).not.toMatch(/potSize/);
+    }
+  });
+
+  it('the payout floor survives in detectBBJHit, untouched', () => {
+    expect(serverCfg).toMatch(/potSize < bigBlind \* BBJ_RULES\.minPotBB/);
+  });
+
+  it('the CI gate that enforces all of this exists and is wired', () => {
+    expect(() => read('scripts/ci/check-rake-bbj-collection-law.mjs')).not.toThrow();
+    expect(read('.github/workflows/ci.yml')).toMatch(/check-rake-bbj-collection-law\.mjs/);
+    expect(read('scripts/ci/all-gates.sh')).toMatch(/check-rake-bbj-collection-law/);
+  });
+
+  it('the player-facing copy states collection and payout separately', () => {
+    const basic = read('src/components/bbj/BBJBasicPanel.tsx');
+    expect(basic).toMatch(/Collected On Every Hand That Sees A Flop/i);
   });
 });
 

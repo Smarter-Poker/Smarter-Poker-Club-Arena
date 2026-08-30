@@ -449,6 +449,9 @@
     "client_crash_log": [
       "boundary"
     ],
+    "client_shell_telemetry": [
+      "event"
+    ],
     "clip_library": [
       "source_url",
       "duration"
@@ -1599,9 +1602,43 @@
       "payout_amount",
       "payout_currency"
     ],
+    "leak_drill_answers": [
+      "batch_id",
+      "user_id",
+      "leak_id",
+      "question_id",
+      "correct_answer",
+      "correct",
+      "solver_source",
+      "classification"
+    ],
+    "leak_drill_attempts": [
+      "batch_id",
+      "user_id",
+      "leak_id",
+      "review_id",
+      "attempt_number",
+      "total_questions",
+      "correct_answers",
+      "accuracy",
+      "passed",
+      "first_attempt",
+      "remediation_mastered"
+    ],
+    "leak_drill_sessions": [
+      "batch_id",
+      "user_id",
+      "leak_id",
+      "question_ids"
+    ],
     "leak_hand_examples": [
       "leak_id",
       "hand_history_id"
+    ],
+    "leak_review_operations": [
+      "user_id",
+      "leak_id",
+      "review_id"
     ],
     "leak_review_state": [
       "user_id",
@@ -1732,6 +1769,10 @@
       "name",
       "price_usd",
       "price_diamonds"
+    ],
+    "merchandise_order_events": [
+      "order_id",
+      "action"
     ],
     "merchandise_orders": [
       "user_id"
@@ -2991,6 +3032,12 @@
       "level",
       "question_data"
     ],
+    "training_question_reports": [
+      "user_id",
+      "game_id",
+      "question_id",
+      "reason"
+    ],
     "training_scenarios": [
       "title"
     ],
@@ -3004,6 +3051,24 @@
     ],
     "training_streaks": [
       "user_id"
+    ],
+    "training_study_group_members": [
+      "group_id",
+      "user_id"
+    ],
+    "training_study_group_messages": [
+      "group_id",
+      "user_id",
+      "body"
+    ],
+    "training_study_groups": [
+      "owner_id",
+      "name"
+    ],
+    "training_tool_records": [
+      "user_id",
+      "tool_id",
+      "record_key"
     ],
     "training_tournaments": [
       "name",
@@ -3400,6 +3465,14 @@
       "bravo_slug",
       "game_name"
     ],
+    "venue_location_integrity_log": [
+      "venue_id",
+      "reason",
+      "integrity_status",
+      "integrity_reason",
+      "before_record",
+      "after_record"
+    ],
     "venue_news": [
       "venue_id",
       "title"
@@ -3466,6 +3539,12 @@
     "vip_backfill_20260812_backup": [
       "user_id"
     ],
+    "vip_diamond_purchase_requests": [
+      "reference_id",
+      "user_id",
+      "request_hash",
+      "response"
+    ],
     "vip_feature_dismissals": [
       "user_id",
       "feature_key"
@@ -3506,6 +3585,13 @@
       "user_id",
       "reward_id",
       "points_spent"
+    ],
+    "vip_subscription_checkout_claims": [
+      "user_id",
+      "request_id",
+      "intent_hash",
+      "state",
+      "expires_at"
     ],
     "w2g_forms": [
       "user_id",

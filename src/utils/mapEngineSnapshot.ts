@@ -222,6 +222,18 @@ export interface MappedTableStatePatch {
    * but never exposed it to clients.
    */
   waitingForBBUserIds: string[];
+  /**
+   * Dan 2026-08-29 — the subset of waitingForBBUserIds who have ALREADY
+   * agreed to post the big blind and are held out only by the seat they are
+   * sitting in (the one the small blind or the button is about to reach).
+   *
+   * The hero must NOT be asked again while their own id is in here. That is
+   * the entire bug: the engine refused the post positionally, the client had
+   * no way to know the answer had been kept, and so it re-rendered the same
+   * "Post Big Blind To Enter" button on the next snapshot and after every
+   * reload. The engine replays the agreement itself once the seat clears.
+   */
+  postBBDeferredUserIds: string[];
 }
 
 // ─── Mapping ──────────────────────────────────────────────────────────────────
@@ -465,5 +477,10 @@ export function mapEngineSnapshot(
     // Bible V8 §4.2 — Waiting-for-BB user IDs (Walkthrough Step 4 fix 2026-04-29)
     waitingForBBUserIds:
       (s as unknown as { waiting_for_bb_user_ids?: string[] }).waiting_for_bb_user_ids ?? [],
+    // Dan 2026-08-29 — see the field docs. Absent on an engine older than the
+    // fix, which maps to "nobody has a standing agreement" and leaves the
+    // pre-fix behaviour exactly as it was rather than hiding a live prompt.
+    postBBDeferredUserIds:
+      (s as unknown as { post_bb_deferred_user_ids?: string[] }).post_bb_deferred_user_ids ?? [],
   };
 }

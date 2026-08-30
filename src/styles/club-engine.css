@@ -145,7 +145,7 @@
 
   /* Runtime chrome dimensions. This is the entry stylesheet imported by
      main.tsx, so shared layout components resolve these values in production. */
-  --bottom-nav-height: clamp(44px, 9vw, 108px);
+  --bottom-nav-height: clamp(44px, 7vw, 84px);
   --bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   --bottom-nav-stack-base: var(--bottom-nav-clearance);
 
@@ -244,22 +244,10 @@ body {
 #root {
   min-height: 100vh;
   /**
-   * MINUS WHAT THE CHROME HAS ALREADY TAKEN (2026-08-29).
-   *
-   * When the pinned table bar is up, BODY spends 48px + the notch inset on
-   * `padding-top` to clear it (`body[data-ca-pinned-bar='1']`, MultiTablePage.css).
-   * A full `100dvh` inside a padded body makes the page taller than the screen
-   * by exactly that padding: measured on production at 375x812 with the bar
-   * up, body was 860px. Every page in Club Arena scrolled 48px for nothing.
-   *
-   * The fallback is 0px, so a page with no pinned bar is unchanged. `100vh`
-   * above stays as the pre-dvh fallback and is deliberately not touched: a
-   * browser without `dvh` is not one to trust `env()` arithmetic on, and an
-   * over-tall page beats a clipped one.
+   * AppLayout reserves persistent action-bar space inside its own flow, after
+   * the GlobalHeader. Body padding must never move the whole application down.
    */
-  min-height: calc(
-    100dvh - var(--ca-pinned-bar-offset, 0px)
-  ); /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   display: flex;
   flex-direction: column;
 }

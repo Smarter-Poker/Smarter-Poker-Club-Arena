@@ -212,8 +212,22 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // iteration — cold start OR crash recovery — all seated players are
         // treated as the initial roster and none of that applies.
         if (this.dealingLoopFirstIteration) {
+          // Dan 2026-08-30: BEFORE the veteran seeding below, because that
+          // seeding is what used to destroy the hold. Both halves of the fix
+          // live in these few lines — the hold comes back, and the player
+          // holding it is excluded from `dealtInUserIds`.
+          this.restoreEntryHoldsFromSeats();
           for (const p of this.seatedPlayers) {
             this.knownPlayerIds.add(p.user_id);
+            // A HELD PLAYER IS NOT A VETERAN. They have never been dealt a
+            // hand at this table — that is what the hold means — so seeding
+            // them here made them button-eligible on what is really their
+            // first hand, which is exactly the rule "a new player never gets
+            // the button when sitting down" exists to prevent. The seeding
+            // itself is right for everyone else: they were genuinely playing
+            // before the restart, and without it buttonEligible() falls back
+            // to the whole roster for a full orbit after every deploy.
+            if (this.waitingForBB.has(p.user_id)) continue;
             // Dan 2026-08-25, BINDING (restart fidelity): anyone already seated
             // when this engine booted was PLAYING before the restart, so they
             // are a veteran for button purposes. Without this, dealtInUserIds is
@@ -255,6 +269,15 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // longer seated (or never seated) is dead weight - drop it.
         for (const id of this.pendingPostToEnter) {
           if (!currentIds.has(id)) this.pendingPostToEnter.delete(id);
+        }
+        // Dan 2026-08-29: and the same for a standing agreement to post. It is
+        // an answer about ONE seat at ONE table; a player who has left has
+        // nothing to agree to, and coming back makes them a fresh arrival who
+        // is asked again. The replay below prunes this too, but doing it here
+        // as well keeps every "player is gone" rule in one place rather than
+        // relying on the replay having run.
+        for (const id of this.postBBWhenClear) {
+          if (!currentIds.has(id)) this.postBBWhenClear.delete(id);
         }
         // Same pruning for button eligibility: a player who has left and comes
         // back is a new joiner again and re-earns the button by playing a hand.
@@ -305,6 +328,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             if (p && p.seat_number === bbSeatIndex) {
               this.waitingForBB.delete(userId);
               // Player will now post BB naturally this hand
+              // Dan 2026-08-30: and the seat owes nothing from here on, so the
+              // persisted hold goes with it. `agreed: false` clears any
+              // standing post agreement in the same write — the big blind
+              // reached them first, so there is nothing left to agree to and
+              // billing it again would be a second blind.
+              this.postBBWhenClear.delete(userId);
+              this.persistEntryHold(userId, { hold: null, agreed: false });
             }
           }
         }
@@ -323,6 +353,54 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             if (this.waitingForBB.has(userId)) {
               this.postBBToEnter(userId);
             }
+          }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // A STANDING AGREEMENT TO POST, REPLAYED UNTIL THE SEAT CLEARS
+        // (Dan 2026-08-29 — see postBBWhenClear in ServerTableEngineBase)
+        //
+        // Unlike pendingPostToEnter above, membership is NOT consumed on the
+        // attempt. A player put here tapped Post Big Blind from the seat the
+        // small blind or the button was about to reach; that is refused, and
+        // must stay refused, so consuming the intent on the first pass would
+        // throw the answer away again and put us back at "it makes you hit
+        // the button again". It is retried every pass instead and removed by
+        // `postBBToEnter` itself, on exactly two outcomes:
+        //
+        //   - the seat cleared and the post went through (billed one live big
+        //     blind through postingBBToEnter, same as a live tap);
+        //   - the big blind reached them first, the release above took them
+        //     out of waitingForBB, and they post it as their own blind. The
+        //     agreement is dropped rather than charged a second time.
+        //
+        // Ordering matters and is deliberate: this sits AFTER the natural-BB
+        // release for that second case, and after the registration pass so a
+        // brand-new joiner is already in waitingForBB by the time it runs.
+        //
+        // Positions are read fresh inside postBBToEnter each pass, so this
+        // grants nothing the player could not have got by tapping again at
+        // this exact moment. It only spares them the tapping.
+        if (this.postBBWhenClear.size > 0) {
+          for (const userId of Array.from(this.postBBWhenClear)) {
+            const stillSeated = this.seatedPlayers.some((s) => s.user_id === userId);
+            if (!stillSeated || !this.waitingForBB.has(userId)) {
+              /* Two ways out that are not a post, and both end the agreement
+                 HERE rather than inside postBBToEnter, so this loop can never
+                 re-add its own entry:
+
+                 - LEFT THE TABLE. An agreement cannot outlive the seat it was
+                   made from; the next occupant answers for themselves.
+                 - ALREADY RELEASED. The big blind reached them (the block
+                   above) and they post it as their own blind, so there is
+                   nothing left to agree to. Routing this through
+                   postBBToEnter instead would fall into queuePostToEnter,
+                   which re-queues an unknown player and would leave this set
+                   populated forever. */
+              this.postBBWhenClear.delete(userId);
+              continue;
+            }
+            this.postBBToEnter(userId);
           }
         }
 
@@ -1796,6 +1874,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.returningFromSitout.clear();
     }
     if (this.postingBBToEnter.size > 0) {
+      // Dan 2026-08-30: the debt is settled, so the seat owes nothing and is
+      // in the rotation. Clearing the persisted hold here — at the moment the
+      // live big blind has actually been handed to the hand config — is what
+      // stops a restart re-billing it, or worse, re-holding a player who has
+      // already paid to come in.
+      for (const userId of this.postingBBToEnter) {
+        this.persistEntryHold(userId, { hold: null, agreed: false });
+      }
       this.postingBBToEnter.clear();
     }
     // B2 2026-08-27: a tournament arrival's big blind is settled the moment it

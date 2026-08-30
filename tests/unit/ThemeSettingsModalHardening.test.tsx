@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -21,7 +21,23 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   themeListeners: new Set<(event: { payload: unknown }) => void>(),
   entitlementInsert: null as null | ((payload: { new: Record<string, unknown> }) => void),
+  entitlementStatus: null as null | ((status: string) => void),
   removeChannel: vi.fn(),
+  loadDiamonds: vi.fn(),
+  themeSelect: '',
+  collections: {
+    favorites: [] as string[],
+    loadouts: [null, null, null] as Array<Record<string, string> | null>,
+    recent: [] as string[],
+    syncState: 'synced' as 'local' | 'loading' | 'synced' | 'error',
+    realtimeState: 'live' as 'local' | 'connecting' | 'live' | 'error',
+    toggleFavorite: vi.fn(),
+    saveLoadout: vi.fn(),
+    renameLoadout: vi.fn(),
+    clearLoadout: vi.fn(),
+    retrySync: vi.fn(),
+    rememberRecent: vi.fn(),
+  },
   toast: {
     success: vi.fn(),
     error: vi.fn(),
@@ -63,15 +79,7 @@ vi.mock('../../src/services/AvatarService', () => ({
 }));
 
 vi.mock('../../src/hooks/useTableStudioCollections', () => ({
-  useTableStudioCollections: () => ({
-    favorites: [],
-    loadouts: [null, null, null],
-    recent: [],
-    syncState: 'synced',
-    toggleFavorite: vi.fn(),
-    saveLoadout: vi.fn(),
-    rememberRecent: vi.fn(),
-  }),
+  useTableStudioCollections: () => mocks.collections,
 }));
 
 vi.mock('../../src/components/table/TableStudioGameplayPreview', () => ({
@@ -85,9 +93,17 @@ vi.mock('../../src/components/table/TableStudioGameplayPreview', () => ({
 }));
 
 vi.mock('../../src/components/vip/DiamondTopUpModal', () => ({
-  DiamondTopUpModal: ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) =>
+  DiamondTopUpModal: ({
+    isOpen,
+    onClose,
+    returnParams,
+  }: {
+    isOpen: boolean;
+    onClose: () => void;
+    returnParams?: string;
+  }) =>
     isOpen ? (
-      <div role="dialog" aria-label="Diamond Store">
+      <div role="dialog" aria-label="Diamond Store" data-return-params={returnParams}>
         <button onClick={onClose}>Close Diamond Store</button>
       </div>
     ) : null,
@@ -112,7 +128,11 @@ vi.mock('../../src/lib/supabase', () => ({
             : mocks.purchaseResult;
       const builder: Record<string, unknown> = {};
       const chain = () => builder;
-      for (const method of ['select', 'eq', 'like']) builder[method] = vi.fn(chain);
+      builder.select = vi.fn((columns: string) => {
+        if (table === 'user_theme_settings') mocks.themeSelect = columns;
+        return builder;
+      });
+      for (const method of ['eq', 'like']) builder[method] = vi.fn(chain);
       builder.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
         result().then(resolve, reject);
       return builder;
@@ -130,7 +150,11 @@ vi.mock('../../src/lib/supabase', () => ({
             return channel;
           }
         ),
-        subscribe: vi.fn(() => channel),
+        subscribe: vi.fn((listener: (status: string) => void) => {
+          mocks.entitlementStatus = listener;
+          listener('SUBSCRIBED');
+          return channel;
+        }),
       };
       return channel;
     }),
@@ -142,6 +166,10 @@ import { useSettingsStore } from '../../src/stores/useSettingsStore';
 import { useWalletStore } from '../../src/stores/useWalletStore';
 import { ThemeSettingsModal } from '../../src/components/table/ThemeSettingsModal';
 import { masterBus } from '../../src/core/MasterBus';
+import {
+  readTableStudioCheckoutIntent,
+  rememberTableStudioCheckoutIntent,
+} from '../../src/lib/tableStudioCheckoutResume';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -160,8 +188,16 @@ const savedTheme = {
   cards_id: 'classic_red',
 };
 
-function renderStudio() {
-  return render(<ThemeSettingsModal isOpen onClose={vi.fn()} userId="user-1" isVip={false} />);
+function renderStudio(checkoutReturnResult: 'success' | 'canceled' | null = null) {
+  return render(
+    <ThemeSettingsModal
+      isOpen
+      onClose={vi.fn()}
+      userId="user-1"
+      isVip={false}
+      checkoutReturnResult={checkoutReturnResult}
+    />
+  );
 }
 
 describe('ThemeSettingsModal hardening', () => {
@@ -183,13 +219,34 @@ describe('ThemeSettingsModal hardening', () => {
     mocks.persistMode.mockResolvedValue({ ok: true });
     mocks.navigate.mockReset();
     mocks.entitlementInsert = null;
+    mocks.entitlementStatus = null;
     mocks.removeChannel.mockReset();
+    mocks.loadDiamonds.mockReset();
+    mocks.loadDiamonds.mockResolvedValue(undefined);
+    mocks.themeSelect = '';
+    mocks.collections.favorites = [];
+    mocks.collections.loadouts = [null, null, null];
+    mocks.collections.recent = [];
+    mocks.collections.syncState = 'synced';
+    mocks.collections.realtimeState = 'live';
+    for (const method of [
+      mocks.collections.toggleFavorite,
+      mocks.collections.saveLoadout,
+      mocks.collections.renameLoadout,
+      mocks.collections.clearLoadout,
+      mocks.collections.retrySync,
+      mocks.collections.rememberRecent,
+    ]) {
+      method.mockReset();
+    }
     for (const method of Object.values(mocks.toast)) method.mockReset();
     useSettingsStore.setState({ theme: 'dark' });
     useWalletStore.setState({
       diamonds: 1_000,
-      loadDiamonds: vi.fn().mockResolvedValue(undefined),
+      loadDiamonds: mocks.loadDiamonds,
     });
+    window.sessionStorage.clear();
+    window.history.replaceState({}, '', '/table/test-table');
   });
 
   it('keeps customization choices disabled until the saved row is known', async () => {
@@ -211,6 +268,71 @@ describe('ThemeSettingsModal hardening', () => {
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
     expect(screen.queryByText('Loading Your Saved Design')).not.toBeInTheDocument();
+  });
+
+  it('renders a named visual loadout and wires equip, rename, and guarded clear', async () => {
+    mocks.collections.loadouts = [
+      {
+        theme_id: 'default-dark',
+        table_id: 'classic_green',
+        button_id: 'classic-white',
+        background_id: 'midnight',
+        cards_id: 'classic_red',
+        name: 'Main Event',
+        saved_at: '2026-08-29T22:00:00.000Z',
+      },
+      null,
+      null,
+    ];
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+
+    const locker = screen.getByRole('region', { name: 'My Looks' });
+    const firstLook = within(locker).getAllByRole('listitem')[0];
+    const name = within(firstLook).getByRole('textbox', { name: 'Name For Look 1' });
+    expect(name).toHaveValue('Main Event');
+
+    fireEvent.click(within(firstLook).getByRole('button', { name: 'Equip' }));
+    await waitFor(() =>
+      expect(mocks.applyAppearance).toHaveBeenCalledWith(
+        expect.objectContaining({ table_id: 'classic_green', background_id: 'midnight' }),
+        expect.objectContaining({ userId: 'user-1', gameType: 'ALL' })
+      )
+    );
+
+    fireEvent.change(name, { target: { value: 'Sunday Final' } });
+    fireEvent.blur(name);
+    expect(mocks.collections.renameLoadout).toHaveBeenCalledWith(0, 'Sunday Final');
+
+    fireEvent.click(within(firstLook).getByRole('button', { name: 'Clear' }));
+    expect(within(firstLook).getByText('Clear This Look?')).toBeVisible();
+    fireEvent.click(within(firstLook).getByRole('button', { name: 'Clear' }));
+    expect(mocks.collections.clearLoadout).toHaveBeenCalledWith(0);
+  });
+
+  it('surfaces a failed collection channel and reconnects it from the locker', async () => {
+    mocks.collections.realtimeState = 'error';
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+
+    expect(screen.getByText('Review Sync')).toBeVisible();
+    const retry = screen.getByRole('button', { name: 'Retry Sync' });
+    fireEvent.click(retry);
+
+    expect(mocks.collections.retrySync).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads row timestamps so the editor matches last-write-wins gameplay precedence', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+
+    expect(mocks.themeSelect).toContain('updated_at');
   });
 
   it('does not present a purchased card back as VIP-locked while ownership loads', async () => {
@@ -252,12 +374,49 @@ describe('ThemeSettingsModal hardening', () => {
     ).toBeDisabled();
   });
 
+  it('shows a retryable catalog failure instead of leaving paid prices silently unavailable', async () => {
+    mocks.pricingResult = Promise.resolve({
+      data: [],
+      error: { message: 'pricing query failed' },
+    });
+    renderStudio();
+
+    expect(await screen.findByText('Purchase Prices Could Not Be Loaded')).toBeVisible();
+    mocks.pricingResult = Promise.resolve({
+      data: [{ feature: 'studio:table_id:neon_city', diamond_cost: 350 }],
+      error: null,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Try Again' }));
+
+    await waitFor(() =>
+      expect(screen.queryByText('Purchase Prices Could Not Be Loaded')).not.toBeInTheDocument()
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
+    expect(screen.getByText('350 ◆')).toBeVisible();
+  });
+
+  it('surfaces and reconnects a failed entitlement realtime channel', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+
+    act(() => mocks.entitlementStatus?.('CHANNEL_ERROR'));
+    expect(await screen.findByText('Live Unlock Updates Are Disconnected')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
+
+    await waitFor(() => expect(mocks.removeChannel).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.queryByText('Live Unlock Updates Are Disconnected')).not.toBeInTheDocument()
+    );
+  });
+
   it('treats checkout as its own dialog and Escape closes only checkout', async () => {
     renderStudio();
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
 
     const locked = screen
       .getAllByRole('button')
@@ -282,7 +441,7 @@ describe('ThemeSettingsModal hardening', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
     fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
     fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
 
@@ -307,15 +466,76 @@ describe('ThemeSettingsModal hardening', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
     fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
 
     const addDiamonds = await screen.findByRole('button', { name: 'Add 250 Diamonds' });
     expect(addDiamonds).toBeEnabled();
     fireEvent.click(addDiamonds);
 
-    expect(await screen.findByRole('dialog', { name: 'Diamond Store' })).toBeVisible();
+    const store = await screen.findByRole('dialog', { name: 'Diamond Store' });
+    expect(store).toBeVisible();
+    expect(store).toHaveAttribute('data-return-params', 'from=table-studio');
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it('restores the exact locked design after Stripe and waits for the credited balance', async () => {
+    useWalletStore.setState({ diamonds: 0 });
+    rememberTableStudioCheckoutIntent({
+      userId: 'user-1',
+      tab: 'table',
+      assetId: 'neon_city',
+    });
+    window.history.replaceState(
+      {},
+      '',
+      '/table/test-table?club=club-1&from=table-studio&purchase=success'
+    );
+
+    renderStudio('success');
+
+    expect(await screen.findByRole('dialog', { name: 'Unlock Neon City' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Syncing Diamond Balance...' })).toBeDisabled();
+    expect(mocks.loadDiamonds).toHaveBeenCalledWith('user-1', { force: true });
+    expect(mocks.toast.success).toHaveBeenCalledWith('Payment Received. Restoring Neon City.');
+    expect(window.location.search).toBe('?club=club-1');
+
+    act(() => useWalletStore.setState({ diamonds: 500 }));
+    expect(await screen.findByRole('button', { name: /Buy For 350/ })).toBeEnabled();
+  });
+
+  it('does not let a hidden duplicate modal consume the global Stripe return', async () => {
+    rememberTableStudioCheckoutIntent({
+      userId: 'user-1',
+      tab: 'table',
+      assetId: 'neon_city',
+    });
+    window.history.replaceState({}, '', '/settings?from=table-studio&purchase=success');
+
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+
+    expect(screen.queryByRole('dialog', { name: 'Unlock Neon City' })).not.toBeInTheDocument();
+    expect(readTableStudioCheckoutIntent('user-1')).not.toBeNull();
+  });
+
+  it('keeps the pending design available after a canceled Stripe checkout', async () => {
+    rememberTableStudioCheckoutIntent({
+      userId: 'user-1',
+      tab: 'table',
+      assetId: 'neon_city',
+    });
+    window.history.replaceState({}, '', '/table/test-table?from=table-studio&purchase=canceled');
+
+    renderStudio('canceled');
+
+    expect(await screen.findByRole('dialog', { name: 'Unlock Neon City' })).toBeVisible();
+    expect(mocks.toast.info).toHaveBeenCalledWith(
+      'Checkout Canceled. No Charge Was Made; Your Design Is Still Waiting.'
+    );
+    expect(mocks.loadDiamonds).not.toHaveBeenCalledWith('user-1', { force: true });
   });
 
   it('opens the Diamond Store if the server rejects a stale balance as insufficient', async () => {
@@ -327,7 +547,7 @@ describe('ThemeSettingsModal hardening', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
     fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
     fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
 
@@ -340,7 +560,7 @@ describe('ThemeSettingsModal hardening', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
     expect(
       screen.getByRole('button', { name: 'Neon City, purchase or VIP required' })
     ).toBeEnabled();
@@ -360,7 +580,7 @@ describe('ThemeSettingsModal hardening', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
     fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
     fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
 

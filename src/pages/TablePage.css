@@ -4202,8 +4202,17 @@ button.post-bb-overlay-button {
            guard) with about 5px of margin, so plate-bottom to seat-top is
            8 + 5 = 13px of air. Nothing on the felt reaches into the band.
        If a later pass grows the plate, --sp-bbj-h grows and this follows on
-       its own; only shrink the 8px if Dan asks for it explicitly. */
-    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 8px + var(--sp-page-inset-top));
+       its own; only shrink the 8px if Dan asks for it explicitly.
+
+       2026-08-29: 8px -> 14px, and this is Dan asking for it explicitly in the
+       other direction. "You can slide the table down to leave more room at the
+       top for the top villain." The extra 6px is exactly what --sp-hero-clear
+       gave back in this same commit (68 -> 62), so the felt's LENGTH is
+       unchanged to the pixel and the oval simply sits 6px lower. The top seats
+       carry their name box ABOVE the avatar and sit at y 5-6% of the scaler,
+       so every pixel of this band is clearance between that box and the BBJ
+       plate's shadow. */
+    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 14px + var(--sp-page-inset-top));
 
     /* THE HERO'S STRIP, and why a phone needs more of it than the desktop
        half-seat floor the base rule declares.
@@ -4279,8 +4288,66 @@ button.post-bb-overlay-button {
        THE FLOOR IT MUST NOT CROSS is half a hero seat, or the name plate
        carrying the stack goes back under the action bar — the 2026-08-23 bug.
        Measured half-heights: 49px @380, 54px @480, 60px @640. 68 clears the
-       largest of those by 8px, which is why it is not 60. */
-    --sp-hero-clear: 68px;
+       largest of those by 8px, which is why it is not 60.
+
+       ── 2026-08-29: 68 -> 62, AND THE 6px GOES TO THE TOP OF THE TABLE ──────
+       Dan, with two screenshots: "table sizing is off because you are leaving
+       too much room at the bottom for the action bar ... you can slide the
+       table down to leave more room at the top for the top villain."
+
+       The strip between the felt's bottom edge and the action bar's top edge
+       IS this number - exactly, on every device, insets or not:
+
+           gap = --sp-table-bottom - (--sp-bottom-row-h + safe-area-inset)
+               = (action-reserve + hero-clear) - action-reserve
+               = --sp-hero-clear
+
+       So this is the whole of what can be reclaimed down there, and what it
+       has to hold is the hero block that hangs below the felt. Measured with
+       the real stylesheets on every device in the harness, the worst PHONE
+       overhang is 59.3px (iPhone 14 Pro Max; 55.3 on Dan's 12/13/14, 47.3 on
+       an SE). 68 was carrying 8.7px of nothing on the phone he reviews from.
+
+       62 keeps 2.7px over the worst phone and gives the rest back. It is not
+       more because it cannot honestly be: the tablets in the same table
+       already overhang PAST this reserve (iPad Pro 12.9 at 86.8px), so the
+       number is generous where it can be and tight where it is measured, and
+       cutting further would put a hero's plate under the bar on the device
+       that binds. If the felt needs to grow by more than this, the pixels are
+       in the action bar's own height or in the hero strip's contents - both of
+       which are Dan's to spend, not an agent's to assume.
+
+       A FLAT NUMBER CANNOT BE TIGHT ON TWO PHONES AT ONCE, which is what the
+       first attempt at this (68 -> 62) ran into and what the guard caught. The
+       hero block is PROPORTIONAL now - the avatar is 15.8% of the felt and the
+       hero's is 1.3333x that (#1650) - so the thing this reserve holds scales
+       with the screen while the reserve did not. Measured, the overhang is a
+       remarkably flat 13.4-14.3% of the felt's width on every device in the
+       harness. 62 was 2.7px of margin on a Pro Max and 14.7px of waste on an
+       SE, at the same time.
+
+       So the reserve rides the same curve. NOT off `--table-w`, which would be
+       circular - the felt's height is derived from this reserve, so sizing the
+       reserve from the felt closes a loop CSS resolves by giving up (it is the
+       same trap ActionPanel.css names for the bar: "the bar is not part of the
+       felt and must not size itself from it"). `vw` is the input that is free
+       of the loop, and on a phone it is the right proxy precisely because the
+       felt is edge-to-edge since 2026-08-29.
+
+           375 (SE, height-bound)  54.8px reserve against a 47.3px block
+           390 (Dan's phone)       56.9px  against 55.3px
+           430 (Pro Max)           62.8px  against 59.3px
+
+       The 68px cap keeps the tablets exactly where they were; the 50px floor
+       is the half-seat rule above, restated as a number this expression cannot
+       fall below.
+
+       AND THE FIRST 6px OF WHAT THIS FREES IS SPENT ON THE TOP, because that
+       is the half of the instruction easy to miss: --sp-table-top goes 8px ->
+       14px in the same commit, so the oval slides 6px down and the top villain
+       gets the room. On Dan's phone the reserve frees 11.1px, 6 of it buys the
+       slide, and the felt still ends up ~5px longer than it was. */
+    --sp-hero-clear: clamp(50px, 14.6vw, 68px);
     /* 2026-08-26: gutters removed per Dan — edge-to-edge felt at 375px
        measures 375x619.8 (up from 367x606.6 with 4px gutters). Side-seat
        overhang at narrow viewports is addressed by the max-width: 340px

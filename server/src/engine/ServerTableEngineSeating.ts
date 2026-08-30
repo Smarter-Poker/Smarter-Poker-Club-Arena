@@ -751,6 +751,11 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     // table setting must not be able to switch off a house rule.
     if (!this.isTournamentTable()) {
       this.waitingForBB.add(userId);
+      // Dan 2026-08-30: and write it down. A Set on this process does not
+      // survive the deploy that happens on every push to server/**, and a hold
+      // that evaporates hands the player a free hand AND the button. See
+      // persistEntryHold().
+      this.persistEntryHold(userId, { hold: 'waiting' });
     }
   }
 
@@ -813,11 +818,27 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    *   - the seat the button is about to reach ("NEW PLAYERS NEVER GET THE
    *     BUTTON WHEN SITTING DOWN")
    * Posting is a way past the WAIT, not past a house rule.
+   *
+   * Dan 2026-08-29: a positional refusal is no longer the END of the answer.
+   * It is DEFERRED — the agreement is held in `postBBWhenClear` and the
+   * dealing loop replays it once the seat clears. See that field. The two
+   * rules above are untouched: the post still does not happen from either
+   * seat, on this call or any later one. `deferred` is how the caller tells
+   * "held, nothing more to do" apart from "posted now".
    */
-  public postBBToEnter(userId: string): { success: boolean; error?: string } {
+  public postBBToEnter(userId: string): {
+    success: boolean;
+    error?: string;
+    deferred?: boolean;
+  } {
     if (!this.waitingForBB.has(userId)) {
       // RACE FIX 2026-08-27: mid-hand joiner not registered yet — see helper.
       if (this.queuePostToEnter(userId)) return { success: true };
+      // A standing agreement outlives the moment the player is released to
+      // post their own big blind, so it is dropped here rather than left to
+      // fire against a player already in the rotation.
+      this.postBBWhenClear.delete(userId);
+      this.persistEntryHold(userId, { hold: null, agreed: false });
       return { success: false, error: 'Player is not waiting for BB' };
     }
     // This endpoint may NOT buy its way past either positional rule. Posting
@@ -837,13 +858,24 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         (sbSeatIndex > 0 && seat.seat_number === sbSeatIndex) ||
         (buttonSeatIndex > 0 && seat.seat_number === buttonSeatIndex)
       ) {
+        // HELD, NOT REFUSED. The player has answered; the seat has not
+        // cleared. The dealing loop replays this on every pass and it takes
+        // effect the moment the small blind and the button are both past
+        // them. Nothing is billed and nobody is dealt in from this seat.
+        this.postBBWhenClear.add(userId);
+        this.persistEntryHold(userId, { hold: 'waiting', agreed: true });
         return {
-          success: false,
-          error: 'You Cannot Post From This Seat. The Button Has To Pass You First.',
+          success: true,
+          deferred: true,
+          error: 'You Are In Between The Blinds, And Will Be Dealt In When The Button Passes.',
         };
       }
     }
     this.waitingForBB.delete(userId);
+    this.postBBWhenClear.delete(userId);
+    // 'posting', not null: the live big blind is owed on the NEXT deal, and a
+    // restart in that window would otherwise deal them in without billing it.
+    this.persistEntryHold(userId, { hold: 'posting', agreed: false });
     // AUDIT FIX 2026-07-19: post ONLY a live BB to enter (no dead SB). Route
     // through postingBBToEnter, not returningFromSitout (which owes a dead SB
     // for a MISSED blind).

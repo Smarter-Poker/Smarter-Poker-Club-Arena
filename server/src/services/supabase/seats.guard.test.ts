@@ -75,9 +75,35 @@ describe('seats.ts - chips cannot leave the felt uncredited', () => {
     /* The two paths have already drifted apart twice while being patched
        separately (2026-08-22 credited different wallets; 2026-08-26 fixed the
        catch block in one and not the other). Sharing the RPC is what stops a
-       third time. */
-    const rpcs = [...SEATS.matchAll(/rpc\(\s*'([a-z_]+)'/g)].map((m) => m[1]);
-    expect(new Set(rpcs)).toEqual(new Set(['atomic_seat_cashout_locked']));
+       third time.
+
+       SCOPED TO THE CASH-OUT PATHS 2026-08-30, and the widening is deliberate
+       rather than a relaxation. This asserted over the WHOLE FILE, so it read
+       "seats.ts calls exactly one RPC" — which happened to be true only while
+       the seat-offer path was hand-written TypeScript. That path became
+       `fn_offer_open_seat` (one transaction, so the queue-head claim stops
+       racing), and this went red for a function that moves no chips at all.
+
+       The rule being protected is about CASHING OUT, so it is asserted about
+       the two cash-out bodies. A third cash-out implementation still fails
+       this; an unrelated RPC elsewhere in the file no longer does. */
+    const cashoutRpcs = [
+      ...markSeatAsLeft.matchAll(/rpc\(\s*'([a-z_]+)'/g),
+      ...atomicCashout.matchAll(/rpc\(\s*'([a-z_]+)'/g),
+    ].map((m) => m[1]);
+    expect(new Set(cashoutRpcs)).toEqual(new Set(['atomic_seat_cashout_locked']));
+
+    /* And no OTHER function in this file may cash a seat out. That is the half
+       the whole-file assertion was really buying, kept explicitly.
+
+       Comments stripped first: this file's docstrings name the RPC repeatedly
+       (that is the point of them), and prose describing the rule must not read
+       as a third implementation of it. */
+    const outsideCode = SEATS.replace(markSeatAsLeft, '')
+      .replace(atomicCashout, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    expect(outsideCode).not.toMatch(/atomic_seat_cashout_locked/);
   });
 
   it('neither path credits a wallet itself', () => {

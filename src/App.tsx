@@ -29,6 +29,7 @@ import { addBreadcrumb } from './core/SentryInit';
 const IntroVideo = lazyWithRetry(() => import('./components/IntroVideo'));
 import { useSettingsStore } from './stores/useSettingsStore';
 import { useShellUpdateGate } from './hooks/useShellUpdateGate';
+import { startShellTelemetry } from './services/ShellTelemetryService';
 
 // Layouts
 import AppLayout from './components/layouts/AppLayout';
@@ -130,7 +131,12 @@ const ArenaGameCardsShowcasePage = lazyWithRetry(
   () => import('./pages/dev/ArenaGameCardsShowcasePage')
 );
 const ClubFooterShowcasePage = lazyWithRetry(() => import('./pages/dev/ClubFooterShowcasePage'));
+const CustomizationStudioShowcasePage = lazyWithRetry(
+  () => import('./pages/dev/CustomizationStudioShowcasePage')
+);
 const clubButtonsPreviewEnabled = import.meta.env.VITE_CLUB_BUTTONS_PREVIEW === 'true';
+const customizationHarnessEnabled =
+  import.meta.env.DEV || import.meta.env.VITE_CUSTOMIZATION_TEST_HARNESS === 'true';
 const FinancialAlertsPage = lazyWithRetry(() => import('./pages/FinancialAlertsPage'));
 const DisputeManagementPage = lazyWithRetry(() => import('./pages/DisputeManagementPage'));
 const FinancialHealthPage = lazyWithRetry(() => import('./pages/FinancialHealthPage'));
@@ -222,7 +228,25 @@ import { STORAGE_KEYS } from './lib/storage';
 import { reportError } from './utils/errorReporter';
 import SlugEnforcer from './components/common/SlugEnforcer';
 
-export default function App() {
+function ClubFooterMount() {
+  return <ClubBottomNav />;
+}
+
+/** The footer probe must stay outside auth, TOS, realtime, and data providers.
+ * It is used by CI and the post-deploy monitor to prove the shipped footer in
+ * a clean Safari/WebKit context, even when Supabase is slow or unavailable. */
+function ClubFooterProbe() {
+  return (
+    <ErrorBoundary>
+      <Suspense fallback={<LoadingSpinner />}>
+        <ClubFooterShowcasePage />
+      </Suspense>
+      <ClubFooterMount />
+    </ErrorBoundary>
+  );
+}
+
+function FullApp() {
   const location = useLocation();
   /* The listener the service worker has always been posting SHELL_UPDATED to
      and never had. Without it a cache-first shell — and the exact hashed
@@ -230,6 +254,15 @@ export default function App() {
      run a days-old bundle while production serves the fix. Applies the update
      only away from a table and only with the tab visible; see the hook. */
   useShellUpdateGate();
+  /* And the reader for what that gate emits (2026-08-30). The gate has been
+     publishing SHELL_STALENESS_CHECKED / SHELL_RELOADED since 2026-08-29 with
+     nothing subscribed — the same shape as SHELL_UPDATED itself, which was
+     posted for months to a client that had no handler. This fix is INVISIBLE
+     when it works (no reload happens), so without a sink there is no way to
+     tell "holding" from "quietly broken". Idempotent; see the service. */
+  useEffect(() => {
+    startShellTelemetry();
+  }, []);
 
   // Check if intro video has been shown this session
   // DISABLED — intro video turned off. To re-enable, restore the original useState initializer.
@@ -535,11 +568,15 @@ export default function App() {
 
               {/* Approved footer visual harness — intentionally blank except
                   for the one application-root footer mounted below Routes. */}
+              <Route path="/dev/footer" element={<ClubFooterShowcasePage />} />
+
+              {/* Real-component browser harness. Development/test builds only;
+                  production navigation cannot expose the deterministic user. */}
               <Route
-                path="/dev/footer"
+                path="/dev/customization"
                 element={
-                  clubButtonsPreviewEnabled ? (
-                    <ClubFooterShowcasePage />
+                  customizationHarnessEnabled ? (
+                    <CustomizationStudioShowcasePage />
                   ) : (
                     <Navigate to="/" replace />
                   )
@@ -1831,7 +1868,7 @@ export default function App() {
               </Route>
             </Routes>
           </Suspense>
-          {shouldShowClubFooter(location.pathname) && <ClubBottomNav />}
+          {shouldShowClubFooter(location.pathname) && <ClubFooterMount />}
           {/* Persistent multi-table layer — mounted BESIDE <Routes>, it never
               unmounts on navigation: engine sockets for seated tables survive
               every route. Off /table/* it collapses to display:none and
@@ -1841,4 +1878,14 @@ export default function App() {
       </ToastProvider>
     </ErrorBoundary>
   );
+}
+
+export default function App() {
+  const location = useLocation();
+
+  if (location.pathname === '/dev/footer') {
+    return <ClubFooterProbe />;
+  }
+
+  return <FullApp />;
 }

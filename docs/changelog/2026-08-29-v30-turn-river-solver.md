@@ -76,6 +76,39 @@ turn wiring (pure-bet stabs as a block bet, pure-check checks), ablation
 equality extended to the turn, boot wiring for loader + driver. Full server
 suite green: 222 files, 2495 tests.
 
+## Follow-up: the driver could not call its own RPC (found by verifying)
+
+The deploy landed at 22:18 UTC and `gto_agg_progress` did not move for six
+hours. The driver was ticking and failing every 20 seconds on:
+
+    21000  DELETE requires a WHERE clause
+
+`fn_aggregate_gto_street_next` clears its temp table with an unqualified
+`delete from tmp_agg30`. PostgREST's API roles run with the safe-update
+guard on and refuse a DELETE without a qual. **I had probed the function
+through the Supabase MCP as the `postgres` role, which has no such guard —
+so it passed a test the engine's path could never have passed.**
+
+THE LESSON, now written into the migration: an RPC the engine calls must be
+probed THE WAY THE ENGINE CALLS IT (`POST /rest/v1/rpc/... ` as
+`service_role`). "It runs in psql" is not evidence that it runs in
+production. `GtoAggregationDriver.test.ts` pins that a real error is
+reported rather than swallowed, which is what would have surfaced this in
+minutes instead of hours.
+
+Fixed in `v30_driver_postgrest_safeupdate_fix` (TRUNCATE instead of DELETE;
+not a DELETE, so no qual required, and cheaper on a temp table). Verified
+through the engine's own path, then observed live: the cursor moved 500,
+1500, 2000 rows on successive minutes with `updated_at` seconds old.
+
+The same verification exposed a second defect. Measured through the API
+path, a 200-row batch takes ~3.5s and 300+ exceeds the ~8s statement budget
+(57014) — and the SQL clamps `p_batch` to a floor of 200. So the adaptive
+sizing had nothing to adapt to: live, it settled at 200 and then oscillated
+200 -> 400 -> timeout -> 200 forever, wasting a tick in four and delivering
+~500 rows/min (12 days for both streets). Replaced with a FIXED 200-row
+batch and up to 4 calls per tick under a 12s wall budget: ~40 rows/s.
+
 ## Expected timeline
 
 Turn (3.18M rows) at ~600 rows/20s ≈ 30h of engine uptime, then river

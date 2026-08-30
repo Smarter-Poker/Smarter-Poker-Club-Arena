@@ -255,6 +255,17 @@ jobs:
       - name: Horses are players — every exclusion is registered
         run: node scripts/ci/check-horses-are-players.mjs
 
+      # Dan 2026-08-29 (binding): the BBJ drop is COLLECTED on every flop with
+      # 3+ players dealt in, whatever the pot size; the 10BB minimum decides
+      # whether a bad beat is PAID OUT. The fee carried the payout's pot gate
+      # for months and 49% of raked hands fed the jackpot nothing — it
+      # survived because the pricing was hand-copied into three settlement
+      # paths (one of which had also lost its pot-overage clamp). This gate
+      # holds the single pricer and refuses a pot-size condition on any fee
+      # path. See server/src/engine/RakeBBJCollection.law.test.ts.
+      - name: Rake + BBJ collection law — one pricer, no pot gate on the fee
+        run: node scripts/ci/check-rake-bbj-collection-law.mjs
+
       # A CSS module key with no matching class resolves to undefined, React
       # drops className={undefined} without a word, and the element ships with
       # no styling at all. Build green, tests green, page visibly broken. It
@@ -1181,25 +1192,22 @@ jobs:
       - name: Install Dependencies
         run: npm ci --ignore-scripts
 
-      - name: Install Chromium
-        run: npx playwright install chromium --with-deps
+      - name: Install Chromium and WebKit
+        run: npx playwright install chromium webkit --with-deps
 
       - name: Build this commit
+        env:
+          # The app fails closed before React mounts when these Vite values are
+          # absent. Footer route probes do not call Supabase, so deterministic
+          # non-secret placeholders are the correct isolated CI configuration.
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY: footer-probe-ci
         run: npm run build
-
-      - name: Serve the build under its production prefix
-        run: |
-          mkdir -p _srv/hub
-          ln -s "$PWD/dist" _srv/hub/club-arena
-          (cd _srv && python3 -m http.server 4173 --bind 127.0.0.1 &> /dev/null &)
-          for i in $(seq 1 20); do
-            curl -sf http://127.0.0.1:4173/hub/club-arena/index.html > /dev/null && break
-            sleep 0.5
-          done
 
       - name: Run the beats against this commit's CSS
         env:
           ARENA_BASE_URL: http://127.0.0.1:4173/hub/club-arena
+          BASE_URL: http://127.0.0.1:4173/hub/club-arena/
         # hero-card-row.spec.ts was written to gate bug list item 11 and then
         # ran in NO job at all - 40 pure-geometry assertions that nobody ever
         # executed, which is why PR #178 could sit for 39 commits proposing
@@ -1219,16 +1227,23 @@ jobs:
         # trap fired again at scale. An inventory found SIXTEEN spec files
         # running in no job; every self-contained one is now named here.
         #
-        # customization-studios went red on this runner the first time it ran,
-        # on a TEXT-metric assertion: it required each tab's label to fit its
-        # column, the studio font is loaded from /fonts and a setContent
-        # harness has no base URL to resolve it, so macOS fell back to a narrow
-        # face and Linux to a wide one. The page ships correctly on both. The
-        # beat now asserts the ROOM the grid guarantees (minmax(124px, 1fr))
-        # rather than the rendering of a font that never loaded, so it means
-        # the same thing on every machine. A gate spec must be deterministic
-        # across platforms; the fix is to stop measuring the runner, not to
-        # exile the spec. Three were already red - top-rail-seat pinned the
+        # customization-studios is intentionally not in this fixture list. It
+        # now mounts the real component and a deterministic Supabase browser
+        # mock, so the dedicated step below runs it through its own Vite config.
+        #
+        # diamond-checkout-mobile.spec.ts joined 2026-08-29 too - it landed from
+        # another branch the same day and arrived orphaned, which is the trap
+        # doing its work in real time. It is self-contained (readFileSync +
+        # setContent), so it belongs here. THE RULE, restated because it keeps
+        # being learned: a spec that is not named in a job runs in NO job. Add
+        # yours in the same commit that writes it.
+        #
+        # tap-sweep-rules.spec.ts (2026-08-30) tests the POST-DEPLOY sweep's own
+        # judgement, and belongs in this gate rather than beside the sweep it
+        # models: it builds its DOM by hand, needs no login and no live site, and
+        # the thing it guards - "excuse a control under fixed chrome only when
+        # the page can still scroll" - is exactly the kind of rule that rots
+        # into "excuse everything" without a beat that fails when it does. Three were already red - top-rail-seat pinned the
         # px-ladder avatar #1650 retired, pot-above-chips froze a pot position
         # two deliberate redesigns old, raise-panel-covers-chat lost the
         # stylesheet its anchor moved into - and every one had been failing
@@ -1237,7 +1252,21 @@ jobs:
         # mobile-chrome-occlusion, mobile-input-zoom, mobile-tap-targets,
         # club-lobby, tournament-buy-in-dialog) need a login or a deployed URL
         # and belong to the post-deploy tier, not this gate.
-        run: npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/customization-studios.spec.ts --reporter=line --retries=1
+        run: |
+          npx vite preview --host 127.0.0.1 --port 4173 > /tmp/arena-preview.log 2>&1 &
+          preview_pid=$!
+          trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:4173/hub/club-arena/index.html > /dev/null && break
+            sleep 0.5
+          done
+          npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+
+      # Unlike the CSS fixtures above, this mounts the production Studio and
+      # drives its real Supabase client through a deterministic browser mock.
+      # Its dedicated route redirects unless the test-harness flag is enabled.
+      - name: Table Studio real-component purchase, sync, and accessibility gate
+        run: npm run test:e2e:customization
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 5: AUTO-REVERT — DISABLED (was causing revert loops during migration)

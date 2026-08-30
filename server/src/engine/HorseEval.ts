@@ -1102,6 +1102,127 @@ function buildOmahaReservoir(holeCount: number, isHiLo: boolean): OmahaReservoir
  * through its own empirical CDF: band [0.85, 1.0] = the top 15% of sorted
  * combos BY INDEX. That is what the read meant all along.
  */
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * OMAHA PREFLOP PERCENTILE — the same CDF correction, for the DECISION
+ * thresholds (Dan 2026-08-30, after a live PLO spin)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The comment above records that omahaPreflopScore is NOT percentile-style
+ * and that matching percentile-intent BANDS against it selects almost
+ * nothing. The reservoir fixed that for HorseMind's reads. It was never
+ * applied to the place it matters most: the preflop decision itself.
+ *
+ * decidePreflopV7's thresholds are percentile-intent — they are calibrated
+ * against holdemPreflopScore, which IS percentile-style. HorseLogic fed them
+ * the raw Omaha score, whose distribution is compressed:
+ *
+ *     median 0.24, p75 0.32, max observed 0.72   (measured over 300 deals)
+ *
+ * So in PLO every hand read as bottom-quartile trash. Measured against the
+ * live decide() before this fix, 3-max PLO spin, SB unopened:
+ *
+ *     first to act   ->  call 212, fold 88, RAISE 0 of 300
+ *
+ * Zero opens, ever. That is exactly what Dan saw: horses that never raise,
+ * never re-raise, and fold to a pot-sized bet.
+ *
+ * THE FIX: map the score through its own empirical CDF, so the median PLO
+ * hand becomes 0.5 and the existing thresholds mean what they say. Ties take
+ * the MID-rank so a common score does not slam to the bottom of its block.
+ * Same reservoir, same private RNG, cached per (holeCount, isHiLo) — one
+ * binary search per decision, no I/O, and the postflop path is untouched
+ * because it already uses real Monte Carlo equity.
+ */
+/**
+ * The EXACT hold'em score distribution: all 1,326 two-card combos, scored
+ * and sorted once. Used to quantile-match Omaha onto the scale the preflop
+ * thresholds were actually tuned against.
+ *
+ * WHY QUANTILE-MATCHING AND NOT A PLAIN PERCENTILE — measured, because the
+ * obvious answer is wrong. Hold'em's own score is NOT uniform either:
+ *
+ *     holdem    median 0.236   p75 0.410   p99 1.000   max 1.000
+ *     omaha     median 0.240   p75 0.317   p99 0.640   max 0.850
+ *
+ * The medians nearly agree; the TOP END does not. Hold'em's best hands
+ * saturate at 1.0, so a 3-bet bar at t(0.74) is cleared by a real slice of
+ * its range. Omaha never gets there at all — p99 is 0.64 — so the same bar
+ * selects essentially nothing, which is why the fleet 3-bet 0.3% of the
+ * time. Mapping Omaha to a FLAT percentile would fix the sticking but
+ * overshoot the other way: every threshold would suddenly admit far more of
+ * the range than the same threshold admits in hold'em. Matching quantiles
+ * makes a 90th-percentile PLO hand score exactly what a 90th-percentile
+ * hold'em hand scores, so every bar in decidePreflopV7 means the same thing
+ * in both games — which is what "percentile-intent" claimed all along.
+ */
+let holdemScoreCdf: Float64Array | null = null;
+function holdemCdf(): Float64Array {
+  if (holdemScoreCdf) return holdemScoreCdf;
+  const d = FULL_DECK;
+  const out: number[] = [];
+  for (let i = 0; i < d.length; i++) {
+    for (let j = i + 1; j < d.length; j++) {
+      out.push(holdemPreflopScore(d[i], d[j], false));
+    }
+  }
+  out.sort((a, b) => a - b);
+  holdemScoreCdf = new Float64Array(out);
+  return holdemScoreCdf;
+}
+
+/**
+ * Omaha preflop strength ON THE HOLD'EM SCALE — what decidePreflopV7's
+ * thresholds have always assumed they were being handed. Percentile first
+ * (through the Omaha reservoir), then the hold'em score at that same
+ * quantile. See omahaPreflopPercentile and holdemCdf for the measurements.
+ */
+export function omahaPreflopStrength(cards: Card[], isHiLo: boolean): number {
+  if (cards.length < 4) return omahaPreflopScore(cards, isHiLo);
+  const p = omahaPreflopPercentile(cards, isHiLo);
+  const cdf = holdemCdf();
+  const idx = Math.min(cdf.length - 1, Math.max(0, Math.round(p * (cdf.length - 1))));
+  return cdf[idx];
+}
+
+export function omahaPreflopPercentile(cards: Card[], isHiLo: boolean): number {
+  const raw = omahaPreflopScore(cards, isHiLo);
+  const holeCount = cards.length;
+  // Below four cards there is no Omaha hand to rank; the raw score is all
+  // there is, and callers already guard this.
+  if (holeCount < 4) return raw;
+
+  const key = `${holeCount}${isHiLo ? 'h' : ''}`;
+  let rv = omahaReservoirs.get(key);
+  if (!rv) {
+    rv = buildOmahaReservoir(holeCount, isHiLo);
+    omahaReservoirs.set(key, rv);
+  }
+  const s = rv.scores;
+  const n = s.length;
+  if (n === 0) return raw;
+
+  // lower bound: how many reservoir scores are strictly below this hand
+  let lo = 0;
+  let hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (s[mid] < raw) lo = mid + 1;
+    else hi = mid;
+  }
+  const lower = lo;
+  // upper bound: end of the tie block
+  let lo2 = lower;
+  let hi2 = n;
+  while (lo2 < hi2) {
+    const mid = (lo2 + hi2) >> 1;
+    if (s[mid] <= raw) lo2 = mid + 1;
+    else hi2 = mid;
+  }
+  return clamp01((lower + lo2) / 2 / n);
+}
+
 export function placeOmahaBandCombo(
   deck: Card[],
   windowStart: number,

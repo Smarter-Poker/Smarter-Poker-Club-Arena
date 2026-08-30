@@ -118,6 +118,15 @@ export interface HeroHubPanelProps {
    * never touched.)
    */
   isHeroTurn?: boolean;
+  /**
+   * The high-frequency table settings, shown inline on the Table tab
+   * (2026-08-30). Sourced from TABLE_SETTINGS_META's `quick` flag and written
+   * through the SAME `toggleSetting` the full panel uses — the hub adds a
+   * surface, never a second owner or a second persisted copy (the rule
+   * `tests/unit/settingsHaveOneOwner.test.ts` exists to defend).
+   */
+  quickSettings?: Array<{ key: string; label: string; description: string; value: boolean }>;
+  onToggleQuickSetting?: (key: string) => void;
 }
 
 /**
@@ -178,6 +187,8 @@ export function HeroHubPanel({
   heroAvatarUrl,
   stats,
   isHeroTurn = false,
+  quickSettings,
+  onToggleQuickSetting,
 }: HeroHubPanelProps) {
   const [tab, setTab] = useState<HeroHubTab>(readInitialHubTab);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -412,8 +423,33 @@ export function HeroHubPanel({
             id="hero-hub-panel-settings"
             aria-labelledby="hero-hub-tab-settings"
           >
+            {/* THE SWITCHES YOU REACH FOR MID-SESSION, HERE (2026-08-30).
+                This tab used to be one button that closed the hub and opened
+                SettingsPanel — the same weakness the Stats tab had. These
+                write through the settings' single owner; the full panel is
+                still one tap below for everything else. */}
+            {quickSettings && quickSettings.length > 0 && (
+              <div className="hero-hub__toggles">
+                {quickSettings.map((s) => (
+                  <button
+                    key={s.key}
+                    type="button"
+                    role="switch"
+                    aria-checked={s.value}
+                    className={`hero-hub__toggle${s.value ? ' is-on' : ''}`}
+                    onClick={() => onToggleQuickSetting?.(s.key)}
+                    title={s.description}
+                  >
+                    <span className="hero-hub__toggle-label">{s.label}</span>
+                    <span className="hero-hub__toggle-track" aria-hidden="true">
+                      <span className="hero-hub__toggle-thumb" />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
             {item(
-              'Table Settings',
+              'All Table Settings',
               'Gameplay, Display, Sound And Customization',
               onOpenTableSettings
             )}

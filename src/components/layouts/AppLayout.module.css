@@ -5,28 +5,28 @@
 .layout {
   min-height: 100vh;
   /**
-   * THE VIEWPORT MINUS WHAT THE CHROME HAS ALREADY TAKEN (2026-08-29).
+   * The global header and the optional action-bar clearance are ordinary flex
+   * children here, so the layout owns one full visible viewport. Neither is
+   * paid for with body padding and no subtraction belongs on this shell.
    *
-   * `100dvh` alone is a full viewport, and when the pinned table bar is up the
-   * BODY has already spent 48px + the notch inset on `padding-top` to clear it
-   * (see `body[data-ca-pinned-bar='1']` in MultiTablePage.css). Full height
-   * inside a padded body means the page is taller than the screen by exactly
-   * that padding.
-   *
-   * Measured on production at 375x812 with the bar up: body 860px, viewport
-   * 812px — every page scrolling 48px for nothing, and on the tournament page
-   * 48px stolen from a content column that is already the tightest thing on
-   * the screen.
-   *
-   * The fallback is 0px, so a page rendered with no pinned bar is exactly as
-   * it was. `100vh` above stays as the pre-dvh fallback and is deliberately
-   * NOT given the same treatment: a browser old enough to lack `dvh` also
-   * lacks reliable `env()` here, and an over-tall page beats a clipped one.
+   * `100vh` remains the older-browser fallback; `100dvh` tracks mobile browser
+   * chrome when supported.
    */
-  min-height: calc(100dvh - var(--ca-pinned-bar-offset, 0px));
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--club-black);
+}
+
+.pinnedActionBarClearance {
+  flex: 0 0 0;
+  height: 0;
+  pointer-events: none;
+}
+
+:global(body[data-ca-pinned-bar='1']) .pinnedActionBarClearance {
+  flex-basis: var(--ca-pinned-bar-offset, 48px);
+  height: var(--ca-pinned-bar-offset, 48px);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

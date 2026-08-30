@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Apply SQL using psql pooler brute force
         env:
-          PGPASSWORD: "215SlalomCt!!!"
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           REGIONS=(
             "aws-0-us-east-1"

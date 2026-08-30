@@ -221,48 +221,32 @@
 
 .multi-table-page__tab-bar-wrapper--pinned {
   position: fixed;
-  top: 0;
+  /* GlobalHeader publishes its responsive rendered height before this pinned
+     state is enabled. The global header therefore owns viewport y=0 and this
+     action strip begins at the header's exact bottom edge. */
+  top: var(--ca-global-header-height, 0px);
   left: 0;
   right: 0;
   /* Above the app's own headers and bottom nav, below the table's modals and
      the urgent dock (400/401) — a countdown the player is about to lose money
      to must never be covered by a navigation control. */
   z-index: 380;
-  /* The notch. On /table/* the strip inherits the felt's inset; pinned it is
-     the topmost element on the page and owns that inset itself. */
-  padding-top: env(safe-area-inset-top, 0px);
+  /* The global header already owns the notch inset. Reapplying it here would
+     create a second safe-area band between the two bars. */
+  padding-top: 0;
 }
 
 /**
- * Push the page down by exactly the strip's height so it covers nothing.
+ * Publish the strip height for AppLayout's in-flow clearance slot.
  *
- * A fixed element is out of flow, so without this the first thing on every
- * page — a heading, a back button, the cashier's balance — sits underneath the
- * bar and cannot be read or tapped. Set as a variable on <body> by
- * MultiTablePage so a single number drives both the offset and any page that
- * wants to know. 48px is the strip's own height (--table-tab-bar-height);
- * the safe-area inset is added on top for the notch.
+ * Padding the body pushed the GlobalHeader down and made the action bar the
+ * first surface on the screen. The body now carries state and the one shared
+ * 48px measurement only. AppLayout spends that height directly AFTER the
+ * GlobalHeader, so every following announcement, rail, and page clears the
+ * fixed strip while the global header remains at viewport y=0.
  */
 body[data-ca-pinned-bar='1'] {
-  /**
-   * NOW ACTUALLY A VARIABLE (2026-08-29).
-   *
-   * The comment above has always said the offset is "set as a variable on
-   * <body> ... so a single number drives both the offset and any page that
-   * wants to know". It was a literal, and nothing could read it — so the app
-   * shell went on claiming a full `100dvh` INSIDE a body that had already
-   * spent 48px of the viewport on this padding.
-   *
-   * Measured on production at 375x812 with the bar up: body 860px against an
-   * 812px viewport. Every page in Club Arena scrolled 48px it did not have to,
-   * and on the tournament page that is 48px taken off a content area already
-   * tight enough that the entries list sits near its floor.
-   *
-   * `AppLayout.module.css` subtracts it. Default 0px there, so a page rendered
-   * without the bar is unaffected.
-   */
-  --ca-pinned-bar-offset: calc(48px + env(safe-area-inset-top, 0px));
-  padding-top: var(--ca-pinned-bar-offset);
+  --ca-pinned-bar-offset: 48px;
 }
 
 /* Full-screen surfaces that already position themselves from the viewport
@@ -270,7 +254,7 @@ body[data-ca-pinned-bar='1'] {
    move them, but their own `top: 0` would slide under the bar. */
 body[data-ca-pinned-bar='1'] .modal-overlay,
 body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
-  top: calc(48px + env(safe-area-inset-top, 0px));
+  top: calc(var(--ca-global-header-height, 0px) + var(--ca-pinned-bar-offset, 48px));
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, Suspense } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 const HamburgerMenu = lazyWithRetry(() => import('./HamburgerMenu'));
 import { Link, useNavigate } from 'react-router-dom';
@@ -40,10 +40,43 @@ export default function GlobalHeader() {
   const navigate = useNavigate();
   const { loadBalances, loadDiamonds } = useWalletStore();
   const { user: authUser } = useAuthUser();
+  const headerRef = useRef<HTMLElement>(null);
 
   const { avatarUrl, notificationCount, unreadMessages, loadOnce } = useHeaderDataStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isNavigatingAway, setIsNavigatingAway] = useState(false);
+
+  /*
+   * The off-route table action bar is fixed, so CSS cannot discover the
+   * responsive raster header's rendered height on its own. Publish the real
+   * measured height before paint and whenever the artwork resizes. This keeps
+   * the global header at viewport y=0 while the action bar begins at its exact
+   * bottom edge on desktop, mobile, zoom, and safe-area layouts.
+   */
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+
+    const root = document.documentElement;
+    const publishHeight = () => {
+      root.style.setProperty(
+        '--ca-global-header-height',
+        `${header.getBoundingClientRect().height}px`
+      );
+    };
+
+    publishHeight();
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publishHeight);
+    observer?.observe(header);
+    window.addEventListener('resize', publishHeight, { passive: true });
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', publishHeight);
+      root.style.removeProperty('--ca-global-header-height');
+    };
+  }, []);
 
   const handleMenuToggle = useCallback(() => setMenuOpen((prev) => !prev), []);
   const handleMenuClose = useCallback(() => setMenuOpen(false), []);
@@ -197,6 +230,7 @@ export default function GlobalHeader() {
       </Suspense>
 
       <header
+        ref={headerRef}
         id="global-header"
         className={styles.header}
         style={headerStyle}
@@ -248,20 +282,21 @@ export default function GlobalHeader() {
           <div className={styles.headerRight}>
             <button
               className={`${styles.artButton} ${styles.profileBtn}`}
-              onClick={() => navigateToHub('/hub/profile')}
+              onClick={() => navigate('/profile')}
               aria-label="My Profile"
               title="My Profile"
             >
               <img src={`${APPROVED_HEADER_ASSET}profile.png`} alt="Profile" />
-              <img
-                src={avatarUrl || DEFAULT_AVATAR}
-                alt=""
-                className={styles.profileAvatar}
-                aria-hidden="true"
-                onError={(event) => {
-                  event.currentTarget.src = DEFAULT_AVATAR;
-                }}
-              />
+              <span className={styles.profileAvatarSlot} aria-hidden="true">
+                <img
+                  src={avatarUrl || DEFAULT_AVATAR}
+                  alt=""
+                  className={styles.profileAvatar}
+                  onError={(event) => {
+                    event.currentTarget.src = DEFAULT_AVATAR;
+                  }}
+                />
+              </span>
             </button>
 
             <button
@@ -292,7 +327,11 @@ export default function GlobalHeader() {
             >
               <img src={`${APPROVED_HEADER_ASSET}messenger.png`} alt="Messages" />
               {unreadMessages > 0 && (
-                <span className={styles.badge} aria-live="polite">
+                <span
+                  className={`${styles.badge} ${styles.messageBadge}`}
+                  aria-label={`${unreadMessages} unread messages`}
+                  aria-live="polite"
+                >
                   {unreadMessages > 99 ? '99+' : unreadMessages}
                 </span>
               )}
@@ -306,7 +345,11 @@ export default function GlobalHeader() {
             >
               <img src={`${APPROVED_HEADER_ASSET}notifications.png`} alt="Notifications" />
               {notificationCount > 0 && (
-                <span className={styles.badge} aria-live="polite">
+                <span
+                  className={`${styles.badge} ${styles.notificationBadge}`}
+                  aria-label={`${notificationCount} unread notifications`}
+                  aria-live="polite"
+                >
                   {notificationCount > 99 ? '99+' : notificationCount}
                 </span>
               )}

@@ -419,6 +419,11 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // BB rotates to them OR they call POST /post-bb. Frontend reads this
       // to render the "Post BB to enter" button on the hero seat.
       waiting_for_bb_user_ids: Array.from(this.waitingForBB),
+      // Dan 2026-08-29: the subset of the above who have ALREADY agreed to
+      // post and are held out only by the seat they are in. Published so the
+      // client stops asking them — without it the overlay returns on the very
+      // next snapshot, and on every reload, which is the complaint itself.
+      post_bb_deferred_user_ids: Array.from(this.postBBWhenClear),
       // Bible V8 §2.4: Side pot information for multi-way all-ins
       pots: (state.pots ?? []).map((p) => ({
         amount: p.amount,
@@ -590,6 +595,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       time_bank_active: false,
       disconnect_states: this.disconnectEngine.getFsmStatesForTable(this.tableId),
       waiting_for_bb_user_ids: Array.from(this.waitingForBB),
+      post_bb_deferred_user_ids: Array.from(this.postBBWhenClear),
       pots: [],
       action_history: [],
       players: (this.seatedPlayers ?? []).map((p) => ({

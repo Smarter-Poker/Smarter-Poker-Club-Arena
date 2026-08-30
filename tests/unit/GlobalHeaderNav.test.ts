@@ -76,12 +76,32 @@ describe('the bar stretches across the top', () => {
     expect(TSX).toContain('height={168}');
   });
 
-  it('caps the chrome height while keeping full-height click regions', () => {
-    expect(CSS).toContain('--global-header-height: clamp(44px, 7.64vw, 84px)');
-    expect(ruleBody(CSS, '.desktopArtwork')).toContain('height: var(--global-header-height)');
-    expect(ruleBody(CSS, '.desktopArtwork')).toContain('object-fit: fill');
-    expect(ruleBody(CSS, '.headerControls')).toContain('height: var(--global-header-height)');
-    expect(ruleBody(CSS, '.artButton')).toContain('height: 100%');
+  it('uses the artwork width as the one coordinate system for art and controls', () => {
+    const art = ruleBody(CSS, '.desktopArtwork');
+    const controls = ruleBody(CSS, '.headerControls');
+    const button = ruleBody(CSS, '.artButton');
+
+    expect(CSS).not.toContain('--global-header-height');
+    expect(art).toContain('height: auto');
+    expect(art).toContain('object-fit: contain');
+    expect(controls).toContain('left: env(safe-area-inset-left, 0px)');
+    expect(controls).toContain('right: env(safe-area-inset-right, 0px)');
+    expect(controls).not.toMatch(/\bheight\s*:/);
+    expect(button).toContain('top: 13%');
+    expect(button).toContain('height: 74%');
+  });
+
+  it('cannot shrink the click plane to a fixed-height aspect box again', () => {
+    const controls = ruleBody(CSS, '.headerControls');
+    const profile = ruleBody(CSS, '.profileBtn');
+
+    // The shipped bug combined `height: 84px` with aspect-ratio. That made the
+    // containing block 824px wide on a 1179px screen, so 66.5% placed the
+    // profile at x=548 over the logo instead of x=779 over its artwork frame.
+    expect(controls).not.toContain('height: var(');
+    expect(profile).toContain('left: 66.5%');
+    expect(1171 * 0.665).toBeCloseTo(778.7, 1);
+    expect(390 * 0.665).toBeCloseTo(259.4, 1);
   });
 
   it('is not capped by a max-width anywhere in the file', () => {
@@ -197,8 +217,16 @@ describe('mobile uses the identical desktop header', () => {
 describe('the profile frame contains the live profile picture', () => {
   it('reads the cached profile URL and overlays it inside the approved frame', () => {
     expect(TSX_CODE).toContain('avatarUrl');
+    expect(TSX).toContain('className={styles.profileAvatarSlot}');
     expect(TSX).toContain('className={styles.profileAvatar}');
+    expect(CSS).toContain('.profileAvatarSlot');
     expect(CSS).toContain('.profileAvatar');
-    expect(ruleBody(CSS, '.profileAvatar')).toContain('border-radius: 50%');
+    expect(ruleBody(CSS, '.profileBtn')).toContain('contain: layout paint');
+    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('width: 58%');
+    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('aspect-ratio: 0.78');
+    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('border-radius: 50%');
+    expect(ruleBody(CSS, '.profileAvatarSlot > .profileAvatar')).toContain(
+      'width: 100% !important'
+    );
   });
 });

@@ -322,14 +322,17 @@ describe('the bar outlives the route', () => {
       CSS.indexOf('body[data-ca-pinned-bar')
     );
     expect(block).toMatch(/position:\s*fixed/);
-    expect(block).toMatch(/top:\s*0/);
-    expect(block).toMatch(/env\(safe-area-inset-top/);
+    expect(block).toMatch(/top:\s*var\(--ca-global-header-height,\s*0px\)/);
+    expect(block).toMatch(/padding-top:\s*0/);
+    expect(block).not.toMatch(/padding-top:\s*env\(safe-area-inset-top/);
   });
 
   it('makes room for itself so it covers nothing', () => {
-    // A fixed bar is out of flow; without the body padding the first heading
-    // or back button on every page sits underneath it, unreadable.
+    // A fixed bar is out of flow. AppLayout owns an in-flow slot immediately
+    // after GlobalHeader; body padding would move the header below the bar.
     expect(CSS).toContain("body[data-ca-pinned-bar='1']");
+    expect(CSS).not.toMatch(/body\[data-ca-pinned-bar='1'\]\s*\{[^}]*padding-top/s);
+    expect(read('src/components/layouts/AppLayout.tsx')).toContain('pinnedActionBarClearance');
     expect(MULTI).toContain("body.setAttribute('data-ca-pinned-bar', '1')");
     expect(MULTI).toContain("body.removeAttribute('data-ca-pinned-bar')");
   });

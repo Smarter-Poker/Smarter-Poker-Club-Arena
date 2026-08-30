@@ -149,11 +149,11 @@ const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
     'SettingsPanel must not reference the non-existent /avatars/default-player.png',
   ],
   // 2026-08-26: PremiumCard.css declared a global .card-back { rotateY(180deg) }
-  // which collided with CardReveal.css and CommunityCards.css. Scoped to
-  // .premium-card .card-back so only cards inside a PremiumCard container flip.
+  // which collided with CardReveal.css and CommunityCards.css. The animated
+  // face now has its own name; the canonical nested CardBack remains untouched.
   [
     'src/components/table/PremiumCard.css',
-    '.premium-card .card-back',
+    '.premium-card__back',
     'PremiumCard card-back rule must be scoped to avoid colliding with CardReveal and CommunityCards',
   ],
 ];

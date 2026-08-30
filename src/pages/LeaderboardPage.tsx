@@ -11,7 +11,7 @@
 
 import { Virtuoso } from 'react-virtuoso';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
 
@@ -28,7 +28,6 @@ import { exportToCSV } from '../lib/export';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import ConfirmModal from '../components/common/ConfirmModal';
-import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { PlayerAvatar } from '../components/avatars/PlayerAvatar';
 import type { VipTier } from '../components/avatars/PlayerAvatar';
 import './LeaderboardPage.css';
@@ -146,8 +145,6 @@ const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
   { value: 'all_time', label: 'All Time' },
 ];
 
-const PODIUM_MEDALS = ['1', '2', '3']; // place numerals; colour comes from the podium classes
-
 export default function LeaderboardPage() {
   useEffect(() => {
     document.title = 'Leaderboard | Smarter Poker';
@@ -181,6 +178,15 @@ export default function LeaderboardPage() {
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState<LeaderboardSettings | null>(null);
   const [payouts, setPayouts] = useState<LeaderboardPayout[]>([]);
+
+  useEffect(() => {
+    if (!showSettings) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowSettings(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [showSettings]);
 
   const [userClubs, setUserClubs] = useState<UserClub[]>([]);
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
@@ -417,12 +423,20 @@ export default function LeaderboardPage() {
 
     // SWR: show cached data instantly
     const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}_${periodOffset}`;
+    if (isGlobal) setPayouts([]);
+    if (!user?.id) setUserRank(null);
     if (!silent) {
       const cached = getCachedEntries(cacheKey);
       if (cached && cached.length > 0) {
         setEntries(cached);
+        setTotalRanked(cached[0]?.totalRanked ?? null);
+        setBaselineDate(cached[0]?.baselineDate ?? null);
         setLoading(false);
       } else {
+        setEntries([]);
+        setTotalRanked(null);
+        setBaselineDate(null);
+        setUserRank(null);
         setLoading(true);
       }
     }
@@ -449,33 +463,48 @@ export default function LeaderboardPage() {
       setCachedEntries(cacheKey, data);
       setLastUpdated(new Date());
 
-      if (selectedClubId) {
-        const { start } = LeaderboardService.getPeriodBoundaries(period, periodOffset);
-        const periodPayouts = await LeaderboardService.getPayoutsForPeriod(
-          selectedClubId,
-          period,
-          metric,
-          start.toISOString().split('T')[0]
-        );
-        if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted()))
-          setPayouts(periodPayouts);
-      }
+      // The ranked rows are the primary content. Render them as soon as the
+      // ranking + profile queries complete instead of holding the skeleton on
+      // screen while secondary payout and personal-rank metadata load.
+      if (!silent) setLoading(false);
 
-      // Get user's rank in the same scope
-      if (user?.id) {
-        const rank = isGlobal
-          ? await LeaderboardService.getGlobalUserRank(user.id, metric, period, periodOffset)
-          : await LeaderboardService.getUserRank(
-              user.id,
-              selectedClubId as string,
-              metric,
-              period,
-              periodOffset
-            );
-        if (myReq !== reqSeqRef.current) return;
-        if (getIsMounted && !getIsMounted()) return;
-        setUserRank(rank);
-      }
+      // Secondary metadata is independent and can arrive in parallel. This
+      // removes two serial round-trips from the visible page-load path.
+      const payoutPromise =
+        !isGlobal && selectedClubId
+          ? (() => {
+              const { start } = LeaderboardService.getPeriodBoundaries(period, periodOffset);
+              return LeaderboardService.getPayoutsForPeriod(
+                selectedClubId,
+                period,
+                metric,
+                start.toISOString().split('T')[0]
+              ).then((periodPayouts) => {
+                if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
+                  setPayouts(periodPayouts);
+                }
+              });
+            })()
+          : Promise.resolve();
+
+      const rankPromise = user?.id
+        ? (isGlobal
+            ? LeaderboardService.getGlobalUserRank(user.id, metric, period, periodOffset)
+            : LeaderboardService.getUserRank(
+                user.id,
+                selectedClubId as string,
+                metric,
+                period,
+                periodOffset
+              )
+          ).then((rank) => {
+            if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
+              setUserRank(rank);
+            }
+          })
+        : Promise.resolve();
+
+      await Promise.allSettled([payoutPromise, rankPromise]);
     } catch (error) {
       reportError(error, 'LeaderboardPage.Failed_to_load_leaderboard');
       if (!silent) toast.error('Failed to load leaderboard');
@@ -576,10 +605,9 @@ export default function LeaderboardPage() {
   };
 
   const getRankLabel = (rank: number): string => {
-    if (rank === 1) return '1st';
-    if (rank === 2) return '2nd';
-    if (rank === 3) return '3rd';
-    return `#${rank}`;
+    const base = rank === 1 ? '1st' : rank === 2 ? '2nd' : rank === 3 ? '3rd' : `#${rank}`;
+    const isTie = entries.filter((entry) => entry.rank === rank).length > 1;
+    return isTie ? `T-${base}` : base;
   };
 
   const isOwner = selectedClubId
@@ -629,18 +657,19 @@ export default function LeaderboardPage() {
   };
 
   const renderPodiumPlace = (entry: LeaderboardEntry, place: 1 | 2 | 3) => {
-    const cls = place === 1 ? 'podium-1st' : place === 2 ? 'podium-2nd' : 'podium-3rd';
-    const barCls = place === 1 ? 'gold-bar' : place === 2 ? 'silver-bar' : 'bronze-bar';
-    const textCls = place === 1 ? 'gold-text' : place === 2 ? 'silver-text' : 'bronze-text';
-    const fallbackTier: VipTier = place === 1 ? 'gold' : place === 2 ? 'silver' : 'bronze';
+    const awardRank = entry.rank <= 3 ? entry.rank : place;
+    const cls = awardRank === 1 ? 'podium-1st' : awardRank === 2 ? 'podium-2nd' : 'podium-3rd';
+    const barCls = awardRank === 1 ? 'gold-bar' : awardRank === 2 ? 'silver-bar' : 'bronze-bar';
+    const textCls = awardRank === 1 ? 'gold-text' : awardRank === 2 ? 'silver-text' : 'bronze-text';
+    const fallbackTier: VipTier = awardRank === 1 ? 'gold' : awardRank === 2 ? 'silver' : 'bronze';
     return (
       <div
-        className={`podium-place ${cls}`}
+        className={`podium-place podium-position-${place} ${cls}`}
         onClick={() => navigate(`/profile/${entry.userId}`)}
         onKeyDown={rowKeyActivate(entry.userId)}
         role="button"
         tabIndex={0}
-        aria-label={`Place ${place}, ${entry.username}, ${formatValue(entry.value, metric)}`}
+        aria-label={`${getRankLabel(entry.rank)}, ${entry.username}, ${formatValue(entry.value, metric)}`}
       >
         {place === 1 && <div className="podium-crown">{'♛'}</div>}
         <PlayerAvatar
@@ -665,15 +694,7 @@ export default function LeaderboardPage() {
           const payout = payouts.find((p) => p.user_id === entry.userId);
           if (payout) {
             return (
-              <span
-                className="payout-badge"
-                style={{
-                  color: '#FFD700',
-                  fontSize: '0.85rem',
-                  marginTop: '4px',
-                  display: 'block',
-                }}
-              >
+              <span className="payout-badge">
                 Paid {payout.payout_amount.toLocaleString()}{' '}
                 {payout.payout_currency === 'diamonds' ? 'Diamonds' : 'Chips'}
               </span>
@@ -682,7 +703,7 @@ export default function LeaderboardPage() {
           return null;
         })()}
         {renderRowContext(entry)}
-        <span className="podium-rank-emoji">{PODIUM_MEDALS[place - 1]}</span>
+        <span className="podium-rank-emoji">{getRankLabel(entry.rank)}</span>
         <div className={`podium-bar ${barCls}`}></div>
       </div>
     );
@@ -700,229 +721,250 @@ export default function LeaderboardPage() {
     return days > expected ? `${days}d window` : `since ${baselineDate}`;
   })();
 
+  const activeMetric = METRIC_OPTIONS.find((option) => option.value === metric);
+  const selectedClubName = userClubs.find((club) => club.id === selectedClubId)?.name;
+  const canExport =
+    (entries.length > 0 && activeTab === 'rankings') ||
+    (tournamentStats.length > 0 && activeTab === 'tournaments');
+
+  const exportLeaderboard = () => {
+    try {
+      if (activeTab === 'rankings') {
+        exportToCSV(entries, `leaderboard_${scope}_${metric}_${period}.csv`, [
+          { key: 'rank', label: 'Rank' },
+          { key: 'username', label: 'Username' },
+          { key: 'value', label: activeMetric?.label || 'Value' },
+          { key: 'hands', label: 'Hands' },
+          { key: 'change', label: 'Change' },
+          { key: 'userId', label: 'User ID' },
+        ]);
+      } else {
+        exportToCSV(tournamentStats, `leaderboard_${scope}_tournaments.csv`, [
+          { key: 'username', label: 'Username' },
+          { key: 'tournamentsPlayed', label: 'Tournaments' },
+          { key: 'wins', label: 'Wins' },
+          { key: 'finalTables', label: 'Final Tables' },
+          { key: 'itmFinishes', label: 'ITM' },
+          { key: 'totalPrizes', label: 'Total Prizes' },
+          { key: 'roi', label: 'ROI' },
+          { key: 'biggestWin', label: 'Biggest Win' },
+          { key: 'userId', label: 'User ID' },
+        ]);
+      }
+      toast.success('Leaderboard exported');
+    } catch (error) {
+      reportError(error, 'LeaderboardPage.export');
+      toast.error('Export failed');
+    }
+  };
+
   return (
-    <div className="leaderboard-page" data-arena-surface="play">
-      <CasinoSurfaceHeader
-        eyebrow="Play & Review / Rankings"
-        title="Leaderboard Array"
-        description="Compare club and global performance across live ranking periods, tournament statistics, and payout views without replacing the real-profit ranking pipeline."
-        artPath="assets/club-buttons/lobby/shark-club-championship-ad-v2.png"
-        status="RANKING SIGNAL // LIVE"
-        metrics={[
-          { label: 'Ranked', value: totalRanked?.toLocaleString() || entries.length },
-          { label: 'Your Rank', value: userRank ? getRankLabel(userRank.rank) : 'Unranked' },
-          { label: 'Scope', value: scope === 'global' ? 'Global' : 'My Clubs', tone: 'live' },
-        ]}
-      />
-      {/* Live Indicator */}
-      <div className="live-indicator">
-        <span className="live-dot"></span>
-        <span>Live &bull; Updated {lastUpdated.toLocaleTimeString()}</span>
-        {activeTab === 'rankings' && windowLabel && (
-          <span className="lb-window-label" title="The snapshot this period is measured from">
-            {windowLabel}
-          </span>
-        )}
-      </div>
-
-      {/* Tab Selector (tournament stats are per-club) */}
-      <div className="leaderboard-tabs">
-        <button
-          className={`tab-btn ${activeTab === 'rankings' ? 'active' : ''}`}
-          onClick={() => setActiveTab('rankings')}
-        >
-          Rankings
-        </button>
-        {scope === 'my-clubs' && (
-          <button
-            className={`tab-btn ${activeTab === 'tournaments' ? 'active' : ''}`}
-            onClick={() => setActiveTab('tournaments')}
-          >
-            Tournament Stats
-          </button>
-        )}
-      </div>
-
-      {/* Filters */}
-      <div className="leaderboard-filters">
-        {/* Club Selector (club scope, multiple clubs) */}
-        {scope === 'my-clubs' && userClubs.length > 1 && (
-          <div className="filter-group">
-            <select
-              value={selectedClubId || ''}
-              onChange={(e) => setSelectedClubId(e.target.value)}
-            >
-              {userClubs.map((club) => (
-                <option key={club.id} value={club.id}>
-                  {club.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* Scope Toggle */}
-        <div className="filter-group scope-toggle">
-          <button
-            className={scope === 'my-clubs' ? 'active' : ''}
-            onClick={() => setScope('my-clubs')}
-          >
-            My Clubs
-          </button>
-          <button className={scope === 'global' ? 'active' : ''} onClick={() => setScope('global')}>
-            Global
-          </button>
-        </div>
-
-        {/* Period Selector */}
-        <div className="filter-group lb-chip-bar">
-          {PERIOD_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              className={`lb-filter-chip ${period === opt.value ? 'active' : ''}`}
-              onClick={() => {
-                setPeriod(opt.value);
-                setPeriodOffset(0);
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
-          {period !== 'all_time' && (
-            <div style={{ display: 'flex', alignItems: 'center', marginLeft: '12px', gap: '4px' }}>
-              <button
-                className="lb-filter-chip"
-                style={{ padding: '0 8px' }}
-                onClick={() => setPeriodOffset((o) => o - 1)}
-                title="Previous"
-              >
-                {'<'}
-              </button>
-              <span
-                style={{ color: '#aaa', fontSize: '12px', minWidth: '40px', textAlign: 'center' }}
-              >
-                {periodOffset === 0 ? 'Current' : periodOffset === -1 ? 'Last' : `${periodOffset}`}
+    <div className="leaderboard-page" data-arena-surface="championship">
+      <section className="lb-hero" aria-labelledby="leaderboard-title">
+        <div className="lb-hero-art" aria-hidden="true" />
+        <div className="lb-hero-copy">
+          <span className="lb-eyebrow">Club Arena / Championship Deck</span>
+          <h1 id="leaderboard-title">Every Hand Leaves A Mark.</h1>
+          <p>
+            Measure The Run, Read The Field, And See Who Owns The Room Across Every Club And Every
+            Table.
+          </p>
+          <div className="lb-live-rail" aria-live="polite">
+            <span className="live-dot" />
+            <span>Live</span>
+            <span className="lb-rail-divider" />
+            <span>
+              Updated {lastUpdated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+            </span>
+            {activeTab === 'rankings' && windowLabel && (
+              <span className="lb-window-label" title="The snapshot this period is measured from">
+                {windowLabel}
               </span>
-              <button
-                className="lb-filter-chip"
-                style={{ padding: '0 8px' }}
-                onClick={() => setPeriodOffset((o) => Math.min(0, o + 1))}
-                disabled={periodOffset >= 0}
-                title="Next"
-              >
-                {'>'}
-              </button>
-            </div>
-          )}
-        </div>
-
-        {isOwner && scope !== 'global' && activeTab === 'rankings' && (
-          <div className="filter-group ml-auto" style={{ display: 'flex', gap: '8px' }}>
-            {/* 2026-08-28: this was a raw window.confirm on a MONEY action —
-                unstyled OS chrome, no Title Case, un-dismissable by tapping
-                outside, and it blocks the JS thread. ConfirmModal is the
-                in-repo replacement (8 other callers) and is keyboard- and
-                mobile-correct. */}
-            <button
-              className="lb-filter-chip"
-              onClick={() => setConfirmPayout(true)}
-              title="Pay Out Current Leaderboard"
-              style={{
-                padding: '0 12px',
-                background: 'rgba(255, 215, 0, 0.2)',
-                color: '#FFD700',
-                border: '1px solid rgba(255, 215, 0, 0.5)',
-              }}
-            >
-              Pay Out
-            </button>
-            <button
-              className="lb-filter-chip"
-              onClick={() => setShowSettings(true)}
-              title="Leaderboard Settings"
-              style={{ padding: '0 12px' }}
-            >
-              Settings
-            </button>
+            )}
           </div>
-        )}
+        </div>
+        <div className="lb-hero-telemetry" aria-label="Current leaderboard summary">
+          <div>
+            <span className="lb-telemetry-label">Field</span>
+            <strong>{totalRanked != null ? totalRanked.toLocaleString('en-US') : '-'}</strong>
+            <span>Ranked Players</span>
+          </div>
+          <div>
+            <span className="lb-telemetry-label">Your Position</span>
+            <strong>{userRank ? getRankLabel(userRank.rank) : '-'}</strong>
+            <span>
+              {userRank ? `Of ${userRank.total.toLocaleString('en-US')}` : 'Enter The Field'}
+            </span>
+          </div>
+          <div>
+            <span className="lb-telemetry-label">Measured By</span>
+            <strong>{activeMetric?.icon || '◆'}</strong>
+            <span>{activeMetric?.label || 'Profit'}</span>
+          </div>
+        </div>
+      </section>
 
-        {/* Metric Selector */}
-        <div className="filter-group lb-chip-bar lb-chip-scroll">
-          {visibleMetricOptions.map((opt) => (
+      <section className="lb-control-deck" aria-label="Leaderboard controls">
+        <div className="lb-control-header">
+          <div className="leaderboard-tabs" role="tablist" aria-label="Leaderboard views">
             <button
-              key={opt.value}
-              className={`lb-filter-chip ${metric === opt.value ? 'active' : ''}`}
-              title={opt.description}
-              onClick={() => setMetric(opt.value)}
+              className={`tab-btn ${activeTab === 'rankings' ? 'active' : ''}`}
+              onClick={() => setActiveTab('rankings')}
+              role="tab"
+              aria-selected={activeTab === 'rankings'}
             >
-              {opt.icon} {opt.label}
+              Rankings
             </button>
-          ))}
+            {scope === 'my-clubs' && (
+              <button
+                className={`tab-btn ${activeTab === 'tournaments' ? 'active' : ''}`}
+                onClick={() => setActiveTab('tournaments')}
+                role="tab"
+                aria-selected={activeTab === 'tournaments'}
+              >
+                Tournament Stats
+              </button>
+            )}
+          </div>
+          <div className="lb-control-actions">
+            {isOwner && scope !== 'global' && activeTab === 'rankings' && (
+              <>
+                <button
+                  className="lb-action-btn lb-action-prize"
+                  onClick={() => setConfirmPayout(true)}
+                  title="Pay Out Current Leaderboard"
+                >
+                  Pay Out
+                </button>
+                <button
+                  className="lb-action-btn"
+                  onClick={() => setShowSettings(true)}
+                  title="Leaderboard Settings"
+                >
+                  Prize Settings
+                </button>
+              </>
+            )}
+            {canExport && (
+              <button className="lb-action-btn" onClick={exportLeaderboard}>
+                Export CSV
+              </button>
+            )}
+          </div>
         </div>
 
-        <div
-          className="export-container"
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            padding: '0 1.5rem',
-            marginBottom: '0.5rem',
-          }}
-        >
-          {((entries.length > 0 && activeTab === 'rankings') ||
-            (tournamentStats.length > 0 && activeTab === 'tournaments')) && (
-            <button
-              className="lb-csv-btn"
-              style={{
-                background: 'rgba(65,105,225,0.15)',
-                color: '#4169E1',
-                border: '1px solid rgba(65,105,225,0.3)',
-                padding: '6px 14px',
-                borderRadius: '8px',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-              onClick={() => {
-                try {
-                  if (activeTab === 'rankings') {
-                    exportToCSV(entries, `leaderboard_${scope}_${metric}_${period}.csv`, [
-                      { key: 'rank', label: 'Rank' },
-                      { key: 'username', label: 'Username' },
-                      {
-                        key: 'value',
-                        label: METRIC_OPTIONS.find((m) => m.value === metric)?.label || 'Value',
-                      },
-                      { key: 'hands', label: 'Hands' },
-                      { key: 'change', label: 'Change' },
-                      { key: 'userId', label: 'User ID' },
-                    ]);
-                  } else {
-                    exportToCSV(tournamentStats, `leaderboard_${scope}_tournaments.csv`, [
-                      { key: 'username', label: 'Username' },
-                      { key: 'tournamentsPlayed', label: 'Tournaments' },
-                      { key: 'wins', label: 'Wins' },
-                      { key: 'finalTables', label: 'Final Tables' },
-                      { key: 'itmFinishes', label: 'ITM' },
-                      { key: 'totalPrizes', label: 'Total Prizes' },
-                      { key: 'roi', label: 'ROI' },
-                      { key: 'biggestWin', label: 'Biggest Win' },
-                      { key: 'userId', label: 'User ID' },
-                    ]);
-                  }
-                  toast.success('Leaderboard exported');
-                } catch (e) {
-                  reportError(e, 'LeaderboardPage.export');
-                  toast.error('Export failed');
-                }
-              }}
-            >
-              Export CSV
-            </button>
-          )}
+        <div className="leaderboard-filters">
+          <div className="lb-control-group lb-arena-group">
+            <span className="lb-control-label">Arena</span>
+            <div className="lb-arena-controls">
+              {/* Club Selector (club scope, multiple clubs) */}
+              {scope === 'my-clubs' && userClubs.length > 1 && (
+                <div className="filter-group">
+                  <select
+                    value={selectedClubId || ''}
+                    onChange={(e) => setSelectedClubId(e.target.value)}
+                  >
+                    {userClubs.map((club) => (
+                      <option key={club.id} value={club.id}>
+                        {club.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {scope === 'my-clubs' && userClubs.length <= 1 && (
+                <span className="lb-club-readout">{selectedClubName || 'My Club'}</span>
+              )}
+
+              {/* Scope Toggle */}
+              <div className="filter-group scope-toggle">
+                <button
+                  className={scope === 'my-clubs' ? 'active' : ''}
+                  onClick={() => setScope('my-clubs')}
+                >
+                  My Clubs
+                </button>
+                <button
+                  className={scope === 'global' ? 'active' : ''}
+                  onClick={() => setScope('global')}
+                >
+                  Global
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Period Selector */}
+          <div className="lb-control-group lb-period-group">
+            <span className="lb-control-label">Period</span>
+            <div className="filter-group lb-chip-bar">
+              {PERIOD_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  className={`lb-filter-chip ${period === opt.value ? 'active' : ''}`}
+                  onClick={() => {
+                    setPeriod(opt.value);
+                    setPeriodOffset(0);
+                  }}
+                  aria-pressed={period === opt.value}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              {period !== 'all_time' && (
+                <div className="lb-period-stepper">
+                  <button
+                    className="lb-step-btn"
+                    onClick={() => setPeriodOffset((o) => o - 1)}
+                    title="Previous Period"
+                    aria-label="Previous Period"
+                  >
+                    {'‹'}
+                  </button>
+                  <span>
+                    {periodOffset === 0
+                      ? 'Current'
+                      : periodOffset === -1
+                        ? 'Last'
+                        : `${periodOffset}`}
+                  </span>
+                  <button
+                    className="lb-step-btn"
+                    onClick={() => setPeriodOffset((o) => Math.min(0, o + 1))}
+                    disabled={periodOffset >= 0}
+                    title="Next Period"
+                    aria-label="Next Period"
+                  >
+                    {'›'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Metric Selector */}
+          <div className="lb-control-group lb-metric-group">
+            <div className="lb-metric-heading">
+              <span className="lb-control-label">Ranking Signal</span>
+              <span>{activeMetric?.description}</span>
+            </div>
+            <div className="filter-group lb-chip-bar lb-chip-scroll">
+              {visibleMetricOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  className={`lb-filter-chip ${metric === opt.value ? 'active' : ''}`}
+                  title={opt.description}
+                  onClick={() => setMetric(opt.value)}
+                  aria-pressed={metric === opt.value}
+                >
+                  <span aria-hidden="true">{opt.icon}</span> {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
 
       {/* Leaderboard Content */}
       <div className="leaderboard-list">
@@ -1011,6 +1053,10 @@ export default function LeaderboardPage() {
                   key={entry.userId}
                   className={`leaderboard-entry ${entry.userId === user?.id ? 'current-user' : ''}`}
                   onClick={() => navigate(`/profile/${entry.userId}`)}
+                  onKeyDown={rowKeyActivate(entry.userId)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${getRankLabel(entry.rank)} ${entry.username}, ${formatValue(entry.value, metric)}`}
                   style={{ ...rankingRowAnimationStyle(index), cursor: 'pointer' }}
                 >
                   <span className={`entry-rank top-3`}>{getRankLabel(entry.rank)}</span>
@@ -1032,9 +1078,7 @@ export default function LeaderboardPage() {
                       const payout = payouts.find((p) => p.user_id === entry.userId);
                       if (payout) {
                         return (
-                          <div
-                            style={{ color: '#FFD700', fontSize: '0.75rem', marginBottom: '4px' }}
-                          >
+                          <div className="payout-badge">
                             Paid {payout.payout_amount.toLocaleString()}{' '}
                             {payout.payout_currency === 'diamonds' ? 'Diamonds' : 'Chips'}
                           </div>
@@ -1093,9 +1137,7 @@ export default function LeaderboardPage() {
                       const payout = payouts.find((p) => p.user_id === entry.userId);
                       if (payout) {
                         return (
-                          <div
-                            style={{ color: '#FFD700', fontSize: '0.75rem', marginBottom: '4px' }}
-                          >
+                          <div className="payout-badge">
                             Paid {payout.payout_amount.toLocaleString()}{' '}
                             {payout.payout_currency === 'diamonds' ? 'Diamonds' : 'Chips'}
                           </div>
@@ -1179,6 +1221,10 @@ export default function LeaderboardPage() {
                 <div
                   className={`tournament-stats-entry ${index < 12 ? `animate-fade-in-up stagger-${Math.min(index + 1, 10)}` : ''} ${stat.userId === user?.id ? 'current-user' : ''}`}
                   onClick={() => navigate(`/profile/${stat.userId}`)}
+                  onKeyDown={rowKeyActivate(stat.userId)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Rank ${index + 1}, ${stat.username}, ${stat.totalPrizes.toLocaleString()} total prizes`}
                   style={{ cursor: 'pointer' }}
                 >
                   <div className="stats-cell player-cell">
@@ -1212,29 +1258,13 @@ export default function LeaderboardPage() {
         ) : null}
       </div>
 
-      {/* Sticky User Rank Card (Bottom) */}
-      {userRank && activeTab === 'rankings' && (
-        <div className="user-rank-card sticky-bottom">
-          <div className="user-rank-position">
-            <span className="rank-number">{getRankLabel(userRank.rank)}</span>
-            <span className="rank-label">Your Rank{scope === 'global' ? ' (Global)' : ''}</span>
-          </div>
-          <div className="rank-context">
-            <span>Out Of {userRank.total.toLocaleString()} Players</span>
-            {userRank.value !== 0 && (
-              <span className="rank-own-value">{formatValue(userRank.value, metric)}</span>
-            )}
-            {!entries.some((e) => e.userId === user?.id) && entries.length > 0 && (
-              <span className="rank-offlist">Not In The Top {entries.length}</span>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Settings Modal */}
       {showSettings && isOwner && (
         <div
           className="modal-overlay"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setShowSettings(false);
+          }}
           style={{
             zIndex: 50,
             position: 'fixed',
@@ -1250,6 +1280,9 @@ export default function LeaderboardPage() {
         >
           <div
             className="modal-content glass-panel p-6 max-w-md w-full"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="leaderboard-prize-settings-title"
             style={{
               background: '#1a1a1a',
               border: '1px solid #333',
@@ -1262,6 +1295,7 @@ export default function LeaderboardPage() {
               style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}
             >
               <h2
+                id="leaderboard-prize-settings-title"
                 className="text-xl font-bold font-display text-white"
                 style={{ fontSize: '1.25rem', color: '#fff', margin: 0 }}
               >
@@ -1269,6 +1303,7 @@ export default function LeaderboardPage() {
               </h2>
               <button
                 onClick={() => setShowSettings(false)}
+                aria-label="Close Prize Settings"
                 className="text-white/60 hover:text-white"
                 style={{
                   background: 'none',
@@ -1446,13 +1481,20 @@ export default function LeaderboardPage() {
                 }}
                 onClick={async () => {
                   if (selectedClubId) {
-                    await LeaderboardService.updateLeaderboardSettings(selectedClubId, {
-                      payout_currency: settings?.payout_currency || 'diamonds',
-                      weekly_prizes: settings?.weekly_prizes || [],
-                      monthly_prizes: settings?.monthly_prizes || [],
-                    });
-                    toast.success('Saved');
-                    setShowSettings(false);
+                    const saved = await LeaderboardService.updateLeaderboardSettings(
+                      selectedClubId,
+                      {
+                        payout_currency: settings?.payout_currency || 'diamonds',
+                        weekly_prizes: settings?.weekly_prizes || [],
+                        monthly_prizes: settings?.monthly_prizes || [],
+                      }
+                    );
+                    if (saved) {
+                      toast.success('Prize Settings Saved');
+                      setShowSettings(false);
+                    } else {
+                      toast.error('Prize Settings Could Not Be Saved');
+                    }
                   }
                 }}
               >

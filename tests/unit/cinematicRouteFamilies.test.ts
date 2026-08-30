@@ -18,7 +18,6 @@ const PLAY_PAGES = [
   'src/pages/tournament/TournamentResultsPage.tsx',
   'src/pages/HandHistoryPage.tsx',
   'src/pages/SessionHistoryPage.tsx',
-  'src/pages/LeaderboardPage.tsx',
 ];
 
 const UNION_PAGES = [
@@ -38,6 +37,14 @@ describe('cinematic retained route families', () => {
     const source = readFileSync(path, 'utf8');
     expect(source).toContain('CasinoSurfaceHeader');
     expect(source).toContain('data-arena-surface="play"');
+  });
+
+  it('preserves the championship-native leaderboard visual authority', () => {
+    const source = readFileSync('src/pages/LeaderboardPage.tsx', 'utf8');
+    expect(source).toContain('data-arena-surface="championship"');
+    expect(source).toContain('className="lb-hero"');
+    expect(source).toContain('Club Arena / Championship Deck');
+    expect(existsSync('public/images/leaderboard/championship-machine.jpg')).toBe(true);
   });
 
   it.each(UNION_PAGES)('%s uses the Union Network visual anchor', (path) => {

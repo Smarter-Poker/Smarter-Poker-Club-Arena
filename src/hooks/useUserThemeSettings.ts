@@ -66,6 +66,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { getLocalStorage, setLocalStorage } from '../lib/storage';
+import { recordCustomizationOperation } from '../services/CustomizationOperationsTelemetry';
 
 export interface UserThemeSelection {
   theme_id: string;
@@ -302,6 +303,7 @@ type ThemeRealtimeEntry = {
   listeners: Set<ThemeRealtimeListener>;
   everLive: boolean;
   generation: number;
+  errorStartedAt: number | null;
 };
 
 const themeRealtimeByUser = new Map<string, ThemeRealtimeEntry>();
@@ -355,10 +357,31 @@ function startThemeRealtime(userId: string, entry: ThemeRealtimeEntry): void {
       if (entry.generation !== generation || themeRealtimeByUser.get(userId) !== entry) return;
       if (status === 'SUBSCRIBED') {
         const recovered = entry.everLive && entry.state !== 'live';
+        if (recovered) {
+          recordCustomizationOperation({
+            userId,
+            event: 'realtime_recovered',
+            surface: 'table-runtime',
+            category: 'appearance',
+            durationMs: entry.errorStartedAt ? Date.now() - entry.errorStartedAt : undefined,
+            reasonCode: 'channel_resubscribed',
+          });
+        }
         entry.state = 'live';
         entry.everLive = true;
+        entry.errorStartedAt = null;
         notifyThemeRealtime(entry, recovered);
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        if (entry.state !== 'error') {
+          entry.errorStartedAt = Date.now();
+          recordCustomizationOperation({
+            userId,
+            event: 'realtime_failed',
+            surface: 'table-runtime',
+            category: 'appearance',
+            reasonCode: status.toLowerCase(),
+          });
+        }
         entry.state = 'error';
         notifyThemeRealtime(entry);
       }
@@ -389,6 +412,7 @@ function acquireThemeRealtime(userId: string, listener: ThemeRealtimeListener): 
     listeners: new Set([listener]),
     everLive: false,
     generation: 0,
+    errorStartedAt: null,
   };
   themeRealtimeByUser.set(userId, entry);
   startThemeRealtime(userId, entry);

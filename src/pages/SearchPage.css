@@ -79,6 +79,18 @@
   box-shadow: 0 0 9px currentColor;
 }
 
+.search-index-status[data-state='partial'] {
+  border-color: rgba(255, 170, 82, 0.4);
+  color: #ffc078;
+  background: rgba(255, 158, 61, 0.055);
+}
+
+.search-index-status[data-state='cached'] {
+  border-color: rgba(126, 177, 219, 0.34);
+  color: #a8d7f7;
+  background: rgba(56, 112, 156, 0.08);
+}
+
 .search-form {
   padding: 8px 24px 20px;
 }

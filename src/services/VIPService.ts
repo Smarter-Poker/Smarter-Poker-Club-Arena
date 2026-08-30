@@ -575,9 +575,15 @@ class VIPServiceClass {
           }),
         3
       );
-      if (error) console.warn('[VIPService] fn_consume_feature_use error:', error.message);
+      // 2026-08-28: these were console.warn — invisible to everyone. A failed
+      // consume means the paid feature was granted and the use was never
+      // decremented: silent entitlement-ledger drift on a purchase path. The
+      // grant deliberately stands (err in the player's favour, never re-charge
+      // a player for our failure) but the failure is now REPORTED so the
+      // drift is visible instead of unknowable.
+      if (error) reportError(error, 'VIPService.fn_consume_feature_use_failed');
     } catch (err) {
-      console.warn('[VIPService] consumePurchase unexpected error:', err);
+      reportError(err, 'VIPService.consumePurchase_failed');
     }
   }
 

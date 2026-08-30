@@ -267,6 +267,85 @@
   text-transform: uppercase;
 }
 
+.loadingHero .heroCopy {
+  justify-content: flex-end;
+}
+
+.loadingSignal {
+  display: grid;
+  width: min(100%, 440px);
+  gap: 9px;
+  margin-top: 28px;
+  color: #aeb9c3;
+  font-size: 0.72rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.loadingSignalBar {
+  position: relative;
+  overflow: hidden;
+  height: 3px;
+  background: #182127;
+}
+
+.loadingSignalBar::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--mission-blue), transparent);
+  content: '';
+  animation: signalSweep 1.25s ease-in-out infinite;
+}
+
+.loadingBoard {
+  padding: clamp(18px, 3vw, 34px);
+  border: 1px solid #3d4851;
+  background: #080c0f;
+}
+
+.loadingBoardHeader,
+.loadingCard {
+  overflow: hidden;
+  background: linear-gradient(100deg, #10161a 20%, #1b252b 48%, #10161a 76%);
+  background-size: 220% 100%;
+  animation: loadingSweep 1.5s ease-in-out infinite;
+}
+
+.loadingBoardHeader {
+  width: min(420px, 72%);
+  height: 44px;
+  margin-bottom: 24px;
+}
+
+.loadingCardGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.loadingCard {
+  min-height: 250px;
+  border: 1px solid #2f3940;
+}
+
+@keyframes signalSweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes loadingSweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
 .commandDeck {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(380px, 0.85fr);
@@ -276,6 +355,7 @@
 .streakConsole,
 .summaryGrid,
 .unclaimedBar,
+.syncNotice,
 .missionBoard,
 .footer {
   border: 1px solid #3d4851;
@@ -283,6 +363,50 @@
   box-shadow:
     inset 0 1px rgba(255, 255, 255, 0.055),
     0 18px 44px rgba(0, 0, 0, 0.28);
+}
+
+.syncNotice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 15px 18px;
+  border-left: 3px solid var(--mission-gold);
+}
+
+.syncNoticeError {
+  border-left-color: #ff765f;
+}
+
+.syncNotice > div {
+  display: grid;
+  gap: 5px;
+}
+
+.syncNotice strong {
+  color: #dce4e9;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.retryButton {
+  min-height: 40px;
+  flex: none;
+  padding: 0 16px;
+  border: 1px solid #71818c;
+  background: #0b1013;
+  color: #ecf3f6;
+  font: 700 0.68rem/1 inherit;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.retryButton:disabled {
+  cursor: wait;
+  opacity: 0.52;
 }
 
 .streakConsole {
@@ -534,6 +658,33 @@
   font-size: 1.25rem;
   font-weight: 600;
   letter-spacing: 0.08em;
+}
+
+.resetReadout small {
+  color: #77848d;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.64rem;
+}
+
+.resetReadout em {
+  max-width: 280px;
+  color: #ffb765;
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.resetUrgent {
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 150, 73, 0.4);
+  background: rgba(108, 43, 10, 0.13);
+  box-shadow: inset 3px 0 #f08b3b;
+}
+
+.resetUrgent strong {
+  color: #ffb765;
 }
 
 .tabs {
@@ -921,6 +1072,10 @@
   font-size: 0.8rem;
 }
 
+.emptyState .retryButton {
+  margin-top: 18px;
+}
+
 .celebrateOverlay {
   position: fixed;
   z-index: 9999;
@@ -984,22 +1139,38 @@
   font-size: 0.82rem;
 }
 
-.celebrateDiamonds {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 10px;
-  color: var(--mission-blue);
+.celebratePayouts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  border-block: 1px solid rgba(180, 194, 204, 0.2);
 }
 
-.celebrateDiamondValue {
-  font-size: 3.1rem;
+.celebratePayouts > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  padding: 18px 12px;
+}
+
+.celebratePayouts > div + div {
+  border-left: 1px solid rgba(180, 194, 204, 0.2);
+}
+
+.celebratePayoutValue {
+  color: var(--mission-gold);
+  font-size: clamp(2rem, 8vw, 3rem);
   font-weight: 500;
   line-height: 1;
 }
 
-.celebrateDiamondLabel {
-  font-size: 0.8rem;
+.celebrateDiamondPayout .celebratePayoutValue {
+  color: var(--mission-blue);
+}
+
+.celebratePayoutLabel {
+  color: #aab6bd;
+  font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -1069,6 +1240,7 @@
 .confirmButton:focus-visible,
 .rerollButton:focus-visible,
 .cancelButton:focus-visible,
+.retryButton:focus-visible,
 .tab:focus-visible,
 .celebrateButton:focus-visible {
   outline: 2px solid var(--mission-blue);
@@ -1086,6 +1258,9 @@
     min-height: 96px;
   }
   .list {
+    grid-template-columns: 1fr;
+  }
+  .loadingCardGrid {
     grid-template-columns: 1fr;
   }
   .challengeCard {
@@ -1175,6 +1350,7 @@
 
   .commandDeck,
   .unclaimedBar,
+  .syncNotice,
   .missionBoard,
   .footer {
     margin-inline: 10px;
@@ -1209,6 +1385,15 @@
     flex-direction: column;
   }
 
+  .syncNotice {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .syncNotice .retryButton {
+    width: 100%;
+  }
+
   .missionBoard {
     padding: 18px 12px;
   }
@@ -1222,6 +1407,10 @@
   .resetReadout {
     align-items: flex-start;
     text-align: left;
+  }
+
+  .resetReadout em {
+    max-width: none;
   }
 
   .tabs {
@@ -1307,7 +1496,27 @@
 @media (prefers-reduced-motion: reduce) {
   .cardCelebrating,
   .celebrateOverlay,
-  .celebrateCard {
+  .celebrateCard,
+  .loadingSignalBar::after,
+  .loadingBoardHeader,
+  .loadingCard {
     animation: none;
   }
+}
+
+/* Engineered surfaces: shallow machined corners instead of arcade capsules. */
+.header,
+.streakBanner,
+.statItem,
+.challengeCard,
+.summaryTile,
+.tabs,
+.milestoneTracker,
+.celebrateCard,
+.emptyState {
+  border-radius: 4px;
+}
+
+.celebrateOverlay {
+  backdrop-filter: none;
 }

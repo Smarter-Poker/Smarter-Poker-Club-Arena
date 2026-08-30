@@ -22,6 +22,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
+import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 interface SessionRecord {
   id: string;
@@ -242,11 +243,23 @@ export default function SessionHistoryPage() {
   };
 
   return (
-    <div className="session-history-page">
-      {/* Header */}
-      <div className="sh-header">
-        <h1 className="sh-title">Session History</h1>
-      </div>
+    <div className="session-history-page" data-arena-surface="play">
+      <CasinoSurfaceHeader
+        eyebrow="Play & Review / Sessions"
+        title="Session Ledger"
+        description="Review complete sessions, loaded performance trends, and table-level results with CSV export and the existing live session record pipeline intact."
+        artPath="assets/club-buttons/lobby/lobby-command-chassis-v2.png"
+        status="SESSION INDEX // SYNCHRONIZED"
+        metrics={[
+          { label: 'Sessions', value: totalSessions },
+          { label: 'Hands', value: totalHands.toLocaleString() },
+          {
+            label: 'Loaded P&L',
+            value: `${totalPL >= 0 ? '+' : ''}${totalPL.toLocaleString()}`,
+            tone: totalPL >= 0 ? 'live' : 'default',
+          },
+        ]}
+      />
 
       {/* Aggregate Stats */}
       <div className="sh-aggregate">

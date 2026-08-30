@@ -182,7 +182,12 @@ test('every control answers to a thumb at 375px', async ({ page }) => {
              So say so instead of accusing it. A control the sweep could not
              measure is recorded and excluded - never counted as a pass, and
              never reported as a miss. */
-          if (cy - REACH < 1 || cy + REACH > window.innerHeight - 1) {
+          if (
+            cy - REACH < 1 ||
+            cy + REACH > window.innerHeight - 1 ||
+            cx < 1 ||
+            cx > window.innerWidth - 1
+          ) {
             unmeasured.push(
               el.tagName.toLowerCase() +
                 (el.className ? '.' + String(el.className).split(' ')[0].slice(0, 26) : '') +

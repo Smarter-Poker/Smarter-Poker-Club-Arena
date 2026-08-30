@@ -78,6 +78,7 @@ import { formatBuyIn } from '../../utils/buyIn';
 import { useTournamentRegistration, isLateStatus } from '../../hooks/useTournamentRegistration';
 import { useMysteryBounty } from '../../hooks/useMysteryBounty';
 import { openTableAsObserver } from '../../utils/observeTable';
+import './PremiumTournamentConsole.css';
 
 /** Ordinal suffix helper (1st, 2nd, 3rd...) */
 function getOrdinal(n: number): string {
@@ -1371,7 +1372,7 @@ export default function TournamentDetails({
 
   return (
     <PageErrorBoundary pageName="TournamentDetails">
-      <div className="tournament-details" ref={shellRef}>
+      <div className="tournament-details" ref={shellRef} data-active-tab={activeTab}>
         {/* Header */}
         <div className="details-header">
           <h1>Game Details</h1>
@@ -1385,13 +1386,7 @@ export default function TournamentDetails({
             is tabbable, Left/Right move (wrapping), Home/End jump, and each
             tab owns the panel by id. */}
         <div className="details-tabs" role="tablist" aria-label="Tournament sections">
-          {TABS.filter((tab) => {
-            if (tab.id === 'satellites') {
-              const isMtt = tournament.tournament_type === 'mtt' || tournament.type === 'mtt';
-              return isMtt && tournament.buy_in_amount >= 50;
-            }
-            return true;
-          }).map((tab, i, visibleTabs) => (
+          {TABS.map((tab, i, visibleTabs) => (
             <button
               key={tab.id}
               id={`tl-tab-${tab.id}`}

@@ -29,6 +29,7 @@
 import { supabase } from './supabase';
 import { masterBus } from '../core/MasterBus';
 import { capture } from './analytics';
+import { recordCustomizationOperation } from '../services/CustomizationOperationsTelemetry';
 
 /** The five columns of `user_theme_settings` the felt actually paints from. */
 export interface AppearancePatch {
@@ -65,8 +66,68 @@ const durableFieldValue = new Map<string, string>();
 const pendingWriteCount = new Map<string, number>();
 let appearanceRevision = 0;
 
+// A browser fetch can remain pending long after the database has recovered.
+// Without an abort boundary that request also holds the per-row write queue,
+// leaving every later tap on "Applying..." forever. Normal production writes
+// complete well inside this window; one bounded retry covers a transient edge
+// or pool stall without allowing two different appearance writes to overlap.
+const APPEARANCE_WRITE_TIMEOUT_MS = 25_000;
+const APPEARANCE_WRITE_ATTEMPTS = 2;
+
 function nowMs(): number {
   return globalThis.performance?.now?.() ?? Date.now();
+}
+
+function retryableAppearanceWriteError(error: unknown): boolean {
+  const record = error && typeof error === 'object' ? (error as Record<string, unknown>) : null;
+  const name = typeof record?.name === 'string' ? record.name : '';
+  const code = typeof record?.code === 'string' ? record.code : '';
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof record?.message === 'string'
+        ? record.message
+        : String(error || '');
+  return (
+    name === 'AbortError' ||
+    /^PGRST00[013]$/.test(code) ||
+    /abort|network|fetch|timeout|timed out|connection/i.test(message)
+  );
+}
+
+async function persistAppearancePatch(
+  userId: string,
+  gameType: string,
+  patch: AppearancePatch
+): Promise<unknown | undefined> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= APPEARANCE_WRITE_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), APPEARANCE_WRITE_TIMEOUT_MS);
+    try {
+      const request = supabase
+        .from('user_theme_settings')
+        .upsert(
+          { user_id: userId, game_type: gameType, ...patch },
+          { onConflict: 'user_id,game_type' }
+        );
+      // PostgREST builders support abortSignal. The conditional keeps the
+      // writer compatible with the deliberately tiny promise-only test mock.
+      const result =
+        typeof request.abortSignal === 'function'
+          ? await request.abortSignal(controller.signal)
+          : await request;
+      if (!result.error) return undefined;
+      lastError = result.error;
+      if (!retryableAppearanceWriteError(lastError)) return lastError;
+    } catch (error) {
+      lastError = error;
+      if (!retryableAppearanceWriteError(error)) return error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  return lastError ?? new Error('appearance write did not complete');
 }
 
 function recordAppearanceResult(
@@ -74,9 +135,11 @@ function recordAppearanceResult(
   startedAt: number,
   gameType: string,
   patch: AppearancePatch,
-  signedIn: boolean
+  userId: string | null | undefined
 ): void {
   const fields = APPEARANCE_FIELDS.filter((field) => Boolean(patch[field]));
+  const durationMs = Math.max(0, Math.round(nowMs() - startedAt));
+  const signedIn = Boolean(userId);
   capture('table_appearance_apply', {
     outcome,
     game_type: gameType,
@@ -85,8 +148,18 @@ function recordAppearanceResult(
     signed_in: signedIn,
     // End-to-end time deliberately includes time waiting behind a rapid-tap
     // write. That is the latency the player actually experiences.
-    duration_ms: Math.max(0, Math.round(nowMs() - startedAt)),
+    duration_ms: durationMs,
   });
+  if (outcome === 'saved' || outcome === 'failed') {
+    recordCustomizationOperation({
+      userId,
+      event: outcome === 'saved' ? 'appearance_saved' : 'appearance_failed',
+      surface: 'table-studio',
+      category: fields.join(':'),
+      durationMs,
+      reasonCode: outcome === 'failed' ? 'persistence_write' : undefined,
+    });
+  }
 }
 
 function emitAppearance(
@@ -136,7 +209,7 @@ export async function applyTableAppearance(
     if (typeof value === 'string' && value) cleanPatch[field] = value;
   }
   if (!Object.keys(cleanPatch).length) {
-    recordAppearanceResult('empty', startedAt, gameType, cleanPatch, Boolean(opts.userId));
+    recordAppearanceResult('empty', startedAt, gameType, cleanPatch, opts.userId);
     return { ok: false, error: new Error('appearance patch is empty') };
   }
 
@@ -179,7 +252,7 @@ export async function applyTableAppearance(
       mutationId,
       state: 'rolled-back',
     });
-    recordAppearanceResult('guest', startedAt, gameType, cleanPatch, false);
+    recordAppearanceResult('guest', startedAt, gameType, cleanPatch, opts.userId);
     return { ok: false, error: new Error('not signed in'), reverted };
   }
 
@@ -197,19 +270,9 @@ export async function applyTableAppearance(
 
   // 2. PERSIST IN TAP ORDER — only the changed columns plus the composite key.
   const previousTail = writeTails.get(scope) ?? Promise.resolve();
-  const task = previousTail.then(async () => {
-    try {
-      const { error } = await supabase
-        .from('user_theme_settings')
-        .upsert(
-          { user_id: opts.userId, game_type: gameType, ...cleanPatch },
-          { onConflict: 'user_id,game_type' }
-        );
-      return error ?? undefined;
-    } catch (error) {
-      return error;
-    }
-  });
+  const task = previousTail.then(() =>
+    persistAppearancePatch(opts.userId as string, gameType, cleanPatch)
+  );
   const tail = task.then(() => undefined);
   writeTails.set(scope, tail);
   const error = await task;
@@ -229,6 +292,15 @@ export async function applyTableAppearance(
         reverted[field] = previous;
       }
     }
+    if (Object.keys(reverted).length < Object.keys(cleanPatch).length) {
+      recordCustomizationOperation({
+        userId: opts.userId,
+        event: 'conflict_suppressed',
+        surface: 'table-runtime',
+        category: APPEARANCE_FIELDS.filter((field) => Boolean(cleanPatch[field])).join(':'),
+        reasonCode: 'newer_optimistic_write',
+      });
+    }
     masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
       kind: 'table-appearance',
       scope,
@@ -243,7 +315,7 @@ export async function applyTableAppearance(
       state: 'rolled-back',
     });
     pendingWriteCount.set(scope, Math.max(0, (pendingWriteCount.get(scope) ?? 1) - 1));
-    recordAppearanceResult('failed', startedAt, gameType, cleanPatch, true);
+    recordAppearanceResult('failed', startedAt, gameType, cleanPatch, opts.userId);
     return { ok: false, error, reverted };
   }
 
@@ -259,6 +331,6 @@ export async function applyTableAppearance(
     state: 'confirmed',
   });
 
-  recordAppearanceResult('saved', startedAt, gameType, cleanPatch, true);
+  recordAppearanceResult('saved', startedAt, gameType, cleanPatch, opts.userId);
   return { ok: true };
 }

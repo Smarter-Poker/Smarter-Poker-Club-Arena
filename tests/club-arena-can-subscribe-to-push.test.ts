@@ -141,10 +141,25 @@ describe('a Club Arena player can enrol this device for push', () => {
   it('enrols on the ROOT service worker, not on Club Arena scope', async () => {
     // public/sw-bus.js has no 'push' listener. A subscription made against it
     // would be accepted by the browser, stored by the server, sent to
-    // successfully, and displayed by nobody. Registering /sw.js also keeps ONE
-    // subscription per device across both apps: push_subscriptions upserts on
-    // (user_id, endpoint), so a second registration would mean two active rows
-    // and every notification arriving twice.
+    // successfully, and displayed by nobody.
+    //
+    // CORRECTED 2026-08-30. This comment used to go on to claim that
+    // registering /sw.js "keeps ONE subscription per device across both apps,
+    // because push_subscriptions upserts on (user_id, endpoint)". That
+    // reasoning is wrong, and believing it is what let a real bug live: THE
+    // ENDPOINT IS NOT STABLE. The browser mints a fresh one after a
+    // service-worker reinstall, cleared site data, a PWA re-add, or a
+    // failed-then-retried subscribe, so the upsert key does not identify a
+    // device -- it inserts a NEW row and leaves the old one is_active with
+    // nothing pointing at it. Dispatch fans out to every active row, and Dan
+    // got the same Seat Open banner twice.
+    //
+    // What actually keeps one live subscription per device is `deviceId`,
+    // which this app did not send until 2026-08-30. See
+    // tests/one-live-subscription-per-device.law.test.ts.
+    //
+    // Registering the ROOT worker is still correct and still required, for the
+    // reason in the first paragraph. It is just not what does the deduping.
     const h = installBrowser();
     const { enablePush } = await import('../src/lib/pushClient');
 

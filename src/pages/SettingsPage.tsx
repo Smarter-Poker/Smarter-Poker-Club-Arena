@@ -753,11 +753,21 @@ export default function SettingsPage() {
          permanently disagreeing. setEnabled() updates the live engine AND
          persists BOTH gate keys (the HamburgerMenu path); volume is applied
          live for the same reason rather than waiting for a table mount. */
-      soundService.setEnabled(settings.soundEnabled);
       /* Volume is NOT applied here. `updateTableSettings` above commits it to
          the store, which applies it in `applyGateChanges` — this line applied
          the same number a second time. `setEnabled` stays because the gate keys
          are a different owner from the store and this page has to write both. */
+
+      /* Dan 2026-08-28: the Sound Effects switch on this page never reached
+         the sound engine. It persisted soundEnabled into
+         club-arena-table-settings, but the gate that actually silences
+         playback (utils/soundGate, consulted by SoundService.shouldPlay)
+         reads 'club_arena_sounds' / 'ca_sound_enabled' — neither of which
+         this page wrote. So muting here said "Settings saved!", the felt
+         kept playing, and the in-table switch still read ON: two switches
+         permanently disagreeing. setEnabled() updates the live engine AND
+         persists BOTH gate keys (the HamburgerMenu path); volume is applied
+         live for the same reason rather than waiting for a table mount. */
 
       /* Sync theme to Zustand store so Shell.tsx applies it immediately.
          2026-08-26: "Auto (System)" was offered in the dropdown, accepted by

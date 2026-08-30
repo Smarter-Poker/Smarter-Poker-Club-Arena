@@ -299,3 +299,28 @@
   gap: 1rem;
   padding: 1rem 0;
 }
+
+/* Phase 6 visual convergence: black-first, engineered, and blur-free. */
+.page {
+  background:
+    radial-gradient(circle at 82% 4%, rgba(58, 168, 255, 0.09), transparent 28rem),
+    linear-gradient(180deg, #05080c 0%, #020407 100%);
+}
+
+.quickStats,
+.searchBar,
+.filters {
+  border-color: #26333d;
+  background: #080d12;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.searchInput,
+.filterBtn {
+  border-radius: 3px;
+  border-color: #26333d;
+  background: #080d12;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}

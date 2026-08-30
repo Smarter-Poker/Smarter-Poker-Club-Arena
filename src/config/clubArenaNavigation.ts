@@ -65,6 +65,11 @@ export function getClubArenaNavigation({
       label: 'Play',
       items: [
         {
+          label: 'Play & Review',
+          path: '/play',
+          description: 'Competition, hands, sessions, and rankings',
+        },
+        {
           label: 'Club Arena',
           path: '/',
           description: 'Your clubs and live games',
@@ -104,6 +109,11 @@ export function getClubArenaNavigation({
     {
       label: 'Community',
       items: [
+        {
+          label: 'Community Center',
+          path: '/community',
+          description: 'Discovery, connections, activity, and conversation',
+        },
         {
           label: 'Find Players & Clubs',
           path: '/search',

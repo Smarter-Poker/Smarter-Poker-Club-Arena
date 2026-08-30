@@ -131,7 +131,14 @@ describe('the table says when it is not connected', () => {
     expect(ruleAt).toBeGreaterThan(-1);
     const rule = BANNER_CSS.slice(ruleAt, BANNER_CSS.indexOf('}', ruleAt));
     expect(rule).not.toMatch(/\btop:\s*\d+px/);
-    expect(rule).toMatch(/top:\s*52%/);
+    /* 2026-08-30 audit: the anchor is no longer a literal. `--sp-brand-top` is
+       declared on `.table-surface` (58%) and MOVED by the `[data-boards]`
+       rules to 72% / 84%, so a multi-board table carries its masthead lower
+       and the banner has to come with it. A hard-coded 52% left the banner a
+       third of the felt above the wordmark, in the middle of the board stack,
+       on run-it-twice and bomb-pot tables. The literal is the bug now. */
+    expect(rule).toMatch(/top:\s*calc\(var\(--sp-brand-top,\s*58%\)\s*-\s*6%\)/);
+    expect(rule).not.toMatch(/top:\s*52%/);
     // Bottom-anchored, so it grows UP off the wordmark rather than over it.
     expect(BANNER_CSS).toMatch(/transform:\s*translate\(-50%,\s*-100%\)/);
     // And it is rendered inside the felt surface, above .table-brand - not as

@@ -253,6 +253,18 @@
   /* The global header already owns the notch inset. Reapplying it here would
      create a second safe-area band between the two bars. */
   padding-top: 0;
+  /* AND THE SAME GOES FOR THE STRIP INSIDE THIS WRAPPER (2026-08-30 audit).
+     Zeroing the wrapper's padding was only half the job: `.table-tab-bar` pays
+     its OWN `calc(6px + env(safe-area-inset-top))`, and this wrapper is fixed
+     at `var(--ca-global-header-height)` - a height GlobalHeader measures AFTER
+     paying that inset itself (GlobalHeader.module.css pads by it;
+     GlobalHeader.tsx publishes getBoundingClientRect().height). So on a
+     notched iPhone the bar sat ~47px below where it belonged, in the lobby,
+     with a dead black band above it. One declaration fixes it because the bar
+     now reads its inset from a property instead of env() directly, and this is
+     scoped to the pinned wrapper: the in-flow bar on /table/* still pays the
+     notch when nothing above it has. */
+  --sp-tabbar-inset: 0px;
 }
 
 /**

@@ -22,6 +22,7 @@
  *      recorded at prize 0 while holding a funded seat.
  */
 import { describe, expect, it } from 'vitest';
+import { sliceEnclosingBlock } from '../../../tests/helpers/sourceWindow.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -66,9 +67,13 @@ describe('a cross-satellite double win pays the ticket value', () => {
   });
 
   it('the cash lands under the stable place key, so a re-drive dedupes', () => {
-    const at = MANAGER.indexOf('held_from_this_satellite === false');
-    expect(at).toBeGreaterThan(-1);
-    const block = MANAGER.slice(at, at + 2000);
+    /* The window is bounded by the BRANCH, not by a byte count. A fixed 2000
+       characters was the shape tests/unit/noFixedSizeSourceWindows.test.ts
+       forbids, and it forbids it for a reason that applies exactly here: the
+       comment block inside this branch is ~1,100 characters on its own, so a
+       few more lines of explanation would push the payCash call out of the
+       window and the pin would pass while asserting nothing. */
+    const block = sliceEnclosingBlock(MANAGER, 'held_from_this_satellite === false');
     expect(block).toMatch(/prize:place:\$\{w\.position\}/);
   });
 

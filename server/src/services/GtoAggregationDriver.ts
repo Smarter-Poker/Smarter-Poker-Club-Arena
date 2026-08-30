@@ -67,6 +67,13 @@ let finished = false;
 let stalledTicks = 0;
 let skipTicks = 0;
 
+/**
+ * Test seam — no production caller by design. `startGtoAggregationDriver`
+ * and the tick read the module-level `finished` directly; this accessor
+ * exists so the suite can assert the driver goes PERMANENTLY silent once
+ * both streets are done, which is the property that keeps a finished
+ * one-time build from calling the RPC forever.
+ */
 export function gtoAggregationFinished(): boolean {
   return finished;
 }

@@ -6,6 +6,8 @@ const migration = readFileSync(
 );
 const modal = readFileSync('src/components/table/ThemeSettingsModal.tsx', 'utf8');
 const collections = readFileSync('src/hooks/useTableStudioCollections.ts', 'utf8');
+const hamburger = readFileSync('src/components/navigation/HamburgerMenu.tsx', 'utf8');
+const checkout = readFileSync('src/lib/tableStudioCheckoutResume.ts', 'utf8');
 const realtimeMigration = readFileSync(
   'supabase/migrations/20260829233000_table_studio_entitlement_realtime.sql',
   'utf8'
@@ -34,6 +36,16 @@ describe('Table Studio permanent storefront', () => {
     expect(modal).toContain("supabase.rpc('fn_purchase_feature'");
     expect(modal).toContain('p_feature: pending.feature');
     expect(modal).toContain('applyAccessibleAsset(pending.tab, pending.id)');
+  });
+
+  it('retains the exact locked design across Stripe and globally reopens the Studio', () => {
+    expect(modal).toContain('rememberTableStudioCheckoutIntent');
+    expect(modal).toContain('TABLE_STUDIO_CHECKOUT_RETURN_PARAMS');
+    expect(modal).toContain('Payment Received. Restoring');
+    expect(hamburger).toContain('tableStudioCheckoutResult(location.search)');
+    expect(hamburger).toContain('readTableStudioCheckoutIntent(user.id)');
+    expect(hamburger.match(/checkoutReturnResult=/g)).toHaveLength(2);
+    expect(checkout).not.toContain('price:');
   });
 
   it('streams the owner-only entitlement ledger to already-open studios on other devices', () => {

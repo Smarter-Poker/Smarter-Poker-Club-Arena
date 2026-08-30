@@ -26,7 +26,9 @@
   -webkit-backdrop-filter: blur(14px);
 }
 .theme-modal,
-.theme-modal * {
+.theme-modal *,
+.theme-vip-prompt,
+.theme-vip-prompt * {
   box-sizing: border-box;
 }
 .theme-modal button,

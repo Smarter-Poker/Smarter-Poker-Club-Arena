@@ -36,6 +36,11 @@ import { CLUB_ARENA_SUPPORT_NAV, getClubArenaNavigation } from '../../config/clu
 import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
 import { capture } from '../../lib/analytics';
 import { fetchQuickLinkClubs, type QuickLinkClub } from '../../utils/clubQuickLink';
+import {
+  clearTableStudioCheckoutReturnUrl,
+  readTableStudioCheckoutIntent,
+  tableStudioCheckoutResult,
+} from '../../lib/tableStudioCheckoutResume';
 import styles from './HamburgerMenu.module.css';
 
 interface HamburgerMenuProps {
@@ -136,6 +141,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   }, [tableSettings.show_stack_in_bb, tableSettingsLoading]);
   const [showTableSettings, setShowTableSettings] = useState(false);
   const [showThemeSettings, setShowThemeSettings] = useState(false);
+  const checkoutResumeHandledRef = useRef(false);
 
   const location = useLocation();
   const workspace = useClubWorkspace();
@@ -143,6 +149,23 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [clubChoices, setClubChoices] = useState<QuickLinkClub[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [attentionCount, setAttentionCount] = useState(0);
+
+  // Stripe returns to the route where the player opened Table Studio. The
+  // command drawer is mounted globally even while closed, so it is the one
+  // launcher that can reliably restore the Studio on tables, settings and club
+  // pages alike. The modal revalidates the stored asset and live price.
+  useEffect(() => {
+    if (checkoutResumeHandledRef.current) return;
+    const result = tableStudioCheckoutResult(location.search);
+    if (!result || !user?.id) return;
+    checkoutResumeHandledRef.current = true;
+    if (!readTableStudioCheckoutIntent(user.id)) {
+      clearTableStudioCheckoutReturnUrl();
+      toast.error('Your Previous Design Could Not Be Restored. Choose It Again To Continue.');
+      return;
+    }
+    setShowThemeSettings(true);
+  }, [location.search, toast, user?.id]);
   const recentStorageKey = `club_arena_nav_recents_v1:${user?.id || 'signed-out'}`;
   const pinStorageKey = `club_arena_nav_pins_v1:${user?.id || 'signed-out'}`;
   const [recentPaths, setRecentPaths] = useState<string[]>(() => {
@@ -676,7 +699,17 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   };
 
   // Do not leave an off-canvas tree full of focusable controls in the tab order.
-  if (!isOpen) return null;
+  if (!isOpen) {
+    return showThemeSettings ? (
+      <ThemeSettingsModal
+        isOpen
+        onClose={() => setShowThemeSettings(false)}
+        userId={user?.id || ''}
+        isVip={isVIP}
+        checkoutReturnResult={tableStudioCheckoutResult(location.search)}
+      />
+    ) : null;
+  }
 
   return (
     <>
@@ -1230,6 +1263,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         onClose={() => setShowThemeSettings(false)}
         userId={user?.id || ''}
         isVip={isVIP}
+        checkoutReturnResult={tableStudioCheckoutResult(location.search)}
       />
     </>
   );

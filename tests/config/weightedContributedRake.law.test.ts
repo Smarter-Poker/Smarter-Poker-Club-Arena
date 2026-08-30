@@ -96,6 +96,46 @@ describe('reconciliation watchdog is wired', () => {
   });
 });
 
+describe('BBJ collection law (Dan 2026-08-29) — collection is not payout', () => {
+  const hc = stripComments(read('server/src/engine/HandController.ts'));
+  const serverCfg = stripComments(read('server/src/config/RakeConfig.ts'));
+  const clientCfg = stripComments(read('src/config/RakeConfig.ts'));
+
+  it('the engine prices deductions in exactly one place', () => {
+    expect(hc).toMatch(/public priceDeductions\(/);
+    expect((hc.match(/bbjCfg\.feeBB/g) ?? []).length).toBe(1);
+    expect((hc.match(/this\.priceDeductions\(/g) ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('no fee path may gate on pot size — that is the PAYOUT rule', () => {
+    expect(hc).not.toMatch(/minPotBB/);
+    expect(hc).not.toMatch(/potInBB/);
+  });
+
+  it('both calculateBBJFee copies take flopSeen, never potSize', () => {
+    for (const src of [serverCfg, clientCfg]) {
+      const sig = src.match(/export function calculateBBJFee\(([\s\S]*?)\):/)?.[1] ?? '';
+      expect(sig).toMatch(/flopSeen/);
+      expect(sig).not.toMatch(/potSize/);
+    }
+  });
+
+  it('the payout floor survives in detectBBJHit, untouched', () => {
+    expect(serverCfg).toMatch(/potSize < bigBlind \* BBJ_RULES\.minPotBB/);
+  });
+
+  it('the CI gate that enforces all of this exists and is wired', () => {
+    expect(() => read('scripts/ci/check-rake-bbj-collection-law.mjs')).not.toThrow();
+    expect(read('.github/workflows/ci.yml')).toMatch(/check-rake-bbj-collection-law\.mjs/);
+    expect(read('scripts/ci/all-gates.sh')).toMatch(/check-rake-bbj-collection-law/);
+  });
+
+  it('the player-facing copy states collection and payout separately', () => {
+    const basic = read('src/components/bbj/BBJBasicPanel.tsx');
+    expect(basic).toMatch(/Collected On Every Hand That Sees A Flop/i);
+  });
+});
+
 describe('hardening sweep (2026-08-29) stays swept', () => {
   const migrations = readdirSync(resolve(__dirname, '../../supabase/migrations'));
 

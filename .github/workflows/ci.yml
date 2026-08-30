@@ -255,6 +255,17 @@ jobs:
       - name: Horses are players — every exclusion is registered
         run: node scripts/ci/check-horses-are-players.mjs
 
+      # Dan 2026-08-29 (binding): the BBJ drop is COLLECTED on every flop with
+      # 3+ players dealt in, whatever the pot size; the 10BB minimum decides
+      # whether a bad beat is PAID OUT. The fee carried the payout's pot gate
+      # for months and 49% of raked hands fed the jackpot nothing — it
+      # survived because the pricing was hand-copied into three settlement
+      # paths (one of which had also lost its pot-overage clamp). This gate
+      # holds the single pricer and refuses a pot-size condition on any fee
+      # path. See server/src/engine/RakeBBJCollection.law.test.ts.
+      - name: Rake + BBJ collection law — one pricer, no pot gate on the fee
+        run: node scripts/ci/check-rake-bbj-collection-law.mjs
+
       # A CSS module key with no matching class resolves to undefined, React
       # drops className={undefined} without a word, and the element ships with
       # no styling at all. Build green, tests green, page visibly broken. It

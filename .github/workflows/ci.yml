@@ -1200,9 +1200,7 @@ jobs:
 
       - name: Serve the build under its production prefix
         run: |
-          mkdir -p _srv/hub
-          ln -s "$PWD/dist" _srv/hub/club-arena
-          (cd _srv && python3 -m http.server 4173 --bind 127.0.0.1 &> /dev/null &)
+          nohup npx vite preview --host 127.0.0.1 --port 4173 > /tmp/arena-preview.log 2>&1 &
           for i in $(seq 1 20); do
             curl -sf http://127.0.0.1:4173/hub/club-arena/index.html > /dev/null && break
             sleep 0.5

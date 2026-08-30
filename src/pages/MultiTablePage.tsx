@@ -835,6 +835,121 @@ export default function MultiTablePage() {
     // truth. See the block comment above (b).
   }, [user?.id, seatResyncToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* ═══ THE BALANCER MOVED YOU: THE TAB FOLLOWS, IN PLACE, INSTANTLY ═══════
+     Dan 2026-08-30, from the first live auto table break: the move opened the
+     new table as ANOTHER tab ("that can never ever happen"), the old tab sat
+     frozen on "Reconnecting To The Table" with action pointed at him and no
+     buttons, the heartbeat toasted "This Table Is No Longer Running", and the
+     removal notice was the CASH one ("your chips are back in your wallet").
+
+     The server does the move right - old seat closed and new seat opened
+     within ~300ms (see movedTableTabIsClosed.test.ts's production trace). The
+     client just had no LIVE ear for it: the server-truth rebuild that would
+     have caught it runs only on mount and reconnect. This subscription is
+     that ear. On an INSERT of a hero seat row:
+
+       - same tournament as an existing tab  -> that tab is REPLACED in place
+         (same slot, active state preserved by position), so the new table
+         mounts inside the very game the player is looking at, and the toast
+         says what actually happened: "You Were Moved To <table>".
+       - anything else -> bump the server-truth rebuild, which appends or
+         prunes with all of its existing guards.
+
+     The dead old TablePage unmounts with the swap, which is also what ends
+     the frozen "Reconnecting" state and the ghost action prompts it showed. */
+  const heroSeatMoveBusyRef = useRef(false);
+  useEffect(() => {
+    if (!user?.id) return;
+    const chanKey = `hero-seat-moves-${user.id}`;
+    const channel = masterBus.getOrCreateChannel(chanKey);
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'table_seats',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload: { new?: { table_id?: string; left_at?: string | null } }) => {
+          const row = payload.new;
+          const newId = row?.table_id;
+          if (!newId || row?.left_at) return;
+          if (tablesRef.current.some((t) => t.id === newId)) return;
+          if (heroSeatMoveBusyRef.current) return;
+          heroSeatMoveBusyRef.current = true;
+          void (async () => {
+            try {
+              const tabIds = tablesRef.current.filter((t) => !isLobbyTab(t)).map((t) => t.id);
+              const { data: rows, error: rowsErr } = await supabase
+                .from('tables')
+                .select('id, name, game_variant, game_type, max_players, small_blind, big_blind, tournament_id')
+                .in('id', [newId, ...tabIds]);
+              if (rowsErr) {
+                /* Cannot identify the move - the rebuild path re-reads server
+                   truth with its own guards rather than guessing here. */
+                setSeatResyncToken((n) => n + 1);
+                return;
+              }
+              const newRow = rows?.find((r) => r.id === newId);
+              const tourId = newRow?.tournament_id as string | null | undefined;
+              const oldTab = tourId
+                ? tablesRef.current.find(
+                    (t) =>
+                      t.id !== newId &&
+                      !isLobbyTab(t) &&
+                      rows?.some((r) => r.id === t.id && r.tournament_id === tourId)
+                  )
+                : undefined;
+              if (!newRow || !oldTab) {
+                // Not a recognisable balancer move - let the rebuild sort it out.
+                setSeatResyncToken((n) => n + 1);
+                return;
+              }
+              const name = formatGameTitle(newRow.name as string) || 'Your New Table';
+              const stakes =
+                newRow.small_blind != null && newRow.big_blind != null
+                  ? `${newRow.small_blind}/${newRow.big_blind}`
+                  : '';
+              setTables((prev) =>
+                prev.map((t) =>
+                  t.id === oldTab.id
+                    ? {
+                        id: newId,
+                        name,
+                        stakes,
+                        gameCode: gameCode({
+                          variant: newRow.game_variant as string | undefined,
+                          isTournament: true,
+                          maxPlayers: newRow.max_players as number | undefined,
+                        }),
+                        isMyTurn: false,
+                        pot: 0,
+                        kind: 'table' as const,
+                        seated: true,
+                      }
+                    : t
+                )
+              );
+              toast.info(`You Were Moved To ${name}`, 6000);
+            } catch {
+              setSeatResyncToken((n) => n + 1);
+            } finally {
+              heroSeatMoveBusyRef.current = false;
+            }
+          })();
+        }
+      )
+      .subscribe();
+    return () => {
+      try {
+        masterBus.removeRegisteredChannel(chanKey);
+      } catch {
+        /* channel cleanup is best-effort */
+      }
+    };
+  }, [user?.id]);
+
   useMasterBusSubscription('TABLE_SEATED', (payload: SeatedPayload) => {
     const e = payload;
     if (!e.tableId) return;

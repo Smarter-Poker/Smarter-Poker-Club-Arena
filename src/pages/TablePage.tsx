@@ -873,9 +873,15 @@ function MastheadNextInfo({
   durationSec,
   struct,
   levelIdx,
+  onBreak = false,
+  breakEndsAtMs = null,
 }: {
   startedAtMs: number;
   durationSec: number;
+  /** Dan 2026-08-30: while the tournament is ON BREAK the clock flips from
+      "Break Starts In" to "Break Over In", counting to the break's real end. */
+  onBreak?: boolean;
+  breakEndsAtMs?: number | null;
   struct: Array<{
     level?: number;
     smallBlind?: number;
@@ -932,6 +938,30 @@ function MastheadNextInfo({
     const ss2 = String(secs % 60).padStart(2, '0');
     return `${m}:${ss2}`;
   };
+
+  /* ON BREAK: the story is when play resumes, not when the next break is. */
+  if (onBreak) {
+    const overIn =
+      breakEndsAtMs && breakEndsAtMs > now ? Math.round((breakEndsAtMs - now) / 1000) : null;
+    return (
+      <>
+        {nextBlinds !== null && (
+          <span className="table-brand__line table-brand__line--round">
+            Next Blinds <span className="table-brand__clock">{nextBlinds}</span>
+          </span>
+        )}
+        <span className="table-brand__line table-brand__line--round">
+          {overIn !== null ? (
+            <>
+              Break Over In <span className="table-brand__clock">{fmtSecs(overIn)}</span>
+            </>
+          ) : (
+            'On Break - Last Hand Finishing'
+          )}
+        </span>
+      </>
+    );
+  }
 
   if (nextBlinds === null && breakInSec === null) return null;
   return (
@@ -3597,11 +3627,22 @@ export default function TablePage({
       if (!bootNoticeShownRef.current) {
         const say = heartbeatToastRef.current?.info;
         if (typeof say === 'function') {
-          bootNoticeShownRef.current = true;
-          say(
-            (reason && BOOT_EXPLANATIONS[reason]) ||
-              'You Were Removed From The Table. Your Chips Are Back In Your Wallet.'
-          );
+          const mapped = reason ? BOOT_EXPLANATIONS[reason] : undefined;
+          /* Dan 2026-08-30: "THATS A CASH GAME PROMPT, NOT A TOURNAMENT
+             PROMPT." A tournament seat closing with no mapped reason is
+             almost always the balancer moving the player - the wallet line is
+             flatly untrue there (tournament chips never touch the wallet).
+             MultiTablePage's hero-seat-move subscription announces the real
+             story ("You Were Moved To <table>") and swaps the tab in place,
+             so this page says nothing rather than something wrong. Mapped
+             reasons (bust, sit-out timeout, VPIP eviction) still speak. */
+          if (mapped) {
+            bootNoticeShownRef.current = true;
+            say(mapped);
+          } else if (!tableStateRef.current.isTournament) {
+            bootNoticeShownRef.current = true;
+            say('You Were Removed From The Table. Your Chips Are Back In Your Wallet.');
+          }
         }
       }
     },
@@ -18473,12 +18514,17 @@ export default function TablePage({
                                 plans around between hands. Renders only while
                                 a level clock exists, same guard as before (no
                                 phantom clocks pre-start or post-finish). */}
-                            {levelClock && (
+                            {(levelClock || tournamentBreak?.active) && (
                               <MastheadNextInfo
-                                startedAtMs={levelClock.startedAtMs}
-                                durationSec={levelClock.durationSec}
+                                startedAtMs={levelClock?.startedAtMs ?? 0}
+                                durationSec={levelClock?.durationSec ?? 0}
                                 struct={blindStructRef.current}
                                 levelIdx={(tableState.currentLevel || 1) - 1}
+                                onBreak={!!tournamentBreak?.active}
+                                breakEndsAtMs={
+                                  (tournamentBreak as { breakEndsAtMs?: number | null })
+                                    ?.breakEndsAtMs ?? null
+                                }
                               />
                             )}
                           </>

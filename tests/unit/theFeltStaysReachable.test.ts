@@ -86,12 +86,13 @@ describe('BuyInModal is reachable and announced', () => {
 });
 
 describe('money actions do not use OS dialogs', () => {
-  it('the leaderboard payout goes through ConfirmModal, latched while in flight', () => {
+  it('the leaderboard does not expose an unsafe browser payout action', () => {
     const src = read('pages/LeaderboardPage.tsx');
     expect(readCode('pages/LeaderboardPage.tsx')).not.toContain('window.confirm');
-    expect(src).toContain('<ConfirmModal');
-    expect(src).toContain('loading={payingOut}');
-    expect(src).toMatch(/if \(payingOut\) return;/);
+    expect(src).not.toContain('<ConfirmModal');
+    expect(src).not.toContain('payoutLeaderboardPeriod');
+    expect(src).toContain('<LeaderboardPrizeWizard');
+    expect(src).toContain('Prize Planning Does Not Move Promo Chips.');
   });
 });
 

@@ -79,6 +79,7 @@ import { gtoOpenJam, gtoBbVsSbJam, handClass as gtoHandClass } from './GtoCharts
 // aggregated offline from the 8.8M-solution warehouse, preloaded by
 // GtoPostflopLoader. See engine/GtoPostflop.ts for scope and honesty notes.
 import { gtoStreetAdvice, rollMix } from './GtoPostflop.js';
+import { gtoStreetAdviceV31 } from './GtoPostflopV31.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
 // HorseEval.ts (extracted verbatim; zero behavior change).
 import {
@@ -960,6 +961,14 @@ export interface HorseDecideOpts {
    *  actions only, per-hand validated). Empty store = inert
    *  (default: enabled) */
   v30GtoTurnRiver?: boolean;
+  /** disable the V31 suit-aware solver layer (2026-08-30): the SECOND solver
+   *  export, strategy_matrix_v2, which is disjoint from the one V29/V30 read
+   *  - zero of 9,584 sampled turn rows carry both. Keyed by hand class AND
+   *  how many of the board's flush suit the holding contains, and it carries
+   *  the solver's real bet size, so it can play the 246%-pot turn overbet v1
+   *  cannot express at all. Consulted BEFORE V30; empty store = inert
+   *  (default: enabled) */
+  v31GtoSuitAware?: boolean;
 }
 
 /**
@@ -2416,14 +2425,94 @@ export class HorseLogic {
                   : player.seat === gs.dealerSeat
                     ? 'BTN'
                     : 'CO';
+        const family29: 'cash' | 'spin' | 'tourney_icm' = !isTournamentMode(gs)
+          ? 'cash'
+          : gs.format === 'spin'
+            ? 'spin'
+            : 'tourney_icm';
+        const stackBB29 = gs.bigBlind > 0 ? player.stack / gs.bigBlind : 100;
+
+        // ═══ V31 FIRST (2026-08-30) ═══ The v2 export is DISJOINT from the
+        // v1 one V29/V30 read - zero of 9,584 sampled turn rows carry both -
+        // so this is not a better answer to the same question, it is the 59%
+        // of the turn V30 never sees. It is consulted first because when it
+        // CAN answer it answers strictly better: it knows how many of the
+        // board's flush suit the holding contains (bet frequency differs
+        // across those buckets by 0.334 on average on the turn, up to 1.000),
+        // and it knows the size the solver actually bet. v1 offers exactly
+        // one bet size everywhere - b16, 16% of pot - so V30 cannot express a
+        // large turn bet at all, while the v2 turn bet averages 246.8% of pot.
+        // NULL when the layer is ablated off, never a synthetic miss: a
+        // disabled layer that reports `empty_store` teaches the counters to
+        // lie about the table being empty, and those counters are the whole
+        // point of the attribution below.
+        const v31 =
+          (opts.v31GtoSuitAware ?? true) !== false
+            ? gtoStreetAdviceV31({
+                street,
+                family: family29,
+                position: chartPos29,
+                stackBB: stackBB29,
+                board: gs.communityCards,
+                hand: hand29,
+                holeCards: player.cards,
+              })
+            : null;
+        if (v31?.hit) {
+          const pick31 = rollMix(v31.mix, fastRandom);
+          if (!pick31) {
+            // A cell whose mix carries no mass. Counted on its own, because
+            // it is a DATA problem in a cell that exists — not a miss.
+            if (telemetryOn(opts)) noteFire('v31_gto_empty_mix');
+          } else {
+            if (pick31 === 'check') {
+              if (telemetryOn(opts)) noteFire('v31_gto_open');
+              return { action: 'check', thinkTime: 0 };
+            }
+            // The size comes from the CELL, never from a bucket midpoint:
+            // bet_big means ">=110% of pot" and the turn's real mean is 246.8.
+            // Guessing the middle of that bucket would size the solver's
+            // overbet at about a third of what it is, which is the entire
+            // reason this layer exists. snapFraction passes anything above
+            // 1.4 through untouched and legalize clamps to the stack, so a
+            // 2.46x pot bet survives intact and becomes all-in when short.
+            const frac31 = v31.sizeFrac[pick31];
+            if (typeof frac31 === 'number' && frac31 > 0) {
+              if (telemetryOn(opts)) noteFire('v31_gto_open');
+              return this.betSize(pot, frac31, player, gs, vi, params, useSizing);
+            }
+            // A bet bucket with no recorded size cannot be sized honestly, so
+            // fall through to V30 rather than invent a number.
+            if (telemetryOn(opts)) noteFire('v31_gto_no_size');
+          }
+        }
+
         const advice29 = gtoStreetAdvice({
           street,
-          family: !isTournamentMode(gs) ? 'cash' : gs.format === 'spin' ? 'spin' : 'tourney_icm',
+          family: family29,
           position: chartPos29,
-          stackBB: gs.bigBlind > 0 ? player.stack / gs.bigBlind : 100,
+          stackBB: stackBB29,
           board: gs.communityCards,
           hand: hand29,
         });
+        if (!advice29 && telemetryOn(opts) && v31 && !v31.hit) {
+          // OBSERVABILITY (2026-08-30): the gate was passed and NEITHER layer
+          // answered. Until now that was silent, so "the solver layer fires on
+          // 0.08% of decisions" could not be attributed to the gate, a missing
+          // cell, or a missing holding inside a cell. Literal labels, so the
+          // dead-layer grep audit can still see them.
+          //
+          // Only fired when V31 actually LOOKED AND MISSED. If it hit and was
+          // merely unusable, v31_gto_empty_mix or v31_gto_no_size already
+          // recorded that, and adding a `no_cell` on top would claim a cell
+          // was absent when one was found — corrupting the very attribution
+          // this exists to provide.
+          if (v31.miss === 'no_cell') noteFire('gto_miss_no_cell');
+          else if (v31.miss === 'hand_not_in_cell') noteFire('gto_miss_hand_not_in_cell');
+          else if (v31.miss === 'no_texture') noteFire('gto_miss_no_texture');
+          else if (v31.miss === 'no_hand') noteFire('gto_miss_no_hand');
+          else noteFire('gto_miss_empty_store');
+        }
         if (advice29) {
           const pick = rollMix(advice29.mix, fastRandom);
           if (pick) {

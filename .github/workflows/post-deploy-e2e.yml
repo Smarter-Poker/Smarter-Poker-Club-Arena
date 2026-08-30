@@ -54,10 +54,25 @@ on:
 # below check routes, layout and touch targets on the live site, and any deploy
 # that reaches production is a fair subject. So it tests whatever is serving
 # when it starts, names that sha in the summary, and finishes in about three
-# minutes instead of thirteen. Cancellation now only dedupes a burst.
+# minutes instead of thirteen.
+#
+# GitHub evaluates concurrency BEFORE the job-level `if`. That means a failed
+# or cancelled Build for World Hub Sync still starts this workflow, takes the
+# concurrency lock, cancels a genuine manual/production run, and only THEN
+# skips its own job. Give those no-op invocations a unique group. Successful
+# deploys and manual runs continue sharing the production group. A running
+# authenticated suite is allowed to finish; GitHub keeps only the newest
+# pending run, so deploy bursts still converge without starving the guard or
+# overlapping its stateful two-account checks.
 concurrency:
-  group: post-deploy-e2e
-  cancel-in-progress: true
+  group: >-
+    post-deploy-e2e-${{
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion != 'success' &&
+      format('noop-{0}', github.run_id) ||
+      'production'
+    }}
+  cancel-in-progress: false
 
 jobs:
   production-e2e:
@@ -128,6 +143,13 @@ jobs:
           # one player without ever leaking into another player's settings.
           SP_EMAIL_2: ${{ secrets.SP_EMAIL_2 }}
           SP_PASS_2: ${{ secrets.SP_PASS_2 }}
+          # The commerce certification never touches either standing player
+          # above. It creates, funds and hard-deletes reserved temporary Auth
+          # users so every live SKU can traverse checkout safely.
+          CUSTOMIZATION_COMMERCE_CERTIFICATION: '1'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           # The mode mobile-fit-audit.spec.ts was built for and has never been
           # run in. Without it the spec logs a report and passes regardless.
           MOBILE_FIT_STRICT: '1'
@@ -149,10 +171,12 @@ jobs:
             tests/e2e/mobile-input-zoom.spec.ts \
             tests/e2e/mobile-chrome-occlusion.spec.ts \
             tests/e2e/showdown-beats.spec.ts \
+            tests/e2e/stats-deep.spec.ts \
             tests/e2e/club-lobby.spec.ts \
             tests/e2e/tournament-buy-in-dialog.spec.ts \
             tests/e2e/tournament-watch.spec.ts \
             tests/e2e/production-customization-realtime.spec.ts \
+            tests/e2e/production-customization-commerce.spec.ts \
             tests/e2e/footer-route.spec.ts \
             tests/e2e/routes \
             --reporter=line --retries=1

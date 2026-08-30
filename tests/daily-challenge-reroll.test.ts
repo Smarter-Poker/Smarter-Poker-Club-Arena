@@ -133,7 +133,8 @@ describe('the page ships the casino-realism surface without the old stubs', () =
   const hero = resolve(__dirname, '../public/images/challenges/daily-missions-vault-v1.webp');
 
   it('uses the spendable balance and the real reroll service', () => {
-    expect(page).toContain('getDiamondBalance(uid)');
+    expect(page).toContain('dailyChallengeService.getDashboard(uid)');
+    expect(page).toContain('setDiamondBalance(dashboard.diamondBalance)');
     expect(page).toContain('dailyChallengeService.rerollChallenge(');
     expect(page).toContain('diamondBalance < 5000');
     expect(page).not.toContain('(Mocked)');
@@ -150,8 +151,8 @@ describe('the page ships the casino-realism surface without the old stubs', () =
     expect(statSync(hero).size).toBeLessThan(200 * 1024);
   });
 
-  it('keeps partial data failures recoverable and refreshes stale background tabs', () => {
-    expect(page).toContain('Promise.allSettled');
+  it('keeps dashboard failures recoverable and refreshes stale background tabs', () => {
+    expect(page).toContain('dailyChallengeService.getDashboard(uid)');
     expect(page).toContain("document.addEventListener('visibilitychange'");
     expect(page).toContain('requestId !== loadRequestRef.current');
     expect(page).toContain('MissionLoadingState');

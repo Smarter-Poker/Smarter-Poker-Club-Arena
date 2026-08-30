@@ -27,15 +27,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
-import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { enumToTitleCase } from '../utils/titleCase';
 import { resolveClubUUID } from '../utils/clubIdResolver';
-import { normaliseRole, type ClubRole } from '../types/clubRoles';
 import ClubRosterService, {
   lastDaysRange,
   isoDate,
@@ -104,15 +101,11 @@ export default function PlayerStatisticsPage() {
 
   const navigate = useNavigate();
   const toast = useToast();
-  const { user } = useAuthUser();
   const isMountedRef = useIsMounted();
 
   const [stats, setStats] = useState<MemberStatistics | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  // Only so the bottom nav shows the same tabs it showed on the way in. The
-  // statistics themselves are gated by the RPC, not by this.
-  const [myRole, setMyRole] = useState<ClubRole>('player');
 
   const [variant, setVariant] = useState<string | null>(null);
   const [rangeMode, setRangeMode] = useState<StatsRange>('month');
@@ -161,16 +154,6 @@ export default function PlayerStatisticsPage() {
             return Array.from(merged).sort();
           });
         }
-
-        if (user?.id) {
-          const { data: mine } = await supabase
-            .from('club_members')
-            .select('role')
-            .eq('club_id', resolved)
-            .eq('user_id', user.id)
-            .maybeSingle();
-          if (live() && mine) setMyRole(normaliseRole(mine.role));
-        }
       } catch (error) {
         reportError(error, 'PlayerStatisticsPage.load');
         if (live()) toast.error('Failed To Load Player Statistics');
@@ -178,7 +161,7 @@ export default function PlayerStatisticsPage() {
         if (live()) setLoading(false);
       }
     },
-    [clubId, userId, user?.id, isMountedRef, toast]
+    [clubId, userId, isMountedRef, toast]
   );
 
   useEffect(() => {
@@ -292,6 +275,11 @@ export default function PlayerStatisticsPage() {
         <EmptyStats
           heading="Member Not Found"
           body="This Player Is Not A Member Of This Club, Or You Do Not Have Permission To View Them."
+        />
+      ) : !stats.authorized ? (
+        <EmptyStats
+          heading="Statistics Restricted"
+          body="Your Club Role Does Not Permit Access To This Player's Private Performance Data."
         />
       ) : !hasHands ? (
         <EmptyStats

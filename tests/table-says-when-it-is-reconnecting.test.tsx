@@ -117,6 +117,42 @@ describe('the table says when it is not connected', () => {
     expect(banner).toBeGreaterThan(container);
   });
 
+  it('sits on the felt above the wordmark, not in the BBJ plate lane', () => {
+    // Dan 2026-08-30, with a screenshot: "ANY 'RELOADING' OR 'DISCONNECTED'
+    // NOTIFICATIONS SHOULD APPEAR ON THE TABLE ABOVE THE SMARTER.POKER BADGE
+    // ON THE TABLE. (CURRENTLY IT APPEARS AS LAYER 2, BEHIND THE BBJ)".
+    //
+    // It shipped at `top: 12px` of .table-container. `.bbj-widget` is at
+    // `top: 6px` of the same box, also centred, also a pill, and it paints
+    // later - so the banner was a sliver of orange behind it. The fix is the
+    // POSITION, not a bigger z-index in the same lane: a pixel offset from the
+    // top of the container IS the bug.
+    const ruleAt = BANNER_CSS.indexOf('.table-conn-banner {');
+    expect(ruleAt).toBeGreaterThan(-1);
+    const rule = BANNER_CSS.slice(ruleAt, BANNER_CSS.indexOf('}', ruleAt));
+    expect(rule).not.toMatch(/\btop:\s*\d+px/);
+    /* 2026-08-30 audit: the anchor is no longer a literal. `--sp-brand-top` is
+       declared on `.table-surface` (58%) and MOVED by the `[data-boards]`
+       rules to 72% / 84%, so a multi-board table carries its masthead lower
+       and the banner has to come with it. A hard-coded 52% left the banner a
+       third of the felt above the wordmark, in the middle of the board stack,
+       on run-it-twice and bomb-pot tables. The literal is the bug now. */
+    expect(rule).toMatch(/top:\s*calc\(var\(--sp-brand-top,\s*58%\)\s*-\s*6%\)/);
+    expect(rule).not.toMatch(/top:\s*52%/);
+    // Bottom-anchored, so it grows UP off the wordmark rather than over it.
+    expect(BANNER_CSS).toMatch(/transform:\s*translate\(-50%,\s*-100%\)/);
+    // And it is rendered inside the felt surface, above .table-brand - not as
+    // a sibling pinned to the top of the table container.
+    const surface = TABLE_PAGE.indexOf('className="table-surface"');
+    const brand = TABLE_PAGE.indexOf('className="table-brand"');
+    const banner = TABLE_PAGE.indexOf('<TableConnectionBanner status=');
+    expect(surface).toBeGreaterThan(-1);
+    expect(banner).toBeGreaterThan(surface);
+    expect(banner).toBeLessThan(brand);
+    // Exactly one. Two would race each other on the same felt.
+    expect(TABLE_PAGE.match(/<TableConnectionBanner status=/g)).toHaveLength(1);
+  });
+
   it('cannot swallow a tap on the felt or an action button', () => {
     // It is painted over the table surface. If it ever caught pointer events it
     // would be a worse bug than the silence it replaces.

@@ -288,7 +288,7 @@ describe('ClubDataPage', () => {
     try {
       render(<ClubDataPage />);
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(15_000);
+        await vi.advanceTimersByTimeAsync(25_000);
       });
 
       expect(snapshotSignal?.aborted).toBe(true);

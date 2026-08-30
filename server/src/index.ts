@@ -44,7 +44,9 @@ import { startBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
 import { startHorseLaneLoader } from './services/HorseLaneLoader.js';
 import { startGtoChartLoader } from './services/GtoChartLoader.js';
 import { startGtoPostflopLoader } from './services/GtoPostflopLoader.js';
+import { startGtoPostflopV31Loader } from './services/GtoPostflopV31Loader.js';
 import { startGtoAggregationDriver } from './services/GtoAggregationDriver.js';
+import { startGtoAggregationDriverV31 } from './services/GtoAggregationDriverV31.js';
 import { startHorseOverlayGuard } from './services/HorseOverlayGuard.js';
 import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 
@@ -309,10 +311,21 @@ httpServer.listen(PORT, () => {
   // solver's mixes at zero I/O. Without this the layer is inert (heuristics
   // decide) — which is the fallback, not the plan.
   startGtoPostflopLoader();
+  // V31 (2026-08-30): the suit-aware cells from the SECOND solver export,
+  // which is disjoint from the one V29/V30 read. Consulted before V30 and
+  // carries the solver's real bet size, so it can play the 246%-pot turn
+  // overbet v1 cannot express. Empty table = inert, V30 answers as before.
+  startGtoPostflopV31Loader();
   // V30 (Dan 2026-08-29): the one-time turn/river aggregation, paced in
   // small batches off the deal path. Restart-safe (cursor in
   // gto_agg_progress); permanently silent once both streets are done.
   startGtoAggregationDriver();
+  // V31 (2026-08-30): the SECOND solver export, strategy_matrix_v2, which is
+  // DISJOINT from the one V30 reads - zero of 9,584 sampled turn rows carry
+  // both - so this is the other 59% of the turn rather than a re-run. It
+  // gates itself on V30 reporting every street done, because both walk the
+  // same 79 GB table and V30 is the one with a consult already reading it.
+  startGtoAggregationDriverV31();
   // Overlay guard (Dan 2026-08-27): Midway Union guaranteed events get topped
   // up with horses that are not already in them, so no overlay occurs.
   startHorseOverlayGuard();

@@ -13,11 +13,28 @@
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  padding-top: calc(6px + env(safe-area-inset-top, 0));
-  background: linear-gradient(180deg, rgba(8, 10, 16, 0.96) 0%, rgba(14, 17, 24, 0.93) 100%);
-  backdrop-filter: blur(12px) saturate(1.2);
-  -webkit-backdrop-filter: blur(12px) saturate(1.2);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  /* THE NOTCH IS PAID ONCE, BY WHOEVER TOUCHES y = 0.
+     `--sp-tabbar-inset` is set to 0px by TournamentStartingTicker while the
+     ticker is the topmost strip (no global header, i.e. /table/*): it has paid
+     the inset itself, and paying it again here is the ~47px double band that
+     has been fixed once already in this same relationship. With no ticker up
+     the property is absent and the fallback is the real inset. */
+  padding-top: calc(6px + var(--sp-tabbar-inset, env(safe-area-inset-top, 0)));
+  /* Dan 2026-08-30: "THE WHOLE BACKGROUND SHOULD BE SOLID BLACK AND ALL THE
+     SAME COLOR. (INCLUDING THE ACTION TAB AREA.)"
+
+     This was a translucent two-stop gradient over a blur, and three separate
+     things made it read as a different black from the page: the gradient, the
+     alpha letting whatever sat behind tint the strip, and the saturate() in
+     the backdrop filter. All three are gone. The blur went with them - it had
+     nothing left to blur once the surface became opaque, and it was costing a
+     compositor layer on every table. */
+  background: #000;
+  /* Kept, and black. The 1px is load-bearing arithmetic - it is a term in the
+     `--sp-tabbar-h` sum published below, which TablePage.css subtracts from the
+     viewport to size the felt. Removing it would have silently changed that
+     height; colouring it removes the seam without touching the number. */
+  border-bottom: 1px solid #000;
   min-height: 48px;
   -webkit-tap-highlight-color: transparent;
   z-index: 200;
@@ -46,20 +63,10 @@
   --sp-tabbar-h: calc(49px + env(safe-area-inset-top, 0));
 }
 
-.table-tab-bar::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.04) 50%,
-    transparent 100%
-  );
-}
+/* The white sheen that used to run along this bar's bottom edge is gone with
+   the gradient above - Dan 2026-08-30, "ALL THE SAME COLOR". The ::after that
+   drew it is deleted rather than made transparent: an empty pseudo-element is
+   a thing the next reader has to work out. */
 
 .table-tab-bar__tabs {
   display: flex;
@@ -524,7 +531,13 @@
   .table-tab-bar {
     /* Horizontal padding here is width the four pills do not get. */
     padding: 4px;
-    padding-top: calc(4px + env(safe-area-inset-top, 0));
+    /* SAME RULE AS THE BASE, AND IT HAS TO BE. 2026-08-30 audit: the base rule
+       was moved to `var(--sp-tabbar-inset, env(...))` so the notch is paid once
+       by whichever strip touches y=0 - and THIS override was left on the raw
+       env(), so the double-inset it fixed survived below 480px. 375px is the
+       design width, so the fix applied everywhere except the screens that have
+       a notch in the first place. */
+    padding-top: calc(4px + var(--sp-tabbar-inset, env(safe-area-inset-top, 0)));
     gap: 4px;
     /* 34px pill + 4px padding top and bottom. */
     min-height: 42px;

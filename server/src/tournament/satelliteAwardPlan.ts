@@ -90,8 +90,16 @@ export function planSatelliteAwards(input: SatelliteAwardInput): SatelliteAwardP
   const configuredSeats = Math.max(0, Math.floor(Number(input.configuredSeats) || 0));
   const finisherCount = Math.max(0, Math.floor(Number(input.finisherCount) || 0));
 
-  const seats =
-    ticketCost > 0 ? (configuredSeats > 0 ? configuredSeats : Math.floor(pool / ticketCost)) : 0;
+  /**
+   * THE GUARANTEE IS A FLOOR, NOT A CAP (2026-08-30 satellite audit, phase 2).
+   *
+   * `configuredSeats` used to REPLACE the pool arithmetic outright, so a
+   * satellite that out-sold its guarantee awarded only the guaranteed count
+   * and dumped the surplus as cash to one finisher — a $10 "2 Seats
+   * Guaranteed" event with 100 runners would seat 2 and cash 500 to 3rd.
+   * A guarantee promises AT LEAST; a field that funds more seats gets them.
+   */
+  const seats = ticketCost > 0 ? Math.max(configuredSeats, Math.floor(pool / ticketCost)) : 0;
   const awardCount = Math.min(seats, finisherCount);
   const remainder = round2(pool - awardCount * ticketCost);
 

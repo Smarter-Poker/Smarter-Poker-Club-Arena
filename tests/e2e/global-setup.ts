@@ -19,13 +19,15 @@
  * their build. Every fallback prints its reason, so a signed-out run is never
  * silently mistaken for a signed-in one.
  *
- * USE A DEDICATED TEST ACCOUNT. The specs are read-only smoke checks, but they
- * walk 47 authenticated routes on production; point them at a throwaway player,
- * not at an owner/admin login.
+ * USE DEDICATED TEST ACCOUNTS. Most specs are read-only smoke checks, while the
+ * customization contract performs reversible writes and this setup may finish
+ * the account's one-time profile onboarding. Never point it at an owner/admin
+ * login or a real player's identity.
  */
 import { chromium, type FullConfig } from '@playwright/test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 
 export const STORAGE_STATE = 'tests/e2e/.auth/state.json';
 
@@ -85,6 +87,7 @@ export default async function globalSetup(config: FullConfig) {
   }
 
   const browser = await chromium.launch();
+  let authenticated = false;
   try {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
@@ -133,9 +136,7 @@ export default async function globalSetup(config: FullConfig) {
     await submit.click({ timeout: 15000 });
 
     // Leaving /auth is the signal the credential was accepted.
-    await page
-      .waitForURL((u) => !u.pathname.includes('/auth'), { timeout: 45000 })
-      .catch(() => {});
+    await page.waitForURL((u) => !u.pathname.includes('/auth'), { timeout: 45000 }).catch(() => {});
     await page.waitForTimeout(5000);
 
     // Clear the first-run gate on this origin before the state is captured.
@@ -159,6 +160,7 @@ export default async function globalSetup(config: FullConfig) {
       signedOut('login did not take');
       return;
     }
+    authenticated = true;
 
     /* Confirm the gate is actually down. Seeding a key that the app no longer
        reads would look identical in the log while every spec kept failing on an
@@ -175,9 +177,27 @@ export default async function globalSetup(config: FullConfig) {
       );
     }
 
+    // A freshly provisioned test account is a real new player and therefore
+    // receives the same mandatory alias/avatar gate. The base route can be a
+    // redirect/loading surface that has not mounted AppLayout's gate yet, so
+    // probe on a known protected layout route before deciding the account is
+    // complete. Leaving the gate open caused 15 apparently unrelated lobby
+    // and tournament tests to time out behind one correct modal.
+    await page.goto(new URL('notifications', baseURL).toString(), {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+    await ensurePlayableProfile(page);
+
     await ctx.storageState({ path: STORAGE_STATE });
     console.log('[global-setup] authenticated session saved — auth-gated specs will run.');
   } catch (err) {
+    if (authenticated) {
+      // Do not convert a broken authenticated preflight into 47 signed-out
+      // skips. This is a production fixture failure and must stop the run with
+      // its real cause.
+      throw err;
+    }
     signedOut(`auth setup failed (${(err as Error).message.slice(0, 120)})`);
   } finally {
     await browser.close();

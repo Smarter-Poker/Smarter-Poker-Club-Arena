@@ -35,7 +35,11 @@
    ever pushing the footer off-screen.
    ───────────────────────────────────────────────────────────────────────── */
 .et-scroll {
-  max-height: min(58vh, 520px);
+  /* `max-height: min(58vh, 520px)` used to open this rule. `vh` is the viewport
+     even when this tab is rendered inside TournamentLobbyModal's 75dvh sheet,
+     so the cap belonged to a box this list was not in - it clipped the entry
+     list while leaving the panel nothing to scroll. `.details-content` owns the
+     scroll for every tab now (Dan 2026-08-30). */
   min-height: 0;
   padding-right: 2px;
   /* Sunk well, so the rows read as sitting INSIDE the panel rather than
@@ -272,7 +276,10 @@
 .et-scroll {
   flex: 1 1 auto;
   max-height: none;
-  min-height: 160px;
+  /* No floor. A `min-height` on a list inside a scrolling panel is only ever a
+     way to push something else off the bottom - the panel scrolls, so the list
+     is free to be exactly as tall as its rows. */
+  min-height: 0;
 }
 
 @media (max-width: 480px) {
@@ -284,10 +291,7 @@
     margin-bottom: 8px;
   }
 
-  /* A floor taller than the space available is not a floor, it is an overflow.
-     Low enough that the list can always fit inside the panel, high enough that
-     it is still a list. */
-  .et-scroll {
-    min-height: 120px;
-  }
+  /* The phone floor went with the desktop one above: "a floor taller than the
+     space available is not a floor, it is an overflow" was the right diagnosis,
+     and no floor at all is the fix. */
 }

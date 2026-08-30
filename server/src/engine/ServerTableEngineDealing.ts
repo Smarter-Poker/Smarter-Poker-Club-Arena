@@ -892,7 +892,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                      refuses it. Holding the felt for a purchase that is going
                      to be refused helps nobody. */
                   const poolOpen = !(t as { prize_pool_finalized?: boolean }).prize_pool_finalized;
-                  if (windowOpen && poolOpen) needsRebuyPause = true;
+                  /**
+                   * Dan 2026-08-30, verbatim: "REBUYS IN A TOURNAMENT SHOULD
+                   * NOT PAUSE THE ACTION." The felt rolls on; the busted
+                   * player's DECISION WINDOW lives in the elimination sweep
+                   * now (REBUY_DECISION_GRACE_MS in
+                   * TournamentManagerEliminations), and a landed rebuy
+                   * re-seats them wherever the balancer most needs a player —
+                   * same table and seat included. The window arithmetic above
+                   * is still computed so the log says WHY nothing paused.
+                   * The 5-second pause remains CASH-ONLY (section 10.5: same
+                   * pause for horse and human at cash tables).
+                   */
+                  if (windowOpen && poolOpen) {
+                    console.log(
+                      `[ServerTableEngine:${this.tableId}] Tournament bust — rebuy window open, table does NOT pause (Dan 2026-08-30); elimination grace covers the decision`
+                    );
+                  }
                 }
               } catch (err) {
                 /* FAIL OPEN, not closed (2026-08-27). This read decides whether
@@ -904,9 +920,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                    life. Every other money-adjacent read in this codebase was
                    converted to treat unreadable as UNKNOWN rather than as NO
                    (see PAYOUT-INTEGRITY 2026-08-25); this one had not been. */
-                needsRebuyPause = true;
+                // Tournament tables never pause for rebuys (Dan 2026-08-30);
+                // an unreadable window costs a log line, not a stall. The
+                // elimination-side grace is the fail-open that protects the
+                // player now.
                 console.error(
-                  `[ServerTableEngine:${this.tableId}] Rebuy-window read failed — pausing anyway (fail-open):`,
+                  `[ServerTableEngine:${this.tableId}] Rebuy-window read failed (tournament — no pause either way):`,
                   err
                 );
               }

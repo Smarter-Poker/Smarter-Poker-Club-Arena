@@ -42,10 +42,11 @@ async function mockStudioBackend(
   let favorites: string[] = [];
   let loadouts: unknown[] = [null, null, null];
 
-  await context.route(/https:\/\/test\.supabase\.co\/auth\/v1\/.*/, (route) =>
-    fulfillJson(route, { user: null })
-  );
-  await context.route(/https:\/\/test\.supabase\.co\/rest\/v1\/.*/, async (route) => {
+  // Intercept the protocol path, not one placeholder hostname. Vite reads the
+  // configured Supabase URL at startup, so a host-pinned mock silently let
+  // local saves and checkout escape to whichever project was in .env.
+  await context.route(/\/auth\/v1\/.*/, (route) => fulfillJson(route, { user: null }));
+  await context.route(/\/rest\/v1\/.*/, async (route) => {
     const request = route.request();
     if (request.method() === 'OPTIONS') {
       await route.fulfill({ status: 204, headers: jsonHeaders });

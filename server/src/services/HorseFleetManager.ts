@@ -384,6 +384,44 @@ export class HorseFleetManager {
         // on ANY read failure this SKIPS the config rather than inserting.
         // Inserting when you could not find out whether the row exists is the
         // whole bug, not the .maybeSingle() call.
+        /**
+         * A SOFT-DELETED ROW CAN NEVER BE THE FLEET'S TABLE (2026-08-30).
+         *
+         * This picked the OLDEST row carrying the config's name. For 8 of the 9
+         * cash configs that row was `is_deleted = true`, and a deleted row
+         * cannot be revived: `fn_block_deleted_table_revival` is a BEFORE
+         * UPDATE trigger that silently puts the status back --
+         *
+         *   IF COALESCE(OLD.is_deleted,false) AND NEW.status IN
+         *      ('running','waiting','active','open') THEN
+         *     NEW.status := OLD.status; NEW.is_deleted := true;
+         *
+         * -- and RAISES NOTHING. So the UPDATE below "succeeded", this logged
+         * `[HorseFleet] Reactivated table: X (was closed)`, and `continue`
+         * skipped the insert because a row HAD been found. Every cycle, for
+         * ever. The table never came back and the log said that it had.
+         *
+         * Measured 2026-08-30: 8 of 9 cash configs had ZERO open rows, their
+         * unrevivable stand-in re-touched at 20:28 on each boot. The only
+         * config still on the felt, `NLH Straddle 1.00/2.00`, was the only one
+         * whose oldest row was not deleted - a clean natural control.
+         *
+         * ONE change: exclude soft-deleted rows. They are unrevivable by
+         * construction, so treating one as "the table exists" is always wrong
+         * and silently starves the lobby. The oldest-first ordering is kept
+         * deliberately - it is what makes the choice stable across cycles, and
+         * `HorseFleetNoDuplicateTables` pins the single-row contract.
+         *
+         * Deliberately NOT ordering by status to "prefer an open row": status
+         * is text, so ascending sorts 'closed' < 'running' < 'waiting' and
+         * would prefer a CLOSED row - the exact opposite - while descending
+         * would only work by alphabetical accident. With the deleted rows
+         * excluded there is at most one usable row per name anyway.
+         *
+         * If nothing usable remains, `existing` is null and the insert below
+         * creates a fresh table - the correct outcome, and the one this bug
+         * was suppressing.
+         */
         const { data: matches, error: lookupError } = await supabase
           .from('tables')
           .select(
@@ -391,6 +429,7 @@ export class HorseFleetManager {
           )
           .eq('name', config.name)
           .is('tournament_id', null)
+          .not('is_deleted', 'is', true)
           .order('created_at', { ascending: true })
           .limit(1);
 

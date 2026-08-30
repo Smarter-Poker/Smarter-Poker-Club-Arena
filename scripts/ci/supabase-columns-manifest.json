@@ -1240,7 +1240,8 @@
       "status",
       "responded_by",
       "responded_at",
-      "created_at"
+      "created_at",
+      "op_id"
     ],
     "chip_supply_snapshots": [
       "id",
@@ -1524,7 +1525,15 @@
       "weekly_prizes",
       "monthly_prizes",
       "created_at",
-      "updated_at"
+      "updated_at",
+      "rewards_enabled",
+      "payout_metric",
+      "funding_owner_type",
+      "funding_union_id",
+      "suggestion_key",
+      "setup_completed_at",
+      "setup_completed_by",
+      "updated_by"
     ],
     "club_level_thresholds": [
       "level",
@@ -4246,6 +4255,12 @@
       "description",
       "threshold"
     ],
+    "daily_challenge_milestones": [
+      "days",
+      "reward_chips",
+      "label",
+      "created_at"
+    ],
     "daily_challenges": [
       "id",
       "user_id",
@@ -4902,6 +4917,24 @@
       "updated_at",
       "last_id"
     ],
+    "gto_agg_progress_v31": [
+      "only_row",
+      "last_at",
+      "last_id",
+      "rows_done",
+      "done",
+      "updated_at"
+    ],
+    "gto_combo_map": [
+      "combo_idx",
+      "card_a",
+      "card_b",
+      "rank_a",
+      "rank_b",
+      "suit_a",
+      "suit_b",
+      "hand_class"
+    ],
     "gto_postflop_compact": [
       "street",
       "game_family",
@@ -4912,6 +4945,17 @@
       "hand_matrix",
       "source_rows",
       "built_at"
+    ],
+    "gto_postflop_v31": [
+      "street",
+      "game_family",
+      "position",
+      "depth_bucket",
+      "texture_class",
+      "hand_matrix",
+      "source_rows",
+      "built_at",
+      "size_pct"
     ],
     "gto_scenarios": [
       "id",
@@ -9848,7 +9892,8 @@
       "is_satellite_qualifier",
       "rebuy_prompt_until",
       "push_15m_sent",
-      "push_2m_sent"
+      "push_2m_sent",
+      "source_satellite_id"
     ],
     "tournament_rake_settlements": [
       "tournament_id",
@@ -11239,7 +11284,14 @@
       "completed_at",
       "created_at",
       "claimed",
-      "claimed_at"
+      "claimed_at",
+      "challenge_name_snapshot",
+      "challenge_description_snapshot",
+      "challenge_type_snapshot",
+      "tier_snapshot",
+      "requirement_snapshot",
+      "chip_reward_snapshot",
+      "diamond_reward_snapshot"
     ],
     "user_daily_rewards": [
       "id",
@@ -12489,6 +12541,27 @@
       "first_seen_at",
       "last_seen_at",
       "resolved"
+    ],
+    "zz_reopen2_20260830_backup": [
+      "table_id",
+      "tournament_id",
+      "old_status",
+      "open_seats",
+      "captured_at"
+    ],
+    "zz_reopen3_20260830_backup": [
+      "table_id",
+      "tournament_id",
+      "old_status",
+      "open_seats",
+      "captured_at"
+    ],
+    "zz_reopen_20260830_backup": [
+      "table_id",
+      "tournament_id",
+      "old_status",
+      "open_seats",
+      "captured_at"
     ]
   }
 }

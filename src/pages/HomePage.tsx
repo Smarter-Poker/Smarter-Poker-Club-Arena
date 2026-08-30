@@ -700,7 +700,13 @@ function HomePageInner() {
         id: 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4',
         club_id: SHARK_CLUB_ID,
         name: 'Shark Club',
-        member_count: 580,
+        /* member_count is deliberately NOT seeded (2026-08-28). It used to
+           carry a hard-coded 580 — a number nobody measured — and the sort
+           immediately below ranks by member count, so a fabricated figure
+           placed this card above real clubs with real members. The per-club
+           stats fetch further down already resolves the true count for every
+           id in this list, including this one; until it lands, unknown sorts
+           as unknown rather than as "the biggest club you are in". */
         entity_type: 'club',
       });
     }

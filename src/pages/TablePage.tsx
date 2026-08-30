@@ -11411,7 +11411,7 @@ export default function TablePage({
     });
   }, []);
 
-  useSeatedProfileSync(tableId, seatedUserIds, handleSeatedProfileChange);
+  const seatedProfileSync = useSeatedProfileSync(tableId, seatedUserIds, handleSeatedProfileChange);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // WAITLIST → HORSE YIELD — When a real player is waiting & table full, remove a horse
@@ -17451,6 +17451,10 @@ export default function TablePage({
          the bottom bar on [data-hero-action="none"]; do not rename either the
          attribute or any of the three values. */
       data-hero-action={heroActionState}
+      /* Operational truth for connection diagnostics and real browser tests.
+         An outage now self-recovers and reconciles, but exposing the current
+         state prevents avatar health from being hidden behind table-art health. */
+      data-player-appearance-sync={seatedProfileSync.state}
       /* Dan 2026-08-18 — the page never shows the skin composite's scene:
          the table is .table-art inside the aspect-locked scaler, and the
          page behind it is a standalone designed background (style below). */

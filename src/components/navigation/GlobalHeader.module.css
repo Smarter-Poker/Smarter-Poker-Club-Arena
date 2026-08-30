@@ -9,7 +9,9 @@
 .header {
   position: sticky;
   top: 0;
-  z-index: 130;
+  /* The global header is the topmost navigation surface. The persistent table
+     action bar deliberately sits one layer below it at z-index 380. */
+  z-index: 390;
   width: 100%;
   align-self: stretch;
   box-sizing: border-box;
@@ -188,6 +190,15 @@
   font:
     800 11px/1 system-ui,
     sans-serif;
+}
+
+/* These semantic anchors make each count belong to its own control. A generic
+   absolute badge must never fall back to the header control plane, where the
+   notification count previously appeared over Profile. */
+.messageBadge,
+.notificationBadge {
+  top: 3px;
+  right: 8%;
 }
 
 .brandArtwork {

@@ -39,6 +39,11 @@ export function TableStudioGameplayPreview({ selection, avatarUrls, finalTable }
     <div
       className={`studio-game-preview${finalTable ? ' studio-game-preview--final' : ''}`}
       data-button-theme={selection.button_id}
+      data-table-theme={finalTable ? 'final_table' : normalizeFeltId(selection.table_id)}
+      data-background-theme={
+        finalTable ? 'final_table_broadcast' : normalizeBackgroundId(selection.background_id)
+      }
+      data-card-back={normalizeCardBack(selection.cards_id)}
       aria-label={
         finalTable
           ? 'Final Table gameplay preview using avatars from your avatar library'

@@ -73,8 +73,10 @@ describe('the five recovered call sites guard on null', () => {
   it('the table balance is not zeroed by a failed buy-in or resync read', () => {
     const src = code(read('src/pages/TablePage.tsx'));
     // Both the buy-in read and the realtime resync guard before setting.
-    const guarded = src.match(/if \(rb\.balance !== null\) setAccountBalance\(rb\.balance\)/g);
+    const guarded = src.match(
+      /if \(rb\.balance !== null\) setBalanceIfCurrent\(\w+, rb\.balance\)/g
+    );
     expect(guarded, 'expected both TablePage balance writes to be null-guarded').toHaveLength(2);
-    expect(src).not.toMatch(/\.then\(setAccountBalance\)/);
+    expect(src).not.toMatch(/\.then\(setBalanceIfCurrent\)/);
   });
 });

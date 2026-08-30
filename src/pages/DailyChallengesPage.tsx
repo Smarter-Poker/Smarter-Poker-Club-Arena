@@ -13,7 +13,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAuthUser, supabase } from '../lib/supabase';
-import { LoadingState } from '../components/common/EmptyState';
 import { StreakFire } from '../components/gamification/StreakFire';
 import { useToast } from '../components/common/Toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -30,6 +29,13 @@ import { reportError } from '../utils/errorReporter';
 import { ConfettiEffect } from '../components/effects/ConfettiEffect';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './DailyChallengesPage.module.css';
+import { mediaUrl } from '../utils/mediaBase';
+import {
+  formatChallengeCountdown,
+  getChallengeResetAt,
+  getUtcDateKey,
+  msUntilChallengeReset,
+} from '../utils/challengeReset';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -87,38 +93,7 @@ const TIER_COLORS: Record<Tier, string> = {
   monthly: '#c084fc',
 };
 
-/** ms until 00:00 UTC tomorrow */
-function msUntilUtcMidnight(): number {
-  const now = new Date();
-  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
-  return next - now.getTime();
-}
-
-/** ms until next Monday 00:00 UTC */
-function msUntilNextMondayUtc(): number {
-  const now = new Date();
-  const day = now.getUTCDay(); // 0 = Sun
-  const daysToMonday = (8 - day) % 7 || 7;
-  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + daysToMonday);
-  return next - now.getTime();
-}
-
-/** ms until 1st of next month 00:00 UTC */
-function msUntilNextMonthUtc(): number {
-  const now = new Date();
-  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
-  return next - now.getTime();
-}
-
-function formatCountdown(ms: number): string {
-  if (ms <= 0) return '0m';
-  const days = Math.floor(ms / 86400000);
-  const hours = Math.floor((ms % 86400000) / 3600000);
-  const mins = Math.floor((ms % 3600000) / 60000);
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${mins}m`;
-  return `${mins}m`;
-}
+const TIERS: Tier[] = ['daily', 'weekly', 'monthly'];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CARDS
@@ -151,6 +126,7 @@ function ChallengeCard({
   const pct = c.requirement > 0 ? Math.min((challenge.progress / c.requirement) * 100, 100) : 0;
   const done = challenge.completed;
   const claimed = challenge.claimed;
+  const remaining = Math.max(0, c.requirement - challenge.progress);
 
   const handleClaim = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -218,7 +194,13 @@ function ChallengeCard({
       </div>
 
       <div className={styles.cardFooter}>
-        <span className={styles.completionReadout}>{Math.round(pct)}% Complete</span>
+        <span className={styles.completionReadout}>
+          {claimed
+            ? 'Contract Settled'
+            : done
+              ? 'Objective Cleared'
+              : `${remaining.toLocaleString()} Remaining`}
+        </span>
         <div className={styles.cardActions}>
           {claimed && (
             <div className={styles.claimedBadge} aria-label="Already claimed">
@@ -253,7 +235,7 @@ function ChallengeCard({
               role="group"
               aria-label={`Confirm reroll for ${c.name}`}
             >
-              <span>Replace This Mission For ◆ 10?</span>
+              <span>Spend ◆ 10? Current Progress Will Be Replaced.</span>
               <button
                 type="button"
                 className={styles.cancelButton}
@@ -278,6 +260,45 @@ function ChallengeCard({
   );
 }
 
+function MissionLoadingState() {
+  return (
+    <StandardContentLayout className={styles.container}>
+      <main className={styles.page} aria-busy="true" aria-label="Loading daily missions">
+        <section className={`${styles.hero} ${styles.loadingHero}`}>
+          <img
+            className={styles.heroArtwork}
+            src={mediaUrl('images/challenges/daily-missions-vault-v1.webp')}
+            alt=""
+            width="1774"
+            height="887"
+            loading="eager"
+            decoding="async"
+            fetchPriority="high"
+            aria-hidden="true"
+          />
+          <div className={styles.heroShade} />
+          <div className={styles.heroCopy}>
+            <span className={styles.eyebrow}>Club Arena // Mission Control</span>
+            <h1>Daily Missions</h1>
+            <p>Establishing A Secure Link To Your Live Contracts And Reward Vault.</p>
+            <div className={styles.loadingSignal} role="status">
+              <span className={styles.loadingSignalBar} />
+              <strong>Synchronizing Mission Network</strong>
+            </div>
+          </div>
+        </section>
+        <section className={styles.loadingBoard} aria-hidden="true">
+          <div className={styles.loadingBoardHeader} />
+          <div className={styles.loadingCardGrid}>
+            <div className={styles.loadingCard} />
+            <div className={styles.loadingCard} />
+          </div>
+        </section>
+      </main>
+    </StandardContentLayout>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -289,6 +310,10 @@ export default function DailyChallengesPage() {
 
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadWarning, setLoadWarning] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [activeTier, setActiveTier] = useState<Tier>('daily');
 
   const [challenges, setChallenges] = useState<TieredChallenge[]>([]);
@@ -302,6 +327,7 @@ export default function DailyChallengesPage() {
   const [rerollingIds, setRerollingIds] = useState<Set<string>>(new Set());
   const [confirmingRerollId, setConfirmingRerollId] = useState<string | null>(null);
   const claimGuardRef = useRef(new Set<string>()); // Prevent double-clicks bypassing React state
+  const rerollGuardRef = useRef(new Set<string>());
 
   // Celebration state
   const [celebratingIds, setCelebratingIds] = useState<Set<string>>(new Set());
@@ -312,42 +338,82 @@ export default function DailyChallengesPage() {
     diamondBalance: number;
   } | null>(null);
 
-  const [, setNow] = useState(Date.now());
+  const [now, setNow] = useState(Date.now());
   const dateKeyRef = useRef<string>('');
-
-  const todayUtcKey = () => new Date().toISOString().split('T')[0];
+  const loadRequestRef = useRef(0);
+  const lastSyncedAtRef = useRef(0);
+  const lastResumeRefreshRef = useRef(0);
 
   // ── Loaders ──
   const loadChallenges = useCallback(
     async (uid: string, withSpinner: boolean) => {
-      if (withSpinner) setIsLoading(true);
-      try {
-        const [{ daily, weekly, monthly }, challengeStats, streakInfo, spendableDiamonds] =
-          await Promise.all([
-            dailyChallengeService.getAllChallenges(uid),
-            dailyChallengeService.getStats(uid),
-            dailyChallengeService.getStreak(uid),
-            dailyChallengeService.getDiamondBalance(uid),
-          ]);
-        if (!isMountedRef.current) return;
+      const requestId = ++loadRequestRef.current;
+      if (withSpinner) {
+        setIsLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
 
+      try {
+        const [missionResult, statsResult, streakResult, balanceResult] = await Promise.allSettled([
+          dailyChallengeService.getAllChallenges(uid),
+          dailyChallengeService.getStats(uid),
+          dailyChallengeService.getStreak(uid),
+          dailyChallengeService.getDiamondBalance(uid),
+        ]);
+        if (!isMountedRef.current || requestId !== loadRequestRef.current) return;
+
+        if (missionResult.status === 'rejected') throw missionResult.reason;
+
+        const { daily, weekly, monthly } = missionResult.value;
         setChallenges([...daily, ...weekly, ...monthly]);
-        setStats(challengeStats);
-        setStreak(streakInfo);
-        setDiamondBalance(spendableDiamonds);
+        setLoadError(null);
+
+        const auxiliaryFailures: string[] = [];
+        if (statsResult.status === 'fulfilled') setStats(statsResult.value);
+        else {
+          auxiliaryFailures.push('Career Totals');
+          reportError(statsResult.reason, 'DailyChallengesPage.stats_load_failed');
+        }
+        if (streakResult.status === 'fulfilled') setStreak(streakResult.value);
+        else {
+          auxiliaryFailures.push('Streak Status');
+          reportError(streakResult.reason, 'DailyChallengesPage.streak_load_failed');
+        }
+        if (balanceResult.status === 'fulfilled') setDiamondBalance(balanceResult.value);
+        else {
+          auxiliaryFailures.push('Diamond Balance');
+          reportError(balanceResult.reason, 'DailyChallengesPage.balance_load_failed');
+        }
+
+        setLoadWarning(
+          auxiliaryFailures.length > 0
+            ? `Missions Are Live, But ${auxiliaryFailures.join(', ')} Could Not Be Refreshed.`
+            : null
+        );
+        const syncedAt = Date.now();
+        lastSyncedAtRef.current = syncedAt;
+        setLastSyncedAt(syncedAt);
       } catch (err: any) {
         reportError(err, 'DailyChallengesPage.load_failed');
-        if (isMountedRef.current) toast.error('Could not load challenges. Please try again.');
+        if (isMountedRef.current && requestId === loadRequestRef.current) {
+          setLoadError(
+            'Mission Network Unavailable. Your Progress Is Safe - Retry The Secure Link.'
+          );
+        }
       } finally {
-        if (isMountedRef.current) setIsLoading(false);
+        if (isMountedRef.current && requestId === loadRequestRef.current) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        }
       }
     },
-    [isMountedRef, toast]
+    [isMountedRef]
   );
 
   // ── Initialization ──
   useEffect(() => {
-    dateKeyRef.current = todayUtcKey();
+    dateKeyRef.current = getUtcDateKey();
     let cancelled = false;
     (async () => {
       try {
@@ -361,8 +427,12 @@ export default function DailyChallengesPage() {
         }
         setUserId(authUser.id);
         await loadChallenges(authUser.id, true);
-      } catch {
-        if (!cancelled) setIsLoading(false);
+      } catch (err) {
+        reportError(err, 'DailyChallengesPage.auth_load_failed');
+        if (!cancelled) {
+          setLoadError('Secure Session Check Failed. Please Retry Or Sign In Again.');
+          setIsLoading(false);
+        }
       }
     })();
     return () => {
@@ -393,16 +463,53 @@ export default function DailyChallengesPage() {
 
   // ── Live countdown + automatic daily rollover ──
   useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(Date.now());
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      const tickAt = Date.now();
+      setNow(tickAt);
       // When the UTC date flips while the page is open, fetch the new day's set
-      const key = todayUtcKey();
+      const key = getUtcDateKey(tickAt);
       if (key !== dateKeyRef.current) {
         dateKeyRef.current = key;
         if (userId) loadChallenges(userId, false);
       }
-    }, 30_000);
-    return () => clearInterval(timer);
+      // Seconds matter during the last hour. Before that, a 30-second cadence
+      // avoids re-rendering every mission card 3,600 times per hour.
+      timer = setTimeout(
+        tick,
+        msUntilChallengeReset('daily', tickAt) <= 60 * 60 * 1000 ? 1000 : 30_000
+      );
+    };
+    timer = setTimeout(tick, 1000);
+    return () => clearTimeout(timer);
+  }, [userId, loadChallenges]);
+
+  // Browsers throttle timers and live sockets in background tabs. Reconcile on
+  // resume so a table left open overnight never shows yesterday's contracts.
+  useEffect(() => {
+    if (!userId) return undefined;
+
+    const refreshAfterResume = () => {
+      if (document.visibilityState !== 'visible') return;
+      const resumedAt = Date.now();
+      setNow(resumedAt);
+      if (resumedAt - lastResumeRefreshRef.current < 1000) return;
+
+      const dateChanged = getUtcDateKey(resumedAt) !== dateKeyRef.current;
+      const stale = resumedAt - lastSyncedAtRef.current > 60_000;
+      if (dateChanged || stale) {
+        lastResumeRefreshRef.current = resumedAt;
+        dateKeyRef.current = getUtcDateKey(resumedAt);
+        loadChallenges(userId, false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', refreshAfterResume);
+    window.addEventListener('focus', refreshAfterResume);
+    return () => {
+      document.removeEventListener('visibilitychange', refreshAfterResume);
+      window.removeEventListener('focus', refreshAfterResume);
+    };
   }, [userId, loadChallenges]);
 
   // ── Refresh when in-game progress updates ──
@@ -421,7 +528,6 @@ export default function DailyChallengesPage() {
   useEffect(() => {
     if (!userId) return;
     let pending: ReturnType<typeof setTimeout> | null = null;
-    let localTimers: ReturnType<typeof setTimeout>[] = [];
 
     const channel = supabase
       .channel(`daily-challenges:${userId}`)
@@ -449,7 +555,6 @@ export default function DailyChallengesPage() {
             // account on a second screen -- lands here without a manual refresh.
             if (isMountedRef.current) loadChallenges(userId, false);
           }, 1200);
-          if (pending) localTimers.push(pending);
         }
       )
       .subscribe();
@@ -457,8 +562,6 @@ export default function DailyChallengesPage() {
     return () => {
       supabase.removeChannel(channel);
       if (pending) clearTimeout(pending);
-      localTimers.forEach(clearTimeout);
-      localTimers = [];
     };
   }, [userId, loadChallenges, isMountedRef]);
 
@@ -469,16 +572,6 @@ export default function DailyChallengesPage() {
       if (claimGuardRef.current.has(challenge.id)) return;
       claimGuardRef.current.add(challenge.id);
       setClaimingIds((prev) => new Set(prev).add(challenge.id));
-      setStats((prev) =>
-        prev
-          ? {
-              ...prev,
-              totalChipsEarned: prev.totalChipsEarned + (challenge.challenge.chipReward || 0),
-              totalDiamondsEarned:
-                prev.totalDiamondsEarned + (challenge.challenge.diamondReward || 0),
-            }
-          : prev
-      );
 
       try {
         const paid = await dailyChallengeService.claimChallenge(
@@ -586,12 +679,13 @@ export default function DailyChallengesPage() {
   const handleReroll = useCallback(
     async (challenge: TieredUserChallenge) => {
       if (!userId) return;
-      if (rerollingIds.has(challenge.id)) return;
+      if (rerollGuardRef.current.has(challenge.id)) return;
       if (diamondBalance < 10) {
         toast.error('Not enough diamonds. 10 Diamonds required.');
         return;
       }
 
+      rerollGuardRef.current.add(challenge.id);
       setRerollingIds((prev) => new Set(prev).add(challenge.id));
       try {
         const result = await dailyChallengeService.rerollChallenge(
@@ -610,6 +704,7 @@ export default function DailyChallengesPage() {
         );
         await loadChallenges(userId, false);
       } finally {
+        rerollGuardRef.current.delete(challenge.id);
         if (isMountedRef.current) {
           setRerollingIds((prev) => {
             const next = new Set(prev);
@@ -619,7 +714,7 @@ export default function DailyChallengesPage() {
         }
       }
     },
-    [userId, rerollingIds, diamondBalance, loadChallenges, toast, isMountedRef]
+    [userId, diamondBalance, loadChallenges, toast, isMountedRef]
   );
 
   const handleClaimAll = useCallback(async () => {
@@ -628,17 +723,6 @@ export default function DailyChallengesPage() {
     if (ready.length === 0) return;
 
     setClaimingAll(true);
-    const optChips = ready.reduce((acc, c) => acc + (c.challenge.chipReward || 0), 0);
-    const optDiamonds = ready.reduce((acc, c) => acc + (c.challenge.diamondReward || 0), 0);
-    setStats((prev) =>
-      prev
-        ? {
-            ...prev,
-            totalChipsEarned: prev.totalChipsEarned + optChips,
-            totalDiamondsEarned: prev.totalDiamondsEarned + optDiamonds,
-          }
-        : prev
-    );
     let chips = 0;
     let diamonds = 0;
     let balance = 0;
@@ -730,10 +814,15 @@ export default function DailyChallengesPage() {
     return { count, chips, diamonds };
   }, [challenges]);
 
+  const tierResetMs: Record<Tier, number> = {
+    daily: msUntilChallengeReset('daily', now),
+    weekly: msUntilChallengeReset('weekly', now),
+    monthly: msUntilChallengeReset('monthly', now),
+  };
   const tierCountdown: Record<Tier, string> = {
-    daily: formatCountdown(msUntilUtcMidnight()),
-    weekly: formatCountdown(msUntilNextMondayUtc()),
-    monthly: formatCountdown(msUntilNextMonthUtc()),
+    daily: formatChallengeCountdown(tierResetMs.daily),
+    weekly: formatChallengeCountdown(tierResetMs.weekly),
+    monthly: formatChallengeCountdown(tierResetMs.monthly),
   };
 
   const visible = useMemo(() => {
@@ -743,10 +832,51 @@ export default function DailyChallengesPage() {
       .sort((a, b) => stateRank(a) - stateRank(b));
   }, [challenges, activeTier]);
 
+  const activeResetLabel = useMemo(
+    () =>
+      new Intl.DateTimeFormat(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short',
+      }).format(getChallengeResetAt(activeTier, now)),
+    [activeTier, now]
+  );
+  const activeResetUrgent = tierResetMs[activeTier] <= 60 * 60 * 1000;
+  const activeUnclaimed = visible.filter(
+    (challenge) => challenge.completed && !challenge.claimed
+  ).length;
+  const syncLabel = isRefreshing
+    ? 'Synchronizing'
+    : lastSyncedAt && now - lastSyncedAt < 60_000
+      ? 'Live Now'
+      : 'Live Sync';
+
+  const handleTierKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>, tier: Tier) => {
+      const index = TIERS.indexOf(tier);
+      let nextIndex = index;
+      if (event.key === 'ArrowRight') nextIndex = (index + 1) % TIERS.length;
+      else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + TIERS.length) % TIERS.length;
+      else if (event.key === 'Home') nextIndex = 0;
+      else if (event.key === 'End') nextIndex = TIERS.length - 1;
+      else return;
+
+      event.preventDefault();
+      const nextTier = TIERS[nextIndex];
+      setActiveTier(nextTier);
+      setConfirmingRerollId(null);
+      requestAnimationFrame(() => document.getElementById(`mission-tab-${nextTier}`)?.focus());
+    },
+    []
+  );
+
   // ── Render ──
 
   if (isLoading) {
-    return <LoadingState message="Loading Challenges..." />;
+    return <MissionLoadingState />;
   }
 
   if (!userId) {
@@ -764,11 +894,16 @@ export default function DailyChallengesPage() {
 
   return (
     <StandardContentLayout className={styles.container}>
-      <main className={styles.page} id="daily-missions">
+      <main
+        className={styles.page}
+        id="daily-missions"
+        data-arena-surface="missions"
+        aria-busy={isRefreshing}
+      >
         <section className={styles.hero} aria-labelledby="missions-title">
           <img
             className={styles.heroArtwork}
-            src="/hub/club-arena/images/challenges/daily-missions-vault-v1.webp"
+            src={mediaUrl('images/challenges/daily-missions-vault-v1.webp')}
             alt=""
             width="1774"
             height="887"
@@ -802,13 +937,35 @@ export default function DailyChallengesPage() {
             </button>
           </div>
           <div className={styles.heroSeal} aria-hidden="true">
-            <span>Live</span>
+            <span>{syncLabel}</span>
             <strong>
               {tierCounts.daily.done}/{tierCounts.daily.total}
             </strong>
             <small>Complete Today</small>
           </div>
         </section>
+
+        {(loadError || loadWarning) && (
+          <aside
+            className={`${styles.syncNotice} ${loadError ? styles.syncNoticeError : ''}`}
+            role={loadError ? 'alert' : 'status'}
+          >
+            <div>
+              <span className={styles.panelLabel}>
+                {loadError ? 'Connection Interrupted' : 'Partial Sync'}
+              </span>
+              <strong>{loadError || loadWarning}</strong>
+            </div>
+            <button
+              type="button"
+              className={styles.retryButton}
+              onClick={() => userId && loadChallenges(userId, false)}
+              disabled={isRefreshing}
+            >
+              {isRefreshing ? 'Reconnecting...' : 'Retry Sync'}
+            </button>
+          </aside>
+        )}
 
         <section className={styles.commandDeck} aria-label="Challenge status">
           <div className={styles.streakConsole}>
@@ -853,9 +1010,22 @@ export default function DailyChallengesPage() {
                   className={styles.buyFreezeBtn}
                   onClick={handleBuyFreeze}
                   disabled={buyingFreeze || diamondBalance < 5000 || streak.freezesAvailable >= 3}
+                  title={
+                    streak.freezesAvailable >= 3
+                      ? 'Your Freeze Vault Is Full.'
+                      : diamondBalance < 5000
+                        ? 'You Need 5,000 Spendable Diamonds.'
+                        : 'Banks One Streak Freeze For A Missed Daily Cycle.'
+                  }
                 >
-                  {buyingFreeze ? 'Securing...' : 'Buy Streak Freeze'}
-                  <span>◆ 5,000</span>
+                  {buyingFreeze
+                    ? 'Securing...'
+                    : streak.freezesAvailable >= 3
+                      ? 'Freeze Vault Full'
+                      : diamondBalance < 5000
+                        ? 'Need More Diamonds'
+                        : 'Buy Streak Freeze'}
+                  {streak.freezesAvailable < 3 && <span>◆ 5,000</span>}
                 </button>
               </div>
             )}
@@ -922,21 +1092,37 @@ export default function DailyChallengesPage() {
               <span className={styles.eyebrow}>Active Contracts</span>
               <h2 id="mission-board-title">Choose Your Mission Cycle</h2>
             </div>
-            <div className={styles.resetReadout} aria-live="polite">
-              <span>{TIER_LABELS[activeTier]} Reset</span>
+            <div
+              className={`${styles.resetReadout} ${activeResetUrgent ? styles.resetUrgent : ''}`}
+              aria-live="polite"
+            >
+              <span>
+                {isRefreshing ? 'Syncing Mission Network' : `${TIER_LABELS[activeTier]} Reset`}
+              </span>
               <strong>{tierCountdown[activeTier]}</strong>
+              <small>{activeResetLabel}</small>
+              {activeResetUrgent && activeUnclaimed > 0 && (
+                <em>
+                  Claim {activeUnclaimed} Ready Reward{activeUnclaimed === 1 ? '' : 's'} Before
+                  Reset
+                </em>
+              )}
             </div>
           </header>
 
           <nav className={styles.tabs} role="tablist" aria-label="Challenge period">
-            {(['daily', 'weekly', 'monthly'] as Tier[]).map((tier) => (
+            {TIERS.map((tier) => (
               <button
                 key={tier}
+                id={`mission-tab-${tier}`}
                 type="button"
                 role="tab"
                 aria-selected={activeTier === tier}
+                aria-controls={`mission-panel-${tier}`}
+                tabIndex={activeTier === tier ? 0 : -1}
                 className={`${styles.tab} ${activeTier === tier ? styles.tabActive : ''}`}
                 style={{ '--tier-color': TIER_COLORS[tier] } as React.CSSProperties}
+                onKeyDown={(event) => handleTierKeyDown(event, tier)}
                 onClick={() => {
                   setActiveTier(tier);
                   setConfirmingRerollId(null);
@@ -950,11 +1136,29 @@ export default function DailyChallengesPage() {
             ))}
           </nav>
 
-          <section className={styles.list} aria-label={`${TIER_LABELS[activeTier]} challenges`}>
+          <section
+            id={`mission-panel-${activeTier}`}
+            className={styles.list}
+            role="tabpanel"
+            aria-labelledby={`mission-tab-${activeTier}`}
+            aria-label={`${TIER_LABELS[activeTier]} challenges`}
+          >
             {visible.length === 0 ? (
               <div className={styles.emptyState}>
-                <h3>No Missions Assigned</h3>
-                <p>Your Next {TIER_LABELS[activeTier]} Mission Set Is Being Prepared.</p>
+                <h3>{loadError ? 'Mission Link Offline' : 'No Missions Assigned'}</h3>
+                <p>
+                  {loadError
+                    ? 'Reconnect to retrieve your active contracts. Your recorded progress is safe.'
+                    : `Your Next ${TIER_LABELS[activeTier]} Mission Set Is Being Prepared.`}
+                </p>
+                <button
+                  type="button"
+                  className={styles.retryButton}
+                  onClick={() => loadChallenges(userId, false)}
+                  disabled={isRefreshing}
+                >
+                  {isRefreshing ? 'Reconnecting...' : 'Retry Mission Link'}
+                </button>
               </div>
             ) : (
               <AnimatePresence mode="popLayout">
@@ -1017,16 +1221,26 @@ export default function DailyChallengesPage() {
               <h2 className={styles.celebrateTitle}>Challenge Complete</h2>
               <p className={styles.celebrateName}>{reward.name}</p>
 
-              {reward.diamonds > 0 && (
-                <div className={styles.celebrateDiamonds}>
-                  <span className={styles.celebrateDiamondValue}>
-                    +{reward.diamonds.toLocaleString()}
-                  </span>
-                  <span className={styles.celebrateDiamondLabel}>
-                    {reward.diamonds === 1 ? 'Diamond' : 'Diamonds'}
-                  </span>
-                </div>
-              )}
+              <div className={styles.celebratePayouts} aria-label="Rewards earned">
+                {reward.chips > 0 && (
+                  <div>
+                    <span className={styles.celebratePayoutValue}>
+                      +{reward.chips.toLocaleString()}
+                    </span>
+                    <span className={styles.celebratePayoutLabel}>Chips</span>
+                  </div>
+                )}
+                {reward.diamonds > 0 && (
+                  <div className={styles.celebrateDiamondPayout}>
+                    <span className={styles.celebratePayoutValue}>
+                      +{reward.diamonds.toLocaleString()}
+                    </span>
+                    <span className={styles.celebratePayoutLabel}>
+                      {reward.diamonds === 1 ? 'Diamond' : 'Diamonds'}
+                    </span>
+                  </div>
+                )}
+              </div>
 
               {reward.diamonds > 0 && (
                 <p className={styles.celebrateBalance}>

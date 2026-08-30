@@ -92,7 +92,12 @@ describe('the client asks for a claim it is allowed to make', () => {
   });
 
   it('carries an op id, so a lost response replays instead of collecting twice', () => {
-    expect(CLAIM_CALL).toMatch(/p_op_id:\s*newOpId\(\)/);
+    // The same key must survive an uncertain response. Minting inside the RPC
+    // arguments made the natural retry a different operation, defeating the
+    // server's replay receipt precisely when the first response was lost.
+    expect(SRC).toContain('claimOpIdsRef.current.get(row.transaction_id) || newOpId()');
+    expect(CLAIM_CALL).toMatch(/p_op_id:\s*heldOpId/);
+    expect(SRC).toContain('claimOpIdsRef.current.delete(row.transaction_id)');
   });
 
   it('offers only what the server says is still claimable', () => {

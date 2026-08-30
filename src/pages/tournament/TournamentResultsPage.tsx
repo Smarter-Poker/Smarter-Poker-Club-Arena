@@ -27,6 +27,7 @@ import {
   type MysteryBountyLeaderboardRow,
   type MysteryBountyPlayerTotals,
 } from '../../services/MysteryBountyService';
+import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
 
 interface CompletedTournament {
   id: string;
@@ -664,7 +665,8 @@ export default function TournamentResultsPage() {
 
   return (
     <div
-      className="tournament-details"
+      className="tournament-results-page"
+      data-arena-surface="play"
       style={{
         padding: '16px',
         // inline padding shorthand was wiping the stylesheet's bottom-nav clearance
@@ -673,6 +675,18 @@ export default function TournamentResultsPage() {
         overflowX: 'hidden',
       }}
     >
+      <CasinoSurfaceHeader
+        eyebrow="Play & Review / Results"
+        title="Tournament Archive"
+        description="Inspect completed fields, standings, total payouts, bounty awards, Spin outcomes, and recorded hands without flattening format-specific results."
+        artPath="assets/club-buttons/lobby/shark-club-championship-ad-v2.png"
+        status="RESULTS LEDGER // LIVE"
+        metrics={[
+          { label: 'Events Loaded', value: tournaments.length, tone: 'live' },
+          { label: 'View', value: filter === 'mine' ? 'My Results' : 'All Results' },
+          { label: 'Format', value: typeFilter === 'all' ? 'All' : typeFilter.toUpperCase() },
+        ]}
+      />
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
         <button

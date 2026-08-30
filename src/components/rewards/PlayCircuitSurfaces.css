@@ -1,0 +1,54 @@
+[data-arena-surface='play'] {
+  color: #eaf3f9;
+  background:
+    radial-gradient(circle at 82% 4%, rgba(58, 168, 255, 0.09), transparent 28rem),
+    linear-gradient(180deg, #05080c 0%, #020407 100%) !important;
+}
+
+.tournament-results-page {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100dvh;
+  overflow-x: clip;
+  color: #eaf3f9;
+}
+
+.hand-history-page::before {
+  display: none;
+}
+
+[data-arena-surface='play'] :is(button, input, select) {
+  border-radius: 3px !important;
+}
+
+[data-arena-surface='play'] :is(input, select) {
+  border: 1px solid #26333d !important;
+  background-color: #080d12 !important;
+  color: #eaf3f9 !important;
+}
+
+:is(.hand-history-page, .session-history-page)
+  :is(.summary-stat, .hand-card, .sh-stat-card, .sh-mini-stat, .sh-session-card) {
+  border: 1px solid #26333d !important;
+  border-radius: 4px !important;
+  background: linear-gradient(112deg, #101820 0%, #080d12 72%, #05080c 100%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(221, 243, 255, 0.055),
+    0 14px 34px rgba(0, 0, 0, 0.24) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+:is(.hand-history-page, .session-history-page) :is(.hh-filters, .sh-aggregate) {
+  border-color: #26333d !important;
+  background: #080d12 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+@media (max-width: 640px) {
+  .tournament-results-page {
+    padding-right: 12px !important;
+    padding-left: 12px !important;
+  }
+}

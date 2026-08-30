@@ -155,9 +155,9 @@
 .visual {
   position: relative;
   min-width: 0;
-  background:
-    linear-gradient(90deg, #030609 0%, rgba(3, 6, 9, 0.1) 48%),
-    url('/images/community/community-network-v1.webp') center right / cover no-repeat;
+  background-position: center right;
+  background-size: cover;
+  background-repeat: no-repeat;
 }
 
 .visual::after {

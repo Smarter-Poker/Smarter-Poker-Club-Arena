@@ -16319,3 +16319,13 @@ both sides, ui-text gate green.
 **Why:** Static inventory counts cannot prove a user tap reaches the live table or remains durable under delayed and failed requests.
 **Verified:** YES — 498 test files / 7,860 tests pass; focused mobile Playwright 1/1; production build passes; ESLint reports 0 errors (711 pre-existing warnings).
 **TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #150 — One Server-Owned UTC Clock For Every Leaderboard Period
+
+**File:** `supabase/migrations/20260831000500_leaderboard_canonical_period_windows.sql`, `src/services/LeaderboardService.ts`, `src/pages/LeaderboardPage.tsx`
+**What existed:** Current rankings used rolling 1/7/30-day database windows while historical rankings and payout lookups rebuilt calendar dates in each browser's local timezone. The same weekly board could therefore mean different dates to rankings, prize metadata, and players in different timezones. Historical rank responses also assumed a single JSON object even when PostgREST returned a table row array.
+**What changed:** Added one authenticated, read-only UTC period-window RPC with Sunday-start weeks and start-inclusive/end-exclusive boundaries; current club, global, and union rankings now consume that boundary while retaining tied ranks, active-player totals, BB/100, pagination, and rank movement. Historical rankings, personal ranks, and payout metadata request the same server window, and rank response normalization accepts both PostgREST shapes.
+**Why:** Rankings, published prize rules, and future settlement must share an immutable period identity before versioned reward programs can be safe.
+**Verified:** Transactional production dry run compiled and executed all three ranking functions and asserted UTC rollover, Sunday weeks, and leap-year months. Targeted service and migration contracts pass; full regression/build results are recorded by the phase release.
+**Money movement:** NONE — this phase exposes date boundaries and reads cumulative stats only.
+**TypeScript:** PASS — `npx tsc --noEmit`.

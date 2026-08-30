@@ -4954,7 +4954,8 @@
       "texture_class",
       "hand_matrix",
       "source_rows",
-      "built_at"
+      "built_at",
+      "size_pct"
     ],
     "gto_scenarios": [
       "id",

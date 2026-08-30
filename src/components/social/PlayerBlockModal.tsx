@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import './PlayerBlockModal.css';
 
 interface PlayerBlockModalProps {
@@ -20,6 +20,16 @@ export default function PlayerBlockModal({
 }: PlayerBlockModalProps) {
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const titleId = useId();
+  const reasonId = useId();
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !submitting) onCancel();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onCancel, submitting]);
 
   const handleConfirm = async () => {
     setSubmitting(true);
@@ -29,10 +39,18 @@ export default function PlayerBlockModal({
 
   return (
     <div className="block-modal-overlay" onClick={onCancel}>
-      <div className="block-modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="block-modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
         <div className="block-modal-header">
-          <span className="block-icon">⊘</span>
-          <h3>Block {playerName}?</h3>
+          <span className="block-icon" aria-hidden="true">
+            !
+          </span>
+          <h3 id={titleId}>Block {playerName}?</h3>
         </div>
 
         <div className="block-modal-body">
@@ -45,22 +63,29 @@ export default function PlayerBlockModal({
           </ul>
 
           <div className="block-reason-field">
-            <label>Reason (Optional)</label>
+            <label htmlFor={reasonId}>Reason (Optional)</label>
             <input
+              id={reasonId}
               type="text"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Why Are You Blocking This Player?"
               maxLength={200}
+              autoFocus
             />
           </div>
         </div>
 
         <div className="block-modal-actions">
-          <button className="cancel-btn" onClick={onCancel} disabled={submitting}>
+          <button type="button" className="cancel-btn" onClick={onCancel} disabled={submitting}>
             Cancel
           </button>
-          <button className="confirm-btn" onClick={handleConfirm} disabled={submitting}>
+          <button
+            type="button"
+            className="confirm-btn"
+            onClick={handleConfirm}
+            disabled={submitting}
+          >
             {submitting ? 'Blocking...' : 'Block Player'}
           </button>
         </div>

@@ -248,7 +248,7 @@ export default function GlobalHeader() {
           <div className={styles.headerRight}>
             <button
               className={`${styles.artButton} ${styles.profileBtn}`}
-              onClick={() => navigateToHub('/hub/profile')}
+              onClick={() => navigate('/profile')}
               aria-label="My Profile"
               title="My Profile"
             >

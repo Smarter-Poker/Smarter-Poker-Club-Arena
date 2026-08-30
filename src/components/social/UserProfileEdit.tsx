@@ -10,7 +10,7 @@
  * - Manage Player Tags (e.g., "Aggressive", "Grinder")
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useId, useRef } from 'react';
 import { sanitizeInput } from '../../utils/sanitizeInput';
 import './UserProfileEdit.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
@@ -56,6 +56,9 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [mounted, setMounted] = useState(false);
   const mountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleId = useId();
+  const aliasId = useId();
+  const bioId = useId();
   useEffect(() => {
     if (isOpen) {
       if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
@@ -77,6 +80,15 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
       }
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -106,6 +118,9 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
       <div
         className="profile-modal"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         style={{
           opacity: mounted ? 1 : 0,
           transform: mounted ? 'translateY(0)' : 'translateY(8px)',
@@ -113,8 +128,13 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
         }}
       >
         <div className="profile-header">
-          <h2>Edit Profile</h2>
-          <button className="close-btn" onClick={onClose}>
+          <h2 id={titleId}>Edit Profile</h2>
+          <button
+            type="button"
+            className="close-btn"
+            onClick={onClose}
+            aria-label="Close profile editor"
+          >
             ×
           </button>
         </div>
@@ -132,27 +152,31 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
                 }}
               />
               <button
+                type="button"
                 className="edit-avatar-btn"
                 onClick={() => setShowAvatarPicker(!showAvatarPicker)}
+                aria-expanded={showAvatarPicker}
+                aria-label="Choose profile avatar"
               >
-                ✏
+                Edit
               </button>
             </div>
             {showAvatarPicker && (
               <div className="avatar-picker">
                 {AVAILABLE_AVATARS.map((url) => (
-                  <img
-                    loading="lazy"
-                    decoding="async"
+                  <button
+                    type="button"
                     key={url}
-                    src={url}
-                    alt="Choice"
                     className={`avatar-choice ${formData.avatarUrl === url ? 'selected' : ''}`}
+                    aria-label="Select this avatar"
+                    aria-pressed={formData.avatarUrl === url}
                     onClick={() => {
                       setFormData({ ...formData, avatarUrl: url });
                       setShowAvatarPicker(false);
                     }}
-                  />
+                  >
+                    <img loading="lazy" decoding="async" src={url} alt="" />
+                  </button>
                 ))}
               </div>
             )}
@@ -160,18 +184,22 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
 
           <form onSubmit={handleSave} className="profile-form">
             <div className="form-group">
-              <label>Poker Alias</label>
+              <label htmlFor={aliasId}>Poker Alias</label>
               <input
+                id={aliasId}
                 value={formData.username || ''}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                 maxLength={16}
                 required
+                autoFocus
+                autoComplete="nickname"
               />
             </div>
 
             <div className="form-group">
-              <label>Bio (Max 100 Chars)</label>
+              <label htmlFor={bioId}>Bio (Max 100 Chars)</label>
               <textarea
+                id={bioId}
                 value={formData.bio}
                 onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
                 maxLength={100}
@@ -188,6 +216,7 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
                     type="button"
                     className={`tag-choice ${formData.tags.includes(tag) ? 'active' : ''}`}
                     onClick={() => toggleTag(tag)}
+                    aria-pressed={formData.tags.includes(tag)}
                   >
                     {tag}
                   </button>

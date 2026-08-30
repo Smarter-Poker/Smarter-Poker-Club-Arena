@@ -4212,6 +4212,17 @@
       "is_deleted",
       "created_at"
     ],
+    "customization_operations": [
+      "id",
+      "user_id",
+      "event",
+      "surface",
+      "category",
+      "duration_ms",
+      "reason_code",
+      "sample_weight",
+      "created_at"
+    ],
     "daemon_state": [
       "daemon",
       "high_water_mark",
@@ -7255,7 +7266,11 @@
       "timezone",
       "zip",
       "source_priority",
-      "location_integrity_revision"
+      "location_integrity_revision",
+      "canonical_venue_id",
+      "retired_at",
+      "retired_by",
+      "retired_reason"
     ],
     "poker_videos": [
       "id",
@@ -11653,6 +11668,28 @@
       "notes",
       "metadata"
     ],
+    "v_customization_health_daily": [
+      "day",
+      "surface",
+      "category",
+      "event",
+      "sampled_rows",
+      "estimated_events",
+      "p95_ms"
+    ],
+    "v_customization_health_hourly": [
+      "hour",
+      "appearance_estimated_attempts",
+      "appearance_failures",
+      "appearance_failure_pct",
+      "apply_p50_ms",
+      "apply_p95_ms",
+      "purchase_estimated_attempts",
+      "purchase_failures",
+      "realtime_failures",
+      "realtime_recoveries",
+      "conflicts_suppressed"
+    ],
     "v_daily_slate": [
       "game_id",
       "official_date",
@@ -11882,6 +11919,26 @@
       "parent_tournament_id",
       "is_suppressed"
     ],
+    "venue_directory_enrichment_log": [
+      "id",
+      "venue_id",
+      "actor_id",
+      "reason",
+      "source_url",
+      "confidence",
+      "before_record",
+      "after_record",
+      "created_at"
+    ],
+    "venue_duplicate_retirement_log": [
+      "id",
+      "retired_venue_id",
+      "canonical_venue_id",
+      "actor_id",
+      "reason",
+      "before_record",
+      "created_at"
+    ],
     "venue_game_alerts": [
       "id",
       "user_id",
@@ -11953,6 +12010,33 @@
       "before_record",
       "after_record",
       "created_at"
+    ],
+    "venue_location_integrity_state": [
+      "venue_id",
+      "name",
+      "venue_type",
+      "address",
+      "city",
+      "state",
+      "latitude",
+      "longitude",
+      "revision",
+      "active",
+      "location_status",
+      "location_reason",
+      "mappable",
+      "issue_types",
+      "primary_issue",
+      "priority",
+      "related_ids",
+      "missing_fields",
+      "completeness_score",
+      "last_scraped_at",
+      "data_quality",
+      "scrape_status",
+      "assessed_at",
+      "updated_at",
+      "search_vector"
     ],
     "venue_managers": [
       "id",

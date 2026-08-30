@@ -253,6 +253,11 @@ describe('item 2 - the felt board is as wide as the bet chips allow', () => {
   const gaps = feltBoardGaps();
   const anchor = boardAnchorY();
   const phoneGap = Math.min(...gaps);
+  // This exhaustive geometry search is deterministic and both invariants use
+  // the same inputs. Computing it once during suite setup avoids paying the
+  // ~2s search twice; under the full parallel corpus the duplicate pass could
+  // exceed Vitest's per-test timeout even though the geometry was correct.
+  const boardCeilingPct = boardCeilingFraction(anchor, phoneGap) * 100;
 
   it('sizes the board off the felt in ONE place, at one width', () => {
     // A second `width` on this rule - in a breakpoint, say - is a board that is
@@ -339,7 +344,7 @@ describe('item 2 - the felt board is as wide as the bet chips allow', () => {
        `.community-area`'s anchor, which is why this test used to allow a point
        and a half of slop. Both are fixed in the same commit as this change, all
        three files now draw the same rectangle, and the slop is gone. */
-    const ceiling = boardCeilingFraction(anchor, phoneGap) * 100;
+    const ceiling = boardCeilingPct;
     expect(
       widths[0],
       `the board is wider than the ${ceiling.toFixed(1)}% the seats leave clean`
@@ -355,7 +360,7 @@ describe('item 2 - the felt board is as wide as the bet chips allow', () => {
        different file. Stated as its own assertion so that a ring change which
        re-narrows the ceiling fails with the number, rather than only showing up
        as "the board is wider than the ceiling" and reading like a CSS mistake. */
-    const ceiling = boardCeilingFraction(anchor, phoneGap) * 100;
+    const ceiling = boardCeilingPct;
     expect(
       ceiling,
       `the seat rings in src/lib/tableSeatGeometry.ts only leave ${ceiling.toFixed(1)}% clean; ` +

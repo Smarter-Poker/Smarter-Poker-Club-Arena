@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useId, useRef, type RefObject } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { STORAGE_KEYS } from '../lib/storage';
@@ -37,7 +37,6 @@ import {
   sendTestPush,
 } from '../lib/pushClient';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import UserProfileEdit from '../components/social/UserProfileEdit';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useTableSettings } from '../hooks/useTableSettings';
 import { soundService } from '../services/SoundService';
@@ -48,14 +47,13 @@ import {
   validateSettings,
   type UserSettings,
 } from '../lib/settingsBridge';
-import FAQPanel from '../components/support/FAQPanel';
-import TermsGate from '../components/auth/TermsGate';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './SettingsPage.module.css';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { useToast } from '../components/common/Toast';
 import { reportError } from '../utils/errorReporter';
 import { ThemeSettingsModal } from '../components/table/ThemeSettingsModal';
+import AccountSurfaceHeader from '../components/account/AccountSurfaceHeader';
 
 const settingsSectionAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -74,12 +72,16 @@ const Toggle = ({
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
-  label?: string;
+  label: string;
 }) => (
   <label className={styles.toggle}>
-    <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={(e) => onChange(e.target.checked)}
+      aria-label={label}
+    />
     <span className={styles.toggleSlider} />
-    {label && <span className={styles.toggleLabel}>{label}</span>}
   </label>
 );
 
@@ -89,12 +91,14 @@ const Slider = ({
   min = 0,
   max = 100,
   disabled = false,
+  label,
 }: {
   value: number;
   onChange: (value: number) => void;
   min?: number;
   max?: number;
   disabled?: boolean;
+  label: string;
 }) => (
   <div className={`${styles.sliderContainer} ${disabled ? styles.disabled : ''}`}>
     <input
@@ -105,6 +109,8 @@ const Slider = ({
       max={max}
       onChange={(e) => onChange(Number(e.target.value))}
       disabled={disabled}
+      aria-label={label}
+      aria-valuetext={`${value} percent`}
     />
     <span className={styles.sliderValue}>{value}%</span>
   </div>
@@ -119,7 +125,7 @@ export default function SettingsPage() {
     document.title = 'Settings | Smarter Poker';
   }, []);
 
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const toast = useToast();
   const { user: authUser } = useAuthUser();
   const { settings: tableSettings, updateSettings: updateTableSettings } = useTableSettings();
@@ -175,10 +181,24 @@ export default function SettingsPage() {
   // Section refs for tab navigation
   const audioRef = useRef<HTMLElement>(null);
   const appearanceRef = useRef<HTMLElement>(null);
-  const gameplayRef = useRef<HTMLElement>(null);
   const notificationsRef = useRef<HTMLElement>(null);
   const securityRef = useRef<HTMLElement>(null);
   const dangerRef = useRef<HTMLElement>(null);
+  const emailDialogTitleId = useId();
+  const passwordDialogTitleId = useId();
+  const twoFactorDialogTitleId = useId();
+
+  useEffect(() => {
+    if (!showEmailModal && !showPasswordModal && !show2FAModal) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setShowEmailModal(false);
+      setShowPasswordModal(false);
+      setShow2FAModal(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [show2FAModal, showEmailModal, showPasswordModal]);
 
   // Tab-based scroll navigation
   useEffect(() => {
@@ -189,7 +209,8 @@ export default function SettingsPage() {
       audio: audioRef,
       appearance: appearanceRef,
       display: appearanceRef,
-      gameplay: gameplayRef,
+      gameplay: appearanceRef,
+      table: appearanceRef,
       notifications: notificationsRef,
       security: securityRef,
       account: securityRef,
@@ -203,6 +224,16 @@ export default function SettingsPage() {
       }, 100);
     }
   }, [searchParams]);
+
+  const jumpToSection = (
+    tab: 'audio' | 'display' | 'notifications' | 'account' | 'data',
+    target: RefObject<HTMLElement | null>
+  ) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', tab);
+    setSearchParams(next, { replace: true });
+    target.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   // Load settings from localStorage on mount
   useEffect(() => {
@@ -233,7 +264,7 @@ export default function SettingsPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [authUser?.id]);
 
   useEffect(() => {
     if (!authUser?.id) {
@@ -816,16 +847,60 @@ export default function SettingsPage() {
   };
 
   return (
-    <StandardContentLayout className={styles.page} title="Settings">
-      <div className={styles.headerActions}>
-        {hasChanges && (
-          <button className={styles.saveButton} onClick={saveSettings} disabled={saving}>
-            {saving ? 'Saving...' : 'Save Changes'}
+    <StandardContentLayout className={styles.page}>
+      <AccountSurfaceHeader
+        eyebrow="Account Control // Player Vault"
+        title="Control Room"
+        description="One authoritative surface for table behavior, alerts, device access, identity security, and account data. Changes remain wired to the live table and player record."
+        status={hasChanges ? 'Changes Pending' : 'Systems Synced'}
+      >
+        <span className={styles.heroMetric}>
+          <small>Identity</small>
+          {userEmail || 'Authenticated'}
+        </span>
+        <span className={styles.heroMetric}>
+          <small>2FA</small>
+          {twoFactorEnabled ? 'Protected' : 'Available'}
+        </span>
+        <span className={styles.heroMetric}>
+          <small>Push</small>
+          {pushEnabled ? 'Connected' : 'Off'}
+        </span>
+      </AccountSurfaceHeader>
+
+      <nav className={styles.controlIndex} aria-label="Settings sections">
+        {[
+          { id: 'audio' as const, label: 'Audio', ref: audioRef },
+          { id: 'display' as const, label: 'Table & Display', ref: appearanceRef },
+          { id: 'notifications' as const, label: 'Alerts', ref: notificationsRef },
+          { id: 'account' as const, label: 'Security', ref: securityRef },
+          { id: 'data' as const, label: 'Account Data', ref: dangerRef },
+        ].map((item) => (
+          <button
+            type="button"
+            key={item.id}
+            className={searchParams.get('tab') === item.id ? styles.controlIndexActive : ''}
+            onClick={() => jumpToSection(item.id, item.ref)}
+          >
+            {item.label}
           </button>
-        )}
-        <button className={styles.resetButton} onClick={resetSettings}>
-          Reset
-        </button>
+        ))}
+      </nav>
+
+      <div className={styles.headerActions} aria-live="polite">
+        <span className={styles.changeState}>
+          {hasChanges ? 'Unsaved controls are staged locally.' : 'All visible controls are saved.'}
+        </span>
+        <div>
+          {hasChanges && (
+            <button className={styles.saveButton} onClick={saveSettings} disabled={saving}>
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          )}
+          <button className={styles.resetButton} onClick={resetSettings}>
+            Reset
+          </button>
+        </div>
       </div>
 
       <div className={styles.content}>
@@ -841,6 +916,7 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.soundEnabled}
               onChange={(v) => updateSetting('soundEnabled', v)}
+              label="Sound Effects"
             />
           </div>
 
@@ -852,6 +928,7 @@ export default function SettingsPage() {
               value={settings.soundVolume}
               onChange={(v) => updateSetting('soundVolume', v)}
               disabled={!settings.soundEnabled}
+              label="Sound Volume"
             />
           </div>
         </section>
@@ -862,7 +939,7 @@ export default function SettingsPage() {
           className={styles.section}
           style={settingsSectionAnimationStyle(1)}
         >
-          <h2>Display</h2>
+          <h2>Table &amp; Display</h2>
 
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
@@ -871,6 +948,7 @@ export default function SettingsPage() {
             <select
               className={styles.select}
               value={settings.theme}
+              aria-label="Theme"
               onChange={(e) => updateSetting('theme', e.target.value as UserSettings['theme'])}
             >
               <option value="dark">Dark</option>
@@ -906,6 +984,7 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.fourColorDeck}
               onChange={(v) => updateSetting('fourColorDeck', v)}
+              label="Four-Color Deck"
             />
           </div>
 
@@ -922,6 +1001,7 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.showTicker}
               onChange={(v) => updateSetting('showTicker', v)}
+              label="Announcement Ticker"
             />
           </div>
 
@@ -932,6 +1012,7 @@ export default function SettingsPage() {
             <select
               className={styles.select}
               value={settings.animationSpeed}
+              aria-label="Animation Speed"
               onChange={(e) =>
                 updateSetting('animationSpeed', e.target.value as UserSettings['animationSpeed'])
               }
@@ -950,41 +1031,9 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.showPotOdds}
               onChange={(v) => updateSetting('showPotOdds', v)}
+              label="Show Pot Odds"
             />
           </div>
-        </section>
-
-        {/* Gameplay Settings */}
-        <section
-          ref={gameplayRef}
-          className={styles.section}
-          style={settingsSectionAnimationStyle(2)}
-        >
-          <h2>Gameplay</h2>
-
-          {/* Confirm All-In toggle REMOVED 2026-08-28: it saved and synced,
-              but ActionPanel destructures the prop to _confirmAllInDeprecated
-              and never reads it — the in-table SettingsPanel removed its copy
-              for the same documented reason ("accept the action"). A toggle
-              that does nothing is worse than no toggle. The stored field
-              stays for compatibility with old saves. */}
-
-          {/* ── "Auto-Muck My Winning Hand" REMOVED 2026-08-29 ──────────────
-              It was a switch that could not do anything. It promised to "skip
-              the show-or-muck prompt when you win without a showdown", and that
-              prompt has been hard-disabled since 2026-08-23 on Dan's ruling
-              ("auto muck should be on by default, you should never ask if they
-              want to show cards"): TablePage's ASK_TO_SHOW_ON_UNCONTESTED_WIN is
-              a `const … = false`, so its only reader is unreachable code.
-
-              Flipping it wrote localStorage, the table-settings blob AND the
-              user_table_settings.auto_muck_winners column, and said "Settings
-              saved!" — the exact defect settingsBridge's own header says it
-              exists to eliminate: a control the user believes governs something.
-
-              The column and the bridge field stay: rows already hold values, and
-              removing a control must not drop a stored one. If the prompt ever
-              returns, restore the switch here rather than reviving it silently. */}
         </section>
 
         {/* Notifications */}
@@ -1003,6 +1052,7 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.tournamentReminders}
               onChange={(v) => updateSetting('tournamentReminders', v)}
+              label="Tournament Reminders"
             />
           </div>
 
@@ -1014,6 +1064,7 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.clubActivity}
               onChange={(v) => updateSetting('clubActivity', v)}
+              label="Club Activity"
             />
           </div>
 
@@ -1024,6 +1075,7 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.achievementNotifications}
               onChange={(v) => updateSetting('achievementNotifications', v)}
+              label="Achievement Unlocked"
             />
           </div>
 
@@ -1035,6 +1087,7 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.friendAlerts}
               onChange={(v) => updateSetting('friendAlerts', v)}
+              label="Friend Alerts"
             />
           </div>
 
@@ -1046,6 +1099,7 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.settlementAlerts}
               onChange={(v) => updateSetting('settlementAlerts', v)}
+              label="Settlement Alerts"
             />
           </div>
 
@@ -1119,7 +1173,7 @@ export default function SettingsPage() {
           className={styles.section}
           style={settingsSectionAnimationStyle(6)}
         >
-          <h2>Account</h2>
+          <h2>Identity Security</h2>
 
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
@@ -1171,7 +1225,7 @@ export default function SettingsPage() {
 
         {/* Danger Zone */}
         <section ref={dangerRef} className={`${styles.section} ${styles.dangerZone}`}>
-          <h2>Danger Zone</h2>
+          <h2>Account Data &amp; Closure</h2>
 
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
@@ -1211,15 +1265,26 @@ export default function SettingsPage() {
           className={styles.modalOverlay}
           onClick={(e) => e.target === e.currentTarget && setShowEmailModal(false)}
         >
-          <div className={styles.modal}>
-            <h3>Change Email</h3>
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={emailDialogTitleId}
+          >
+            <h3 id={emailDialogTitleId}>Change Email</h3>
             <p>A Confirmation Email Will Be Sent To Your New Address.</p>
+            <label className={styles.fieldLabel} htmlFor="settings-new-email">
+              New Email Address
+            </label>
             <input
+              id="settings-new-email"
               type="email"
               placeholder="New Email Address"
               value={newEmail}
               onChange={(e) => setNewEmail(e.target.value)}
               className={styles.input}
+              autoComplete="email"
+              autoFocus
             />
             <div className={styles.modalActions}>
               <button className={styles.cancelBtn} onClick={() => setShowEmailModal(false)}>
@@ -1243,23 +1308,38 @@ export default function SettingsPage() {
           className={styles.modalOverlay}
           onClick={(e) => e.target === e.currentTarget && setShowPasswordModal(false)}
         >
-          <div className={styles.modal}>
-            <h3>Change Password</h3>
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={passwordDialogTitleId}
+          >
+            <h3 id={passwordDialogTitleId}>Change Password</h3>
             <p>Password Must Be At Least 8 Characters.</p>
+            <label className={styles.fieldLabel} htmlFor="settings-new-password">
+              New Password
+            </label>
             <input
+              id="settings-new-password"
               type="password"
               placeholder="New Password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               className={styles.input}
+              autoComplete="new-password"
+              autoFocus
             />
+            <label className={styles.fieldLabel} htmlFor="settings-confirm-password">
+              Confirm New Password
+            </label>
             <input
+              id="settings-confirm-password"
               type="password"
               placeholder="Confirm New Password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               className={styles.input}
-              style={{ marginTop: '0.5rem' }}
+              autoComplete="new-password"
             />
             {newPassword && confirmPassword && newPassword !== confirmPassword && (
               <p style={{ color: '#ef4444', fontSize: '0.85rem' }}>Passwords Don't Match</p>
@@ -1291,8 +1371,13 @@ export default function SettingsPage() {
           className={styles.modalOverlay}
           onClick={(e) => e.target === e.currentTarget && setShow2FAModal(false)}
         >
-          <div className={styles.modal}>
-            <h3>Set Up Two-Factor Authentication</h3>
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={twoFactorDialogTitleId}
+          >
+            <h3 id={twoFactorDialogTitleId}>Set Up Two-Factor Authentication</h3>
             <p>Scan This QR Code With Your Authenticator App (Google Authenticator, Authy, Etc.)</p>
 
             {totpQRCode && (
@@ -1315,6 +1400,7 @@ export default function SettingsPage() {
             </p>
 
             <input
+              aria-label="Six-digit authenticator code"
               type="text"
               placeholder="Enter 6-digit Code"
               value={verificationCode}
@@ -1322,6 +1408,9 @@ export default function SettingsPage() {
               className={styles.input}
               style={{ textAlign: 'center', fontSize: '1.5rem', letterSpacing: '0.5rem' }}
               maxLength={6}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
             />
 
             <div className={styles.modalActions}>

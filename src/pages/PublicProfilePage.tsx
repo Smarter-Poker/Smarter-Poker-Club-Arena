@@ -68,6 +68,12 @@ export default function PublicProfilePage() {
 
   const loadingRef = useRef(false);
 
+  useEffect(() => {
+    document.title = profile
+      ? `${profile.displayName || profile.username} | Smarter Poker`
+      : 'Player Profile | Smarter Poker';
+  }, [profile]);
+
   useVisibilityRefresh(() => loadProfile());
   const loadProfile = useCallback(async () => {
     if (!userId || !user?.id) return;
@@ -105,7 +111,7 @@ export default function PublicProfilePage() {
       loadingRef.current = false;
       if (isMounted.current) setLoading(false);
     }
-  }, [userId, user?.id]);
+  }, [isMounted, navigate, toast, userId, user?.id]);
 
   useEffect(() => {
     loadProfile();
@@ -303,10 +309,12 @@ export default function PublicProfilePage() {
   });
 
   return (
-    <div className="public-profile-page">
+    <article className="public-profile-page">
       {/* Header with avatar & name */}
-      <div className="public-profile-header">
+      <header className="public-profile-header">
+        <div className="public-profile-artwork" aria-hidden="true" />
         <div className="profile-hero">
+          <span className="public-profile-eyebrow">Player Network // Public Credential</span>
           <PlayerAvatar
             src={profile.avatarUrl || generateDefaultAvatar()}
             name={profile.username}
@@ -329,21 +337,24 @@ export default function PublicProfilePage() {
           </div>
 
           {/* Q3: Playing-At & Status */}
-          {playerStatus?.playingAt && (
-            <div
+          {playerStatus?.playingAt && playerStatus.playingAtTableId ? (
+            <button
+              type="button"
               className="playing-at-badge"
-              onClick={() =>
-                playerStatus.playingAtTableId && navigate(`/table/${playerStatus.playingAtTableId}`)
-              }
+              onClick={() => navigate(`/table/${playerStatus.playingAtTableId}`)}
             >
               Playing At <strong>{playerStatus.playingAt}</strong>
+            </button>
+          ) : playerStatus?.playingAt ? (
+            <div className="playing-at-badge playing-at-badge--static">
+              Playing At <strong>{playerStatus.playingAt}</strong>
             </div>
-          )}
+          ) : null}
           {playerStatus?.statusText && (
             <p className="player-status-text">{playerStatus.statusText}</p>
           )}
         </div>
-      </div>
+      </header>
 
       {/* Action Buttons */}
       <div className="profile-actions">
@@ -390,10 +401,14 @@ export default function PublicProfilePage() {
               onClick={handleMessage}
               disabled={actionLoading}
             >
-              ✉ Message
+              Message
             </button>
-            <button className="action-btn block-btn" onClick={() => setShowBlockModal(true)}>
-              ⊘
+            <button
+              className="action-btn block-btn"
+              onClick={() => setShowBlockModal(true)}
+              aria-label={`Block ${profile.username}`}
+            >
+              Block
             </button>
             <button
               className="action-btn share-btn"
@@ -447,7 +462,8 @@ export default function PublicProfilePage() {
           </h3>
           <div className="mutual-friends-list">
             {mutualFriends.slice(0, 6).map((friend) => (
-              <div
+              <button
+                type="button"
                 key={friend.id}
                 className="mutual-friend-chip"
                 onClick={() => navigate(`/profile/${friend.id}`)}
@@ -461,7 +477,7 @@ export default function PublicProfilePage() {
                   }}
                 />
                 <span>{friend.username}</span>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -503,6 +519,6 @@ export default function PublicProfilePage() {
           onCancel={() => setShowBlockModal(false)}
         />
       )}
-    </div>
+    </article>
   );
 }

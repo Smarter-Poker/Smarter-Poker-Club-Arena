@@ -220,6 +220,8 @@ describe('Club Arena information architecture', () => {
     expect(getArenaSectionNavigation('/marketplace')).toBeNull();
     expect(getArenaSectionNavigation('/stats')).toBeNull();
     expect(getArenaSectionNavigation('/notifications')).toBeNull();
+    expect(getArenaSectionNavigation('/profile')?.label).toBe('Player Identity');
+    expect(getArenaSectionNavigation('/profile/player-1')).toBeNull();
   });
 
   it('connects conduct reports, financial disputes, and exclusions as one permission-aware workflow', () => {

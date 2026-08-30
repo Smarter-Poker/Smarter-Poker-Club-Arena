@@ -100,7 +100,10 @@ export function getArenaSectionNavigation(pathname: string): ArenaSectionNavigat
     return { id: 'rewards', label: 'Rewards Circuit', items: REWARD_ITEMS };
   }
 
-  if (isWithin(current, ['/profile', '/settings'])) {
+  // A public player's `/profile/:userId` is a community destination, not an
+  // account-control surface. Showing the Player Identity rail there selected
+  // "Profile" even though that link opens the viewer's own profile.
+  if (current === '/profile' || isWithin(current, ['/settings'])) {
     return { id: 'account', label: 'Player Identity', items: ACCOUNT_ITEMS };
   }
 

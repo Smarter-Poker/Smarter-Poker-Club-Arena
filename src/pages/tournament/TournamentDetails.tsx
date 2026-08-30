@@ -160,6 +160,11 @@ export default function TournamentDetails({
 
   const lateRegTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  /** Distinguishes this mount's realtime channel from any other mount of the
+      same tournament — see the subscription effect for why that matters. */
+  const channelInstanceRef = useRef<string>(
+    `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+  );
 
   /**
    * MYSTERY BOUNTY (sections 10, 31 to 36, 67, 68, 73).
@@ -194,6 +199,10 @@ export default function TournamentDetails({
    * This is also what makes the MultiTablePage embed right, where the space is
    * a tab panel and not the viewport at all.
    */
+  /** True when this page is rendered inside a container rather than as its own
+      route — see the measurement effect and the auto-open effect below. */
+  const isEmbedded = Boolean(tournamentIdOverride);
+
   useEffect(() => {
     const el = shellRef.current;
     if (!el || typeof window === 'undefined') return;
@@ -215,7 +224,33 @@ export default function TournamentDetails({
        * Converges the same way --details-h does — the guarded writes stop
        * the ResizeObserver loop after one pass.
        */
-      const avail = Math.max(320, window.innerHeight - above);
+      /**
+       * MEASURE AGAINST THE BOX WE ARE ACTUALLY IN (Dan 2026-08-30).
+       *
+       * `window.innerHeight - above` is right for the ROUTE, where the shell
+       * really does run to the bottom of the viewport. It is wrong for the
+       * TournamentLobbyModal embed, where the container is a `75dvh` sheet
+       * anchored to the bottom of the screen: `dvh` and `innerHeight` disagree
+       * by the browser toolbar on iOS and Android, so the shell was measured
+       * TALLER than the sheet holding it. `.tlm-body` is `overflow: hidden`, so
+       * the excess was not merely unreachable — the content area's box was
+       * bigger than anything visible, which is a second, independent way for a
+       * tab to have nothing to scroll while its content is cut off.
+       *
+       * THE EMBEDDER SAYS SO, we do not infer it — the same rule the auto-open
+       * effect follows with `suppressAutoOpenTable`. That distinction is not
+       * fussiness: on the route the parent is `<main>`, which is CONTENT-sized,
+       * so its height is a readback of the height we just wrote and measuring
+       * against it would be a feedback loop rather than a measurement.
+       * `.tlm-body` is `flex: 1 1 auto` inside a fixed-height panel, so its
+       * height is genuinely independent of ours and safe to read.
+       */
+      const parentBox = isEmbedded && parent ? parent.getBoundingClientRect() : null;
+      const parentAvail =
+        parentBox && parentBox.height > 0
+          ? parentBox.height - (el.getBoundingClientRect().top - parentBox.top)
+          : 0;
+      const avail = Math.max(320, parentAvail > 0 ? parentAvail : window.innerHeight - above);
       const nextMargin = below > 0 ? `${-Math.round(below)}px` : '';
       if (el.style.marginBottom !== nextMargin) {
         el.style.marginBottom = nextMargin;
@@ -242,7 +277,7 @@ export default function TournamentDetails({
       window.removeEventListener('orientationchange', measure);
       ro?.disconnect();
     };
-  }, [isLoading, tournament?.id]);
+  }, [isLoading, tournament?.id, isEmbedded]);
 
   useEffect(() => {
     let isMounted = true;
@@ -378,7 +413,30 @@ export default function TournamentDetails({
   useEffect(() => {
     if (!tournamentId) return;
 
-    const channelKey = `tournament-${tournamentId}`;
+    /**
+     * ONE CHANNEL PER MOUNT, NOT PER TOURNAMENT (2026-08-30).
+     *
+     * This was `tournament-${tournamentId}`, and `getOrCreateChannel` hands the
+     * SAME Supabase channel to every consumer of a key. That is right for a key
+     * several different components subscribe to; it is a trap for this one,
+     * because the two consumers are two mounts of THIS page — the
+     * /tournaments/:id route and the TournamentLobbyModal embed, which can be
+     * open on the same event at the same time.
+     *
+     * The second mount then adds its `.on('postgres_changes', ...)` bindings to
+     * a channel that has already joined. supabase-js sends postgres_changes
+     * bindings in the join payload and ignores every one added afterwards: the
+     * second mount receives NOTHING, its `.subscribe()` resolves against the
+     * existing join, and no error is raised anywhere. That is a card frozen on
+     * its mount-time snapshot with a realtime channel reporting itself healthy
+     * — the exact failure the watchdog above exists to survive, and this is the
+     * cause of it rather than the floor under it.
+     *
+     * A per-mount suffix makes the bindings always land pre-join. The refcount
+     * in MasterBus is untouched and still correct; this key simply never has
+     * more than one holder.
+     */
+    const channelKey = `tournament-${tournamentId}-${channelInstanceRef.current}`;
 
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel
@@ -694,6 +752,93 @@ export default function TournamentDetails({
   );
 
   /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  THE WATCHDOG — a lobby card may never freeze (Dan 2026-08-30, binding)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Dan: "the 20k gtd did not start, or launch. currently froze instead of auto
+   * launching."
+   *
+   * The engine had launched it — 13 tables, 111 players seated, 79 hands dealt.
+   * What froze was THIS PAGE, which had loaded once at mount and then never
+   * looked again: it showed STARTS IN 0:00, TABLES 0, LEVEL 1, ELIMINATED 0 —
+   * the REGISTERING snapshot — while the player's seat was already dealt in
+   * behind it. To the player there is no difference between a tournament that
+   * did not start and a card that never noticed, and there was no control on
+   * screen to disprove it.
+   *
+   * THE PAGE HAD NO SECOND SOURCE OF TRUTH. Every live update arrived through
+   * one realtime channel: one dropped socket, one silent CHANNEL_ERROR, one
+   * `.on()` binding added to a channel some other mount had already subscribed
+   * (postgres_changes bindings are sent in the join and IGNORED afterwards, so
+   * the second mount gets no events and no error — fixed separately below), and
+   * the card is frozen for as long as it is open, with realtime reporting
+   * itself perfectly healthy.
+   *
+   * So the truth is re-read on a timer as well. Realtime stays exactly as it
+   * was and is still what makes the page feel live — this is the floor under
+   * it, not a replacement for it. The cadence follows how much a wrong answer
+   * would cost right now:
+   *
+   *   THE START WINDOW — from a minute before `start_time` (which is when the
+   *   engine now pre-seats the field) until the row leaves REGISTERING: every
+   *   3 seconds. This is the only window in which a stale card can strand a
+   *   player who has paid a buy-in, so it is the one worth spending requests
+   *   on. It is bounded by the transition it is waiting for.
+   *
+   *   A LIVE EVENT — 20 seconds. Chip counts and eliminations still arrive over
+   *   realtime; this only has to catch up a page whose socket has gone quiet.
+   *
+   *   EVERYTHING ELSE — 60 seconds, and nothing at all once the event is
+   *   COMPLETED or CANCELLED, because those rows do not change again.
+   *
+   * A hidden tab polls nothing (`document.hidden`) and refreshes once the
+   * moment it is looked at again, so a lobby left open in a background tab
+   * costs nothing and is never the stale one.
+   */
+  useEffect(() => {
+    if (!tournamentId) return;
+    if (typeof document === 'undefined') return;
+
+    const status = String(tournament?.status ?? '');
+    if (status === 'COMPLETED' || status === 'CANCELLED') return;
+
+    const refresh = () => {
+      if (document.hidden) return;
+      void loadTournament(undefined, { quiet: true });
+    };
+
+    const intervalMs = (() => {
+      const startMs = Date.parse(String(tournament?.start_time ?? ''));
+      const preStart = status === 'REGISTERING' || status === 'ANNOUNCED' || status === '';
+      /* 60s of lead, because that is when the engine seats the field
+         (TOURNAMENT_PRESEAT_LEAD_MS), plus 15s of slack so a clock skewed by a
+         few seconds still opens the window before anything happens. */
+      const inStartWindow = Number.isFinite(startMs) && preStart && Date.now() >= startMs - 75_000;
+      if (inStartWindow) return 3_000;
+      if (isLateStatus(status)) return 20_000;
+      return 60_000;
+    })();
+
+    const timer = setInterval(refresh, intervalMs);
+    /* Coming back to the tab is the single most likely moment for the card to
+       be wrong, and the cheapest moment to fix it. */
+    const onVisible = () => {
+      if (!document.hidden) refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+    // `start_time` is in the deps because it decides the cadence: an event
+    // rescheduled while the card is open must re-arm against its new clock.
+  }, [tournamentId, tournament?.status, tournament?.start_time]);
+
+  /**
    * Registration status, recomputed whenever the entry list moves.
    *
    * The `entries.length > 0` guard is gone (2026-08-26). It meant this could
@@ -712,9 +857,14 @@ export default function TournamentDetails({
     setIsRegistered(entries.some((e) => e.user_id === user.id));
   }, [user, tournament, entries]);
 
-  const loadTournament = async (getIsMounted?: () => boolean) => {
+  /**
+   * `quiet` is for the watchdog below: a background refresh must not throw the
+   * page back to its full-screen "Loading tournament..." state every few
+   * seconds, which is what an unconditional `setIsLoading(true)` would do.
+   */
+  const loadTournament = async (getIsMounted?: () => boolean, opts?: { quiet?: boolean }) => {
     if (!tournamentId) return;
-    if (!getIsMounted || getIsMounted()) setIsLoading(true);
+    if (!opts?.quiet && (!getIsMounted || getIsMounted())) setIsLoading(true);
     try {
       const data = await tournamentService.getTournament(tournamentId);
       if (getIsMounted && !getIsMounted()) return;
@@ -795,8 +945,14 @@ export default function TournamentDetails({
           setEntries([]);
         }
 
-        // Fetch tournament tables
-        if (data.status === 'RUNNING') {
+        /* Fetch tournament tables.
+           `isLateStatus` as well as RUNNING (2026-08-30): a LATE_REG event has
+           players at tables, and reading only RUNNING left `tables` empty for
+           it — which meant no featured table, so no WATCH button, and an empty
+           Tables tab on an event that is visibly dealing. The footer already
+           uses `isWatchable` for exactly this reason; the query it depends on
+           did not. */
+        if (data.status === 'RUNNING' || isLateStatus(data.status)) {
           const { data: tablesData, error: tablesErr } = await supabase
             .from('tables')
             .select('id, name, status, max_players, current_players, small_blind, big_blind')
@@ -837,9 +993,13 @@ export default function TournamentDetails({
       }
     } catch (error) {
       reportError(error, 'TournamentDetails.Failed_to_load_tournament');
-      if (!getIsMounted || getIsMounted()) toast.error('Failed to load tournament details');
+      /* A quiet refresh that fails is a retry next tick, not a toast. Toasting
+         it would put an error on screen every few seconds for the whole of a
+         network wobble, on a page that is otherwise still perfectly readable. */
+      if (!opts?.quiet && (!getIsMounted || getIsMounted()))
+        toast.error('Failed to load tournament details');
     }
-    if (!getIsMounted || getIsMounted()) setIsLoading(false);
+    if (!opts?.quiet && (!getIsMounted || getIsMounted())) setIsLoading(false);
   };
 
   /**
@@ -1338,11 +1498,51 @@ export default function TournamentDetails({
             /* `isWatchable` covers LATE_REG as well as RUNNING. A late-reg
                event has players at tables — refusing to show WATCH for it was
                the same blind spot the registration side already fixed. */
+            /**
+             * ═════════════════════════════════════════════════════════════════
+             *  TAKE SEAT (Dan 2026-08-30, binding: "there needs to be a take
+             *  seat button, there isn't")
+             * ═════════════════════════════════════════════════════════════════
+             *
+             * There was one control here that took a player to their own seat,
+             * it was labelled ENTER TABLE, and it was gated on
+             * `status === 'playing'`. Three things were wrong with that.
+             *
+             * IT SAID THE WRONG THING. "Enter table" is what a spectator does.
+             * The player has paid a buy-in and has a seat with their stack in
+             * it; the action is taking it. Now that the engine seats the field
+             * a minute before the cards (TOURNAMENT_PRESEAT_LEAD_MS), that
+             * minute is exactly when a player wants a button that says so.
+             *
+             * IT WAS NOT OFFERED TO A SEATED 'registered' PLAYER. Late
+             * registration seats you at the moment you register
+             * (fn_seat_late_registrant) while your row can still read
+             * 'registered' for a beat — so a player who had just paid, and
+             * whose seat existed, was shown the passive badge WAITING FOR
+             * SEAT... over the top of a seat they already had. The test is a
+             * table id, which is the thing that is true when there is a seat to
+             * take, not a status enum that is true slightly later.
+             *
+             * IT WAS THE ONLY WAY IN, AND IT WAS AUTOMATIC. The auto-open
+             * effect above navigates once per tournament; if a player dismisses
+             * that, opens the lobby from the felt (where auto-open is
+             * deliberately suppressed), or is looking at the card on a second
+             * device, there was nothing on screen to press. A button that is
+             * always there costs nothing and removes a whole class of "it
+             * froze" — which is what a card with no control on it looks like,
+             * whatever the server is doing.
+             */
             if (isWatchable) {
-              if (myEntry?.status === 'playing' && myEntry.table_id) {
+              if (
+                myEntry?.table_id &&
+                (myEntry.status === 'playing' || myEntry.status === 'registered')
+              ) {
                 return (
-                  <Link to={`/table/${myEntry.table_id}`} className="btn btn-enter-table">
-                    ENTER TABLE
+                  <Link
+                    to={`/table/${myEntry.table_id}`}
+                    className="btn btn-enter-table btn-take-seat"
+                  >
+                    TAKE SEAT
                   </Link>
                 );
               }

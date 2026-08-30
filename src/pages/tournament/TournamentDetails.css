@@ -381,35 +381,75 @@
    The tab itself is the scroller (`> *`), not this container, so a tab that
    wants two independently scrolling regions can still have them.
    ------------------------------------------------------------------------- */
+/* ── WHY THIS CONTAINER SCROLLS AND THE TABS NO LONGER DO (Dan 2026-08-30) ──
+
+   Dan: "inside the tournament cards when they load, you need to be able to
+   scroll up or down inside all pages."
+
+   This used to be `overflow: hidden` with `.details-content > *` made the
+   scroller, on the theory that "a tab that wants two independently scrolling
+   regions can still have them". The theory cost every tab its scrollbar,
+   because it asks each of eight tab stylesheets to get the same four-property
+   incantation right, and eight of eight got it wrong in three different ways:
+
+     CLIPPED OUTRIGHT - `.dov-info--band` set `overflow: hidden` on the very
+     element carrying `.tl-scroll`, and being imported after it, won. The
+     Detail tab could not scroll by a single pixel.
+
+     NEVER OVERFLOWED - `.dov`, `.blinds-tab` and `.rw` are flex columns whose
+     bands shrink instead of overflowing, so the root was always exactly as
+     tall as its box and `overflow-y: auto` had nothing to scroll. Content past
+     the fold was simply invisible.
+
+     CAPPED AGAINST THE WRONG BOX - `.rk-list` and `.et-scroll` capped
+     themselves at `min(62vh, 620px)` / `min(58vh, 520px)`. Rendered inside
+     TournamentLobbyModal's 75dvh sheet, `vh` is the VIEWPORT, not the sheet,
+     so the cap sat below the content and above the space available at once.
+
+   One scroller, owned here, cannot be got wrong by a tab that forgets. A tab
+   that genuinely wants a second independent scrolling region is still free to
+   declare one on an inner element - it just may not be the only one, and it
+   may not be the tab root. */
 .details-content {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
-  padding: 0 12px 12px;
-  display: flex;
-  flex-direction: column;
-}
-
-.details-content > * {
-  flex: 1 1 auto;
-  min-height: 0;
-  max-height: 100%;
   overflow-y: auto;
+  /* Wide content (the blind ladder, the payout table) scrolls inside its own
+     box; the panel itself must never scroll sideways. */
+  overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: rgba(111, 220, 255, 0.3) transparent;
+  padding: 0 12px 12px;
+  /* NOT `display: flex`. A flex column shrinks its children to fit rather than
+     overflowing, which is precisely how a container with `overflow-y: auto`
+     ends up with nothing to scroll. Block layout lets the tab be as tall as
+     its content and lets this box scroll it. */
+  display: block;
 }
 
+/* The tab root is CONTENT now, not a viewport. Anything it declared to make
+   itself a scroller inside the old scheme is neutralised here in one place,
+   so no tab has to be edited to stop fighting the panel it lives in. */
+.details-content > * {
+  max-height: none;
+  min-height: 0;
+  overflow: visible;
+}
+
+.details-content::-webkit-scrollbar,
 .details-content > *::-webkit-scrollbar {
   width: 6px;
 }
 
+.details-content::-webkit-scrollbar-thumb,
 .details-content > *::-webkit-scrollbar-thumb {
   border-radius: 3px;
   background: rgba(111, 220, 255, 0.3);
 }
 
+.details-content::-webkit-scrollbar-track,
 .details-content > *::-webkit-scrollbar-track {
   background: transparent;
 }

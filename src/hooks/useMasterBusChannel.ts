@@ -47,6 +47,8 @@ export interface UseMasterBusChannelOptions {
    * Supabase subscription status.
    */
   onSubscriptionError?: (status: string, err?: Error) => void;
+  /** Receives every channel lifecycle status, including SUBSCRIBED after recovery. */
+  onSubscriptionStatus?: (status: string) => void;
 }
 
 /**
@@ -91,10 +93,12 @@ export function useMasterBusChannel({
   onPayload,
   enabled = true,
   onSubscriptionError,
+  onSubscriptionStatus,
 }: UseMasterBusChannelOptions) {
   // Store callbacks in refs to avoid re-subscribing on every render
   const callbackRef = useRef(onPayload);
   const errorCallbackRef = useRef(onSubscriptionError);
+  const statusCallbackRef = useRef(onSubscriptionStatus);
 
   // Update refs when callbacks change (but doesn't trigger re-subscription)
   useEffect(() => {
@@ -103,6 +107,9 @@ export function useMasterBusChannel({
   useEffect(() => {
     errorCallbackRef.current = onSubscriptionError;
   }, [onSubscriptionError]);
+  useEffect(() => {
+    statusCallbackRef.current = onSubscriptionStatus;
+  }, [onSubscriptionStatus]);
 
   useEffect(() => {
     // Null-safety: skip if no channel name or filter (common during data loading)
@@ -172,6 +179,11 @@ export function useMasterBusChannel({
         )
         .subscribe((status: string, err?: Error) => {
           if (!alive) return;
+          try {
+            statusCallbackRef.current?.(status);
+          } catch (cbErr) {
+            reportError(cbErr, 'useMasterBusChannel.onSubscriptionStatus_threw');
+          }
           /* CLOSED is what arrives when the socket drops or another owner
              removes a shared channel, and it was not handled at all - so the
              consumer went blind with nothing to tell it. */

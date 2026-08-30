@@ -343,3 +343,63 @@ World Hub PR #1036: in the no-Babel branch only, JSX-shaped files are SKIPPED an
 reported as unverified instead of failed, with a message saying coverage is
 reduced and how to restore it. Verified both ways, and the PR itself was pushed
 from a worktree with no `node_modules` — the exact condition that used to fail.
+
+## The money alarms, measured (NOT touched — Dan's call, RULE 0 / CLAUDE.md 11.5)
+
+These are **not** caused by today's outage. They predate it and are trending.
+
+**1. A club treasury is going more negative every day.** From
+`ledger_reconcile_log`, `entity_type = 'negative_balance'`, severity critical:
+
+| run_date   | drift    |
+| ---------- | -------- |
+| 2026-08-27 | 1,202.80 |
+| 2026-08-28 | 4,846.10 |
+| 2026-08-29 | 7,161.10 |
+
+Club "Midway Union" currently holds `chip_treasury = -7,161.10`. A club treasury
+cannot legitimately go negative — something is paying out of it without a
+balance check, and it is compounding at roughly 2,300-3,600 a day. **This is the
+one I would look at first.**
+
+**2. BBJ pool conservation is off by 74k.** `fn_bbj_conservation_check()`:
+
+```
+inflow  376,901.78
+outflow 184,979.01
+balances 117,628.43
+gap      74,294.34   (tolerance 1)
+baseline_gap 2,572.59  ->  drift_from_baseline 71,721.75
+```
+
+**3. `club_treasury` drift is critical and wildly unstable** across runs:
+-110,377.78 (27th), 5,159,494.35 (28th), 12,425,392.32 (29th). Either the check
+or the accumulator is wrong; a real economy does not move like that.
+
+**4. The rakeback settler is behind but CATCHING UP** — not stuck.
+`fn_settler_lag_check()`: cursor `2026-08-30T05:09:37Z`, lag 15.32h, backlog
+21,583 rows, last save 6 minutes ago. The backlog fell 22,445 -> 21,583 in about
+ten minutes, so it is draining at roughly 860 rows/10min (~4h to clear). Most of
+the lag was built during the outage. No action needed unless it stops falling.
+
+**5. `fn_union_weekly_rakeback_close_all` is failing** with
+`EMERGENCY_PROFIT_DRIFT_LOCK` — a deliberate guard refusing to settle while the
+drift above is unresolved. It is doing its job; it unblocks when 1-3 do.
+
+## Also observed, not changed
+
+- **Sentry has been blind since 2026-08-23**: 46,362 events accepted that day,
+  then zero — 34,228 rate-limited, 722,617 discarded by the SDK. This is a quota
+  matter (billing), which is why it is not fixed here. Every "nothing in Sentry"
+  conclusion for the past week has been a broken pipe, not evidence.
+- **Two SECURITY DEFINER views are readable by `anon`**:
+  `v_shell_staleness_rate`, `v_shell_reload_lateness`. Both expose ONLY aggregate
+  telemetry (day, counts, percentages, worst page age) — no user data, no
+  balances. Deliberately left alone: revoking anon SELECT is a one-line change
+  but would break any unauthenticated status page reading them, and the exposure
+  does not justify that risk without knowing the consumer.
+- Supabase security advisors: 855 lints, of which 3 are ERROR — the two views
+  above, plus `spatial_ref_sys` (a PostGIS-owned table that cannot take RLS and
+  is flagged on every PostGIS project). The 642 WARN
+  `authenticated_security_definer_function_executable` are this platform's RPC
+  design, not defects.

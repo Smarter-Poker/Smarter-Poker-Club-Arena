@@ -56,6 +56,18 @@ And the negative pin in that file (`not.toMatch(/needsRebuyPause = true/)`) is
 the strongest argument for the whole rule: a window bounded by a byte count
 that stops short passes by looking at nothing at all.
 
+## 4. Reduced motion truncated the announcement with no sign it had
+
+With `prefers-reduced-motion` the marquee stops and the first copy of the
+message is shown static — correct, motion collapses and meaning does not. But
+`.mtt-ticker__scroll` is `inline-flex`, sized by its content, so it stayed wider
+than the bar and the line was cut dead at the edge with nothing to say it
+continued. It now ellipsises: `max-width: 100%` + `min-width: 0` on the
+scroller, `text-overflow: ellipsis` on the message. The strip is a button on to
+the event either way, and the copy is built most-important-part-first
+("505 Overlay Right Now - <event> - ..."), so what survives the truncation is
+the part worth reading.
+
 ## Also checked, and deliberately left alone
 
 - **`--sp-page-h` over-states by the ticker's height on `/table/*`.** The felt

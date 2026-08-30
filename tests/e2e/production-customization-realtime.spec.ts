@@ -243,6 +243,14 @@ function different(current: string, options: readonly string[]) {
   return result;
 }
 
+function differentFrom(disallowed: readonly string[], options: readonly string[]) {
+  const result = options.find((name) => !disallowed.includes(name));
+  if (!result) {
+    throw new Error(`No free design remains after excluding ${disallowed.join(', ')}.`);
+  }
+  return result;
+}
+
 async function restoreState(studio: Locator, state: SavedStudioState) {
   await selectAsset(studio, 'Looks', state.selections.Looks);
   await selectAsset(studio, 'Tables', state.selections.Tables);
@@ -318,8 +326,21 @@ test.describe('production Table Studio realtime contract', () => {
       await expectAppearance(otherStudio, otherBefore);
 
       for (const category of ['Tables', 'Scenes', 'Buttons', 'Cards'] as const) {
-        const target = different(
-          primaryOriginal.selections[category],
+        await activateCategory(primaryStudio, category);
+        if (category === 'Scenes') {
+          await primaryStudio.getByRole('button', { name: /^Places & Rooms/ }).click();
+        }
+        const selected = primaryStudio.locator(
+          '.theme-modal__grid .theme-asset[aria-pressed="true"]'
+        );
+        const current =
+          (await selected.count()) === 1 ? (await selected.getAttribute('aria-label')) || '' : '';
+        // A preset may already have applied one of these assets. Re-selecting
+        // it can produce a green POST while proving nothing about a changed
+        // value surviving reload. The final choice must differ from both the
+        // artwork currently on screen and the account's original value.
+        const target = differentFrom(
+          [current, primaryOriginal.selections[category]],
           CATEGORY_ALTERNATIVES[category]
         );
         await selectAsset(primaryStudio, category, target);

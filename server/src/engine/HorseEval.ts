@@ -1102,6 +1102,76 @@ function buildOmahaReservoir(holeCount: number, isHiLo: boolean): OmahaReservoir
  * through its own empirical CDF: band [0.85, 1.0] = the top 15% of sorted
  * combos BY INDEX. That is what the read meant all along.
  */
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * OMAHA PREFLOP PERCENTILE — the same CDF correction, for the DECISION
+ * thresholds (Dan 2026-08-30, after a live PLO spin)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The comment above records that omahaPreflopScore is NOT percentile-style
+ * and that matching percentile-intent BANDS against it selects almost
+ * nothing. The reservoir fixed that for HorseMind's reads. It was never
+ * applied to the place it matters most: the preflop decision itself.
+ *
+ * decidePreflopV7's thresholds are percentile-intent — they are calibrated
+ * against holdemPreflopScore, which IS percentile-style. HorseLogic fed them
+ * the raw Omaha score, whose distribution is compressed:
+ *
+ *     median 0.24, p75 0.32, max observed 0.72   (measured over 300 deals)
+ *
+ * So in PLO every hand read as bottom-quartile trash. Measured against the
+ * live decide() before this fix, 3-max PLO spin, SB unopened:
+ *
+ *     first to act   ->  call 212, fold 88, RAISE 0 of 300
+ *
+ * Zero opens, ever. That is exactly what Dan saw: horses that never raise,
+ * never re-raise, and fold to a pot-sized bet.
+ *
+ * THE FIX: map the score through its own empirical CDF, so the median PLO
+ * hand becomes 0.5 and the existing thresholds mean what they say. Ties take
+ * the MID-rank so a common score does not slam to the bottom of its block.
+ * Same reservoir, same private RNG, cached per (holeCount, isHiLo) — one
+ * binary search per decision, no I/O, and the postflop path is untouched
+ * because it already uses real Monte Carlo equity.
+ */
+export function omahaPreflopPercentile(cards: Card[], isHiLo: boolean): number {
+  const raw = omahaPreflopScore(cards, isHiLo);
+  const holeCount = cards.length;
+  // Below four cards there is no Omaha hand to rank; the raw score is all
+  // there is, and callers already guard this.
+  if (holeCount < 4) return raw;
+
+  const key = `${holeCount}${isHiLo ? 'h' : ''}`;
+  let rv = omahaReservoirs.get(key);
+  if (!rv) {
+    rv = buildOmahaReservoir(holeCount, isHiLo);
+    omahaReservoirs.set(key, rv);
+  }
+  const s = rv.scores;
+  const n = s.length;
+  if (n === 0) return raw;
+
+  // lower bound: how many reservoir scores are strictly below this hand
+  let lo = 0;
+  let hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (s[mid] < raw) lo = mid + 1;
+    else hi = mid;
+  }
+  const lower = lo;
+  // upper bound: end of the tie block
+  let lo2 = lower;
+  let hi2 = n;
+  while (lo2 < hi2) {
+    const mid = (lo2 + hi2) >> 1;
+    if (s[mid] <= raw) lo2 = mid + 1;
+    else hi2 = mid;
+  }
+  return clamp01((lower + lo2) / 2 / n);
+}
+
 export function placeOmahaBandCombo(
   deck: Card[],
   windowStart: number,

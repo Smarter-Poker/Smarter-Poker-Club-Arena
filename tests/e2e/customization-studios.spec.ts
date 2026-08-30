@@ -282,7 +282,7 @@ test.describe('real Table Studio browser flows', () => {
     context,
     page,
   }) => {
-    test.setTimeout(120_000);
+    test.slow();
     await mockStudioBackend(context, { unlockAllLooks: true });
     const studio = await openStudio(page);
     const shell = studio.locator('.theme-modal__preview-shell');
@@ -304,22 +304,35 @@ test.describe('real Table Studio browser flows', () => {
     });
 
     const settleArtwork = async () => {
-      await page.evaluate(async () => {
+      await shell.evaluate(async (preview) => {
         await document.fonts.ready;
         await Promise.all(
-          Array.from(document.images)
-            .filter((image) => image.complete)
-            .map((image) => image.decode?.().catch(() => undefined))
+          Array.from(
+            preview.querySelectorAll<HTMLImageElement>(
+              '.studio-game-preview__background-ambient, .studio-game-preview__background, .studio-game-preview__table'
+            )
+          ).map((image) => image.decode?.().catch(() => undefined))
         );
       });
     };
     const capture = async (name: string) => {
       await settleArtwork();
-      await expect(shell).toHaveScreenshot(name, {
+      await shell.scrollIntoViewIfNeeded();
+      const bounds = await shell.boundingBox();
+      expect(bounds, `preview bounds for ${name}`).not.toBeNull();
+      const clip = {
+        x: Math.floor(bounds!.x),
+        y: Math.floor(bounds!.y),
+        width: Math.ceil(bounds!.x + bounds!.width) - Math.floor(bounds!.x),
+        height: Math.ceil(bounds!.y + bounds!.height) - Math.floor(bounds!.y),
+      };
+      const screenshot = await page.screenshot({
         animations: 'disabled',
         caret: 'hide',
-        maxDiffPixelRatio: 0.02,
+        clip,
+        scale: 'css',
       });
+      expect(screenshot).toMatchSnapshot(name, { maxDiffPixelRatio: 0.02 });
     };
 
     for (const look of looks) {

@@ -80,7 +80,6 @@
   height: 2px;
 }
 
-.controlIndex button:hover,
 .controlIndex button:focus-visible,
 .controlIndexActive {
   color: #f4f8fb !important;
@@ -171,21 +170,13 @@
   color: #ff9a9a;
 }
 
-.saveButton:hover,
 .saveButton:focus-visible,
-.resetButton:hover,
 .resetButton:focus-visible,
-.actionButton:hover,
 .actionButton:focus-visible,
-.actionButtonSecondary:hover,
 .actionButtonSecondary:focus-visible,
-.dangerButton:hover,
 .dangerButton:focus-visible,
-.studioButton:hover,
 .studioButton:focus-visible,
-.cancelBtn:hover,
 .cancelBtn:focus-visible,
-.saveBtn:hover,
 .saveBtn:focus-visible {
   border-color: #b7e6ff;
   outline: none;

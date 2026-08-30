@@ -275,11 +275,8 @@
     box-shadow 160ms ease;
 }
 
-.editButton:hover,
 .editButton:focus-visible,
-.workspaceCta:hover,
 .workspaceCta:focus-visible,
-.textAction:hover,
 .textAction:focus-visible {
   border-color: #77c9ff;
   color: #fff;
@@ -348,7 +345,6 @@
   box-shadow: 0 0 12px rgba(58, 168, 255, 0.7);
 }
 
-.destination:hover,
 .destination:focus-visible {
   border-color: #6c8799;
   outline: 2px solid transparent;

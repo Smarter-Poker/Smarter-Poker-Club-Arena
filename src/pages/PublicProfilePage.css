@@ -229,7 +229,6 @@
   cursor: pointer;
 }
 
-.public-profile-page .action-btn:hover,
 .public-profile-page .action-btn:focus-visible {
   border-color: #77c9ff;
   color: #fff;
@@ -347,7 +346,6 @@
   cursor: pointer;
 }
 
-.public-profile-page .mutual-friend-chip:hover,
 .public-profile-page .mutual-friend-chip:focus-visible {
   border-color: #77c9ff;
   outline: none;

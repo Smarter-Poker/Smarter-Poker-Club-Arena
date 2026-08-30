@@ -153,6 +153,14 @@
   text-transform: uppercase;
 }
 
+.pickerStatus {
+  padding: 22px 16px;
+  color: #91a1b1;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
 .title {
   color: #aebdca;
 }
@@ -274,6 +282,13 @@
   box-shadow:
     0 0 0 3px rgba(54, 169, 255, 0.12),
     0 0 13px var(--cashier-blue);
+}
+
+.securityDotWarning {
+  background: #e0aa54;
+  box-shadow:
+    0 0 0 3px rgb(197 154 74 / 16%),
+    0 0 13px #c59a4a;
 }
 
 .heroMetrics {
@@ -687,6 +702,10 @@
   border-bottom: 1px solid rgba(141, 158, 175, 0.11);
   color: #dfe6eb;
   background: rgba(8, 12, 17, 0.72);
+  cursor: default;
+}
+
+.selectableRow {
   cursor: pointer;
 }
 

@@ -246,6 +246,75 @@ test.describe('every device gets the same proportions', () => {
     ).toEqual([]);
   });
 
+  test('the bottom reserve holds the hero block on every phone, with nothing spare', async ({
+    page,
+  }) => {
+    /* Dan 2026-08-29: "table sizing is off because you are leaving too much
+       room at the bottom for the action bar."
+
+       The strip between the felt's bottom edge and the action bar's top edge
+       IS --sp-hero-clear, exactly, on every device: --sp-table-bottom is
+       (action-reserve + hero-clear) and the bar occupies the action-reserve.
+       What that strip has to hold is the part of the hero seat that hangs
+       below the felt, because the hero's avatar CENTRE sits on the scaler's
+       bottom edge (SeatSlot.css, "Zero, not some smaller lift").
+
+       This pins the reserve from BOTH sides on the devices Dan reviews from,
+       which is what makes it a guard rather than a floor:
+
+         too small  the hero's plate goes under the bar - the 2026-08-23 bug,
+                    and the reason the reserve exists at all;
+         too large  the felt is shorter than the screen allows for no reason,
+                    which is the report that produced this beat.
+
+       Phones only. The tablets in DEVICES legitimately overhang PAST this
+       reserve (an iPad Pro 12.9 hero block is 86.8px against a 62px strip) -
+       they have vertical space to spare and clear it on the bar's own height,
+       so holding them to the phone's rule would forbid a layout that is fine.
+       The hero-plate-vs-bar beat above is what covers them. */
+    const PHONES = [
+      'iPhone SE',
+      'iPhone 12/13/14',
+      'iPhone 14 Pro Max',
+      'iPhone 12/13/14 (real)',
+      'iPhone 14 Pro Max (real)',
+    ];
+    const SLACK_BUDGET = 8; // px of reserve a phone may carry above its need
+
+    const rows = (await measureAll(page, css)).filter((r) => PHONES.includes(r.device));
+    expect(rows.length, 'the phone rows vanished from DEVICES').toBe(PHONES.length);
+
+    const tooTight: string[] = [];
+    const tooLoose: string[] = [];
+    for (const r of rows) {
+      const spare = r.heroClear - r.heroOverhang;
+      if (spare < 0) {
+        tooTight.push(
+          `${r.device} (${r.vp}): the hero block hangs ${r.heroOverhang}px below the felt but ` +
+            `the reserve is only ${r.heroClear}px - the plate goes under the action bar`
+        );
+      } else if (spare > SLACK_BUDGET) {
+        tooLoose.push(
+          `${r.device} (${r.vp}): reserve ${r.heroClear}px against a ${r.heroOverhang}px block = ` +
+            `${spare.toFixed(1)}px of felt given away for nothing`
+        );
+      }
+    }
+
+    expect(
+      tooTight,
+      'the bottom reserve no longer holds the hero block. Do not shrink --sp-hero-clear to ' +
+        'satisfy the other half of this beat - shrink what hangs below the felt, or take the ' +
+        'pixels from the action bar.'
+    ).toEqual([]);
+    expect(
+      tooLoose,
+      `--sp-hero-clear is carrying more than ${SLACK_BUDGET}px of nothing on a phone, which is ` +
+        'felt length the player can see missing. If the block genuinely shrank, lower the ' +
+        'reserve in the same commit and say so.'
+    ).toEqual([]);
+  });
+
   test('the widest hole-card row keeps a constant share of the felt', async ({ page }) => {
     /* The fit guarantee, expressed the way it is now true. Every worked example
        in SeatSlot.css used to be a hand-checked sum at four fixed widths — the

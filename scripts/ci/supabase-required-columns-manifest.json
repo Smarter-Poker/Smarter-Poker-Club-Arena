@@ -1381,6 +1381,14 @@
       "hand_matrix",
       "source_rows"
     ],
+    "gto_postflop_v31": [
+      "street",
+      "game_family",
+      "position",
+      "depth_bucket",
+      "texture_class",
+      "hand_matrix"
+    ],
     "gto_scenarios": [
       "id",
       "title",
@@ -3668,6 +3676,9 @@
     ],
     "youtube_embed_failures": [
       "video_id"
+    ],
+    "zz_reopen2_20260830_backup": [
+      "table_id"
     ],
     "zz_reopen_20260830_backup": [
       "table_id"

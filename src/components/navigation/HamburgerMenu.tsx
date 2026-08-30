@@ -37,6 +37,10 @@ import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
 import { capture } from '../../lib/analytics';
 import { fetchQuickLinkClubs, type QuickLinkClub } from '../../utils/clubQuickLink';
 import {
+  LeaderboardService,
+  type LeaderboardRewardContext,
+} from '../../services/LeaderboardService';
+import {
   clearTableStudioCheckoutReturnUrl,
   readTableStudioCheckoutIntent,
   tableStudioCheckoutResult,
@@ -149,6 +153,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [clubChoices, setClubChoices] = useState<QuickLinkClub[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [attentionCount, setAttentionCount] = useState(0);
+  const [rewardContexts, setRewardContexts] = useState<LeaderboardRewardContext[]>([]);
+  const [rewardContextClubId, setRewardContextClubId] = useState<string>('');
 
   // Stripe returns to the route where the player opened Table Studio. The
   // command drawer is mounted globally even while closed, so it is the one
@@ -215,6 +221,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const pinnedItems = pinnedPaths
     .map((path) => allNavigationItems.find((item) => item.path === path))
     .filter((item): item is (typeof allNavigationItems)[number] => Boolean(item));
+  const rewardToolMatchesSearch =
+    !searchQuery.trim() ||
+    'leaderboard prize setup owner rewards promo wallet'.includes(searchQuery.trim().toLowerCase());
 
   useEffect(() => {
     try {
@@ -291,6 +300,36 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     if (!isOpen || !user?.id) return;
     void fetchQuickLinkClubs(user.id).then(setClubChoices);
   }, [isOpen, user?.id]);
+
+  useEffect(() => {
+    if (!isOpen || !user?.id) {
+      if (!user?.id) {
+        setRewardContexts([]);
+        setRewardContextClubId('');
+      }
+      return;
+    }
+    let cancelled = false;
+    void LeaderboardService.getManageableRewardContexts()
+      .then((contexts) => {
+        if (cancelled) return;
+        setRewardContexts(contexts);
+        setRewardContextClubId((current) => {
+          if (contexts.some((context) => context.club_id === current)) return current;
+          const routeContext = contexts.find((context) => context.club_id === workspace.clubUUID);
+          return routeContext?.club_id || contexts[0]?.club_id || '';
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        reportError(error, 'HamburgerMenu.Leaderboard_reward_contexts_failed');
+        setRewardContexts([]);
+        setRewardContextClubId('');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, user?.id, workspace.clubUUID]);
 
   useEffect(() => {
     if (!isOpen || !workspace.clubUUID || !workspace.isClubStaff) {
@@ -1050,12 +1089,54 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           </section>
         ))}
 
-        {searchQuery && filteredNavigationGroups.length === 0 && (
-          <div className={styles.noResults} role="status">
-            <strong>No Menu Destination Matches.</strong>
-            <span>Press Search To Look Across Players And Clubs.</span>
-          </div>
+        {rewardContexts.length > 0 && rewardToolMatchesSearch && (
+          <section className={styles.navGroup} aria-label="Owner Prize Tools">
+            <h2 className={styles.sectionHeader}>Owner Prize Tools</h2>
+            {rewardContexts.length > 1 && (
+              <label className={styles.contextSwitcher}>
+                <span>Prize Club</span>
+                <select
+                  value={rewardContextClubId}
+                  onChange={(event) => setRewardContextClubId(event.target.value)}
+                >
+                  {rewardContexts.map((context) => (
+                    <option key={context.club_id} value={context.club_id}>
+                      {context.club_name}
+                      {context.union_name ? ` / ${context.union_name}` : ' / Standalone'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <div className={styles.navItemRow}>
+              <button
+                type="button"
+                className={styles.navItem}
+                onClick={() =>
+                  handleNavigate(`/leaderboard?setup=prizes&club=${rewardContextClubId}`)
+                }
+                disabled={!rewardContextClubId}
+              >
+                <span>
+                  <span className={styles.navLabel}>Leaderboard Prize Setup</span>
+                  <span className={styles.navDescription}>
+                    Configure Suggested Or Custom Promo Wallet Prize Plans
+                  </span>
+                </span>
+                <span className={styles.navArrow}>›</span>
+              </button>
+            </div>
+          </section>
         )}
+
+        {searchQuery &&
+          filteredNavigationGroups.length === 0 &&
+          !(rewardContexts.length > 0 && rewardToolMatchesSearch) && (
+            <div className={styles.noResults} role="status">
+              <strong>No Menu Destination Matches.</strong>
+              <span>Press Search To Look Across Players And Clubs.</span>
+            </div>
+          )}
 
         <button
           type="button"

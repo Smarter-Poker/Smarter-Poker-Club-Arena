@@ -3903,6 +3903,16 @@ button.post-bb-overlay-button {
 .table-page.ca-raising .chat-collapsed {
   opacity: 0;
   pointer-events: none;
+  /* VISIBILITY, NOT JUST POINTER-EVENTS (Dan 2026-08-30: "IF YOU TRY TO BET
+     33% FROM THE ACTION BAR, IT SOMEHOW BLEEDS THROUGH, AND OPENS THE
+     PREVIOUS HAND BUTTON"). `pointer-events: none` on an ancestor is only a
+     default - `.prev-hand-card` (and the rabbit/timebank tiles) set their own
+     `pointer-events: auto`, which RE-ENABLES hit-testing inside a none
+     ancestor. The HUD paints after the action panel at the same z-index, so
+     the invisible previous-hand button sat on top of the preset row and ate
+     the 33% tap. `visibility: hidden` removes the subtree from hit-testing
+     entirely and no descendant can opt back in. */
+  visibility: hidden;
   transition: opacity 0.15s ease;
 }
 

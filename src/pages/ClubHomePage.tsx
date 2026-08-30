@@ -1498,7 +1498,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         },
         300
       ),
-      masterBus.subscribeDebounced('WAITLIST_PROMOTED', reload, 300),
     ];
 
     // 90-second fallback interval to ensure the page data doesn't get completely

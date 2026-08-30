@@ -82,6 +82,38 @@ const TABLE_DISCOVERY_INTERVAL = 5000; // Check for new tables every 5 seconds
 const TOURNAMENT_DISCOVERY_INTERVAL = 5000; // Check for tournaments every 5 seconds
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE SEAT-FIRST START LANE RUNS AT ONE SECOND (Dan 2026-08-30, round 16)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan, verbatim: "THE MOMENT THE 3RD SEAT IS BOUGHT AND PAID FOR THE SPIN
+ * ANIMATION MUST START 1 SECOND LATER!"
+ *
+ * That is a hard number, and on a 5-second sleep it is unreachable by
+ * construction. Measured against production over six hours, 524 spins, from
+ * the third paid seat to `started_at`:
+ *
+ *     p50 5.4s   p90 7.7s   max 73.8s   299 of 524 over five seconds
+ *
+ * Dan's own game on 2026-08-30 took 39.6s (paid 07:33:41.4, started
+ * 07:34:21.0) because the engine happened to be restarting in that minute.
+ *
+ * A whole second of it was just this sleep. The lane is deliberately the
+ * cheapest loop in the process — two bounded reads per pass, `tables` and
+ * `table_seats`, both keyed by ids it already holds — and the per-game fill
+ * throttle (12s) and the start's own synchronous engine-map check mean a
+ * faster cadence adds no work per GAME, only the two reads per second. That
+ * is a trivial load next to the ~200 hands a minute this database already
+ * takes, and it buys the difference between Dan's rule and a shrug.
+ *
+ * It stays a POLL rather than a LISTEN on purpose: the engine holds no direct
+ * Postgres connection (supabase-js only, see server/package.json), so
+ * NOTIFY would mean a new dependency and a new failure mode on the one path
+ * that must never silently stop. A one-second poll cannot miss an edge.
+ */
+const SEAT_FIRST_START_INTERVAL = 1000;
+
+/**
  * Lease reaping. An hour is 120x the 30-second staleness window, so a row this
  * old has already lost every claim it could ever win and deleting it cannot
  * race a live engine. The server-side function refuses anything under 600s.
@@ -3583,7 +3615,9 @@ export class GameServer {
       } catch (err) {
         reportError(err, 'GameServer.seat_first_fast_start_error');
       }
-      await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
+      /* ONE SECOND, not five. See SEAT_FIRST_START_INTERVAL: Dan's rule is a
+         number, and four fifths of the old floor was this line. */
+      await this.sleep(SEAT_FIRST_START_INTERVAL);
     }
   }
 

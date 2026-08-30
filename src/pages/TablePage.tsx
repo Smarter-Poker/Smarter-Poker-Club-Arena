@@ -7101,7 +7101,53 @@ export default function TablePage({
     /* ROUND 14: the seat-first (Spin / Heads-Up) confirm sheet is governed by
        THIS clock now. It used to have a second, broken timer of its own; see
        the note where that was deleted. One window, one implementation. */
-    const sheetOpen = showBuyInModal || seatFirstConfirm !== null;
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  THE CLOCK STOPS WHEN THE MONEY MOVES, NOT WHEN THE RPC ANSWERS
+     *  (Dan, live, 2026-08-30 — round 16)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Dan: "IT DID SPIN ABOUT 20 SECONDS LATER, NEVER FINISH ... THEN BOOTED
+     * ME OFF THE TABLE, CLOSED THE GAME AND SENT ME BACK TO THE LOBBY!"
+     *
+     * That is this effect, and the bug was mine (round 14). Production shows
+     * the seat was BOUGHT — `tournament_players.registered_at` 07:33:41.366Z,
+     * seat 3 of "20 Chip Spin PLO4", stack still on the felt, the game still
+     * running without him. And Sentry has ZERO client events in that window,
+     * which is the tell: nothing threw. A deliberate code path decided to
+     * leave, and this is the only one that closes the tab and navigates with
+     * no error of any kind.
+     *
+     * HOW IT FIRES AGAINST A PAID SEAT. The guard below used to be exactly
+     * `showBuyInModal || seatFirstConfirm !== null`. On the seat-first path
+     * `seatFirstConfirm` is cleared only AFTER `fn_take_seat_and_buy_in`
+     * RESOLVES, so the whole in-flight window — pressing Buy In, the RPC, the
+     * round trip — is still "sheet open" and the clock is still running. The
+     * old comment claimed "there is no path where this fires against a
+     * completed buy-in, because onConfirmBuyIn closes the modal before the RPC
+     * resolves". True of the CASH modal. Never true of the seat-first sheet
+     * this effect was handed in round 14, and I wrote that line.
+     *
+     * The odds ladder (round 9) made it likelier by design: it gives a player
+     * something to READ on this sheet, so deliberating 50-odd seconds and then
+     * confirming is now the normal way to use it. Add one slow RPC — the
+     * engine was restarting at 07:34, hand throughput fell 182 -> 88/min — and
+     * the timer wins the race against a purchase that already succeeded.
+     *
+     * TWO GUARDS, because the second one makes the whole CLASS impossible:
+     *
+     *   1. A commit in flight is not an open sheet. `seatFirstPending` means
+     *      the player has pressed the button and chips are moving; the
+     *      decision window is over whatever the network does next.
+     *   2. A SEATED PLAYER IS NEVER SENT TO THE LOBBY BY A DECISION CLOCK.
+     *      `heroSeat` above zero means the seat is held and paid for. No
+     *      timeout about *deciding* to buy in may eject someone who has
+     *      already bought in — whatever else races, that stays true.
+     */
+    const commitInFlight = seatFirstPending || seatFirstPendingRef.current;
+    const alreadySeated = tableState.heroSeat > 0 || heroSeatRef.current > 0;
+    const sheetOpen =
+      (showBuyInModal || seatFirstConfirm !== null) && !commitInFlight && !alreadySeated;
     if (!sheetOpen) {
       setBuyInSecondsLeft(null);
       return;
@@ -7118,6 +7164,14 @@ export default function TablePage({
 
       window.clearInterval(id);
       setBuyInSecondsLeft(null);
+
+      /* LAST LOOK, AT FIRE TIME (round 16). The guard above is evaluated when
+         the effect runs; this one is evaluated in the instant it would eject.
+         Between the two sits a whole second in which the RPC can land — which
+         is precisely the race that took Dan off a seat he had paid for. Refs,
+         not state: a value committed during this tick is visible here and the
+         re-rendered state is not. */
+      if (seatFirstPendingRef.current || heroSeatRef.current > 0) return;
 
       // Release the sheet and the optimistic seat, exactly as a cancel does.
       setShowBuyInModal(false);
@@ -7144,8 +7198,12 @@ export default function TablePage({
     }, 1000);
 
     return () => window.clearInterval(id);
+    /* `seatFirstPending` and `heroSeat` are DEPENDENCIES, not just reads: the
+       guard above is what stops the clock, and a guard that is never
+       re-evaluated is not a guard. Pressing Buy In flips `seatFirstPending`
+       true and must tear this interval down in that same commit. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showBuyInModal, seatFirstConfirm, tableId]);
+  }, [showBuyInModal, seatFirstConfirm, tableId, seatFirstPending, tableState.heroSeat]);
 
   const handleLeaveTable = async () => {
     if (!tableId || !userId) return;

@@ -228,7 +228,25 @@ import { STORAGE_KEYS } from './lib/storage';
 import { reportError } from './utils/errorReporter';
 import SlugEnforcer from './components/common/SlugEnforcer';
 
-export default function App() {
+function ClubFooterMount() {
+  return <ClubBottomNav />;
+}
+
+/** The footer probe must stay outside auth, TOS, realtime, and data providers.
+ * It is used by CI and the post-deploy monitor to prove the shipped footer in
+ * a clean Safari/WebKit context, even when Supabase is slow or unavailable. */
+function ClubFooterProbe() {
+  return (
+    <ErrorBoundary>
+      <Suspense fallback={<LoadingSpinner />}>
+        <ClubFooterShowcasePage />
+      </Suspense>
+      <ClubFooterMount />
+    </ErrorBoundary>
+  );
+}
+
+function FullApp() {
   const location = useLocation();
   /* The listener the service worker has always been posting SHELL_UPDATED to
      and never had. Without it a cache-first shell — and the exact hashed
@@ -550,16 +568,7 @@ export default function App() {
 
               {/* Approved footer visual harness — intentionally blank except
                   for the one application-root footer mounted below Routes. */}
-              <Route
-                path="/dev/footer"
-                element={
-                  clubButtonsPreviewEnabled ? (
-                    <ClubFooterShowcasePage />
-                  ) : (
-                    <Navigate to="/" replace />
-                  )
-                }
-              />
+              <Route path="/dev/footer" element={<ClubFooterShowcasePage />} />
 
               {/* Real-component browser harness. Development/test builds only;
                   production navigation cannot expose the deterministic user. */}
@@ -1859,7 +1868,7 @@ export default function App() {
               </Route>
             </Routes>
           </Suspense>
-          {shouldShowClubFooter(location.pathname) && <ClubBottomNav />}
+          {shouldShowClubFooter(location.pathname) && <ClubFooterMount />}
           {/* Persistent multi-table layer — mounted BESIDE <Routes>, it never
               unmounts on navigation: engine sockets for seated tables survive
               every route. Off /table/* it collapses to display:none and
@@ -1869,4 +1878,14 @@ export default function App() {
       </ToastProvider>
     </ErrorBoundary>
   );
+}
+
+export default function App() {
+  const location = useLocation();
+
+  if (location.pathname === '/dev/footer') {
+    return <ClubFooterProbe />;
+  }
+
+  return <FullApp />;
 }

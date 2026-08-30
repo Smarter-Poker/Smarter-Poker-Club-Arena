@@ -33,18 +33,45 @@ that matching percentile bands against it "selects almost nothing". A
 reservoir CDF was built to fix it _for HorseMind's opponent reads_. Nobody
 applied it to the decision itself.
 
-## Measured through the real `decide()`, 3-max plo4 spin, 300 deals
+## Measured through the real `decide()`, 300 deals per cell
 
-|                        | BEFORE (shipped)                | AFTER                            |
-| ---------------------- | ------------------------------- | -------------------------------- |
-| facing a pot raise     | fold 188, call 111, **raise 1** | fold 72, call 126, **raise 102** |
-| first to act, unopened | fold 208, call 62, **raise 30** | fold 83, call 41, **raise 176**  |
+|                    | plo4 BEFORE                      | plo4 AFTER                    | nlh (reference)               |
+| ------------------ | -------------------------------- | ----------------------------- | ----------------------------- |
+| open, first to act | raise **4%**, call 24%, fold 72% | raise 19%, call 16%, fold 65% | raise 22%, call 17%, fold 61% |
+| facing a pot raise | raise **0%**, call 36%, fold 64% | raise 11%, call 29%, fold 60% | raise 10%, call 41%, fold 48% |
 
-A 0.3% 3-bet frequency against an opponent potting every hand is not a
-strategy, it is a stuck valve — and from the other side of the table it
-looks exactly like what Dan described.
+A **0%** 3-bet frequency against an opponent potting every hand is not a
+strategy, it is a stuck valve — and from the other side of the table it looks
+exactly like what Dan described. After the fix PLO tracks hold'em in the same
+spot, which is the whole claim of quantile-matching.
 
-## The fix
+Honesty about the harness: these are synthetic states driven through the real
+`decide()`, and the absolute frequencies read tighter than a real 3-handed
+table would (hold'em opening 22% from the button is itself tight for 3-max).
+The comparison BETWEEN variants in an IDENTICAL state is the trustworthy
+signal here, not the absolute numbers.
+
+## The fix: quantile-matching, not a flat percentile
+
+The obvious fix — map Omaha to a uniform percentile — is wrong, and
+measuring said so. Hold'em's own score is **not** uniform either:
+
+    holdem   median 0.236   p75 0.410   p99 1.000   max 1.000
+    omaha    median 0.240   p75 0.317   p99 0.640   max 0.850
+
+The medians nearly agree; the **top end** does not. Hold'em's best hands
+saturate at 1.0, so a 3-bet bar at `t(0.74)` is cleared by a real slice of
+its range; Omaha never gets there at all, which is why the valve stuck. A
+flat percentile fixes the sticking but overshoots the other way — tried it,
+and PLO went to a 34% 3-bet and a 24% fold, far looser than hold'em at the
+same bar.
+
+So the shipped mapping is **quantile-matching**: Omaha percentile first,
+then the hold'em score at that same quantile (all 1,326 two-card combos,
+scored and sorted once). A 90th-percentile PLO hand now scores exactly what
+a 90th-percentile hold'em hand scores, so every bar in `decidePreflopV7`
+means the same thing in both games — which is what "percentile-intent"
+claimed all along.
 
 `omahaPreflopPercentile()` maps the raw score through its own empirical CDF
 using the **same reservoir** the band sampler already built and cached
@@ -79,7 +106,11 @@ here rather than silently patched.
 
 - The A/B above was produced by toggling only the percentile mapping,
   through the real `HorseLogic.decide()`, with a deterministic dealer.
-- `HorseOmahaPercentile.test.ts` — 9 tests: the raw score's compression
+- `HorseOmahaPercentile.test.ts` — 8 tests. The behavioural ones run PLO
+  and NLH through the SAME spot and assert PLO is in the same league as
+  hold'em, rather than freezing a magic frequency — so they survive a future
+  retune of the bars while still catching a stuck valve. Plus the raw
+  score's compression
   (pinned, because it is _why_ the mapping must exist), the percentile's
   uniformity, AAKKds at the top, 4/5/6-card and hi-lo all mapping without
   throwing, sub-4-card left alone, plus behavioural floors for open

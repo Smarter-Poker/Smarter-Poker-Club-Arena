@@ -664,6 +664,7 @@ export default function PlayerStatsPage() {
   const targetUserId = userId || user?.id;
   const [full, setFull] = useState<FullStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [servingCache, setServingCache] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -920,6 +921,7 @@ export default function PlayerStatsPage() {
    * below read it, so neither can fire a copy captured under an older range.
    */
   const loadRef = useRef<((opts?: { fresh?: boolean }) => Promise<void>) | null>(null);
+  const activeRangeKeyRef = useRef(rangeKey);
   // The index refresh is a WRITE. Un-throttled it fired on every bus refresh and
   // every tab-visibility change, i.e. repeatedly during active play.
 
@@ -948,7 +950,11 @@ export default function PlayerStatsPage() {
         }
       }
       statsLoadingRef.current = true;
-      if (!hasStatsRef.current) setLoading(true);
+      if (!hasStatsRef.current) {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
 
       try {
         const { data, error } = await retryFetch(
@@ -960,6 +966,14 @@ export default function PlayerStatsPage() {
         );
 
         if (!isMounted.current) return;
+
+        // A slow response for the previous analysis window must never paint
+        // underneath the newly selected label. The pending replay below will
+        // request the current range as soon as this obsolete read unwinds.
+        if (activeRangeKeyRef.current !== rangeKey) {
+          pendingRefreshRef.current = true;
+          return;
+        }
 
         if (!error && data && data.overall) {
           const resolved = normalizeFull(data);
@@ -1038,6 +1052,8 @@ export default function PlayerStatsPage() {
           // range while a load was in flight, replaying the old closure refetched
           // the PREVIOUS window and overwrote the newer data with it.
           void loadRef.current?.({ fresh: true });
+        } else if (isMounted.current) {
+          setRefreshing(false);
         }
       }
       // toast comes from context and isMounted is a ref wrapper: both stable.
@@ -1120,6 +1136,10 @@ export default function PlayerStatsPage() {
   useLayoutEffect(() => {
     loadRef.current = loadAllData;
   });
+
+  useLayoutEffect(() => {
+    activeRangeKeyRef.current = rangeKey;
+  }, [rangeKey]);
 
   // A tab return means time has passed, so it CLEARS the memo and refetches.
   useVisibilityRefresh(() => loadAllData({ fresh: true }));
@@ -1432,8 +1452,30 @@ export default function PlayerStatsPage() {
 
   if (loading) {
     return (
-      <div className="stats-page">
-        <PageSkeleton variant="stats" />
+      <div className="stats-page stats-page-loading" aria-busy="true">
+        <section className="stats-command-deck stats-command-deck-loading">
+          <img
+            className="stats-hero-art"
+            src={`${import.meta.env.BASE_URL}images/stats/player-intelligence-console-v1.webp`}
+            alt=""
+            aria-hidden="true"
+            fetchPriority="high"
+            decoding="async"
+          />
+          <div className="stats-command-copy">
+            <span className="stats-eyebrow">Club Arena // Player Analytics</span>
+            <h1>Player Intelligence</h1>
+            <p>Opening Your Performance Dossier...</p>
+          </div>
+          <div className="stats-loading-readout">
+            <span />
+            <span />
+            <span />
+          </div>
+        </section>
+        <div className="stats-loading-details">
+          <PageSkeleton variant="stats" />
+        </div>
       </div>
     );
   }
@@ -1482,91 +1524,125 @@ export default function PlayerStatsPage() {
 
   return (
     <div className="stats-page">
-      {/* ── HERO SECTION ── */}
-      <div className="stats-hero">
-        <HandsWonGauge handsWonPct={handsWonPct} />
-        <div className="hero-stats">
-          <div className="hero-stat">
-            <span className="hero-stat-label">
-              {lifetime.hands > overall.total_hands ? 'Hands Played' : 'Total Hands'}
+      {/* ── COMMAND DECK ─────────────────────────────────────────────────────
+          The artwork is deliberately data-free. All player figures remain live,
+          selectable HTML so a new RPC response never requires a new image. */}
+      <section className="stats-command-deck" aria-labelledby="stats-page-title">
+        <img
+          className="stats-hero-art"
+          src={`${import.meta.env.BASE_URL}images/stats/player-intelligence-console-v1.webp`}
+          alt=""
+          aria-hidden="true"
+          fetchPriority="high"
+          decoding="async"
+        />
+
+        <div className="stats-command-copy">
+          <span className="stats-eyebrow">Club Arena // Player Analytics</span>
+          <h1 id="stats-page-title">Player Intelligence</h1>
+          <p>Every Recorded Hand, Distilled Into Patterns You Can Use At The Next Table.</p>
+
+          {/* Analysis range. Everything below the hero is computed over this window. */}
+          <div className="stats-range-control">
+            <span className="stats-range-label">
+              Analysis Window
+              <span
+                className={`stats-range-status ${refreshing ? 'is-refreshing' : ''}`}
+                role="status"
+              >
+                {refreshing ? 'Updating' : 'Live'}
+              </span>
             </span>
-            <span className="hero-stat-value cyan">
-              {Math.max(lifetime.hands, overall.total_hands).toLocaleString()}
-            </span>
-            {lifetime.hands > overall.total_hands && (
-              <span className="hero-stat-sub">{overall.total_hands.toLocaleString()} Analysed</span>
-            )}
-          </div>
-          <div className="hero-stat">
-            <span className="hero-stat-label">Cash Profit</span>
-            <span
-              className={`hero-stat-value ${overall.total_profit >= 0 ? 'positive' : 'negative'}`}
-            >
-              {overall.total_profit >= 0 ? '+' : ''}
-              {overall.total_profit.toLocaleString()}
-            </span>
-          </div>
-          <div className="hero-stat">
-            <span className="hero-stat-label">BB/100</span>
-            <span
-              className={`hero-stat-value ${overall.bb_per_100 >= 0 ? 'positive' : 'negative'}`}
-            >
-              {overall.bb_per_100.toFixed(2)}
-            </span>
+            <div className="stats-range-row" role="group" aria-label="Analysis Range">
+              {RANGES.map((r) => (
+                <button
+                  key={r.key}
+                  className={rangeKey === r.key ? 'active' : ''}
+                  aria-pressed={rangeKey === r.key}
+                  onClick={() => setRangeKey(r.key)}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Analysis range. Everything below the hero is computed over this window. */}
-      <div className="stats-range-row" role="group" aria-label="Analysis Range">
-        {RANGES.map((r) => (
-          <button
-            key={r.key}
-            className={rangeKey === r.key ? 'active' : ''}
-            aria-pressed={rangeKey === r.key}
-            onClick={() => setRangeKey(r.key)}
-          >
-            {r.label}
-          </button>
-        ))}
-      </div>
+        <div className="stats-hero" role="group" aria-label="Headline performance">
+          <HandsWonGauge handsWonPct={handsWonPct} />
+          <div className="hero-stats">
+            <div className="hero-stat">
+              <span className="hero-stat-label">
+                {lifetime.hands > overall.total_hands ? 'Hands Played' : 'Total Hands'}
+              </span>
+              <span className="hero-stat-value cyan">
+                {Math.max(lifetime.hands, overall.total_hands).toLocaleString()}
+              </span>
+              {lifetime.hands > overall.total_hands && (
+                <span className="hero-stat-sub">
+                  {overall.total_hands.toLocaleString()} Analysed
+                </span>
+              )}
+            </div>
+            <div className="hero-stat">
+              <span className="hero-stat-label">Cash Profit</span>
+              <span
+                className={`hero-stat-value ${overall.total_profit >= 0 ? 'positive' : 'negative'}`}
+              >
+                {overall.total_profit >= 0 ? '+' : ''}
+                {overall.total_profit.toLocaleString()}
+              </span>
+            </div>
+            <div className="hero-stat">
+              <span className="hero-stat-label">BB/100</span>
+              <span
+                className={`hero-stat-value ${overall.bb_per_100 >= 0 ? 'positive' : 'negative'}`}
+              >
+                {overall.bb_per_100.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Analysis-window and staleness notices: never present a truncated or
           stale figure as though it were a current lifetime total. */}
-      {hasData && overall.hands_capped && (
-        <div className="stats-notice">
-          Based On Your Most Recent {overall.hand_cap.toLocaleString()} Hands
-          {rangeKey !== 'all' ? ' in this range' : ''}.
-        </div>
-      )}
-      {hasData && !overall.hands_capped && rangeKey !== 'all' && (
-        <div className="stats-notice">
-          {overall.total_hands.toLocaleString()} Hands In The Last{' '}
-          {RANGES.find((r) => r.key === rangeKey)?.label.toLowerCase()}.
-        </div>
-      )}
-      {/* Small samples: bb/100 swings wildly over a few hundred hands, and a
+      <div className="stats-notice-deck" aria-live="polite">
+        {hasData && overall.hands_capped && (
+          <div className="stats-notice">
+            Based On Your Most Recent {overall.hand_cap.toLocaleString()} Hands
+            {rangeKey !== 'all' ? ' in this range' : ''}.
+          </div>
+        )}
+        {hasData && !overall.hands_capped && rangeKey !== 'all' && (
+          <div className="stats-notice">
+            {overall.total_hands.toLocaleString()} Hands In The Last{' '}
+            {RANGES.find((r) => r.key === rangeKey)?.label.toLowerCase()}.
+          </div>
+        )}
+        {/* Small samples: bb/100 swings wildly over a few hundred hands, and a
           confident-looking number invites the wrong conclusion. */}
-      {/* indexed_complete is parsed by normalizeFull and was read nowhere. A
+        {/* indexed_complete is parsed by normalizeFull and was read nowhere. A
           player whose backfill is incomplete saw a confident lifetime figure
           that would change tomorrow, on a page whose whole design rule is
           "never present a truncated figure as a lifetime total". */}
-      {hasData && !lifetime.indexed_complete && (
-        <div className="stats-notice">
-          Older Hands Are Still Being Indexed. These Totals Will Grow.
-        </div>
-      )}
-      {hasData && overall.cash_hands > 0 && overall.cash_hands < 1000 && (
-        <div className="stats-notice">
-          {overall.cash_hands.toLocaleString()} Cash Hands Is A Small Sample - Win Rate Is Not Yet
-          Meaningful.
-        </div>
-      )}
-      {servingCache && (
-        <div className="stats-notice stats-notice-warn">
-          Showing Your Last Loaded Stats - The Refresh Did Not Go Through.
-        </div>
-      )}
+        {hasData && !lifetime.indexed_complete && (
+          <div className="stats-notice">
+            Older Hands Are Still Being Indexed. These Totals Will Grow.
+          </div>
+        )}
+        {hasData && overall.cash_hands > 0 && overall.cash_hands < 1000 && (
+          <div className="stats-notice">
+            {overall.cash_hands.toLocaleString()} Cash Hands Is A Small Sample - Win Rate Is Not Yet
+            Meaningful.
+          </div>
+        )}
+        {servingCache && (
+          <div className="stats-notice stats-notice-warn">
+            Showing Your Last Loaded Stats - The Refresh Did Not Go Through.
+          </div>
+        )}
+      </div>
 
       {/* ── PILL TABS ── */}
       {/* A real tablist. This was eight buttons whose active state lived only in
@@ -1704,7 +1780,14 @@ export default function PlayerStatsPage() {
           {/* ── OVERVIEW TAB ── */}
           {showTab('overview') && hasData && (
             <>
-              <div className="stats-grid">
+              <div className="stats-section-lead">
+                <div>
+                  <span className="stats-section-kicker">Live Readout</span>
+                  <h2>Core Tendencies</h2>
+                </div>
+                <span>{RANGES.find((r) => r.key === rangeKey)?.label ?? 'All'} Window</span>
+              </div>
+              <div className="stats-grid stats-overview-grid">
                 <StatRow
                   label="VPIP"
                   value={`${(overall.vpip * 100).toFixed(1)}%`}
@@ -1740,60 +1823,64 @@ export default function PlayerStatsPage() {
                 />
               </div>
 
-              {/* Per-variant breakdown */}
-              {(full?.variants?.length ?? 0) > 0 && (
-                <div className="variant-table">
-                  <div className="variant-row variant-head">
-                    <span>Game</span>
-                    <span>Hands</span>
-                    <span>Won</span>
-                    <span>Profit</span>
-                    <span>BB/100</span>
-                  </div>
-                  {(full?.variants || []).map((v) => (
-                    <div className="variant-row" key={v.variant}>
-                      <span className="variant-name">{String(v.variant).toUpperCase()}</span>
-                      <span>{v.hands.toLocaleString()}</span>
-                      <span>{v.hands_won.toLocaleString()}</span>
-                      <span className={v.profit >= 0 ? 'positive' : 'negative'}>
-                        {v.profit >= 0 ? '+' : ''}
-                        {v.profit.toLocaleString()}
-                      </span>
-                      <span className={v.bb100 >= 0 ? 'positive' : 'negative'}>
-                        {v.bb100.toFixed(1)}
-                      </span>
+              <div className="stats-ledger-grid">
+                {/* Per-variant breakdown */}
+                {(full?.variants?.length ?? 0) > 0 && (
+                  <div className="variant-table" role="region" aria-label="Performance by game">
+                    <h3 className="variant-title">Game Mix</h3>
+                    <div className="variant-row variant-head">
+                      <span>Game</span>
+                      <span>Hands</span>
+                      <span>Won</span>
+                      <span>Profit</span>
+                      <span>BB/100</span>
                     </div>
-                  ))}
-                </div>
-              )}
+                    {(full?.variants || []).map((v) => (
+                      <div className="variant-row" key={v.variant}>
+                        <span className="variant-name">{String(v.variant).toUpperCase()}</span>
+                        <span>{v.hands.toLocaleString()}</span>
+                        <span>{v.hands_won.toLocaleString()}</span>
+                        <span className={v.profit >= 0 ? 'positive' : 'negative'}>
+                          {v.profit >= 0 ? '+' : ''}
+                          {v.profit.toLocaleString()}
+                        </span>
+                        <span className={v.bb100 >= 0 ? 'positive' : 'negative'}>
+                          {v.bb100.toFixed(1)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-              {/* Per-stake breakdown: which game size is actually carrying (or
-                bleeding) the results, instead of one blended number. */}
-              {(full?.stakes?.length ?? 0) > 1 && (
-                <div className="variant-table">
-                  <div className="variant-row variant-head">
-                    <span>Stake</span>
-                    <span>Hands</span>
-                    <span>Won</span>
-                    <span>Profit</span>
-                    <span>BB/100</span>
-                  </div>
-                  {(full?.stakes || []).map((st) => (
-                    <div className="variant-row" key={`stake-${st.big_blind}`}>
-                      <span className="variant-name">{st.big_blind} BB</span>
-                      <span>{st.hands.toLocaleString()}</span>
-                      <span>{st.hands_won.toLocaleString()}</span>
-                      <span className={st.profit >= 0 ? 'positive' : 'negative'}>
-                        {st.profit >= 0 ? '+' : ''}
-                        {st.profit.toLocaleString()}
-                      </span>
-                      <span className={st.bb100 >= 0 ? 'positive' : 'negative'}>
-                        {st.bb100.toFixed(1)}
-                      </span>
+                {/* Per-stake breakdown: which game size is actually carrying (or
+                  bleeding) the results, instead of one blended number. */}
+                {(full?.stakes?.length ?? 0) > 1 && (
+                  <div className="variant-table" role="region" aria-label="Performance by stake">
+                    <h3 className="variant-title">Stake Ledger</h3>
+                    <div className="variant-row variant-head">
+                      <span>Stake</span>
+                      <span>Hands</span>
+                      <span>Won</span>
+                      <span>Profit</span>
+                      <span>BB/100</span>
                     </div>
-                  ))}
-                </div>
-              )}
+                    {(full?.stakes || []).map((st) => (
+                      <div className="variant-row" key={`stake-${st.big_blind}`}>
+                        <span className="variant-name">{st.big_blind} BB</span>
+                        <span>{st.hands.toLocaleString()}</span>
+                        <span>{st.hands_won.toLocaleString()}</span>
+                        <span className={st.profit >= 0 ? 'positive' : 'negative'}>
+                          {st.profit >= 0 ? '+' : ''}
+                          {st.profit.toLocaleString()}
+                        </span>
+                        <span className={st.bb100 >= 0 ? 'positive' : 'negative'}>
+                          {st.bb100.toFixed(1)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {/* Leak analysis deliberately does NOT live here. Dan, 2026-08-21:
                 it belongs in the Personal Assistant, which already owns

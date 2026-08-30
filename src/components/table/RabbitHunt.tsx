@@ -31,8 +31,6 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { vipService, FEATURE_PRICING } from '../../services/VIPService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
-import { CardImage } from '../table/CardImage';
-import type { Card as CardImageCard } from '../table/CardImage';
 import './RabbitHunt.css';
 import { reportError } from '../../utils/errorReporter';
 /* Dan: "use the actual rabbit hunt dynamic image". Updated to the custom
@@ -82,18 +80,11 @@ export interface RabbitHuntProps {
   onReveal: () => Promise<RabbitHuntRevealResult>;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// UTILITIES
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function normalizeRank(rank: string): CardImageCard['rank'] {
-  if (rank === '10') return 'T';
-  return rank as CardImageCard['rank'];
-}
-
-function toCardImage(card: Card): CardImageCard {
-  return { rank: normalizeRank(card.rank), suit: card.suit };
-}
+/* The card-image helpers that lived here (`normalizeRank`, `toCardImage`) are
+   gone, with the `CardImage` import that fed them. POKERBROS PARITY 2026-08-26
+   moved the reveal onto the CommunityCards board; this component has drawn no
+   card since, so the pair had no call site and the import pulled the CardImage
+   module into the Rabbit Hunt chunk for nothing. */
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -110,7 +101,11 @@ export function RabbitHunt({
   const toast = useToast();
 
   const [isRevealing, setIsRevealing] = useState(false);
-  const [revealedCards, setRevealedCards] = useState<Card[]>([]);
+  /* Write-only on purpose: the reveal RENDERS on the CommunityCards board
+     (TablePage passes it `rabbitCards`), so nothing here reads the array back.
+     The setter stays because clearing it on a new hand is what stops the
+     previous hand's cards being offered again. */
+  const [, setRevealedCards] = useState<Card[]>([]);
   const [hasRevealed, setHasRevealed] = useState(false);
   const [isVIP, setIsVIP] = useState(false);
   const [vipRemaining, setVipRemaining] = useState<number | null>(null);

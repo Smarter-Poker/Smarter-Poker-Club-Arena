@@ -154,6 +154,55 @@ describe('the action tab starts below the ticker, never above it', () => {
     }
   });
 
+  it('the notch is paid once at EVERY breakpoint, not just above 480px', () => {
+    /* 2026-08-30 audit. The base rule was moved to
+       `var(--sp-tabbar-inset, env(...))` so whichever strip touches y=0 pays
+       the notch - and the <=480px override was left on the raw env(), so the
+       double-inset survived on exactly the screens that have a notch. 375px is
+       the design width; the fix applied everywhere it did not matter. */
+    const insetRules =
+      TAB_BAR_CSS.replace(/\/\*[\s\S]*?\*\//g, '').match(
+        /padding-top:\s*calc\([^;]*safe-area-inset-top[^;]*\)/g
+      ) || [];
+    expect(insetRules.length).toBeGreaterThanOrEqual(2);
+    for (const rule of insetRules) {
+      expect(rule, `every padding-top must read the property: ${rule}`).toMatch(
+        /var\(--sp-tabbar-inset,\s*env\(safe-area-inset-top/
+      );
+    }
+  });
+
+  it('the pinned bar does not pay a notch the global header already paid', () => {
+    /* GlobalHeader.module.css pads by env(safe-area-inset-top) and
+       GlobalHeader.tsx publishes getBoundingClientRect().height, so
+       --ca-global-header-height ALREADY contains the inset. The pinned wrapper
+       zeroed its own padding for that reason but the strip inside it kept
+       paying env() itself - ~47px of dead black above the bar in the lobby on
+       a notched iPhone. Scoped to the pinned wrapper: the in-flow bar on
+       /table/* still pays the notch when nothing above it has. */
+    const pinnedAt = MULTI_TABLE_CSS.indexOf('.multi-table-page__tab-bar-wrapper--pinned {');
+    const pinned = MULTI_TABLE_CSS.slice(pinnedAt, MULTI_TABLE_CSS.indexOf('\n}', pinnedAt));
+    expect(pinned).toMatch(/--sp-tabbar-inset:\s*0px/);
+  });
+
+  it('the banner and the wordmark share one anchor, so multi-board moves both', () => {
+    /* The banner was pinned to a literal 52% while `[data-boards]` moved the
+       masthead to 72% / 84%. On a run-it-twice or bomb-pot table it floated a
+       third of the felt above the mark it sits on, into the board stack. */
+    expect(TABLE_PAGE_CSS).toMatch(/--sp-brand-top:\s*58%/);
+    expect(TABLE_PAGE_CSS).toMatch(/top:\s*var\(--sp-brand-top,\s*58%\)/);
+    // The overrides move the SHARED property, not the wordmark's own top.
+    expect(TABLE_PAGE_CSS).toMatch(
+      /\.table-page\[data-boards='2'\] \.table-surface \{\s*--sp-brand-top:\s*72%/
+    );
+    expect(TABLE_PAGE_CSS).toMatch(
+      /\.table-page\[data-boards='3'\] \.table-surface \{\s*--sp-brand-top:\s*84%/
+    );
+    // And nothing sets the wordmark's `top` directly any more, which is how
+    // the two drifted apart in the first place.
+    expect(TABLE_PAGE_CSS).not.toMatch(/\.table-brand \{[^}]*top:\s*\d+%/);
+  });
+
   it('the notch is paid once, by whichever strip touches y = 0', () => {
     // The ticker pays env(safe-area-inset-top) only when it is topmost, and
     // zeroes the bar's inset when it does. Paying twice is a ~47px dead band

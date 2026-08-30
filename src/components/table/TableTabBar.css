@@ -531,7 +531,13 @@
   .table-tab-bar {
     /* Horizontal padding here is width the four pills do not get. */
     padding: 4px;
-    padding-top: calc(4px + env(safe-area-inset-top, 0));
+    /* SAME RULE AS THE BASE, AND IT HAS TO BE. 2026-08-30 audit: the base rule
+       was moved to `var(--sp-tabbar-inset, env(...))` so the notch is paid once
+       by whichever strip touches y=0 - and THIS override was left on the raw
+       env(), so the double-inset it fixed survived below 480px. 375px is the
+       design width, so the fix applied everywhere except the screens that have
+       a notch in the first place. */
+    padding-top: calc(4px + var(--sp-tabbar-inset, env(safe-area-inset-top, 0)));
     gap: 4px;
     /* 34px pill + 4px padding top and bottom. */
     min-height: 42px;

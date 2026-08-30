@@ -27,7 +27,17 @@
  */
 .table-conn-banner {
   position: absolute;
-  top: 52%;
+  /* FOLLOW THE WORDMARK, do not guess where it is (2026-08-30 audit).
+     This was a literal `52%`, six points above the wordmark's 58%. Correct for
+     a one-board table and wrong for every other kind: the `[data-boards]`
+     rules in TablePage.css move the masthead to 72% on a run-it-twice board
+     and 84% on three, and a hard-coded banner stayed at 52% - a third of the
+     felt above the mark it is supposed to sit on, floating in the middle of
+     the board stack, on precisely the tables where losing the connection costs
+     the most. `--sp-brand-top` is declared on `.table-surface` and moved by
+     those same rules, so the offset is stated once and holds for every board
+     count. */
+  top: calc(var(--sp-brand-top, 58%) - 6%);
   left: 50%;
   /* -100% on Y puts the pill's BOTTOM edge on that 52% line, so it grows
      upward off the wordmark instead of down through it. */

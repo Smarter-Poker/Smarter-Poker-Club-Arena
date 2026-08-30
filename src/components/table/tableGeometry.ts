@@ -431,7 +431,9 @@ export const BOARD_CHIP_GAP_WIDTH_PCT = 0.2;
  * date."
  *
  * `.table-brand` in TablePage.css: `width: 62%` of the felt capped at 260px,
- * centred on `top: 58%` of the felt, holding a 900x116 wordmark at full width,
+ * centred on `--sp-brand-top` (declared 58% on `.table-surface`, and moved to
+ * 72% / 84% by the `[data-boards]` rules), holding a 900x116 wordmark at full
+ * width,
  * a 6px gap, and two `.table-brand__line` rows at 0.48rem.
  *
  * ── WHY 62 IS THE RIGHT NUMBER, AND WHY IT WAS NOT ─────────────────────────

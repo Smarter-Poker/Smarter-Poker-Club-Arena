@@ -12,8 +12,11 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import CasinoPlaque, { PlaqueSeats } from './CasinoPlaque';
+import ArenaGameCard from './game-cards/ArenaGameCard';
+import { arenaGameCardDataFromEntry } from './game-cards/arenaGameCardAdapter';
+import type { ArenaGameCardActions } from './game-cards/arenaGameCardTypes';
 import type { LobbyEntry, LobbyTableRow, LobbyTournamentRow } from './lobbyEntries';
 import { parseBlindStructure, tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import { parseTableSettings, seatsTakenLabel, seatFirstJoinable } from './lobbyEntries';
@@ -84,6 +87,7 @@ const lvlNum = (
 ) => Number(l[snake] ?? l[camel] ?? 0);
 
 export default function GameLobbyPanel(props: GameLobbyPanelProps) {
+  const navigate = useNavigate();
   const {
     entry,
     clubId,
@@ -389,6 +393,38 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
 
   const ctaDisabled = cta.kind === 'disabled' || busy || (cta.needsAuth === true && !currentUserId);
 
+  /* The selected cash-table view must be the SAME approved machine as the
+     card that opened it. The previous implementation drew a second, generic
+     CSS plaque here, so the player moved from real machined artwork into a
+     cheaper imitation after one click. Keep one live data adapter and one
+     hardware renderer; only the action handlers belong to this dialog. */
+  const cashMachineData = useMemo(
+    () => ({ ...arenaGameCardDataFromEntry(entry), registeredByViewer: seated }),
+    [entry, seated]
+  );
+  const cashMachineActions = useMemo<ArenaGameCardActions>(() => {
+    const primaryTone =
+      cta.kind === 'gold'
+        ? 'green'
+        : cta.kind === 'danger'
+          ? 'red'
+          : cta.kind === 'disabled'
+            ? 'neutral'
+            : 'blue';
+    return {
+      primaryLabel: cta.label,
+      primaryTone,
+      primaryDisabled: ctaDisabled,
+      busy,
+      onPrimary: () => {
+        if (cta.link) navigate(cta.link);
+        else cta.run?.();
+      },
+      secondaryLabel: 'View Table',
+      onSecondary: () => navigate(`/table/${entry.id}`),
+    };
+  }, [busy, cta, ctaDisabled, entry.id, navigate]);
+
   // ── Right zone of the plaque ──
   /* The lobby row is the fallback for the two figures the table now prints
      in columns of their own. When the detail fetch fails the panel used to
@@ -558,7 +594,16 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         </header>
 
         <div className="glp__scroll">
-          <CasinoPlaque entry={entry}>{joinZone}</CasinoPlaque>
+          {isCash ? (
+            <ArenaGameCard
+              data={cashMachineData}
+              actions={cashMachineActions}
+              presentation="auto"
+              className="glp__arena-card"
+            />
+          ) : (
+            <CasinoPlaque entry={entry}>{joinZone}</CasinoPlaque>
+          )}
 
           {/* ── CASH GAME LOBBY ── */}
           {isCash && cashRaw && (

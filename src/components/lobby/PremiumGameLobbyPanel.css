@@ -1,76 +1,42 @@
-/* Premium selected-table machine. Scoped to cash lobbies so tournament and
-   spin drawers keep their established layouts and action contracts. */
+/*
+ * SHARK CLUB — SELECTED CASH TABLE
+ *
+ * The artwork is the interface. This panel intentionally reuses the exact
+ * approved game-card renderer and the Club Arena chassis; it does not redraw
+ * the hardware with borders, gradients or clipped rectangles.
+ */
 
 .glp--cash {
   --pg-blue: #168bff;
   --pg-cyan: #65d9ff;
   --pg-green: #32d27a;
-  --pg-red: #ef3d4f;
-  width: min(640px, 100%);
-  padding: 8px;
+  position: relative;
+  width: min(720px, 100%);
+  padding: clamp(18px, 2.7vw, 30px) clamp(24px, 4vw, 44px) clamp(28px, 4.8vw, 52px);
   isolation: isolate;
-  color: #edf3f8;
-  font-family: 'Rajdhani', 'Roboto Condensed', var(--font-sans, system-ui, sans-serif);
-  background:
-    radial-gradient(circle at 50% -10%, rgba(22, 139, 255, 0.17), transparent 34%),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 4px), #020406;
-  border-left: 1px solid #87929d;
-  box-shadow:
-    inset 0 0 0 2px #111820,
-    inset 0 0 0 4px #020406,
-    inset 0 0 0 5px rgba(142, 157, 171, 0.42),
-    -22px 0 58px rgba(0, 0, 0, 0.78);
+  overflow: hidden;
+  color: #eef3f8;
+  font-family: 'Roboto Condensed', 'Rajdhani', var(--font-sans, system-ui, sans-serif);
+  background: #000 url('/hub/club-arena/assets/club-buttons/lobby/lobby-command-chassis-v2.png')
+    center / 100% 100% no-repeat;
+  border: 0;
+  box-shadow: -28px 0 70px rgb(0 0 0 / 88%);
 }
 
-.glp--cash::before {
-  content: '';
-  position: absolute;
-  z-index: 5;
-  inset: 3px;
-  pointer-events: none;
-  border: 1px solid rgba(218, 226, 233, 0.35);
-  clip-path: polygon(
-    0 16px,
-    16px 0,
-    calc(100% - 16px) 0,
-    100% 16px,
-    100% calc(100% - 16px),
-    calc(100% - 16px) 100%,
-    16px 100%,
-    0 calc(100% - 16px)
-  );
-}
-
+/* Keep the live close control and table name inside the top glass well. */
 .glp--cash .glp__head {
   position: relative;
-  z-index: 2;
-  min-height: 68px;
-  padding: 12px 16px;
-  background: linear-gradient(180deg, #1f2933, #05080b 64%, #111820);
-  border: 1px solid #606d79;
-  border-bottom-color: #1c77b9;
-  clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%, 0 12px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.26),
-    inset 0 -2px 0 #020406,
-    0 0 15px rgba(22, 139, 255, 0.18);
-}
-
-.glp--cash .glp__head::after {
-  content: '';
-  position: absolute;
-  left: 32%;
-  right: 32%;
-  bottom: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #65d9ff, #168bff, #65d9ff, transparent);
-  box-shadow: 0 0 10px #168bff;
+  z-index: 6;
+  flex: 0 0 auto;
+  min-height: 76px;
+  padding: 17px clamp(18px, 4vw, 34px) 12px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .glp--cash .glp__head-title {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  display: grid;
   min-width: 0;
   text-transform: uppercase;
 }
@@ -78,245 +44,137 @@
 .glp--cash .glp__head-title small {
   color: var(--pg-cyan);
   font:
-    800 9px/1 'Rajdhani',
+    800 9px/1 'Roboto Condensed',
     sans-serif;
   letter-spacing: 0.24em;
+  text-shadow: 0 0 8px rgb(22 139 255 / 55%);
 }
 
 .glp--cash .glp__head-title b {
   overflow: hidden;
-  color: transparent;
+  color: #f2f4f6;
   font:
-    800 clamp(22px, 4.5vw, 34px)/1 'Rajdhani',
-    'Roboto Condensed',
+    800 clamp(20px, 4vw, 30px) / 1.04 'Roboto Condensed',
     sans-serif;
-  letter-spacing: 0.035em;
+  letter-spacing: 0.025em;
   text-overflow: ellipsis;
+  text-shadow:
+    0 2px 0 #000,
+    0 4px 8px #000;
   white-space: nowrap;
-  background: linear-gradient(180deg, #fff, #c8d0d7 47%, #6b7580 56%, #e4e9ed);
-  background-clip: text;
-  -webkit-background-clip: text;
-  filter: drop-shadow(0 2px 1px #000);
 }
 
 .glp--cash .glp__close {
-  width: 42px;
-  height: 42px;
-  border-radius: 2px;
-  border: 1px solid #72808d;
-  color: #d8e0e7;
-  background: linear-gradient(180deg, #283540, #080d12 68%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.24),
-    inset 0 -2px 3px #000;
+  width: 46px;
+  height: 40px;
+  border: 0;
+  border-radius: 0;
+  color: #dfe8ef;
+  font:
+    800 14px/1 'Roboto Condensed',
+    sans-serif;
+  background: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114%
+    no-repeat;
+  box-shadow: none;
+  text-shadow: 0 2px 2px #000;
+}
+
+.glp--cash .glp__close:focus-visible {
+  outline: 2px solid #9be7ff;
+  outline-offset: -4px;
 }
 
 .glp--cash .glp__scroll {
-  gap: 10px;
-  padding: 10px 11px 20px;
-  background:
-    radial-gradient(circle at 50% 0, rgba(22, 139, 255, 0.09), transparent 30%),
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.008) 0 1px, transparent 1px 4px), #05090d;
-  border-inline: 1px solid #47535f;
-  scrollbar-color: #168bff #05080b;
+  position: relative;
+  z-index: 2;
+  gap: 14px;
+  padding: 6px clamp(16px, 3.3vw, 30px) 34px;
+  background: transparent;
+  border: 0;
+  scrollbar-color: #168bff #03070a;
 }
 
 .glp--cash .glp__scroll::-webkit-scrollbar {
   width: 8px;
 }
+
 .glp--cash .glp__scroll::-webkit-scrollbar-track {
-  background: #05080b;
-  border-left: 1px solid #27313a;
+  background: #03070a;
 }
+
 .glp--cash .glp__scroll::-webkit-scrollbar-thumb {
-  border: 2px solid #05080b;
+  border: 2px solid #03070a;
   border-radius: 0;
-  background: linear-gradient(180deg, #65d9ff, #168bff 52%, #06386d);
+  background: linear-gradient(180deg, #9cecff, #168bff 52%, #06396f);
 }
 
-.glp--cash .cplaque {
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.9fr);
-  grid-template-areas:
-    'identity identity'
-    'join rules';
-  gap: 8px;
-  padding: 18px 18px 16px;
-  border: 1px solid #75818c;
-  border-radius: 3px;
-  background:
-    radial-gradient(circle at 50% 8%, rgba(22, 139, 255, 0.19), transparent 28%),
-    repeating-linear-gradient(92deg, rgba(255, 255, 255, 0.014) 0 1px, transparent 1px 4px),
-    linear-gradient(165deg, #202b35, #060a0e 53%, #131c25);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.3),
-    inset 0 0 0 2px #020406,
-    inset 0 0 0 4px #242f39,
-    0 10px 25px rgba(0, 0, 0, 0.64);
-  clip-path: polygon(
-    12px 0,
-    calc(100% - 12px) 0,
-    100% 12px,
-    100% calc(100% - 12px),
-    calc(100% - 12px) 100%,
-    12px 100%,
-    0 calc(100% - 12px),
-    0 12px
-  );
+/* Exact approved responsive cash machine — the same component, registry,
+   live values and production shell used by the Club Arena card grid. */
+.glp--cash .glp__arena-card {
+  flex: 0 0 auto;
+  width: min(100%, 540px);
+  max-width: 540px;
+  margin: 0 auto;
+  filter: drop-shadow(0 14px 24px rgb(0 0 0 / 82%));
 }
 
-.glp--cash .cplaque::before {
-  border-radius: 0;
-  background:
-    linear-gradient(90deg, transparent 28%, rgba(101, 217, 255, 0.16) 50%, transparent 72%),
-    linear-gradient(115deg, transparent 32%, rgba(255, 255, 255, 0.045) 50%, transparent 68%);
+.glp--cash .glp__arena-card .agc-action {
+  cursor: pointer;
 }
 
-.glp--cash .cplaque__identity {
+/* The information below the machine keeps the same manufactured frame
+   language. The empty, alpha-backed navigation shell scales without baking
+   any fake values or labels into these live sections. */
+.glp--cash .glp__section {
   position: relative;
-  justify-self: stretch;
-  padding: 6px 12px 14px;
-  border-bottom: 1px solid #42515f;
+  padding: clamp(24px, 5.5vw, 42px) clamp(24px, 5.2vw, 40px);
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background:
+    url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114% no-repeat,
+    #020507;
+  box-shadow: 0 9px 18px rgb(0 0 0 / 58%);
 }
 
-.glp--cash .cplaque__identity::after {
+.glp--cash .glp__section::before {
   content: '';
   position: absolute;
-  left: 22%;
-  right: 22%;
-  bottom: -1px;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #168bff, #8ce9ff, #168bff, transparent);
-  box-shadow: 0 0 10px #168bff;
+  z-index: 0;
+  inset: 18% 7%;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgb(255 255 255 / 1.2%) 0 1px, transparent 1px 4px);
 }
 
-.glp--cash .cplaque__game {
-  font-size: clamp(34px, 8vw, 54px);
-  line-height: 0.9;
-  letter-spacing: 0.04em;
+.glp--cash .glp__section > * {
+  position: relative;
+  z-index: 1;
 }
 
-.glp--cash .cplaque__variant {
-  color: #9cabb8;
-  font:
-    700 13px/1 'Rajdhani',
-    sans-serif;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-}
-
-.glp--cash .cplaque__stakes {
+.glp--cash .glp__h {
+  margin: 0 0 13px;
   color: var(--pg-cyan);
   font:
-    800 15px/1 'Rajdhani',
+    800 11px/1 'Roboto Condensed',
     sans-serif;
-  letter-spacing: 0.08em;
-  text-shadow: 0 0 9px rgba(22, 139, 255, 0.7);
+  letter-spacing: 0.19em;
+  text-shadow: 0 0 9px rgb(22 139 255 / 55%);
 }
 
-.glp--cash .cplaque__join {
-  align-self: stretch;
-  justify-self: stretch;
-  min-width: 0;
-  padding: 13px;
-  border: 1px solid #52616e;
-  border-radius: 2px;
-  background: linear-gradient(180deg, #151f29, #05090d 72%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.17),
-    inset 0 0 0 2px #020406;
+.glp--cash .glp__grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
 }
 
-.glp--cash .cplaque__join-label {
-  color: var(--pg-cyan);
-  font:
-    800 10px/1 'Rajdhani',
-    sans-serif;
-  letter-spacing: 0.2em;
-}
-
-.glp--cash .cplaque__join-figure b {
-  color: transparent;
-  font:
-    800 22px/1 'Rajdhani',
-    sans-serif;
-  background: linear-gradient(180deg, #fff, #bcc6cf 55%, #6f7983);
-  background-clip: text;
-  -webkit-background-clip: text;
-  filter: drop-shadow(0 2px 1px #000);
-}
-
-.glp--cash .cplaque__seats-num {
-  color: #b8c2cb;
-  font:
-    700 12px/1 'Rajdhani',
-    sans-serif;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
-.glp--cash .cplaque__seats-pips i {
-  border-radius: 0;
-  background: #151c23;
-}
-
-.glp--cash .cplaque__seats-pips i.is-filled {
-  background: linear-gradient(180deg, #65d9ff, #168bff 58%, #06386d);
-  box-shadow: 0 0 5px rgba(22, 139, 255, 0.65);
-}
-
-.glp--cash .cplaque__rules {
-  align-self: stretch;
-  justify-self: stretch;
-  align-content: center;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid #52616e;
-  border-radius: 2px;
-  background: linear-gradient(180deg, #111923, #05080c);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    inset 0 0 0 2px #020406;
-}
-
-.glp--cash .cplaque__medallion {
-  width: 78px;
-  height: 78px;
-  background:
-    radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.16), transparent 35%),
-    radial-gradient(circle, #132a4a, #07101d 67%, #030507 70%);
-  box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.22),
-    inset 0 -3px 5px #000,
-    0 0 0 2px #53606c,
-    0 0 0 4px #020406,
-    0 0 12px rgba(22, 139, 255, 0.35);
-}
-
-.glp--cash .cplaque__medallion-ring {
-  border-color: #168bff;
-  box-shadow:
-    inset 0 0 7px rgba(22, 139, 255, 0.38),
-    0 0 7px rgba(22, 139, 255, 0.42);
-}
-
-.glp--cash .cplaque__medallion-detail {
-  color: var(--pg-cyan);
-}
-
-.glp--cash .cplaque__cta,
-.glp--cash .cplaque__observe-link {
-  min-height: 46px;
-  display: flex;
+.glp--cash .glp__grid > div {
+  min-height: 52px;
+  padding: 8px 10px;
   align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  border-radius: 2px;
-  font:
-    800 15px/1 'Rajdhani',
-    sans-serif;
-  letter-spacing: 0.12em;
-  text-decoration: none;
-  text-transform: uppercase;
+  border: 1px solid #364858;
+  background: linear-gradient(180deg, rgb(20 31 42 / 96%), rgb(2 7 11 / 98%));
+  box-shadow:
+    inset 0 0 0 2px #020406,
+    inset 0 1px 0 rgb(255 255 255 / 13%);
   clip-path: polygon(
     7px 0,
     calc(100% - 7px) 0,
@@ -329,139 +187,59 @@
   );
 }
 
-.glp--cash .cplaque__cta {
-  border: 1px solid #91e9ff;
-  background: linear-gradient(180deg, #34adff, #0d76df 50%, #063b76);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    inset 0 -3px 4px #031a34,
-    0 0 12px rgba(22, 139, 255, 0.56);
-}
-
-.glp--cash .cplaque__cta--gold {
-  color: #dff8e9;
-  border-color: #59e596;
-  background: linear-gradient(180deg, #35cf7a, #138447 55%, #06381e);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.38),
-    0 0 12px rgba(50, 210, 122, 0.42);
-}
-
-.glp--cash .cplaque__cta--danger {
-  color: #fff;
-  border-color: #ff9da6;
-  background: linear-gradient(180deg, #ff5361, #d91f31 55%, #7b0d18);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.38),
-    0 0 12px rgba(239, 61, 79, 0.4);
-}
-
-.glp--cash .cplaque__observe-link {
-  margin-top: 0;
-  color: #e5ebf0;
-  border: 1px solid #697783;
-  background: linear-gradient(180deg, #2a3540, #080c10 66%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 -3px 4px #000;
-}
-
-.glp--cash .glp__section {
-  position: relative;
-  padding: 14px;
-  border: 1px solid #53616e;
-  border-radius: 3px;
-  background:
-    repeating-linear-gradient(92deg, rgba(255, 255, 255, 0.01) 0 1px, transparent 1px 4px),
-    linear-gradient(165deg, #16212b, #070b10 64%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.17),
-    inset 0 0 0 2px #030609,
-    0 6px 14px rgba(0, 0, 0, 0.5);
-}
-
-.glp--cash .glp__section::before {
-  content: '';
-  position: absolute;
-  left: 18%;
-  right: 18%;
-  top: -1px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, #b9c4ce, transparent);
-}
-
-.glp--cash .glp__h {
-  margin-bottom: 12px;
-  color: var(--pg-cyan);
-  font:
-    800 11px/1 'Rajdhani',
-    sans-serif;
-  letter-spacing: 0.2em;
-  text-shadow: 0 0 9px rgba(22, 139, 255, 0.5);
-}
-
-.glp--cash .glp__grid {
-  gap: 7px;
-}
-
-.glp--cash .glp__grid > div {
-  min-height: 48px;
-  padding: 8px 10px;
-  align-items: center;
-  border: 1px solid #33414e;
-  background: linear-gradient(180deg, #121c26, #05090d);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
 .glp--cash .glp__grid dt {
-  color: #8392a0;
+  color: #80909e;
   font:
-    700 10px/1 'Rajdhani',
+    700 9px/1 'Roboto Condensed',
     sans-serif;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .glp--cash .glp__grid dd {
-  color: #e6edf3;
+  color: #eff3f6;
   font:
-    800 15px/1 'Rajdhani',
+    800 15px/1 'Roboto Condensed',
     sans-serif;
+  text-shadow: 0 2px 2px #000;
 }
 
 .glp--cash .glp__seatmap {
-  position: relative;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(68px, 1fr));
-  gap: 9px;
-  padding: 18px;
-  overflow: hidden;
-  border: 1px solid #364858;
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #334a5d;
   background:
-    radial-gradient(ellipse at center, #0d3b33 0 28%, #071511 29% 40%, transparent 41%),
-    linear-gradient(180deg, #091018, #030609);
-  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.85);
+    radial-gradient(ellipse at center, #0b382f 0 28%, #061510 29% 41%, transparent 42%), #020609;
+  box-shadow: inset 0 0 22px #000;
 }
 
 .glp--cash .glp__seat {
-  position: relative;
-  z-index: 1;
   min-width: 0;
   min-height: 58px;
   justify-content: center;
-  border: 1px solid #4f5f6e;
-  border-radius: 3px;
-  background: linear-gradient(180deg, #1c2935, #080d12);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    inset 0 0 0 2px #04070a;
+  border: 1px solid #526272;
+  border-radius: 0;
+  background: linear-gradient(180deg, #172431, #05090d);
+  box-shadow: inset 0 0 0 2px #020406;
+  clip-path: polygon(
+    7px 0,
+    calc(100% - 7px) 0,
+    100% 7px,
+    100% calc(100% - 7px),
+    calc(100% - 7px) 100%,
+    7px 100%,
+    0 calc(100% - 7px),
+    0 7px
+  );
 }
 
 .glp--cash .glp__seat:not(.is-taken) {
   border-color: #168bff;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 0 8px rgba(22, 139, 255, 0.28);
+    inset 0 0 0 2px #020406,
+    0 0 8px rgb(22 139 255 / 34%);
 }
 
 .glp--cash .glp__seat:not(.is-taken) i,
@@ -470,89 +248,82 @@
 }
 
 .glp--cash .glp__seat.is-you {
-  border-color: #32d27a;
-  background: linear-gradient(180deg, #17613a, #071d12);
-}
-
-.glp--cash .glp__seat.is-you i,
-.glp--cash .glp__seat.is-you em {
-  color: #bdfbd7;
+  border-color: var(--pg-green);
+  background: linear-gradient(180deg, #175f39, #061b10);
 }
 
 .glp--cash .glp__rules li {
   padding: 10px 11px;
   border-left: 2px solid #168bff;
-  background: linear-gradient(90deg, rgba(22, 139, 255, 0.11), transparent);
+  background: linear-gradient(90deg, rgb(22 139 255 / 12%), transparent);
 }
 
 .glp--cash .glp__rules b {
   color: var(--pg-cyan);
-  font-family: 'Rajdhani', sans-serif;
-  letter-spacing: 0.13em;
+  font-family: 'Roboto Condensed', sans-serif;
+  letter-spacing: 0.12em;
 }
 
 .glp--cash .glp__foot {
   gap: 8px;
-  padding: 4px 0 12px;
+  padding: 0 0 16px;
 }
 
 .glp--cash .glp__backlink,
 .glp--cash .glp__deletebtn {
-  min-height: 42px;
-  padding: 11px 18px;
-  border-radius: 2px;
+  min-height: 48px;
+  padding: 11px 26px;
+  border: 0;
+  border-radius: 0;
+  color: #e8eef3;
   font:
-    800 12px/1 'Rajdhani',
+    800 12px/1 'Roboto Condensed',
     sans-serif;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+  background: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114%
+    no-repeat;
+  text-shadow: 0 2px 2px #000;
 }
 
-.glp--cash .glp__backlink {
-  color: #dce4eb;
-  border: 1px solid #667583;
-  background: linear-gradient(180deg, #26333e, #070b0f 65%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+.glp--cash .glp__deletebtn {
+  color: #ff8b94;
 }
 
-@media (max-width: 560px) {
+@media (max-width: 640px) {
   .glp--cash {
-    padding: 4px;
+    width: 100%;
+    padding: max(8px, env(safe-area-inset-top, 0px)) 0 0;
+    background-size: 100% 100%;
+    box-shadow: none;
   }
 
   .glp--cash .glp__head {
-    min-height: 60px;
+    min-height: 68px;
+    padding: 14px 12% 8px;
+  }
+
+  .glp--cash .glp__head-title b {
+    font-size: clamp(18px, 6vw, 25px);
+  }
+
+  .glp--cash .glp__close {
+    width: 44px;
+    height: 38px;
   }
 
   .glp--cash .glp__scroll {
-    padding: 7px 7px 16px;
+    gap: 10px;
+    padding: 4px 5.5% calc(28px + env(safe-area-inset-bottom, 0px));
   }
 
-  .glp--cash .cplaque {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      'identity'
-      'join'
-      'rules';
-    padding: 15px 12px 13px;
-  }
-
-  .glp--cash .cplaque__identity,
-  .glp--cash .cplaque__join,
-  .glp--cash .cplaque__rules {
-    justify-self: stretch;
-    width: auto;
+  .glp--cash .glp__arena-card {
+    width: 100%;
     max-width: none;
   }
 
-  .glp--cash .cplaque__game {
-    font-size: 38px;
-  }
-
-  .glp--cash .cplaque__rules {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    justify-content: flex-start;
+  .glp--cash .glp__section {
+    padding: 30px 8%;
   }
 
   .glp--cash .glp__grid {
@@ -561,7 +332,17 @@
 
   .glp--cash .glp__seatmap {
     grid-template-columns: repeat(3, 1fr);
-    padding: 12px;
+    padding: 10px;
+  }
+}
+
+@media (max-width: 390px) {
+  .glp--cash .glp__scroll {
+    padding-inline: 4.5%;
+  }
+
+  .glp--cash .glp__section {
+    padding-inline: 7%;
   }
 }
 

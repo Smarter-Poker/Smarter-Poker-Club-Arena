@@ -121,6 +121,23 @@ export interface SettingMeta {
   key: keyof UserTableSettings;
   label: string;
   description: string;
+  /**
+   * Surfaced inline in the Hero Hub's Table tab (2026-08-30), as well as in
+   * the full settings panel.
+   *
+   * The hub's Table tab used to be a single button that closed the hub and
+   * opened SettingsPanel — the same weakness the Stats tab had before its
+   * figures were inlined. These are the switches a player reaches for DURING
+   * a session, so they belong one tap from the avatar rather than three.
+   *
+   * The flag lives HERE, next to the settings' single owner, on purpose: the
+   * quick list must never become a second hand-maintained list of keys that
+   * can drift from this one. Marking a setting `quick` is the whole edit;
+   * the hub renders whatever carries the flag and writes through the same
+   * `toggleSetting` as the panel, so there is still exactly one owner and one
+   * persisted copy per setting.
+   */
+  quick?: boolean;
 }
 
 // Only list a setting here if flipping it changes what the player sees.
@@ -144,6 +161,7 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
     key: 'show_avatars',
     label: 'Show Avatars',
     description: 'Display Player Avatar Images At Seats',
+    quick: true,
   },
   {
     key: 'show_badges',
@@ -159,6 +177,7 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
     key: 'gestures_enabled',
     label: 'Gestures',
     description: 'Enable Swipe/Drag Gesture Controls For Actions',
+    quick: true,
   },
   {
     key: 'card_slide',
@@ -169,11 +188,13 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
     key: 'card_squeeze',
     label: 'Card Squeeze',
     description: 'Deal Your Cards Face Down - Drag Up To Squeeze Them Open Like A Live Game',
+    quick: true,
   },
   {
     key: 'show_stack_in_bb',
     label: 'Show Stack In Big Blinds',
     description: 'Display Chip Stacks As BB Count Instead Of Chip Value',
+    quick: true,
   },
   {
     key: 'auto_time_bank',

@@ -244,3 +244,78 @@
 .hero-hub:focus {
   outline: none;
 }
+
+/* QUICK TABLE TOGGLES (2026-08-30) — the switches a player reaches for during
+   a session, one tap from the avatar instead of three. */
+.hero-hub__toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.hero-hub__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px; /* mobile-first: a real touch target at 375px */
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.hero-hub__toggle-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-align: left;
+}
+
+.hero-hub__toggle-track {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  position: relative;
+  transition: background var(--sp-ui-fast, 160ms) ease;
+}
+
+.hero-hub__toggle.is-on .hero-hub__toggle-track {
+  background: #3fb950;
+}
+
+.hero-hub__toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform var(--sp-ui-fast, 160ms) ease;
+}
+
+.hero-hub__toggle.is-on .hero-hub__toggle-thumb {
+  transform: translateX(18px);
+}
+
+.hero-hub__toggle:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+/* Reduced motion: the thumb still MOVES (it carries the meaning - on vs off),
+   it just stops sliding. See the animation law: motion may collapse, meaning
+   may not. */
+@media (prefers-reduced-motion: reduce) {
+  .hero-hub__toggle-track,
+  .hero-hub__toggle-thumb {
+    transition: none;
+  }
+}

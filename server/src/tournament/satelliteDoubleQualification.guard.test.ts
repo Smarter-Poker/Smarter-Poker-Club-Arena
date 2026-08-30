@@ -25,6 +25,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sliceBlockAfter } from '../testHelpers/sourceWindow.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MANAGER = fs.readFileSync(path.join(HERE, 'TournamentManager.ts'), 'utf8');
@@ -66,9 +67,7 @@ describe('a cross-satellite double win pays the ticket value', () => {
   });
 
   it('the cash lands under the stable place key, so a re-drive dedupes', () => {
-    const at = MANAGER.indexOf('held_from_this_satellite === false');
-    expect(at).toBeGreaterThan(-1);
-    const block = MANAGER.slice(at, at + 2000);
+    const block = sliceBlockAfter(MANAGER, 'held_from_this_satellite === false');
     expect(block).toMatch(/prize:place:\$\{w\.position\}/);
   });
 

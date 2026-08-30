@@ -4,6 +4,10 @@ import { resolve } from 'node:path';
 
 const PAGE = readFileSync(resolve(__dirname, '../src/pages/PlayerStatsPage.tsx'), 'utf8');
 const CSS = readFileSync(resolve(__dirname, '../src/pages/PlayerStatsPage.css'), 'utf8');
+const POST_DEPLOY_WORKFLOW = readFileSync(
+  resolve(__dirname, '../.github/workflows/post-deploy-e2e.yml'),
+  'utf8'
+);
 
 describe('Stats operational transparency', () => {
   it('measures the authenticated RPC without recording player identity', () => {
@@ -37,5 +41,11 @@ describe('Stats evidence links to real hand history', () => {
     expect(PAGE).not.toContain("navigate('/player-sessions')");
     expect(PAGE).toContain('navigate(`/hand-history?');
     expect(PAGE).toContain('openHandEvidence');
+  });
+});
+
+describe('Stats production certification', () => {
+  it('runs the deep, mobile, and accessibility suite after every successful deploy', () => {
+    expect(POST_DEPLOY_WORKFLOW).toContain('tests/e2e/stats-deep.spec.ts');
   });
 });

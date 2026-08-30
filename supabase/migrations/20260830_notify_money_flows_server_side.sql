@@ -222,75 +222,37 @@ CREATE TRIGGER trg_notify_credit_request
   FOR EACH ROW EXECUTE FUNCTION public.fn_notify_credit_request();
 
 -- ───────────────────────────────────────────────────────────────────────────
--- CASHOUT REQUESTS  -> the player, on every terminal transition.
+-- CASH-OUTS ARE DELIBERATELY ABSENT. Read this before adding them.
 --
--- The status vocabulary is taken from the live CHECK constraint
--- (cashout_requests_status_check), not from memory:
---   pending, approved, rejected, expired, cancelled, cancelling,
---   completed, completing
--- The two -ing states are in-flight and deliberately silent; a player does not
--- need to be told twice that the same cash-out is happening.
--- ───────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.fn_notify_cashout()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_amount text := to_char(COALESCE(NEW.amount, 0), 'FM999,999,999,990');
-  v_title  text;
-  v_body   text;
-BEGIN
-  BEGIN
-    IF TG_OP = 'UPDATE' AND OLD.status IS DISTINCT FROM NEW.status THEN
-      CASE NEW.status
-        WHEN 'approved'  THEN v_title := 'Cash-Out Approved';
-                              v_body  := 'Your cash-out of ' || v_amount || ' chips was approved';
-        WHEN 'completed' THEN v_title := 'Cash-Out Complete';
-                              v_body  := v_amount || ' chips have been paid out';
-        WHEN 'rejected'  THEN v_title := 'Cash-Out Declined';
-                              v_body  := COALESCE(NULLIF(btrim(NEW.agent_note), ''),
-                                                  'Your cash-out of ' || v_amount || ' chips was declined');
-        WHEN 'expired'   THEN v_title := 'Cash-Out Expired';
-                              v_body  := 'Your cash-out of ' || v_amount || ' chips expired before it was actioned';
-        WHEN 'cancelled' THEN v_title := 'Cash-Out Cancelled';
-                              v_body  := 'Your cash-out of ' || v_amount || ' chips was cancelled';
-        ELSE v_title := NULL;  -- pending / cancelling / completing: in-flight, stay quiet
-      END CASE;
-
-      IF v_title IS NOT NULL THEN
-        PERFORM public.fn_raise_notification(
-          NEW.player_id, 'cashout_' || NEW.status, v_title, v_body, '/wallet',
-          jsonb_build_object('cashoutRequestId', NEW.id, 'clubId', NEW.club_id)
-        );
-      END IF;
-
-    ELSIF TG_OP = 'INSERT' AND NEW.agent_id IS NOT NULL THEN
-      -- The agent has to action it, so the agent is the one who needs telling.
-      PERFORM public.fn_raise_notification(
-        NEW.agent_id,
-        'cashout_requested',
-        'Cash-Out Requested',
-        public.fn_notify_display_name(NEW.player_id)
-          || ' requested a cash-out of ' || v_amount || ' chips',
-        '/commander/cashouts',
-        jsonb_build_object('cashoutRequestId', NEW.id, 'clubId', NEW.club_id)
-      );
-    END IF;
-  EXCEPTION WHEN OTHERS THEN
-    RAISE WARNING 'fn_notify_cashout failed for cashout %: %', NEW.id, SQLERRM;
-  END;
-
-  RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_notify_cashout ON public.cashout_requests;
-CREATE TRIGGER trg_notify_cashout
-  AFTER INSERT OR UPDATE OF status ON public.cashout_requests
-  FOR EACH ROW EXECUTE FUNCTION public.fn_notify_cashout();
-
+-- The first cut of this migration added a cash-out trigger. It was applied,
+-- then corrected, then dropped entirely the same day — the two corrections are
+-- in the applied history as
+--   20260830_notify_cashout_drop_duplicate_insert_branch
+--   20260830_drop_redundant_cashout_notify_trigger
+-- and this file carries only the end state, because the phantom-ref gate
+-- requires that no migration declare a function the live schema lacks.
+--
+-- WHY IT WAS WRONG, so nobody re-adds it:
+--
+-- Cash-outs already notify, server-side, inside the money transaction, and
+-- have all along. Read out of pg_proc rather than assumed:
+--
+--   fn_notify_agent_on_cashout  AFTER INSERT  -> 'cashout_request'   (to the agent)
+--   fn_cashout_approve                        -> 'cashout_approved'
+--   fn_cashout_release                        -> 'cashout_cancelled' | 'cashout_denied'
+--   fn_cashout_request                        -> 'cashout_request_escrow'
+--   fn_expire_stale_cashouts                  -> 'cashout_expired_refund'
+--
+-- trg_mirror_notification_to_push_outbox turns every one of those into a push.
+-- A trigger of ours emitting 'cashout_approved' or 'cashout_cancelled' — which
+-- is exactly what the first cut did — tells the player TWICE that their money
+-- moved.
+--
+-- The client-side `pushQuietly` in src/services/CashoutService.ts was a
+-- redundant second push over the same events. Retiring OneSignal on 2026-08-19
+-- only made that redundancy invisible; it did not break cash-out
+-- notifications, and #1498 never applied to them.
+--
 -- ───────────────────────────────────────────────────────────────────────────
 -- ASSERTIONS — this migration aborts if its own assumptions are wrong.
 -- (supabase/migrations/.template.sql pattern, CLAUDE.md migration-safety.)
@@ -303,8 +265,9 @@ BEGIN
     v_missing := v_missing || ' trg_notify_dispute'; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_notify_credit_request' AND NOT tgisinternal) THEN
     v_missing := v_missing || ' trg_notify_credit_request'; END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_notify_cashout' AND NOT tgisinternal) THEN
-    v_missing := v_missing || ' trg_notify_cashout'; END IF;
+  -- and the pre-existing cash-out notifier must survive untouched
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'tr_notify_agent_on_cashout' AND NOT tgisinternal) THEN
+    v_missing := v_missing || ' tr_notify_agent_on_cashout(PRE-EXISTING)'; END IF;
 
   -- The whole design rests on this one already existing. If it is ever
   -- dropped, these triggers write in-app rows that never become pushes, and

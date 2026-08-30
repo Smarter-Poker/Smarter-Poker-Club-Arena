@@ -3,14 +3,22 @@
  *  UNIT TESTS — clubIdResolver
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+
+const resolverMock = vi.hoisted(() => ({
+  result: { data: null as { id: string } | null, error: null as unknown },
+  calls: 0,
+}));
 
 vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
     const handler: ProxyHandler<any> = {
       get: (_target, prop) => {
         if (prop === 'maybeSingle' || prop === 'single')
-          return () => Promise.resolve({ data: null, error: null });
+          return () => {
+            resolverMock.calls += 1;
+            return Promise.resolve(resolverMock.result);
+          };
         if (prop === 'then')
           return (resolve: (v: any) => void) => resolve({ data: null, error: null });
         return vi.fn().mockReturnValue(new Proxy({}, handler));
@@ -25,7 +33,21 @@ vi.mock('../../src/lib/supabase', () => {
   };
 });
 
-import { isUUID, resolveClubIdFilter } from '../../src/utils/clubIdResolver';
+import {
+  clearClubUUIDCache,
+  ClubNotFoundError,
+  ClubResolutionError,
+  isUUID,
+  resolveClubIdFilter,
+  resolveClubUUIDStrict,
+} from '../../src/utils/clubIdResolver';
+
+beforeEach(() => {
+  resolverMock.result = { data: null, error: null };
+  resolverMock.calls = 0;
+  clearClubUUIDCache();
+  localStorage.clear();
+});
 
 describe('isUUID', () => {
   it('should return true for a valid UUID', () => {
@@ -62,5 +84,33 @@ describe('resolveClubIdFilter', () => {
     const result = resolveClubIdFilter('midway-union');
     expect(result.column).toBe('slug');
     expect(result.value).toBe('midway-union');
+  });
+});
+
+describe('resolveClubUUIDStrict', () => {
+  it('returns a resolved club UUID', async () => {
+    resolverMock.result = {
+      data: { id: '550e8400-e29b-41d4-a716-446655440000' },
+      error: null,
+    };
+
+    await expect(resolveClubUUIDStrict('shark-club')).resolves.toBe(
+      '550e8400-e29b-41d4-a716-446655440000'
+    );
+  });
+
+  it('reports a genuine absent row as not found', async () => {
+    await expect(resolveClubUUIDStrict('missing-club')).rejects.toBeInstanceOf(ClubNotFoundError);
+  });
+
+  it('never turns a failed lookup into not found', async () => {
+    resolverMock.result = {
+      data: null,
+      error: { message: 'permission denied', status: 403 },
+    };
+
+    const error = await resolveClubUUIDStrict('shark-club').catch((caught) => caught);
+    expect(error).toBeInstanceOf(ClubResolutionError);
+    expect(error).not.toBeInstanceOf(ClubNotFoundError);
   });
 });

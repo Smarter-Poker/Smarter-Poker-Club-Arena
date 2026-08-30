@@ -152,7 +152,13 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
 
   return (
     <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modalContainer} onClick={(e) => e.stopPropagation()}>
+      <div
+        className={styles.modalContainer}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Create Club"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* High-fidelity frame background - hidden when logo generator is open */}
         <img
           loading="lazy"

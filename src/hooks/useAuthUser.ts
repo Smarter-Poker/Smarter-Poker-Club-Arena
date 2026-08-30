@@ -54,7 +54,19 @@ export function useAuthUser() {
         // Silent — IdentityDNA listener will handle it eventually
         console.warn('[useAuthUser] Re-hydration failed:', err);
       } finally {
-        if (!cancelled) setIsHydrating(false);
+        /*
+         * `setUser` above updates the Zustand store synchronously. That update
+         * rerenders this hook, runs this effect's cleanup, and sets `cancelled`
+         * before the promise reaches `finally`. Gating this state reset on the
+         * request flag therefore left `isHydrating=true` forever after a
+         * successful session restore — every guarded page stayed on its
+         * loading screen even though the user was already available.
+         *
+         * React safely ignores a state update after a real unmount. Clearing
+         * the request-local loading flag unconditionally is also correct when
+         * this effect is superseded by the store update that it initiated.
+         */
+        setIsHydrating(false);
       }
     }
 

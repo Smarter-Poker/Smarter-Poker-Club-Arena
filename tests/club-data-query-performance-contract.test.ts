@@ -94,6 +94,8 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
   it('keeps the first browser render bounded while allowing queued ledger traffic to finish', () => {
     expect(page).toContain('const PLAYER_PAGE_SIZE = 100;');
     expect(page).toContain('p_limit: PLAYER_PAGE_SIZE');
+    expect(page).toContain('const SNAPSHOT_REQUEST_TIMEOUT_MS = 25_000;');
+    expect(page).toMatch(/'Club data request timed out',\s*SNAPSHOT_REQUEST_TIMEOUT_MS/);
     expect(page).toContain('const PLAYER_REQUEST_TIMEOUT_MS = 25_000;');
     expect(page).toMatch(/'Player data request timed out',\s*PLAYER_REQUEST_TIMEOUT_MS/);
     expect(page).toMatch(/setPlayersLoading\(true\);\s*setPlayersError\(null\);/);

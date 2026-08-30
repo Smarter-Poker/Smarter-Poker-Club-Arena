@@ -4255,6 +4255,12 @@
       "description",
       "threshold"
     ],
+    "daily_challenge_milestones": [
+      "days",
+      "reward_chips",
+      "label",
+      "created_at"
+    ],
     "daily_challenges": [
       "id",
       "user_id",
@@ -11277,7 +11283,14 @@
       "completed_at",
       "created_at",
       "claimed",
-      "claimed_at"
+      "claimed_at",
+      "challenge_name_snapshot",
+      "challenge_description_snapshot",
+      "challenge_type_snapshot",
+      "tier_snapshot",
+      "requirement_snapshot",
+      "chip_reward_snapshot",
+      "diamond_reward_snapshot"
     ],
     "user_daily_rewards": [
       "id",

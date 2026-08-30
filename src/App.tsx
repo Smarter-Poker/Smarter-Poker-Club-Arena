@@ -29,6 +29,7 @@ import { addBreadcrumb } from './core/SentryInit';
 const IntroVideo = lazyWithRetry(() => import('./components/IntroVideo'));
 import { useSettingsStore } from './stores/useSettingsStore';
 import { useShellUpdateGate } from './hooks/useShellUpdateGate';
+import { startShellTelemetry } from './services/ShellTelemetryService';
 
 // Layouts
 import AppLayout from './components/layouts/AppLayout';
@@ -230,6 +231,15 @@ export default function App() {
      run a days-old bundle while production serves the fix. Applies the update
      only away from a table and only with the tab visible; see the hook. */
   useShellUpdateGate();
+  /* And the reader for what that gate emits (2026-08-30). The gate has been
+     publishing SHELL_STALENESS_CHECKED / SHELL_RELOADED since 2026-08-29 with
+     nothing subscribed — the same shape as SHELL_UPDATED itself, which was
+     posted for months to a client that had no handler. This fix is INVISIBLE
+     when it works (no reload happens), so without a sink there is no way to
+     tell "holding" from "quietly broken". Idempotent; see the service. */
+  useEffect(() => {
+    startShellTelemetry();
+  }, []);
 
   // Check if intro video has been shown this session
   // DISABLED — intro video turned off. To re-enable, restore the original useState initializer.

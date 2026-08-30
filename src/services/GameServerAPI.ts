@@ -126,6 +126,18 @@ export interface ActionResult {
   code?: string;
   hint?: Record<string, unknown>;
   /**
+   * Dan 2026-08-30: /preaction replies carry this — the price to call that the
+   * ENGINE recorded when it armed the pre-action, from its own authoritative
+   * state. The client's panel-suppression rule
+   * (src/lib/preActionPanelGate.ts) used to judge "can the engine still honour
+   * this?" against a price the BROWSER snapshotted at tap time. Two snapshots
+   * of one number, taken at two moments on two machines, agree almost always —
+   * and the "almost" is a visible flash on a hand the engine was going to act,
+   * or no panel on a hand where the arm had already been invalidated. Adopting
+   * this collapses the two to one.
+   */
+  armedToCall?: number;
+  /**
    * Dan 2026-08-29: /post-bb replies carry this. true = the player is in
    * between the blinds, so the post has been ACCEPTED AND HELD rather than
    * done — the engine posts it for them once the button is past, and the

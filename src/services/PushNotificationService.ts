@@ -264,24 +264,17 @@ class PushNotificationServiceClass {
    * `url` deep-links straight at the table so tapping the notification IS
    * taking the seat.
    */
-  async notifyBlindingOff(
-    userId: string,
-    tournamentName: string,
-    tableId: string,
-    chipsLeft?: number
-  ): Promise<boolean> {
-    const stack =
-      typeof chipsLeft === 'number' && chipsLeft > 0
-        ? ` You have ${Math.round(chipsLeft).toLocaleString()} chips left.`
-        : '';
-    return this.sendToUser(userId, {
-      title: 'You Are Being Blinded Off',
-      message: `Your seat in ${tournamentName} is posting blinds without you.${stack} Tap to take your seat.`,
-      category: 'tournament_start',
-      url: `/table/${tableId}`,
-      data: { tableId, action: 'blinding_off' },
-    });
-  }
+  /**
+   * REMOVED 2026-08-30 (#1498). The last live caller was TournamentAutoSeat,
+   * and it is now handled by trg_notify_blinding_off on table_seats: the engine
+   * flags is_sitting_out / is_away on a live tournament seat, the trigger raises
+   * the notification, and the mirror sends the push.
+   *
+   * Server-side is not merely tidier here, it is the only version that works.
+   * Somebody being blinded off is by definition not looking at the app, and a
+   * push that only fires while a React component is mounted is the one that
+   * matters least.
+   */
 
   /**
    * Notify user that a club game is starting / has open seats

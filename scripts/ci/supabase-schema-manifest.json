@@ -1709,6 +1709,7 @@
     "fn_notification_action_url",
     "fn_notification_fill_action_url",
     "fn_notify_agent_on_cashout",
+    "fn_notify_blinding_off",
     "fn_notify_credit_request",
     "fn_notify_display_name",
     "fn_notify_dispute",

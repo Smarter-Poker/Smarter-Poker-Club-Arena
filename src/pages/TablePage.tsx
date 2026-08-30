@@ -1290,6 +1290,16 @@ export default function TablePage({
    */
   const [playHasBegun, setPlayHasBegun] = useState(false);
   /**
+   * The same latch, readable from a timer callback (round 17).
+   *
+   * `exitIfBusted` runs out of `releaseBustHold`, which is reached from a
+   * `setTimeout` and from two modal handlers — closures where React state is
+   * whatever it was when the callback was created. The eject it performs must
+   * read the CURRENT answer to "has this game dealt yet", not a stale one, so
+   * it reads this. Kept in step by the effect that owns the latch below.
+   */
+  const playHasBegunRef = useRef(false);
+  /**
    * The one place the wheel is opened from a tournament ROW (the DB fallback
    * path, used both at mount and by the post-start re-check for D2). Returns
    * whether the wheel was actually opened, so callers can stop retrying.
@@ -6790,6 +6800,14 @@ export default function TablePage({
          is set by the confirm handler and is the authoritative "they paid" flag
          — it does not depend on local state having caught up yet. */
       if (rebuyJustSucceededRef.current) return;
+      /* AND NOT BEFORE THE GAME HAS DEALT (round 17). This function has three
+         callers; the watcher above now carries the same guard, but the two
+         rebuy-decline paths reach here directly. A seat-first seat holds zero
+         chips until the wheel lands — see the note on the watcher — so
+         without this, "stack is 0" still reads as "busted" during the reveal
+         and still throws a paying player off the table. A ref, because this
+         runs from a timer callback where state is stale. */
+      if (!playHasBegunRef.current) return;
       const stack = tableStateRef.current.players[seat - 1]?.stack ?? 0;
       if (stack > 0) return;
       heroSeatRef.current = 0;
@@ -6805,6 +6823,41 @@ export default function TablePage({
   useEffect(() => {
     if (!tableId || !userId || tableState.heroSeat <= 0) return;
     if (!tableState.isTournament || !tableState.tournamentId) return;
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  NOBODY IS BUSTED BEFORE A CARD HAS BEEN DEALT (Dan 2026-08-30, r17)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Dan, live: "AS SOON AS THE ANIMATION FINISHED, I GOT KICKED OFF THE
+     * TABLE AGAIN" — with a ranking card reading Finished, Total Payout 0.00,
+     * HANDS 0.
+     *
+     * This watcher was the whole of it, and the mechanism is embarrassingly
+     * simple: A SEAT-FIRST SEAT HOLDS ZERO CHIPS UNTIL THE WHEEL LANDS. That
+     * is deliberate on both sides — `fn_take_seat_and_buy_in` inserts the seat
+     * with `stack = 0` because the seat is a RESERVATION, and the engine's
+     * `deferStacksForSpinReveal` withholds the credit until the reveal is over
+     * precisely so the stacks appear as part of the show. The starting stack
+     * is a property of the drawn tier, so before the draw there is no honest
+     * number to hold.
+     *
+     * So for the fifteen seconds of the reveal, every seat at the table reads
+     * zero — and this watcher reads zero as BUSTED. It found no rebuy on offer
+     * (a Spin has none), released the hold, and `exitIfBusted` threw the
+     * player off a table they had just paid for. Silently, by construction:
+     * this is an ordinary path, so nothing was reported, which is why Sentry
+     * showed zero events for the incident.
+     *
+     * Verified against production, tournament c53bd1f6 ("1 Chip Spin PLO6"):
+     * still RUNNING, Dan still in seat 3 with 270 chips, two hands played
+     * AFTER he was ejected. The card was fiction; the game was fine.
+     *
+     * `playHasBegun` is the latch this page already keeps for exactly this
+     * distinction (dealer drawn, a hand started, or any seat holding chips).
+     * Before it, "busted" is not a state a player can be in — there is
+     * nothing to have lost yet.
+     */
+    if (!playHasBegun) return;
     const heroPlayer = tableState.players[tableState.heroSeat - 1];
     if (!heroPlayer) return;
     const stack = heroPlayer.stack ?? 0;
@@ -14938,6 +14991,25 @@ export default function TablePage({
       if (!tableId || seatFirstPending || seatFirstPendingRef.current) return;
       seatFirstPendingRef.current = true;
       setSeatFirstPending(true);
+      /* ── UNLOCK AUDIO ON THIS TAP (Dan 2026-08-30, round 17) ─────────────
+         "ANIMATION STARTED WHEN BOUGHT IN, BUT WITH NO SOUND EFFECTS."
+
+         The wheel is the FIRST sound most spin sessions ever make, and Web
+         Audio only resumes inside a real user gesture. `ensureContext()`
+         calls resume() when a cue is requested, but that call happens during
+         the ANIMATION - not in a gesture - and it deliberately lets the cue
+         through while resume() is still settling, so the opening beats can be
+         scheduled against a context that is not running yet and are simply
+         lost, with no error.
+
+         THIS tap is a genuine gesture, and it is ~15 seconds ahead of the
+         wheel. Priming here is the one moment where unlocking is both allowed
+         and early enough to matter. Idempotent and cheap. */
+      try {
+        soundService.primeAudioUnlock();
+      } catch {
+        /* audio is best-effort and must never block a buy-in */
+      }
       try {
         const { data, error } = await supabase.rpc('fn_take_seat_and_buy_in', {
           p_table_id: tableId,
@@ -15114,7 +15186,14 @@ export default function TablePage({
       tableState.dealerSeat > 0 ||
       (tableState.handNumber ?? 0) > 0 ||
       tableState.players.some((p) => p && Number(p.stack ?? 0) > 0);
-    if (begun) setPlayHasBegun(true);
+    if (begun) {
+      /* The ref first, and synchronously: `exitIfBusted` reads it from a timer
+         callback and must never see a stale false after play has started
+         (round 17). Setting state alone would leave that read one render
+         behind, which is the whole width of this race. */
+      playHasBegunRef.current = true;
+      setPlayHasBegun(true);
+    }
   }, [playHasBegun, tableState.dealerSeat, tableState.handNumber, tableState.players]);
 
   /**

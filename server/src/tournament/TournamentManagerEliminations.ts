@@ -49,6 +49,13 @@ interface TableRevealQueue {
 }
 
 export abstract class TournamentManagerEliminations extends TournamentManagerBase {
+  /** Dan 2026-08-30: how long a busted player's rebuy offer stays open before
+   *  the elimination sweep may stamp a finishing place. The table itself never
+   *  pauses; only the PLAYER'S elimination waits. */
+  protected static readonly REBUY_DECISION_GRACE_MS = 30_000;
+  /** userId -> epoch-ms deadline for an open rebuy decision. Self-clearing. */
+  protected rebuyDecisionGraceUntil = new Map<string, number>();
+
   /**
    * One reveal queue per table (sections 22 and 61 — only the affected table
    * pauses). Keyed by table id; the empty string is the degenerate "knockout
@@ -473,12 +480,92 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // 'rebuy' row dated 2026-04-19, while events were being scheduled
           // with rebuy_cost, rebuy_levels 6 and max_rebuys 2 configured and
           // ready. The money path was correct and simply unreachable.
-          const rebought = await this.tryTournamentRebuys(busted.map((b) => b.user_id));
+          const { rebought, answered } = await this.tryTournamentRebuys(
+            busted.map((b) => b.user_id)
+          );
           if (rebought.size > 0) {
             busted = busted.filter((b) => !rebought.has(b.user_id));
             if (busted.length === 0) {
               return; // everyone bought back in; nobody is eliminated this pass
             }
+          }
+
+          /**
+           * THE REBUY DECISION WINDOW (Dan, 2026-08-30, verbatim): "REBUYS IN
+           * A TOURNAMENT SHOULD NOT PAUSE THE ACTION, IT SHOUD TRIGGER THE
+           * REBUY OFFER, THEN SIT THE PLAYER REBUYING AT ANY TABLE THAT NEEDS
+           * TO BE BALANCED, OR AT ANY SEAT THAT IS OPEN OR WHERE A PLAYER IS
+           * NEEDED FIRST, IF THEY TRULY SHOULD BE IN THE SAME TABLE, SAME
+           * SEAT, ITS ALLOWED."
+           *
+           * The table no longer pauses (ServerTableEngineDealing skips the
+           * rebuy pause on tournament tables), so the WINDOW moves here: a
+           * busted player whose rebuy offer is still open is not eliminated
+           * until they answer or the grace expires. Horses answer inside
+           * tryTournamentRebuys in this same pass (`answered`), so the window
+           * is identical for everyone — a horse simply replies immediately,
+           * which is its input device, not a different deal. A rebuy that
+           * lands mid-grace raises chips above zero, drops the player out of
+           * the next bust snapshot, and ensureLateRegSeated re-seats them at
+           * the table that most needs a player — same table and seat when
+           * that is where the need is.
+           *
+           * If the rebuy window is CLOSED, there is nothing to wait for and
+           * nobody is deferred. The grace map is per-manager and self-clears.
+           */
+          {
+            const tt = this.tournamentCache as {
+              is_rebuy?: boolean;
+              rebuy_levels?: number | null;
+              late_reg_levels?: number | null;
+              addon_levels?: number | null;
+              add_on_available?: boolean;
+              prize_pool_finalized?: boolean;
+            } | null;
+            const nz = (v: unknown): number | null => {
+              const n = Number(v);
+              return Number.isFinite(n) && n !== 0 ? n : null;
+            };
+            let rebuyCap = nz(tt?.rebuy_levels) ?? nz(tt?.late_reg_levels) ?? 0;
+            if (rebuyCap > 0 && tt?.add_on_available) {
+              rebuyCap += nz(tt?.addon_levels) ?? 1;
+            }
+            const windowOpen =
+              !!tt?.is_rebuy &&
+              rebuyCap > 0 &&
+              this.currentLevel < rebuyCap &&
+              !tt?.prize_pool_finalized;
+            if (windowOpen) {
+              const now = Date.now();
+              busted = busted.filter((b) => {
+                if (answered.has(b.user_id)) {
+                  this.rebuyDecisionGraceUntil.delete(b.user_id);
+                  return true; // decision made this pass — eliminate the declines
+                }
+                const until = this.rebuyDecisionGraceUntil.get(b.user_id);
+                if (until === undefined) {
+                  this.rebuyDecisionGraceUntil.set(
+                    b.user_id,
+                    now + TournamentManagerEliminations.REBUY_DECISION_GRACE_MS
+                  );
+                  return false; // window just opened for them
+                }
+                if (now < until) return false; // still deciding
+                this.rebuyDecisionGraceUntil.delete(b.user_id);
+                return true; // window expired — they are out
+              });
+            } else if (this.rebuyDecisionGraceUntil.size > 0) {
+              this.rebuyDecisionGraceUntil.clear();
+            }
+            // Anyone no longer busted (they rebought) sheds their entry.
+            const stillBusted = new Set(busted.map((b) => b.user_id));
+            for (const uid of this.rebuyDecisionGraceUntil.keys()) {
+              if (!stillBusted.has(uid) && !answered.has(uid)) {
+                // kept: they may re-bust later and deserve a fresh window then
+                this.rebuyDecisionGraceUntil.delete(uid);
+              }
+            }
+            if (busted.length === 0) return;
           }
 
           let bustedOrdered = [...busted].sort((a, b) => (a.chips ?? 0) - (b.chips ?? 0));
@@ -940,16 +1027,23 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * Bounded by construction: max_rebuys (2 on the scheduled events) and the
    * rebuy level window, both enforced server-side, so this cannot loop.
    */
-  private async tryTournamentRebuys(bustedUserIds: string[]): Promise<Set<string>> {
+  private async tryTournamentRebuys(
+    bustedUserIds: string[]
+  ): Promise<{ rebought: Set<string>; answered: Set<string> }> {
     const rebought = new Set<string>();
+    /** Players whose rebuy decision is FINAL this pass: horses that were asked
+     *  (the RPC either granted or refused). Everyone else — humans, and any
+     *  horse the profile read could not identify — still holds an open
+     *  decision window and gets the elimination grace below instead. */
+    const answered = new Set<string>();
     const t = this.tournamentCache as
       | { is_rebuy?: boolean; rebuy_levels?: number | null; late_reg_levels?: number | null }
       | undefined;
-    if (!t?.is_rebuy || bustedUserIds.length === 0) return rebought;
+    if (!t?.is_rebuy || bustedUserIds.length === 0) return { rebought, answered };
 
     // Cheap pre-check so a closed rebuy period costs no round trips at all.
     const cap = t.rebuy_levels ?? t.late_reg_levels ?? 0;
-    if (cap > 0 && this.currentLevel > cap) return rebought;
+    if (cap > 0 && this.currentLevel > cap) return { rebought, answered };
 
     try {
       const { data: horseRows, error: horseErr } = await supabase
@@ -957,7 +1051,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         .select('id')
         .in('id', bustedUserIds)
         .eq('is_horse', true);
-      if (horseErr || !horseRows || horseRows.length === 0) return rebought;
+      if (horseErr || !horseRows || horseRows.length === 0) return { rebought, answered };
 
       const declined = new Map<string, number>();
       for (const h of horseRows) {
@@ -973,8 +1067,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         });
         if (error) {
           declined.set(error.message, (declined.get(error.message) || 0) + 1);
+          answered.add(h.id);
           continue;
         }
+        answered.add(h.id);
         if ((data as { success?: boolean } | null)?.success === true) rebought.add(h.id);
       }
 
@@ -992,7 +1088,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     } catch (err) {
       reportError(err, 'Tournament.tournament_rebuy_threw');
     }
-    return rebought;
+    return { rebought, answered };
   }
 
   /**
@@ -1250,7 +1346,20 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       )
       .eq('tournament_id', this.tournamentId)
       .eq('user_id', userId)
-      .eq('status', 'playing'); // Only update if still playing (prevents double-processing)
+      .eq('status', 'playing') // Only update if still playing (prevents double-processing)
+      /**
+       * A LANDED REBUY OUTRANKS A STALE BUST SNAPSHOT (Dan, 2026-08-30).
+       *
+       * The bust list is read at the top of the sweep; process_tournament_rebuy
+       * can land between that read and this write. It did, live, in the
+       * restarted Sunday $200: rebuy debit 21:13:57.405, this UPDATE
+       * 21:13:57.911 — the player paid 200, was granted 30,000 chips, and was
+       * eliminated and unseated half a second later off the pre-rebuy
+       * snapshot. Status alone cannot catch it (a rebuy leaves status
+       * 'playing'); the chips CAN: a rebought player is no longer at zero, so
+       * this CAS misses, updateCount is 0, and the sweep moves on.
+       */
+      .lte('chips', 0);
 
     if (updateErr) {
       // A DB error and "somebody else got there first" were both returned

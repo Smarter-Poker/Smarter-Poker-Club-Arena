@@ -753,7 +753,6 @@
       "big_blind",
       "stakes_tier",
       "created_at",
-      "player_id",
       "main_portion",
       "backup_portion",
       "promo_portion",
@@ -1313,6 +1312,17 @@
       "embedded",
       "build_sha"
     ],
+    "client_shell_telemetry": [
+      "id",
+      "user_id",
+      "event",
+      "stale",
+      "source",
+      "running_entry",
+      "deployed_entry",
+      "page_age_ms",
+      "created_at"
+    ],
     "clip_library": [
       "id",
       "source_url",
@@ -1680,7 +1690,8 @@
       "status",
       "acquired_at",
       "redeemed_at",
-      "stackable_snapshot"
+      "stackable_snapshot",
+      "grant_snapshot"
     ],
     "club_shop_items": [
       "id",
@@ -1711,7 +1722,9 @@
       "created_at",
       "refunded_at",
       "stock_claimed",
-      "currency"
+      "currency",
+      "grant_snapshot",
+      "charge_reference"
     ],
     "club_stats_rebuild_log": [
       "table_id",
@@ -4354,7 +4367,10 @@
       "completed_at",
       "refunded_at",
       "created_at",
-      "updated_at"
+      "updated_at",
+      "refunded_amount_cents",
+      "refunded_diamonds",
+      "metadata"
     ],
     "diamond_reward_catalog": [
       "action_key",
@@ -5695,6 +5711,13 @@
       "ev_loss",
       "created_at"
     ],
+    "leak_review_operations": [
+      "id",
+      "user_id",
+      "leak_id",
+      "review_id",
+      "created_at"
+    ],
     "leak_review_state": [
       "id",
       "user_id",
@@ -6066,6 +6089,16 @@
       "created_at",
       "updated_at"
     ],
+    "merchandise_order_events": [
+      "id",
+      "order_id",
+      "actor_id",
+      "action",
+      "from_status",
+      "to_status",
+      "details",
+      "created_at"
+    ],
     "merchandise_orders": [
       "id",
       "user_id",
@@ -6084,7 +6117,13 @@
       "carrier",
       "metadata",
       "shipped_at",
-      "delivered_at"
+      "delivered_at",
+      "refunded_amount_cents",
+      "purchase_reference",
+      "refunded_diamonds",
+      "refunded_at",
+      "stock_restored",
+      "fulfillment_version"
     ],
     "message_reactions": [
       "id",
@@ -7593,7 +7632,8 @@
       "last_used_at",
       "last_receipt_at",
       "created_at",
-      "updated_at"
+      "updated_at",
+      "device_id"
     ],
     "pwa_prompt_log": [
       "id",
@@ -8950,7 +8990,10 @@
     "stripe_webhook_events": [
       "event_id",
       "event_type",
-      "processed_at"
+      "processed_at",
+      "processing_status",
+      "locked_at",
+      "completed_at"
     ],
     "study_rooms": [
       "id",
@@ -10089,7 +10132,8 @@
       "daily_id",
       "score",
       "ev_loss",
-      "completed_at"
+      "completed_at",
+      "selected_action"
     ],
     "training_daily_challenges": [
       "id",
@@ -10225,6 +10269,17 @@
       "generated_at",
       "times_used"
     ],
+    "training_question_reports": [
+      "id",
+      "user_id",
+      "game_id",
+      "question_id",
+      "reason",
+      "note",
+      "created_at",
+      "resolved_at",
+      "resolution"
+    ],
     "training_questions": [
       "id",
       "scenario_text",
@@ -10305,6 +10360,43 @@
       "last_training_date",
       "streak_start_date",
       "milestones_claimed"
+    ],
+    "training_study_group_members": [
+      "group_id",
+      "user_id",
+      "role",
+      "joined_at"
+    ],
+    "training_study_group_messages": [
+      "id",
+      "group_id",
+      "user_id",
+      "body",
+      "created_at"
+    ],
+    "training_study_groups": [
+      "id",
+      "owner_id",
+      "name",
+      "format",
+      "stakes",
+      "timezone",
+      "focus",
+      "schedule",
+      "level",
+      "max_members",
+      "created_at",
+      "updated_at"
+    ],
+    "training_tool_records": [
+      "id",
+      "user_id",
+      "tool_id",
+      "record_type",
+      "record_key",
+      "data",
+      "created_at",
+      "updated_at"
     ],
     "training_tournament_entries": [
       "id",
@@ -11560,6 +11652,20 @@
       "incoherent_runlines_with_bet",
       "total_live_recs"
     ],
+    "v_shell_reload_lateness": [
+      "day",
+      "reloads",
+      "within_startup_window",
+      "after_paint",
+      "worst_page_age_ms"
+    ],
+    "v_shell_staleness_rate": [
+      "day",
+      "source",
+      "checks",
+      "stale_checks",
+      "stale_pct"
+    ],
     "v_spin_reserve_health": [
       "club_id",
       "club_name",
@@ -12048,6 +12154,13 @@
       "prev_vip_expires_at",
       "backed_up_at"
     ],
+    "vip_diamond_purchase_requests": [
+      "reference_id",
+      "user_id",
+      "request_hash",
+      "response",
+      "created_at"
+    ],
     "vip_feature_dismissals": [
       "id",
       "user_id",
@@ -12126,6 +12239,16 @@
       "status",
       "claimed_at",
       "fulfilled_at"
+    ],
+    "vip_subscription_checkout_claims": [
+      "user_id",
+      "request_id",
+      "intent_hash",
+      "state",
+      "session_id",
+      "session_url",
+      "expires_at",
+      "updated_at"
     ],
     "vip_subscriptions": [
       "id",

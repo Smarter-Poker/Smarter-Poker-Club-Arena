@@ -253,7 +253,7 @@ import SpectatorBadge from '../components/table/SpectatorBadge';
 // FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay
 // import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
 import { horseBugReporter } from '../services/HorseBugReporter';
-import { useUserTableSettings } from '../hooks/useUserTableSettings';
+import { useUserTableSettings, TABLE_SETTINGS_META } from '../hooks/useUserTableSettings';
 import { useUserThemeSettings } from '../hooks/useUserThemeSettings';
 import PineappleDiscard from '../components/table/PineappleDiscard';
 import GameServerAPI, {
@@ -2602,6 +2602,18 @@ export default function TablePage({
             const res = await serverSetPreAction(tableId, serverAction, armCap);
             if (!res?.success) {
               throw new Error(`network/preaction-arm: ${res?.error || 'engine refused'}`);
+            }
+            /* ADOPT THE ENGINE'S OWN NUMBER (2026-08-30). The engine records
+               `toCallAtSet` from its authoritative state and now returns it.
+               Until this line the panel-suppression rule judged "can the
+               engine still honour this?" against a price the BROWSER
+               snapshotted at tap time — two snapshots of one number, taken at
+               two moments on two machines. They agree almost always, and the
+               "almost" is a visible flash on a hand the engine was going to
+               act, or no panel on a hand where the arm was already dead.
+               There is now one number, and it is the engine's. */
+            if (typeof res.armedToCall === 'number' && Number.isFinite(res.armedToCall)) {
+              preActionCallAmountRef.current = res.armedToCall;
             }
             return res;
           },
@@ -15886,6 +15898,19 @@ export default function TablePage({
     };
   })();
 
+  /**
+   * The Table tab's inline switches (2026-08-30). Derived from the SAME meta
+   * list that drives the full settings panel, filtered by its `quick` flag —
+   * so adding or removing one is a single edit next to the setting itself,
+   * and this can never drift into a second hand-maintained list of keys.
+   */
+  const heroHubQuickSettings = TABLE_SETTINGS_META.filter((m) => m.quick).map((m) => ({
+    key: m.key as string,
+    label: m.label,
+    description: m.description,
+    value: !!v8Settings[m.key as keyof typeof v8Settings],
+  }));
+
   const hudSlotControl: 'timebank' | 'rabbit' | null = isHeroTurnContext
     ? 'timebank'
     : !tableState.isHandInProgress && isRabbitAvailable
@@ -21288,6 +21313,14 @@ export default function TablePage({
           heroAvatarUrl={heroAvatarUrl || undefined}
           stats={heroHubStats}
           isHeroTurn={isHeroTurnContext}
+          /* 2026-08-30: the quick toggles come from TABLE_SETTINGS_META's
+             `quick` flag — one list, beside the settings' single owner — and
+             write through the same toggleSetting the full panel uses. The hub
+             adds a surface, never a second owner. */
+          quickSettings={heroHubQuickSettings}
+          onToggleQuickSetting={(key) => {
+            void toggleV8Setting(key as keyof typeof v8Settings);
+          }}
         />
       )}
 

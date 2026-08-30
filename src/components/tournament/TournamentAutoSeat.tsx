@@ -203,16 +203,18 @@ export default function TournamentAutoSeat() {
             writeWarned(warnedRef.current);
             const chips = Number(row.stack) || 0;
             setBlindingOff({ tableId, name, chips });
-            // The phone half. Fire-and-forget: a failed push must never stop
-            // the on-screen popup, which is the alert that actually matters
-            // when they are looking at the app.
-            void import('../../services/PushNotificationService')
-              .then(({ pushNotificationService }) =>
-                pushNotificationService.notifyBlindingOff(user.id, name, tableId, chips)
-              )
-              .catch(() => {
-                /* push is best-effort */
-              });
+            // The phone half is NOT sent from here any more (#1498,
+            // 2026-08-30). It used to call pushNotificationService, whose
+            // transport OneSignal's retirement killed on 2026-08-19, so it had
+            // delivered nothing for eleven days.
+            //
+            // The engine's own flag is the trigger now: trg_notify_blinding_off
+            // fires on table_seats when is_sitting_out or is_away goes true on
+            // a live TOURNAMENT seat, raises the notification server-side, and
+            // the mirror sends the push. That reaches the player whether or not
+            // this component is mounted -- which is the whole point, because
+            // somebody being blinded off is by definition not looking at the
+            // app. This banner is only the half for when they are.
           }
         } else if (warnedRef.current.has(tableId)) {
           warnedRef.current.delete(tableId);

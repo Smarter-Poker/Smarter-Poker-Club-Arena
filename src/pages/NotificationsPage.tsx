@@ -60,6 +60,7 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import PushEnableBanner from '../components/notifications/PushEnableBanner';
+import AccountSurfaceHeader from '../components/account/AccountSurfaceHeader';
 import './NotificationsPage.css';
 
 /** Club Arena's router basename. Paths under it are handled in-SPA. */
@@ -231,6 +232,7 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<FeedNotification[]>(readCache);
   const [loading, setLoading] = useState(() => readCache().length === 0);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState<'all' | 'unread'>('all');
 
   const mounted = useRef(true);
   useEffect(() => {
@@ -245,6 +247,10 @@ export default function NotificationsPage() {
   }, []);
 
   const unreadCount = useMemo(() => notifications.filter(isUnread).length, [notifications]);
+  const visibleNotifications = useMemo(
+    () => (filter === 'unread' ? notifications.filter(isUnread) : notifications),
+    [filter, notifications]
+  );
 
   /* ── Refresh from the one feed endpoint ──────────────────────────── */
 
@@ -494,17 +500,46 @@ export default function NotificationsPage() {
 
   return (
     <div className="ca-notif">
-      <header className="ca-notif__bar">
-        <h1 className="ca-notif__title">
-          Notifications
-          {unreadCount > 0 && <span className="ca-notif__count">{unreadCount}</span>}
-        </h1>
-        {unreadCount > 0 && (
-          <button type="button" className="ca-notif__markall" onClick={markAllAsRead}>
-            Mark All Read
+      <AccountSurfaceHeader
+        eyebrow="Signal Inbox // Live Player Network"
+        title="Notifications"
+        description="Seat calls, tournament movement, messages, rewards, and club operations, resolved by the same canonical destination service used across Smarter.Poker."
+        status={loading ? 'Synchronizing' : 'Live Feed'}
+      >
+        <span className="ca-notif__heroMetric">
+          <small>Unread</small>
+          {unreadCount}
+        </span>
+        <span className="ca-notif__heroMetric">
+          <small>Loaded</small>
+          {notifications.length}
+        </span>
+      </AccountSurfaceHeader>
+
+      <div className="ca-notif__bar">
+        <div className="ca-notif__filters" role="group" aria-label="Filter notifications">
+          <button type="button" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
+            All <span>{notifications.length}</span>
           </button>
-        )}
-      </header>
+          <button
+            type="button"
+            aria-pressed={filter === 'unread'}
+            onClick={() => setFilter('unread')}
+          >
+            Unread <span>{unreadCount}</span>
+          </button>
+        </div>
+        <div className="ca-notif__actions">
+          <button type="button" onClick={() => navigate('/settings?tab=notifications')}>
+            Alert Controls
+          </button>
+          {unreadCount > 0 && (
+            <button type="button" className="ca-notif__markall" onClick={markAllAsRead}>
+              Mark All Read
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* The way back into push enrolment. FirstRunPushPrompt asks once and
         then never again, which is right for a modal and wrong as the only
@@ -529,8 +564,16 @@ export default function NotificationsPage() {
             <h3>No Notifications Yet</h3>
             <p>When Someone Likes, Comments, Or Tags You, You Will See It Here.</p>
           </div>
+        ) : visibleNotifications.length === 0 ? (
+          <div className="ca-notif__empty" role="status">
+            <h3>All Signals Cleared</h3>
+            <p>There Are No Unread Notifications.</p>
+            <button type="button" onClick={() => setFilter('all')}>
+              View All Notifications
+            </button>
+          </div>
         ) : (
-          notifications.map((n) => {
+          visibleNotifications.map((n) => {
             const unread = isUnread(n);
             const clickable = !!destinationOf(n);
             const { glyph, bg } = categorise(n.type, n.message);
@@ -543,22 +586,17 @@ export default function NotificationsPage() {
               .join(' ');
 
             return (
-              <div className={rowClass} key={n.id} data-notif-id={n.id}>
-                <div
+              <article className={rowClass} key={n.id} data-notif-id={n.id}>
+                <button
+                  type="button"
                   className={`ca-notif__tap${clickable ? ' ca-notif__tap--clickable' : ''}`}
                   onClick={clickable ? () => handleTap(n) : undefined}
-                  onKeyDown={
+                  disabled={!clickable}
+                  aria-label={
                     clickable
-                      ? (e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            handleTap(n);
-                          }
-                        }
+                      ? `${n.actor_name || n.title || 'Notification'} ${n.message || ''}. ${timeAgo(n.created_at)}`
                       : undefined
                   }
-                  role={clickable ? 'button' : undefined}
-                  tabIndex={clickable ? 0 : undefined}
                 >
                   <div className="ca-notif__avatarWrap">
                     <img
@@ -579,34 +617,29 @@ export default function NotificationsPage() {
                     <div className="ca-notif__time">{timeAgo(n.created_at)}</div>
                   </div>
 
-                  <div className="ca-notif__aside">
-                    {unread && <span className="ca-notif__dot" />}
-                    <button
-                      type="button"
-                      className="ca-notif__delete"
-                      title="Dismiss"
-                      aria-label="Dismiss notification"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(n.id);
-                      }}
-                    >
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        aria-hidden="true"
-                      >
-                        <path d="M18 6L6 18M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
+                  {unread && <span className="ca-notif__dot" aria-label="Unread" />}
+                </button>
+                <button
+                  type="button"
+                  className="ca-notif__delete"
+                  title="Dismiss"
+                  aria-label={`Dismiss ${n.title || n.message || 'notification'}`}
+                  onClick={() => handleDelete(n.id)}
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </article>
             );
           })
         )}

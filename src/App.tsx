@@ -160,6 +160,16 @@ const AdminDashboardPage = lazyWithRetry(() => import('./pages/AdminDashboardPag
 const PlayerSessionsPage = lazyWithRetry(() => import('./pages/PlayerSessionsPage'));
 const AgentDashboardPage = lazyWithRetry(() => import('./pages/AgentDashboardPage'));
 const UnionDashboardPage = lazyWithRetry(() => import('./pages/UnionDashboardPage'));
+const CommunityWorkspacePage = lazyWithRetry(() =>
+  import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
+    default: module.CommunityWorkspacePage,
+  }))
+);
+const PlayWorkspacePage = lazyWithRetry(() =>
+  import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
+    default: module.PlayWorkspacePage,
+  }))
+);
 const RewardsWorkspacePage = lazyWithRetry(() =>
   import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
     default: module.RewardsWorkspacePage,
@@ -983,6 +993,16 @@ function FullApp() {
 
                 {/* New Pages */}
                 <Route
+                  path="play"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Play And Review">
+                        <PlayWorkspacePage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
                   path="leaderboard"
                   element={
                     <AuthGuard>
@@ -1019,6 +1039,16 @@ function FullApp() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Notifications">
                         <NotificationsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="community"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Community Center">
+                        <CommunityWorkspacePage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

@@ -20,6 +20,10 @@ test.describe('Authentication Flow', () => {
 });
 
 test.describe('Navigation', () => {
+  test('should navigate to play overview', async ({ page }) => {
+    await expectRoute(page, 'play', { expectText: 'Play & Review' });
+  });
+
   test('should navigate to clubs page', async ({ page }) => {
     await expectRoute(page, 'clubs');
   });
@@ -30,6 +34,14 @@ test.describe('Navigation', () => {
 
   test('should navigate to leaderboard page', async ({ page }) => {
     await expectRoute(page, 'leaderboard');
+  });
+
+  test('should navigate to community overview', async ({ page }) => {
+    await expectRoute(page, 'community', { expectText: 'Community Center' });
+  });
+
+  test('should navigate to rewards overview', async ({ page }) => {
+    await expectRoute(page, 'rewards', { expectText: 'Rewards Center' });
   });
 });
 

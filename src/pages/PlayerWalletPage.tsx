@@ -16,6 +16,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { TransactionHistory } from '../components/wallet/TransactionHistory';
 import DepositWithdrawModal from '../components/wallet/DepositWithdrawModal';
 import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
+import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import './PlayerWalletPage.css';
@@ -443,6 +444,22 @@ export default function PlayerWalletPage() {
 
   return (
     <div className="wallet-page">
+      <RewardsSurfaceHeader
+        eyebrow="Rewards Circuit / Wallet"
+        title="Your Value Vault"
+        description="One secure command surface for playable chips, protected balances, club earnings, promotional value, and diamonds. Every figure below remains connected to the live wallet ledger."
+        art="vault"
+        status="WALLET LEDGER // SYNCHRONIZED"
+        metrics={[
+          {
+            label: 'Playable Now',
+            value: balances.PLAYER.available.toLocaleString(),
+            tone: 'live',
+          },
+          { label: 'All Wallets', value: animatedTotal.toLocaleString() },
+          { label: 'Diamonds', value: animatedDiamonds.toLocaleString(), tone: 'attention' },
+        ]}
+      />
       {/* ═══════════ HERO BALANCE CARD ═══════════ */}
       <div className="wallet-hero">
         {/* "Total Balance" was a lie of omission. This figure is BUSINESS +

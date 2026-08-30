@@ -511,43 +511,28 @@ class TableService {
         }
       }
 
-      // ── WAITLIST AUTO-SEAT: Promote next waitlisted player into the opened seat ──
-      // Only for cash games — tournaments have their own elimination flow
-      if (!tableData?.tournament_id) {
-        try {
-          const { data: promotedUserId, error: promoErr } = await supabase.rpc(
-            'promote_next_waitlisted_player',
-            { p_table_id: tableId }
-          );
-
-          if (promoErr) {
-            console.warn('[TableService] Waitlist auto-promote RPC failed:', promoErr.message);
-          } else if (promotedUserId) {
-            console.debug(
-              `[TableService] Waitlist auto-seated player ${promotedUserId} at table ${tableId}`
-            );
-
-            // Notify the promoted player via notification
-            await supabase.from('notifications').insert({
-              user_id: promotedUserId,
-              type: 'seat_available',
-              title: 'You Have Been Seated!',
-              message:
-                'A seat opened up and you have been automatically seated at your waitlisted table.',
-              action_url: `/table/${tableId}`,
-            });
-
-            // Emit bus event so the promoted player's client gets a real-time toast
-            masterBus.emit('WAITLIST_PROMOTED', {
-              tableId,
-              userId: promotedUserId,
-              tableName: tableData?.name || 'your table',
-            });
-          }
-        } catch (promoError) {
-          console.warn('[TableService] Waitlist auto-promote failed:', promoError);
-        }
-      }
+      /**
+       * ── WAITLIST PROMOTION IS THE ENGINE'S JOB, AND ALWAYS WAS ──────────
+       *
+       * REMOVED 2026-08-28. This block invoked an RPC named
+       * promote-next-waitlisted-player — A FUNCTION THAT DOES NOT EXIST IN
+       * THE DATABASE (verified against pg_proc: of the 213 RPC names
+       * reachable from src/, it was the only one with no definition). Every
+       * cash leave therefore issued a failing round trip and swallowed it
+       * into a console.warn, so nothing here has ever run.
+       *
+       * Nothing is lost by deleting it, because the engine already owns this
+       * path correctly: `notifyWaitlistSeatOpen` in
+       * server/src/services/supabase/seats.ts fires on every seat vacate and
+       * claims the queue head by flipping the row to 'notified' — which is
+       * the authoritative signal GlobalWaitlistListener listens for and turns
+       * into the seat offer.
+       *
+       * And it must NOT be revived as written: the notification it sent told
+       * the player they had already been seated, which would have been a lie
+       * (nobody was), and a client-side path that genuinely auto-seated a
+       * player would spend their chips on a buy-in they never consented to.
+       */
 
       // Record in table history
       // The columns are `action`, `metadata` and `chips_cashed_out`. Writing

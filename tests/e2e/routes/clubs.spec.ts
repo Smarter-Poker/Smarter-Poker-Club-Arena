@@ -46,7 +46,7 @@ test.describe('Union Management', () => {
   });
 
   test('should show create union page', async ({ page }) => {
-    await expectRoute(page, 'unions/create', { expectText: 'Create Your Union' });
+    await expectRoute(page, 'unions/create', { expectText: 'Forge A Union' });
   });
 
   test('should show union detail page', async ({ page }) => {

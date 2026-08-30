@@ -5567,6 +5567,45 @@ export default function TablePage({
    * RPC remains the authority that actually refuses an underfunded entry.
    */
   const [accountBalance, setAccountBalance] = useState<number | null>(null);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * BALANCE WRITE FENCE (audit 2026-08-28)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * `accountBalance` has six writers: three RELATIVE and optimistic (a
+   * top-up debit, a credit, the buy-in debit) and three ABSOLUTE reads
+   * (loadTableInfo's tail, the BALANCE_UPDATED payload, and a resync read
+   * fired from inside that same handler). The absolute ones are awaited, so
+   * an absolute read ISSUED BEFORE an optimistic debit can RESOLVE AFTER it
+   * and restore the pre-debit figure — the player watches their balance snap
+   * back up after buying in. `readPlayerBalance` is also table-scoped, so a
+   * slow read for one table could land as another table's number.
+   *
+   * This is the same defect `applyTableAppearance` was given a write tail
+   * for. The fence here is lighter because balances need no ordering across
+   * requests, only "do not let a stale absolute overwrite a newer local
+   * truth": every optimistic write bumps a revision; an absolute write
+   * captures the revision BEFORE its await and is dropped if the revision
+   * moved while it was in flight.
+   *
+   * The direct BALANCE_UPDATED payload write is deliberately NOT fenced —
+   * it carries no await, so it is the newest information at the instant it
+   * arrives.
+   */
+  const balanceRevisionRef = useRef(0);
+  /** Optimistic, relative write. Bumps the fence. */
+  const applyBalanceDelta = useCallback((next: (prev: number | null) => number | null) => {
+    balanceRevisionRef.current += 1;
+    setAccountBalance(next);
+  }, []);
+  /** Read the fence before issuing an awaited balance read. */
+  const readBalanceRevision = useCallback(() => balanceRevisionRef.current, []);
+  /** Absolute write that refuses to land if an optimistic write beat it home. */
+  const setBalanceIfCurrent = useCallback((revisionAtIssue: number, value: number | null) => {
+    if (revisionAtIssue !== balanceRevisionRef.current) return;
+    setAccountBalance(value);
+  }, []);
   // FIX 136: 2-hour re-entry restriction — minimum buy-in from recent cashout
   const [cashoutMinBuyIn, setCashoutMinBuyIn] = useState(0);
 
@@ -5635,7 +5674,7 @@ export default function TablePage({
       // Engine ack'd the single debit -- reflect it locally + in session trackers.
       /* A local delta on an UNKNOWN balance would invent a number. Stay
          unknown until a real read lands (see the accountBalance decl). */
-      setAccountBalance((prev) => (prev === null ? null : Math.max(0, prev - applied)));
+      applyBalanceDelta((prev) => (prev === null ? null : Math.max(0, prev - applied)));
       totalBuyInRef.current += applied; // Track for session P/L
       totalRebuysRef.current += 1; // Track rebuy count for session summary
       // Dan 2026-08-15: feed the top-up into SessionStatsService too, otherwise
@@ -5710,7 +5749,7 @@ export default function TablePage({
       // Engine ack'd \u2014 the wallet was credited; reflect it locally. We do
       // NOT optimistic-update tableState; the next engine broadcast carries the
       // authoritative stack.
-      setAccountBalance((prev) => (prev === null ? null : prev + amount));
+      applyBalanceDelta((prev) => (prev === null ? null : prev + amount));
       const estimatedNewStack = Math.max(
         0,
         (tableState.players[tableState.heroSeat - 1]?.stack || 0) - amount
@@ -10619,8 +10658,18 @@ export default function TablePage({
              wallet on the buy-in sheet. Keep the last known figure on unknown;
              the buy-in RPC is the authority either way and refuses an
              underfunded entry. */
+          const balanceRevision = readBalanceRevision();
           const rb = await WalletService.readPlayerBalance(userId, { tableId });
-          if (rb.balance !== null) setAccountBalance(rb.balance);
+          /* AUDIT 2026-08-28 — THE TAIL OF THIS EFFECT STOPPED CHECKING
+             isMounted. Every write from here to the end ran unconditionally,
+             and the bootstrap above is a 5-attempt 1s/2s/4s/8s backoff ladder
+             followed by four more sequential round trips, so this tail can
+             legitimately land 15+ seconds late — after a tab switch, after a
+             userId change, or after the table was closed. `readPlayerBalance`
+             is also table-scoped, so a late one could paint another table's
+             figure. Guarded from here down. */
+          if (!isMounted) return;
+          if (rb.balance !== null) setBalanceIfCurrent(balanceRevision, rb.balance);
 
           /* FIX 136: Check 2-hour re-entry restriction from recent cashout.
              2026-08-28: the error was discarded, so a failed read looked
@@ -10638,6 +10687,7 @@ export default function TablePage({
             .limit(1)
             .maybeSingle();
 
+          if (!isMounted) return;
           if (cashoutErr) reportError(cashoutErr, 'TablePage.cashout_restriction_read');
           if (cashoutHistory) {
             setCashoutMinBuyIn(cashoutHistory.cashout_amount);
@@ -10654,6 +10704,7 @@ export default function TablePage({
           .eq('table_id', table.id)
           .is('left_at', null);
 
+        if (!isMounted) return;
         // ROUND 9 (2026-08-29): a failed restore read rendered an EMPTY felt
         // on a mid-session reload - every seat blank until the next engine
         // snapshot arrived to repair it. The snapshot is still the authority
@@ -10957,10 +11008,13 @@ export default function TablePage({
       } else {
         /* 2026-08-27: same rule - .then(setAccountBalance) on a helper that
            collapses failures wrote a 0 into the on-screen balance whenever a
-           resync was refused. */
+           resync was refused.
+           2026-08-28: fenced — this read is awaited, so an optimistic debit
+           issued while it was in flight must not be undone by its answer. */
+        const resyncRevision = readBalanceRevision();
         WalletService.readPlayerBalance(userId, { tableId })
           .then((rb) => {
-            if (rb.balance !== null) setAccountBalance(rb.balance);
+            if (rb.balance !== null) setBalanceIfCurrent(resyncRevision, rb.balance);
           })
           .catch((e) => reportError(e, 'TablePage.balanceSync'));
       }
@@ -21142,7 +21196,7 @@ export default function TablePage({
                 // RPC committed — clear the key. The seat is taken; any future
                 // buy-in at this table is a distinct transaction.
                 buyInIdempotencyKeyRef.current = null;
-                setAccountBalance((prev) => (prev === null ? null : Math.max(0, prev - amount)));
+                applyBalanceDelta((prev) => (prev === null ? null : Math.max(0, prev - amount)));
                 totalBuyInRef.current += amount;
                 if (amount > peakStackRef.current) peakStackRef.current = amount;
                 // The seat + stack were already painted above, before this RPC

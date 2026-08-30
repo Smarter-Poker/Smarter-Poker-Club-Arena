@@ -1,49 +1,55 @@
 /**
  * A SEAT OFFER SENDS ONE PUSH, TO SOMEBODY WHO IS ACTUALLY WAITING.
  * ============================================================================
- * Two rules, both bought with a real regression.
+ * The rules are unchanged since 2026-08-29; WHERE they live changed on
+ * 2026-08-30, and this file moved with them. Both halves are asserted, because
+ * either one going missing re-opens a report Dan raised.
  *
- * 1. ONE WRITER. This file used to POST straight to onesignal.com — a vendor
- *    removed on 2026-08-19, a week before that block was written, so it never
- *    delivered anything (no ONESIGNAL_APP_ID in the engine container, zero
- *    OneSignal lines in 48h of logs, the `if (osAppId && osKey)` guard false
- *    on every offer). The repair on 2026-08-26 added an explicit
- *    `push_outbox` insert instead. That was one writer too many:
- *    `trg_mirror_notification_to_push_outbox` — AFTER INSERT ON notifications,
- *    live since before either version — already mirrors the notification row
- *    into push_outbox. Every seat offer enqueued TWICE.
- *
- *    It was visible rather than merely wasteful, because the two rows carried
- *    different tags (`waitlist_seat_open:<id>` from the trigger,
- *    `seat-open-<tableId>` from the engine). The tag is what lets the OS
- *    collapse a repeat into the banner already on screen, so two rows with
- *    identical text and different tags are guaranteed to STACK. That is the
- *    pair of identical "A Seat Just Opened At PLO4 0.50/1.00" banners Dan
- *    photographed on 2026-08-29; the rows behind it were 7e1ba96a and
- *    91453e36, 237ms apart, both delivered to the same phone.
- *
- *    So this file writes the NOTIFICATION and nothing else. The trigger turns
- *    it into exactly one push, and push-dispatch runs gateDecision() on that
- *    row, so opt-outs are respected by construction rather than by this file
- *    remembering to check.
+ * 1. ONE PUSH WRITER. This path used to POST straight to onesignal.com — a
+ *    vendor removed on 2026-08-19, a week before that block was written, so it
+ *    never delivered anything. The 2026-08-26 repair added an explicit
+ *    `push_outbox` insert instead, which was one writer too many:
+ *    `trg_mirror_notification_to_push_outbox` already mirrors the notification
+ *    row into push_outbox. Every offer enqueued TWICE, and visibly, because the
+ *    two rows carried different tags — and the tag is what lets the OS collapse
+ *    a repeat into the banner already on screen. That is the pair of identical
+ *    "A Seat Just Opened At PLO4 0.50/1.00" banners Dan photographed; the rows
+ *    behind it were 7e1ba96a and 91453e36, 237ms apart, both delivered.
  *
  * 2. ONLY SOMEBODY WAITING. Dan 2026-08-29: "the seat open push notification
  *    should only occur if you are on a list waiting for a seat, not randomly."
- *    Two ways a row stopped meaning that, both fixed in the same commit:
- *    an abandoned queue row was immortal (the 24h GC in
- *    20260826151500 ran once, as a backlog cleanup, and no recurring job took
- *    it over), and taking a seat by any route other than the offer itself left
- *    the row 'waiting', so the next seat to turn over pushed "tap to claim it"
- *    to somebody already sitting at that table.
+ *    An abandoned queue row was immortal (the 24h GC in 20260826151500 ran
+ *    once, as a backlog cleanup, and no recurring job took it over), and taking
+ *    a seat by any route other than the offer itself left the row 'waiting', so
+ *    the next seat to turn over pushed "tap to claim it" at somebody already
+ *    sitting at that table.
+ *
+ * WHY THE ASSERTIONS NOW POINT AT SQL. On 2026-08-30 the whole sequence became
+ * `fn_offer_open_seat`, one transaction, for a correctness reason rather than a
+ * tidiness one: between reading the queue head and claiming it, a concurrent
+ * opener could take the same row, and the loser's seat went UNOFFERED in
+ * silence. `FOR UPDATE ... SKIP LOCKED` hands a concurrent caller the next
+ * person in line instead of a collision. So the TypeScript is asserted to be a
+ * thin, single call, and the rules are asserted against the migration that now
+ * holds them.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { resolve, join } from 'node:path';
 
 const SEATS = resolve(__dirname, '../../server/src/services/supabase/seats.ts');
 const src = existsSync(SEATS) ? readFileSync(SEATS, 'utf8') : '';
 
-describe('seat-open push', () => {
+/* The migration is found by NAME rather than by a hard-coded path so that a
+   later migration which supersedes it fails this test loudly instead of
+   leaving it passing against a file nothing runs any more. */
+const MIGRATIONS = resolve(__dirname, '../../supabase/migrations');
+const offerMigration = existsSync(MIGRATIONS)
+  ? readdirSync(MIGRATIONS).find((f) => f.includes('offer_open_seat'))
+  : undefined;
+const sql = offerMigration ? readFileSync(join(MIGRATIONS, offerMigration), 'utf8') : '';
+
+describe('seat-open push — the engine side', () => {
   it('the source is present', () => {
     expect(src).not.toBe('');
   });
@@ -59,37 +65,93 @@ describe('seat-open push', () => {
     expect(src).not.toMatch(/if\s*\(\s*osAppId\s*&&\s*osKey/);
   });
 
-  it('has exactly ONE push writer — the notification row the DB trigger mirrors', () => {
-    // The regression this pins is a SECOND enqueue, not a missing one. If a
-    // future change needs to enqueue directly, it must first remove the
-    // trigger, and this assertion is where that conversation starts.
+  it('writes NO push of its own — the notification the RPC inserts is the only one', () => {
+    // The regression this pins is a SECOND enqueue, not a missing one.
     expect(src).not.toMatch(/from\(['"`]push_outbox['"`]\)\s*\.insert/);
-    expect(src).toMatch(/from\(['"`]notifications['"`]\)\s*\.insert/);
-    expect(src).toMatch(/type:\s*['"`]waitlist_seat_open['"`]/);
+    expect(src).not.toMatch(/from\(['"`]notifications['"`]\)\s*\.insert/);
   });
 
-  it('carries the table id, which is what the action-url trigger deep-links from', () => {
-    // The push URL is derived by fn_notification_fill_action_url from this
-    // payload. Drop it and the banner lands on /hub with no table.
-    expect(src).toMatch(/data:\s*\{\s*table_id:\s*tableId\s*\}/);
+  it('is one RPC call, not a sequence the caller can get half-right', () => {
+    expect(src).toMatch(/supabase\.rpc\(['"`]fn_offer_open_seat['"`]/);
+    expect(src).toMatch(/p_table_id: tableId/);
+    // No queue reading left in TypeScript: that is what raced.
+    expect(src).not.toMatch(/from\(['"`]table_waitlist['"`]\)/);
   });
 
-  it('retires a queue row older than its TTL before choosing who to offer', () => {
-    expect(src).toMatch(/WAITLIST_ENTRY_TTL_MS/);
-    // Applied to 'waiting' rows by created_at — an abandoned place in line,
-    // as distinct from WAITLIST_OFFER_TTL_MS, which reclaims a dead offer.
-    expect(src).toMatch(/\.eq\('status', 'waiting'\)[\s\S]{0,160}created_at/);
+  it('never throws out of the offer path — a failed offer must not stall a table', () => {
+    const fn = src.slice(src.indexOf('export async function notifyWaitlistSeatOpen'));
+    expect(fn).toMatch(/try \{/);
+    expect(fn).toMatch(/catch/);
+    // An RPC error is reported and swallowed, never rethrown into the caller,
+    // which is a cash-out path.
+    expect(fn).toMatch(/if \(error\)/);
+  });
+
+  it('is still called from every path that opens a seat', () => {
+    // markSeatAsLeft, atomicCashout and processLeavePending. A cash-out that
+    // forgets to offer the seat is a queue that never moves.
+    expect(
+      (src.match(/void notifyWaitlistSeatOpen\(tableId\)/g) || []).length
+    ).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('seat-open push — the rules, now in the migration', () => {
+  it('the migration is present and is the one that defines the RPC', () => {
+    expect(offerMigration, 'no offer_open_seat migration found').toBeTruthy();
+    expect(sql).toMatch(/CREATE OR REPLACE FUNCTION public\.fn_offer_open_seat/);
+  });
+
+  it('retires a lapsed OFFER and tells the player, instead of dropping them in silence', () => {
+    expect(sql).toMatch(/p_offer_ttl interval DEFAULT interval '3 minutes'/);
+    expect(sql).toMatch(/notified_at < now\(\) - p_offer_ttl/);
+    expect(sql).toMatch(/'waitlist_offer_expired'/);
+    // A bell item, never an interrupt: '_push' is the documented signal that
+    // makes the mirror trigger skip the row.
+    expect(sql).toMatch(/'_push', 'skip'/);
+  });
+
+  it('retires an ABANDONED place in line', () => {
+    expect(sql).toMatch(/p_entry_ttl interval DEFAULT interval '24 hours'/);
+    expect(sql).toMatch(/created_at < now\(\) - p_entry_ttl/);
   });
 
   it('never offers a seat to somebody already sitting at that table', () => {
-    expect(src).toMatch(/from\('table_seats'\)/);
-    expect(src).toMatch(/\.is\('left_at', null\)/);
-    expect(src).toMatch(/status: 'seated'/);
+    expect(sql).toMatch(/FROM public\.table_seats s/);
+    expect(sql).toMatch(/s\.left_at IS NULL/);
+    expect(sql).toMatch(/SET status = 'seated'/);
   });
 
-  it('still notifies only a HUMAN at the head of the queue', () => {
-    // Horses are players everywhere else (CLAUDE.md 10.5); this is the one
-    // sanctioned use of the flag — a horse has no phone to push to.
-    expect(src).toMatch(/is_horse/);
+  it('claims the queue head under a lock, so a concurrent opener cannot burn the seat', () => {
+    expect(sql).toMatch(/FOR UPDATE OF w SKIP LOCKED/);
+    expect(sql).toMatch(/ORDER BY w\.created_at/);
+    // No ceiling on how far down the queue it will look. The old TypeScript
+    // read the ten oldest rows and gave up if all ten were horses.
+    expect(sql).not.toMatch(/LIMIT 10\b/);
+  });
+
+  it('offers to a HUMAN — the one sanctioned use of is_horse here', () => {
+    // Horses are players everywhere else (CLAUDE.md 10.5). A horse has no
+    // phone, so offering it the seat wastes the offer while people wait.
+    expect(sql).toMatch(/NOT COALESCE\(p\.is_horse, false\)/);
+  });
+
+  it('writes exactly one notification for the offer, and lets the trigger push it', () => {
+    expect((sql.match(/'waitlist_seat_open'/g) || []).length).toBe(1);
+    expect(sql).toMatch(/jsonb_build_object\('table_id', p_table_id\)/);
+    expect(sql).not.toMatch(/INSERT INTO public\.push_outbox/);
+  });
+
+  it('is not callable from a browser', () => {
+    // A mutating SECURITY DEFINER function reachable by anon or authenticated
+    // is a seat-offer forgery primitive.
+    expect(sql).toMatch(/SECURITY DEFINER/);
+    expect(sql).toMatch(/REVOKE ALL ON FUNCTION public\.fn_offer_open_seat[\s\S]*FROM anon/);
+    expect(sql).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_offer_open_seat[\s\S]*FROM authenticated/
+    );
+    expect(sql).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.fn_offer_open_seat[\s\S]*TO service_role/
+    );
   });
 });

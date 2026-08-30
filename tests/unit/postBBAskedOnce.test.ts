@@ -36,6 +36,10 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+/* Structural extractors, never `.slice(at, at + N)`. A fixed window drifts off
+   the end of what it guards as comments grow — and it can drift while staying
+   GREEN, which is why noFixedSizeSourceWindows.test.ts gates it. */
+import { sliceEnclosingBlock, sliceStatement } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const TABLE_PAGE = read('src/pages/TablePage.tsx');
@@ -52,8 +56,10 @@ describe('the post-BB prompt asks once', () => {
     const calls = [...TABLE_PAGE.matchAll(/await serverPostBBToEnter\(tableId\)/g)];
     expect(calls.length, 'the post-bb call sites moved').toBeGreaterThanOrEqual(2);
 
-    for (const call of calls) {
-      const window = TABLE_PAGE.slice(call.index ?? 0, (call.index ?? 0) + 1200);
+    for (let i = 0; i < calls.length; i++) {
+      // The `try { ... }` the call sits inside — bounded by the brace, so the
+      // window grows with the handler instead of being outrun by it.
+      const window = sliceEnclosingBlock(TABLE_PAGE, 'await serverPostBBToEnter(tableId)', i);
       const deferred = window.indexOf('res?.deferred');
       const success = window.indexOf('res?.success');
       expect(deferred, 'a post-bb call site ignores the deferred reply').toBeGreaterThan(-1);
@@ -73,12 +79,17 @@ describe('the post-BB prompt asks once', () => {
   it('the overlay is gated on the ENGINE agreement, so a reload does not re-ask', () => {
     // The durable half. Without it the prompt returns on every fresh load of a
     // table the player has already answered for.
-    // lastIndexOf, deliberately: the flag-reset effect earlier in the file
-    // tests the same membership, and anchoring on the first hit reads the
-    // wrong block.
-    const at = TABLE_PAGE.lastIndexOf('tableState.waitingForBBUserIds.includes(userId)');
-    expect(at, 'the overlay gate moved').toBeGreaterThan(-1);
-    const gate = TABLE_PAGE.slice(at, at + 900);
+    /* Anchored on the gate's OWN clause rather than on the membership test,
+       which by now appears three times (the flag-reset effect, the footer
+       label, and here) — an occurrence index over a string that keeps gaining
+       call sites is a magic number wearing a different hat. This clause reads
+       `includes(userId)`; the footer's reads `includes(userId!)`, so the
+       anchor cannot slide onto it. */
+    const gate = sliceEnclosingBlock(
+      TABLE_PAGE,
+      '!(tableState.postBBDeferredUserIds ?? []).includes(userId) &&'
+    );
+    expect(gate).toMatch(/tableState\.waitingForBBUserIds\.includes\(userId\)/);
     expect(gate).toMatch(/!\(tableState\.postBBDeferredUserIds \?\? \[\]\)\.includes\(userId\)/);
     expect(gate).toMatch(/!bbPostAgreed/);
   });
@@ -100,13 +111,45 @@ describe('the post-BB prompt asks once', () => {
     );
   });
 
+  it('the reserved-seat footer stops contradicting the overlay', () => {
+    /* Dan 2026-08-30. In the screenshot from 2026-08-29 the overlay says
+       "Post Big Blind To Enter" and the bar below says "Seat Reserved, You'll
+       Be Dealt In Next Hand" AT THE SAME TIME. They cannot both be true, and
+       the footer is the wrong one — a player between the blinds waits for the
+       button to pass, which is two or three hands. It is also the one people
+       believe, because it is not a button.
+
+       Three states, and the sentence must depend on which one holds. */
+    expect(
+      TABLE_PAGE.indexOf('SAY WHICH STATE YOU ARE ACTUALLY IN'),
+      'the reserved-seat footer branch is gone'
+    ).toBeGreaterThan(-1);
+    // The IIFE body that computes the label, bounded by its own braces.
+    const bar = sliceEnclosingBlock(TABLE_PAGE, 'SAY WHICH STATE YOU ARE ACTUALLY IN');
+
+    // It must ASK the engine, not assume.
+    expect(bar).toMatch(/waitingForBBUserIds/);
+    expect(bar).toMatch(/postBBDeferredUserIds/);
+    expect(bar).toMatch(/bbPostAgreed/);
+
+    // Held and unanswered: agrees with the overlay instead of promising a deal.
+    expect(bar).toContain('Seat Reserved, Post The Big Blind Or Wait For It');
+    // Held and answered: nothing is being asked, and it names the real trigger.
+    expect(bar).toContain('Posting The Big Blind, You Are Dealt In When The Button Passes');
+    // Not held: the original sentence survives, now only said when it is true.
+    expect(bar).toContain("Seat Reserved, You'll Be Dealt In Next Hand");
+  });
+
   it('the optimistic flag cannot outlive the hold', () => {
     // It HIDES a prompt, so a stale one is worse than no flag at all: the
     // player would sit unable to answer. Cleared as soon as the engine stops
     // listing the hero as held.
-    const at = TABLE_PAGE.indexOf('if (!bbPostAgreed) return;');
-    expect(at, 'the flag reset effect is gone').toBeGreaterThan(-1);
-    const effect = TABLE_PAGE.slice(at, at + 500);
+    expect(
+      TABLE_PAGE.indexOf('if (!bbPostAgreed) return;'),
+      'the flag reset effect is gone'
+    ).toBeGreaterThan(-1);
+    // The useEffect callback body, bounded by its own braces.
+    const effect = sliceEnclosingBlock(TABLE_PAGE, 'if (!bbPostAgreed) return;');
     expect(effect).toMatch(/waitingForBBUserIds\.includes\(userId\)/);
     expect(effect).toMatch(/setBBPostAgreed\(false\)/);
   });

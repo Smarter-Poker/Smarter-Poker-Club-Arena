@@ -19461,9 +19461,49 @@ export default function TablePage({
              contradicted the reserved seat + "Post BB to Enter" CTA on felt. */
           <div className="spectator-footer-bar" data-state="reserved">
             <span className="spectator-footer-bar__label">
-              {tableState.isTournament
-                ? 'Spectating'
-                : "Seat Reserved, You'll Be Dealt In Next Hand"}
+              {(() => {
+                /* ═══ SAY WHICH STATE YOU ARE ACTUALLY IN (Dan 2026-08-30) ═══
+                   This read "Seat Reserved, You'll Be Dealt In Next Hand" for
+                   every non-tournament seat, unconditionally — including the
+                   one case where it is FALSE and the felt was already saying
+                   so two inches higher up.
+
+                   In the screenshot Dan sent on 2026-08-29 the overlay says
+                   "Post Big Blind To Enter" and this bar says "you'll be dealt
+                   in next hand" AT THE SAME TIME. They cannot both be right,
+                   and this one is the wrong one: a player between the blinds
+                   waits for the button to pass, which is two or three hands,
+                   not one. Of the two the footer sounds the more authoritative
+                   because it is not a button, so it is what people believe.
+
+                   Three honest states, in the order they can be true. */
+                if (tableState.isTournament) return 'Spectating';
+
+                const held =
+                  !!userId &&
+                  Array.isArray(tableState.waitingForBBUserIds) &&
+                  tableState.waitingForBBUserIds.includes(userId);
+                if (!held) {
+                  // Not held by the engine at all — the seat is theirs and the
+                  // next deal includes them. The original sentence, now only
+                  // said when it is true.
+                  return "Seat Reserved, You'll Be Dealt In Next Hand";
+                }
+
+                const agreed =
+                  bbPostAgreed || (tableState.postBBDeferredUserIds ?? []).includes(userId!);
+                if (agreed) {
+                  // They answered. The engine holds the agreement and posts it
+                  // the moment the seat clears, so nothing is being asked of
+                  // them and the bar must not imply otherwise.
+                  return 'Posting The Big Blind, You Are Dealt In When The Button Passes';
+                }
+
+                // Held and unanswered: the overlay above is asking a real
+                // question, and this bar now agrees with it instead of
+                // contradicting it.
+                return 'Seat Reserved, Post The Big Blind Or Wait For It';
+              })()}
             </span>
           </div>
         ) : seatFirstBuyIn && tableState.heroSeat > 0 ? (

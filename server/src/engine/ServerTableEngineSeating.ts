@@ -751,6 +751,11 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     // table setting must not be able to switch off a house rule.
     if (!this.isTournamentTable()) {
       this.waitingForBB.add(userId);
+      // Dan 2026-08-30: and write it down. A Set on this process does not
+      // survive the deploy that happens on every push to server/**, and a hold
+      // that evaporates hands the player a free hand AND the button. See
+      // persistEntryHold().
+      this.persistEntryHold(userId, { hold: 'waiting' });
     }
   }
 
@@ -833,6 +838,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       // post their own big blind, so it is dropped here rather than left to
       // fire against a player already in the rotation.
       this.postBBWhenClear.delete(userId);
+      this.persistEntryHold(userId, { hold: null, agreed: false });
       return { success: false, error: 'Player is not waiting for BB' };
     }
     // This endpoint may NOT buy its way past either positional rule. Posting
@@ -857,6 +863,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         // effect the moment the small blind and the button are both past
         // them. Nothing is billed and nobody is dealt in from this seat.
         this.postBBWhenClear.add(userId);
+        this.persistEntryHold(userId, { hold: 'waiting', agreed: true });
         return {
           success: true,
           deferred: true,
@@ -866,6 +873,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     }
     this.waitingForBB.delete(userId);
     this.postBBWhenClear.delete(userId);
+    // 'posting', not null: the live big blind is owed on the NEXT deal, and a
+    // restart in that window would otherwise deal them in without billing it.
+    this.persistEntryHold(userId, { hold: 'posting', agreed: false });
     // AUDIT FIX 2026-07-19: post ONLY a live BB to enter (no dead SB). Route
     // through postingBBToEnter, not returningFromSitout (which owes a dead SB
     // for a MISSED blind).

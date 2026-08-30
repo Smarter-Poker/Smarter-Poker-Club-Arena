@@ -30,13 +30,14 @@ const INTENTIONAL_EXCEPTIONS = [
   '/replay',
   '/sim',
   '/dev/footer',
+  '/dev/customization',
   'table/:tableId',
 ] as const;
 const intentionalExceptions = new Set<string>(INTENTIONAL_EXCEPTIONS);
 
 describe('the complete route manifest inherits one global header', () => {
   it('discovers every current route, including dynamic and legacy redirect paths', () => {
-    expect(allPaths).toHaveLength(123);
+    expect(allPaths).toHaveLength(124);
     expect(allPaths).toContain('clubs/:clubId/create-table/:gameType');
     expect(allPaths).toContain('messages/clubs/:conversationId');
     expect(allPaths).toContain('*');

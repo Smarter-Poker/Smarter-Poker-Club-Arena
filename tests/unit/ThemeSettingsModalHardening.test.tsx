@@ -289,7 +289,7 @@ describe('ThemeSettingsModal hardening', () => {
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
 
-    const locker = screen.getByRole('region', { name: 'Loadout Locker' });
+    const locker = screen.getByRole('region', { name: 'My Looks' });
     const firstLook = within(locker).getAllByRole('listitem')[0];
     const name = within(firstLook).getByRole('textbox', { name: 'Name For Look 1' });
     expect(name).toHaveValue('Main Event');
@@ -391,7 +391,7 @@ describe('ThemeSettingsModal hardening', () => {
     await waitFor(() =>
       expect(screen.queryByText('Purchase Prices Could Not Be Loaded')).not.toBeInTheDocument()
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
     expect(screen.getByText('350 ◆')).toBeVisible();
   });
 
@@ -416,7 +416,7 @@ describe('ThemeSettingsModal hardening', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
 
     const locked = screen
       .getAllByRole('button')
@@ -441,7 +441,7 @@ describe('ThemeSettingsModal hardening', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
     fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
     fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
 
@@ -466,7 +466,7 @@ describe('ThemeSettingsModal hardening', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
     fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
 
     const addDiamonds = await screen.findByRole('button', { name: 'Add 250 Diamonds' });
@@ -547,7 +547,7 @@ describe('ThemeSettingsModal hardening', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
     fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
     fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
 
@@ -560,7 +560,7 @@ describe('ThemeSettingsModal hardening', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
     expect(
       screen.getByRole('button', { name: 'Neon City, purchase or VIP required' })
     ).toBeEnabled();
@@ -580,7 +580,7 @@ describe('ThemeSettingsModal hardening', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
-    fireEvent.click(screen.getByRole('tab', { name: 'Table' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
     fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
     fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
 

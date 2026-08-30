@@ -1602,6 +1602,35 @@
       "payout_amount",
       "payout_currency"
     ],
+    "leak_drill_answers": [
+      "batch_id",
+      "user_id",
+      "leak_id",
+      "question_id",
+      "correct_answer",
+      "correct",
+      "solver_source",
+      "classification"
+    ],
+    "leak_drill_attempts": [
+      "batch_id",
+      "user_id",
+      "leak_id",
+      "review_id",
+      "attempt_number",
+      "total_questions",
+      "correct_answers",
+      "accuracy",
+      "passed",
+      "first_attempt",
+      "remediation_mastered"
+    ],
+    "leak_drill_sessions": [
+      "batch_id",
+      "user_id",
+      "leak_id",
+      "question_ids"
+    ],
     "leak_hand_examples": [
       "leak_id",
       "hand_history_id"
@@ -3435,6 +3464,14 @@
     "venue_live_tables": [
       "bravo_slug",
       "game_name"
+    ],
+    "venue_location_integrity_log": [
+      "venue_id",
+      "reason",
+      "integrity_status",
+      "integrity_reason",
+      "before_record",
+      "after_record"
     ],
     "venue_news": [
       "venue_id",

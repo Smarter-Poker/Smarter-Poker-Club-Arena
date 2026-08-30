@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 type Handler = (event: any) => void;
 
@@ -16,7 +16,10 @@ const emitBus = (event: string, payload: unknown) => {
 const realtime = {
   channelNames: [] as string[],
   bindings: [] as Array<{ config: Record<string, string>; handler: Handler }>,
+  statuses: [] as Array<(status: string, error?: Error) => void>,
   removed: 0,
+  profileRows: [] as Array<Record<string, unknown>>,
+  profileReads: 0,
 };
 
 vi.mock('../../src/core/MasterBus', () => ({
@@ -35,6 +38,14 @@ vi.mock('../../src/core/MasterBus', () => ({
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
+    from: () => ({
+      select: () => ({
+        in: () => {
+          realtime.profileReads += 1;
+          return Promise.resolve({ data: realtime.profileRows, error: null });
+        },
+      }),
+    }),
     channel: (name: string) => {
       realtime.channelNames.push(name);
       const channel = {
@@ -42,7 +53,10 @@ vi.mock('../../src/lib/supabase', () => ({
           realtime.bindings.push({ config, handler });
           return channel;
         },
-        subscribe: () => channel,
+        subscribe: (callback: (status: string, error?: Error) => void) => {
+          realtime.statuses.push(callback);
+          return channel;
+        },
       };
       return channel;
     },
@@ -66,7 +80,10 @@ beforeEach(() => {
   bus.removed = 0;
   realtime.channelNames = [];
   realtime.bindings = [];
+  realtime.statuses = [];
   realtime.removed = 0;
+  realtime.profileRows = [];
+  realtime.profileReads = 0;
 });
 
 describe('useSeatedProfileSync', () => {
@@ -83,6 +100,61 @@ describe('useSeatedProfileSync', () => {
       `id=eq.${B}`,
     ]);
     expect(realtime.bindings.every((binding) => binding.config.table === 'profiles')).toBe(true);
+  });
+
+  it('reports channel health and reconciles the authoritative seated profiles once live', async () => {
+    const onChange = vi.fn();
+    realtime.profileRows = [
+      {
+        id: A,
+        arena_avatar_url: '/avatars/table/current.webp',
+        equipped_frame: 'frame-gold',
+        equipped_aura: null,
+      },
+    ];
+    const { result } = renderHook(() => useSeatedProfileSync('t1', [A], onChange));
+
+    expect(result.current.state).toBe('connecting');
+    act(() => realtime.statuses[0]?.('SUBSCRIBED'));
+
+    await waitFor(() => expect(result.current.state).toBe('live'));
+    await waitFor(() =>
+      expect(onChange).toHaveBeenCalledWith({
+        userId: A,
+        avatar: '/avatars/table/current.webp',
+        frame: 'frame-gold',
+        aura: null,
+      })
+    );
+    expect(realtime.profileReads).toBe(1);
+  });
+
+  it('re-reads seated profiles after a channel outage so missed avatar updates cannot stay stale', async () => {
+    const onChange = vi.fn();
+    const { result } = renderHook(() => useSeatedProfileSync('t1', [A], onChange));
+    act(() => realtime.statuses[0]?.('SUBSCRIBED'));
+    await waitFor(() => expect(result.current.state).toBe('live'));
+    onChange.mockClear();
+
+    act(() => realtime.statuses[0]?.('CHANNEL_ERROR', new Error('offline')));
+    expect(result.current.state).toBe('error');
+    realtime.profileRows = [
+      {
+        id: A,
+        arena_avatar_url: '/avatars/table/changed-while-offline.webp',
+        equipped_frame: null,
+        equipped_aura: 'aura-fire',
+      },
+    ];
+    act(() => realtime.statuses[0]?.('SUBSCRIBED'));
+
+    await waitFor(() => expect(realtime.profileReads).toBe(2));
+    expect(onChange).toHaveBeenCalledWith({
+      userId: A,
+      avatar: '/avatars/table/changed-while-offline.webp',
+      frame: null,
+      aura: 'aura-fire',
+    });
   });
 
   it('does nothing without a table or without any seated player', () => {

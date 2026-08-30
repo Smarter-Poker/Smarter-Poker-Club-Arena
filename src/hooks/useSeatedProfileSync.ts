@@ -56,7 +56,7 @@
  * payload comes from replication.
  */
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { reportError } from '../utils/errorReporter';
 import { masterBus } from '../core/MasterBus';
 import { supabase } from '../lib/supabase';
@@ -69,6 +69,13 @@ export interface SeatedProfileChange {
   frame?: string | null;
   /** `profiles.equipped_aura`, normalised: null means "explicitly none". */
   aura?: string | null;
+}
+
+export type SeatedProfileSyncState = 'local' | 'connecting' | 'live' | 'error';
+
+export interface SeatedProfileSyncHandle {
+  state: SeatedProfileSyncState;
+  retry: () => void;
 }
 
 function toProfileChange(row: Record<string, unknown>): SeatedProfileChange | null {
@@ -107,13 +114,18 @@ export function useSeatedProfileSync(
   tableId: string | null | undefined,
   seatedUserIds: readonly (string | null | undefined)[],
   onChange: (change: SeatedProfileChange) => void
-): void {
+): SeatedProfileSyncHandle {
   /* The callback is read through a ref so a caller that re-creates it every
      render (which TablePage does, being one enormous component) does not tear
      down and rebuild a realtime subscription sixty times a second. */
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const pendingMutationsRef = useRef(new Map<string, Set<string>>());
+  const [state, setState] = useState<SeatedProfileSyncState>(
+    tableId && seatedUserIds.length ? 'connecting' : 'local'
+  );
+  const [retryRevision, setRetryRevision] = useState(0);
+  const retry = useCallback(() => setRetryRevision((revision) => revision + 1), []);
 
   /* A stable identity for the id SET. Sorted and joined so [a,b] and [b,a] are
      the same dependency, and deduped so a table mid-seat-change does not churn
@@ -127,7 +139,10 @@ export function useSeatedProfileSync(
   }, [seatedUserIds]);
 
   useEffect(() => {
-    if (!tableId || !idKey) return undefined;
+    if (!tableId || !idKey) {
+      setState('local');
+      return undefined;
+    }
 
     const ids = idKey.split(',');
 
@@ -136,7 +151,14 @@ export function useSeatedProfileSync(
        anything else is dropped rather than concatenated into a filter string. */
     const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const safeIds = ids.filter((id) => UUID.test(id));
-    if (safeIds.length === 0) return undefined;
+    if (safeIds.length === 0) {
+      setState('local');
+      return undefined;
+    }
+
+    let mounted = true;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    setState('connecting');
 
     const deliver = (change: SeatedProfileChange | null) => {
       if (!change || !safeIds.includes(change.userId)) return;
@@ -144,6 +166,34 @@ export function useSeatedProfileSync(
         onChangeRef.current(change);
       } catch (err) {
         reportError(err, 'useSeatedProfileSync.onChange');
+      }
+    };
+
+    // Realtime does not replay UPDATEs missed while a phone is asleep or a
+    // connection is down. Re-read the small seated roster whenever the
+    // channel becomes live, including its first subscription, so the engine
+    // snapshot and every recovery converge on the same profile rows.
+    const reconcile = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, arena_avatar_url, equipped_frame, equipped_aura')
+          .in('id', safeIds);
+        if (!mounted) return;
+        if (error) {
+          setState('error');
+          reportError(error, 'useSeatedProfileSync.reconcile');
+          return;
+        }
+        for (const row of Array.isArray(data) ? data : []) {
+          const change = toProfileChange(row as Record<string, unknown>);
+          if (change && pendingMutationsRef.current.get(change.userId)?.size) continue;
+          deliver(change);
+        }
+      } catch (error) {
+        if (!mounted) return;
+        setState('error');
+        reportError(error, 'useSeatedProfileSync.reconcile');
       }
     };
 
@@ -191,20 +241,34 @@ export function useSeatedProfileSync(
       );
     }
     channel.subscribe((status, error) => {
-      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+      if (!mounted) return;
+      if (status === 'SUBSCRIBED') {
+        if (retryTimer) clearTimeout(retryTimer);
+        retryTimer = null;
+        setState('live');
+        void reconcile();
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        setState('error');
         reportError(
           error || new Error(`Seated profile channel ${status}`),
           'useSeatedProfileSync.channel'
         );
+        // Supabase normally reconnects its channel. This bounded client retry
+        // also heals environments where the channel remains closed forever.
+        if (!retryTimer) retryTimer = setTimeout(retry, 2_000);
       }
     });
 
     return () => {
+      mounted = false;
+      if (retryTimer) clearTimeout(retryTimer);
       mutationOff();
       appearanceOff();
       void supabase.removeChannel(channel);
     };
-  }, [tableId, idKey]);
+  }, [tableId, idKey, retry, retryRevision]);
+
+  return { state, retry };
 }
 
 export default useSeatedProfileSync;

@@ -65,14 +65,13 @@ export const TAB_IDS: readonly TabId[] = [
  * 'Blinds' is structure.
  */
 export const TABS: readonly { id: TabId; label: string }[] = [
-  { id: 'detail', label: 'Detail' },
+  { id: 'detail', label: 'Details' },
   { id: 'blinds', label: 'Blinds' },
   { id: 'ranking', label: 'Ranking' },
   { id: 'entries', label: 'Entries' },
   { id: 'unions', label: 'Unions' },
   { id: 'tables', label: 'Tables' },
   { id: 'rewards', label: 'Rewards' },
-  { id: 'satellites', label: 'Satellites' },
 ];
 
 /**

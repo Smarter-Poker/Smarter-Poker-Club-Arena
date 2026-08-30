@@ -264,7 +264,7 @@ export default function SettingsPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [authUser?.id]);
 
   useEffect(() => {
     if (!authUser?.id) {

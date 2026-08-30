@@ -4,12 +4,12 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import './PlayerBlockModal.css';
 
 interface PlayerBlockModalProps {
   playerName: string;
-  onConfirm: (reason?: string) => void;
+  onConfirm: (reason?: string) => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -20,26 +20,62 @@ export default function PlayerBlockModal({
 }: PlayerBlockModalProps) {
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const onCancelRef = useRef(onCancel);
+  const submittingRef = useRef(submitting);
   const titleId = useId();
   const reasonId = useId();
+  onCancelRef.current = onCancel;
+  submittingRef.current = submitting;
 
   useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !submitting) onCancel();
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const handleDialogKeys = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !submittingRef.current) {
+        event.preventDefault();
+        onCancelRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [onCancel, submitting]);
+    document.addEventListener('keydown', handleDialogKeys);
+    return () => {
+      document.removeEventListener('keydown', handleDialogKeys);
+      previouslyFocused?.focus();
+    };
+  }, []);
 
   const handleConfirm = async () => {
     setSubmitting(true);
-    await onConfirm(reason.trim() || undefined);
-    setSubmitting(false);
+    setSubmitError('');
+    try {
+      await onConfirm(reason.trim() || undefined);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Player could not be blocked.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
-    <div className="block-modal-overlay" onClick={onCancel}>
+    <div className="block-modal-overlay" onClick={() => !submitting && onCancel()}>
       <div
+        ref={dialogRef}
         className="block-modal"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -77,6 +113,11 @@ export default function PlayerBlockModal({
         </div>
 
         <div className="block-modal-actions">
+          {submitError && (
+            <p className="block-modal-error" role="alert">
+              {submitError}
+            </p>
+          )}
           <button type="button" className="cancel-btn" onClick={onCancel} disabled={submitting}>
             Cancel
           </button>

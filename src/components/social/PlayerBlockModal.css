@@ -112,7 +112,16 @@
 
 .block-modal-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.block-modal-error {
+  width: 100%;
+  margin: 0 0 0.25rem;
+  color: #ff9a9a;
+  font-size: 0.75rem;
+  line-height: 1.4;
 }
 
 .block-modal-actions button {

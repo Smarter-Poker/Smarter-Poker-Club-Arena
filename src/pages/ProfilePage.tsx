@@ -532,7 +532,7 @@ export default function ProfilePage() {
       isMounted = false;
       clearTimeout(safetyTimer);
     };
-  }, []);
+  }, [isMountedRef, toast]);
 
   // ── Bus Listeners: cross-page profile reactivity ──
   useEffect(() => {
@@ -1305,9 +1305,11 @@ export default function ProfilePage() {
                 bio: data.bio,
                 player_tags: data.tags,
               });
-              setShowProfileEdit(false);
+              toast.success('Profile saved');
             } catch (err) {
-              console.error('Failed to update profile:', err);
+              reportError(err, 'ProfilePage.Profile_update_failed');
+              toast.error('Profile could not be saved. Please try again.');
+              throw err;
             }
           }}
         />

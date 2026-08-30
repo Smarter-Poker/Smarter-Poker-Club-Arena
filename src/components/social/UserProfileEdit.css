@@ -229,14 +229,29 @@
 
 .profile-overlay .form-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 0.25rem;
 }
 
+.profile-overlay .profile-save-error {
+  width: 100%;
+  margin: 0 0 0.25rem;
+  color: #ff9a9a;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
 .profile-overlay .cancel-btn,
 .profile-overlay .save-btn-blue {
   padding: 0.65rem 0.9rem;
+}
+
+.profile-overlay .cancel-btn:disabled,
+.profile-overlay .save-btn-blue:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .profile-overlay .save-btn-blue {

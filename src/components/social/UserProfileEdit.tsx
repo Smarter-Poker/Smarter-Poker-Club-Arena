@@ -28,7 +28,7 @@ export interface UserProfileEditProps {
   isOpen: boolean;
   onClose: () => void;
   initialData: UserProfileData;
-  onSave: (data: UserProfileData) => void;
+  onSave: (data: UserProfileData) => void | Promise<void>;
 }
 
 const AVAILABLE_AVATARS = [
@@ -55,12 +55,25 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
   const [formData, setFormData] = useState<UserProfileData>(initialData);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const mountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const initialDataRef = useRef(initialData);
+  const onCloseRef = useRef(onClose);
+  const savingRef = useRef(saving);
   const titleId = useId();
   const aliasId = useId();
   const bioId = useId();
+  initialDataRef.current = initialData;
+  onCloseRef.current = onClose;
+  savingRef.current = saving;
   useEffect(() => {
     if (isOpen) {
+      setFormData(initialDataRef.current);
+      setShowAvatarPicker(false);
+      setSaving(false);
+      setSaveError('');
       if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
       mountTimerRef.current = setTimeout(() => {
         mountTimerRef.current = null;
@@ -83,24 +96,55 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
 
   useEffect(() => {
     if (!isOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const handleDialogKeys = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !savingRef.current) {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [isOpen, onClose]);
+    document.addEventListener('keydown', handleDialogKeys);
+    return () => {
+      document.removeEventListener('keydown', handleDialogKeys);
+      previouslyFocused?.focus();
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave({
-      ...formData,
-      username: sanitizeInput(formData.username),
-      bio: sanitizeInput(formData.bio),
-      tags: formData.tags,
-    });
-    onClose();
+    setSaving(true);
+    setSaveError('');
+    try {
+      await onSave({
+        ...formData,
+        username: sanitizeInput(formData.username),
+        bio: sanitizeInput(formData.bio),
+        tags: formData.tags,
+      });
+      onClose();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Profile could not be saved.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const toggleTag = (tag: string) => {
@@ -114,8 +158,9 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
   };
 
   return (
-    <div className="profile-overlay" onClick={onClose}>
+    <div className="profile-overlay" onClick={() => !saving && onClose()}>
       <div
+        ref={dialogRef}
         className="profile-modal"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -133,6 +178,7 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
             type="button"
             className="close-btn"
             onClick={onClose}
+            disabled={saving}
             aria-label="Close profile editor"
           >
             ×
@@ -225,11 +271,16 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
             </div>
 
             <div className="form-actions">
-              <button type="button" className="cancel-btn" onClick={onClose}>
+              {saveError && (
+                <p className="profile-save-error" role="alert">
+                  {saveError}
+                </p>
+              )}
+              <button type="button" className="cancel-btn" onClick={onClose} disabled={saving}>
                 Cancel
               </button>
-              <button type="submit" className="save-btn-blue">
-                Save Profile
+              <button type="submit" className="save-btn-blue" disabled={saving}>
+                {saving ? 'Saving...' : 'Save Profile'}
               </button>
             </div>
           </form>

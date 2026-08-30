@@ -111,7 +111,7 @@ export default function PublicProfilePage() {
       loadingRef.current = false;
       if (isMounted.current) setLoading(false);
     }
-  }, [userId, user?.id]);
+  }, [isMounted, navigate, toast, userId, user?.id]);
 
   useEffect(() => {
     loadProfile();

@@ -59,6 +59,8 @@ interface HeaderDataState {
   setNotificationCount: (count: number) => void;
   setUnreadMessages: (count: number) => void;
   setMessengerPageActive: (active: boolean) => void;
+  clearUnreadNotifications: (userId: string) => Promise<boolean>;
+  clearUnreadMessages: (userId: string) => Promise<boolean>;
   teardown: () => void;
 }
 
@@ -189,6 +191,50 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
   },
 
   setMessengerPageActive: (active) => set({ isMessengerPageActive: active }),
+
+  /* Opening either destination acknowledges the count the player just acted
+     on. Zero it synchronously so the badge disappears on the click, then make
+     the database authoritative before Messenger performs its full-page
+     redirect. A failed write restores the previous count instead of lying. */
+  clearUnreadNotifications: async (userId) => {
+    const previous = get().notificationCount;
+    get().setNotificationCount(0);
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('user_id', userId)
+        .eq('read', false);
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      reportError(error, 'useHeaderDataStore.clear_unread_notifications');
+      if (get().notificationCount === 0 && (!get()._userId || get()._userId === userId)) {
+        get().setNotificationCount(previous);
+      }
+      return false;
+    }
+  },
+
+  clearUnreadMessages: async (userId) => {
+    const previous = get().unreadMessages;
+    get().setUnreadMessages(0);
+    try {
+      const { error } = await supabase
+        .from('messages')
+        .update({ is_read: true })
+        .eq('receiver_id', userId)
+        .eq('is_read', false);
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      reportError(error, 'useHeaderDataStore.clear_unread_messages');
+      if (get().unreadMessages === 0 && (!get()._userId || get()._userId === userId)) {
+        get().setUnreadMessages(previous);
+      }
+      return false;
+    }
+  },
 
   /**
    * Load header data ONCE for a given userId.

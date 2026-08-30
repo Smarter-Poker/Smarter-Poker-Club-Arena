@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import GlobalHeader from '@/components/navigation/GlobalHeader';
 
@@ -18,6 +18,8 @@ const headerData = vi.hoisted(() => ({
   loadOnce: vi.fn(),
   setAvatarUrl: vi.fn(),
   setUnreadMessages: vi.fn(),
+  clearUnreadNotifications: vi.fn().mockResolvedValue(true),
+  clearUnreadMessages: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('@/stores/useHeaderDataStore', () => ({
@@ -46,6 +48,8 @@ describe('GlobalHeader Component', () => {
   beforeEach(() => {
     headerData.notificationCount = 0;
     headerData.unreadMessages = 0;
+    headerData.clearUnreadNotifications.mockClear();
+    headerData.clearUnreadMessages.mockClear();
   });
 
   it('renders the brand text image', () => {
@@ -159,5 +163,33 @@ describe('GlobalHeader Component', () => {
     expect(badge).toHaveTextContent('5');
     expect(profile).not.toContainElement(badge);
     expect(within(profile).queryByLabelText(/unread notifications/i)).not.toBeInTheDocument();
+  });
+
+  it('acknowledges unread messages before leaving for Messenger', async () => {
+    headerData.unreadMessages = 4;
+    render(
+      <MemoryRouter>
+        <GlobalHeader />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^Messages$/i }));
+    await waitFor(() => {
+      expect(headerData.clearUnreadMessages).toHaveBeenCalledWith('test-user-123');
+    });
+  });
+
+  it('acknowledges unread notifications before opening Notifications', async () => {
+    headerData.notificationCount = 5;
+    render(
+      <MemoryRouter>
+        <GlobalHeader />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: /^Notifications$/i }));
+    await waitFor(() => {
+      expect(headerData.clearUnreadNotifications).toHaveBeenCalledWith('test-user-123');
+    });
   });
 });

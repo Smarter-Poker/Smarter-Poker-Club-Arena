@@ -258,6 +258,8 @@ describe('PlayerStatsPage mounts', () => {
     expect(() => render(<PlayerStatsPage />)).not.toThrow();
     await waitFor(() => {
       expect(screen.getByText(/Overview/i)).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /Player Intelligence/i })).toBeInTheDocument();
+      expect(screen.getByRole('group', { name: /Analysis Range/i })).toBeInTheDocument();
     });
   });
 

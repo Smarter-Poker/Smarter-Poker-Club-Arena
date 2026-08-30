@@ -253,15 +253,16 @@ export default function GlobalHeader() {
               title="My Profile"
             >
               <img src={`${APPROVED_HEADER_ASSET}profile.png`} alt="Profile" />
-              <img
-                src={avatarUrl || DEFAULT_AVATAR}
-                alt=""
-                className={styles.profileAvatar}
-                aria-hidden="true"
-                onError={(event) => {
-                  event.currentTarget.src = DEFAULT_AVATAR;
-                }}
-              />
+              <span className={styles.profileAvatarSlot} aria-hidden="true">
+                <img
+                  src={avatarUrl || DEFAULT_AVATAR}
+                  alt=""
+                  className={styles.profileAvatar}
+                  onError={(event) => {
+                    event.currentTarget.src = DEFAULT_AVATAR;
+                  }}
+                />
+              </span>
             </button>
 
             <button

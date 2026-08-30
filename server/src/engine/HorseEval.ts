@@ -1282,6 +1282,87 @@ export function pineapplePreflopStrength(cards: Card[], shortDeck: boolean): num
 }
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * MULTIWAY VALUE BARS — the same scale bug, on the opponent-count axis
+ * (Dan 2026-08-30)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * decidePostflop's VALUE-BET bars are written as absolute equity numbers
+ * (`equity >= 0.8 + mw`, `0.62 + mw`, `0.52 + mw`). They were calibrated
+ * against the HEADS-UP equity distribution. But `equity` is computed against
+ * min(oppCount, 4) opponents, and that distribution collapses as opponents
+ * are added. Measured, 250 random NLH flops per column:
+ *
+ *     opps  median   %>=0.80   mw     effective bar   % clearing it
+ *      1     0.473      9%     0.00       0.80             9%
+ *      2     0.280      2%     0.03       0.83             2%
+ *      4     0.154      0%     0.09       0.89             0%
+ *
+ * So the bar meant "top ~9% of hands" heads-up and "literally nothing" four
+ * ways — and `mw` pushed it UP on a distribution that had already collapsed
+ * DOWN, compounding instead of conserving. Live consequence, measured
+ * through decide() before this fix: a preflop raiser c-bet 71% heads-up,
+ * 24% three-handed and 2% five-handed, in EVERY variant. A fleet that never
+ * bets multiway is both exploitable and visibly robotic.
+ *
+ * THE FIX, mirroring the preflop variant fix: express the bar as the
+ * PERCENTILE it was always meant to be, and look up the equity that sits at
+ * that percentile for the actual opponent count. `mw` then supplies the
+ * intended extra multiway tightening on top of a scale-neutral bar, which is
+ * what it was for.
+ *
+ * ONLY the value-BET bars use this. The calling side compares equity to POT
+ * ODDS — a true probability against a true probability — and must keep raw
+ * equity. Normalising that would misprice every call.
+ *
+ * Deciles measured over 600 random flops per cell (nlh and plo4 averaged;
+ * they agree within a few points, so one table serves every variant — the
+ * dilution is a property of counting opponents, not of the game).
+ */
+const EQ_DECILES: Record<number, number[]> = {
+  1: [0.112, 0.258, 0.323, 0.378, 0.428, 0.483, 0.543, 0.596, 0.668, 0.776, 0.974],
+  2: [0.038, 0.124, 0.163, 0.2, 0.244, 0.291, 0.344, 0.398, 0.479, 0.607, 0.929],
+  3: [0.009, 0.075, 0.101, 0.129, 0.165, 0.202, 0.241, 0.291, 0.37, 0.502, 0.907],
+  4: [0.002, 0.05, 0.073, 0.092, 0.12, 0.152, 0.187, 0.228, 0.296, 0.422, 0.897],
+};
+
+/** Quantile of `v` within a sorted decile table, linearly interpolated. */
+function quantileOf(table: number[], v: number): number {
+  if (v <= table[0]) return 0;
+  if (v >= table[table.length - 1]) return 1;
+  for (let i = 1; i < table.length; i++) {
+    if (v <= table[i]) {
+      const span = table[i] - table[i - 1];
+      const frac = span > 0 ? (v - table[i - 1]) / span : 0;
+      return (i - 1 + frac) / (table.length - 1);
+    }
+  }
+  return 1;
+}
+
+/** The value at quantile `q` in a decile table, linearly interpolated. */
+function valueAtQuantile(table: number[], q: number): number {
+  const x = clamp01(q) * (table.length - 1);
+  const lo = Math.floor(x);
+  const hi = Math.min(table.length - 1, lo + 1);
+  return table[lo] + (table[hi] - table[lo]) * (x - lo);
+}
+
+/**
+ * Translate a value-bet bar written on the HEADS-UP equity scale into the
+ * equivalent bar for `oppCount` opponents, preserving the PERCENTILE of hand
+ * strength the bar was calibrated to mean.
+ *
+ * Heads-up it returns the bar unchanged, so nothing about HU play moves.
+ */
+export function multiwayValueBar(headsUpBar: number, oppCount: number): number {
+  const n = Math.max(1, Math.min(4, Math.floor(oppCount)));
+  if (n === 1) return headsUpBar;
+  const q = quantileOf(EQ_DECILES[1], headsUpBar);
+  return valueAtQuantile(EQ_DECILES[n], q);
+}
+
+/**
  * Omaha preflop strength ON THE HOLD'EM SCALE — what decidePreflopV7's
  * thresholds have always assumed they were being handed. Percentile first
  * (through the Omaha reservoir), then the hold'em score at that same

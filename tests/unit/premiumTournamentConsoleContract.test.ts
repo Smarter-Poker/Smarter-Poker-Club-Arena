@@ -45,6 +45,12 @@ describe('approved premium tournament console contract', () => {
     expect(rail).not.toMatch(/width:\s*(?:fit-content|max-content)/);
   });
 
+  it('uses the approved Club Arena chassis and hardware assets instead of a CSS imitation', () => {
+    expect(PREMIUM).toContain('lobby-command-chassis-v2.png');
+    expect(PREMIUM).toContain('club-nav-shell.webp');
+    expect(PREMIUM).toContain('action-primary-shell.webp');
+  });
+
   it('keeps every tab vertically scrollable inside the fixed chassis', () => {
     /**
      * THE SCROLLER MOVED UP ONE ELEMENT (2026-08-30), and the guarantee this
@@ -89,7 +95,10 @@ describe('approved premium tournament console contract', () => {
 describe('approved premium cash-table machine contract', () => {
   it('scopes the premium machine to cash lobbies', () => {
     expect(GAME_PANEL).toContain("className={`glp${isCash ? ' glp--cash' : ''}`}");
-    expect(GAME_PREMIUM).toContain('.glp--cash .cplaque');
+    expect(GAME_PANEL).toContain('className="glp__arena-card"');
+    expect(GAME_PANEL).toContain('arenaGameCardDataFromEntry(entry)');
+    expect(GAME_PREMIUM).toContain('lobby-command-chassis-v2.png');
+    expect(GAME_PREMIUM).toContain('.glp--cash .glp__arena-card');
   });
 
   it('retains real join and observe actions', () => {

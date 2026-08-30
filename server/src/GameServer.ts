@@ -121,6 +121,37 @@ const SEAT_FIRST_START_INTERVAL = 1000;
 const LEASE_REAP_STALE_SECONDS = 3600;
 const LEASE_REAP_INTERVAL_MS = 60 * 60 * 1000;
 
+/**
+ * ── PRE-SEAT LEAD (Dan 2026-08-30, binding) ──
+ *
+ * Dan, verbatim: "when a player is registered, they should be 'sat down' one
+ * minute before the event starts (doesn't happen yet)."
+ *
+ * Until now a timed MTT was discovered at `start_time <= now` and everything —
+ * building the tables, claiming the seats, stamping every roster row — happened
+ * AFTER the advertised start. The 20K GTD on 2026-08-30 is the shape of it: it
+ * was found at 17:00:00, the first table row appeared at 17:01:19 and the row
+ * did not read RUNNING until 17:02:10. For 130 seconds every registered player
+ * sat on a lobby card that said STARTS IN 0:00 and TABLES 0, with no seat to go
+ * to and nothing to press. A real poker room seats the field BEFORE the clock
+ * starts, and so does this one now.
+ *
+ * The lead is the discovery lead, not a new state: `TournamentManager.start()`
+ * does exactly what it always did, in the same order, one minute earlier — and
+ * then HOLDS every table's dealing until the advertised `start_time` (the same
+ * `holdDealingUntil` deadline the spin wheel uses) and arms the level clock at
+ * that instant rather than at seating. So the cards still fly at the time on
+ * the tin; only the seating moved.
+ *
+ * Seat-first formats (spin, heads-up) are untouched: their gate is bought
+ * seats, never the clock, and this constant never reaches that branch.
+ *
+ * IDENTICAL FOR HORSES (section 10.5). Nothing here reads `is_horse` — a horse
+ * is seated by the same createTablesAndSeatPlayers pass, at the same instant,
+ * and watches the same held felt for the same minute a human does.
+ */
+const TOURNAMENT_PRESEAT_LEAD_MS = 60_000;
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // GAME SERVER — Main Orchestrator
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2639,7 +2670,24 @@ export class GameServer {
 
           const maxReached =
             tournament.max_players > 0 && tournament.current_players >= tournament.max_players;
-          const timeReached = startTime <= now && tournament.current_players >= minPlayers;
+          /**
+           * ONE MINUTE EARLY, ON PURPOSE — see TOURNAMENT_PRESEAT_LEAD_MS.
+           *
+           * The comparison used to be `startTime <= now`, which meant the field
+           * was seated after the advertised start rather than before it. The
+           * lead moves the SEATING, not the game: start() holds every table's
+           * dealing and its level clock to `start_time`, so a player who opens
+           * the lobby at T-60 finds a seat waiting and a TAKE SEAT button, and
+           * the first card is still dealt at the time the lobby advertised.
+           *
+           * The min-players requirement is unchanged and is still evaluated
+           * against the pre-start horse ramp above, which runs right up to this
+           * moment — so an event short of a field at T-60 simply is not started
+           * early, and falls through to the past-start top-up branch as before.
+           */
+          const timeReached =
+            startTime - TOURNAMENT_PRESEAT_LEAD_MS <= now &&
+            tournament.current_players >= minPlayers;
 
           // SNG/Spin: only start when every seat has been bought and paid for.
           // MTT variants: start at scheduled time with minimum players.
@@ -2654,7 +2702,9 @@ export class GameServer {
               ? `seats sold (${paidSeats}/${tournament.max_players})`
               : maxReached
                 ? `full (${tournament.current_players}/${tournament.max_players})`
-                : `${tournament.current_players} players`;
+                : startTime > now
+                  ? `pre-seating ${tournament.current_players} players, cards in ${Math.round((startTime - now) / 1000)}s`
+                  : `${tournament.current_players} players`;
             /* Re-check in the same tick as the set: the seat-first fast lane
                (discoverSeatFirstStarts) may have started this game while this
                pass was busy with earlier rows. Both sites check-and-set with

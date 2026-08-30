@@ -1135,6 +1135,57 @@ function buildOmahaReservoir(holeCount: number, isHiLo: boolean): OmahaReservoir
  * binary search per decision, no I/O, and the postflop path is untouched
  * because it already uses real Monte Carlo equity.
  */
+/**
+ * The EXACT hold'em score distribution: all 1,326 two-card combos, scored
+ * and sorted once. Used to quantile-match Omaha onto the scale the preflop
+ * thresholds were actually tuned against.
+ *
+ * WHY QUANTILE-MATCHING AND NOT A PLAIN PERCENTILE — measured, because the
+ * obvious answer is wrong. Hold'em's own score is NOT uniform either:
+ *
+ *     holdem    median 0.236   p75 0.410   p99 1.000   max 1.000
+ *     omaha     median 0.240   p75 0.317   p99 0.640   max 0.850
+ *
+ * The medians nearly agree; the TOP END does not. Hold'em's best hands
+ * saturate at 1.0, so a 3-bet bar at t(0.74) is cleared by a real slice of
+ * its range. Omaha never gets there at all — p99 is 0.64 — so the same bar
+ * selects essentially nothing, which is why the fleet 3-bet 0.3% of the
+ * time. Mapping Omaha to a FLAT percentile would fix the sticking but
+ * overshoot the other way: every threshold would suddenly admit far more of
+ * the range than the same threshold admits in hold'em. Matching quantiles
+ * makes a 90th-percentile PLO hand score exactly what a 90th-percentile
+ * hold'em hand scores, so every bar in decidePreflopV7 means the same thing
+ * in both games — which is what "percentile-intent" claimed all along.
+ */
+let holdemScoreCdf: Float64Array | null = null;
+function holdemCdf(): Float64Array {
+  if (holdemScoreCdf) return holdemScoreCdf;
+  const d = FULL_DECK;
+  const out: number[] = [];
+  for (let i = 0; i < d.length; i++) {
+    for (let j = i + 1; j < d.length; j++) {
+      out.push(holdemPreflopScore(d[i], d[j], false));
+    }
+  }
+  out.sort((a, b) => a - b);
+  holdemScoreCdf = new Float64Array(out);
+  return holdemScoreCdf;
+}
+
+/**
+ * Omaha preflop strength ON THE HOLD'EM SCALE — what decidePreflopV7's
+ * thresholds have always assumed they were being handed. Percentile first
+ * (through the Omaha reservoir), then the hold'em score at that same
+ * quantile. See omahaPreflopPercentile and holdemCdf for the measurements.
+ */
+export function omahaPreflopStrength(cards: Card[], isHiLo: boolean): number {
+  if (cards.length < 4) return omahaPreflopScore(cards, isHiLo);
+  const p = omahaPreflopPercentile(cards, isHiLo);
+  const cdf = holdemCdf();
+  const idx = Math.min(cdf.length - 1, Math.max(0, Math.round(p * (cdf.length - 1))));
+  return cdf[idx];
+}
+
 export function omahaPreflopPercentile(cards: Card[], isHiLo: boolean): number {
   const raw = omahaPreflopScore(cards, isHiLo);
   const holeCount = cards.length;

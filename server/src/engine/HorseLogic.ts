@@ -96,7 +96,7 @@ import {
   preflopEquity,
   holdemPreflopScore,
   omahaPreflopScore,
-  omahaPreflopPercentile,
+  omahaPreflopStrength,
   pineapplePreflopScore,
   scoreHoldem,
   scoreOmahaHi,
@@ -1188,7 +1188,7 @@ export class HorseLogic {
     // percentile-intent; the raw score's median is 0.24, so feeding it here
     // made every PLO hand read as trash and the fleet never opened a pot.
     // (Dan 2026-08-30 live PLO spin; see omahaPreflopPercentile.)
-    if (vi.isOmaha) strength = omahaPreflopPercentile(player.cards, vi.isHiLo);
+    if (vi.isOmaha) strength = omahaPreflopStrength(player.cards, vi.isHiLo);
     else if (player.cards.length === 3)
       strength = pineapplePreflopScore(player.cards, vi.isShortDeck);
     else if (player.cards.length === 2)
@@ -1584,7 +1584,7 @@ export class HorseLogic {
     // through its empirical CDF so it actually IS percentile-style — the
     // raw score is compressed (median 0.24) and broke every threshold here.
     let strength: number;
-    if (vi.isOmaha) strength = omahaPreflopPercentile(player.cards, vi.isHiLo);
+    if (vi.isOmaha) strength = omahaPreflopStrength(player.cards, vi.isHiLo);
     else if (player.cards.length === 3)
       strength = pineapplePreflopScore(player.cards, vi.isShortDeck);
     else if (player.cards.length === 2)
@@ -3892,7 +3892,7 @@ export class HorseLogic {
     if (!holeCards || holeCards.length === 0) return 0;
     const vi = variantInfo(gameVariant);
     if (stage === 'preflop') {
-      if (vi.isOmaha && holeCards.length >= 4) return omahaPreflopPercentile(holeCards, vi.isHiLo);
+      if (vi.isOmaha && holeCards.length >= 4) return omahaPreflopStrength(holeCards, vi.isHiLo);
       if (holeCards.length === 3) return pineapplePreflopScore(holeCards, vi.isShortDeck);
       if (holeCards.length !== 2) return 0.3;
       return holdemPreflopScore(holeCards[0], holeCards[1], vi.isShortDeck);

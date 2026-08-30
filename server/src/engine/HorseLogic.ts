@@ -1639,6 +1639,13 @@ export class HorseLogic {
       sb: 0.5,
       bb: 0.42,
     };
+    /**
+     * The floor for limping BEHIND another limper. Set at the single-raise
+     * calling threshold on purpose: a hand that cannot call a raise has no
+     * business putting a chip in, because the only thing it can do next is
+     * fold. See the no-open-limp note in the unopened branch.
+     */
+    const LIMP_BEHIND_MIN = 0.5;
     const t = (x: number) => clamp01(x * params.tightness);
 
     const unopened = raises === 0 && currentBet <= bb * 1.05;
@@ -1670,16 +1677,58 @@ export class HorseLogic {
         const sizeBB = (2.2 + fastRandom() * 0.8 + limpers * 1.0) * params.sizingMultiplier;
         return this.raiseTo(sizeBB * bb, player, gs, vi);
       }
-      // Below opening threshold: free check, limp-behind with playable hands,
-      // otherwise fold to a raise / complete cheap in the blinds.
+      // Never fold for free.
       if (toCall === 0) return { action: 'check', thinkTime: 0 };
-      const limpable = strength >= openThresh - 0.12;
-      if (toCall <= bb && (limpable || position === 'sb') && fastRandom() < 0.7) {
-        return { action: 'call', amount: toCall, thinkTime: 0 };
-      }
-      if (toCall <= bb * 1.5 && strength >= 0.3) {
-        return { action: 'call', amount: toCall, thinkTime: 0 };
-      }
+
+      // ═══ NO OPEN-LIMP (Dan 2026-08-30, binding) ═══
+      //
+      // First in, it is RAISE OR FOLD. Never call.
+      //
+      // What this replaced, and why. Two branches called here: one limped
+      // any hand within 0.12 of the opening threshold 70% of the time, and
+      // one limped ANY hand of strength >= 0.3 for up to 1.5bb from ANY
+      // position, unconditionally. Neither asked whether anyone had actually
+      // limped first, so both open-limped an unopened pot.
+      //
+      // Measured in production before this changed, over 596 tournament
+      // hands in a 25-minute window:
+      //
+      //     open-limps                                852   (35% of all
+      //     open-raises                               214    unraised
+      //     open-folds                              1,098    first actions)
+      //
+      //     limps that then faced a raise             458
+      //     of those, FOLDED                          419   (91.5%)
+      //
+      // Horses limped four times more often than they raised, and then gave
+      // the chips up nine times out of ten. Limp-folding is the worst
+      // preflop pattern in tournament poker: it forfeits the chance to win
+      // the pot uncontested, builds a multiway pot with a hand too weak to
+      // continue, and then surrenders.
+      //
+      // It is worse HERE than at a normal table because these tournaments
+      // run a big blind ante. In hand #3761806 the ante was 1,200 on a 150
+      // big blind, so the unopened pot already held 1,425 chips when it was
+      // 150 to call. That dead money is what an open-raise plays for, and a
+      // limp simply hands it to whoever raises behind - which is exactly
+      // what happened: six limps, the big blind raised to 1,125, and five of
+      // the six folded.
+      //
+      // LIMPING BEHIND survives, narrowly, because it is a real thing real
+      // players do. Two conditions keep it honest:
+      //   - somebody must have limped first (limpers >= 1), so this can
+      //     never open a pot; and
+      //   - the hand must be strong enough to CONTINUE against a raise. The
+      //     single-raise branch below calls at roughly 0.52, so anything
+      //     weaker would be limping in order to fold. That gate is the one
+      //     that kills the 91.5%.
+      // Because a hand at or above the opening threshold RAISES, the surviving
+      // band is [LIMP_BEHIND_MIN, openThresh) - which is empty in late
+      // position and from the blinds until several limpers widen it. Late
+      // position isolating limpers instead of joining them is correct.
+      const limpBehind =
+        limpers >= 1 && strength >= LIMP_BEHIND_MIN && toCall <= bb && fastRandom() < 0.35;
+      if (limpBehind) return { action: 'call', amount: toCall, thinkTime: 0 };
       return { action: 'fold', thinkTime: 0 };
     }
 

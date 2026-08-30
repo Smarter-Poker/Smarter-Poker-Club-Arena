@@ -372,23 +372,23 @@ export default function DailyChallengesPage() {
         const auxiliaryFailures: string[] = [];
         if (statsResult.status === 'fulfilled') setStats(statsResult.value);
         else {
-          auxiliaryFailures.push('career totals');
+          auxiliaryFailures.push('Career Totals');
           reportError(statsResult.reason, 'DailyChallengesPage.stats_load_failed');
         }
         if (streakResult.status === 'fulfilled') setStreak(streakResult.value);
         else {
-          auxiliaryFailures.push('streak status');
+          auxiliaryFailures.push('Streak Status');
           reportError(streakResult.reason, 'DailyChallengesPage.streak_load_failed');
         }
         if (balanceResult.status === 'fulfilled') setDiamondBalance(balanceResult.value);
         else {
-          auxiliaryFailures.push('diamond balance');
+          auxiliaryFailures.push('Diamond Balance');
           reportError(balanceResult.reason, 'DailyChallengesPage.balance_load_failed');
         }
 
         setLoadWarning(
           auxiliaryFailures.length > 0
-            ? `Missions are live, but ${auxiliaryFailures.join(', ')} could not be refreshed.`
+            ? `Missions Are Live, But ${auxiliaryFailures.join(', ')} Could Not Be Refreshed.`
             : null
         );
         const syncedAt = Date.now();
@@ -397,7 +397,9 @@ export default function DailyChallengesPage() {
       } catch (err: any) {
         reportError(err, 'DailyChallengesPage.load_failed');
         if (isMountedRef.current && requestId === loadRequestRef.current) {
-          setLoadError('Mission network unavailable. Your progress is safe—retry the secure link.');
+          setLoadError(
+            'Mission Network Unavailable. Your Progress Is Safe - Retry The Secure Link.'
+          );
         }
       } finally {
         if (isMountedRef.current && requestId === loadRequestRef.current) {
@@ -428,7 +430,7 @@ export default function DailyChallengesPage() {
       } catch (err) {
         reportError(err, 'DailyChallengesPage.auth_load_failed');
         if (!cancelled) {
-          setLoadError('Secure session check failed. Please retry or sign in again.');
+          setLoadError('Secure Session Check Failed. Please Retry Or Sign In Again.');
           setIsLoading(false);
         }
       }
@@ -1010,10 +1012,10 @@ export default function DailyChallengesPage() {
                   disabled={buyingFreeze || diamondBalance < 5000 || streak.freezesAvailable >= 3}
                   title={
                     streak.freezesAvailable >= 3
-                      ? 'Your freeze vault is full.'
+                      ? 'Your Freeze Vault Is Full.'
                       : diamondBalance < 5000
-                        ? 'You need 5,000 spendable diamonds.'
-                        : 'Banks one streak freeze for a missed daily cycle.'
+                        ? 'You Need 5,000 Spendable Diamonds.'
+                        : 'Banks One Streak Freeze For A Missed Daily Cycle.'
                   }
                 >
                   {buyingFreeze
@@ -1101,8 +1103,8 @@ export default function DailyChallengesPage() {
               <small>{activeResetLabel}</small>
               {activeResetUrgent && activeUnclaimed > 0 && (
                 <em>
-                  Claim {activeUnclaimed} ready reward{activeUnclaimed === 1 ? '' : 's'} before
-                  reset
+                  Claim {activeUnclaimed} Ready Reward{activeUnclaimed === 1 ? '' : 's'} Before
+                  Reset
                 </em>
               )}
             </div>

@@ -45,7 +45,11 @@ import { useSettingsStore } from '../../stores/useSettingsStore';
 import { avatarService } from '../../services/AvatarService';
 import TableStudioGameplayPreview from './TableStudioGameplayPreview';
 import { applyTableAppearance, type AppearancePatch } from '../../lib/applyTableAppearance';
-import { canonicalGameType, pickThemeRow } from '../../hooks/useUserThemeSettings';
+import {
+  canonicalGameType,
+  pickThemeRow,
+  useUserThemeRealtime,
+} from '../../hooks/useUserThemeSettings';
 import { persistInterfaceTheme, type InterfaceTheme } from '../../lib/persistInterfaceTheme';
 import { masterBus } from '../../core/MasterBus';
 import { useWalletStore } from '../../stores/useWalletStore';
@@ -591,6 +595,7 @@ export function ThemeSettingsModal({
   const [assetFilter, setAssetFilter] = useState<AssetFilter>('all');
   const [assetSearch, setAssetSearch] = useState('');
   const collections = useTableStudioCollections(isOpen, userId);
+  const appearanceRealtime = useUserThemeRealtime(userId, isOpen);
   /** Card backs bought with diamonds in the store. See canAccessAsset. */
   const [ownedCardBacks, setOwnedCardBacks] = useState<string[]>([]);
   /** Every category-specific entitlement issued by rewards, clubs or checkout. */
@@ -1060,7 +1065,7 @@ export function ThemeSettingsModal({
       try {
         const { data, error } = await supabase
           .from('user_theme_settings')
-          .select('game_type, theme_id, table_id, button_id, background_id, cards_id')
+          .select('game_type, theme_id, table_id, button_id, background_id, cards_id, updated_at')
           .eq('user_id', userId);
 
         if (error) {
@@ -1119,7 +1124,14 @@ export function ThemeSettingsModal({
     // `toast` is stable for the life of the provider; listing it would re-run
     // the load on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, userId, gameType, replaceSelection, themeLoadRevision]);
+  }, [
+    isOpen,
+    userId,
+    gameType,
+    replaceSelection,
+    themeLoadRevision,
+    appearanceRealtime.reconciliationRevision,
+  ]);
 
   const handleUiModeChange = useCallback(
     async (mode: InterfaceTheme) => {
@@ -1559,12 +1571,18 @@ export function ThemeSettingsModal({
   const collectionSyncing =
     collections.syncState === 'loading' || collections.realtimeState === 'connecting';
   const studioNeedsAttention =
-    collectionNeedsAttention || entitlementRealtimeState === 'error' || pricingState === 'error';
+    collectionNeedsAttention ||
+    entitlementRealtimeState === 'error' ||
+    pricingState === 'error' ||
+    themeLoadState === 'error' ||
+    appearanceRealtime.state === 'error';
   const studioSyncing =
     collectionSyncing ||
     entitlementRealtimeState === 'connecting' ||
     pricingState === 'loading' ||
-    checkoutBalanceSyncing;
+    checkoutBalanceSyncing ||
+    themeLoadState === 'loading' ||
+    appearanceRealtime.state === 'connecting';
   const collectionStatus = collectionNeedsAttention
     ? 'error'
     : collectionSyncing
@@ -1620,21 +1638,37 @@ export function ThemeSettingsModal({
               ))}
             </select>
           </div>
-          <span
-            className={`theme-modal__autosave ${studioNeedsAttention ? 'theme-modal__autosave--error' : ''}`}
+          <div
+            className={`theme-modal__live-link theme-modal__live-link--${appearanceRealtime.state} ${studioNeedsAttention ? 'theme-modal__live-link--attention' : ''}`}
             aria-live="polite"
           >
-            <span className="theme-modal__autosave-dot" />
-            {saving || modeSaving
-              ? 'Saving selection'
-              : studioSyncing
-                ? checkoutBalanceSyncing
-                  ? 'Syncing diamond balance'
-                  : 'Syncing Studio data'
-                : studioNeedsAttention
-                  ? 'Saved here · Studio sync needs retry'
-                  : 'All changes saved'}
-          </span>
+            <span className="theme-modal__live-signal" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className="theme-modal__live-copy">
+              <small>Live Table Link</small>
+              <strong>
+                {saving || modeSaving
+                  ? 'Applying...'
+                  : appearanceRealtime.state === 'error'
+                    ? 'Reconnect'
+                    : studioSyncing
+                      ? checkoutBalanceSyncing
+                        ? 'Balance Sync'
+                        : 'Linking...'
+                      : studioNeedsAttention
+                        ? 'Review Sync'
+                        : 'Tables Live'}
+              </strong>
+            </span>
+            {appearanceRealtime.state === 'error' && (
+              <button type="button" onClick={appearanceRealtime.retry}>
+                Retry
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="theme-modal__workspace">

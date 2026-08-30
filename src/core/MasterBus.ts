@@ -1122,6 +1122,8 @@ export interface BusPayloadMap {
     userId?: string;
     /** Present on optimistic paints and their rollbacks; absent on DB echoes. */
     mutationId?: string;
+    /** Authoritative row clock used to preserve ALL-vs-variant precedence. */
+    updatedAt?: string;
   };
   // Phase 8 Deep Sweep: flash pool game state event
   GAME_STATE_UPDATED: {

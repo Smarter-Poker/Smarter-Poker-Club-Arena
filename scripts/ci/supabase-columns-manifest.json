@@ -9082,7 +9082,9 @@
       "time_bank_remaining",
       "time_bank_uses_remaining",
       "club_id",
-      "sit_out_at"
+      "sit_out_at",
+      "entry_hold",
+      "entry_post_agreed"
     ],
     "table_sessions": [
       "id",

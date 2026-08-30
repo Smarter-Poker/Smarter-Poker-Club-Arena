@@ -1729,6 +1729,7 @@
     "fn_notify_post_comment",
     "fn_notify_post_like",
     "fn_notify_post_share",
+    "fn_offer_open_seat",
     "fn_on_table_status_change",
     "fn_open_settlement_period",
     "fn_overlay_at_risk",

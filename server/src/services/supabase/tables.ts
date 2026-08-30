@@ -57,8 +57,16 @@ export async function loadSeatedPlayers(tableId: string) {
     // often than every five minutes the 5-minute limit could never mature and
     // the seat was held forever. Dan 2026-08-28: "FOR SOME REASON THIS NEVER
     // KICKS THE USER OFF THE CASH GAME AFTER THE 5 MIN."
+    // entry_hold / entry_post_agreed added 2026-08-30, and they are the THIRD
+    // instance of the same lesson on this one query: the engine wrote a fact
+    // and never read it back. is_sitting_out (2026-08-25) dealt cards to
+    // players who had sat out; sit_out_at (2026-08-28) handed every sat-out
+    // seat a fresh five minutes on every restart so the eviction never fired.
+    // These two are the cash entry hold — without them a deploy releases every
+    // held player free, button-eligible, and re-prompts anyone who had already
+    // agreed to post.
     .select(
-      'user_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out, sit_out_at'
+      'user_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out, sit_out_at, entry_hold, entry_post_agreed'
     )
     .eq('table_id', tableId)
     .is('left_at', null)
@@ -134,6 +142,13 @@ export async function loadSeatedPlayers(tableId: string) {
            a database trigger (trg_stamp_sit_out_at) owns both, so the pair can
            never disagree regardless of which writer touched the row. */
         sit_out_at: (seat as { sit_out_at?: string | null }).sit_out_at ?? null,
+        /* The persisted cash entry hold, read by restoreEntryHoldsFromSeats()
+           once per process on boot. Mapped through here rather than queried
+           separately so the restore has no round trip of its own — it reads
+           the roster the engine already loaded. */
+        entry_hold: (seat as { entry_hold?: string | null }).entry_hold ?? null,
+        entry_post_agreed:
+          (seat as { entry_post_agreed?: boolean | null }).entry_post_agreed === true,
         avatar_url: profile.avatar_url || '',
         /* Cosmetics ride the avatar's pipeline rather than getting one of their
            own: same query, same snapshot field group, same client mapper. They

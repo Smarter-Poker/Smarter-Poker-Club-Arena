@@ -126,6 +126,14 @@ export interface ActionResult {
   code?: string;
   hint?: Record<string, unknown>;
   /**
+   * Dan 2026-08-29: /post-bb replies carry this. true = the player is in
+   * between the blinds, so the post has been ACCEPTED AND HELD rather than
+   * done — the engine posts it for them once the button is past, and the
+   * caller must not ask them again. `error` then carries the sentence to
+   * show, which is a status line and not a failure.
+   */
+  deferred?: boolean;
+  /**
    * Dan 2026-08-21: /leave replies carry this. true = the engine has no live
    * hand holding the player (safe for the client to run the DB cashout now);
    * false = a hand is running and the ENGINE will cash the player out at
@@ -816,11 +824,19 @@ export async function notifyServerRejectRebuy(tableId: string): Promise<ActionRe
  * POST /post-bb — Bible V8 §4.2: Post the BB to enter the next hand
  * immediately, skipping the normal "wait for BB to rotate to your seat" delay.
  *
- * Dan 2026-08-25: NOTHING IN THE UI CALLS THIS ANY MORE, deliberately. The
- * overlay that did is a notice now — cash entry is free, and the only players
- * still waiting are the two the engine holds out for one hand, for both of whom
- * the engine refuses this call. Kept exported so the endpoint stays reachable
- * for the fuzzer and any future opt-in with a real wait to skip.
+ * THIS COMMENT WAS STALE AND SAID THE OPPOSITE OF THE TRUTH (corrected
+ * 2026-08-29). It read "NOTHING IN THE UI CALLS THIS ANY MORE, deliberately...
+ * cash entry is free", which was the 2026-08-25 rule Dan reversed on
+ * 2026-08-26: "Every single player needs to either wait for the BB or post
+ * when entering a cash game... no free hands." TablePage has called this from
+ * two places ever since — the post-or-wait modal and the on-felt overlay.
+ *
+ * Three outcomes, and the caller must read them in this order:
+ *   deferred:true          in between the blinds. Accepted and HELD; the
+ *                          engine posts it when the button passes. Do not
+ *                          ask again. `error` is the status line to show.
+ *   success:true           posted; dealt into the next hand, billed one BB.
+ *   success:false          not held out at all (already in the rotation).
  */
 export async function postBBToEnter(tableId: string): Promise<ActionResult> {
   try {

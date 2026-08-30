@@ -278,6 +278,41 @@ export abstract class ServerTableEngineBase {
   // empties.
   protected pendingPostToEnter: Set<string> = new Set();
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // AGREEING TO POST IS ANSWERED ONCE (Dan 2026-08-29, binding)
+  //
+  //   "in cash games when you click POST BB but you are IN BETWEEN THE
+  //    BLINDS you get this pop up... that shouldn't happen because you
+  //    already agreed to post bb... and auto post the blind then. it
+  //    currently makes you hit the button again, or it simply won't deal
+  //    you in at all."
+  //
+  // `postBBToEnter` refuses from two seats and must keep refusing them: a
+  // cash player is never dealt into the small blind, and a new player never
+  // takes the button. Neither may be bought, and this set does not buy them.
+  //
+  // What it fixes is what the refusal did to the PLAYER. The refusal threw
+  // the answer away — the player stayed in `waitingForBB`, TablePage put the
+  // same "Post Big Blind To Enter" button straight back on the felt, and
+  // nothing anywhere remembered that they had already said yes. Tapping it
+  // again from the same seat was refused again, so the only way through was
+  // to keep tapping until the button happened to have moved, which is why it
+  // reads as "it simply won't deal you in at all".
+  //
+  // A player in here has ALREADY AGREED to post. The dealing loop replays
+  // that agreement, unchanged, on every pass, and it takes effect on the
+  // first pass where the seat is no longer the one the small blind or the
+  // button is about to reach. They are then billed one live big blind
+  // through `postingBBToEnter` exactly as if they had tapped at that moment.
+  //
+  // Nothing here shortens the wait. It only stops the wait from costing the
+  // player their answer.
+  protected postBBWhenClear: Set<string> = new Set();
+
+  // Guards restoreEntryHoldsFromSeats() to once per process. See that method
+  // for why it must not run on every pass the way the sit-out restore does.
+  protected entryHoldsRestored = false;
+
   // Bible V8 §4.2: Track every userId we've ever seen seated at this table.
   // Used by the dealing loop to detect new joiners after the engine has started
   // dealing hands. Since 2026-08-25 a new joiner does NOT wait and does not
@@ -1625,6 +1660,13 @@ export abstract class ServerTableEngineBase {
           continue;
         }
         this.restoreSitOutsFromSeats();
+        // Dan 2026-08-30: and the cash entry holds, for the same reason the
+        // sit-out restore is here rather than only in the dealing loop — a
+        // table below the minimum to deal never reaches that loop, so a player
+        // held for the big blind on a table that went quiet would have their
+        // hold restored only if and when the table filled again. Guarded to
+        // once per process, so the two call sites cannot double-restore.
+        this.restoreEntryHoldsFromSeats();
         // THE CASE DAN REPORTED. This loop is where a table below the minimum
         // to deal waits — possibly forever — and the sit-out rule used to live
         // only in the dealing loop, which is never reached from here. So the
@@ -3401,6 +3443,113 @@ export abstract class ServerTableEngineBase {
           'ServerTableEngine.sit_out_restore_no_effect'
         );
       }
+    }
+  }
+
+  /**
+   * WRITE THE CASH ENTRY HOLD DOWN, SO A DEPLOY CANNOT CANCEL IT.
+   *
+   * Dan 2026-08-30. `waitingForBB`, `postBBWhenClear` and `postingBBToEnter`
+   * are Sets on this process and every push to `server/**` redeploys it. The
+   * dealing loop's first-iteration block then adds every seated player to
+   * `knownPlayerIds` AND `dealtInUserIds` — right for someone who really was
+   * playing before the restart, wrong for someone who was being HELD, who came
+   * back released, unbilled and button-eligible. One deploy, three house rules
+   * switched off: the wait, "no free hands", and "a new player never gets the
+   * button".
+   *
+   * Fire-and-forget on purpose, in the house style of the other seat-state
+   * writes. This is a DURABILITY improvement over a Set in memory; awaiting it
+   * inside the dealing loop would put a network round trip between a player
+   * tapping a button and the engine acting on it, to protect against a restart
+   * landing inside a few hundred milliseconds. The in-memory set stays
+   * authoritative for the running process; this column is only ever read by
+   * `restoreEntryHoldsFromSeats()` on boot.
+   *
+   * Scoped to the live seat (`left_at IS NULL`) so it can never resurrect state
+   * onto a historical row for a player who has since left and come back.
+   */
+  protected persistEntryHold(
+    userId: string,
+    state: { hold: 'waiting' | 'posting' | null; agreed?: boolean }
+  ): void {
+    if (this.isTournamentTable()) return;
+    const patch: Record<string, unknown> = { entry_hold: state.hold };
+    if (state.agreed !== undefined) patch.entry_post_agreed = state.agreed;
+    /* Promise.resolve() around the builder, deliberately. A PostgREST query
+       builder is a THENABLE, not a Promise: it has `.then` and no `.catch`, so
+       `void builder.then(...).catch(...)` does not compile — and without the
+       `.catch` an unhandled rejection takes the engine down (that is what
+       noUnhandledRejections.test.ts pins). Promise.resolve turns the thenable
+       into a real Promise, which is the only shape that has both. */
+    void Promise.resolve(
+      supabase
+        .from('table_seats')
+        .update(patch)
+        .eq('table_id', this.tableId)
+        .eq('user_id', userId)
+        .is('left_at', null)
+    )
+      .then(({ error }) => {
+        if (error) {
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] entry hold write failed for ${userId.slice(0, 8)}: ${error.message}`
+          );
+        }
+      })
+      // A fire-and-forget promise without a .catch() takes the process down on
+      // an unhandled rejection, which for THIS write would mean a transient
+      // network blip killing the engine to protect a durability nicety. The
+      // in-memory set is still authoritative for the running process, so a
+      // lost write costs only restart fidelity.
+      .catch((err: unknown) => {
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] entry hold write threw for ${userId.slice(0, 8)}:`,
+          err
+        );
+      });
+  }
+
+  /**
+   * PUT THE HOLD BACK, ONCE, ON BOOT.
+   *
+   * The counterpart of persistEntryHold. Runs exactly once per process — NOT
+   * on every pass like `restoreSitOutsFromSeats`, and the difference matters:
+   * sit-out state is a fact the database owns continuously, whereas an entry
+   * hold is released by the engine itself mid-orbit. Re-reading it every pass
+   * would race the fire-and-forget write that clears it and re-hold a player
+   * the engine had just let in.
+   *
+   * A restored waiter is deliberately NOT added to `dealtInUserIds` by the
+   * caller. They have never been dealt a hand here, so they must not be
+   * button-eligible; that is half the hole this closes.
+   */
+  protected restoreEntryHoldsFromSeats(): void {
+    if (this.entryHoldsRestored) return;
+    this.entryHoldsRestored = true;
+    if (this.isTournamentTable()) return;
+
+    let restored = 0;
+    for (const p of this.seatedPlayers) {
+      const hold = (p as { entry_hold?: string | null }).entry_hold ?? null;
+      const agreed = (p as { entry_post_agreed?: boolean | null }).entry_post_agreed === true;
+      if (hold === 'waiting') {
+        this.waitingForBB.add(p.user_id);
+        if (agreed) this.postBBWhenClear.add(p.user_id);
+        restored += 1;
+      } else if (hold === 'posting') {
+        // They paid to come in and the restart landed before the deal that
+        // bills it. Put the debt back rather than the hold: they are entitled
+        // to the next hand, and they owe the live big blind for it.
+        this.postingBBToEnter.add(p.user_id);
+        restored += 1;
+      }
+    }
+
+    if (restored > 0) {
+      console.log(
+        `[ServerTableEngine:${this.tableId}] Restored ${restored} cash entry hold(s) from table_seats`
+      );
     }
   }
 

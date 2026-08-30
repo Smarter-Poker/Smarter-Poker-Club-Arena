@@ -159,162 +159,73 @@ export async function atomicCashout(
 }
 
 /**
- * TOURNEY-AUDIT 2026-07-24 (sweep 6): cash-game waitlist notifier. When a seat
- * opens at a cash table, the longest-waiting 'waiting' entry is flipped to
- * 'notified' and receives a notification row. The player then sits via the
- * normal buy-in flow. Cash games only (tournament entrants are auto-seated by
- * the engine, never queued). Fire-and-forget; failures never block the table.
+ * CASH-GAME SEAT OFFER. When a seat opens at a cash table the longest-waiting
+ * HUMAN on that table's queue is offered it. Cash games only — tournament
+ * entrants are engine-seated and never queued. Fire-and-forget; a failure here
+ * must never block a table.
  *
- * TABLE NAME, 2026-08-21: this read `table_waitlists` (plural) while every
- * client path wrote `table_waitlist` (singular). The engine was therefore
- * watching an empty queue that nothing ever joined, and no seat offer could
- * ever have fired. Both tables were empty, so the reconciliation cost no data.
+ * ═══ THIS IS NOW ONE CALL, AND THAT IS THE POINT (2026-08-30) ═══════════════
+ *
+ * Everything below used to be six round trips of TypeScript: read the table,
+ * expire lapsed offers, expire abandoned rows, retire rows for players already
+ * seated, page the queue looking for a human, claim the head, write the
+ * notification. It ran on EVERY cash-out at EVERY table.
+ *
+ * Cost was the smaller half. The real problem was a race the old code could
+ * only SURVIVE, never avoid: between reading the queue head and claiming it,
+ * a concurrent opener could pick the same row. The loser noticed (its claim
+ * was scoped `.eq('status','waiting')` and updated nothing) and returned — so
+ * the seat went UNOFFERED, silently, until another seat happened to turn over.
+ *
+ * `fn_offer_open_seat` does the whole thing in one transaction and takes the
+ * queue head with `FOR UPDATE ... SKIP LOCKED`, which hands a concurrent caller
+ * the NEXT person in line instead of a collision. It also notifies whoever just
+ * lost an offer to the TTL, which nothing anywhere used to do.
+ *
+ * The TTLs live in the function signature as defaults rather than here, so the
+ * rule and the code that enforces it cannot drift apart. They are:
+ *   offer TTL  3 minutes  — an offer nobody acted on is dead; release the head
+ *                           or one unclaimed offer jams the queue forever
+ *   entry TTL  24 hours   — a place in line you walked away from is not a
+ *                           person waiting for a seat (Dan 2026-08-29)
  */
-/** An offer a player has not acted on in this long is dead — release the
- *  queue head so the seat can be offered to the next person. Without this a
- *  single unclaimed offer jammed the queue permanently (nothing anywhere
- *  ever expired a 'notified' row). */
-const WAITLIST_OFFER_TTL_MS = 3 * 60 * 1000;
-
 export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
   try {
-    // Only cash tables have waitlists
-    const { data: tableRow } = await supabase
-      .from('tables')
-      .select('id, name, tournament_id, max_players, current_players')
-      .eq('id', tableId)
-      .maybeSingle();
-    if (!tableRow || tableRow.tournament_id) return;
-    if ((tableRow.current_players ?? 0) >= (tableRow.max_players ?? 9)) return;
-
-    // Reclaim dead offers first, or the queue head can jam forever behind
-    // one player (or horse) who never sat down.
-    await supabase
-      .from('table_waitlist')
-      .update({ status: 'expired' })
-      .eq('table_id', tableId)
-      .eq('status', 'notified')
-      .lt('notified_at', new Date(Date.now() - WAITLIST_OFFER_TTL_MS).toISOString());
-
-    // Dan 2026-08-26 waitlist fix: the queue can contain horses (the fleet
-    // seeds a short "atmosphere" queue behind hot tables). A horse can never
-    // act on a seat-open notification, so offering it the seat silently
-    // wasted the offer — regularly, since horses were often at the head.
-    // Fetch the oldest few and notify the first HUMAN.
-    /* ═══ NO ARBITRARY WINDOW ON THE QUEUE (Dan 2026-08-27) ═══════════════
-       This fetched the ten oldest entries and then looked for a human among
-       them. If the ten oldest all happened to be horses, it returned without
-       notifying ANYBODY - while real people waited directly behind them. The
-       queue is deliberately horse-seeded ("atmosphere"), so a horse-heavy
-       head is the expected shape, not a freak one; the ten was simply a
-       number somebody hoped was big enough.
-
-       Measured 2026-08-27 before changing it: 12 tables with a queue, 22
-       people waiting, no queue longer than 10 and no table with a human
-       stranded behind ten horses - so this was latent, not live. Fixed
-       anyway, because "big enough today" is exactly the reasoning that
-       eventually is not.
-
-       The window is gone rather than raised: walk the queue in order, a page
-       at a time, until a human turns up or the queue runs out. No ceiling,
-       and on the normal queue (22 people across 12 tables today) it is still
-       exactly one round trip.
-
-       DELIBERATELY NOT an embedded `profiles!inner(is_horse)` filter, which
-       would have been one query instead of two: `table_waitlist.user_id`
-       carries TWO foreign keys - one to `profiles(id)` and one to
-       `auth.users(id)` - and an ambiguous embed resolves at PostgREST's
-       discretion. If it ever answered 400, `data` is null, this function
-       returns early, and seat offers stop going out ENTIRELY - silently, and
-       far worse than the horse-heavy-head case being fixed. Two plain reads
-       cannot fail that way. */
-    const QUEUE_PAGE = 25;
-    let next: { id: string; user_id: string } | undefined;
-    for (let page = 0; ; page++) {
-      if (page > 10_000) break; // anti-runaway assert, not a queue limit
-      const { data: batch } = await supabase
-        .from('table_waitlist')
-        .select('id, user_id')
-        .eq('table_id', tableId)
-        .eq('status', 'waiting')
-        .order('created_at', { ascending: true })
-        .range(page * QUEUE_PAGE, page * QUEUE_PAGE + QUEUE_PAGE - 1);
-      if (!batch || batch.length === 0) break;
-
-      const ids = batch.map((r) => r.user_id as string);
-      const { data: horseRows } = await supabase
-        .from('profiles')
-        .select('id')
-        .in('id', ids)
-        .eq('is_horse', true);
-      const horseIds = new Set((horseRows ?? []).map((r) => r.id as string));
-      const found = batch.find((r) => !horseIds.has(r.user_id as string));
-      if (found) {
-        next = found as { id: string; user_id: string };
-        break;
-      }
-      if (batch.length < QUEUE_PAGE) break; // queue exhausted, all horses
-    }
-    if (!next) return; // nobody human is queued — nothing to offer
-
-    const { data: claimed } = await supabase
-      .from('table_waitlist')
-      .update({ status: 'notified', notified_at: new Date().toISOString() })
-      .eq('id', next.id)
-      .eq('status', 'waiting')
-      .select('id');
-    if (!claimed || claimed.length === 0) return; // raced — another opener claimed it
-
-    await supabase.from('notifications').insert({
-      user_id: next.user_id,
-      type: 'waitlist_seat_open',
-      title: 'Seat Open',
-      message: `A Seat Just Opened At ${tableRow.name || 'Your Waitlisted Table'}. Sit Down Now To Claim It.`,
-      data: { table_id: tableId },
+    const { data, error } = await supabase.rpc('fn_offer_open_seat', {
+      p_table_id: tableId,
     });
 
-    // WEB PUSH, via the platform's real delivery path.
-    //
-    // This used to POST straight to onesignal.com. OneSignal was REMOVED from
-    // this platform on 2026-08-19 and replaced by self-hosted VAPID web push —
-    // pages/api/notifications/send.js says so in its header and rejects
-    // OneSignal device ids outright. This block was written on 2026-08-26, a
-    // week after that, so it has never delivered anything: the engine
-    // container has no ONESIGNAL_APP_ID or ONESIGNAL_REST_API_KEY (verified
-    // 2026-08-27, `printenv | grep -c ONESIGNAL_APP_ID` returns 0 inside
-    // club-arena-engine) and 48h of its logs contain zero OneSignal lines.
-    //
-    // The correct path needs no credentials at all. push_outbox is the durable
-    // queue World Hub's /api/cron/push-dispatch drains every few minutes; it
-    // loads the consent gate and calls gateDecision() on every row before
-    // delivering, so a row written here is opt-out-respecting by construction
-    // rather than by this file remembering to check. That also closes the
-    // consent bypass the old raw insert had: send.js enforces preferences and
-    // the engine went around it.
-    //
-    // A crash between the notification insert and this write costs one push,
-    // never a duplicate: the outbox row is the only thing that sends.
-    try {
-      const { error: pushErr } = await supabase.from('push_outbox').insert({
-        recipient_user_id: next.user_id,
-        title: 'Seat Open',
-        body: `A Seat Just Opened At ${tableRow.name || 'Your Waitlisted Table'}. Tap To Claim It.`,
-        url: `/hub/club-arena/table/${tableId}`,
-        event: 'waitlist_seat_open',
-        related_entity_id: tableId,
-        // Collapses repeat offers for the same table into one notification
-        // shade entry rather than stacking them.
-        tag: `seat-open-${tableId}`,
-      });
-      if (pushErr) {
-        console.warn(`[Waitlist] push_outbox insert failed: ${pushErr.message}`);
+    if (error) {
+      console.warn(`[Waitlist] seat offer failed for ${tableId.slice(0, 8)}: ${error.message}`);
+      return;
+    }
+
+    const result = (data ?? {}) as {
+      ok?: boolean;
+      reason?: string;
+      user_id?: string;
+      table_name?: string;
+      offers_expired?: number;
+    };
+
+    if (result.offers_expired && result.offers_expired > 0) {
+      console.log(
+        `[Waitlist] reclaimed ${result.offers_expired} lapsed offer(s) at ${tableId.slice(0, 8)}`
+      );
+    }
+
+    if (!result.ok) {
+      // Every one of these is ordinary: the table filled again, it is a
+      // tournament table, or nobody human is queued. Logged at debug volume
+      // only for the reasons that are worth seeing.
+      if (result.reason && result.reason !== 'nobody_waiting') {
+        console.log(`[Waitlist] no offer at ${tableId.slice(0, 8)}: ${result.reason}`);
       }
-    } catch (pushErr) {
-      console.warn(`[Waitlist] push enqueue threw for ${next.user_id.slice(0, 8)}:`, pushErr);
+      return;
     }
 
     console.log(
-      `[Waitlist] Notified ${next.user_id.slice(0, 8)} — seat open at ${tableId.slice(0, 8)}`
+      `[Waitlist] Notified ${String(result.user_id ?? '').slice(0, 8)} — seat open at ${tableId.slice(0, 8)}`
     );
   } catch (e) {
     console.warn(`[Waitlist] notify failed for table ${tableId}:`, e);

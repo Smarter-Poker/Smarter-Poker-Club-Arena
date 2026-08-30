@@ -60,3 +60,6 @@
   that wiring with a source contract test.
 - Repaired two malformed comments in the newly landed multi-table shell that
   were being parsed as CSS and emitted six production minifier warnings.
+- Removed a placeholder-host assumption from the component browser mocks, so
+  local Table Studio save and checkout coverage cannot escape to a configured
+  Supabase project instead of exercising its isolated in-memory backend.

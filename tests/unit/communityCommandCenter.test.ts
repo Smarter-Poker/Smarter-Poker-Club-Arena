@@ -64,6 +64,13 @@ describe('Community Command Center interaction contracts', () => {
     expect(FRIENDS).not.toContain('useSwipeAction');
   });
 
+  it('progressively renders large friend networks without limiting search or export', () => {
+    expect(FRIENDS).toContain('const FRIENDS_PAGE_SIZE = 40');
+    expect(FRIENDS).toContain('.slice(0, visibleFriendCount)');
+    expect(FRIENDS).toContain('setVisibleFriendCount((current) => current + FRIENDS_PAGE_SIZE)');
+    expect(FRIENDS).toContain("exportToCSV(filteredFriends, 'friends_list.csv'");
+  });
+
   it('keeps challenge and activity data live while making failure states recoverable', () => {
     expect(CHALLENGE_PANEL).toContain("supabase.rpc('fn_respond_friend_challenge'");
     expect(CHALLENGE_PANEL).toContain('if (challengeError) throw challengeError');

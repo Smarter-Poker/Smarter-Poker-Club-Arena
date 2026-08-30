@@ -39,6 +39,7 @@ const FRIEND_TABS: Array<{ id: FriendsTab; label: string }> = [
 const FR_CACHE_PREFIX = 'fr_cache_';
 const FR_CACHE_TS_PREFIX = 'fr_cache_ts_';
 const FR_CACHE_TTL = 5 * 60 * 1000;
+const FRIENDS_PAGE_SIZE = 40;
 
 function getFriendsTab(value: string | null): FriendsTab {
   if (value === 'pending') return 'requests';
@@ -82,6 +83,7 @@ export default function FriendsPage() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [visibleFriendCount, setVisibleFriendCount] = useState(FRIENDS_PAGE_SIZE);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const [challengeTarget, setChallengeTarget] = useState<{ id: string; name: string } | null>(null);
   const [removeTarget, setRemoveTarget] = useState<Friend | null>(null);
@@ -93,6 +95,10 @@ export default function FriendsPage() {
   useEffect(() => {
     document.title = 'Community Connections | Smarter Poker';
   }, []);
+
+  useEffect(() => {
+    setVisibleFriendCount(FRIENDS_PAGE_SIZE);
+  }, [searchQuery]);
 
   useEffect(() => {
     const legacyTab = searchParams.get('tab');
@@ -386,6 +392,9 @@ export default function FriendsPage() {
   );
   const onlineFriends = filteredFriends.filter((friend) => friend.is_online);
   const offlineFriends = filteredFriends.filter((friend) => !friend.is_online);
+  const visibleFriends = [...onlineFriends, ...offlineFriends].slice(0, visibleFriendCount);
+  const visibleOnlineFriends = visibleFriends.filter((friend) => friend.is_online);
+  const visibleOfflineFriends = visibleFriends.filter((friend) => !friend.is_online);
   const onlineCount = friendsWithStatus.filter((friend) => friend.is_online).length;
 
   const exportFriends = () => {
@@ -528,10 +537,11 @@ export default function FriendsPage() {
               </div>
             ) : (
               <div className="friends-groups">
-                {onlineFriends.length > 0 && (
+                {visibleOnlineFriends.length > 0 && (
                   <FriendGroup
                     label="Online now"
-                    friends={onlineFriends}
+                    friends={visibleOnlineFriends}
+                    totalCount={onlineFriends.length}
                     navigate={navigate}
                     onMessage={(friend) => navigate(`/messages?compose=${friend.user_id}`)}
                     onChallenge={(friend) =>
@@ -540,10 +550,11 @@ export default function FriendsPage() {
                     onRemove={setRemoveTarget}
                   />
                 )}
-                {offlineFriends.length > 0 && (
+                {visibleOfflineFriends.length > 0 && (
                   <FriendGroup
                     label="Offline"
-                    friends={offlineFriends}
+                    friends={visibleOfflineFriends}
+                    totalCount={offlineFriends.length}
                     navigate={navigate}
                     onMessage={(friend) => navigate(`/messages?compose=${friend.user_id}`)}
                     onChallenge={(friend) =>
@@ -551,6 +562,23 @@ export default function FriendsPage() {
                     }
                     onRemove={setRemoveTarget}
                   />
+                )}
+                {visibleFriends.length < filteredFriends.length && (
+                  <div className="friends-load-more">
+                    <span aria-live="polite">
+                      Showing {visibleFriends.length} Of {filteredFriends.length} Friends
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setVisibleFriendCount((current) => current + FRIENDS_PAGE_SIZE)
+                      }
+                    >
+                      Load{' '}
+                      {Math.min(FRIENDS_PAGE_SIZE, filteredFriends.length - visibleFriends.length)}{' '}
+                      More
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -673,6 +701,7 @@ export default function FriendsPage() {
 interface FriendGroupProps {
   label: string;
   friends: Friend[];
+  totalCount: number;
   navigate: (path: string) => void;
   onMessage: (friend: Friend) => void;
   onChallenge: (friend: Friend) => void;
@@ -682,6 +711,7 @@ interface FriendGroupProps {
 function FriendGroup({
   label,
   friends,
+  totalCount,
   navigate,
   onMessage,
   onChallenge,
@@ -694,7 +724,7 @@ function FriendGroup({
     >
       <h3 id={`friend-group-${label.replace(/\s/g, '-').toLowerCase()}`}>
         {label}
-        <span>{friends.length}</span>
+        <span>{totalCount}</span>
       </h3>
       <div className="friend-group-list">
         {friends.map((friend) => (

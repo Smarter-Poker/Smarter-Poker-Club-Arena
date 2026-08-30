@@ -37,8 +37,11 @@ describe('Player Identity Vault information architecture', () => {
 
   it('removes the empty gameplay panel but keeps old deep links useful', () => {
     expect(SETTINGS).not.toContain('<h2>Gameplay</h2>');
-    expect(SETTINGS).toContain('gameplay: appearanceRef');
-    expect(SETTINGS).toContain('table: appearanceRef');
+    expect(SETTINGS).toContain("case 'gameplay':");
+    expect(SETTINGS).toContain("case 'table':");
+    expect(SETTINGS).toContain("return 'display';");
+    expect(SETTINGS).toContain('data: dangerRef');
+    expect(SETTINGS).toContain('activeSettingsSection === item.id');
     expect(SETTINGS).toContain('aria-label="Settings sections"');
   });
 

@@ -61,6 +61,30 @@ const settingsSectionAnimationStyle = (index: number) => ({
   animation: `animationsFadeInUp 0.5s ease-out ${index * 70}ms forwards`,
 });
 
+type SettingsSectionId = 'audio' | 'display' | 'notifications' | 'account' | 'data';
+
+const resolveSettingsSection = (tab: string | null): SettingsSectionId | null => {
+  switch (tab?.toLowerCase()) {
+    case 'audio':
+      return 'audio';
+    case 'appearance':
+    case 'display':
+    case 'gameplay':
+    case 'table':
+    case 'language':
+      return 'display';
+    case 'notifications':
+      return 'notifications';
+    case 'security':
+    case 'account':
+      return 'account';
+    case 'data':
+      return 'data';
+    default:
+      return null;
+  }
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -126,6 +150,7 @@ export default function SettingsPage() {
   }, []);
 
   const [searchParams, setSearchParams] = useSearchParams();
+  const activeSettingsSection = resolveSettingsSection(searchParams.get('tab'));
   const toast = useToast();
   const { user: authUser } = useAuthUser();
   const { settings: tableSettings, updateSettings: updateTableSettings } = useTableSettings();
@@ -202,33 +227,25 @@ export default function SettingsPage() {
 
   // Tab-based scroll navigation
   useEffect(() => {
-    const tab = searchParams.get('tab');
-    if (!tab) return;
+    if (!activeSettingsSection) return;
 
-    const tabToRef: Record<string, React.RefObject<HTMLElement | null>> = {
+    const sectionToRef: Record<SettingsSectionId, React.RefObject<HTMLElement | null>> = {
       audio: audioRef,
-      appearance: appearanceRef,
       display: appearanceRef,
-      gameplay: appearanceRef,
-      table: appearanceRef,
       notifications: notificationsRef,
-      security: securityRef,
       account: securityRef,
-      language: appearanceRef, // Language settings would be in appearance section
+      data: dangerRef,
     };
 
-    const targetRef = tabToRef[tab.toLowerCase()];
+    const targetRef = sectionToRef[activeSettingsSection];
     if (targetRef?.current) {
       setTimeout(() => {
         targetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 100);
     }
-  }, [searchParams]);
+  }, [activeSettingsSection]);
 
-  const jumpToSection = (
-    tab: 'audio' | 'display' | 'notifications' | 'account' | 'data',
-    target: RefObject<HTMLElement | null>
-  ) => {
+  const jumpToSection = (tab: SettingsSectionId, target: RefObject<HTMLElement | null>) => {
     const next = new URLSearchParams(searchParams);
     next.set('tab', tab);
     setSearchParams(next, { replace: true });
@@ -879,7 +896,7 @@ export default function SettingsPage() {
           <button
             type="button"
             key={item.id}
-            className={searchParams.get('tab') === item.id ? styles.controlIndexActive : ''}
+            className={activeSettingsSection === item.id ? styles.controlIndexActive : ''}
             onClick={() => jumpToSection(item.id, item.ref)}
           >
             {item.label}

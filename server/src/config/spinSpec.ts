@@ -362,6 +362,59 @@ export function spinOddsTable(tiers: SpinTierSpec[] = SPIN_TIERS): SpinOddsRow[]
     }));
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  HOW LOUDLY DOES THIS DRAW CELEBRATE? (2026-08-29, round 15)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * A 100x lands about once in 9,921 games and a 2x lands about every other
+ * game, and until now they celebrated almost identically: the confetti burst
+ * was a FLAT 24 pieces for 25x, 50x and 100x alike, the banner read the same
+ * "JACKPOT SPIN" for 25x and 50x, and the sound differed only in volume - the
+ * same chord, turned up. The rarest event in the product had no moment of its
+ * own.
+ *
+ * This is the one place that decides intensity, so the wheel and the sound
+ * can never drift apart (the same discipline as spinOddsTable: derive, never
+ * duplicate). Thresholds intentionally match `tierClass`, which already bands
+ * the wheel's colour.
+ *
+ * ANIMATION LAW (CLAUDE.md 10.6): this only ever ADDS. Every band that
+ * celebrated before still celebrates, for at least as long and at least as
+ * loudly; `mid` is new, so a 10x - a 1-in-100 draw that previously got
+ * nothing at all - now gets a modest burst. No band returns zero pieces, and
+ * nothing here can gate an animation off.
+ */
+export type SpinCelebrationBand = 'base' | 'mid' | 'big' | 'mega';
+
+export interface SpinCelebration {
+  band: SpinCelebrationBand;
+  /** Confetti pieces. Scales with rarity; never zero for a celebrating band. */
+  confettiPieces: number;
+  /** Banner text, or null when the draw is an ordinary one. */
+  label: string | null;
+  /** Audio intensity 0..1, consumed by SoundService so the two cannot drift. */
+  soundLevel: number;
+}
+
+export function spinCelebration(multiplier: number): SpinCelebration {
+  const m = Number(multiplier) || 0;
+  if (m >= 100) {
+    return { band: 'mega', confettiPieces: 72, label: 'MEGA JACKPOT', soundLevel: 1 };
+  }
+  if (m >= 50) {
+    return { band: 'big', confettiPieces: 48, label: 'SUPER JACKPOT', soundLevel: 0.95 };
+  }
+  if (m >= 25) {
+    return { band: 'big', confettiPieces: 32, label: 'JACKPOT SPIN', soundLevel: 0.9 };
+  }
+  if (m >= 10) {
+    // New in round 15. A 1-in-100 draw deserves more than silence.
+    return { band: 'mid', confettiPieces: 16, label: 'BIG SPIN', soundLevel: 0.8 };
+  }
+  return { band: 'base', confettiPieces: 0, label: null, soundLevel: 0.72 };
+}
+
 /** Expected multiplier over a set of tiers (default: all of them). */
 export function expectedMultiplier(tiers: SpinTierSpec[] = SPIN_TIERS): number {
   const total = tiers.reduce((s, t) => s + t.freq, 0);

@@ -42,7 +42,16 @@ const EXTS = new Set(['.ts', '.tsx', '.js', '.jsx']);
 const DEPRECATED = {
   rake_history: 'rake_records',
   hand_players: 'hand_history (or the ca_player_stats_full RPC for aggregates)',
-  rake_attributions: 'rake_records.player_contributions',
+  // rake_attributions: NO LONGER DEPRECATED (Dan 2026-08-29/30). It was
+  // genuinely dead — declared with a unique guard and 0 rows, which is why it
+  // was listed here. The weighted contributed rake migration made it the
+  // AUTHORITATIVE per-player rake ledger: atomic_distribute_rake writes one
+  // row per contributor per hand inside the banking transaction, the SQL
+  // consumers read it through fn_rake_shares_for_record, and the settler
+  // reads it through sharesForRakeRecordWithLedger. A register that still
+  // called it dead would push the next reader back onto recomputation — the
+  // dual-implementation shape that produced the equal-dealt bug. Removed
+  // from DEPRECATED deliberately, in the commit that started reading it.
   // hands / hand_actions: zero rows ever. saveHand inserts into `hands` first
   // and returns early when it fails, so everything below it is unreachable.
   hands: 'hand_history',

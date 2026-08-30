@@ -43,3 +43,12 @@
 --   Both derive identity from auth.uid() — never from a parameter — and
 --   neither exposes another player's contribution.
 SELECT 'applied via MCP — see migration history for the three bodies' AS notice;
+
+-- Also applied 2026-08-30 as migration `rake_attributions_is_no_longer_deprecated`:
+-- rake_attributions was legitimately on public.deprecated_tables (0 rows, no
+-- writer) and is now the AUTHORITATIVE per-player rake ledger. Leaving it
+-- listed would send the next reader back to recomputing from
+-- player_contributions — the dual-implementation shape that caused the
+-- equal-dealt bug. The DB row is deleted and
+-- scripts/ci/check-deprecated-tables.mjs (which mirrors that table) is
+-- corrected in the same commit. Caught by CI, which is exactly its job.

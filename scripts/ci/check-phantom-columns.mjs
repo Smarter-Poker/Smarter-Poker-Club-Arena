@@ -27,6 +27,7 @@
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
+import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
 
 const REPO = process.cwd();
 const MANIFEST = join(REPO, 'scripts/ci/supabase-columns-manifest.json');
@@ -298,12 +299,12 @@ async function liveColumns() {
     try {
       const res = await fetch(`${url}/rest/v1/rpc/fn_columns_manifest`, {
         method: 'POST',
-        headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        headers: supabaseServerHeaders(key, { 'Content-Type': 'application/json' }),
         body: '{}',
-      // Measured 2026-08-21: this RPC returned in 0.6s warm and 30.7s under
-      // load, against a 30s budget — so on a slow day all three attempts can
-      // expire and the gate loses its live evidence exactly when the database
-      // is busiest. The wait costs nothing when the database is healthy.
+        // Measured 2026-08-21: this RPC returned in 0.6s warm and 30.7s under
+        // load, against a 30s budget — so on a slow day all three attempts can
+        // expire and the gate loses its live evidence exactly when the database
+        // is busiest. The wait costs nothing when the database is healthy.
         signal: AbortSignal.timeout(75000),
       });
       if (res.ok) {
@@ -314,9 +315,13 @@ async function liveColumns() {
         }
         return map.size ? map : UNAVAILABLE;
       }
-      console.log(`[check-phantom-columns] live re-check attempt ${attempt}/3 failed (HTTP ${res.status})`);
+      console.log(
+        `[check-phantom-columns] live re-check attempt ${attempt}/3 failed (HTTP ${res.status})`
+      );
     } catch (err) {
-      console.log(`[check-phantom-columns] live re-check attempt ${attempt}/3 failed (${err.message})`);
+      console.log(
+        `[check-phantom-columns] live re-check attempt ${attempt}/3 failed (${err.message})`
+      );
     }
     if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 3000));
   }
@@ -362,7 +367,9 @@ if (liveCols) {
 }
 
 console.log('');
-console.log('PHANTOM COLUMNS DETECTED (a .select() or a write payload names a column the table does not have):');
+console.log(
+  'PHANTOM COLUMNS DETECTED (a .select() or a write payload names a column the table does not have):'
+);
 console.log('');
 for (const [key, sites] of phantoms) {
   console.log(`  ${key}`);

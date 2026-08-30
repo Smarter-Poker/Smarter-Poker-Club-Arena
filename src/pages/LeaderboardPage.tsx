@@ -617,17 +617,18 @@ export default function LeaderboardPage() {
       const payoutPromise =
         !isGlobal && selectedClubId
           ? (() => {
-              const { start } = LeaderboardService.getPeriodBoundaries(period, periodOffset);
-              return LeaderboardService.getPayoutsForPeriod(
-                selectedClubId,
-                period,
-                metric,
-                start.toISOString().split('T')[0]
-              ).then((periodPayouts) => {
-                if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
-                  setPayouts(periodPayouts);
-                }
-              });
+              return LeaderboardService.getPeriodWindow(period, periodOffset).then((window) =>
+                LeaderboardService.getPayoutsForPeriod(
+                  selectedClubId,
+                  period,
+                  metric,
+                  window.start_date
+                ).then((periodPayouts) => {
+                  if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
+                    setPayouts(periodPayouts);
+                  }
+                })
+              );
             })()
           : Promise.resolve();
 

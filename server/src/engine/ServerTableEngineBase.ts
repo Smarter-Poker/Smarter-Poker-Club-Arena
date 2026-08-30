@@ -278,6 +278,37 @@ export abstract class ServerTableEngineBase {
   // empties.
   protected pendingPostToEnter: Set<string> = new Set();
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // AGREEING TO POST IS ANSWERED ONCE (Dan 2026-08-29, binding)
+  //
+  //   "in cash games when you click POST BB but you are IN BETWEEN THE
+  //    BLINDS you get this pop up... that shouldn't happen because you
+  //    already agreed to post bb... and auto post the blind then. it
+  //    currently makes you hit the button again, or it simply won't deal
+  //    you in at all."
+  //
+  // `postBBToEnter` refuses from two seats and must keep refusing them: a
+  // cash player is never dealt into the small blind, and a new player never
+  // takes the button. Neither may be bought, and this set does not buy them.
+  //
+  // What it fixes is what the refusal did to the PLAYER. The refusal threw
+  // the answer away — the player stayed in `waitingForBB`, TablePage put the
+  // same "Post Big Blind To Enter" button straight back on the felt, and
+  // nothing anywhere remembered that they had already said yes. Tapping it
+  // again from the same seat was refused again, so the only way through was
+  // to keep tapping until the button happened to have moved, which is why it
+  // reads as "it simply won't deal you in at all".
+  //
+  // A player in here has ALREADY AGREED to post. The dealing loop replays
+  // that agreement, unchanged, on every pass, and it takes effect on the
+  // first pass where the seat is no longer the one the small blind or the
+  // button is about to reach. They are then billed one live big blind
+  // through `postingBBToEnter` exactly as if they had tapped at that moment.
+  //
+  // Nothing here shortens the wait. It only stops the wait from costing the
+  // player their answer.
+  protected postBBWhenClear: Set<string> = new Set();
+
   // Bible V8 §4.2: Track every userId we've ever seen seated at this table.
   // Used by the dealing loop to detect new joiners after the engine has started
   // dealing hands. Since 2026-08-25 a new joiner does NOT wait and does not

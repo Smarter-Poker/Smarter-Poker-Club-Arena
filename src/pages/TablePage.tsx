@@ -567,6 +567,10 @@ interface TableState {
   // rotate. The hero sees a "Post BB to enter" button when their userId
   // is in this list. Walkthrough Step 4 fix 2026-04-29.
   waitingForBBUserIds?: string[];
+  // Dan 2026-08-29 — the subset of the above who have already agreed to post
+  // and are held out only by their seat. The hero is never asked again while
+  // their own id is in here; the engine posts for them when the seat clears.
+  postBBDeferredUserIds?: string[];
   // Phase 8: Action timer state
   actionTimerDeadline?: number;
   /** Wall-clock turn start (server-authoritative). Drives the CSS ring
@@ -2128,6 +2132,7 @@ export default function TablePage({
         engineWinners: mapped.winners,
         // Walkthrough Step 4 fix 2026-04-29: waiting-for-BB user IDs.
         waitingForBBUserIds: mapped.waitingForBBUserIds,
+        postBBDeferredUserIds: mapped.postBBDeferredUserIds,
       };
     });
   }, [engineSnapshot, USE_ENGINE_WS, userId, tableState.maxPlayers]);
@@ -2888,6 +2893,18 @@ export default function TablePage({
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   // Guards the entry-post overlay against a double tap billing two big blinds.
   const [isPostingBB, setIsPostingBB] = useState(false);
+  /* Dan 2026-08-29, binding: "that shouldn't happen because you already
+     agreed to post bb... it currently makes you hit the button again, or it
+     simply won't deal you in at all."
+
+     The engine holds the agreement (postBBWhenClear) and republishes it as
+     postBBDeferredUserIds, which is the durable answer and survives a reload.
+     This flag is the OPTIMISTIC half, and it exists because the snapshot that
+     carries the durable answer is up to one poll behind the tap: without it
+     the button reappears for a beat between the toast and the next snapshot,
+     which is a re-prompt as far as a thumb is concerned. Cleared the moment
+     the engine stops holding the hero at all. */
+  const [bbPostAgreed, setBBPostAgreed] = useState(false);
   /* Dan 2026-08-26, binding: "as soon as you confirm your buy in at a cash
      table, the next pop up must be Post Or Wait For BB. Then that decides if
      the player will be dealt in or is waiting." Opened by the buy-in success
@@ -6694,6 +6711,26 @@ export default function TablePage({
       setPostOrWaitOpen(false);
     }
   }, [postOrWaitOpen, tableState.heroSeat, tableState.players]);
+
+  /* Dan 2026-08-29 — the optimistic "I already agreed" flag lives exactly as
+     long as the engine is still holding the hero out.
+
+     HOSTILE STATE, which is the reason this effect exists rather than a bare
+     setter at the call site: the flag hides the post prompt, so a stale one
+     would hide a prompt the hero genuinely needs to answer — after they stand
+     up and sit back down, or after the engine restarts and no longer knows
+     about the agreement. Clearing it the moment the hero is no longer in
+     waitingForBBUserIds makes it impossible to outlive the hold. The durable
+     answer is postBBDeferredUserIds, which comes from the engine and can be
+     trusted across a reload; this only covers the poll in between. */
+  useEffect(() => {
+    if (!bbPostAgreed) return;
+    const held =
+      !!userId &&
+      Array.isArray(tableState.waitingForBBUserIds) &&
+      tableState.waitingForBBUserIds.includes(userId);
+    if (!held) setBBPostAgreed(false);
+  }, [bbPostAgreed, userId, tableState.waitingForBBUserIds]);
 
   /**
    * `rebuyProcessing` readable from a timer's closure. The 120s backstop must
@@ -19952,15 +19989,24 @@ export default function TablePage({
                        post left the player waiting. One call, three honest
                        outcomes. */
                     const res = await serverPostBBToEnter(tableId);
-                    if (res?.success) {
+                    if (res?.deferred) {
+                      /* Dan 2026-08-29: HELD, NOT REFUSED. They are in
+                         between the blinds. The agreement is kept by the
+                         engine and posted for them the moment the button is
+                         past, so this says what happens next and never asks
+                         again. */
+                      setBBPostAgreed(true);
+                      toast.info(
+                        res?.error ||
+                          'You Are In Between The Blinds, And Will Be Dealt In When The Button Passes.'
+                      );
+                    } else if (res?.success) {
                       toast.success('Posting The Big Blind. You Are Dealt Into The Next Hand.');
                     } else if (res?.error === 'Player is not waiting for BB') {
                       // Already known to the engine and not held out: they
                       // are in the rotation and post blinds like everyone.
                       toast.info('You Are Already In The Hand Rotation.');
                     } else {
-                      // Positional refusal (SB or button incoming): the wait
-                      // is mandatory there and cannot be bought.
                       toast.info(
                         res?.error || 'Could Not Post The Big Blind. You Will Wait For It Instead.'
                       );
@@ -19993,7 +20039,16 @@ export default function TablePage({
         tableId &&
         !tableState.isTournament &&
         Array.isArray(tableState.waitingForBBUserIds) &&
-        tableState.waitingForBBUserIds.includes(userId) && (
+        tableState.waitingForBBUserIds.includes(userId) &&
+        /* Dan 2026-08-29, binding: ASK ONCE. A hero who has already agreed to
+           post is not asked again while the seat clears — not on the next
+           snapshot, and not after a reload, because the engine republishes
+           the agreement in postBBDeferredUserIds and the local flag covers
+           the poll between the tap and that snapshot. They keep their place,
+           the engine posts for them, and the two positional house rules are
+           still what decides WHEN. */
+        !bbPostAgreed &&
+        !(tableState.postBBDeferredUserIds ?? []).includes(userId) && (
           /* Dan 2026-08-26, binding: a cash entrant either waits for the big
              blind or posts it. There is no free hand and no coming in behind
              the blinds, so this is a real choice again rather than the notice
@@ -20013,7 +20068,15 @@ export default function TablePage({
               setIsPostingBB(true);
               try {
                 const res = await serverPostBBToEnter(tableId);
-                if (res?.success) {
+                if (res?.deferred) {
+                  // Dan 2026-08-29 — see the identical branch on the
+                  // post-or-wait modal above. Held, not refused.
+                  setBBPostAgreed(true);
+                  toast.info(
+                    res?.error ||
+                      'You Are In Between The Blinds, And Will Be Dealt In When The Button Passes.'
+                  );
+                } else if (res?.success) {
                   toast.success('Posting The Big Blind. You Are Dealt Into The Next Hand.');
                 } else if (res?.error === 'Player is not waiting for BB') {
                   toast.info('You Are Already In The Hand Rotation.');

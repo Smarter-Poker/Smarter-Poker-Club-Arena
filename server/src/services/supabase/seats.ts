@@ -176,6 +176,22 @@ export async function atomicCashout(
  *  ever expired a 'notified' row). */
 const WAITLIST_OFFER_TTL_MS = 3 * 60 * 1000;
 
+/* A QUEUE ROW YOU LEFT BEHIND IS NOT A PERSON WAITING FOR A SEAT
+   (Dan 2026-08-29: "the seat open push notification should only occur if you
+   are on a list waiting for a seat, not randomly").
+
+   `20260826151500_waitlist_queue_visibility_and_gc.sql` expired human 'waiting'
+   rows older than 24h, but it did it ONCE, as a backlog cleanup, and no
+   recurring job took it over. So a row has been immortal ever since: join a
+   queue, close the app, and weeks later a seat turns over and the phone lights
+   up about a table you have no memory of. From the player's side that is
+   indistinguishable from a random push, which is exactly the report.
+
+   Enforcing it HERE rather than in a cron is deliberate — this is the only
+   place that turns a queue row into an interrupt, so a row cannot outlive its
+   own expiry by the width of a scheduler window. */
+const WAITLIST_ENTRY_TTL_MS = 24 * 60 * 60 * 1000;
+
 export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
   try {
     // Only cash tables have waitlists
@@ -195,6 +211,38 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
       .eq('table_id', tableId)
       .eq('status', 'notified')
       .lt('notified_at', new Date(Date.now() - WAITLIST_OFFER_TTL_MS).toISOString());
+
+    // ...and abandoned queue rows, for the reason at WAITLIST_ENTRY_TTL_MS.
+    // Same shape, same table, one extra round trip on a path that already
+    // makes several and blocks nothing.
+    await supabase
+      .from('table_waitlist')
+      .update({ status: 'expired' })
+      .eq('table_id', tableId)
+      .eq('status', 'waiting')
+      .lt('created_at', new Date(Date.now() - WAITLIST_ENTRY_TTL_MS).toISOString());
+
+    /* YOU CANNOT BE OFFERED A SEAT AT A TABLE YOU ARE ALREADY SITTING AT.
+       Nothing removed a player's queue row when they took a seat by any route
+       other than the offer itself — buying in directly from the lobby leaves
+       'waiting' behind — so the next seat to turn over at THAT table pushed
+       "a seat just opened, tap to claim it" to somebody already in seat 4 of
+       it. Retire those rows before choosing, so the offer goes to the next
+       person who can actually use it instead of being burnt on a no-op. */
+    const { data: seatedRows } = await supabase
+      .from('table_seats')
+      .select('user_id')
+      .eq('table_id', tableId)
+      .is('left_at', null);
+    const seatedIds = (seatedRows ?? []).map((r) => r.user_id as string).filter(Boolean);
+    if (seatedIds.length > 0) {
+      await supabase
+        .from('table_waitlist')
+        .update({ status: 'seated' })
+        .eq('table_id', tableId)
+        .eq('status', 'waiting')
+        .in('user_id', seatedIds);
+    }
 
     // Dan 2026-08-26 waitlist fix: the queue can contain horses (the fleet
     // seeds a short "atmosphere" queue behind hot tables). A horse can never
@@ -273,45 +321,28 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
       data: { table_id: tableId },
     });
 
-    // WEB PUSH, via the platform's real delivery path.
-    //
-    // This used to POST straight to onesignal.com. OneSignal was REMOVED from
-    // this platform on 2026-08-19 and replaced by self-hosted VAPID web push —
-    // pages/api/notifications/send.js says so in its header and rejects
-    // OneSignal device ids outright. This block was written on 2026-08-26, a
-    // week after that, so it has never delivered anything: the engine
-    // container has no ONESIGNAL_APP_ID or ONESIGNAL_REST_API_KEY (verified
-    // 2026-08-27, `printenv | grep -c ONESIGNAL_APP_ID` returns 0 inside
-    // club-arena-engine) and 48h of its logs contain zero OneSignal lines.
-    //
-    // The correct path needs no credentials at all. push_outbox is the durable
-    // queue World Hub's /api/cron/push-dispatch drains every few minutes; it
-    // loads the consent gate and calls gateDecision() on every row before
-    // delivering, so a row written here is opt-out-respecting by construction
-    // rather than by this file remembering to check. That also closes the
-    // consent bypass the old raw insert had: send.js enforces preferences and
-    // the engine went around it.
-    //
-    // A crash between the notification insert and this write costs one push,
-    // never a duplicate: the outbox row is the only thing that sends.
-    try {
-      const { error: pushErr } = await supabase.from('push_outbox').insert({
-        recipient_user_id: next.user_id,
-        title: 'Seat Open',
-        body: `A Seat Just Opened At ${tableRow.name || 'Your Waitlisted Table'}. Tap To Claim It.`,
-        url: `/hub/club-arena/table/${tableId}`,
-        event: 'waitlist_seat_open',
-        related_entity_id: tableId,
-        // Collapses repeat offers for the same table into one notification
-        // shade entry rather than stacking them.
-        tag: `seat-open-${tableId}`,
-      });
-      if (pushErr) {
-        console.warn(`[Waitlist] push_outbox insert failed: ${pushErr.message}`);
-      }
-    } catch (pushErr) {
-      console.warn(`[Waitlist] push enqueue threw for ${next.user_id.slice(0, 8)}:`, pushErr);
-    }
+    /* THE INSERT ABOVE IS THE WHOLE OF THE PUSH. DO NOT ADD A SECOND WRITER.
+       ═══════════════════════════════════════════════════════════════════════
+       There used to be an explicit `push_outbox` insert here, added
+       2026-08-26 to replace a dead OneSignal call. It was one writer too many:
+       `trg_mirror_notification_to_push_outbox` (AFTER INSERT ON notifications)
+       already mirrors the row above into push_outbox, and has since before
+       that block was written. Every seat offer therefore enqueued TWICE.
+
+       It was not merely redundant, it was VISIBLE, because the two rows
+       carried different tags — the trigger's `waitlist_seat_open:<id>` and
+       this block's `seat-open-<tableId>`. A notification tag is what lets the
+       operating system collapse a repeat into the banner already on screen,
+       so two rows that agree on every word and disagree on their tag are
+       guaranteed to STACK. That is the pair of identical "A Seat Just Opened
+       At PLO4 0.50/1.00" banners Dan photographed on 2026-08-29, and the
+       outbox rows behind it are 7e1ba96a and 91453e36, 237ms apart, both
+       delivered.
+
+       So the notification row is the only thing this function writes, and the
+       trigger turns it into exactly one push. The trigger is also what makes
+       the delivery consent-respecting: push-dispatch loads the gate and calls
+       gateDecision() on every row it drains. */
 
     console.log(
       `[Waitlist] Notified ${next.user_id.slice(0, 8)} — seat open at ${tableId.slice(0, 8)}`

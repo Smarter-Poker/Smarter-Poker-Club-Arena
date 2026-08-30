@@ -164,6 +164,14 @@ jobs:
         # level down - the same class of miss as the specs this job exists for.
         # A directory cannot go stale when a tenth file is added beside them.
         run: |
+          # Certify Stats first. The repository deploys frequently enough that
+          # workflow concurrency can cancel this run before an alphabetically
+          # late spec starts; keeping the page under active audit in its own
+          # leading command guarantees a prompt, named production verdict.
+          npx playwright test \
+            tests/e2e/stats-deep.spec.ts \
+            --project=chromium --reporter=line --retries=1
+
           npx playwright test \
             tests/e2e/smoke.spec.ts \
             tests/e2e/mobile-fit-audit.spec.ts \
@@ -171,7 +179,6 @@ jobs:
             tests/e2e/mobile-input-zoom.spec.ts \
             tests/e2e/mobile-chrome-occlusion.spec.ts \
             tests/e2e/showdown-beats.spec.ts \
-            tests/e2e/stats-deep.spec.ts \
             tests/e2e/club-lobby.spec.ts \
             tests/e2e/tournament-buy-in-dialog.spec.ts \
             tests/e2e/tournament-watch.spec.ts \

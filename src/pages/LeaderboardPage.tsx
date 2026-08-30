@@ -11,7 +11,7 @@
 
 import { Virtuoso } from 'react-virtuoso';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
 
@@ -32,22 +32,74 @@ import { PlayerAvatar } from '../components/avatars/PlayerAvatar';
 import type { VipTier } from '../components/avatars/PlayerAvatar';
 import './LeaderboardPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { retryFetch } from '../utils/retryFetch';
 import { reportError } from '../utils/errorReporter';
 
 // ── SWR Cache helpers ──
-const LB_CACHE_KEY = 'lb_cache_';
-function getCachedEntries(key: string): LeaderboardEntry[] | null {
+const LB_CACHE_KEY = 'lb_cache_v2_';
+const LB_CACHE_TTL_MS = 5 * 60 * 1000;
+const LB_CACHE_MAX_RECORDS = 20;
+
+interface LeaderboardCacheRecord {
+  version: 2;
+  storedAt: number;
+  entries: LeaderboardEntry[];
+}
+
+function isLeaderboardEntry(value: unknown): value is LeaderboardEntry {
+  if (!value || typeof value !== 'object') return false;
+  const entry = value as Partial<LeaderboardEntry>;
+  return (
+    Number.isFinite(entry.rank) &&
+    typeof entry.userId === 'string' &&
+    typeof entry.username === 'string' &&
+    Number.isFinite(entry.value)
+  );
+}
+
+function getCachedEntries(key: string): LeaderboardCacheRecord | null {
+  const storageKey = LB_CACHE_KEY + key;
   try {
-    const raw = sessionStorage.getItem(LB_CACHE_KEY + key);
-    return raw ? JSON.parse(raw) : null;
+    const raw = sessionStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<LeaderboardCacheRecord>;
+    if (
+      parsed.version !== 2 ||
+      !Number.isFinite(parsed.storedAt) ||
+      Date.now() - (parsed.storedAt as number) > LB_CACHE_TTL_MS ||
+      !Array.isArray(parsed.entries) ||
+      !parsed.entries.every(isLeaderboardEntry)
+    ) {
+      sessionStorage.removeItem(storageKey);
+      return null;
+    }
+    return parsed as LeaderboardCacheRecord;
   } catch {
+    sessionStorage.removeItem(storageKey);
     return null;
   }
 }
-function setCachedEntries(key: string, data: LeaderboardEntry[]) {
+function setCachedEntries(key: string, entries: LeaderboardEntry[]) {
   try {
-    sessionStorage.setItem(LB_CACHE_KEY + key, JSON.stringify(data));
+    const record: LeaderboardCacheRecord = { version: 2, storedAt: Date.now(), entries };
+    sessionStorage.setItem(LB_CACHE_KEY + key, JSON.stringify(record));
+
+    const records: { key: string; storedAt: number }[] = [];
+    for (let index = 0; index < sessionStorage.length; index += 1) {
+      const storageKey = sessionStorage.key(index);
+      if (!storageKey?.startsWith(LB_CACHE_KEY)) continue;
+      try {
+        const cached = JSON.parse(sessionStorage.getItem(storageKey) || '{}');
+        records.push({ key: storageKey, storedAt: Number(cached.storedAt) || 0 });
+      } catch {
+        sessionStorage.removeItem(storageKey);
+      }
+    }
+    records
+      .sort((a, b) => b.storedAt - a.storedAt)
+      .slice(LB_CACHE_MAX_RECORDS)
+      .forEach((recordToRemove) => sessionStorage.removeItem(recordToRemove.key));
   } catch {
     /* quota */
   }
@@ -145,13 +197,19 @@ const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
   { value: 'all_time', label: 'All Time' },
 ];
 
+const createDefaultSettings = (clubId: string): LeaderboardSettings => ({
+  club_id: clubId,
+  payout_currency: 'diamonds',
+  weekly_prizes: [],
+  monthly_prizes: [],
+});
+
 export default function LeaderboardPage() {
   useEffect(() => {
     document.title = 'Leaderboard | Smarter Poker';
   }, []);
 
   const navigate = useNavigate();
-  useVisibilityRefresh(() => loadLeaderboard());
   const { user } = useAuthUser();
   const toast = useToast();
   const [scope, setScope] = useState<LeaderboardScope>('my-clubs');
@@ -166,6 +224,7 @@ export default function LeaderboardPage() {
   const [baselineDate, setBaselineDate] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [userRank, setUserRank] = useState<{ rank: number; total: number; value: number } | null>(
     null
   );
@@ -177,16 +236,20 @@ export default function LeaderboardPage() {
 
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState<LeaderboardSettings | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
   const [payouts, setPayouts] = useState<LeaderboardPayout[]>([]);
+  const settingsModalRef = useFocusTrap(showSettings);
+  const settingsRequestRef = useRef(0);
 
   useEffect(() => {
     if (!showSettings) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setShowSettings(false);
+      if (event.key === 'Escape' && !settingsSaving) setShowSettings(false);
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [showSettings]);
+  }, [showSettings, settingsSaving]);
 
   const [userClubs, setUserClubs] = useState<UserClub[]>([]);
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
@@ -197,10 +260,22 @@ export default function LeaderboardPage() {
   const activeTabRef = useRef<LeaderboardTab>('rankings');
   const [tournamentStats, setTournamentStats] = useState<TournamentStats[]>([]);
   const [tournamentsLoading, setTournamentsLoading] = useState(false);
+  const [tournamentError, setTournamentError] = useState<string | null>(null);
 
   // Refs for realtime callbacks to avoid stale closures
   const loadLeaderboardRef = useRef(async (_silent?: boolean, _getIsMounted?: () => boolean) => {});
-  const loadTournamentStatsRef = useRef(async (_getIsMounted?: () => boolean) => {});
+  const loadTournamentStatsRef = useRef(
+    async (_getIsMounted?: () => boolean, _silent?: boolean) => {}
+  );
+  const refreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { isRefreshing } = useVisibilityRefresh(async () => {
+    if (activeTabRef.current === 'rankings') {
+      await loadLeaderboardRef.current(true, () => isMountedRef.current);
+    } else {
+      await loadTournamentStatsRef.current(() => isMountedRef.current, true);
+    }
+  });
 
   // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
   useEffect(() => {
@@ -219,6 +294,12 @@ export default function LeaderboardPage() {
   // Load user's clubs on mount or when user auth changes
   useEffect(() => {
     let isMounted = true;
+    setUserClubs([]);
+    setSelectedClubId(null);
+    setUserRank(null);
+    setPayouts([]);
+    setSettings(null);
+    setShowSettings(false);
     if (user?.id) {
       loadUserClubs(() => isMounted);
     } else if (user === null) {
@@ -255,39 +336,40 @@ export default function LeaderboardPage() {
 
   // ── Bus Listener: instant leaderboard refresh when engine completes a hand ──
   useEffect(() => {
+    const scheduleRefresh = (view: LeaderboardTab) => {
+      if (document.visibilityState !== 'visible' || activeTabRef.current !== view) return;
+      if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current);
+      refreshDebounceRef.current = setTimeout(() => {
+        if (view === 'rankings') {
+          loadLeaderboardRef.current(true, () => isMountedRef.current);
+        } else {
+          loadTournamentStatsRef.current(() => isMountedRef.current, true);
+        }
+      }, 600);
+    };
     const unsub = masterBus.subscribeDebounced(
       'HAND_COMPLETED',
-      () => {
-        if (activeTabRef.current === 'rankings') {
-          loadLeaderboardRef.current(true);
-        } else {
-          loadTournamentStatsRef.current();
-        }
-      },
+      () => scheduleRefresh(activeTabRef.current),
       500
     );
     const unsub2 = masterBus.subscribeDebounced(
       'CHIPS_DISTRIBUTED',
-      () => loadLeaderboardRef.current(true),
+      () => scheduleRefresh('rankings'),
       500
     );
     const unsub3 = masterBus.subscribeDebounced(
       'CASHOUT_APPROVED',
-      () => loadLeaderboardRef.current(true),
+      () => scheduleRefresh('rankings'),
       500
     );
     const unsub4 = masterBus.subscribeDebounced(
       'BALANCE_UPDATED',
-      () => loadLeaderboardRef.current(true),
+      () => scheduleRefresh('rankings'),
       500
     );
     const unsub5 = masterBus.subscribeDebounced(
       'TOURNAMENT_UPDATED',
-      () => {
-        if (activeTabRef.current === 'tournaments') {
-          loadTournamentStatsRef.current();
-        }
-      },
+      () => scheduleRefresh('tournaments'),
       2000
     );
     return () => {
@@ -296,6 +378,7 @@ export default function LeaderboardPage() {
       unsub3();
       unsub4();
       unsub5();
+      if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current);
     };
   }, []);
 
@@ -307,17 +390,27 @@ export default function LeaderboardPage() {
   // every seat of every hand (~1.1M writes/day) and would flood the client.
 
   useEffect(() => {
-    let isMounted = true;
-    if (selectedClubId && userClubs.find((c) => c.id === selectedClubId)?.role === 'owner') {
-      LeaderboardService.getLeaderboardSettings(selectedClubId).then((data) => {
-        if (isMounted && data) {
-          setSettings(data);
-        }
-      });
+    const requestId = ++settingsRequestRef.current;
+    const isOwnerForClub =
+      !!selectedClubId && userClubs.find((club) => club.id === selectedClubId)?.role === 'owner';
+
+    setShowSettings(false);
+    setSettings(null);
+    setSettingsSaving(false);
+    if (!selectedClubId || !isOwnerForClub) {
+      setSettingsLoading(false);
+      return;
     }
-    return () => {
-      isMounted = false;
-    };
+
+    setSettingsLoading(true);
+    LeaderboardService.getLeaderboardSettings(selectedClubId)
+      .then((data) => {
+        if (requestId !== settingsRequestRef.current) return;
+        setSettings(data || createDefaultSettings(selectedClubId));
+      })
+      .finally(() => {
+        if (requestId === settingsRequestRef.current) setSettingsLoading(false);
+      });
   }, [selectedClubId, userClubs]);
 
   // 2026-08-24: a useMasterBusChannel({ table: 'tournament_players',
@@ -337,10 +430,11 @@ export default function LeaderboardPage() {
   // Auto-refresh every 30 seconds
   useEffect(() => {
     refreshTimerRef.current = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       if (activeTabRef.current === 'rankings') {
         loadLeaderboardRef.current(true, () => isMountedRef.current);
       } else {
-        loadTournamentStatsRef.current(() => isMountedRef.current);
+        loadTournamentStatsRef.current(() => isMountedRef.current, true);
       }
     }, 30000);
 
@@ -360,13 +454,14 @@ export default function LeaderboardPage() {
       loadLeaderboard(false, () => isMounted);
     } else if (scope === 'my-clubs' && !selectedClubId) {
       setEntries([]);
+      setLoadError(null);
       setLoading(false);
     }
     return () => {
       isMounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, period, periodOffset, metric, selectedClubId, activeTab]);
+  }, [scope, period, periodOffset, metric, selectedClubId, activeTab, user?.id]);
 
   // Fetch Tournament Stats Data (club-scoped only)
   useEffect(() => {
@@ -376,6 +471,7 @@ export default function LeaderboardPage() {
       loadTournamentStats(() => isMounted);
     } else if (!selectedClubId) {
       setTournamentStats([]);
+      setTournamentError(null);
       setTournamentsLoading(false);
     }
     return () => {
@@ -398,11 +494,15 @@ export default function LeaderboardPage() {
 
       if (getIsMounted && !getIsMounted()) return;
       setUserClubs(clubs as UserClub[]);
-      if (clubs.length > 0 && !selectedClubId) {
-        setSelectedClubId(clubs[0].id as string);
-      }
+      setSelectedClubId((currentClubId) =>
+        clubs.some((club) => club.id === currentClubId) ? currentClubId : clubs[0]?.id || null
+      );
     } catch (error) {
       reportError(error, 'LeaderboardPage.Failed_to_load_clubs');
+      if (!getIsMounted || getIsMounted()) {
+        setUserClubs([]);
+        setSelectedClubId(null);
+      }
       toast.error('Failed to load clubs');
     }
     if (getIsMounted && !getIsMounted()) return;
@@ -410,6 +510,7 @@ export default function LeaderboardPage() {
   };
 
   const reqSeqRef = useRef(0);
+  const activeRankingRequestRef = useRef(0);
 
   const loadLeaderboard = async (silent = false, getIsMounted?: () => boolean) => {
     const isGlobal = scope === 'global';
@@ -417,20 +518,26 @@ export default function LeaderboardPage() {
       setLoading(false);
       return;
     }
+    if (silent && activeRankingRequestRef.current !== 0) return;
     // Monotonic request token: a newer request always wins, and an in-flight
     // response that is no longer current is discarded rather than rendered.
     const myReq = ++reqSeqRef.current; // also invalidates any in-flight loadMore
+    activeRankingRequestRef.current = myReq;
 
     // SWR: show cached data instantly
     const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}_${periodOffset}`;
     if (isGlobal) setPayouts([]);
     if (!user?.id) setUserRank(null);
     if (!silent) {
+      setLoadError(null);
+      setPayouts([]);
+      setUserRank(null);
       const cached = getCachedEntries(cacheKey);
-      if (cached && cached.length > 0) {
-        setEntries(cached);
-        setTotalRanked(cached[0]?.totalRanked ?? null);
-        setBaselineDate(cached[0]?.baselineDate ?? null);
+      if (cached && cached.entries.length > 0) {
+        setEntries(cached.entries);
+        setTotalRanked(cached.entries[0]?.totalRanked ?? null);
+        setBaselineDate(cached.entries[0]?.baselineDate ?? null);
+        setLastUpdated(new Date(cached.storedAt));
         setLoading(false);
       } else {
         setEntries([]);
@@ -444,14 +551,22 @@ export default function LeaderboardPage() {
       const data = await retryFetch(
         () =>
           isGlobal
-            ? LeaderboardService.getGlobalLeaderboard(metric, period, PAGE_SIZE, 0, periodOffset)
+            ? LeaderboardService.getGlobalLeaderboard(
+                metric,
+                period,
+                PAGE_SIZE,
+                0,
+                periodOffset,
+                true
+              )
             : LeaderboardService.getClubLeaderboard(
                 selectedClubId as string,
                 metric,
                 period,
                 PAGE_SIZE,
                 0,
-                periodOffset
+                periodOffset,
+                true
               ),
         { maxRetries: 2 }
       );
@@ -462,6 +577,7 @@ export default function LeaderboardPage() {
       setBaselineDate(data[0]?.baselineDate ?? null);
       setCachedEntries(cacheKey, data);
       setLastUpdated(new Date());
+      setLoadError(null);
 
       // The ranked rows are the primary content. Render them as soon as the
       // ranking + profile queries complete instead of holding the skeleton on
@@ -507,9 +623,15 @@ export default function LeaderboardPage() {
       await Promise.allSettled([payoutPromise, rankPromise]);
     } catch (error) {
       reportError(error, 'LeaderboardPage.Failed_to_load_leaderboard');
-      if (!silent) toast.error('Failed to load leaderboard');
+      if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
+        setLoadError('Rankings Could Not Be Refreshed.');
+        if (!silent) toast.error('Failed to load leaderboard');
+      }
     } finally {
-      if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) setLoading(false);
+      if (myReq === reqSeqRef.current) {
+        activeRankingRequestRef.current = 0;
+        if (!getIsMounted || getIsMounted()) setLoading(false);
+      }
     }
   };
 
@@ -536,7 +658,8 @@ export default function LeaderboardPage() {
             period,
             PAGE_SIZE,
             offset,
-            periodOffset
+            periodOffset,
+            true
           )
         : await LeaderboardService.getClubLeaderboard(
             selectedClubId as string,
@@ -544,7 +667,8 @@ export default function LeaderboardPage() {
             period,
             PAGE_SIZE,
             offset,
-            periodOffset
+            periodOffset,
+            true
           );
       if (myReq !== reqSeqRef.current) return; // filters moved on; drop this page
       if (more.length > 0) {
@@ -568,25 +692,30 @@ export default function LeaderboardPage() {
 
   const tournReqSeqRef = useRef(0);
 
-  const loadTournamentStats = async (getIsMounted?: () => boolean) => {
+  const loadTournamentStats = async (getIsMounted?: () => boolean, silent = false) => {
     if (!selectedClubId) {
       setTournamentsLoading(false);
       return;
     }
     const myReq = ++tournReqSeqRef.current;
-    setTournamentsLoading(true);
+    if (!silent) setTournamentsLoading(true);
+    setTournamentError(null);
     try {
       const data = await retryFetch(
-        () => LeaderboardService.getClubTournamentStats(selectedClubId, 50),
+        () => LeaderboardService.getClubTournamentStats(selectedClubId, 50, 0, true),
         { maxRetries: 2 }
       );
       if (myReq !== tournReqSeqRef.current) return;
       if (getIsMounted && !getIsMounted()) return;
       setTournamentStats(data);
       setLastUpdated(new Date());
+      setTournamentError(null);
     } catch (error) {
       reportError(error, 'LeaderboardPage.Failed_to_load_tournament_stats');
-      if (myReq === tournReqSeqRef.current) toast.error('Failed to load tournament stats');
+      if (myReq === tournReqSeqRef.current) {
+        setTournamentError('Tournament Stats Could Not Be Refreshed.');
+        if (!silent) toast.error('Failed to load tournament stats');
+      }
     } finally {
       if (myReq === tournReqSeqRef.current && (!getIsMounted || getIsMounted()))
         setTournamentsLoading(false);
@@ -616,6 +745,10 @@ export default function LeaderboardPage() {
 
   const visibleMetricOptions = METRIC_OPTIONS.filter(
     (m) => scope === 'my-clubs' || m.globalSupported
+  );
+  const payoutsByUser = useMemo(
+    () => new Map(payouts.map((payout) => [payout.user_id, payout])),
+    [payouts]
   );
 
   const top3 = entries.slice(0, 3);
@@ -691,7 +824,7 @@ export default function LeaderboardPage() {
         <span className="podium-name">{entry.username}</span>
         <span className={`podium-value ${textCls}`}>{formatValue(entry.value, metric)}</span>
         {(() => {
-          const payout = payouts.find((p) => p.user_id === entry.userId);
+          const payout = payoutsByUser.get(entry.userId);
           if (payout) {
             return (
               <span className="payout-badge">
@@ -723,9 +856,56 @@ export default function LeaderboardPage() {
 
   const activeMetric = METRIC_OPTIONS.find((option) => option.value === metric);
   const selectedClubName = userClubs.find((club) => club.id === selectedClubId)?.name;
+  const activePeriod = PERIOD_OPTIONS.find((option) => option.value === period);
+  const currentError = activeTab === 'rankings' ? loadError : tournamentError;
+  const canPayout = period === 'weekly' || period === 'monthly';
   const canExport =
     (entries.length > 0 && activeTab === 'rankings') ||
     (tournamentStats.length > 0 && activeTab === 'tournaments');
+
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (scope !== 'my-clubs') return;
+    let nextTab: LeaderboardTab | null = null;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+      nextTab = activeTab === 'rankings' ? 'tournaments' : 'rankings';
+    } else if (event.key === 'Home') {
+      nextTab = 'rankings';
+    } else if (event.key === 'End') {
+      nextTab = 'tournaments';
+    }
+    if (!nextTab) return;
+    event.preventDefault();
+    setActiveTab(nextTab);
+    requestAnimationFrame(() => document.getElementById(`leaderboard-${nextTab}-tab`)?.focus());
+  };
+
+  const retryCurrentView = () => {
+    if (activeTab === 'rankings') {
+      loadLeaderboardRef.current(false, () => isMountedRef.current);
+    } else {
+      loadTournamentStatsRef.current(() => isMountedRef.current, false);
+    }
+  };
+
+  const saveSettings = async () => {
+    if (!selectedClubId || !settings || settingsSaving) return;
+    setSettingsSaving(true);
+    try {
+      const saved = await LeaderboardService.updateLeaderboardSettings(selectedClubId, {
+        payout_currency: settings.payout_currency,
+        weekly_prizes: settings.weekly_prizes,
+        monthly_prizes: settings.monthly_prizes,
+      });
+      if (saved) {
+        toast.success('Prize Settings Saved');
+        setShowSettings(false);
+      } else {
+        toast.error('Prize Settings Could Not Be Saved');
+      }
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
 
   const exportLeaderboard = () => {
     try {
@@ -774,7 +954,11 @@ export default function LeaderboardPage() {
             <span>Live</span>
             <span className="lb-rail-divider" />
             <span>
-              Updated {lastUpdated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+              {isRefreshing
+                ? 'Refreshing Board'
+                : currentError
+                  ? 'Update Delayed'
+                  : `Updated ${lastUpdated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}
             </span>
             {activeTab === 'rankings' && windowLabel && (
               <span className="lb-window-label" title="The snapshot this period is measured from">
@@ -808,19 +992,27 @@ export default function LeaderboardPage() {
         <div className="lb-control-header">
           <div className="leaderboard-tabs" role="tablist" aria-label="Leaderboard views">
             <button
+              id="leaderboard-rankings-tab"
               className={`tab-btn ${activeTab === 'rankings' ? 'active' : ''}`}
               onClick={() => setActiveTab('rankings')}
+              onKeyDown={handleTabKeyDown}
               role="tab"
               aria-selected={activeTab === 'rankings'}
+              aria-controls="leaderboard-content-panel"
+              tabIndex={activeTab === 'rankings' ? 0 : -1}
             >
               Rankings
             </button>
             {scope === 'my-clubs' && (
               <button
+                id="leaderboard-tournaments-tab"
                 className={`tab-btn ${activeTab === 'tournaments' ? 'active' : ''}`}
                 onClick={() => setActiveTab('tournaments')}
+                onKeyDown={handleTabKeyDown}
                 role="tab"
                 aria-selected={activeTab === 'tournaments'}
+                aria-controls="leaderboard-content-panel"
+                tabIndex={activeTab === 'tournaments' ? 0 : -1}
               >
                 Tournament Stats
               </button>
@@ -829,19 +1021,22 @@ export default function LeaderboardPage() {
           <div className="lb-control-actions">
             {isOwner && scope !== 'global' && activeTab === 'rankings' && (
               <>
-                <button
-                  className="lb-action-btn lb-action-prize"
-                  onClick={() => setConfirmPayout(true)}
-                  title="Pay Out Current Leaderboard"
-                >
-                  Pay Out
-                </button>
+                {canPayout && (
+                  <button
+                    className="lb-action-btn lb-action-prize"
+                    onClick={() => setConfirmPayout(true)}
+                    title="Pay Out Current Leaderboard"
+                  >
+                    Pay Out
+                  </button>
+                )}
                 <button
                   className="lb-action-btn"
                   onClick={() => setShowSettings(true)}
                   title="Leaderboard Settings"
+                  disabled={settingsLoading || !settings}
                 >
-                  Prize Settings
+                  {settingsLoading ? 'Loading Settings' : 'Prize Settings'}
                 </button>
               </>
             )}
@@ -861,6 +1056,7 @@ export default function LeaderboardPage() {
               {scope === 'my-clubs' && userClubs.length > 1 && (
                 <div className="filter-group">
                   <select
+                    aria-label="Club"
                     value={selectedClubId || ''}
                     onChange={(e) => setSelectedClubId(e.target.value)}
                   >
@@ -882,12 +1078,14 @@ export default function LeaderboardPage() {
                 <button
                   className={scope === 'my-clubs' ? 'active' : ''}
                   onClick={() => setScope('my-clubs')}
+                  aria-pressed={scope === 'my-clubs'}
                 >
                   My Clubs
                 </button>
                 <button
                   className={scope === 'global' ? 'active' : ''}
                   onClick={() => setScope('global')}
+                  aria-pressed={scope === 'global'}
                 >
                   Global
                 </button>
@@ -927,7 +1125,7 @@ export default function LeaderboardPage() {
                       ? 'Current'
                       : periodOffset === -1
                         ? 'Last'
-                        : `${periodOffset}`}
+                        : `${Math.abs(periodOffset)} Periods Ago`}
                   </span>
                   <button
                     className="lb-step-btn"
@@ -966,8 +1164,29 @@ export default function LeaderboardPage() {
         </div>
       </section>
 
+      {currentError &&
+        ((activeTab === 'rankings' && entries.length > 0) ||
+          (activeTab === 'tournaments' && tournamentStats.length > 0)) && (
+          <div className="lb-refresh-warning" role="status">
+            <div>
+              <strong>Live Update Delayed</strong>
+              <span>Showing The Last Verified Board.</span>
+            </div>
+            <button onClick={retryCurrentView}>Retry Now</button>
+          </div>
+        )}
+
       {/* Leaderboard Content */}
-      <div className="leaderboard-list">
+      <div
+        id="leaderboard-content-panel"
+        className="leaderboard-list"
+        role="tabpanel"
+        aria-labelledby={`leaderboard-${activeTab}-tab`}
+        aria-busy={
+          clubsLoading ||
+          (activeTab === 'rankings' ? loading || isRefreshing : tournamentsLoading || isRefreshing)
+        }
+      >
         {clubsLoading && scope === 'my-clubs' ? (
           <div className="lb-skeleton-wrapper">
             <div className="lb-skeleton-podium">
@@ -997,6 +1216,15 @@ export default function LeaderboardPage() {
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="lb-skeleton-row" />
             ))}
+          </div>
+        ) : activeTab === 'rankings' && loadError && entries.length === 0 ? (
+          <div className="empty-state lb-error-state" role="alert">
+            <span className="empty-icon">{'!'}</span>
+            <p>Rankings Could Not Be Loaded.</p>
+            <p className="empty-sub">Check Your Connection And Try Again.</p>
+            <button className="join-club-btn" onClick={retryCurrentView}>
+              Retry Rankings
+            </button>
           </div>
         ) : activeTab === 'rankings' && entries.length === 0 ? (
           <div className="empty-state" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
@@ -1028,6 +1256,15 @@ export default function LeaderboardPage() {
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="lb-skeleton-row" />
             ))}
+          </div>
+        ) : activeTab === 'tournaments' && tournamentError && tournamentStats.length === 0 ? (
+          <div className="empty-state lb-error-state" role="alert">
+            <span className="empty-icon">{'!'}</span>
+            <p>Tournament Stats Could Not Be Loaded.</p>
+            <p className="empty-sub">Check Your Connection And Try Again.</p>
+            <button className="join-club-btn" onClick={retryCurrentView}>
+              Retry Tournament Stats
+            </button>
           </div>
         ) : activeTab === 'tournaments' && tournamentStats.length === 0 ? (
           <div className="empty-state">
@@ -1075,7 +1312,7 @@ export default function LeaderboardPage() {
                   </div>
                   <div className={`entry-value ${entry.value >= 0 ? 'positive' : 'negative'}`}>
                     {(() => {
-                      const payout = payouts.find((p) => p.user_id === entry.userId);
+                      const payout = payoutsByUser.get(entry.userId);
                       if (payout) {
                         return (
                           <div className="payout-badge">
@@ -1134,7 +1371,7 @@ export default function LeaderboardPage() {
                   </div>
                   <div className={`entry-value ${entry.value >= 0 ? 'positive' : 'negative'}`}>
                     {(() => {
-                      const payout = payouts.find((p) => p.user_id === entry.userId);
+                      const payout = payoutsByUser.get(entry.userId);
                       if (payout) {
                         return (
                           <div className="payout-badge">
@@ -1263,7 +1500,7 @@ export default function LeaderboardPage() {
         <div
           className="modal-overlay"
           onClick={(event) => {
-            if (event.target === event.currentTarget) setShowSettings(false);
+            if (event.target === event.currentTarget && !settingsSaving) setShowSettings(false);
           }}
           style={{
             zIndex: 50,
@@ -1279,6 +1516,7 @@ export default function LeaderboardPage() {
           }}
         >
           <div
+            ref={settingsModalRef}
             className="modal-content glass-panel p-6 max-w-md w-full"
             role="dialog"
             aria-modal="true"
@@ -1304,6 +1542,7 @@ export default function LeaderboardPage() {
               <button
                 onClick={() => setShowSettings(false)}
                 aria-label="Close Prize Settings"
+                disabled={settingsSaving}
                 className="text-white/60 hover:text-white"
                 style={{
                   background: 'none',
@@ -1330,12 +1569,14 @@ export default function LeaderboardPage() {
             >
               <div className="form-group">
                 <label
+                  htmlFor="leaderboard-payout-currency"
                   className="text-sm font-semibold mb-2 block"
                   style={{ display: 'block', marginBottom: '8px', color: '#fff' }}
                 >
                   Payout Currency
                 </label>
                 <select
+                  id="leaderboard-payout-currency"
                   className="w-full bg-black/40 border border-white/10 rounded px-3 py-2 text-white"
                   style={{
                     width: '100%',
@@ -1391,6 +1632,10 @@ export default function LeaderboardPage() {
                       <span style={{ width: '60px', color: '#aaa' }}>Rank {rank}</span>
                       <input
                         type="number"
+                        min="0"
+                        step="1"
+                        inputMode="numeric"
+                        aria-label={`Weekly Prize For Rank ${rank}`}
                         style={{
                           flex: 1,
                           background: 'rgba(0,0,0,0.4)',
@@ -1442,6 +1687,10 @@ export default function LeaderboardPage() {
                       <span style={{ width: '60px', color: '#aaa' }}>Rank {rank}</span>
                       <input
                         type="number"
+                        min="0"
+                        step="1"
+                        inputMode="numeric"
+                        aria-label={`Monthly Prize For Rank ${rank}`}
                         style={{
                           flex: 1,
                           background: 'rgba(0,0,0,0.4)',
@@ -1468,6 +1717,7 @@ export default function LeaderboardPage() {
 
               <button
                 className="btn-primary w-full mt-4"
+                disabled={settingsSaving}
                 style={{
                   width: '100%',
                   background: '#4169E1',
@@ -1479,26 +1729,9 @@ export default function LeaderboardPage() {
                   marginTop: '16px',
                   cursor: 'pointer',
                 }}
-                onClick={async () => {
-                  if (selectedClubId) {
-                    const saved = await LeaderboardService.updateLeaderboardSettings(
-                      selectedClubId,
-                      {
-                        payout_currency: settings?.payout_currency || 'diamonds',
-                        weekly_prizes: settings?.weekly_prizes || [],
-                        monthly_prizes: settings?.monthly_prizes || [],
-                      }
-                    );
-                    if (saved) {
-                      toast.success('Prize Settings Saved');
-                      setShowSettings(false);
-                    } else {
-                      toast.error('Prize Settings Could Not Be Saved');
-                    }
-                  }
-                }}
+                onClick={saveSettings}
               >
-                Save Settings
+                {settingsSaving ? 'Saving Settings' : 'Save Settings'}
               </button>
             </div>
           </div>
@@ -1511,7 +1744,7 @@ export default function LeaderboardPage() {
       <ConfirmModal
         isOpen={confirmPayout}
         title="Pay Out Leaderboard"
-        message={`Pay Out The ${period} ${metric} Leaderboard Now? This Issues Prizes To The Ranked Players And Cannot Be Undone.`}
+        message={`Pay Out The ${activePeriod?.label || period} ${activeMetric?.label || metric} Leaderboard Now? This Issues Prizes To The Ranked Players And Cannot Be Undone.`}
         confirmText="Pay Out"
         cancelText="Cancel"
         variant="danger"
@@ -1521,16 +1754,29 @@ export default function LeaderboardPage() {
         }}
         onConfirm={async () => {
           if (payingOut) return;
+          if (!canPayout || !selectedClubId) {
+            setConfirmPayout(false);
+            return;
+          }
           setPayingOut(true);
           try {
             const { start, end } = LeaderboardService.getPeriodBoundaries(period, periodOffset);
-            await LeaderboardService.payoutLeaderboardPeriod(
-              selectedClubId as string,
+            const payoutSucceeded = await LeaderboardService.payoutLeaderboardPeriod(
+              selectedClubId,
               period,
               metric,
               start.toISOString().split('T')[0],
               end.toISOString().split('T')[0]
             );
+            if (!payoutSucceeded) throw new Error('Payout Could Not Be Completed.');
+            const refreshedPayouts = await LeaderboardService.getPayoutsForPeriod(
+              selectedClubId,
+              period,
+              metric,
+              start.toISOString().split('T')[0]
+            );
+            setPayouts(refreshedPayouts);
+            await loadLeaderboardRef.current(true, () => isMountedRef.current);
             toast.success('Payouts Issued.');
             setConfirmPayout(false);
           } catch (err: any) {

@@ -6,16 +6,30 @@ import { ensurePlayableProfile } from '../e2e/support/ensurePlayableProfile';
 
 const source = (path: string) => readFileSync(resolve(__dirname, '../..', path), 'utf8');
 
-function playablePage(options: { gateOpen?: boolean; gateReturnsAfterReload?: boolean } = {}) {
+function playablePage(
+  options: {
+    gateOpen?: boolean;
+    gateReturnsAfterReload?: boolean;
+    decisionUnavailable?: boolean;
+  } = {}
+) {
   const gateOpen = options.gateOpen ?? true;
   const gate = {
     waitFor: vi.fn().mockResolvedValue(undefined),
-    isVisible: vi
-      .fn()
-      .mockResolvedValueOnce(gateOpen)
-      .mockResolvedValueOnce(options.gateReturnsAfterReload ?? false),
   };
-  const decision = { waitFor: vi.fn().mockResolvedValue(undefined) };
+  const initialStatus = options.decisionUnavailable
+    ? 'unavailable'
+    : gateOpen
+      ? 'incomplete'
+      : 'complete';
+  const persistedStatus = options.gateReturnsAfterReload ? 'incomplete' : 'complete';
+  const decision = {
+    waitFor: vi.fn().mockResolvedValue(undefined),
+    getAttribute: vi
+      .fn()
+      .mockResolvedValueOnce(initialStatus)
+      .mockResolvedValueOnce(persistedStatus),
+  };
   const selectAvatar = { click: vi.fn().mockResolvedValue(undefined) };
   const freeAvatar = {
     waitFor: vi.fn().mockResolvedValue(undefined),
@@ -74,7 +88,7 @@ describe('authenticated production account preflight', () => {
     expect(fixture.enterArena.click).toHaveBeenCalledOnce();
     expect(fixture.page.reload).toHaveBeenCalledOnce();
     expect(fixture.decision.waitFor).toHaveBeenCalledTimes(2);
-    expect(fixture.gate.isVisible).toHaveBeenCalledTimes(2);
+    expect(fixture.decision.getAttribute).toHaveBeenCalledTimes(2);
   });
 
   it('fails loudly when successful-looking onboarding did not persist', async () => {
@@ -85,13 +99,22 @@ describe('authenticated production account preflight', () => {
     );
   });
 
+  it('fails once with the real cause when the profile query did not answer', async () => {
+    const fixture = playablePage({ gateOpen: false, decisionUnavailable: true });
+
+    await expect(ensurePlayableProfile(fixture.page as unknown as Page)).rejects.toThrow(
+      'The production profile query did not answer; onboarding state is unknown.'
+    );
+    expect(fixture.selectAvatar.click).not.toHaveBeenCalled();
+  });
+
   it('probes a protected layout route and exposes the server-backed decision', () => {
     expect(source('tests/e2e/global-setup.ts')).toContain("new URL('notifications', baseURL)");
     expect(source('tests/e2e/production-customization-realtime.spec.ts')).toContain(
       "new URL('notifications', baseURL)"
     );
     expect(source('src/components/layouts/AppLayout.tsx')).toContain(
-      "data-profile-gate-ready={profileReady ? 'true' : 'false'}"
+      'data-profile-gate-status={profileStatus}'
     );
   });
 });

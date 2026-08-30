@@ -117,6 +117,47 @@ describe('theme first paint comes from the cache', () => {
     expect(second.current.theme.table_id).toBe('carbon_ion');
   });
 
+  it('a confirmed ALL save advances cache precedence over an older game-specific row', async () => {
+    localStorage.setItem(
+      CACHE_KEY,
+      JSON.stringify([
+        { ...cachedRows[0], updated_at: '2026-08-01T00:00:00Z' },
+        {
+          ...cachedRows[0],
+          game_type: 'NLH',
+          table_id: 'ocean_blue',
+          updated_at: '2026-08-20T00:00:00Z',
+        },
+      ])
+    );
+    const { result } = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    expect(result.current.theme.table_id).toBe('ocean_blue');
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'table-appearance',
+        scope: 'user-1:ALL',
+        mutationId: 'confirmed-all',
+        state: 'pending',
+      });
+      masterBus.emit('UI_THEME_CHANGED', {
+        key: 'ALL',
+        value: { table_id: 'carbon_ion' },
+        userId: 'user-1',
+        mutationId: 'confirmed-all',
+      });
+      masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'table-appearance',
+        scope: 'user-1:ALL',
+        mutationId: 'confirmed-all',
+        state: 'confirmed',
+      });
+    });
+
+    expect(resolveCachedTheme('user-1', 'NLH')?.table_id).toBe('carbon_ion');
+  });
+
   it("never paints one account's cache onto another account or a guest", () => {
     localStorage.setItem(CACHE_KEY, JSON.stringify(cachedRows));
     expect(resolveCachedTheme('user-2', 'NLH')).toBeNull();

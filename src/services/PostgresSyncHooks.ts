@@ -256,6 +256,7 @@ class PostgresSyncHooksService {
               key: typeof row.game_type === 'string' ? row.game_type : 'ALL',
               value,
               userId,
+              updatedAt: typeof row.updated_at === 'string' ? row.updated_at : undefined,
             });
             if (value.cards_id) {
               masterBus.emit('SETTINGS_CHANGED', {
@@ -290,6 +291,7 @@ class PostgresSyncHooksService {
               key: typeof row.game_type === 'string' ? row.game_type : 'ALL',
               value,
               userId,
+              updatedAt: typeof row.updated_at === 'string' ? row.updated_at : undefined,
             });
             if (value.cards_id) {
               masterBus.emit('SETTINGS_CHANGED', {

@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   entitlementStatus: null as null | ((status: string) => void),
   removeChannel: vi.fn(),
   loadDiamonds: vi.fn(),
+  themeSelect: '',
   collections: {
     favorites: [] as string[],
     loadouts: [null, null, null] as Array<Record<string, string> | null>,
@@ -127,7 +128,11 @@ vi.mock('../../src/lib/supabase', () => ({
             : mocks.purchaseResult;
       const builder: Record<string, unknown> = {};
       const chain = () => builder;
-      for (const method of ['select', 'eq', 'like']) builder[method] = vi.fn(chain);
+      builder.select = vi.fn((columns: string) => {
+        if (table === 'user_theme_settings') mocks.themeSelect = columns;
+        return builder;
+      });
+      for (const method of ['eq', 'like']) builder[method] = vi.fn(chain);
       builder.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
         result().then(resolve, reject);
       return builder;
@@ -218,6 +223,7 @@ describe('ThemeSettingsModal hardening', () => {
     mocks.removeChannel.mockReset();
     mocks.loadDiamonds.mockReset();
     mocks.loadDiamonds.mockResolvedValue(undefined);
+    mocks.themeSelect = '';
     mocks.collections.favorites = [];
     mocks.collections.loadouts = [null, null, null];
     mocks.collections.recent = [];
@@ -313,11 +319,20 @@ describe('ThemeSettingsModal hardening', () => {
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
 
-    expect(screen.getByText('Saved here · Studio sync needs retry')).toBeVisible();
+    expect(screen.getByText('Review Sync')).toBeVisible();
     const retry = screen.getByRole('button', { name: 'Retry Sync' });
     fireEvent.click(retry);
 
     expect(mocks.collections.retrySync).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads row timestamps so the editor matches last-write-wins gameplay precedence', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+
+    expect(mocks.themeSelect).toContain('updated_at');
   });
 
   it('does not present a purchased card back as VIP-locked while ownership loads', async () => {

@@ -9,10 +9,14 @@ test.describe('Club Management', () => {
   test('should show create club page', async ({ page }) => {
     await page.goto('clubs/create');
     await page.waitForLoadState('domcontentloaded');
+    const createClubDialog = page.getByRole('dialog', { name: 'Create Club' });
+    await expect
+      .poll(async () => page.url().includes('/auth') || (await createClubDialog.isVisible()), {
+        timeout: 15000,
+      })
+      .toBe(true);
     if (page.url().includes('/auth')) test.skip();
-    await expect(page.getByRole('dialog', { name: 'Create Club' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(createClubDialog).toBeVisible({ timeout: 15000 });
   });
 
   test('should show club detail page', async ({ page }) => {

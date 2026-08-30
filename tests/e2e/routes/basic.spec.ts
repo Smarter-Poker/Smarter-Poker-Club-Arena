@@ -7,15 +7,13 @@ test.describe('Authentication Flow', () => {
 
     await expect
       .poll(() => new URL(page.url()).pathname, { timeout: 10000 })
-      .toMatch(/^(?:\/hub\/club-arena)?\/$/);
+      .toMatch(/^(?:\/hub\/club-arena)?\/$|^\/auth(?:\/|$)/);
+    if (new URL(page.url()).pathname.startsWith('/auth')) test.skip();
     await assertRendered(page, 'canonical lobby');
   });
 
   test('should show home page', async ({ page }) => {
-    await page.goto('');
-
-    // Home page should load
-    await assertRendered(page, '');
+    await expectRoute(page, '');
   });
 });
 

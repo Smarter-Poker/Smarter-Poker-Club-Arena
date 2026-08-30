@@ -197,8 +197,16 @@ describe('mobile uses the identical desktop header', () => {
 describe('the profile frame contains the live profile picture', () => {
   it('reads the cached profile URL and overlays it inside the approved frame', () => {
     expect(TSX_CODE).toContain('avatarUrl');
+    expect(TSX).toContain('className={styles.profileAvatarSlot}');
     expect(TSX).toContain('className={styles.profileAvatar}');
+    expect(CSS).toContain('.profileAvatarSlot');
     expect(CSS).toContain('.profileAvatar');
-    expect(ruleBody(CSS, '.profileAvatar')).toContain('border-radius: 50%');
+    expect(ruleBody(CSS, '.profileBtn')).toContain('contain: layout paint');
+    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('width: 58%');
+    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('aspect-ratio: 0.78');
+    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('border-radius: 50%');
+    expect(ruleBody(CSS, '.profileAvatarSlot > .profileAvatar')).toContain(
+      'width: 100% !important'
+    );
   });
 });

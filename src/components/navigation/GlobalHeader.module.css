@@ -116,19 +116,41 @@
 .profileBtn {
   left: 66.5%;
   width: 7.5%;
+  position: absolute !important;
+  overflow: hidden;
+  contain: layout paint;
+  isolation: isolate;
 }
 
-.profileAvatar {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 56%;
+.profileAvatarSlot {
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  z-index: 1;
+  display: block;
+  width: 58%;
   height: auto;
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
+  aspect-ratio: 0.78;
+  transform: translate(-50%, -50%) !important;
+  overflow: hidden;
   border-radius: 50%;
-  background: #05070a;
-  object-fit: cover;
+  background: #020305;
+  pointer-events: none;
+}
+
+.profileAvatarSlot > .profileAvatar {
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  aspect-ratio: auto !important;
+  transform: none !important;
+  border-radius: inherit !important;
+  background: #020305;
+  object-fit: cover !important;
+  object-position: center !important;
   opacity: 1 !important;
   pointer-events: none;
 }

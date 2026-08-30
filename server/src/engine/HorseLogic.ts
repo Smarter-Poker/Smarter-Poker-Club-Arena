@@ -97,6 +97,7 @@ import {
   holdemPreflopScore,
   omahaPreflopScore,
   omahaPreflopStrength,
+  multiwayValueBar,
   shortDeckPreflopStrength,
   pineapplePreflopStrength,
   pineapplePreflopScore,
@@ -2470,12 +2471,12 @@ export class HorseLogic {
       if (useV11 && useIQ && initiative === 'opp' && !prevChecked && !ip) {
         const donkLead =
           (vulnerable && wetness >= 0.5 && fastRandom() < 0.2) ||
-          (equity >= 0.8 + mw && wetness >= 0.55 && fastRandom() < 0.3);
+          (equity >= multiwayValueBar(0.8, oppCount) + mw && wetness >= 0.55 && fastRandom() < 0.3);
         if (!donkLead) return { action: 'check', thinkTime: 0 };
       }
       // Monster: usually bet big, sometimes trap (never trap on wet or
       // freshly-dangered boards). V4: size to get stacks in by the river.
-      if (equity >= 0.8 + mw) {
+      if (equity >= multiwayValueBar(0.8, oppCount) + mw) {
         if (
           !isRiver &&
           wetness < 0.5 &&
@@ -2522,7 +2523,7 @@ export class HorseLogic {
       }
       // Strong value. V4: a vulnerable made hand sizes UP and never checks
       // back; a dangered hand slows down instead of firing into the new nuts.
-      if (equity >= 0.62 + mw) {
+      if (equity >= multiwayValueBar(0.62, oppCount) + mw) {
         if (dangered && fastRandom() < 0.55) {
           return { action: 'check', thinkTime: 0 };
         }
@@ -2574,7 +2575,10 @@ export class HorseLogic {
       // V5 river polarization: medium made hands stop thin-betting into
       // non-stations on the river — they get called by better and fold out
       // worse. Check back and win at showdown instead.
-      if (equity >= 0.52 + mw + thinAdj23 - (exploit.valueThinMod - 1) * 0.08) {
+      if (
+        equity >=
+        multiwayValueBar(0.52, oppCount) + mw + thinAdj23 - (exploit.valueThinMod - 1) * 0.08
+      ) {
         if (dangered) return { action: 'check', thinkTime: 0 };
         // V10: when hero HELD THE INITIATIVE and the river checks to us, the
         // opponent's range is capped (they would have raised their value along

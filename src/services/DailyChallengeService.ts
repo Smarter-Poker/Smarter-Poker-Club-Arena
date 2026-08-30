@@ -12,6 +12,7 @@ import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
+import { uuid } from '../utils/uuid';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -159,6 +160,15 @@ export interface RerollResult {
   success: boolean;
   alreadyRerolled: boolean;
   challengeId?: string;
+  diamondBalance?: number;
+  error?: string;
+}
+
+/** Authoritative receipt returned by a streak-freeze purchase. */
+export interface FreezePurchaseResult {
+  success: boolean;
+  alreadyPurchased: boolean;
+  freezesAvailable?: number;
   diamondBalance?: number;
   error?: string;
 }
@@ -976,23 +986,59 @@ class DailyChallengeServiceClass {
    * The RPC now exists (migration 20260823_buy_streak_freeze) and every failure
    * is reported as one.
    */
-  async buyStreakFreeze(userId: string): Promise<{ success: boolean; error?: string }> {
+  async buyStreakFreeze(userId: string): Promise<FreezePurchaseResult> {
+    // One request id survives every network retry. The database binds it to the
+    // diamond ledger entry, so a committed response that was lost cannot buy a
+    // second freeze when the client retries.
+    const requestId = uuid();
     try {
-      const { data, error } = await supabase.rpc('buy_streak_freeze', {
-        p_user_id: userId,
-        p_cost: 5000,
-      });
-      if (error) throw error;
+      const { data } = await retryAsync(async () => {
+        const result = await supabase.rpc('buy_streak_freeze', {
+          p_user_id: userId,
+          p_cost: 5000,
+          p_request_id: requestId,
+        });
+        if (result.error) throw result.error;
+        return result;
+      }, 3);
       // The RPC reports refusals in its payload (at the 3-freeze cap, not
       // enough diamonds) rather than as a Postgres error, so an absent or
       // false `success` is still a failed purchase.
-      const result = data as { success?: boolean; error?: string } | null;
+      const result = data as {
+        success?: boolean;
+        alreadyPurchased?: boolean;
+        freezesAvailable?: number;
+        diamondBalance?: number;
+        error?: string;
+      } | null;
       if (!result?.success) {
-        return { success: false, error: result?.error || 'Purchase failed' };
+        return {
+          success: false,
+          alreadyPurchased: false,
+          diamondBalance:
+            result?.diamondBalance == null ? undefined : Math.max(0, Number(result.diamondBalance)),
+          error: result?.error || 'Purchase failed',
+        };
       }
-      return { success: true };
+      const alreadyPurchased = result.alreadyPurchased === true;
+      const diamondBalance = Math.max(0, Number(result.diamondBalance) || 0);
+      masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+        newBalance: diamondBalance,
+        delta: alreadyPurchased ? 0 : -5000,
+        source: 'streak_freeze_purchase',
+      });
+      return {
+        success: true,
+        alreadyPurchased,
+        freezesAvailable: Math.max(0, Number(result.freezesAvailable) || 0),
+        diamondBalance,
+      };
     } catch (err: any) {
-      return { success: false, error: err?.message || 'Purchase failed' };
+      return {
+        success: false,
+        alreadyPurchased: false,
+        error: err?.message || 'Purchase failed',
+      };
     }
   }
 

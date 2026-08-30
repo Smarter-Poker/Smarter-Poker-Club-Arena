@@ -18262,18 +18262,8 @@ export default function TablePage({
             almost exactly like a table that is merely quiet. Say it on the
             felt. The banner self-delays so a 300ms blip never strobes it, and
             it is pointer-events: none so it cannot eat a tap on an action
-            button mid-hand.
-
-            2026-08-30, second pass. It shipped pinned to the TOP of this
-            container, which is the same 6px strip the Bad Beat Jackpot plate
-            occupies, so the two drew on top of each other and the BBJ, in a
-            later sibling layer, won. Dan, with the screenshot: "ANY
-            'RELOADING' OR 'DISCONNECTED' NOTIFICATIONS SHOULD APPEAR ON THE
-            TABLE ABOVE THE SMARTER.POKER BADGE ON THE TABLE. (CURRENTLY IT
-            APPEARS AS LAYER 2, BEHIND THE BBJ)". It renders INSIDE
-            .table-surface now, just above the felt wordmark, so it is measured
-            in felt coordinates and cannot collide with the top chrome at all.
-            The fix is the position, not a bigger number in the same lane. */}
+            button mid-hand. */}
+        <TableConnectionBanner status={engineWsStatus} isActive={isActive} />
         {/* --table-w: the table's MEASURED width, published to CSS.
             Dan 2026-08-25 (item 8): the dealer button and the chips are sized
             as a proportion of this in TableVisualHotfix.css, so one table size
@@ -18317,11 +18307,6 @@ export default function TablePage({
                     Sits behind the pot and community cards (z-index 1, the
                     pot area is 2+) and is fully click-through so it can never
                     intercept a seat or action tap. */}
-                {/* Sits directly above the wordmark, in felt coordinates, and
-                    paints over everything on the surface. See the note in
-                    .table-container above for why it moved off the top rail. */}
-                <TableConnectionBanner status={engineWsStatus} isActive={isActive} />
-
                 <div className="table-brand" aria-hidden="true">
                   <img
                     className="table-brand__logo"

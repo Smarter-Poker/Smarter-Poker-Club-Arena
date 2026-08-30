@@ -5,36 +5,12 @@
  * a banner that swallowed a tap on a card, a seat or the fold button would be
  * a worse bug than the silence it replaces.
  */
-/*
- * WHERE IT SITS, and why it moved (2026-08-30, the same day it shipped).
- *
- * It first drew at `top: 12px` of `.table-container`. The Bad Beat Jackpot
- * plate is at `top: 6px` of the same box, also centred, also a rounded pill,
- * and it paints later - so the two landed on each other and all the player saw
- * was an orange sliver behind the BBJ. Dan, with the screenshot: "CURRENTLY IT
- * APPEARS AS LAYER 2, BEHIND THE BBJ".
- *
- * A bigger z-index would only have swapped which pill is unreadable: they were
- * in the same thirty pixels of screen. So it moved to where he asked for it,
- * "ON THE TABLE ABOVE THE SMARTER.POKER BADGE" - anchored inside
- * `.table-surface` with its bottom edge just above the felt wordmark
- * (`.table-brand`, whose top edge is ~52.7% of the felt). Percentages, not
- * pixels, so it keeps that relationship at every breakpoint and in landscape.
- *
- * `.table-surface` is its own stacking context (z-index: 1), and that is the
- * real guarantee: nothing in the top chrome can reach into it, whatever either
- * side's z-index grows to later.
- */
 .table-conn-banner {
   position: absolute;
-  top: 52%;
+  top: 12px;
   left: 50%;
-  /* -100% on Y puts the pill's BOTTOM edge on that 52% line, so it grows
-     upward off the wordmark instead of down through it. */
-  transform: translate(-50%, -100%);
-  /* Above the pot (30) and the chip-flight layer (25). Still inside
-     .table-surface, so every modal and celebration overlay covers it. */
-  z-index: 70;
+  transform: translateX(-50%);
+  z-index: 60;
 
   display: flex;
   align-items: center;
@@ -81,16 +57,14 @@
   background: #f87171;
 }
 
-/* The Y term must carry the -100% base offset, or the pill would jump down
-   onto the wordmark for the length of the animation and settle back up. */
 @keyframes table-conn-banner-in {
   from {
     opacity: 0;
-    transform: translate(-50%, calc(-100% - 6px));
+    transform: translateX(-50%) translateY(-6px);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, -100%);
+    transform: translateX(-50%) translateY(0);
   }
 }
 
@@ -118,11 +92,10 @@
   }
 }
 
-/* 375px is the design width. The felt is tighter here, so the pill shrinks
-   rather than moving - the anchor to the wordmark is the whole point. */
 @media (max-width: 420px) {
   .table-conn-banner {
     font-size: 12px;
     padding: 6px 12px;
+    top: 8px;
   }
 }

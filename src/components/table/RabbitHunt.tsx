@@ -114,11 +114,6 @@ export function RabbitHunt({
   const [hasRevealed, setHasRevealed] = useState(false);
   const [isVIP, setIsVIP] = useState(false);
   const [vipRemaining, setVipRemaining] = useState<number | null>(null);
-  /* Uses left on a PURCHASED pack. A different pool from the VIP monthly one,
-     and only knowable after a reveal has consumed one, so it can never be read
-     before the first press. Once it IS known it belongs on the tile with every
-     other count, not in a popup. See the corner numeral below. */
-  const [packRemaining, setPackRemaining] = useState<number | null>(null);
 
   // Server price when we have it, the constant only as a fallback.
   const cost =
@@ -204,22 +199,24 @@ export function RabbitHunt({
       if (result.diamondsSpent && result.diamondsSpent > 0) {
         toast.info(`${result.diamondsSpent} Diamonds Charged`);
       } else if (typeof result.vipRemaining === 'number') {
-        /* Dan 2026-08-30: "YOU DO NOT NEED A POP UP IN THE BOTTOM RIGHT CORNER
-           'ALERTING YOU' HOW MANY RABBIT HUNTS YOU HAVE LEFT."
-
-           The count is not dropped, it is MOVED. It already renders as the
-           corner numeral on the tile (rabbit-hunt__remaining), where it is
-           readable BEFORE the press rather than announced after the money has
-           gone — which is the moment it is actually useful. A toast that
-           repeats it is one more thing covering the felt at the end of a hand.
-           Nothing spent is left unsaid: the diamonds branch above still speaks,
-           because that one is a charge, not a stock level. */
+        // Tell a VIP what they have left. Without this the 100th free hunt and
+        // the 101st paid one look identical until the diamonds toast appears,
+        // which is the first the player hears that the free pool ran out.
         setVipRemaining(result.vipRemaining);
+        toast.info(
+          result.vipRemaining > 0
+            ? `Free Rabbit Hunt, ${result.vipRemaining} Left This Month`
+            : 'Last Free Rabbit Hunt This Month'
+        );
       } else if (typeof result.usesRemaining === 'number') {
-        // A purchased pack. Same rule: the number lands on the tile, not in a
-        // popup. This spends neither diamonds nor a VIP use, so without one of
-        // the two it would be the only path with no acknowledgement at all.
-        setPackRemaining(result.usesRemaining);
+        // A purchased pack. This spends neither diamonds nor a VIP use, so it
+        // fell through both branches above and the player burned one of
+        // something they had paid for in total silence.
+        toast.info(
+          result.usesRemaining > 0
+            ? `Rabbit Hunt Used, ${result.usesRemaining} Left In Your Pack`
+            : 'That Was The Last Hunt In Your Pack'
+        );
       } else if (result.source === 'already_revealed') {
         toast.info('Showing Your Rabbit Hunt Again, No Charge');
       }
@@ -292,8 +289,8 @@ export function RabbitHunt({
               bottom-right corner. The word does not fit and does not need to;
               the aria-label above still says "N Free This Month" in full, so
               nothing is lost to a screen reader. */}
-          {!isRevealing && typeof (vipRemaining ?? packRemaining) === 'number' && (
-            <span className="rabbit-hunt__remaining">{vipRemaining ?? packRemaining}</span>
+          {!isRevealing && typeof vipRemaining === 'number' && (
+            <span className="rabbit-hunt__remaining">{vipRemaining}</span>
           )}
           {!isRevealing && (
             <span

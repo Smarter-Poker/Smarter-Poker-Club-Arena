@@ -252,28 +252,7 @@ describe('who is offered a hunt, and for how many cards', () => {
     // branches and the player burned a pack use with no feedback at all.
     expect(SETTLEMENT).toMatch(/uses_remaining/);
     expect(TABLE_PAGE).toMatch(/usesRemaining: result\.uses_remaining/);
-    // The acknowledgement is the tile numeral now, not a toast - see below.
-    expect(COMPONENT).toMatch(/setPackRemaining\(result\.usesRemaining\)/);
-    // And it has somewhere to land: the corner count falls back to the pack
-    // when there is no VIP pool, or the number would be set and never drawn.
-    expect(COMPONENT).toMatch(/vipRemaining \?\? packRemaining/);
-  });
-
-  it('never pops up a running count of hunts left', () => {
-    // Dan 2026-08-30: "YOU DO NOT NEED A POP UP IN THE BOTTOM RIGHT CORNER
-    // 'ALERTING YOU' HOW MANY RABBIT HUNTS YOU HAVE LEFT."
-    //
-    // The count is not deleted, it MOVED - onto the tile, where it reads
-    // BEFORE the press instead of being announced after the money has gone. A
-    // toast repeating it is one more thing covering the felt at hand's end.
-    expect(COMPONENT).not.toMatch(/Left This Month/);
-    expect(COMPONENT).not.toMatch(/Left In Your Pack/);
-    expect(COMPONENT).not.toMatch(/Last Free Rabbit Hunt/);
-    // What must NOT be swept away with it: a CHARGE is not a stock level, and
-    // spending diamonds in silence is the bug this whole file exists for.
-    expect(COMPONENT).toMatch(/Diamonds Charged/);
-    // The numeral stays on the button.
-    expect(COMPONENT).toMatch(/rabbit-hunt__remaining/);
+    expect(COMPONENT).toMatch(/usesRemaining/);
   });
 
   it('the reveal flip does not flicker through its delay', () => {

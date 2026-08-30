@@ -11,7 +11,6 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { pushNotificationService } from './PushNotificationService';
 import { FinancialAlertService } from './FinancialAlertService';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -122,12 +121,10 @@ export const DisputeService = {
         .maybeSingle();
 
       if (club?.owner_id) {
-        await pushNotificationService.sendToUser(club.owner_id, {
-          title: 'Settlement Dispute Filed',
-          message: `${submitterName} disputed ${dispute.amount.toLocaleString()} chips on ${dispute.targetType}`,
-          category: 'settlement' as any,
-          url: '/commander/disputes',
-        });
+        // Notification removed 2026-08-30 (#1498). The club owner is now told by
+        // trg_notify_dispute, which fires on the INSERT itself, so a dispute filed
+        // from Commander or a back-office script notifies identically. This call
+        // had delivered nothing since OneSignal was retired on 2026-08-19.
       }
     } catch (e: unknown) {
       reportError(e, 'DisputeService.notification');
@@ -276,12 +273,8 @@ export const DisputeService = {
     // Notify the submitter
     if (data?.submitted_by) {
       try {
-        await pushNotificationService.sendToUser(data.submitted_by, {
-          title: 'Dispute Resolved',
-          message: resolution.resolution || 'Your dispute has been resolved',
-          category: 'settlement' as any,
-          url: '/wallet',
-        });
+        // Notification removed 2026-08-30 (#1498) - trg_notify_dispute fires on the
+        // status transition to 'resolved'.
       } catch (e: unknown) {
         reportError(e, 'DisputeService.notification');
       }

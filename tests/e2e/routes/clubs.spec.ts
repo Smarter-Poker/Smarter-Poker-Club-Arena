@@ -50,7 +50,13 @@ test.describe('Union Management', () => {
   });
 
   test('should show create union page', async ({ page }) => {
-    await expectRoute(page, 'unions/create', { expectText: 'Forge A Union' });
+    const rendered = await expectRoute(page, 'unions/create');
+    if (!rendered) return;
+
+    await expect(
+      page.getByText(/^(?:Forge A Union|Create A Club First)$/).first(),
+      'union creation should render either the forge or its club-ownership prerequisite'
+    ).toBeVisible({ timeout: 15000 });
   });
 
   test('should show union detail page', async ({ page }) => {

@@ -1,5 +1,20 @@
 import type { Page } from '@playwright/test';
 
+type ProfileGateStatus = 'complete' | 'incomplete' | 'unavailable';
+
+async function waitForProfileDecision(page: Page): Promise<ProfileGateStatus> {
+  const decision = page.locator(
+    '[data-profile-gate-status]:not([data-profile-gate-status="pending"])'
+  );
+  await decision.waitFor({ state: 'attached', timeout: 60_000 });
+  const status = await decision.getAttribute('data-profile-gate-status');
+  if (status === 'complete' || status === 'incomplete') return status;
+  if (status === 'unavailable') {
+    throw new Error('The production profile query did not answer; onboarding state is unknown.');
+  }
+  throw new Error(`Unexpected production profile gate status: ${String(status)}`);
+}
+
 /**
  * Bring a dedicated authenticated account to the same playable state a real
  * player reaches before opening a lobby.
@@ -11,13 +26,13 @@ import type { Page } from '@playwright/test';
  * reload once to prove that both profile writes persisted.
  */
 export async function ensurePlayableProfile(page: Page): Promise<boolean> {
+  // Do not infer "complete" from an absent modal while the server-backed gate
+  // is still deciding, or when its query failed. That race let global setup
+  // save an incomplete account, then every worker mounted the modal later.
+  const status = await waitForProfileDecision(page);
   const gate = page.getByRole('heading', { name: 'Complete Your Profile' });
-  const gateIsOpen = await gate
-    .waitFor({ state: 'visible', timeout: 10_000 })
-    .then(() => true)
-    .catch(() => false);
-
-  if (!gateIsOpen) return false;
+  if (status === 'complete') return false;
+  await gate.waitFor({ state: 'visible', timeout: 20_000 });
 
   console.log('[global-setup] completing the dedicated account profile through the live UI.');
 
@@ -41,11 +56,8 @@ export async function ensurePlayableProfile(page: Page): Promise<boolean> {
   await gate.waitFor({ state: 'hidden', timeout: 30_000 });
 
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
-  const gateReturned = await gate
-    .waitFor({ state: 'visible', timeout: 12_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (gateReturned) {
+  const persistedStatus = await waitForProfileDecision(page);
+  if (persistedStatus !== 'complete') {
     throw new Error('Profile onboarding appeared again after its writes reported success.');
   }
 

@@ -16319,3 +16319,33 @@ both sides, ui-text gate green.
 **Why:** Static inventory counts cannot prove a user tap reaches the live table or remains durable under delayed and failed requests.
 **Verified:** YES — 498 test files / 7,860 tests pass; focused mobile Playwright 1/1; production build passes; ESLint reports 0 errors (711 pre-existing warnings).
 **TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #150 — Cashier Claim Back Moves Whole Cents Only
+
+**File:** `supabase/migrations/20260830235990_cashier_claim_back_cent_integrity.sql`, `src/pages/CashierTradePage.tsx`
+**Lines:** Before: final claim-back body from `20260826_cashier_send_out_and_claim_back_audit_fixes.sql` 337-523; client claim call near 1450
+**What existed:** The claim RPC accepted arbitrary numeric precision, credited a four-decimal agent wallet and debited a two-decimal player wallet, and accepted an operation-ID replay without binding it to the same source send. The client echoed the server's potentially contaminated fractional remainder.
+**What changed:** Explicit sub-cent values are refused before any wallet read, null claims the maximum safe whole-cent remainder, historical residue rounds down, retries serialize and bind to source plus explicit amount, and the client renders the server-returned amount.
+**Why:** A repeated `0.0049` claim could credit the agent while the player debit rounded to zero. Money movement must conserve the same unit on both sides and a retry key must describe one immutable intent.
+**Verified:** YES — re-read after editing; production migration assertions passed; six transaction-isolated production behavior probes passed and rolled back.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #151 — The First Cashier Load Cannot Invalidate Itself
+
+**File:** `src/pages/CashierTradePage.tsx`, `tests/cashier-club-load-order.test.tsx`
+**Lines:** Before: separate load effect 727-729 and later reset effect 777-820
+**What existed:** React started the club load and then the later reset effect incremented its version. The load's success and finally paths both treated themselves as stale, so the Trade tab could remain on `Loading Members...` forever.
+**What changed:** Club reset and load now share one ordered effect: invalidate prior work, clear club-scoped state, then start the new request.
+**Why:** Request invalidation must target the club being left, never the request for the club being entered.
+**Verified:** YES — a rendered regression test holds the membership response in flight, releases it, observes the roster, and confirms Trade remains the selected first tab.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #152 — Browser Balance Guards Survive A Clean Replay
+
+**File:** `supabase/migrations/20260830235990_cashier_claim_back_cent_integrity.sql`, `scripts/verification-harness/cashier-claim-back-cent-integrity.sql`
+**Lines:** Before: `20260827g_close_browser_chip_mint.sql` ended in `SELECT 1`
+**What existed:** Three live protection triggers existed only as a production hotfix; the tracked historical migration described them but did not recreate them.
+**What changed:** The invoker-rights update/insert guards and all three triggers are installed idempotently, asserted inside the migration, and exercised by a reusable rolled-back production probe.
+**Why:** Disaster recovery and fresh environments must preserve the same chip-mint boundary as production.
+**Verified:** YES — all three trigger definitions are live and an authenticated own-wallet update returned the expected insufficient-privilege refusal inside a rolled-back transaction.
+**TypeScript:** PASS — `npx tsc --noEmit`.

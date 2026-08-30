@@ -199,7 +199,7 @@
      its darker gradient over the rest — "a slightly different black". One
      ground, same gradient as .table-tab-bar, so the whole bar reads as one
      surface. */
-     Dan 2026-08-30 closed the same complaint for good: "THE WHOLE BACKGROUND
+  /* Dan 2026-08-30 closed the same complaint for good: "THE WHOLE BACKGROUND
      SHOULD BE SOLID BLACK AND ALL THE SAME COLOR. (INCLUDING THE ACTION TAB
      AREA.)" One opaque black - no gradient, no alpha, no blur, no inset sheen
      - which is the exact ground .table-tab-bar now paints, so the strip and
@@ -235,7 +235,7 @@
   /* GlobalHeader publishes its responsive rendered height before this pinned
      state is enabled. The global header therefore owns viewport y=0 and this
      action strip begins at the header's exact bottom edge. */
-     2026-08-30: and the TICKER owns the band immediately under the header, so
+  /* 2026-08-30: and the TICKER owns the band immediately under the header, so
      this strip begins after it. Dan: "THE TICKER MUST ALWAYS BE AT THE VERY
      TOP OF THE PAGE, DIRECTLY UNDER THE GLOBAL HEADER, THE 'ACTION TAB' SHOULD
      NEVER BE ABOVE IT." `--mtt-ticker-h` is absent unless a ticker is actually

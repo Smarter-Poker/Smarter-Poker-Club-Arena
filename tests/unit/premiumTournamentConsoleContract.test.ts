@@ -7,8 +7,6 @@ const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 const PAGE = read('src/pages/tournament/TournamentDetails.tsx');
 const TYPES = read('src/components/tournament/details/types.ts');
 const PREMIUM = read('src/pages/tournament/PremiumTournamentConsole.css');
-const MODAL = read('src/components/table/TournamentLobbyModal.tsx');
-const LAYOUT = read('src/components/layouts/AppLayout.tsx');
 const GAME_PANEL = read('src/components/lobby/GameLobbyPanel.tsx');
 const GAME_PREMIUM = read('src/components/lobby/PremiumGameLobbyPanel.css');
 
@@ -41,15 +39,16 @@ describe('approved premium tournament console contract', () => {
       PREMIUM.indexOf('.tournament-details .details-tabs {'),
       PREMIUM.indexOf('.tournament-details .details-tabs .tab.active')
     );
-    expect(rail).toContain('display: grid');
-    expect(rail).toMatch(/grid-template-columns:\s*repeat\(7, minmax\(0, 1fr\)\)/);
+    expect(rail).toContain('display: flex');
+    expect(rail).toContain('flex-wrap: wrap');
+    expect(rail).toMatch(/flex:\s*1 1 110px/);
     expect(rail).not.toMatch(/width:\s*(?:fit-content|max-content)/);
   });
 
-  it('fits live controls inside the approved Club Arena hardware assets', () => {
+  it('uses the approved Club Arena chassis and hardware assets instead of a CSS imitation', () => {
+    expect(PREMIUM).toContain('lobby-command-chassis-v2.png');
     expect(PREMIUM).toContain('club-nav-shell.webp');
-    expect(PREMIUM).toContain('club-utility-shell.webp');
-    expect(PREMIUM).not.toContain('lobby-command-chassis-v2.png');
+    expect(PREMIUM).toContain('action-primary-shell.webp');
   });
 
   it('keeps every tab vertically scrollable inside the fixed chassis', () => {
@@ -86,22 +85,10 @@ describe('approved premium tournament console contract', () => {
     expect(css).not.toMatch(/\.details-content\s*>\s*\*\s*{[^}]*overflow-y:\s*auto/s);
   });
 
-  it('keeps dynamic blue, green and red action states in the event control bay', () => {
-    expect(PAGE).toContain('tournament-machine-actions');
-    expect(PAGE).toContain('You Are Registered');
-    expect(PREMIUM).toContain('.details-footer.tournament-machine-actions .btn-register');
-    expect(PREMIUM).toContain('.details-footer.tournament-machine-actions .btn-unregister');
-    expect(PREMIUM).toContain(
-      '.details-footer.tournament-machine-actions .tournament-status-badge.running'
-    );
-  });
-
-  it('renders one connected machine without the generic lobby and game-detail headers', () => {
-    expect(PAGE).toContain('className="tournament-play-rail"');
-    expect(PAGE).not.toContain('<h1>Game Details</h1>');
-    expect(MODAL).not.toContain('className="tlm-header"');
-    expect(MODAL).toContain('onRequestClose={onClose}');
-    expect(LAYOUT).toContain('!isTournamentLobbyPage && <ArenaSectionRail />');
+  it('keeps dynamic blue, green and red action states in the machine footer', () => {
+    expect(PREMIUM).toContain('.details-footer .btn-register');
+    expect(PREMIUM).toContain('.details-footer .btn-unregister');
+    expect(PREMIUM).toContain('.details-footer .tournament-status-badge.running');
   });
 });
 

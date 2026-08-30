@@ -10,7 +10,6 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
-import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 import { uuid } from '../utils/uuid';
 
@@ -189,6 +188,45 @@ export type Tier = 'daily' | 'weekly' | 'monthly';
 
 export interface TieredUserChallenge extends UserDailyChallenge {
   tier: Tier;
+}
+
+export interface DailyChallengeStats {
+  totalCompleted: number;
+  totalClaimed: number;
+  currentStreak: number;
+  totalChipsEarned: number;
+  totalDiamondsEarned: number;
+  milestoneStart: number;
+  nextMilestone: number;
+  milestoneReward: number;
+  milestoneProgressPercent: number;
+  daysToMilestone: number;
+}
+
+export interface ChallengeStreak {
+  streak: number;
+  freezesAvailable: number;
+  usedFreeze: boolean;
+  frozenDate: string | null;
+  nextFreezeIn: number | null;
+}
+
+export interface DailyChallengeRewardVault {
+  count: number;
+  chips: number;
+  diamonds: number;
+  items: TieredUserChallenge[];
+  pageSize: number;
+  hasMore: boolean;
+}
+
+export interface DailyChallengeDashboard {
+  missions: TieredUserChallenge[];
+  stats: DailyChallengeStats;
+  streak: ChallengeStreak;
+  diamondBalance: number;
+  vault: DailyChallengeRewardVault;
+  syncedAt: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -778,6 +816,38 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class DailyChallengeServiceClass {
+  private mapServerChallenge(row: any, userId: string): TieredUserChallenge {
+    const tier: Tier =
+      row.tier === 'weekly' || row.tier === 'monthly' || row.tier === 'daily'
+        ? row.tier
+        : /^W/.test(row.assigned_date || '')
+          ? 'weekly'
+          : /^M/.test(row.assigned_date || '')
+            ? 'monthly'
+            : 'daily';
+
+    return {
+      id: row.id,
+      challengeId: row.challenge_id,
+      userId,
+      progress: Number(row.progress) || 0,
+      completed: row.completed === true,
+      claimed: row.claimed === true,
+      completedAt: row.completed_at || undefined,
+      tier,
+      challenge: {
+        id: row.challenge_id,
+        name: row.name,
+        description: row.description,
+        type: row.challenge_type as ChallengeType,
+        requirement: Number(row.requirement) || 0,
+        chipReward: Number(row.chip_reward) || 0,
+        diamondReward: Number(row.diamond_reward) || 0,
+        icon: '',
+      },
+    };
+  }
+
   /**
    * Fetch (and assign, if needed) the rows for one period.
    *
@@ -834,6 +904,84 @@ class DailyChallengeServiceClass {
   }
 
   /**
+   * The complete Daily Missions page in one authenticated receipt.
+   *
+   * Active contracts, career totals, streak state, spendable diamonds, and
+   * every completed-but-unclaimed reward are read from the same database
+   * snapshot. Historical rows carry immutable assignment snapshots, so a
+   * later catalog edit cannot rewrite what a player earned or make an old
+   * reward disappear after its period rolls over.
+   */
+  async getDashboard(userId: string): Promise<DailyChallengeDashboard> {
+    const dailyKey = this.getTodayKey();
+    const weeklyKey = this.getWeekKey();
+    const monthlyKey = this.getMonthKey();
+
+    const { data, error } = await supabase.rpc('get_daily_challenge_dashboard', {
+      p_daily_key: dailyKey,
+      p_daily_ids: this.selectDailyChallenges(5).map((c) => c.id),
+      p_weekly_key: weeklyKey,
+      p_weekly_ids: this.selectChallenges(WEEKLY_CHALLENGE_POOL, 3, weeklyKey).map((c) => c.id),
+      p_monthly_key: monthlyKey,
+      p_monthly_ids: this.selectChallenges(MONTHLY_CHALLENGE_POOL, 2, monthlyKey).map((c) => c.id),
+    });
+
+    if (error) {
+      reportError(error, 'DailyChallengeService.getDashboard_failed');
+      throw new Error(error.message || 'Could not synchronize Daily Missions');
+    }
+
+    const payload = data as any;
+    if (!payload || !Array.isArray(payload.missions) || !payload.stats || !payload.vault) {
+      const contractError = new Error('Daily Missions returned an incomplete dashboard receipt');
+      reportError(contractError, 'DailyChallengeService.getDashboard_invalid_receipt');
+      throw contractError;
+    }
+
+    const mapRows = (rows: any[]): TieredUserChallenge[] =>
+      rows.map((row) => this.mapServerChallenge(row, userId));
+    const stats = payload.stats || {};
+    const streak = payload.streak || {};
+    const vault = payload.vault || {};
+
+    return {
+      missions: mapRows(payload.missions),
+      stats: {
+        totalCompleted: Math.max(0, Number(stats.totalCompleted) || 0),
+        totalClaimed: Math.max(0, Number(stats.totalClaimed) || 0),
+        currentStreak: Math.max(0, Number(stats.currentStreak) || 0),
+        totalChipsEarned: Math.max(0, Number(stats.totalChipsEarned) || 0),
+        totalDiamondsEarned: Math.max(0, Number(stats.totalDiamondsEarned) || 0),
+        milestoneStart: Math.max(0, Number(stats.milestoneStart) || 0),
+        nextMilestone: Math.max(1, Number(stats.nextMilestone) || 7),
+        milestoneReward: Math.max(0, Number(stats.milestoneReward) || 0),
+        milestoneProgressPercent: Math.min(
+          100,
+          Math.max(0, Number(stats.milestoneProgressPercent) || 0)
+        ),
+        daysToMilestone: Math.max(0, Number(stats.daysToMilestone) || 0),
+      },
+      streak: {
+        streak: Math.max(0, Number(streak.streak) || 0),
+        freezesAvailable: Math.max(0, Number(streak.freezesAvailable) || 0),
+        usedFreeze: streak.usedFreeze === true,
+        frozenDate: streak.frozenDate || null,
+        nextFreezeIn: streak.nextFreezeIn == null ? null : Number(streak.nextFreezeIn),
+      },
+      diamondBalance: Math.max(0, Number(payload.diamondBalance) || 0),
+      vault: {
+        count: Math.max(0, Number(vault.count) || 0),
+        chips: Math.max(0, Number(vault.chips) || 0),
+        diamonds: Math.max(0, Number(vault.diamonds) || 0),
+        items: mapRows(Array.isArray(vault.items) ? vault.items : []),
+        pageSize: Math.max(1, Number(vault.pageSize) || 100),
+        hasMore: vault.hasMore === true,
+      },
+      syncedAt: typeof payload.syncedAt === 'string' ? payload.syncedAt : new Date().toISOString(),
+    };
+  }
+
+  /**
    * The whole page in ONE round trip, rendered from the SERVER catalog.
    *
    * Two problems this replaces:
@@ -885,32 +1033,8 @@ class DailyChallengeServiceClass {
       monthly: [] as TieredUserChallenge[],
     };
     for (const row of (data || []) as any[]) {
-      const tier: Tier =
-        row.assigned_date === dailyKey
-          ? 'daily'
-          : row.assigned_date === weeklyKey
-            ? 'weekly'
-            : 'monthly';
-      out[tier].push({
-        id: row.id,
-        challengeId: row.challenge_id,
-        userId,
-        progress: Number(row.progress) || 0,
-        completed: row.completed === true,
-        claimed: row.claimed === true,
-        completedAt: row.completed_at || undefined,
-        tier,
-        challenge: {
-          id: row.challenge_id,
-          name: row.name,
-          description: row.description,
-          type: row.challenge_type as ChallengeType,
-          requirement: Number(row.requirement) || 0,
-          chipReward: Number(row.chip_reward) || 0,
-          diamondReward: Number(row.diamond_reward) || 0,
-          icon: '',
-        },
-      });
+      const challenge = this.mapServerChallenge(row, userId);
+      out[challenge.tier].push(challenge);
     }
     return out;
   }
@@ -1433,101 +1557,8 @@ class DailyChallengeServiceClass {
   /**
    * Get challenge completion stats for a user
    */
-  async getStats(userId: string): Promise<{
-    totalCompleted: number;
-    currentStreak: number;
-    totalChipsEarned: number;
-    totalDiamondsEarned: number;
-    nextMilestone: number;
-    milestoneReward: number;
-  }> {
-    // ORDER BY is load-bearing: an unordered LIMIT returns an arbitrary subset
-    // in Postgres, so once a user passed QUERY_LIMITS.MODERATE completions the
-    // streak scan below walked a random slice and collapsed to a wrong value.
-    const { data, error: statErr } = await supabase
-      .from('user_daily_challenges')
-      .select('challenge_id, completed, claimed, assigned_date')
-      .eq('user_id', userId)
-      .eq('completed', true)
-      .order('assigned_date', { ascending: false })
-      .limit(QUERY_LIMITS.MODERATE);
-    if (statErr) reportError(statErr, 'DailyChallengeService.getStats_error');
-
-    if (!data) {
-      return {
-        totalCompleted: 0,
-        currentStreak: 0,
-        totalChipsEarned: 0,
-        totalDiamondsEarned: 0,
-        nextMilestone: 7,
-        milestoneReward: 500,
-      };
-    }
-
-    const totalCompleted = data.length;
-    let totalChipsEarned = 0;
-    let totalDiamondsEarned = 0;
-
-    for (const uc of data) {
-      // Only CLAIMED rewards are money the player actually has. Counting
-      // completed-but-unclaimed rows made "Chips Earned" overstate the balance.
-      if (!uc.claimed) continue;
-      const challenge = this.findInPools(uc.challenge_id);
-      if (challenge) {
-        totalChipsEarned += challenge.chipReward;
-        totalDiamondsEarned += challenge.diamondReward;
-      }
-    }
-
-    // Calculate streak (consecutive days with at least 1 completion)
-    // CRITICAL: Filter to DAILY keys only. Weekly keys start with "W" and
-    // monthly keys start with "M" — these are NOT valid dates and would
-    // produce Invalid Date from subtractDays(), silently breaking the streak.
-    const dailyDates = data
-      .map((d) => d.assigned_date)
-      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)); // Only YYYY-MM-DD
-    const dates = [...new Set(dailyDates)].sort().reverse();
-    let currentStreak = 0;
-    const today = this.getTodayKey();
-    const yesterday = this.subtractDays(today, 1);
-
-    // Anchor the walk at today OR yesterday. Anchoring only at today meant a
-    // player with a 30-day streak saw "0 day streak" from 00:00 UTC until they
-    // completed something — the streak looked broken at the exact moment the
-    // UI is trying to persuade them to keep it alive.
-    const anchor = dates[0] === today ? today : dates[0] === yesterday ? yesterday : null;
-    if (anchor) {
-      for (const date of dates) {
-        const expectedDate = this.subtractDays(anchor, currentStreak);
-        if (date === expectedDate) {
-          currentStreak++;
-        } else {
-          break;
-        }
-      }
-    }
-
-    // Dynamic streak milestones — tiered rewards escalate with longer streaks
-    const MILESTONES = [
-      { days: 7, reward: 500 },
-      { days: 14, reward: 1500 },
-      { days: 30, reward: 5000 },
-      { days: 60, reward: 15000 },
-      { days: 100, reward: 50000 },
-    ];
-    const nextMilestoneEntry =
-      MILESTONES.find((m) => m.days > currentStreak) || MILESTONES[MILESTONES.length - 1];
-    const nextMilestone = nextMilestoneEntry.days;
-    const milestoneReward = nextMilestoneEntry.reward;
-
-    return {
-      totalCompleted,
-      currentStreak,
-      totalChipsEarned,
-      totalDiamondsEarned,
-      nextMilestone,
-      milestoneReward,
-    };
+  async getStats(userId: string): Promise<DailyChallengeStats> {
+    return (await this.getDashboard(userId)).stats;
   }
 
   // emitDailyResetReminder removed — was dead code (never called from any file)
@@ -1693,17 +1724,6 @@ class DailyChallengeServiceClass {
   private getMonthKey(): string {
     const d = new Date();
     return `M${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-  }
-
-  /**
-   * Subtract days from a date
-   */
-  private subtractDays(dateStr: string, days: number): string {
-    // MUST use UTC operations — getTodayKey() returns UTC date (via toISOString()),
-    // so streak calculation must also use UTC to avoid timezone boundary mismatches.
-    const date = new Date(dateStr + 'T00:00:00Z'); // Force UTC parse
-    date.setUTCDate(date.getUTCDate() - days);
-    return date.toISOString().split('T')[0];
   }
 
   /**

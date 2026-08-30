@@ -178,10 +178,15 @@ export default async function globalSetup(config: FullConfig) {
     }
 
     // A freshly provisioned test account is a real new player and therefore
-    // receives the same mandatory alias/avatar gate. Leaving it open caused 14
-    // apparently unrelated lobby and tournament tests to time out behind one
-    // correct modal. Finish it once and prove the durable profile state before
-    // sharing this browser state with the suite.
+    // receives the same mandatory alias/avatar gate. The base route can be a
+    // redirect/loading surface that has not mounted AppLayout's gate yet, so
+    // probe on a known protected layout route before deciding the account is
+    // complete. Leaving the gate open caused 15 apparently unrelated lobby
+    // and tournament tests to time out behind one correct modal.
+    await page.goto(new URL('notifications', baseURL).toString(), {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
     await ensurePlayableProfile(page);
 
     await ctx.storageState({ path: STORAGE_STATE });

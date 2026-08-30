@@ -61,15 +61,18 @@ function AppLayoutContent() {
   // User store for conditional rendering
   const { user } = useAuthUser();
   const { showWelcome, isReady, acceptWelcome } = useClubArenaWelcome();
-  const { showProfileModal, isReady: profileReady, finishProfile } = useCompleteProfile(user);
+  const {
+    showProfileModal,
+    isReady: profileReady,
+    profileStatus,
+    finishProfile,
+  } = useCompleteProfile(user);
 
   // Hide global header on table and tournament play pages
   const isTablePage =
     location.pathname.startsWith('/table') ||
     (location.pathname.startsWith('/tournaments/') && location.pathname.endsWith('/play'));
   const showGlobalHeader = !isTablePage;
-  const cleanPathname = location.pathname.replace(/\/+$/, '');
-  const isTournamentLobbyPage = /^\/tournaments\/[^/]+$/.test(cleanPathname);
 
   /**
    * Full-bleed routes: pages that render their own edge-to-edge chrome and
@@ -77,7 +80,7 @@ function AppLayoutContent() {
    * gutter. Dan, 2026-08-27, on notifications: "IT NEEDS TO BE RAISED UP TO
    * THE TOP TO BE ATTACHED TO THE GLOBAL HEADER."
    */
-  const isFlushPage = cleanPathname.endsWith('/notifications') || isTournamentLobbyPage;
+  const isFlushPage = location.pathname.replace(/\/+$/, '').endsWith('/notifications');
   const casinoZone = getCasinoZone(location.pathname);
   const casinoStageStyle: CasinoStageStyle = {
     '--casino-route-art': `url("${ROUTE_ART[casinoZone]}")`,
@@ -91,7 +94,7 @@ function AppLayoutContent() {
   }, [location.pathname]);
 
   return (
-    <div className={styles.layout}>
+    <div className={styles.layout} data-profile-gate-status={profileStatus}>
       {/* First-time Welcome Modal */}
       {isReady && <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />}
 
@@ -116,10 +119,7 @@ function AppLayoutContent() {
 
       {/* Route-family navigation keeps global sibling pages reachable without
           reopening the hamburger or duplicating the exhaustive route registry. */}
-      {/* A tournament lobby carries the same play navigation inside its single
-          connected machine. Rendering this generic rail too would split the
-          approved cabinet into two unrelated headers. */}
-      {showGlobalHeader && !isTournamentLobbyPage && <ArenaSectionRail />}
+      {showGlobalHeader && <ArenaSectionRail />}
 
       {/* Club staff pages share one permission-aware command rail. It renders
           only inside the operations route family and leaves the live lobby,

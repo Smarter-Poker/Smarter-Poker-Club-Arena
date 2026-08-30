@@ -66,8 +66,68 @@ const durableFieldValue = new Map<string, string>();
 const pendingWriteCount = new Map<string, number>();
 let appearanceRevision = 0;
 
+// A browser fetch can remain pending long after the database has recovered.
+// Without an abort boundary that request also holds the per-row write queue,
+// leaving every later tap on "Applying..." forever. Normal production writes
+// complete well inside this window; one bounded retry covers a transient edge
+// or pool stall without allowing two different appearance writes to overlap.
+const APPEARANCE_WRITE_TIMEOUT_MS = 25_000;
+const APPEARANCE_WRITE_ATTEMPTS = 2;
+
 function nowMs(): number {
   return globalThis.performance?.now?.() ?? Date.now();
+}
+
+function retryableAppearanceWriteError(error: unknown): boolean {
+  const record = error && typeof error === 'object' ? (error as Record<string, unknown>) : null;
+  const name = typeof record?.name === 'string' ? record.name : '';
+  const code = typeof record?.code === 'string' ? record.code : '';
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof record?.message === 'string'
+        ? record.message
+        : String(error || '');
+  return (
+    name === 'AbortError' ||
+    /^PGRST00[013]$/.test(code) ||
+    /abort|network|fetch|timeout|timed out|connection/i.test(message)
+  );
+}
+
+async function persistAppearancePatch(
+  userId: string,
+  gameType: string,
+  patch: AppearancePatch
+): Promise<unknown | undefined> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= APPEARANCE_WRITE_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), APPEARANCE_WRITE_TIMEOUT_MS);
+    try {
+      const request = supabase
+        .from('user_theme_settings')
+        .upsert(
+          { user_id: userId, game_type: gameType, ...patch },
+          { onConflict: 'user_id,game_type' }
+        );
+      // PostgREST builders support abortSignal. The conditional keeps the
+      // writer compatible with the deliberately tiny promise-only test mock.
+      const result =
+        typeof request.abortSignal === 'function'
+          ? await request.abortSignal(controller.signal)
+          : await request;
+      if (!result.error) return undefined;
+      lastError = result.error;
+      if (!retryableAppearanceWriteError(lastError)) return lastError;
+    } catch (error) {
+      lastError = error;
+      if (!retryableAppearanceWriteError(error)) return error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  return lastError ?? new Error('appearance write did not complete');
 }
 
 function recordAppearanceResult(
@@ -210,19 +270,9 @@ export async function applyTableAppearance(
 
   // 2. PERSIST IN TAP ORDER — only the changed columns plus the composite key.
   const previousTail = writeTails.get(scope) ?? Promise.resolve();
-  const task = previousTail.then(async () => {
-    try {
-      const { error } = await supabase
-        .from('user_theme_settings')
-        .upsert(
-          { user_id: opts.userId, game_type: gameType, ...cleanPatch },
-          { onConflict: 'user_id,game_type' }
-        );
-      return error ?? undefined;
-    } catch (error) {
-      return error;
-    }
-  });
+  const task = previousTail.then(() =>
+    persistAppearancePatch(opts.userId as string, gameType, cleanPatch)
+  );
   const tail = task.then(() => undefined);
   writeTails.set(scope, tail);
   const error = await task;

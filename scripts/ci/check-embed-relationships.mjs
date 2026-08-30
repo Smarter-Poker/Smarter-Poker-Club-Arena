@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  EMBED RELATIONSHIP CHECK — every PostgREST embed must actually resolve
@@ -181,7 +183,7 @@ async function probe(c) {
   for (let attempt = 1; attempt <= 2 && !res; attempt++) {
     try {
       res = await fetch(target, {
-        headers: { apikey: key, Authorization: `Bearer ${key}` },
+        headers: supabaseServerHeaders(key),
         signal: AbortSignal.timeout(45000),
       });
     } catch (err) {
@@ -231,7 +233,7 @@ if (unreachable) {
   console.log(`[check-embeds] WARNING: ${unreachable} of ${cases.length} select(s) could not be`);
   console.log('  checked — the API did not answer. Those embeds are UNVERIFIED by this run.');
   console.log('  Not failing the build for it: a busy database must not red somebody');
-  console.log('  else\'s commit. If this number is not small, the gate is not doing its job.');
+  console.log("  else's commit. If this number is not small, the gate is not doing its job.");
 }
 
 if (unverified.length) {

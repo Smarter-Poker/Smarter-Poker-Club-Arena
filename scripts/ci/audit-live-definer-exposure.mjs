@@ -62,6 +62,7 @@
 import { readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
+import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
 
 const REPO = process.cwd();
 const BASELINE = join(REPO, 'scripts/ci/definer-exposure-baseline.json');
@@ -84,7 +85,9 @@ const summary = (line) => {
 };
 
 if (!existsSync(BASELINE)) {
-  console.error(`[definer-exposure] ${BASELINE} is missing. It is the list of reviewed exceptions.`);
+  console.error(
+    `[definer-exposure] ${BASELINE} is missing. It is the list of reviewed exceptions.`
+  );
   process.exit(2);
 }
 const baseline = JSON.parse(readFileSync(BASELINE, 'utf8'));
@@ -105,7 +108,7 @@ let live;
 try {
   const res = await fetch(`${URL_}/rest/v1/rpc/fn_definer_exposure_audit`, {
     method: 'POST',
-    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+    headers: supabaseServerHeaders(KEY, { 'Content-Type': 'application/json' }),
     body: '{}',
   });
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
@@ -161,7 +164,9 @@ if (anonWriters.length > 0) {
   console.error('  was this grant:');
   console.error('');
   console.error('    REVOKE ALL ON FUNCTION public.<name>(<types>) FROM PUBLIC, anon;');
-  console.error('    GRANT EXECUTE ON FUNCTION public.<name>(<types>) TO authenticated, service_role;');
+  console.error(
+    '    GRANT EXECUTE ON FUNCTION public.<name>(<types>) TO authenticated, service_role;'
+  );
   console.error('');
   console.error('  There is no allowlist for this one. The live answer is zero and it stays zero.');
   console.error('');
@@ -188,7 +193,9 @@ if (newTables.length > 0) {
   console.error('  Enable RLS and give it a policy, or revoke the writes:');
   console.error('');
   console.error('    ALTER TABLE public.<name> ENABLE ROW LEVEL SECURITY;');
-  console.error('    REVOKE INSERT, UPDATE, DELETE ON TABLE public.<name> FROM PUBLIC, anon, authenticated;');
+  console.error(
+    '    REVOKE INSERT, UPDATE, DELETE ON TABLE public.<name> FROM PUBLIC, anon, authenticated;'
+  );
   console.error('');
   console.error('  Check the OWNER first. A REVOKE only removes grants YOU made: postgres');
   console.error('  cannot revoke what supabase_admin granted, and the attempt fails silently.');
@@ -227,7 +234,9 @@ for (const f of newly) {
 }
 console.error('  Almost always the answer is that no browser should call it at all:');
 console.error('');
-console.error('    REVOKE ALL ON FUNCTION public.<name>(<types>) FROM PUBLIC, anon, authenticated;');
+console.error(
+  '    REVOKE ALL ON FUNCTION public.<name>(<types>) FROM PUBLIC, anon, authenticated;'
+);
 console.error('    GRANT EXECUTE ON FUNCTION public.<name>(<types>) TO service_role;');
 console.error('');
 console.error('  Name PUBLIC as well as the roles: a grant to PUBLIC lets authenticated');

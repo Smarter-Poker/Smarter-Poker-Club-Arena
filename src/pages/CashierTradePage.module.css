@@ -170,7 +170,7 @@
   align-items: center;
   gap: 9px;
   width: min(330px, 60vw);
-  min-height: 40px;
+  min-height: 44px;
   padding: 5px 12px 5px 6px;
   overflow: hidden;
   border: 1px solid #5e6c7c;
@@ -348,7 +348,7 @@
 
 .picker {
   position: absolute;
-  z-index: 40;
+  z-index: 80;
   top: 82px;
   right: 40px;
   width: min(390px, calc(100vw - 48px));
@@ -559,7 +559,7 @@
 .stripLabel {
   display: block;
   margin-bottom: 7px;
-  color: #6c7b8b;
+  color: #8292a2;
 }
 
 .stripValue {
@@ -625,7 +625,7 @@
 .searchRow input::placeholder,
 .ledgerSearch::placeholder,
 .modal input::placeholder {
-  color: #586676;
+  color: #7b8998;
 }
 
 .memberCount {
@@ -893,7 +893,7 @@
 .summaryLabel {
   display: block;
   margin-bottom: 7px;
-  color: #687788;
+  color: #8292a2;
 }
 
 .summaryValue {
@@ -1028,7 +1028,7 @@
 }
 
 .selClear {
-  min-height: 32px;
+  min-height: 44px;
   padding: 0 12px;
   border: 1px solid #587087;
   border-radius: 3px;
@@ -1173,7 +1173,7 @@
 .modalActions button,
 .reqBtn,
 .retryBtn {
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 15px;
   border: 1px solid #536273;
   border-radius: 4px;
@@ -1197,21 +1197,25 @@
 
 .reqBtn {
   flex: 0 0 auto;
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 12px;
 }
 
 .retryBtn {
   display: inline-flex;
   align-items: center;
-  min-height: 34px;
+  min-height: 44px;
   margin-left: 7px;
 }
 
 /* ── Focus, motion and responsive behavior ────────────────────────────── */
 
 .page button:focus-visible,
-.page input:focus-visible {
+.page input:focus-visible,
+.page [role='checkbox']:focus-visible,
+.page [role='tabpanel']:focus-visible,
+.picker:focus-visible,
+.modal:focus-visible {
   outline: 2px solid var(--cashier-blue-hot);
   outline-offset: 2px;
 }
@@ -1270,7 +1274,7 @@
   }
 
   .hero {
-    min-height: 525px;
+    min-height: 400px;
   }
 
   .heroImage {
@@ -1302,12 +1306,12 @@
 
   .heroContent {
     width: 92%;
-    padding: 48px 18px 164px;
+    padding: 30px 18px 132px;
   }
 
   .heroTitle {
-    margin-top: 10px;
-    font-size: clamp(2.45rem, 13vw, 3.65rem);
+    margin-top: 6px;
+    font-size: clamp(2.15rem, 11vw, 3.15rem);
   }
 
   .heroCopy {
@@ -1333,6 +1337,25 @@
   .heroMetric:last-child {
     grid-column: 1 / -1;
     border-top: 1px solid rgba(144, 162, 179, 0.17);
+  }
+
+  .tabs {
+    scroll-snap-type: x proximity;
+    scrollbar-color: var(--cashier-blue) #080c12;
+    scrollbar-width: thin;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: block;
+    height: 4px;
+  }
+
+  .tabs::-webkit-scrollbar-thumb {
+    background: var(--cashier-blue);
+  }
+
+  .tab {
+    scroll-snap-align: start;
   }
 
   .heroMetricValue {

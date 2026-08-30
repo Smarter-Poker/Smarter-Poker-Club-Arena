@@ -11,6 +11,7 @@
 import { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { supabase } from '../services/supabase.js';
 import { planSatelliteAwards } from './satelliteAwardPlan.js';
+import { isSatelliteTargetOpen, satelliteTicketCost } from './satelliteTargetOpen.js';
 import { type BalancerTable, type MoveInstruction } from '../engine/TableBalancer.js';
 import { reportError } from '../services/errorReporter.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
@@ -388,6 +389,19 @@ export class TournamentManager extends TournamentManagerEliminations {
           .select('id');
 
         let seatWriteErr: { message?: string } | null = reuseErr;
+
+        if (!seatWriteErr && reusedRows && reusedRows.length > 0) {
+          // Un-assign the old occupant whose seat we just reused, avoiding the ghost seat bug
+          // (which can crash the engine with deck_capacity_exceeded if 11 players point to a 9-max table).
+          await supabase
+            .from('tournament_players')
+            .update({ table_id: null, seat_number: null })
+            .eq('tournament_id', this.tournamentId)
+            .eq('table_id', move.toTableId)
+            .eq('seat_number', move.toSeat)
+            .neq('user_id', move.playerId);
+        }
+
         if (!seatWriteErr && (!reusedRows || reusedRows.length === 0)) {
           const { error: insErr } = await supabase.from('table_seats').insert({
             table_id: move.toTableId,
@@ -544,12 +558,17 @@ export class TournamentManager extends TournamentManagerEliminations {
       status: string;
       max_players: number | null;
       current_players: number | null;
+      current_level: number | null;
+      late_reg_levels: number | null;
+      rebuy_levels: number | null;
     }
     let target: SatelliteTarget | null = null;
     if (targetId) {
       const { data, error: targetErr } = await supabase
         .from('tournaments')
-        .select('id, name, buy_in_amount, buy_in_fee, status, max_players, current_players')
+        .select(
+          'id, name, buy_in_amount, buy_in_fee, status, max_players, current_players, current_level, late_reg_levels, rebuy_levels'
+        )
         .eq('id', targetId)
         .maybeSingle();
 
@@ -584,11 +603,27 @@ export class TournamentManager extends TournamentManagerEliminations {
       }
       target = (data as SatelliteTarget | null) ?? null;
     }
-    const targetOpen =
-      !!target && ['ANNOUNCED', 'REGISTERING'].includes((target.status || '').toUpperCase());
-    const ticketCost = target
-      ? Math.round((Number(target.buy_in_amount || 0) + Number(target.buy_in_fee || 0)) * 100) / 100
-      : 0;
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A RUNNING TARGET IN LATE REG IS OPEN, AND AN UNSPENDABLE TICKET IS
+     *  WORTH NOTHING (2026-08-30)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Both rules, and the incident that produced them, are documented on
+     * `satelliteTargetOpen.ts`. They live there rather than here because this
+     * method needs four Supabase round trips and a running tournament to
+     * enter, which is precisely why the bug survived: a decision that hands
+     * out real chips had nothing able to test it.
+     *
+     * In short: a satellite normally ends AFTER its target has started, so
+     * refusing a RUNNING target cashed out tickets while late registration
+     * stood open; and pricing the ticket off the target row merely EXISTING
+     * (rather than being enterable) paid those cashed tickets at full face
+     * value out of a pool that never held it — 3,582.50 chips across fifteen
+     * satellites, one of them paying 1,000 from a pool of 108.
+     */
+    const targetOpen = isSatelliteTargetOpen(target);
+    const ticketCost = satelliteTicketCost(target, targetOpen);
 
     // Finishers ordered best-first
     const { data: finishers, error: finishersErr } = await supabase
@@ -730,8 +765,12 @@ export class TournamentManager extends TournamentManagerEliminations {
           p_user_id: w.user_id,
           p_username: w.username || 'Player',
         });
-        const seat = seatRes as { ok?: boolean; reason?: string } | null;
-        // A refusal that is simply "they already hold this seat" is success.
+        const seat = seatRes as {
+          ok?: boolean;
+          awarded?: boolean;
+          reason?: string;
+          held_from_this_satellite?: boolean;
+        } | null;
         const regErr =
           seatErr || (seat?.ok === false ? { message: seat?.reason || 'seat_refused' } : null);
         if (regErr && !/duplicate|unique|already_registered/i.test(regErr.message || '')) {
@@ -741,6 +780,38 @@ export class TournamentManager extends TournamentManagerEliminations {
             ticketCost,
             `Satellite seat fallback (registration failed): ${target.name || 'target'}`,
             `tourney:${this.tournamentId}:prize:place:${w.position}`
+          );
+        } else if (
+          seat?.ok === true &&
+          seat?.awarded === false &&
+          seat?.held_from_this_satellite === false
+        ) {
+          /**
+           * A SECOND WIN IS NEVER WORTH ZERO (2026-08-30 satellite audit).
+           *
+           * `awarded: false` means the player already holds the target seat.
+           * When THIS satellite is the one that seated them, this is a
+           * recovery re-drive and paying again would be a double payment —
+           * stay silent. When a DIFFERENT satellite (or a direct buy-in)
+           * seated them, this satellite collected their buy-in, promised a
+           * seat it cannot deliver, and used to hand them NOTHING: four
+           * winners across 1a6f53a4, acb14548 and e3d3bd1e received neither
+           * seat nor cash (back-paid in the same migration that taught
+           * fn_award_satellite_seat to report `held_from_this_satellite`).
+           * The ticket value is paid as cash instead, under the same stable
+           * place key, so a re-drive of THIS pass dedupes to nothing.
+           *
+           * An old fn without the flag returns `undefined`, which lands in
+           * neither branch — the conservative pre-migration behaviour.
+           */
+          await payCash(
+            w.user_id,
+            ticketCost,
+            `Satellite seat already held - ticket value paid in cash: ${target.name || 'target'}`,
+            `tourney:${this.tournamentId}:prize:place:${w.position}`
+          );
+          console.log(
+            `[Satellite:${this.tournamentId.slice(0, 8)}] Seat already held elsewhere — ticket cashed: ${w.user_id.slice(0, 8)}`
           );
         } else {
           console.log(
@@ -756,11 +827,23 @@ export class TournamentManager extends TournamentManagerEliminations {
           `tourney:${this.tournamentId}:prize:place:${w.position}`
         );
       }
-      await supabase
+      const { error: prizeStampErr } = await supabase
         .from('tournament_players')
         .update({ prize: ticketCost })
         .eq('tournament_id', this.tournamentId)
         .eq('user_id', w.user_id);
+      if (prizeStampErr) {
+        // 2026-08-30: this write failed silently during the Supabase
+        // degradation and left every e3d3bd1e winner recorded at prize 0
+        // while holding a funded seat. The stamp is a RECORD, not money —
+        // report it, never abort the loop over it.
+        reportError(
+          new Error(
+            `[Satellite:${this.tournamentId.slice(0, 8)}] prize stamp failed for ${w.user_id.slice(0, 8)}: ${prizeStampErr.message}`
+          ),
+          'Tournament.satellite_prize_stamp_failed'
+        );
+      }
     }
 
     // Remainder → next finisher as cash (or last seat winner if field exhausted)
@@ -987,9 +1070,27 @@ export class TournamentManager extends TournamentManagerEliminations {
         }
         occ.taken.add(seatNumber);
 
+        if (reusedRows && reusedRows.length > 0) {
+          // The old occupant has been overwritten in `table_seats`, but their `tournament_players`
+          // row still falsely points to this table. This is how 11 players can get assigned to
+          // a 9-max table and crash the Table Engine with `deck_capacity_exceeded`. Clear it.
+          await supabase
+            .from('tournament_players')
+            .update({ table_id: null, seat_number: null })
+            .eq('tournament_id', this.tournamentId)
+            .eq('table_id', best.tableId)
+            .eq('seat_number', seatNumber)
+            .neq('user_id', player.user_id);
+        }
+
         await supabase
           .from('tournament_players')
-          .update({ status: 'playing', chips: playerChips, table_id: best.tableId })
+          .update({
+            status: 'playing',
+            chips: playerChips,
+            table_id: best.tableId,
+            seat_number: seatNumber,
+          })
           .eq('tournament_id', this.tournamentId)
           .eq('user_id', player.user_id);
         await supabase

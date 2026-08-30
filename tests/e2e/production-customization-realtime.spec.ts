@@ -8,6 +8,7 @@ import {
 } from '@playwright/test';
 
 import { STORAGE_STATE } from './global-setup';
+import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 
 type Appearance = {
   table: string;
@@ -101,22 +102,23 @@ async function openStudio(page: Page) {
   await menu.click();
   const open = page.getByRole('button', { name: 'Open Table Studio' });
   await expect(open).toBeVisible({ timeout: 20_000 });
-  const loaded = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'GET' &&
-      response.url().includes('/rest/v1/user_theme_settings'),
-    { timeout: PRODUCTION_RESPONSE_TIMEOUT }
-  );
   await open.click();
 
   const studio = page.getByRole('dialog', { name: 'Make The Table Yours' });
   await expect(studio).toBeVisible({ timeout: 20_000 });
-  const response = await loaded;
-  if (!response.ok()) throw new Error(`Table Studio load failed with HTTP ${response.status()}.`);
-  await expect(studio.locator('.theme-modal__grid')).toHaveAttribute('aria-busy', 'false', {
-    timeout: 20_000,
+  // The settings request may be satisfied before the listener is attached or
+  // from a warm in-memory snapshot. Network timing is not the contract; a
+  // settled grid with the live-status marker and exactly one selected design
+  // is. These assertions still fail on an empty/error response without making
+  // a cached success look like a timeout.
+  const grid = studio.locator('.theme-modal__grid');
+  await expect(grid).toHaveAttribute('aria-busy', 'false', {
+    timeout: PRODUCTION_RESPONSE_TIMEOUT,
   });
   await expect(studio.getByText('Table Art Live')).toBeVisible({
+    timeout: PRODUCTION_RESPONSE_TIMEOUT,
+  });
+  await expect(grid.locator('.theme-asset[aria-pressed="true"]')).toHaveCount(1, {
     timeout: PRODUCTION_RESPONSE_TIMEOUT,
   });
   return studio;
@@ -148,7 +150,11 @@ async function signIn(context: BrowserContext, baseURL: string) {
     await page.waitForURL((url) => !url.pathname.includes('/auth'), { timeout: 45_000 });
   }
   await page.evaluate(() => localStorage.setItem('club_arena_welcome_accepted', 'true'));
-  await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  await page.goto(new URL('notifications', baseURL).toString(), {
+    waitUntil: 'domcontentloaded',
+    timeout: 60_000,
+  });
+  await ensurePlayableProfile(page);
   await expect(page.getByRole('button', { name: 'Open Menu' }).first()).toBeVisible({
     timeout: 30_000,
   });

@@ -49,6 +49,12 @@ const TILE = {
 
 const A = { id: 'aaaaaaaa-0000-0000-0000-000000000001', name: 'Alpha Club' };
 const B = { id: 'bbbbbbbb-0000-0000-0000-000000000002', name: 'Bravo Club' };
+const UNION = {
+  id: 'cccccccc-0000-0000-0000-000000000003',
+  name: 'Midway Union',
+  is_union: true,
+  is_owner: true,
+};
 
 function renderTile(props: Record<string, unknown> = {}) {
   const merged = {
@@ -95,12 +101,12 @@ describe('ClubQuickLinkTile', () => {
     expect(onEmpty).toHaveBeenCalledOnce();
   });
 
-  it('does not open a popover for single-club users (no switch affordance)', () => {
+  it('opens the wallet directory for a single eligible club too', async () => {
     renderTile({ clubs: [A] });
     const tileBtn = screen.getByRole('button', { name: /Cashier for Alpha Club/ });
-    // Right-click (the desktop switch gesture) must do nothing with one club
     fireEvent.contextMenu(tileBtn);
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Alpha Club/ })).toBeInTheDocument();
+    await act(async () => {});
   });
 
   it('opens the popover, lists clubs with chip balances, and selects one', async () => {
@@ -115,7 +121,7 @@ describe('ClubQuickLinkTile', () => {
     });
     renderTile({ onSelect });
     // Right-click is the pointer path to the quick-switch popover
-    fireEvent.contextMenu(screen.getByRole('button', { name: /hold to switch clubs/ }));
+    fireEvent.contextMenu(screen.getByRole('button', { name: /hold to choose a wallet/ }));
     expect(screen.getByRole('menu')).toBeInTheDocument();
     expect(
       await screen.findByText(new RegExp(`${(1234).toLocaleString()} chips`, 'i'))
@@ -125,10 +131,17 @@ describe('ClubQuickLinkTile', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
+  it('labels an owned union treasury and does not mislabel it as club chips', async () => {
+    renderTile({ clubs: [A, UNION] });
+    fireEvent.contextMenu(screen.getByRole('button', { name: /hold to choose a wallet/ }));
+    expect(screen.getByRole('menuitem', { name: /Midway Union Union Wallet/ })).toBeInTheDocument();
+    await act(async () => {});
+  });
+
   it('closes the popover on Escape and returns focus to the tile trigger', async () => {
     const user = userEvent.setup();
     renderTile();
-    const trigger = screen.getByRole('button', { name: /hold to switch clubs/ });
+    const trigger = screen.getByRole('button', { name: /hold to choose a wallet/ });
     fireEvent.contextMenu(trigger);
     expect(screen.getByRole('menu')).toBeInTheDocument();
     await user.keyboard('{Escape}');
@@ -139,7 +152,7 @@ describe('ClubQuickLinkTile', () => {
   it('navigates the popover with arrow keys', async () => {
     const user = userEvent.setup();
     renderTile();
-    fireEvent.contextMenu(screen.getByRole('button', { name: /hold to switch clubs/ }));
+    fireEvent.contextMenu(screen.getByRole('button', { name: /hold to choose a wallet/ }));
     expect(screen.getByRole('menuitem', { name: /Alpha Club/ })).toHaveFocus();
     await user.keyboard('{ArrowDown}');
     expect(screen.getByRole('menuitem', { name: /Bravo Club/ })).toHaveFocus();
@@ -167,6 +180,31 @@ describe('ClubQuickLinkTile', () => {
     });
     expect(screen.getByRole('menu')).toBeInTheDocument();
     await act(async () => {}); // flush the balance fetch
+  });
+
+  it.each([
+    ['ArrowDown', { key: 'ArrowDown' }],
+    ['ContextMenu', { key: 'ContextMenu' }],
+    ['Shift+F10', { key: 'F10', shiftKey: true }],
+  ])('opens the wallet directory from the %s keyboard command', async (_label, keys) => {
+    renderTile();
+    const trigger = screen.getByRole('button', { name: /hold to choose a wallet/ });
+    fireEvent.keyDown(trigger, keys);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Alpha Club/ })).toHaveFocus();
+    await act(async () => {});
+  });
+
+  it('returns focus to the trigger when the outside overlay dismisses the directory', async () => {
+    renderTile();
+    const trigger = screen.getByRole('button', { name: /hold to choose a wallet/ });
+    fireEvent.contextMenu(trigger);
+    const menu = screen.getByRole('menu');
+    expect(menu).toBeInTheDocument();
+    fireEvent.click(document.querySelector('[class*="cashierSwitchOverlay"]') as HTMLElement);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    await act(async () => {});
   });
 
   it('does not open the popover when the press is cancelled early', () => {
@@ -205,13 +243,13 @@ describe('ClubQuickLinkTile', () => {
     expect(onSelect).toHaveBeenCalledWith(A);
   });
 
-  it('marks the tile as a popup trigger only when switching is possible', () => {
-    const { unmount } = renderTile({ clubs: [A] });
-    expect(screen.getByRole('button', { name: /Cashier for Alpha Club/ })).not.toHaveAttribute(
+  it('marks the tile as a popup trigger whenever a wallet directory exists', () => {
+    const { unmount } = renderTile({ clubs: [], targetClub: null });
+    expect(screen.getByRole('button', { name: /Cashier \(press 4\)/ })).not.toHaveAttribute(
       'aria-haspopup'
     );
     unmount();
-    renderTile();
+    renderTile({ clubs: [A] });
     expect(screen.getByRole('button', { name: /Cashier for Alpha Club/ })).toHaveAttribute(
       'aria-haspopup',
       'menu'

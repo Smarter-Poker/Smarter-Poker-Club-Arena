@@ -1196,6 +1196,12 @@ jobs:
         run: npx playwright install chromium webkit --with-deps
 
       - name: Build this commit
+        env:
+          # The app fails closed before React mounts when these Vite values are
+          # absent. Footer route probes do not call Supabase, so deterministic
+          # non-secret placeholders are the correct isolated CI configuration.
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY: footer-probe-ci
         run: npm run build
 
       - name: Run the beats against this commit's CSS

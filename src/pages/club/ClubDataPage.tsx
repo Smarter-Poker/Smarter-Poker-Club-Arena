@@ -160,6 +160,7 @@ const PLAYER_SORTS: Array<{ id: PlayerSort; label: string }> = [
 
 const REFRESH_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 15_000;
+const SNAPSHOT_REQUEST_TIMEOUT_MS = 25_000;
 const PLAYER_REQUEST_TIMEOUT_MS = 25_000;
 const EXPORT_REQUEST_TIMEOUT_MS = 30_000;
 const PLAYER_PAGE_SIZE = 100;
@@ -465,7 +466,8 @@ export default function ClubDataPage() {
             p_search: search || null,
             p_limit: 200,
           }),
-          'Club data request timed out'
+          'Club data request timed out',
+          SNAPSHOT_REQUEST_TIMEOUT_MS
         );
         if (stale()) return false;
         if (rpcError) {

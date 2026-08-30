@@ -7,7 +7,7 @@ import './UnionsPage.css';
 import { EmptyState, ErrorState, LoadingState } from '../components/common/EmptyState';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import CreateUnionModal from '../components/union/CreateUnionModal';
 import { unionService, type Union } from '../services/UnionService';
@@ -15,6 +15,7 @@ import { getUnionLevel } from '../utils/clubLevels';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import { reportError } from '../utils/errorReporter';
+import { mediaUrl } from '../utils/mediaBase';
 
 const unionCardAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -181,24 +182,15 @@ export default function UnionsPage() {
     };
   }, [loadUnions]);
 
-  if (loading) {
-    return (
-      <div className="unions-page">
-        <LoadingState message="Opening Union Networks" />
-      </div>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <div className="unions-page">
-        <ErrorState message={loadError} onRetry={loadUnions} />
-      </div>
-    );
-  }
-
   return (
-    <div className="unions-page">
+    <div
+      className="unions-page"
+      style={
+        {
+          '--union-network-art': `url("${mediaUrl('assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp')}")`,
+        } as CSSProperties
+      }
+    >
       <header className="unions-header">
         <div>
           <span className="unions-eyebrow">Connected Club Networks</span>
@@ -211,7 +203,15 @@ export default function UnionsPage() {
       </header>
 
       <div className="unions-grid">
-        {unions.length === 0 ? (
+        {loading ? (
+          <div className="unions-state">
+            <LoadingState message="Opening Union Networks" />
+          </div>
+        ) : loadError ? (
+          <div className="unions-state">
+            <ErrorState message={loadError} onRetry={loadUnions} />
+          </div>
+        ) : unions.length === 0 ? (
           <div className="unions-state">
             <EmptyState
               icon="UNION"

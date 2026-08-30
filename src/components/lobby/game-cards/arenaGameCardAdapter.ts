@@ -9,6 +9,24 @@ import {
 import { tournamentBlinds, tournamentLevel } from '../tournamentFigures';
 import type { ArenaGameCardData, ArenaGameFamily, ArenaGameStatus } from './arenaGameCardTypes';
 
+function compactChipAmount(value: number): string {
+  if (!Number.isFinite(value) || value < 1_000) return value.toLocaleString('en-US');
+  const thousands = value / 1_000;
+  return `${Number.isInteger(thousands) ? thousands : thousands.toFixed(1).replace(/\.0$/, '')}K`;
+}
+
+/**
+ * Cash-card bays are intentionally narrow. Keep the full precision below 1K,
+ * then use the poker-room convention above it (1K, 1.2K, 10K). The source
+ * label remains untouched everywhere else in the lobby.
+ */
+export function compactCashBuyInLabel(label: string): string {
+  return label.replace(/\d[\d,]*(?:\.\d+)?/g, (token) => {
+    const value = Number(token.replace(/,/g, ''));
+    return Number.isFinite(value) ? compactChipAmount(value) : token;
+  });
+}
+
 function familyOf(entry: LobbyEntry): ArenaGameFamily {
   if (entry.kind === 'mtt') return 'mtt';
   if (entry.kind === 'spin') return 'spins';
@@ -58,7 +76,10 @@ export function arenaGameCardDataFromEntry(entry: LobbyEntry): ArenaGameCardData
     gameType: entry.gameLabel,
     stakes: entry.stakesLabel || undefined,
     players: entry.capacity > 0 ? `${entry.players}/${entry.capacity}` : String(entry.players),
-    buyIn: entry.buyInLabel || undefined,
+    buyIn:
+      entry.kind === 'cash' && entry.buyInLabel
+        ? compactCashBuyInLabel(entry.buyInLabel)
+        : entry.buyInLabel || undefined,
     guarantee: entry.guaranteeLabel || undefined,
     registered:
       entry.kind === 'cash'

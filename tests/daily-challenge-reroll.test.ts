@@ -149,4 +149,19 @@ describe('the page ships the casino-realism surface without the old stubs', () =
     expect(css).toContain(':focus-visible');
     expect(statSync(hero).size).toBeLessThan(200 * 1024);
   });
+
+  it('keeps partial data failures recoverable and refreshes stale background tabs', () => {
+    expect(page).toContain('Promise.allSettled');
+    expect(page).toContain("document.addEventListener('visibilitychange'");
+    expect(page).toContain('requestId !== loadRequestRef.current');
+    expect(page).toContain('MissionLoadingState');
+    expect(page).toContain('Retry Mission Link');
+  });
+
+  it('ships complete reward feedback and keyboard-operable period tabs', () => {
+    expect(page).toContain('reward.chips.toLocaleString()');
+    expect(page).toContain('aria-controls={`mission-panel-${tier}`}');
+    expect(page).toContain("event.key === 'ArrowRight'");
+    expect(page).toContain('Current Progress Will Be Replaced');
+  });
 });

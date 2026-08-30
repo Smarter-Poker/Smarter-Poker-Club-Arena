@@ -17,6 +17,7 @@ import { sanitizeInput } from '../utils/sanitizeInput';
 import { reportError } from '../utils/errorReporter';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -188,10 +189,18 @@ export default function CreateUnionPage() {
   return (
     <div className={styles.page}>
       <div className={styles.container}>
-        {/* Header */}
-        <div className={styles.header}>
-          <h1>Create Your Union</h1>
-        </div>
+        <CasinoSurfaceHeader
+          eyebrow="Union Network / Creation"
+          title="Forge A Union"
+          description="Configure a governed club network, revenue rules, and shared features through the existing server-authorized creation workflow."
+          artPath="assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp"
+          status="UNION FORGE // SECURE"
+          metrics={[
+            { label: 'Step', value: `${step} / ${totalSteps}`, tone: 'attention' },
+            { label: 'Club Authority', value: ownsClub ? 'Verified' : 'Checking', tone: 'live' },
+            { label: 'Visibility', value: form.isPublic ? 'Public' : 'Private' },
+          ]}
+        />
 
         {/* Progress */}
         <div className={styles.progress}>

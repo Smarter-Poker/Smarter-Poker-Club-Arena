@@ -113,6 +113,26 @@
   align-self: start;
 }
 
+.lobby-top__house-welcome {
+  width: 100%;
+  margin: 7px 0 0;
+  padding: 5px 10px;
+  overflow: hidden;
+  border: 1px solid rgb(74 145 202 / 32%);
+  background: linear-gradient(180deg, rgb(10 24 36 / 92%), rgb(2 7 11 / 98%));
+  color: #36aaff;
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: clamp(7px, 1.25vw, 10px);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-shadow: 0 0 7px rgb(32 157 255 / 35%);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .lobby-top__identity {
   width: 100%;
   justify-self: stretch;
@@ -1276,16 +1296,15 @@
   flex-direction: column;
   gap: 8px;
 }
-.lobby-top__notice-editor textarea {
+.lobby-top__notice-editor input {
   width: 100%;
-  min-height: 80px;
+  min-height: 40px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 6px;
   color: #fff;
   padding: 8px;
   font-family: inherit;
-  resize: vertical;
 }
 .lobby-top__notice-actions {
   display: flex;

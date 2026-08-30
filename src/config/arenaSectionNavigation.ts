@@ -10,6 +10,7 @@ export interface ArenaSectionNavigation {
 }
 
 const PLAY_ITEMS: ArenaSectionItem[] = [
+  { label: 'Overview', path: '/play' },
   { label: 'Tournaments', path: '/tournaments' },
   { label: 'Results', path: '/tournament-results' },
   { label: 'Hands', path: '/hand-history' },
@@ -18,6 +19,7 @@ const PLAY_ITEMS: ArenaSectionItem[] = [
 ];
 
 const COMMUNITY_ITEMS: ArenaSectionItem[] = [
+  { label: 'Overview', path: '/community' },
   { label: 'Discover', path: '/search' },
   { label: 'Friends', path: '/friends' },
   { label: 'Messages', path: '/messages' },
@@ -34,6 +36,7 @@ const REWARD_ITEMS: ArenaSectionItem[] = [
   { label: 'Bonuses', path: '/bonuses' },
   { label: 'Achievements', path: '/achievements' },
   { label: 'Challenges', path: '/challenges' },
+  { label: 'Marketplace', path: '/marketplace' },
 ];
 
 const ACCOUNT_ITEMS: ArenaSectionItem[] = [
@@ -70,6 +73,7 @@ export function getArenaSectionNavigation(pathname: string): ArenaSectionNavigat
 
   if (
     isWithin(current, [
+      '/play',
       '/tournaments',
       '/tournament-results',
       '/hand-history',
@@ -80,7 +84,7 @@ export function getArenaSectionNavigation(pathname: string): ArenaSectionNavigat
     return { id: 'play', label: 'Play Records', items: PLAY_ITEMS };
   }
 
-  if (isWithin(current, ['/search', '/friends', '/messages'])) {
+  if (isWithin(current, ['/community', '/search', '/friends', '/messages'])) {
     return { id: 'community', label: 'Community', items: COMMUNITY_ITEMS };
   }
 
@@ -95,6 +99,7 @@ export function getArenaSectionNavigation(pathname: string): ArenaSectionNavigat
       '/bonuses',
       '/achievements',
       '/challenges',
+      '/marketplace',
     ])
   ) {
     return { id: 'rewards', label: 'Rewards Circuit', items: REWARD_ITEMS };

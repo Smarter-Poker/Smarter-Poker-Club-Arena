@@ -811,6 +811,42 @@ export class GameServer {
       (discoveryLoopStalledMs > 900_000 ||
         (discoveryLoopStalledMs > 60_000 && !anyTableProgressedRecently));
 
+    /**
+     * ── A BARREN LEADER IS DEAD, HOWEVER BUSY ITS LOOP LOOKS (2026-08-30) ───
+     *
+     * Every fix above moved liveness from "did discovery SUCCEED" to "is the
+     * loop RUNNING", each time for a good reason: a slow database must not
+     * kill an engine that is dealing. Correct — but it left a hole with no
+     * detector in it. A discovery loop that ATTEMPTS every few seconds and
+     * FAILS every single time is, to `discoveryLoopStalledMs`, perfectly
+     * healthy: the attempt clock keeps getting stamped. So the process owns no
+     * tables, deals no hands, reports liveness 'ok', and — because it is the
+     * leader — holds the lease that would let a working instance take over.
+     *
+     * OBSERVED IN PRODUCTION 2026-08-30, the whole fleet dark for 20 minutes:
+     *   role=leader status=ok uptime=175s activeTables=0 totalHandsDealt=0
+     *   discoveryLoopStalledMs=4496      <- loop ticking, so "alive"
+     *   discoveryStaleMs=101563          <- not one success in 101s
+     * Nineteen RUNNING tournaments with ~3,000 seated players, zero hands.
+     * Docker saw 'ok' and left it alone; the lease stayed held; it could only
+     * be cleared by hand. `discoveryStaleMs` was RIGHT there in the payload and
+     * nothing was allowed to read it, because reading it used to be the bug.
+     *
+     * So read it again — but only in the one state where it cannot be confused
+     * with a slow database, and where acting on it costs nothing:
+     *
+     *   - the loop has not SUCCEEDED once in ten minutes, so this is not a
+     *     blip and not an idle fleet (an idle fleet's discovery still SUCCEEDS
+     *     and finds nothing, which keeps this clock at zero); and
+     *   - we own ZERO tables, so a restart voids no hand and drops no player.
+     *
+     * That second clause is what makes this safe where its predecessors were
+     * not: every regression above was harmful because it killed an engine with
+     * live tables. This one is unreachable unless there is nothing to lose.
+     */
+    const barrenLeaderDead =
+      !stillBooting && this.tableEngines.size === 0 && discoveryStaleMs > 600_000;
+
     let totalHands = 0;
     // FIX 153: Aggregate telemetry from all table engines for health endpoint
     const tableMetrics: any[] = [];
@@ -873,7 +909,7 @@ export class GameServer {
        */
       liveness: !isLeader()
         ? 'standby'
-        : deadStalledCount > 0 || discoveryLoopDead || dealRate.dbConfirmedDead
+        : deadStalledCount > 0 || discoveryLoopDead || barrenLeaderDead || dealRate.dbConfirmedDead
           ? 'dead'
           : 'ok',
       /**
@@ -896,6 +932,12 @@ export class GameServer {
        * engine. `discoveryLoopStalledMs` can.
        */
       discoveryLoopStalledMs,
+      /**
+       * True when this leader owns no tables and discovery has not succeeded
+       * for ten minutes — the barren-leader verdict above. Surfaced so the
+       * reason a container was restarted is readable after the fact.
+       */
+      barrenLeaderDead,
       /**
        * C20 adoption budget. At ENGINE_START_BUDGET_MAX the database is coping;
        * lower means engine starts have been failing and the loop has throttled
@@ -1013,7 +1055,20 @@ export class GameServer {
       // keys on whether the loop RAN, not on whether its last answer was good.
       // Alerting on poker_discovery_stale_ms is still correct and still wired;
       // it just must not be what declares the engine dead.
-      `poker_engine_liveness ${stalled.length === 0 && Date.now() - this.lastDiscoveryAttemptAt <= 60_000 ? 1 : 0}`,
+      //
+      // 2026-08-30: the ONE exception, mirroring `barrenLeaderDead` in
+      // getStatus(). A loop that runs and fails forever keeps the RAN clock
+      // fresh, so with zero tables adopted this gauge reported a healthy
+      // engine through twenty minutes of a completely dark fleet. Owning no
+      // tables makes the ok-clock safe to read here: there is no in-flight
+      // hand for a restart to void, which is the only reason it was banned.
+      `poker_engine_liveness ${
+        stalled.length === 0 &&
+        Date.now() - this.lastDiscoveryAttemptAt <= 60_000 &&
+        !(this.tableEngines.size === 0 && Date.now() - this.lastDiscoveryOkAt > 600_000)
+          ? 1
+          : 0
+      }`,
       '# HELP poker_table_ms_since_progress Milliseconds since this table last made observable progress',
       '# TYPE poker_table_ms_since_progress gauge',
       ...liveness.map(

@@ -24,7 +24,6 @@
   position: absolute;
   inset: 0;
   z-index: -3;
-  background-image: url('/images/bg-vault.jpg');
   background-position: center 48%;
   background-size: cover;
   filter: saturate(0.75) contrast(1.1) brightness(0.62);

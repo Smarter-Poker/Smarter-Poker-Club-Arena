@@ -256,29 +256,105 @@ A turn class whose two suit buckets bet 100% and 0% is one cell in the old
 design, averaged to 50% and wrong for both holdings. The predicted spread
 was 0.238 from sampling; the built cells show 0.334.
 
-## 9. What is NOT proven, and what is deliberately not running
+## 9. The RPC-path measurement — and why it changed the build
 
-**The RPC-path measurement is not done.** The rule here is to call the RPC
-the way the ENGINE calls it, because a privileged SQL session hides
-PostgREST failures — and this attempt hit two of exactly that kind. First
-`PGRST202`: the function was invisible until the schema cache was
-reloaded, so a driver shipped in the same breath would have failed on its
-first tick for reasons no SQL test could show. Then the host's own
-credentials failed (`PGRST303`, then a gateway 520); `.env` now holds
-new-style `sb_secret_`/`sb_publishable_` keys, so the handoff's curl recipe
-for diagnosing the V30 cursor no longer works as written. The cursor
-confirms none of those calls executed. So the 657ms figure is SQL-session
-timing, and the batch size is **not** yet validated against the API's ~8s
-budget. That must be measured before any driver ships, exactly as V30's
-was — its cost turned out super-linear, and 25 is a guess until proven.
+The rule here is to call the RPC the way the ENGINE calls it, because a
+privileged SQL session hides what PostgREST does. That measurement was
+initially blocked (`PGRST202` until the schema cache was reloaded, then
+transient `PGRST303` and a gateway 520), and this doc first shipped saying
+so. The transient failures cleared. The measurement was then taken, and it
+overturned the number I had:
 
-**Nothing drives V31 yet, on purpose.** V30 is still aggregating the same
-79 GB table; a second walker would contend with it for the same buffers,
-and V30 is the one with users waiting on it. The driver starts when
-`gto_agg_progress` reports both streets done. 225 of ~1.89M rows are
-folded — enough to prove the shape, and the cursor resumes from there.
+    batch 25, privileged SQL session      0.657 s
+    batch 25, POST /rest/v1/rpc          20.5   s      31x worse
 
-Still to build after that: the driver, the loader, and the engine-side
-lookup, which needs the hero's flush-suit count computed against the live
-board to form `CLASS:n` — the mirror of `fn_gto_board_flush_suit`, and the
-same mirroring obligation `textureClass()` already carries.
+`authenticator` carries `statement_timeout=8s`. So the batch that looked
+comfortable could never have completed on the engine's path at all — the
+driver's first tick would have returned 57014 forever, and the cursor
+would never have moved. Had the driver shipped beside the aggregator, that
+is exactly what would have happened, silently, because every SQL test
+would still have passed.
+
+Three optimisations followed, each proven before being combined:
+
+1. **One whole-array cast instead of 1,326 element casts.**
+   `translate(arr::text,'[]','{}')::numeric[]` then `unnest ... with
+ordinality`, in place of `jsonb_array_elements` plus a per-slot
+   `::text::numeric`. 1,089/5,564ms became 692/1,252ms over 267,852
+   values, with an identical checksum (21743.0000) on both runs. The
+   variance matters as much as the mean: an 8s ceiling is broken by tails.
+2. **Aggregate before keying.** The old form built the `CLASS:suitcount`
+   text key for all ~69,000 expanded rows, sorted them wide through a
+   window function, then discarded ~85% at the validity filter. Now
+   filtered aggregates produce the per-combo distribution in one GROUP BY
+   and only the survivors are decoded and keyed. The old form swung
+   3,190ms → 42,281ms on identical input; the new one held 5,453/5,756ms.
+3. **A vocabulary guard**, so a non-numeric slot skips its action rather
+   than failing the whole-array cast and stalling the cursor.
+
+Equality was proven by `EXCEPT` in both directions on two independent
+windows — 5,377 and 5,736 output rows, zero difference either way.
+
+Re-measured on the engine's path afterwards:
+
+    batch    time     verdict
+      5      1.18 s   comfortable
+     10      6.67 s   fits, and is the largest that reliably does
+     15      4.90 s   fits, but the spread against 10 says that is luck
+     25      9.06 s   57014 — cancelled, over the ceiling
+
+**Batch 10.** Note 15 measured faster than 10 on a single sample: the
+run-to-run variance exceeds the difference between those two sizes, which
+is precisely why the number is chosen with headroom rather than by taking
+the fastest sample.
+
+### A latent bug the rewrite removed
+
+The old shape grouped by `(id, handkey, bucket)` and took `avg(f)`. Across
+COMBOS sharing a hand key that is right — it is what a class cell means.
+Across two ACTIONS landing in the same size bucket it is wrong: two bets
+both under 60% of pot are two ways to do one thing, and their frequencies
+must be SUMMED. Averaging would yield a mix that does not sum to 1 —
+quietly breaking the invariant this table is verified by. V30's aggregator
+sums here; V31's did not.
+
+It has never fired — 4,000 sampled rows have exactly one action per bucket
+(turn 2/2, flop 3/3), so no shipped cell is affected — but the bucket
+boundaries are arbitrary and a future export could collide without anyone
+noticing. `sum(f) FILTER (WHERE bucket = ...)` makes it structurally
+impossible.
+
+## 10. The driver, gated
+
+`GtoAggregationDriverV31` is wired into boot beside V30's, and **waits**:
+every tick first asks whether `gto_agg_progress` reports every V30 street
+done, and does nothing until it does. Both walk the same 79 GB relation
+behind the 2026-08-15 liveness incident, and V30 is the one with a consult
+already reading its output. The gate **fails closed** — an error, an empty
+table, or any shape it does not recognise all answer "not yet", because a
+driver that cannot tell whether it is safe to start must not start.
+
+Four calls of 10 rows per 20s tick is ~2 rows/s, deliberately gentler than
+V30's eight: nothing is waiting on this build. That is roughly five days
+of wall clock for ~1.89M rows, unattended, with the cursor making every
+restart free.
+
+Nine tests. Two of them were verified to fail for the right reason before
+being trusted — `BATCH` mutated to 25 failed only the batch pin, and the
+gate mutated to fail open failed only the fails-closed pin — then restored
+green. A guard nobody has watched fail is theatre.
+
+## 11. What remains, honestly
+
+The engine-side **consult is not wired, and should not be yet**:
+`gto_postflop_v31` holds 34 cells from 475 folded rows, 0.03% of the
+build. A lookup against that would return null almost always and prove
+nothing. It becomes worth building when the table is substantially full,
+and it needs one new piece — the hero's flush-suit count computed against
+the live board to form `CLASS:n`, a mirror of `fn_gto_board_flush_suit`
+carrying the same obligation `textureClass()` already has: mirrored
+classifiers must agree or lookups land in the wrong cell.
+
+Also still true and worth not re-deriving: V30's `bet_big` branch remains
+unreachable on turn and river (section 3a). It is dead rather than wrong,
+and it stays because V31 will populate that bucket for real.

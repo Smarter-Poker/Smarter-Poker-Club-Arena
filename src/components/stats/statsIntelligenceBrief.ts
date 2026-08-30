@@ -98,7 +98,7 @@ export function buildStatsIntelligenceBrief(input: {
     new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
       date
     );
-  const recentRange = `${formatDay(start)}–${formatDay(end)}`;
+  const recentRange = `${formatDay(start)} to ${formatDay(end)}`;
 
   return [
     {

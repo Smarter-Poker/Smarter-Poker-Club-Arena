@@ -133,6 +133,35 @@ export interface RakeRecordLike {
 }
 
 /**
+ * LEDGER-FIRST shares for one rake_records row (POLISH 4, 2026-08-30).
+ *
+ * `atomic_distribute_rake` already persisted the authoritative per-player
+ * allocation into `rake_attributions` at banking time. Recomputing it in JS
+ * was a SECOND implementation of the same arithmetic — correct today (it is
+ * parity-tested against the SQL twin), but two implementations of one money
+ * rule is precisely the shape that produced the equal-dealt bug, the missing
+ * pot-overage clamp, and the 49%-underfunded jackpot. Reading what was
+ * written removes the divergence risk entirely.
+ *
+ * `ledger` is the per-hand map the caller batch-loaded (one query per page,
+ * not per hand). When a hand has ledger rows they ARE the answer. When it has
+ * none — a historical hand, a pruned horse-only hand, a tournament fee row, a
+ * null-hand row — we fall back to the canonical allocator, exactly as the SQL
+ * side does via fn_rake_shares_for_record. Same contract, same fallback.
+ */
+export function sharesForRakeRecordWithLedger(
+  row: RakeRecordLike & { hand_id?: string | null },
+  ledger: Map<string, Map<string, number>>
+): Map<string, number> {
+  const handId = row.hand_id;
+  if (handId) {
+    const stored = ledger.get(handId);
+    if (stored && stored.size > 0) return stored;
+  }
+  return sharesForRakeRecord(row);
+}
+
+/**
  * Per-player rake credits for one rake_records row, under the methodology the
  * row was SETTLED with. This is the single call every JS consumer (rakeback
  * periods, agent commissions, player_stats) uses — do not re-derive shares

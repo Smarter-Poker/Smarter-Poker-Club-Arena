@@ -151,6 +151,21 @@ vi.mock('../../src/services/StatsFactsService', () => {
     }),
     getDistribution: vi.fn().mockResolvedValue([]),
   };
+  // POLISH 1 (2026-08-30): the page reads its own weighted rake. Mocked here
+  // so the mock cannot lag the service it stands in for.
+  (svc as Record<string, unknown>).getRakeStats = vi.fn().mockResolvedValue({
+    hands: 0,
+    raked_hands: 0,
+    rake_paid: 0,
+    rake_per_100: 0,
+    rake_in_bb: 0,
+    bb_per_100: 0,
+    avg_rake_per_raked_hand: 0,
+    first_hand_at: null,
+    last_hand_at: null,
+    days: null,
+  });
+  (svc as Record<string, unknown>).getHandRakeShare = vi.fn().mockResolvedValue({ found: false });
   return { __esModule: true, default: svc, StatsFactsService: svc };
 });
 

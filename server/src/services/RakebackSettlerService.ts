@@ -41,7 +41,7 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
-import { sharesForRakeRecord } from './rakeAllocation.js';
+import { sharesForRakeRecord, sharesForRakeRecordWithLedger } from './rakeAllocation.js';
 
 const SETTLEMENT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 /**
@@ -72,6 +72,12 @@ const CATCH_UP_DELAY_MS = 60 * 1000; // 1 minute
  * 150, so a chunk is comfortably inside even a slow window with headroom.
  */
 const CREDIT_BATCH_SIZE = 150;
+/**
+ * POLISH 4 (2026-08-30): hand ids per batched rake_attributions read. The
+ * ledger is loaded once per page, not once per hand — a page of 1,000 hands
+ * costs a handful of round trips instead of 1,000.
+ */
+const LEDGER_READ_CHUNK = 200;
 const DAEMON_KEY = 'rakeback_settler';
 
 /**
@@ -1412,6 +1418,66 @@ export class RakebackSettlerService {
     // array would end the drain one page early and leave backlog unsettled.
     const hitLimit = rawPageSize >= FETCH_LIMIT;
 
+    // ── POLISH 4 (2026-08-30): READ THE LEDGER, DO NOT RE-DERIVE IT ────────
+    //
+    // atomic_distribute_rake persisted the authoritative per-player allocation
+    // into rake_attributions at banking time. Recomputing it here was a second
+    // implementation of one money rule — the exact shape that produced the
+    // equal-dealt bug, the missing pot-overage clamp and the 49%-underfunded
+    // jackpot. ONE batched query per page (not per hand) loads what was
+    // written; hands with no ledger rows (historical, pruned horse-only,
+    // tournament fees, null-hand) fall back to the canonical allocator,
+    // mirroring fn_rake_shares_for_record on the SQL side.
+    //
+    // A failed read is NOT fatal: the fallback is the allocator, which is
+    // parity-tested against the same SQL. Worst case we compute what we would
+    // have computed before this change.
+    const ledger = new Map<string, Map<string, number>>();
+    {
+      const handIds = [
+        ...new Set(
+          (rows as RakeRecordRow[])
+            .map((r) => r.hand_id)
+            .filter((h): h is string => typeof h === 'string' && h.length > 0)
+        ),
+      ];
+      for (let i = 0; i < handIds.length; i += LEDGER_READ_CHUNK) {
+        const chunk = handIds.slice(i, i + LEDGER_READ_CHUNK);
+        try {
+          const { data, error } = await supabase
+            .from('rake_attributions')
+            .select('hand_id, player_id, weighted_rake_credit')
+            .in('hand_id', chunk);
+          if (error) {
+            reportError(
+              new Error(`rake_attributions read failed: ${error.message}`),
+              'RakebackSettler.ledger_read'
+            );
+            continue; // allocator fallback covers this chunk
+          }
+          for (const r of (data ?? []) as Array<{
+            hand_id: string;
+            player_id: string;
+            weighted_rake_credit: number | string | null;
+          }>) {
+            const credit = Number(r.weighted_rake_credit);
+            if (!Number.isFinite(credit)) continue;
+            let m = ledger.get(r.hand_id);
+            if (!m) {
+              m = new Map<string, number>();
+              ledger.set(r.hand_id, m);
+            }
+            m.set(r.player_id, credit);
+          }
+        } catch (e) {
+          reportError(
+            new Error((e as { message?: string })?.message || String(e)),
+            'RakebackSettler.ledger_read_threw'
+          );
+        }
+      }
+    }
+
     // 2. Aggregate per (user_id, club_id, week)
     type Bucket = {
       user_id: string;
@@ -1427,7 +1493,7 @@ export class RakebackSettlerService {
       // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): method-aware, canonical
       // allocator. Weighted for new cash hands; historical DEALT_EQUAL rows
       // reproduce their historical equal split. Shares sum exactly to rake.
-      const shares = sharesForRakeRecord(row);
+      const shares = sharesForRakeRecordWithLedger(row, ledger);
       if (shares.size === 0) continue;
       const created = new Date(row.created_at);
       const ws = weekStart(created);
@@ -1490,7 +1556,7 @@ export class RakebackSettlerService {
       // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): method-aware shares — the
       // commission basis is the player's credited rake under the hand's own
       // methodology. Shares sum exactly to the rake collected.
-      const shares = sharesForRakeRecord(row);
+      const shares = sharesForRakeRecordWithLedger(row, ledger);
       if (shares.size === 0) continue;
       for (const [userId, credit] of shares.entries()) {
         agentCreditsAttempted++;
@@ -1566,7 +1632,7 @@ export class RakebackSettlerService {
       const rrId = (row as { id?: string }).id;
       if (!rrId) continue; // no durable id -> cannot key idempotency; skip (safe)
       // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): method-aware shares.
-      const psShares = sharesForRakeRecord(row);
+      const psShares = sharesForRakeRecordWithLedger(row, ledger);
       if (psShares.size === 0) continue;
       for (const [userId, credit] of psShares.entries()) {
         statsItems.push({

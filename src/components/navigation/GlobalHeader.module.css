@@ -125,14 +125,42 @@
   left: 50% !important;
   z-index: 1;
   display: block;
-  width: 58%;
-  height: auto;
-  aspect-ratio: 0.78;
+  width: 54%;
+  height: 64%;
+  aspect-ratio: auto;
   transform: translate(-50%, -50%) !important;
   overflow: hidden;
   border-radius: 50%;
   background: #020305;
   pointer-events: none;
+}
+
+/* The approved profile crop is repeated only as the chrome foreground ring.
+   Its center is transparent, so the stock blue profile person is removed; the
+   annulus remains pixel-for-pixel approved artwork above the user's avatar. */
+.profileFrameOverlay {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 2;
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  object-fit: contain !important;
+  opacity: 1 !important;
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(
+    circle at 50% 50%,
+    transparent 0 35%,
+    #000 37% 49%,
+    transparent 51% 100%
+  );
+  mask-image: radial-gradient(
+    circle at 50% 50%,
+    transparent 0 35%,
+    #000 37% 49%,
+    transparent 51% 100%
+  );
 }
 
 .profileAvatarSlot > .profileAvatar {

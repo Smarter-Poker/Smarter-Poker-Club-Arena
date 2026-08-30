@@ -18,6 +18,7 @@ import {
   SPIN_REVEAL,
   spinRevealToDealMs,
   spinRevealTotalMs,
+  spinPostRevealMs,
   SPIN_SEATS as SPEC_SPIN_SEATS,
   spinTier,
   spinRakeRate,
@@ -204,6 +205,19 @@ export abstract class TournamentManagerBase {
    * gap grow unnoticed in the first place.
    */
   protected spinRevealLagMs: number = 0;
+  /**
+   * Tables the paid seats are already sitting at, read for free alongside the
+   * paid-entry roster. A seat-first player is on the felt before the game
+   * starts, so this is where the wheel has to reach them (round 18).
+   */
+  protected seatFirstTableIds: string[] = [];
+  /**
+   * Has the reveal already gone out? Once it has, the moment is PUBLIC and
+   * `resolveSpinReveal` must never re-anchor it — three players are already
+   * animating against those numbers, and moving them would desynchronise the
+   * one thing the whole anchor exists to keep in step.
+   */
+  protected spinRevealEmitted = false;
   // Tournament metadata cache
   protected tournamentCache: any = null;
   // FIX 151: ChipRaceEngine for denomination removal on level-up
@@ -1174,7 +1188,13 @@ export abstract class TournamentManagerBase {
              adjacent reads had opposite failure policies. */
           const { data: regs, error: regsErr } = await supabase
             .from('tournament_players')
-            .select('user_id')
+            /* `table_id` costs nothing here — this read already happens — and
+               it is what lets the wheel fire the INSTANT the draw resolves
+               rather than after the settle, the row write, the per-player
+               updates and the table build. See emitSpinRevealNow (round 18):
+               a seat-first player is already sitting at that table, so its id
+               is all the reveal needs to reach them. */
+            .select('user_id, table_id')
             .eq('tournament_id', this.tournamentId)
             .in('status', ['registered', 'playing']);
           if (regsErr) {
@@ -1188,6 +1208,11 @@ export abstract class TournamentManagerBase {
             return;
           }
           const regIds = (regs ?? []).map((r: any) => r.user_id).filter(Boolean);
+          /* The tables these paid seats are already sitting at. Distinct, and
+             usually exactly one for a Spin. Used only by the early reveal. */
+          this.seatFirstTableIds = Array.from(
+            new Set((regs ?? []).map((r: any) => r.table_id).filter(Boolean) as string[])
+          );
 
           const { data: debits, error: debitErr } = await supabase
             .from('wallet_transactions')
@@ -1458,6 +1483,71 @@ export abstract class TournamentManagerBase {
         const tier = spinTier(spinMultiplier);
         const prizePool = Math.round(buyIn * spinMultiplier * 100) / 100;
 
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  THE WHEEL FIRES HERE, NOT FOUR ROUND TRIPS LATER (round 18)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * Dan: "AS SOON AS THE 3RD SEAT IS PAID FOR THE ANIMATION SHOULD
+         * START AS SOON AS POSSIBLE."
+         *
+         * The draw has just resolved, and the draw is the ONLY thing the
+         * wheel is waiting on — every number the packet carries is already
+         * known on this line: the multiplier, the buy-in, and `prizePool`,
+         * computed immediately above from the two of them.
+         *
+         * Everything that used to sit between here and the broadcast is
+         * bookkeeping the player cannot see: `fn_spin_settle_game`, the spin
+         * row write, a roster read plus a per-player update for each seat,
+         * the stack credit, and the table build. Measured post-round-16 over
+         * 229 spins, third paid seat to `started_at` was p50 3.02s with a
+         * floor of 1.57s — and the old broadcast sat behind all of it.
+         *
+         * None of that work is a precondition for showing three players a
+         * spinning wheel. It is a precondition for DEALING, and dealing is
+         * already held for `spinRevealToDealMs` by the hold below, which is
+         * far longer than the work takes. So the reveal goes out now and the
+         * bookkeeping continues underneath it, inside a hold that was always
+         * there.
+         *
+         * The later block still runs: it applies `holdDealingUntil` to each
+         * engine once they exist, and re-emits for any table this early pass
+         * could not name. `resolveSpinReveal` is frozen the moment this fires
+         * (`spinRevealEmitted`), so the second emit carries the SAME instant
+         * and cannot move a wheel that is already turning.
+         */
+        if (this.seatFirstTableIds.length > 0 && spinMultiplier > 0) {
+          const { revealAt, holdUntil } = this.resolveSpinReveal();
+          this.spinRevealEmitted = true;
+          for (const tableId of this.seatFirstTableIds) {
+            try {
+              tableStateHub.emitEvent(tableId, {
+                type: 'spin_reveal',
+                table_id: tableId,
+                tournament_id: this.tournamentId,
+                multiplier: spinMultiplier,
+                buy_in: buyIn,
+                locked_tiers: tournament.spin_locked_tiers ?? null,
+                reveal_at: revealAt,
+                hold_until: holdUntil,
+                reveal_lag_ms: this.spinRevealLagMs,
+                prize_pool: prizePool,
+                timestamp: revealAt,
+                replay_until: holdUntil,
+              });
+            } catch (err) {
+              /* The reveal is theatre; it must never stop a game starting. */
+              reportError(
+                err,
+                'Tournament.' + this.tournamentId.slice(0, 8) + '.spin_reveal_early_emit'
+              );
+            }
+          }
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reveal broadcast EARLY — ${spinMultiplier}x to ${this.seatFirstTableIds.length} table(s), ${this.spinRevealLagMs}ms behind the third payment, settle and table build still to come inside the hold`
+          );
+        }
+
         // Book it. This is the row that did not exist before the cutover.
         //
         // RETRIED. Settlement is idempotent (it returns already_settled on a
@@ -1719,9 +1809,40 @@ export abstract class TournamentManagerBase {
          * instant the stacks are still being written.
          */
         const { revealAt, holdUntil } = this.resolveSpinReveal();
+        /**
+         * ONE-SIDED SAFETY ON THE HOLD (round 18).
+         *
+         * Freezing the reveal at the early emit means `holdUntil` is now
+         * decided BEFORE the settle, the row write and the table build,
+         * rather than after them. In the normal case that work costs a second
+         * or two out of a 16.6s hold and nothing changes. On a bad day — a
+         * slow settle, a retry loop — it could in principle consume the whole
+         * hold, and the re-anchor that used to catch exactly that is
+         * deliberately disabled once the moment is public (three wheels are
+         * already turning on those numbers; moving them is worse).
+         *
+         * So the HOLD is extended instead of the reveal being moved. Clients
+         * clamp their animation to the `hold_until` they were given and are
+         * allowed to finish EARLY — "faster than the budget is allowed: that
+         * player's wheel lands early and the felt simply waits" — so a longer
+         * server hold desynchronises nothing. It only ever guarantees the
+         * post-reveal beats (chip drop, button draw) still have room, which
+         * is the floor below which a card would land on a moving wheel.
+         */
+        const effectiveHold = Math.max(holdUntil, Date.now() + spinPostRevealMs());
         for (const [tableId, engine] of this.tableEngines) {
           try {
-            engine.holdDealingUntil(holdUntil);
+            /* THE HOLD IS APPLIED EITHER WAY (round 18). The early emit above
+               reached the players; it could not reach the ENGINE, which did
+               not exist yet. This is where dealing is actually held, and it
+               must happen for every table whether or not the wheel was
+               already announced to it. */
+            engine.holdDealingUntil(effectiveHold);
+            /* Already announced to this table by the early pass — the wheel
+               is turning on those exact numbers. Re-emitting is harmless (the
+               client guards a second open) but pointless, and skipping keeps
+               one reveal to one table. */
+            if (this.spinRevealEmitted && this.seatFirstTableIds.includes(tableId)) continue;
             tableStateHub.emitEvent(tableId, {
               type: 'spin_reveal',
               table_id: tableId,
@@ -2536,6 +2657,13 @@ export abstract class TournamentManagerBase {
       return { revealAt: this.spinRevealAt, holdUntil: this.spinHoldUntil };
     }
     this.spinRevealLagMs = Math.max(0, now - this.spinRevealAt);
+    /* ONCE IT IS PUBLIC, IT DOES NOT MOVE (round 18). The early emit puts
+       these exact numbers on three screens; re-anchoring afterwards would
+       leave the second broadcast disagreeing with the wheels already turning,
+       which is the precise desynchronisation the anchor exists to prevent. */
+    if (this.spinRevealEmitted) {
+      return { revealAt: this.spinRevealAt, holdUntil: this.spinHoldUntil };
+    }
     /* The full sequence must still fit between now and the deal. Anything
        less and some beat is being cut, so the wheel starts here instead. */
     if (this.spinHoldUntil - now < spinRevealToDealMs()) {
@@ -3050,6 +3178,11 @@ export abstract class TournamentManagerBase {
         joined_at: new Date().toISOString(),
       });
       if (seatErr) {
+        // Un-burn the seat. If we don't, this seat is permanently unavailable in `occupiedSeats`
+        // even though it was never written to the database, which leads to `seating_capacity_exhausted`
+        // when we skip too many players.
+        taken.delete(seatNumber);
+
         reportError(
           new Error(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Failed to seat ${toSeat[i].user_id.slice(0, 8)}: ${seatErr.message}`

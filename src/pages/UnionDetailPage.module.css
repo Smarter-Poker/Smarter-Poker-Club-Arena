@@ -92,6 +92,23 @@
   font-size: 1.5rem;
 }
 
+.unionInfo h2 {
+  margin: 0 0 0.5rem;
+  color: #f4f8fb;
+  font:
+    700 1.5rem/1 Rajdhani,
+    Inter,
+    sans-serif;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.unionAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .unionInfo p {
   margin: 0;
   color: var(--text-muted);
@@ -964,4 +981,42 @@
 .emptyState p {
   margin: 0;
   font-size: 0.9rem;
+}
+
+/* Phase 6: unify the retained union overview with the Union Command system. */
+.page {
+  background:
+    radial-gradient(circle at 82% 5%, rgba(58, 168, 255, 0.08), transparent 28rem),
+    linear-gradient(180deg, #05080c, #020407);
+}
+
+.header,
+.modal,
+.clubOption,
+.statCard,
+.clubCard,
+.tableCard,
+.tournamentCard,
+.settingsCard,
+.section {
+  border-color: #26333d;
+  border-radius: 4px;
+  background: linear-gradient(112deg, #101820, #080d12 72%, #05080c);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.unionAvatar {
+  overflow: hidden;
+  border: 1px solid #b9cad7;
+  border-radius: 4px;
+  background: #080d12;
+}
+
+.applyButton,
+.cancelButton,
+.clubOption,
+.page button {
+  min-height: 44px;
+  border-radius: 3px;
 }

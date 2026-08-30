@@ -406,6 +406,34 @@
   }
 }
 
+/* Phase 6: align live union games with the black-first network command deck. */
+.page {
+  background:
+    radial-gradient(circle at 82% 5%, rgba(58, 168, 255, 0.08), transparent 28rem),
+    linear-gradient(180deg, #05080c, #020407);
+}
+
+.statCard,
+.tournCard,
+.tableCard,
+.bbjCard,
+.filterBar {
+  border: 1px solid #26333d;
+  border-radius: 4px;
+  background: linear-gradient(112deg, #101820, #080d12 72%, #05080c);
+}
+
+.page button,
+.page a {
+  min-height: 44px;
+  border-radius: 3px;
+}
+
+.statValueGold,
+.statValuePurple {
+  color: #ddf3ff;
+}
+
 @media (max-width: 480px) {
   .page {
     padding: 12px 12px 100px;

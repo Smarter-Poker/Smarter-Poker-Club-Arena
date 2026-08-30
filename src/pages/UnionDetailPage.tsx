@@ -29,6 +29,7 @@ import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import { ensureMidwayUnionSetup } from '../services/HorseOrchestrator';
 import { getUnionLevel, getClubLevel } from '../utils/clubLevels';
 import { reportError } from '../utils/errorReporter';
+import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 // Whole-number tournament money (Dan 2026-08-20).
 import { formatBuyInShort } from '../utils/buyIn';
 import UnionClubGovernance from '../components/union/UnionClubGovernance';
@@ -712,10 +713,27 @@ export default function UnionDetailPage() {
 
   return (
     <div className={styles.page}>
+      <CasinoSurfaceHeader
+        eyebrow="Union Network / Overview"
+        title={union.name}
+        description={
+          union.description ||
+          'Inspect this connected club network, its live games, player scale, and governed operations.'
+        }
+        artPath="assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp"
+        status="UNION NETWORK // LIVE"
+        metrics={[
+          { label: 'Clubs', value: union.clubCount },
+          { label: 'Players', value: union.memberCount.toLocaleString(), tone: 'live' },
+          { label: 'Online', value: union.onlineCount.toLocaleString(), tone: 'attention' },
+        ]}
+      />
       <div className={styles.header}>
-        <div className={styles.unionAvatar}>{union.avatarUrl || union.name.charAt(0)}</div>
+        <div className={styles.unionAvatar}>
+          {union.avatarUrl ? <img src={union.avatarUrl} alt="" /> : union.name.charAt(0)}
+        </div>
         <div className={styles.unionInfo}>
-          <h1>{union.name}</h1>
+          <h2>{union.name}</h2>
           <p>{union.description}</p>
         </div>
         <div className={styles.headerActions}>

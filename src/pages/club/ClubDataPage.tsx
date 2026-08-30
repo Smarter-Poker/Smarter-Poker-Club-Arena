@@ -29,7 +29,7 @@
  * that disagrees with the reader's own calendar late in their evening.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { sizedStorageUrl, generateAvatarSvg } from '../../utils/avatarGenerator';
@@ -159,9 +159,38 @@ const PLAYER_SORTS: Array<{ id: PlayerSort; label: string }> = [
 ];
 
 const REFRESH_MS = 60_000;
+const REQUEST_TIMEOUT_MS = 15_000;
 
 /** What a money tile shows when there is no figure to show. Never "0.00". */
 const NO_VALUE = '-';
+
+type AbortableRequest<T> = PromiseLike<T> & {
+  abortSignal?: (signal: AbortSignal) => AbortableRequest<T>;
+};
+
+function withTimeout<T>(request: AbortableRequest<T>, message: string): Promise<T> {
+  const controller = new AbortController();
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+      reject(new Error(message));
+    }, REQUEST_TIMEOUT_MS);
+  });
+  const abortableRequest =
+    typeof request.abortSignal === 'function' ? request.abortSignal(controller.signal) : request;
+
+  return Promise.race([Promise.resolve(abortableRequest), timeout])
+    .catch((error: unknown) => {
+      if (timedOut) throw new Error(message);
+      throw error;
+    })
+    .finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+}
 
 /**
  * Every other timestamp on this page is UTC and the range chip is badged UTC.
@@ -247,20 +276,9 @@ function rowsToCsv(rows: SnapshotRow[]): string {
 
 function playersToCsv(rows: PlayerRow[]): string {
   const esc = csvEscape;
-  const head = [
-    'user_id',
-    'username',
-    'is_horse',
-    'hands',
-    'rake',
-    'net',
-    'cash_net',
-    'tournament_net',
-  ];
+  const head = ['user_id', 'username', 'hands', 'rake', 'net', 'cash_net', 'tournament_net'];
   const lines = rows.map((r) =>
-    [r.user_id, r.username, r.is_horse, r.hands, r.rake, r.net, r.cash_net, r.tournament_net]
-      .map(esc)
-      .join(',')
+    [r.user_id, r.username, r.hands, r.rake, r.net, r.cash_net, r.tournament_net].map(esc).join(',')
   );
   return [head.join(','), ...lines].join('\n');
 }
@@ -288,7 +306,11 @@ export default function ClubDataPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [invoicesError, setInvoicesError] = useState<string | null>(null);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
   const [tab, setTab] = useState<'games' | 'players'>('games');
   /** Read by the poll/visibility handlers, which must not re-register per tab. */
   const tabRef = useRef<'games' | 'players'>('games');
@@ -307,7 +329,12 @@ export default function ClubDataPage() {
   // A version per request fixes the ordering; the ref still handles unmount.
   const loadVersion = useRef(0);
   const playersVersion = useRef(0);
+  const invoicesVersion = useRef(0);
+  const resolveVersion = useRef(0);
+  const clubNameVersion = useRef(0);
   const cancelledRef = useRef(false);
+  const gamesTabRef = useRef<HTMLButtonElement>(null);
+  const playersTabRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     cancelledRef.current = false;
     return () => {
@@ -329,20 +356,43 @@ export default function ClubDataPage() {
 
   const isToday = endDate >= toISODate(new Date());
 
-  // resolve a club code or slug into a uuid once
+  // Invalidate every club-scoped value before the browser paints a new route.
+  // A normal effect runs after paint; that left one frame where changing from
+  // one club slug to another showed the first club's money under the new URL.
+  useLayoutEffect(() => {
+    loadVersion.current += 1;
+    playersVersion.current += 1;
+    invoicesVersion.current += 1;
+    resolveVersion.current += 1;
+    clubNameVersion.current += 1;
+    setClubUuid(isUUID(clubParam) ? clubParam : null);
+    setClubName('');
+    setSnapshot(null);
+    setInvoices([]);
+    setPlayers(null);
+    setError(null);
+    setInvoicesError(null);
+    setPlayersError(null);
+    setExportNote(null);
+    setRefreshNote(null);
+    setShowInvoiceDetail(false);
+    setShowInvoiceHistory(false);
+    setLoading(Boolean(clubParam));
+    setPlayersLoading(false);
+    setInvoicesLoading(false);
+  }, [clubParam]);
+
+  // Resolve a club code or slug only after auth restoration. A protected club
+  // lookup that races the session can return "not found" for a valid club and
+  // never retry when the user arrives.
   useEffect(() => {
     let cancelled = false;
-    if (!clubParam) {
-      setClubUuid(null);
-      return;
-    }
-    if (isUUID(clubParam)) {
-      setClubUuid(clubParam);
-      return;
-    }
-    resolveClubUUID(clubParam)
+    if (!clubParam || isUUID(clubParam) || isHydrating || !user) return;
+    const myVersion = ++resolveVersion.current;
+    const stale = () => cancelled || resolveVersion.current !== myVersion;
+    withTimeout(resolveClubUUID(clubParam), 'Club lookup timed out')
       .then((uuid) => {
-        if (cancelled) return;
+        if (stale()) return;
         // isUUID, not truthiness: resolveClubUUID returns the INPUT unchanged
         // when it cannot resolve, so this branch was unreachable and the
         // comment below described a fix the code did not implement - a bad club
@@ -361,63 +411,56 @@ export default function ClubDataPage() {
       })
       .catch((err) => {
         reportError(err, 'ClubDataPage.resolve_club');
-        if (cancelled) return;
+        if (stale()) return;
         setError('Club not found.');
         setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [clubParam]);
-
-  // Every piece of per-club state is cleared the moment the club changes.
-  // Before this, clubName was only written on success (so a club with no name
-  // row kept the PREVIOUS club's name in the footer), and snapshot, invoices
-  // and players simply stayed put - the old club's money under the new club's
-  // heading, with no skeleton, because the skeleton is gated on !snapshot.
-  useEffect(() => {
-    setSnapshot(null);
-    setInvoices([]);
-    setPlayers(null);
-    setPlayersError(null);
-    setClubName('');
-    setExportNote(null);
-    setShowInvoiceDetail(false);
-  }, [clubUuid]);
+  }, [clubParam, isHydrating, user]);
 
   useEffect(() => {
-    if (!clubUuid) return;
+    if (!clubUuid || isHydrating || !user) return;
     let cancelled = false;
-    supabase
-      .from('clubs')
-      .select('name')
-      .eq('id', clubUuid)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (!cancelled) setClubName(data?.name || '');
-      });
+    const myVersion = ++clubNameVersion.current;
+    const stale = () => cancelled || clubNameVersion.current !== myVersion;
+    withTimeout(
+      supabase.from('clubs').select('name').eq('id', clubUuid).maybeSingle(),
+      'Club name request timed out'
+    ).then(
+      ({ data }) => {
+        if (!stale()) setClubName(data?.name || '');
+      },
+      (err: unknown) => {
+        if (!stale()) reportError(err, 'ClubDataPage.club_name');
+      }
+    );
     return () => {
       cancelled = true;
     };
-  }, [clubUuid]);
+  }, [clubUuid, isHydrating, user]);
 
   const load = useCallback(
-    async (showSpinner: boolean) => {
-      if (!clubUuid) return;
+    async (showSpinner: boolean, preserveOnError = false): Promise<boolean> => {
+      if (!clubUuid || isHydrating || !user) return false;
       const myVersion = ++loadVersion.current;
       const stale = () => cancelledRef.current || loadVersion.current !== myVersion;
       if (showSpinner) setLoading(true);
       try {
-        const { data, error: rpcError } = await supabase.rpc('ca_club_data_snapshot', {
-          p_club_id: clubUuid,
-          p_start: startDate,
-          p_end: endDate,
-          p_game: game,
-          p_stakes: stakes,
-          p_search: search || null,
-          p_limit: 200,
-        });
-        if (stale()) return;
+        const { data, error: rpcError } = await withTimeout(
+          supabase.rpc('ca_club_data_snapshot', {
+            p_club_id: clubUuid,
+            p_start: startDate,
+            p_end: endDate,
+            p_game: game,
+            p_stakes: stakes,
+            p_search: search || null,
+            p_limit: 200,
+          }),
+          'Club data request timed out'
+        );
+        if (stale()) return false;
         if (rpcError) {
           if (isAuthzError(rpcError)) {
             setError('You need to be an owner or admin of this club to see its data.');
@@ -425,17 +468,26 @@ export default function ClubDataPage() {
             reportError(rpcError, 'ClubDataPage.snapshot_rpc');
             setError('Could not load club data.');
           }
-          setSnapshot(null);
+          if (isAuthzError(rpcError) || !preserveOnError) setSnapshot(null);
+          return false;
         } else if (!data || !Array.isArray((data as Snapshot).rows)) {
           // A null or shapeless payload used to be stored as success, leaving a
           // page with no data, no skeleton and no message.
           reportError(new Error('snapshot payload was empty'), 'ClubDataPage.snapshot_shape');
           setError('Could not load club data.');
-          setSnapshot(null);
+          if (!preserveOnError) setSnapshot(null);
+          return false;
         } else {
           setError(null);
           setSnapshot(data as Snapshot);
+          return true;
         }
+      } catch (err) {
+        if (stale()) return false;
+        reportError(err, 'ClubDataPage.snapshot_request');
+        setError('Club data took too long to respond. Try again.');
+        if (!preserveOnError) setSnapshot(null);
+        return false;
       } finally {
         // Only the newest request may clear the skeleton. A background poll that
         // finished first used to pull it out from under a load the user had just
@@ -443,7 +495,7 @@ export default function ClubDataPage() {
         if (!stale()) setLoading(false);
       }
     },
-    [clubUuid, startDate, endDate, game, stakes, search]
+    [clubUuid, startDate, endDate, game, stakes, search, isHydrating, user]
   );
 
   useEffect(() => {
@@ -452,39 +504,54 @@ export default function ClubDataPage() {
 
   // Players are fetched only when that tab is open. It is a second scan over
   // the same window and there is no reason to pay for it on every visit.
-  const loadPlayers = useCallback(async () => {
-    if (!clubUuid) return;
-    const myVersion = ++playersVersion.current;
-    const stale = () => cancelledRef.current || playersVersion.current !== myVersion;
-    setPlayersLoading(true);
-    try {
-      const { data, error: rpcError } = await supabase.rpc('ca_club_player_breakdown', {
-        p_club_id: clubUuid,
-        p_start: startDate,
-        p_end: endDate,
-        p_limit: 500,
-      });
-      if (stale()) return;
-      if (rpcError) {
-        if (isAuthzError(rpcError)) {
-          setPlayersError('You need to be an owner or admin of this club to see player data.');
-        } else {
-          reportError(rpcError, 'ClubDataPage.players_rpc');
+  const loadPlayers = useCallback(
+    async (preserveOnError = false): Promise<boolean> => {
+      if (!clubUuid || isHydrating || !user) return false;
+      const myVersion = ++playersVersion.current;
+      const stale = () => cancelledRef.current || playersVersion.current !== myVersion;
+      setPlayersLoading(true);
+      try {
+        const { data, error: rpcError } = await withTimeout(
+          supabase.rpc('ca_club_player_breakdown', {
+            p_club_id: clubUuid,
+            p_start: startDate,
+            p_end: endDate,
+            p_limit: 500,
+          }),
+          'Player data request timed out'
+        );
+        if (stale()) return false;
+        if (rpcError) {
+          if (isAuthzError(rpcError)) {
+            setPlayersError('You need to be an owner or admin of this club to see player data.');
+          } else {
+            reportError(rpcError, 'ClubDataPage.players_rpc');
+            setPlayersError('Could not load player data.');
+          }
+          if (isAuthzError(rpcError) || !preserveOnError) setPlayers(null);
+          return false;
+        } else if (!data || !Array.isArray((data as PlayerBreakdown).players)) {
+          reportError(new Error('player payload was empty'), 'ClubDataPage.players_shape');
           setPlayersError('Could not load player data.');
+          if (!preserveOnError) setPlayers(null);
+          return false;
+        } else {
+          setPlayersError(null);
+          setPlayers(data as PlayerBreakdown);
+          return true;
         }
-        setPlayers(null);
-      } else if (!data || !Array.isArray((data as PlayerBreakdown).players)) {
-        reportError(new Error('player payload was empty'), 'ClubDataPage.players_shape');
-        setPlayersError('Could not load player data.');
-        setPlayers(null);
-      } else {
-        setPlayersError(null);
-        setPlayers(data as PlayerBreakdown);
+      } catch (err) {
+        if (stale()) return false;
+        reportError(err, 'ClubDataPage.players_request');
+        setPlayersError('Player data took too long to respond. Try again.');
+        if (!preserveOnError) setPlayers(null);
+        return false;
+      } finally {
+        if (!stale()) setPlayersLoading(false);
       }
-    } finally {
-      if (!stale()) setPlayersLoading(false);
-    }
-  }, [clubUuid, startDate, endDate]);
+    },
+    [clubUuid, startDate, endDate, isHydrating, user]
+  );
 
   useEffect(() => {
     if (tab !== 'players') return;
@@ -504,7 +571,7 @@ export default function ClubDataPage() {
 
   // near-real-time: re-poll on an interval and whenever the tab regains focus
   useEffect(() => {
-    if (!clubUuid) return;
+    if (!clubUuid || isHydrating || !user) return;
     // Roll `endDate` forward across UTC midnight. It was set once at mount, so
     // a page left open overnight polled YESTERDAY's window forever: the owner
     // watched live rake stop growing and the forward arrow silently arm itself.
@@ -515,58 +582,71 @@ export default function ClubDataPage() {
     };
     const id = setInterval(() => {
       pinToToday();
-      void load(false);
-      if (tabRef.current === 'players') void loadPlayers();
+      void load(false, true);
+      if (tabRef.current === 'players') void loadPlayers(true);
     }, REFRESH_MS);
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return;
       pinToToday();
-      void load(false);
+      void load(false, true);
       // The Players tab was never refreshed by either trigger, so the tiles
       // ticked over every minute above a list frozen at whenever it was opened.
-      if (tabRef.current === 'players') void loadPlayers();
+      if (tabRef.current === 'players') void loadPlayers(true);
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(id);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [clubUuid, load, loadPlayers]);
+  }, [clubUuid, isHydrating, user, load, loadPlayers]);
+
+  const loadInvoices = useCallback(async (): Promise<boolean> => {
+    if (!clubUuid || isHydrating || !user) return false;
+    const myVersion = ++invoicesVersion.current;
+    const stale = () => cancelledRef.current || invoicesVersion.current !== myVersion;
+    setInvoicesLoading(true);
+    try {
+      const { data, error: invErr } = await withTimeout(
+        supabase.rpc('ca_club_union_invoices', { p_club_id: clubUuid, p_limit: 8 }),
+        'Union statement request timed out'
+      );
+      if (stale()) return false;
+      if (invErr) {
+        if (!isAuthzError(invErr)) reportError(invErr, 'ClubDataPage.invoices_rpc');
+        setInvoicesError(
+          isAuthzError(invErr)
+            ? 'You Do Not Have Access To This Club\u2019s Union Statements.'
+            : 'Could Not Refresh Your Union Statement.'
+        );
+        // Keep the last verified statement for a transient refresh failure.
+        // Authorization failures are different: stale financial data must not
+        // survive after access is revoked.
+        if (isAuthzError(invErr)) setInvoices([]);
+        return false;
+      } else {
+        setInvoicesError(null);
+        setInvoices((data as InvoiceRow[]) || []);
+        return true;
+      }
+    } catch (err) {
+      if (stale()) return false;
+      reportError(err, 'ClubDataPage.invoices_rpc');
+      setInvoicesError('Could Not Refresh Your Union Statement.');
+      return false;
+    } finally {
+      if (!stale()) setInvoicesLoading(false);
+    }
+  }, [clubUuid, isHydrating, user]);
 
   useEffect(() => {
-    if (!clubUuid) return;
-    let cancelled = false;
-    supabase.rpc('ca_club_union_invoices', { p_club_id: clubUuid, p_limit: 8 }).then(
-      ({ data, error: invErr }) => {
-        if (cancelled) return;
-        if (invErr) {
-          if (!isAuthzError(invErr)) reportError(invErr, 'ClubDataPage.invoices_rpc');
-          // An empty list hides the whole square-up banner, which an owner
-          // reads as "nothing outstanding". A failed read has to say so.
-          setInvoicesError(
-            isAuthzError(invErr)
-              ? 'You Do Not Have Access To This Club\u2019s Union Statements.'
-              : 'Could Not Load Your Union Statement.'
-          );
-          setInvoices([]);
-        } else {
-          setInvoicesError(null);
-          setInvoices((data as InvoiceRow[]) || []);
-        }
-      },
-      (err: unknown) => {
-        // No rejection handler at all previously: an unhandled promise
-        // rejection, and still a silent banner.
-        if (cancelled) return;
-        reportError(err, 'ClubDataPage.invoices_rpc');
-        setInvoicesError('Could Not Load Your Union Statement.');
-        setInvoices([]);
-      }
-    );
-    return () => {
-      cancelled = true;
+    if (!clubUuid || isHydrating || !user) return;
+    void loadInvoices();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void loadInvoices();
     };
-  }, [clubUuid]);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [clubUuid, isHydrating, user, loadInvoices]);
 
   const shiftRange = useCallback(
     (direction: -1 | 1) => {
@@ -579,57 +659,94 @@ export default function ClubDataPage() {
     [endDate, preset]
   );
 
+  const refreshAll = useCallback(async () => {
+    if (manualRefreshing || !clubUuid || isHydrating || !user) return;
+    setManualRefreshing(true);
+    setRefreshNote('Refreshing Club Ledger.');
+    try {
+      const requests: Array<Promise<boolean>> = [load(true, true), loadInvoices()];
+      if (tab === 'players') requests.push(loadPlayers(true));
+      const outcomes = await Promise.all(requests);
+      if (!cancelledRef.current) {
+        setRefreshNote(
+          outcomes.every(Boolean)
+            ? 'Club Ledger Refreshed.'
+            : 'Refresh Finished With Some Data Unavailable.'
+        );
+      }
+    } finally {
+      if (!cancelledRef.current) setManualRefreshing(false);
+    }
+  }, [manualRefreshing, clubUuid, isHydrating, user, load, loadInvoices, loadPlayers, tab]);
+
   // The screen holds one page of rows. Exporting that silently would hand
   // someone a CSV of 200 games labelled as the period's data when the period
   // has thousands - on a financial page that is not acceptable, so the export
   // re-fetches at the RPC's ceiling and says so when even that is not enough.
   const exportCsv = useCallback(async () => {
-    if (!clubUuid) return;
+    if (!clubUuid || exporting) return;
+    setExporting(true);
     setExportNote(null);
+    try {
+      if (tab === 'players') {
+        if (!sortedPlayers.length) return;
+        if (players && players.player_count > sortedPlayers.length) {
+          setExportNote(
+            `Exported ${sortedPlayers.length} of ${players.player_count} players. Narrow the date range to export the rest.`
+          );
+        }
+        if (!downloadCsv(`club_players_${startDate}_${endDate}.csv`, playersToCsv(sortedPlayers))) {
+          setExportNote('This browser could not start the download.');
+        }
+        return;
+      }
 
-    if (tab === 'players') {
-      if (!sortedPlayers.length) return;
-      if (players && players.player_count > sortedPlayers.length) {
+      if (!snapshot) return;
+      let rows = snapshot.rows;
+      if (snapshot.row_count > rows.length) {
+        const { data, error: exportError } = await withTimeout(
+          supabase.rpc('ca_club_data_snapshot', {
+            p_club_id: clubUuid,
+            p_start: startDate,
+            p_end: endDate,
+            p_game: game,
+            p_stakes: stakes,
+            p_search: search || null,
+            p_limit: 500,
+          }),
+          'Club data export timed out'
+        );
+        if (exportError) throw exportError;
+        if (Array.isArray((data as Snapshot)?.rows)) rows = (data as Snapshot).rows;
+      }
+      if (!rows.length) return;
+      if (snapshot.row_count > rows.length) {
         setExportNote(
-          `Exported ${sortedPlayers.length} of ${players.player_count} players. Narrow the date range to export the rest.`
+          `Exported the ${rows.length} most recent of ${snapshot.row_count} games. Narrow the date range to export the rest.`
         );
       }
-      if (!downloadCsv(`club_players_${startDate}_${endDate}.csv`, playersToCsv(sortedPlayers))) {
+      if (!downloadCsv(`club_data_${startDate}_${endDate}.csv`, rowsToCsv(rows))) {
         setExportNote('This browser could not start the download.');
-      }
-      return;
-    }
-
-    if (!snapshot) return;
-    let rows = snapshot.rows;
-    try {
-      if (snapshot.row_count > rows.length) {
-        const { data, error: exportError } = await supabase.rpc('ca_club_data_snapshot', {
-          p_club_id: clubUuid,
-          p_start: startDate,
-          p_end: endDate,
-          p_game: game,
-          p_stakes: stakes,
-          p_search: search || null,
-          p_limit: 500,
-        });
-        if (!exportError && Array.isArray((data as Snapshot)?.rows)) {
-          rows = (data as Snapshot).rows;
-        }
       }
     } catch (e) {
       reportError(e, 'ClubDataPage.export_refetch');
+      setExportNote('The full export could not be prepared. Try again or narrow the date range.');
+    } finally {
+      if (!cancelledRef.current) setExporting(false);
     }
-    if (!rows?.length) return;
-    if (snapshot.row_count > rows.length) {
-      setExportNote(
-        `Exported the ${rows.length} most recent of ${snapshot.row_count} games. Narrow the date range to export the rest.`
-      );
-    }
-    if (!downloadCsv(`club_data_${startDate}_${endDate}.csv`, rowsToCsv(rows))) {
-      setExportNote('This browser could not start the download.');
-    }
-  }, [clubUuid, snapshot, startDate, endDate, game, stakes, search, tab, players, sortedPlayers]);
+  }, [
+    clubUuid,
+    exporting,
+    tab,
+    sortedPlayers,
+    players,
+    startDate,
+    endDate,
+    snapshot,
+    game,
+    stakes,
+    search,
+  ]);
 
   /**
    * The RPC is asked for 8 statements and nothing orders the result, so
@@ -664,6 +781,21 @@ export default function ClubDataPage() {
   const delta = snapshot?.delta;
   const prevRange = snapshot?.previous_range;
 
+  const onTabKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>) => {
+    let next: 'games' | 'players' | null = null;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp' || event.key === 'Home') {
+      next = 'games';
+    } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown' || event.key === 'End') {
+      next = 'players';
+    }
+    if (!next) return;
+    event.preventDefault();
+    setTab(next);
+    requestAnimationFrame(() => {
+      (next === 'games' ? gamesTabRef : playersTabRef).current?.focus();
+    });
+  }, []);
+
   // "vs prev 14d" under a headline number. Null pct means the prior window was
   // zero, and nothing is a percentage of nothing - so nothing is shown.
   const pctNote = (pct: number | null | undefined) => {
@@ -673,7 +805,7 @@ export default function ClubDataPage() {
     const v = Math.round(Number(pct) * 10) / 10;
     const cls = v > 0 ? styles.deltaUp : v < 0 ? styles.deltaDown : styles.deltaFlat;
     return (
-      <div
+      <span
         className={`${styles.delta} ${cls}`}
         title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}
       >
@@ -682,7 +814,7 @@ export default function ClubDataPage() {
             tapped while the snapshot is still the old window, so this read
             "Vs Prev 1d" over a 14-day comparison for the whole fetch. */}
         {v}% Vs Prev {prevRange?.days ?? preset}d
-      </div>
+      </span>
     );
   };
 
@@ -691,17 +823,17 @@ export default function ClubDataPage() {
     const v = Number(abs);
     const cls = v > 0 ? styles.deltaUp : v < 0 ? styles.deltaDown : styles.deltaFlat;
     return (
-      <div
+      <span
         className={`${styles.delta} ${cls}`}
         title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}
       >
         {v > 0 ? '+' : ''}
         {money(v)} Vs Prev {prevRange?.days ?? preset}d
-      </div>
+      </span>
     );
   };
 
-  if (isHydrating) {
+  if (isHydrating && !user) {
     return (
       <div className={styles.page}>
         <LoadingState message="Opening Club Data" />
@@ -743,91 +875,162 @@ export default function ClubDataPage() {
       <header className={styles.header}>
         <button
           type="button"
-          className={styles.headerBtn}
+          className={`${styles.headerBtn} ${styles.backButton}`}
           onClick={() => navigate(-1)}
           aria-label="Go back"
         >
-          &laquo;
+          <span aria-hidden="true">&#8592;</span>
+          <span>Back</span>
         </button>
-        <h1 className={styles.title}>Club Data</h1>
-        <button
-          type="button"
-          className={styles.headerBtn}
-          onClick={() => {
-            void exportCsv();
-          }}
-          disabled={tab === 'players' ? !sortedPlayers.length : !snapshot?.rows?.length}
-          aria-label="Export as CSV"
-          title="Export as CSV"
-        >
-          CSV
-        </button>
+        <span className={styles.headerIdentity}>Club Intelligence</span>
+        <div className={styles.headerActions}>
+          <button
+            type="button"
+            className={styles.headerBtn}
+            onClick={() => void refreshAll()}
+            disabled={manualRefreshing || loading || playersLoading || invoicesLoading}
+            aria-label="Refresh club ledger"
+          >
+            {manualRefreshing ? 'Refreshing' : 'Refresh'}
+          </button>
+          <button
+            type="button"
+            className={`${styles.headerBtn} ${styles.exportButton}`}
+            onClick={() => {
+              void exportCsv();
+            }}
+            disabled={
+              exporting || (tab === 'players' ? !sortedPlayers.length : !snapshot?.rows?.length)
+            }
+            aria-label="Export as CSV"
+            title="Export as CSV"
+          >
+            {exporting ? 'Exporting' : 'Export CSV'}
+          </button>
+        </div>
       </header>
 
-      <div className={styles.rangeBar}>
-        <button
-          type="button"
-          className={styles.arrow}
-          onClick={() => shiftRange(-1)}
-          aria-label="Previous period"
-        >
-          &#9664;
-        </button>
-        <div className={styles.rangeChip}>
-          <span>{startDate}</span>
-          <span>&mdash;</span>
-          <span>{endDate}</span>
-          <span className={styles.rangeTz}>UTC</span>
-        </div>
-        <button
-          type="button"
-          className={styles.arrow}
-          onClick={() => shiftRange(1)}
-          disabled={isToday}
-          aria-label="Next period"
-        >
-          &#9654;
-        </button>
+      <div className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true">
+        {refreshNote || exportNote || ''}
       </div>
 
-      {/* role="group" + aria-pressed, not a tablist. These control no tabpanel,
+      <section className={styles.hero} aria-labelledby="club-data-title">
+        <img
+          className={styles.heroArt}
+          src="/hub/club-arena/images/club-data/data-vault-hero-v1.webp"
+          alt=""
+          width="1600"
+          height="901"
+          fetchPriority="high"
+          decoding="async"
+        />
+        <div className={styles.heroShade} aria-hidden="true" />
+        <div className={styles.heroContent}>
+          <div className={styles.heroEyebrow} aria-live="polite">
+            <span className={styles.statusLight} aria-hidden="true" />
+            {loading ? 'Synchronizing Ledger' : 'Live Club Ledger'}
+          </div>
+          <h1 className={styles.title} id="club-data-title">
+            Read The Room.
+            <span>Own The Numbers.</span>
+          </h1>
+          <p className={styles.heroCopy}>
+            Track Every Game, Fee, Player Result, And Union Square-Up From One Operator-Grade View.
+          </p>
+          <div className={styles.heroMeta}>
+            <span>{clubName || 'Club Data'}</span>
+            <span>
+              {snapshot?.data_updated_at
+                ? `Cash Updated ${utcTime(snapshot.data_updated_at)}`
+                : loading
+                  ? 'Loading Live Records'
+                  : 'Live Records Ready'}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.controlDeck} aria-label="Reporting period">
+        <div className={styles.controlLabel}>Reporting Window</div>
+        <div className={styles.rangeBar}>
+          <button
+            type="button"
+            className={styles.arrow}
+            onClick={() => shiftRange(-1)}
+            aria-label="Previous period"
+          >
+            &#8592;
+          </button>
+          <div className={styles.rangeChip}>
+            <span>{startDate}</span>
+            <span className={styles.rangeDivider}>&mdash;</span>
+            <span>{endDate}</span>
+            <span className={styles.rangeTz}>UTC</span>
+          </div>
+          <button
+            type="button"
+            className={styles.arrow}
+            onClick={() => shiftRange(1)}
+            disabled={isToday}
+            aria-label="Next period"
+          >
+            &#8594;
+          </button>
+        </div>
+
+        {/* role="group" + aria-pressed, not a tablist. These control no tabpanel,
           and the stakes row is a TOGGLE - tapping the active chip clears it,
           which is impossible for a tab and leaves a tablist with nothing
           selected. A screen reader was told "tab 3 of 6" for a filter. */}
-      <div className={styles.presets} role="group" aria-label="Date Range">
-        {([1, 7, 14] as PresetId[]).map((p) => (
-          <button
-            key={p}
-            type="button"
-            aria-pressed={preset === p}
-            className={`${styles.preset} ${preset === p ? styles.active : ''}`}
-            onClick={() => setPreset(p)}
-          >
-            {p === 1 ? '1 day' : `${p} days`}
-          </button>
-        ))}
+        <div className={styles.presets} role="group" aria-label="Date Range">
+          {([1, 7, 14] as PresetId[]).map((p) => (
+            <button
+              key={p}
+              type="button"
+              aria-pressed={preset === p}
+              className={`${styles.preset} ${preset === p ? styles.active : ''}`}
+              onClick={() => setPreset(p)}
+            >
+              {p === 1 ? '1 day' : `${p} days`}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <div className={styles.sectionThreshold}>
+        <div>
+          <span>Performance Ledger</span>
+          <h2>Club Pulse</h2>
+        </div>
+        <span className={styles.thresholdStatus}>{loading ? 'Syncing' : 'Live'}</span>
       </div>
 
       <div className={styles.tabs} role="tablist" aria-label="View">
         <button
+          ref={gamesTabRef}
           type="button"
           role="tab"
           id="club-data-tab-games"
           aria-controls="club-data-panel-games"
           aria-selected={tab === 'games'}
+          tabIndex={tab === 'games' ? 0 : -1}
           className={`${styles.tab} ${tab === 'games' ? styles.active : ''}`}
           onClick={() => setTab('games')}
+          onKeyDown={onTabKeyDown}
         >
           Games
         </button>
         <button
+          ref={playersTabRef}
           type="button"
           role="tab"
           id="club-data-tab-players"
           aria-controls="club-data-panel-players"
           aria-selected={tab === 'players'}
+          tabIndex={tab === 'players' ? 0 : -1}
           className={`${styles.tab} ${tab === 'players' ? styles.active : ''}`}
           onClick={() => setTab('players')}
+          onKeyDown={onTabKeyDown}
         >
           Players
         </button>
@@ -839,32 +1042,32 @@ export default function ClubDataPage() {
           Fee 0.00" in confident green with the real message buried in the list
           below. On the screen that answers "what do I owe the union", a zero
           has to mean zero. Dashes while there is no snapshot to read. */}
-      <div className={styles.summary} aria-busy={loading}>
+      <dl className={styles.summary} aria-busy={loading} aria-label="Club performance summary">
         <div className={styles.tile}>
-          <div className={styles.tileValue}>{summary ? compactInt(summary.games) : NO_VALUE}</div>
-          <div className={styles.tileLabel}>Games</div>
-          {summary && pctNote(delta?.games_pct)}
+          <dt className={styles.tileLabel}>Games</dt>
+          <dd className={styles.tileValue}>{summary ? compactInt(summary.games) : NO_VALUE}</dd>
+          {summary && <dd className={styles.tileMeta}>{pctNote(delta?.games_pct)}</dd>}
         </div>
         <div className={styles.tile}>
-          <div
+          <dt className={styles.tileLabel}>Total Winnings</dt>
+          <dd
             className={`${styles.tileValue} ${summary && Number(summary.total_winnings) < 0 ? styles.neg : styles.pos}`}
           >
             {summary ? money(summary.total_winnings) : NO_VALUE}
-          </div>
-          <div className={styles.tileLabel}>Total Winnings</div>
-          {summary && absNote(delta?.winnings_abs)}
+          </dd>
+          {summary && <dd className={styles.tileMeta}>{absNote(delta?.winnings_abs)}</dd>}
         </div>
         <div className={styles.tile}>
-          <div
+          <dt className={styles.tileLabel}>MTT Winnings</dt>
+          <dd
             className={`${styles.tileValue} ${summary && Number(summary.mtt_winnings) < 0 ? styles.neg : styles.pos}`}
           >
             {summary ? money(summary.mtt_winnings) : NO_VALUE}
-          </div>
-          <div className={styles.tileLabel}>MTT Winnings</div>
+          </dd>
         </div>
         <div className={styles.tile}>
-          <div className={styles.tileValue}>{summary ? money(summary.fee) : NO_VALUE}</div>
-          <div className={styles.tileLabel}>Fee</div>
+          <dt className={styles.tileLabel}>Fee</dt>
+          <dd className={styles.tileValue}>{summary ? money(summary.fee) : NO_VALUE}</dd>
           {/* cash_fee and mtt_fee are already in the payload and rendered
               nowhere. Cash rake is a percentage of pots; MTT fee is a fixed cut
               of buy-ins. Blending them into one number meant an owner deciding
@@ -873,13 +1076,13 @@ export default function ClubDataPage() {
           {summary &&
             Number.isFinite(Number(summary.cash_fee)) &&
             Number.isFinite(Number(summary.mtt_fee)) && (
-              <div className={styles.tileSub}>
+              <dd className={`${styles.tileSub} ${styles.tileMeta}`}>
                 {money(summary.cash_fee)} Cash - {money(summary.mtt_fee)} MTT
-              </div>
+              </dd>
             )}
-          {summary && pctNote(delta?.fee_pct)}
+          {summary && <dd className={styles.tileMeta}>{pctNote(delta?.fee_pct)}</dd>}
         </div>
-      </div>
+      </dl>
 
       {/* The tiles are filtered by the game/stakes/search chips, which are only
           RENDERED on the Games tab. Switching to Players left Omaha-only totals
@@ -894,9 +1097,20 @@ export default function ClubDataPage() {
         </div>
       )}
 
-      {!latestInvoice && invoicesError && (
+      {invoicesError && (
         <div className={`${styles.state} ${styles.error}`} role="alert">
-          {invoicesError}
+          <span>
+            {invoicesError}
+            {latestInvoice ? ' Showing The Last Verified Statement.' : ''}
+          </span>
+          <button
+            type="button"
+            className={styles.retryButton}
+            onClick={() => void loadInvoices()}
+            disabled={invoicesLoading}
+          >
+            {invoicesLoading ? 'Refreshing' : 'Try Again'}
+          </button>
         </div>
       )}
 
@@ -906,27 +1120,32 @@ export default function ClubDataPage() {
             type="button"
             className={styles.linkBtn}
             onClick={() => setShowInvoiceHistory((v) => !v)}
+            aria-expanded={showInvoiceHistory}
+            aria-controls="club-data-invoice-history"
           >
             {showInvoiceHistory
               ? 'Hide Earlier Statements'
               : `Earlier Statements (${olderInvoices.length})`}
           </button>
-          {showInvoiceHistory &&
-            olderInvoices.map((inv) => (
-              <div className={styles.invoiceLine} key={inv.invoice_id}>
-                <span>
-                  {String(inv.period_start || '').slice(0, 10)} To{' '}
-                  {String(inv.period_end || '').slice(0, 10)}
-                </span>
-                <span>
-                  {inv.direction === 'union owes club' ? '+' : '-'}
-                  {Number.isFinite(Number(inv.amount))
-                    ? money(Math.abs(Number(inv.amount)))
-                    : NO_VALUE}
-                  {inv.status ? ` - ${invoiceStatusLabel(inv.status)}` : ''}
-                </span>
-              </div>
-            ))}
+          {showInvoiceHistory && (
+            <div id="club-data-invoice-history">
+              {olderInvoices.map((inv) => (
+                <div className={styles.invoiceLine} key={inv.invoice_id}>
+                  <span>
+                    {String(inv.period_start || '').slice(0, 10)} To{' '}
+                    {String(inv.period_end || '').slice(0, 10)}
+                  </span>
+                  <span>
+                    {inv.direction === 'union owes club' ? '+' : '-'}
+                    {Number.isFinite(Number(inv.amount))
+                      ? money(Math.abs(Number(inv.amount)))
+                      : NO_VALUE}
+                    {inv.status ? ` - ${invoiceStatusLabel(inv.status)}` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -945,6 +1164,7 @@ export default function ClubDataPage() {
                   ? styles.invoiceOwed
                   : ''
           }`}
+          aria-busy={invoicesLoading}
         >
           <div className={styles.invoiceTop}>
             <span className={styles.invoiceLabel}>
@@ -965,7 +1185,7 @@ export default function ClubDataPage() {
           </div>
 
           {showInvoiceDetail && latestInvoice.breakdown && (
-            <div className={styles.invoiceLines}>
+            <div className={styles.invoiceLines} id="club-data-invoice-detail">
               {[
                 // The figures come from the invoice; the percentages used to be
                 // literals, so any club on a non-standard deal got a label that
@@ -1000,6 +1220,8 @@ export default function ClubDataPage() {
             onClick={() => setShowInvoiceDetail((v) => !v)}
             disabled={!latestInvoice.breakdown}
             title={latestInvoice.breakdown ? undefined : 'No Line Detail On This Statement'}
+            aria-expanded={latestInvoice.breakdown ? showInvoiceDetail : undefined}
+            aria-controls={latestInvoice.breakdown ? 'club-data-invoice-detail' : undefined}
           >
             {!latestInvoice.breakdown
               ? 'No Statement Detail'
@@ -1011,14 +1233,22 @@ export default function ClubDataPage() {
       )}
 
       {tab === 'games' && (
-        <div role="tabpanel" id="club-data-panel-games" aria-labelledby="club-data-tab-games">
+        <div
+          role="tabpanel"
+          id="club-data-panel-games"
+          aria-labelledby="club-data-tab-games"
+          tabIndex={0}
+        >
           <div className={styles.searchRow}>
+            <label className={styles.srOnly} htmlFor="club-data-search">
+              Search Games
+            </label>
             <input
+              id="club-data-search"
               className={styles.searchInput}
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Type In The Name Of The Game, Creator ID Or Player ID"
-              aria-label="Search games"
             />
           </div>
 
@@ -1054,18 +1284,53 @@ export default function ClubDataPage() {
             ))}
           </div>
 
-          <div className={styles.list}>
+          {filtersActive && (
+            <div className={styles.filterUtility}>
+              <span>
+                {compactInt(snapshot?.row_count || 0)} Matching Game
+                {Number(snapshot?.row_count || 0) === 1 ? '' : 's'}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setGame('ALL');
+                  setStakes('ALL');
+                  setSearchInput('');
+                  setSearch('');
+                }}
+              >
+                Reset Filters
+              </button>
+            </div>
+          )}
+
+          <div
+            className={styles.list}
+            role={snapshot?.rows.length ? 'list' : undefined}
+            aria-busy={loading}
+            aria-label="Games"
+          >
             {loading && !snapshot && !error && (
               <>
-                <div className={styles.skeletonRow} />
-                <div className={styles.skeletonRow} />
-                <div className={styles.skeletonRow} />
+                <span className={styles.srOnly} role="status">
+                  Loading Games
+                </span>
+                <div className={styles.skeletonRow} aria-hidden="true" />
+                <div className={styles.skeletonRow} aria-hidden="true" />
+                <div className={styles.skeletonRow} aria-hidden="true" />
               </>
             )}
 
             {error && (
               <div className={`${styles.state} ${styles.error}`} role="alert">
-                {error}
+                <span>{error}</span>
+                <button
+                  type="button"
+                  className={styles.retryButton}
+                  onClick={() => void load(true, true)}
+                >
+                  Try Again
+                </button>
               </div>
             )}
 
@@ -1100,7 +1365,7 @@ export default function ClubDataPage() {
                   (row.creator_id ? row.creator_id.slice(0, 8) : row.id.slice(0, 8));
 
                 return (
-                  <div className={styles.row} key={`${row.kind}-${row.id}`}>
+                  <div className={styles.row} key={`${row.kind}-${row.id}`} role="listitem">
                     <div className={styles.rowTime}>
                       <div className={styles.rowTimeMain}>{hhmm}</div>
                       <div className={styles.rowTimeSub}>{ddmm}</div>
@@ -1176,6 +1441,7 @@ export default function ClubDataPage() {
           id="club-data-panel-players"
           aria-labelledby="club-data-tab-players"
           aria-busy={playersLoading}
+          tabIndex={0}
         >
           <div className={styles.filterRow} role="group" aria-label="Sort Players">
             {PLAYER_SORTS.map((o) => (
@@ -1201,18 +1467,33 @@ export default function ClubDataPage() {
             </div>
           )}
 
-          <div className={styles.list}>
+          <div
+            className={styles.list}
+            role={sortedPlayers.length ? 'list' : undefined}
+            aria-busy={playersLoading}
+            aria-label="Players"
+          >
             {playersLoading && !players && !playersError && (
               <>
-                <div className={styles.skeletonRow} />
-                <div className={styles.skeletonRow} />
-                <div className={styles.skeletonRow} />
+                <span className={styles.srOnly} role="status">
+                  Loading Players
+                </span>
+                <div className={styles.skeletonRow} aria-hidden="true" />
+                <div className={styles.skeletonRow} aria-hidden="true" />
+                <div className={styles.skeletonRow} aria-hidden="true" />
               </>
             )}
 
             {playersError && (
               <div className={`${styles.state} ${styles.error}`} role="alert">
-                {playersError}
+                <span>{playersError}</span>
+                <button
+                  type="button"
+                  className={styles.retryButton}
+                  onClick={() => void loadPlayers(true)}
+                >
+                  Try Again
+                </button>
               </div>
             )}
 
@@ -1222,7 +1503,7 @@ export default function ClubDataPage() {
 
             {!playersError &&
               sortedPlayers.map((pl, i) => (
-                <div className={styles.playerRow} key={pl.user_id}>
+                <div className={styles.playerRow} key={pl.user_id} role="listitem">
                   <div className={styles.playerRank}>{i + 1}</div>
 
                   <div className={styles.avatarWrap}>
@@ -1247,7 +1528,6 @@ export default function ClubDataPage() {
                   <div className={styles.rowMain}>
                     <div className={styles.rowName} title={pl.username}>
                       {pl.username}
-                      {pl.is_horse && <span className={styles.horseTag}>HORSE</span>}
                     </div>
                     <div className={styles.rowBlinds}>
                       {compactInt(pl.hands)} Hands &middot; {money(pl.rake)} Rake

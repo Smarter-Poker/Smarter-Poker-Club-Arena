@@ -131,6 +131,7 @@ import { parseBlindStructure } from '../utils/parseBlindStructure';
 // Supabase Realtime game-state path stays wired in parallel until PR-5 deletes
 // it, so flipping the flag is a pure rollout switch.
 import { useEngineTableState } from '../hooks/useEngineTableState';
+import TableConnectionBanner from '../components/table/TableConnectionBanner';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
 import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
@@ -1289,6 +1290,16 @@ export default function TablePage({
    * the spin resolved). Latches once: play does not un-begin.
    */
   const [playHasBegun, setPlayHasBegun] = useState(false);
+  /**
+   * The same latch, readable from a timer callback (round 17).
+   *
+   * `exitIfBusted` runs out of `releaseBustHold`, which is reached from a
+   * `setTimeout` and from two modal handlers — closures where React state is
+   * whatever it was when the callback was created. The eject it performs must
+   * read the CURRENT answer to "has this game dealt yet", not a stale one, so
+   * it reads this. Kept in step by the effect that owns the latch below.
+   */
+  const playHasBegunRef = useRef(false);
   /**
    * The one place the wheel is opened from a tournament ROW (the DB fallback
    * path, used both at mount and by the post-start re-check for D2). Returns
@@ -3718,6 +3729,10 @@ export default function TablePage({
     cost: number;
     seats: number;
     label: string;
+    /* The stack every seat receives when the draw resolves. Known from the
+       tournament row at creation, and shown on the felt before the wheel so a
+       seated player is not looking at a table of zeroes (Dan, round 17). */
+    startingChips: number;
   } | null>(null);
   /* Mirror for the early dead-table effects — see seatFirstOpenRef where it
      is declared, next to the heartbeat machinery it silences. Render-time
@@ -5552,6 +5567,45 @@ export default function TablePage({
    * RPC remains the authority that actually refuses an underfunded entry.
    */
   const [accountBalance, setAccountBalance] = useState<number | null>(null);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * BALANCE WRITE FENCE (audit 2026-08-28)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * `accountBalance` has six writers: three RELATIVE and optimistic (a
+   * top-up debit, a credit, the buy-in debit) and three ABSOLUTE reads
+   * (loadTableInfo's tail, the BALANCE_UPDATED payload, and a resync read
+   * fired from inside that same handler). The absolute ones are awaited, so
+   * an absolute read ISSUED BEFORE an optimistic debit can RESOLVE AFTER it
+   * and restore the pre-debit figure — the player watches their balance snap
+   * back up after buying in. `readPlayerBalance` is also table-scoped, so a
+   * slow read for one table could land as another table's number.
+   *
+   * This is the same defect `applyTableAppearance` was given a write tail
+   * for. The fence here is lighter because balances need no ordering across
+   * requests, only "do not let a stale absolute overwrite a newer local
+   * truth": every optimistic write bumps a revision; an absolute write
+   * captures the revision BEFORE its await and is dropped if the revision
+   * moved while it was in flight.
+   *
+   * The direct BALANCE_UPDATED payload write is deliberately NOT fenced —
+   * it carries no await, so it is the newest information at the instant it
+   * arrives.
+   */
+  const balanceRevisionRef = useRef(0);
+  /** Optimistic, relative write. Bumps the fence. */
+  const applyBalanceDelta = useCallback((next: (prev: number | null) => number | null) => {
+    balanceRevisionRef.current += 1;
+    setAccountBalance(next);
+  }, []);
+  /** Read the fence before issuing an awaited balance read. */
+  const readBalanceRevision = useCallback(() => balanceRevisionRef.current, []);
+  /** Absolute write that refuses to land if an optimistic write beat it home. */
+  const setBalanceIfCurrent = useCallback((revisionAtIssue: number, value: number | null) => {
+    if (revisionAtIssue !== balanceRevisionRef.current) return;
+    setAccountBalance(value);
+  }, []);
   // FIX 136: 2-hour re-entry restriction — minimum buy-in from recent cashout
   const [cashoutMinBuyIn, setCashoutMinBuyIn] = useState(0);
 
@@ -5620,7 +5674,7 @@ export default function TablePage({
       // Engine ack'd the single debit -- reflect it locally + in session trackers.
       /* A local delta on an UNKNOWN balance would invent a number. Stay
          unknown until a real read lands (see the accountBalance decl). */
-      setAccountBalance((prev) => (prev === null ? null : Math.max(0, prev - applied)));
+      applyBalanceDelta((prev) => (prev === null ? null : Math.max(0, prev - applied)));
       totalBuyInRef.current += applied; // Track for session P/L
       totalRebuysRef.current += 1; // Track rebuy count for session summary
       // Dan 2026-08-15: feed the top-up into SessionStatsService too, otherwise
@@ -5695,7 +5749,7 @@ export default function TablePage({
       // Engine ack'd \u2014 the wallet was credited; reflect it locally. We do
       // NOT optimistic-update tableState; the next engine broadcast carries the
       // authoritative stack.
-      setAccountBalance((prev) => (prev === null ? null : prev + amount));
+      applyBalanceDelta((prev) => (prev === null ? null : prev + amount));
       const estimatedNewStack = Math.max(
         0,
         (tableState.players[tableState.heroSeat - 1]?.stack || 0) - amount
@@ -6790,6 +6844,14 @@ export default function TablePage({
          is set by the confirm handler and is the authoritative "they paid" flag
          — it does not depend on local state having caught up yet. */
       if (rebuyJustSucceededRef.current) return;
+      /* AND NOT BEFORE THE GAME HAS DEALT (round 17). This function has three
+         callers; the watcher above now carries the same guard, but the two
+         rebuy-decline paths reach here directly. A seat-first seat holds zero
+         chips until the wheel lands — see the note on the watcher — so
+         without this, "stack is 0" still reads as "busted" during the reveal
+         and still throws a paying player off the table. A ref, because this
+         runs from a timer callback where state is stale. */
+      if (!playHasBegunRef.current) return;
       const stack = tableStateRef.current.players[seat - 1]?.stack ?? 0;
       if (stack > 0) return;
       heroSeatRef.current = 0;
@@ -6805,6 +6867,41 @@ export default function TablePage({
   useEffect(() => {
     if (!tableId || !userId || tableState.heroSeat <= 0) return;
     if (!tableState.isTournament || !tableState.tournamentId) return;
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  NOBODY IS BUSTED BEFORE A CARD HAS BEEN DEALT (Dan 2026-08-30, r17)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Dan, live: "AS SOON AS THE ANIMATION FINISHED, I GOT KICKED OFF THE
+     * TABLE AGAIN" — with a ranking card reading Finished, Total Payout 0.00,
+     * HANDS 0.
+     *
+     * This watcher was the whole of it, and the mechanism is embarrassingly
+     * simple: A SEAT-FIRST SEAT HOLDS ZERO CHIPS UNTIL THE WHEEL LANDS. That
+     * is deliberate on both sides — `fn_take_seat_and_buy_in` inserts the seat
+     * with `stack = 0` because the seat is a RESERVATION, and the engine's
+     * `deferStacksForSpinReveal` withholds the credit until the reveal is over
+     * precisely so the stacks appear as part of the show. The starting stack
+     * is a property of the drawn tier, so before the draw there is no honest
+     * number to hold.
+     *
+     * So for the fifteen seconds of the reveal, every seat at the table reads
+     * zero — and this watcher reads zero as BUSTED. It found no rebuy on offer
+     * (a Spin has none), released the hold, and `exitIfBusted` threw the
+     * player off a table they had just paid for. Silently, by construction:
+     * this is an ordinary path, so nothing was reported, which is why Sentry
+     * showed zero events for the incident.
+     *
+     * Verified against production, tournament c53bd1f6 ("1 Chip Spin PLO6"):
+     * still RUNNING, Dan still in seat 3 with 270 chips, two hands played
+     * AFTER he was ejected. The card was fiction; the game was fine.
+     *
+     * `playHasBegun` is the latch this page already keeps for exactly this
+     * distinction (dealer drawn, a hand started, or any seat holding chips).
+     * Before it, "busted" is not a state a player can be in — there is
+     * nothing to have lost yet.
+     */
+    if (!playHasBegun) return;
     const heroPlayer = tableState.players[tableState.heroSeat - 1];
     if (!heroPlayer) return;
     const stack = heroPlayer.stack ?? 0;
@@ -9102,7 +9199,7 @@ export default function TablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, buy_in_amount, buy_in_fee, max_players, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, final_table_triggered'
+              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, final_table_triggered'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -9254,6 +9351,7 @@ export default function TablePage({
                   cost,
                   seats: maxP || (fmt === 'spin' ? 3 : 2),
                   label: fmt === 'spin' ? 'Spin' : 'Heads Up',
+                  startingChips: Number(tournData.starting_chips ?? 0),
                 });
               } else {
                 setSeatFirstBuyIn(null);
@@ -10560,8 +10658,18 @@ export default function TablePage({
              wallet on the buy-in sheet. Keep the last known figure on unknown;
              the buy-in RPC is the authority either way and refuses an
              underfunded entry. */
+          const balanceRevision = readBalanceRevision();
           const rb = await WalletService.readPlayerBalance(userId, { tableId });
-          if (rb.balance !== null) setAccountBalance(rb.balance);
+          /* AUDIT 2026-08-28 — THE TAIL OF THIS EFFECT STOPPED CHECKING
+             isMounted. Every write from here to the end ran unconditionally,
+             and the bootstrap above is a 5-attempt 1s/2s/4s/8s backoff ladder
+             followed by four more sequential round trips, so this tail can
+             legitimately land 15+ seconds late — after a tab switch, after a
+             userId change, or after the table was closed. `readPlayerBalance`
+             is also table-scoped, so a late one could paint another table's
+             figure. Guarded from here down. */
+          if (!isMounted) return;
+          if (rb.balance !== null) setBalanceIfCurrent(balanceRevision, rb.balance);
 
           /* FIX 136: Check 2-hour re-entry restriction from recent cashout.
              2026-08-28: the error was discarded, so a failed read looked
@@ -10579,6 +10687,7 @@ export default function TablePage({
             .limit(1)
             .maybeSingle();
 
+          if (!isMounted) return;
           if (cashoutErr) reportError(cashoutErr, 'TablePage.cashout_restriction_read');
           if (cashoutHistory) {
             setCashoutMinBuyIn(cashoutHistory.cashout_amount);
@@ -10595,6 +10704,7 @@ export default function TablePage({
           .eq('table_id', table.id)
           .is('left_at', null);
 
+        if (!isMounted) return;
         // ROUND 9 (2026-08-29): a failed restore read rendered an EMPTY felt
         // on a mid-session reload - every seat blank until the next engine
         // snapshot arrived to repair it. The snapshot is still the authority
@@ -10898,10 +11008,13 @@ export default function TablePage({
       } else {
         /* 2026-08-27: same rule - .then(setAccountBalance) on a helper that
            collapses failures wrote a 0 into the on-screen balance whenever a
-           resync was refused. */
+           resync was refused.
+           2026-08-28: fenced — this read is awaited, so an optimistic debit
+           issued while it was in flight must not be undone by its answer. */
+        const resyncRevision = readBalanceRevision();
         WalletService.readPlayerBalance(userId, { tableId })
           .then((rb) => {
-            if (rb.balance !== null) setAccountBalance(rb.balance);
+            if (rb.balance !== null) setBalanceIfCurrent(resyncRevision, rb.balance);
           })
           .catch((e) => reportError(e, 'TablePage.balanceSync'));
       }
@@ -14938,6 +15051,25 @@ export default function TablePage({
       if (!tableId || seatFirstPending || seatFirstPendingRef.current) return;
       seatFirstPendingRef.current = true;
       setSeatFirstPending(true);
+      /* ── UNLOCK AUDIO ON THIS TAP (Dan 2026-08-30, round 17) ─────────────
+         "ANIMATION STARTED WHEN BOUGHT IN, BUT WITH NO SOUND EFFECTS."
+
+         The wheel is the FIRST sound most spin sessions ever make, and Web
+         Audio only resumes inside a real user gesture. `ensureContext()`
+         calls resume() when a cue is requested, but that call happens during
+         the ANIMATION - not in a gesture - and it deliberately lets the cue
+         through while resume() is still settling, so the opening beats can be
+         scheduled against a context that is not running yet and are simply
+         lost, with no error.
+
+         THIS tap is a genuine gesture, and it is ~15 seconds ahead of the
+         wheel. Priming here is the one moment where unlocking is both allowed
+         and early enough to matter. Idempotent and cheap. */
+      try {
+        soundService.primeAudioUnlock();
+      } catch {
+        /* audio is best-effort and must never block a buy-in */
+      }
       try {
         const { data, error } = await supabase.rpc('fn_take_seat_and_buy_in', {
           p_table_id: tableId,
@@ -15114,7 +15246,14 @@ export default function TablePage({
       tableState.dealerSeat > 0 ||
       (tableState.handNumber ?? 0) > 0 ||
       tableState.players.some((p) => p && Number(p.stack ?? 0) > 0);
-    if (begun) setPlayHasBegun(true);
+    if (begun) {
+      /* The ref first, and synchronously: `exitIfBusted` reads it from a timer
+         callback and must never see a stale false after play has started
+         (round 17). Setting state alone would leave that read one render
+         behind, which is the whole width of this race. */
+      playHasBegunRef.current = true;
+      setPlayHasBegun(true);
+    }
   }, [playHasBegun, tableState.dealerSeat, tableState.handNumber, tableState.players]);
 
   /**
@@ -15183,7 +15322,9 @@ export default function TablePage({
       attempts += 1;
       const { data, error } = await supabase
         .from('tournaments')
-        .select('status, variant, tournament_type, max_players, buy_in_amount, buy_in_fee')
+        .select(
+          'status, variant, tournament_type, max_players, buy_in_amount, buy_in_fee, starting_chips'
+        )
         .eq('id', tournId)
         .maybeSingle();
       if (cancelled) return;
@@ -15205,6 +15346,7 @@ export default function TablePage({
         max_players?: number;
         buy_in_amount?: number;
         buy_in_fee?: number;
+        starting_chips?: number;
       } | null;
       if (!row) return; // no such tournament: nothing to recover, stop asking.
 
@@ -15250,6 +15392,7 @@ export default function TablePage({
         cost: Number(row.buy_in_amount ?? 0) + Number(row.buy_in_fee ?? 0),
         seats: maxP || (isSpin ? 3 : 2),
         label: isSpin ? 'Spin' : 'Heads Up',
+        startingChips: Number(row.starting_chips ?? 0),
       });
     };
 
@@ -15456,7 +15599,29 @@ export default function TablePage({
             id: seat.user_id,
             name: profile?.display_name || profile?.username || `Player ${seat.seat_number}`,
             avatar: profile?.avatar_url || '',
-            stack: Number(seat.stack || 0),
+            /**
+             * ── SHOW WHAT THEY WILL BE PLAYING WITH (Dan 2026-08-30, r17) ──
+             *
+             * "THE PLAYERS SITTING ALREADY SHOULD HAVE THE DEFAULT STARTING
+             * STACKS IN THEIR PLAYER BANKS, IT SHOULDN'T SAY ZERO."
+             *
+             * A seat-first seat really does hold zero until the wheel lands —
+             * `fn_take_seat_and_buy_in` writes `stack = 0` because the seat is
+             * a reservation, and the engine withholds the credit so the chips
+             * arrive as part of the reveal. Both are right, and both are
+             * invisible to a player looking at a table of zeroes wondering
+             * whether anybody has actually paid.
+             *
+             * So before the draw, a SEATED player is shown the stack they are
+             * about to receive. It is not a guess: `starting_chips` is on the
+             * tournament row from creation, the same number the engine credits.
+             * The moment real chips exist this stops applying — `playHasBegun`
+             * latches on the first dealer, hand, or non-zero stack.
+             */
+            stack:
+              Number(seat.stack || 0) > 0 || playHasBegun
+                ? Number(seat.stack || 0)
+                : Number(seatFirstBuyIn?.startingChips || 0),
             status: 'active' as const,
             isHero,
             showCards: isHero,
@@ -18087,6 +18252,18 @@ export default function TablePage({
           TABLE AREA
           ═══════════════════════════════════════════════════════════════════════ */}
       <div className="table-container">
+        {/* Dan 2026-08-30, from a live tournament seat: "if its 'reconnecting'
+            it should say that as a pop up on the table". The status was
+            already known and already passed down - but only to TableMenu,
+            which shows it in the DRAWER HEADER, so the one way to learn why
+            your table had gone blank was to open the hamburger menu. When the
+            engine socket is down the felt still paints from the last snapshot
+            (seats and badges, no stacks, no pot, nothing animating) and looks
+            almost exactly like a table that is merely quiet. Say it on the
+            felt. The banner self-delays so a 300ms blip never strobes it, and
+            it is pointer-events: none so it cannot eat a tap on an action
+            button mid-hand. */}
+        <TableConnectionBanner status={engineWsStatus} isActive={isActive} />
         {/* --table-w: the table's MEASURED width, published to CSS.
             Dan 2026-08-25 (item 8): the dealer button and the chips are sized
             as a proportion of this in TableVisualHotfix.css, so one table size
@@ -21019,7 +21196,7 @@ export default function TablePage({
                 // RPC committed — clear the key. The seat is taken; any future
                 // buy-in at this table is a distinct transaction.
                 buyInIdempotencyKeyRef.current = null;
-                setAccountBalance((prev) => (prev === null ? null : Math.max(0, prev - amount)));
+                applyBalanceDelta((prev) => (prev === null ? null : Math.max(0, prev - amount)));
                 totalBuyInRef.current += amount;
                 if (amount > peakStackRef.current) peakStackRef.current = amount;
                 // The seat + stack were already painted above, before this RPC

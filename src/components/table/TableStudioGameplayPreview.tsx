@@ -54,11 +54,26 @@ export function TableStudioGameplayPreview({ selection, avatarUrls, finalTable }
         className="studio-game-preview__background-ambient"
         src={background}
         alt=""
+        loading="eager"
         decoding="async"
       />
-      <img className="studio-game-preview__background" src={background} alt="" decoding="async" />
+      <img
+        className="studio-game-preview__background"
+        src={background}
+        alt=""
+        loading="eager"
+        decoding="async"
+        fetchPriority="high"
+      />
       <div className="studio-game-preview__scrim" />
-      <img className="studio-game-preview__table" src={table} alt="" decoding="async" />
+      <img
+        className="studio-game-preview__table"
+        src={table}
+        alt=""
+        loading="eager"
+        decoding="async"
+        fetchPriority="high"
+      />
 
       {SEATS.map((seat, index) => (
         <div

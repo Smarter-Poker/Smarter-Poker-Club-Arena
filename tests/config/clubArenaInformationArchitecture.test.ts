@@ -24,8 +24,10 @@ describe('Club Arena information architecture', () => {
     const paths = items.map((item) => item.path);
 
     expect(paths).toContain('/tournaments');
+    expect(paths).toContain('/play');
     expect(paths).toContain('/hand-history');
     expect(paths).toContain('/session-history');
+    expect(paths).toContain('/community');
     expect(paths).not.toContain('/tournament-lobby');
     expect(paths).not.toContain('/hands');
     expect(paths).not.toContain('/history');
@@ -141,14 +143,27 @@ describe('Club Arena information architecture', () => {
 
   it('keeps sibling routes reachable through contextual section rails', () => {
     const rewards = getArenaSectionNavigation('/rakeback');
+    const community = getArenaSectionNavigation('/community');
     const play = getArenaSectionNavigation('/tournaments/event-1');
     const union = getArenaSectionNavigation('/unions/union-1/statements');
 
     expect(rewards?.label).toBe('Rewards Circuit');
     expect(rewards?.items.map((item) => item.path)).toEqual(
-      expect.arrayContaining(['/wallet', '/transactions', '/vip', '/bonuses', '/challenges'])
+      expect.arrayContaining([
+        '/wallet',
+        '/transactions',
+        '/vip',
+        '/bonuses',
+        '/challenges',
+        '/marketplace',
+      ])
+    );
+    expect(community?.items[0]).toEqual({ label: 'Overview', path: '/community' });
+    expect(community?.items.map((item) => item.path)).toEqual(
+      expect.arrayContaining(['/search', '/friends', '/messages', '/unions'])
     );
     expect(play?.items.map((item) => item.path)).toContain('/session-history');
+    expect(play?.items[0]).toEqual({ label: 'Overview', path: '/play' });
     expect(union?.items.map((item) => item.path)).toEqual([
       '/unions',
       '/unions/union-1',
@@ -217,7 +232,7 @@ describe('Club Arena information architecture', () => {
 
   it('does not duplicate the club rail or break the flush notifications page', () => {
     expect(getArenaSectionNavigation('/clubs/club-1/settings')).toBeNull();
-    expect(getArenaSectionNavigation('/marketplace')).toBeNull();
+    expect(getArenaSectionNavigation('/marketplace')?.label).toBe('Rewards Circuit');
     expect(getArenaSectionNavigation('/stats')).toBeNull();
     expect(getArenaSectionNavigation('/notifications')).toBeNull();
     expect(getArenaSectionNavigation('/profile')?.label).toBe('Player Identity');

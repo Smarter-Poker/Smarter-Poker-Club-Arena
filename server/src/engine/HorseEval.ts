@@ -1173,6 +1173,196 @@ function holdemCdf(): Float64Array {
 }
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE SAME CORRECTION FOR SHORT DECK AND PINEAPPLE (Dan 2026-08-30)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The PLO fix exposed the same defect running the OTHER way. Sweeping every
+ * live variant's preflop strength against the identical spot showed:
+ *
+ *     variant      median  p75    | opens | facing a pot raise
+ *     nlh          0.232   0.410  |  22%  | fold 48%
+ *     short_deck   0.420   0.620  |  40%  | fold 23%
+ *     pineapple    0.493   0.713  |  51%  | fold 15%
+ *
+ * Short deck deals from 36 cards and pineapple deals three, so in both games
+ * every hand is genuinely better in ABSOLUTE terms — and both score
+ * functions faithfully say so. But decidePreflopV7's bars are
+ * PERCENTILE-INTENT: "open the top ~20%" is a statement about rank, not
+ * about an absolute number. Feeding an inflated score against a fixed bar
+ * does not express "this game plays looser", it just silently doubles the
+ * opening range and folds a pot-sized raise 15% of the time.
+ *
+ * Variant intent belongs where it is already expressed and visible: the V8
+ * style overlay in HorseLogic (Omaha tightens 1.03 and trims slowplay,
+ * short deck trims bluffs). The SCALE should be neutral so those knobs mean
+ * what they say. So every variant is mapped onto the hold'em scale by
+ * quantile, and any deliberate widening is a separate, reviewable decision
+ * rather than an artifact of a scoring range.
+ *
+ * Both CDFs are EXACT, not sampled — 630 two-card combos from the 36-card
+ * deck, 22,100 three-card combos from 52 — built once and cached.
+ */
+let shortDeckCdf: Float64Array | null = null;
+function shortDeckScoreCdf(): Float64Array {
+  if (shortDeckCdf) return shortDeckCdf;
+  const d = SHORT_DECK_CARDS;
+  const out: number[] = [];
+  for (let i = 0; i < d.length; i++) {
+    for (let j = i + 1; j < d.length; j++) out.push(holdemPreflopScore(d[i], d[j], true));
+  }
+  out.sort((a, b) => a - b);
+  shortDeckCdf = new Float64Array(out);
+  return shortDeckCdf;
+}
+
+let pineappleCdf: Float64Array | null = null;
+function pineappleScoreCdf(shortDeck: boolean): Float64Array {
+  if (!shortDeck && pineappleCdf) return pineappleCdf;
+  const d = shortDeck ? SHORT_DECK_CARDS : FULL_DECK;
+  const out: number[] = [];
+  for (let i = 0; i < d.length; i++) {
+    for (let j = i + 1; j < d.length; j++) {
+      for (let k = j + 1; k < d.length; k++) {
+        out.push(pineapplePreflopScore([d[i], d[j], d[k]], shortDeck));
+      }
+    }
+  }
+  out.sort((a, b) => a - b);
+  const arr = new Float64Array(out);
+  if (!shortDeck) pineappleCdf = arr;
+  return arr;
+}
+
+/** Rank a value inside a sorted array and return the mid-rank percentile. */
+function midRankPercentile(sorted: Float64Array, v: number): number {
+  const n = sorted.length;
+  if (n === 0) return v;
+  let lo = 0;
+  let hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sorted[mid] < v) lo = mid + 1;
+    else hi = mid;
+  }
+  const lower = lo;
+  let lo2 = lower;
+  let hi2 = n;
+  while (lo2 < hi2) {
+    const mid = (lo2 + hi2) >> 1;
+    if (sorted[mid] <= v) lo2 = mid + 1;
+    else hi2 = mid;
+  }
+  return clamp01((lower + lo2) / 2 / n);
+}
+
+/** The hold'em score sitting at a given quantile. */
+function holdemAtQuantile(p: number): number {
+  const cdf = holdemCdf();
+  const idx = Math.min(cdf.length - 1, Math.max(0, Math.round(p * (cdf.length - 1))));
+  return cdf[idx];
+}
+
+/**
+ * Short-deck preflop strength ON THE HOLD'EM SCALE. Without this a 6+ horse
+ * opened 40% of hands and folded a pot-sized raise 23% of the time, purely
+ * because a 36-card deck inflates every score.
+ */
+export function shortDeckPreflopStrength(c1: Card, c2: Card): number {
+  return holdemAtQuantile(midRankPercentile(shortDeckScoreCdf(), holdemPreflopScore(c1, c2, true)));
+}
+
+/**
+ * Pineapple preflop strength ON THE HOLD'EM SCALE. Without this a pineapple
+ * horse opened 51% and folded a pot-sized raise 15% of the time.
+ */
+export function pineapplePreflopStrength(cards: Card[], shortDeck: boolean): number {
+  const raw = pineapplePreflopScore(cards, shortDeck);
+  return holdemAtQuantile(midRankPercentile(pineappleScoreCdf(shortDeck), raw));
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * MULTIWAY VALUE BARS — the same scale bug, on the opponent-count axis
+ * (Dan 2026-08-30)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * decidePostflop's VALUE-BET bars are written as absolute equity numbers
+ * (`equity >= 0.8 + mw`, `0.62 + mw`, `0.52 + mw`). They were calibrated
+ * against the HEADS-UP equity distribution. But `equity` is computed against
+ * min(oppCount, 4) opponents, and that distribution collapses as opponents
+ * are added. Measured, 250 random NLH flops per column:
+ *
+ *     opps  median   %>=0.80   mw     effective bar   % clearing it
+ *      1     0.473      9%     0.00       0.80             9%
+ *      2     0.280      2%     0.03       0.83             2%
+ *      4     0.154      0%     0.09       0.89             0%
+ *
+ * So the bar meant "top ~9% of hands" heads-up and "literally nothing" four
+ * ways — and `mw` pushed it UP on a distribution that had already collapsed
+ * DOWN, compounding instead of conserving. Live consequence, measured
+ * through decide() before this fix: a preflop raiser c-bet 71% heads-up,
+ * 24% three-handed and 2% five-handed, in EVERY variant. A fleet that never
+ * bets multiway is both exploitable and visibly robotic.
+ *
+ * THE FIX, mirroring the preflop variant fix: express the bar as the
+ * PERCENTILE it was always meant to be, and look up the equity that sits at
+ * that percentile for the actual opponent count. `mw` then supplies the
+ * intended extra multiway tightening on top of a scale-neutral bar, which is
+ * what it was for.
+ *
+ * ONLY the value-BET bars use this. The calling side compares equity to POT
+ * ODDS — a true probability against a true probability — and must keep raw
+ * equity. Normalising that would misprice every call.
+ *
+ * Deciles measured over 600 random flops per cell (nlh and plo4 averaged;
+ * they agree within a few points, so one table serves every variant — the
+ * dilution is a property of counting opponents, not of the game).
+ */
+const EQ_DECILES: Record<number, number[]> = {
+  1: [0.112, 0.258, 0.323, 0.378, 0.428, 0.483, 0.543, 0.596, 0.668, 0.776, 0.974],
+  2: [0.038, 0.124, 0.163, 0.2, 0.244, 0.291, 0.344, 0.398, 0.479, 0.607, 0.929],
+  3: [0.009, 0.075, 0.101, 0.129, 0.165, 0.202, 0.241, 0.291, 0.37, 0.502, 0.907],
+  4: [0.002, 0.05, 0.073, 0.092, 0.12, 0.152, 0.187, 0.228, 0.296, 0.422, 0.897],
+};
+
+/** Quantile of `v` within a sorted decile table, linearly interpolated. */
+function quantileOf(table: number[], v: number): number {
+  if (v <= table[0]) return 0;
+  if (v >= table[table.length - 1]) return 1;
+  for (let i = 1; i < table.length; i++) {
+    if (v <= table[i]) {
+      const span = table[i] - table[i - 1];
+      const frac = span > 0 ? (v - table[i - 1]) / span : 0;
+      return (i - 1 + frac) / (table.length - 1);
+    }
+  }
+  return 1;
+}
+
+/** The value at quantile `q` in a decile table, linearly interpolated. */
+function valueAtQuantile(table: number[], q: number): number {
+  const x = clamp01(q) * (table.length - 1);
+  const lo = Math.floor(x);
+  const hi = Math.min(table.length - 1, lo + 1);
+  return table[lo] + (table[hi] - table[lo]) * (x - lo);
+}
+
+/**
+ * Translate a value-bet bar written on the HEADS-UP equity scale into the
+ * equivalent bar for `oppCount` opponents, preserving the PERCENTILE of hand
+ * strength the bar was calibrated to mean.
+ *
+ * Heads-up it returns the bar unchanged, so nothing about HU play moves.
+ */
+export function multiwayValueBar(headsUpBar: number, oppCount: number): number {
+  const n = Math.max(1, Math.min(4, Math.floor(oppCount)));
+  if (n === 1) return headsUpBar;
+  const q = quantileOf(EQ_DECILES[1], headsUpBar);
+  return valueAtQuantile(EQ_DECILES[n], q);
+}
+
+/**
  * Omaha preflop strength ON THE HOLD'EM SCALE — what decidePreflopV7's
  * thresholds have always assumed they were being handed. Percentile first
  * (through the Omaha reservoir), then the hold'em score at that same

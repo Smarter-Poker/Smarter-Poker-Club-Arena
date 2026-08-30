@@ -215,6 +215,8 @@ function setClubHomeCache(clubId: string, data: { club: any; tables: any[] }) {
   }
 }
 
+const CLUB_DESCRIPTION_MAX_LENGTH = 72;
+
 // Types
 interface ClubData {
   id: string;
@@ -1498,7 +1500,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         },
         300
       ),
-      masterBus.subscribeDebounced('WAITLIST_PROMOTED', reload, 300),
     ];
 
     // 90-second fallback interval to ensure the page data doesn't get completely
@@ -3999,6 +4000,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   })
                 }
               />
+              <p className="lobby-top__house-welcome">
+                Welcome To The {club.name}, All Fish Of All Shapes And Sizes Are Welcome!
+              </p>
             </div>
           )}
         </div>
@@ -4116,9 +4120,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               className={`lobby-top__notice ${isOwner || isClubStaff(userRole) ? 'lobby-top__notice--editable' : ''}`}
               role={noticeEditable && !isEditingNotice ? 'button' : undefined}
               tabIndex={noticeEditable && !isEditingNotice ? 0 : undefined}
-              aria-label={
-                noticeEditable && !isEditingNotice ? 'Edit Club Welcome Message' : undefined
-              }
+              aria-label={noticeEditable && !isEditingNotice ? 'Edit Club Description' : undefined}
               onKeyDown={(e) => {
                 if (!noticeEditable || isEditingNotice) return;
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -4136,10 +4138,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             >
               {isEditingNotice ? (
                 <div className="lobby-top__notice-editor" onClick={(e) => e.stopPropagation()}>
-                  <textarea
+                  <input
+                    type="text"
                     value={noticeDraft}
-                    onChange={(e) => setNoticeDraft(e.target.value)}
-                    placeholder="All Fish Of All Shapes And Sizes Are Welcome!"
+                    maxLength={CLUB_DESCRIPTION_MAX_LENGTH}
+                    onChange={(e) => setNoticeDraft(e.target.value.replace(/\s+/g, ' '))}
+                    placeholder="Optional Club Description"
                     autoFocus
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') setIsEditingNotice(false);
@@ -4149,7 +4153,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     <button onClick={() => setIsEditingNotice(false)}>Cancel</button>
                     <button
                       onClick={() => {
-                        const newDesc = noticeDraft.trim();
+                        const newDesc = noticeDraft
+                          .replace(/\s+/g, ' ')
+                          .trim()
+                          .slice(0, CLUB_DESCRIPTION_MAX_LENGTH);
                         const targetId = club.id;
                         setClub((prev) => (prev ? { ...prev, description: newDesc } : prev));
                         setIsEditingNotice(false);
@@ -4160,9 +4167,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                             .eq('id', targetId);
                           if (error) {
                             reportError(error, 'ClubHomePage.Notice_save_failed');
-                            toast.error('Could Not Save The Welcome Message');
+                            toast.error('Could Not Save The Club Description');
                           } else {
-                            toast.success('Welcome Message Updated');
+                            toast.success('Club Description Updated');
                           }
                         })();
                       }}
@@ -4175,8 +4182,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 <div className="club-lobby-command-top__welcome-copy">
                   <span className="club-lobby-command-top__welcome-eyebrow">Welcome To The</span>
                   <h2 className="club-lobby-command-top__club-name">{club.name}</h2>
-                  <p>
-                    {club.description?.trim() || 'All Fish Of All Shapes And Sizes Are Welcome!'}
+                  <p className={!club.description?.trim() ? 'is-empty' : undefined}>
+                    {club.description?.trim() ||
+                      (noticeEditable ? 'Add Optional Club Description' : '\u00a0')}
                   </p>
                 </div>
               )}

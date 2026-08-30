@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { mediaUrl } from '../../utils/mediaBase';
 import styles from './CommunitySurfaceHeader.module.css';
 
 export interface CommunityMetric {
@@ -51,7 +52,13 @@ export default function CommunitySurfaceHeader({
         )}
       </div>
 
-      <div className={styles.visual} aria-hidden="true">
+      <div
+        className={styles.visual}
+        style={{
+          backgroundImage: `linear-gradient(90deg, #030609 0%, rgba(3, 6, 9, 0.1) 48%), url("${mediaUrl('images/community/community-network-v1.webp')}")`,
+        }}
+        aria-hidden="true"
+      >
         <div className={styles.scanLine} />
         <div className={styles.visualLabel}>COMMUNITY NETWORK // LIVE</div>
       </div>

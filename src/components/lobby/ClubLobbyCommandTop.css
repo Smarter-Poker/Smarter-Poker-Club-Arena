@@ -192,9 +192,8 @@
   box-shadow: inset 0 0 14px #000;
 }
 
-.club-lobby-command-top .lobby-top__notice-editor textarea {
+.club-lobby-command-top .lobby-top__notice-editor input {
   min-height: 38px;
-  max-height: 54px;
 }
 
 .club-lobby-command-top .lobby-controls {
@@ -902,9 +901,10 @@
 
 @media (max-width: 900px) {
   .club-lobby-machine {
-    width: min(calc(100% - 12px), 520px);
+    width: calc(100vw - 4px);
+    max-width: none;
     aspect-ratio: auto;
-    margin: 8px auto 20px;
+    margin: 8px 0 20px calc(50% - 50vw + 2px);
     padding: 0;
     overflow: visible;
     background: #000;
@@ -995,11 +995,12 @@
   }
 
   .club-lobby-command-top .lobby-top__notice {
-    padding: 0 5%;
+    padding: 4.8% 6.5% 3.2%;
   }
 
   .club-lobby-command-top__welcome-copy {
-    gap: 5px;
+    gap: 1px;
+    transform: translateY(-1.8cqw);
   }
 
   .club-lobby-command-top__welcome-eyebrow {
@@ -1009,8 +1010,8 @@
 
   .club-lobby-command-top__club-name {
     max-width: 100%;
-    font-size: clamp(28px, 9.6vw, 46px);
-    line-height: 0.94;
+    font-size: clamp(27px, 8.5vw, 52px);
+    line-height: 0.86;
     letter-spacing: 0.035em;
   }
 
@@ -1019,8 +1020,8 @@
     font-size: clamp(6px, 1.8vw, 8px);
     line-height: 1.35;
     letter-spacing: 0.2em;
-    text-wrap: balance;
-    white-space: normal;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .club-lobby-command-top .lobby-controls {
@@ -1122,8 +1123,8 @@
 
 @media (max-width: 430px) {
   .club-lobby-machine {
-    width: calc(100vw - 8px);
-    margin-left: calc(50% - 50vw + 4px);
+    width: calc(100vw - 4px);
+    margin-left: calc(50% - 50vw + 2px);
   }
 
   .club-lobby-command-top {
@@ -1146,7 +1147,7 @@
   }
 
   .club-lobby-command-top__club-name {
-    font-size: clamp(27px, 9.4vw, 40px);
+    font-size: clamp(27px, 8.5vw, 36px);
   }
 
   .club-lobby-command-top .lobby-top__notice p {
@@ -1217,7 +1218,7 @@
   }
 
   .club-lobby-command-top__welcome--approved-universal .lobby-top__notice {
-    padding: 2.2% 7% 4.2%;
+    padding: 4.8% 7% 3.2%;
   }
 
   .club-lobby-command-top__welcome--approved-universal .club-lobby-command-top__welcome-copy {

@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 
@@ -73,35 +73,65 @@ const playerBreakdown = {
   generated_at: '2026-08-30T12:05:02Z',
 };
 
+const latestInvoice = {
+  invoice_id: 'invoice-1',
+  status: 'awaiting_payment',
+  issued_at: '2026-08-30T09:00:00Z',
+  due_at: '2026-09-02T09:00:00Z',
+  amount: 350,
+  direction: 'club owes union',
+  period_start: '2026-08-23',
+  period_end: '2026-08-29',
+  breakdown: { rake_generated: 500, rakeback_due: 150, union_fee_kept: 350 },
+  message_sent: true,
+};
+
+const authState = vi.hoisted(() => ({
+  current: { user: { id: 'owner-1' } as { id: string } | null, isHydrating: false },
+}));
+
+const routeState = vi.hoisted(() => ({ clubId: 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4' }));
+const rpcMock = vi.hoisted(() => vi.fn());
+const fromMock = vi.hoisted(() => vi.fn());
+
 vi.mock('../../src/hooks/useAuthUser', () => ({
-  useAuthUser: () => ({ user: { id: 'owner-1' }, isHydrating: false }),
+  useAuthUser: () => authState.current,
 }));
 
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
-  useParams: () => ({ clubId: CLUB_ID }),
+  useParams: () => ({ clubId: routeState.clubId }),
   useSearchParams: () => [new URLSearchParams()],
 }));
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    rpc: vi.fn(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
-      if (fn === 'ca_club_player_breakdown') return { data: playerBreakdown, error: null };
-      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
-      return { data: null, error: null };
-    }),
-    from: vi.fn(() => ({
-      select: () => ({
-        eq: () => ({ maybeSingle: async () => ({ data: { name: 'Shark Club' }, error: null }) }),
-      }),
-    })),
+    rpc: rpcMock,
+    from: fromMock,
   },
 }));
 
 import ClubDataPage from '../../src/pages/club/ClubDataPage';
 
 afterEach(() => cleanup());
+
+beforeEach(() => {
+  authState.current = { user: { id: 'owner-1' }, isHydrating: false };
+  routeState.clubId = CLUB_ID;
+  rpcMock.mockReset();
+  rpcMock.mockImplementation(async (fn: string) => {
+    if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+    if (fn === 'ca_club_player_breakdown') return { data: playerBreakdown, error: null };
+    if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+    return { data: null, error: null };
+  });
+  fromMock.mockReset();
+  fromMock.mockImplementation(() => ({
+    select: () => ({
+      eq: () => ({ maybeSingle: async () => ({ data: { name: 'Shark Club' }, error: null }) }),
+    }),
+  }));
+});
 
 describe('ClubDataPage', () => {
   it('renders the operator hero and live financial summary', async () => {
@@ -119,5 +149,155 @@ describe('ClubDataPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
     await waitFor(() => expect(screen.getByText('Table Regular')).toBeInTheDocument());
     expect(screen.queryByText('HORSE')).not.toBeInTheDocument();
+  });
+
+  it('waits for auth restoration before making protected data calls', async () => {
+    authState.current = { user: null, isHydrating: true };
+    const { rerender } = render(<ClubDataPage />);
+
+    expect(screen.getByText('Opening Club Data')).toBeInTheDocument();
+    expect(rpcMock).not.toHaveBeenCalled();
+    expect(fromMock).not.toHaveBeenCalled();
+
+    authState.current = { user: { id: 'owner-1' }, isHydrating: false };
+    rerender(<ClubDataPage />);
+
+    await waitFor(() =>
+      expect(rpcMock).toHaveBeenCalledWith('ca_club_data_snapshot', expect.any(Object))
+    );
+    expect(fromMock).toHaveBeenCalledWith('clubs');
+  });
+
+  it('clears the previous club ledger before a new route can resolve', async () => {
+    const secondClubId = 'b52545cc-9e1d-411b-9f1e-f9c4e76bf0e5';
+    let resolveSecondSnapshot!: (result: { data: typeof snapshot; error: null }) => void;
+    rpcMock.mockImplementation((fn: string, args?: { p_club_id?: string }) => {
+      if (fn === 'ca_club_data_snapshot' && args?.p_club_id === secondClubId) {
+        return new Promise((resolve) => {
+          resolveSecondSnapshot = resolve;
+        });
+      }
+      if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
+      if (fn === 'ca_club_player_breakdown') {
+        return Promise.resolve({ data: playerBreakdown, error: null });
+      }
+      if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    const { rerender } = render(<ClubDataPage />);
+    await screen.findByText('Shark Table One');
+
+    routeState.clubId = secondClubId;
+    rerender(<ClubDataPage />);
+
+    expect(screen.queryByText('Shark Table One')).not.toBeInTheDocument();
+    expect(screen.queryByText('2,450.00')).not.toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(rpcMock).toHaveBeenCalledWith(
+        'ca_club_data_snapshot',
+        expect.objectContaining({ p_club_id: secondClubId })
+      )
+    );
+    resolveSecondSnapshot({ data: snapshot, error: null });
+    await screen.findByText('Shark Table One');
+  });
+
+  it('supports arrow-key tab navigation with a roving tab stop', async () => {
+    render(<ClubDataPage />);
+    const gamesTab = screen.getByRole('tab', { name: 'Games' });
+    const playersTab = screen.getByRole('tab', { name: 'Players' });
+
+    expect(gamesTab).toHaveAttribute('tabindex', '0');
+    expect(playersTab).toHaveAttribute('tabindex', '-1');
+    fireEvent.keyDown(gamesTab, { key: 'ArrowRight' });
+
+    await waitFor(() => expect(playersTab).toHaveAttribute('aria-selected', 'true'));
+    expect(playersTab).toHaveAttribute('tabindex', '0');
+    await waitFor(() => expect(playersTab).toHaveFocus());
+  });
+
+  it('refreshes the game ledger and union statement together', async () => {
+    render(<ClubDataPage />);
+    const refresh = screen.getByRole('button', { name: 'Refresh club ledger' });
+
+    await waitFor(() => expect(refresh).toBeEnabled());
+    expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot')).toHaveLength(1);
+    expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_union_invoices')).toHaveLength(1);
+
+    fireEvent.click(refresh);
+
+    await waitFor(() =>
+      expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot')).toHaveLength(2)
+    );
+    expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_union_invoices')).toHaveLength(2);
+    await screen.findByText('Club Ledger Refreshed.');
+  });
+
+  it('keeps the last verified statement visible through a transient refresh failure', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let invoiceRequest = 0;
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_player_breakdown') return { data: playerBreakdown, error: null };
+      if (fn === 'ca_club_union_invoices') {
+        invoiceRequest += 1;
+        return invoiceRequest === 1
+          ? { data: [latestInvoice], error: null }
+          : { data: null, error: { message: 'temporary network failure' } };
+      }
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+      await screen.findByText(/350\.00/);
+      const refresh = screen.getByRole('button', { name: 'Refresh club ledger' });
+      await waitFor(() => expect(refresh).toBeEnabled());
+
+      fireEvent.click(refresh);
+
+      await screen.findByText(/Could Not Refresh Your Union Statement/i);
+      expect(screen.getByText(/Showing The Last Verified Statement/i)).toBeInTheDocument();
+      expect(screen.getByText(/350\.00/)).toBeInTheDocument();
+      expect(screen.getByText('Refresh Finished With Some Data Unavailable.')).toBeInTheDocument();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('aborts a protected request when its response deadline expires', async () => {
+    vi.useFakeTimers();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let snapshotSignal: AbortSignal | undefined;
+    const pending = new Promise<never>(() => undefined);
+    const abortableSnapshot = {
+      then: pending.then.bind(pending),
+      abortSignal(signal: AbortSignal) {
+        snapshotSignal = signal;
+        return this;
+      },
+    };
+    rpcMock.mockImplementation((fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return abortableSnapshot;
+      if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    try {
+      render(<ClubDataPage />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+
+      expect(snapshotSignal?.aborted).toBe(true);
+      expect(
+        screen.getByText('Club data took too long to respond. Try again.')
+      ).toBeInTheDocument();
+    } finally {
+      errorSpy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

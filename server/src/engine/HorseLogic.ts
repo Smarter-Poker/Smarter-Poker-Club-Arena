@@ -97,6 +97,8 @@ import {
   holdemPreflopScore,
   omahaPreflopScore,
   omahaPreflopStrength,
+  shortDeckPreflopStrength,
+  pineapplePreflopStrength,
   pineapplePreflopScore,
   scoreHoldem,
   scoreOmahaHi,
@@ -1190,9 +1192,11 @@ export class HorseLogic {
     // (Dan 2026-08-30 live PLO spin; see omahaPreflopPercentile.)
     if (vi.isOmaha) strength = omahaPreflopStrength(player.cards, vi.isHiLo);
     else if (player.cards.length === 3)
-      strength = pineapplePreflopScore(player.cards, vi.isShortDeck);
+      strength = pineapplePreflopStrength(player.cards, vi.isShortDeck);
     else if (player.cards.length === 2)
-      strength = holdemPreflopScore(player.cards[0], player.cards[1], vi.isShortDeck);
+      strength = vi.isShortDeck
+        ? shortDeckPreflopStrength(player.cards[0], player.cards[1])
+        : holdemPreflopScore(player.cards[0], player.cards[1], false);
     else strength = 0.3;
     strength = clamp01(strength + (fastRandom() * 0.06 - 0.03));
 
@@ -1586,9 +1590,11 @@ export class HorseLogic {
     let strength: number;
     if (vi.isOmaha) strength = omahaPreflopStrength(player.cards, vi.isHiLo);
     else if (player.cards.length === 3)
-      strength = pineapplePreflopScore(player.cards, vi.isShortDeck);
+      strength = pineapplePreflopStrength(player.cards, vi.isShortDeck);
     else if (player.cards.length === 2)
-      strength = holdemPreflopScore(player.cards[0], player.cards[1], vi.isShortDeck);
+      strength = vi.isShortDeck
+        ? shortDeckPreflopStrength(player.cards[0], player.cards[1])
+        : holdemPreflopScore(player.cards[0], player.cards[1], false);
     else strength = 0.3;
 
     // Small per-decision jitter creates mixed strategies at the boundaries.
@@ -3893,9 +3899,11 @@ export class HorseLogic {
     const vi = variantInfo(gameVariant);
     if (stage === 'preflop') {
       if (vi.isOmaha && holeCards.length >= 4) return omahaPreflopStrength(holeCards, vi.isHiLo);
-      if (holeCards.length === 3) return pineapplePreflopScore(holeCards, vi.isShortDeck);
+      if (holeCards.length === 3) return pineapplePreflopStrength(holeCards, vi.isShortDeck);
       if (holeCards.length !== 2) return 0.3;
-      return holdemPreflopScore(holeCards[0], holeCards[1], vi.isShortDeck);
+      return vi.isShortDeck
+        ? shortDeckPreflopStrength(holeCards[0], holeCards[1])
+        : holdemPreflopScore(holeCards[0], holeCards[1], false);
     }
     return simulateEquity(holeCards, communityCards, 1, vi, vi.iterations);
   }

@@ -1,15 +1,24 @@
 .bottomNav {
+  /* Global chrome law: this container never moves with page content or scroll. */
   position: fixed;
   z-index: 1000;
+  top: auto;
   right: 0;
   bottom: 0;
   left: 0;
+  width: 100%;
+  max-width: 100vw;
+  margin: 0;
+  box-sizing: border-box;
   min-height: var(--bottom-nav-height, 44px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   overflow: hidden;
   color: #f4f4f4;
   background: #000;
   transform: none;
+  translate: none;
+  transition: none;
+  animation: none;
   contain: none;
   isolation: isolate;
 }

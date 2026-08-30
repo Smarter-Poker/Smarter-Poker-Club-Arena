@@ -46,27 +46,28 @@ const PAGE = readFileSync(
   'utf8'
 );
 /**
- * TWO migrations, and the SECOND one is the live definition.
+ * ONE migration, and it is the read-only one.
  *
  * The first cut collected its window into a temp table and read it three
- * times. `check-definer-authorization` blocked the push and it was right to:
+ * times. `check-definer-authorization` blocked the push and it was RIGHT to:
  * what it saw was a SECURITY DEFINER function a browser role can execute,
  * running INSERT and DELETE, that never asks auth.uid() who is calling. The
  * guard cannot tell a temp table from a real one, and the shape it looks for
- * was genuinely there.
+ * was genuinely present.
  *
- * The fix was not an allowlist entry. A leaderboard has no business writing
- * anything, so it is CTEs now, `language sql stable`, and Postgres itself
- * enforces the claim.
+ * The answer was not an allowlist entry, and it was not to keep the bad file
+ * around beside a good one - the guard asks "does what you are ADDING today
+ * carry the rule", and a superseded file that does not carry it is still a
+ * file being added. So there is one migration, it is the CTE version, and it
+ * is `language sql stable` so Postgres enforces the claim rather than the
+ * comment. (Both versions exist in the applied history in Supabase, which is
+ * normal: this directory is explicitly history, not truth.)
  */
 const MIGRATION = readFileSync(
-  join(root, 'supabase', 'migrations', '20260830053746_spin_leaderboards.sql'),
-  'utf8'
-);
-const READ_ONLY = readFileSync(
   join(root, 'supabase', 'migrations', '20260830064500_spin_leaderboards_read_only.sql'),
   'utf8'
 );
+const READ_ONLY = MIGRATION;
 
 /** The page with every comment removed, so a pin can never be satisfied by
  *  prose ABOUT the code instead of the code (handoff trap #6 - a grep for a

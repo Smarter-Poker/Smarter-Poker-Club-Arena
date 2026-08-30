@@ -1228,7 +1228,14 @@ jobs:
         # rather than the rendering of a font that never loaded, so it means
         # the same thing on every machine. A gate spec must be deterministic
         # across platforms; the fix is to stop measuring the runner, not to
-        # exile the spec. Three were already red - top-rail-seat pinned the
+        # exile the spec.
+        #
+        # diamond-checkout-mobile.spec.ts joined 2026-08-29 too - it landed from
+        # another branch the same day and arrived orphaned, which is the trap
+        # doing its work in real time. It is self-contained (readFileSync +
+        # setContent), so it belongs here. THE RULE, restated because it keeps
+        # being learned: a spec that is not named in a job runs in NO job. Add
+        # yours in the same commit that writes it. Three were already red - top-rail-seat pinned the
         # px-ladder avatar #1650 retired, pot-above-chips froze a pot position
         # two deliberate redesigns old, raise-panel-covers-chat lost the
         # stylesheet its anchor moved into - and every one had been failing
@@ -1237,7 +1244,7 @@ jobs:
         # mobile-chrome-occlusion, mobile-input-zoom, mobile-tap-targets,
         # club-lobby, tournament-buy-in-dialog) need a login or a deployed URL
         # and belong to the post-deploy tier, not this gate.
-        run: npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/customization-studios.spec.ts --reporter=line --retries=1
+        run: npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/customization-studios.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts --reporter=line --retries=1
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 5: AUTO-REVERT — DISABLED (was causing revert loops during migration)

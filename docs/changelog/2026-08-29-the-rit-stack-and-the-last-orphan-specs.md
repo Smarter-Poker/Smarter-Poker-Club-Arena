@@ -136,3 +136,24 @@ carry two thumb targets, or stop making both lines buttons and copy the id from
 one control. Until then the post-deploy job stays red on this single, named,
 genuine finding — which is what an open bug should look like, and it cannot
 block anyone's merge.
+
+## 5. The orphan sweep had its own blind spot: it only globbed one level
+
+The sweep that wired sixteen orphans into jobs used `tests/e2e/*.spec.ts`, and
+`tests/e2e/routes/` is one level down. Nine route suites — admin, basic,
+cashier-deep, clubs, features, financial-flows, hamburger-menu, operations,
+social — stayed invisible to the very audit that existed to find them, and the
+report that said "20 of 20" was counting 20 of 29.
+
+They are wired now, and named as a DIRECTORY (`tests/e2e/routes`) rather than
+nine filenames, so a tenth file added beside them cannot arrive orphaned.
+
+`diamond-checkout-mobile.spec.ts` was also missing — it landed from another
+branch the same afternoon and arrived with no job, which is the trap operating
+in real time while the fix for it was being written. It is self-contained
+(readFileSync + setContent), so it joined the merge gate: 12 specs, 108 beats.
+
+Final state: **30 spec files, every one of them named in a job.** This morning
+it was 4. The verification is stricter now too — the check confirms every spec
+NAMED in a workflow actually exists on disk, because a typo'd filename in a job
+is a silent orphan wearing a green tick.

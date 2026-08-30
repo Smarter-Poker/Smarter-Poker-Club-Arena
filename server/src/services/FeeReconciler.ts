@@ -646,3 +646,68 @@ export async function auditRakeAttributionDrift(
     return null;
   }
 }
+
+/**
+ * SATELLITE CONSERVATION watchdog (2026-08-30 satellite audit, phase 3).
+ *
+ * Two failure shapes shipped silently in one week and this makes both loud:
+ *
+ *   1. UNPAID WINNERS — a finisher inside the awardable count who received
+ *      neither a funded seat (rake_records / fn_award_satellite_seat) nor
+ *      prize cash. Four players won satellites and got nothing.
+ *   2. DISBURSED BEYOND THE PROMISE — cash + funded seats worth more than
+ *      max(pool, awardable_seats x ticket). The guarantee overlay is the
+ *      advertised promise and is allowed; the pre-#1935 face-value cash bug
+ *      (4,132.50 chips, now an acknowledged baseline) was not.
+ *
+ * The arithmetic lives in fn_satellite_conservation_audit so the check reads
+ * the same ledgers the money moved through. Read-only: it reports, it never
+ * repairs.
+ */
+export async function auditSatelliteConservation(
+  windowHours = 24
+): Promise<{ violations: number } | null> {
+  try {
+    const { data, error } = await supabase.rpc('fn_satellite_conservation_audit', {
+      p_hours: windowHours,
+    });
+    if (error) {
+      reportError(error, 'FeeReconciler.satellite_conservation_query_failed');
+      return null;
+    }
+    const rows = (data ?? []) as Array<{
+      satellite_id: string;
+      satellite_name: string;
+      pool: number;
+      ticket_cost: number;
+      awardable: number;
+      seats_funded: number;
+      cash_paid: number;
+      unpaid_winners: number;
+      excess_disbursed: number;
+    }>;
+    if (rows.length === 0) return { violations: 0 };
+
+    const detail =
+      `SATELLITE_CONSERVATION: ${rows.length} completed satellite(s) in the last ${windowHours}h ` +
+      `broke conservation: ` +
+      rows
+        .slice(0, 10)
+        .map(
+          (r) =>
+            `${r.satellite_id.slice(0, 8)} "${r.satellite_name}" (pool ${r.pool}, seats ${r.seats_funded}/${r.awardable}, ` +
+            `cash ${r.cash_paid}, unpaid winners ${r.unpaid_winners}, excess ${r.excess_disbursed})`
+        )
+        .join('; ');
+    reportError(new Error(detail), 'FeeReconciler.satellite_conservation');
+    await raiseFinancialAlert('critical', 'FeeReconciler.satellite_conservation', detail, {
+      windowHours,
+      violations: rows.length,
+      rows: rows.slice(0, 50),
+    });
+    return { violations: rows.length };
+  } catch (err) {
+    reportError(err, 'FeeReconciler.satellite_conservation_threw');
+    return null;
+  }
+}

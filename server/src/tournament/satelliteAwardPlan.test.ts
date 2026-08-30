@@ -210,8 +210,9 @@ describe('nothing pays out twice, and nothing pays out negative', () => {
   });
 
   it('a fractional guarantee floors rather than rounding a seat into existence', () => {
+    // Pool funds only 1 seat, so the (floored) guarantee of 2 is what rules.
     const p = planSatelliteAwards({
-      pool: 1000,
+      pool: 300,
       ticketCost: TICKET,
       configuredSeats: 2.9,
       finisherCount: 10,
@@ -239,14 +240,55 @@ describe('the remainder recipient is why it needs its own idempotency key', () =
   });
 
   it('resolves to a fresh player whenever the field is long enough', () => {
+    // 2026-08-30 floor-not-cap: 1,050 funds 5 seats over a 4-seat guarantee,
+    // and the 50 left over goes to 6th - the first player without a seat.
     const p = planSatelliteAwards({
-      pool: 1000,
+      pool: 1050,
       ticketCost: TICKET,
       configuredSeats: 4,
       finisherCount: 30,
     });
-    expect(p.remainder).toBe(200);
-    expect(remainderRecipientIndex(p, 30)).toBe(4);
+    expect(p.awardCount).toBe(5);
+    expect(p.remainder).toBe(50);
+    expect(remainderRecipientIndex(p, 30)).toBe(5);
     expect(remainderRecipientIndex(p, 30)).toBeGreaterThanOrEqual(p.awardCount);
+  });
+});
+
+describe('the guarantee is a floor, not a cap (2026-08-30)', () => {
+  it('a field that out-funds the guarantee gets the extra seats, not cash', () => {
+    // "2 Seats Guaranteed" but 1,000 collected at 200 a seat -> 5 seats.
+    const p = planSatelliteAwards({
+      pool: 1000,
+      ticketCost: 200,
+      configuredSeats: 2,
+      finisherCount: 20,
+    });
+    expect(p.awardCount).toBe(5);
+    expect(p.remainder).toBe(0);
+    expect(p.overlay).toBe(0);
+  });
+
+  it('the fractional surplus above the funded seats is still cash to the next finisher', () => {
+    const p = planSatelliteAwards({
+      pool: 1050,
+      ticketCost: 200,
+      configuredSeats: 2,
+      finisherCount: 20,
+    });
+    expect(p.awardCount).toBe(5);
+    expect(p.remainder).toBe(50);
+  });
+
+  it('an under-funded guarantee still wins — the floor holds from below', () => {
+    const p = planSatelliteAwards({
+      pool: 540,
+      ticketCost: 200,
+      configuredSeats: 3,
+      finisherCount: 20,
+    });
+    expect(p.awardCount).toBe(3);
+    expect(p.overlay).toBe(60);
+    expect(p.remainder).toBe(0);
   });
 });

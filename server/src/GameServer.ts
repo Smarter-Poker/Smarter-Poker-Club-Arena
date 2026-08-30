@@ -50,6 +50,7 @@ import {
   auditBBJDrift,
   repairUnbankedBBJFees,
   auditRakeAttributionDrift,
+  auditSatelliteConservation,
 } from './services/FeeReconciler.js';
 import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
 import { fetchAllRows } from './services/supabase/pagination.js';
@@ -1332,6 +1333,11 @@ export class GameServer {
           // must sum exactly to the rake collected. Files a critical
           // financial_alert per drift window; never silently repairs.
           await auditRakeAttributionDrift(24);
+          // Satellite conservation (2026-08-30 audit): every completed
+          // satellite must have paid its winners (seat or cash, never
+          // neither) and disbursed no more than max(pool, awardable seats).
+          // Files a critical financial_alert per violating event.
+          await auditSatelliteConservation(24);
         } catch (err) {
           reportError(err, 'GameServer.bbj_drift_audit_failed');
         }

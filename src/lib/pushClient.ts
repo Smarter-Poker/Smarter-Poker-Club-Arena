@@ -201,6 +201,56 @@ function applicationServerKeyMatches(
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   DEVICE IDENTITY
+
+   THE KEY IS DELIBERATELY THE HUB'S KEY. Club Arena is served from
+   /hub/club-arena/ on the SAME ORIGIN as the hub, so both apps read and write
+   one localStorage. Sharing `smarter-poker-push-device-id` is what makes this
+   browser ONE device to the server no matter which of the two apps the player
+   happened to enable notifications in. A Club-Arena-specific key would mint a
+   second identity for the same phone and reintroduce, by a new route, exactly
+   the duplicate this exists to stop. If you rename it, rename it in
+   `Smarter-Poker-World-Hub/src/lib/push-client.js` in the same commit.
+
+   WHY IT IS NEEDED AT ALL. `replacesEndpoint` only retires the old row while
+   the CLIENT still remembers what it is replacing, and it does not after a
+   service-worker reinstall, cleared site data, or a PWA re-add — the browser
+   mints a fresh endpoint and the previous row is left is_active with nothing
+   pointing at it. It is a perfectly valid endpoint, so the push service never
+   410s it and no reaper removes it. The dispatcher fans out to every active
+   row, so the same phone is sent the same notification once per stale row.
+
+   Measured on production 2026-08-30, before this change: one account, 22 rows,
+   4 of them active for 2 physical devices, and two Seat Open banners on one
+   iPhone. Every row Club Arena had ever written carried device_id = NULL,
+   because this field was never sent — and the partial unique index that is
+   supposed to enforce one live row per device is
+   `WHERE is_active AND device_id IS NOT NULL`, so it was structurally blind
+   to precisely the rows this app creates.
+
+   Returns null rather than throwing: private windows and locked-down browsers
+   throw on localStorage access. A missing device id costs a duplicate banner.
+   A thrown one would cost the entire subscription, which is far worse.
+   ═══════════════════════════════════════════════════════════════════════ */
+const DEVICE_ID_KEY = 'smarter-poker-push-device-id';
+
+function deviceId(): string | null {
+  try {
+    const existing = window.localStorage.getItem(DEVICE_ID_KEY);
+    if (existing && /^[a-z0-9-]{8,64}$/i.test(existing)) return existing;
+
+    const fresh =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+    window.localStorage.setItem(DEVICE_ID_KEY, fresh);
+    return fresh;
+  } catch {
+    return null;
+  }
+}
+
 function deviceLabel(): string {
   const ua = navigator.userAgent || '';
   if (/iPhone/.test(ua)) return 'iPhone';
@@ -345,6 +395,11 @@ async function persistSubscription(
         // the device count on /admin/push-health and every send burns a
         // request on it until the push service finally 404s.
         replacesEndpoint: replacedEndpoint || undefined,
+        // Stable per browser profile, shared with the hub. The server retires
+        // any other live row this device owns before upserting this one, which
+        // is the only thing that works when the endpoint has rotated and
+        // `replacesEndpoint` above is therefore unknown. See deviceId().
+        deviceId: deviceId() || undefined,
       }),
     }),
     T.save,

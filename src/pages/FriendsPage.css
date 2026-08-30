@@ -624,6 +624,25 @@
 }
 
 @media (max-width: 500px) {
+  .friends-tab-rail {
+    overflow-x: hidden;
+  }
+
+  .friends-tab-rail button {
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 5px;
+    font-size: clamp(0.5rem, 2.5vw, 0.63rem);
+    letter-spacing: 0.03em;
+  }
+
+  .friends-tab-rail button span {
+    min-width: 18px;
+    padding: 3px 4px;
+  }
+
   .friends-panel {
     padding: 14px 12px 22px;
   }

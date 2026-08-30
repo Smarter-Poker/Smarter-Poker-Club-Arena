@@ -216,11 +216,6 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
     label: 'Emoji Reactions',
     description: 'Enable Emoji Reactions And Throwables',
   },
-  {
-    key: 'blue_buttons_enabled',
-    label: 'Blue Table Buttons',
-    description: 'Use the Blue metallic style for table buttons',
-  },
   // Dan 2026-08-18: "remove the skip animations toggle, animations are not
   // optional." This definition list is what renders the switches, so dropping
   // the entry removes the control everywhere it appeared. The column and the

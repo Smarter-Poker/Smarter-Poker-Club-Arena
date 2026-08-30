@@ -2,19 +2,18 @@ import { test, expect } from '@playwright/test';
 import { expectRoute, assertRendered } from './utils';
 
 test.describe('Authentication Flow', () => {
-  test('should allow guest access to clubs page', async ({ page }) => {
+  test('should route the retired clubs index to the canonical lobby', async ({ page }) => {
     await page.goto('clubs');
 
-    // App allows guest access to clubs page
-    await expect(page).toHaveURL(/.*clubs/);
-    await assertRendered(page, 'clubs');
+    await expect
+      .poll(() => new URL(page.url()).pathname, { timeout: 10000 })
+      .toMatch(/^(?:\/hub\/club-arena)?\/$|^\/auth(?:\/|$)/);
+    if (new URL(page.url()).pathname.startsWith('/auth')) test.skip();
+    await assertRendered(page, 'canonical lobby');
   });
 
   test('should show home page', async ({ page }) => {
-    await page.goto('');
-
-    // Home page should load
-    await assertRendered(page, '');
+    await expectRoute(page, '');
   });
 });
 

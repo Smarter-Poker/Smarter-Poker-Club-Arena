@@ -76,6 +76,13 @@ describe('Player Identity Vault interaction semantics', () => {
     expect(BLOCK_MODAL).toContain('role="dialog"');
     expect(BLOCK_MODAL).toContain('htmlFor={reasonId}');
   });
+
+  it('accepts reciprocal friendship rows without a false single-row error', () => {
+    expect(PUBLIC_PROFILE).toContain("friendshipRows.some((row) => row.status === 'accepted')");
+    expect(PUBLIC_PROFILE).toContain("friendshipRows.find((row) => row.status === 'pending')");
+    expect(PUBLIC_PROFILE).toContain('.limit(2)');
+    expect(PUBLIC_PROFILE).not.toContain('.maybeSingle()');
+  });
 });
 
 describe('#SmarterCasinoRealism account surfaces', () => {

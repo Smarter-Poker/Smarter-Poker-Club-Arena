@@ -107,6 +107,7 @@ No route was deleted and no redirect was required.
 - Settings bridge/store ownership, table live updates, SoundService gate, real notification preference columns, VAPID subscription flow, email/password updates, MFA enrollment, export, delete, and confirmation handlers remain active.
 - Notification feed routing remains server-resolved; the page still does not introduce a second notification routing table.
 - Friendship, messaging compose deep link, block/unblock, public status, table navigation, QR, and sharing behaviors remain active.
+- Public friendship state now treats the live reciprocal accepted-row pair as one relationship instead of incorrectly requiring a single database row.
 
 ## Validation
 
@@ -114,6 +115,8 @@ No route was deleted and no redirect was required.
 - Changed-file quality gate: ESLint passed with zero warnings and zero errors; Prettier and `git diff --check` passed.
 - Account/navigation regression pack: 12 files and 136 tests passed, including identity dialogs, settings ownership/write contracts, push subscription, information architecture, navigation, waterfall, avatar-boundary, and no-hover interaction laws.
 - Full Vitest suite: 620 files and 9,262 tests passed.
+- Authenticated production smoke: every profile tab and Settings compatibility alias resolved to its canonical active section; Notifications All/Unread controls remained live; public-profile actions and credential data rendered without the viewer's account rail.
+- Responsive production matrix: `/profile`, `/settings`, `/notifications`, and `/profile/:userId` passed at 1440×900, 834×1112, and 375×812 with no horizontal overflow.
 - Production bundle: `npm run build` passed on current `origin/main`; stamped provenance reported `behind-main=0`.
 - Responsive implementation coverage: dedicated desktop/tablet/phone rules are present for all four retained pages and both dialogs; constrained grids use `minmax(0, 1fr)`, long content is wrapped, mobile form controls remain at least 44px high and 16px where text input could trigger iOS zoom, and the global no-hover law passes.
 - Protected CI and authenticated production route/overflow smoke checks run after the protected merge and are reported in the release handoff, because the local E2E environment intentionally has no account credentials.

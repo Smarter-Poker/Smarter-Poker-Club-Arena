@@ -57,6 +57,19 @@ interface ProfileRow {
 }
 
 export type LeaderboardPeriod = 'daily' | 'weekly' | 'monthly' | 'all_time';
+
+export interface LeaderboardPeriodWindow {
+  period: LeaderboardPeriod;
+  period_offset: number;
+  timezone: 'UTC';
+  start_date: string;
+  /** Exclusive period boundary. Closed periods read the snapshot at this date. */
+  end_date: string;
+  start_at: string;
+  end_at: string;
+  is_current: boolean;
+  label: string;
+}
 export type LeaderboardMetric =
   | 'profit'
   | 'hands_played'
@@ -289,6 +302,42 @@ async function decorateWithProfiles(
 
 export const LeaderboardService = {
   /**
+   * Load the one canonical calendar window used by rankings, prize display and
+   * eventual settlement. The database owns these boundaries so a browser's
+   * locale or daylight-saving transition can never change a leaderboard.
+   */
+  async getPeriodWindow(
+    period: LeaderboardPeriod,
+    periodOffset: number = 0
+  ): Promise<LeaderboardPeriodWindow> {
+    const { data, error } = await supabase.rpc('fn_leaderboard_period_window', {
+      p_period: period,
+      p_period_offset: periodOffset,
+    });
+    if (error) {
+      reportError(error, 'LeaderboardService.getPeriodWindow');
+      throw error;
+    }
+
+    const row = (Array.isArray(data) ? data[0] : data) as Partial<LeaderboardPeriodWindow> | null;
+    if (
+      !row ||
+      row.period !== period ||
+      row.period_offset !== periodOffset ||
+      row.timezone !== 'UTC' ||
+      typeof row.start_date !== 'string' ||
+      typeof row.end_date !== 'string' ||
+      typeof row.start_at !== 'string' ||
+      typeof row.end_at !== 'string' ||
+      typeof row.is_current !== 'boolean' ||
+      typeof row.label !== 'string'
+    ) {
+      throw new Error('Leaderboard Period Window Returned Invalid Data');
+    }
+    return row as LeaderboardPeriodWindow;
+  },
+
+  /**
    * Get leaderboard for a club. Non-ratio metrics use the snapshot-delta RPC
    * (v2, with real rank_change) for every period including all_time. Ratio
    * metrics (vpip/pfr) have no meaningful period delta and query all-time
@@ -312,12 +361,12 @@ export const LeaderboardService = {
       if (!isRatio) {
         let data, error;
         if (periodOffset < 0) {
-          const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+          const window = await this.getPeriodWindow(period, periodOffset);
           const result = await supabase.rpc('fn_club_leaderboard_by_dates', {
             p_club_id: resolvedClubId,
             p_metric: metric,
-            p_start_date: start.toISOString().split('T')[0],
-            p_end_date: end.toISOString().split('T')[0],
+            p_start_date: window.start_date,
+            p_end_date: window.end_date,
             p_limit: limit,
             p_offset: offset,
           });
@@ -393,11 +442,11 @@ export const LeaderboardService = {
       if (metric === 'vpip' || metric === 'pfr') return [];
       let data, error;
       if (periodOffset < 0) {
-        const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+        const window = await this.getPeriodWindow(period, periodOffset);
         const result = await supabase.rpc('fn_global_leaderboard_by_dates', {
           p_metric: metric,
-          p_start_date: start.toISOString().split('T')[0],
-          p_end_date: end.toISOString().split('T')[0],
+          p_start_date: window.start_date,
+          p_end_date: window.end_date,
           p_limit: limit,
           p_offset: offset,
         });
@@ -568,13 +617,13 @@ export const LeaderboardService = {
       if (!isRatio) {
         let data, error;
         if (periodOffset < 0) {
-          const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+          const window = await this.getPeriodWindow(period, periodOffset);
           const result = await supabase.rpc('fn_user_rank_by_dates', {
             p_user_id: userId,
             p_club_id: resolvedClubId,
             p_metric: metric,
-            p_start_date: start.toISOString().split('T')[0],
-            p_end_date: end.toISOString().split('T')[0],
+            p_start_date: window.start_date,
+            p_end_date: window.end_date,
           });
           data = result.data;
           error = result.error;
@@ -588,14 +637,20 @@ export const LeaderboardService = {
           data = result.data;
           error = result.error;
         }
-        if (error || !data?.found) {
+        const rankData = (Array.isArray(data) ? data[0] : data) as {
+          rank?: number;
+          total?: number;
+          value?: number;
+          found?: boolean;
+        } | null;
+        if (error || !rankData?.found) {
           if (error) reportError(error, 'LeaderboardService.getUserRank_period');
           return null;
         }
         return {
-          rank: Number(data.rank || 0),
-          total: Number(data.total || 0),
-          value: Number(data.value || 0),
+          rank: Number(rankData.rank || 0),
+          total: Number(rankData.total || 0),
+          value: Number(rankData.value || 0),
         };
       }
 
@@ -639,12 +694,12 @@ export const LeaderboardService = {
       if (metric === 'vpip' || metric === 'pfr') return null;
       let data, error;
       if (periodOffset < 0) {
-        const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+        const window = await this.getPeriodWindow(period, periodOffset);
         const result = await supabase.rpc('fn_user_rank_global_by_dates', {
           p_user_id: userId,
           p_metric: metric,
-          p_start_date: start.toISOString().split('T')[0],
-          p_end_date: end.toISOString().split('T')[0],
+          p_start_date: window.start_date,
+          p_end_date: window.end_date,
         });
         data = result.data;
         error = result.error;
@@ -657,14 +712,20 @@ export const LeaderboardService = {
         data = result.data;
         error = result.error;
       }
-      if (error || !data?.found) {
+      const rankData = (Array.isArray(data) ? data[0] : data) as {
+        rank?: number;
+        total?: number;
+        value?: number;
+        found?: boolean;
+      } | null;
+      if (error || !rankData?.found) {
         if (error) reportError(error, 'LeaderboardService.getGlobalUserRank');
         return null;
       }
       return {
-        rank: Number(data.rank || 0),
-        total: Number(data.total || 0),
-        value: Number(data.value || 0),
+        rank: Number(rankData.rank || 0),
+        total: Number(rankData.total || 0),
+        value: Number(rankData.value || 0),
       };
     } catch (err: unknown) {
       reportError(err, 'LeaderboardService.getGlobalUserRank_err');
@@ -834,10 +895,6 @@ export const LeaderboardService = {
     }
   },
 
-  /**
-   * Get period date boundaries
-   */
-
   async getManageableRewardContexts(): Promise<LeaderboardRewardContext[]> {
     try {
       const { data, error } = await supabase.rpc('fn_leaderboard_reward_contexts');
@@ -919,47 +976,6 @@ export const LeaderboardService = {
       reportError(err, 'LeaderboardService.getUserTrophies');
       return [];
     }
-  },
-
-  getPeriodBoundaries(
-    period: LeaderboardPeriod,
-    periodOffset: number = 0
-  ): { start: Date; end: Date } {
-    const now = new Date();
-    let start: Date;
-
-    // Apply offset logic based on period type
-    if (period === 'weekly') {
-      const offsetDays = periodOffset * 7;
-      now.setDate(now.getDate() + offsetDays);
-    } else if (period === 'monthly') {
-      now.setMonth(now.getMonth() + periodOffset);
-    } else if (period === 'daily') {
-      now.setDate(now.getDate() + periodOffset);
-    }
-
-    const end = new Date(now);
-
-    switch (period) {
-      case 'daily':
-        start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        break;
-      case 'weekly': {
-        const dayOfWeek = now.getDay();
-        start = new Date(now);
-        start.setDate(now.getDate() - dayOfWeek);
-        start.setHours(0, 0, 0, 0);
-        break;
-      }
-      case 'monthly':
-        start = new Date(now.getFullYear(), now.getMonth(), 1);
-        break;
-      case 'all_time':
-        start = new Date(0);
-        break;
-    }
-
-    return { start, end };
   },
 };
 

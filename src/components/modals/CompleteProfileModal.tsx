@@ -6,7 +6,7 @@
  * if they signed in via a provider (Google) that skipped the Hub signup form.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useUserStore } from '../../stores/useUserStore';
 import { sanitizeInput } from '../../utils/sanitizeInput';
@@ -253,8 +253,17 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
         throw profileError;
       }
 
+      /* The result was discarded here until 2026-08-30. `setUserAvatar` REFUSES
+         rather than throws (AvatarService's library-only guard returns false for
+         anything that is not library art), so a refused write left this modal
+         showing "Welcome!", closing, and then re-appearing on the next load with
+         no explanation — the same gate, for the same reason, forever. If the
+         avatar did not land, say so and stay open. */
       if (currentAvatar && currentAvatar !== user.avatar_url) {
-        await avatarService.setUserAvatar(user.id, currentAvatar);
+        const avatarSaved = await avatarService.setUserAvatar(user.id, currentAvatar);
+        if (!avatarSaved) {
+          throw new Error('Could not save that avatar. Please choose another.');
+        }
       }
 
       // 3. Update Local Store (Removed users table update to prevent silent RLS failures)
@@ -278,124 +287,147 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
 
   return (
     <>
-      <div className={styles.overlay}>
-        <div
-          className={styles.modal}
-          style={{
-            opacity: mounted ? 1 : 0,
-            transform: mounted ? 'translateY(0)' : 'translateY(8px)',
-            transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          }}
-        >
-          <header className={styles.header}>
-            <h2>Complete Your Profile</h2>
-          </header>
+      {/*
+       * THE GATE STANDS DOWN WHILE THE GALLERY IS UP.
+       *
+       * 2026-08-30: "Select Avatar" silently did nothing. Nothing was broken in
+       * the gallery — it opened every time, and then painted UNDERNEATH this
+       * modal. AvatarGallery portals to document.body at `z-index: 9999`; this
+       * overlay is a sibling in the same root stacking context at `z-index:
+       * 10000` with `rgba(0,0,0,0.85)` and an 8px backdrop blur over the whole
+       * viewport. So the player got a dead button, a locked body scroll
+       * (AvatarGallery sets `overflow: hidden`) and a focus trap inside a dialog
+       * they could not see. That is the whole "Club Arena is blocking play"
+       * report.
+       *
+       * Raising the gallery instead would have been the wrong end: Toast sits at
+       * 10000 deliberately so "Avatar Updated" lands ON TOP of the gallery, and
+       * lifting the gallery past it would have traded a dead button for a
+       * silent save. Only one of these two can be the front-most surface at a
+       * time, so the one that is not being used steps off the screen.
+       */}
+      {!showAvatarGallery && (
+        <div className={styles.overlay}>
+          <div
+            className={styles.modal}
+            style={{
+              opacity: mounted ? 1 : 0,
+              transform: mounted ? 'translateY(0)' : 'translateY(8px)',
+              transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+            }}
+          >
+            <header className={styles.header}>
+              <h2>Complete Your Profile</h2>
+            </header>
 
-          <div className={styles.content}>
-            <p className={styles.intro}>
-              Welcome To Club Arena! Before You Hit The Tables, Please Choose Your Poker Alias And
-              Avatar.
-            </p>
+            <div className={styles.content}>
+              <p className={styles.intro}>
+                Welcome To Club Arena! Before You Hit The Tables, Please Choose Your Poker Alias And
+                Avatar.
+              </p>
 
-            <div className={styles.avatarSection}>
-              <label>Profile Avatar (Required)</label>
-              <div className={styles.avatarControls}>
-                <div
-                  className={`${styles.avatarPreview} ${!hasAvatar ? styles.avatarPreviewNeedsAvatar : ''}`}
-                  onClick={() => setShowAvatarGallery(true)}
-                >
-                  {hasAvatar ? (
-                    <img src={currentAvatar!} alt="Your Avatar" className={styles.avatarImg} />
-                  ) : (
-                    <div className={styles.avatarPlaceholder}>
-                      <span>+</span>
-                    </div>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className={styles.selectAvatarBtn}
-                  onClick={() => setShowAvatarGallery(true)}
-                >
-                  {user.avatar_url ? 'Change Avatar' : 'Select Avatar'}
-                </button>
-              </div>
-            </div>
-
-            <form id="complete-profile-form" onSubmit={handleSave} className={styles.formGroup}>
-              <div className={styles.formGroup}>
-                <div className={styles.labelRow}>
-                  <label>Poker Alias (Required)</label>
-                  <button type="button" className={styles.randomizeBtn} onClick={handleRandomize}>
-                    ⚄ Randomize
-                  </button>
-                </div>
-                <div
-                  className={`${styles.inputWrapper} ${aliasAvailable === false ? styles.inputInvalid : ''} ${aliasAvailable === true ? styles.inputValid : ''}`}
-                >
-                  <span className={styles.inputIcon}>◆</span>
-                  <input
-                    className={styles.input}
-                    placeholder="E.g. SharkPro99"
-                    value={alias}
-                    onChange={(e) => setAlias(e.target.value)}
-                    minLength={3}
-                    maxLength={16}
-                    required
-                  />
-                  <div className={styles.availabilityIndicator}>
-                    {isCheckingAlias && <span className={styles.spinner}>↻</span>}
-                    {!isCheckingAlias && aliasAvailable === true && (
-                      <span className={styles.iconAvailable}>✓</span>
-                    )}
-                    {!isCheckingAlias && aliasAvailable === false && !aliasLocalError && (
-                      <span className={styles.iconTaken}>✗</span>
+              <div className={styles.avatarSection}>
+                <label>Profile Avatar (Required)</label>
+                <div className={styles.avatarControls}>
+                  <div
+                    className={`${styles.avatarPreview} ${!hasAvatar ? styles.avatarPreviewNeedsAvatar : ''}`}
+                    onClick={() => setShowAvatarGallery(true)}
+                  >
+                    {hasAvatar ? (
+                      <img src={currentAvatar!} alt="Your Avatar" className={styles.avatarImg} />
+                    ) : (
+                      <div className={styles.avatarPlaceholder}>
+                        <span>+</span>
+                      </div>
                     )}
                   </div>
-                </div>
-                {aliasLocalError && <div className={styles.localErrorText}>{aliasLocalError}</div>}
-              </div>
-
-              <div className={styles.formGroup} style={{ marginTop: '0.5rem' }}>
-                <label>Real Name (Optional)</label>
-                <div className={styles.inputWrapper}>
-                  <span className={styles.inputIcon}>◉</span>
-                  <input
-                    className={styles.input}
-                    placeholder="E.g. John Doe"
-                    value={realName}
-                    onChange={(e) => setRealName(e.target.value)}
-                    maxLength={24}
-                  />
+                  <button
+                    type="button"
+                    className={styles.selectAvatarBtn}
+                    onClick={() => setShowAvatarGallery(true)}
+                  >
+                    {user.avatar_url ? 'Change Avatar' : 'Select Avatar'}
+                  </button>
                 </div>
               </div>
 
-              {error && <div className={styles.errorText}>{error}</div>}
+              <form id="complete-profile-form" onSubmit={handleSave} className={styles.formGroup}>
+                <div className={styles.formGroup}>
+                  <div className={styles.labelRow}>
+                    <label>Poker Alias (Required)</label>
+                    <button type="button" className={styles.randomizeBtn} onClick={handleRandomize}>
+                      ⚄ Randomize
+                    </button>
+                  </div>
+                  <div
+                    className={`${styles.inputWrapper} ${aliasAvailable === false ? styles.inputInvalid : ''} ${aliasAvailable === true ? styles.inputValid : ''}`}
+                  >
+                    <span className={styles.inputIcon}>◆</span>
+                    <input
+                      className={styles.input}
+                      placeholder="E.g. SharkPro99"
+                      value={alias}
+                      onChange={(e) => setAlias(e.target.value)}
+                      minLength={3}
+                      maxLength={16}
+                      required
+                    />
+                    <div className={styles.availabilityIndicator}>
+                      {isCheckingAlias && <span className={styles.spinner}>↻</span>}
+                      {!isCheckingAlias && aliasAvailable === true && (
+                        <span className={styles.iconAvailable}>✓</span>
+                      )}
+                      {!isCheckingAlias && aliasAvailable === false && !aliasLocalError && (
+                        <span className={styles.iconTaken}>✗</span>
+                      )}
+                    </div>
+                  </div>
+                  {aliasLocalError && (
+                    <div className={styles.localErrorText}>{aliasLocalError}</div>
+                  )}
+                </div>
 
-              <div className={styles.infoBox}>
-                <p>You Can Change These Later In Your Profile Settings.</p>
-              </div>
-            </form>
+                <div className={styles.formGroup} style={{ marginTop: '0.5rem' }}>
+                  <label>Real Name (Optional)</label>
+                  <div className={styles.inputWrapper}>
+                    <span className={styles.inputIcon}>◉</span>
+                    <input
+                      className={styles.input}
+                      placeholder="E.g. John Doe"
+                      value={realName}
+                      onChange={(e) => setRealName(e.target.value)}
+                      maxLength={24}
+                    />
+                  </div>
+                </div>
+
+                {error && <div className={styles.errorText}>{error}</div>}
+
+                <div className={styles.infoBox}>
+                  <p>You Can Change These Later In Your Profile Settings.</p>
+                </div>
+              </form>
+            </div>
+
+            <footer className={styles.footer}>
+              <button
+                type="submit"
+                form="complete-profile-form"
+                className={`${styles.submitButton} ${isSuccess ? styles.submitSuccess : ''}`}
+                disabled={
+                  isSaving || isSuccess || !alias.trim() || !hasAvatar || aliasAvailable === false
+                }
+              >
+                {isSuccess ? '✓ Welcome!' : isSaving ? 'Saving...' : 'Enter Arena'}
+              </button>
+            </footer>
           </div>
-
-          <footer className={styles.footer}>
-            <button
-              type="submit"
-              form="complete-profile-form"
-              className={`${styles.submitButton} ${isSuccess ? styles.submitSuccess : ''}`}
-              disabled={
-                isSaving || isSuccess || !alias.trim() || !hasAvatar || aliasAvailable === false
-              }
-            >
-              {isSuccess ? '✓ Welcome!' : isSaving ? 'Saving...' : 'Enter Arena'}
-            </button>
-          </footer>
         </div>
-      </div>
+      )}
 
       <AvatarGallery
         userId={user.id}
-        currentAvatarUrl={user.avatar_url || ''}
+        currentAvatarUrl={currentAvatar || ''}
         isVip={user.vip_level !== 'bronze'}
         isOpen={showAvatarGallery}
         onClose={() => setShowAvatarGallery(false)}
@@ -408,38 +440,105 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
   );
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  THE GATE ASKS THE DATABASE, NOT THE STORE
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * 2026-08-30: established members with an alias AND an avatar were being stopped
+ * at this modal. Nothing was wrong with their rows — danimal5022 has
+ * `arena_avatar_url = /avatars/table/free_samurai@2x.webp` and always did. The
+ * gate was reading the Zustand user, and FOUR separate paths seed that store
+ * with a session STUB before the profile row arrives:
+ *
+ *   IdentityDNA.hydrateUserFromSession   username: email.split('@')[0]
+ *   useAuthUser.rehydrate                avatar_url: metadata?.avatar_url ?? null
+ *   AuthGuard.hydrateStoreFromSession    (same)
+ *   AuthGuard.hydrateStoreFromLocalStorage  avatar_url: null, hard-coded
+ *
+ * Every one of them writes `avatar_url: null` for a player who has an avatar,
+ * because the avatar lives in `profiles.arena_avatar_url` and a JWT does not
+ * carry it. The gate read that null as "this player has never chosen an avatar"
+ * and threw up a blocking modal — on every cold load, and again on every token
+ * refresh, since `hydrateUserFromSession` runs on SIGNED_IN, TOKEN_REFRESHED and
+ * USER_UPDATED alike. It cleared itself a moment later when the profile landed,
+ * which is exactly why it read as "glitching": a hard gate flickering over a
+ * player who had already passed it.
+ *
+ * So the decision is made from the one place that actually knows, and:
+ *
+ *   - A query that DID NOT ANSWER is not a missing profile. An error or a
+ *     dropped connection leaves the gate DOWN and retries, rather than locking a
+ *     paid-up member out of the tables because the network hiccuped.
+ *   - The check runs ONCE per account id, not once per store write. A token
+ *     refresh must never re-litigate a gate the player already walked through.
+ *   - `isReady` stays false until the answer is in, and AppLayout does not mount
+ *     the modal until then, so there is no window in which it can flash.
+ */
 export function useCompleteProfile(user: any) {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  /** Account id this hook has already decided for. Null means undecided. */
+  const decidedForRef = useRef<string | null>(null);
+
+  const userId: string | undefined = user?.id;
 
   useEffect(() => {
-    if (!user) {
+    if (!userId) {
+      decidedForRef.current = null;
+      setShowProfileModal(false);
       setIsReady(true);
       return;
     }
 
-    const hasCompletedLocal = localStorage.getItem('profile_alias_configured') === 'true';
+    if (decidedForRef.current === userId) return;
+    decidedForRef.current = userId;
 
-    const isSystemGenerated =
-      /^Player\d{4}$/.test(user.username || '') || !(user.username || '').trim();
-    const isMissingAvatar = !user.avatar_url;
+    let cancelled = false;
 
-    if (isSystemGenerated || isMissingAvatar) {
-      setShowProfileModal(true);
-    } else {
-      if (!hasCompletedLocal) {
-        localStorage.setItem('profile_alias_configured', 'true');
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('username, arena_avatar_url')
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        if (error || !data) {
+          /* Unanswered, not empty. Leave the gate down and allow a retry on the
+             next identity change rather than blocking play on a failed read. */
+          if (error) reportError(error, 'useCompleteProfile.ProfileReadFailed');
+          decidedForRef.current = null;
+          setShowProfileModal(false);
+          setIsReady(true);
+          return;
+        }
+
+        const username = String(data.username || '').trim();
+        const needsAlias = !username || /^Player\d{4}$/.test(username);
+        const needsAvatar = !String(data.arena_avatar_url || '').trim();
+
+        setShowProfileModal(needsAlias || needsAvatar);
+        setIsReady(true);
+      } catch (err) {
+        if (cancelled) return;
+        reportError(err, 'useCompleteProfile.ProfileReadThrew');
+        decidedForRef.current = null;
+        setShowProfileModal(false);
+        setIsReady(true);
       }
-      setShowProfileModal(false);
-    }
+    })();
 
-    setIsReady(true);
-  }, [user]);
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
-  const finishProfile = () => {
-    localStorage.setItem('profile_alias_configured', 'true');
+  const finishProfile = useCallback(() => {
     setShowProfileModal(false);
-  };
+  }, []);
 
   return {
     showProfileModal,

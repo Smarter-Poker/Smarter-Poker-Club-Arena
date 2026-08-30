@@ -264,6 +264,10 @@ export default function CashierTradePage() {
   const [visibleCount, setVisibleCount] = useState(25);
 
   const [records, setRecords] = useState<TradeRecordRow[]>([]);
+  const [recordQuery, setRecordQuery] = useState('');
+  const [recordDirection, setRecordDirection] = useState<'all' | 'in' | 'out'>('all');
+  const [recordsLimit, setRecordsLimit] = useState(50);
+  const [recordsHasMore, setRecordsHasMore] = useState(false);
   // Dan 2026-08-21: the three tabs/buttons that used to say "coming soon" are
   // real features now (chip_requests + tournament_tickets, migration 20260821).
   const [requests, setRequests] = useState<ChipRequestRow[]>([]);
@@ -725,6 +729,10 @@ export default function CashierTradePage() {
     // to a club where you have no assigned players left the filter stuck ON
     // with the only control that clears it greyed out - reload was the way out.
     setMineOnly(false);
+    setRecordQuery('');
+    setRecordDirection('all');
+    setRecordsLimit(50);
+    setRecordsHasMore(false);
   }, [clubUuid]);
 
   useEffect(() => {
@@ -740,13 +748,16 @@ export default function CashierTradePage() {
           .eq('club_id', clubUuid)
           .or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`)
           .order('created_at', { ascending: false })
-          .limit(50);
+          // Fetch one sentinel row so the UI only offers "Load Older Entries"
+          // when another page really exists. Initial wire cost stays at 51 rows.
+          .limit(recordsLimit + 1);
         if (!live) return;
         // A discarded error rendered as "No trades recorded yet", which is a
         // different statement from "we could not read them".
         if (error) throw error;
+        const pageRows = (data || []).slice(0, recordsLimit);
         const ids = new Set<string>();
-        for (const r of data || []) {
+        for (const r of pageRows) {
           if (r.from_user_id) ids.add(r.from_user_id);
           if (r.to_user_id) ids.add(r.to_user_id);
         }
@@ -756,8 +767,9 @@ export default function CashierTradePage() {
           .in('id', Array.from(ids));
         const nameOf = new Map((profs || []).map((p) => [p.id, p.display_name || p.username]));
         if (!live) return;
+        setRecordsHasMore((data || []).length > recordsLimit);
         setRecords(
-          (data || []).map((r) => {
+          pageRows.map((r) => {
             const out = r.from_user_id === user.id;
             const other = out ? r.to_user_id : r.from_user_id;
             return {
@@ -783,7 +795,7 @@ export default function CashierTradePage() {
     return () => {
       live = false;
     };
-  }, [tab, user?.id, clubUuid]);
+  }, [tab, user?.id, clubUuid, recordsLimit]);
 
   // ── Chip requests (Chip Request tab) ───────────────────────────────────────
   const reqSeqRef = useRef(0);
@@ -1122,6 +1134,43 @@ export default function CashierTradePage() {
   }, [downline, search, sortKey, groupByRole, mineOnly]);
 
   const agencyBalance = useMemo(() => downline.reduce((s, r) => s + r.chipBalance, 0), [downline]);
+
+  /** Fast client-side ledger controls over the bounded, newest-first page. */
+  const filteredRecords = useMemo(() => {
+    const q = recordQuery.trim().toLowerCase();
+    return records.filter((row) => {
+      if (recordDirection !== 'all' && row.direction !== recordDirection) return false;
+      if (!q) return true;
+      return (
+        row.counterparty.toLowerCase().includes(q) || txLabel(row.type).toLowerCase().includes(q)
+      );
+    });
+  }, [records, recordDirection, recordQuery]);
+
+  const recordSummary = useMemo(() => {
+    const incoming = records.reduce(
+      (sum, row) => (row.direction === 'in' ? sum + row.amount : sum),
+      0
+    );
+    const outgoing = records.reduce(
+      (sum, row) => (row.direction === 'out' ? sum + row.amount : sum),
+      0
+    );
+    return { incoming, outgoing, net: incoming - outgoing };
+  }, [records]);
+
+  const visibleTabs = useMemo<[TabKey, string][]>(() => {
+    const all: [TabKey, string][] = [
+      ['trade', 'Trade'],
+      ['record', 'Trade Record'],
+      ['leaderboard', 'Settlement Record'],
+      ['request', 'Chip Requests'],
+      ['tickets', 'Tickets'],
+    ];
+    return myRole === 'player'
+      ? all.filter(([key]) => key === 'record' || key === 'request' || key === 'tickets')
+      : all;
+  }, [myRole]);
 
   // A selection had no relationship to what was on screen. Select three
   // players, type a search, select a fourth, press Send Out - and chips went
@@ -1487,11 +1536,12 @@ export default function CashierTradePage() {
    * refuse them, so the button goes and the sentence explaining why takes its
    * place rather than leaving a control that fails on tap.
    */
-  const stillClaimable = useMemo(
-    () => reversible.filter((r) => secondsLeftFor(r) > 0),
-    // nowTick is a dependency on purpose: it is what re-runs this every second.
-    [reversible, secondsLeftFor, nowTick]
-  );
+  const stillClaimable = useMemo(() => {
+    // Read the tick explicitly: its value is irrelevant, but each new value is
+    // what asks this memo to re-evaluate the server-anchored countdown.
+    void nowTick;
+    return reversible.filter((r) => secondsLeftFor(r) > 0);
+  }, [reversible, secondsLeftFor, nowTick]);
 
   /**
    * MODAL KEYBOARD AND SCROLL (Dan 2026-08-25).
@@ -1529,32 +1579,86 @@ export default function CashierTradePage() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className={styles.page}>
-      {/* Header */}
-      <div className={styles.header}>
-        <span className={styles.title}>CASHIER</span>
-        <button
-          className={styles.entityBtn}
-          onClick={() => setPickerOpen((o) => !o)}
-          aria-expanded={pickerOpen}
-        >
-          {currentClub?.logoUrl ? (
-            <img src={currentClub.logoUrl} alt="" className={styles.entityLogo} />
-          ) : (
-            <span className={styles.entityInitial}>{initial(currentClub?.name || 'C')}</span>
-          )}
-          <span className={styles.entityName}>{currentClub?.name || '...'}</span>
-          <span className={styles.entityCaret}>&#9662;</span>
-        </button>
-      </div>
+      <section className={styles.hero} aria-labelledby="cashier-title">
+        <img
+          className={styles.heroImage}
+          src={`${import.meta.env.BASE_URL}images/cashier/cashier-vault-hero-v1.webp`}
+          alt=""
+          width="1672"
+          height="941"
+          loading="eager"
+          fetchPriority="high"
+        />
+        <div className={styles.heroHardware} aria-hidden="true" />
+
+        <div className={styles.header}>
+          <span className={styles.title}>Secure cashier · Live ledger</span>
+          <button
+            className={styles.entityBtn}
+            onClick={() => setPickerOpen((open) => !open)}
+            aria-expanded={pickerOpen}
+            aria-haspopup="listbox"
+            aria-label={`Open another club cashier. Current club: ${currentClub?.name || 'Loading'}`}
+          >
+            {currentClub?.logoUrl ? (
+              <img src={currentClub.logoUrl} alt="" className={styles.entityLogo} />
+            ) : (
+              <span className={styles.entityInitial}>{initial(currentClub?.name || 'C')}</span>
+            )}
+            <span className={styles.entityName}>{currentClub?.name || 'Loading Club'}</span>
+            <span className={styles.entityCaret} aria-hidden="true">
+              &#9662;
+            </span>
+          </button>
+        </div>
+
+        <div className={styles.heroContent}>
+          <span className={styles.eyebrow}>Club Arena / Cashier Room</span>
+          <h1 className={styles.heroTitle} id="cashier-title">
+            Every chip.
+            <br />
+            Accounted for.
+          </h1>
+          <p className={styles.heroCopy}>
+            Move chips through the correct wallet, answer requests, redeem tickets, and verify every
+            ledger entry from one secure desk.
+          </p>
+          <div className={styles.securityLine} role="status">
+            <span className={styles.securityDot} aria-hidden="true" />
+            {loading || isHydrating ? 'Synchronizing cashier balances' : 'Balances synchronized'}
+          </div>
+        </div>
+
+        <div className={styles.heroMetrics} aria-label="Current cashier balances">
+          <div className={styles.heroMetric}>
+            <span className={styles.heroMetricLabel}>Club chips</span>
+            <strong className={styles.heroMetricValue}>
+              {loading || isHydrating ? '—' : fmt(myBalance)}
+            </strong>
+          </div>
+          <div className={styles.heroMetric}>
+            <span className={styles.heroMetricLabel}>Agent wallet</span>
+            <strong className={styles.heroMetricValue}>
+              {loading || isHydrating || agentWallet === null ? '—' : fmt(agentWallet)}
+            </strong>
+          </div>
+          <div className={styles.heroMetric}>
+            <span className={styles.heroMetricLabel}>Access</span>
+            <strong className={styles.heroRole}>{roleLabel(myRole as ClubRole)}</strong>
+          </div>
+        </div>
+      </section>
 
       {/* Entity picker */}
       {pickerOpen && (
-        <div className={styles.picker}>
+        <div className={styles.picker} role="listbox" aria-label="Club cashiers">
           <div className={styles.pickerLabel}>OPEN CASHIER FOR</div>
           {memberships.map((m) => (
             <button
               key={m.clubUuid}
               className={`${styles.pickerRow} ${m.clubUuid === clubUuid ? styles.pickerRowActive : ''}`}
+              role="option"
+              aria-selected={m.clubUuid === clubUuid}
               onClick={() => {
                 setPickerOpen(false);
                 if (m.clubUuid !== clubUuid) {
@@ -1575,59 +1679,77 @@ export default function CashierTradePage() {
       )}
 
       {/* Tabs */}
-      <div className={styles.tabs}>
-        {(
-          [
-            ['trade', 'Trade'],
-            ['record', 'Trade Record'],
-            ['leaderboard', 'Leaderboard Record'],
-            ['request', 'Chip Request'],
-            ['tickets', 'Tickets'],
-          ] as [TabKey, string][]
-        )
-          .filter(([key]) => {
-            if (myRole === 'player') {
-              // Players see their history, chip requests, and their tickets —
-              // the tab where a ticket sent to them is actually redeemed.
-              return key === 'record' || key === 'request' || key === 'tickets';
-            }
-            return true;
-          })
-          .map(([key, label]) => (
-            <button
-              key={key}
-              className={`${styles.tab} ${tab === key ? styles.tabActive : ''}`}
-              aria-pressed={tab === key}
-              onClick={() => setTab(key)}
-            >
-              {label}
-              {/* A player who has asked their agent for chips is a player who is
+      <nav
+        className={styles.tabs}
+        role="tablist"
+        aria-label="Cashier actions"
+        onKeyDown={(event) => {
+          if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          const keys = visibleTabs.map(([key]) => key);
+          const index = Math.max(0, keys.indexOf(tab));
+          const next =
+            event.key === 'Home'
+              ? keys[0]
+              : event.key === 'End'
+                ? keys[keys.length - 1]
+                : event.key === 'ArrowRight'
+                  ? keys[(index + 1) % keys.length]
+                  : keys[(index - 1 + keys.length) % keys.length];
+          setTab(next);
+          document.getElementById(`cashier-tab-${next}`)?.focus();
+        }}
+      >
+        {visibleTabs.map(([key, label]) => (
+          <button
+            key={key}
+            id={`cashier-tab-${key}`}
+            role="tab"
+            className={`${styles.tab} ${tab === key ? styles.tabActive : ''}`}
+            aria-selected={tab === key}
+            tabIndex={tab === key ? 0 : -1}
+            onClick={() => setTab(key)}
+          >
+            {label}
+            {/* A player who has asked their agent for chips is a player who is
                   not at a table. loadRequests only runs when this tab is opened,
                   so an owner sitting on Trade had no indication that anyone was
                   waiting. One head-only count turns a tab nobody opens into a
                   queue that pulls itself. Dan 2026-08-25. */}
-              {key === 'request' && pendingCount > 0 ? (
-                <span className={styles.tabBadge}>{pendingCount.toLocaleString()}</span>
-              ) : null}
-              {/* A ticket in hand is chips waiting to be redeemed. Same pull
+            {key === 'request' && pendingCount > 0 ? (
+              <span className={styles.tabBadge}>{pendingCount.toLocaleString()}</span>
+            ) : null}
+            {/* A ticket in hand is chips waiting to be redeemed. Same pull
                   as the request badge: the tab must advertise the work. */}
-              {key === 'tickets' && heldTicketCount > 0 ? (
-                <span className={styles.tabBadge}>{heldTicketCount.toLocaleString()}</span>
-              ) : null}
-            </button>
-          ))}
-      </div>
+            {key === 'tickets' && heldTicketCount > 0 ? (
+              <span className={styles.tabBadge}>{heldTicketCount.toLocaleString()}</span>
+            ) : null}
+          </button>
+        ))}
+      </nav>
 
       {tab === 'trade' && (
-        <>
+        <section className={styles.sectionShell} aria-labelledby="trade-workspace-title">
+          <div className={styles.sectionHeading}>
+            <div>
+              <span className={styles.sectionEyebrow}>Distribution desk</span>
+              <h2 className={styles.sectionTitle} id="trade-workspace-title">
+                Select recipients
+              </h2>
+            </div>
+            <span className={styles.sectionMeta}>
+              {downline.length.toLocaleString()} available · {selected.size.toLocaleString()}{' '}
+              selected
+            </span>
+          </div>
           {/* Balance strip */}
           <div className={styles.strip}>
             <div className={styles.stripCell}>
-              <span className={styles.stripLabel}>Your Chip Balance</span>
+              <span className={styles.stripLabel}>Club chips</span>
               <span className={styles.stripValue}>{fmt(myBalance)}</span>
             </div>
             <div className={styles.stripCell}>
-              <span className={styles.stripLabel}>Agency Players Balance</span>
+              <span className={styles.stripLabel}>Downline holdings</span>
               <span className={styles.stripValue}>{fmt(agencyBalance)}</span>
             </div>
             {/* THE ACCOUNT THIS PAGE SPENDS (Dan 2026-08-25).
@@ -1856,217 +1978,328 @@ export default function CashierTradePage() {
               Send Out
             </button>
           </div>
-        </>
+        </section>
       )}
 
       {tab === 'record' && (
-        <div className={styles.list}>
-          {recordsLoading && <div className={styles.empty}>Loading Trades...</div>}
-          {!recordsLoading && recordsError && (
-            <div className={styles.empty} role="alert">
-              {recordsError}
+        <section className={styles.sectionShell} aria-labelledby="ledger-title">
+          <div className={styles.sectionHeading}>
+            <div>
+              <span className={styles.sectionEyebrow}>Auditable history</span>
+              <h2 className={styles.sectionTitle} id="ledger-title">
+                Trade ledger
+              </h2>
             </div>
-          )}
-          {!recordsLoading && !recordsError && records.length === 0 && (
-            <div className={styles.empty}>No Trades Recorded Yet.</div>
-          )}
-          {records.map((r) => (
-            <div key={r.id} className={styles.row}>
-              <div className={styles.rowInfo}>
-                <span className={styles.rowName}>
-                  {r.direction === 'out' ? 'To ' : 'From '}
-                  {r.counterparty}
-                </span>
-                <span className={styles.rowSub}>
-                  {txLabel(r.type)} &middot;{' '}
-                  {new Date(r.createdAt).toLocaleString([], {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </span>
-              </div>
-              <span
-                className={`${styles.rowBalance} ${r.direction === 'in' ? styles.amtIn : styles.amtOut}`}
-              >
-                {r.direction === 'in' ? '+' : '-'}
-                {fmt(r.amount)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+            <span className={styles.sectionMeta}>Newest entries first</span>
+          </div>
 
-      {tab === 'leaderboard' && (
-        <div className={styles.list}>
-          {invoicesLoading && <div className={styles.empty}>Loading Settlement Records...</div>}
-          {!invoicesLoading && invoicesError && (
-            <div className={styles.empty} role="alert">
-              {invoicesError}{' '}
-              <button
-                type="button"
-                className={styles.retryBtn}
-                onClick={() => setInvoicesReload((n) => n + 1)}
+          <div className={styles.ledgerSummary} aria-label="Loaded ledger totals">
+            <div className={styles.summaryCell}>
+              <span className={styles.summaryLabel}>In</span>
+              <strong className={`${styles.summaryValue} ${styles.amtIn}`}>
+                +{fmt(recordSummary.incoming)}
+              </strong>
+            </div>
+            <div className={styles.summaryCell}>
+              <span className={styles.summaryLabel}>Out</span>
+              <strong className={`${styles.summaryValue} ${styles.amtOut}`}>
+                -{fmt(recordSummary.outgoing)}
+              </strong>
+            </div>
+            <div className={styles.summaryCell}>
+              <span className={styles.summaryLabel}>Net</span>
+              <strong
+                className={`${styles.summaryValue} ${recordSummary.net >= 0 ? styles.amtIn : styles.amtOut}`}
               >
-                Retry
-              </button>
+                {recordSummary.net >= 0 ? '+' : '-'}
+                {fmt(Math.abs(recordSummary.net))}
+              </strong>
             </div>
-          )}
-          {!invoicesLoading && !invoicesError && invoices.length === 0 && (
-            <div className={styles.empty}>
-              No Settlement Records Yet. They Appear Here After The First Weekly Close.
-            </div>
-          )}
-          {invoices.map((iv) => (
-            <div key={iv.id} className={styles.row}>
-              <div className={styles.rowInfo}>
-                <span className={styles.rowName}>{txLabel(iv.type)}</span>
-                <span className={styles.rowSub}>
-                  {new Date(iv.createdAt).toLocaleDateString([], {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}{' '}
-                  &middot; {txLabel(iv.status)}
-                </span>
-              </div>
-              <span className={styles.rowSub}>Gross {fmt(iv.gross)}</span>
-              <span
-                className={`${styles.rowBalance} ${iv.net >= 0 ? styles.amtIn : styles.amtOut}`}
-              >
-                {iv.net >= 0 ? '+' : ''}
-                {fmt(iv.net)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+          </div>
 
-      {tab === 'request' && (
-        <div className={styles.list}>
-          <button className={styles.classicLink} onClick={() => setAskOpen(true)}>
-            Request Chips From Your Agent
-          </button>
-          {requestsLoading && <div className={styles.empty}>Loading Requests...</div>}
-          {!requestsLoading && requestsError && (
-            <div className={styles.empty} role="alert">
-              {requestsError}{' '}
-              <button type="button" className={styles.retryBtn} onClick={() => void loadRequests()}>
-                Retry
-              </button>
-            </div>
-          )}
-          {!requestsLoading && !requestsError && requests.length === 0 && (
-            <div className={styles.empty}>No Open Chip Requests.</div>
-          )}
-          {requests.map((r) => (
-            <div key={r.id} className={styles.row}>
-              <div className={styles.rowInfo}>
-                <span className={styles.rowName}>{r.mine ? 'You' : r.requesterName}</span>
-                <span className={styles.rowSub}>
-                  {new Date(r.createdAt).toLocaleString([], {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                  {r.note ? ` · ${r.note}` : ''}
-                </span>
-              </div>
-              <span className={styles.rowBalance}>{fmt(r.amount)}</span>
-              {r.mine ? (
+          <div className={styles.ledgerToolbar}>
+            <input
+              className={styles.ledgerSearch}
+              type="search"
+              value={recordQuery}
+              onChange={(event) => setRecordQuery(event.target.value)}
+              placeholder="Search person or entry type"
+              aria-label="Search trade record"
+            />
+            <div className={styles.ledgerFilters} aria-label="Filter trade direction">
+              {(['all', 'in', 'out'] as const).map((direction) => (
                 <button
-                  className={styles.reqBtn}
-                  disabled={respondingId !== null}
-                  onClick={() => respondToRequest(r.id, 'cancel')}
+                  key={direction}
+                  type="button"
+                  className={`${styles.ledgerFilter} ${recordDirection === direction ? styles.ledgerFilterActive : ''}`}
+                  aria-pressed={recordDirection === direction}
+                  onClick={() => setRecordDirection(direction)}
                 >
-                  {respondingId === r.id ? 'Working...' : 'Cancel'}
+                  {direction === 'all' ? 'All' : direction === 'in' ? 'Incoming' : 'Outgoing'}
                 </button>
-              ) : (
-                <>
-                  <button
-                    className={styles.reqBtn}
-                    disabled={respondingId !== null}
-                    onClick={() => respondToRequest(r.id, 'decline')}
-                  >
-                    {respondingId === r.id ? 'Working...' : 'Decline'}
-                  </button>
-                  <button
-                    className={`${styles.reqBtn} ${styles.reqBtnGo}`}
-                    disabled={respondingId !== null}
-                    onClick={() => respondToRequest(r.id, 'approve')}
-                  >
-                    {respondingId === r.id ? 'Working...' : 'Approve'}
-                  </button>
-                </>
-              )}
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          </div>
 
-      {tab === 'tickets' && (
-        <div className={styles.list}>
-          {ticketsLoading && <div className={styles.empty}>Loading Tickets...</div>}
-          {!ticketsLoading && ticketsError && (
-            <div className={styles.empty} role="alert">
-              {ticketsError}{' '}
-              <button type="button" className={styles.retryBtn} onClick={() => void loadTickets()}>
-                Retry
-              </button>
-            </div>
-          )}
-          {!ticketsLoading && !ticketsError && tickets.length === 0 && (
-            <div className={styles.empty}>
-              No Tickets Yet. Tickets Sent To You Appear Here, Ready To Redeem.
-            </div>
-          )}
-          {!ticketsLoading &&
-            !ticketsError &&
-            tickets.map((t) => (
-              <div key={t.id} className={styles.row}>
+          <div className={styles.list}>
+            {recordsLoading && <div className={styles.empty}>Loading Trades...</div>}
+            {!recordsLoading && recordsError && (
+              <div className={styles.empty} role="alert">
+                {recordsError}
+              </div>
+            )}
+            {!recordsLoading && !recordsError && filteredRecords.length === 0 && (
+              <div className={styles.empty}>No Trades Recorded Yet.</div>
+            )}
+            {filteredRecords.map((r) => (
+              <div key={r.id} className={styles.row}>
                 <div className={styles.rowInfo}>
                   <span className={styles.rowName}>
-                    {t.held ? `From ${t.otherName}` : `To ${t.otherName}`}
+                    {r.direction === 'out' ? 'To ' : 'From '}
+                    {r.counterparty}
                   </span>
                   <span className={styles.rowSub}>
-                    {txLabel(t.status)} &middot;{' '}
-                    {new Date(t.createdAt).toLocaleString([], {
+                    {txLabel(r.type)} &middot;{' '}
+                    {new Date(r.createdAt).toLocaleString([], {
                       month: 'short',
                       day: 'numeric',
                       hour: '2-digit',
                       minute: '2-digit',
                     })}
-                    {t.note ? ` · ${t.note}` : ''}
                   </span>
                 </div>
-                <span className={styles.rowBalance}>{fmt(t.value)}</span>
-                {/* A held ticket redeems; a ticket you issued cancels back to
-                    your balance. A self-issued ticket cannot exist - the
-                    server refuses issuing to yourself - so the two buttons
-                    can never collide on one row. */}
-                {t.status === 'issued' && t.held && (
-                  <button
-                    className={`${styles.reqBtn} ${styles.reqBtnGo}`}
-                    disabled={ticketActingId !== null}
-                    onClick={() => void actOnTicket(t, 'redeem')}
-                  >
-                    {ticketActingId === t.id ? 'Working...' : 'Redeem'}
-                  </button>
-                )}
-                {t.status === 'issued' && !t.held && (
+                <span
+                  className={`${styles.rowBalance} ${r.direction === 'in' ? styles.amtIn : styles.amtOut}`}
+                >
+                  {r.direction === 'in' ? '+' : '-'}
+                  {fmt(r.amount)}
+                </span>
+              </div>
+            ))}
+            {!recordsLoading && recordsHasMore && recordDirection === 'all' && !recordQuery && (
+              <button
+                type="button"
+                className={styles.loadMore}
+                onClick={() => setRecordsLimit((limit) => Math.min(limit + 50, 250))}
+                disabled={recordsLimit >= 250}
+              >
+                {recordsLimit >= 250 ? 'Showing The Latest 250 Entries' : 'Load 50 Older Entries'}
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+
+      {tab === 'leaderboard' && (
+        <section className={styles.sectionShell} aria-labelledby="settlement-title">
+          <div className={styles.sectionHeading}>
+            <div>
+              <span className={styles.sectionEyebrow}>Weekly close</span>
+              <h2 className={styles.sectionTitle} id="settlement-title">
+                Settlement record
+              </h2>
+            </div>
+            <span className={styles.sectionMeta}>{invoices.length.toLocaleString()} entries</span>
+          </div>
+          <div className={styles.list}>
+            {invoicesLoading && <div className={styles.empty}>Loading Settlement Records...</div>}
+            {!invoicesLoading && invoicesError && (
+              <div className={styles.empty} role="alert">
+                {invoicesError}{' '}
+                <button
+                  type="button"
+                  className={styles.retryBtn}
+                  onClick={() => setInvoicesReload((n) => n + 1)}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+            {!invoicesLoading && !invoicesError && invoices.length === 0 && (
+              <div className={styles.empty}>
+                No Settlement Records Yet. They Appear Here After The First Weekly Close.
+              </div>
+            )}
+            {invoices.map((iv) => (
+              <div key={iv.id} className={styles.row}>
+                <div className={styles.rowInfo}>
+                  <span className={styles.rowName}>{txLabel(iv.type)}</span>
+                  <span className={styles.rowSub}>
+                    {new Date(iv.createdAt).toLocaleDateString([], {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}{' '}
+                    &middot; {txLabel(iv.status)}
+                  </span>
+                </div>
+                <span className={styles.rowSub}>Gross {fmt(iv.gross)}</span>
+                <span
+                  className={`${styles.rowBalance} ${iv.net >= 0 ? styles.amtIn : styles.amtOut}`}
+                >
+                  {iv.net >= 0 ? '+' : ''}
+                  {fmt(iv.net)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {tab === 'request' && (
+        <section className={styles.sectionShell} aria-labelledby="requests-title">
+          <div className={styles.sectionHeading}>
+            <div>
+              <span className={styles.sectionEyebrow}>Funding queue</span>
+              <h2 className={styles.sectionTitle} id="requests-title">
+                Chip requests
+              </h2>
+            </div>
+            <span className={styles.sectionMeta}>{pendingCount.toLocaleString()} waiting</span>
+          </div>
+          <div className={styles.list}>
+            <button className={styles.classicLink} onClick={() => setAskOpen(true)}>
+              Request Chips From Your Agent
+            </button>
+            {requestsLoading && <div className={styles.empty}>Loading Requests...</div>}
+            {!requestsLoading && requestsError && (
+              <div className={styles.empty} role="alert">
+                {requestsError}{' '}
+                <button
+                  type="button"
+                  className={styles.retryBtn}
+                  onClick={() => void loadRequests()}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+            {!requestsLoading && !requestsError && requests.length === 0 && (
+              <div className={styles.empty}>No Open Chip Requests.</div>
+            )}
+            {requests.map((r) => (
+              <div key={r.id} className={styles.row}>
+                <div className={styles.rowInfo}>
+                  <span className={styles.rowName}>{r.mine ? 'You' : r.requesterName}</span>
+                  <span className={styles.rowSub}>
+                    {new Date(r.createdAt).toLocaleString([], {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                    {r.note ? ` · ${r.note}` : ''}
+                  </span>
+                </div>
+                <span className={styles.rowBalance}>{fmt(r.amount)}</span>
+                {r.mine ? (
                   <button
                     className={styles.reqBtn}
-                    disabled={ticketActingId !== null}
-                    onClick={() => void actOnTicket(t, 'cancel')}
+                    disabled={respondingId !== null}
+                    onClick={() => respondToRequest(r.id, 'cancel')}
                   >
-                    {ticketActingId === t.id ? 'Working...' : 'Cancel'}
+                    {respondingId === r.id ? 'Working...' : 'Cancel'}
                   </button>
+                ) : (
+                  <>
+                    <button
+                      className={styles.reqBtn}
+                      disabled={respondingId !== null}
+                      onClick={() => respondToRequest(r.id, 'decline')}
+                    >
+                      {respondingId === r.id ? 'Working...' : 'Decline'}
+                    </button>
+                    <button
+                      className={`${styles.reqBtn} ${styles.reqBtnGo}`}
+                      disabled={respondingId !== null}
+                      onClick={() => respondToRequest(r.id, 'approve')}
+                    >
+                      {respondingId === r.id ? 'Working...' : 'Approve'}
+                    </button>
+                  </>
                 )}
               </div>
             ))}
-        </div>
+          </div>
+        </section>
+      )}
+
+      {tab === 'tickets' && (
+        <section className={styles.sectionShell} aria-labelledby="tickets-title">
+          <div className={styles.sectionHeading}>
+            <div>
+              <span className={styles.sectionEyebrow}>Tournament value</span>
+              <h2 className={styles.sectionTitle} id="tickets-title">
+                Ticket vault
+              </h2>
+            </div>
+            <span className={styles.sectionMeta}>{heldTicketCount.toLocaleString()} ready</span>
+          </div>
+          <div className={styles.list}>
+            {ticketsLoading && <div className={styles.empty}>Loading Tickets...</div>}
+            {!ticketsLoading && ticketsError && (
+              <div className={styles.empty} role="alert">
+                {ticketsError}{' '}
+                <button
+                  type="button"
+                  className={styles.retryBtn}
+                  onClick={() => void loadTickets()}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+            {!ticketsLoading && !ticketsError && tickets.length === 0 && (
+              <div className={styles.empty}>
+                No Tickets Yet. Tickets Sent To You Appear Here, Ready To Redeem.
+              </div>
+            )}
+            {!ticketsLoading &&
+              !ticketsError &&
+              tickets.map((t) => (
+                <div key={t.id} className={styles.row}>
+                  <div className={styles.rowInfo}>
+                    <span className={styles.rowName}>
+                      {t.held ? `From ${t.otherName}` : `To ${t.otherName}`}
+                    </span>
+                    <span className={styles.rowSub}>
+                      {txLabel(t.status)} &middot;{' '}
+                      {new Date(t.createdAt).toLocaleString([], {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                      {t.note ? ` · ${t.note}` : ''}
+                    </span>
+                  </div>
+                  <span className={styles.rowBalance}>{fmt(t.value)}</span>
+                  {/* A held ticket redeems; a ticket you issued cancels back to
+                    your balance. A self-issued ticket cannot exist - the
+                    server refuses issuing to yourself - so the two buttons
+                    can never collide on one row. */}
+                  {t.status === 'issued' && t.held && (
+                    <button
+                      className={`${styles.reqBtn} ${styles.reqBtnGo}`}
+                      disabled={ticketActingId !== null}
+                      onClick={() => void actOnTicket(t, 'redeem')}
+                    >
+                      {ticketActingId === t.id ? 'Working...' : 'Redeem'}
+                    </button>
+                  )}
+                  {t.status === 'issued' && !t.held && (
+                    <button
+                      className={styles.reqBtn}
+                      disabled={ticketActingId !== null}
+                      onClick={() => void actOnTicket(t, 'cancel')}
+                    >
+                      {ticketActingId === t.id ? 'Working...' : 'Cancel'}
+                    </button>
+                  )}
+                </div>
+              ))}
+          </div>
+        </section>
       )}
 
       {/* Ask-for-chips modal */}

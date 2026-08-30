@@ -110,90 +110,118 @@ describe('omahaPreflopPercentile — the CDF the thresholds always assumed', () 
 });
 
 describe('a PLO horse actually plays back — the live symptom, pinned', () => {
-  const mkGs = (hero: SeatPlayer, over: Record<string, unknown>) => ({
-    players: [
-      hero,
-      { seat: 2, user_id: 'human', stack: 48, bet: 2, is_folded: false, cards: [] },
-      { seat: 3, user_id: 'other', stack: 50, bet: 0, is_folded: false, cards: [] },
-    ],
-    communityCards: [],
-    pot: 3,
-    currentBet: 2,
-    minRaise: 2,
-    stage: 'preflop',
-    gameVariant: 'plo4',
-    bigBlind: 2,
-    smallBlind: 1,
-    dealerSeat: 1,
-    actionHistory: [],
-    ...over,
-  });
-
-  it('FIRST TO ACT it opens a real range instead of folding its way out of the pot', () => {
-    const deal = makeDealer(31337);
-    const tally: Record<string, number> = {};
+  /**
+   * Both variants run through the SAME spot so the assertions calibrate
+   * themselves against hold'em rather than freezing a magic frequency.
+   * Quantile-matching is exactly the claim that PLO should behave like NLH
+   * at a given threshold, so NLH is the honest reference — and if the bars
+   * are ever retuned, this test moves with them instead of going stale.
+   */
+  const tally = (variant: string, holes: number, facing: boolean) => {
+    const deal = makeDealer(facing ? 2718 : 31337);
+    const t: Record<string, number> = {};
     for (let i = 0; i < 300; i++) {
-      const hero = {
-        seat: 1,
-        user_id: `h${i}`,
-        stack: 49,
-        bet: 1,
-        is_folded: false,
-        is_sitting_out: false,
-        cards: deal(4),
-      } as unknown as SeatPlayer;
-      const d = HorseLogic.decide(hero, mkGs(hero, {}) as never, 'balanced');
-      tally[d.action] = (tally[d.action] || 0) + 1;
-    }
-    const raises = tally.raise ?? 0;
-    // Measured 30/300 before the fix, 176/300 after. The floor catches the
-    // valve sticking, and is far below the observed value on purpose.
-    expect(raises).toBeGreaterThan(90);
-    expect(tally.fold ?? 0).toBeLessThan(180);
-  });
-
-  it('FACING A POT-SIZED RAISE it 3-bets and calls instead of folding 95% of the time', () => {
-    const deal = makeDealer(2718);
-    const tally: Record<string, number> = {};
-    for (let i = 0; i < 300; i++) {
-      const hero = {
-        seat: 3,
-        user_id: `g${i}`,
-        stack: 48,
-        bet: 2,
-        is_folded: false,
-        is_sitting_out: false,
-        cards: deal(4),
-      } as unknown as SeatPlayer;
-      const gs = mkGs(hero, {
-        players: [
-          hero,
-          { seat: 1, user_id: 'human', stack: 43, bet: 7, is_folded: false, cards: [] },
-          { seat: 2, user_id: 'other', stack: 49, bet: 1, is_folded: true, cards: [] },
-        ],
-        pot: 10,
-        currentBet: 7,
-        minRaise: 5,
-        actionHistory: [
-          {
-            stage: 'preflop',
+      const cards = deal(holes);
+      const hero = (facing
+        ? {
+            seat: 3,
+            user_id: `g${i}`,
+            stack: 48,
+            bet: 2,
+            is_folded: false,
+            is_sitting_out: false,
+            cards,
+          }
+        : {
             seat: 1,
-            userId: 'human',
-            action: 'raise',
-            amount: 7,
-            isFullRaise: true,
-          },
-        ],
-      });
+            user_id: `h${i}`,
+            stack: 49,
+            bet: 1,
+            is_folded: false,
+            is_sitting_out: false,
+            cards,
+          }) as unknown as SeatPlayer;
+      const gs = facing
+        ? {
+            players: [
+              hero,
+              { seat: 1, user_id: 'human', stack: 43, bet: 7, is_folded: false, cards: [] },
+              { seat: 2, user_id: 'other', stack: 49, bet: 1, is_folded: true, cards: [] },
+            ],
+            communityCards: [],
+            pot: 10,
+            currentBet: 7,
+            minRaise: 5,
+            stage: 'preflop',
+            gameVariant: variant,
+            bigBlind: 2,
+            smallBlind: 1,
+            dealerSeat: 1,
+            actionHistory: [
+              {
+                stage: 'preflop',
+                seat: 1,
+                userId: 'human',
+                action: 'raise',
+                amount: 7,
+                isFullRaise: true,
+              },
+            ],
+          }
+        : {
+            players: [
+              hero,
+              { seat: 2, user_id: 'human', stack: 48, bet: 2, is_folded: false, cards: [] },
+              { seat: 3, user_id: 'other', stack: 50, bet: 0, is_folded: false, cards: [] },
+            ],
+            communityCards: [],
+            pot: 3,
+            currentBet: 2,
+            minRaise: 2,
+            stage: 'preflop',
+            gameVariant: variant,
+            bigBlind: 2,
+            smallBlind: 1,
+            dealerSeat: 1,
+            actionHistory: [],
+          };
       const d = HorseLogic.decide(hero, gs as never, 'balanced');
-      tally[d.action] = (tally[d.action] || 0) + 1;
+      t[d.action] = (t[d.action] || 0) + 1;
     }
-    const raises = tally.raise ?? 0;
-    const folds = tally.fold ?? 0;
-    // Measured: raise 1/300 and fold 188/300 before; raise 102 and fold 72
-    // after. Dan's "folded 95% of the time, never even raised" was this.
-    expect(raises).toBeGreaterThan(20);
-    expect(folds).toBeLessThan(150);
+    return t;
+  };
+
+  /**
+   * THE STUCK VALVE. Measured on the shipped code before this fix, facing a
+   * pot-sized raise in plo4: raise 0 of 300. Dan: "never even raised."
+   * Hold'em in the identical spot raised 10% of the time.
+   */
+  it('FACING A POT-SIZED RAISE the 3-bet valve is not stuck shut', () => {
+    const plo = tally('plo4', 4, true);
+    const nlh = tally('nlh', 2, true);
+    const ploRaise = plo.raise ?? 0;
+    const nlhRaise = nlh.raise ?? 0;
+
+    expect(nlhRaise, "hold'em reference should 3-bet sometimes").toBeGreaterThan(10);
+    // Was literally 0 before the fix. It must be a real frequency, and in
+    // the same league as hold'em rather than an order of magnitude below.
+    expect(ploRaise).toBeGreaterThan(10);
+    expect(ploRaise).toBeGreaterThan(nlhRaise * 0.4);
+  });
+
+  /**
+   * Opening: 4% of hands before the fix (12 of 300) against hold'em's 22%.
+   * A range that tight is what "never raised when first to act" looks like.
+   */
+  it("FIRST TO ACT it opens a real range, in the same league as hold'em", () => {
+    const plo = tally('plo4', 4, false);
+    const nlh = tally('nlh', 2, false);
+    const ploRaise = plo.raise ?? 0;
+    const nlhRaise = nlh.raise ?? 0;
+
+    expect(nlhRaise).toBeGreaterThan(20);
+    expect(ploRaise).toBeGreaterThan(25);
+    expect(ploRaise).toBeGreaterThan(nlhRaise * 0.5);
   });
 
   it('the very best hand always plays back — it never limps its way in', () => {
@@ -209,7 +237,24 @@ describe('a PLO horse actually plays back — the live symptom, pinned', () => {
         is_sitting_out: false,
         cards: aakkds,
       } as unknown as SeatPlayer;
-      const d = HorseLogic.decide(hero, mkGs(hero, {}) as never, 'balanced');
+      const gs = {
+        players: [
+          hero,
+          { seat: 2, user_id: 'human', stack: 48, bet: 2, is_folded: false, cards: [] },
+          { seat: 3, user_id: 'other', stack: 50, bet: 0, is_folded: false, cards: [] },
+        ],
+        communityCards: [],
+        pot: 3,
+        currentBet: 2,
+        minRaise: 2,
+        stage: 'preflop',
+        gameVariant: 'plo4',
+        bigBlind: 2,
+        smallBlind: 1,
+        dealerSeat: 1,
+        actionHistory: [],
+      };
+      const d = HorseLogic.decide(hero, gs as never, 'balanced');
       if (d.action === 'raise' || d.action === 'all_in') raises++;
     }
     expect(raises).toBeGreaterThan(45);

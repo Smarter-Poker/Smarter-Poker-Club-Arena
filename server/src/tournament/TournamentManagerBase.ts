@@ -3178,6 +3178,11 @@ export abstract class TournamentManagerBase {
         joined_at: new Date().toISOString(),
       });
       if (seatErr) {
+        // Un-burn the seat. If we don't, this seat is permanently unavailable in `occupiedSeats`
+        // even though it was never written to the database, which leads to `seating_capacity_exhausted`
+        // when we skip too many players.
+        taken.delete(seatNumber);
+
         reportError(
           new Error(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Failed to seat ${toSeat[i].user_id.slice(0, 8)}: ${seatErr.message}`

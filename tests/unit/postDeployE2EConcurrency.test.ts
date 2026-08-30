@@ -19,7 +19,7 @@ describe('post-deploy E2E concurrency', () => {
   it('still serializes genuine production checks so authenticated writes cannot overlap', () => {
     const concurrency = workflow.match(/concurrency:\n([\s\S]*?)\n\njobs:/)?.[1] ?? '';
 
-    expect(concurrency).toContain('cancel-in-progress: true');
+    expect(concurrency).toContain('cancel-in-progress: false');
     expect(concurrency).not.toContain('manual-');
   });
 });

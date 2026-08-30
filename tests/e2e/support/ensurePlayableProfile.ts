@@ -11,11 +11,15 @@ import type { Page } from '@playwright/test';
  * reload once to prove that both profile writes persisted.
  */
 export async function ensurePlayableProfile(page: Page): Promise<boolean> {
+  // Do not infer "complete" from an absent modal while the server-backed gate
+  // is still deciding. That race let global setup save an incomplete account,
+  // then every worker mounted the modal a moment later. AppLayout publishes
+  // this non-visual state only after the profile query has answered.
+  const decision = page.locator('[data-profile-gate-ready="true"]');
+  await decision.waitFor({ state: 'attached', timeout: 60_000 });
+
   const gate = page.getByRole('heading', { name: 'Complete Your Profile' });
-  const gateIsOpen = await gate
-    .waitFor({ state: 'visible', timeout: 10_000 })
-    .then(() => true)
-    .catch(() => false);
+  const gateIsOpen = await gate.isVisible();
 
   if (!gateIsOpen) return false;
 
@@ -41,10 +45,8 @@ export async function ensurePlayableProfile(page: Page): Promise<boolean> {
   await gate.waitFor({ state: 'hidden', timeout: 30_000 });
 
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
-  const gateReturned = await gate
-    .waitFor({ state: 'visible', timeout: 12_000 })
-    .then(() => true)
-    .catch(() => false);
+  await decision.waitFor({ state: 'attached', timeout: 60_000 });
+  const gateReturned = await gate.isVisible();
   if (gateReturned) {
     throw new Error('Profile onboarding appeared again after its writes reported success.');
   }

@@ -89,7 +89,7 @@ function AppLayoutContent() {
   }, [location.pathname]);
 
   return (
-    <div className={styles.layout}>
+    <div className={styles.layout} data-profile-gate-ready={profileReady ? 'true' : 'false'}>
       {/* First-time Welcome Modal */}
       {isReady && <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />}
 

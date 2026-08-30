@@ -42,7 +42,14 @@ export default function GlobalHeader() {
   const { user: authUser } = useAuthUser();
   const headerRef = useRef<HTMLElement>(null);
 
-  const { avatarUrl, notificationCount, unreadMessages, loadOnce } = useHeaderDataStore();
+  const {
+    avatarUrl,
+    notificationCount,
+    unreadMessages,
+    loadOnce,
+    clearUnreadNotifications,
+    clearUnreadMessages,
+  } = useHeaderDataStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isNavigatingAway, setIsNavigatingAway] = useState(false);
 
@@ -219,6 +226,16 @@ export default function GlobalHeader() {
     navigateToHub('/hub');
   };
 
+  const handleMessagesClick = useCallback(async () => {
+    if (authUser?.id) await clearUnreadMessages(authUser.id);
+    navigate('/messages');
+  }, [authUser?.id, clearUnreadMessages, navigate]);
+
+  const handleNotificationsClick = useCallback(async () => {
+    if (authUser?.id) await clearUnreadNotifications(authUser.id);
+    navigate('/notifications');
+  }, [authUser?.id, clearUnreadNotifications, navigate]);
+
   const headerStyle = isNavigatingAway
     ? { opacity: 0.5, transition: 'opacity 0.15s ease', pointerEvents: 'none' as const }
     : undefined;
@@ -329,7 +346,7 @@ export default function GlobalHeader() {
 
             <button
               className={`${styles.artButton} ${styles.messengerBtn}`}
-              onClick={() => navigate('/messages')}
+              onClick={() => void handleMessagesClick()}
               onMouseEnter={prefetchMessenger}
               onTouchStart={prefetchMessenger}
               aria-label="Messages"
@@ -350,6 +367,10 @@ export default function GlobalHeader() {
             <Link
               to="/notifications"
               className={`${styles.artButton} ${styles.notificationsBtn}`}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleNotificationsClick();
+              }}
               title="Notifications"
               aria-label="Notifications"
             >

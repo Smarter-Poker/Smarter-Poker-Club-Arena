@@ -66,10 +66,27 @@ const BATCH = 10;
 /** Wall-clock work budget per tick — the rest of the tick is the rest. */
 const TICK_BUDGET_MS = 12_000;
 /**
- * Four x 10 rows per 20s tick is ~2 rows/s, deliberately gentler than V30's
- * eight calls: this build has no consult waiting on it, so it yields to
- * everything else. At that rate the ~1.89M v2 rows take roughly five days
- * of wall clock, unattended, and the cursor makes every restart free.
+ * A CAP, NOT A RATE — and the difference matters, because the first version
+ * of this comment got it wrong.
+ *
+ * The loop also stops at TICK_BUDGET_MS, so the calls that actually fit are
+ * `min(4, 12s / cost-per-call)`. A V31 call is expensive: batch 10 measured
+ * 1.72s, 2.54s and 6.67s on the RPC path, so between 2 and 4 calls land in a
+ * tick, not always 4. Real throughput is therefore 20-40 rows per 20s tick,
+ * i.e. **1-2 rows/s**, and the ~1.89M v2 rows take **11-22 days** of wall
+ * clock rather than the "five days" this comment originally claimed.
+ *
+ * The cost is intrinsic, not a tuning miss: V31 unnests 1,326 combos x ~2
+ * actions per solved row, so a row costs ~0.4-0.7s against V30's ~0.009s —
+ * roughly 74x — because V30 reads a payload already reduced to 169 classes.
+ * Raising this cap does not help while TICK_BUDGET_MS is the binding
+ * constraint; raising the BUDGET buys throughput by raising the duty cycle,
+ * which is a decision to make against the fleet, with a fresh measurement,
+ * not a constant to nudge.
+ *
+ * Deliberately gentler than V30's eight calls regardless: nothing reads
+ * gto_postflop_v31 yet, so this build yields to everything that does. The
+ * cursor makes every restart free, so a long build costs patience only.
  */
 const MAX_CALLS_PER_TICK = 4;
 /** Consecutive all-timeout ticks before backing off (DB under pressure). */

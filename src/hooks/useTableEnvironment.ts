@@ -151,16 +151,38 @@ export function useTableEnvironment(
    *      for. It falls back to the id only while the name is still loading, so
    *      the tab is never blank.
    *
-   * NOT restored on unmount, deliberately: MultiTablePage's "YOUR TURN" badge
-   * effect owns the restore, and it captures `document.title` at the moment it
-   * badges precisely so it hands back the CURRENT title rather than a
-   * mount-time one (see the AUDIT 2026-08-25 note there). A restore here would
-   * fight it.
+   * ── 3. AND IT WAS NEVER PUT BACK (Dan 2026-08-29, seen live) ──────────────
+   *
+   * This used to say the restore was deliberate, because "MultiTablePage's
+   * YOUR TURN badge effect owns the restore". THAT PREMISE IS FALSE, and the
+   * consequence is visible: leave a table for the club lobby and the browser
+   * tab still reads "NLH Micro .10/.20 | Smarter Poker". Observed on
+   * production 2026-08-29 with the URL already at /clubs/club-jaqk.
+   *
+   * The badge effect restores only a title IT badged (`if (!badged) ... else
+   * if (badged)`), and it only badges while the tab is HIDDEN and a real turn
+   * is live. In the ordinary case — no badge ever applied — nothing restores
+   * anything, and Club Arena's lobby routes set no title of their own, so the
+   * dead table's name follows the player around the app and into any bookmark
+   * they make.
+   *
+   * Restored here, with the same discipline the badge effect uses and the
+   * reason it cannot fight it: we capture the title we are about to replace,
+   * and on the way out we put it back ONLY IF the title is still the exact
+   * string we wrote. If the badge effect (or another table, or a route that
+   * sets its own title) has changed it since, ours is stale and we leave it
+   * alone. Two owners, neither able to clobber the other.
    */
   useEffect(() => {
     if (!isActive) return;
     const name = displayName && displayName !== 'Loading...' ? displayName : tableId;
-    document.title = name ? `${name} | Smarter Poker` : 'Table | Smarter Poker';
+    const ours = name ? `${name} | Smarter Poker` : 'Table | Smarter Poker';
+    const previous = document.title;
+    document.title = ours;
+    return () => {
+      // Only hand back what we took, and only if we are still the last writer.
+      if (document.title === ours) document.title = previous;
+    };
   }, [tableId, displayName, isActive]);
 
   // ─── MOBILE VIEWPORT LOCK — Prevent accidental pinch-zoom during poker play ───

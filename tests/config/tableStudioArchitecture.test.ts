@@ -21,7 +21,7 @@ describe('Table Studio is the one owner of selectable table appearance', () => {
   it('keeps every visual category in Table Studio, including Buttons', () => {
     expect(MODAL).toContain("{ key: 'button', label: 'Buttons' }");
     expect(MODAL).not.toContain("{ key: 'button', label: 'Controls' }");
-    for (const category of ['Themes', 'Table', 'Buttons', 'Background', 'Cards']) {
+    for (const category of ['Looks', 'Tables', 'Scenes', 'Buttons', 'Cards']) {
       expect(MODAL).toContain(`label: '${category}'`);
     }
   });

@@ -185,34 +185,6 @@
   color: #f3f7fa;
   background: #111820;
 }
-.theme-modal__autosave {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  max-width: 150px;
-  color: var(--studio-silver);
-  text-align: right;
-  font:
-    700 9px/1.2 'JetBrains Mono',
-    ui-monospace,
-    monospace;
-}
-.theme-modal__autosave-dot {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: #3fb950;
-  box-shadow: 0 0 8px rgba(63, 185, 80, 0.8);
-}
-.theme-modal__autosave--error {
-  color: #ffb3b3;
-}
-.theme-modal__autosave--error .theme-modal__autosave-dot {
-  background: #ff6464;
-  box-shadow: 0 0 8px rgba(255, 100, 100, 0.72);
-}
 .theme-modal__live-link {
   min-width: 0;
   min-height: 44px;
@@ -267,7 +239,7 @@
 .theme-modal__live-copy small {
   color: var(--studio-muted);
   font:
-    800 7px/1 'JetBrains Mono',
+    800 9px/1 'JetBrains Mono',
     ui-monospace,
     monospace;
   letter-spacing: 0.14em;
@@ -276,7 +248,7 @@
 .theme-modal__live-copy strong {
   color: #eef5f0;
   font:
-    700 10px/1.1 'Rajdhani',
+    700 11px/1.1 'Rajdhani',
     Inter,
     sans-serif;
   letter-spacing: 0.055em;
@@ -458,7 +430,7 @@
   color: #8193a1;
   background: #10171e;
   font:
-    800 8px/1 'JetBrains Mono',
+    800 10px/1 'JetBrains Mono',
     ui-monospace,
     monospace;
   letter-spacing: 0.08em;
@@ -495,7 +467,7 @@
 .theme-modal__live-caption span {
   color: var(--studio-blue);
   font:
-    800 7px/1.2 'JetBrains Mono',
+    800 9px/1.2 'JetBrains Mono',
     ui-monospace,
     monospace;
   letter-spacing: 0.12em;
@@ -504,7 +476,7 @@
   color: #fff;
   text-align: right;
   font:
-    700 10px/1.2 'Rajdhani',
+    700 11px/1.2 'Rajdhani',
     Inter,
     sans-serif;
   letter-spacing: 0.04em;
@@ -532,7 +504,7 @@
 .theme-modal__selection-item span {
   color: var(--studio-muted);
   font:
-    700 7px/1 'JetBrains Mono',
+    700 9px/1 'JetBrains Mono',
     ui-monospace,
     monospace;
   letter-spacing: 0.12em;
@@ -557,13 +529,9 @@
   z-index: 8;
   top: 0;
   display: grid;
-  /* "Background" is the widest label. A 390px phone cannot contain five
-     fully legible touch targets, so preserve the words and let the rail do
-     the horizontal scrolling it already advertises. */
-  grid-template-columns: repeat(5, minmax(124px, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   flex: 0 0 auto;
-  overflow-x: auto;
-  scrollbar-width: none;
+  overflow: visible;
   border-bottom: 1px solid var(--studio-line);
   background: rgba(7, 11, 16, 0.98);
 }
@@ -609,7 +577,27 @@
 }
 .theme-modal__catalog-scroll {
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   padding-bottom: 10px;
+}
+.theme-modal__catalog-scroll > .theme-modal__background-groups {
+  order: 0;
+}
+.theme-modal__catalog-scroll > .theme-modal__discovery {
+  order: 1;
+}
+.theme-modal__catalog-scroll > .theme-modal__loadouts {
+  order: 2;
+}
+.theme-modal__catalog-scroll > .theme-modal__section-heading {
+  order: 3;
+}
+.theme-modal__catalog-scroll > .theme-modal__state {
+  order: 4;
+}
+.theme-modal__catalog-scroll > .theme-modal__grid {
+  order: 5;
 }
 .theme-modal__background-groups {
   display: grid;
@@ -639,7 +627,7 @@
 .theme-asset__tier-badge {
   color: var(--studio-brass);
   font:
-    800 8px/1 'JetBrains Mono',
+    800 9px/1 'JetBrains Mono',
     ui-monospace,
     monospace;
   letter-spacing: 0.08em;
@@ -687,7 +675,7 @@
   color: #899aa7;
   background: #0d1319;
   font:
-    700 9px/1 'JetBrains Mono',
+    700 10px/1 'JetBrains Mono',
     ui-monospace,
     monospace;
   text-transform: uppercase;
@@ -792,6 +780,8 @@
 .theme-asset-wrap {
   position: relative;
   min-width: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: 172px 238px;
 }
 .theme-asset {
   width: 100%;
@@ -995,7 +985,7 @@
   background: linear-gradient(145deg, #f1d188, #b3822b);
   box-shadow: 0 7px 15px rgba(0, 0, 0, 0.42);
   font:
-    900 8px/1 'JetBrains Mono',
+    900 10px/1 'JetBrains Mono',
     ui-monospace,
     monospace;
   letter-spacing: 0.1em;
@@ -1040,6 +1030,9 @@
   display: inline-block;
   margin: 5px 9px 0;
 }
+.theme-asset__tier-badge--selected {
+  color: var(--studio-blue);
+}
 .theme-asset__favorite {
   position: absolute;
   z-index: 4;
@@ -1049,14 +1042,14 @@
   min-height: 44px;
   display: inline-flex;
   align-items: center;
-  padding: 7px 6px;
+  justify-content: center;
+  padding: 0;
   border: 0;
   color: #748692;
   background: transparent;
   font:
-    700 8px/1 'JetBrains Mono',
-    ui-monospace,
-    monospace;
+    700 22px/1 Inter,
+    sans-serif;
   cursor: pointer;
 }
 .theme-asset__favorite.active {
@@ -1091,7 +1084,7 @@
 .theme-loadout__slotline span {
   color: var(--studio-blue);
   font:
-    700 8px/1 'JetBrains Mono',
+    700 9px/1 'JetBrains Mono',
     ui-monospace,
     monospace;
   letter-spacing: 0.13em;
@@ -1108,7 +1101,7 @@
 .theme-modal__loadout-header small {
   overflow: hidden;
   color: #788b98;
-  font-size: 9px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1121,7 +1114,7 @@
   color: #c8d3da;
   background: linear-gradient(#18222c, #0e141a);
   font:
-    700 9px/1 'Rajdhani',
+    700 11px/1 'Rajdhani',
     Inter,
     sans-serif;
   cursor: pointer;
@@ -1150,6 +1143,8 @@
   box-shadow:
     inset 0 1px rgba(255, 255, 255, 0.055),
     0 8px 20px rgba(0, 0, 0, 0.2);
+  content-visibility: auto;
+  contain-intrinsic-size: 276px 294px;
 }
 .theme-modal__loadout--empty {
   grid-template-rows: auto minmax(154px, 1fr);
@@ -1165,7 +1160,7 @@
 .theme-loadout__slotline b {
   color: #3fb950;
   font:
-    800 7px/1 'JetBrains Mono',
+    800 9px/1 'JetBrains Mono',
     ui-monospace,
     monospace;
   letter-spacing: 0.1em;
@@ -1273,7 +1268,7 @@
 .theme-loadout__summary {
   overflow: hidden;
   color: #7f929f;
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1303,7 +1298,7 @@
 }
 .theme-loadout__confirm span {
   color: #ffc2c2;
-  font-size: 9px;
+  font-size: 10px;
 }
 .theme-loadout__empty-action {
   min-height: 154px;
@@ -1333,7 +1328,7 @@
 }
 .theme-loadout__empty-action small {
   color: #687b87;
-  font-size: 7px;
+  font-size: 10px;
 }
 .theme-modal__loadout-sync {
   min-height: 32px;
@@ -1345,7 +1340,7 @@
   padding: 6px 8px;
   border-top: 1px solid rgba(174, 185, 195, 0.12);
   color: #7c8f9a;
-  font-size: 9px;
+  font-size: 10px;
 }
 .theme-modal__loadout-sync::before {
   width: 6px;
@@ -1378,7 +1373,7 @@
   color: #ffd0d0;
   background: linear-gradient(#3e191c, #221013);
   font:
-    700 9px/1 'Rajdhani',
+    700 11px/1 'Rajdhani',
     Inter,
     sans-serif;
   cursor: pointer;
@@ -1635,7 +1630,6 @@
 [data-theme='light'] .theme-modal__selection-ledger {
   scrollbar-color: #758995 #dce4e9;
 }
-[data-theme='light'] .theme-modal__autosave,
 [data-theme='light'] .theme-modal__live-copy small,
 [data-theme='light'] .theme-modal__mode-note,
 [data-theme='light'] .theme-modal__section-heading div > span,
@@ -1701,7 +1695,7 @@
     flex-direction: column;
     gap: 2px;
     padding: 4px 3px;
-    font-size: 8px;
+    font-size: 10px;
   }
   .theme-modal__mode-icon {
     width: 13px;
@@ -1749,7 +1743,7 @@
     padding: 5px 6px;
   }
   .theme-modal__selection-item strong {
-    font-size: 9px;
+    font-size: 10px;
   }
   .theme-modal__catalog {
     min-height: 0;
@@ -1760,12 +1754,6 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-color: #334654 #080d12;
-  }
-  .theme-modal__tabs {
-    scroll-snap-type: x proximity;
-  }
-  .theme-modal__tab {
-    scroll-snap-align: start;
   }
   .theme-modal__filters button {
     min-height: 44px;
@@ -1904,10 +1892,6 @@
   .theme-modal__studio-bar {
     padding-inline: 9px;
   }
-  .theme-modal__autosave {
-    max-width: 115px;
-    font-size: 8px;
-  }
   .theme-modal__live-link {
     max-width: 174px;
     grid-template-columns: 19px minmax(0, 1fr);
@@ -1921,15 +1905,15 @@
     gap: 2px;
   }
   .theme-modal__live-copy small {
-    font-size: 6px;
+    font-size: 9px;
   }
   .theme-modal__live-copy strong {
-    font-size: 8px;
+    font-size: 10px;
   }
   .theme-modal__live-link button {
     min-width: 44px;
     padding-inline: 5px;
-    font-size: 8px;
+    font-size: 10px;
   }
   .theme-modal__visual-rail {
     padding: 9px;

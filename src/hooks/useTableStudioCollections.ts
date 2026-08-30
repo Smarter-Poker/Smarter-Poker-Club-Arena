@@ -19,9 +19,14 @@ type StoredCollections = {
   loadouts: Array<TableStudioLoadout | null>;
 };
 
+type CollectionMutation =
+  | { kind: 'favorite'; key: string; enabled: boolean }
+  | { kind: 'loadout'; slot: number; value: TableStudioLoadout | null };
+
 type PendingCloudWrite = {
   owner: string;
-  value: StoredCollections;
+  mutation: CollectionMutation;
+  signature: string;
 };
 
 const EMPTY_LOADOUTS: Array<TableStudioLoadout | null> = [null, null, null];
@@ -85,6 +90,42 @@ function collectionSignature(value: StoredCollections): string {
   return JSON.stringify(value);
 }
 
+function applyMutation(value: StoredCollections, mutation: CollectionMutation): StoredCollections {
+  if (mutation.kind === 'favorite') {
+    const favorites = mutation.enabled
+      ? [mutation.key, ...value.favorites.filter((item) => item !== mutation.key)].slice(0, 100)
+      : value.favorites.filter((item) => item !== mutation.key);
+    return { favorites, loadouts: value.loadouts };
+  }
+  const loadouts = [...value.loadouts];
+  loadouts[mutation.slot] = mutation.value;
+  return { favorites: value.favorites, loadouts };
+}
+
+function mutationRpcArgs(mutation: CollectionMutation) {
+  return mutation.kind === 'favorite'
+    ? {
+        p_favorite_key: mutation.key,
+        p_favorite_enabled: mutation.enabled,
+        p_loadout_slot: null,
+        p_loadout: null,
+      }
+    : {
+        p_favorite_key: null,
+        p_favorite_enabled: null,
+        p_loadout_slot: mutation.slot,
+        p_loadout: mutation.value,
+      };
+}
+
+function rpcCollections(data: unknown): StoredCollections | null {
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== 'object') return null;
+  const value = row as { favorites?: unknown; loadouts?: unknown };
+  if (!('favorites' in value) || !('loadouts' in value)) return null;
+  return normalizeCollections(value.favorites, value.loadouts);
+}
+
 export function useTableStudioCollections(isOpen: boolean, userId: string) {
   const owner = userId || 'guest';
   const favoritesKey = `table-studio-favorites:${owner}`;
@@ -102,7 +143,8 @@ export function useTableStudioCollections(isOpen: boolean, userId: string) {
   const loadoutsRef = useRef<Array<TableStudioLoadout | null>>(EMPTY_LOADOUTS);
   const activeOwnerRef = useRef(userId);
   const localMutationRevisionRef = useRef(0);
-  const pendingCloudWriteRef = useRef<PendingCloudWrite | null>(null);
+  const pendingCloudWritesRef = useRef<PendingCloudWrite[]>([]);
+  const failedCloudWritesRef = useRef<PendingCloudWrite[]>([]);
   const cloudWriteInFlightRef = useRef(false);
   const staleLocalEchoesRef = useRef<string[]>([]);
   const latestLocalSignatureRef = useRef<string | null>(null);
@@ -116,62 +158,78 @@ export function useTableStudioCollections(isOpen: boolean, userId: string) {
     [favoritesKey, loadoutsKey]
   );
 
-  const persist = useCallback(
+  const applyCollections = useCallback(
     (next: StoredCollections) => {
+      favoritesRef.current = next.favorites;
+      loadoutsRef.current = next.loadouts;
+      setFavorites(next.favorites);
+      setLoadouts(next.loadouts);
+      cache(next);
+    },
+    [cache]
+  );
+
+  const flushCloudWrites = useCallback(() => {
+    if (cloudWriteInFlightRef.current || pendingCloudWritesRef.current.length === 0) return;
+    cloudWriteInFlightRef.current = true;
+    setSyncState('loading');
+    void (async () => {
+      while (pendingCloudWritesRef.current.length > 0) {
+        const queued = pendingCloudWritesRef.current.shift();
+        if (!queued) continue;
+        const { data, error } = await supabase.rpc(
+          'fn_mutate_table_studio_preferences',
+          mutationRpcArgs(queued.mutation)
+        );
+        if (error) {
+          failedCloudWritesRef.current.push(queued);
+          reportError(error, 'TableStudio.Collections_sync_failed');
+          continue;
+        }
+
+        if (pendingCloudWritesRef.current.length > 0) {
+          staleLocalEchoesRef.current = [
+            ...staleLocalEchoesRef.current.filter((item) => item !== queued.signature),
+            queued.signature,
+          ].slice(-8);
+        } else {
+          latestLocalSignatureRef.current = queued.signature;
+        }
+
+        const canonical = rpcCollections(data);
+        if (
+          canonical &&
+          pendingCloudWritesRef.current.length === 0 &&
+          failedCloudWritesRef.current.length === 0 &&
+          activeOwnerRef.current === queued.owner
+        ) {
+          latestLocalSignatureRef.current = collectionSignature(canonical);
+          applyCollections(canonical);
+        }
+      }
+      cloudWriteInFlightRef.current = false;
+      const activeOwner = activeOwnerRef.current;
+      const failed = failedCloudWritesRef.current.some((item) => item.owner === activeOwner);
+      if (activeOwner) setSyncState(failed ? 'error' : 'synced');
+      // A tap can land between the final length check and the in-flight flag
+      // being cleared. Flush once more so no mutation waits for another tap.
+      if (pendingCloudWritesRef.current.length > 0) flushCloudWrites();
+    })();
+  }, [applyCollections]);
+
+  const persistMutation = useCallback(
+    (mutation: CollectionMutation, next: StoredCollections) => {
       cache(next);
       if (!userId) return;
       localMutationRevisionRef.current += 1;
-      pendingCloudWriteRef.current = { owner: userId, value: next };
-      if (cloudWriteInFlightRef.current) return;
-      cloudWriteInFlightRef.current = true;
-      setSyncState('loading');
-      void (async () => {
-        const failedOwners = new Set<string>();
-        while (pendingCloudWriteRef.current) {
-          const queued = pendingCloudWriteRef.current;
-          pendingCloudWriteRef.current = null;
-          const queuedSignature = collectionSignature(queued.value);
-          const { error } = await supabase.from('user_table_studio_preferences').upsert(
-            {
-              user_id: queued.owner,
-              favorites: queued.value.favorites,
-              loadouts: queued.value.loadouts,
-            },
-            { onConflict: 'user_id' }
-          );
-          // A newer call may have populated the ref while the network request
-          // awaited, even though control-flow analysis only sees the null
-          // assignment above.
-          const newerQueued = pendingCloudWriteRef.current as PendingCloudWrite | null;
-          if (error) {
-            failedOwners.add(queued.owner);
-            reportError(error, 'TableStudio.Collections_sync_failed');
-          } else {
-            // Every write is a complete collection snapshot. A later success
-            // for the same owner therefore heals an earlier failed attempt and
-            // must clear the visible error instead of asking for a redundant
-            // retry.
-            failedOwners.delete(queued.owner);
-          }
-          if (!error && newerQueued?.owner === queued.owner) {
-            // The server may echo this successful but superseded write after
-            // the newer local tap is already visible. Keep a short signature
-            // ledger so that echo cannot make Favorites or Loadouts flicker
-            // backwards while the queued write catches up.
-            staleLocalEchoesRef.current = [
-              ...staleLocalEchoesRef.current.filter((item) => item !== queuedSignature),
-              queuedSignature,
-            ].slice(-8);
-          } else if (!error) {
-            latestLocalSignatureRef.current = queuedSignature;
-          }
-        }
-        cloudWriteInFlightRef.current = false;
-        const activeOwner = activeOwnerRef.current;
-        if (activeOwner) setSyncState(failedOwners.has(activeOwner) ? 'error' : 'synced');
-      })();
+      pendingCloudWritesRef.current.push({
+        owner: userId,
+        mutation,
+        signature: collectionSignature(next),
+      });
+      flushCloudWrites();
     },
-    [cache, userId]
+    [cache, flushCloudWrites, userId]
   );
 
   useEffect(() => {
@@ -196,43 +254,51 @@ export function useTableStudioCollections(isOpen: boolean, userId: string) {
 
     let mounted = true;
     setSyncState('loading');
-    void supabase
-      .from('user_table_studio_preferences')
-      .select('favorites, loadouts')
-      .eq('user_id', userId)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (!mounted) return;
-        if (error) {
-          setSyncState('error');
-          reportError(error, 'TableStudio.Collections_load_failed');
-          return;
+    void (async () => {
+      const { data, error } = await supabase
+        .from('user_table_studio_preferences')
+        .select('favorites, loadouts')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (!mounted) return;
+      if (error) {
+        setSyncState('error');
+        reportError(error, 'TableStudio.Collections_load_failed');
+        return;
+      }
+      // A tap made while this request was in flight is newer than its
+      // response. The queued writer owns reconciliation from here; applying
+      // this response would visibly undo the player's just-made change.
+      if (localMutationRevisionRef.current !== hydrationRevision) return;
+      if (!data) {
+        // Existing users already have device-local collections. Seed their
+        // first cloud row without replacing a row another device may create
+        // between this read and the write.
+        if (local.favorites.length || local.loadouts.some(Boolean)) {
+          const seeded = await supabase.rpc('fn_seed_table_studio_preferences', {
+            p_favorites: local.favorites,
+            p_loadouts: local.loadouts,
+          });
+          if (!mounted) return;
+          if (seeded.error) {
+            setSyncState('error');
+            reportError(seeded.error, 'TableStudio.Collections_seed_failed');
+            return;
+          }
+          applyCollections(rpcCollections(seeded.data) ?? local);
         }
-        // A tap made while this request was in flight is newer than its
-        // response. The queued writer owns reconciliation from here; applying
-        // this response would visibly undo the player's just-made change.
-        if (localMutationRevisionRef.current !== hydrationRevision) return;
-        if (!data) {
-          // Existing users already have device-local collections. Seed their
-          // first cloud row on open so "sync across devices" is true without
-          // requiring an unrelated extra tap.
-          if (local.favorites.length || local.loadouts.some(Boolean)) persist(local);
-          else setSyncState('synced');
-          return;
-        }
-        const cloud = normalizeCollections(data.favorites, data.loadouts);
-        favoritesRef.current = cloud.favorites;
-        loadoutsRef.current = cloud.loadouts;
-        setFavorites(cloud.favorites);
-        setLoadouts(cloud.loadouts);
-        cache(cloud);
         setSyncState('synced');
-      });
+        return;
+      }
+      const cloud = normalizeCollections(data.favorites, data.loadouts);
+      applyCollections(cloud);
+      setSyncState('synced');
+    })();
 
     return () => {
       mounted = false;
     };
-  }, [cache, favoritesKey, isOpen, loadoutsKey, persist, recentKey, userId]);
+  }, [applyCollections, favoritesKey, isOpen, loadoutsKey, recentKey, userId]);
 
   // Realtime owns a separate lifecycle from hydration so Retry Sync can
   // reconnect a failed channel without re-reading an older cloud snapshot over
@@ -243,7 +309,31 @@ export function useTableStudioCollections(isOpen: boolean, userId: string) {
       return undefined;
     }
     let mounted = true;
+    let everLive = false;
     setRealtimeState('connecting');
+    const reconcileAfterRecovery = async () => {
+      const { data, error } = await supabase
+        .from('user_table_studio_preferences')
+        .select('favorites, loadouts')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (!mounted) return;
+      if (error) {
+        setRealtimeState('error');
+        setSyncState('error');
+        reportError(error, 'TableStudio.Collections_reconcile_failed');
+        return;
+      }
+      if (
+        data &&
+        !cloudWriteInFlightRef.current &&
+        pendingCloudWritesRef.current.length === 0 &&
+        failedCloudWritesRef.current.length === 0
+      ) {
+        applyCollections(normalizeCollections(data.favorites, data.loadouts));
+        setSyncState('synced');
+      }
+    };
     const channel = supabase
       .channel(`table-studio-preferences:${userId}`)
       .on(
@@ -262,7 +352,12 @@ export function useTableStudioCollections(isOpen: boolean, userId: string) {
           // Local taps are the newest intent while the ordered writer is
           // active. Realtime can deliver the first write after a second tap;
           // accepting it here visibly rolls the locker back for a moment.
-          if (cloudWriteInFlightRef.current || pendingCloudWriteRef.current) return;
+          if (
+            cloudWriteInFlightRef.current ||
+            pendingCloudWritesRef.current.length > 0 ||
+            failedCloudWritesRef.current.length > 0
+          )
+            return;
           if (staleLocalEchoesRef.current.includes(signature)) {
             staleLocalEchoesRef.current = staleLocalEchoesRef.current.filter(
               (item) => item !== signature
@@ -273,11 +368,7 @@ export function useTableStudioCollections(isOpen: boolean, userId: string) {
             setSyncState('synced');
             return;
           }
-          favoritesRef.current = next.favorites;
-          loadoutsRef.current = next.loadouts;
-          setFavorites(next.favorites);
-          setLoadouts(next.loadouts);
-          cache(next);
+          applyCollections(next);
           setSyncState('synced');
         }
       )
@@ -285,7 +376,9 @@ export function useTableStudioCollections(isOpen: boolean, userId: string) {
         if (!mounted) return;
         if (status === 'SUBSCRIBED') {
           setRealtimeState('live');
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          if (everLive) void reconcileAfterRecovery();
+          everLive = true;
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           setRealtimeState('error');
           reportError(
             new Error(`Table Studio collection channel ${status.toLowerCase()}`),
@@ -298,30 +391,37 @@ export function useTableStudioCollections(isOpen: boolean, userId: string) {
       mounted = false;
       void supabase.removeChannel(channel);
     };
-  }, [cache, isOpen, realtimeRevision, userId]);
+  }, [applyCollections, isOpen, realtimeRevision, userId]);
 
   const toggleFavorite = useCallback(
     (key: string) => {
-      const current = favoritesRef.current;
-      const nextFavorites = current.includes(key)
-        ? current.filter((item) => item !== key)
-        : [key, ...current].slice(0, 100);
-      favoritesRef.current = nextFavorites;
-      setFavorites(nextFavorites);
-      persist({ favorites: nextFavorites, loadouts: loadoutsRef.current });
+      const mutation: CollectionMutation = {
+        kind: 'favorite',
+        key,
+        enabled: !favoritesRef.current.includes(key),
+      };
+      const next = applyMutation(
+        { favorites: favoritesRef.current, loadouts: loadoutsRef.current },
+        mutation
+      );
+      applyCollections(next);
+      persistMutation(mutation, next);
     },
-    [persist]
+    [applyCollections, persistMutation]
   );
 
   const saveLoadout = useCallback(
     (slot: number, value: TableStudioLoadout) => {
-      const nextLoadouts = [...loadoutsRef.current];
-      nextLoadouts[slot] = value;
-      loadoutsRef.current = nextLoadouts;
-      setLoadouts(nextLoadouts);
-      persist({ favorites: favoritesRef.current, loadouts: nextLoadouts });
+      if (slot < 0 || slot > 2) return;
+      const mutation: CollectionMutation = { kind: 'loadout', slot, value };
+      const next = applyMutation(
+        { favorites: favoritesRef.current, loadouts: loadoutsRef.current },
+        mutation
+      );
+      applyCollections(next);
+      persistMutation(mutation, next);
     },
-    [persist]
+    [applyCollections, persistMutation]
   );
 
   const renameLoadout = useCallback(
@@ -330,32 +430,69 @@ export function useTableStudioCollections(isOpen: boolean, userId: string) {
       if (!current) return;
       const cleanName = name.trim().replace(/\s+/g, ' ').slice(0, 32) || `Look ${slot + 1}`;
       if (current.name === cleanName) return;
-      const nextLoadouts = [...loadoutsRef.current];
-      nextLoadouts[slot] = { ...current, name: cleanName };
-      loadoutsRef.current = nextLoadouts;
-      setLoadouts(nextLoadouts);
-      persist({ favorites: favoritesRef.current, loadouts: nextLoadouts });
+      const mutation: CollectionMutation = {
+        kind: 'loadout',
+        slot,
+        value: { ...current, name: cleanName },
+      };
+      const next = applyMutation(
+        { favorites: favoritesRef.current, loadouts: loadoutsRef.current },
+        mutation
+      );
+      applyCollections(next);
+      persistMutation(mutation, next);
     },
-    [persist]
+    [applyCollections, persistMutation]
   );
 
   const clearLoadout = useCallback(
     (slot: number) => {
       if (!loadoutsRef.current[slot]) return;
-      const nextLoadouts = [...loadoutsRef.current];
-      nextLoadouts[slot] = null;
-      loadoutsRef.current = nextLoadouts;
-      setLoadouts(nextLoadouts);
-      persist({ favorites: favoritesRef.current, loadouts: nextLoadouts });
+      const mutation: CollectionMutation = { kind: 'loadout', slot, value: null };
+      const next = applyMutation(
+        { favorites: favoritesRef.current, loadouts: loadoutsRef.current },
+        mutation
+      );
+      applyCollections(next);
+      persistMutation(mutation, next);
     },
-    [persist]
+    [applyCollections, persistMutation]
   );
 
   const retrySync = useCallback(() => {
     if (!userId) return;
-    persist({ favorites: favoritesRef.current, loadouts: loadoutsRef.current });
     setRealtimeRevision((revision) => revision + 1);
-  }, [persist, userId]);
+    setSyncState('loading');
+    void (async () => {
+      const { data, error } = await supabase
+        .from('user_table_studio_preferences')
+        .select('favorites, loadouts')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (error) {
+        setSyncState('error');
+        reportError(error, 'TableStudio.Collections_retry_load_failed');
+        return;
+      }
+
+      const failed = failedCloudWritesRef.current.filter((item) => item.owner === userId);
+      failedCloudWritesRef.current = failedCloudWritesRef.current.filter(
+        (item) => item.owner !== userId
+      );
+      const cloud = data
+        ? normalizeCollections(data.favorites, data.loadouts)
+        : normalizeCollections([], []);
+      const merged = failed.reduce((current, item) => applyMutation(current, item.mutation), cloud);
+      applyCollections(merged);
+
+      if (failed.length === 0) {
+        setSyncState('synced');
+        return;
+      }
+      pendingCloudWritesRef.current.push(...failed);
+      flushCloudWrites();
+    })();
+  }, [applyCollections, flushCloudWrites, userId]);
 
   const rememberRecent = useCallback(
     (key: string) => {

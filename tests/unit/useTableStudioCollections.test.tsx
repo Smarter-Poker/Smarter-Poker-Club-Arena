@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   cloud: { data: null as null | { favorites: string[]; loadouts: unknown[] }, error: null },
   upsert: vi.fn(),
+  rpc: vi.fn(),
+  readCloud: vi.fn(),
   realtime: undefined as undefined | ((payload: { new: unknown }) => void),
   realtimeStatus: undefined as undefined | ((status: string) => void),
   removeChannel: vi.fn(),
@@ -29,11 +31,12 @@ vi.mock('../../src/lib/supabase', () => {
         const builder = {
           select: vi.fn(() => builder),
           eq: vi.fn(() => builder),
-          maybeSingle: vi.fn(() => Promise.resolve(mocks.cloud)),
+          maybeSingle: mocks.readCloud,
           upsert: mocks.upsert,
         };
         return builder;
       }),
+      rpc: mocks.rpc,
       channel: vi.fn(() => channel),
       removeChannel: mocks.removeChannel,
     },
@@ -96,6 +99,10 @@ describe('useTableStudioCollections', () => {
     mocks.cloud = { data: null, error: null };
     mocks.upsert.mockReset();
     mocks.upsert.mockResolvedValue({ error: null });
+    mocks.rpc.mockReset();
+    mocks.rpc.mockResolvedValue({ data: [], error: null });
+    mocks.readCloud.mockReset();
+    mocks.readCloud.mockImplementation(() => Promise.resolve(mocks.cloud));
     mocks.removeChannel.mockReset();
     mocks.realtime = undefined;
     mocks.realtimeStatus = undefined;
@@ -126,21 +133,22 @@ describe('useTableStudioCollections', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Favorite' }));
     await waitFor(() =>
-      expect(mocks.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          user_id: 'user-1',
-          favorites: ['table:classic_green'],
-        }),
-        { onConflict: 'user_id' }
-      )
+      expect(mocks.rpc).toHaveBeenCalledWith('fn_mutate_table_studio_preferences', {
+        p_favorite_enabled: true,
+        p_favorite_key: 'table:classic_green',
+        p_loadout: null,
+        p_loadout_slot: null,
+      })
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Save Loadout' }));
     await waitFor(() =>
-      expect(mocks.upsert).toHaveBeenLastCalledWith(
-        expect.objectContaining({ user_id: 'user-1', loadouts: [loadout, null, null] }),
-        { onConflict: 'user_id' }
-      )
+      expect(mocks.rpc).toHaveBeenLastCalledWith('fn_mutate_table_studio_preferences', {
+        p_favorite_enabled: null,
+        p_favorite_key: null,
+        p_loadout: loadout,
+        p_loadout_slot: 0,
+      })
     );
   });
 
@@ -154,14 +162,10 @@ describe('useTableStudioCollections', () => {
     render(<Harness />);
 
     await waitFor(() =>
-      expect(mocks.upsert).toHaveBeenCalledWith(
-        {
-          user_id: 'user-1',
-          favorites: ['table:carbon_red'],
-          loadouts: [{ ...loadout, table_id: 'carbon_red' }, null, null],
-        },
-        { onConflict: 'user_id' }
-      )
+      expect(mocks.rpc).toHaveBeenCalledWith('fn_seed_table_studio_preferences', {
+        p_favorites: ['table:carbon_red'],
+        p_loadouts: [{ ...loadout, table_id: 'carbon_red' }, null, null],
+      })
     );
     expect(screen.getByTestId('state')).toHaveTextContent('synced');
   });
@@ -200,7 +204,7 @@ describe('useTableStudioCollections', () => {
     const secondWrite = deferred<{ error: null }>();
     render(<Harness />);
     await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
-    mocks.upsert
+    mocks.rpc
       .mockImplementationOnce(() => firstWrite.promise)
       .mockImplementationOnce(() => secondWrite.promise);
 
@@ -220,7 +224,7 @@ describe('useTableStudioCollections', () => {
     );
 
     firstWrite.resolve({ error: null });
-    await waitFor(() => expect(mocks.upsert).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(2));
     secondWrite.resolve({ error: null });
     await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
 
@@ -237,18 +241,25 @@ describe('useTableStudioCollections', () => {
   it('provides the retry promised by the sync error state', async () => {
     render(<Harness />);
     await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
-    mocks.upsert.mockResolvedValueOnce({ error: new Error('offline') });
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: new Error('offline') });
 
     fireEvent.click(screen.getByRole('button', { name: 'Favorite' }));
     await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('error'));
 
-    mocks.upsert.mockResolvedValueOnce({ error: null });
+    mocks.cloud = {
+      data: { favorites: ['cards:gold'], loadouts: [null, null, null] },
+      error: null,
+    };
+    mocks.rpc.mockResolvedValueOnce({ data: [], error: null });
     fireEvent.click(screen.getByRole('button', { name: 'Retry Sync' }));
     await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('synced'));
-    expect(mocks.upsert).toHaveBeenLastCalledWith(
-      expect.objectContaining({ favorites: ['table:classic_green'] }),
-      { onConflict: 'user_id' }
-    );
+    expect(screen.getByTestId('favorites')).toHaveTextContent('table:classic_green,cards:gold');
+    expect(mocks.rpc).toHaveBeenLastCalledWith('fn_mutate_table_studio_preferences', {
+      p_favorite_enabled: true,
+      p_favorite_key: 'table:classic_green',
+      p_loadout: null,
+      p_loadout_slot: null,
+    });
   });
 
   it('reconnects a failed realtime channel when the player retries sync', async () => {

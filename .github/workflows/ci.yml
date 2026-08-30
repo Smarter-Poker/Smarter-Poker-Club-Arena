@@ -1227,16 +1227,9 @@ jobs:
         # trap fired again at scale. An inventory found SIXTEEN spec files
         # running in no job; every self-contained one is now named here.
         #
-        # customization-studios went red on this runner the first time it ran,
-        # on a TEXT-metric assertion: it required each tab's label to fit its
-        # column, the studio font is loaded from /fonts and a setContent
-        # harness has no base URL to resolve it, so macOS fell back to a narrow
-        # face and Linux to a wide one. The page ships correctly on both. The
-        # beat now asserts the ROOM the grid guarantees (minmax(124px, 1fr))
-        # rather than the rendering of a font that never loaded, so it means
-        # the same thing on every machine. A gate spec must be deterministic
-        # across platforms; the fix is to stop measuring the runner, not to
-        # exile the spec.
+        # customization-studios is intentionally not in this fixture list. It
+        # now mounts the real component and a deterministic Supabase browser
+        # mock, so the dedicated step below runs it through its own Vite config.
         #
         # diamond-checkout-mobile.spec.ts joined 2026-08-29 too - it landed from
         # another branch the same day and arrived orphaned, which is the trap
@@ -1267,7 +1260,13 @@ jobs:
             curl -sf http://127.0.0.1:4173/hub/club-arena/index.html > /dev/null && break
             sleep 0.5
           done
-          npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/customization-studios.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+          npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+
+      # Unlike the CSS fixtures above, this mounts the production Studio and
+      # drives its real Supabase client through a deterministic browser mock.
+      # Its dedicated route redirects unless the test-harness flag is enabled.
+      - name: Table Studio real-component purchase, sync, and accessibility gate
+        run: npm run test:e2e:customization
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 5: AUTO-REVERT — DISABLED (was causing revert loops during migration)

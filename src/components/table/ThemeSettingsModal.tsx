@@ -121,10 +121,10 @@ const GAME_TYPE_LABELS: Record<string, string> = {
 };
 
 const TABS: { key: ThemeTab; label: string }[] = [
-  { key: 'themes', label: 'Themes' },
-  { key: 'table', label: 'Table' },
+  { key: 'themes', label: 'Looks' },
+  { key: 'table', label: 'Tables' },
+  { key: 'background', label: 'Scenes' },
   { key: 'button', label: 'Buttons' },
-  { key: 'background', label: 'Background' },
   { key: 'cards', label: 'Cards' },
 ];
 
@@ -1648,7 +1648,7 @@ export function ThemeSettingsModal({
               <i />
             </span>
             <span className="theme-modal__live-copy">
-              <small>Live Table Link</small>
+              <small>Table Art Link</small>
               <strong>
                 {saving || modeSaving
                   ? 'Applying...'
@@ -1660,7 +1660,7 @@ export function ThemeSettingsModal({
                         : 'Linking...'
                       : studioNeedsAttention
                         ? 'Review Sync'
-                        : 'Tables Live'}
+                        : 'Table Art Live'}
               </strong>
             </span>
             {appearanceRealtime.state === 'error' && (
@@ -1949,6 +1949,15 @@ export function ThemeSettingsModal({
                     ownedCardBacks,
                     ownedThemeAssets
                   );
+                  const assetStatus = isSelected
+                    ? 'Selected'
+                    : asset.vipOnly
+                      ? isExplicitlyOwned
+                        ? 'Owned'
+                        : isVip
+                          ? 'VIP Included'
+                          : 'Premium'
+                      : 'Included';
 
                   return (
                     <div className="theme-asset-wrap" key={asset.id}>
@@ -1989,9 +1998,11 @@ export function ThemeSettingsModal({
                           {isSelected && !isLocked && <div className="theme-asset__check">✓</div>}
                         </div>
                         <span className="theme-asset__name">{asset.name}</span>
-                        {asset.vipOnly && !isLocked && (
-                          <span className="theme-asset__tier-badge">
-                            {isExplicitlyOwned ? 'Owned' : 'VIP'}
+                        {!isLocked && !ownershipPending && !ownershipUnavailable && (
+                          <span
+                            className={`theme-asset__tier-badge${isSelected ? ' theme-asset__tier-badge--selected' : ''}`}
+                          >
+                            {assetStatus}
                           </span>
                         )}
                       </button>
@@ -1999,6 +2010,12 @@ export function ThemeSettingsModal({
                         type="button"
                         className={`theme-asset__favorite ${collections.favorites.includes(`${activeTab}:${asset.id}`) ? 'active' : ''}`}
                         aria-label={`${collections.favorites.includes(`${activeTab}:${asset.id}`) ? 'Remove' : 'Add'} ${asset.name} ${collections.favorites.includes(`${activeTab}:${asset.id}`) ? 'from' : 'to'} favorites`}
+                        aria-pressed={collections.favorites.includes(`${activeTab}:${asset.id}`)}
+                        title={
+                          collections.favorites.includes(`${activeTab}:${asset.id}`)
+                            ? 'Remove From Favorites'
+                            : 'Add To Favorites'
+                        }
                         onClick={() => toggleFavorite(activeTab, asset.id)}
                       >
                         {/* "Favorite", not "Save" (Dan 2026-08-28): "INSIDE THE THEME
@@ -2022,9 +2039,9 @@ export function ThemeSettingsModal({
                       contradiction without touching a working save path. The
                       note under the grid already warns that favourites stay on
                       this device. */}
-                        {collections.favorites.includes(`${activeTab}:${asset.id}`)
-                          ? 'Favorited'
-                          : 'Favorite'}
+                        <span aria-hidden="true">
+                          {collections.favorites.includes(`${activeTab}:${asset.id}`) ? '★' : '☆'}
+                        </span>
                       </button>
                     </div>
                   );
@@ -2034,9 +2051,9 @@ export function ThemeSettingsModal({
               <section className="theme-modal__loadouts" aria-labelledby="theme-loadout-title">
                 <div className="theme-modal__loadout-header">
                   <div>
-                    <span>TABLE PIT RACK</span>
-                    <strong id="theme-loadout-title">Loadout Locker</strong>
-                    <small>Keep Three Complete Looks Ready To Deal.</small>
+                    <span>SAVED LOOKS</span>
+                    <strong id="theme-loadout-title">My Looks</strong>
+                    <small>Keep Three Complete Designs Ready To Deal.</small>
                   </div>
                   <button
                     type="button"
@@ -2060,7 +2077,7 @@ export function ThemeSettingsModal({
                         'Room'
                       : '';
                     return (
-                      <article
+                      <div
                         key={slot}
                         role="listitem"
                         className={`theme-modal__loadout${look ? '' : ' theme-modal__loadout--empty'}`}
@@ -2132,7 +2149,7 @@ export function ThemeSettingsModal({
                             <small>Table · Room · Buttons · Cards</small>
                           </button>
                         )}
-                      </article>
+                      </div>
                     );
                   })}
                 </div>

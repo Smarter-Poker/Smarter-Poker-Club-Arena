@@ -131,7 +131,12 @@ const ArenaGameCardsShowcasePage = lazyWithRetry(
   () => import('./pages/dev/ArenaGameCardsShowcasePage')
 );
 const ClubFooterShowcasePage = lazyWithRetry(() => import('./pages/dev/ClubFooterShowcasePage'));
+const CustomizationStudioShowcasePage = lazyWithRetry(
+  () => import('./pages/dev/CustomizationStudioShowcasePage')
+);
 const clubButtonsPreviewEnabled = import.meta.env.VITE_CLUB_BUTTONS_PREVIEW === 'true';
+const customizationHarnessEnabled =
+  import.meta.env.DEV || import.meta.env.VITE_CUSTOMIZATION_TEST_HARNESS === 'true';
 const FinancialAlertsPage = lazyWithRetry(() => import('./pages/FinancialAlertsPage'));
 const DisputeManagementPage = lazyWithRetry(() => import('./pages/DisputeManagementPage'));
 const FinancialHealthPage = lazyWithRetry(() => import('./pages/FinancialHealthPage'));
@@ -564,6 +569,19 @@ function FullApp() {
               {/* Approved footer visual harness — intentionally blank except
                   for the one application-root footer mounted below Routes. */}
               <Route path="/dev/footer" element={<ClubFooterShowcasePage />} />
+
+              {/* Real-component browser harness. Development/test builds only;
+                  production navigation cannot expose the deterministic user. */}
+              <Route
+                path="/dev/customization"
+                element={
+                  customizationHarnessEnabled ? (
+                    <CustomizationStudioShowcasePage />
+                  ) : (
+                    <Navigate to="/" replace />
+                  )
+                }
+              />
 
               {/* ═══════════════════════════════════════════════════════════════
                     PROTECTED ROUTES (Auth Required)

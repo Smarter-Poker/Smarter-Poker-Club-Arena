@@ -39,8 +39,12 @@ describe('the canonical allocator exists and is the single JS source of shares',
     expect(allocationCode).toMatch(/WEIGHTED_CONTRIBUTED/);
   });
 
-  it('the settler consumes sharesForRakeRecord and no longer owns a private equal split', () => {
-    expect(settler).toMatch(/import \{ sharesForRakeRecord \} from '\.\/rakeAllocation\.js'/);
+  it('the settler consumes the canonical allocator and no longer owns a private equal split', () => {
+    // POLISH 4 (2026-08-30): it now imports the ledger-first helper too, and
+    // prefers stored rake_attributions over recomputation. Either import
+    // satisfies the law; owning its own split never does.
+    expect(settler).toMatch(/from '\.\/rakeAllocation\.js'/);
+    expect(settler).toMatch(/sharesForRakeRecordWithLedger/);
     expect(settler).not.toMatch(/function equalShareCents/);
     // The retired formula shape must not reappear in any form:
     expect(settler).not.toMatch(/rake_amount\s*\/\s*dealt/i);

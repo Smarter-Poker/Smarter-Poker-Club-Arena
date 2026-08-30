@@ -68,6 +68,8 @@ function AppLayoutContent() {
     location.pathname.startsWith('/table') ||
     (location.pathname.startsWith('/tournaments/') && location.pathname.endsWith('/play'));
   const showGlobalHeader = !isTablePage;
+  const cleanPathname = location.pathname.replace(/\/+$/, '');
+  const isTournamentLobbyPage = /^\/tournaments\/[^/]+$/.test(cleanPathname);
 
   /**
    * Full-bleed routes: pages that render their own edge-to-edge chrome and
@@ -75,7 +77,7 @@ function AppLayoutContent() {
    * gutter. Dan, 2026-08-27, on notifications: "IT NEEDS TO BE RAISED UP TO
    * THE TOP TO BE ATTACHED TO THE GLOBAL HEADER."
    */
-  const isFlushPage = location.pathname.replace(/\/+$/, '').endsWith('/notifications');
+  const isFlushPage = cleanPathname.endsWith('/notifications') || isTournamentLobbyPage;
   const casinoZone = getCasinoZone(location.pathname);
   const casinoStageStyle: CasinoStageStyle = {
     '--casino-route-art': `url("${ROUTE_ART[casinoZone]}")`,
@@ -114,7 +116,10 @@ function AppLayoutContent() {
 
       {/* Route-family navigation keeps global sibling pages reachable without
           reopening the hamburger or duplicating the exhaustive route registry. */}
-      {showGlobalHeader && <ArenaSectionRail />}
+      {/* A tournament lobby carries the same play navigation inside its single
+          connected machine. Rendering this generic rail too would split the
+          approved cabinet into two unrelated headers. */}
+      {showGlobalHeader && !isTournamentLobbyPage && <ArenaSectionRail />}
 
       {/* Club staff pages share one permission-aware command rail. It renders
           only inside the operations route family and leaves the live lobby,

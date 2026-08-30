@@ -80,6 +80,14 @@ import { useMysteryBounty } from '../../hooks/useMysteryBounty';
 import { openTableAsObserver } from '../../utils/observeTable';
 import './PremiumTournamentConsole.css';
 
+const PLAY_RAIL_ITEMS = [
+  { label: 'Tournaments', path: '/tournaments' },
+  { label: 'Results', path: '/tournament-results' },
+  { label: 'Hands', path: '/hand-history' },
+  { label: 'Sessions', path: '/session-history' },
+  { label: 'Leaderboards', path: '/leaderboard' },
+] as const;
+
 /** Ordinal suffix helper (1st, 2nd, 3rd...) */
 function getOrdinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'];
@@ -97,9 +105,13 @@ export default function TournamentDetails({
   tournamentIdOverride,
   suppressAutoOpenTable = false,
   searchOverride,
+  onRequestClose,
 }: {
   tournamentIdOverride?: string;
   suppressAutoOpenTable?: boolean;
+  /** The felt modal supplies this so its close control is part of the same
+   * manufactured rail as the lobby, never a generic header above it. */
+  onRequestClose?: () => void;
   /**
    * Dan 2026-08-28 round 2: the query string that came with an EMBEDDED
    * destination, "?watch=1" and all.
@@ -1373,10 +1385,35 @@ export default function TournamentDetails({
   return (
     <PageErrorBoundary pageName="TournamentDetails">
       <div className="tournament-details" ref={shellRef} data-active-tab={activeTab}>
-        {/* Header */}
-        <div className="details-header">
-          <h1>Game Details</h1>
-        </div>
+        {/* PLAY RECORDS is the first bay, not another title floating above the
+            machine. The routed page suppresses AppLayout's duplicate rail;
+            embedded lobbies get this exact same navigation and geometry. */}
+        <nav className="tournament-play-rail" aria-label="Play Records sections">
+          <Link className="tournament-play-identity" to="/play">
+            <span className="tournament-play-mark" aria-hidden="true" />
+            <span>Play Records</span>
+          </Link>
+          {PLAY_RAIL_ITEMS.map((item) => (
+            <Link
+              key={item.path}
+              className={`tournament-play-link${item.path === '/tournaments' ? ' active' : ''}`}
+              to={item.path}
+              aria-current={item.path === '/tournaments' ? 'page' : undefined}
+            >
+              {item.label}
+            </Link>
+          ))}
+          {onRequestClose && (
+            <button
+              className="tournament-machine-close"
+              type="button"
+              onClick={onRequestClose}
+              aria-label="Close tournament lobby"
+            >
+              <span aria-hidden="true" />
+            </button>
+          )}
+        </nav>
 
         {/* Tabs */}
         {/* A tablist is a ROVING focus widget, not seven tab stops. Declaring
@@ -1453,11 +1490,122 @@ export default function TournamentDetails({
                 beside the name on every tab rather than inside one. */}
             {shortDescription && <p className="tournament-blurb">{shortDescription}</p>}
           </div>
+
+          {/* Live actions occupy the event control bay shown in the approved
+              reference. The legacy class remains for the production watch
+              contract, but this is intentionally not a detached footer. */}
+          <div className="details-footer tournament-machine-actions">
+            {(() => {
+              const myEntry = entries.find((e) => e.user_id === user?.id);
+
+              if (isWatchable) {
+                if (
+                  myEntry?.table_id &&
+                  (myEntry.status === 'playing' || myEntry.status === 'registered')
+                ) {
+                  return (
+                    <>
+                      <span className="tournament-status-badge running">You Are Registered</span>
+                      <Link
+                        to={`/table/${myEntry.table_id}`}
+                        className="btn btn-enter-table btn-take-seat"
+                      >
+                        Take Seat
+                      </Link>
+                    </>
+                  );
+                }
+
+                const watchBtn = featuredTableId ? (
+                  <button
+                    className="btn btn-watch"
+                    type="button"
+                    onClick={() => watchTable(featuredTableId)}
+                    title="Watch the featured table"
+                  >
+                    Watch
+                  </button>
+                ) : null;
+
+                if (myEntry?.status === 'registered') {
+                  return (
+                    <>
+                      <span className="tournament-status-badge running">You Are Registered</span>
+                      {watchBtn}
+                    </>
+                  );
+                }
+                if (myEntry?.status === 'eliminated') {
+                  return (
+                    <>
+                      <span className="tournament-status-badge cancelled">Eliminated</span>
+                      {watchBtn}
+                    </>
+                  );
+                }
+                if (!isRegistered && lateRegCountdown) {
+                  return (
+                    <>
+                      <button
+                        className="btn btn-register late-reg"
+                        type="button"
+                        onClick={() => handleRegister(true)}
+                        disabled={isRegisteringMtt}
+                      >
+                        Late Register ({lateRegCountdown})
+                      </button>
+                      {watchBtn}
+                    </>
+                  );
+                }
+                return (
+                  <>
+                    <span className="tournament-status-badge running">In Progress</span>
+                    {watchBtn}
+                  </>
+                );
+              }
+
+              if (tournament.status === 'COMPLETED') {
+                return <span className="tournament-status-badge completed">Completed</span>;
+              }
+              if (tournament.status === 'CANCELLED') {
+                return <span className="tournament-status-badge cancelled">Cancelled</span>;
+              }
+
+              if (isRegistered) {
+                return (
+                  <>
+                    <span className="tournament-status-badge running">You Are Registered</span>
+                    <button
+                      className="btn btn-unregister"
+                      type="button"
+                      onClick={handleUnregister}
+                      disabled={isProcessing}
+                    >
+                      {isProcessing ? 'Processing...' : 'Unregister'}
+                    </button>
+                  </>
+                );
+              }
+
+              return (
+                <button
+                  className="btn btn-register"
+                  type="button"
+                  onClick={() => handleRegister(false)}
+                  disabled={isRegisteringMtt}
+                >
+                  {isRegisteringMtt ? 'Processing...' : 'Register'}
+                </button>
+              );
+            })()}
+          </div>
         </div>
 
-        {/* The only part of the shell that grows. Each tab scrolls inside
-            itself via the shared `.tl-scroll`, so the page keeps exactly one
-            scrollbar and the footer never moves. */}
+        {/* The only part of the shell that grows. The cabinet owns one vertical
+            scroller, so every tab remains reachable without splitting the
+            event controls away from the event header. */}
         <div
           className="details-content"
           role="tabpanel"
@@ -1476,159 +1624,6 @@ export default function TournamentDetails({
           {activeTab === 'tables' && <TablesTab {...tabProps} />}
           {activeTab === 'rewards' && <RewardsTab {...tabProps} />}
           {activeTab === 'satellites' && <SatellitesTab {...tabProps} />}
-        </div>
-
-        {/* Footer Actions. A flex child of the shell, NOT `position: fixed`:
-            the fixed version offset itself by `--bottom-nav-clearance` to clear
-            a bottom nav this page does not render, which is the dead 74px gap
-            Dan reported under it. As a flex child there is no offset left to be
-            wrong. */}
-        <div className="details-footer">
-          <button className="btn btn-share" type="button" onClick={() => void shareTournament()}>
-            Share
-          </button>
-          {(() => {
-            const myEntry = entries.find((e) => e.user_id === user?.id);
-
-            /* `isWatchable` covers LATE_REG as well as RUNNING. A late-reg
-               event has players at tables — refusing to show WATCH for it was
-               the same blind spot the registration side already fixed. */
-            /**
-             * ═════════════════════════════════════════════════════════════════
-             *  TAKE SEAT (Dan 2026-08-30, binding: "there needs to be a take
-             *  seat button, there isn't")
-             * ═════════════════════════════════════════════════════════════════
-             *
-             * There was one control here that took a player to their own seat,
-             * it was labelled ENTER TABLE, and it was gated on
-             * `status === 'playing'`. Three things were wrong with that.
-             *
-             * IT SAID THE WRONG THING. "Enter table" is what a spectator does.
-             * The player has paid a buy-in and has a seat with their stack in
-             * it; the action is taking it. Now that the engine seats the field
-             * a minute before the cards (TOURNAMENT_PRESEAT_LEAD_MS), that
-             * minute is exactly when a player wants a button that says so.
-             *
-             * IT WAS NOT OFFERED TO A SEATED 'registered' PLAYER. Late
-             * registration seats you at the moment you register
-             * (fn_seat_late_registrant) while your row can still read
-             * 'registered' for a beat — so a player who had just paid, and
-             * whose seat existed, was shown the passive badge WAITING FOR
-             * SEAT... over the top of a seat they already had. The test is a
-             * table id, which is the thing that is true when there is a seat to
-             * take, not a status enum that is true slightly later.
-             *
-             * IT WAS THE ONLY WAY IN, AND IT WAS AUTOMATIC. The auto-open
-             * effect above navigates once per tournament; if a player dismisses
-             * that, opens the lobby from the felt (where auto-open is
-             * deliberately suppressed), or is looking at the card on a second
-             * device, there was nothing on screen to press. A button that is
-             * always there costs nothing and removes a whole class of "it
-             * froze" — which is what a card with no control on it looks like,
-             * whatever the server is doing.
-             */
-            if (isWatchable) {
-              if (
-                myEntry?.table_id &&
-                (myEntry.status === 'playing' || myEntry.status === 'registered')
-              ) {
-                return (
-                  <Link
-                    to={`/table/${myEntry.table_id}`}
-                    className="btn btn-enter-table btn-take-seat"
-                  >
-                    TAKE SEAT
-                  </Link>
-                );
-              }
-              /* Dan 2026-08-25: every branch below used to END the footer - a
-                 badge, a countdown, or nothing. So a running tournament you
-                 were not playing in offered no way onto its felt at all. WATCH
-                 rides alongside whatever else the branch says, because "I am
-                 waiting for a seat" and "I want to see the action" are not
-                 mutually exclusive, and a busted player still wants to watch
-                 the rest of it out. See featuredTableId. */
-              const watchBtn = featuredTableId ? (
-                <button
-                  className="btn btn-watch"
-                  type="button"
-                  onClick={() => watchTable(featuredTableId)}
-                  title="Watch the featured table"
-                >
-                  WATCH
-                </button>
-              ) : null;
-
-              if (myEntry?.status === 'registered') {
-                return (
-                  <>
-                    <span className="tournament-status-badge running">WAITING FOR SEAT...</span>
-                    {watchBtn}
-                  </>
-                );
-              }
-              if (myEntry?.status === 'eliminated') {
-                return (
-                  <>
-                    <span className="tournament-status-badge cancelled">ELIMINATED</span>
-                    {watchBtn}
-                  </>
-                );
-              }
-              if (!isRegistered && lateRegCountdown) {
-                return (
-                  <>
-                    <button
-                      className="btn btn-register late-reg"
-                      type="button"
-                      onClick={() => handleRegister(true)}
-                      disabled={isRegisteringMtt}
-                    >
-                      Late Register ({lateRegCountdown})
-                    </button>
-                    {watchBtn}
-                  </>
-                );
-              }
-              return (
-                <>
-                  <span className="tournament-status-badge running">In Progress</span>
-                  {watchBtn}
-                </>
-              );
-            }
-
-            if (tournament.status === 'COMPLETED') {
-              return <span className="tournament-status-badge completed">Completed</span>;
-            }
-            if (tournament.status === 'CANCELLED') {
-              return <span className="tournament-status-badge cancelled">Cancelled</span>;
-            }
-
-            if (isRegistered) {
-              return (
-                <button
-                  className="btn btn-unregister"
-                  type="button"
-                  onClick={handleUnregister}
-                  disabled={isProcessing}
-                >
-                  {isProcessing ? 'Processing...' : 'Unregister'}
-                </button>
-              );
-            }
-
-            return (
-              <button
-                className="btn btn-register"
-                type="button"
-                onClick={() => handleRegister(false)}
-                disabled={isRegisteringMtt}
-              >
-                {isRegisteringMtt ? 'Processing...' : 'Register'}
-              </button>
-            );
-          })()}
         </div>
 
         {/* The Sign Up card that used to live here is now

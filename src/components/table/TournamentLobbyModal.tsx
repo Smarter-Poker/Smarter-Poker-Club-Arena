@@ -70,18 +70,7 @@ export function TournamentLobbyModal({ isOpen, tournamentId, onClose }: Tourname
         aria-label="Tournament lobby"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Phone affordance: the sheet is draggable-looking and the quarter of
-            the screen above it is a tappable backdrop. */}
-        <div className="tlm-grab" aria-hidden="true">
-          <span />
-        </div>
-
-        <div className="tlm-header">
-          <span className="tlm-title">Tournament Lobby</span>
-          <button type="button" className="tlm-close" onClick={onClose} aria-label="Close">
-            Close
-          </button>
-        </div>
+        <span className="sr-only">Tournament Lobby</span>
 
         <div className="tlm-body">
           {/* suppressAutoOpenTable: the player is ALREADY at this tournament's
@@ -90,7 +79,11 @@ export function TournamentLobbyModal({ isOpen, tournamentId, onClose }: Tourname
               the overlay, which at best re-enters the route we are standing on
               and at worst pulls a multi-tabling player off the table they were
               watching. */}
-          <TournamentDetails tournamentIdOverride={tournamentId} suppressAutoOpenTable />
+          <TournamentDetails
+            tournamentIdOverride={tournamentId}
+            suppressAutoOpenTable
+            onRequestClose={onClose}
+          />
         </div>
       </div>
     </div>

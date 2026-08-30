@@ -765,7 +765,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           p_user_id: w.user_id,
           p_username: w.username || 'Player',
         });
-        const seat = seatRes as { ok?: boolean; reason?: string } | null;
+        const seat = seatRes as { ok?: boolean; awarded?: boolean; reason?: string } | null;
         // A refusal that is simply "they already hold this seat" is success.
         const regErr =
           seatErr || (seat?.ok === false ? { message: seat?.reason || 'seat_refused' } : null);
@@ -776,6 +776,39 @@ export class TournamentManager extends TournamentManagerEliminations {
             ticketCost,
             `Satellite seat fallback (registration failed): ${target.name || 'target'}`,
             `tourney:${this.tournamentId}:prize:place:${w.position}`
+          );
+        } else if (seat?.ok === true && seat?.awarded === false) {
+          /**
+           * ═══════════════════════════════════════════════════════════════
+           *  A WINNER WHO ALREADY HOLDS A SEAT WAS PAID NOTHING (2026-08-30)
+           * ═══════════════════════════════════════════════════════════════
+           *
+           * fn_award_satellite_seat is idempotent: a winner already entered in
+           * the target returns ok:true, awarded:false and moves no money —
+           * correct, because a second seat is not a thing a player can hold and
+           * the pool must not be credited twice for one chair.
+           *
+           * But this branch then logged "Seat awarded" and paid nothing, while
+           * the write below still stamped `prize = ticketCost` on their row. So
+           * the player won a ticket, received neither a seat they did not
+           * already have nor its value, and the tournament recorded a prize
+           * that never moved. Observed on the 2026-08-30 Sunday Deep Stack
+           * Satellite $25, where two of the five winners were already in the
+           * Main Event from the original field.
+           *
+           * A ticket that cannot be spent as a seat is worth its cash value —
+           * the same conclusion this method already reaches when the target is
+           * unavailable, for the same reason. The idempotency key is shared
+           * with the failure branch above, so a re-drive cannot double-pay.
+           */
+          await payCash(
+            w.user_id,
+            ticketCost,
+            `Satellite ticket cashed (already seated in ${target.name || 'target'})`,
+            `tourney:${this.tournamentId}:prize:place:${w.position}`
+          );
+          console.log(
+            `[Satellite:${this.tournamentId.slice(0, 8)}] ${w.user_id.slice(0, 8)} already held a seat in ${target.name || target.id.slice(0, 8)} — ticket paid as ${ticketCost} cash`
           );
         } else {
           console.log(

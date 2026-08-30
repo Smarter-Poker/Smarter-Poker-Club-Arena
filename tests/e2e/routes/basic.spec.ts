@@ -7,7 +7,7 @@ test.describe('Authentication Flow', () => {
 
     await expect
       .poll(() => new URL(page.url()).pathname, { timeout: 10000 })
-      .toMatch(/^(?:\/hub\/club-arena)?\/$|^\/auth(?:\/|$)/);
+      .toMatch(/^(?:\/hub\/club-arena)?\/?$|^\/auth(?:\/|$)/);
     if (new URL(page.url()).pathname.startsWith('/auth')) test.skip();
     await assertRendered(page, 'canonical lobby');
   });

@@ -37,58 +37,8 @@ function num(value: unknown): number {
   return 0;
 }
 
-function nullableNum(value: unknown): number | null {
-  return value === null || value === undefined ? null : num(value);
-}
-
-export interface RosterCapabilities {
-  can_view_financials: boolean;
-  can_export: boolean;
-  can_manage_members: boolean;
-  can_view_notes: boolean;
-}
-
-export interface RosterSummary {
-  viewer_role: ClubRole;
-  capabilities: RosterCapabilities;
-  counts: { total: number; online: number; seated: number; agents: number; admins: number };
-  data_version: string | null;
-  page_size: number;
-}
-
-export type RosterFilter =
-  | 'all'
-  | 'mine'
-  | 'seated'
-  | 'online'
-  | 'agents'
-  | 'admins'
-  | 'inactive_30'
-  | 'inactive_60'
-  | 'inactive_90'
-  | 'high_fees';
-export type RosterSort = 'hierarchy' | 'activity' | 'name' | 'downlines' | 'wallet' | 'fees';
-export type RosterCursor = Record<string, string | number>;
-
-export interface RosterQuery {
-  search?: string;
-  filter?: RosterFilter;
-  sort?: RosterSort;
-  cursor?: RosterCursor | null;
-  limit?: number;
-  signal?: AbortSignal;
-}
-
-export interface RosterPage {
-  items: RosterMember[];
-  next_cursor: RosterCursor | null;
-  has_more: boolean;
-  filtered_total: number;
-}
-
 export interface RosterMember {
   user_id: string;
-  management_club_id: string | null;
   home_club_id: string | null;
   home_club_name: string | null;
   /** profiles.player_number. Guaranteed present by the 20260823_01 migration. */
@@ -104,25 +54,22 @@ export interface RosterMember {
   is_online: boolean;
   /** Specifically "sitting at a live table", as opposed to merely connected. */
   is_seated: boolean;
-  chip_balance: number | null;
-  player_wallet: number | null;
-  agent_wallet: number | null;
-  promo_wallet: number | null;
+  chip_balance: number;
+  player_wallet: number;
+  agent_wallet: number;
+  promo_wallet: number;
   /** Total rake this member has generated. */
-  total_fees: number | null;
-  downline_fees: number | null;
-  total_hands: number | null;
-  downline_direct: number | null;
-  downline_total: number | null;
+  total_fees: number;
+  downline_fees: number;
+  total_hands: number;
+  downline_direct: number;
+  downline_total: number;
   upline_user_id: string | null;
   upline_name: string | null;
   joined_at: string | null;
   last_login: string | null;
   nickname: string | null;
   remark: string | null;
-  can_view_financials: boolean;
-  can_view_notes: boolean;
-  in_viewer_downline: boolean;
 }
 
 /**
@@ -135,7 +82,6 @@ export interface RosterMember {
 export function mapRosterRow(row: Record<string, unknown>): RosterMember {
   return {
     user_id: String(row.user_id ?? ''),
-    management_club_id: (row.management_club_id as string) ?? (row.home_club_id as string) ?? null,
     home_club_id: (row.home_club_id as string) ?? null,
     home_club_name: (row.home_club_name as string) ?? null,
     player_number: (row.player_number as string) ?? null,
@@ -147,24 +93,21 @@ export function mapRosterRow(row: Record<string, unknown>): RosterMember {
     role_rank: num(row.role_rank),
     is_online: row.is_online === true,
     is_seated: row.is_seated === true,
-    chip_balance: nullableNum(row.chip_balance),
-    player_wallet: nullableNum(row.player_wallet),
-    agent_wallet: nullableNum(row.agent_wallet),
-    promo_wallet: nullableNum(row.promo_wallet),
-    total_fees: nullableNum(row.total_fees),
-    downline_fees: nullableNum(row.downline_fees),
-    total_hands: nullableNum(row.total_hands),
-    downline_direct: nullableNum(row.downline_direct),
-    downline_total: nullableNum(row.downline_total),
+    chip_balance: num(row.chip_balance),
+    player_wallet: num(row.player_wallet),
+    agent_wallet: num(row.agent_wallet),
+    promo_wallet: num(row.promo_wallet),
+    total_fees: num(row.total_fees),
+    downline_fees: num(row.downline_fees),
+    total_hands: num(row.total_hands),
+    downline_direct: num(row.downline_direct),
+    downline_total: num(row.downline_total),
     upline_user_id: (row.upline_user_id as string) ?? null,
     upline_name: (row.upline_name as string) ?? null,
     joined_at: (row.joined_at as string) ?? null,
     last_login: (row.last_login as string) ?? null,
     nickname: (row.nickname as string) ?? null,
     remark: (row.remark as string) ?? null,
-    can_view_financials: row.can_view_financials === true,
-    can_view_notes: row.can_view_notes === true,
-    in_viewer_downline: row.in_viewer_downline === true,
   };
 }
 
@@ -217,8 +160,8 @@ export interface MemberDetail {
     player_wallet: number;
     agent_wallet: number;
     promo_wallet: number;
-  } | null;
-  downline: { downline_direct: number; downline_total: number } | null;
+  };
+  downline: { downline_direct: number; downline_total: number };
   stats: {
     hands: number;
     mtt_hands: number;
@@ -228,19 +171,11 @@ export interface MemberDetail {
     sent_out: number;
     total_winnings: number;
     mtt_winnings: number;
-  } | null;
-  range: { from: string | null; to: string | null; is_overall: boolean };
-  capabilities: {
-    access: 'none' | 'identity' | 'downline' | 'staff' | 'service';
-    can_view_financials: boolean;
-    can_view_notes: boolean;
-    can_edit_notes: boolean;
-    can_manage_role: boolean;
   };
+  range: { from: string | null; to: string | null; is_overall: boolean };
 }
 
 export interface MemberStatistics {
-  authorized: boolean;
   variant: string;
   variants: string[];
   total_games: number;
@@ -272,60 +207,6 @@ export interface DownlineMember {
 }
 
 export const ClubRosterService = {
-  async getSummary(clubId: string, signal?: AbortSignal): Promise<RosterSummary | null> {
-    let request = supabase.rpc('ca_club_members_summary', { p_club_id: clubId });
-    if (signal && typeof (request as any).abortSignal === 'function') {
-      request = (request as any).abortSignal(signal);
-    }
-    const { data, error } = await request;
-    if (error) throw error;
-    if (!data) return null;
-    const d = data as Record<string, any>;
-    return {
-      viewer_role: normaliseRole(d.viewer_role),
-      capabilities: {
-        can_view_financials: d.capabilities?.can_view_financials === true,
-        can_export: d.capabilities?.can_export === true,
-        can_manage_members: d.capabilities?.can_manage_members === true,
-        can_view_notes: d.capabilities?.can_view_notes === true,
-      },
-      counts: {
-        total: num(d.counts?.total),
-        online: num(d.counts?.online),
-        seated: num(d.counts?.seated),
-        agents: num(d.counts?.agents),
-        admins: num(d.counts?.admins),
-      },
-      data_version: d.data_version ?? null,
-      page_size: Math.max(20, Math.min(num(d.page_size) || 80, 200)),
-    };
-  },
-
-  async getRosterPage(clubId: string, query: RosterQuery = {}): Promise<RosterPage> {
-    let request = supabase.rpc('ca_club_members_page', {
-      p_club_id: clubId,
-      p_search: query.search?.trim() ?? '',
-      p_filter: query.filter ?? 'all',
-      p_sort: query.sort ?? 'hierarchy',
-      p_cursor: query.cursor ?? null,
-      p_limit: query.limit ?? 80,
-    });
-    if (query.signal && typeof (request as any).abortSignal === 'function') {
-      request = (request as any).abortSignal(query.signal);
-    }
-    const { data, error } = await request;
-    if (error) throw error;
-    const d = (data ?? {}) as Record<string, any>;
-    return {
-      items: Array.isArray(d.items)
-        ? d.items.map((row: Record<string, unknown>) => mapRosterRow(row))
-        : [],
-      next_cursor: d.next_cursor && typeof d.next_cursor === 'object' ? d.next_cursor : null,
-      has_more: d.has_more === true,
-      filtered_total: num(d.filtered_total),
-    };
-  },
-
   /**
    * The whole Players tab in one call. `clubId` must already be a UUID --
    * callers resolve a slug with utils/clubIdResolver first, because this
@@ -395,43 +276,30 @@ export const ClubRosterService = {
         is_online: d.presence?.is_online === true,
         is_seated: d.presence?.is_seated === true,
       },
-      wallets: d.wallets
-        ? {
-            chip_balance: num(d.wallets?.chip_balance),
-            player_wallet: num(d.wallets?.player_wallet),
-            agent_wallet: num(d.wallets?.agent_wallet),
-            promo_wallet: num(d.wallets?.promo_wallet),
-          }
-        : null,
-      downline: d.downline
-        ? {
-            downline_direct: num(d.downline?.downline_direct),
-            downline_total: num(d.downline?.downline_total),
-          }
-        : null,
-      stats: d.stats
-        ? {
-            hands: num(d.stats?.hands),
-            mtt_hands: num(d.stats?.mtt_hands),
-            total_fee: num(d.stats?.total_fee),
-            mtt_fee: num(d.stats?.mtt_fee),
-            claimed_back: num(d.stats?.claimed_back),
-            sent_out: num(d.stats?.sent_out),
-            total_winnings: num(d.stats?.total_winnings),
-            mtt_winnings: num(d.stats?.mtt_winnings),
-          }
-        : null,
+      wallets: {
+        chip_balance: num(d.wallets?.chip_balance),
+        player_wallet: num(d.wallets?.player_wallet),
+        agent_wallet: num(d.wallets?.agent_wallet),
+        promo_wallet: num(d.wallets?.promo_wallet),
+      },
+      downline: {
+        downline_direct: num(d.downline?.downline_direct),
+        downline_total: num(d.downline?.downline_total),
+      },
+      stats: {
+        hands: num(d.stats?.hands),
+        mtt_hands: num(d.stats?.mtt_hands),
+        total_fee: num(d.stats?.total_fee),
+        mtt_fee: num(d.stats?.mtt_fee),
+        claimed_back: num(d.stats?.claimed_back),
+        sent_out: num(d.stats?.sent_out),
+        total_winnings: num(d.stats?.total_winnings),
+        mtt_winnings: num(d.stats?.mtt_winnings),
+      },
       range: {
         from: d.range?.from ?? null,
         to: d.range?.to ?? null,
         is_overall: d.range?.is_overall !== false,
-      },
-      capabilities: {
-        access: d.capabilities?.access ?? 'none',
-        can_view_financials: d.capabilities?.can_view_financials === true,
-        can_view_notes: d.capabilities?.can_view_notes === true,
-        can_edit_notes: d.capabilities?.can_edit_notes === true,
-        can_manage_role: d.capabilities?.can_manage_role === true,
       },
     };
   },
@@ -452,7 +320,6 @@ export const ClubRosterService = {
     if (error) throw error;
     const d = (data ?? {}) as Record<string, any>;
     return {
-      authorized: d.authorized !== false,
       variant: d.variant ?? 'all',
       variants: Array.isArray(d.variants) ? d.variants.filter(Boolean) : [],
       total_games: num(d.total_games),
@@ -489,52 +356,6 @@ export const ClubRosterService = {
       total_fees: num(row.total_fees),
       is_online: row.is_online === true,
     }));
-  },
-
-  async exportRoster(
-    clubId: string,
-    query: Pick<RosterQuery, 'search' | 'filter' | 'sort'>,
-    userIds: string[] | null = null
-  ): Promise<{ rows: Record<string, unknown>[]; row_count: number; audit_id: string }> {
-    const { data, error } = await supabase.rpc('ca_club_members_export', {
-      p_club_id: clubId,
-      p_search: query.search?.trim() ?? '',
-      p_filter: query.filter ?? 'all',
-      p_sort: query.sort ?? 'hierarchy',
-      p_user_ids: userIds,
-    });
-    if (error) throw error;
-    const d = (data ?? {}) as Record<string, any>;
-    if (d.success !== true) throw new Error(d.error || 'Roster export failed');
-    return {
-      rows: Array.isArray(d.rows) ? d.rows : [],
-      row_count: num(d.row_count),
-      audit_id: String(d.audit_id ?? ''),
-    };
-  },
-
-  async updateMemberNotes(
-    clubId: string,
-    userId: string,
-    nickname: string,
-    remark: string,
-    requestId: string
-  ): Promise<{ nickname: string | null; remark: string | null; replayed: boolean }> {
-    const { data, error } = await supabase.rpc('ca_club_member_notes_update', {
-      p_club_id: clubId,
-      p_target_user_id: userId,
-      p_nickname: nickname,
-      p_remark: remark,
-      p_request_id: requestId,
-    });
-    if (error) throw error;
-    const d = (data ?? {}) as Record<string, any>;
-    if (d.success !== true) throw new Error(d.error || 'Member note update failed');
-    return {
-      nickname: d.nickname ?? null,
-      remark: d.remark ?? null,
-      replayed: d.replayed === true,
-    };
   },
 };
 

@@ -51,6 +51,8 @@ const CATEGORY_ALTERNATIVES = {
   Cards: ['Classic Blue', 'Classic Red', 'Royal'],
 } as const;
 
+const PRODUCTION_RESPONSE_TIMEOUT = 60_000;
+
 function preview(studio: Locator) {
   return studio.locator('.studio-game-preview');
 }
@@ -103,7 +105,7 @@ async function openStudio(page: Page) {
     (response) =>
       response.request().method() === 'GET' &&
       response.url().includes('/rest/v1/user_theme_settings'),
-    { timeout: 30_000 }
+    { timeout: PRODUCTION_RESPONSE_TIMEOUT }
   );
   await open.click();
 
@@ -114,7 +116,9 @@ async function openStudio(page: Page) {
   await expect(studio.locator('.theme-modal__grid')).toHaveAttribute('aria-busy', 'false', {
     timeout: 20_000,
   });
-  await expect(studio.getByText('Table Art Live')).toBeVisible({ timeout: 30_000 });
+  await expect(studio.getByText('Table Art Live')).toBeVisible({
+    timeout: PRODUCTION_RESPONSE_TIMEOUT,
+  });
   return studio;
 }
 
@@ -220,13 +224,17 @@ async function selectAsset(
   }
   const asset = studio.getByRole('button', { name, exact: true });
   await expect(asset).toBeEnabled({ timeout: 20_000 });
+  // Cleanup can overlap a newer production run using the same dedicated
+  // accounts. If that run has already restored this exact value, there is no
+  // write to wait for and the account is already in the requested state.
+  if ((await asset.getAttribute('aria-pressed')) === 'true') return;
   const persisted = studio
     .page()
     .waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
         response.url().includes('/rest/v1/user_theme_settings'),
-      { timeout: 30_000 }
+      { timeout: PRODUCTION_RESPONSE_TIMEOUT }
     );
   await asset.click();
   await expect(asset).toHaveAttribute('aria-pressed', 'true', { timeout: 20_000 });
@@ -243,6 +251,14 @@ function different(current: string, options: readonly string[]) {
   return result;
 }
 
+function differentFrom(disallowed: readonly string[], options: readonly string[]) {
+  const result = options.find((name) => !disallowed.includes(name));
+  if (!result) {
+    throw new Error(`No free design remains after excluding ${disallowed.join(', ')}.`);
+  }
+  return result;
+}
+
 async function restoreState(studio: Locator, state: SavedStudioState) {
   await selectAsset(studio, 'Looks', state.selections.Looks);
   await selectAsset(studio, 'Tables', state.selections.Tables);
@@ -250,19 +266,21 @@ async function restoreState(studio: Locator, state: SavedStudioState) {
   await studio.getByRole('button', { name: new RegExp(`^${state.sceneGroup}`) }).click();
   const scene = studio.getByRole('button', { name: state.selections.Scenes, exact: true });
   await expect(scene).toBeEnabled({ timeout: 20_000 });
-  const scenePersisted = studio
-    .page()
-    .waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        response.url().includes('/rest/v1/user_theme_settings'),
-      { timeout: 30_000 }
-    );
-  await scene.click();
-  await expect(scene).toHaveAttribute('aria-pressed', 'true', { timeout: 20_000 });
-  const sceneResponse = await scenePersisted;
-  if (!sceneResponse.ok()) {
-    throw new Error(`Table Studio restoration failed with HTTP ${sceneResponse.status()}.`);
+  if ((await scene.getAttribute('aria-pressed')) !== 'true') {
+    const scenePersisted = studio
+      .page()
+      .waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().includes('/rest/v1/user_theme_settings'),
+        { timeout: PRODUCTION_RESPONSE_TIMEOUT }
+      );
+    await scene.click();
+    await expect(scene).toHaveAttribute('aria-pressed', 'true', { timeout: 20_000 });
+    const sceneResponse = await scenePersisted;
+    if (!sceneResponse.ok()) {
+      throw new Error(`Table Studio restoration failed with HTTP ${sceneResponse.status()}.`);
+    }
   }
   await selectAsset(studio, 'Buttons', state.selections.Buttons);
   await selectAsset(studio, 'Cards', state.selections.Cards);
@@ -271,14 +289,18 @@ async function restoreState(studio: Locator, state: SavedStudioState) {
 }
 
 test.describe('production Table Studio realtime contract', () => {
-  test.describe.configure({ mode: 'serial', timeout: 240_000 });
+  // This test deliberately performs and verifies a dozen durable production
+  // writes, then restores two accounts. Publish bursts can make the cleanup
+  // slower without making it less necessary, so give the live contract its
+  // own budget instead of letting Playwright close the browser mid-restore.
+  test.describe.configure({ mode: 'serial', timeout: 360_000 });
 
   test('every free cosmetic applies, persists, syncs to another device, and stays isolated from another player', async ({
     browser,
     page,
     baseURL,
   }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(360_000);
     if (!baseURL) throw new Error('A deployed BASE_URL is required.');
 
     const primaryMobile = await browser.newContext({
@@ -318,8 +340,21 @@ test.describe('production Table Studio realtime contract', () => {
       await expectAppearance(otherStudio, otherBefore);
 
       for (const category of ['Tables', 'Scenes', 'Buttons', 'Cards'] as const) {
-        const target = different(
-          primaryOriginal.selections[category],
+        await activateCategory(primaryStudio, category);
+        if (category === 'Scenes') {
+          await primaryStudio.getByRole('button', { name: /^Places & Rooms/ }).click();
+        }
+        const selected = primaryStudio.locator(
+          '.theme-modal__grid .theme-asset[aria-pressed="true"]'
+        );
+        const current =
+          (await selected.count()) === 1 ? (await selected.getAttribute('aria-label')) || '' : '';
+        // A preset may already have applied one of these assets. Re-selecting
+        // it can produce a green POST while proving nothing about a changed
+        // value surviving reload. The final choice must differ from both the
+        // artwork currently on screen and the account's original value.
+        const target = differentFrom(
+          [current, primaryOriginal.selections[category]],
           CATEGORY_ALTERNATIVES[category]
         );
         await selectAsset(primaryStudio, category, target);

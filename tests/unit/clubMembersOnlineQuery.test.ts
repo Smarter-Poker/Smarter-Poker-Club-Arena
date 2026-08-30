@@ -48,21 +48,12 @@ const CSS = readFileSync(resolve(__dirname, '../../src/pages/ClubMembersPage.css
  */
 const CSS_RULES = CSS.replace(/\/\*[\s\S]*?\*\//g, ' ');
 const SERVICE = readFileSync(resolve(__dirname, '../../src/services/ClubRosterService.ts'), 'utf8');
-const CACHE = readFileSync(resolve(__dirname, '../../src/lib/rosterCache.ts'), 'utf8');
-const VIRTUAL = readFileSync(resolve(__dirname, '../../src/hooks/useVirtualScroll.ts'), 'utf8');
 const ROSTER_OPERATIONS_ART = resolve(
   __dirname,
   '../../public/images/club-members/roster-ledger-desk-v2.webp'
 );
 const MIGRATION = readFileSync(
   resolve(__dirname, '../../supabase/migrations/20260823_03_club_members_overview.sql'),
-  'utf8'
-);
-const PRIVACY_MIGRATION = readFileSync(
-  resolve(
-    __dirname,
-    '../../supabase/migrations/20260830143000_club_roster_privacy_and_cursor_pages.sql'
-  ),
   'utf8'
 );
 
@@ -128,8 +119,7 @@ describe('seated-online lookup (ca_club_members_overview)', () => {
 describe('ClubMembersPage reads the roster from one RPC', () => {
   it('asks the service rather than assembling the roster itself', () => {
     expect(PAGE_CODE).toContain('ClubRosterService');
-    expect(SERVICE).toContain('ca_club_members_page');
-    expect(SERVICE).toContain('ca_club_members_summary');
+    expect(SERVICE).toContain('ca_club_members_overview');
   });
 
   /**
@@ -195,36 +185,30 @@ describe('Players tab #smarterCasinoRealism presentation', () => {
 
   it('does not put a blur compositor on every roster row', () => {
     expect(CSS_RULES).not.toContain('backdrop-filter');
-    expect(CSS_RULES).toContain('contain: layout paint');
-    expect(VIRTUAL).toContain('items.slice(startIndex, endIndex)');
+    expect(CSS_RULES).toContain('content-visibility: auto');
   });
 });
 
 describe('Players tab large-roster performance and cache integrity', () => {
-  it('debounces server search so typing stays responsive', () => {
-    expect(PAGE_CODE).toContain('useDebounce(searchQuery, 260)');
-    expect(PAGE_CODE).toContain('search: debouncedSearch');
+  it('defers expensive search filtering so typing stays responsive', () => {
+    expect(PAGE_CODE).toContain('useDeferredValue(searchQuery)');
+    expect(PAGE_CODE).toContain('deferredSearchQuery.trim()');
   });
 
-  it('uses server cursor pages rather than presenting a truncated roster as complete', () => {
-    expect(PAGE_CODE).toContain('next_cursor');
-    expect(PAGE_CODE).toContain('hasMore && virtual.endIndex');
-    expect(PRIVACY_MIGRATION).toContain("'next_cursor'");
-    expect(PRIVACY_MIGRATION).toContain('LIMIT v_limit + 1');
+  it('never presents a truncated roster cache as the complete club', () => {
+    expect(PAGE_CODE).not.toMatch(/roster\.slice\(0,\s*300\)/);
+    expect(PAGE_CODE).toContain('ROSTER_CACHE_MAX_CHARACTERS');
+    expect(PAGE_CODE).toContain('sessionStorage.removeItem(swrKey)');
   });
 
-  it('keeps export locked until the server grants export capability', () => {
-    expect(PAGE).toContain('summary.capabilities.can_export');
-    expect(PAGE).toContain('ClubRosterService.exportRoster');
-    expect(PRIVACY_MIGRATION).toContain("'export_club_roster'");
+  it('keeps export locked until the live roster replaces cached data', () => {
+    expect(PAGE).toMatch(/className="members-export"[\s\S]*disabled=\{loading \|\| isRefreshing\}/);
   });
 
-  it('scopes caches by viewer and club and strips every sensitive field', () => {
-    expect(CACHE).toContain('roster_cache_v5_');
-    expect(CACHE).toContain('${ROSTER_CACHE_PREFIX}${userId}_${clubId}');
-    for (const field of ['player_wallet', 'agent_wallet', 'total_fees', 'last_login', 'remark']) {
-      expect(CACHE).toMatch(new RegExp(`${field}: null`));
-    }
+  it('scopes financial roster caches to the signed-in viewer and club', () => {
+    expect(PAGE_CODE).toContain('roster_cache_v4_${user.id}_${resolvedId}');
+    expect(PAGE_CODE).toContain('if (swrKey && serialised.length');
+    expect(PAGE_CODE).toContain('sessionStorage.removeItem(`roster_cache_v3_${resolvedId}`)');
   });
 
   it('never treats the slow-request warning as request completion', () => {
@@ -232,37 +216,35 @@ describe('Players tab large-roster performance and cache integrity', () => {
     expect(PAGE_CODE).not.toMatch(/setTimeout\(\(\)\s*=>\s*setLoading\(false\)/);
   });
 
-  it('cancels superseded requests and cools down structural invalidations', () => {
-    expect(PAGE_CODE).toContain('abortRef.current?.abort()');
-    expect(PAGE_CODE).toContain('controller.signal.aborted');
-    expect(PAGE_CODE).toContain('refreshTimerRef.current');
-    expect(PAGE_CODE).toContain('}, 1200)');
+  it('coalesces invalidations received during an in-flight roster request', () => {
+    expect(PAGE_CODE).toContain('pendingRefreshRef.current = true');
+    expect(PAGE_CODE).toContain('queueMicrotask(() => void loadMembers())');
+    expect(PAGE_CODE).toContain('requestEpoch === requestEpochRef.current');
   });
 
   it('resets the render window when search, filter or sort context changes', () => {
-    expect(PAGE_CODE).toContain('const resetVirtual = virtual.reset');
-    expect(PAGE_CODE).toMatch(/debouncedSearch, filter, resetVirtual, sortKey/);
+    expect(PAGE_CODE).toContain('resetVirtualScroll()');
+    expect(PAGE_CODE).toMatch(/deferredSearchQuery, filter, resetVirtualScroll, sortKey/);
   });
 });
 
 describe('Players tab operational continuity', () => {
-  it('keeps views in the URL, but keeps typed player searches private to the tab', () => {
+  it('restores roster context from the URL and updates it without history spam', () => {
     expect(PAGE_CODE).toContain("readFilter(searchParams.get('view'))");
     expect(PAGE_CODE).toContain("readSort(searchParams.get('sort'))");
-    expect(PAGE_CODE).toContain("next.delete('q')");
-    expect(PAGE_CODE).toContain('rosterSearchKey(user.id, id)');
+    expect(PAGE_CODE).toContain("searchParams.get('q')");
     expect(PAGE_CODE).toContain('setSearchParams(next, { replace: true })');
   });
 
   it('distinguishes members at tables from members who are merely online', () => {
+    expect(PAGE_CODE).toContain("filter === 'seated' && !m.is_seated");
     expect(PAGE).toContain('At Tables');
-    expect(PRIVACY_MIGRATION).toContain("WHEN 'seated' THEN r.is_seated");
-    expect(PAGE).toContain("member.is_seated ? 'At A Table'");
+    expect(PAGE).toContain('seatedCount');
   });
 
   it('searches the visible club and upline fields as well as identity', () => {
-    expect(PRIVACY_MIGRATION).toContain("lower(coalesce(r.home_club_name, ''))");
-    expect(PRIVACY_MIGRATION).toContain("lower(coalesce(r.upline_name, ''))");
+    expect(PAGE_CODE).toContain("(m.home_club_name ?? '').toLowerCase().includes(q)");
+    expect(PAGE_CODE).toContain("(m.upline_name ?? '').toLowerCase().includes(q)");
   });
 });
 
@@ -288,7 +270,7 @@ describe('Players tab shows what the brief asked for', () => {
   });
 
   it('offers every sort the brief listed, hierarchy first', () => {
-    expect(SERVICE).toMatch(
+    expect(PAGE).toMatch(
       /'hierarchy'\s*\|\s*'activity'\s*\|\s*'name'\s*\|\s*'downlines'\s*\|\s*'wallet'\s*\|\s*'fees'/
     );
     expect(PAGE).toContain("readSort(searchParams.get('sort'))");

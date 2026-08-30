@@ -25,8 +25,6 @@
  *   club_home_cache_ → ClubHomePage (Phase 8)
  */
 
-import { ROSTER_CACHE_PREFIX, ROSTER_CACHE_TTL_MS, ROSTER_SEARCH_PREFIX } from '../lib/rosterCache';
-
 /**
  * The canonical list of sessionStorage SWR cache prefixes.
  *
@@ -50,9 +48,10 @@ export const SWR_CACHE_PREFIXES = [
   'members_cache_',
   'tx_cache_',
   'club_home_cache_',
-  ROSTER_CACHE_PREFIX,
-  ROSTER_SEARCH_PREFIX,
 ];
+
+/** Maximum cache age in milliseconds (1 hour) */
+const MAX_AGE_MS = 60 * 60 * 1000;
 
 /**
  * Wallet instant-paint entries live in LOCALstorage (they must survive a
@@ -133,13 +132,6 @@ function reapStaleCaches(): void {
 
         // If the data is null or empty, remove it
         const parsed = JSON.parse(raw);
-        if (
-          key.startsWith(ROSTER_CACHE_PREFIX) &&
-          (typeof parsed?.at !== 'number' || Date.now() - parsed.at > ROSTER_CACHE_TTL_MS)
-        ) {
-          keysToRemove.push(key);
-          continue;
-        }
         if (
           parsed === null ||
           (Array.isArray(parsed) && parsed.length === 0) ||

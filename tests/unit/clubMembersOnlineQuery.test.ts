@@ -31,7 +31,7 @@
  * column would have happily passed.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync, statSync } from 'fs';
 import { resolve } from 'path';
 
 const PAGE = readFileSync(resolve(__dirname, '../../src/pages/ClubMembersPage.tsx'), 'utf8');
@@ -48,6 +48,7 @@ const CSS = readFileSync(resolve(__dirname, '../../src/pages/ClubMembersPage.css
  */
 const CSS_RULES = CSS.replace(/\/\*[\s\S]*?\*\//g, ' ');
 const SERVICE = readFileSync(resolve(__dirname, '../../src/services/ClubRosterService.ts'), 'utf8');
+const ROSTER_VAULT_ART = resolve(__dirname, '../../public/images/club-members/roster-vault.webp');
 const MIGRATION = readFileSync(
   resolve(__dirname, '../../supabase/migrations/20260823_03_club_members_overview.sql'),
   'utf8'
@@ -161,6 +162,43 @@ describe('Players tab palette', () => {
   it('draws presence as a ring rather than a dot', () => {
     expect(CSS_RULES).toContain('.member-row--online .member-avatar');
     expect(CSS_RULES).not.toContain('.online-dot');
+  });
+});
+
+describe('Players tab #smarterCasinoRealism presentation', () => {
+  it('ships the purpose-built roster vault as an optimized local asset', () => {
+    expect(existsSync(ROSTER_VAULT_ART)).toBe(true);
+    expect(statSync(ROSTER_VAULT_ART).size).toBeLessThan(180_000);
+    expect(PAGE).toContain('images/club-members/roster-vault.webp');
+    expect(PAGE).toContain('fetchPriority="high"');
+  });
+
+  it('keeps the artwork decorative and the live roster data in HTML', () => {
+    expect(PAGE).toContain('alt=""');
+    expect(PAGE).toContain('Club Personnel Vault');
+    expect(PAGE).toContain('members-summary');
+  });
+
+  it('does not put a blur compositor on every roster row', () => {
+    expect(CSS_RULES).not.toContain('backdrop-filter');
+    expect(CSS_RULES).toContain('content-visibility: auto');
+  });
+});
+
+describe('Players tab large-roster performance and cache integrity', () => {
+  it('defers expensive search filtering so typing stays responsive', () => {
+    expect(PAGE_CODE).toContain('useDeferredValue(searchQuery)');
+    expect(PAGE_CODE).toContain('deferredSearchQuery.trim()');
+  });
+
+  it('never presents a truncated roster cache as the complete club', () => {
+    expect(PAGE_CODE).not.toMatch(/roster\.slice\(0,\s*300\)/);
+    expect(PAGE_CODE).toContain('ROSTER_CACHE_MAX_CHARACTERS');
+    expect(PAGE_CODE).toContain('sessionStorage.removeItem(swrKey)');
+  });
+
+  it('keeps export locked until the live roster replaces cached data', () => {
+    expect(PAGE).toMatch(/className="members-export"[\s\S]*disabled=\{loading \|\| isRefreshing\}/);
   });
 });
 

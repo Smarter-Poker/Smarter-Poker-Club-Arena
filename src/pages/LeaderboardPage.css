@@ -1538,6 +1538,140 @@
   }
 }
 
+.lb-prize-program {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 18px;
+  align-items: center;
+  margin: 0 0 18px;
+  padding: 18px 20px 30px;
+  overflow: hidden;
+  color: #f7f2e5;
+  border: 1px solid rgba(224, 180, 77, 0.3);
+  border-radius: 18px;
+  background:
+    linear-gradient(120deg, rgba(224, 180, 77, 0.1), transparent 45%), rgba(11, 14, 22, 0.94);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
+}
+
+.lb-prize-program-mark {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  color: #211604;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #f2d681, #a86d11);
+}
+
+.lb-prize-program-copy h2,
+.lb-prize-program-copy p,
+.lb-prize-program-totals {
+  margin: 0;
+}
+
+.lb-prize-program-copy h2 {
+  margin: 3px 0 5px;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: 1.16rem;
+}
+
+.lb-prize-program-copy p {
+  max-width: 650px;
+  color: rgba(247, 242, 229, 0.66);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.lb-prize-program-kicker {
+  color: #d1b66c;
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.lb-prize-program-totals {
+  display: flex;
+  gap: 20px;
+}
+
+.lb-prize-program-totals div {
+  min-width: 90px;
+}
+
+.lb-prize-program-totals dt,
+.lb-prize-program-safety {
+  color: rgba(247, 242, 229, 0.5);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lb-prize-program-totals dd {
+  margin: 4px 0 0;
+  color: #edce75;
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.lb-prize-program > button {
+  min-height: 44px;
+  padding: 0 16px;
+  color: #201604;
+  border: 1px solid #f1cf72;
+  border-radius: 11px;
+  background: linear-gradient(145deg, #f3d77f, #c78b24);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.lb-prize-program-safety {
+  position: absolute;
+  right: 20px;
+  bottom: 9px;
+}
+
+.payout-badge-planned {
+  color: #201604;
+  border-color: rgba(241, 207, 114, 0.74);
+  background: linear-gradient(145deg, #f3d77f, #c78b24);
+}
+
+@media (max-width: 800px) {
+  .lb-prize-program {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .lb-prize-program-totals,
+  .lb-prize-program > button {
+    grid-column: 1 / -1;
+  }
+
+  .lb-prize-program > button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .lb-prize-program {
+    gap: 12px;
+    padding: 15px 14px 34px;
+  }
+
+  .lb-prize-program-totals {
+    justify-content: space-between;
+  }
+
+  .lb-prize-program-safety {
+    right: 14px;
+    left: 14px;
+    text-align: center;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .lb-hero-art,
   .live-dot,

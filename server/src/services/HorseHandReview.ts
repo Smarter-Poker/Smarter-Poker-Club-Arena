@@ -27,6 +27,7 @@
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
 import { variantInfo, omahaNutStatus, nlhNutStatus } from '../engine/HorseEval.js';
+import { RANK_VALUES } from '../engine/PokerEngine.js';
 import type { Card } from '../types.js';
 
 export interface HorseReviewInput {
@@ -260,6 +261,60 @@ export function detectLeaks(row: {
         tags.push('nonnut_flush_stackoff');
       } else if (ns.cat === boatCat && ns.underfull) {
         tags.push('underfull_stackoff');
+      }
+    } catch {
+      /* detector is best-effort */
+    }
+  }
+
+  // V24 KICKER DISCIPLINE (2026-08-30): the 08-29 GTO sweep's three biggest
+  // showdown losses were all the same shape — trips on a paired board with a
+  // dominated kicker committing a full stack (QT on 2-T-T-5-J for 453.9bb,
+  // QJ on J-6-J-T-K for 440bb, AJ on A-3-T-Q-A for 437bb) — and two more in
+  // the top five were top pair with a rag kicker jamming 300bb. None of them
+  // carried anything beyond the generic river_aggr_lost, because the nut
+  // discipline block above knows flushes, straights and boats but nothing on
+  // the pair ladder. These tags COUNT the pattern so the self-tuner and the
+  // nightly audit can see it; no strategy dial moves here (that needs league
+  // measurement per the standing rule).
+  if (
+    !vi.isOmaha &&
+    row.wentToShowdown &&
+    row.holeCards &&
+    row.holeCards.length === 2 &&
+    row.board &&
+    row.board.length >= 5 &&
+    investedBB >= 2 * FLAG_BB
+  ) {
+    try {
+      const rv = (card: Card): number => RANK_VALUES[card.rank];
+      const boardCount = new Map<number, number>();
+      for (const bc of row.board) boardCount.set(rv(bc), (boardCount.get(rv(bc)) ?? 0) + 1);
+      const [h1, h2] = row.holeCards;
+      const r1 = rv(h1);
+      const rr2 = rv(h2);
+      // Trips by pairing a doubled board rank with EXACTLY one hole card.
+      // (Two hole cards of that rank is quads; a kicker that also matches a
+      // board rank is a full house — both stronger shapes, both excluded.)
+      const tripRank = [...boardCount].find(([r, n]) => n === 2 && (r1 === r) !== (rr2 === r))?.[0];
+      if (tripRank !== undefined) {
+        const kicker = r1 === tripRank ? rr2 : r1;
+        const kickerFillsBoat = (boardCount.get(kicker) ?? 0) >= 1;
+        // An ace kicker cannot be out-kicked; anything below it can.
+        if (!kickerFillsBoat && kicker < 14) {
+          tags.push('weak_kicker_trips_stackoff');
+        }
+      } else if (r1 !== rr2) {
+        // Top pair on an unpaired top rank with a kicker nine or worse.
+        const topBoard = Math.max(...boardCount.keys());
+        const pairsTop =
+          (boardCount.get(topBoard) ?? 0) === 1 && (r1 === topBoard) !== (rr2 === topBoard);
+        if (pairsTop) {
+          const kicker = r1 === topBoard ? rr2 : r1;
+          if (kicker <= 9 && (boardCount.get(kicker) ?? 0) === 0) {
+            tags.push('top_pair_weak_kicker_stackoff');
+          }
+        }
       }
     } catch {
       /* detector is best-effort */

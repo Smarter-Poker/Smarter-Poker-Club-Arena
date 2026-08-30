@@ -15,9 +15,10 @@ describe('buildStatsIntelligenceBrief', () => {
         { variant: 'omaha', hands: 22, bb100: 40 },
       ],
       daily: [
-        { date: '2026-08-29', profit: -10 },
-        { date: '2026-08-30', profit: 35 },
+        { date: '2026-08-29', hands: 80, profit: -10 },
+        { date: '2026-08-30', hands: 120, profit: 35 },
       ],
+      asOf: new Date('2026-08-30T18:00:00Z'),
     });
 
     expect(brief).toEqual(
@@ -32,10 +33,46 @@ describe('buildStatsIntelligenceBrief', () => {
         expect.objectContaining({
           id: 'trend',
           value: 'Positive',
-          detail: '+25 over the latest 2 recorded days.',
+          detail: '+25 across 200 hands, Aug 24 to Aug 30.',
         }),
       ])
     );
+  });
+
+  it('does not rank a noisy segment while the overall cash sample is immature', () => {
+    const brief = buildStatsIntelligenceBrief({
+      overall: { total_hands: 750, cash_hands: 750 },
+      positions: [{ position: 'BTN', hands_played: 400, bb100: 22 }],
+      variants: [{ variant: 'holdem', hands: 750, bb100: 18 }],
+      daily: [{ date: '2026-08-30', hands: 750, profit: 220 }],
+      asOf: new Date('2026-08-30T18:00:00Z'),
+    });
+
+    expect(brief.find((item) => item.id === 'position')).toMatchObject({
+      value: 'Not Yet Reliable',
+      tone: 'neutral',
+    });
+    expect(brief.find((item) => item.id === 'game')).toMatchObject({
+      value: 'Not Yet Reliable',
+      tone: 'neutral',
+    });
+  });
+
+  it('uses the last seven calendar days and refuses to label old sessions as recent', () => {
+    const brief = buildStatsIntelligenceBrief({
+      overall: { total_hands: 2_000, cash_hands: 2_000 },
+      daily: [
+        { date: '2026-05-01', hands: 100, profit: 500 },
+        { date: '2026-05-02', hands: 100, profit: 500 },
+      ],
+      asOf: new Date('2026-08-30T18:00:00Z'),
+    });
+
+    expect(brief.find((item) => item.id === 'trend')).toMatchObject({
+      value: 'No Recent Play',
+      detail: 'No cash results recorded from Aug 24 to Aug 30.',
+      tone: 'neutral',
+    });
   });
 
   it('says it is building a sample instead of ranking noise', () => {
@@ -46,8 +83,8 @@ describe('buildStatsIntelligenceBrief', () => {
     });
 
     expect(brief.find((item) => item.id === 'sample')?.value).toBe('Early Read');
-    expect(brief.find((item) => item.id === 'position')?.value).toBe('Building Sample');
-    expect(brief.find((item) => item.id === 'game')?.value).toBe('Building Sample');
-    expect(brief.find((item) => item.id === 'trend')?.value).toBe('No Results');
+    expect(brief.find((item) => item.id === 'position')?.value).toBe('Not Yet Reliable');
+    expect(brief.find((item) => item.id === 'game')?.value).toBe('Not Yet Reliable');
+    expect(brief.find((item) => item.id === 'trend')?.value).toBe('No Recent Play');
   });
 });

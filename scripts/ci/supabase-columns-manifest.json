@@ -9885,7 +9885,8 @@
       "is_satellite_qualifier",
       "rebuy_prompt_until",
       "push_15m_sent",
-      "push_2m_sent"
+      "push_2m_sent",
+      "source_satellite_id"
     ],
     "tournament_rake_settlements": [
       "tournament_id",
@@ -12526,6 +12527,20 @@
       "first_seen_at",
       "last_seen_at",
       "resolved"
+    ],
+    "zz_reopen2_20260830_backup": [
+      "table_id",
+      "tournament_id",
+      "old_status",
+      "open_seats",
+      "captured_at"
+    ],
+    "zz_reopen3_20260830_backup": [
+      "table_id",
+      "tournament_id",
+      "old_status",
+      "open_seats",
+      "captured_at"
     ],
     "zz_reopen_20260830_backup": [
       "table_id",

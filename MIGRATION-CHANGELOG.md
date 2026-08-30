@@ -2,6 +2,43 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Codex session 2026-08-30 — LEADERBOARD PRIZE SETUP AND PROMO-WALLET AUTHORITY
+
+Leaderboard prize configuration now follows the actual financial hierarchy:
+an affiliated club is funded and administered by its union's
+`union_wallets.promo_wallet`; a standalone club is funded by its own
+`clubs.promo_balance`. Migration
+`20260830223000_leaderboard_reward_setup_safe.sql` adds validated setup
+metadata, read-only funding visibility, an owner-context RPC, and a single
+server-authorized save RPC. Union authority is derived with
+`fn_union_can_manage_wallets`; standalone authority is limited to the club
+owner or active co-owner. The browser never submits or chooses the funding
+source.
+
+The same migration closes a pre-existing unsafe path. The live
+`fn_payout_leaderboard` implementation credited club member chip balances
+without debiting either required promo source. Because there is no canonical,
+idempotent promo-wallet batch transfer that covers both funding owners, the
+function is replaced by an explicit safety refusal and browser execution is
+revoked. No balances are changed by this migration and no payout automation is
+introduced. This follows the request to omit high-risk work instead of creating
+a second money system.
+
+The client adds an accessible four-step setup wizard, suggested and custom
+plans, owner-only hamburger discovery, first-click deep linking, live planned
+prize badges, and a saved program summary. Existing verified payout history
+remains readable. Direct table writes are removed; configuration goes through
+the validated RPC only.
+
+Applied to production after a transaction-wrapped live-schema dry run. Verified
+8/8 new columns, zero browser write policies, zero settings/payout rows changed,
+authenticated payout execution revoked, the payout body replaced by the safety
+barrier, and valid/duplicate/hostile prize validators returning the expected
+results. Verification after rebasing onto current `origin/main`: 657 Vitest
+files / 9,591 tests green; TypeScript clean; targeted ESLint, Title Case, and
+no-hover law clean; production bundle and the full media optimization pipeline
+completed with `behind-main=0`.
+
 ## Codex session 2026-08-29 — CLUB ARENA IA PHASE 3: COMMAND RAILS, UNION RECOVERY, INVITE CONTEXT
 
 The exhaustive hamburger cleanup now extends beyond the drawer itself into the

@@ -147,7 +147,7 @@ describe('clause 3 — agents see their downline and nobody else', () => {
    */
   it('all three cashier surfaces read the same downline RPC', () => {
     for (const src of [MODAL, CLASSIC, TRADE]) {
-      expect(src).toContain("supabase.rpc('fn_club_cashier_members'");
+      expect(src).toMatch(/supabase\s*\.rpc\(\s*'fn_club_cashier_members(?:_v2)?'/);
     }
   });
 

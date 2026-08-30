@@ -1685,6 +1685,17 @@
       0 8px 20px rgba(0, 0, 0, 0.3);
   }
 
+  .stats-last-updated {
+    padding: 0 9px 0 3px;
+    color: #8fa3b5;
+    font-family: 'Rajdhani', 'Roboto Condensed', sans-serif;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
   .stats-range-label {
     display: flex;
     align-items: center;
@@ -1698,7 +1709,7 @@
     align-items: center;
     gap: 5px;
     color: #68b6f8;
-    font-size: 0.58rem;
+    font-size: 0.64rem;
     letter-spacing: 0.12em;
   }
 
@@ -1931,7 +1942,7 @@
     max-width: 390px;
     margin: 0;
     color: #81909a;
-    font-size: 0.67rem;
+    font-size: 0.72rem;
     letter-spacing: 0.035em;
     line-height: 1.45;
     text-align: right;
@@ -1973,7 +1984,7 @@
   .stats-brief-label {
     display: block;
     color: #71808b;
-    font-size: 0.58rem;
+    font-size: 0.65rem;
     font-weight: 600;
     letter-spacing: 0.11em;
     text-transform: uppercase;
@@ -2002,7 +2013,7 @@
   .stats-brief-item p {
     margin: 9px 0 0;
     color: #84919a;
-    font-size: 0.65rem;
+    font-size: 0.69rem;
     line-height: 1.42;
   }
 
@@ -2014,7 +2025,7 @@
   }
 
   .stats-brief-actions button {
-    min-height: 40px;
+    min-height: 44px;
     padding: 8px 14px;
     border: 1px solid rgba(216, 201, 167, 0.22);
     border-radius: 2px;
@@ -2025,6 +2036,48 @@
     font-weight: 600;
     letter-spacing: 0.09em;
     text-transform: uppercase;
+  }
+
+  .stats-evidence-row {
+    width: 100%;
+    border: 0;
+    border-bottom: 1px solid rgba(131, 159, 184, 0.12);
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+  }
+
+  .stats-evidence-row:focus-visible {
+    background: rgba(34, 132, 215, 0.12);
+    outline: 1px solid rgba(79, 176, 255, 0.5);
+    outline-offset: -1px;
+  }
+
+  .stats-position-evidence {
+    display: flex;
+    gap: 7px;
+    overflow-x: auto;
+    margin: 0 0 14px;
+    padding: 0 0 7px;
+    scroll-snap-type: x proximity;
+  }
+
+  .stats-position-evidence button {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 1px solid rgba(110, 167, 214, 0.32);
+    border-radius: 3px;
+    background: rgba(3, 12, 20, 0.92);
+    color: #bdd8ee;
+    font-family: 'Rajdhani', 'Roboto Condensed', sans-serif;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    scroll-snap-align: start;
   }
 
   .stats-brief-actions button:focus-visible {
@@ -2467,6 +2520,11 @@
       width: 100%;
     }
 
+    .stats-last-updated {
+      padding: 1px 7px 5px;
+      font-size: 0.69rem;
+    }
+
     .stats-range-row button {
       flex: 1 1 0;
       min-width: 0;
@@ -2597,6 +2655,11 @@
   }
 
   @media (max-width: 390px) {
+    .stats-command-deck {
+      grid-template-rows: minmax(245px, 1fr) auto;
+      min-height: 470px;
+    }
+
     .stats-command-copy {
       padding-inline: 17px;
     }
@@ -2610,13 +2673,50 @@
       grid-template-columns: minmax(0, 1fr);
     }
 
-    .stats-brief-grid,
+    .stats-brief-grid {
+      grid-template-columns: none;
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(248px, 82vw);
+      gap: 9px;
+      overflow-x: auto;
+      padding: 0 1px 8px;
+      scroll-snap-type: x mandatory;
+      overscroll-behavior-inline: contain;
+      scrollbar-width: thin;
+    }
+
+    .stats-brief-item {
+      min-height: 132px;
+      scroll-snap-align: start;
+    }
+
     .stats-brief-actions {
-      grid-template-columns: minmax(0, 1fr);
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .stat-row {
       min-height: 76px;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .stats-command-deck,
+    .stats-intelligence-brief,
+    .stats-brief-item,
+    .stats-pill-tabs,
+    .stats-content {
+      border: 1px solid CanvasText;
+      background: Canvas;
+      color: CanvasText;
+      forced-color-adjust: auto;
+    }
+
+    .stats-range-row button.active,
+    .stats-pill-tabs button.active,
+    .stats-brief-actions button:focus-visible,
+    .stats-evidence-row:focus-visible {
+      outline: 2px solid Highlight;
+      outline-offset: 2px;
     }
   }
 }

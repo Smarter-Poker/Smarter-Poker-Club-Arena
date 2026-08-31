@@ -8,6 +8,8 @@ export interface ClubLaunchTask {
   complete: boolean;
   actionLabel: string;
   onAction: () => void;
+  disabled?: boolean;
+  disabledLabel?: string;
 }
 
 interface Props {
@@ -80,8 +82,16 @@ export default function ClubLaunchProgress({ clubName, openingBank, tasks }: Pro
                 <strong>{task.label}</strong>
                 <span>{task.complete ? 'Complete' : task.detail}</span>
               </div>
-              <button type="button" onClick={task.onAction} disabled={task.complete}>
-                {task.complete ? 'Done' : task.actionLabel}
+              <button
+                type="button"
+                onClick={task.onAction}
+                disabled={task.complete || task.disabled}
+              >
+                {task.complete
+                  ? 'Done'
+                  : task.disabled
+                    ? task.disabledLabel || 'Owner Required'
+                    : task.actionLabel}
               </button>
             </article>
           ))}

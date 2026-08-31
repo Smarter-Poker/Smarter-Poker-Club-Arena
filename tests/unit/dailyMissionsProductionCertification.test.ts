@@ -39,9 +39,10 @@ describe('Daily Missions production certification', () => {
       expect(spec).toContain(contract);
     }
     expect(spec).toContain('cleanupTemporaryCustomizationAccount(environment, account)');
-    expect(spec).toContain('dropRealtimeServerFrames = true');
+    expect(spec).toContain('blockRevisionFrames = true');
     expect(spec).toContain('interceptedRealtimeSockets');
-    expect(spec).not.toContain('isDailyMissionRevisionFrame');
+    expect(spec).toContain('isDailyMissionRevisionFrame');
+    expect(spec).toContain('observedRevisionFrames');
     // dashboard_loaded is intentionally sampled at 20%; certification proves
     // the actual receipt and only requires unsampled mutation operations.
     const operationGate = spec.slice(

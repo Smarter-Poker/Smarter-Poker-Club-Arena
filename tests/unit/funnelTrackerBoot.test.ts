@@ -11,10 +11,11 @@ describe('activation telemetry never blocks the first paint', () => {
     expect(main).toContain("importWithRetry(() => import('./lib/funnelTracker'))");
   });
 
-  it('keeps lazy-load and tracker failures on the non-blocking error path', () => {
+  it('recovers stale tracker chunks before reporting a non-blocking error', () => {
     expect(main).toContain(
       ".catch((err) => reportDeferredImportFailure(err, 'main.FunnelTracker_init_error_non_blocking'))"
     );
+    expect(main).toContain('installVitePreloadErrorRecovery();');
   });
 });
 
@@ -26,10 +27,11 @@ describe('membership warming starts without entering the critical graph', () => 
     expect(main).toContain("importWithRetry(() => import('./services/ClubsService'))");
   });
 
-  it('keeps lazy-load and warm-start failures on the non-blocking error path', () => {
+  it('recovers stale membership chunks before reporting a non-blocking error', () => {
     expect(main).toContain(
       ".catch((err) => reportDeferredImportFailure(err, 'main.Membership_warm_start_non_blocking'))"
     );
+    expect(main).toContain('installVitePreloadErrorRecovery();');
   });
 
   it('retries only recognized stale assets and keeps genuine code failures hard', () => {

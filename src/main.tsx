@@ -56,7 +56,16 @@ import SystemOffline from './core/SystemOffline';
 import { ErrorBoundary } from './components/common';
 import { reportError, reportWarning } from './utils/errorReporter';
 import { hasLocalSession } from './lib/authUtils';
-import { importWithRetry, isChunkLoadError } from './utils/lazyWithRetry';
+import {
+  importWithRetry,
+  installVitePreloadErrorRecovery,
+  isChunkLoadError,
+} from './utils/lazyWithRetry';
+
+// Install before any fire-and-forget import. Vite's preload event covers the
+// critical route graph, while importWithRetry below keeps optional boot work
+// non-disruptive during an atomic publish.
+installVitePreloadErrorRecovery();
 
 function reportDeferredImportFailure(error: unknown, context: string): void {
   if (isChunkLoadError(error)) {

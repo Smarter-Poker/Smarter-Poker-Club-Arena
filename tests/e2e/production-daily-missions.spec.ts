@@ -24,6 +24,32 @@ const DASHBOARD_RPC_BUDGET_MS = 8_000;
 
 type JsonObject = Record<string, unknown>;
 
+function isDailyMissionRevisionFrame(message: string | Buffer): boolean {
+  try {
+    const frame = JSON.parse(typeof message === 'string' ? message : message.toString('utf8'));
+    const event = Array.isArray(frame) ? frame[3] : frame?.event;
+    const payload = Array.isArray(frame) ? frame[4] : frame?.payload;
+    const change = payload?.data ?? payload;
+    return event === 'postgres_changes' && change?.table === 'daily_challenge_dashboard_revisions';
+  } catch {
+    return false;
+  }
+}
+
+function realtimeFrameDescriptor(message: string | Buffer): string {
+  try {
+    const frame = JSON.parse(typeof message === 'string' ? message : message.toString('utf8'));
+    const event = Array.isArray(frame) ? frame[3] : frame?.event;
+    const payload = Array.isArray(frame) ? frame[4] : frame?.payload;
+    const change = payload?.data ?? payload;
+    return [event || 'unknown', change?.schema, change?.table, change?.type]
+      .filter(Boolean)
+      .join(':');
+  } catch {
+    return 'non-json';
+  }
+}
+
 function exactQuery(select: string, column: string, value: string): URLSearchParams {
   return new URLSearchParams({ select, [column]: `eq.${value}` });
 }
@@ -157,20 +183,24 @@ test.describe('production Daily Missions certification', () => {
         storageState: { cookies: [], origins: [] },
       });
       contexts.push(desktopContext);
-      let dropRealtimeServerFrames = false;
-      let blockedRealtimeServerFrames = 0;
+      let observedRevisionFrames = 0;
+      let blockedRevisionFrames = 0;
+      let blockRevisionFrames = false;
+      const observedRealtimeFrames = new Set<string>();
       let interceptedRealtimeSockets = 0;
       await desktopContext.routeWebSocket(/\/realtime\/v1\/websocket/, (socket) => {
         interceptedRealtimeSockets += 1;
         const server = socket.connectToServer();
         server.onMessage((message) => {
-          // Protocol payload shapes vary across Realtime client versions. Once
-          // armed, drop the wire itself rather than guessing which JSON field
-          // names the revision event. This reproduces a silently missed frame
-          // while keeping the already-SUBSCRIBED channel open.
-          if (dropRealtimeServerFrames) {
-            blockedRealtimeServerFrames += 1;
-            return;
+          if (observedRealtimeFrames.size < 30) {
+            observedRealtimeFrames.add(realtimeFrameDescriptor(message));
+          }
+          if (isDailyMissionRevisionFrame(message)) {
+            observedRevisionFrames += 1;
+            if (blockRevisionFrames) {
+              blockedRevisionFrames += 1;
+              return;
+            }
           }
           socket.send(message);
         });
@@ -369,8 +399,20 @@ test.describe('production Daily Missions certification', () => {
           }
         );
         expect(incrementForbidden, 'authenticated row progress must be denied').toBeTruthy();
-        blockedRealtimeServerFrames = 0;
-        dropRealtimeServerFrames = true;
+        try {
+          await expect
+            .poll(() => observedRevisionFrames, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT })
+            .toBeGreaterThan(0);
+        } catch (error) {
+          throw new Error(
+            `No Daily Mission revision frame was observed before the missed-frame test. Observed: ${
+              [...observedRealtimeFrames].join(', ') || 'none'
+            }`,
+            { cause: error }
+          );
+        }
+        blockedRevisionFrames = 0;
+        blockRevisionFrames = true;
         try {
           await completeEveryAssignedMission(environment, account!);
           const completed = await serviceRows<{ id: string; completed: boolean }>(
@@ -387,18 +429,23 @@ test.describe('production Daily Missions certification', () => {
             })
             .toBeGreaterThan(revisionBefore);
           await expect
-            .poll(() => blockedRealtimeServerFrames, {
-              timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
-            })
+            .poll(() => blockedRevisionFrames, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT })
             .toBeGreaterThan(0);
           const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
           await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
+        } catch (error) {
+          throw new Error(
+            `No Daily Mission revision frame crossed the routed socket. Observed: ${
+              [...observedRealtimeFrames].join(', ') || 'none'
+            }`,
+            { cause: error }
+          );
         } finally {
-          dropRealtimeServerFrames = false;
+          blockRevisionFrames = false;
         }
         expect(navigations).toBe(0);
         report.interceptedRealtimeSockets = interceptedRealtimeSockets;
-        report.blockedRealtimeServerFrames = blockedRealtimeServerFrames;
+        report.blockedRevisionFrames = blockedRevisionFrames;
       });
 
       await test.step('claim-all settles chips and diamonds once and replays its receipt', async () => {

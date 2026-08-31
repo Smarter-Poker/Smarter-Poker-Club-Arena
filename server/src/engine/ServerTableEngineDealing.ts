@@ -2445,11 +2445,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * backoff inside the hand's own event loop would spend live-hand latency on
    * a history record. One attempt, and a report if it fails.
    */
-  protected async persistDiscardedCard(
-    userId: string,
-    seat: number,
-    card: unknown
-  ): Promise<void> {
+  protected async persistDiscardedCard(userId: string, seat: number, card: unknown): Promise<void> {
     const handNumberAtDiscard = this.handCount;
     try {
       const { error } = await supabase.from('hand_discards').upsert(

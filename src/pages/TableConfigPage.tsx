@@ -329,7 +329,7 @@ const GAME_TYPE_LABELS: Record<string, { name: string; color: string }> = {
   plo5: { name: 'PLO5', color: '#7c3aed' },
   plo6: { name: 'PLO6', color: '#7c3aed' },
   plo8: { name: 'PLO8', color: '#7c3aed' },
-  pineapple: { name: 'PINEAPPLE', color: '#f59e0b' },
+  pineapple: { name: 'CRAZY PINEAPPLE', color: '#f59e0b' },
   short_deck: { name: '6+', color: '#0d9488' },
   // Green, matching the limit cards on the create-table screen.
   flh: { name: 'FLH', color: '#059669' },

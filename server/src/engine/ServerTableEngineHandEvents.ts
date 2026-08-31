@@ -353,9 +353,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
        */
       case 'PINEAPPLE_DISCARDED': {
         if (event.seat === undefined || !event.card || !this.handController) break;
-        const seated = this.handController
-          .getState()
-          .players.find((p) => p.seat === event.seat);
+        const seated = this.handController.getState().players.find((p) => p.seat === event.seat);
         if (!seated?.user_id) break;
         await this.persistDiscardedCard(seated.user_id, event.seat, event.card);
         break;

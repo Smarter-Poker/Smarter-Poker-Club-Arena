@@ -443,6 +443,28 @@ export function buildReplay(input: ReplayInput): ReplayModel {
   const sbSeat = smallBlindSeat(seats, input.buttonSeat);
   const bbSeat = bigBlindSeat(seats, input.buttonSeat);
 
+  /**
+   * PHASE 4 2026-09-01 - the discarded card, by user, normalised once.
+   *
+   * Built up here rather than beside `holeByUser` further down because the
+   * action rows are pushed BEFORE that point, and a discard row needs its card
+   * at the moment it is created.
+   *
+   * `toDeckCards` is reused rather than a bespoke parser so a discard is read
+   * by exactly the same code that reads a hole card and a board card: one
+   * shape rule for every card in this file. It takes an array, so the single
+   * card is wrapped and unwrapped - a deliberate round trip that keeps the
+   * storage format free to become an array later without touching this.
+   */
+  const discardByUser = new Map<string, DeckCard>();
+  for (const [uid, card] of Object.entries(input.discardedCards || {})) {
+    if (!card) continue;
+    const deck = toDeckCards([card]);
+    if (deck.length > 0) discardByUser.set(uid, deck[0]);
+  }
+  const discardedCardFor = (userId: string | undefined): DeckCard | null =>
+    (userId && discardByUser.get(userId)) || null;
+
   const board = toDeckCards(input.board);
   const extra = (input.extraBoards || []).map((b) => toDeckCards(b)).filter((b) => b.length > 0);
   const ritFromLog = ritBoardsFromActions(input.actions || []).map((b) => toDeckCards(b));
@@ -507,6 +529,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
         stackAfter: null,
         showsMuck: false,
         shownCards: null,
+        discardedCard: null,
       });
     };
     post(sbSeat, Number(input.smallBlind) || 0, 'sb');
@@ -565,6 +588,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
       stackAfter: null,
       showsMuck: false,
       shownCards: null,
+      discardedCard: null,
     });
   };
 
@@ -630,6 +654,13 @@ export function buildReplay(input: ReplayInput): ReplayModel {
       stackAfter: null,
       showsMuck: verb === 'fold' || verb === 'muck',
       shownCards: null,
+      /* PHASE 4 2026-09-01: the card this seat threw, and only ever the
+         viewer's own - `discardedCards` is populated straight from
+         `hand_discards`, whose RLS hands a client nothing but its own rows.
+         Undefined for every hand played before this shipped, so those rows
+         render exactly as they did. */
+      discardedCard:
+        verb === 'discard' ? discardedCardFor(a.userId || bySeat.get(seat)?.userId) : null,
     });
   });
   settleStreet();
@@ -729,6 +760,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
       stackAfter: null,
       showsMuck: false,
       shownCards: hole,
+      discardedCard: null,
     });
   }
 

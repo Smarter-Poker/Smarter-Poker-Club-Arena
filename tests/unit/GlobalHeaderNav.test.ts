@@ -100,9 +100,9 @@ describe('the bar stretches across the top', () => {
     // over the logo. The source crop starts at pixel 1111 of 1648, so that
     // exact ratio must keep scaling with the complete artwork plane.
     expect(controls).not.toContain('height: var(');
-    expect(profile).toContain('left: 67.415049%');
-    expect(1171 * (1111 / 1648)).toBeCloseTo(789.43, 2);
-    expect(390 * (1111 / 1648)).toBeCloseTo(262.92, 2);
+    expect(profile).toContain('left: 66.75%');
+    expect(1171 * 0.6675).toBeCloseTo(781.64, 2);
+    expect(390 * 0.6675).toBeCloseTo(260.33, 2);
   });
 
   it('is not capped by a max-width anywhere in the file', () => {
@@ -232,10 +232,11 @@ describe('the profile region shows the complete live profile picture', () => {
     expect(CSS).not.toContain('.profileFrameOverlay');
     const profileButton = ruleBody(CSS, '.profileBtn');
     expect(profileButton).toContain('contain: layout paint');
-    expect(profileButton).toContain('left: 67.415049%');
-    expect(profileButton).toContain('width: 5.946602%');
-    expect(profileButton).toContain('top: 19.642857%');
-    expect(profileButton).toContain('height: 60.714286%');
+    expect(profileButton).toContain('left: 66.75%');
+    expect(profileButton).toContain('width: 7.15%');
+    expect(profileButton).toContain('top: 13%');
+    expect(profileButton).toContain('height: 75%');
+    expect(profileButton).toContain('background: #000');
     expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('inset: 0 !important');
     expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('width: 100%');
     expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('height: 100%');
@@ -257,7 +258,7 @@ describe('VIP membership state', () => {
     expect(TSX_CODE).toContain('setVipShimmerVisible(false)');
     expect(CSS).toContain('.vipBtn:not(.vipActive)::after');
     expect(CSS).toContain('.vipShimmer::before');
-    expect(CSS).toContain('animation: vipHeaderShimmer 1s ease-in-out 1');
+    expect(CSS).toContain('animation: vipHeaderShimmer 1.25s cubic-bezier(0.2, 0.7, 0.25, 1) 1');
     expect(CSS).not.toContain('infinite');
   });
 });

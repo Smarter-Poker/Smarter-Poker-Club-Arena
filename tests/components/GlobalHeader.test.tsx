@@ -182,7 +182,7 @@ describe('GlobalHeader Component', () => {
       act(() => vi.advanceTimersByTime(1));
       expect(vip.className).toContain('vipShimmer');
 
-      act(() => vi.advanceTimersByTime(1_000));
+      act(() => vi.advanceTimersByTime(1_250));
       expect(vip.className).not.toContain('vipShimmer');
     } finally {
       random.mockRestore();

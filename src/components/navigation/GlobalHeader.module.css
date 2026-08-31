@@ -107,17 +107,18 @@
 }
 
 .profileBtn {
-  /* Exact source-pixel bounds of profile.png within the approved 1648×168
-     header. The live image covers that complete region so the baked stock icon
-     and decorative ring cannot remain visible around it. */
-  top: 19.642857%;
-  left: 67.415049%;
-  width: 5.946602%;
-  height: 60.714286%;
+  /* Cover the complete baked profile ornament, including its blue outer glow.
+     A smaller inner slot leaves the source ring visible around the live photo. */
+  top: 13%;
+  left: 66.75%;
+  width: 7.15%;
+  height: 75%;
   position: absolute !important;
   overflow: hidden;
   contain: layout paint;
   isolation: isolate;
+  border-radius: 0;
+  background: #000;
 }
 
 .profileAvatarSlot {
@@ -161,6 +162,7 @@
 .vipBtn {
   left: 79.9%;
   width: 6.5%;
+  overflow: hidden;
   isolation: isolate;
 }
 
@@ -180,41 +182,41 @@
    second only after a newly selected random 5–10 second pause. */
 .vipShimmer::before {
   position: absolute;
-  z-index: 2;
-  top: 7%;
-  bottom: 7%;
-  left: -85%;
-  width: 52%;
-  border-radius: 50%;
+  z-index: 3;
+  top: 2%;
+  bottom: 2%;
+  left: -65%;
+  width: 45%;
+  border-radius: 35%;
   background: linear-gradient(
-    108deg,
+    105deg,
     transparent 0%,
-    rgba(112, 198, 255, 0.12) 28%,
-    rgba(255, 255, 255, 0.92) 49%,
-    rgba(255, 220, 112, 0.42) 60%,
+    rgba(60, 165, 255, 0.22) 25%,
+    #fff 48%,
+    rgba(255, 224, 112, 0.95) 58%,
     transparent 100%
   );
+  box-shadow: 0 0 18px 7px rgba(56, 174, 255, 0.75);
   content: '';
-  filter: blur(1px);
+  filter: blur(0.4px);
   mix-blend-mode: screen;
-  opacity: 0;
   pointer-events: none;
-  animation: vipHeaderShimmer 1s ease-in-out 1;
+  animation: vipHeaderShimmer 1.25s cubic-bezier(0.2, 0.7, 0.25, 1) 1;
 }
 
 @keyframes vipHeaderShimmer {
   0% {
-    left: -85%;
+    left: -65%;
     opacity: 0;
   }
 
-  18%,
-  70% {
+  12%,
+  78% {
     opacity: 1;
   }
 
   100% {
-    left: 135%;
+    left: 125%;
     opacity: 0;
   }
 }

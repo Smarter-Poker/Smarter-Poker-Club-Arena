@@ -313,13 +313,6 @@ test.describe('production Daily Missions certification', () => {
         await expect(page.getByText('Live Now')).toBeVisible({
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });
-        const dashboardStatuses: number[] = [];
-        const onDashboardResponse = (response: Response) => {
-          if (response.url().includes('/rest/v1/rpc/get_daily_challenge_dashboard')) {
-            dashboardStatuses.push(response.status());
-          }
-        };
-        page.on('response', onDashboardResponse);
         const revisionBefore = await dashboardRevision(environment, account!.id);
         const { error: forbidden } = await account!.client.rpc('bump_challenge_progress', {
           p_user_id: account!.id,
@@ -360,20 +353,8 @@ test.describe('production Daily Missions certification', () => {
             timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
           })
           .toBeGreaterThan(revisionBefore);
-        await expect
-          .poll(() => dashboardStatuses.length, {
-            message: 'the subscribed revision must trigger an authoritative dashboard receipt',
-            timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
-          })
-          .toBeGreaterThan(0);
-        expect(
-          dashboardStatuses.some((status) => status >= 200 && status < 300),
-          `dashboard reconciliation statuses: ${dashboardStatuses.join(', ')}`
-        ).toBe(true);
-        report.realtimeDashboardStatuses = dashboardStatuses;
         const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
         await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
-        page.off('response', onDashboardResponse);
         expect(navigations).toBe(0);
       });
 

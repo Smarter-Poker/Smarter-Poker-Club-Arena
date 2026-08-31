@@ -103,14 +103,6 @@ const TIER_COLORS: Record<Tier, string> = {
 
 const TIERS: Tier[] = ['daily', 'weekly', 'monthly'];
 
-// A revision event is only a notification; the authoritative state still comes
-// from get_daily_challenge_dashboard. If that one receipt lands during a short
-// PostgREST/schema-cache outage, leaving the page stale until focus or midnight
-// turns a healthy realtime channel into a dead end. Retry only the event-driven
-// read, on a short bounded backoff. This is deliberately not background polling
-// and never repeats an economy mutation.
-const SILENT_RECOVERY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000] as const;
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // CARDS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -625,23 +617,11 @@ export default function DailyChallengesPage() {
   const lastResumeRefreshRef = useRef(0);
   const initialLoadSettledRef = useRef(false);
   const realtimeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const silentRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const realtimeStatusRef = useRef<'connecting' | 'live' | 'degraded'>('connecting');
 
   // ── Loaders ──
   const loadChallenges = useCallback(
-    async (
-      uid: string,
-      mode: 'initial' | 'refresh' | 'silent',
-      recoveryAttempt = 0
-    ): Promise<void> => {
-      // A newer event/manual request supersedes a pending recovery. A recovery
-      // invocation leaves its own timer alone until it either succeeds or
-      // schedules the next bounded attempt.
-      if (recoveryAttempt === 0 && silentRecoveryTimerRef.current) {
-        clearTimeout(silentRecoveryTimerRef.current);
-        silentRecoveryTimerRef.current = null;
-      }
+    async (uid: string, mode: 'initial' | 'refresh' | 'silent') => {
       const startedAt = performance.now();
       const requestId = ++loadRequestRef.current;
       if (mode === 'initial') {
@@ -660,10 +640,6 @@ export default function DailyChallengesPage() {
         setDiamondBalance(dashboard.diamondBalance);
         setRewardVault(dashboard.vault);
         setLoadError(null);
-        if (silentRecoveryTimerRef.current) {
-          clearTimeout(silentRecoveryTimerRef.current);
-          silentRecoveryTimerRef.current = null;
-        }
         const receiptTime = Date.parse(dashboard.syncedAt);
         const syncedAt = Number.isFinite(receiptTime) ? receiptTime : Date.now();
         lastSyncedAtRef.current = syncedAt;
@@ -693,16 +669,6 @@ export default function DailyChallengesPage() {
           setLoadError(
             'Mission Network Unavailable. Your Progress Is Safe - Retry The Secure Link.'
           );
-          if (mode === 'silent' && recoveryAttempt < SILENT_RECOVERY_DELAYS_MS.length) {
-            const delay = SILENT_RECOVERY_DELAYS_MS[recoveryAttempt];
-            if (silentRecoveryTimerRef.current) clearTimeout(silentRecoveryTimerRef.current);
-            silentRecoveryTimerRef.current = setTimeout(() => {
-              silentRecoveryTimerRef.current = null;
-              if (isMountedRef.current) {
-                void loadChallenges(uid, 'silent', recoveryAttempt + 1);
-              }
-            }, delay);
-          }
         }
       } finally {
         if (isMountedRef.current && requestId === loadRequestRef.current) {
@@ -824,7 +790,6 @@ export default function DailyChallengesPage() {
   useEffect(
     () => () => {
       if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
-      if (silentRecoveryTimerRef.current) clearTimeout(silentRecoveryTimerRef.current);
     },
     []
   );

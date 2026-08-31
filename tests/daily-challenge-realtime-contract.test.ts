@@ -34,12 +34,9 @@ describe('Daily Missions realtime and render-isolation contract', () => {
     expect(page).not.toContain("table: 'user_daily_challenges'");
   });
 
-  it('coalesces event bursts and bounds failed receipt recovery without UX polling', () => {
+  it('coalesces event bursts and never turns them into visible UX polling', () => {
     expect(page).toContain('scheduleRealtimeRefresh');
     expect(page).toContain("loadChallenges(userId, 'silent')");
-    expect(page).toContain('SILENT_RECOVERY_DELAYS_MS');
-    expect(page).toContain("loadChallenges(uid, 'silent', recoveryAttempt + 1)");
-    expect(page).toContain('recoveryAttempt < SILENT_RECOVERY_DELAYS_MS.length');
     expect(page).not.toContain("'CHALLENGE_PROGRESS_UPDATED'");
     expect(page).not.toMatch(/setInterval\s*\(/);
   });

@@ -59,30 +59,34 @@ const HTML_FILES = [
 const SERVER_SRC = join(ROOT, 'server/src');
 const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 'test-results']);
 /**
- * The files ALLOWED to contain these characters are the ones whose job is to
- * REMOVE them. On the first --fix run this script rewrote titleCase.ts's own
- * character class into `[--]` (a valid, meaningless range) and silently
- * disabled the stripper.
+ * A WHOLE-FILE EXEMPTION IS A SWEEP WHERE A GUARD BELONGS (2026-08-31, later).
  *
- * CORRECTED 2026-08-31. This note used to say titleCase.ts stored the
- * characters as escapes and that the exemption was therefore only a belt to
- * that pair of braces. That was false, and had been for some time:
- * titleCase.ts lines 87-88 hold them as LITERAL characters
- * in `EM_DASH_RUN` and `OTHER_DASHES`. The exemption is therefore still
- * load-bearing, not belt-and-braces - remove it and the next --fix run breaks
- * the stripper exactly as it did the first time. The same is true of
- * popupStyle.ts, lobbyEntries.ts and BBJBasicPanel.tsx, each of which holds a
- * dash class inside a normalising regex.
+ * Four files were skipped ENTIRELY: titleCase.ts, popupStyle.ts,
+ * BBJBasicPanel.tsx and lobbyEntries.ts. The reason was real: they are the code
+ * that REMOVES the character, so each holds a dash class inside a normalising
+ * regex, and on the first --fix run this script rewrote titleCase.ts's own
+ * class into `[--]` and silently disabled the stripper. An audit earlier today
+ * re-read all four and confirmed none of them shows a dash where a player can
+ * see it.
  *
- * Every one of these was re-read on 2026-08-31: none contains a dash in any
- * position a player can see. If that ever changes, the file has stopped being
- * a stripper and must come off this list.
+ * That audit is the problem. It was true on the day it was written and has to
+ * be re-done by hand every time anyone edits those files, because two of the
+ * four - BBJBasicPanel.tsx and lobbyEntries.ts - render copy a player reads.
+ * A `<span>Held in trust - 400</span>` added to either one would be invisible
+ * to this gate forever. That is the same shape as a cron watcher scoped to
+ * three job-name prefixes, or a definer sweep that a new view walks straight
+ * past: a list of the exceptions that happened to be true once.
+ *
+ * So the exemption is now the LINE, not the FILE. A regex literal in regex
+ * position holding a dash is the stripper's own machinery and is blanked before
+ * scanning; every string and JSX node in those four files is checked again.
+ * Blanking rather than filtering the report is deliberate: --fix takes its
+ * offsets from the same blanked copy, so the failure that broke titleCase.ts
+ * cannot come back through a second code path.
  */
 const SKIP_FILES = new Set([
-  'src/utils/titleCase.ts',
-  'src/utils/popupStyle.ts',
-  'src/components/bbj/BBJBasicPanel.tsx',
-  'src/components/lobby/lobbyEntries.ts',
+  // This gate's own PATTERN is a literal list of the characters, so it can only
+  // ever match itself. Nothing else belongs on this list.
   'scripts/ci/check-ui-text.mjs',
 ]);
 /**
@@ -111,6 +115,17 @@ const EM_DASHES_GLOBAL = new RegExp(PATTERN, 'gi');
 
 const fix = process.argv.includes('--fix');
 
+/**
+ * A regex literal in regex position that carries a dash is the code that
+ * strips the character, never copy that shows it: a dash character class in a
+ * normalising replace. Required to sit where a regex can legally begin
+ * (after = ( , [ : ! & | ? { ; return, or at the start of a line) so that a
+ * date or a fraction in JSX text is not mistaken for one, and required to hold
+ * a dash at all so ordinary regexes are untouched. Blanked, not skipped: --fix
+ * reads its offsets from this same copy.
+ */
+const REGEX_LITERAL = /(^|[=(,[:!&|?{;\n]|\breturn)(\s*)(\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n[])+\/[gimsuy]*)/g;
+
 /** Strip comments so the scan only sees code and copy. */
 function stripComments(source, isCss, isHtml) {
   let out = source;
@@ -122,6 +137,10 @@ function stripComments(source, isCss, isHtml) {
   if (!isCss) {
     // Line comments, but not the // inside a URL like https://
     out = out.replace(/(^|[^:])\/\/[^\n]*/g, (m, p1) => p1 + ' '.repeat(m.length - p1.length));
+    // ...then the strippers' own regexes, which by now cannot be comment text.
+    out = out.replace(REGEX_LITERAL, (m, pre, gap, body) =>
+      EM_DASHES.test(body) ? pre + gap + ' '.repeat(body.length) : m
+    );
   }
   return out;
 }

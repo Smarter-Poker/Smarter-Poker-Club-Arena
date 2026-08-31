@@ -82,7 +82,12 @@ describe('a listing only counts if a player could sit at it', () => {
 
   it('will not treat a table-less seat-first game as covering its price point', () => {
     expect(service).toMatch(/joinability read failed/);
-    expect(service).toMatch(/withTable\.has\(r\.id\)/);
+    /* PIN MOVED 2026-08-31, NOT WEAKENED — see the twin assertion in
+       todaysIncidentsStayFixed.test.ts. #2054 renamed `withTable` to
+       `withJoinableTable` and tightened it (a CLOSED table stops counting
+       too). Same law, stronger mechanism; that rename shipped without moving
+       the pins and left main red until this commit. */
+    expect(service).toMatch(/withJoinableTable\.has\(r\.id\)/);
   });
 });
 

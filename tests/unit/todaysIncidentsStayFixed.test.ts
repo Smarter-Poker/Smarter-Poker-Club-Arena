@@ -117,7 +117,16 @@ describe('44 of 50 Spins and Heads-Ups could never be joined', () => {
 
   it('will not count a game with no table as covering its price point', () => {
     // One dead REGISTERING row wedged one price point permanently.
-    expect(recurring).toMatch(/withTable\.has\(r\.id\)/);
+    //
+    // PIN MOVED 2026-08-31, NOT WEAKENED. #2054 ("a closed table is not a
+    // joinable table") renamed `withTable` to `withJoinableTable` and made it
+    // stricter: a table that exists but is CLOSED no longer counts either. The
+    // law this test states is unchanged — a listing only counts if a player
+    // could actually sit at it — and the new set enforces it more tightly.
+    // That rename shipped without moving these pins, which left main red from
+    // #2054 until now. House rule 8 says the pin moves in the same commit as
+    // the behaviour it guards; this is that debt paid.
+    expect(recurring).toMatch(/withJoinableTable\.has\(r\.id\)/);
   });
 
   it('keeps a floor of horses for the cash room', () => {

@@ -116,7 +116,13 @@ describe('Save and Start both create tables the engine can adopt', () => {
   it('the Cap toggle now carries an amount the engine can enforce', () => {
     // cap_enabled alone is not a cap: the engine computes the ceiling from
     // cap_bb and treats <= 0 as uncapped.
-    expect(page).toContain('cap_bb: config.capEnabled ? config.capBB : 0');
+    /* 2026-08-31: the expression gained a `!limitGame &&` guard, so this now
+       asserts the RULE rather than one spelling of it. A fixed-limit table
+       cannot carry a cap at all — ServerTableEngineTurns assigns the mandatory
+       fixed size and THEN clamps it with `Math.min(amount, capRemaining)`,
+       which can emit a wager that is not a legal size. The amount is still
+       forced to 0 whenever the cap is not written. */
+    expect(page).toMatch(/cap_bb:\s*!limitGame && config\.capEnabled \? config\.capBB : 0/);
   });
 });
 

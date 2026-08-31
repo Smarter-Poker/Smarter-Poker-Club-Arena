@@ -50,8 +50,8 @@ describe('ActionPanel - main panel ALL IN', () => {
     render(<ActionPanel {...baseProps} canRaise={false} confirmAllIn onAction={onAction} />);
     fireEvent.click(screen.getByLabelText('All In'));
     expect(screen.queryByText(/CONFIRM ALL-IN/i)).toBeNull();
-    expect(screen.queryByLabelText(/Confirm all in/i)).toBeNull();
-    expect(screen.queryByLabelText(/Cancel all in/i)).toBeNull();
+    expect(screen.queryByLabelText(/Confirm All In/i)).toBeNull();
+    expect(screen.queryByLabelText(/Cancel All In/i)).toBeNull();
   });
 
   it('sends the real all-in amount, not the pot cap', () => {

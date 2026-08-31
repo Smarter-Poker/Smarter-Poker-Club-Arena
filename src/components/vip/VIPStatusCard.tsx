@@ -61,7 +61,7 @@ export const VIPStatusCard: React.FC<VIPStatusCardProps> = ({
             <span className="progress-text">
               {currentPoints >= nextTierPoints
                 ? 'Max Tier Reached!'
-                : `${(nextTierPoints - currentPoints).toLocaleString()} ${pointsLabel.toLowerCase()} To Next Tier`}
+                : `${(nextTierPoints - currentPoints).toLocaleString()} ${pointsLabel} To Next Tier`}
             </span>
           </div>
         )}

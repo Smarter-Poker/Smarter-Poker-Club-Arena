@@ -263,7 +263,7 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
         <h3>Session History</h3>
         <p className="session-subtitle">
           {allSessions.length > 0
-            ? `${sessions.length} sessions${dateRange !== 'all' ? ` (${dateRange === '7d' ? 'Last 7 Days' : 'Last 30 Days'})` : ''}`
+            ? `${sessions.length} Sessions${dateRange !== 'all' ? ` (${dateRange === '7d' ? 'Last 7 Days' : 'Last 30 Days'})` : ''}`
             : 'No Sessions Yet'}
         </p>
       </div>

@@ -675,9 +675,9 @@ export default function TournamentLobbyPage() {
       // Already started or completed
       return { label: 'Now', order: 0 };
     } else if (diffMins < 30) {
-      return { label: 'Starting Soon (< 30 min)', order: 1 };
+      return { label: 'Starting Soon (< 30 Min)', order: 1 };
     } else if (diffMins < 120) {
-      return { label: 'Next Hour (30 min - 2 hours)', order: 2 };
+      return { label: 'Next Hour (30 Min - 2 Hours)', order: 2 };
     } else if (diffHours < 6) {
       return { label: 'Later Today', order: 3 };
     } else if (diffHours < 24) {

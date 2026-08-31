@@ -1340,7 +1340,7 @@ export default function DynamicWallet({
       icon: 'bank',
       value: animUnionBank,
       known: unionFiguresKnown,
-      hint: unionFiguresKnown ? 'Send or Pull Chips From Clubs & Members' : 'Union Admins Only',
+      hint: unionFiguresKnown ? 'Send Or Pull Chips From Clubs & Members' : 'Union Admins Only',
       onOpen: () => onOpenUnionBank?.(data.unionBank || 0),
     },
     {

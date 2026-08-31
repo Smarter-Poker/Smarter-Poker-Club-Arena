@@ -202,10 +202,10 @@ const GAME_SORTS: Array<{ id: GameSort; label: string }> = [
 type PlayerSort = 'winners' | 'losers' | 'rake' | 'hands';
 
 const PLAYER_SORTS: Array<{ id: PlayerSort; label: string }> = [
-  { id: 'winners', label: 'Biggest winners' },
-  { id: 'losers', label: 'Biggest losers' },
-  { id: 'rake', label: 'Most rake' },
-  { id: 'hands', label: 'Most hands' },
+  { id: 'winners', label: 'Biggest Winners' },
+  { id: 'losers', label: 'Biggest Losers' },
+  { id: 'rake', label: 'Most Rake' },
+  { id: 'hands', label: 'Most Hands' },
 ];
 
 const REFRESH_MS = 60_000;
@@ -1966,7 +1966,7 @@ export default function ClubDataPage() {
           <div className={styles.invoiceMeta}>
             {String(latestInvoice.period_start || '').slice(0, 10)} To{' '}
             {String(latestInvoice.period_end || '').slice(0, 10)}
-            {latestInvoice.due_at ? ` - Due ${String(latestInvoice.due_at).slice(0, 10)}` : ''}
+            {latestInvoice.due_at ? ` - due ${String(latestInvoice.due_at).slice(0, 10)}` : ''}
             {latestInvoice.status ? ` - ${invoiceStatusLabel(latestInvoice.status)}` : ''}
           </div>
 
@@ -2446,7 +2446,7 @@ export default function ClubDataPage() {
                   : '';
               })()}
               {players.player_count > sortedPlayers.length
-                ? ` Showing ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)} Players, Ordered By ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label.toLowerCase() || 'Server Rank'}.`
+                ? ` Showing ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)} Players, Ordered By ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label || 'Server Rank'}.`
                 : ''}
             </div>
           )}
@@ -2472,7 +2472,7 @@ export default function ClubDataPage() {
           {clubName ? `${clubName} - ` : ''}
           Showing {compactInt(snapshot.rows.length)} Of {compactInt(snapshot.row_count)} Games
           {snapshot.data_updated_at
-            ? ` - Cash Data Updated ${utcTime(snapshot.data_updated_at)}`
+            ? ` - cash data updated ${utcTime(snapshot.data_updated_at)}`
             : ''}
         </div>
       )}

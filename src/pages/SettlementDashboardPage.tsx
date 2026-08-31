@@ -426,7 +426,7 @@ export default function SettlementDashboardPage() {
     }
     if (
       !(await confirmDialog({
-        title: 'Settle pending rakeback now',
+        title: 'Settle Pending Rakeback Now',
         message: `Settle ${pending} pending rakeback period(s) across ${rakebackStatus?.pendingClubs ?? 0} club(s), paying out ~${owed.toLocaleString()} chips? This is idempotent - it can't pay the same period twice.`,
         confirmText: 'Settle now',
         variant: 'default',

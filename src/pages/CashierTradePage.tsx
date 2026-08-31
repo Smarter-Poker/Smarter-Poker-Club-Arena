@@ -2397,7 +2397,7 @@ export default function CashierTradePage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search Members"
-              aria-label={`Search ${downline.length} member${downline.length === 1 ? '' : 's'}`}
+              aria-label={`Search ${downline.length} Member${downline.length === 1 ? '' : 's'}`}
             />
             <span className={styles.memberCount} aria-hidden="true">
               {downline.length}

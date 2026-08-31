@@ -185,7 +185,7 @@ export default function ActivityHeatmap({
                   role={cell ? 'button' : undefined}
                   aria-label={
                     cell
-                      ? `${cell.count} action${cell.count !== 1 ? 's' : ''} On ${cell.date}`
+                      ? `${cell.count} Action${cell.count !== 1 ? 's' : ''} On ${cell.date}`
                       : undefined
                   }
                   onMouseEnter={(e) => showCell(e.currentTarget, cell)}

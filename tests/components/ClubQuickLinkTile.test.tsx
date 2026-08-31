@@ -124,7 +124,7 @@ describe('ClubQuickLinkTile', () => {
     fireEvent.contextMenu(screen.getByRole('button', { name: /Hold To Choose A Wallet/ }));
     expect(screen.getByRole('menu')).toBeInTheDocument();
     expect(
-      await screen.findByText(new RegExp(`${(1234).toLocaleString()} chips`, 'i'))
+      await screen.findByText(new RegExp(`${(1234).toLocaleString()} Chips`, 'i'))
     ).toBeInTheDocument();
     await user.click(screen.getByRole('menuitem', { name: /Bravo Club/ }));
     expect(onSelect).toHaveBeenCalledWith(B);

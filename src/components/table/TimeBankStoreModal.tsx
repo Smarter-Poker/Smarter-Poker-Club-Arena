@@ -89,7 +89,7 @@ export const TimeBankStoreModal: React.FC<TimeBankStoreModalProps> = ({
         </h3>
         <p className="tbs-body">
           {banksRemaining > 0
-            ? `You Have ${banksRemaining} bank${banksRemaining === 1 ? '' : 's'} Left. Each One Adds ${bankSeconds} Seconds To Your Clock.`
+            ? `You Have ${banksRemaining} Bank${banksRemaining === 1 ? '' : 's'} Left. Each One Adds ${bankSeconds} Seconds To Your Clock.`
             : `You Have No Time Banks Left. Each One Adds ${bankSeconds} Seconds To Your Clock When The Shot Clock Runs Out.`}
         </p>
 

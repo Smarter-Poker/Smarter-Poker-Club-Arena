@@ -67,25 +67,25 @@ export function RewardsWorkspacePage() {
       description="A Single Route Into Every Live Balance, Benefit, Offer, And Earned Milestone."
       art="assets/club-buttons/wallets/square/wallet-diamonds-square-v1.webp"
       links={[
-        { label: 'Wallet', description: 'Balances, transfers, and ledger', path: '/wallet' },
+        { label: 'Wallet', description: 'Balances, Transfers, And Ledger', path: '/wallet' },
         {
           label: 'Transactions',
-          description: 'Complete account transaction history',
+          description: 'Complete Account Transaction History',
           path: '/transactions',
         },
-        { label: 'VIP Status', description: 'Tier, benefits, and progress', path: '/vip' },
-        { label: 'Rakeback', description: 'Current rate and payment history', path: '/rakeback' },
-        { label: 'Promotions', description: 'Live and upcoming offers', path: '/promotions' },
-        { label: 'Bonuses', description: 'Available bonus inventory', path: '/bonuses' },
+        { label: 'VIP Status', description: 'Tier, Benefits, And Progress', path: '/vip' },
+        { label: 'Rakeback', description: 'Current Rate And Payment History', path: '/rakeback' },
+        { label: 'Promotions', description: 'Live And Upcoming Offers', path: '/promotions' },
+        { label: 'Bonuses', description: 'Available Bonus Inventory', path: '/bonuses' },
         {
           label: 'Achievements',
-          description: 'Milestones, badges, and unlock progress',
+          description: 'Milestones, Badges, And Unlock Progress',
           path: '/achievements',
         },
-        { label: 'Challenges', description: 'Daily objectives and progress', path: '/challenges' },
+        { label: 'Challenges', description: 'Daily Objectives And Progress', path: '/challenges' },
         {
           label: 'Marketplace',
-          description: 'Diamonds, membership, cosmetics, and owned items',
+          description: 'Diamonds, Membership, Cosmetics, And Owned Items',
           path: '/marketplace',
         },
       ]}
@@ -103,38 +103,38 @@ export function CommunityWorkspacePage() {
       links={[
         {
           label: 'Discover',
-          description: 'Search live players, clubs, tables, and tournaments',
+          description: 'Search Live Players, Clubs, Tables, And Tournaments',
           path: '/search',
           signal: 'Live',
         },
         {
           label: 'Friends',
-          description: 'Trusted connections, presence, and direct actions',
+          description: 'Trusted Connections, Presence, And Direct Actions',
           path: '/friends',
         },
         {
           label: 'Requests',
-          description: 'Review incoming connection requests',
+          description: 'Review Incoming Connection Requests',
           path: '/friends?tab=requests',
         },
         {
           label: 'Activity',
-          description: 'Shared achievements, hands, and network discovery',
+          description: 'Shared Achievements, Hands, And Network Discovery',
           path: '/friends?tab=activity',
         },
         {
           label: 'Challenges',
-          description: 'Head-to-head social missions and progress',
+          description: 'Head-To-Head Social Missions And Progress',
           path: '/friends?tab=challenges',
         },
         {
           label: 'Messages',
-          description: 'Continue in Smarter.Poker Messenger',
+          description: 'Continue In Smarter.Poker Messenger',
           path: '/messages',
         },
         {
           label: 'Union Network',
-          description: 'Browse and operate connected club networks',
+          description: 'Browse And Operate Connected Club Networks',
           path: '/unions',
         },
       ]}
@@ -152,33 +152,33 @@ export function PlayWorkspacePage() {
       links={[
         {
           label: 'Tournaments',
-          description: 'Scheduled, registering, and live events',
+          description: 'Scheduled, Registering, And Live Events',
           path: '/tournaments',
           signal: 'Live',
         },
         {
           label: 'Tournament Results',
-          description: 'Finishes, prizes, and completed fields',
+          description: 'Finishes, Prizes, And Completed Fields',
           path: '/tournament-results',
         },
         {
           label: 'My Spin Results',
-          description: 'Your Spin finishes and prizes',
+          description: 'Your Spin Finishes And Prizes',
           path: '/tournament-results?filter=mine&type=spin',
         },
         {
           label: 'Hand History',
-          description: 'Review, replay, and share completed hands',
+          description: 'Review, Replay, And Share Completed Hands',
           path: '/hand-history',
         },
         {
           label: 'Session History',
-          description: 'Session-level results and performance',
+          description: 'Session-Level Results And Performance',
           path: '/session-history',
         },
         {
           label: 'Leaderboards',
-          description: 'Club and global competitive rankings',
+          description: 'Club And Global Competitive Rankings',
           path: '/leaderboard',
         },
       ]}
@@ -196,25 +196,25 @@ export function LegalWorkspacePage() {
       links={[
         {
           label: 'Fair Gaming',
-          description: 'Integrity, security, and reporting',
+          description: 'Integrity, Security, And Reporting',
           path: '/legal/fair-gaming',
         },
         {
           label: 'Terms Of Service',
-          description: 'Platform and account terms',
+          description: 'Platform And Account Terms',
           path: '/legal/tos',
         },
         {
           label: 'Privacy Policy',
-          description: 'Data use, retention, and controls',
+          description: 'Data Use, Retention, And Controls',
           path: '/legal/privacy',
         },
         {
           label: 'Promotion Rules',
-          description: 'Eligibility and campaign terms',
+          description: 'Eligibility And Campaign Terms',
           path: '/legal/promotions',
         },
-        { label: 'Help Center', description: 'Product help and support paths', path: '/help' },
+        { label: 'Help Center', description: 'Product Help And Support Paths', path: '/help' },
       ]}
     />
   );

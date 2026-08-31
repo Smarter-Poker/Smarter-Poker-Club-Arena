@@ -8,14 +8,14 @@ describe('activation telemetry never blocks the first paint', () => {
   it('loads the funnel tracker dynamically instead of in the entry graph', () => {
     expect(main).not.toContain("import { startFunnelTracker } from './lib/funnelTracker'");
     expect(main).toContain("import('./lib/funnelTracker')");
+    expect(main).toContain("importWithRetry(() => import('./lib/funnelTracker'))");
   });
 
   it('recovers stale tracker chunks before reporting a non-blocking error', () => {
     expect(main).toContain(
-      ".catch((err) => handleBootImportError(err, 'main.FunnelTracker_init_error_non_blocking'))"
+      ".catch((err) => reportDeferredImportFailure(err, 'main.FunnelTracker_init_error_non_blocking'))"
     );
-    expect(main).toContain('void recoverFromStaleChunk(error).then((recovering) => {');
-    expect(main).toContain('if (!recovering) reportError(error, context);');
+    expect(main).toContain('installVitePreloadErrorRecovery();');
   });
 });
 
@@ -24,13 +24,19 @@ describe('membership warming starts without entering the critical graph', () => 
     expect(main).not.toContain("import { warmUserMemberships } from './services/ClubsService'");
     expect(main).toContain('if (hasLocalSession())');
     expect(main).toContain("import('./services/ClubsService')");
+    expect(main).toContain("importWithRetry(() => import('./services/ClubsService'))");
   });
 
   it('recovers stale membership chunks before reporting a non-blocking error', () => {
     expect(main).toContain(
-      ".catch((err) => handleBootImportError(err, 'main.Membership_warm_start_non_blocking'))"
+      ".catch((err) => reportDeferredImportFailure(err, 'main.Membership_warm_start_non_blocking'))"
     );
-    expect(main).toContain('void recoverFromStaleChunk(error).then((recovering) => {');
-    expect(main).toContain('if (!recovering) reportError(error, context);');
+    expect(main).toContain('installVitePreloadErrorRecovery();');
+  });
+
+  it('retries only recognized stale assets and keeps genuine code failures hard', () => {
+    expect(main).toContain('if (isChunkLoadError(error))');
+    expect(main).toContain('reportWarning(');
+    expect(main).toContain('reportError(error, context)');
   });
 });

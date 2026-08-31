@@ -25,6 +25,30 @@ const RELOAD_KEY = STORAGE_KEYS.CHUNK_RELOAD;
 const MAX_RELOADS = 2; // Max full-page reloads before giving up
 let recoveryStarted = false;
 
+/**
+ * Retry a deferred, non-render-blocking module during an atomic publish.
+ * Unlike lazyWithRetry, this never reloads the page: callers use it for boot
+ * warmers and telemetry that must not interrupt a usable route.
+ */
+export async function importWithRetry<T>(
+  importFn: () => Promise<T>,
+  retries = 4,
+  baseDelayMs = 500
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    try {
+      return await importFn();
+    } catch (error) {
+      lastError = error;
+      if (!isChunkLoadError(error) || attempt === retries - 1) throw error;
+      const delay = Math.min(baseDelayMs * 2 ** attempt, 4_000);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError;
+}
+
 function getReloadCount(): number {
   try {
     return parseInt(sessionStorage.getItem(RELOAD_KEY) || '0', 10);

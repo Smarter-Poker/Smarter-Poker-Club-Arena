@@ -2230,6 +2230,7 @@ export default function CashierTradePage() {
         className={styles.tabs}
         role="tablist"
         aria-label="Cashier Actions"
+        aria-busy={!roleResolved}
         onKeyDown={(event) => {
           if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();

@@ -1340,7 +1340,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         : prevButtonSeat > 0
           ? this.getNextSeat(prevButtonSeat, buttonRoster)
           : buttonSeats[0];
-    if (headsUpFirstButton !== null) {
+    if (headsUpFirstButton !== null && this.isTournamentTable()) {
       /**
        * PERSISTED, OR A RESTART RE-DRAWS IT. `lastButtonSeat` is memory only
        * and there is no settled hand for restoreButtonFromHistory to read, so
@@ -1351,6 +1351,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
        * .restoreDrawnFirstButtons re-applies it on resume for any tournament
        * table that has not yet settled a hand. Fire-and-forget with a warning:
        * losing the persist costs a re-draw, refusing to deal costs the game.
+       *
+       * TOURNAMENT TABLES ONLY, because that manager is the only reader of
+       * the column -- nothing else in the repo selects it. A cash table
+       * restarting before its first hand re-draws instead, which is fair
+       * (no hand has been played), and a column written by one path and read
+       * by none is the "declared 37 times, read by var() exactly zero times"
+       * shape this codebase has already been bitten by.
        */
       void Promise.resolve(
         supabase
@@ -1507,10 +1514,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // roster is built with `is_sitting_out: false`, so the two walks agree.
     const sbSeat = players.length === 2 ? dealerSeat : this.getNextSeat(dealerSeat, players);
     const bbSeat = this.getNextSeat(sbSeat, players);
-    // The anchor the heads-up dead-button rule above reads on the NEXT hand.
-    // Written here, off the one shared computation, so it can never disagree
-    // with the seat that actually posted.
-    this.lastBigBlindSeat = bbSeat;
 
     // Bible V8 §4.4: Process straddles before hand starts
     let straddleResults: { seat: number; amount: number }[] = [];
@@ -1850,6 +1853,29 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     //
     // noteBlindChargedWhileAway is a no-op for a player who is present, so
     // every branch below is safe to call unconditionally.
+    /**
+     * THE BIG BLIND ANCHOR, RECORDED ONLY WHEN A BIG BLIND IS ACTUALLY POSTED
+     * (2026-08-31, audit of my own Phase 2 commit).
+     *
+     * The heads-up dead-button rule reads `lastBigBlindSeat` on the NEXT hand
+     * to decide who posts next. It was written beside the shared sb/bb
+     * computation above, which runs on every hand -- including a bomb pot,
+     * where HandController calls postBombPotAntes and returns BEFORE
+     * postBlinds(), so nobody posts a blind at all. The very next block skips
+     * its away-blind charge for exactly that reason and says so.
+     *
+     * Recording a big blind that was never posted walks the anchor one seat
+     * too far, and on the following hand the rule would hand the big blind
+     * back to the player who last really paid it -- reintroducing, at a
+     * two-handed bomb-pot table, the bug this rule exists to remove.
+     *
+     * `bombPotConfig` is only decided further up, which is why this sits here
+     * rather than beside the computation it copies.
+     */
+    if (!bombPotConfig) {
+      this.lastBigBlindSeat = bbSeat;
+    }
+
     if (!this.isTournamentTable() && !bombPotConfig && players.length >= 2) {
       const chargeBlind = (seatNumber: number, which: 'sb' | 'bb') => {
         const occupant = players.find((p) => p.seat_number === seatNumber);

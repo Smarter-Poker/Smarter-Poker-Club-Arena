@@ -97,6 +97,36 @@ export function setGtoPostflop(rows: GtoPostflopRow[]): number {
   return n;
 }
 
+/**
+ * V32 (2026-08-30): the WHOLE cell, for the facing-defence layer. Reading a
+ * single hand's mix answers "what do I do"; reading the whole matrix from
+ * the BETTOR's seat answers "what does a bet at this size mean" — the
+ * per-holding bet frequencies ARE the betting range. Same family/depth
+ * fallback discipline as gtoStreetAdvice, texture never substituted.
+ */
+export function gtoV30CellMatrix(
+  street: string,
+  family: 'cash' | 'spin' | 'tourney_icm' | 'tourney_ev',
+  position: string,
+  depth: number,
+  texture: string
+): Record<string, Record<string, number>> | null {
+  const families: string[] =
+    family === 'tourney_icm'
+      ? ['tourney_icm', 'tourney_ev']
+      : family === 'tourney_ev'
+        ? ['tourney_ev']
+        : [family];
+  const depths = [depth, ...DEPTH_BUCKETS.filter((d) => d !== depth)].slice(0, 2);
+  for (const fam of families) {
+    for (const d of depths) {
+      const m = store.get(key(street, fam, position, d, texture));
+      if (m) return m;
+    }
+  }
+  return null;
+}
+
 export function gtoPostflopCount(): number {
   return store.size;
 }

@@ -22,9 +22,29 @@
   background: #000;
 }
 
+/*
+ * IN-FLOW CLEARANCE FOR EVERY FIXED STRIP UNDER THE HEADER.
+ *
+ * It began as the pinned action bar's slot, which is why it is named for it,
+ * and it now also carries the MTT ticker.
+ *
+ * The ticker needed it (2026-08-30 audit). The bar's clearance only exists
+ * while `body[data-ca-pinned-bar='1']` is set - i.e. while a table is open -
+ * so in a lobby with NO tables open nothing reserved the ticker's band at all,
+ * and a live ticker sat on top of the first 34px of the club card. That is the
+ * strip Dan had raised to sit "1 pixel under where the ticker runs through
+ * under the global header" on 2026-08-24: the layout was already written as if
+ * this reservation existed.
+ *
+ * `--mtt-ticker-h` is absent unless a ticker is actually on screen, so this
+ * costs nothing on a quiet schedule. The pinned rule below spends
+ * `--ca-pinned-bar-offset`, which MultiTablePage.css already defines as
+ * `calc(48px + var(--mtt-ticker-h, 0px))` - one slot, both strips, counted
+ * once each.
+ */
 .pinnedActionBarClearance {
-  flex: 0 0 0;
-  height: 0;
+  flex: 0 0 var(--mtt-ticker-h, 0px);
+  height: var(--mtt-ticker-h, 0px);
   pointer-events: none;
 }
 

@@ -2198,7 +2198,14 @@ describe('HorseLogic V10 — strategy layer', () => {
         rand: () => 0.5,
       });
     expect(iso(0.06).a).toBe('raiseTo'); // V10 attacks the limp
-    expect(iso(0).a).toBe('call'); // legacy: limp behind the same hand
+    // Was 'call' — this hand (strength 0.42) used to limp behind whenever it
+    // came within 0.12 of the opening bar. That branch WAS the limp-fold
+    // engine: measured over 596 tournament hands, 91.5% of limps that later
+    // faced a raise folded. Limping behind now requires a hand that can
+    // CONTINUE against a raise (>= 0.5), and 0.42 cannot, so it folds.
+    // The property this test exists for is untouched: the iso widen is what
+    // turns a non-raise into a raise.
+    expect(iso(0).a).toBe('fold');
   });
 
   it('V10 decisions stay legal across randomized states in every variant', () => {

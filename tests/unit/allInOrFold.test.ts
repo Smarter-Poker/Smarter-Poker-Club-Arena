@@ -144,9 +144,15 @@ describe('AoF: engine wiring (source pins)', () => {
 
   it('horse decisions are coerced: non-fold becomes the all-in at AoF tables', () => {
     const turns = read('server/src/engine/ServerTableEngineTurns.ts');
-    const at = turns.indexOf('all_in_or_fold');
-    expect(at).toBeGreaterThan(-1);
-    const block = sliceEnclosingBlock(turns, 'all_in_or_fold');
+    /* 2026-08-30: anchored on the bare string 'all_in_or_fold', whose FIRST
+       occurrence used to be the coercion site itself. The V28 sitting-out
+       work added an earlier, unrelated mention (telemetry), the anchor
+       drifted onto it, and this pin went red while the coercion it guards
+       had not changed by a character. Anchor on the coercion's own unique
+       condition so no earlier mention can ever steal it again. */
+    const anchor = "all_in_or_fold && currentState.stage === 'preflop'";
+    expect(turns.indexOf(anchor)).toBeGreaterThan(-1);
+    const block = sliceEnclosingBlock(turns, anchor);
     expect(block).toMatch(/action !== 'fold'/);
     expect(block).toMatch(/action = 'all_in'/);
   });

@@ -192,6 +192,10 @@
 
 .multi-table-page__tab-bar-wrapper {
   display: flex;
+  /* Reserve the right-edge band the fixed 4-square button occupies (40px +
+     6px inset + breathing room), so the tab strip and the profit chip can
+     never slide underneath it. */
+  padding-right: 50px;
   /* Dan 2026-08-28: "the profit tracker and the 4 screen box need to be
      lowered down so the 4 screen box is touching the top of where the table
      meets." `center` floated both chips in the middle of the bar's full
@@ -353,22 +357,46 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
    TILE TOGGLE BUTTON
    ───────────────────────────────────────────────────────────────────────────── */
 
+/* Dan 2026-08-30: the 4-square button is FIXED on the right edge - the mirror
+   of the hamburger trigger on the left - and the same 40px square that
+   .table-menu__trigger paints (TableMenu.css), wearing the brushed-metal
+   four-screen artwork. Vertically it sits in the tab-bar band, below the
+   action ticker when one is up (--mtt-ticker-h, 0px otherwise). With fewer
+   than 2 tables it stays put but is inert and dimmed - the position is a
+   fixture, the function needs a second table. */
 .tile-toggle-btn {
-  width: 28px;
-  height: 28px;
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + var(--mtt-ticker-h, 0px) + 5px);
+  right: 6px;
+  z-index: 210;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 10px;
   border: none;
-  background: rgba(255, 255, 255, 0.08);
+  background: transparent;
+  padding: 0;
   color: rgba(255, 255, 255, 0.6);
   cursor: pointer;
-  transition:
-    background 0.15s,
-    color 0.15s;
+  transition: opacity 0.15s;
   flex-shrink: 0;
-  margin-right: 6px;
+}
+
+.tile-toggle-btn--inert {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.tile-toggle-btn__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -423,14 +451,9 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   }
 
   .tile-toggle-btn {
-    /* 2026-08-23: 36px was still under the 44px tap minimum */
-    min-height: 44px;
-    min-width: 44px;
+    /* The 40px square matches the hamburger; touch-action stays for taps.
+       (It is fixed-positioned now, so it no longer eats tab-strip budget.) */
     touch-action: manipulation;
-    /* Dan 2026-08-25: the tab strip beside this has to hold four tables at
-       375px, and the base 6px right margin was 6px of that budget. The 44px
-       tap target is untouched — only the empty space next to it. */
-    margin-right: 2px;
   }
 
   /* The strip is the thing that must survive a narrow screen, so give it every

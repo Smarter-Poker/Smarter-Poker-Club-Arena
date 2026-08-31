@@ -274,6 +274,19 @@
 
 .tournament-details .details-content {
   position: relative;
+  /* Dan 2026-08-30: "EACH PAGE NEEDS TO BE SCROLLABLE UP AND DOWN. YOU
+     CURRENTLY CAN'T." The one-scroller contract lives on the base
+     `.details-content` (TournamentDetails.css) — but this compound selector
+     outranks it, so any property a future skin adds here can silently cost
+     the scrollbar, and there is no pin on load order. The scroll contract is
+     therefore restated AT THE WINNING SPECIFICITY: this box scrolls, its
+     children do not clip it. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 10px 12px;
   background:
     radial-gradient(circle at 50% 0, rgba(22, 139, 255, 0.075), transparent 34%),

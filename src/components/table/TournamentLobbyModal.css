@@ -30,7 +30,9 @@
   background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: stretch;
-  justify-content: flex-start;
+  /* Dan 2026-08-30: "JUST OPENS RIGHT TO LEFT AS A 3/4 PAGE POP UP" - the
+     panel hangs on the RIGHT edge and slides in leftward. */
+  justify-content: flex-end;
 }
 
 .tlm-panel {
@@ -49,15 +51,15 @@
     var(--club-surface, #111318) 0%,
     var(--club-black, #050507) 100%
   );
-  border-right: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
-  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.5);
+  border-left: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.5);
   color: var(--text-primary, #ffffff);
   animation: tlmSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes tlmSlideIn {
   from {
-    transform: translateX(-2%);
+    transform: translateX(6%);
     opacity: 0;
   }
   to {
@@ -145,7 +147,7 @@
     min-width: 0;
     height: 75vh;
     height: 75dvh;
-    border-right: none;
+    border-left: none;
     border-radius: 18px 18px 0 0;
     box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5);
     animation: tlmSlideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);

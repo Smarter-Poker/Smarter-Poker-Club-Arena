@@ -188,6 +188,36 @@ export function setGtoPostflopV31(rows: GtoPostflopV31Row[]): number {
   return n;
 }
 
+/**
+ * V32 (2026-08-30): the whole suit-aware cell for the facing-defence layer.
+ * The board argument exists only for signature symmetry with the V30 getter's
+ * caller; keying is identical to gtoStreetAdviceV31 (texture from the board,
+ * never substituted).
+ */
+export function gtoV31CellMatrix(
+  street: string,
+  family: 'cash' | 'spin' | 'tourney_icm' | 'tourney_ev',
+  position: string,
+  depth: number,
+  texture: string,
+  _board: Card[]
+): Record<string, Record<string, number>> | null {
+  const families: string[] =
+    family === 'tourney_icm'
+      ? ['tourney_icm', 'tourney_ev']
+      : family === 'tourney_ev'
+        ? ['tourney_ev']
+        : [family];
+  const depths = [depth, ...DEPTH_BUCKETS.filter((d) => d !== depth)].slice(0, 2);
+  for (const fam of families) {
+    for (const d of depths) {
+      const cell = store.get(key(street, fam, position, d, texture));
+      if (cell) return cell.matrix;
+    }
+  }
+  return null;
+}
+
 export function gtoPostflopV31Count(): number {
   return store.size;
 }

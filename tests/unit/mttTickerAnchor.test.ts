@@ -36,6 +36,7 @@ import { resolve } from 'path';
 import {
   measureTopChromeBottom,
   TOP_CHROME_SELECTORS,
+  TOP_CHROME_MAX_TOP_PX,
 } from '../../src/components/tournament/topChrome';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
@@ -80,9 +81,29 @@ describe('MTT ticker top-chrome measurement', () => {
     expect(bottom).toBe(0);
   });
 
-  it('takes the lowest edge when both header selectors are on screen', () => {
-    const bottom = measureTopChromeBottom(lookup({ '#global-header': el(56), header: el(72) }));
-    expect(bottom).toBe(72);
+  it('never follows a bare <header>, of which this app has twenty-odd', () => {
+    /* `document.querySelector('header')` returns the FIRST <header> in the
+       document, not the top chrome, and the rule takes the LOWEST bottom edge
+       - so a game card, a BBJ panel or a modal header anywhere down the page
+       won, and the ticker relocated onto the felt. The fallback existed for
+       "routes that predate the id" and there are none: GlobalHeader always
+       sets it, and Shell.tsx's .shell-header is imported by nothing. */
+    expect(TOP_CHROME_SELECTORS).not.toContain('header');
+    expect(TOP_CHROME_SELECTORS).toHaveLength(1);
+  });
+
+  it('ignores top chrome that is not actually at the top', () => {
+    // Belt and braces: even a correctly-id'd header pushed into the middle of
+    // the page by some future layout must not drag the ticker down with it.
+    const low = measureTopChromeBottom(
+      lookup({ '#global-header': el(56, TOP_CHROME_MAX_TOP_PX + 1) })
+    );
+    expect(low).toBe(0);
+    // At the threshold it still counts.
+    const atEdge = measureTopChromeBottom(
+      lookup({ '#global-header': el(56, TOP_CHROME_MAX_TOP_PX) })
+    );
+    expect(atEdge).toBe(TOP_CHROME_MAX_TOP_PX + 56);
   });
 
   it('ignores a collapsed header rather than anchoring to it', () => {
@@ -91,7 +112,10 @@ describe('MTT ticker top-chrome measurement', () => {
   });
 
   it('ignores a zero-height element rather than anchoring to it', () => {
-    expect(measureTopChromeBottom(lookup({ '#global-header': el(0), header: el(56) }))).toBe(56);
+    // A header mid-mount measures 0 and must contribute nothing; with the bare
+    // `header` fallback gone there is no second candidate to fall back to, so
+    // the honest answer is the top of the viewport.
+    expect(measureTopChromeBottom(lookup({ '#global-header': el(0) }))).toBe(0);
   });
 
   it('returns 0 when there is no top chrome at all', () => {
@@ -126,6 +150,30 @@ describe('the action tab starts below the ticker, never above it', () => {
     expect(pinnedAt).toBeGreaterThan(-1);
     const pinned = MULTI_TABLE_CSS.slice(pinnedAt, MULTI_TABLE_CSS.indexOf('\n}', pinnedAt));
     expect(pinned).toMatch(/margin-top:\s*0/);
+  });
+
+  it('the ticker gets in-flow clearance even with no action bar open', () => {
+    /* The clearance slot only expanded under `body[data-ca-pinned-bar='1']`,
+       which is set while a table is open. In a lobby with no tables the ticker
+       had no reservation at all and sat on the first 34px of the club card -
+       the strip Dan had raised on 2026-08-24 to sit "1 pixel under where the
+       ticker runs through under the global header", i.e. written as if this
+       reservation already existed. The base rule reserves it now; absent a
+       ticker the property is unset and the slot is still 0. */
+    const shell = read('src/components/layouts/AppLayout.module.css');
+    const at = shell.indexOf('.pinnedActionBarClearance {');
+    expect(at).toBeGreaterThan(-1);
+    const base = shell.slice(at, shell.indexOf('\n}', at));
+    expect(base).toMatch(/flex:\s*0 0 var\(--mtt-ticker-h,\s*0px\)/);
+    expect(base).toMatch(/height:\s*var\(--mtt-ticker-h,\s*0px\)/);
+    // And the pinned state must not count the ticker twice: it spends
+    // --ca-pinned-bar-offset, which already carries the ticker term.
+    // The RULE, not the sentence in the comment above it that names the same
+    // attribute selector.
+    const pinnedAt = shell.indexOf(":global(body[data-ca-pinned-bar='1'])");
+    const pinned = shell.slice(pinnedAt, shell.indexOf('\n}', pinnedAt));
+    expect(pinned).toMatch(/var\(--ca-pinned-bar-offset,\s*48px\)/);
+    expect(pinned).not.toMatch(/--mtt-ticker-h/);
   });
 
   it('page content clears both bars, not just the pinned one', () => {

@@ -55,6 +55,7 @@ import type {
 
 import { reportError } from '../services/errorReporter.js';
 import { createHandStateMachine, type HandFSMState } from './StateMachine.js';
+import { bigBlindAnteTotal } from './AnteMath.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HAND CONTROLLER
@@ -450,8 +451,16 @@ export class HandController {
 
     if (this.config.ante) {
       if (this.config.bigBlindAnte && bbPlayer) {
-        // Bible V8 §4.3: BBA — Big blind posts ante for entire table
-        const totalBBA = this.config.ante * activePlayers.length;
+        // Bible V8 §4.3: BBA — Big blind posts ante for entire table.
+        // The seat-count multiply lives in bigBlindAnteTotal now, because a
+        // structure that authors `ante` as the TOTAL (ante == bigBlind, the
+        // modern standard) was being charged one big blind PER SEAT — 7 to 8
+        // big blinds a hand, measured live 2026-08-30. See AnteMath.ts.
+        const totalBBA = bigBlindAnteTotal(
+          this.config.ante,
+          activePlayers.length,
+          this.config.bigBlind
+        );
         const bbaAmount = Math.min(totalBBA, bbPlayer.stack);
         bbPlayer.totalInvested += bbaAmount;
         // Dead money: the BB fronts the whole table's ante. It belongs to the

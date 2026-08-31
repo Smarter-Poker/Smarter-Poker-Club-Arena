@@ -289,6 +289,30 @@ describe('ClubDataPage', () => {
     }
   });
 
+  it('heals one transient cold-start cancellation before exposing an error state', async () => {
+    let snapshotRequest = 0;
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') {
+        snapshotRequest += 1;
+        return snapshotRequest === 1
+          ? {
+              data: null,
+              error: { code: '57014', message: 'canceling statement due to statement timeout' },
+            }
+          : { data: snapshot, error: null };
+      }
+      if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+
+    render(<ClubDataPage />);
+
+    await screen.findByText('Shark Table One');
+    expect(snapshotRequest).toBe(2);
+    expect(screen.queryByText('Could not load club data.')).not.toBeInTheDocument();
+  });
+
   it('aborts a protected request when its response deadline expires', async () => {
     vi.useFakeTimers();
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);

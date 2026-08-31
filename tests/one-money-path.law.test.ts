@@ -167,6 +167,30 @@ describe('the list agrees with the server', () => {
   });
 });
 
+describe('the ledger reason names the account that actually paid', () => {
+  /**
+   * Found in the phase 3 audit pass. The reason string is written into the
+   * chip_transactions row and is what somebody reads back months later, so it
+   * has to name the source the money really came from.
+   *
+   * It asked isClubStaff, which is owner, co_owner and admin - ONE ROLE SHORT
+   * of the four that spend the club bank. A super agent therefore debited the
+   * club treasury while the ledger recorded "Agent -> ...: player funding".
+   * It now follows the same viaClubBank the send routes on, so the row and the
+   * money cannot disagree.
+   */
+  it('describes a super agent send as the club bank, because that is what it debits', () => {
+    expect(MODAL_CODE).toMatch(/if \(viaClubBank\) \{\s*\n\s*return `\$\{clubName\}/);
+    expect(MODAL_CODE).not.toMatch(/if \(isClubStaff\(senderRole\)\) \{/);
+  });
+
+  it('never prints a transfer to "undefined" when the recipient arrived as a prop', () => {
+    const messages = MODAL_CODE.match(/Transferred \$\{transferAmount[^`]*/g) ?? [];
+    expect(messages.length).toBeGreaterThan(0);
+    for (const m of messages) expect(m).toMatch(/recipientData\?\.username \|\| 'Them'/);
+  });
+});
+
 describe('the dead hierarchy methods are gone', () => {
   it('ChipFlowService no longer exposes clubToAgent, agentToPlayer or clubToPlayer', () => {
     expect(CHIPFLOW_CODE).not.toMatch(/async clubToAgent\(/);

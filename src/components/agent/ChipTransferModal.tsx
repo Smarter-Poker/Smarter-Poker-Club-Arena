@@ -37,7 +37,6 @@
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { isClubStaff } from '../../types/clubRoles';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -363,11 +362,15 @@ export default function ChipTransferModal({
           ? `Sub-Agent ${recipientData.username}`
           : recipientData.username;
 
-    // Club staff spend from the club bank; an agent spends from their own
-    // wallet. This compared the sender role against the single word owner, so
-    // a co-owner and an admin were described - and, below, ROUTED - as if the
-    // chips were their own.
-    if (isClubStaff(senderRole)) {
+    /* THE REASON MUST NAME THE ACCOUNT THAT PAID, because it is written into
+       the chip_transactions row and is what somebody reads back months later.
+       This asked isClubStaff, which is owner, co-owner and admin - one role
+       short of the four that spend the club bank. A SUPER AGENT therefore
+       debited the club treasury while the ledger recorded "Agent -> ...:
+       player funding", describing the wrong source. It follows the same
+       viaClubBank the send itself routes on, so the row and the money cannot
+       disagree. */
+    if (viaClubBank) {
       return `${clubName} → ${recipientLabel}: chip allocation`;
     }
     return `Agent → ${recipientLabel}: player funding (${clubName})`;
@@ -443,7 +446,7 @@ export default function ChipTransferModal({
       const drawnNote = drawn > 0 ? ` (${drawn.toLocaleString()} On Credit)` : '';
       const headline = sendRes.replayed
         ? `That Transfer Had Already Gone Through. ${transferAmount.toLocaleString()} Chips Are With ${recipientData?.username || 'Them'}`
-        : `Transferred ${transferAmount.toLocaleString()} To ${recipientData?.username}${drawnNote}`;
+        : `Transferred ${transferAmount.toLocaleString()} To ${recipientData?.username || 'Them'}${drawnNote}`;
 
       // The intent is spent: the next identical send is a new one.
       opIdSeedRef.current = '';

@@ -217,11 +217,29 @@ describe('co_owner is readable everywhere it is grantable', () => {
     expect(MESSAGING).toMatch(/case 'sub_agent':/);
   });
 
-  it('a club-bank send is routed by staff, not by the word owner', () => {
-    // senderRole === 'owner' sent a co-owner's club allocation down the
-    // agent-to-player path, out of the wrong account.
+  /**
+   * MOVED, NOT DROPPED (phase 3 of 7, 2026-08-31).
+   *
+   * This pin was written when the modal compared senderRole against the single
+   * word 'owner', which sent a co-owner's club allocation down the
+   * agent-to-player path and out of the wrong account. It required
+   * isClubStaff(senderRole) instead.
+   *
+   * isClubStaff is owner, co_owner and admin - ONE ROLE SHORT of the four that
+   * may spend the club bank. A SUPER AGENT was still routed as an agent. The
+   * modal now routes on CLUB_BANK_ROLES, the single list walletRows keeps and
+   * fn_can_use_club_bank enforces server-side, so all four are covered.
+   *
+   * The rule is unchanged and still pinned here: never the bare word, always
+   * the shared role helper.
+   */
+  it('a club-bank send is routed by the role list, not by the word owner', () => {
     expect(codeOnly(CHIP_TRANSFER)).not.toMatch(/senderRole === 'owner'/);
-    expect(CHIP_TRANSFER).toMatch(/isClubStaff\(senderRole\)/);
+    expect(codeOnly(CHIP_TRANSFER)).toMatch(
+      /CLUB_BANK_ROLES\.includes\(normaliseRole\(senderRole\)\)/
+    );
+    // And the four-role list is imported, never re-typed by hand.
+    expect(codeOnly(CHIP_TRANSFER)).toMatch(/from '\.\.\/wallet\/walletRows'/);
   });
 
   it('useClubMembership asks clubRoles instead of a vocabulary that does not exist', () => {

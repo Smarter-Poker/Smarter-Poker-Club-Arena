@@ -129,8 +129,14 @@ describe('no flop, no drop is settled by the board', () => {
   it('markFlopSeen() still authorises the drop when the board lives outside this state', () => {
     // The RIT path: boards are built in dealAndResolveRIT, so
     // state.communityCards stays empty and markFlopSeen() is the evidence.
-    const players = mkPlayers([200, 200]);
-    const { hc, internal } = harness(mkConfig(), players, 1);
+    // 2026-08-31: markFlopSeen is runout-only now (the stale-runout guard),
+    // so stand in the state the RIT path actually calls it from: both all-in.
+    const players = mkPlayers([3, 8]);
+    const { hc, internal } = harness(
+      mkConfig({ smallBlind: 5, bigBlind: 10 } as never),
+      players,
+      1
+    );
     hc.start();
     internal.state.pot = 100;
     hc.markFlopSeen();

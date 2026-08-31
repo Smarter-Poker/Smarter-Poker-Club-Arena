@@ -84,7 +84,12 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
     name: Specs that need a real deployed page
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Cashier plus six isolated stateful groups and the 138-test responsive
+    # sweep take 20-24 minutes when production is under normal publish load.
+    # The old 20-minute ceiling cancelled the honesty/report steps just as the
+    # sweep completed, discarding a real verdict. This remains bounded while
+    # leaving enough room for first-attempt, zero-retry certification.
+    timeout-minutes: 35
 
     steps:
       - name: Checkout

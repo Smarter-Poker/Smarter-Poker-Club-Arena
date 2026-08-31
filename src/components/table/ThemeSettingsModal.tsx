@@ -1305,14 +1305,20 @@ export function ThemeSettingsModal({
 
   // Postgres Changes is a low-latency signal, not a durable queue. Keep the
   // open Studio's preview honest if a mobile radio handoff or a busy Realtime
-  // connection drops the appearance event: one authoritative, visible-only
-  // snapshot every two seconds repairs the editor without reloading the page.
+  // connection drops the appearance event: one authoritative snapshot every
+  // two seconds repairs the editor without reloading the page.
+  //
+  // Do this while the Studio is OPEN even when the document is backgrounded.
+  // A second device/tab can miss one websocket frame while its Studio remains
+  // mounted; pausing the only durable reconciliation merely because that page
+  // is hidden leaves its preview stale indefinitely. This is one five-column
+  // row read at most every two seconds, bounded to an open modal. Browsers may
+  // throttle the timer, but the application must not disable it itself.
   // The request guard above prevents an older snapshot from rolling back a tap
   // or a newer event while the read is in flight.
   useEffect(() => {
     if (!isOpen || !userId || appearanceRealtime.state !== 'live') return undefined;
     const reconcile = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       setThemeLoadRevision((revision) => revision + 1);
     };
     const interval = window.setInterval(reconcile, 2_000);

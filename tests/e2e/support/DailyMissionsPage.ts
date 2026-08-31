@@ -142,6 +142,25 @@ export class DailyMissionsPage {
     return Date.now() - startedAt;
   }
 
+  /**
+   * Remount an Arena route through the live BrowserRouter without replacing
+   * the document. Playwright disables HTTP cache as soon as page.route() is
+   * installed; forcing a full navigation after installing an RPC fault route
+   * therefore measures an artificial uncached asset waterfall and can time
+   * out before DOMContentLoaded even though the target UI is already mounted.
+   *
+   * This dispatches the same popstate transition the browser's Back/Forward
+   * controls use. Callers still assert the destination UI and its live network
+   * contract; only the unrelated document reload is removed.
+   */
+  async navigateWithinArena(route: string): Promise<void> {
+    const target = new URL(route, this.baseURL).toString();
+    await this.page.evaluate((href) => {
+      window.history.pushState({}, '', href);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }));
+    }, target);
+  }
+
   dashboardResponses(): Promise<Response> {
     return this.page.waitForResponse(
       (response) => response.url().includes('/rest/v1/rpc/get_daily_challenge_dashboard'),

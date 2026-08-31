@@ -27,6 +27,7 @@ import { cashMinBuyIn } from '../config/cashBuyIn.js';
 import { horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
 // The VARIANT'S OWN seat ceiling, which is a house rule and not deck
 // arithmetic — PLO6 is 6-max and PLO5 is 7-max by Dan's ruling, both tighter
@@ -88,21 +89,51 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         if (this.postHandTasksPromise) {
           this.setLoopPhase('await_post_hand_tasks');
           const pending = this.postHandTasksPromise;
-          let timedOut = false;
-          await Promise.race([
-            pending,
-            new Promise<void>((r) => {
-              const t = setTimeout(() => {
-                timedOut = true;
-                r();
-              }, 45_000);
-              (t as { unref?: () => void }).unref?.();
-            }),
-          ]);
-          if (timedOut) {
+          /* ═══ WAIT WITH LIVENESS, DO NOT WALK AWAY (2026-08-31) ═══════════
+             This used to race the settlement against a single 45s timer and
+             then PROCEED, with the settlement still running in the background
+             against the per-hand capture fields the very next dealHand()
+             blanks. Under a degraded database that is not a liveness save, it
+             is record corruption on a schedule: hand N's history written from
+             hand N+1's empty fields (the rake-law audit's board_not_recorded
+             warnings are that corpse). The 45s cap existed only because this
+             await never called markProgress() and the idle watchdog would
+             kill the engine - so keep the engine provably alive in 15s
+             slices instead, and simply do not deal the next hand until this
+             hand's money and record are done. A table on a database too sick
+             to settle for five full minutes has no business dealing anyway;
+             at that point proceed as before, but say - durably - which hand's
+             record is now at risk. */
+          const sliceMs = 15_000;
+          const maxWaitMs = 300_000;
+          let waited = 0;
+          let settled = false;
+          while (!settled && waited < maxWaitMs && this.running) {
+            settled = await Promise.race([
+              pending.then(() => true),
+              new Promise<boolean>((r) => {
+                const t = setTimeout(() => r(false), sliceMs);
+                (t as { unref?: () => void }).unref?.();
+              }),
+            ]);
+            if (!settled) {
+              waited += sliceMs;
+              this.markProgress();
+            }
+          }
+          if (!settled) {
             reportError(
-              new Error('postHandTasks exceeded 45s - continuing loop, tasks finish in background'),
+              new Error(
+                `postHandTasks still running after ${maxWaitMs / 1000}s - dealing resumes; ` +
+                  "the previous hand's history/rake record may be written from reset fields"
+              ),
               'ServerTableEngine.' + this.tableId + '.postHandTasks_timeout'
+            );
+            void raiseFinancialAlert(
+              'critical',
+              'ServerTableEngine.settlement_barrier_abandoned',
+              `Table ${this.tableId}: settlement for hand #${this.handCount} exceeded ${maxWaitMs / 1000}s; dealing resumed while it ran`,
+              { tableId: this.tableId, handNumber: this.handCount, waitedMs: waited }
             );
             this.markProgress();
           }
@@ -2404,11 +2435,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     cards: unknown
   ): Promise<void> {
     const payload = JSON.stringify([{ user_id: userId, seat_number: seat, cards }]);
+    // 2026-08-31: captured ONCE. this.handCount is reallocated when the next
+    // hand deals; the retry loop below awaits between attempts, so re-reading
+    // it per attempt could stamp THIS hand's cards with the NEXT hand's
+    // number on a slow attempt. Same class as the settlement snapshot fix.
+    const handNumberAtDeal = this.handCount;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         const { error } = await supabase.rpc('insert_hole_cards', {
           p_table_id: this.tableId,
-          p_hand_number: this.handCount,
+          p_hand_number: handNumberAtDeal,
           p_cards: payload,
         });
         if (!error) return;
@@ -2431,12 +2467,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     reportError(
       new Error('insert_hole_cards failed after 3 attempts'),
       `ServerTableEngine.${this.tableId}.insert_hole_cards_failed`,
-      { userId, seat, handNumber: this.handCount }
+      { userId, seat, handNumber: handNumberAtDeal }
     );
     this.hub?.emitEvent(this.tableId, {
       type: 'hole_cards_unavailable',
       table_id: this.tableId,
-      hand_number: this.handCount,
+      hand_number: handNumberAtDeal,
       user_id: userId,
       seat,
       timestamp: Date.now(),

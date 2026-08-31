@@ -26,6 +26,7 @@ import {
 } from './services/TournamentRecurringService.js';
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { TournamentMetrics } from './services/TournamentMetrics.js';
+import { SpinMetrics } from './services/SpinMetrics.js';
 import {
   planTableReopens,
   freshHumanWindowMs,
@@ -313,6 +314,7 @@ export class GameServer {
    * 2026-08-30/31 audit was found by a human running SQL by hand.
    */
   private tournamentMetrics = new TournamentMetrics();
+  private spinMetrics = new SpinMetrics();
   private lifecycle = new HorseLifecycleManager();
 
   /**
@@ -556,6 +558,12 @@ export class GameServer {
       // poker_tournament_metrics_stale_seconds climbs — a blind collector must
       // never read as a healthy platform.
       this.tournamentMetrics.start();
+
+      // Step 3d: Spin gauges. Spin charges no rake — the 8% IS the multiplier
+      // distribution — so E[multiplier] = 2.7638 is the only evidence the house
+      // takes what it advertises, and until this collector shipped nothing had
+      // ever checked it except a human typing SQL. Same fail-loud contract.
+      this.spinMetrics.start();
 
       // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
       this.lifecycle.start();
@@ -1177,6 +1185,11 @@ export class GameServer {
       // from the database because the database is the only thing that knows
       // what SHOULD exist. See services/TournamentMetrics.ts.
       ...this.tournamentMetrics.toPrometheus(),
+      // ── SPIN OBSERVABILITY (2026-08-31) ──────────────────────────────
+      // The tournament gauges above count events. These test the one
+      // EQUALITY the Spin format is sold on, and watch the punctuality of
+      // the wheel that sells it. See services/SpinMetrics.ts.
+      ...this.spinMetrics.toPrometheus(),
     ];
 
     if (allLines.length === 0) {
@@ -3352,6 +3365,36 @@ export class GameServer {
             }
           } catch (attEx) {
             reportError(attEx, 'GameServer.rake_attribution_repair_threw');
+          }
+
+          // ── AND THE BACKLOG BEHIND IT (2026-08-31) ──
+          // fn_repair_ retries settlements the settle path recorded as FAILED.
+          // It cannot see the ones that were never measured at all, because
+          // before attributed_users existed there was nothing to record — and
+          // that was 40,055 rows on 2026-08-31, four years of VIP points and
+          // agent commission owed to 585 players and never paid. Draining it
+          // was a one-off by hand; keeping it drained cannot be, or the next
+          // outage rebuilds the same silent backlog. Small limit, on the same
+          // 15-minute clock: this is a floor sweeper, not a migration.
+          try {
+            const { data: bp, error: bpErr } = await supabase.rpc(
+              'fn_backpay_tournament_rake_attribution',
+              { p_limit: 200 }
+            );
+            if (bpErr) {
+              reportError(
+                new Error(`[GameServer] rake attribution back-pay failed: ${bpErr.message}`),
+                'GameServer.rake_attribution_backpay_failed'
+              );
+            } else if (Number(bp?.paid) > 0 || Number(bp?.errors) > 0) {
+              console.log(
+                `[GameServer] Rake attribution back-pay: ${bp.paid} paid ` +
+                  `(${bp.chips} chips), ${bp.retried} retried, ${bp.errors} threw, ` +
+                  `${bp.remaining} unmeasured left, ${bp.needs_a_human} need a human`
+              );
+            }
+          } catch (bpEx) {
+            reportError(bpEx, 'GameServer.rake_attribution_backpay_threw');
           }
         }
 

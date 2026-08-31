@@ -1,0 +1,203 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  SPIN ALERTS (2026-08-31)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Spin is the only format on the platform that charges NO RAKE. There is no
+# fee row, no ledger line, nothing to reconcile — the 8% is engineered into
+# the multiplier distribution, and the entire commercial design rests on one
+# equality:
+#
+#     E[multiplier] = seats x (1 - rake_rate) = 3 x 0.92126 = 2.7637726
+#
+# Until 2026-08-31 nothing had ever checked it. Not a job, not a dashboard,
+# not a test — the first and only verification in the platform's life was a
+# human typing SQL during an audit. If that mean drifted down, players would
+# quietly pay a bigger edge than the lobby advertises and no part of this
+# system would have said a word.
+#
+# Every expression below is verified against a gauge the engine actually
+# emits (server/src/services/SpinMetrics.ts). check-monitoring-drift.mjs
+# asserts this file is listed, mounted and non-empty.
+
+groups:
+  - name: spin-fairness
+    interval: 60s
+    rules:
+      # ── THE ONE THAT MATTERS ─────────────────────────────────────────
+      # The gauge is already sample-size aware: drift is |z| >= 4 over at
+      # least 2,000 draws, which is roughly a 1-in-16,000 false alarm. The
+      # 15m `for` is not extra statistics, it is scrape hygiene.
+      #
+      # BEFORE ESCALATING, READ poker_spin_draw_constrained. A thin reserve
+      # pool locks the top tiers out of the draw and renormalises, which
+      # lowers the conditional mean through no fault of the RNG. Non-zero
+      # there is the explanation; zero there means the draw itself moved.
+      - alert: SpinDrawFairnessDrift
+        expr: poker_spin_draw_fairness_drift > 0
+        for: 15m
+        labels:
+          severity: critical
+          component: spin
+        annotations:
+          summary: "Spin's realised E[multiplier] is 4+ standard errors from spec"
+          description: |
+            The mean multiplier drawn over the last 24h differs from the
+            2.7637726 the format is sold on by more than four standard
+            errors. Below spec means players are paying a larger edge than
+            the lobby advertises; above spec means the reserve pool is being
+            drained faster than the buy-ins refill it.
+            FIRST: check poker_spin_draw_constrained. Non-zero means the
+            reserve pool locked tiers out and renormalised — expected, not a
+            defect. Zero means the draw itself moved: compare
+            v_spin_draw_distribution_7d against spin_tier_spec.
+          runbook: https://monitor.smarter.poker/runbooks/spin-fairness-drift
+
+      # A collector that cannot read is not a healthy platform. A failed
+      # refresh keeps the last good snapshot on purpose, so this gauge is
+      # the ONLY thing that proves the numbers above are current.
+      - alert: SpinMetricsStale
+        expr: poker_spin_metrics_stale_seconds > 600
+        for: 5m
+        labels:
+          severity: critical
+          component: spin
+        annotations:
+          summary: "Spin gauges are {{ $value }}s stale — fairness is unwatched"
+          description: |
+            SpinMetrics has not completed a refresh in over ten minutes. The
+            gauges are showing the last good values, which look healthy and
+            are not current. fn_spin_metrics is failing; check the engine log
+            for SpinMetrics.refresh_failed.
+          runbook: https://monitor.smarter.poker/runbooks/spin-metrics-stale
+
+  - name: spin-money
+    interval: 60s
+    rules:
+      # The prize left the reserve pool and reached no wallet. There is a
+      # back-pay job for exactly this; a non-zero reading that persists
+      # means the job is not running or not working.
+      - alert: SpinPrizeUnpaid
+        expr: poker_spin_unpaid_settlements > 0
+        for: 10m
+        labels:
+          severity: critical
+          component: spin
+        annotations:
+          summary: "{{ $value }} Spin prize(s) drawn from the pool and paid to nobody"
+          description: |
+            v_spin_unpaid_settlements compares what the reserve pool DREW for
+            a Spin against what reached a player's wallet. fn_backpay_spin_
+            unpaid_winners runs every 10 minutes and should clear these. Ten
+            minutes of a standing count means the repair is not working.
+          runbook: https://monitor.smarter.poker/runbooks/spin-prize-unpaid
+
+      # NEW gaps only. Eleven historical rows (2026-08-22 to 08-24, cause
+      # closed, 293.00 chips of pool overstatement) are a remediation
+      # decision, not an ongoing incident — alerting on the standing count
+      # would fire forever and teach everyone to ignore this rule. A rising
+      # count means the cause reopened.
+      - alert: SpinDrawBookingGapOpened
+        expr: delta(poker_spin_draw_booking_gaps[1h]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: spin
+        annotations:
+          summary: "A new Spin booked a different multiplier than it paid"
+          description: |
+            v_spin_draw_booking_gaps grew in the last hour. The reserve pool
+            was debited for one multiplier step and the players were paid at
+            another, so the pool's books and the wallets disagree. This class
+            of defect was closed on 2026-08-24; a new row means it reopened.
+          runbook: https://monitor.smarter.poker/runbooks/spin-booking-gap
+
+      # Every row is a player who lost VIP points and an agent who lost
+      # commission. The threshold is not zero: the settle path attributes
+      # asynchronously and a handful in flight is normal. A standing hundred
+      # is the back-pay sweeper having stopped.
+      - alert: RakeAttributionBacklog
+        expr: poker_rake_attribution_gaps > 100
+        for: 30m
+        labels:
+          severity: warning
+          component: spin
+        annotations:
+          summary: "{{ $value }} settled rake rows have credited nobody"
+          description: |
+            Tournament rake was banked but never attributed, so VIP points,
+            rakeback and agent commission went unpaid for those events. The
+            engine's 15-minute loop runs fn_repair_ and fn_backpay_
+            tournament_rake_attribution. A standing backlog means one of them
+            is failing — check GameServer.rake_attribution_backpay_failed,
+            and read `needs_a_human` in its return for rows a transient-lock
+            retry will never pick up.
+          runbook: https://monitor.smarter.poker/runbooks/rake-attribution-backlog
+
+  - name: spin-experience
+    interval: 60s
+    rules:
+      # THE ANIMATION LAW: "the spin animation plays every time it is owed,
+      # FOR ITS FULL DURATION." A wheel that starts late because the ENGINE
+      # was slow is that law's plainest violation — the player is charged for
+      # the engine's lateness in the one moment the format sells.
+      #
+      # 5s is the breach line v_spin_reveal_latency already uses, so the
+      # alert and the view cannot disagree about what "late" means.
+      - alert: SpinRevealChronicallyLate
+        expr: poker_spin_reveal_lag_p50_ms > 5000
+        for: 15m
+        labels:
+          severity: warning
+          component: spin
+        annotations:
+          summary: "Median Spin reveal is {{ $value }}ms behind its own anchor"
+          description: |
+            More than half of the spins started in the last hour reached the
+            draw over five seconds after the moment the three players were
+            promised the wheel. Each one is re-anchored so it still plays in
+            full, which is correct and also means the players sat looking at
+            a table waiting for it. The cost is in the start path: see the
+            sequential reads between start() and fn_spin_draw_multiplier.
+          runbook: https://monitor.smarter.poker/runbooks/spin-reveal-late
+
+      # The reserve pool cannot cover the top tier, so 100x (and possibly
+      # 50x) are locked out of the draw entirely. The lobby still advertises
+      # them. Warning, not critical: the lockout is the CORRECT behaviour —
+      # the alternative is promising a prize the pool cannot pay — but it
+      # must not go unnoticed, because it also moves the realised edge.
+      - alert: SpinReservePoolThin
+        expr: poker_spin_reserve_thin_clubs > 0
+        for: 30m
+        labels:
+          severity: warning
+          component: spin
+        annotations:
+          summary: "{{ $value }} club(s) cannot cover Spin's top tier"
+          description: |
+            The reserve pool is too thin to pay the highest multiplier, so
+            fn_spin_draw_multiplier has locked those tiers out and
+            renormalised over the rest. Players cannot win the top prize the
+            lobby shows, and poker_spin_draw_realised_multiplier will sit
+            below spec for as long as this lasts. Top the pool up, or accept
+            it and expect SpinDrawFairnessDrift to follow.
+          runbook: https://monitor.smarter.poker/runbooks/spin-reserve-thin
+
+      # A Spin sits open until three players sit down. A few waiting is the
+      # format working. A standing pile past the fill deadline means
+      # fn_spin_expire_unfilled is not clearing them and players' buy-ins
+      # are parked in games that will never run.
+      - alert: SpinUnfilledBacklog
+        expr: poker_spin_unfilled_waits > 5
+        for: 20m
+        labels:
+          severity: warning
+          component: spin
+        annotations:
+          summary: "{{ $value }} Spins are past their fill deadline and still open"
+          description: |
+            v_spin_unfilled_waits counts Spins open past the point they
+            should have been expired and refunded. The engine runs
+            fn_spin_expire_unfilled on its own timer; a standing backlog
+            means it is not, and registered players' chips are held in games
+            that are not going to start.
+          runbook: https://monitor.smarter.poker/runbooks/spin-unfilled-backlog

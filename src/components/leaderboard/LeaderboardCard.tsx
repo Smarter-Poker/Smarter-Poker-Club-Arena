@@ -122,7 +122,7 @@ function LeaderboardCardInner({
 
       {entries.length === 0 ? (
         <div className={styles.empty}>
-          <span>≡</span>
+          <span>☆</span>
           <p>No Entries Yet</p>
         </div>
       ) : (

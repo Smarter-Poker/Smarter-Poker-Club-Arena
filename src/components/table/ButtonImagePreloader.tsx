@@ -7,7 +7,6 @@ export function ButtonImagePreloader() {
   const icons = [
     'icon-addscreen',
     'icon-chat',
-    'icon-hamburger',
     'icon-prevhand',
     'icon-rabbit',
     'icon-stats',

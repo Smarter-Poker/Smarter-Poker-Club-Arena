@@ -758,3 +758,57 @@
   outline: 2px solid #00d4ff;
   outline-offset: 2px;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   HANDING THE CLUB OVER
+
+   Amber, not red. Handing a club to somebody is a deliberate act, not a
+   destructive one, and giving it the Danger Zone's colour would say the two
+   are the same kind of thing. It sits directly above the red section, so the
+   difference has to be visible at a glance.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.handover-section {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: linear-gradient(145deg, rgba(251, 191, 36, 0.07) 0%, rgba(251, 191, 36, 0.03) 100%);
+}
+
+.handover-section h3 {
+  color: #fbbf24;
+  border-bottom-color: rgba(251, 191, 36, 0.2);
+}
+
+.handover-label {
+  display: block;
+  margin-top: 1rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.8rem;
+  color: #9fb0c0;
+}
+
+.handover-select,
+.handover-input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.handover-select:focus-visible,
+.handover-input:focus-visible {
+  outline: 2px solid #fbbf24;
+  outline-offset: 2px;
+}
+
+.handover-error {
+  margin-top: 0.85rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  font-size: 0.8rem;
+}

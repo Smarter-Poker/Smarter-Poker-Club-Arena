@@ -160,6 +160,10 @@ const PLAYER_SORTS: Array<{ id: PlayerSort; label: string }> = [
 
 const REFRESH_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 15_000;
+const SNAPSHOT_REQUEST_TIMEOUT_MS = 25_000;
+const PLAYER_REQUEST_TIMEOUT_MS = 25_000;
+const EXPORT_REQUEST_TIMEOUT_MS = 30_000;
+const PLAYER_PAGE_SIZE = 100;
 
 /** What a money tile shows when there is no figure to show. Never "0.00". */
 const NO_VALUE = '-';
@@ -168,7 +172,11 @@ type AbortableRequest<T> = PromiseLike<T> & {
   abortSignal?: (signal: AbortSignal) => AbortableRequest<T>;
 };
 
-function withTimeout<T>(request: AbortableRequest<T>, message: string): Promise<T> {
+function withTimeout<T>(
+  request: AbortableRequest<T>,
+  message: string,
+  timeoutMs = REQUEST_TIMEOUT_MS
+): Promise<T> {
   const controller = new AbortController();
   let timedOut = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -177,7 +185,7 @@ function withTimeout<T>(request: AbortableRequest<T>, message: string): Promise<
       timedOut = true;
       controller.abort();
       reject(new Error(message));
-    }, REQUEST_TIMEOUT_MS);
+    }, timeoutMs);
   });
   const abortableRequest =
     typeof request.abortSignal === 'function' ? request.abortSignal(controller.signal) : request;
@@ -458,7 +466,8 @@ export default function ClubDataPage() {
             p_search: search || null,
             p_limit: 200,
           }),
-          'Club data request timed out'
+          'Club data request timed out',
+          SNAPSHOT_REQUEST_TIMEOUT_MS
         );
         if (stale()) return false;
         if (rpcError) {
@@ -510,15 +519,17 @@ export default function ClubDataPage() {
       const myVersion = ++playersVersion.current;
       const stale = () => cancelledRef.current || playersVersion.current !== myVersion;
       setPlayersLoading(true);
+      setPlayersError(null);
       try {
         const { data, error: rpcError } = await withTimeout(
           supabase.rpc('ca_club_player_breakdown', {
             p_club_id: clubUuid,
             p_start: startDate,
             p_end: endDate,
-            p_limit: 500,
+            p_limit: PLAYER_PAGE_SIZE,
           }),
-          'Player data request timed out'
+          'Player data request timed out',
+          PLAYER_REQUEST_TIMEOUT_MS
         );
         if (stale()) return false;
         if (rpcError) {
@@ -714,7 +725,8 @@ export default function ClubDataPage() {
             p_search: search || null,
             p_limit: 500,
           }),
-          'Club data export timed out'
+          'Club data export timed out',
+          EXPORT_REQUEST_TIMEOUT_MS
         );
         if (exportError) throw exportError;
         if (Array.isArray((data as Snapshot)?.rows)) rows = (data as Snapshot).rows;

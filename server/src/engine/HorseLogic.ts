@@ -79,6 +79,8 @@ import { gtoOpenJam, gtoBbVsSbJam, handClass as gtoHandClass } from './GtoCharts
 // aggregated offline from the 8.8M-solution warehouse, preloaded by
 // GtoPostflopLoader. See engine/GtoPostflop.ts for scope and honesty notes.
 import { gtoStreetAdvice, rollMix } from './GtoPostflop.js';
+import { gtoStreetAdviceV31 } from './GtoPostflopV31.js';
+import { gtoFacingDefense } from './GtoFacingDefenseV32.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
 // HorseEval.ts (extracted verbatim; zero behavior change).
 import {
@@ -107,6 +109,7 @@ import {
   scoreOmahaLow,
   straightTop,
 } from './HorseEval.js';
+import { anteOrbitCostBB } from './AnteMath.js';
 
 // BUG 020 FIX (2026-04-15) — round chip amounts to whole cents so horse decisions
 // don't pollute hand_history.actions with 15-digit floats. Bible V8 §2.6.
@@ -586,6 +589,12 @@ export interface HorseGameStateV2 extends HorseGameState {
   gameMode?: 'cash' | 'tournament';
   /** V11: table ante (0/undefined = no ante). Antes widen preflop ranges. */
   ante?: number;
+  /** ALL-IN-OR-FOLD table: preflop is fold or shove and nothing else. */
+  allInOrFold?: boolean;
+  /** The ante is a BIG BLIND ANTE: the big blind posts it once for the whole
+   *  table, rather than every player posting it every hand. Changes what an
+   *  orbit COSTS, which is what Harrington M divides by — see AnteMath.ts. */
+  bigBlindAnte?: boolean;
   /** V18: the table allows a UTG straddle (2xBB). Straddle posts are not
    *  ActionRecords, so the brain needs this to read a straddled pot as
    *  UNOPENED dead money rather than an open raise. */
@@ -960,6 +969,16 @@ export interface HorseDecideOpts {
    *  actions only, per-hand validated). Empty store = inert
    *  (default: enabled) */
   v30GtoTurnRiver?: boolean;
+  /** disable the V31 suit-aware solver layer (2026-08-30): the SECOND solver
+   *  export, strategy_matrix_v2, which is disjoint from the one V29/V30 read
+   *  - zero of 9,584 sampled turn rows carry both. Keyed by hand class AND
+   *  how many of the board's flush suit the holding contains, and it carries
+   *  the solver's real bet size, so it can play the 246%-pot turn overbet v1
+   *  cannot express at all. Consulted BEFORE V30; empty store = inert
+   *  (default: enabled) */
+  v31GtoSuitAware?: boolean;
+  /** V32: facing-a-bet defence from the solver's own betting range. */
+  v32FacingDefense?: boolean;
 }
 
 /**
@@ -1443,10 +1462,23 @@ export class HorseLogic {
       // the preflop layer keeps exact legacy behavior in ablation runs).
       mode: opts.v11 !== false ? (isTournamentMode(gs) ? 'tournament' : 'cash') : undefined,
       anteInPlay: opts.v11 !== false && (gs.ante ?? 0) > 0,
+      allInOrFold: gs.allInOrFold === true,
       // V20 M-ZONES: the real per-orbit cost needs the ante SIZE and the
       // table size, not just "an ante exists". Undefined when the layer is
       // ablated so the preflop engine keeps exact legacy behavior.
-      anteBB: (opts.v20Mzone ?? true) !== false && bb > 0 ? (gs.ante ?? 0) / bb : undefined,
+      // The ORBIT cost, resolved for the table's ante style. Previously this
+      // shipped a per-player figure that HorsePreflop multiplied by the seat
+      // count — which read a big-blind-ante structure as seat-count times too
+      // expensive, collapsed M, and turned tournaments into jam-or-fold.
+      anteOrbitBB:
+        (opts.v20Mzone ?? true) !== false
+          ? anteOrbitCostBB(
+              gs.ante ?? 0,
+              gs.players.filter((p) => !p.is_sitting_out).length,
+              bb,
+              gs.bigBlindAnte === true
+            )
+          : undefined,
       tableSize:
         (opts.v20Mzone ?? true) !== false
           ? gs.players.filter((p) => !p.is_sitting_out).length
@@ -1630,6 +1662,13 @@ export class HorseLogic {
       sb: 0.5,
       bb: 0.42,
     };
+    /**
+     * The floor for limping BEHIND another limper. Set at the single-raise
+     * calling threshold on purpose: a hand that cannot call a raise has no
+     * business putting a chip in, because the only thing it can do next is
+     * fold. See the no-open-limp note in the unopened branch.
+     */
+    const LIMP_BEHIND_MIN = 0.5;
     const t = (x: number) => clamp01(x * params.tightness);
 
     const unopened = raises === 0 && currentBet <= bb * 1.05;
@@ -1661,16 +1700,58 @@ export class HorseLogic {
         const sizeBB = (2.2 + fastRandom() * 0.8 + limpers * 1.0) * params.sizingMultiplier;
         return this.raiseTo(sizeBB * bb, player, gs, vi);
       }
-      // Below opening threshold: free check, limp-behind with playable hands,
-      // otherwise fold to a raise / complete cheap in the blinds.
+      // Never fold for free.
       if (toCall === 0) return { action: 'check', thinkTime: 0 };
-      const limpable = strength >= openThresh - 0.12;
-      if (toCall <= bb && (limpable || position === 'sb') && fastRandom() < 0.7) {
-        return { action: 'call', amount: toCall, thinkTime: 0 };
-      }
-      if (toCall <= bb * 1.5 && strength >= 0.3) {
-        return { action: 'call', amount: toCall, thinkTime: 0 };
-      }
+
+      // ═══ NO OPEN-LIMP (Dan 2026-08-30, binding) ═══
+      //
+      // First in, it is RAISE OR FOLD. Never call.
+      //
+      // What this replaced, and why. Two branches called here: one limped
+      // any hand within 0.12 of the opening threshold 70% of the time, and
+      // one limped ANY hand of strength >= 0.3 for up to 1.5bb from ANY
+      // position, unconditionally. Neither asked whether anyone had actually
+      // limped first, so both open-limped an unopened pot.
+      //
+      // Measured in production before this changed, over 596 tournament
+      // hands in a 25-minute window:
+      //
+      //     open-limps                                852   (35% of all
+      //     open-raises                               214    unraised
+      //     open-folds                              1,098    first actions)
+      //
+      //     limps that then faced a raise             458
+      //     of those, FOLDED                          419   (91.5%)
+      //
+      // Horses limped four times more often than they raised, and then gave
+      // the chips up nine times out of ten. Limp-folding is the worst
+      // preflop pattern in tournament poker: it forfeits the chance to win
+      // the pot uncontested, builds a multiway pot with a hand too weak to
+      // continue, and then surrenders.
+      //
+      // It is worse HERE than at a normal table because these tournaments
+      // run a big blind ante. In hand #3761806 the ante was 1,200 on a 150
+      // big blind, so the unopened pot already held 1,425 chips when it was
+      // 150 to call. That dead money is what an open-raise plays for, and a
+      // limp simply hands it to whoever raises behind - which is exactly
+      // what happened: six limps, the big blind raised to 1,125, and five of
+      // the six folded.
+      //
+      // LIMPING BEHIND survives, narrowly, because it is a real thing real
+      // players do. Two conditions keep it honest:
+      //   - somebody must have limped first (limpers >= 1), so this can
+      //     never open a pot; and
+      //   - the hand must be strong enough to CONTINUE against a raise. The
+      //     single-raise branch below calls at roughly 0.52, so anything
+      //     weaker would be limping in order to fold. That gate is the one
+      //     that kills the 91.5%.
+      // Because a hand at or above the opening threshold RAISES, the surviving
+      // band is [LIMP_BEHIND_MIN, openThresh) - which is empty in late
+      // position and from the blinds until several limpers widen it. Late
+      // position isolating limpers instead of joining them is correct.
+      const limpBehind =
+        limpers >= 1 && strength >= LIMP_BEHIND_MIN && toCall <= bb && fastRandom() < 0.35;
+      if (limpBehind) return { action: 'call', amount: toCall, thinkTime: 0 };
       return { action: 'fold', thinkTime: 0 };
     }
 
@@ -2377,6 +2458,95 @@ export class HorseLogic {
           : 'foldToRaise';
 
     const useV11 = opts.v11 !== false;
+    // ═══ V32 FACING A BET — the solver's own betting range (2026-08-30) ═══
+    // Phase 2 of 7. V29/V30/V31 answer only with the LEAD; this is the other
+    // half. The bettor's open-node cell gives P(bet at this size | holding)
+    // for every holding — which IS the betting range. Hero's equity against
+    // that range vs pot odds is the fold/call line; hands above the strong
+    // threshold PASS (null) so the aggression layers keep owning raises.
+    // Gate mirrors the open consult exactly: heads-up hold'em, one board.
+    if (
+      (opts.v32FacingDefense ?? true) !== false &&
+      facingBet &&
+      // NOT `initiative === 'opp'`: readInitiative reads EARLIER streets only,
+      // so a villain betting THIS street after the action checked to them
+      // reads 'none' — and that spontaneous lead is exactly the open-node bet
+      // the cells model. Only a bet made INTO hero's own lead (hero raised,
+      // villain donks) is excluded: the cell for that node does not exist,
+      // and pretending the open-node range covers it would price the donk
+      // range as an opening range.
+      initiative !== 'hero' &&
+      (street === 'flop' || street === 'turn' || street === 'river') &&
+      player.cards.length === 2 &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      // NOT oppCount: `Math.max(1, opponents.length)` reads 1 even when the
+      // array is EMPTY, and the bettor is indexed out of it below.
+      opponents.length === 1 &&
+      // Hero has put nothing in voluntarily this street: the wager faced is
+      // a BET, not a raise of hero's own bet. A check-raise's range comes
+      // from a raise node the warehouse does not hold — pricing it with the
+      // open-bet cell would be the donk mistake with the seats swapped.
+      player.bet === 0 &&
+      !(gs.communityCards2 && gs.communityCards2.length > 0)
+    ) {
+      const bettor = opponents[0];
+      const bettorPos32 = classifyPosition(
+        bettor.seat,
+        gs.dealerSeat,
+        gs.players,
+        opts.v13 !== false
+      );
+      const chartPos32 =
+        bettorPos32 === 'sb'
+          ? 'SB'
+          : bettorPos32 === 'bb'
+            ? 'BB'
+            : bettorPos32 === 'early'
+              ? 'UTG'
+              : bettorPos32 === 'middle'
+                ? 'MP'
+                : bettor.seat === gs.dealerSeat
+                  ? 'BTN'
+                  : 'CO';
+      const family32: 'cash' | 'spin' | 'tourney_icm' = !isTournamentMode(gs)
+        ? 'cash'
+        : gs.format === 'spin'
+          ? 'spin'
+          : 'tourney_icm';
+      const stackBB32 = gs.bigBlind > 0 ? player.stack / gs.bigBlind : 100;
+      // Bucket by the size the bettor CHOSE (raw), price by what hero pays
+      // (effective). A jam of three pots into a short stack is still a
+      // bet_big for range purposes even when hero's call is small.
+      const bettorWager32 = isFinite(bettor.bet) ? Math.max(0, bettor.bet) : 0;
+      const rawPotBefore32 = gs.pot - bettorWager32;
+      const defense = gtoFacingDefense({
+        street,
+        family: family32,
+        bettorPosition: chartPos32,
+        stackBB: stackBB32,
+        board: gs.communityCards,
+        heroCards: player.cards,
+        pot,
+        toCall,
+        rawBetFraction: rawPotBefore32 > 0 ? bettorWager32 / rawPotBefore32 : undefined,
+        rand: fastRandom,
+      });
+      if (defense) {
+        if (defense.action === 'pass_strong') {
+          if (telemetryOn(opts)) noteFire('v32_defend_pass_strong');
+          // fall through: the aggression layers play this hand
+        } else if (defense.action === 'call') {
+          if (telemetryOn(opts)) noteFire('v32_defend_call');
+          return { action: 'call', amount: toCall, thinkTime: 0 };
+        } else {
+          if (telemetryOn(opts)) noteFire('v32_defend_fold');
+          return { action: 'fold', thinkTime: 0 };
+        }
+      } else if (telemetryOn(opts)) {
+        noteFire('v32_defend_no_range');
+      }
+    }
 
     // ═══ Not facing a bet ═══
     if (!facingBet) {
@@ -2416,14 +2586,94 @@ export class HorseLogic {
                   : player.seat === gs.dealerSeat
                     ? 'BTN'
                     : 'CO';
+        const family29: 'cash' | 'spin' | 'tourney_icm' = !isTournamentMode(gs)
+          ? 'cash'
+          : gs.format === 'spin'
+            ? 'spin'
+            : 'tourney_icm';
+        const stackBB29 = gs.bigBlind > 0 ? player.stack / gs.bigBlind : 100;
+
+        // ═══ V31 FIRST (2026-08-30) ═══ The v2 export is DISJOINT from the
+        // v1 one V29/V30 read - zero of 9,584 sampled turn rows carry both -
+        // so this is not a better answer to the same question, it is the 59%
+        // of the turn V30 never sees. It is consulted first because when it
+        // CAN answer it answers strictly better: it knows how many of the
+        // board's flush suit the holding contains (bet frequency differs
+        // across those buckets by 0.334 on average on the turn, up to 1.000),
+        // and it knows the size the solver actually bet. v1 offers exactly
+        // one bet size everywhere - b16, 16% of pot - so V30 cannot express a
+        // large turn bet at all, while the v2 turn bet averages 246.8% of pot.
+        // NULL when the layer is ablated off, never a synthetic miss: a
+        // disabled layer that reports `empty_store` teaches the counters to
+        // lie about the table being empty, and those counters are the whole
+        // point of the attribution below.
+        const v31 =
+          (opts.v31GtoSuitAware ?? true) !== false
+            ? gtoStreetAdviceV31({
+                street,
+                family: family29,
+                position: chartPos29,
+                stackBB: stackBB29,
+                board: gs.communityCards,
+                hand: hand29,
+                holeCards: player.cards,
+              })
+            : null;
+        if (v31?.hit) {
+          const pick31 = rollMix(v31.mix, fastRandom);
+          if (!pick31) {
+            // A cell whose mix carries no mass. Counted on its own, because
+            // it is a DATA problem in a cell that exists — not a miss.
+            if (telemetryOn(opts)) noteFire('v31_gto_empty_mix');
+          } else {
+            if (pick31 === 'check') {
+              if (telemetryOn(opts)) noteFire('v31_gto_open');
+              return { action: 'check', thinkTime: 0 };
+            }
+            // The size comes from the CELL, never from a bucket midpoint:
+            // bet_big means ">=110% of pot" and the turn's real mean is 246.8.
+            // Guessing the middle of that bucket would size the solver's
+            // overbet at about a third of what it is, which is the entire
+            // reason this layer exists. snapFraction passes anything above
+            // 1.4 through untouched and legalize clamps to the stack, so a
+            // 2.46x pot bet survives intact and becomes all-in when short.
+            const frac31 = v31.sizeFrac[pick31];
+            if (typeof frac31 === 'number' && frac31 > 0) {
+              if (telemetryOn(opts)) noteFire('v31_gto_open');
+              return this.betSize(pot, frac31, player, gs, vi, params, useSizing);
+            }
+            // A bet bucket with no recorded size cannot be sized honestly, so
+            // fall through to V30 rather than invent a number.
+            if (telemetryOn(opts)) noteFire('v31_gto_no_size');
+          }
+        }
+
         const advice29 = gtoStreetAdvice({
           street,
-          family: !isTournamentMode(gs) ? 'cash' : gs.format === 'spin' ? 'spin' : 'tourney_icm',
+          family: family29,
           position: chartPos29,
-          stackBB: gs.bigBlind > 0 ? player.stack / gs.bigBlind : 100,
+          stackBB: stackBB29,
           board: gs.communityCards,
           hand: hand29,
         });
+        if (!advice29 && telemetryOn(opts) && v31 && !v31.hit) {
+          // OBSERVABILITY (2026-08-30): the gate was passed and NEITHER layer
+          // answered. Until now that was silent, so "the solver layer fires on
+          // 0.08% of decisions" could not be attributed to the gate, a missing
+          // cell, or a missing holding inside a cell. Literal labels, so the
+          // dead-layer grep audit can still see them.
+          //
+          // Only fired when V31 actually LOOKED AND MISSED. If it hit and was
+          // merely unusable, v31_gto_empty_mix or v31_gto_no_size already
+          // recorded that, and adding a `no_cell` on top would claim a cell
+          // was absent when one was found — corrupting the very attribution
+          // this exists to provide.
+          if (v31.miss === 'no_cell') noteFire('gto_miss_no_cell');
+          else if (v31.miss === 'hand_not_in_cell') noteFire('gto_miss_hand_not_in_cell');
+          else if (v31.miss === 'no_texture') noteFire('gto_miss_no_texture');
+          else if (v31.miss === 'no_hand') noteFire('gto_miss_no_hand');
+          else noteFire('gto_miss_empty_store');
+        }
         if (advice29) {
           const pick = rollMix(advice29.mix, fastRandom);
           if (pick) {

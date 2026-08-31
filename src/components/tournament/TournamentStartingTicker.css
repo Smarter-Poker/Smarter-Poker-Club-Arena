@@ -116,10 +116,25 @@
   }
   .mtt-ticker__scroll {
     animation: none;
+    /* The scroller is `inline-flex` and sized by its content, so without these
+       it stays wider than the bar and the text is simply cut at the edge with
+       no sign that anything follows. */
+    max-width: 100%;
+    min-width: 0;
   }
   /* Static: show the first copy, truncated, instead of a moving strip. */
   .mtt-ticker__msg + .mtt-ticker__msg {
     display: none;
+  }
+  .mtt-ticker__msg {
+    /* Ellipsis, not a hard cut: reduced motion collapses the MOVEMENT, and the
+       reader still has to be able to tell that the line continues. The strip is
+       a button on to the event either way, and the message is built
+       most-important-part-first ("505 Overlay Right Now - <event> - ..."), so
+       what survives the truncation is the part worth reading. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
   }
   .mtt-ticker__track {
     overflow: hidden;

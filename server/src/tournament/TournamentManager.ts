@@ -765,8 +765,12 @@ export class TournamentManager extends TournamentManagerEliminations {
           p_user_id: w.user_id,
           p_username: w.username || 'Player',
         });
-        const seat = seatRes as { ok?: boolean; reason?: string } | null;
-        // A refusal that is simply "they already hold this seat" is success.
+        const seat = seatRes as {
+          ok?: boolean;
+          awarded?: boolean;
+          reason?: string;
+          held_from_this_satellite?: boolean;
+        } | null;
         const regErr =
           seatErr || (seat?.ok === false ? { message: seat?.reason || 'seat_refused' } : null);
         if (regErr && !/duplicate|unique|already_registered/i.test(regErr.message || '')) {
@@ -776,6 +780,38 @@ export class TournamentManager extends TournamentManagerEliminations {
             ticketCost,
             `Satellite seat fallback (registration failed): ${target.name || 'target'}`,
             `tourney:${this.tournamentId}:prize:place:${w.position}`
+          );
+        } else if (
+          seat?.ok === true &&
+          seat?.awarded === false &&
+          seat?.held_from_this_satellite === false
+        ) {
+          /**
+           * A SECOND WIN IS NEVER WORTH ZERO (2026-08-30 satellite audit).
+           *
+           * `awarded: false` means the player already holds the target seat.
+           * When THIS satellite is the one that seated them, this is a
+           * recovery re-drive and paying again would be a double payment —
+           * stay silent. When a DIFFERENT satellite (or a direct buy-in)
+           * seated them, this satellite collected their buy-in, promised a
+           * seat it cannot deliver, and used to hand them NOTHING: four
+           * winners across 1a6f53a4, acb14548 and e3d3bd1e received neither
+           * seat nor cash (back-paid in the same migration that taught
+           * fn_award_satellite_seat to report `held_from_this_satellite`).
+           * The ticket value is paid as cash instead, under the same stable
+           * place key, so a re-drive of THIS pass dedupes to nothing.
+           *
+           * An old fn without the flag returns `undefined`, which lands in
+           * neither branch — the conservative pre-migration behaviour.
+           */
+          await payCash(
+            w.user_id,
+            ticketCost,
+            `Satellite seat already held - ticket value paid in cash: ${target.name || 'target'}`,
+            `tourney:${this.tournamentId}:prize:place:${w.position}`
+          );
+          console.log(
+            `[Satellite:${this.tournamentId.slice(0, 8)}] Seat already held elsewhere — ticket cashed: ${w.user_id.slice(0, 8)}`
           );
         } else {
           console.log(
@@ -791,11 +827,23 @@ export class TournamentManager extends TournamentManagerEliminations {
           `tourney:${this.tournamentId}:prize:place:${w.position}`
         );
       }
-      await supabase
+      const { error: prizeStampErr } = await supabase
         .from('tournament_players')
         .update({ prize: ticketCost })
         .eq('tournament_id', this.tournamentId)
         .eq('user_id', w.user_id);
+      if (prizeStampErr) {
+        // 2026-08-30: this write failed silently during the Supabase
+        // degradation and left every e3d3bd1e winner recorded at prize 0
+        // while holding a funded seat. The stamp is a RECORD, not money —
+        // report it, never abort the loop over it.
+        reportError(
+          new Error(
+            `[Satellite:${this.tournamentId.slice(0, 8)}] prize stamp failed for ${w.user_id.slice(0, 8)}: ${prizeStampErr.message}`
+          ),
+          'Tournament.satellite_prize_stamp_failed'
+        );
+      }
     }
 
     // Remainder → next finisher as cash (or last seat winner if field exhausted)
@@ -898,12 +946,25 @@ export class TournamentManager extends TournamentManagerEliminations {
         // the pre-credited early-bird bonus (fn_register_for_tournament writes
         // it at registration). Seating ADDS the starting stack to it — never
         // overwrites it.
+        /**
+         * A ZERO-CHIP 'playing' ENTRANT IS NOT SEATABLE (2026-08-30).
+         *
+         * That state now has a precise meaning: they busted and their rebuy
+         * decision window is open (the bust vacates the seat immediately —
+         * Dan 2026-08-30 — and the elimination sweep holds their entry for
+         * REBUY_DECISION_GRACE_MS). The old fallback here handed such a
+         * player a FREE startingChips stack, which was unreachable while
+         * busted players kept their seats and becomes a chip mint the moment
+         * they do not. A landed rebuy raises their chips and the next pass
+         * seats them normally; a declined/expired window eliminates them.
+         */
+        if (player.status !== 'registered' && Number(player.chips || 0) <= 0) {
+          continue;
+        }
         const playerChips =
           player.status === 'registered'
             ? startingChips + Math.max(0, Math.floor(Number(player.chips) || 0))
-            : Number(player.chips || 0) <= 0
-              ? startingChips
-              : Number(player.chips);
+            : Number(player.chips);
 
         if (!best) {
           // All tables full — promote to 'playing' so expansion counts them;

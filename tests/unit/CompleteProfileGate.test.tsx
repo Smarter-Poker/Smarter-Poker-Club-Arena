@@ -130,6 +130,7 @@ describe('The gate reads the profile row, not the session stub', () => {
 
     await waitFor(() => expect(result.current.isReady).toBe(true));
     expect(result.current.showProfileModal).toBe(false);
+    expect(result.current.profileStatus).toBe('complete');
   });
 
   it('does not open just because the store user arrived as a stub', async () => {
@@ -150,6 +151,7 @@ describe('The gate reads the profile row, not the session stub', () => {
 
     await waitFor(() => expect(result.current.isReady).toBe(true));
     expect(result.current.showProfileModal).toBe(true);
+    expect(result.current.profileStatus).toBe('incomplete');
   });
 
   it('opens for a real alias with no arena avatar', async () => {
@@ -168,6 +170,7 @@ describe('The gate reads the profile row, not the session stub', () => {
 
     await waitFor(() => expect(result.current.isReady).toBe(true));
     expect(result.current.showProfileModal).toBe(false);
+    expect(result.current.profileStatus).toBe('unavailable');
   });
 
   it('does not re-litigate the gate when the store rewrites the user on token refresh', async () => {

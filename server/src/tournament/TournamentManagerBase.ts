@@ -172,6 +172,22 @@ export abstract class TournamentManagerBase {
    */
   protected bustingArmedAt: number = 0;
   /**
+   * ── THE PRE-SEAT MINUTE (Dan 2026-08-30) ──
+   *
+   * How far ahead of the advertised `start_time` this start() ran, in ms, or 0
+   * for a start at or past it. GameServer discovers a timed event
+   * TOURNAMENT_PRESEAT_LEAD_MS early so the field is SEATED before the clock;
+   * this number is what stops the poker moving with it. Two consumers, both in
+   * start(): the `holdDealingUntil` deadline on every table, and the level
+   * clock, which is armed after this lead rather than at seating so level 1 is
+   * a full level of cards instead of a minute of waiting plus nine of poker.
+   *
+   * Read it as "time the felt owes the clock", not as a state — nothing outside
+   * start() branches on it, and it is 0 for every seat-first game and for every
+   * event started late.
+   */
+  protected preStartLeadMs: number = 0;
+  /**
    * How often the elimination sweep runs. Named because `bustingArmedAt` is
    * sized in terms of it — a literal in two files is how the two drift apart.
    */
@@ -1766,6 +1782,49 @@ export abstract class TournamentManagerBase {
       await this.createTablesAndSeatPlayers(tournament);
 
       /**
+       * ═══════════════════════════════════════════════════════════════════════
+       *  THE PRE-SEAT MINUTE (Dan 2026-08-30, binding)
+       * ═══════════════════════════════════════════════════════════════════════
+       *
+       * "When a player is registered, they should be 'sat down' one minute
+       *  before the event starts."
+       *
+       * GameServer discovers a timed event TOURNAMENT_PRESEAT_LEAD_MS before its
+       * `start_time`, so by this line the tables exist and every registered
+       * player — human and horse alike — is in a seat with a stack, one minute
+       * ahead of the clock. What must NOT move with them is the poker: the
+       * lobby advertised a start time and that is when the first card is dealt.
+       *
+       * So the whole field is held to the advertised instant, using the same
+       * `holdDealingUntil` deadline the spin wheel uses. `holdDealingUntil` is
+       * monotonic (it only ever takes the later of the two), so a spin reveal
+       * arming its own longer hold a few lines below cannot be shortened by
+       * this one, and this cannot be shortened by it.
+       *
+       * `preStartLeadMs` is what the level clock reads at the bottom of start():
+       * arming it here would spend the first minute of level 1 on an empty
+       * felt, and a 10-minute level would be a 9-minute level for everybody.
+       *
+       * SECTION 10.5. There is no horse branch anywhere in this window. Every
+       * seat is filled by the same pass and every seat waits out the same
+       * minute — a felt that filled a horse seat and dealt to it while the
+       * human seats were still held would announce which is which.
+       */
+      const scheduledStartMs = Date.parse(String(tournament.start_time ?? ''));
+      this.preStartLeadMs =
+        Number.isFinite(scheduledStartMs) && scheduledStartMs > Date.now()
+          ? scheduledStartMs - Date.now()
+          : 0;
+      if (this.preStartLeadMs > 0) {
+        for (const engine of this.tableEngines.values()) {
+          engine.holdDealingUntil(scheduledStartMs);
+        }
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Pre-seated ${this.tableEngines.size} table(s) — holding the deal ${Math.round(this.preStartLeadMs / 1000)}s until the advertised start ${new Date(scheduledStartMs).toISOString()}`
+        );
+      }
+
+      /**
        * THE SHARED REVEAL (Dan 2026-08-21).
        *
        * "THE WHEEL STARTS SPINNING THE MOMENT THE 3RD PLAYER PAYS FOR HIS
@@ -1943,11 +2002,24 @@ export abstract class TournamentManagerBase {
       // The flip is now retried and then CONFIRMED by reading the row back.
       // A row that reads RUNNING (or any later status) is success, including
       // when another process won the race.
+      /**
+       * `started_at` IS THE ADVERTISED START, NOT THIS INSTANT (2026-08-30).
+       *
+       * With the pre-seat lead this line runs up to a minute before the time on
+       * the lobby card, and `started_at` is not a log entry — it is arithmetic.
+       * `late_reg_mins` is measured from it (`started_at + mins`, in both the
+       * footer countdown and `make_interval(mins => late_reg_mins)` server
+       * side), so stamping the seating instant would close a 30-minute late-reg
+       * window 29 minutes after the first hand and shorten every duration ever
+       * reported for the event. Stamp the moment the cards are actually allowed
+       * to fly, which is what every reader already believes this column means.
+       */
+      const startedAtIso = new Date(Date.now() + Math.max(0, this.preStartLeadMs)).toISOString();
       let runningFlipped = false;
       for (let attempt = 1; attempt <= 3 && !runningFlipped; attempt++) {
         const { error: flipErr } = await supabase
           .from('tournaments')
-          .update({ status: 'RUNNING', started_at: new Date().toISOString() })
+          .update({ status: 'RUNNING', started_at: startedAtIso })
           .eq('id', this.tournamentId)
           .eq('status', 'REGISTERING');
         const { data: confirmRow } = await supabase
@@ -2054,8 +2126,29 @@ export abstract class TournamentManagerBase {
       // sweep is their only freeze recovery.
       this.startTableLivenessSweep();
 
-      // Start blind timer
-      this.startBlindTimer(tournament.blind_structure || []);
+      /**
+       * Start blind timer — AT THE ADVERTISED START, not at seating.
+       *
+       * `startBlindTimer` clamps its override to at most one level's duration,
+       * so the lead cannot be expressed as "level 1 plus a minute". It is
+       * expressed as what it is: the clock is armed when the cards are, which
+       * is the same instant `holdDealingUntil` releases the felt above. Arming
+       * it here would hand level 1 to the pre-seat minute and every level after
+       * it would run a minute out of step with the structure the lobby printed.
+       *
+       * Guarded on `this.running` because a stand-down between here and then
+       * (see the start() stand-down paths) must not arm a clock on a tournament
+       * that is no longer being managed by this process.
+       */
+      if (this.preStartLeadMs > 0) {
+        const structure = tournament.blind_structure || [];
+        setTimeout(() => {
+          if (!this.running) return;
+          this.startBlindTimer(structure);
+        }, this.preStartLeadMs);
+      } else {
+        this.startBlindTimer(tournament.blind_structure || []);
+      }
 
       // TOURNEY-AUDIT 2026-07-24 (sweep 4): with NO late-reg/rebuy window
       // configured (cap <= 0), the prize pool is final from the first hand —

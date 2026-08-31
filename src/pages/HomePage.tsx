@@ -42,6 +42,9 @@ import LOBBY_TILES from '../config/lobbyTiles.config';
 import { preloadRoute } from '../utils/ChunkPreloader';
 import {
   eligibleQuickLinkClubs,
+  eligibleCashierWallets,
+  isUnionEntity,
+  resolveCashierWallet,
   resolveTargetClub,
   readLastClubId,
   rememberLastClub,
@@ -322,7 +325,16 @@ function HomePageInner() {
           data: { user: authUser },
         } = await getAuthUser();
         if (authUser) {
-          const memberships = await ClubsService.getUserMemberships(authUser);
+          const [memberships, ownedUnionResult] = await Promise.all([
+            ClubsService.getUserMemberships(authUser),
+            supabase
+              .from('clubs')
+              .select(
+                'id, club_id, name, slug, logo_url, card_image_url, member_count, owner_id, union_id, is_union'
+              )
+              .eq('owner_id', authUser.id)
+              .eq('is_union', true),
+          ]);
           const clubs =
             memberships?.map(
               (m) =>
@@ -335,11 +347,26 @@ function HomePageInner() {
                   // display stub. Regular member clubs also have union_id but don't
                   // have "union" in their name.
                   entity_type:
-                    (m.club as any)?.union_id && /union/i.test(m.club?.name || '')
+                    (m.club as any)?.is_union === true ||
+                    ((m.club as any)?.union_id && /union/i.test(m.club?.name || ''))
                       ? 'union'
                       : 'club',
                 }) as UserClub
             ) || [];
+          // Union ownership is authority in its own right; do not depend on a
+          // redundant club_members row existing for the union hub card.
+          if (ownedUnionResult.error) {
+            reportError(ownedUnionResult.error, 'HomePage.ownedUnionWallets');
+          } else {
+            for (const owned of ownedUnionResult.data || []) {
+              if (clubs.some((club) => club.id === owned.id)) continue;
+              clubs.push({
+                ...owned,
+                is_owner: true,
+                entity_type: 'union',
+              } as UserClub);
+            }
+          }
           // UNION LAW (2026-08-19, Dan): the union house-club card (club.id ===
           // club.union_id) is only shown to its owner. Players enter through
           // their own club; union games appear inside the club lobby.
@@ -585,9 +612,15 @@ function HomePageInner() {
         case '4': {
           haptic.light();
           PremiumSFX.navigate();
-          const target = resolveTargetClub(userClubs);
-          if (target) navigate(`/clubs/${target.slug || target.id}/cashier`);
-          else toast.info('Join a club first to access the cashier');
+          const target = resolveCashierWallet(eligibleCashierWallets(userClubs), quickLinkClubId);
+          if (target) {
+            rememberLastClub(target.id);
+            navigate(
+              isUnionEntity(target)
+                ? `/unions/${String(target.union_id || target.id)}/operations?tab=wallet`
+                : `/clubs/${target.slug || target.id}/cashier`
+            );
+          } else toast.info('Join a club first to access the cashier');
           break;
         }
         case '5': {
@@ -625,10 +658,12 @@ function HomePageInner() {
   }, [
     navigate,
     userClubs,
+    quickLinkClubId,
     showJoinModal,
     showCreateClubModal,
     showFindPlayerModal,
     leaveConfirm?.visible,
+    toast,
   ]);
 
   // #2: Pin/unpin club
@@ -998,12 +1033,17 @@ function HomePageInner() {
     // Stats re-fetch naturally when displayClubIdsKey changes (membership changes)
   }, [displayClubs.length, displayClubIdsKey]);
 
-  // Club quick links — shared resolution (utils/clubQuickLink): last-used
-  // club if still a member, else first club; unions excluded
+  // Marketplace remains club-only. Cashier additionally exposes an owned
+  // union treasury from its right-click / long-press wallet launcher.
   const quickLinkClubs = useMemo(() => eligibleQuickLinkClubs(userClubs), [userClubs]);
   const quickLinkClub = useMemo(
     () => resolveTargetClub(quickLinkClubs, quickLinkClubId),
     [quickLinkClubs, quickLinkClubId]
+  );
+  const cashierWallets = useMemo(() => eligibleCashierWallets(userClubs), [userClubs]);
+  const cashierWallet = useMemo(
+    () => resolveCashierWallet(cashierWallets, quickLinkClubId),
+    [cashierWallets, quickLinkClubId]
   );
 
   const openClubCashier = useCallback(
@@ -1012,7 +1052,11 @@ function HomePageInner() {
       setQuickLinkClubId(club.id);
       haptic.light();
       PremiumSFX.navigate();
-      navigate(`/clubs/${club.slug || club.id}/cashier`);
+      navigate(
+        isUnionEntity(club)
+          ? `/unions/${String(club.union_id || club.id)}/operations?tab=wallet`
+          : `/clubs/${club.slug || club.id}/cashier`
+      );
     },
     [navigate]
   );
@@ -1239,8 +1283,8 @@ function HomePageInner() {
               <ClubQuickLinkTile
                 key={tile.alt}
                 tile={tile}
-                clubs={quickLinkClubs}
-                targetClub={quickLinkClub}
+                clubs={tile.alt === 'Cashier' ? cashierWallets : quickLinkClubs}
+                targetClub={tile.alt === 'Cashier' ? cashierWallet : quickLinkClub}
                 menuTitle={tile.alt === 'Cashier' ? 'Open Cashier For' : 'Open Marketplace For'}
                 onSelect={tile.alt === 'Cashier' ? openClubCashier : openClubMarketplace}
                 onEmpty={tile.alt === 'Cashier' ? cashierEmpty : marketplaceEmpty}

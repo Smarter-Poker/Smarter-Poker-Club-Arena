@@ -781,6 +781,17 @@
    (min-height 48 / 42 sits under both sums, so the sum is what wins.) Erring
    LARGE is the safe direction - it under-states the space available, and
    under-stating only makes the oval smaller, never off-ratio. */
+/* THE TICKER IS NOT IN THIS SUM, DELIBERATELY (2026-08-30).
+   The MTT ticker sits above the tab bar now (Dan: "THE 'ACTION TAB' SHOULD
+   NEVER BE ABOVE IT"), so on /table/* it does take a band off the top of the
+   viewport, and subtracting `--mtt-ticker-h` here was the obvious move. It is
+   the wrong one: that property is written by JavaScript and the ticker comes
+   and goes MID-HAND, so putting it in this expression would rescale the felt,
+   the seat ring, the pot and every chip on the table the moment an MTT entered
+   its five-minute window. That is the exact class of bug
+   tests/unit/feltReserveIsStatic.test.ts exists to refuse, and its closing
+   instruction is the answer here too: reserve in CSS and let what varies
+   OVERLAY the felt. The tab bar moves for the ticker; the felt does not. */
 .table-page--embedded .table-container {
   --sp-page-h: calc(100dvh - var(--sp-tabbar-h, calc(49px + env(safe-area-inset-top, 0px))));
   --sp-page-inset-top: 0px;
@@ -1072,6 +1083,15 @@
 }
 
 .table-surface {
+  /* WHERE THE FELT WORDMARK SITS, as a percentage of this surface (2026-08-30).
+     Declared here because it is the nearest common ancestor of the two things
+     that must agree on it: `.table-brand`, which is centred ON this line, and
+     `.table-conn-banner`, which is anchored just above it. The `[data-boards]`
+     rules further down move a multi-board table's masthead by overriding THIS,
+     so the banner follows instead of being left behind in the board stack.
+     CSS-declared, never written from JavaScript - it is not part of the felt's
+     size expression and must not become part of it (feltReserveIsStatic). */
+  --sp-brand-top: 58%;
   position: absolute;
   /* Dan 2026-08-17: the felt window of the canonical skin composites after
      the scaler's cover-crop (source felt x 20.3-79.6% / y 8.9-89.2%, crop
@@ -1138,8 +1158,18 @@
   max-width: 82%;
   /* Dan 2026-08-17 (audit round 2): at 38% the wordmark + date/club line sat
      BEHIND the board cards (text peeked between cards). 58% parks the whole
-     masthead in the clear felt below the board, PokerBros-watermark style. */
-  top: 58%;
+     masthead in the clear felt below the board, PokerBros-watermark style.
+
+     THE NUMBER LIVES IN `--sp-brand-top` NOW (2026-08-30 audit), declared on
+     `.table-surface` below, because a second element has to follow it: the
+     connection banner is anchored just ABOVE this wordmark, and it was pinned
+     to a literal 52% while the `[data-boards]` rules moved the wordmark to 72%
+     and 84%. On a run-it-twice or bomb-pot table the banner therefore floated
+     a third of the felt above the mark it is supposed to sit on, straight into
+     the board stack - on exactly the tables where losing the connection costs
+     the most. One property, both elements, and the multi-board overrides now
+     move both by moving it. */
+  top: var(--sp-brand-top, 58%);
   left: 50%;
   transform: translate(-50%, -50%);
   display: flex;
@@ -1679,11 +1709,14 @@
     transform: translateY(0) scale(1) rotateY(0deg);
   }
 }
-.table-page[data-boards='2'] .table-brand {
-  top: 72%;
+/* Set the SHARED anchor, not the wordmark's own `top`: the connection banner
+   rides just above it and has to come along. See `--sp-brand-top` on
+   `.table-surface`. */
+.table-page[data-boards='2'] .table-surface {
+  --sp-brand-top: 72%;
 }
-.table-page[data-boards='3'] .table-brand {
-  top: 84%;
+.table-page[data-boards='3'] .table-surface {
+  --sp-brand-top: 84%;
 }
 
 /* ── BOARD SIZING ON THE PORTRAIT TABLE (Dan 2026-07-28) ────────────────────
@@ -3870,6 +3903,16 @@ button.post-bb-overlay-button {
 .table-page.ca-raising .chat-collapsed {
   opacity: 0;
   pointer-events: none;
+  /* VISIBILITY, NOT JUST POINTER-EVENTS (Dan 2026-08-30: "IF YOU TRY TO BET
+     33% FROM THE ACTION BAR, IT SOMEHOW BLEEDS THROUGH, AND OPENS THE
+     PREVIOUS HAND BUTTON"). `pointer-events: none` on an ancestor is only a
+     default - `.prev-hand-card` (and the rabbit/timebank tiles) set their own
+     `pointer-events: auto`, which RE-ENABLES hit-testing inside a none
+     ancestor. The HUD paints after the action panel at the same z-index, so
+     the invisible previous-hand button sat on top of the preset row and ate
+     the 33% tap. `visibility: hidden` removes the subtree from hit-testing
+     entirely and no descendant can opt back in. */
+  visibility: hidden;
   transition: opacity 0.15s ease;
 }
 

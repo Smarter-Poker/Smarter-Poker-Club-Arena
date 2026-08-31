@@ -2,6 +2,43 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Codex session 2026-08-30 — LEADERBOARD PRIZE SETUP AND PROMO-WALLET AUTHORITY
+
+Leaderboard prize configuration now follows the actual financial hierarchy:
+an affiliated club is funded and administered by its union's
+`union_wallets.promo_wallet`; a standalone club is funded by its own
+`clubs.promo_balance`. Migration
+`20260830223000_leaderboard_reward_setup_safe.sql` adds validated setup
+metadata, read-only funding visibility, an owner-context RPC, and a single
+server-authorized save RPC. Union authority is derived with
+`fn_union_can_manage_wallets`; standalone authority is limited to the club
+owner or active co-owner. The browser never submits or chooses the funding
+source.
+
+The same migration closes a pre-existing unsafe path. The live
+`fn_payout_leaderboard` implementation credited club member chip balances
+without debiting either required promo source. Because there is no canonical,
+idempotent promo-wallet batch transfer that covers both funding owners, the
+function is replaced by an explicit safety refusal and browser execution is
+revoked. No balances are changed by this migration and no payout automation is
+introduced. This follows the request to omit high-risk work instead of creating
+a second money system.
+
+The client adds an accessible four-step setup wizard, suggested and custom
+plans, owner-only hamburger discovery, first-click deep linking, live planned
+prize badges, and a saved program summary. Existing verified payout history
+remains readable. Direct table writes are removed; configuration goes through
+the validated RPC only.
+
+Applied to production after a transaction-wrapped live-schema dry run. Verified
+8/8 new columns, zero browser write policies, zero settings/payout rows changed,
+authenticated payout execution revoked, the payout body replaced by the safety
+barrier, and valid/duplicate/hostile prize validators returning the expected
+results. Verification after rebasing onto current `origin/main`: 657 Vitest
+files / 9,591 tests green; TypeScript clean; targeted ESLint, Title Case, and
+no-hover law clean; production bundle and the full media optimization pipeline
+completed with `behind-main=0`.
+
 ## Codex session 2026-08-29 — CLUB ARENA IA PHASE 3: COMMAND RAILS, UNION RECOVERY, INVITE CONTEXT
 
 The exhaustive hamburger cleanup now extends beyond the drawer itself into the
@@ -16281,4 +16318,44 @@ both sides, ui-text gate green.
 **What changed:** Added behavior-level component, ordered-writer, cache, live-bus, rollback, shared-token, and mobile Chromium contracts.
 **Why:** Static inventory counts cannot prove a user tap reaches the live table or remains durable under delayed and failed requests.
 **Verified:** YES — 498 test files / 7,860 tests pass; focused mobile Playwright 1/1; production build passes; ESLint reports 0 errors (711 pre-existing warnings).
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #150 — Cashier Claim Back Moves Whole Cents Only
+
+**File:** `supabase/migrations/20260830235990_cashier_claim_back_cent_integrity.sql`, `src/pages/CashierTradePage.tsx`
+**Lines:** Before: final claim-back body from `20260826_cashier_send_out_and_claim_back_audit_fixes.sql` 337-523; client claim call near 1450
+**What existed:** The claim RPC accepted arbitrary numeric precision, credited a four-decimal agent wallet and debited a two-decimal player wallet, and accepted an operation-ID replay without binding it to the same source send. The client echoed the server's potentially contaminated fractional remainder.
+**What changed:** Explicit sub-cent values are refused before any wallet read, null claims the maximum safe whole-cent remainder, historical residue rounds down, retries serialize and bind to source plus explicit amount, and the client renders the server-returned amount.
+**Why:** A repeated `0.0049` claim could credit the agent while the player debit rounded to zero. Money movement must conserve the same unit on both sides and a retry key must describe one immutable intent.
+**Verified:** YES — re-read after editing; production migration assertions passed; six transaction-isolated production behavior probes passed and rolled back.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #151 — The First Cashier Load Cannot Invalidate Itself
+
+**File:** `src/pages/CashierTradePage.tsx`, `tests/cashier-club-load-order.test.tsx`
+**Lines:** Before: separate load effect 727-729 and later reset effect 777-820
+**What existed:** React started the club load and then the later reset effect incremented its version. The load's success and finally paths both treated themselves as stale, so the Trade tab could remain on `Loading Members...` forever.
+**What changed:** Club reset and load now share one ordered effect: invalidate prior work, clear club-scoped state, then start the new request.
+**Why:** Request invalidation must target the club being left, never the request for the club being entered.
+**Verified:** YES — a rendered regression test holds the membership response in flight, releases it, observes the roster, and confirms Trade remains the selected first tab.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #152 — Browser Balance Guards Survive A Clean Replay
+
+**File:** `supabase/migrations/20260830235990_cashier_claim_back_cent_integrity.sql`, `scripts/verification-harness/cashier-claim-back-cent-integrity.sql`
+**Lines:** Before: `20260827g_close_browser_chip_mint.sql` ended in `SELECT 1`
+**What existed:** Three live protection triggers existed only as a production hotfix; the tracked historical migration described them but did not recreate them.
+**What changed:** The invoker-rights update/insert guards and all three triggers are installed idempotently, asserted inside the migration, and exercised by a reusable rolled-back production probe.
+**Why:** Disaster recovery and fresh environments must preserve the same chip-mint boundary as production.
+**Verified:** YES — all three trigger definitions are live and an authenticated own-wallet update returned the expected insufficient-privilege refusal inside a rolled-back transaction.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #153 — One Server-Owned UTC Clock For Every Leaderboard Period
+
+**File:** `supabase/migrations/20260831000500_leaderboard_canonical_period_windows.sql`, `src/services/LeaderboardService.ts`, `src/pages/LeaderboardPage.tsx`
+**What existed:** Current rankings used rolling 1/7/30-day database windows while historical rankings and payout lookups rebuilt calendar dates in each browser's local timezone. The same weekly board could therefore mean different dates to rankings, prize metadata, and players in different timezones. Historical rank responses also assumed a single JSON object even when PostgREST returned a table row array.
+**What changed:** Added one authenticated, read-only UTC period-window RPC with Sunday-start weeks and start-inclusive/end-exclusive boundaries; current club, global, and union rankings now consume that boundary while retaining tied ranks, active-player totals, BB/100, pagination, and rank movement. Historical rankings, personal ranks, and payout metadata request the same server window, and rank response normalization accepts both PostgREST shapes.
+**Why:** Rankings, published prize rules, and future settlement must share an immutable period identity before versioned reward programs can be safe.
+**Verified:** Transactional production dry run compiled and executed all three ranking functions and asserted UTC rollover, Sunday weeks, and leap-year months. Targeted service and migration contracts pass; full regression/build results are recorded by the phase release.
+**Money movement:** NONE — this phase exposes date boundaries and reads cumulative stats only.
 **TypeScript:** PASS — `npx tsc --noEmit`.

@@ -43,6 +43,23 @@ import {
   msUntilChallengeReset,
 } from '../utils/challengeReset';
 import { getChallengeMissionAction } from '../utils/challengeMissionAction';
+import { capture } from '../lib/analytics';
+import {
+  enablePush,
+  hasLocalSubscription,
+  isIos,
+  isIosStandalonePwa,
+  isWebPushSupported,
+  notificationPermission,
+} from '../lib/pushClient';
+import {
+  getDailyMissionAlertPreference,
+  setDailyMissionAlertPreference,
+} from '../services/DailyMissionNotificationService';
+import {
+  dailyMissionReasonCode,
+  recordDailyMissionOperation,
+} from '../services/DailyMissionTelemetryService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -367,6 +384,179 @@ function MissionResetReadout({
   );
 }
 
+function MissionAlertsPanel({ userId }: { userId: string }) {
+  const toast = useToast();
+  const [enabled, setEnabled] = useState(false);
+  const [deviceConnected, setDeviceConnected] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([getDailyMissionAlertPreference(userId), hasLocalSubscription()])
+      .then(([preference, subscribed]) => {
+        if (cancelled) return;
+        setEnabled(preference.enabled);
+        setDeviceConnected(subscribed);
+        setError(null);
+      })
+      .catch((err) => {
+        reportError(err, 'DailyChallengesPage.alert_preference_load_failed');
+        if (!cancelled) setError('Mission Alert Status Is Temporarily Unavailable.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  /** Keep this directly on the click path so iOS preserves the permission gesture. */
+  const enableAlerts = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const startedAt = performance.now();
+    const pushResultPromise = enablePush();
+    try {
+      const pushResult = await pushResultPromise;
+      if (!pushResult.ok) throw new Error(pushResult.error || 'Push enrollment failed');
+      const preference = await setDailyMissionAlertPreference(userId, true);
+      setEnabled(preference.enabled);
+      setDeviceConnected(true);
+      toast.success('Daily Mission reset alerts are on for this device');
+      capture('daily_mission_alerts_changed', { enabled: true, surface: 'daily_missions' });
+      recordDailyMissionOperation({
+        userId,
+        event: 'alerts_enabled',
+        durationMs: performance.now() - startedAt,
+      });
+    } catch (err) {
+      reportError(err, 'DailyChallengesPage.alert_enable_failed');
+      const message = err instanceof Error ? err.message : 'Mission alerts could not be enabled.';
+      setError(message);
+      toast.error(message);
+      recordDailyMissionOperation({
+        userId,
+        event: 'alerts_failed',
+        durationMs: performance.now() - startedAt,
+        reasonCode: dailyMissionReasonCode(err),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disableAlerts = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const startedAt = performance.now();
+    try {
+      const preference = await setDailyMissionAlertPreference(userId, false);
+      setEnabled(preference.enabled);
+      toast.success('Daily Mission reset alerts are off');
+      capture('daily_mission_alerts_changed', { enabled: false, surface: 'daily_missions' });
+      recordDailyMissionOperation({
+        userId,
+        event: 'alerts_disabled',
+        durationMs: performance.now() - startedAt,
+      });
+    } catch (err) {
+      reportError(err, 'DailyChallengesPage.alert_disable_failed');
+      setError('Mission alerts could not be turned off. Please try again.');
+      toast.error('Mission alerts could not be turned off');
+      recordDailyMissionOperation({
+        userId,
+        event: 'alerts_failed',
+        durationMs: performance.now() - startedAt,
+        reasonCode: dailyMissionReasonCode(err),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const permission = notificationPermission();
+  const unsupportedIos = !isWebPushSupported() && isIos() && !isIosStandalonePwa();
+  const deviceNeedsConnection = enabled && !deviceConnected;
+  const enrollmentBlocked = permission === 'denied' || unsupportedIos;
+  const status = loading
+    ? 'Checking Alert Link'
+    : enabled && deviceConnected
+      ? 'On For This Device'
+      : enabled
+        ? 'Preference On, Device Disconnected'
+        : permission === 'denied'
+          ? 'Blocked In Browser Settings'
+          : unsupportedIos
+            ? 'Install App To Enable'
+            : 'Off Until You Opt In';
+
+  return (
+    <aside className={styles.alertConsole} aria-labelledby="mission-alerts-title">
+      <div className={styles.alertIcon} aria-hidden="true">
+        {'\u25C7'}
+      </div>
+      <div className={styles.alertCopy}>
+        <span className={styles.panelLabel}>Optional Mission Signal</span>
+        <h2 id="mission-alerts-title">Daily Reset Alerts</h2>
+        <p>
+          Get One Alert When A Fresh Daily Mission Set Opens. This Is Off By Default And Does Not
+          Change Seat, Message, Tournament, Or Club Alerts.
+        </p>
+        {unsupportedIos && (
+          <small>
+            Add Smarter Poker To Your Home Screen, Then Open The Installed App To Enable.
+          </small>
+        )}
+        {permission === 'denied' && (
+          <small>
+            Allow Notifications For Smarter Poker In Your Browser Settings, Then Reload.
+          </small>
+        )}
+        {error && (
+          <small className={styles.alertError} role="alert">
+            {error}
+          </small>
+        )}
+      </div>
+      <div className={styles.alertControls}>
+        <span className={enabled && deviceConnected ? styles.alertStatusOn : styles.alertStatus}>
+          {status}
+        </span>
+        <button
+          type="button"
+          className={styles.alertButton}
+          onClick={enabled && deviceConnected ? disableAlerts : enableAlerts}
+          disabled={loading || busy || (enrollmentBlocked && (!enabled || deviceNeedsConnection))}
+          aria-pressed={enabled}
+        >
+          {busy
+            ? 'Updating...'
+            : enabled && deviceConnected
+              ? 'Turn Off Mission Alerts'
+              : deviceNeedsConnection
+                ? 'Reconnect This Device'
+                : 'Turn On Mission Alerts'}
+        </button>
+        {deviceNeedsConnection && (
+          <button
+            type="button"
+            className={styles.alertSecondaryButton}
+            onClick={disableAlerts}
+            disabled={loading || busy}
+          >
+            Turn Off Without Reconnecting
+          </button>
+        )}
+      </div>
+    </aside>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -430,6 +620,7 @@ export default function DailyChallengesPage() {
   // ── Loaders ──
   const loadChallenges = useCallback(
     async (uid: string, mode: 'initial' | 'refresh' | 'silent') => {
+      const startedAt = performance.now();
       const requestId = ++loadRequestRef.current;
       if (mode === 'initial') {
         setIsLoading(true);
@@ -451,8 +642,27 @@ export default function DailyChallengesPage() {
         const syncedAt = Number.isFinite(receiptTime) ? receiptTime : Date.now();
         lastSyncedAtRef.current = syncedAt;
         setLastSyncedAt(syncedAt);
+        recordDailyMissionOperation({
+          userId: uid,
+          event: 'dashboard_loaded',
+          durationMs: performance.now() - startedAt,
+          itemCount: dashboard.missions.length,
+        });
+        if (mode === 'initial') {
+          capture('daily_missions_viewed', {
+            mission_count: dashboard.missions.length,
+            reward_vault_count: dashboard.vault.count,
+            load_duration_ms: Math.round(performance.now() - startedAt),
+          });
+        }
       } catch (err: any) {
         reportError(err, 'DailyChallengesPage.load_failed');
+        recordDailyMissionOperation({
+          userId: uid,
+          event: 'dashboard_failed',
+          durationMs: performance.now() - startedAt,
+          reasonCode: dailyMissionReasonCode(err),
+        });
         if (isMountedRef.current && requestId === loadRequestRef.current) {
           setLoadError(
             'Mission Network Unavailable. Your Progress Is Safe - Retry The Secure Link.'
@@ -599,6 +809,7 @@ export default function DailyChallengesPage() {
     onSubscriptionError: () => {
       realtimeStatusRef.current = 'degraded';
       setRealtimeState('degraded');
+      recordDailyMissionOperation({ userId, event: 'realtime_degraded' });
       // One event-driven reconciliation while the channel factory reconnects;
       // there is deliberately no UX polling fallback.
       scheduleRealtimeRefresh();
@@ -608,7 +819,10 @@ export default function DailyChallengesPage() {
       const recovered = realtimeStatusRef.current === 'degraded';
       realtimeStatusRef.current = 'live';
       setRealtimeState('live');
-      if (recovered) scheduleRealtimeRefresh();
+      if (recovered) {
+        recordDailyMissionOperation({ userId, event: 'realtime_recovered' });
+        scheduleRealtimeRefresh();
+      }
     },
   });
 
@@ -619,6 +833,7 @@ export default function DailyChallengesPage() {
       if (claimGuardRef.current.has(challenge.id)) return;
       claimGuardRef.current.add(challenge.id);
       setClaimingIds((prev) => new Set(prev).add(challenge.id));
+      const startedAt = performance.now();
 
       try {
         const paid = await dailyChallengeService.claimChallenges(userId, [challenge.id]);
@@ -647,6 +862,19 @@ export default function DailyChallengesPage() {
           prev.map((c) => (c.id === challenge.id ? { ...c, claimed: true } : c))
         );
         if (newlyClaimed) {
+          capture('daily_mission_claimed', {
+            tier: challenge.tier,
+            chip_reward: paid.chips,
+            diamond_reward: paid.diamonds,
+            claim_count: 1,
+          });
+          recordDailyMissionOperation({
+            userId,
+            event: 'claim_succeeded',
+            tier: challenge.tier,
+            durationMs: performance.now() - startedAt,
+            itemCount: 1,
+          });
           triggerHaptic('success');
           setCelebratingIds((prev) => new Set(prev).add(challenge.id));
 
@@ -669,6 +897,14 @@ export default function DailyChallengesPage() {
         }
       } catch (err: any) {
         reportError(err, 'DailyChallengesPage.claim_failed');
+        recordDailyMissionOperation({
+          userId,
+          event: 'claim_failed',
+          tier: challenge.tier,
+          durationMs: performance.now() - startedAt,
+          itemCount: 1,
+          reasonCode: dailyMissionReasonCode(err),
+        });
         if (isMountedRef.current) toast.error(err?.message || 'Failed to claim reward');
         loadChallenges(userId, 'silent');
       } finally {
@@ -705,9 +941,19 @@ export default function DailyChallengesPage() {
     setDiamondBalance((prev) => Math.max(0, prev - 5000));
     setStreak((prev) => (prev ? { ...prev, freezesAvailable: prev.freezesAvailable + 1 } : prev));
 
+    const startedAt = performance.now();
     try {
       const res = await dailyChallengeService.buyStreakFreeze(userId);
       if (res.success) {
+        capture('daily_mission_freeze_purchased', {
+          replayed: res.alreadyPurchased,
+          diamond_cost: 5000,
+        });
+        recordDailyMissionOperation({
+          userId,
+          event: 'freeze_succeeded',
+          durationMs: performance.now() - startedAt,
+        });
         toast.success(
           res.alreadyPurchased ? 'Streak Freeze Purchase Confirmed.' : 'Streak Freeze Purchased.'
         );
@@ -720,11 +966,24 @@ export default function DailyChallengesPage() {
           }
         }
       } else {
+        recordDailyMissionOperation({
+          userId,
+          event: 'freeze_failed',
+          durationMs: performance.now() - startedAt,
+          reasonCode: 'rejected',
+        });
         toast.error(res.error || 'Failed to buy freeze');
         // Revert UI on fail
         loadChallenges(userId, 'silent');
       }
-    } catch {
+    } catch (err) {
+      reportError(err, 'DailyChallengesPage.freeze_failed');
+      recordDailyMissionOperation({
+        userId,
+        event: 'freeze_failed',
+        durationMs: performance.now() - startedAt,
+        reasonCode: dailyMissionReasonCode(err),
+      });
       toast.error('Failed to buy freeze');
       loadChallenges(userId, 'silent');
     } finally {
@@ -744,6 +1003,7 @@ export default function DailyChallengesPage() {
 
       rerollGuardRef.current.add(challenge.id);
       setRerollingIds((prev) => new Set(prev).add(challenge.id));
+      const startedAt = performance.now();
       try {
         const result = await dailyChallengeService.rerollChallenge(
           userId,
@@ -751,6 +1011,13 @@ export default function DailyChallengesPage() {
           challenge.challengeId
         );
         if (!result.success) {
+          recordDailyMissionOperation({
+            userId,
+            event: 'reroll_failed',
+            tier: challenge.tier,
+            durationMs: performance.now() - startedAt,
+            reasonCode: 'rejected',
+          });
           toast.error(result.error || 'Challenge reroll failed');
           return;
         }
@@ -764,9 +1031,33 @@ export default function DailyChallengesPage() {
           prev.map((item) => (item.id === challenge.id ? result.challenge! : item))
         );
         setConfirmingRerollId(null);
+        capture('daily_mission_rerolled', {
+          tier: challenge.tier,
+          replayed: result.alreadyRerolled,
+          diamond_cost: 10,
+        });
+        recordDailyMissionOperation({
+          userId,
+          event: 'reroll_succeeded',
+          tier: challenge.tier,
+          durationMs: performance.now() - startedAt,
+          itemCount: 1,
+        });
         toast.success(
           result.alreadyRerolled ? 'Challenge already replaced.' : 'New mission online.'
         );
+      } catch (err) {
+        reportError(err, 'DailyChallengesPage.reroll_failed');
+        recordDailyMissionOperation({
+          userId,
+          event: 'reroll_failed',
+          tier: challenge.tier,
+          durationMs: performance.now() - startedAt,
+          itemCount: 1,
+          reasonCode: dailyMissionReasonCode(err),
+        });
+        if (isMountedRef.current) toast.error('Challenge reroll failed. Nothing was deducted.');
+        loadChallenges(userId, 'silent');
       } finally {
         rerollGuardRef.current.delete(challenge.id);
         if (isMountedRef.current) {
@@ -790,6 +1081,7 @@ export default function DailyChallengesPage() {
     if (ready.length === 0) return;
 
     setClaimingAll(true);
+    const startedAt = performance.now();
     const readyIds = ready.map((challenge) => challenge.id);
     readyIds.forEach((id) => claimGuardRef.current.add(id));
     setClaimingIds((prev) => new Set([...prev, ...readyIds]));
@@ -809,6 +1101,18 @@ export default function DailyChallengesPage() {
       setDiamondBalance(paid.diamondBalance);
 
       if (paid.claimedIds.length > 0) {
+        capture('daily_mission_claimed', {
+          tier: 'vault',
+          chip_reward: paid.chips,
+          diamond_reward: paid.diamonds,
+          claim_count: paid.claimedIds.length,
+        });
+        recordDailyMissionOperation({
+          userId,
+          event: 'claim_all_succeeded',
+          durationMs: performance.now() - startedAt,
+          itemCount: paid.claimedIds.length,
+        });
         const newlyClaimedIds = new Set(paid.claimedIds);
         triggerHaptic('success');
         setReward({
@@ -835,6 +1139,13 @@ export default function DailyChallengesPage() {
       }
     } catch (err) {
       reportError(err, 'DailyChallengesPage.claimAll_failed');
+      recordDailyMissionOperation({
+        userId,
+        event: 'claim_all_failed',
+        durationMs: performance.now() - startedAt,
+        itemCount: readyIds.length,
+        reasonCode: dailyMissionReasonCode(err),
+      });
       toast.error('Rewards could not be claimed. Nothing was deducted. Refreshing...');
       loadChallenges(userId, 'silent');
     } finally {
@@ -908,8 +1219,13 @@ export default function DailyChallengesPage() {
   );
 
   const handleOpenMission = useCallback(
-    (type: ChallengeType) => navigate(getChallengeMissionAction(type).path),
-    [navigate]
+    (type: ChallengeType) => {
+      const action = getChallengeMissionAction(type);
+      capture('daily_mission_cta_clicked', { mission_type: type, destination: action.path });
+      recordDailyMissionOperation({ userId, event: 'mission_cta_opened', tier: activeTier });
+      navigate(action.path);
+    },
+    [activeTier, navigate, userId]
   );
 
   // ── Render ──
@@ -1139,6 +1455,8 @@ export default function DailyChallengesPage() {
           </aside>
         )}
 
+        <MissionAlertsPanel userId={userId} />
+
         <section className={styles.missionBoard} aria-labelledby="mission-board-title">
           <header className={styles.boardHeader}>
             <div>
@@ -1281,7 +1599,7 @@ export default function DailyChallengesPage() {
               {'\u25C6'}
             </div>
             <h2 id="challenge-reward-title" className={styles.celebrateTitle}>
-              Challenge Complete
+              Reward Settled
             </h2>
             <p id="challenge-reward-description" className={styles.celebrateName}>
               {reward.name}
@@ -1313,6 +1631,10 @@ export default function DailyChallengesPage() {
                 New Balance: {reward.diamondBalance.toLocaleString()} Diamonds
               </p>
             )}
+
+            <p className={styles.celebrateReceipt} role="status">
+              Deposited Securely To Your Club Arena Balances
+            </p>
 
             <button className={styles.celebrateButton} onClick={dismissReward}>
               Continue

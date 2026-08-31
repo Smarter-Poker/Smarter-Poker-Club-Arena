@@ -306,7 +306,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     if (isCreating) return;
     if (
       hasDraft &&
-      !window.confirm('Close Create Club? Your text settings will remain saved as a draft.')
+      !window.confirm('Close Create Club? Your Text Settings Will Remain Saved As A Draft.')
     )
       return;
     ClubEntryTrustService.track('create', 'closed', { outcome: 'cancelled' });

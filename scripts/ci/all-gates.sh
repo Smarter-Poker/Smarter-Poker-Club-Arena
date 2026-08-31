@@ -10,8 +10,15 @@
 # className={undefined}, so the element renders unstyled and NOTHING warns at
 # runtime. That is exactly the class of fault a local gate should catch.
 #
-# Not covered here: the Playwright e2e projects (they need a browser download)
-# and the migrations check (it needs live Supabase credentials).
+# Not covered here: the Playwright e2e projects (they need a browser download),
+# and the two checks that need live Supabase credentials -
+# check-migrations-applied.mjs and check-db-mirror-parity.mjs. Both SKIP their
+# live half and say so rather than reporting a pass they did not earn, so run
+# them by hand with SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY exported when you
+# have touched a migration or a config the database mirrors:
+#
+#     node scripts/ci/check-db-mirror-parity.mjs
+#     node scripts/ci/check-migrations-applied.mjs
 #
 # Usage:  bash scripts/ci/all-gates.sh [--fast]
 #         --fast  skips the production build (and therefore bundle-size)

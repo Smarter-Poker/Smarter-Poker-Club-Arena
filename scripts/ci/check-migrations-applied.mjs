@@ -30,12 +30,62 @@
  * manifest is stale (regenerate it in the same PR). Both are things the author
  * must do; neither is something to discover a day later.
  *
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  THE DATA-ONLY BLIND SPOT, CLOSED (2026-09-01)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Everything above verifies that objects a migration DECLARES exist in
+ * production. A migration whose payload is a DELETE, an UPDATE or an INSERT
+ * declares NOTHING, so it passed this gate green while never having run.
+ *
+ * That is exactly how the 5/5 rake-schedule deletion shipped: the code half
+ * landed, `20260901050000_the_rake_row_no_table_can_match.sql` sat unapplied
+ * for hours, and every gate in the repo stayed green because every gate was
+ * comparing a file to a file. Its whole payload is one DELETE and a CHECK
+ * constraint added inside a DO block — zero declared objects.
+ *
+ * THE LEVER USED. Supabase records every migration it applies in
+ * `supabase_migrations.schema_migrations`, and this project already exposes it
+ * to CI as the SECURITY DEFINER RPC `public.fn_ca_applied_migrations(p_since)`
+ * (added for check-applied-migrations-are-recorded.mjs, which asks the OPPOSITE
+ * question: applied but not committed). A migration file this branch ADDS whose
+ * version and name appear nowhere in that ledger has never run, whatever it
+ * declares or does not declare.
+ *
+ * WHAT THIS STILL CANNOT CATCH, said plainly:
+ *
+ *   - A migration APPLIED OUTSIDE the sanctioned path. SQL pasted into the
+ *     Supabase SQL editor writes no ledger row, so this reports it as
+ *     unapplied. That is not a false positive worth softening — CLAUDE.md says
+ *     `apply_migration` is the only sanctioned path, and this makes the rule
+ *     enforceable rather than aspirational.
+ *   - Whether the payload DID WHAT IT CLAIMS. The ledger row proves a file with
+ *     that version ran, not that its DELETE matched a row or its UPDATE moved
+ *     one. `public.exec_sql` is permanently disabled on this project (by
+ *     design), so CI has no channel to run a migration's own
+ *     `DO $$ ... RAISE EXCEPTION` post-apply assertions against production, and
+ *     re-creating one would hand arbitrary SQL execution to any holder of the
+ *     service key. The right home for those assertions is the migration itself,
+ *     where they already run at apply time and abort the transaction. The gate
+ *     that checks the RESULT of the two rake mirrors landing is
+ *     scripts/ci/check-db-mirror-parity.mjs.
+ *   - A migration MODIFIED rather than added. Historical files are history, not
+ *     truth (see SCOPE above), and ~36 of them are legitimately unrecorded.
+ *
+ * DELIBERATELY NOT APPLYING ONE. Put `-- @unapplied: <reason>` in the file's
+ * header. The whole file is then skipped by BOTH halves of this gate and
+ * printed in a loud block so a reviewer sees it in the log rather than
+ * discovering it in production. There is precedent in the tree already —
+ * `011_hand_events.sql` carries "STATUS: authored but INTENTIONALLY NOT
+ * APPLIED" as prose that no tool could read.
+ *
  * Usage:  node scripts/ci/check-migrations-applied.mjs [baseRef]
- * Exit:   0 clean · 1 an unapplied object · 2 script error
+ * Exit:   0 clean · 1 an unapplied object or migration · 2 script error
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
 
 const REPO = process.cwd();
 const MANIFEST = join(REPO, 'scripts/ci/supabase-schema-manifest.json');
@@ -120,9 +170,7 @@ function declaredObjects(sql) {
    * removed first so that an apostrophe in prose ("someone else's change")
    * cannot unbalance the quote scan that follows.
    */
-  const clean = sql
-    .replace(/--[^\n]*/g, '')
-    .replace(/'(?:[^']|'')*'/g, "''");
+  const clean = sql.replace(/--[^\n]*/g, '').replace(/'(?:[^']|'')*'/g, "''");
   const fns = [
     ...clean.matchAll(
       /create\s+(?:or\s+replace\s+)?function\s+(?:public\.)?"?([a-z0-9_]+)"?\s*\(/gi
@@ -173,7 +221,46 @@ function declaredAtBase(base, file) {
   };
 }
 
-function main() {
+/** `-- @unapplied: reason` in the header. A deliberate, reviewable opt-out for
+ *  a migration this branch ships but does not apply — a retirement waiting on
+ *  Dan, a guard staged for a quiet window. Without it, an author who cannot
+ *  apply yet has only one way past this gate: delete the check. */
+function unappliedMarker(sql) {
+  const m = /^[ \t]*--[ \t]*@unapplied[ \t]*:?[ \t]*(.*)$/m.exec(sql);
+  return m ? m[1].trim() || '(no reason given)' : null;
+}
+
+/** version + name as the Supabase ledger records them, from the filename. */
+function ledgerKeyOf(file) {
+  const base = file.slice(file.lastIndexOf('/') + 1);
+  const m = /^(\d+)[_-]?(.*)\.sql$/.exec(base);
+  if (!m) return null;
+  return { version: m[1], name: (m[2] || '').toLowerCase(), file };
+}
+
+/** The applied-migration ledger, or null when this run has no credentials. */
+async function appliedLedger(since) {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  const res = await fetch(`${url}/rest/v1/rpc/fn_ca_applied_migrations`, {
+    method: 'POST',
+    headers: supabaseServerHeaders(key, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ p_since: since }),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `fn_ca_applied_migrations -> ${res.status} ${(await res.text()).slice(0, 300)}`
+    );
+  }
+  const rows = await res.json();
+  return {
+    versions: new Set(rows.map((r) => String(r.version))),
+    names: new Set(rows.map((r) => String(r.name || '').toLowerCase()).filter(Boolean)),
+  };
+}
+
+async function main() {
   if (!existsSync(MANIFEST)) {
     console.error('[check-migrations-applied] missing schema manifest — cannot judge.');
     process.exit(2);
@@ -199,9 +286,23 @@ function main() {
   }
 
   const problems = [];
+  const deliberate = [];
+  const addedFiles = [];
   for (const file of files) {
     if (!existsSync(join(REPO, file))) continue;
-    const now = declaredObjects(readFileSync(join(REPO, file), 'utf8'));
+    const sql = readFileSync(join(REPO, file), 'utf8');
+
+    /* A file marked @unapplied is skipped by both halves. It is NOT silent:
+       every one is printed below, so "we shipped a migration we did not run"
+       is a sentence a reviewer reads rather than a thing they discover. */
+    const marker = unappliedMarker(sql);
+    if (marker) {
+      deliberate.push([file, marker]);
+      continue;
+    }
+    if (declaredAtBase(base, file) === null) addedFiles.push(file);
+
+    const now = declaredObjects(sql);
 
     /* WHAT THIS BRANCH ACTUALLY ADDS (2026-08-22).
      *
@@ -243,8 +344,54 @@ function main() {
     }
   }
 
+  /* ── THE DATA-ONLY HALF ──────────────────────────────────────────────────
+     A migration that declares nothing cannot fail the loop above, so ask the
+     production ledger whether it ran at all. Scoped to files this branch ADDS:
+     a modified historical file is history, and ~36 of those are legitimately
+     unrecorded (see check-applied-migrations-are-recorded.mjs). */
+  const keys = addedFiles.map(ledgerKeyOf).filter(Boolean);
+  let ledgerVerdict = 'no new migration files to check against the ledger';
+  if (keys.length > 0) {
+    const since = keys.map((k) => k.version).sort()[0];
+    let ledger = null;
+    try {
+      ledger = await appliedLedger(since);
+    } catch (err) {
+      console.error(`[check-migrations-applied] ledger unavailable: ${err.message}`);
+      process.exit(2);
+    }
+    if (ledger === null) {
+      /* No credentials — a local run or a fork. Say which half did not run.
+         A gate that silently skips reports success for a check it never made. */
+      ledgerVerdict =
+        `SKIPPED for ${keys.length} added migration(s) — no SUPABASE_URL / ` +
+        'SUPABASE_SERVICE_ROLE_KEY, so this run could not ask production whether ' +
+        'they were applied. CI supplies both.';
+    } else {
+      let ran = 0;
+      for (const k of keys) {
+        if (ledger.versions.has(k.version) || (k.name && ledger.names.has(k.name))) {
+          ran++;
+          continue;
+        }
+        problems.push([k.file, 'migration', 'never ran — no row in the production ledger']);
+      }
+      ledgerVerdict = `${ran}/${keys.length} added migration(s) recorded as applied in production`;
+    }
+  }
+
+  if (deliberate.length > 0) {
+    console.log('\n[check-migrations-applied] DELIBERATELY NOT APPLIED (@unapplied):');
+    for (const [file, why] of deliberate) console.log(`  ${file}\n    ${why}`);
+    console.log(
+      '  These ship as files only. Nothing in production has changed for them, and\n' +
+        '  any code that assumes they ran is wrong until somebody applies them.\n'
+    );
+  }
+
   console.log(
-    `[check-migrations-applied] ${files.length} changed migration(s) vs ${base}; ${problems.length} unapplied object(s).`
+    `[check-migrations-applied] ${files.length} changed migration(s) vs ${base}; ` +
+      `${problems.length} problem(s); ledger: ${ledgerVerdict}.`
   );
 
   if (problems.length === 0) {
@@ -252,20 +399,26 @@ function main() {
     return;
   }
 
-  console.error('\nA MIGRATION IN THIS BRANCH DECLARES SOMETHING THE LIVE SCHEMA DOES NOT HAVE:\n');
+  console.error('\nA MIGRATION IN THIS BRANCH HAS NOT LANDED IN PRODUCTION:\n');
   for (const [file, kind, name] of problems) console.error(`  ${file}\n    ${kind} ${name}`);
   console.error(
     '\nEither the migration was never applied — apply it with the Supabase MCP' +
       '\n`apply_migration`, which is the only sanctioned path — or the manifest is' +
       '\nstale: regenerate it with scripts/ci/gen-schema-manifest.mjs in this same PR.' +
       '\nA migration file that never ran is a feature the code believes in and the' +
-      '\ndatabase has never heard of.'
+      '\ndatabase has never heard of.' +
+      '\n' +
+      '\nA line reading `migration  never ran` is the DATA-ONLY half: the file' +
+      '\ndeclares no object to look for, and production has no ledger row for it.' +
+      '\nApply it, or — if it is meant to ship unapplied — put' +
+      '\n`-- @unapplied: <reason>` in its header so the skip is a decision on the' +
+      '\nrecord instead of a gate somebody turned off.'
   );
   process.exit(1);
 }
 
 try {
-  main();
+  await main();
 } catch (err) {
   console.error('[check-migrations-applied] script error:', err?.message || err);
   process.exit(2);

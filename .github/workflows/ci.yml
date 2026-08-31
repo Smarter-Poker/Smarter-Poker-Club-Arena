@@ -315,6 +315,35 @@ jobs:
       - name: Rake Invariant — client and server rake schedules must match
         run: node scripts/ci/check-rake-schedule-parity.mjs
 
+      # BLOCKING. Every parity gate in this repo compares a FILE to a FILE. Four
+      # tables exist in production for no purpose except to be a copy of the
+      # code — ca_rake_schedule and ca_rake_tier (which fn_effective_rake_cap
+      # prices the rake-law alarm from), bbj_stakes_tiers, and spin_tier_spec
+      # (which fn_spin_fairness_check measures the live wheel against) — and
+      # nothing compared any of them to the code they mirror. On 2026-09-01 the
+      # code half of the 5/5 rake-row deletion shipped and the DB half sat
+      # unapplied for hours with every gate green. A stale mirror does not sit
+      # there harmlessly: it makes an alarm certify the bug it exists to catch.
+      # This also probes fn_effective_rake_cap against the engine's own cap rule
+      # at 35 stakes, which is what catches DB ARITHMETIC drifting while every
+      # row still matches. Read-only: four GETs and one STABLE function.
+      - name: Rake + Spin Invariant — the database mirrors must equal the code
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          echo "## DB Mirror Parity" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-db-mirror-parity.mjs 2>&1 | tee /tmp/dbmirror.log; then
+            sed -e 's/^/    /' /tmp/dbmirror.log >> $GITHUB_STEP_SUMMARY
+          else
+            echo "A database mirror has drifted from the code it mirrors — see the log." >> $GITHUB_STEP_SUMMARY
+            echo "Fix it by APPLYING the migration that moves the DB half in this same pull" >> $GITHUB_STEP_SUMMARY
+            echo "request. Never by editing the code to match the database." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       # BLOCKING (2026-08-19 incident): the cash seat law (plo6 6, plo5 7,
       # plo4 8, plo8 8) was enforced only in src/services/TableService.ts, which
       # guards the club's Create Table modal. HorseFleetManager — the engine's
@@ -599,13 +628,26 @@ jobs:
       # reverted by a bad merge — a feature the repo claimed and the database
       # had never heard of, found by hand a day later. Every other gate here
       # checks the CODE against the schema; nothing checked the MIGRATIONS.
+      #
+      # 2026-09-01: it now ALSO asks the production migration ledger whether the
+      # files this branch adds were ever applied. The declared-object half is
+      # blind to a migration whose payload is a DELETE or an UPDATE — it
+      # declares nothing, so it passed green having never run, which is exactly
+      # how the 5/5 rake-row deletion shipped in code and not in the database.
+      # That half needs the service-role credential, hence the env block; a file
+      # meant to ship unapplied says so with `-- @unapplied: <reason>`.
       - name: Supabase Invariants — New Migrations Were Applied
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -o pipefail
           echo "## New-Migration Check" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if node scripts/ci/check-migrations-applied.mjs 2>&1 | tee /tmp/migapplied.log; then
-            echo "OK — every object this branch's migrations declare exists in production." >> $GITHUB_STEP_SUMMARY
+            echo "OK — every object this branch's migrations declare exists in production," >> $GITHUB_STEP_SUMMARY
+            echo "and every migration it adds has a row in the production ledger." >> $GITHUB_STEP_SUMMARY
+            sed -n '/DELIBERATELY NOT APPLIED/,$p' /tmp/migapplied.log | sed -e 's/^/    /' >> $GITHUB_STEP_SUMMARY
           else
             echo "A migration here was never applied (or the manifest is stale). Apply it via" >> $GITHUB_STEP_SUMMARY
             echo "the Supabase MCP apply_migration, or regenerate the manifest in this PR." >> $GITHUB_STEP_SUMMARY

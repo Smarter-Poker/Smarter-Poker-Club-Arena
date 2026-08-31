@@ -268,12 +268,24 @@ export const BLIND_STRUCTURES = {
    */
 };
 
+/**
+ * The payout ladders this scheduler hands to the tournaments it creates.
+ *
+ * THREE (50/30/20) WAS REMOVED 2026-09-01. It was declared here and referenced
+ * by nothing - not once in this file, not anywhere in server/ or src/, and not
+ * in a test. FIVE has sixteen call sites and NINE has five, so the file reads
+ * as if a three-place ladder were one of three live choices when it was never
+ * a choice at all. A payout structure that looks available and is not is a
+ * money-shaped invitation: the next person adding a small recurring event
+ * reaches for THREE, and nothing that ships today would tell them whether 50/
+ * 30/20 is the ladder this platform actually pays at three places.
+ *
+ * If a three-place ladder is wanted, derive it the way everything else does -
+ * PAYOUT_STRUCTURES in src/config/blindStructures.ts is the published set, and
+ * spinSpec's own payouts array is what a three-seat Spin pays. Do not re-add
+ * a hand-typed one here.
+ */
 const PAYOUT_STRUCTURES = {
-  THREE: [
-    { place: 1, percentage: 50 },
-    { place: 2, percentage: 30 },
-    { place: 3, percentage: 20 },
-  ],
   FIVE: [
     { place: 1, percentage: 40 },
     { place: 2, percentage: 25 },

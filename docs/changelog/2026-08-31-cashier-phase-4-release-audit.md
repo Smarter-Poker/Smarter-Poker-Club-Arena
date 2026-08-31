@@ -59,6 +59,11 @@ after the Phase 4 squash merge, not against the older feature branch.
   still selected the pre-release lowercase reroll accessibility names. The page
   object and confirmation assertion now target the enforced title-case contract,
   with a source-level pin joining the application and both selectors.
+- The same production run reached its realtime mission-completion step after the
+  selector repair and proved that the deployed database had correctly revoked
+  the legacy player-callable progress RPC. Certification now advances its isolated
+  fixture through the service-role-only, idempotent event recorder, using the
+  recorder's deployed bounds and a stable key that is safe across transport retry.
 - That rerun also exposed three independent false-red paths in the mobile chrome
   audit: a route could replace its document during measurement, smooth scrolling
   could leave the probe mid-animation, and virtualized rows clipped by an inner

@@ -15157,6 +15157,36 @@ export default function TablePage({
     updateSeat(seatNumber).catch((e) => console.warn('[Seat] Presence update failed:', e));
   };
 
+  /* ── DEEP LINK ?buyin=1 (Dan 2026-08-30) ─────────────────────────────────
+     A waitlist seat offer holds the seat for 60 seconds and its notification
+     must land the player "to the buy in screen directly". The offer toast and
+     the bell deep link both navigate here with ?buyin=1; once the table has
+     painted and the hero is not already seated, open the buy-in flow on the
+     first open seat exactly as if they had tapped it. Fires at most once per
+     mount, and never on a tournament table (handleSeatClick refuses those). */
+  const autoBuyInFiredRef = useRef(false);
+  useEffect(() => {
+    if (autoBuyInFiredRef.current) return;
+    let wantsBuyIn = false;
+    try {
+      wantsBuyIn = new URLSearchParams(window.location.search).get('buyin') === '1';
+    } catch {
+      wantsBuyIn = false;
+    }
+    if (!wantsBuyIn) {
+      autoBuyInFiredRef.current = true;
+      return;
+    }
+    if (!tableState.players.length) return; // table not painted yet - wait
+    autoBuyInFiredRef.current = true;
+    if (heroSeatRef.current > 0 || tableState.heroSeat > 0) return;
+    if (tableState.players.some((p) => p && p.id === userId)) return;
+    const openIdx = tableState.players.findIndex((p) => !p);
+    if (openIdx < 0) return;
+    handleSeatClick(openIdx + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tableState.players, tableState.heroSeat]);
+
   /**
    * SEAT-FIRST COMMIT (Dan 2026-08-23). The only place a seat-first buy-in
    * spends money. Called from the confirmation sheet, never from a raw tap:

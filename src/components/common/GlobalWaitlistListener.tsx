@@ -263,8 +263,15 @@ export default function GlobalWaitlistListener() {
               newRow?.table_id
             ) {
               const offeredTableId = String(newRow.table_id);
-              toast.success('A Seat Just Opened For You. Tap Here To Take It.', 15000, () =>
-                navigate(`/table/${offeredTableId}`)
+              /* 60 SECONDS, NOT 15 (Dan 2026-08-30): the seat is now HELD for
+                 this player for 60s (fn_offer_open_seat + atomic_table_buyin
+                 SEAT_RESERVED guard), so the popup lives exactly as long as
+                 the hold. Tapping it lands on the table with the buy-in
+                 screen already open (?buyin=1). */
+              toast.success(
+                'A Seat Just Opened For You. It Is Held For 60 Seconds. Tap Here To Take It.',
+                60000,
+                () => navigate(`/table/${offeredTableId}?buyin=1`)
               );
             }
             void refreshWatchedTables();

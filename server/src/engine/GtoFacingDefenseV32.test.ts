@@ -351,3 +351,37 @@ describe('gtoFacingDefense — the line itself', () => {
     ).toBeNull();
   });
 });
+
+describe('the raw bet defines the RANGE, the effective call defines the PRICE', () => {
+  it('a three-pot jam into a short hero consults the OVERBET range, not mid', () => {
+    loadV30();
+    // Effective numbers alone: pot 160, toCall 60 -> frac 0.6 -> bet_mid,
+    // which this cell does not have. The RAW fraction says bet_big, which
+    // it does. Only the rawBetFraction path can answer here.
+    const withRaw = gtoFacingDefense({
+      street: 'turn',
+      family: 'cash',
+      bettorPosition: 'BTN',
+      stackBB: 80,
+      board: BOARD,
+      heroCards: cards('3c4d'),
+      pot: 160,
+      toCall: 60,
+      rawBetFraction: 3.0,
+      rand: mulberry(11),
+    });
+    expect(withRaw).not.toBeNull();
+    const withoutRaw = gtoFacingDefense({
+      street: 'turn',
+      family: 'cash',
+      bettorPosition: 'BTN',
+      stackBB: 80,
+      board: BOARD,
+      heroCards: cards('3c4d'),
+      pot: 160,
+      toCall: 60,
+      rand: mulberry(11),
+    });
+    expect(withoutRaw).toBeNull(); // frac 0.6 -> bet_mid -> no such range here
+  });
+});

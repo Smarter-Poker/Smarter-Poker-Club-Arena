@@ -159,3 +159,30 @@ describe('the consult is WIRED', () => {
     }
   });
 });
+
+describe("a raise of hero's own bet is refused — no open-node cell models it", () => {
+  it('hero bet, villain raised: the counters stay silent', () => {
+    stock();
+    enableBrainTelemetry();
+    drainFires();
+    const st = state('3c4d');
+    // hero already bet 30 this street; villain raised to 90
+    (st.players[0] as { bet: number }).bet = 30;
+    (st.players[1] as { bet: number }).bet = 90;
+    st.currentBet = 90;
+    st.pot = 220;
+    st.actionHistory = [
+      { stage: 'turn', seat: 1, userId: 'hero', action: 'bet', amount: 30 },
+      { stage: 'turn', seat: 2, userId: 'villain', action: 'raise', amount: 90 },
+    ];
+    for (let i = 0; i < 10; i++)
+      HorseLogic.decide(st.players[0] as never, st as never, 'balanced', {}, {
+        telemetry: true,
+      } as never);
+    const fires = Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
+    expect(fires['v32_defend_fold'] ?? 0).toBe(0);
+    expect(fires['v32_defend_call'] ?? 0).toBe(0);
+    expect(fires['v32_defend_pass_strong'] ?? 0).toBe(0);
+    expect(fires['v32_defend_no_range'] ?? 0).toBe(0);
+  });
+});

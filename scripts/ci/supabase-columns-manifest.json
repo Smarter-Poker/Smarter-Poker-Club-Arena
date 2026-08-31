@@ -4238,7 +4238,8 @@
       "status",
       "due_date",
       "created_at",
-      "paid_at"
+      "paid_at",
+      "void_reason"
     ],
     "credit_payments": [
       "id",
@@ -4373,6 +4374,17 @@
       "completed",
       "completed_at",
       "reward_claimed",
+      "created_at"
+    ],
+    "daily_mission_operations": [
+      "id",
+      "user_id",
+      "event",
+      "tier",
+      "duration_ms",
+      "item_count",
+      "reason_code",
+      "sample_weight",
       "created_at"
     ],
     "daily_spins": [
@@ -11609,7 +11621,8 @@
       "messenger_alerts",
       "daily_challenges",
       "diamond_rewards",
-      "club_updates"
+      "club_updates",
+      "daily_mission_reminders"
     ],
     "user_notifications": [
       "id",
@@ -11920,6 +11933,27 @@
       "realtime_failures",
       "realtime_recoveries",
       "conflicts_suppressed"
+    ],
+    "v_daily_mission_health_daily": [
+      "day",
+      "tier",
+      "event",
+      "sampled_rows",
+      "estimated_events",
+      "p95_ms"
+    ],
+    "v_daily_mission_health_hourly": [
+      "hour",
+      "estimated_loads",
+      "load_failures",
+      "load_failure_pct",
+      "load_p50_ms",
+      "load_p95_ms",
+      "action_failures",
+      "realtime_degradations",
+      "realtime_recoveries",
+      "alert_opt_ins",
+      "alert_opt_outs"
     ],
     "v_daily_slate": [
       "game_id",

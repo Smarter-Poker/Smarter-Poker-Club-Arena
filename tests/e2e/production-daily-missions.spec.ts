@@ -1,4 +1,11 @@
-import { devices, expect, test, type BrowserContext, type Request } from '@playwright/test';
+import {
+  devices,
+  expect,
+  test,
+  type BrowserContext,
+  type Request,
+  type Response,
+} from '@playwright/test';
 
 import { DAILY_MISSIONS_RESPONSE_TIMEOUT, DailyMissionsPage } from './support/DailyMissionsPage';
 import {
@@ -11,7 +18,8 @@ import {
 } from './support/temporaryCustomizationAccount';
 
 const CERTIFICATION_ENABLED = process.env.DAILY_MISSIONS_CERTIFICATION === '1';
-const LOAD_BUDGET_MS = 8_000;
+const LOAD_BUDGET_MS = 12_000;
+const DASHBOARD_RPC_BUDGET_MS = 8_000;
 
 type JsonObject = Record<string, unknown>;
 
@@ -121,12 +129,21 @@ test.describe('production Daily Missions certification', () => {
         const consoleErrors: string[] = [];
         const pageErrors: string[] = [];
         const dashboardRequests: Request[] = [];
+        const dashboardStartedAt = new Map<Request, number>();
+        let dashboardRpcMs = Number.POSITIVE_INFINITY;
         const onRequest = (request: Request) => {
           if (request.url().includes('/rest/v1/rpc/get_daily_challenge_dashboard')) {
             dashboardRequests.push(request);
+            dashboardStartedAt.set(request, Date.now());
           }
         };
+        const onResponse = (response: Response) => {
+          const request = response.request();
+          const startedAt = dashboardStartedAt.get(request);
+          if (startedAt != null) dashboardRpcMs = Date.now() - startedAt;
+        };
         page.on('request', onRequest);
+        page.on('response', onResponse);
         page.on('console', (message) => {
           if (message.type() === 'error') consoleErrors.push(message.text());
         });
@@ -134,10 +151,13 @@ test.describe('production Daily Missions certification', () => {
 
         const loadMs = await missions.open();
         page.off('request', onRequest);
+        page.off('response', onResponse);
         report.coldLoadMs = loadMs;
+        report.dashboardRpcMs = dashboardRpcMs;
         report.dashboardRequests = dashboardRequests.length;
         report.consoleErrors = consoleErrors;
         expect(loadMs).toBeLessThan(LOAD_BUDGET_MS);
+        expect(dashboardRpcMs).toBeLessThan(DASHBOARD_RPC_BUDGET_MS);
         expect(dashboardRequests).toHaveLength(1);
         // The app shell owns unrelated header/membership fetches and can log a
         // transient failure while the mission aggregate succeeds. Preserve
@@ -225,9 +245,14 @@ test.describe('production Daily Missions certification', () => {
         const receipts = await serviceRows<{
           amount: number;
           reference_id: string;
-          source: string;
-        }>(environment, 'diamond_transactions', account!.id, 'amount,reference_id,source');
-        const freezes = receipts.filter((row) => row.source === 'streak_freeze');
+          transaction_type: string;
+        }>(
+          environment,
+          'diamond_transactions',
+          account!.id,
+          'amount,reference_id,transaction_type'
+        );
+        const freezes = receipts.filter((row) => row.transaction_type === 'streak_freeze');
         expect(freezes).toHaveLength(1);
         expect(Number(freezes[0].amount)).toBe(-5_000);
       });

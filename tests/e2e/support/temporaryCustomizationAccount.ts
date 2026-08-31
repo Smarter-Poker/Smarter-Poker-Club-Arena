@@ -148,6 +148,10 @@ async function normalizeTemporaryProfile(
       is_vip: false,
       vip_tier: null,
       vip_expires_at: null,
+      // Keep commerce/mission certification focused on the target surface.
+      // This is a real free library asset and satisfies the same durable gate
+      // that the public Avatar Gallery writes during first-run onboarding.
+      arena_avatar_url: '/avatars/table/free_samurai@2x.webp',
     }),
   });
 
@@ -155,11 +159,12 @@ async function normalizeTemporaryProfile(
     diamonds: number;
     diamond_balance: number;
     is_vip: boolean;
+    arena_avatar_url: string | null;
   }>(
     environment,
     'profiles',
     new URLSearchParams({
-      select: 'diamonds,diamond_balance,is_vip',
+      select: 'diamonds,diamond_balance,is_vip,arena_avatar_url',
       id: `eq.${userId}`,
     })
   );
@@ -167,7 +172,8 @@ async function normalizeTemporaryProfile(
     rows.length !== 1 ||
     Number(rows[0].diamonds) !== 0 ||
     Number(rows[0].diamond_balance) !== 0 ||
-    rows[0].is_vip !== false
+    rows[0].is_vip !== false ||
+    rows[0].arena_avatar_url !== '/avatars/table/free_samurai@2x.webp'
   ) {
     throw new Error(`Temporary customization account ${userId} was not normalized.`);
   }

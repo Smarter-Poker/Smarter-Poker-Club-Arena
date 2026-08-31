@@ -66,5 +66,19 @@ describe('Daily Missions production certification', () => {
     const after = css.slice(css.indexOf('.challengeCard::after'), css.indexOf('.cardCompleted'));
     expect(before).toContain('pointer-events: none');
     expect(after).toContain('pointer-events: none');
+    const page = source('src/pages/DailyChallengesPage.tsx');
+    expect(page).toContain("import { createPortal } from 'react-dom'");
+    expect(page).toContain('document.body');
+  });
+
+  it('bounds player-scoped wallet receipt cleanup with an online index', () => {
+    const migration = source(
+      'supabase/migrations/20260901010000_daily_missions_certification_cleanup_index.sql'
+    );
+    expect(migration).toContain(
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_wallet_credit_idempotency_user_id'
+    );
+    expect(migration).toContain('SET statement_timeout = 0');
+    expect(migration).toContain('ON public.wallet_credit_idempotency (user_id)');
   });
 });

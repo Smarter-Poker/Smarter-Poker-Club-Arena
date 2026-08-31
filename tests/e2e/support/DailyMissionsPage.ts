@@ -19,6 +19,20 @@ export class DailyMissionsPage {
     baseURL: string,
     account: TemporaryCustomizationAccount
   ): Promise<DailyMissionsPage> {
+    const localBundle = ['127.0.0.1', 'localhost'].includes(new URL(baseURL).hostname);
+    const { data: apiSession } = localBundle
+      ? await account.client.auth.getSession()
+      : { data: { session: null } };
+    await context.addInitScript(
+      ({ session }) => {
+        localStorage.setItem('club_arena_welcome_accepted', 'true');
+        // The production Hub owns /auth/login. A standalone branch bundle has
+        // no Hub process, so seed the same shared SSO key from the already
+        // authenticated disposable-account client for local pre-publish UI.
+        if (session) localStorage.setItem('smarter-poker-auth', JSON.stringify(session));
+      },
+      { session: apiSession.session }
+    );
     const page = await context.newPage();
     await page.goto(baseURL, {
       waitUntil: 'domcontentloaded',
@@ -29,6 +43,18 @@ export class DailyMissionsPage {
       .catch(() => undefined);
 
     if (page.url().includes('/auth')) {
+      const appBasePath = new URL(baseURL).pathname;
+      if (!new URL(page.url()).pathname.startsWith(appBasePath)) {
+        // Vite's base-path guard exposes a helpful link when an application
+        // redirect targets /auth directly during local-bundle certification.
+        // Follow the same auth route under the configured Club Arena base.
+        const authURL = new URL('auth', baseURL);
+        authURL.searchParams.set('redirect', appBasePath);
+        await page.goto(authURL.toString(), {
+          waitUntil: 'domcontentloaded',
+          timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+        });
+      }
       const email = page.locator('input[type="email"]').first();
       const password = page.locator('input[type="password"]').first();
       await expect(email).toBeVisible({ timeout: 30_000 });

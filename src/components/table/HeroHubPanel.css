@@ -18,6 +18,39 @@
   -webkit-backdrop-filter: blur(6px) saturate(1.1);
 }
 
+/* ── YIELD: the hero is on the clock ───────────────────────────────────────
+ *
+ * Dan 2026-08-31, binding: "IT SHOULD NEVER AUTO CLOSE." The hub used to call
+ * onClose() from an effect the moment the turn arrived, because it covers the
+ * action bar and a covered Fold button costs a hand. The panel now stays open
+ * and gets out of the way instead:
+ *
+ *   - the backdrop stops painting and stops taking pointer events, so a tap
+ *     lands on the felt / action bar underneath rather than on a scrim;
+ *   - the panel is bottom-aligned above --sp-action-reserve (the height the
+ *     action bar owns, declared on .table-page in TablePage.css), so the
+ *     buttons are never behind it;
+ *   - the panel keeps pointer-events: auto, so everything inside it is still
+ *     clickable while the player acts.
+ *
+ * The action bar sits at --z-action-panel (100) and this overlay at 900, so
+ * the bar is reachable only because nothing here intercepts the click. Do not
+ * give this element a background or pointer-events in this state.
+ */
+.hero-hub__overlay--yield {
+  pointer-events: none;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  align-items: flex-end;
+  padding-bottom: calc(var(--sp-action-reserve, 120px) + 8px);
+}
+
+.hero-hub__overlay--yield .hero-hub {
+  pointer-events: auto;
+  max-height: min(58vh, 520px);
+}
+
 .hero-hub {
   width: min(400px, calc(100vw - 24px));
   max-height: min(78vh, 640px);

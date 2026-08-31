@@ -145,6 +145,23 @@ jobs:
             -X -v ON_ERROR_STOP=1 \
             -f scripts/verification-harness/cashier-telemetry-rls.sql
 
+      # Keep the release-critical Cashier result independent from the broader
+      # production sweep. A failure on Stats or another route must not obscure
+      # whether the money surface itself passed or failed.
+      - name: Certify the authenticated production Cashier
+        if: steps.live.outputs.ready == 'true'
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          ARENA_BASE_URL: https://smarter.poker/hub/club-arena
+          SP_EMAIL: ${{ secrets.SP_EMAIL }}
+          SP_PASS: ${{ secrets.SP_PASS }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+        run: >-
+          npx playwright test tests/e2e/production-cashier.spec.ts
+          --project=chromium --reporter=line --retries=1
+
       - name: Run the specs that need a deployed page
         if: steps.live.outputs.ready == 'true'
         env:
@@ -178,13 +195,10 @@ jobs:
         # level down - the same class of miss as the specs this job exists for.
         # A directory cannot go stale when a tenth file is added beside them.
         run: |
-          # Certify Stats first. The repository deploys frequently enough that
-          # workflow concurrency can cancel this run before an alphabetically
-          # late spec starts; keeping the page under active audit in its own
-          # leading command guarantees a prompt, named production verdict.
+          # Certify Stats first among the broader route checks. Cashier has its
+          # own preceding release gate so this suite cannot hide its verdict.
           npx playwright test \
             tests/e2e/stats-deep.spec.ts \
-            tests/e2e/production-cashier.spec.ts \
             --project=chromium --reporter=line --retries=1
 
           npx playwright test \

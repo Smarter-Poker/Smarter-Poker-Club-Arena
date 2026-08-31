@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { fieldIsStillLive } from './recoveryFieldGuard.js';
+import { sliceBlockAfter } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 /** Strip comments so a guard cannot pass on a mention in prose. */
@@ -74,9 +75,7 @@ describe('the guard is actually wired into the rescue', () => {
   it('refuses by CONTINUING — it must not fall through and pay', () => {
     // The whole failure was paying. A guard that reports and then proceeds is
     // the same bug with better logging.
-    const at = RECOVERY.indexOf('fieldIsStillLive({ livePlayers, paidPlaces })');
-    expect(at).toBeGreaterThan(-1);
-    const window = RECOVERY.slice(at, at + 700);
+    const window = sliceBlockAfter(RECOVERY, 'if (fieldIsStillLive({ livePlayers, paidPlaces }))');
     expect(window).toMatch(/recoverStuckCompleting_field_still_live/);
     expect(window).toMatch(/continue;/);
   });

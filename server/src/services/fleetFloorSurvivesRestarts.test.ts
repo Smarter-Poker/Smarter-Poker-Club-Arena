@@ -25,53 +25,44 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { sliceBlockAfter, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 /** Strip comments so a guard cannot pass on a mention in prose. */
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 const SRC = code(read('src/services/DealRateVerifier.ts'));
+const STARTUP_GRACE = sliceBlockAfter(SRC, 'if (Date.now() - this.startedAt < STARTUP_GRACE_MS)');
+const FLEET_DARK_CHECK = sliceMethod(SRC, 'private async fleetDarkAcrossRestarts');
 
 describe('the startup grace must justify itself against the database', () => {
   it('no longer returns blind just because the process is young', () => {
     // The bug in one line: `if (young) return;` with nothing else asked.
-    const at = SRC.indexOf('Date.now() - this.startedAt < STARTUP_GRACE_MS');
-    expect(at).toBeGreaterThan(-1);
-    const window = SRC.slice(at, at + 500);
-    expect(window).toMatch(/fleetDarkAcrossRestarts\(\)/);
+    expect(STARTUP_GRACE).toMatch(/fleetDarkAcrossRestarts\(\)/);
   });
 
   it('only stands down when the fleet is NOT dark', () => {
-    const at = SRC.indexOf('Date.now() - this.startedAt < STARTUP_GRACE_MS');
-    const window = SRC.slice(at, at + 500);
     // Stand down on "not dark"; fall through to judge otherwise.
-    expect(window).toMatch(/if \(!darkAcrossRestarts\)/);
-    expect(window).toMatch(/return;/);
+    expect(STARTUP_GRACE).toMatch(/if \(!darkAcrossRestarts\)/);
+    expect(STARTUP_GRACE).toMatch(/return;/);
   });
 
   it('asks a question that outlives a restart, unfiltered by table', () => {
-    const at = SRC.indexOf('private async fleetDarkAcrossRestarts');
-    expect(at).toBeGreaterThan(-1);
-    const fn = SRC.slice(at, at + 700);
-    expect(fn).toMatch(/from\('hand_history'\)/);
+    expect(FLEET_DARK_CHECK).toMatch(/from\('hand_history'\)/);
     // Unfiltered BY DESIGN: a collapsed fleet has no table ids left to filter
     // by, which is the entire hole being closed.
-    expect(fn).not.toMatch(/\.in\('table_id'/);
-    expect(fn).toMatch(/STARTUP_GRACE_MS/);
+    expect(FLEET_DARK_CHECK).not.toMatch(/\.in\('table_id'/);
+    expect(FLEET_DARK_CHECK).toMatch(/STARTUP_GRACE_MS/);
   });
 
   it('treats a failed query as NOT dark — could-not-ask is never evidence', () => {
     // A flaky database must not manufacture a critical page.
-    const at = SRC.indexOf('private async fleetDarkAcrossRestarts');
-    const fn = SRC.slice(at, at + 700);
-    expect(fn).toMatch(/if \(error\) return false;/);
-    expect(fn).toMatch(/catch \{[\s\S]*?return false;/);
+    expect(FLEET_DARK_CHECK).toMatch(/if \(error\) return false;/);
+    expect(FLEET_DARK_CHECK).toMatch(/catch \{[\s\S]*?return false;/);
   });
 
   it('only calls the fleet dark when the count is exactly zero', () => {
-    const at = SRC.indexOf('private async fleetDarkAcrossRestarts');
-    const fn = SRC.slice(at, at + 700);
-    expect(fn).toMatch(/\(count \?\? 0\) === 0/);
+    expect(FLEET_DARK_CHECK).toMatch(/\(count \?\? 0\) === 0/);
   });
 
   it('keeps the floor and its threshold — this widens the alarm, it does not weaken it', () => {

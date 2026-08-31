@@ -5,23 +5,6 @@
 -- existing reserve authority; BBJ and promotions receive real, traceable
 -- transfers from the Club Bank. A failed step rolls the entire setup back.
 
-ALTER TABLE public.clubs
-  ADD COLUMN IF NOT EXISTS tagline text;
-
-ALTER TABLE public.clubs
-  DROP CONSTRAINT IF EXISTS clubs_tagline_length;
-ALTER TABLE public.clubs
-  ADD CONSTRAINT clubs_tagline_length
-  CHECK (tagline IS NULL OR char_length(tagline) <= 72);
-
--- The line belongs to the canonical Shark Club only. It was previously
--- hard-coded into every lobby, so no other club row is backfilled from it.
-UPDATE public.clubs
-SET tagline = description
-WHERE club_id = 25450
-  AND NULLIF(btrim(tagline), '') IS NULL
-  AND description ILIKE '%all fish of all shapes and sizes are welcome%';
-
 CREATE TABLE IF NOT EXISTS public.club_opening_setups (
   club_id uuid PRIMARY KEY REFERENCES public.clubs(id) ON DELETE CASCADE,
   owner_id uuid NOT NULL,

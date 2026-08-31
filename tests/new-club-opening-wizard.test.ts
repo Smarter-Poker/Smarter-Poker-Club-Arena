@@ -9,6 +9,7 @@ const wizardCss = read('src/components/club/ClubOpeningWizard.css');
 const home = read('src/pages/ClubHomePage.tsx');
 const settings = read('src/pages/ClubSettingsPage.tsx');
 const openingSql = read('supabase/migrations/20260901073000_club_opening_setup_wizard.sql');
+const taglineSql = read('supabase/migrations/20260901072500_club_tagline_is_its_own_field.sql');
 const payoutSql = read(
   'supabase/migrations/20260901074000_leaderboard_promo_first_overlay_waterfall.sql'
 );
@@ -42,7 +43,7 @@ describe('new club opening wizard', () => {
   });
 
   it('keeps a custom tag line separate and never paints the Shark line globally', () => {
-    expect(openingSql).toContain('ADD COLUMN IF NOT EXISTS tagline text');
+    expect(taglineSql).toContain('ADD COLUMN IF NOT EXISTS tagline text');
     expect(home).toContain('Boolean(club.tagline?.trim())');
     expect(home).toContain('club.tagline?.trim() || `Welcome To ${club.name}`');
     expect(settings).toContain('value={settings.tagline}');

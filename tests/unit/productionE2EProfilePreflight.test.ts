@@ -113,6 +113,9 @@ describe('authenticated production account preflight', () => {
     expect(source('tests/e2e/production-customization-realtime.spec.ts')).toContain(
       "new URL('notifications', baseURL)"
     );
+    expect(source('tests/e2e/production-customization-commerce.spec.ts')).toContain(
+      "new URL('notifications', baseURL)"
+    );
     expect(source('src/components/layouts/AppLayout.tsx')).toContain(
       'data-profile-gate-status={profileStatus}'
     );

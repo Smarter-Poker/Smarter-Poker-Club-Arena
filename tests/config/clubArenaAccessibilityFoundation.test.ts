@@ -71,6 +71,8 @@ describe('Club Arena accessibility foundation', () => {
     expect(workspaceSource).toContain("await import('../utils/retryFetch')");
     expect(workspaceSource).toMatch(/retryFetch\([\s\S]*?from\('club_members'\)/);
     expect(workspaceSource).toMatch(/retryFetch\([\s\S]*?from\('profiles'\)/);
+    expect(workspaceSource).toContain('CLUB_WORKSPACE_READ_TIMEOUT_MS');
+    expect(workspaceSource).toContain('.abortSignal(signal)');
     expect(source).toContain("label: 'Settings'");
     expect(source).toContain("label: 'Stats'");
     expect(source).toContain("clubRoot ? `${clubRoot}/data` : '/data'");

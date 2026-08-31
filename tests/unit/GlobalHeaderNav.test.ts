@@ -38,7 +38,9 @@ const TSX = read('../../src/components/navigation/GlobalHeader.tsx');
 const CSS = read('../../src/components/navigation/GlobalHeader.module.css');
 const LAYOUT = read('../../src/components/layouts/AppLayout.tsx');
 const OPTIMIZER = read('../../scripts/optimize-dist-media.mjs');
-const APPROVED_DESKTOP = readBytes('../../public/images/global-header/global-header-desktop.png');
+const APPROVED_DESKTOP = readBytes(
+  '../../public/images/global-header/global-header-command-center-v1.png'
+);
 
 /**
  * Comments explain the bugs by name, so "the word is gone" is the wrong
@@ -151,7 +153,7 @@ describe('no handler is left wired to nothing', () => {
 });
 
 describe('the button artwork exists', () => {
-  const IMAGES = ['command-center.png', 'back.png', 'hub.png'] as const;
+  const IMAGES = ['command-center-v1.png', 'back.png', 'hub.png'] as const;
 
   it.each(IMAGES)('%s is referenced by the header', (file) => {
     expect(TSX).toContain(`APPROVED_HEADER_ASSET}${file}`);
@@ -191,9 +193,9 @@ describe('mobile uses the identical desktop header', () => {
   });
 
   it('uses only artwork derived from the approved source image', () => {
-    expect(TSX).toContain('global-header-desktop.png');
+    expect(TSX).toContain('global-header-command-center-v1.png');
     for (const file of [
-      'command-center.png',
+      'command-center-v1.png',
       'back.png',
       'hub.png',
       'profile.png',

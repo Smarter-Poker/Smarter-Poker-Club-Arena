@@ -31,6 +31,18 @@ const DEPLOY_TS = '20260822000000';
 //   not changed. Media staleness is handled by stale-while-revalidate below.
 const CACHE_NAME = `club-arena-${DEPLOY_TS}`;
 const MEDIA_CACHE = 'club-arena-media-v1';
+// These stable URLs shipped prohibited three-horizontal-line artwork before
+// the command-center migration. MEDIA_CACHE intentionally survives deploys,
+// so deleting the source files alone is not sufficient: an installed client
+// could otherwise continue to render the old pixels for six hours. Keep this
+// tombstone list until all pre-migration clients have activated this worker.
+const DECOMMISSIONED_THREE_BAR_PATHS = new Set([
+  '/hub/club-arena/images/btn-hamburger-v4.png',
+  '/hub/club-arena/images/btn-hamburger.png',
+  '/hub/club-arena/images/btn-hamburger.webp',
+  '/hub/club-arena/images/global-header/menu.png',
+  '/hub/club-arena/images/global-header/global-header-desktop.png',
+]);
 // How stale a cached media entry may be before it is REALLY revalidated.
 // See the media branch of the fetch handler for why this number has to exist.
 const MEDIA_REVALIDATE_AFTER_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -51,6 +63,22 @@ function cachedAgeMs(response) {
 const MAX_CACHE_ENTRIES = 400; // Evict oldest chunk entries beyond this (a full
 // deploy emits ~330 hashed chunks, so 300 could evict live code mid-session)
 const MAX_MEDIA_ENTRIES = 600; // Cards (104/deck-style) + tiles + icons + logos fit comfortably
+
+async function purgeDecommissionedThreeBarArtwork() {
+  const mediaCache = await caches.open(MEDIA_CACHE);
+  const entries = await mediaCache.keys();
+  await Promise.all(
+    entries
+      .filter((request) => {
+        try {
+          return DECOMMISSIONED_THREE_BAR_PATHS.has(new URL(request.url).pathname);
+        } catch {
+          return false;
+        }
+      })
+      .map((request) => mediaCache.delete(request))
+  );
+}
 
 // App-shell assets to warm at install time. EMPTY in source — the build
 // (scripts/optimize-dist-media.mjs) injects the entry chunk, modulepreloaded
@@ -498,6 +526,7 @@ sw.addEventListener('activate', (event) => {
     event.waitUntil(
         Promise.all([
             sw.clients.claim(),
+            purgeDecommissionedThreeBarArtwork(),
             // Clean up any old cache versions
             caches.keys().then((keys) =>
                 Promise.all(

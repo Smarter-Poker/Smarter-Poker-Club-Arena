@@ -50,7 +50,7 @@ export default function FloatingHamburger() {
     >
       <img
         className={styles.icon}
-        src={`${import.meta.env.BASE_URL}images/global-header/command-center.png`}
+        src={`${import.meta.env.BASE_URL}images/global-header/command-center-v1.png`}
         alt=""
         draggable={false}
       />

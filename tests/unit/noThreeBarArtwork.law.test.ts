@@ -49,11 +49,16 @@ describe('three-horizontal-line artwork can never return', () => {
       'public/images/btn-hamburger.webp',
       'public/images/global-header/menu.png',
       'public/images/global-header/global-header-approved-source.png',
+      'public/images/global-header/command-center.png',
+      'public/images/global-header/global-header-desktop.png',
     ];
     expect(removedAssets.filter((path) => existsSync(join(ROOT, path)))).toEqual([]);
 
     const forbiddenReference = /(btn-hamburger|icon-hamburger|global-header\/menu\.png)/;
+    // sw-bus.js is the sole deliberate exception: it retains the retired URL
+    // strings as cache tombstones so already-installed clients delete them.
     const offenders = sourceFiles
+      .filter((file) => !file.endsWith('public/sw-bus.js'))
       .filter((file) => forbiddenReference.test(readFileSync(file, 'utf8')))
       .map((file) => relative(ROOT, file));
     expect(offenders).toEqual([]);
@@ -61,10 +66,10 @@ describe('three-horizontal-line artwork can never return', () => {
 
   it('locks the premium command-center replacement and the rebuilt header', () => {
     const commandCenter = readFileSync(
-      join(ROOT, 'public/images/global-header/command-center.png')
+      join(ROOT, 'public/images/global-header/command-center-v1.png')
     );
     const header = readFileSync(
-      join(ROOT, 'public/images/global-header/global-header-desktop.png')
+      join(ROOT, 'public/images/global-header/global-header-command-center-v1.png')
     );
 
     expect(createHash('sha256').update(commandCenter).digest('hex')).toBe(
@@ -85,7 +90,21 @@ describe('three-horizontal-line artwork can never return', () => {
     const shell = readFileSync(join(ROOT, 'src/components/Shell.tsx'), 'utf8');
 
     for (const source of [header, floating, table, shell]) {
-      expect(source).toContain('command-center.png');
+      expect(source).toContain('command-center-v1.png');
     }
+  });
+
+  it('purges every retired stable URL from persistent media caches', () => {
+    const worker = readFileSync(join(ROOT, 'public/sw-bus.js'), 'utf8');
+    for (const path of [
+      '/hub/club-arena/images/btn-hamburger-v4.png',
+      '/hub/club-arena/images/btn-hamburger.png',
+      '/hub/club-arena/images/btn-hamburger.webp',
+      '/hub/club-arena/images/global-header/menu.png',
+      '/hub/club-arena/images/global-header/global-header-desktop.png',
+    ]) {
+      expect(worker).toContain(path);
+    }
+    expect(worker).toContain('purgeDecommissionedThreeBarArtwork()');
   });
 });

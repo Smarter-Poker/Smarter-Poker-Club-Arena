@@ -10,6 +10,11 @@ the command-center gear, and remaining three-bar glyphs in transaction,
 leaderboard, promotion, wallet, and table-rules surfaces were replaced with
 semantic symbols.
 
+The replacement header and command-center button use versioned filenames so a
+client cannot reuse the prohibited pixels from the persistent media cache. On
+activation, the service worker also evicts every retired three-bar asset URL,
+including the formerly stable global-header URL.
+
 A source and asset law test now rejects the banned glyphs, legacy asset names,
 runtime references, and any unexpected byte change to the approved replacement
 artwork.

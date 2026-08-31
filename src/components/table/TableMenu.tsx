@@ -33,7 +33,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 
-const COMMAND_CENTER_ASSET = `${import.meta.env.BASE_URL}images/global-header/command-center.png`;
+const COMMAND_CENTER_ASSET = `${import.meta.env.BASE_URL}images/global-header/command-center-v1.png`;
 
 // ─── SVG Icons for Identity section ─── */
 const AvatarIcon = () => (

@@ -83,6 +83,15 @@ describe('.carouselScrollFade - the carousel stage', () => {
     expect(base).toMatch(/margin-left\s*:\s*auto/);
     expect(base).toMatch(/margin-right\s*:\s*auto/);
   });
+
+  it('cannot collapse beneath the action console and quick-action row', () => {
+    /* The stage's child is ~500px tall on desktop. With the flex-item default
+       `flex-shrink: 1`, a 720px-tall viewport reduced this wrapper to 0px,
+       clipped every club card, and left the following tile row intercepting
+       the cards' pointer targets. .mainContent already owns vertical scroll,
+       so this item must retain its measured height. */
+    expect(blocks[0]).toMatch(/flex\s*:\s*0\s+0\s+auto/);
+  });
 });
 
 describe('.mainContent - the parent whose display mode caused it', () => {

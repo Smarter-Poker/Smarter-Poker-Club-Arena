@@ -109,6 +109,12 @@ const authState = vi.hoisted(() => ({
 const routeState = vi.hoisted(() => ({ clubId: 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4' }));
 const rpcMock = vi.hoisted(() => vi.fn());
 const fromMock = vi.hoisted(() => vi.fn());
+const downloadMock = vi.hoisted(() => vi.fn(() => true));
+const realtimeState = vi.hoisted(() => ({
+  channels: [] as Array<Record<string, any>>,
+  busHandler: null as ((payload: unknown) => void) | null,
+  busEvents: [] as string[],
+}));
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => authState.current,
@@ -127,7 +133,30 @@ vi.mock('../../src/lib/supabase', () => ({
   },
 }));
 
+vi.mock('../../src/utils/downloadCsv', async () => {
+  const actual = await vi.importActual<typeof import('../../src/utils/downloadCsv')>(
+    '../../src/utils/downloadCsv'
+  );
+  return { ...actual, downloadCsv: downloadMock };
+});
+
+vi.mock('../../src/hooks/useMasterBusChannel', () => ({
+  useMasterBusChannel: (options: Record<string, any>) => realtimeState.channels.push(options),
+}));
+
+vi.mock('../../src/hooks/useMasterBusSubscription', () => ({
+  useMasterBusSubscriptions: (events: string[], handler: (payload: unknown) => void) => {
+    realtimeState.busEvents = events;
+    realtimeState.busHandler = handler;
+  },
+}));
+
 import ClubDataPage from '../../src/pages/club/ClubDataPage';
+import {
+  CLUB_DATA_CACHE_PREFIX,
+  clubDataQueryKey,
+  writeClubDataCache,
+} from '../../src/lib/clubDataCache';
 
 afterEach(() => cleanup());
 
@@ -135,6 +164,11 @@ beforeEach(() => {
   authState.current = { user: { id: 'owner-1' }, isHydrating: false };
   routeState.clubId = CLUB_ID;
   rpcMock.mockReset();
+  downloadMock.mockClear();
+  sessionStorage.clear();
+  realtimeState.channels = [];
+  realtimeState.busHandler = null;
+  realtimeState.busEvents = [];
   rpcMock.mockImplementation(async (fn: string) => {
     if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
     if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
@@ -152,6 +186,75 @@ beforeEach(() => {
 });
 
 describe('ClubDataPage', () => {
+  it('paints a recent verified snapshot immediately while the live RPC revalidates', async () => {
+    const endDate = new Date().toISOString().slice(0, 10);
+    const start = new Date(`${endDate}T00:00:00Z`);
+    start.setUTCDate(start.getUTCDate() - 13);
+    const cachedSnapshot = {
+      ...snapshot,
+      rows: [{ ...snapshot.rows[0], id: 'cached-game', name: 'Cached Table' }],
+    };
+    const queryKey = clubDataQueryKey({
+      kind: 'games',
+      startDate: start.toISOString().slice(0, 10),
+      endDate,
+      game: 'ALL',
+      stakes: 'ALL',
+      search: '',
+      gameSort: 'recent',
+    });
+    writeClubDataCache('owner-1', CLUB_ID, queryKey, {
+      snapshot: cachedSnapshot,
+      cursor: null,
+      hasMore: false,
+    });
+    rpcMock.mockImplementation((fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return new Promise(() => undefined);
+      if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    render(<ClubDataPage />);
+
+    expect(await screen.findByText('Cached Table')).toBeInTheDocument();
+    expect(screen.getByText('Recent Verified Snapshot')).toBeInTheDocument();
+    expect(
+      screen.getByText('Showing A Recent Verified Snapshot While Live Numbers Refresh.')
+    ).toBeInTheDocument();
+    expect(rpcMock).toHaveBeenCalledWith('ca_club_data_snapshot', expect.any(Object));
+  });
+
+  it('wires scoped realtime tables and coalesces a mutation into an authoritative refresh', async () => {
+    render(<ClubDataPage />);
+    await screen.findByText('Shark Table One');
+
+    const latestByTable = new Map<string, Record<string, any>>();
+    for (const channel of realtimeState.channels) latestByTable.set(channel.table, channel);
+    expect([...latestByTable.keys()].sort()).toEqual([
+      'club_members',
+      'settlement_invoices',
+      'tables',
+      'tournaments',
+    ]);
+    for (const channel of latestByTable.values()) {
+      expect(channel.filter).toBe(`club_id=eq.${CLUB_ID}`);
+      expect(channel.enabled).toBe(true);
+    }
+
+    const before = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot').length;
+    act(() => latestByTable.get('tables')?.onPayload({ eventType: 'UPDATE' }));
+    expect(
+      Object.keys(sessionStorage).filter((key) => key.startsWith(CLUB_DATA_CACHE_PREFIX))
+    ).toHaveLength(0);
+    await waitFor(
+      () =>
+        expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot').length).toBe(
+          before + 1
+        ),
+      { timeout: 2_000 }
+    );
+  });
+
   it('renders the operator hero and live financial summary', async () => {
     render(<ClubDataPage />);
 
@@ -164,6 +267,45 @@ describe('ClubDataPage', () => {
       expect.objectContaining({ p_limit: 100 })
     );
     expect(rpcMock.mock.calls.some(([fn]) => fn === 'ca_club_game_page')).toBe(false);
+  });
+
+  it('exports the exact prepared game snapshot instead of only the visible page', async () => {
+    const secondRow = { ...snapshot.rows[0], id: 'game-2', name: 'Shark Table Two' };
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      if (fn === 'ca_club_game_export_start') {
+        return { data: { export_id: 'export-1', total_rows: 2, status: 'ready' }, error: null };
+      }
+      if (fn === 'ca_club_data_export_page') {
+        return {
+          data: {
+            rows: [snapshot.rows[0], secondRow],
+            total_rows: 2,
+            next_offset: 2,
+            has_more: false,
+          },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_data_export_cancel') return { data: true, error: null };
+      return { data: null, error: null };
+    });
+
+    render(<ClubDataPage />);
+    const exportButton = await screen.findByRole('button', { name: 'Export as CSV' });
+    fireEvent.click(exportButton);
+
+    expect(await screen.findAllByText('Exported all 2 games.')).toHaveLength(2);
+    expect(downloadMock).toHaveBeenCalledOnce();
+    expect(downloadMock.mock.calls[0][1].split('\n')).toHaveLength(3);
+    expect(rpcMock).toHaveBeenCalledWith(
+      'ca_club_game_export_start',
+      expect.objectContaining({ p_sort: 'recent', p_request_id: expect.any(String) })
+    );
+    expect(rpcMock).toHaveBeenCalledWith('ca_club_data_export_cancel', {
+      p_export_id: 'export-1',
+    });
   });
 
   it('keeps internal player automation metadata out of the operator UI', async () => {
@@ -259,6 +401,41 @@ describe('ClubDataPage', () => {
     expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_union_invoices')).toHaveLength(2);
     await screen.findByText('Club Ledger Refreshed.');
   });
+
+  it('keeps verified game rows visible when a background refresh is transiently refused', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let snapshotRequest = 0;
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') {
+        snapshotRequest += 1;
+        return snapshotRequest === 1
+          ? { data: snapshot, error: null }
+          : { data: null, error: { code: '57014', message: 'statement timeout' } };
+      }
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+      await screen.findByText('Shark Table One');
+      const refresh = screen.getByRole('button', { name: 'Refresh club ledger' });
+      await waitFor(() => expect(refresh).toBeEnabled());
+
+      fireEvent.click(refresh);
+
+      await screen.findByText(
+        /Live Refresh Is Delayed\. Showing The Last Verified Snapshot/i,
+        {},
+        { timeout: 12_000 }
+      );
+      expect(screen.getByText('Shark Table One')).toBeInTheDocument();
+      expect(screen.queryByText('Could not load club data.')).not.toBeInTheDocument();
+      expect(screen.getByText(/Showing The Last Verified Snapshot/i)).toBeInTheDocument();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  }, 15_000);
 
   it('keeps the last verified statement visible through a transient refresh failure', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);

@@ -67,6 +67,7 @@ import {
   type TableStudioCheckoutResult,
 } from '../../lib/tableStudioCheckoutResume';
 import { recordCustomizationOperation } from '../../services/CustomizationOperationsTelemetry';
+import { retryFetch } from '../../utils/retryFetch';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -87,6 +88,15 @@ type ThemeSelection = Omit<TableStudioLoadout, 'name' | 'saved_at'>;
 type ThemeTab = 'themes' | 'table' | 'button' | 'background' | 'cards';
 type BackgroundGroup = 'places-rooms' | 'skins';
 type AssetFilter = 'all' | 'free' | 'vip' | 'favorites' | 'recent';
+
+/**
+ * Table Studio opens several independent, security-sensitive reads at once.
+ * PostgREST can briefly answer PGRST002 while its schema cache reconnects;
+ * treating that one response as permanent leaves the editor locked until the
+ * player manually retries every panel. Keep the retry window bounded and
+ * short enough that the modal still reports a real outage promptly.
+ */
+const STUDIO_READ_RETRY = { maxRetries: 4, baseDelayMs: 500 } as const;
 
 interface ThemeAsset {
   id: string;
@@ -814,43 +824,70 @@ export function ThemeSettingsModal({
     // initial loading transition; every subsequent snapshot is merged in place.
     if (scopeChanged) setOwnershipState('loading');
     Promise.all([
-      supabase
-        .from('feature_purchases')
-        .select('feature')
-        .eq('user_id', userId)
-        .like('feature', 'card_back_%'),
-      supabase.from('theme_asset_unlocks').select('category, asset_id').eq('user_id', userId),
-    ]).then(([cardBacks, assets]) => {
-      // Ownership is permanent and snapshots are merged, so an older read is
-      // still safe to apply after a newer reconciliation starts. Its status is
-      // not authoritative, though, and a response for a closed/different user
-      // must never touch the current Studio.
-      if (ownershipScopeRef.current !== requestedScope) return;
-      if (cardBacks.error || assets.error) {
-        // Not fatal, and not silently swallowed either: a failure here means
-        // paid designs read as locked, so it has to be visible somewhere.
-        reportError(
-          cardBacks.error || assets.error,
-          'ThemeSettingsModal.Cosmetic_ownership_load_failed'
+      retryFetch(
+        () =>
+          supabase
+            .from('feature_purchases')
+            .select('feature')
+            .eq('user_id', userId)
+            .like('feature', 'card_back_%')
+            .then((result) => result),
+        STUDIO_READ_RETRY
+      ),
+      retryFetch(
+        () =>
+          supabase
+            .from('theme_asset_unlocks')
+            .select('category, asset_id')
+            .eq('user_id', userId)
+            .then((result) => result),
+        STUDIO_READ_RETRY
+      ),
+    ])
+      .then(([cardBacks, assets]) => {
+        // Ownership is permanent and snapshots are merged, so an older read is
+        // still safe to apply after a newer reconciliation starts. Its status is
+        // not authoritative, though, and a response for a closed/different user
+        // must never touch the current Studio.
+        if (ownershipScopeRef.current !== requestedScope) return;
+        if (cardBacks.error || assets.error) {
+          // Not fatal, and not silently swallowed either: a failure here means
+          // paid designs read as locked, so it has to be visible somewhere.
+          reportError(
+            cardBacks.error || assets.error,
+            'ThemeSettingsModal.Cosmetic_ownership_load_failed'
+          );
+          if (requestId === ownershipRequestRef.current) setOwnershipState('error');
+          return;
+        }
+        // Merge the authoritative snapshot into any INSERT events that arrived
+        // while this read was in flight. Replacing either array here opens a
+        // second race: an entitlement can be delivered after the SELECT snapshot
+        // was taken but before React applies its result, and the stale snapshot
+        // would put the lock back on that just-purchased design.
+        const purchasedCardBacks = (cardBacks.data || []).map((r: { feature: string }) =>
+          r.feature.replace('card_back_', '')
         );
+        const unlockedAssets = (assets.data || []).map(
+          (row: { category: string; asset_id: string }) => `${row.category}:${row.asset_id}`
+        );
+        setOwnedCardBacks((current) => [...new Set([...current, ...purchasedCardBacks])]);
+        setOwnedThemeAssets((current) => [...new Set([...current, ...unlockedAssets])]);
+        // Ownership only grows and every same-scope snapshot is merged. A newer
+        // two-second reconciliation may already be in flight when this one
+        // succeeds, especially on a slow mobile/database connection. Requiring
+        // this response to still be the newest request starves `ready` forever
+        // when each SELECT takes longer than the cadence: the Studio stays
+        // aria-busy even though valid snapshots keep arriving. Any successful
+        // response for the active user proves the ledger is readable; a later
+        // current failure can still move the state back to error.
+        setOwnershipState('ready');
+      })
+      .catch((error) => {
+        if (ownershipScopeRef.current !== requestedScope) return;
+        reportError(error, 'ThemeSettingsModal.Cosmetic_ownership_load_failed');
         if (requestId === ownershipRequestRef.current) setOwnershipState('error');
-        return;
-      }
-      // Merge the authoritative snapshot into any INSERT events that arrived
-      // while this read was in flight. Replacing either array here opens a
-      // second race: an entitlement can be delivered after the SELECT snapshot
-      // was taken but before React applies its result, and the stale snapshot
-      // would put the lock back on that just-purchased design.
-      const purchasedCardBacks = (cardBacks.data || []).map((r: { feature: string }) =>
-        r.feature.replace('card_back_', '')
-      );
-      const unlockedAssets = (assets.data || []).map(
-        (row: { category: string; asset_id: string }) => `${row.category}:${row.asset_id}`
-      );
-      setOwnedCardBacks((current) => [...new Set([...current, ...purchasedCardBacks])]);
-      setOwnedThemeAssets((current) => [...new Set([...current, ...unlockedAssets])]);
-      if (requestId === ownershipRequestRef.current) setOwnershipState('ready');
-    });
+      });
     return undefined;
   }, [isOpen, userId, ownershipRevision]);
 
@@ -861,9 +898,14 @@ export function ThemeSettingsModal({
     if (!isOpen) return undefined;
     let mounted = true;
     setPricingState('loading');
-    supabase
-      .from('feature_pricing')
-      .select('feature, diamond_cost')
+    retryFetch(
+      () =>
+        supabase
+          .from('feature_pricing')
+          .select('feature, diamond_cost')
+          .then((result) => result),
+      STUDIO_READ_RETRY
+    )
       .then(({ data, error }) => {
         if (!mounted) return;
         if (error) {
@@ -887,6 +929,12 @@ export function ThemeSettingsModal({
           )
         );
         setPricingState('ready');
+      })
+      .catch((error) => {
+        if (!mounted) return;
+        reportError(error, 'ThemeSettingsModal.Asset_pricing_load_failed');
+        setAssetPrices({});
+        setPricingState('error');
       });
     return () => {
       mounted = false;
@@ -1151,10 +1199,17 @@ export function ThemeSettingsModal({
     if (scopeChanged) setThemeLoadState('loading');
     const load = async () => {
       try {
-        const { data, error } = await supabase
-          .from('user_theme_settings')
-          .select('game_type, theme_id, table_id, button_id, background_id, cards_id, updated_at')
-          .eq('user_id', userId);
+        const { data, error } = await retryFetch(
+          () =>
+            supabase
+              .from('user_theme_settings')
+              .select(
+                'game_type, theme_id, table_id, button_id, background_id, cards_id, updated_at'
+              )
+              .eq('user_id', userId)
+              .then((result) => result),
+          STUDIO_READ_RETRY
+        );
 
         if (error) {
           // A FAILED READ IS NOT "YOU HAVE THE DEFAULT THEME" (2026-08-25).

@@ -380,7 +380,7 @@ describe('ThemeSettingsModal hardening', () => {
   it('keeps premium card backs unavailable when ownership cannot be verified', async () => {
     mocks.purchaseResult = Promise.resolve({
       data: [],
-      error: { message: 'ownership query failed' },
+      error: { code: '42501', message: 'ownership query failed' },
     });
     renderStudio();
 
@@ -398,7 +398,7 @@ describe('ThemeSettingsModal hardening', () => {
   it('shows a retryable catalog failure instead of leaving paid prices silently unavailable', async () => {
     mocks.pricingResult = Promise.resolve({
       data: [],
-      error: { message: 'pricing query failed' },
+      error: { code: '42501', message: 'pricing query failed' },
     });
     renderStudio();
 
@@ -701,6 +701,40 @@ describe('ThemeSettingsModal hardening', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Neon City' })).toBeEnabled());
     expect(await screen.findByText('Table Art Live')).toBeVisible();
+  });
+
+  it('clears ownership loading when a slow snapshot succeeds during a newer refresh', async () => {
+    mocks.autoEntitlementSubscribe = false;
+    renderStudio();
+    const studio = await screen.findByRole('dialog', { name: 'Make The Table Yours' });
+    const grid = studio.querySelector('.theme-modal__grid');
+    expect(grid).not.toBeNull();
+    await waitFor(() => expect(grid).toHaveAttribute('aria-busy', 'false'));
+
+    const firstRefresh = deferred<{ data: unknown[]; error: null }>();
+    mocks.unlockResult = firstRefresh.promise;
+    act(() => mocks.entitlementStatus?.('SUBSCRIBED'));
+    await waitFor(() => expect(grid).toHaveAttribute('aria-busy', 'true'));
+
+    // Keep the next periodic reconciliation pending. The first valid snapshot
+    // is no longer the newest request when it returns, but it still proves the
+    // same user's monotonic ownership ledger is readable and must clear busy.
+    const newerRefresh = deferred<{ data: unknown[]; error: null }>();
+    await act(async () => {
+      mocks.unlockResult = newerRefresh.promise;
+      await new Promise((resolve) => setTimeout(resolve, 2_100));
+    });
+    await act(async () => {
+      firstRefresh.resolve({ data: [], error: null });
+      await firstRefresh.promise;
+    });
+
+    await waitFor(() => expect(grid).toHaveAttribute('aria-busy', 'false'));
+
+    await act(async () => {
+      newerRefresh.resolve({ data: [], error: null });
+      await newerRefresh.promise;
+    });
   });
 
   it('does not claim a completed purchase was applied when the appearance save fails', async () => {

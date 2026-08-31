@@ -107,6 +107,9 @@ describe('club roster privacy contract', () => {
     expect(HARDENING).toContain("'nickname', v_after_nickname, 'remark', v_after_remark");
     expect(MANAGEMENT).toContain('draftRef.current');
     expect(MANAGEMENT).toContain('Save Notes');
+    expect(MANAGEMENT).toContain('The Member Ledger Did Not Respond');
+    expect(MANAGEMENT).toContain('Retry Member');
+    expect(MANAGEMENT).toContain('setLoadError(true)');
   });
 
   it('enforces the non-self-editable note capability in the writer', () => {

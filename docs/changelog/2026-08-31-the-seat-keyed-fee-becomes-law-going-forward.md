@@ -9,7 +9,7 @@ Dan's ruling: **guard forward, do not rewrite history, no chips move.**
 
 ## What shipped
 
-`supabase/migrations/20260831200000_the_seat_keyed_fee_becomes_law_going_forward.sql`
+`supabase/migrations/20260901110000_the_seat_keyed_fee_becomes_law_going_forward.sql`
 
 - `trg_tournament_fee_seat_rule`, BEFORE INSERT OR UPDATE OF
   `buy_in_amount, buy_in_fee` on `public.tournaments`. It refuses any row whose
@@ -43,12 +43,12 @@ violating row (2026-08-25) and after this file lands.
 Non-spin rows (fee-bearing Spins are `tournaments_spin_no_extra_rake`'s
 business and count 7,120 separately):
 
-| rows  | what                                                        |
-| ----- | ----------------------------------------------------------- |
-| 9,357 | `buy_in_fee` is not the derived value                       |
-| 3,415 | overcharged, every one COMPLETED                            |
-| 5,942 | undercharged (3,232 COMPLETED, 2,710 CANCELLED)             |
-| 174   | live and upcoming rows, **zero** of them in violation       |
+| rows  | what                                                  |
+| ----- | ----------------------------------------------------- |
+| 9,357 | `buy_in_fee` is not the derived value                 |
+| 3,415 | overcharged, every one COMPLETED                      |
+| 5,942 | undercharged (3,232 COMPLETED, 2,710 CANCELLED)       |
+| 174   | live and upcoming rows, **zero** of them in violation |
 
 No backfill. No refund. Nothing pays out wrong going forward.
 

@@ -11,7 +11,7 @@
  * could see either — both existing CHECKs are ceilings, so a fee of 0.00 on a
  * 100-chip MTT satisfies every guard the table has.
  *
- * `supabase/migrations/20260831200000_the_seat_keyed_fee_becomes_law_going_forward.sql`
+ * `supabase/migrations/20260901110000_the_seat_keyed_fee_becomes_law_going_forward.sql`
  * puts the rule where the writers are. This file is what keeps the two copies
  * from drifting, and what keeps the three properties that make the migration
  * safe from being quietly edited out:
@@ -31,7 +31,7 @@ import path from 'path';
 import { rakeRateFor, splitBuyIn } from '../src/utils/buyIn';
 
 const MIGRATION =
-  'supabase/migrations/20260831200000_the_seat_keyed_fee_becomes_law_going_forward.sql';
+  'supabase/migrations/20260901110000_the_seat_keyed_fee_becomes_law_going_forward.sql';
 
 const sql = fs.readFileSync(path.join(process.cwd(), MIGRATION), 'utf8');
 
@@ -142,7 +142,9 @@ describe('the drift alarm files findings where the money checks already live', (
     // The constraint is an allowlist; an alarm that emits an unlisted value
     // throws instead of reporting, which is the loudest possible way to be
     // silent.
-    const constraint = code.slice(code.indexOf('ADD CONSTRAINT ledger_reconcile_log_entity_type_check'));
+    const constraint = code.slice(
+      code.indexOf('ADD CONSTRAINT ledger_reconcile_log_entity_type_check')
+    );
     expect(constraint).toContain("'tournament_fee_law'::text");
     expect(constraint).toContain("'rake_law'::text");
   });

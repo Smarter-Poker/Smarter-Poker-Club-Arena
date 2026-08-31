@@ -82,7 +82,7 @@ describe('a listing only counts if a player could sit at it', () => {
 
   it('will not treat a table-less seat-first game as covering its price point', () => {
     expect(service).toMatch(/joinability read failed/);
-    expect(service).toMatch(/withTable\.has\(r\.id\)/);
+    expect(service).toMatch(/withJoinableTable\.has\(r\.id\)/);
   });
 });
 

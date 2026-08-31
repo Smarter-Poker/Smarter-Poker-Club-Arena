@@ -1049,13 +1049,13 @@ class SoundService {
   }
 
   /**
-   * Discard — ONE card swept away, then landing on the muck.
+   * Discard - ONE card swept away, then landing on the muck.
    *
    * CRAZY PINEAPPLE PHASE 3 2026-08-31. Until today the discard played
    * `playFold()`: the wrong action's cue, and a two-card brush for a
    * one-card decision. A player who threw a card heard the sound the table
    * makes when a hand DIES, in the one variant where throwing a card is how
-   * you stay in — which is exactly the confusion Dan reported as "auto folded
+   * you stay in - which is exactly the confusion Dan reported as "auto folded
    * my hand, even though it didn't".
    *
    * Built out of the same air the deal is built from (`createSweptNoiseBurst`,
@@ -1065,12 +1065,12 @@ class SoundService {
    * separate it from the fold:
    *
    *   - ONE brush, not two. The fold sends the whole hand; this sends a card.
-   *   - It sweeps from higher and lands SHORTER (0.19s vs 0.26s) — a flick
+   *   - It sweeps from higher and lands SHORTER (0.19s vs 0.26s) - a flick
    *     across the felt rather than a hand sliding away.
    *   - It ends on a soft felt tap, because the card stops. The fold has no
    *     tap: those cards are gone.
    *
-   * Peak gain 0.10, just under the fold's 0.11 — this fires on every seat in
+   * Peak gain 0.10, just under the fold's 0.11 - this fires on every seat in
    * a round where every seat acts at once, so it has to sit under the action
    * rather than over it.
    */
@@ -1081,7 +1081,7 @@ class SoundService {
     // The card through the air: bandpass sliding down = moving away from you.
     this.createSweptNoiseBurst(t, 0.19, 0.1, 3000, 520, 0.85);
 
-    // The card arriving on the felt. Heavily lowpassed and quiet — this is
+    // The card arriving on the felt. Heavily lowpassed and quiet - this is
     // the stop at the end of the flick, not a second card.
     this.createNoiseBurst(t + 0.14, 0.055, 0.05, 900);
 

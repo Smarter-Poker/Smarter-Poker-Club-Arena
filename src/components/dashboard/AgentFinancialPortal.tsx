@@ -169,7 +169,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
   };
 
   const handleTransferToPlayer = async () => {
-    const amountStr = prompt('Amount to transfer to Player Wallet?');
+    const amountStr = prompt('Amount To Transfer To Player Wallet?');
     const amount = Number(amountStr);
     if (!amount || amount <= 0) return;
 

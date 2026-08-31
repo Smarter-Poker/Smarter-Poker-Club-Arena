@@ -171,6 +171,13 @@ const ACTION_LABEL: Record<string, string> = {
   bet: 'Bet',
   raise: 'Raise',
   all_in: 'All In',
+  /* PHASE 3 AUDIT 2026-08-31. The fallback below is `ACTION_LABEL[flash] ?? flash`,
+     i.e. the RAW engine token, so a missing entry ships a lowercase word to the
+     tab strip - and CLAUDE.md 5.7 is Title Case Every Word. 'discard' was
+     unreachable here until Phase 3, because nothing on the client ever put it
+     in lastActions; now the engine records it and the hero's own click sets it,
+     so this tab would have flashed "discard". */
+  discard: 'Discard',
 };
 
 export interface TableTabBarProps {

@@ -49,7 +49,7 @@
  * from disk for the next thirty days. The deploy was correct and the screen
  * was wrong, which is the worst shape a bug can have. Bumping the filename
  * changes the URL, and a URL that has never been requested cannot be stale.
- * `btn-hamburger-v4.png` and `header-help-v4.png` in this same folder are the
+ * `header-settings-v4.png` and `header-help-v4.png` in this same folder are the
  * same lesson already learned once.
  *
  * `satellite-seat-icon.png` was kept beside it for a day, holding the SAME

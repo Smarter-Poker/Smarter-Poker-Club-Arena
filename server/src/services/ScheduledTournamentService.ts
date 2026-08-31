@@ -350,6 +350,14 @@ export const SCHEDULE_BLIND_PRESETS: Record<string, Array<Record<string, number>
   ],
 };
 SCHEDULE_BLIND_PRESETS.DEEP = SCHEDULE_BLIND_PRESETS.SLOW;
+// DEEPSTACK is what the schedule seeds actually wrote (19 active schedules on
+// production carry `blindPreset: "DEEPSTACK"`, all created 2026-08-25) and it
+// resolved to NOTHING — every one of those events was silently skipped with
+// `structure_missing` on each spawn attempt: Morning Grind Deepstack,
+// Five-Card Big Stack, Midweek Morning Stack, Wednesday PLO Stack, Sunday
+// Funday Six-Card Closer, and fourteen more never ran once. Same structure as
+// DEEP/SLOW — a deep stack IS the slow structure.
+SCHEDULE_BLIND_PRESETS.DEEPSTACK = SCHEDULE_BLIND_PRESETS.SLOW;
 
 /** Named payout presets, resolvable as `payoutPreset`. */
 export const SCHEDULE_PAYOUT_PRESETS: Record<

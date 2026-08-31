@@ -26,11 +26,26 @@ async function removeEmptyDirectories(root, relative = '') {
   if (relative && (await readdir(directory).catch(() => [])).length === 0) await rm(directory);
 }
 
-async function readPreviousRuntimeAssets(target, targetAssetFiles) {
+function sameAssetGeneration(previousAssets, currentAssets) {
+  if (previousAssets.length !== currentAssets.length) return false;
+  const current = new Set(currentAssets);
+  return previousAssets.every((asset) => current.has(asset));
+}
+
+async function readPreviousRuntimeAssets(target, targetAssetFiles, currentRuntimeAssets) {
   try {
     const manifest = JSON.parse(await readFile(path.join(target, MANIFEST), 'utf8'));
     if (Array.isArray(manifest.assets)) {
-      return manifest.assets.filter((entry) => typeof entry === 'string' && isRuntimeAsset(entry));
+      const manifestedAssets = manifest.assets.filter(
+        (entry) => typeof entry === 'string' && isRuntimeAsset(entry)
+      );
+      // A same-build retry must not rotate away the generation already being
+      // retained beside it. The target was bounded by the preceding successful
+      // sync, so all runtime files here are exactly current + previous.
+      if (sameAssetGeneration(manifestedAssets, currentRuntimeAssets)) {
+        return targetAssetFiles.filter(isRuntimeAsset);
+      }
+      return manifestedAssets;
     }
   } catch {
     // The first rollout has no manifest. The checked-out target is exactly the
@@ -44,8 +59,12 @@ export async function syncClubArenaDist(source, target) {
   const targetAssets = path.join(target, 'assets');
   const currentAssetFiles = await filesBelow(sourceAssets);
   const targetAssetFiles = await filesBelow(targetAssets);
-  const previousRuntimeAssets = await readPreviousRuntimeAssets(target, targetAssetFiles);
   const currentRuntimeAssets = currentAssetFiles.filter(isRuntimeAsset);
+  const previousRuntimeAssets = await readPreviousRuntimeAssets(
+    target,
+    targetAssetFiles,
+    currentRuntimeAssets
+  );
 
   await mkdir(target, { recursive: true });
   const sourceRootEntries = new Set(

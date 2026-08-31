@@ -65,16 +65,40 @@ describe('Club Arena runtime asset retention', () => {
     );
   });
 
-  it('checks out the sync helper in the isolated World Hub publish job', async () => {
+  it('does not rotate away the retained generation when the same build is republished', async () => {
+    const { source, target } = await fixture();
+    await writeFile(path.join(source, 'index.html'), 'rebuilt shell');
+    await writeFile(path.join(source, 'assets', 'current.js'), 'current');
+    await writeFile(path.join(target, 'index.html'), 'deployed shell');
+    await writeFile(path.join(target, 'assets', 'current.js'), 'current');
+    await writeFile(path.join(target, 'assets', 'previous.js'), 'previous');
+    await writeFile(
+      path.join(target, 'runtime-asset-manifest.json'),
+      JSON.stringify({ assets: ['current.js'] })
+    );
+
+    const result = await syncClubArenaDist(source, target);
+
+    expect(result).toEqual({ currentRuntimeAssets: 1, retainedPreviousRuntimeAssets: 1 });
+    await expect(readFile(path.join(target, 'index.html'), 'utf8')).resolves.toBe('rebuilt shell');
+    await expect(readFile(path.join(target, 'assets', 'previous.js'), 'utf8')).resolves.toBe(
+      'previous'
+    );
+  });
+
+  it('checks out the sync helper and invokes it once after the publish verdict', async () => {
     const workflow = await readFile(
       path.join(process.cwd(), '.github', 'workflows', 'build-for-world-hub.yml'),
       'utf8'
+    );
+    const scriptCalls = workflow.match(
+      /node \.\.\/club-arena-source\/scripts\/ci\/sync-club-arena-dist\.mjs/g
     );
 
     expect(workflow).toContain('- name: Checkout Club Arena sync tooling');
     expect(workflow).toContain('path: club-arena-source');
     expect(workflow).toContain('sparse-checkout: scripts/ci/sync-club-arena-dist.mjs');
-    expect(workflow).toContain('node club-arena-source/scripts/ci/sync-club-arena-dist.mjs');
-    expect(workflow).toContain('node ../club-arena-source/scripts/ci/sync-club-arena-dist.mjs');
+    expect(scriptCalls).toHaveLength(1);
+    expect(workflow).not.toContain('- name: Sync dist/ to World Hub');
   });
 });

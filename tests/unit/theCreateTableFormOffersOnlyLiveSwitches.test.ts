@@ -73,8 +73,28 @@ const ALIVE_DESPITE_APPEARANCES = [
   'ante_bb',
 ];
 
-/** Generated from min_buy_in/max_buy_in; Postgres rejects direct writes. */
-const DERIVED_CASH_COLUMNS = ['min_buy_in_bb', 'max_buy_in_bb'];
+/**
+ * DERIVED COLUMNS. WRITING ONE IS AN ERROR, NOT A PREFERENCE (2026-08-31).
+ *
+ * These used to sit in ALIVE_DESPITE_APPEARANCES on the grounds that
+ * 20260828_cash_buyins_are_40bb_to_200bb.sql "resyncs them deliberately". That
+ * resync only ever touched the six rows its WHERE clause matched and left
+ * 103,684 on the 2/25 DEFAULT from 010_table_configuration.sql, which is how a
+ * 1/2 table came to advertise a 400-chip maximum while carrying a column that
+ * said 50.
+ *
+ * 20260831133000_one_buy_in_band_and_the_rest_are_derived.sql ended that: all
+ * four are now GENERATED ALWAYS ... STORED from the canonical chips pair, so
+ * Postgres itself refuses a write with 428C9 and the families cannot disagree.
+ * A page that stamps one of these does not write a stale value any more, it
+ * breaks table creation outright.
+ *
+ * The pin is therefore INVERTED for these, not deleted. That distinction is
+ * the point: the columns are still read everywhere, so a plain "no longer
+ * writes" entry in DEAD_ON_A_CASH_ROW would have said something false about
+ * why.
+ */
+const DERIVED_AND_UNWRITABLE = ['min_buy_in_bb', 'max_buy_in_bb', 'min_buyin', 'max_buyin'];
 
 describe('5a — the three lifecycle switches are read in SQL and stay', () => {
   it.each(['Auto Restart', 'Auto Extension', 'Auto Create Table'])(
@@ -101,8 +121,24 @@ describe('5b — the tournament block is not written onto a cash row', () => {
     expect(code).toMatch(new RegExp(`^\\s*${column}:`, 'm'));
   });
 
-  it.each(DERIVED_CASH_COLUMNS)('does not write generated column %s', (column) => {
-    expect(code).not.toMatch(new RegExp(`^\\s*${column}:`, 'm'));
+  it.each(DERIVED_AND_UNWRITABLE)(
+    'does not write %s, which the database now generates',
+    (column) => {
+      expect(
+        code,
+        `${column} is GENERATED ALWAYS since ` +
+          '20260831133000_one_buy_in_band_and_the_rest_are_derived.sql. Writing it ' +
+          'raises 428C9 and breaks table creation. Write min_buy_in / max_buy_in ' +
+          '(chips) instead; the big-blind columns follow.'
+      ).not.toMatch(new RegExp(`^\\s*${column}:`, 'm'));
+    }
+  );
+
+  it('still writes the canonical chips pair the engine actually enforces', () => {
+    // The inverted pins above only say what must NOT be written. Without this,
+    // deleting the real band would turn the whole block green.
+    expect(code).toMatch(/^\s*min_buy_in:/m);
+    expect(code).toMatch(/^\s*max_buy_in:/m);
   });
 });
 

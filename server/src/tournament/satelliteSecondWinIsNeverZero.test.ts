@@ -38,17 +38,20 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sliceMethod } from '../../../tests/helpers/sourceWindow';
+import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 const SRC = readFileSync(resolve(__dirname, 'TournamentManager.ts'), 'utf8');
 
-/** The satellite award branch, isolated from every other payCash call. */
-const AWARD = (() => {
-  const method = sliceMethod(SRC, 'protected async processSatelliteAwards');
-  const at = method.indexOf("supabase.rpc('fn_award_satellite_seat'");
-  expect(at).toBeGreaterThan(-1);
-  return method.slice(at);
-})();
+/**
+ * The satellite award branch, isolated from every other payCash call.
+ *
+ * Bounded by the block that CONTAINS the award RPC, not by a character count.
+ * A fixed window is the failure tests/unit/noFixedSizeSourceWindows.test.ts
+ * exists to stop: comments grow, the asserted code slides past the end, and
+ * the pin either goes red for no reason or - worse - stays GREEN because the
+ * code it watched is no longer inside the window at all.
+ */
+const AWARD = sliceEnclosingBlock(SRC, "supabase.rpc('fn_award_satellite_seat'");
 
 describe('a satellite winner who already holds a seat', () => {
   it('reads held_from_this_satellite off the RPC result at all', () => {

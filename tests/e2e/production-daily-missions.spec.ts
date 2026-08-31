@@ -468,12 +468,7 @@ test.describe('production Daily Missions certification', () => {
         account.id,
         'event'
       );
-      for (const event of [
-        'dashboard_loaded',
-        'reroll_succeeded',
-        'freeze_succeeded',
-        'claim_all_succeeded',
-      ]) {
+      for (const event of ['reroll_succeeded', 'freeze_succeeded', 'claim_all_succeeded']) {
         expect(
           operations.some((row) => row.event === event),
           `missing operation ${event}`

@@ -37,6 +37,14 @@ describe('Daily Missions production certification', () => {
       expect(spec).toContain(contract);
     }
     expect(spec).toContain('cleanupTemporaryCustomizationAccount(environment, account)');
+    // dashboard_loaded is intentionally sampled at 20%; certification proves
+    // the actual receipt and only requires unsampled mutation operations.
+    const operationGate = spec.slice(
+      spec.indexOf('const operations ='),
+      spec.indexOf('report.operationEvents')
+    );
+    expect(operationGate).not.toContain("'dashboard_loaded'");
+    expect(operationGate).toContain("'reroll_succeeded'");
   });
 
   it('hard-deletes all Daily Missions and reward-ledger fixture residue', () => {

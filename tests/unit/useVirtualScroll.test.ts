@@ -3,8 +3,9 @@
  *  UNIT TESTS — useVirtualScroll
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+import { createElement } from 'react';
 import { describe, it, expect } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { fireEvent, render, renderHook, screen } from '@testing-library/react';
 import { useVirtualScroll } from '../../src/hooks/useVirtualScroll';
 
 describe('useVirtualScroll', () => {
@@ -53,5 +54,30 @@ describe('useVirtualScroll', () => {
       useVirtualScroll(items, { itemHeight: 50, viewportHeight: 300 })
     );
     expect(typeof result.current.reset).toBe('function');
+  });
+
+  it('attaches scrolling when a cold-load viewport mounts after rows arrive', () => {
+    function Harness({ items }: { items: number[] }) {
+      const virtual = useVirtualScroll(items, {
+        itemHeight: 50,
+        viewportHeight: 200,
+        buffer: 1,
+      });
+      return createElement(
+        'div',
+        null,
+        items.length > 0
+          ? createElement('div', { ref: virtual.containerRef, 'data-testid': 'viewport' })
+          : null,
+        createElement('output', { 'data-testid': 'start' }, String(virtual.startIndex))
+      );
+    }
+
+    const view = render(createElement(Harness, { items: [] }));
+    view.rerender(createElement(Harness, { items: Array.from({ length: 100 }, (_, i) => i) }));
+    const viewport = screen.getByTestId('viewport');
+    Object.defineProperty(viewport, 'scrollTop', { configurable: true, value: 500 });
+    fireEvent.scroll(viewport);
+    expect(Number(screen.getByTestId('start').textContent)).toBeGreaterThan(0);
   });
 });

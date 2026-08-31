@@ -1215,10 +1215,25 @@ export default function TableConfigPage() {
     // over-cap row is not a preference, it is a mid-hand engine crash.
     max_players: clampSeatsForVariant(String(gameType || 'nlh').toLowerCase(), config.maxPlayers),
     action_time_seconds: config.actionTimeSeconds,
+    /**
+     * THE BUY-IN BAND IS ONE PAIR OF COLUMNS, IN CHIPS.
+     *
+     * This page used to stamp `min_buy_in_bb` / `max_buy_in_bb` here as well,
+     * in big blinds, beside a sibling written in chips. Nothing ever read
+     * them: `atomic_table_buyin` — the only hard enforcement of a buy-in in
+     * the product — reads `min_buy_in` / `max_buy_in`, and so do the engine
+     * and src/lib/cashBuyIn.ts. What the extra pair did was give a future
+     * reader a column that looks authoritative and is not; on a 1/2 table the
+     * database still carried the 2/25 default, so anyone who picked it up
+     * would have capped a player at 50 chips on a table advertising 400.
+     *
+     * They are now GENERATED columns derived from these two
+     * (supabase/migrations/20260831133000_one_buy_in_band_and_the_rest_are
+     * _derived.sql), so writing them raises 428C9 and the schema itself keeps
+     * the families from disagreeing. Write the chips; the big blinds follow.
+     */
     min_buy_in: config.minBuyInBB * config.bigBlind,
     max_buy_in: config.maxBuyInBB * config.bigBlind,
-    min_buy_in_bb: config.minBuyInBB,
-    max_buy_in_bb: config.maxBuyInBB,
     ante_bb: config.anteBB,
     /**
      * THE ANTE SLIDER WAS DEAD ON EVERY TABLE THIS PAGE CREATED.

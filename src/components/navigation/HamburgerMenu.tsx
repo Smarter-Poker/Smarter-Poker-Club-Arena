@@ -319,7 +319,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       return;
     }
     let cancelled = false;
-    void LeaderboardService.getManageableRewardContexts()
+    void LeaderboardService.getManageableRewardContexts(true)
       .then((contexts) => {
         if (cancelled) return;
         setRewardContexts(contexts);

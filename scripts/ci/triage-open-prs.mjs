@@ -66,6 +66,52 @@ if (!TOKEN) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// ---------------------------------------------------------------------------
+// SUPERSESSION BY ADDED-FILE IDENTITY
+//
+// close-superseded-prs.sh asks "is every ADDED LINE already in main". On a
+// swarm repo one stray comment defeats that, which is why it closed 0 of 100
+// candidates on each of its last ten runs.
+//
+// The question that actually discriminates here is coarser and far more
+// reliable: DOES EVERY FILE THIS BRANCH ADDS ALREADY EXIST ON MAIN. Each branch
+// in this estate brings its own new test files, its own migration, its own
+// changelog entry. If all of those are already there, the work reached main
+// through a sibling branch under a different SHA - the exact pattern CLAUDE.md
+// section 12 describes - and this branch is a leftover, not lost work.
+//
+// MEASURED 2026-08-31: 64 of 97 open pull requests satisfied it, and ZERO were
+// byte-identical to main, which is precisely why the line test finds nothing.
+// Ten were then verified BY HAND against main and against production before
+// this signal was trusted:
+//
+//   #1105 #1108 #1021 #1742 #1439 #1450 #1118 #1091 #1110  superseded (closed)
+//   #1971                                                  GENUINELY STRANDED
+//
+// #1971 is the reason this stays a REPORT and never an auto-close. Its content
+// was absent from main and one of its two commits was real, unshipped work
+// guarding the boot-time rescue against paying out live tournaments. A sweep
+// that closed on this signal alone would still have been right nine times out
+// of ten - and wrong in the one case that mattered.
+// ---------------------------------------------------------------------------
+import { execFileSync } from 'node:child_process';
+
+function gitOut(args) {
+  try {
+    return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return null;
+  }
+}
+
+// A workflow checkout has origin/main; a local worktree may only have main.
+const BASE_REF = ['origin/main', 'main'].find((r) => gitOut(['rev-parse', '--verify', r])) || null;
+
+/** The blob sha of `path` on the base branch, or null when it is not there. */
+function baseBlob(path) {
+  return BASE_REF ? gitOut(['rev-parse', `${BASE_REF}:${path}`]) : null;
+}
+
 async function api(path, { retries = 3 } = {}) {
   const url = path.startsWith('http') ? path : `https://api.github.com/repos/${REPO}/${path}`;
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -126,6 +172,12 @@ function classify(files) {
     paths.length > 0 &&
     paths.every((p) => /\.(md|mdx|txt)$/i.test(p) || p.startsWith('docs/') || p.startsWith('.agent/'));
 
+  // Added files only. A MODIFIED file exists on both sides by definition, so
+  // including those would call every branch superseded.
+  const addedFiles = files.filter((f) => f.status === 'added');
+  const addedOnBase = addedFiles.filter((f) => baseBlob(f.filename) !== null).length;
+  const addedIdentical = addedFiles.filter((f) => baseBlob(f.filename) === f.sha).length;
+
   const signals = {
     migration: paths.some((p) => p.startsWith('supabase/migrations/')),
     tests: paths.some((p) => p.startsWith('tests/') || /\.test\.(ts|tsx|js)$/.test(p)),
@@ -138,6 +190,9 @@ function classify(files) {
     // work when it is merged late. Silent Revert Guard catches the worst of it;
     // this flags it for a human before it gets that far.
     destructive: deletions > additions * 2 && deletions > 50,
+    // Only meaningful when the branch adds something. A modify-only branch
+    // says nothing either way and must not be scored as superseded.
+    superseded: addedFiles.length > 0 && addedOnBase === addedFiles.length,
   };
 
   let score = 0;
@@ -149,13 +204,27 @@ function classify(files) {
   if (signals.junk) score -= 40;
 
   let verdict;
-  if (signals.docs) verdict = 'DOCS';
+  // Ranked above every other verdict on purpose: an operator should not spend a
+  // conflict resolution on work that is already in production.
+  if (signals.superseded) verdict = 'LIKELY-SUPERSEDED';
+  else if (signals.docs) verdict = 'DOCS';
   else if (signals.junk) verdict = 'INSPECT-JUNK';
   else if (signals.destructive) verdict = 'STALE-DESTRUCTIVE';
   else if (score >= 30) verdict = 'RESCUE';
   else verdict = 'REVIEW';
 
-  return { signals, score, verdict, additions, deletions };
+  if (signals.superseded) score -= 60;
+
+  return {
+    signals,
+    score,
+    verdict,
+    additions,
+    deletions,
+    addedFiles: addedFiles.length,
+    addedOnBase,
+    addedIdentical,
+  };
 }
 
 function flagString(s) {
@@ -167,6 +236,7 @@ function flagString(s) {
   if (s.destructive) on.push('destructive');
   if (s.junk) on.push('junk');
   if (s.docs) on.push('docs');
+  if (s.superseded) on.push('superseded?');
   return on.join(' ') || '-';
 }
 
@@ -180,6 +250,13 @@ async function main() {
   }
   const candidates = LIMIT ? open.slice(0, LIMIT) : open;
   console.error(`triage-open-prs: ${open.length} open, examining ${candidates.length}`);
+  if (!BASE_REF) {
+    console.error(
+      'triage-open-prs: WARNING - no origin/main or main in this checkout, so the ' +
+        'supersession signal is OFF and every branch will read as novel. Run this ' +
+        'inside a full clone (actions/checkout with fetch-depth: 0).'
+    );
+  }
 
   const now = Date.now();
   const rows = [];
@@ -216,12 +293,13 @@ async function main() {
   console.log('');
   console.log(`${rows.length} open. ` + Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(' | '));
   console.log('');
-  console.log('| PR | verdict | score | age | ahead/behind | +/- | signals | title |');
-  console.log('|----|---------|-------|-----|--------------|-----|---------|-------|');
+  console.log('| PR | verdict | score | age | ahead/behind | +/- | added on base | signals | title |');
+  console.log('|----|---------|-------|-----|--------------|-----|---------------|---------|-------|');
   for (const r of rows) {
     console.log(
       `| #${r.pr} | ${r.verdict} | ${r.score} | ${r.ageDays}d | ${r.ahead ?? '?'}/${r.behind ?? '?'} | ` +
-        `+${r.additions}/-${r.deletions} | ${flagString(r.signals)} | ${r.title.replace(/\|/g, '/').slice(0, 60)} |`
+        `+${r.additions}/-${r.deletions} | ${r.addedOnBase}/${r.addedFiles} | ` +
+        `${flagString(r.signals)} | ${r.title.replace(/\|/g, '/').slice(0, 60)} |`
     );
   }
 

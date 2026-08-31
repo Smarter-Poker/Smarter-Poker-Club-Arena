@@ -24,6 +24,31 @@ export type StorefrontSku = {
 
 type JsonObject = Record<string, unknown>;
 
+const CLEANUP_RETRY_DELAYS_MS = [250, 750, 1_500] as const;
+
+function isTransientCleanupError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return (
+    /\((?:429|502|503|504)\)/.test(message) ||
+    /PGRST00[0123]|schema cache|retrying|network|fetch|timeout/i.test(message)
+  );
+}
+
+async function withCleanupRetries<T>(operation: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= CLEANUP_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientCleanupError(error) || attempt === CLEANUP_RETRY_DELAYS_MS.length)
+        throw error;
+      await new Promise((resolve) => setTimeout(resolve, CLEANUP_RETRY_DELAYS_MS[attempt]));
+    }
+  }
+  throw lastError;
+}
+
 function serverHeaders(key: string, extra: Record<string, string> = {}): Record<string, string> {
   return {
     apikey: key,
@@ -246,28 +271,32 @@ async function deleteRows(
   userId: string
 ): Promise<void> {
   const query = new URLSearchParams({ [column]: `eq.${userId}` });
-  await serviceRequest<void>(environment, `/rest/v1/${table}?${query.toString()}`, {
-    method: 'DELETE',
-    headers: { Prefer: 'return=minimal' },
-  });
+  await withCleanupRetries(() =>
+    serviceRequest<void>(environment, `/rest/v1/${table}?${query.toString()}`, {
+      method: 'DELETE',
+      headers: { Prefer: 'return=minimal' },
+    })
+  );
 }
 
 async function authUserExists(
   environment: CustomizationCertificationEnvironment,
   userId: string
 ): Promise<boolean> {
-  const response = await fetch(
-    `${environment.supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(userId)}`,
-    { headers: serverHeaders(environment.serviceRoleKey) }
-  );
-  if (response.status === 404) return false;
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(
-      `Supabase Auth verification failed (${response.status}): ${text.slice(0, 400)}`
+  return withCleanupRetries(async () => {
+    const response = await fetch(
+      `${environment.supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(userId)}`,
+      { headers: serverHeaders(environment.serviceRoleKey) }
     );
-  }
-  return true;
+    if (response.status === 404) return false;
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(
+        `Supabase Auth verification failed (${response.status}): ${text.slice(0, 400)}`
+      );
+    }
+    return true;
+  });
 }
 
 /**
@@ -304,15 +333,13 @@ export async function cleanupTemporaryCustomizationAccount(
   }
 
   let firstAuthDeleteError: Error | null = null;
-  await serviceRequest<void>(
-    environment,
-    `/auth/v1/admin/users/${encodeURIComponent(account.id)}`,
-    {
+  await withCleanupRetries(() =>
+    serviceRequest<void>(environment, `/auth/v1/admin/users/${encodeURIComponent(account.id)}`, {
       method: 'DELETE',
       // GoTrue reads should_soft_delete from the JSON body. A query-string
       // value receives 2xx but does not guarantee the requested hard delete.
       body: JSON.stringify({ should_soft_delete: false }),
-    }
+    })
   ).catch((error) => {
     firstAuthDeleteError = error as Error;
   });
@@ -335,13 +362,11 @@ export async function cleanupTemporaryCustomizationAccount(
     failures.push(`auth.users verification: ${(error as Error).message}`);
   }
   if (firstAuthDeleteError || userStillExists) {
-    await serviceRequest<void>(
-      environment,
-      `/auth/v1/admin/users/${encodeURIComponent(account.id)}`,
-      {
+    await withCleanupRetries(() =>
+      serviceRequest<void>(environment, `/auth/v1/admin/users/${encodeURIComponent(account.id)}`, {
         method: 'DELETE',
         body: JSON.stringify({ should_soft_delete: false }),
-      }
+      })
     ).catch((error) => failures.push(`auth.users: ${(error as Error).message}`));
   }
 

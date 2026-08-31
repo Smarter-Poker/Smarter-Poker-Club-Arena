@@ -1178,7 +1178,15 @@ export class HorseFleetManager {
           !msg.includes('Insufficient balance') &&
           !msg.includes('Player already seated') &&
           !msg.includes('duplicate key') &&
-          !msg.includes('TABLE_CAP_REACHED')
+          !msg.includes('TABLE_CAP_REACHED') &&
+          // The RPC's cap rejection actually reads "FOUR TABLE LIMIT: user …"
+          // (constraint 23514) — the TABLE_CAP_REACHED literal above never
+          // matched it, so every expected cap rejection during seeding was
+          // reported as an error: 57 reports in one 10-minute window on
+          // 2026-08-31. The in-memory MAX_TABLES_PER_HORSE filter only counts
+          // cash seats this process knows about, while the RPC also counts
+          // tournament bookings, so cap rejections here are ordinary.
+          !msg.includes('FOUR TABLE LIMIT')
         ) {
           reportError(rpcErr, 'HorseFleet.atomic_table_buyin_failed_for_horse');
         }

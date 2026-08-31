@@ -1,5 +1,13 @@
 {
   "_comment": "Live public schema COLUMN snapshot {table: [columns]}. Source of truth for the phantom-column CI gate. Do NOT hand-edit.",
+  "bbj_ledger_deletions": [
+    "application_name",
+    "deleted_at",
+    "deleted_by_role",
+    "id",
+    "row_data",
+    "source_table"
+  ],
   "columns": {
     "_audit_horse_avatar_restore_20260815": [
       "id",

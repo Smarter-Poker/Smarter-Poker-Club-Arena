@@ -120,3 +120,100 @@ weakened.
 The promote screen was not rendered live at 375px. The control is two `flex: 1`
 buttons with a 44px minimum in the existing `.mm-roles__rates` card, pinned by
 test, but a screenshot was not taken.
+
+---
+
+# Audit pass before phase 3 (same day)
+
+Dan asked for every step of phase 2 to be checked end to end before phase 3.
+Auditing **every caller** of the functions `20260901000002` changed found three
+defects, one of them introduced by that migration and one of them a security
+regression. All three are fixed; two rolled-back probe suites are the evidence.
+
+Migration `20260901000003_the_agent_panel_cannot_strand_an_agent`, applied.
+
+## What the audit checked
+
+| Surface                                         | Result                                                                                                                                                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 4 database callers of `fn_club_set_member_role` | `fn_create_agent` and `fn_admin_update_agent` pass 8 arguments, `promote_member` passes 4 and takes the defaults, `fn_club_members_role_guard` only names it in a comment. No `42883` risk.       |
+| 2 client callers of the RPC                     | `MemberManagementPage`, `MembershipService`. Both send the funding.                                                                                                                               |
+| 4 callers of `MembershipService.updateRole`     | `ClubDetailPage` (admin, player) and `ClubMemberManagement` (`ASSIGNABLE_HERE = co_owner, admin, player`). No agent tier is reachable from either, so no funding is needed and nothing regressed. |
+| **9 call sites of `fn_admin_update_agent`**     | Two were broken by `20260901000002`. See G1.                                                                                                                                                      |
+| World Hub ops API, workers                      | No reference to any changed function. Nothing to update in tier 3 or tier 4.                                                                                                                      |
+| Supabase security advisor                       | One new WARN naming a function I touched. See G3.                                                                                                                                                 |
+
+## G1 — a regression `20260901000002` introduced
+
+Its coherence check read the funding pair as
+`COALESCE(p_is_prepaid, is_prepaid)`, so raising a limit **without** mentioning
+`is_prepaid` inherited the stored `true` and was refused. Two live callers do
+exactly that (`CreditRequestService.raiseAgentCreditLimit`,
+`AgentService.setCreditLimit`) and **63 of 111 active agents are prepaid**, with
+no screen that "moves them to credit first". The credit panel dead-ended for the
+majority of agents.
+
+Fixed: an operator who types a credit limit has already chosen credit, so an
+unstated `is_prepaid` follows the limit. Stating both and contradicting yourself
+is still refused.
+
+## G2 — pre-existing, unguarded
+
+Setting the limit to `0` on an agent who is not prepaid produced _(not prepaid,
+no line)_ — the one combination that can send nothing, which is the state
+`20260901000002` stops the **promotion** from creating. The agent panel could
+still create it afterwards. Now refused with `needs_funding`.
+
+Two neighbouring holes closed with it: moving an agent to prepaid while
+`credit_used` still stands, and lowering a limit below what has already been
+drawn (which reached the client as a raw `23514`).
+
+**The regression that was hiding inside this fix:** one active agent is already
+in the send-nothing state, and four callers update only a status or a role.
+Validating the pair unconditionally would have made that agent impossible to
+suspend, reinstate or re-grade. The guards fire only when the call actually
+touches funding, pinned by test and proved by probes G6, G7 and G8.
+
+## G3 — a security regression `20260901000002` introduced
+
+`DROP FUNCTION` takes the ACL with it, and `CREATE` restores the Postgres
+default of `EXECUTE` to `PUBLIC`. The estate's autorevoke event trigger strips
+that on a plain `CREATE OR REPLACE` but did not fire on drop-and-create, so
+granting `authenticated, service_role` left **PUBLIC and `anon`** holding
+EXECUTE on `fn_club_set_member_role`. Caught by the Supabase security advisor
+(`anon_security_definer_function_executable`).
+
+Not exploitable — `anon` has no `auth.uid()` and `auth.role()` is `anon` rather
+than `service_role`, so the caller-supplied actor is refused and the function
+answers _"actor identity required"_. Closed anyway: the signature it replaced
+never granted `anon`. `REVOKE ... FROM PUBLIC, anon` now sits beside the GRANT,
+and the migration asserts `anon` cannot execute it.
+
+Live ACL now `{postgres=X, authenticated=X, service_role=X}`, matching every
+sibling function.
+
+## Re-verification
+
+Both probe suites were re-run against the **live, applied** functions inside
+rolled-back transactions. All 22 pass. The estate is untouched:
+`credit_used = 0.00`, agent wallets `6,726,000.0000` — unchanged from the
+measurement in the handoff.
+
+```
+G1 raise a limit on a prepaid agent  success=true  -> prepaid=f limit=50000
+G2 set limit 0 on a credit agent     success=false needs_funding=true
+G3 to prepaid while 1200 is owed     success=false settle the invoice first
+G4 limit 500 when 1200 is drawn      success=false below what is already drawn
+G5 prepaid AND a line, both stated   success=false
+G6 suspend an agent already stranded success=true   <- the regression guard
+G7 reinstate the same agent          success=true
+G8 rates only on a stranded agent    success=true
+```
+
+## Left alone deliberately, for Dan
+
+**One active agent is in the send-nothing state** (not prepaid, no line). The
+promotion path and the agent panel can no longer create it, but this row already
+exists. Prepaid-or-credit and how much is a commercial term, and choosing one on
+someone's behalf is the "a rate nobody chose" bug this programme keeps removing.
+It needs a decision, not a silent rewrite.

@@ -66,6 +66,9 @@ const MIGRATION_PATH =
 
 const MIGRATION = read(MIGRATION_PATH);
 const SQL = codeOnly(MIGRATION);
+const PANEL_MIGRATION = codeOnly(
+  read('supabase/migrations/20260901000003_the_agent_panel_cannot_strand_an_agent.sql')
+);
 const MEMBER_MANAGEMENT = read('src/pages/MemberManagementPage.tsx');
 const MEMBER_MANAGEMENT_CODE = codeOnly(MEMBER_MANAGEMENT);
 const MEMBERSHIP_SERVICE = read('src/services/MembershipService.ts');
@@ -87,6 +90,19 @@ describe('the promotion assigns the funding', () => {
     expect(SQL).toMatch(
       /GRANT EXECUTE ON FUNCTION public\.fn_club_set_member_role\([^)]*boolean, numeric\)[\s\S]{0,60}authenticated/i
     );
+  });
+
+  /**
+   * A DROP takes the ACL with it and CREATE restores the PUBLIC default, so a
+   * grant to two roles is not the same as closing the function. The estate's
+   * autorevoke trigger does not fire on drop-and-create. Caught by the Supabase
+   * security advisor during the phase 2 audit pass.
+   */
+  it('revokes PUBLIC and anon that the DROP handed back', () => {
+    expect(SQL).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_club_set_member_role\([^)]*boolean, numeric\)\s*\n?\s*FROM PUBLIC, anon/
+    );
+    expect(MIGRATION).toMatch(/RAISE EXCEPTION 'anon can still execute fn_club_set_member_role/);
   });
 
   it('refuses an agent role that arrives with no funding choice', () => {
@@ -248,6 +264,63 @@ describe('staff hold agent wallets', () => {
     const ensure = SQL.slice(SQL.indexOf('CREATE OR REPLACE FUNCTION public.fn_ensure_agent_row'));
     expect(ensure).toMatch(/credit_limit, credit_used, is_prepaid/);
     expect(ensure).toMatch(/v_min := case when v_staff then 0/i);
+  });
+});
+
+/**
+ * Found by auditing every caller of the functions phase 2 changed, and proved
+ * against production inside a rolled-back transaction. Two of these are the
+ * agent panel's, one of them introduced by 20260901000002 itself.
+ */
+describe('the agent panel cannot strand an agent', () => {
+  it('granting a limit moves a prepaid agent to credit instead of dead-ending', () => {
+    expect(PANEL_MIGRATION).toMatch(
+      /IF p_is_prepaid IS NULL AND COALESCE\(p_credit_limit, 0\) > 0 THEN\s*\n\s*v_prepaid_after := false/
+    );
+  });
+
+  it('refuses the pair that can send nothing', () => {
+    expect(PANEL_MIGRATION).toMatch(/an agent on credit needs a limit greater than 0/);
+  });
+
+  it('refuses to move an agent to prepaid while a debt still stands', () => {
+    expect(PANEL_MIGRATION).toMatch(/IF v_prepaid_after AND v_used_now > 0 THEN/);
+  });
+
+  it('refuses a limit below what has already been drawn, instead of a raw 23514', () => {
+    expect(PANEL_MIGRATION).toMatch(/IF NOT v_prepaid_after AND v_limit_after < v_used_now THEN/);
+  });
+
+  it('still refuses a stated contradiction', () => {
+    expect(PANEL_MIGRATION).toMatch(
+      /a prepaid agent carries no credit line\. Send prepaid on its own/
+    );
+  });
+
+  /**
+   * The regression hiding inside the fix. One active agent is already in the
+   * send-nothing state; validating the funding pair on every call would have
+   * made them impossible to suspend, reinstate or re-grade.
+   */
+  it('validates funding ONLY on a call that touches funding', () => {
+    expect(PANEL_MIGRATION).toMatch(
+      /v_touches_funding := \(p_is_prepaid IS NOT NULL OR p_credit_limit IS NOT NULL\)/
+    );
+    expect(PANEL_MIGRATION).toMatch(/IF v_touches_funding THEN/);
+    expect(PANEL_MIGRATION).toMatch(
+      /is_prepaid = CASE WHEN v_touches_funding THEN v_prepaid_after ELSE is_prepaid END/
+    );
+  });
+
+  it('forwards the resolved pair to the one write path, not the raw arguments', () => {
+    expect(PANEL_MIGRATION).toMatch(
+      /CASE WHEN v_touches_funding THEN v_prepaid_after ELSE NULL END/
+    );
+  });
+
+  it('alters no table and adds no column either', () => {
+    expect(PANEL_MIGRATION).not.toMatch(/ALTER TABLE/i);
+    expect(PANEL_MIGRATION).not.toMatch(/ADD COLUMN/i);
   });
 });
 

@@ -123,29 +123,6 @@ export function clearClubUUIDCache(): void {
   persistedLoaded = false;
 }
 
-/** Cache a strict lookup without exposing the resolver's storage internals. */
-export function rememberClubUUID(clubIdParam: string, clubUUID: string): void {
-  uuidCache.set(clubIdParam, clubUUID);
-  persistMap();
-}
-
-export class ClubNotFoundError extends Error {
-  constructor(clubIdParam: string) {
-    super(`Club "${clubIdParam}" was not found.`);
-    this.name = 'ClubNotFoundError';
-  }
-}
-
-export class ClubResolutionError extends Error {
-  readonly cause: unknown;
-
-  constructor(clubIdParam: string, cause: unknown) {
-    super(`Club identity could not be resolved for "${clubIdParam}".`);
-    this.name = 'ClubResolutionError';
-    this.cause = cause;
-  }
-}
-
 export async function resolveClubUUID(clubIdParam: string): Promise<string> {
   // Already a UUID — return as-is
   if (isUUID(clubIdParam)) return clubIdParam;
@@ -194,9 +171,9 @@ export async function resolveClubUUID(clubIdParam: string): Promise<string> {
  * explicit, fail-closed result.
  */
 export async function resolveClubUUIDStrict(clubIdParam: string): Promise<string> {
-  if (isUUID(clubIdParam)) return clubIdParam;
-  const cached = resolveClubUUIDSync(clubIdParam);
-  if (cached) return cached;
-  const { resolveClubUUIDStrictRead } = await import('./strictClubIdResolver');
-  return resolveClubUUIDStrictRead(clubIdParam);
+  const resolvedId = await resolveClubUUID(clubIdParam);
+  if (!isUUID(resolvedId)) {
+    throw new Error(`Club identity could not be resolved for "${clubIdParam}".`);
+  }
+  return resolvedId;
 }

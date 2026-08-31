@@ -11,7 +11,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
 import RosterConnectionStatus from '../components/club/RosterConnectionStatus';
 import { exportToCSV } from '../lib/export';
-import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/clubIdResolver';
+import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import {
   computeRosterRetryDelay,

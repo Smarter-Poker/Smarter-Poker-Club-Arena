@@ -238,6 +238,36 @@ describe('resolveBombPotVariant (spec §10.1)', () => {
     expect(resolveBombPotVariant('nlh', 'short_deck')).toBe('nlh');
     expect(resolveBombPotVariant('nlh', 'DROP TABLE tables')).toBe('nlh');
   });
+
+  /**
+   * 2026-08-31 audit. The whitelist checked the variant NAME and nothing else,
+   * so a `plo4` bomb on a Fixed Limit Hold'em table dealt one POT-LIMIT hand at
+   * a table every seated player had sat down at for fixed limit: pot-limit
+   * sizing, no four-wager cap, a raise slider on a felt that has none.
+   *
+   * The no-limit/pot-limit swap above is the classic bomb pot and stays. Fixed
+   * limit is a different kind of game, so the override does not cross that line
+   * in either direction.
+   */
+  it('never crosses the fixed-limit line, in either direction', () => {
+    // A limit table keeps its own game, whatever the override says.
+    expect(resolveBombPotVariant('flh', 'plo4')).toBe('flh');
+    expect(resolveBombPotVariant('flh', 'nlh')).toBe('flh');
+    expect(resolveBombPotVariant('flo8', 'plo6')).toBe('flo8');
+    expect(resolveBombPotVariant('flo8', 'PLO4')).toBe('flo8');
+    // ...and a no-limit or pot-limit table cannot be handed a limit bomb.
+    // (`flh` is outside the whitelist as well, so this is belt and braces.)
+    expect(resolveBombPotVariant('nlh', 'flh')).toBe('nlh');
+    expect(resolveBombPotVariant('plo4', 'flo8')).toBe('plo4');
+  });
+
+  it('still allows the classic no-limit table with pot-limit bombs', () => {
+    // The rule above must not have quietly disabled the feature it guards.
+    expect(resolveBombPotVariant('nlh', 'plo4')).toBe('plo4');
+    expect(resolveBombPotVariant('nlh', 'plo5')).toBe('plo5');
+    expect(resolveBombPotVariant('nlh', 'plo6')).toBe('plo6');
+    expect(resolveBombPotVariant('plo6', 'nlh')).toBe('nlh');
+  });
 });
 
 describe('timed persistence seed (spec §4.3)', () => {

@@ -584,6 +584,90 @@ describe('ThemeSettingsModal hardening', () => {
     expect(await screen.findByRole('button', { name: 'Neon City' })).toBeEnabled();
   });
 
+  it('repairs a missed entitlement in the authoritative snapshot after realtime activity', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    expect(
+      screen.getByRole('button', { name: 'Neon Ice, purchase or VIP required' })
+    ).toBeEnabled();
+
+    // Simulate a burst where Postgres Changes delivers one component row but
+    // the composite theme row itself is dropped. The event is only the wakeup;
+    // the subsequent server snapshot is the durable ownership truth.
+    mocks.unlockResult = Promise.resolve({
+      data: [
+        { category: 'table_id', asset_id: 'neon_city' },
+        { category: 'theme_id', asset_id: 'neon-blue' },
+      ],
+      error: null,
+    });
+    act(() => {
+      mocks.entitlementInsert?.({
+        new: { user_id: 'user-1', category: 'table_id', asset_id: 'neon_city' },
+      });
+    });
+
+    expect(
+      await screen.findByRole('button', { name: 'Neon Ice' }, { timeout: 2_000 })
+    ).toBeEnabled();
+    expect(screen.getByText('Table Art Live')).toBeVisible();
+  });
+
+  it('repairs ownership when a sleeping tab missed the entire realtime burst', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    expect(
+      screen.getByRole('button', { name: 'Neon Ice, purchase or VIP required' })
+    ).toBeEnabled();
+
+    mocks.unlockResult = Promise.resolve({
+      data: [{ category: 'theme_id', asset_id: 'neon-blue' }],
+      error: null,
+    });
+
+    expect(
+      await screen.findByRole('button', { name: 'Neon Ice' }, { timeout: 3_000 })
+    ).toBeEnabled();
+    expect(screen.getByText('Table Art Live')).toBeVisible();
+  });
+
+  it('never re-locks verified designs while a background reconciliation is in flight', async () => {
+    mocks.unlockResult = Promise.resolve({
+      data: [{ category: 'theme_id', asset_id: 'neon-blue' }],
+      error: null,
+    });
+    renderStudio();
+    expect(await screen.findByRole('button', { name: 'Neon Ice' })).toBeEnabled();
+
+    const refresh = deferred<{ data: unknown[]; error: unknown }>();
+    mocks.unlockResult = refresh.promise;
+    act(() => {
+      mocks.entitlementInsert?.({
+        new: { user_id: 'user-1', category: 'table_id', asset_id: 'neon_city' },
+      });
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+
+    expect(screen.getByRole('button', { name: 'Neon Ice' })).toBeEnabled();
+    expect(screen.getByText('Table Art Live')).toBeVisible();
+    await act(async () => {
+      refresh.resolve({
+        data: [
+          { category: 'theme_id', asset_id: 'neon-blue' },
+          { category: 'table_id', asset_id: 'neon_city' },
+        ],
+        error: null,
+      });
+      await refresh.promise;
+    });
+  });
+
   it('reconciles ownership after subscription before declaring Table Art live', async () => {
     mocks.autoEntitlementSubscribe = false;
     renderStudio();

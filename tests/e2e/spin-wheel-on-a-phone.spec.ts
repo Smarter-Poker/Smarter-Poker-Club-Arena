@@ -128,6 +128,37 @@ async function mountWheelResult(page: Page, multiplier = 25, prize = 250): Promi
   );
 }
 
+/**
+ * Let every entrance animation finish before measuring.
+ *
+ * WITHOUT THIS THE SUITE IS FLAKY, and it was: the first CI run failed on
+ * `.sw__hub-mult` being invisible and passed on retry. The wheel's parts
+ * animate IN from opacity 0, so sampling opacity at an arbitrary instant
+ * measures how far the animation happens to have travelled on that runner,
+ * not whether the element is ever painted. The reduced-motion variant passed
+ * on the same run precisely because `animation:none` settles it immediately —
+ * which is what identified the cause.
+ *
+ * Waiting on the real Animation objects (rather than sleeping a guessed
+ * number of ms, which is the same magic-number trap the repo bans for source
+ * windows) asserts the END STATE deterministically: if the multiplier is
+ * still transparent once its own animation has finished, it is genuinely
+ * invisible and that is a real bug worth failing on.
+ */
+async function settle(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const anims = document.getAnimations();
+    await Promise.all(
+      anims.map((a) =>
+        // A paused or infinite animation would hang the wait; finished is a
+        // promise that only such an animation never resolves, so race it.
+        Promise.race([a.finished.catch(() => undefined), new Promise((r) => setTimeout(r, 4000))])
+      )
+    );
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+  });
+}
+
 /** Is this element painted, and wholly inside the viewport? */
 async function paintedInside(page: Page, selector: string) {
   return page.evaluate((sel) => {
@@ -154,6 +185,7 @@ test.describe('LIVE E2E — the spin wheel on a 375px phone', () => {
     const page = await ctx.newPage();
     await loadLiveCss(page);
     await mountWheelResult(page);
+    await settle(page);
 
     // The disc itself. A wheel that renders at zero size, or half off the
     // side of a phone, is the "animation never plays" complaint in its most
@@ -166,6 +198,15 @@ test.describe('LIVE E2E — the spin wheel on a 375px phone', () => {
     expect(disc.insideX, 'the disc must not run off the side of a 375px screen').toBe(true);
 
     // The number the sequence exists to announce.
+    // The shipped multiplier intentionally begins at opacity: 0 and pops in
+    // over 450ms. Wait for that real animation instead of sampling its first
+    // frame, which made this browser gate deterministically fail on CI.
+    await expect
+      .poll(async () => (await paintedInside(page, '.sw__hub-mult')).visible, {
+        message: 'the drawn multiplier must finish its entrance animation',
+        timeout: 2_000,
+      })
+      .toBe(true);
     const hub = await paintedInside(page, '.sw__hub-mult');
     expect(hub.found, 'the drawn multiplier must be rendered').toBe(true);
     expect(hub.visible, 'the drawn multiplier must be visible').toBe(true);
@@ -177,7 +218,10 @@ test.describe('LIVE E2E — the spin wheel on a 375px phone', () => {
     expect(prize.found, 'the prize must be rendered').toBe(true);
     expect(prize.visible, 'the prize must be visible').toBe(true);
     expect(prize.insideX, 'the prize must be on screen horizontally').toBe(true);
-    expect(prize.insideY, 'the prize must be on screen vertically — the insurance modal shipped its buttons below the clip line on this exact viewport').toBe(true);
+    expect(
+      prize.insideY,
+      'the prize must be on screen vertically — the insurance modal shipped its buttons below the clip line on this exact viewport'
+    ).toBe(true);
 
     await ctx.close();
   });
@@ -190,6 +234,7 @@ test.describe('LIVE E2E — the spin wheel on a 375px phone', () => {
     const page = await ctx.newPage();
     await loadLiveCss(page);
     await mountWheelResult(page);
+    await settle(page);
 
     const dim = await page.evaluate(() => {
       const el = document.querySelector('.sw__dim');
@@ -198,7 +243,9 @@ test.describe('LIVE E2E — the spin wheel on a 375px phone', () => {
       return { w: Math.round(r.width), h: Math.round(r.height) };
     });
     expect(dim, 'the dim layer must exist').not.toBeNull();
-    expect(dim!.w, 'the dim must span the width of the phone').toBeGreaterThanOrEqual(PHONE.width - 2);
+    expect(dim!.w, 'the dim must span the width of the phone').toBeGreaterThanOrEqual(
+      PHONE.width - 2
+    );
 
     await ctx.close();
   });
@@ -236,7 +283,11 @@ test.describe('LIVE E2E — the shipped wheel CSS still lasts as long as the eng
           const dur = st.animationDuration || st.getPropertyValue('animation-duration');
           if (!dur) continue;
           for (const d of dur.split(',').map((x) => x.trim())) {
-            const ms = d.endsWith('ms') ? parseFloat(d) : d.endsWith('s') ? parseFloat(d) * 1000 : 0;
+            const ms = d.endsWith('ms')
+              ? parseFloat(d)
+              : d.endsWith('s')
+                ? parseFloat(d) * 1000
+                : 0;
             if (ms > 0) out[sel + '|' + d] = Math.round(ms);
           }
         }
@@ -269,7 +320,6 @@ test.describe('LIVE E2E — the shipped wheel CSS still lasts as long as the eng
   });
 });
 
-
 // ═══════════════════════════════════════════════════════════════════════════
 // CLAUDE.md 10.6: reduced motion collapses MOTION, never MEANING.
 // ═══════════════════════════════════════════════════════════════════════════
@@ -295,10 +345,14 @@ test.describe('LIVE E2E — the wheel under reduced motion', () => {
     const page = await ctx.newPage();
     await loadLiveCss(page);
     await mountWheelResult(page, 25, 250);
+    await settle(page);
 
     const prize = await paintedInside(page, '.sw__prize');
     expect(prize.found, 'the prize must still be rendered under reduced motion').toBe(true);
-    expect(prize.visible, 'reduced motion must not hide the result — that is meaning, not motion').toBe(true);
+    expect(
+      prize.visible,
+      'reduced motion must not hide the result — that is meaning, not motion'
+    ).toBe(true);
     expect(prize.insideY, 'the prize must still be on screen').toBe(true);
 
     const hub = await paintedInside(page, '.sw__hub-mult');

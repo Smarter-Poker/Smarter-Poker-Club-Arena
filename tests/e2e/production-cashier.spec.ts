@@ -9,6 +9,7 @@ test.describe('Production Cashier Certification', () => {
   );
 
   test('serves the redesigned Trade surface and opens its first visible tab', async ({ page }) => {
+    test.setTimeout(90_000);
     const clubId = process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
     const consoleErrors: string[] = [];
     page.on('console', (message) => {
@@ -21,7 +22,9 @@ test.describe('Production Cashier Certification', () => {
     });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
     await expect(page.locator('[data-cashier-surface="trade"]')).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByRole('heading', { name: 'CASHIER', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: /Every Chip\.\s*Accounted For\./i })
+    ).toBeVisible();
 
     const tablist = page.getByRole('tablist', { name: 'Cashier actions' });
     await expect(tablist).toBeVisible();

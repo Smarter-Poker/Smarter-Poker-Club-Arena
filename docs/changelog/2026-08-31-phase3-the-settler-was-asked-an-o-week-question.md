@@ -144,6 +144,36 @@ With a 600s ceiling it completes: a 7-day dry run scans **32,531 events in
 with `total_top_up: 0`. **Nobody is owed money.** Two of the six are the already
 acknowledged ones; the rest are 0.01 rounding and one 3.50.
 
+### And then the fix made noise, which is also a bug
+
+Turning the payout sweep on for the first time had a consequence: the two
+accepted overpayments started re-raising a critical **every cycle**.
+
+`fn_tournament_payout_reconcile` already knows how not to nag — it suppresses a
+re-raise when the findings are only `overpaid`/`no_finisher_recorded`, nothing
+is owed, and a resolved alert for that tournament carries a `resolution` key.
+When I resolved those alerts earlier today I set `resolved`/`resolved_at` and
+nothing else, so `context ? 'resolution'` was false and the suppressor could
+never engage. It did not matter while the sweep was dying on its ceiling —
+nothing was calling the reconciler. **A fix that produces a permanent alert loop
+is not finished.**
+
+Handshake stamped. Verified: an APPLY sweep over 2 days reports 3 findings and
+raises **zero** new alerts (0 open before, 0 after). The suppressor stays
+narrow — any underpayment or outstanding top-up re-raises regardless of what
+was accepted before. The 142 historical resolved alerts for events outside the
+sweep window were left alone; nothing re-scans them, and rewriting them to
+satisfy an assertion would be tidying, not fixing.
+
+### Dan's ruling, recorded
+
+Both double-payment backlogs were filed with `decision_owner: Dan`. His answer,
+verbatim: _"IM NOT WORRIED ABOUT ANY DOUBLE PAYMENTS OR ACCURACY WE ARE BETA
+TESTING, AS LONG AS THE LEAK OR BUG IS FIXED."_ No clawback. Both closed as
+**decided** rather than left open as undecided — the amounts and their causes
+stay on the resolved rows and in `tournament_conservation_baseline`. Recording
+a decision is not erasing a number.
+
 ## What was deliberately NOT changed
 
 - The watermark-holding behaviour on failure. It is the reason no player was

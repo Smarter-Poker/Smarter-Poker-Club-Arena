@@ -323,7 +323,9 @@ export default function AgentDashboardPage() {
               .from('club_members')
               .select('club_id')
               .eq('user_id', user.id)
-              .in('role', ['agent', 'sub_agent', 'super_agent', 'owner', 'admin'])
+              // co_owner was missing, so a co-owner with no other membership
+              // was told they belong to no club at all.
+              .in('role', ['agent', 'sub_agent', 'super_agent', 'owner', 'co_owner', 'admin'])
               .then((r) => r),
           { maxRetries: 2, isMountedRef: mountedRef }
         );

@@ -48,7 +48,28 @@ export default function WaitlistBanner() {
   );
   useEffect(() => {
     if (!hasLiveHold) return;
-    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    const id = setInterval(() => {
+      /* AND DROP A HOLD THAT HAS RUN OUT. Without this the card fell through
+         to the "You Are #N In Line" branch carrying the offer's position of
+         0, and rendered the literal nonsense "You Are #0 In Line" - then
+         froze there, because the tick stops once no hold is live. An expired
+         offer is not a queue position: fn_offer_open_seat sets that row to
+         'expired', so the player really is out of the line, and the honest
+         thing is to take the card away. The offer-expired notification is
+         what tells them why. */
+      setWaitlistEntries((prev) => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const [key, entry] of prev) {
+          if (entry.holdExpiresAt && secondsLeft(entry.holdExpiresAt) <= 0) {
+            next.delete(key);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+      setTick((t) => t + 1);
+    }, 1000);
     return () => clearInterval(id);
   }, [hasLiveHold]);
 
@@ -105,7 +126,14 @@ export default function WaitlistBanner() {
     });
   };
 
-  const entries = Array.from(waitlistEntries.values());
+  /* BELT AND BRACES. The prune above removes a lapsed offer on the next tick,
+     but a tick can be missed - a backgrounded tab, a throttled timer - and the
+     one thing that must never appear is a card claiming a position the player
+     does not hold. An entry is renderable only if it has a real queue position
+     or a hold that is still running. */
+  const entries = Array.from(waitlistEntries.values()).filter(
+    (e) => e.position > 0 || secondsLeft(e.holdExpiresAt) > 0
+  );
 
   if (entries.length === 0) return null;
 
@@ -235,15 +263,19 @@ export default function WaitlistBanner() {
                   </>
                 )}
               </div>
-              <div
-                style={{
-                  fontSize: '0.62rem',
-                  color: '#6a7a8a',
-                  marginTop: 2,
-                }}
-              >
-                {entry.tableName}
-              </div>
+              {/* An offer card arrives before the table name is known, and an
+                  empty line just adds a gap under the countdown. */}
+              {entry.tableName ? (
+                <div
+                  style={{
+                    fontSize: '0.62rem',
+                    color: '#6a7a8a',
+                    marginTop: 2,
+                  }}
+                >
+                  {entry.tableName}
+                </div>
+              ) : null}
             </div>
 
             {/* Close button */}

@@ -274,7 +274,9 @@ describe('wallet separation and honest labels', () => {
     // so a union panel pointed at a standalone club showed the same reserve
     // twice, one row apart.
     const SRC = read('src/components/wallet/DynamicWallet.tsx');
-    expect(SRC).toMatch(/effectiveVariant === 'club' && !isClubInUnion && data\.backupBBJ > 0/);
+    expect(SRC).toMatch(
+      /effectiveVariant === 'club'\s*&&\s*!isClubInUnion\s*&&\s*data\.backupBBJ > 0/
+    );
   });
 
   it('the wallet page does not call a sum of three wallets a "Total Balance"', () => {

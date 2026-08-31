@@ -10,8 +10,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getAuthUser } from '../lib/supabase';
+import { isAgentRole, isClubPrincipal, isClubStaff, roleLabel } from '../types/clubRoles';
 import { masterBus } from '../core/MasterBus';
 import { ClubsService } from '../services/ClubsService';
+import { ClubJoinService } from '../services/ClubJoinService';
 import { unionService } from '../services/UnionService';
 import type { Union } from '../services/UnionService';
 import { NoClubsEmpty } from '../components/common/EmptyState';
@@ -362,9 +364,12 @@ export default function ClubsPage() {
               <ClubDiscovery
                 onJoinRequest={async (clubId) => {
                   try {
-                    const membership = await ClubsService.join(clubId);
+                    const joinResult = await ClubJoinService.join({ identifier: clubId });
+                    if (!joinResult.success) {
+                      throw new Error(joinResult.error || 'Failed to join club');
+                    }
                     await loadMyClubs();
-                    if (membership?.status === 'pending') {
+                    if (joinResult.status === 'pending') {
                       // Approval-gated club — not a member until approved.
                       toast.success('Request submitted - pending owner approval.');
                     } else {
@@ -445,20 +450,19 @@ export default function ClubsPage() {
                               <span className={styles.statLabel}>Members</span>
                             </div>
                             <div className={styles.clubStat}>
+                              {/* Three names for seven roles: a co-owner, a
+                                  super agent, an agent and a sub agent all read
+                                  as "Player" on their own club card. */}
                               <span className={styles.statValue}>
-                                {membership.role === 'owner'
+                                {isClubPrincipal(membership.role)
                                   ? '♛'
-                                  : membership.role === 'admin'
+                                  : isClubStaff(membership.role)
                                     ? '⚙'
-                                    : '▦'}
+                                    : isAgentRole(membership.role)
+                                      ? '◈'
+                                      : '▦'}
                               </span>
-                              <span className={styles.statLabel}>
-                                {membership.role === 'owner'
-                                  ? 'Owner'
-                                  : membership.role === 'admin'
-                                    ? 'Admin'
-                                    : 'Player'}
-                              </span>
+                              <span className={styles.statLabel}>{roleLabel(membership.role)}</span>
                             </div>
                             <div className={styles.clubStat}>
                               <span className={styles.statValue} style={{ color: levelInfo.color }}>

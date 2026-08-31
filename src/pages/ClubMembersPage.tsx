@@ -264,6 +264,27 @@ export default function ClubMembersPage() {
     }
   }, [resolvedClubId, searchQuery, user?.id]);
 
+  const scheduleConnectionRecovery = useCallback(
+    (maxAttempts: number = Number.POSITIVE_INFINITY): boolean => {
+      if (
+        !resolvedClubId ||
+        refreshTimerRef.current ||
+        !browserOnline ||
+        recoveryAttemptRef.current >= maxAttempts
+      ) {
+        return false;
+      }
+      const delay = computeRosterRetryDelay(recoveryAttemptRef.current, 1_200, 30_000);
+      recoveryAttemptRef.current += 1;
+      refreshTimerRef.current = setTimeout(() => {
+        refreshTimerRef.current = null;
+        void latestLoadRef.current({ forceSummary: true });
+      }, delay);
+      return true;
+    },
+    [browserOnline, resolvedClubId]
+  );
+
   const loadFirstPage = useCallback(
     async (options: RosterLoadOptions = {}) => {
       if (!resolvedClubId) return;
@@ -360,9 +381,12 @@ export default function ClubMembersPage() {
         },
         onPageError: (error) => {
           if (!isCurrent() || abortLike(error)) return;
-          reportError(error, 'ClubMembersPage.loadFirstPage');
-          setLoadError(true);
-          setDataFreshness(membersRef.current.length > 0 ? 'stale' : 'failed');
+          const hasSavedRows = membersRef.current.length > 0;
+          const recoveryScheduled = scheduleConnectionRecovery(2);
+          if (!recoveryScheduled) reportError(error, 'ClubMembersPage.loadFirstPage');
+          setLoadError(!recoveryScheduled && !hasSavedRows);
+          setLoading(recoveryScheduled && !hasSavedRows);
+          setDataFreshness(hasSavedRows ? 'stale' : recoveryScheduled ? 'loading' : 'failed');
         },
       });
 
@@ -379,7 +403,7 @@ export default function ClubMembersPage() {
         writeRosterCache(user.id, resolvedClubId, pageResult.value.items, summaryResult.value);
       }
     },
-    [debouncedSearch, filter, resolvedClubId, sortKey, user?.id]
+    [debouncedSearch, filter, resolvedClubId, scheduleConnectionRecovery, sortKey, user?.id]
   );
 
   useEffect(() => {
@@ -448,16 +472,6 @@ export default function ClubMembersPage() {
       void latestLoadRef.current({ forceSummary: true });
     }, 1200);
   }, [resolvedClubId]);
-
-  const scheduleConnectionRecovery = useCallback(() => {
-    if (!resolvedClubId || refreshTimerRef.current || !browserOnline) return;
-    const delay = computeRosterRetryDelay(recoveryAttemptRef.current, 1_200, 30_000);
-    recoveryAttemptRef.current += 1;
-    refreshTimerRef.current = setTimeout(() => {
-      refreshTimerRef.current = null;
-      void latestLoadRef.current({ forceSummary: true });
-    }, delay);
-  }, [browserOnline, resolvedClubId]);
 
   useEffect(
     () => () => {

@@ -31,7 +31,14 @@ import { resolveCosmetic } from '../cosmetics/avatarCosmetics';
 
 interface HeaderDataState {
   // Data
+  /** Resolved portrait shown by the global header. */
   avatarUrl: string | null;
+  profilePhotoUrl: string | null;
+  arenaAvatarUrl: string | null;
+  useAvatarAsProfilePic: boolean;
+  isVipActive: boolean;
+  _vipFlag: boolean;
+  _vipExpiresAt: string | null;
   /**
    * The player's own equipped cosmetics, for the header orb and the hamburger.
    *
@@ -54,6 +61,7 @@ interface HeaderDataState {
 
   // Actions
   loadOnce: (userId: string) => void;
+  setProfileHeaderData: (row: Record<string, unknown>) => void;
   setAvatarUrl: (url: string | null) => void;
   setCosmetics: (frame: string | null, aura: string | null) => void;
   setNotificationCount: (count: number) => void;
@@ -96,7 +104,40 @@ function persistCount(key: string, value: number): void {
  * whoever logs in next on a shared device, which is worse than the flash it
  * removes.
  */
-const AVATAR_KEY = 'ca-avatar-cache';
+const AVATAR_KEY = 'ca-header-portrait-cache-v2';
+const LEGACY_AVATAR_KEY = 'ca-avatar-cache';
+
+function cleanUrl(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+/**
+ * Match the World Hub's existing profile-picture toggle exactly.
+ *
+ * The social photo is the global default. The Arena avatar is allowed onto a
+ * global surface only after the user explicitly enables "Use Avatar". When an
+ * opted-in avatar is later removed, fall back to the real photo rather than a
+ * placeholder.
+ */
+export function resolveHeaderPortrait(
+  profilePhotoUrl: string | null,
+  arenaAvatarUrl: string | null,
+  useAvatarAsProfilePic: boolean
+): string | null {
+  if (useAvatarAsProfilePic) return arenaAvatarUrl || profilePhotoUrl;
+  return profilePhotoUrl;
+}
+
+export function resolveActiveVip(
+  isVip: boolean,
+  expiresAt: string | null,
+  now = Date.now()
+): boolean {
+  if (!isVip) return false;
+  if (!expiresAt) return true;
+  const expiry = Date.parse(expiresAt);
+  return Number.isFinite(expiry) && expiry > now;
+}
 
 function hydrateAvatar(userId: string): string | null {
   try {
@@ -111,6 +152,9 @@ function hydrateAvatar(userId: string): string | null {
 
 function persistAvatar(userId: string | null, url: string | null): void {
   try {
+    // Never hydrate the old Arena-only value again. It is exactly the stale
+    // KingFish flash this versioned cache is intended to eliminate.
+    localStorage.removeItem(LEGACY_AVATAR_KEY);
     if (!userId || !url) {
       localStorage.removeItem(AVATAR_KEY);
       return;
@@ -137,6 +181,12 @@ function scheduleCount(kind: string, run: () => void | Promise<void>): void {
 
 export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
   avatarUrl: null,
+  profilePhotoUrl: null,
+  arenaAvatarUrl: null,
+  useAvatarAsProfilePic: false,
+  isVipActive: false,
+  _vipFlag: false,
+  _vipExpiresAt: null,
   /* Not hydrated from localStorage the way the avatar is, deliberately. The
      avatar cache exists to kill a visible pop-in of the player's own face; a
      frame that appears a beat later is not that, and caching an entitlement
@@ -153,9 +203,37 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
   _channelKey: null,
   _busUnsubscribers: [],
 
+  setProfileHeaderData: (row) => {
+    const state = get();
+    const has = (column: string) => Object.prototype.hasOwnProperty.call(row, column);
+    const profilePhotoUrl = has('avatar_url') ? cleanUrl(row.avatar_url) : state.profilePhotoUrl;
+    const arenaAvatarUrl = has('arena_avatar_url')
+      ? cleanUrl(row.arena_avatar_url)
+      : state.arenaAvatarUrl;
+    const useAvatarAsProfilePic = has('use_avatar_as_profile_pic')
+      ? row.use_avatar_as_profile_pic === true
+      : state.useAvatarAsProfilePic;
+    const vipFlag = has('is_vip') ? row.is_vip === true : state._vipFlag;
+    const vipExpiresAt = has('vip_expires_at') ? cleanUrl(row.vip_expires_at) : state._vipExpiresAt;
+    const avatarUrl = resolveHeaderPortrait(profilePhotoUrl, arenaAvatarUrl, useAvatarAsProfilePic);
+
+    set({
+      avatarUrl,
+      profilePhotoUrl,
+      arenaAvatarUrl,
+      useAvatarAsProfilePic,
+      isVipActive: resolveActiveVip(vipFlag, vipExpiresAt),
+      _vipFlag: vipFlag,
+      _vipExpiresAt: vipExpiresAt,
+    });
+    persistAvatar(state._userId, avatarUrl);
+  },
+
+  // Backward-compatible action for the Arena's avatar picker events. It
+  // updates the Arena source but cannot replace the global photo unless the
+  // user's World Hub preference explicitly opted into that behaviour.
   setAvatarUrl: (url) => {
-    set({ avatarUrl: url });
-    persistAvatar(get()._userId, url);
+    get().setProfileHeaderData({ arena_avatar_url: url });
   },
 
   /**
@@ -266,7 +344,17 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
 
     // Paint the cached avatar SYNCHRONOUSLY, before the fetch is even issued,
     // so the first frame of the header already has the player's face.
-    set({ _loaded: true, _userId: userId, avatarUrl: hydrateAvatar(userId) });
+    set({
+      _loaded: true,
+      _userId: userId,
+      avatarUrl: hydrateAvatar(userId),
+      profilePhotoUrl: null,
+      arenaAvatarUrl: null,
+      useAvatarAsProfilePic: false,
+      isVipActive: false,
+      _vipFlag: false,
+      _vipExpiresAt: null,
+    });
 
     // ── Fetch initial data (non-blocking) ──
     (async () => {
@@ -275,7 +363,9 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         const [profileResult, notifResult, msgResult] = await Promise.all([
           supabase
             .from('profiles')
-            .select('avatar_url:arena_avatar_url, equipped_frame, equipped_aura')
+            .select(
+              'avatar_url, arena_avatar_url, use_avatar_as_profile_pic, is_vip, vip_expires_at, equipped_frame, equipped_aura'
+            )
             .eq('id', userId)
             .maybeSingle(),
           supabase
@@ -317,9 +407,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         // Only a query that actually came back gets to say the player has no
         // avatar; anything else keeps the face already on screen.
         if (!profileResult.error && pendingPlayerAppearance.size === 0) {
-          const avatarUrl = profileResult.data?.avatar_url || null;
-          set({ avatarUrl });
-          persistAvatar(userId, avatarUrl);
+          get().setProfileHeaderData((profileResult.data ?? {}) as Record<string, unknown>);
           get().setCosmetics(
             profileResult.data?.equipped_frame ?? null,
             profileResult.data?.equipped_aura ?? null
@@ -340,7 +428,9 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
             const [pR, nR, mR] = await Promise.all([
               supabase
                 .from('profiles')
-                .select('avatar_url:arena_avatar_url, equipped_frame, equipped_aura')
+                .select(
+                  'avatar_url, arena_avatar_url, use_avatar_as_profile_pic, is_vip, vip_expires_at, equipped_frame, equipped_aura'
+                )
                 .eq('id', userId)
                 .maybeSingle(),
               supabase
@@ -360,9 +450,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
               reportError(nR.error, 'useHeaderDataStore.notification_count_fetch_retry');
             if (mR.error) reportError(mR.error, 'useHeaderDataStore.message_count_fetch_retry');
             if (!pR.error && pendingPlayerAppearance.size === 0) {
-              const retriedAvatar = pR.data?.avatar_url || null;
-              set({ avatarUrl: retriedAvatar });
-              persistAvatar(userId, retriedAvatar);
+              get().setProfileHeaderData((pR.data ?? {}) as Record<string, unknown>);
               get().setCosmetics(pR.data?.equipped_frame ?? null, pR.data?.equipped_aura ?? null);
             }
             set({
@@ -473,17 +561,13 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
              `table-seats-live` subscription in TablePage has never delivered a
              row and could not be copied here.
 
-             A partial payload must not blank the orb: only a string is
-             accepted, and `avatar_url` is read from `arena_avatar_url` because
-             realtime delivers RAW COLUMN NAMES — the select alias does not
-             apply to a replication payload. */
+             A partial payload must not blank the orb. setProfileHeaderData
+             merges only columns actually present in the replication payload,
+             then applies the same Photo/Avatar preference used by World Hub. */
           const row = payload?.new;
           if (!row) return;
           if (pendingPlayerAppearance.size > 0) return;
-          const nextAvatar = row['arena_avatar_url'];
-          if (typeof nextAvatar === 'string' && nextAvatar) {
-            get().setAvatarUrl(nextAvatar);
-          }
+          get().setProfileHeaderData(row);
           get().setCosmetics(
             typeof row['equipped_frame'] === 'string' ? (row['equipped_frame'] as string) : null,
             typeof row['equipped_aura'] === 'string' ? (row['equipped_aura'] as string) : null
@@ -606,11 +690,18 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       localStorage.removeItem('ca-notif-count');
       localStorage.removeItem('ca-msg-count');
       localStorage.removeItem(AVATAR_KEY);
+      localStorage.removeItem(LEGACY_AVATAR_KEY);
     } catch {
       /* quota */
     }
     set({
       avatarUrl: null,
+      profilePhotoUrl: null,
+      arenaAvatarUrl: null,
+      useAvatarAsProfilePic: false,
+      isVipActive: false,
+      _vipFlag: false,
+      _vipExpiresAt: null,
       // Cleared with the avatar for the same reason the avatar cache is: on a
       // shared device the next account must not inherit the last one's face,
       // and a frame is part of that face.

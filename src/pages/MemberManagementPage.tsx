@@ -53,6 +53,8 @@ import { toTitleCase } from '../utils/titleCase';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import {
   ROLE_DESCRIPTION,
+  isAgentRole,
+  isClubStaff,
   normaliseRole,
   roleLabel,
   roleRank,
@@ -674,6 +676,10 @@ function RoleSection({
   const [confirmRole, setConfirmRole] = useState<ClubRole | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  // Percentages, not fractions. Blank on purpose: a rate that arrives
+  // pre-filled is a rate nobody chose, which is the bug this pair fixes.
+  const [commissionPct, setCommissionPct] = useState('');
+  const [rakebackPct, setRakebackPct] = useState('');
 
   // CA-18 BUG FIX: the 1.2s "show success then refresh" timer was fire-and-forget.
   // If the user left the screen before 1.2s, the component unmounted and the
@@ -736,6 +742,45 @@ function RoleSection({
     setError('');
     setSuccess('');
 
+    // THE RATE IS CHOSEN HERE OR IT IS NOT CHOSEN AT ALL.
+    //
+    // Dan, 2026-08-31: "MAKE SURE THAT RAKE BACK PERCENTAGES ARE ASSIGNED WHEN
+    // CREATING THEM (CO-OWNERS AND ADMINS GET NO RAKE BACK)."
+    //
+    // This screen used to send the role and nothing else, and the server
+    // invented a pair of rates - 50/30 for a super agent, 30/20 for the other
+    // two - that nobody had agreed to, and applied them only when the agents
+    // row did not already exist. fn_club_set_member_role now refuses an agent
+    // role that arrives without a rate, so the two fields below are the whole
+    // point of the confirm step rather than decoration on it.
+    let rates: { p_commission_rate: number; p_player_rakeback_rate: number } | undefined;
+    if (isAgentRole(newRole)) {
+      const comm = Number(commissionPct);
+      const rake = Number(rakebackPct);
+      if (commissionPct.trim() === '' || rakebackPct.trim() === '') {
+        setError('Enter A Commission And A Rakeback Percentage.');
+        setPromoting(false);
+        return;
+      }
+      if (!Number.isFinite(comm) || comm < 0 || comm > 70) {
+        setError('Commission Must Be Between 0 And 70 Percent.');
+        setPromoting(false);
+        return;
+      }
+      if (!Number.isFinite(rake) || rake < 0 || rake > 50) {
+        setError('Rakeback Must Be Between 0 And 50 Percent.');
+        setPromoting(false);
+        return;
+      }
+      if (rake > comm) {
+        setError('Rakeback Cannot Be More Than The Commission It Is Paid Out Of.');
+        setPromoting(false);
+        return;
+      }
+      // The database stores a fraction. The field asks for a percentage.
+      rates = { p_commission_rate: comm / 100, p_player_rakeback_rate: rake / 100 };
+    }
+
     try {
       // ONE WRITE PATH. This used to fall back to
       // `.from('club_members').update({ role })` whenever the RPC errored,
@@ -747,6 +792,7 @@ function RoleSection({
         p_club_id: resolvedClubId,
         p_user_id: targetUserId,
         p_role: newRole,
+        ...(rates ?? {}),
       });
       if (rpcError) throw rpcError;
 
@@ -802,6 +848,53 @@ function RoleSection({
             Change <strong>{targetName}</strong> To{' '}
             <strong style={{ color: roleColor(confirmRole) }}>{roleLabel(confirmRole)}</strong>?
           </p>
+
+          {isAgentRole(confirmRole) && (
+            <div className="mm-roles__rates">
+              <p className="mm-roles__rates-note">
+                Set The Deal Now. The Server Will Not Accept An Agent Without One.
+              </p>
+              <label className="mm-field">
+                <span className="mm-field__label">Commission Percent (0 To 70)</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  max={70}
+                  step={1}
+                  value={commissionPct}
+                  placeholder="e.g. 40"
+                  onChange={(e) => setCommissionPct(e.target.value)}
+                  disabled={promoting}
+                />
+              </label>
+              <label className="mm-field">
+                <span className="mm-field__label">Player Rakeback Percent (0 To 50)</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  max={50}
+                  step={1}
+                  value={rakebackPct}
+                  placeholder="e.g. 30"
+                  onChange={(e) => setRakebackPct(e.target.value)}
+                  disabled={promoting}
+                />
+              </label>
+              <p className="mm-roles__rates-note">
+                Rakeback Is Paid Out Of The Commission, So It Cannot Be The Larger Of The Two, And
+                Neither May Exceed The Upline They Report To.
+              </p>
+            </div>
+          )}
+
+          {isClubStaff(confirmRole) && (
+            <p className="mm-roles__rates-note">
+              This Role Earns No Rakeback. Any Rate This Member Carries Is Set To Zero.
+            </p>
+          )}
+
           <div className="mm-roles__confirm-actions">
             <button
               type="button"
@@ -828,7 +921,12 @@ function RoleSection({
               key={role}
               type="button"
               className={`mm-roles__option${role === targetRole ? ' mm-roles__option--current' : ''}`}
-              onClick={() => setConfirmRole(role)}
+              onClick={() => {
+                setError('');
+                setCommissionPct('');
+                setRakebackPct('');
+                setConfirmRole(role);
+              }}
               disabled={role === targetRole || promoting}
             >
               <RoleBadge role={role} size="sm" />

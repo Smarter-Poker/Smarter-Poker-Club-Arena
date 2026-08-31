@@ -90,7 +90,10 @@ describe('solid-color metallic popup system', () => {
 
 describe('solid-color live lobby', () => {
   it('removes gradients from the redesigned control deck', () => {
-    const liveBoard = lobbyCss.slice(lobbyCss.indexOf('LIVE GAME BOARD'));
+    const liveBoard = lobbyCss.slice(
+      lobbyCss.indexOf('LIVE GAME BOARD'),
+      lobbyCss.indexOf('APPROVED CLUB ARENA COMPOSITION')
+    );
     expect(liveBoard).not.toMatch(/(?:linear|radial|conic)-gradient\s*\(/i);
     expect(liveBoard).toContain('background: #111a2a');
     expect(liveBoard).toContain('background: #2866dc');

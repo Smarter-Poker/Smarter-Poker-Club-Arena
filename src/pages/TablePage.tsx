@@ -593,6 +593,8 @@ interface TableState {
   actionTimerDeadline?: number;
   /** Hero's own pineapple discard deadline, absolute epoch ms, from the engine. */
   discardDeadline?: number | null;
+  /** How long the discard round runs, ms, as the engine reports it. */
+  discardDurationMs?: number;
   /** Wall-clock turn start (server-authoritative). Drives the CSS ring
    * animation via SeatSlot turnStartTimeMs/turnDeadlineMs props. */
   actionTimerStartTime?: number;
@@ -2292,6 +2294,7 @@ export default function TablePage({
         })) as SidePot[],
         actionTimerDeadline: mapped.actionTimerDeadline,
         discardDeadline: mapped.discardDeadline ?? null,
+        discardDurationMs: mapped.discardDurationMs ?? 0,
         actionTimerStartTime: mapped.actionTimerStartTime,
         actionTimerPlayerId: mapped.actionTimerPlayerId,
         isTimeBankActive: mapped.isTimeBankActive,
@@ -2944,6 +2947,22 @@ export default function TablePage({
   // recovery toast was lost.
   const heartbeatToastRef = useRef(toast);
   heartbeatToastRef.current = toast;
+
+  /**
+   * PHASE 2 (2026-08-31): has this client actually drawn the action controls
+   * for the hero on the turn it is currently claiming?
+   *
+   * Written by the ActionPanel render arm itself (the only place that knows
+   * for certain) and cleared the moment the turn ends, so it can never carry
+   * a stale "yes" into a later hand. Read by the heartbeat, which sends it to
+   * the engine so the silent-client canary can tell a player who ignored the
+   * action from one who was never shown it.
+   *
+   * A REF, not state, on purpose: this must not trigger a render - it is
+   * written DURING one - and the heartbeat only needs the latest value at the
+   * moment it fires.
+   */
+  const heroActionRenderedRef = useRef(false);
   /* One removal, one notice. Two paths detect a forced removal — the `seat_left`
      websocket event (instant, but missable) and the ten-second seat read (slow,
      but authoritative) — and without this the player who caught both would be
@@ -2991,7 +3010,25 @@ export default function TablePage({
     let consecutiveMisses = 0;
     let warned = false;
     const beat = async () => {
-      const res = await sendHeartbeat(tableId);
+      /* PHASE 2 (2026-08-31): tell the engine whether this client has actually
+         PUT THE ACTION IN FRONT OF THE PLAYER, not merely that it is online.
+
+         A heartbeat proves the app is running. It proved exactly that on
+         2026-08-31 while a player's own seat had been erased from his screen:
+         the beats landed every five seconds, the engine offered him turns
+         nobody could see, timed each one out, force-sat him out and took the
+         seat. From the server there was nothing to distinguish him from
+         somebody who had walked away.
+
+         The flag is read from a ref the FELT writes as it renders, not
+         re-derived from state here. A second copy of the rule could drift
+         from the first and start claiming the bar is up when it is not - and
+         a false "the player can see this" is worse than silence, because it
+         tells the canary to relax about precisely the player it exists to
+         notice. */
+      const res = await sendHeartbeat(tableId, {
+        turnRendered: heroActionRenderedRef.current,
+      });
       if (res?.success) {
         // Silent recovery (Dan 2026-08-23). A "Reconnected" toast is only
         // reassuring if the player was told something broke - and they no
@@ -11780,6 +11817,16 @@ export default function TablePage({
       tableState.currentPlayerSeat > 0 &&
       tableState.currentPlayerSeat === tableState.heroSeat &&
       tableState.isHandInProgress;
+    /* PHASE 2 (2026-08-31): the turn is over, so the claim that we are showing
+       this player their options expires with it. Without this the flag would
+       stay true from the last turn the client DID render, and the engine would
+       keep hearing "they can see it" through a hand where they cannot - the
+       canary silenced by its own stale evidence. Cleared here rather than in
+       the render, because the render arm only runs while the panel is UP; the
+       moment it stops running there is nothing to switch the flag back off. */
+    if (!isHeroTurn) {
+      heroActionRenderedRef.current = false;
+    }
     if (!isHeroTurn && timeBankActive) {
       // Hero acted or hand ended — cancel time bank state
       setTimeBankActive(false);
@@ -20710,6 +20757,17 @@ export default function TablePage({
                engine does not act inside the grace window. */
             !suppressPanelForPreAction
               ? (() => {
+                  /* PHASE 2 (2026-08-31): THE ONE PLACE THAT KNOWS.
+                     Everything above this line is the real, complete gate for
+                     the action controls - every clause of it, including the
+                     deal-animation hold and the pre-action suppression. Being
+                     inside this arm is the only honest proof the player is
+                     being shown their options, which is why the heartbeat's
+                     `turnRendered` flag is written HERE rather than re-derived
+                     next to the heartbeat. A second copy of this condition
+                     would drift, and a false "they can see it" silences the
+                     canary for exactly the player it exists to catch. */
+                  heroActionRenderedRef.current = true;
                   // Bible V8 §1.4: Use SERVER-AUTHORITATIVE values, not local calculations
                   const heroPlayer = getPlayerAtSeat(tableState.heroSeat);
                   const heroStack = heroPlayer?.stack || 0;
@@ -21439,6 +21497,7 @@ export default function TablePage({
         cards={heroPineappleCards ?? []}
         onDiscard={handlePineappleDiscard}
         deadline={pineappleDeadline}
+        durationMs={tableState.discardDurationMs}
         deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
       />
 

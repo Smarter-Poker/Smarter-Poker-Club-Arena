@@ -288,8 +288,6 @@ export default function LeaderboardPage() {
     setUserRank(null);
     setPayouts([]);
     setSettings(null);
-    setEditingSettings(null);
-    setShowSettings(false);
     if (user?.id) {
       loadUserClubs(() => isMounted);
     } else if (user === null) {
@@ -423,6 +421,7 @@ export default function LeaderboardPage() {
       openedSetupLinkRef.current !== requestKey
     ) {
       openedSetupLinkRef.current = requestKey;
+      setEditingSettings(settings);
       setShowSettings(true);
     }
   }, [location.search, selectedClubId, settings, userClubs]);

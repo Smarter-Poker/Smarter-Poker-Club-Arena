@@ -52,6 +52,10 @@ const DIR_RULES = [
   // the lossless WebP changed 465,144 of 490,496 pixels in the production
   // artifact, so it must pass through byte-for-byte.
   { prefix: 'images/club-footer/', maxDim: 0 },
+  // User-approved production artwork. It was converted to lossless WebP after
+  // exterior-only transparency extraction; resizing or lossy re-encoding here
+  // would no longer be the exact supplied action pill.
+  { prefix: 'images/club-arena/approved-club-entry-action-pill-v1.webp', maxDim: 0 },
   { prefix: 'game-card-icons/', maxDim: 512 },
   { prefix: 'club-logos/', maxDim: 512 },
   // The approved global-header artwork is a locked, lossless release asset.

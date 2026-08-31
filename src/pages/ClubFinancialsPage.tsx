@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import type { ClubRole } from '../types/clubRoles';
+import { isClubStaff, type ClubRole } from '../types/clubRoles';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -540,8 +540,11 @@ export default function ClubFinancialsPage() {
         </div>
       )}
 
-      {/* Club Financial Dashboard - Chip Minting & Commission (owner-only) */}
-      {clubId && userRole === 'owner' && (
+      {/* Club Financial Dashboard - Chip Minting & Commission (club staff).
+          This was owner-only, which left a co-owner - "everything an owner can
+          do except appoint another co owner" - without the one screen that
+          mints chips. fn_actor_can_manage_club_treasury admits all three. */}
+      {clubId && isClubStaff(userRole) && (
         <section className="financial-dashboard-section">
           <ClubFinancialDashboard clubId={clubId} />
         </section>

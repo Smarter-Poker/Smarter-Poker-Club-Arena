@@ -10,7 +10,7 @@ import { getWarmMemberships, rememberWarmMemberships } from '../lib/membershipWa
 export { clearMembershipsWarmCache } from '../lib/membershipWarmState';
 import { retryAsync } from '../utils/retryAsync';
 import { sanitizeInput } from '../utils/sanitizeInput';
-import { buildClubSlug, escapeIlikePattern } from '../utils/clubSlug';
+import { escapeIlikePattern } from '../utils/clubSlug';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
@@ -144,6 +144,7 @@ export async function getClub(identifier: string): Promise<Club | null> {
  * Create a new club with automatic slug generation
  */
 export interface CreateClubData {
+  request_id?: string;
   name: string;
   description?: string;
   color_theme?: string;
@@ -159,27 +160,6 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
   const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // ENFORCE 4-CLUB LIMIT
-  // ═══════════════════════════════════════════════════════════════════════
-  const { count, error: countError } = await supabase
-    .from('club_members')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', user.user.id)
-    .in('status', ['active', 'approved']);
-
-  // FAIL CLOSED. fn_join_club re-checks this limit for joins, but its owner
-  // branch — the one createClub lands in — does not, so this client check is
-  // the ONLY 4-club limit on the create path. Dan's 2026-08-26 lobby audit
-  // (item 5) found it shrugging on a count error; it must refuse instead.
-  if (countError) {
-    reportError(countError, 'ClubsService._Failed_to_check_club_membership_count');
-    throw new Error('Could not verify your club memberships. Please try again.');
-  }
-  if (count !== null && count >= 4) {
-    throw new Error('You can only be a member of up to 4 clubs. Leave a club to create a new one.');
-  }
-
   // Sanitize inputs
   const safeName = sanitizeInput(clubData.name.trim());
   const safeDescription = clubData.description
@@ -194,118 +174,80 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
     throw new Error('Club name must be 30 characters or less.');
   }
 
-  // Duplicate name check (pattern-escaped so "100%" matches literally)
-  const { data: existing, error: existingErr } = await supabase
-    .from('clubs')
-    .select('id')
-    .ilike('name', escapeIlikePattern(safeName))
-    .limit(1);
-
-  /* A FAILED CHECK IS NOT "THE NAME IS FREE" (2026-08-29). Only `data` was
-     destructured. A Supabase builder resolves with {data: null, error}, so any
-     failure here made `existing` null, skipped the guard below, and CREATED THE
-     CLUB -- with a name the check exists to prevent. Refuse instead: a club
-     creation the player can retry is much cheaper than a second club wearing
-     somebody else's name. */
-  if (existingErr) {
-    throw new Error('Could not verify that club name is available. Please try again.');
-  }
-
-  if (existing && existing.length > 0) {
-    throw new Error('A club with this name already exists. Please choose a different name.');
-  }
-
   const isPublic = clubData.is_public ?? true;
+  // Persisted by the modal with its draft so a retry after a lost response
+  // resolves the original transaction instead of creating a second club.
+  const requestId = clubData.request_id || crypto.randomUUID();
 
   // ── Step 1: Upload raw logo to storage ──────────────────────────────
   let logoUrl: string | null = null;
   let uploadedLogoPath: string | null = null;
   if (clubData.logoPreview) {
     try {
-      const logoBlob = await fetch(clubData.logoPreview).then((r) => r.blob());
-      const logoExt = logoBlob.type.includes('png') ? 'png' : 'jpg';
-      const logoFileName = `club-logos/${Date.now()}-logo.${logoExt}`;
+      const logoResponse = await fetch(clubData.logoPreview);
+      if (!logoResponse.ok) throw new Error('The selected logo could not be read.');
+      const logoBlob = await logoResponse.blob();
+      if (!['image/png', 'image/jpeg', 'image/webp'].includes(logoBlob.type)) {
+        throw new Error('Club logos must be PNG, JPG, or WEBP images.');
+      }
+      if (logoBlob.size > 2 * 1024 * 1024) {
+        throw new Error('The optimized club logo must be 2MB or smaller.');
+      }
+      const logoExt =
+        logoBlob.type === 'image/png' ? 'png' : logoBlob.type === 'image/webp' ? 'webp' : 'jpg';
+      const logoFileName = `club-logos/${user.user.id}/${requestId}.${logoExt}`;
 
       const { data: logoUploadData, error: logoUploadError } = await supabase.storage
         .from('club-assets')
         .upload(logoFileName, logoBlob, {
           contentType: logoBlob.type || 'image/png',
+          // Replaying the same request must be safe before its RPC runs too.
           upsert: true,
         });
-
-      if (!logoUploadError && logoUploadData) {
-        uploadedLogoPath = logoFileName;
-        const { data: urlData } = supabase.storage.from('club-assets').getPublicUrl(logoFileName);
-        logoUrl = urlData?.publicUrl || null;
+      if (logoUploadError || !logoUploadData) {
+        throw new Error(logoUploadError?.message || 'Logo upload failed.');
       }
+      uploadedLogoPath = logoFileName;
+      const { data: urlData } = supabase.storage.from('club-assets').getPublicUrl(logoFileName);
+      logoUrl = urlData?.publicUrl || null;
     } catch (e) {
       reportError(e, 'ClubsService.createClub.LogoUpload');
+      throw new Error(e instanceof Error ? e.message : 'Failed to upload the club logo.');
     }
   }
 
-  // Insert with collision retry for random club_id AND slug (clubs.slug has a
-  // unique index — retries make the slug collision-proof, see utils/clubSlug)
-  let data: any = null;
-  let lastError: any = null;
-  const MAX_RETRIES = 3;
-
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    // 5-digit code (10000-99999) — canonical format matching the Join modal
-    // and all existing production clubs.
-    const clubIdNumber = Math.floor(10000 + Math.random() * 90000);
-
-    const { data: insertData, error: insertError } = await supabase
-      .from('clubs')
-      .insert({
-        club_id: clubIdNumber,
-        name: safeName,
-        slug: buildClubSlug(safeName, clubIdNumber, attempt),
-        description: safeDescription,
-        color_theme: clubData.color_theme || 'royal-blue',
-        is_public: isPublic,
-        requires_approval: clubData.requires_approval ?? false,
-        owner_id: user.user.id,
-        member_count: 1,
-        level: 1,
-        logo_url: logoUrl,
-        avatar_url: logoUrl, // ensure compatibility
-      })
-      .select()
-      .maybeSingle();
-
-    if (!insertError && insertData) {
-      data = insertData;
-      break;
+  // The RPC serializes this user's creates and commits the club, owner row,
+  // and idempotency key as one transaction.
+  const { data: rpcData, error: createError } = await supabase.rpc('fn_create_club_atomic', {
+    p_request_id: requestId,
+    p_name: safeName,
+    p_description: safeDescription ?? null,
+    p_color_theme: clubData.color_theme || 'royal-blue',
+    p_is_public: isPublic,
+    p_requires_approval: clubData.requires_approval ?? false,
+    p_logo_url: logoUrl,
+  });
+  if (createError || !rpcData) {
+    reportError(createError, 'ClubsService.Club_creation_failed');
+    const definitiveRejection = new Set(['22023', '23505', '23514', '28000', 'P0001']).has(
+      createError?.code || ''
+    );
+    // An empty/transport code is an ambiguous outcome: the transaction may
+    // have committed before its response was lost, so preserve its logo for
+    // the idempotent retry instead of deleting a live club's asset.
+    if (uploadedLogoPath && definitiveRejection) {
+      const { error: cleanupError } = await supabase.storage
+        .from('club-assets')
+        .remove([uploadedLogoPath]);
+      if (cleanupError) reportError(cleanupError, 'ClubsService.createClub.OrphanLogoCleanup');
     }
-
-    lastError = insertError;
-    // Name uniqueness (idx_clubs_name_lower) can never be fixed by a retry —
-    // the name doesn't change between attempts.
-    if (insertError?.message?.includes('idx_clubs_name_lower')) {
+    const message = createError?.message || 'Failed to create club';
+    if (/already exists|duplicate|unique/i.test(message)) {
       throw new Error('A club with this name already exists. Please choose a different name.');
     }
-    if (
-      insertError &&
-      !insertError.message?.includes('duplicate') &&
-      !insertError.message?.includes('unique')
-    ) {
-      break;
-    }
+    throw new Error(message);
   }
-
-  if (!data) {
-    reportError(lastError, 'ClubsService.Club_creation_failed');
-    // The logo was uploaded before the insert (the URL goes INTO the row), so
-    // a failed create would otherwise strand the file in club-assets forever —
-    // nothing references it and nothing ever cleans that bucket.
-    if (uploadedLogoPath) {
-      supabase.storage
-        .from('club-assets')
-        .remove([uploadedLogoPath])
-        .catch((e: unknown) => reportError(e, 'ClubsService.createClub.OrphanLogoCleanup'));
-    }
-    throw new Error('Failed to create club');
-  }
+  const data = rpcData as Club & { card_image_url?: string };
 
   // ── Step 3: Generate baked card with REAL club_id ────────────────────
   if (logoUrl || clubData.logoPreview) {
@@ -340,30 +282,46 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
     }
   }
 
-  // Auto-join as owner — clean up the orphan club if this fails. Without the
-  // cleanup a failed owner join leaves a members-less club row that squats on
-  // the name forever (the old CreateClubModal had this guard; the refactor to
-  // this service must not lose it).
+  // Creation already committed the owner membership. Notify every live view.
   try {
-    await joinClub(data.id, 'owner');
-  } catch (joinErr) {
-    reportError(joinErr, 'ClubsService.createClub.OwnerJoinFailed_cleaning_up_orphan');
-    try {
-      await supabase.from('clubs').delete().eq('id', data.id);
-    } catch (cleanupErr) {
-      reportError(cleanupErr, 'ClubsService.createClub.OrphanCleanupFailed');
-    }
-    // The club row is gone; its uploaded logo must not stay behind either.
-    if (uploadedLogoPath) {
-      supabase.storage
-        .from('club-assets')
-        .remove([uploadedLogoPath])
-        .catch((e: unknown) => reportError(e, 'ClubsService.createClub.OrphanLogoCleanup'));
-    }
-    throw new Error('Failed to set up club ownership. Please try again.');
+    const { masterBus } = await import('../core/MasterBus');
+    masterBus.emit('CLUB_JOINED', {
+      clubId: data.id,
+      clubName: data.name,
+      action: 'member_joined',
+    });
+  } catch (eventError) {
+    console.warn('[ClubsService] createClub: bus emit failed (non-critical):', eventError);
   }
 
   return data;
+}
+
+export async function checkClubNameAvailability(name: string): Promise<boolean> {
+  const safeName = sanitizeInput(name.trim());
+  if (safeName.length < 3 || safeName.length > 30) return false;
+  const { data, error } = await supabase.rpc('fn_club_name_available', { p_name: safeName });
+  if (error) throw new Error('Could not check club name availability.');
+  return data === true;
+}
+
+export async function getClubCreationEligibility(): Promise<{
+  canCreate: boolean;
+  membershipCount: number;
+  maxClubs: number | null;
+  remaining: number | null;
+}> {
+  const { data, error } = await supabase.rpc('fn_get_club_creation_eligibility');
+  if (error || !data || typeof data !== 'object') {
+    throw new Error('Could not verify your club allowance. Please try again.');
+  }
+  const result = data as Record<string, unknown>;
+  return {
+    canCreate: result.can_create === true,
+    membershipCount: Number(result.membership_count) || 0,
+    maxClubs: result.limit === null ? null : Number(result.limit),
+    remaining: result.remaining === null ? null : Number(result.remaining),
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1340,6 +1298,8 @@ export const ClubsService = {
   search: searchClubs,
   get: getClub,
   create: createClub,
+  checkNameAvailability: checkClubNameAvailability,
+  getCreationEligibility: getClubCreationEligibility,
   update: updateClub,
   join: joinClub,
   rememberInviteCode,

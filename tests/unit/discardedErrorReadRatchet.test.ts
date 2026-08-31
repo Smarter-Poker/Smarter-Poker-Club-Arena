@@ -68,7 +68,6 @@ const BASELINE = new Map<string, number>([
   ['src/pages/UnionDashboardPage.tsx', 10],
   ['src/services/UnionService.ts', 12],
   ['src/pages/AdminDashboardPage.tsx', 7],
-  ['src/components/modals/FindPlayerModal.tsx', 7],
   ['src/services/ClubsService.ts', 5],
   ['src/services/PromotionService.ts', 2],
   ['src/services/CreditService.ts', 5],

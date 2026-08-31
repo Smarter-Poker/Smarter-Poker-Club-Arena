@@ -9,7 +9,14 @@ const css = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTab
 
 describe('union-owned lobby creation controls', () => {
   it('shows creation only to staff on the union row itself', () => {
-    expect(page).toContain("(isOwner || userRole === 'admin') && club?.is_union === true");
+    // Moved to the new mechanism in the same commit, per CLAUDE.md rule 8.
+    // The guard used to name a single role, which left a co-owner - the one
+    // role whose whole description is "everything an owner can do except
+    // appoint another co owner" - unable to create a game on a union club.
+    // isClubStaff() is owner, co_owner or admin, and the same file already
+    // used it a hundred and ninety lines further down.
+    expect(page).toContain('(isOwner || isClubStaff(userRole)) && club?.is_union === true');
+    expect(page).not.toContain("userRole === 'admin') && club?.is_union");
     expect(page).not.toContain('(!isInUnion || club?.is_union)');
   });
 

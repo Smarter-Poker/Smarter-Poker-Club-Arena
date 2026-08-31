@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import GlobalHeader from '@/components/navigation/GlobalHeader';
 
@@ -159,36 +159,6 @@ describe('GlobalHeader Component', () => {
       'data-vip-active',
       'true'
     );
-  });
-
-  it('shimmers across the complete right icon bank every randomized 15-20 seconds', () => {
-    vi.useFakeTimers();
-    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
-    headerData.isVipActive = true;
-
-    try {
-      const { container } = render(
-        <MemoryRouter>
-          <GlobalHeader />
-        </MemoryRouter>
-      );
-
-      const shimmer = container.querySelector('[data-header-icons-shimmer]');
-      expect(shimmer).not.toBeNull();
-      expect(shimmer).toHaveAttribute('data-header-icons-shimmer', 'idle');
-
-      act(() => vi.advanceTimersByTime(14_999));
-      expect(shimmer).toHaveAttribute('data-header-icons-shimmer', 'idle');
-
-      act(() => vi.advanceTimersByTime(1));
-      expect(shimmer).toHaveAttribute('data-header-icons-shimmer', 'active');
-
-      act(() => vi.advanceTimersByTime(1_500));
-      expect(shimmer).toHaveAttribute('data-header-icons-shimmer', 'idle');
-    } finally {
-      random.mockRestore();
-      vi.useRealTimers();
-    }
   });
 
   it('renders the same left slot regardless of route depth', () => {

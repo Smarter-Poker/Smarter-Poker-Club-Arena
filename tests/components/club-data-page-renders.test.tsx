@@ -284,7 +284,10 @@ describe('ClubDataPage', () => {
   it('exports the exact prepared game snapshot instead of only the visible page', async () => {
     const secondRow = { ...snapshot.rows[0], id: 'game-2', name: 'Shark Table Two' };
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_data_snapshot') {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return { data: snapshot, error: null };
+      }
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
       if (fn === 'ca_club_game_export_start') {
         return { data: { export_id: 'export-1', total_rows: 2, status: 'ready' }, error: null };
@@ -306,6 +309,11 @@ describe('ClubDataPage', () => {
 
     render(<ClubDataPage />);
     const exportButton = await screen.findByRole('button', { name: 'Export As CSV' });
+    // The control exists during the cold snapshot read but is intentionally
+    // disabled. Clicking it before the ledger is verified is a no-op in the
+    // browser, which a fast local runner can hide by finishing the read first.
+    expect(exportButton).toBeDisabled();
+    await waitFor(() => expect(exportButton).toBeEnabled(), { timeout: 10_000 });
     fireEvent.click(exportButton);
 
     // Assert the export side effect first. Under the full CI worker load React
@@ -323,7 +331,7 @@ describe('ClubDataPage', () => {
     expect(rpcMock).toHaveBeenCalledWith('ca_club_data_export_cancel', {
       p_export_id: 'export-1',
     });
-  }, 15_000);
+  }, 20_000);
 
   it('keeps internal player automation metadata out of the operator UI', async () => {
     render(<ClubDataPage />);

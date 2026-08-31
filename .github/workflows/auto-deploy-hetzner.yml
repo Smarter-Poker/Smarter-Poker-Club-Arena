@@ -55,37 +55,38 @@ name: Auto-Deploy Hetzner Engine (on server/ changes)
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'server/**'
-      # Test-only / sim changes never affect the runtime image, so they must not
-      # trigger a live restart (a restart voids in-flight hands).
-      - '!server/**/*.test.ts'
-      - '!server/sim/**'
-  # 2026-08-24: hourly catch-up. The drain gate below now DEFERS a restart
-  # while humans are seated (instead of kicking them after 8 minutes), so a
-  # deferred deploy needs a later ride. This run deploys HEAD iff production
-  # is not already serving it — the dedupe step exits in seconds otherwise,
-  # so the CI cost of an up-to-date hour is one checkout and one curl.
+  # ═══════════════════════════════════════════════════════════════════════════
+  #  THE ENGINE RESTARTS AT 7AM AND 7PM. NOT WHEN CODE MERGES.
+  #  (Dan, 2026-08-31, binding: "STOP THE ENGINE FROM RESTARTING. IT SHOULD
+  #   ONLY BE RESTARTING AT 7AM AND 7PM FROM NOW ON.")
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # WHAT THIS REPLACES. Every merge touching `server/**` restarted production
+  # (263 such commits in one week before the dedupe was added), and a `*/20`
+  # catch-up chased whatever those runs deferred. A restart is not free even
+  # with the SIGTERM drain: every socket reconnects and ~120 tables rehydrate.
+  # Two scheduled windows a day replace that entirely -- merged engine code now
+  # WAITS for the next window, by design, and the wait is the feature.
+  #
+  # WHY FOUR CRONS FOR TWO WINDOWS. GitHub cron is UTC and has no notion of
+  # DST. 07:00 and 19:00 America/Chicago are 12:00/00:00 UTC on CDT and
+  # 13:00/01:00 UTC on CST, so all four fire and the window gate (first step)
+  # keeps only the two that are genuinely 7 or 19 o'clock in Chicago. Getting
+  # this wrong by an hour twice a year is exactly the kind of drift this
+  # program keeps finding, so the hour is resolved from the tz database at run
+  # time rather than baked into the cron.
   schedule:
-    # EVERY 20 MINUTES, WHICH IS MIN_RESTART_SPACING_SEC. Was hourly, and the
-    # mismatch was a 40-minute dead zone: a commit that coalesced at minute 18
-    # could not land until the next hour even though it became eligible at
-    # minute 38. On 2026-08-26 that hid a merged engine fix for 13 minutes and
-    # would have hidden it for up to 40 — with the deploy reporting success
-    # the whole time. Matching the cadence to the gate means a coalesced
-    # commit lands at the first moment it is allowed to.
-    #
-    # Cost is unchanged in the common case: the dedupe step below exits in
-    # seconds when production already serves this commit, so an up-to-date
-    # cycle is one checkout and one curl.
-    - cron: '*/20 * * * *'
+    - cron: '0 0,1,12,13 * * *'
+
+  # The override, and the only path that may restart outside a window:
+  # a deliberate `force: true` dispatch. A plain dispatch -- which is what
+  # publish-watchdog.yml sends when it notices the engine is behind main --
+  # is subject to the window like everything else, so the watchdog keeps
+  # alarming without being able to bounce production at 3am.
   workflow_dispatch:
     inputs:
       force:
-        description: 'Restart even while humans are seated in live hands'
+        description: 'Restart NOW, outside the 7am/7pm window (and even while humans are seated)'
         type: boolean
         default: false
       ref_sha:
@@ -124,9 +125,36 @@ jobs:
       # catch-up schedule nearly free, and it also absorbs redundant push
       # triggers (263 server-touching commits landed in the week before this
       # was written; every one was a full restart).
+      - name: Restart window — 7am and 7pm America/Chicago
+        id: window
+        run: |
+          # Chicago time, from the tz database on the runner, so DST is not a
+          # number anybody has to remember to change twice a year.
+          HOUR=$(TZ=America/Chicago date +%H)
+          LOCAL=$(TZ=America/Chicago date '+%Y-%m-%d %H:%M %Z')
+          FORCED="${{ github.event.inputs.force }}"
+          if [ "$FORCED" = "true" ]; then
+            echo "open=true" >> $GITHUB_OUTPUT
+            echo "::warning title=FORCED RESTART::force=true — restarting outside the 7am/7pm window ($LOCAL)."
+            exit 0
+          fi
+          case "$HOUR" in
+            07|19)
+              echo "open=true" >> $GITHUB_OUTPUT
+              echo "Restart window OPEN — $LOCAL." ;;
+            *)
+              echo "open=false" >> $GITHUB_OUTPUT
+              echo "::notice title=OUTSIDE THE RESTART WINDOW::$LOCAL is not 7am or 7pm in Chicago. Nothing was deployed and the engine was not touched. Merged engine code lands at the next window; dispatch this workflow with force=true to land it now." ;;
+          esac
+
       - name: Skip if production already serves this commit
         id: dedupe
         run: |
+          if [ "${{ steps.window.outputs.open }}" != "true" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Outside the restart window — nothing to deploy."
+            exit 0
+          fi
           SHORT="${SHA:0:8}"
           BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
           VER=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
@@ -304,6 +332,26 @@ jobs:
           echo "skip=false" >> $GITHUB_OUTPUT
           if [ "${{ github.event.inputs.force }}" = "true" ]; then
             echo "force=true — skipping drain gate"; exit 0
+          fi
+          # A SCHEDULED WINDOW IS THE SANCTIONED RESTART TIME (2026-08-31).
+          #
+          # The poll below waits for handsInFlightTotal to reach zero, and the
+          # comments further down record why it never does on this platform: a
+          # fleet dealing ~290 hands a minute across ~120 tables is never
+          # empty, so all 16 attempts fail and the run exits green having
+          # shipped nothing. Measured the day this was written: three
+          # consecutive deploy runs reported success and left production on
+          # older code.
+          #
+          # With two windows a day that failure mode would mean the engine
+          # NEVER updates. Inside a window the deploy therefore proceeds, and
+          # hands are protected the way the staleness-cap path below already
+          # argues is sufficient and equal for everyone: GameServer.drainHands
+          # parks EVERY table at a hand boundary on SIGTERM -- horses included,
+          # which is what CLAUDE.md 10.5 requires -- inside docker stop -t 45.
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "scheduled 7am/7pm window — proceeding; the engine drains itself at a hand boundary on SIGTERM"
+            exit 0
           fi
           # FAILS CLOSED. Every read error used to collapse to 0 == "safe to
           # restart", so a renamed field or a Cloudflare hiccup silently

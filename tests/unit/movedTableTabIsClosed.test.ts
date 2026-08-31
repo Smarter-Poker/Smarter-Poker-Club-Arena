@@ -89,6 +89,28 @@ describe('the seat rebuild prunes, not just adds', () => {
     expect(CODE).toMatch(/isTournament: true,\s*\n\s*isMyTurn: false,/);
   });
 
+  it('cannot omit kind again: the compiler is the guard now', () => {
+    /* Dan 2026-08-31. Two rounds of fixing individual factories only moved the
+       hole — a THIRD site (the initial state built from the URL) was still
+       omitting `kind`, and tsc named it the moment the field became required.
+       A required field is the one guard that cannot rot: it is checked on
+       every build rather than by a regex somebody has to keep accurate. This
+       assertion is deliberately about the TYPE, which is the whole mechanism. */
+    expect(CODE).toMatch(/\n\s*kind: 'table' \| 'lobby';/);
+    expect(CODE).not.toMatch(/kind\?: 'table' \| 'lobby';/);
+  });
+
+  it('builds the URL tab with the same fields as the route effect', () => {
+    /* The initial state and the route effect construct the SAME tab from the
+       same URL, and had drifted: the initial one carried neither `kind` nor
+       `gameCode`, so a deep link or a refresh at the table produced a tab the
+       prune could not see and a blank chip in the strip. */
+    expect(CODE).toMatch(/const nameFromUrl = formatGameTitle\(searchParams\.get\('name'\)\)/);
+    expect(CODE).toMatch(
+      /gameCode: searchParams\.get\('code'\) \|\| gameCodeFromName\(nameFromUrl\)/
+    );
+  });
+
   it('still returns the same array reference when nothing changed', () => {
     // The P1-2 render-loop fix depends on this identity bail-out.
     expect(CODE).toMatch(/if \(prunedRef\.current === 0 && additions\.length === 0\) return prev;/);

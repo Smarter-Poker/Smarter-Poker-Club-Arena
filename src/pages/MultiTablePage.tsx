@@ -145,7 +145,21 @@ interface TableInstance {
    *
    * Absent means 'table', so every pre-existing construction site stays valid.
    */
-  kind?: 'table' | 'lobby';
+  /**
+   * REQUIRED, and that is the fix (Dan 2026-08-31).
+   *
+   * This was optional, and three separate factories forgot it — the seat
+   * rebuild, the balancer-move branch, and the initial state built from the
+   * URL. `undefined` is not a harmless default here: a tab with no `kind` was
+   * invisible to the stale-seat prune, so a table the server had closed under
+   * the player stayed on screen, frozen. Two rounds of fixing individual
+   * factories only moved the hole.
+   *
+   * Required means the COMPILER refuses the next factory that forgets, which
+   * is the only guard that cannot itself rot. It is also what found the third
+   * site: tsc named it in one run.
+   */
+  kind: 'table' | 'lobby';
   /**
    * Does the hero hold an ACTIVE SEAT at this table right now?
    *
@@ -519,13 +533,26 @@ export default function MultiTablePage() {
     sessionStorage.removeItem('multi_table_session');
     // Initialize with the table from URL
     if (routeTableId) {
+      /* Dan 2026-08-31: this is the FIRST tab of any session that lands
+         straight on /table/:id — a deep link, a refresh at the table, the dock
+         going back — and it was built with neither `kind` nor `gameCode`,
+         while the route effect below builds the very same tab WITH both. The
+         missing `kind` is what the required type now forbids; the missing
+         `gameCode` made the tab strip show a blank chip until TablePage
+         reported one. Same derivation as the route effect, so the two paths
+         can no longer disagree about a tab they both build. */
+      const nameFromUrl = formatGameTitle(searchParams.get('name')) || 'Table 1';
       return [
         {
           id: routeTableId,
-          name: formatGameTitle(searchParams.get('name')) || 'Table 1',
+          name: nameFromUrl,
           stakes: searchParams.get('stakes') || '',
+          gameCode: searchParams.get('code') || gameCodeFromName(nameFromUrl),
           isMyTurn: false,
           pot: 0,
+          kind: 'table' as const,
+          // `seated` and `isTournament` stay unset on purpose: a URL proves
+          // neither. TABLE_SEATED sets the first, TablePage reports the second.
         },
       ];
     }
@@ -546,6 +573,17 @@ export default function MultiTablePage() {
   // on it (re-running on every tab switch would fight the router), so it reads
   // the live value through a ref instead of closing over a stale one.
   const activeIndexRef = useRef(0);
+  /* Assigned during render, exactly as `tablesRef` is two lines above.
+     Dan 2026-08-31: this used to be written in a passive effect, so between a
+     `setActiveIndex` and the following commit the ref still named the PREVIOUS
+     tab. Six readers consult it — the rebuild's focus restore, the observe
+     slot pick, the tab reorder, both quick-join reads and the route cap
+     branch — and every one of them wants the tab the player is on NOW; none
+     wants the one they were on a commit ago. A bus event landing in that
+     window (a seat, a balancer move) read the stale index and acted on the
+     wrong tab. Assigning here closes the window and matches the idiom this
+     file already uses for the tables array itself. */
+  activeIndexRef.current = activeIndex;
 
   // Swipe tracking refs
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
@@ -563,9 +601,6 @@ export default function MultiTablePage() {
    * past on its way to the borrowed table.
    */
   const pendingTabIndexRef = useRef<number | null>(null);
-  useEffect(() => {
-    activeIndexRef.current = activeIndex;
-  }, [activeIndex]);
 
   /**
    * Every `setActiveIndex` in this file was paired with a bare

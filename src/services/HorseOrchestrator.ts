@@ -110,7 +110,7 @@ interface TableConfig {
 
 const MIDWAY_UNION = {
   name: 'Midway Union',
-  description: 'The premier poker union - all stakes, all games, all action.',
+  description: 'The Premier Poker Union - All Stakes, All Games, All Action.',
   ownerId: '47965354-0e56-43ef-931c-ddaab82af765', // Dan's user ID
   isPublic: true,
   settings: {

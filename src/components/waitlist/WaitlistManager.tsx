@@ -232,7 +232,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
         <div className="seat-status">
           <span className={seatsAvailable > 0 ? 'available' : 'full'}>
             {seatsAvailable > 0
-              ? `${seatsAvailable} seat${seatsAvailable > 1 ? 's' : ''} Available`
+              ? `${seatsAvailable} Seat${seatsAvailable > 1 ? 's' : ''} Available`
               : 'Table Full'}
           </span>
         </div>

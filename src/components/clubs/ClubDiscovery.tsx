@@ -90,7 +90,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
         slug: c.slug,
         name: c.name,
         logo: c.logo_url || c.avatar_url,
-        description: c.description || 'Welcome to our club!',
+        description: c.description || 'Welcome To Our Club!',
         memberCount: c.member_count || 0,
         activeTableCount: c.table_count || 0,
         // No minStakes/maxStakes: clubs has no such columns, so every card

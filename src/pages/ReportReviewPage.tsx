@@ -206,7 +206,7 @@ export default function ReportReviewPage() {
       <ClubIntegrityHeader
         clubId={clubId}
         active="reports"
-        eyebrow="Case intake / conduct signals"
+        eyebrow="Case Intake / Conduct Signals"
         title="Player Report Review"
         description="Triage Player Conduct Signals, Inspect The Evidence, And Record A Moderation Decision Without Leaving The Live Club Workflow."
         metrics={[

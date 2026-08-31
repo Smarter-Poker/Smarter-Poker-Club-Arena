@@ -205,7 +205,7 @@ export default function StatsShareCard({ displayName, stats, styleLabel, styleCo
       const file = new File([blob], 'smarter-poker-stats.png', { type: 'image/png' });
 
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'My Smarter Poker stats' });
+        await navigator.share({ files: [file], title: 'My Smarter Poker Stats' });
         return;
       }
 

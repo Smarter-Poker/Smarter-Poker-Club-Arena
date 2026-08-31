@@ -133,7 +133,7 @@ const WALLET_CONFIG: Record<
   PLAYER: {
     icon: '♠',
     label: 'Player',
-    description: 'Table Buy-ins & Gameplay',
+    description: 'Table Buy-Ins & Gameplay',
     cssClass: 'player',
   },
   PROMO: {

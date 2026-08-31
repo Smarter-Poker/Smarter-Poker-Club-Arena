@@ -1381,6 +1381,7 @@
     "fn_award_share_streak_diamonds",
     "fn_award_vip_credit",
     "fn_award_vip_points_from_rake",
+    "fn_backfill_bomb_multi_winner_units",
     "fn_backfill_bomb_pot_award_units",
     "fn_backfill_position_stats",
     "fn_backfill_rake_attributions",

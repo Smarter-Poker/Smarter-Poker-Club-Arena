@@ -2023,6 +2023,7 @@
     "fn_sync_union_membership_table_counts",
     "fn_table_chat_is_silenced",
     "fn_table_lifecycle_pass",
+    "fn_tables_autostart_guard",
     "fn_tables_creation_guard",
     "fn_tables_sync_rit",
     "fn_take_seat_and_buy_in",

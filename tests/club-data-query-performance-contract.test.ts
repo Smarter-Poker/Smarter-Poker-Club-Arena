@@ -34,6 +34,42 @@ const playerCoveringIndex = readFileSync(
   'utf8'
 );
 const page = readFileSync(resolve(__dirname, '../src/pages/club/ClubDataPage.tsx'), 'utf8');
+const reportingFacts = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20260831010000_club_data_incremental_reporting_facts.sql'
+  ),
+  'utf8'
+);
+const attributionParity = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20260831010001_club_data_rollup_attribution_parity.sql'
+  ),
+  'utf8'
+);
+const cashScope = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20260831010002_club_data_cash_scope_and_search_plan.sql'
+  ),
+  'utf8'
+);
+const unsearchedFastPath = readFileSync(
+  resolve(__dirname, '../supabase/migrations/20260831010003_club_data_unsearched_fast_path.sql'),
+  'utf8'
+);
+const customGamePlan = readFileSync(
+  resolve(__dirname, '../supabase/migrations/20260831010004_club_data_custom_game_plan.sql'),
+  'utf8'
+);
+const boundedSnapshot = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20260831010005_club_data_bounded_snapshot_pipeline.sql'
+  ),
+  'utf8'
+);
 
 describe('Club Data reporting stays inside the authenticated query budget', () => {
   it('covers both high-volume tournament fact reads with partial indexes', () => {
@@ -99,5 +135,77 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
     expect(page).toContain('const PLAYER_REQUEST_TIMEOUT_MS = 25_000;');
     expect(page).toMatch(/'Player data request timed out',\s*PLAYER_REQUEST_TIMEOUT_MS/);
     expect(page).toMatch(/setPlayersLoading\(true\);\s*setPlayersError\(null\);/);
+  });
+
+  it('serves both reports from incrementally maintained daily facts', () => {
+    expect(reportingFacts).toContain('CREATE TABLE IF NOT EXISTS public.ca_club_player_daily');
+    expect(reportingFacts).toContain('CREATE TABLE IF NOT EXISTS public.ca_club_tournament_daily');
+    expect(reportingFacts).toContain(
+      'CREATE TABLE IF NOT EXISTS public.ca_club_tournament_player_daily'
+    );
+    expect(reportingFacts).toContain('CREATE TRIGGER ca_reporting_wallet_insert');
+    expect(reportingFacts).toContain('CREATE TRIGGER ca_reporting_rake_insert');
+    expect(reportingFacts).toContain('pg_advisory_xact_lock(918273645)');
+
+    const gamesStart = reportingFacts.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_club_games');
+    const gamesEnd = reportingFacts.indexOf('$function$;', gamesStart);
+    const games = reportingFacts.slice(gamesStart, gamesEnd);
+    expect(games).toContain('public.ca_club_tournament_daily');
+    expect(games).toContain('public.ca_club_tournament_player_daily');
+    expect(games).not.toContain('public.wallet_transactions');
+    expect(games).not.toContain('public.rake_records');
+
+    const playersStart = reportingFacts.indexOf(
+      'CREATE OR REPLACE FUNCTION public.ca_club_player_breakdown'
+    );
+    const playersEnd = reportingFacts.indexOf('$function$;', playersStart);
+    const players = reportingFacts.slice(playersStart, playersEnd);
+    expect(players).toContain('public.ca_club_player_daily');
+    expect(players).not.toContain('public.wallet_transactions');
+    expect(players).toContain("'is_horse',COALESCE(pr.is_horse,false)");
+  });
+
+  it('preserves tournament home-club attribution without leaking cross-club hands', () => {
+    expect(attributionParity).toContain(
+      'CREATE OR REPLACE FUNCTION public.ca_reporting_tournament_clubs_for_user'
+    );
+    expect(attributionParity).toContain('tb.union_id IS NOT NULL');
+    expect(attributionParity).toContain('WHERE s.club_id=p_club_id');
+    expect(attributionParity).toContain("'is_horse',COALESCE(pr.is_horse,false)");
+  });
+
+  it('keeps tournament tables out of cash and avoids per-row creator probes', () => {
+    expect(cashScope).toContain('tb.tournament_id IS NULL');
+    expect(cashScope).toContain('v_is_tournament_table');
+    expect(cashScope).toContain("COALESCE(pr.username,'') creator_username");
+    expect(cashScope).not.toContain('SELECT 1 FROM public.profiles pr');
+  });
+
+  it('gives empty-search requests a plan with no search expressions', () => {
+    expect(unsearchedFastPath).toContain('public.fn_ca_club_games_unsearched');
+    const unsearchedStart = unsearchedFastPath.indexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_ca_club_games_unsearched'
+    );
+    const unsearchedEnd = unsearchedFastPath.indexOf('$function$;', unsearchedStart);
+    const unsearched = unsearchedFastPath.slice(unsearchedStart, unsearchedEnd);
+    expect(unsearched).not.toContain('p_search');
+    expect(unsearched).not.toContain('||btrim(p_search)||');
+    expect(unsearchedFastPath).toContain("IF NULLIF(btrim(COALESCE(p_search,'')),'') IS NULL THEN");
+  });
+
+  it('replans the game fact query with its actual club and date values', () => {
+    expect(customGamePlan).toContain('RETURN QUERY EXECUTE $query$');
+    expect(customGamePlan).toContain('$query$ USING p_club_id,p_start,p_end,p_game,p_stakes');
+    expect(customGamePlan).toContain('d.club_id=$1');
+    expect(customGamePlan).toContain('d.stat_date BETWEEN $2 AND $3');
+  });
+
+  it('aggregates totals in-database and bounds rows before JSON crosses the RPC', () => {
+    expect(boundedSnapshot).toContain('public.fn_ca_club_game_summary');
+    expect(boundedSnapshot).toContain('public.fn_ca_club_game_rows');
+    expect(boundedSnapshot).toContain('ORDER BY r.started_at DESC NULLS LAST LIMIT $7');
+    expect(boundedSnapshot).toContain(
+      'v_rows:=public.fn_ca_club_game_rows(p_club_id,v_start,v_end,v_game,v_stakes,v_q,v_lim)'
+    );
   });
 });

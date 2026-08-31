@@ -134,7 +134,7 @@ describe('one op id per target, held across a failure', () => {
     // one. Retained across a failure, cleared on a change: both, or neither
     // protection works.
     expect(PAGE).toMatch(
-      /useEffect\(\(\) => \{\s*submissionIdRef\.current = null;\s*opIdsRef\.current = new Map\(\);\s*\},\s*\[amount, selected, clubUuid\]\)/
+      /useEffect\(\(\) => \{\s*submissionIdRef\.current = null;\s*opIdsRef\.current = new Map\(\);\s*setTransferRecovery\(null\);\s*\},\s*\[amount, selected, clubUuid\]\)/
     );
   });
 

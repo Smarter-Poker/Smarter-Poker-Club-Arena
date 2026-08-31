@@ -190,7 +190,7 @@ describe('who is offered a hunt, and for how many cards', () => {
     // quietly stopped working on that table with nothing to say why — the exact
     // blind spot that would have hidden the RIT bug above.
     const at = SETTLEMENT.indexOf('rabbitHuntOffers.set');
-    const block = sliceMethod(SETTLEMENT, 'protected async handleHandCompleteEvent(');
+    const block = sliceMethod(SETTLEMENT, 'private async settleCompletedHand(');
     expect(block).toMatch(/reportError\(err, 'ServerTableEngine\.rabbit_hunt_capture_error'\)/);
   });
 

@@ -58,6 +58,35 @@ describe('the DB seat gate agrees with the TS seat gate', () => {
     expect(sql).toMatch(/held_from_this_satellite/);
     expect(sql).toMatch(/source_satellite_id/);
   });
+
+  /**
+   * AND THEY AGREE ABOUT WHERE "OPEN" ENDS (2026-08-31).
+   *
+   * The two gates agreed that a RUNNING target in late reg is open and then
+   * disagreed by one level about when late reg stops, because
+   * `tournaments.current_level` is a ZERO-BASED index and the DB gate closed on
+   * `> v_cap` while every other reader on the platform closes on `>=`. The DB
+   * gate also never read `prize_pool_finalized`, so it would seat a winner into
+   * an event whose payout ladder had already been sized — inserting a
+   * tournament_players row, a buy-in into the finalized prize_pool, a rake row
+   * and a payout row after the fact.
+   *
+   * `isSatelliteTargetOpen` above is pinned at the same boundary by
+   * satelliteTargetOpen.test.ts. These two pins are the same rule, once on
+   * each side of the wire.
+   */
+  it('the latest fn_award_satellite_seat closes AT the cap, not one level past it', () => {
+    const sql = latestFnDefinition();
+    expect(sql).toMatch(/COALESCE\(v_t\.current_level, 0\) >= v_cap/);
+    // The post-apply assertion that the off-by-one cannot come back.
+    expect(sql).toMatch(/the off-by-one level guard survived the rewrite/);
+  });
+
+  it('the latest fn_award_satellite_seat refuses a finalized prize pool', () => {
+    const sql = latestFnDefinition();
+    expect(sql).toMatch(/prize_pool_finalized/);
+    expect(sql).toMatch(/target_pool_finalized/);
+  });
 });
 
 describe('a cross-satellite double win pays the ticket value', () => {
@@ -76,6 +105,30 @@ describe('a cross-satellite double win pays the ticket value', () => {
     // the flag (undefined) and a same-satellite re-drive (true) both fall
     // through to the silent path.
     expect(MANAGER).not.toMatch(/held_from_this_satellite !== true/);
+  });
+});
+
+describe('the gate is given the columns it decides on', () => {
+  /**
+   * A gate that reads a column the query never selected returns `undefined`,
+   * which is falsy, which silently means "not finalized" — the exact bug the
+   * finalized check exists to close. The select list and the gate have to move
+   * together.
+   */
+  it('the satellite target read fetches prize_pool_finalized and the level fields', () => {
+    const selectList = MANAGER.match(/'id, name, buy_in_amount, buy_in_fee, status[^']*'/);
+    expect(selectList, 'the satellite target select list moved').not.toBeNull();
+    const list = selectList![0];
+    for (const col of [
+      'current_level',
+      'late_reg_levels',
+      'rebuy_levels',
+      'current_players',
+      'max_players',
+      'prize_pool_finalized',
+    ]) {
+      expect(list, `satellite target select is missing ${col}`).toContain(col);
+    }
   });
 });
 

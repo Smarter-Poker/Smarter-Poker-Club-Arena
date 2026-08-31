@@ -782,11 +782,10 @@ function RoleSection({
   // FUND THEM NOW?
   // ───────────────────────────────────────────────────────────────────────────
   // A promotion assigns the TERMS - commission, rakeback, prepaid or a credit
-  // line. It does not put a single chip in the agent wallet, and a prepaid
-  // agent with an empty wallet cannot send anything at all: fn_agent_wallet_send
-  // refuses them for want of float, and the credit path is closed to them by
-  // definition. The person who just promoted them is, right now, the person
-  // holding the club bank and standing in front of the screen that can fix it.
+  // line. It does not put a single chip in the agent wallet. A credit LIMIT is
+  // authorization, never an automatic transfer. The owner must deliberately
+  // send chips through the audited club-bank cashier when they want to fund the
+  // wallet; this prompt merely offers that separate action.
   //
   // Asked rather than done. Funding somebody is a transfer of chips and it is
   // not implied by choosing their commission rate, so this offers the step and

@@ -566,13 +566,14 @@ export class TournamentManager extends TournamentManagerEliminations {
       current_level: number | null;
       late_reg_levels: number | null;
       rebuy_levels: number | null;
+      prize_pool_finalized: boolean | null;
     }
     let target: SatelliteTarget | null = null;
     if (targetId) {
       const { data, error: targetErr } = await supabase
         .from('tournaments')
         .select(
-          'id, name, buy_in_amount, buy_in_fee, status, max_players, current_players, current_level, late_reg_levels, rebuy_levels'
+          'id, name, buy_in_amount, buy_in_fee, status, max_players, current_players, current_level, late_reg_levels, rebuy_levels, prize_pool_finalized'
         )
         .eq('id', targetId)
         .maybeSingle();

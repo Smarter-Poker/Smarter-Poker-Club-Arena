@@ -41,6 +41,7 @@ const DECOMMISSIONED_THREE_BAR_PATHS = new Set([
   '/hub/club-arena/images/btn-hamburger.png',
   '/hub/club-arena/images/btn-hamburger.webp',
   '/hub/club-arena/images/global-header/menu.png',
+  '/hub/club-arena/images/global-header/global-header-approved-source.png',
   '/hub/club-arena/images/global-header/global-header-desktop.png',
 ]);
 // How stale a cached media entry may be before it is REALLY revalidated.

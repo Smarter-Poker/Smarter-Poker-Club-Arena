@@ -1279,7 +1279,8 @@
       "mint_since_prev",
       "burn_since_prev",
       "delta_vs_prev",
-      "unexplained"
+      "unexplained",
+      "tournament_liability"
     ],
     "ca_treasury_baseline": [
       "club_id",

@@ -176,6 +176,7 @@ test.describe('production Daily Missions certification', () => {
         const balanceBefore = await diamondBalance(environment, account!.id);
         const reroll = missions.rerollButton();
         await expect(reroll).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
+        await missions.placeControlInSafeViewport(reroll);
         await reroll.click();
         const confirmation = page.getByRole('group', { name: /^Confirm reroll for / });
         await expect(confirmation).toBeVisible();
@@ -213,6 +214,7 @@ test.describe('production Daily Missions certification', () => {
         const balanceBefore = await diamondBalance(environment, account!.id);
         const buy = page.getByRole('button', { name: /Buy Streak Freeze/ });
         await expect(buy).toBeEnabled({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
+        await missions.placeControlInSafeViewport(buy);
         let calls = 0;
         const onRequest = (request: Request) => {
           if (request.url().includes('/rest/v1/rpc/buy_streak_freeze')) calls += 1;
@@ -270,6 +272,7 @@ test.describe('production Daily Missions certification', () => {
 
       await test.step('claim-all settles chips and diamonds once and replays its receipt', async () => {
         const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
+        await missions.placeControlInSafeViewport(claim);
         let claimCalls = 0;
         const onRequest = (request: Request) => {
           if (request.url().includes('/rest/v1/rpc/claim_daily_challenges')) claimCalls += 1;
@@ -347,7 +350,9 @@ test.describe('production Daily Missions certification', () => {
             response.url().includes('/rest/v1/user_notification_preferences'),
           { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
         );
-        await page.getByRole('button', { name: 'Turn Off Without Reconnecting' }).click();
+        const turnOff = page.getByRole('button', { name: 'Turn Off Without Reconnecting' });
+        await missions.placeControlInSafeViewport(turnOff);
+        await turnOff.click();
         expect((await update).ok()).toBe(true);
         // Headless and policy-managed browsers can truthfully remain "Blocked
         // In Browser Settings" after opt-out. The stable UI contract is that
@@ -387,7 +392,9 @@ test.describe('production Daily Missions certification', () => {
           (response) => response.url().includes('/rest/v1/rpc/get_daily_challenge_dashboard'),
           { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
         );
-        await page.getByRole('button', { name: 'Retry Sync' }).click();
+        const retry = page.getByRole('button', { name: 'Retry Sync' });
+        await missions.placeControlInSafeViewport(retry);
+        await retry.click();
         expect((await recovered).ok()).toBe(true);
         await expect(page.getByRole('alert')).toHaveCount(0, {
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,

@@ -69,6 +69,10 @@ describe('Daily Missions production certification', () => {
     const page = source('src/pages/DailyChallengesPage.tsx');
     expect(page).toContain("import { createPortal } from 'react-dom'");
     expect(page).toContain('document.body');
+    const pageObject = source('tests/e2e/support/DailyMissionsPage.ts');
+    expect(pageObject).toContain('placeControlInSafeViewport');
+    expect(pageObject).toContain("block: 'center'");
+    expect(pageObject).toContain("getByRole('navigation', { name: 'Club Arena' })");
   });
 
   it('keeps every mission control above the fixed Club Arena footer', () => {

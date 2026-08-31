@@ -1,4 +1,10 @@
-import { expect, type BrowserContext, type Page, type Response } from '@playwright/test';
+import {
+  expect,
+  type BrowserContext,
+  type Locator,
+  type Page,
+  type Response,
+} from '@playwright/test';
 
 import { ensurePlayableProfile } from './ensurePlayableProfile';
 import type { TemporaryCustomizationAccount } from './temporaryCustomizationAccount';
@@ -136,6 +142,29 @@ export class DailyMissionsPage {
       (response) => response.url().includes('/rest/v1/rpc/get_daily_challenge_dashboard'),
       { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
     );
+  }
+
+  /**
+   * Fixed artwork navigation is intentionally opaque and interactive. Browser
+   * visibility APIs do not subtract fixed overlays, so a control can be
+   * reported visible while its click point belongs to the footer. Always
+   * center mission controls before activation, then prove their entire hit
+   * target is above the live footer geometry.
+   */
+  async placeControlInSafeViewport(control: Locator): Promise<void> {
+    await control.evaluate((element) => {
+      element.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+    });
+    await expect
+      .poll(async () => {
+        const [controlBox, footerBox] = await Promise.all([
+          control.boundingBox(),
+          this.page.getByRole('navigation', { name: 'Club Arena' }).boundingBox(),
+        ]);
+        if (!controlBox || !footerBox) return false;
+        return controlBox.y + controlBox.height <= footerBox.y - 8;
+      })
+      .toBe(true);
   }
 
   rerollButton() {

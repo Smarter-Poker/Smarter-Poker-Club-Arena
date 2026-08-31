@@ -2271,6 +2271,10 @@ export default function TablePage({
    * variant correctly and the people never got to play it at all.
    */
   const [pineappleDeadline, setPineappleDeadline] = useState<number | null>(null);
+  /** Hero's hole cards as `${rank}${suit}` in the ENGINE's delivery order, which
+   *  cards_pre_sort re-orders for display. `submitDiscard` indexes into this
+   *  one, never into what the felt shows. Written in handleHoleCardPayload. */
+  const heroEngineCardOrderRef = useRef<string[] | null>(null);
   const heroPineappleCards = useMemo(() => {
     if (tableState.engineStage !== 'pineapple_discard') return null;
     const hero = tableState.players[tableState.heroSeat - 1];
@@ -2305,9 +2309,26 @@ export default function TablePage({
   }, [pineappleDeadline]);
 
   const handlePineappleDiscard = useCallback(
-    async (cardIndex: number): Promise<boolean> => {
+    async (displayIndex: number): Promise<boolean> => {
       if (!tableId) return false;
-      const res = await GameServerAPI.submitDiscard(tableId, cardIndex);
+      const shown = heroPineappleCards;
+      if (!shown || !shown[displayIndex]) return false;
+      const chosen = shown[displayIndex];
+
+      /* ── DISCARD THE CARD THE PLAYER POINTED AT ────────────────────────────
+         The panel hands back an index into what it RENDERED, which
+         cards_pre_sort has re-ordered. `performDiscard` splices
+         `player.cards[cardIndex]` - the engine's own delivery order. Translate
+         by identity through the order recorded in handleHoleCardPayload; fall
+         back to the display index only when that record is missing (a mid-hand
+         mount that recovered cards by polling), which is the pre-existing
+         behaviour and no worse than it was. */
+      const key = `${chosen.rank}${chosen.suit}`;
+      const engineOrder = heroEngineCardOrderRef.current;
+      let engineIndex = engineOrder ? engineOrder.indexOf(key) : -1;
+      if (engineIndex < 0) engineIndex = displayIndex;
+
+      const res = await GameServerAPI.submitDiscard(tableId, engineIndex);
       if (!res?.success) {
         reportError(
           new Error(res?.error || 'submitDiscard rejected by engine'),
@@ -2315,10 +2336,34 @@ export default function TablePage({
         );
         return false;
       }
+
+      /* Take it off the felt NOW. The engine re-pushes the remaining two cards
+         through table_hole_cards and that is still the authority, but it is a
+         round trip through Postgres and Realtime; the card the player just
+         threw away must not linger in their hand while it happens. Removing it
+         here also closes the picker, because `heroPineappleCards` requires
+         exactly three. */
+      if (engineOrder) {
+        heroEngineCardOrderRef.current = engineOrder.filter((_, i) => i !== engineIndex);
+      }
+      setTableState((prev) => {
+        const players = [...prev.players];
+        const heroIdx = players.findIndex((pl) => pl && pl.id === userId);
+        const hero = heroIdx >= 0 ? players[heroIdx] : null;
+        if (!hero || !hero.holeCards || hero.holeCards.length !== 3) return prev;
+        const at = hero.holeCards.findIndex((c) => c && `${c.rank}${c.suit}` === key);
+        if (at < 0) return prev;
+        players[heroIdx] = {
+          ...hero,
+          holeCards: hero.holeCards.filter((_, i) => i !== at),
+        };
+        return { ...prev, players };
+      });
+
       soundService.playFold();
       return true;
     },
-    [tableId]
+    [tableId, userId, heroPineappleCards]
   );
 
   /**
@@ -7839,6 +7884,21 @@ export default function TablePage({
               rank: c.rank,
               suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
             }));
+            /* ═══ THE ENGINE'S OWN CARD ORDER, KEPT SEPARATELY (2026-08-31) ═══
+               `submitDiscard` takes an INDEX into the engine's `player.cards`
+               array. Two lines below, cards_pre_sort re-orders this array for
+               display — so on every table with that setting on (it is on by
+               default) the index the player clicked and the index the engine
+               splices were DIFFERENT ARRAYS. Dan, from a live Crazy Pineapple
+               seat: "IT DOESN'T REMOVE THE CARD FROM YOU HAND AFTER YOU
+               DISCARD IT." It removed a card - just not the one he picked, and
+               since the felt never repainted (see the '*' on the subscription
+               below) nothing about the hand appeared to change at all.
+
+               So the unsorted delivery order is kept here, and
+               handlePineappleDiscard translates the clicked card back into it
+               by identity. Display order stays whatever the player asked for. */
+            heroEngineCardOrderRef.current = formattedCards.map((c: Card) => `${c.rank}${c.suit}`);
             // Bible V8 §11.1: cards_pre_sort — sort by rank high→low
             // FIX-232: Use ref to avoid stale closure (callback deps are [userId] only)
             if (cardsPreSortRef.current) formattedCards = sortCardsByRank(formattedCards);
@@ -7858,11 +7918,21 @@ export default function TablePage({
     [userId]
   );
 
+  /* ═══ 'INSERT' MISSED EVERY PINEAPPLE DISCARD (2026-08-31) ═════════════
+     `insert_hole_cards` is an upsert - `ON CONFLICT (table_id, hand_number,
+     user_id) DO UPDATE SET cards = EXCLUDED.cards` (20260312_secure_hole_
+     cards_fix.sql). The deal is the INSERT; the engine's re-push of the hero's
+     remaining two cards after `performDiscard` splices one out hits the same
+     unique key and is therefore an UPDATE. Subscribing to INSERT only meant
+     the client was never told, and the third card sat on the felt for the rest
+     of the hand. Every other hole-card re-push - a RESYNC, a reconnect - was
+     invisible for the same reason. '*' is INSERT + UPDATE + DELETE, and the
+     handler already reads `payload.new`, which UPDATE carries. */
   useMasterBusChannel({
     channelName: `table-cards-secure-${tableId}-${userId}`,
     table: 'table_hole_cards',
     filter: tableId ? `table_id=eq.${tableId}` : null,
-    event: 'INSERT',
+    event: '*',
     onPayload: handleHoleCardPayload,
     enabled: !!tableId && !!userId,
   });

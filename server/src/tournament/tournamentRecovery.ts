@@ -519,6 +519,48 @@ export async function recoverStuckCompletingTournaments(
           .sort((a, b) => Number(b.chips || 0) - Number(a.chips || 0));
 
         /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  YOU CANNOT RANK A PODIUM OUT OF PLAYERS WHO NEVER SAT (2026-08-31)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * `alive` deliberately includes `registered` rows, because a genuine
+         * late registrant can still be waiting on ensureLateRegSeated when a
+         * decided game is recovered, and that player is owed their place.
+         *
+         * But when EVERY alive row is `registered`, nobody in that set has
+         * been dealt a card in this event. They all hold the same starting
+         * stack, so the `chips` sort that assigns places 1..N is not a
+         * ranking at all — it is arbitrary order, and the recovery pays the
+         * whole published structure against it.
+         *
+         * MEASURED LIVE. Sunday $200 Deep Stack dfae9288 on 2026-08-30 at
+         * 19:47 UTC — 73 minutes BEFORE its own start — was walked through
+         * this path and paid places 1..9 (20,880 chips) to registered
+         * entrants. Two of them, be61d864 and 484d22c4, were handed 1st and
+         * 2nd; when the event actually ran they finished 107th and 87th. The
+         * real podium was then paid a second time by
+         * fn_tournament_payout_reconcile at 02:32, whose key is
+         * `...:prize:{user}:{place}:reconcile` and so does not dedupe against
+         * this path's `...:prize:place:{N}`. The event disbursed 62,841.60
+         * against a 44,640.00 pool — 141%.
+         *
+         * A tournament with no `playing` row is not a decided tournament, it
+         * is one that never dealt. Pay nobody, say so, and leave it COMPLETING
+         * for the reconciler or a human — the same stance this function
+         * already takes for a position collision below.
+         */
+        const anyDealtIn = alive.some((r) => r.status === 'playing');
+        if (alive.length > 0 && !anyDealtIn) {
+          reportError(
+            new Error(
+              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" — all ${alive.length} surviving entrant(s) are still 'registered', so none of them has been dealt a card in this event. Ranking them by chips would invent a podium. Paying nobody; left COMPLETING for review.`
+            ),
+            'GameServer.recoverStuckCompleting_no_dealt_in_survivor'
+          );
+          continue;
+        }
+
+        /**
          * PAYOUT-INTEGRITY 2026-08-25: places must be DISTINCT here too.
          *
          * The survivors are handed places 1..alive.length unconditionally,

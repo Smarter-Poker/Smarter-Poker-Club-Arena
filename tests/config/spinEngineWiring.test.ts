@@ -133,7 +133,20 @@ describe('the draw happens at START, nowhere else', () => {
 
   it('creation writes a NULL multiplier for the start path to key on', () => {
     expect(spinInsertBlock(recurring)).toMatch(/spin_multiplier:\s*null/);
-    expect(spinInsertBlock(orchestrator)).toMatch(/spin_multiplier:\s*null/);
+  });
+
+  /**
+   * STRONGER THAN THE OLD PIN (2026-08-30 audit). This used to require the
+   * ORCHESTRATOR's own Spin insert to write spin_multiplier: null. That
+   * client insert is gone: HorseOrchestrator.launchSpin had no production
+   * caller, registered horses instead of selling seats, and then overwrote
+   * current_players with its own counter - the documented "0/3 with paid
+   * seats" shape. A creation path that does not exist cannot leak a draw, so
+   * the pin moved from "creates safely" to "does not create at all".
+   */
+  it('the client orchestrator does not create Spins at all', () => {
+    expect(orchestratorRaw).not.toMatch(/tournament_type:\s*'SPIN'/);
+    expect(orchestratorRaw).toMatch(/launchSpin is retired/);
   });
 
   it('creation does not put a multiplier-derived amount in prize_pool', () => {
@@ -146,7 +159,7 @@ describe('the draw happens at START, nowhere else', () => {
     const body = recurring.slice(i, next > i ? next : undefined);
     expect(body).not.toMatch(/prize_pool:\s*prizePool/);
     expect(body).not.toMatch(/buyIn\s*\*\s*multiplier/i);
-    expect(spinInsertBlock(orchestrator)).toMatch(/prize_pool:\s*0/);
+    // (the orchestrator no longer has a Spin insert to check - see the pin above)
   });
 
   it('no client-side draw survives anywhere', () => {

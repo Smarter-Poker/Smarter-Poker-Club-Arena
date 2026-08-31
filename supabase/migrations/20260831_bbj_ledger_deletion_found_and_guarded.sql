@@ -1,3 +1,17 @@
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║ SUPERSEDED IN PART, SAME DAY. The re-baseline this file performs was  ║
+-- ║ REVERTED by 20260831_revert_bbj_rebaseline_the_alarm_stays_red.sql.   ║
+-- ║ Its stated composition is wrong (the "sixteen deleted payout rows"    ║
+-- ║ fingerprint compares one pool's total_paid_out against two pools'     ║
+-- ║ payout rows, and 41,096.65 of the drift is measurably March portion   ║
+-- ║ shortfall), and rebaselining overrode a deliberate standing decision  ║
+-- ║ taken while a GLOBAL_SETTLEMENT_FREEZE is open on this exact          ║
+-- ║ investigation. WHAT SURVIVES AND IS STILL LIVE: the                   ║
+-- ║ bbj_ledger_deletions table, fn_bbj_ledger_delete_guard and its three  ║
+-- ║ triggers. Kept in the tree unedited so the audit trail shows what was ║
+-- ║ applied, not a tidied version of it.                                  ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
 -- Repo copy of production migration `bbj_ledger_deletion_found_and_guarded`
 -- (applied 2026-08-31 via Supabase MCP). See
 -- docs/changelog/2026-08-31-outage-money-repair-and-bbj-ledger-deletion.md.

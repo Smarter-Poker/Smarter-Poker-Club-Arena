@@ -1,0 +1,200 @@
+#!/usr/bin/env node
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  check-nav-title-case — the half of the Title Case rule nothing was enforcing
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Dan 2026-08-21: "First letter of every word is capitalized, that's a hard rule
+ * for all forward facing pages."
+ * Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU MUST
+ * BE CAPITALIZED. AS WELL AS EVERY CLICKABLE PAGE AND SUBPAGE."
+ *
+ * WHY A SECOND GATE, AND NOT A WIDENING OF check-title-case.mjs
+ *
+ * That gate says, in its own header, exactly what it does not cover:
+ *
+ *   "WHAT IT DOES NOT TOUCH
+ *      - anything inside {} - those are expressions, and their values are cased
+ *        at their source (or by formatPopupText for toasts)"
+ *
+ * That is a correct decision - a parser cannot tell a CSS value from prose - and
+ * it makes a PROMISE: expression values are cased AT THEIR SOURCE. Nothing
+ * enforced the promise. Every navigation surface in Club Arena renders its copy
+ * from a config registry through an expression (`{item.label}`), so all of it
+ * fell in the gap between the two halves of the rule:
+ *
+ *   ArenaSectionRail, ClubOperationsRail, QuickActionsBar, Breadcrumbs,
+ *   ClubBottomNav, HamburgerMenu - six surfaces, one blind spot.
+ *
+ * Measured when this was written: 55 label/description/eyebrow literals across
+ * the three navigation registries were not Title Cased, and had never been,
+ * because the only gate that could have seen them is documented not to look.
+ * The hamburger was made to case its own labels at render on 2026-08-30, which
+ * fixed what a player saw in ONE drawer and left the same strings wrong
+ * everywhere else they are rendered.
+ *
+ * So this gate holds the source end of that promise: in the navigation
+ * registries, a `label`, `description` or `eyebrow` string literal must already
+ * be Title Cased when it is written down. Fix it once, and every surface that
+ * renders it is correct - including surfaces nobody has built yet.
+ *
+ * SCOPE IS DELIBERATELY NARROW. Only the files in REGISTRIES below, and only
+ * those three keys. These are navigation registries whose every string is
+ * forward-facing menu copy by construction, which is what makes casing them
+ * unambiguous - the exact property the sibling gate could not get from arbitrary
+ * expressions. Do not widen this to "all string literals"; that is the mistake
+ * check-title-case.mjs correctly refused to make.
+ *
+ * Run:  node scripts/ci/check-nav-title-case.mjs [--fix]
+ */
+
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import ts from 'typescript';
+
+const ROOT = new URL('../../', import.meta.url).pathname;
+
+/**
+ * Navigation registries: every label/description/eyebrow here is menu copy.
+ *
+ * The last two are components rather than config files, because they define
+ * their destination lists inline. Their labels were already correct when this
+ * gate was written - they are listed so they cannot QUIETLY stop being correct,
+ * which is the entire failure mode this gate exists for. A rule that covers
+ * only the places currently broken is a cleanup, not a gate.
+ */
+const REGISTRIES = [
+  'src/config/clubArenaNavigation.ts',
+  'src/config/arenaSectionNavigation.ts',
+  'src/config/clubOperationsNavigation.ts',
+  'src/config/clubIntegrityNavigation.ts',
+  'src/components/navigation/QuickActionsBar.tsx',
+  'src/components/club/ClubBottomNav.tsx',
+];
+
+const KEYS = new Set(['label', 'description', 'eyebrow']);
+
+/** Same list as check-title-case.mjs and src/utils/titleCase.ts. */
+const ACRONYMS = new Set([
+  'nlh', 'nlhe', 'plo', 'plo4', 'plo5', 'plo6', 'plo8', 'flh', 'flo', 'ofc',
+  'nl', 'pl', 'fl', 'sng', 'mtt', 'xmtt', 'pko', 'ko', 'gtd', 'hu', 'wsop',
+  'bbj', 'vip', 'id', 'utg', 'sb', 'bb', 'btn', 'co', 'mp', 'hj', 'lj',
+  'rit', 'gto', 'ev', 'roi', 'itm', 'usd', 'kyc', 'tos', 'faq', 'api', 'url',
+  'pc', 'ios', 'os', 'ui', 'ux', 'qr', 'sms', 'otp', '2fa',
+]);
+
+/**
+ * Capitalise the first letter of every word. Byte-for-byte the same rule as
+ * check-title-case.mjs: interior capitals preserved, acronyms shouted, tokens
+ * starting with a digit left alone. Two gates that disagree about what Title
+ * Case IS would each be "fixing" the other's output forever.
+ */
+export function titleCaseText(text) {
+  return text.replace(/[A-Za-z][A-Za-z0-9'’]*/g, (word, offset, whole) => {
+    const before = whole.slice(Math.max(0, offset - 1), offset);
+    if (before === '&') return word;
+    if (/^[0-9]/.test(word)) return word;
+    const lower = word.toLowerCase();
+    if (ACRONYMS.has(lower)) return lower.toUpperCase();
+    if (word.length > 1 && word === word.toUpperCase()) return word;
+    return word.charAt(0).toUpperCase() + word.slice(1);
+  });
+}
+
+const fix = process.argv.includes('--fix');
+const offenders = [];
+let fixedNodes = 0;
+let fixedFiles = 0;
+
+for (const rel of REGISTRIES) {
+  const file = join(ROOT, rel);
+  let original;
+  try {
+    original = readFileSync(file, 'utf8');
+  } catch {
+    // A registry that has been renamed or removed is not this gate's business.
+    continue;
+  }
+
+  const sf = ts.createSourceFile(
+    rel,
+    original,
+    ts.ScriptTarget.Latest,
+    true,
+    rel.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  );
+  const changes = [];
+
+  const visit = (node) => {
+    if (
+      ts.isPropertyAssignment(node) &&
+      ts.isIdentifier(node.name) &&
+      KEYS.has(node.name.text) &&
+      ts.isStringLiteral(node.initializer)
+    ) {
+      const value = node.initializer.text;
+      const cased = titleCaseText(value);
+      if (cased !== value) {
+        changes.push({
+          key: node.name.text,
+          value,
+          cased,
+          // The literal's own span, quotes included, so the replacement keeps
+          // whatever quote style the file already uses.
+          start: node.initializer.getStart(sf),
+          end: node.initializer.getEnd(),
+          line: original.slice(0, node.initializer.getStart(sf)).split('\n').length,
+        });
+      }
+    }
+    node.forEachChild(visit);
+  };
+  visit(sf);
+
+  if (changes.length === 0) continue;
+
+  if (fix) {
+    let out = original;
+    // Back to front, so earlier offsets stay valid.
+    for (let i = changes.length - 1; i >= 0; i--) {
+      const c = changes[i];
+      const quote = original[c.start];
+      // Only quote styles that need no escaping analysis. A template literal or
+      // a value containing the quote character is reported, never rewritten.
+      if ((quote !== "'" && quote !== '"') || c.cased.includes(quote)) continue;
+      out = out.slice(0, c.start) + quote + c.cased + quote + out.slice(c.end);
+      fixedNodes++;
+    }
+    if (out !== original) {
+      writeFileSync(file, out, 'utf8');
+      fixedFiles++;
+    }
+  } else {
+    for (const c of changes) {
+      offenders.push(`${rel}:${c.line}: ${c.key}: "${c.value}"  ->  "${c.cased}"`);
+    }
+  }
+}
+
+if (fix) {
+  console.log(
+    `check-nav-title-case: fixed ${fixedNodes} navigation label(s) across ${fixedFiles} registry file(s).`
+  );
+  process.exit(0);
+}
+
+if (offenders.length > 0) {
+  console.error(
+    '\ncheck-nav-title-case FAILED: navigation copy is not Title Cased at its source.\n'
+  );
+  console.error('These strings are rendered through an expression ({item.label}), which');
+  console.error('check-title-case.mjs deliberately does not inspect - it assumes they are');
+  console.error('cased at their source. This gate is that assumption.');
+  console.error('Run: node scripts/ci/check-nav-title-case.mjs --fix\n');
+  offenders.slice(0, 60).forEach((o) => console.error('  ' + o));
+  if (offenders.length > 60) console.error(`  ... and ${offenders.length - 60} more`);
+  console.error('');
+  process.exit(1);
+}
+
+console.log('check-nav-title-case: OK - every navigation label is Title Cased at its source.');

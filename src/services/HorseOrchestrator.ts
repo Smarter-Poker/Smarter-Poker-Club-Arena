@@ -25,7 +25,6 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { SPIN_TIERS, SPIN_SEATS as SPEC_SPIN_SEATS } from '../config/spinSpec';
 import { HydraService } from './HydraService';
 import { tournamentService } from './TournamentService';
 import { QUERY_LIMITS } from '../lib/constants';
@@ -1635,114 +1634,23 @@ class HorseOrchestrator {
     return { launched, totalRegistered };
   }
 
-  /** Create a Spin & Go with random multiplier */
+  /**
+   * RETIRED (2026-08-30 audit). Spin creation is SERVER-AUTHORITATIVE:
+   * TournamentRecurringService.createSpin is the only creation path. This
+   * client path had no production caller (window-debug only) and violated the
+   * seat-first law two ways: it registered horses via registerPlayer instead
+   * of selling seats, then overwrote current_players with its own counter —
+   * the exact overwrite documented in createSpin as the cause of the
+   * "0/3 with paid seats" incident. It now refuses loudly instead of
+   * carrying a second, drifting copy of the spin creation logic.
+   */
   async launchSpin(
-    configIndex: number = 0
+    _configIndex: number = 0
   ): Promise<{ tournamentId: string | null; registered: number; multiplier: number }> {
-    const config = SPIN_CONFIGS[configIndex];
-    if (!config) return { tournamentId: null, registered: 0, multiplier: 0 };
-
-    // ── AUDIT FIX 2026-08-20 (second pass) ────────────────────────────────
-    // This path's original defects (a local EV-2.75 ladder, a buy-in fee,
-    // the inflated per-seat prize formula) were fixed earlier today by
-    // routing its draw through the reserve-gated RPC. That was still wrong
-    // in a deeper way: ANY multiplier decided at creation sits readable on
-    // the row for the minute before start — and even with every label
-    // hidden, prize_pool = buyIn x multiplier leaks it arithmetically to a
-    // lobby client doing division.
-    //
-    // So this path no longer decides anything about the multiplier. It
-    // writes the same pre-draw shape as TournamentRecurringService.createSpin
-    // — spin_multiplier NULL, prize_pool 0, smallest-tier placeholder
-    // structure — and the engine draws through the reserve gate at START,
-    // settles the pool in the same breath, and rewrites stack, blinds and
-    // payouts from the real tier. One draw site, zero seconds of
-    // readable-but-unsettled state.
-    const placeholderTier = SPIN_TIERS[0];
-
-    try {
-      const gameTypeMap: Record<string, string> = {
-        nlh: 'NLH',
-        plo4: 'PLO4',
-        plo5: 'PLO5',
-        plo8: 'PLO8',
-        short_deck: 'SHORT_DECK',
-      };
-      const dbGameType = gameTypeMap[config.gameVariant || 'nlh'] || 'NLH';
-
-      const { data: spin, error } = await supabase
-        .from('tournaments')
-        .insert({
-          club_id: this.getNextClubId(),
-          // The name must not carry the multiplier — and cannot, since no
-          // multiplier exists yet.
-          name: config.name,
-          game_type: dbGameType,
-          // Lowercase + tournament_type, matching every other creation path.
-          // 'SPIN' alone failed the engine's `variant === 'spin'` check AND
-          // slipped past a case-sensitive constraint.
-          variant: 'spin',
-          tournament_type: 'SPIN',
-          // NULL is what the engine's start-time draw path keys on.
-          spin_multiplier: null,
-          buy_in_amount: config.buyIn,
-          buy_in_fee: 0,
-          guaranteed_prize: 0,
-          prize_pool: 0,
-          starting_chips: placeholderTier.startingStack,
-          max_players: SPEC_SPIN_SEATS,
-          min_players: SPEC_SPIN_SEATS,
-          current_players: 0,
-          status: 'REGISTERING',
-          blind_structure: config.blindStructure,
-          payout_structure: [{ place: 1, percentage: 100 }],
-          late_reg_levels: 0,
-          late_reg_mins: 0,
-          start_time: new Date(Date.now() + 10_000).toISOString(),
-        })
-        .select()
-        .maybeSingle();
-
-      if (error) {
-        this.logError(`Spin creation failed: ${error.message}`);
-        return { tournamentId: null, registered: 0, multiplier: 0 };
-      }
-
-      const { tournamentService } = await import('./TournamentService');
-      const horses = await HydraService.getAvailableHorses(config.horsesToRegister);
-      let registered = 0;
-
-      for (const horse of horses) {
-        try {
-          // Use atomic tournament registration which deducts buy-in and validates wallet
-          await tournamentService.registerPlayer(spin.id, horse.id, horse.name);
-          registered++;
-        } catch (err: any) {
-          console.error(
-            `[Orchestrator] Failed to register horse ${horse.name} for Spin: ${err.message}`
-          );
-          // Continue with next horse instead of failing entire Spin launch
-        }
-      }
-
-      await supabase
-        .from('tournaments')
-        .update({
-          current_players: registered,
-          status: 'REGISTERING',
-        })
-        .eq('id', spin.id);
-
-      console.debug(
-        `[Orchestrator] Spin "${config.name}" created with ${registered} horses - multiplier drawn at start`
-      );
-      // multiplier: 0 is honest — it has not been drawn yet. Callers that
-      // want the drawn value read spin_multiplier off the row after start.
-      return { tournamentId: spin.id, registered, multiplier: 0 };
-    } catch (err: any) {
-      this.logError(`Spin launch error: ${err.message}`);
-      return { tournamentId: null, registered: 0, multiplier: 0 };
-    }
+    this.logError(
+      'launchSpin is retired: Spins are created server-side by TournamentRecurringService.createSpin. No Spin was created.'
+    );
+    return { tournamentId: null, registered: 0, multiplier: 0 };
   }
 
   /** Launch ALL Spin configs */

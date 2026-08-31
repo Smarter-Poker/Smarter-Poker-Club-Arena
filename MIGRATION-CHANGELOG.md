@@ -16386,3 +16386,30 @@ both sides, ui-text gate green.
 **Why:** Every escrow debit and closing credit needs an immutable, joinable audit contract.
 **Verified:** YES — cancel/redeem and their retries passed; each produced exactly one ticket-linked receipt and credited exactly one cent in a rolled-back production transaction.
 **TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #157 — Cashier Roster Paints Progressively With A Stable Cursor
+
+**File:** `supabase/migrations/20260831235991_cashier_roster_ledger_batch_performance.sql`, `src/pages/CashierTradePage.tsx`
+**What existed:** The browser repeatedly OFFSET-paged the full recursive roster and withheld every row until the final request returned.
+**What changed:** A bounded role-rank/user-id keyset RPC and club/agent covering index now back progressive first-page publication. Continuation failure preserves the usable authorized page and exposes an explicit full-roster retry.
+**Why:** A large club must become usable after its first authoritative page, without repeated offset walks or an all-or-nothing loading screen.
+**Verified:** YES — rendered deferred-page regression and rollback-isolated production keyset overlap probe pass.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #158 — Cashier Batches Use One Bounded Server Round Trip
+
+**File:** `supabase/migrations/20260831235991_cashier_roster_ledger_batch_performance.sql`, `src/pages/CashierTradePage.tsx`
+**What existed:** Six browser lanes made one RPC per recipient while every request contended on the same club wallet hierarchy lock; long actions had no progress and emitted one monitoring event per failed target.
+**What changed:** The browser submits chunks of at most 25 to one server RPC. Each item retains its mandatory retry key and isolated result, the modal announces progress, and failures are aggregated into one diagnostic while remaining individually visible.
+**Why:** Batch throughput must reduce network and lock churn without weakening replay safety or hiding partial failure.
+**Verified:** YES — send and ticket batches execute, replay, and move exact balances only once in a rolled-back production transaction; focused UI contracts pass.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #159 — Club Ledger Party Queries Have Covering Indexes
+
+**File:** `supabase/migrations/20260831235991_cashier_roster_ledger_batch_performance.sql`
+**What existed:** Ledger history filtered by club plus sender/recipient, but the available party indexes omitted club and forced avoidable heap/filter work across the full immutable ledger.
+**What changed:** Concurrent club/from/created and club/to/created covering indexes serve both directions without blocking live chip writes during construction.
+**Why:** Cashier history latency should scale with one club and one wallet, not the global ledger.
+**Verified:** YES — both ledger indexes and the roster index are live, ready, and valid in production.
+**TypeScript:** PASS — no runtime TypeScript surface.

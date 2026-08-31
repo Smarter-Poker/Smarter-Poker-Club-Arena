@@ -146,9 +146,10 @@ describe('clause 3 — agents see their downline and nobody else', () => {
    * exactly those roles to exactly those three answers.
    */
   it('all three cashier surfaces read the same downline RPC', () => {
-    for (const src of [MODAL, CLASSIC, TRADE]) {
+    for (const src of [MODAL, CLASSIC]) {
       expect(src).toMatch(/supabase\s*\.rpc\(\s*'fn_club_cashier_members(?:_v2)?'/);
     }
+    expect(TRADE).toContain("'fn_club_cashier_members_page_v3'");
   });
 
   it('the classic cashier no longer misreads ca_club_my_downline', () => {
@@ -199,10 +200,13 @@ describe('clause 4 — owners, co owners and admins see everyone', () => {
 
 // ═══════════════════════════════════════════════════════════════════════════
 describe('clause 5 — sends and claim backs move the AGENT wallet', () => {
-  it('all three surfaces send through fn_agent_wallet_send', () => {
-    for (const src of [MODAL, CLASSIC, TRADE]) {
+  it('all three surfaces use the agent-wallet send path', () => {
+    for (const src of [MODAL, CLASSIC]) {
       expect(src).toContain("supabase.rpc('fn_agent_wallet_send'");
     }
+    // The trade grid batches network round trips; the batch RPC delegates each
+    // item to fn_agent_wallet_send and is pinned by cashier-phase3-performance.
+    expect(TRADE).toContain("supabase.rpc('fn_cashier_batch_transfer'");
   });
 
   it('the classic cashier no longer routes a send through the player wallet', () => {
@@ -364,7 +368,7 @@ describe('the cashier never offers a recipient the server will refuse', () => {
   it('the trade grid drops the viewer from its own downline list', () => {
     // fn_club_cashier_members returns the caller for a staff viewer (scope
     // 'all' is every active member), so an owner could tick their own row.
-    expect(TRADE).toContain('.filter((r) => String(r.user_id) !== user.id)');
+    expect(TRADE).toContain('.filter((row) => String(row.user_id) !== viewerId)');
   });
 });
 

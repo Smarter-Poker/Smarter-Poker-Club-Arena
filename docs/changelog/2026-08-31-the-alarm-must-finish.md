@@ -114,11 +114,39 @@ anon_can  false      auth_can  false      svc_can  true
 was deliberately NOT swept along with it - a different decision on a different
 function deserves its own migration.
 
-## Still open
+## The seat-DELETE question, chased down and CLOSED
 
-`ca_seat_stack_exits` records **1,736 cash-table seat rows a day ending by
-`DELETE`**, carrying ~649k chips, against CLAUDE.md section 11.5's rule that a
-seat must never end that way. Nothing is being lost today - the deleting path
-refunds first, which is why this alarm reads 0 - but the guarantee rests on
-convention rather than on anything enforcing it. That is the next piece of
-phase 4, and it is a separate change.
+The first draft of this file said 1,736 cash-table seat rows a day were still
+ending by `DELETE` against CLAUDE.md section 11.5. That number was a 24-hour
+average, and chasing the deleting path showed the average was hiding the answer.
+
+Neither known deleter touches a live seat. `HydraService.seatHorse` and
+`atomic_table_buyin` both delete only rows with `left_at IS NOT NULL`, and
+`fn_log_seat_stack_exit` already returns early on those - so every
+`exit_kind = 'deleted'` row is a LIVE seat destroyed, which is the real thing
+section 11.5 forbids.
+
+Per hour, it stops dead:
+
+```
+2026-08-31 06:00Z   deleted 170
+2026-08-31 07:00Z   deleted   0
+2026-08-31 08:00Z   deleted 149     <- last one
+2026-08-31 09:00Z   deleted   0
+... through 14:00Z  deleted   0     six clean hours
+```
+
+**#2038 - "a seat never ends by DELETE: locked cash-out on boot, remove_horse
+retired, bomb ledger repaired" - merged at 08:45:21 UTC today.** The last delete
+falls inside the hour it landed; there has not been one since. `GameServer.ts`
+now carries the cash-out-then-vacate path and
+`server/src/seatExitMoneyPaths.test.ts` pins `never issues a table_seats
+DELETE`.
+
+The bursty shape was the tell all along - 0 for hours, then 100-300 in one hour
+
+- because the old path swept seats at BOOT, so it fired once per engine restart
+  rather than continuously.
+
+Nothing to fix here. Recorded because the earlier reading was wrong and the
+correction is the useful part.

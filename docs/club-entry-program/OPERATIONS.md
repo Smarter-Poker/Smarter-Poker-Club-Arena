@@ -51,7 +51,7 @@ Telemetry accepts only allowlisted, low-cardinality fields: source, status,
 error code, result count, and variant. Never add player names, search text, club
 codes, invite URLs, email addresses, or free-form metadata.
 
-Direct client writes to `audit_logs` are revoked. Staff can inspect mutation audit
+Direct client writes to `audit_trail` are revoked. Staff can inspect mutation audit
 records; normal users can inspect only records attributed to themselves. The
 database trigger records Club, membership, and search-privacy mutations.
 

@@ -40,14 +40,15 @@ CREATE TABLE public.club_members (
   chip_balance numeric,
   PRIMARY KEY (club_id, user_id)
 );
-CREATE TABLE public.audit_logs (
+CREATE TABLE public.audit_trail (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   club_id uuid,
-  actor_id uuid,
+  actor_id uuid NOT NULL,
+  actor_role text NOT NULL,
   action text,
   target_type text,
   target_id uuid,
-  details jsonb
+  after_state jsonb
 );
 CREATE TABLE public.friendships (user_id uuid, friend_id uuid);
 CREATE TABLE public.unions (id uuid PRIMARY KEY, owner_id uuid);

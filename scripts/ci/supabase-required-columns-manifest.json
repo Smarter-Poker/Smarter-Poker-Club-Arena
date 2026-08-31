@@ -387,6 +387,12 @@
       "metric",
       "sample_size"
     ],
+    "ca_treasury_baseline": [
+      "club_id",
+      "opening_balance",
+      "ledger_at_baseline",
+      "unledgered_gap"
+    ],
     "cashier_operations": [
       "user_id",
       "club_id",
@@ -510,8 +516,21 @@
       "user_id",
       "club_id"
     ],
+    "club_creation_requests": [
+      "user_id",
+      "request_id",
+      "club_id"
+    ],
     "club_diamond_wallets": [
       "club_id"
+    ],
+    "club_entry_events": [
+      "session_id",
+      "flow",
+      "event_name"
+    ],
+    "club_entry_feature_flags": [
+      "key"
     ],
     "club_financial_summary": [
       "club_id",
@@ -525,6 +544,11 @@
     "club_hand_daily_shard": [
       "club_id",
       "stat_date"
+    ],
+    "club_join_idempotency": [
+      "user_id",
+      "request_id",
+      "result"
     ],
     "club_leaderboard_settings": [
       "club_id"
@@ -2080,6 +2104,9 @@
     "player_position_stats": [
       "user_id",
       "position"
+    ],
+    "player_search_preferences": [
+      "user_id"
     ],
     "player_stats": [
       "user_id"
@@ -3681,6 +3708,9 @@
       "to_tier"
     ],
     "vip_points": [
+      "user_id"
+    ],
+    "vip_points_carry": [
       "user_id"
     ],
     "vip_points_ledger": [

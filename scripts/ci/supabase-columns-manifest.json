@@ -1125,6 +1125,13 @@
       "sample_size",
       "computed_at"
     ],
+    "ca_treasury_baseline": [
+      "club_id",
+      "opening_balance",
+      "ledger_at_baseline",
+      "unledgered_gap",
+      "taken_at"
+    ],
     "cashier_operations": [
       "id",
       "user_id",
@@ -1503,6 +1510,12 @@
       "amount",
       "granted_at"
     ],
+    "club_creation_requests": [
+      "user_id",
+      "request_id",
+      "club_id",
+      "created_at"
+    ],
     "club_daily_stats": [
       "club_id",
       "stat_date",
@@ -1520,6 +1533,32 @@
       "last_transaction_at",
       "created_at",
       "updated_at"
+    ],
+    "club_entry_daily_metrics": [
+      "day",
+      "flow",
+      "event_name",
+      "outcome",
+      "events",
+      "p95_ms"
+    ],
+    "club_entry_events": [
+      "id",
+      "actor_id",
+      "session_id",
+      "flow",
+      "event_name",
+      "outcome",
+      "duration_ms",
+      "metadata",
+      "created_at"
+    ],
+    "club_entry_feature_flags": [
+      "key",
+      "enabled",
+      "rollout_percent",
+      "updated_at",
+      "updated_by"
     ],
     "club_financial_summary": [
       "id",
@@ -1564,6 +1603,13 @@
       "pot_total",
       "updated_at",
       "shard"
+    ],
+    "club_join_idempotency": [
+      "user_id",
+      "request_id",
+      "club_id",
+      "result",
+      "created_at"
     ],
     "club_leaderboard_settings": [
       "club_id",
@@ -6954,6 +7000,14 @@
       "total_profit",
       "updated_at"
     ],
+    "player_search_preferences": [
+      "user_id",
+      "discoverable",
+      "show_display_name",
+      "show_presence",
+      "show_current_table",
+      "updated_at"
+    ],
     "player_sessions": [
       "id",
       "user_id",
@@ -9060,6 +9114,11 @@
       "seed_returned_at",
       "seed_returned_amount",
       "required_seed_at_activation"
+    ],
+    "spin_fill_policy": [
+      "id",
+      "unfilled_timeout_minutes",
+      "updated_at"
     ],
     "spin_reserve_ledger": [
       "id",
@@ -11959,6 +12018,17 @@
       "club_id",
       "can_draw_100x"
     ],
+    "v_spin_unfilled_waits": [
+      "tournament_id",
+      "club_id",
+      "name",
+      "buy_in_amount",
+      "max_players",
+      "live_seats",
+      "oldest_seat_at",
+      "longest_wait",
+      "chips_locked"
+    ],
     "v_spin_unpaid_settlements": [
       "tournament_id",
       "club_id",
@@ -12529,6 +12599,11 @@
       "lifetime_points",
       "updated_at"
     ],
+    "vip_points_carry": [
+      "user_id",
+      "carry",
+      "updated_at"
+    ],
     "vip_points_ledger": [
       "id",
       "user_id",
@@ -12536,7 +12611,8 @@
       "reason",
       "source_type",
       "source_id",
-      "created_at"
+      "created_at",
+      "credit"
     ],
     "vip_pricing": [
       "id",

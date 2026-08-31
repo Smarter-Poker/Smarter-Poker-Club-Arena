@@ -17,9 +17,9 @@ const joinModal = read('src/components/modals/JoinClubModal.tsx');
 
 describe('Phase 5 shared trust boundary', () => {
   it('removes public/client-writable audit policies and installs immutable server auditing', () => {
-    expect(migration).toContain('DROP POLICY IF EXISTS "audit_logs_select"');
-    expect(migration).toContain('DROP POLICY IF EXISTS "audit_logs_insert"');
-    expect(migration).toContain('REVOKE INSERT, UPDATE, DELETE');
+    expect(migration).toContain('REVOKE INSERT, UPDATE, DELETE ON public.audit_trail');
+    expect(migration).toContain('INSERT INTO public.audit_trail');
+    expect(migration).toContain("v_club,v_actor,'system'");
     expect(migration).toContain('fn_audit_club_entry_mutation');
   });
 

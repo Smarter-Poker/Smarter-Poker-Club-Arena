@@ -1,19 +1,10 @@
 -- Privacy-safe analytics, immutable audit, rollout controls, and ops metrics.
 
--- The legacy policies made the audit trail world-readable and client-writable.
-DROP POLICY IF EXISTS "audit_logs_select" ON public.audit_logs;
-DROP POLICY IF EXISTS "audit_logs_insert" ON public.audit_logs;
-DROP POLICY IF EXISTS audit_logs_club_staff_read ON public.audit_logs;
-CREATE POLICY audit_logs_club_staff_read ON public.audit_logs FOR SELECT TO authenticated
-USING (
-  actor_id=auth.uid()
-  OR EXISTS (
-    SELECT 1 FROM public.club_members cm
-     WHERE cm.club_id=audit_logs.club_id AND cm.user_id=auth.uid()
-       AND cm.role IN ('owner','co_owner','admin') AND cm.status IN ('active','approved')
-  )
-);
-REVOKE INSERT, UPDATE, DELETE ON public.audit_logs FROM authenticated, anon;
+-- audit_trail is the production canonical, append-only privileged-action log.
+-- Its existing RLS grants scoped reads and service-role writes. Club Entry
+-- mutations write through the SECURITY DEFINER trigger below, never directly
+-- from the browser.
+REVOKE INSERT, UPDATE, DELETE ON public.audit_trail FROM authenticated, anon;
 
 CREATE TABLE IF NOT EXISTS public.club_entry_events (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -92,21 +83,27 @@ GRANT EXECUTE ON FUNCTION public.fn_get_club_entry_flags() TO authenticated;
 CREATE OR REPLACE FUNCTION public.fn_audit_club_entry_mutation()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
 AS $$
-DECLARE v_action text; v_club uuid; v_target uuid; v_details jsonb;
+DECLARE v_action text; v_club uuid; v_target uuid; v_actor uuid; v_details jsonb;
 BEGIN
   IF TG_TABLE_NAME='clubs' THEN
     v_action:='club_created'; v_club:=NEW.id; v_target:=NEW.id;
+    v_actor:=COALESCE(auth.uid(),NEW.owner_id);
     v_details:=jsonb_build_object('club_code',NEW.club_id,'requires_approval',NEW.requires_approval);
   ELSIF TG_TABLE_NAME='club_members' THEN
     v_club:=NEW.club_id; v_target:=NEW.user_id;
+    v_actor:=COALESCE(auth.uid(),NEW.user_id);
     v_action:=CASE WHEN TG_OP='INSERT' THEN 'club_join_'||NEW.status ELSE 'club_join_status_changed' END;
     v_details:=jsonb_build_object('status',NEW.status,'previous_status',CASE WHEN TG_OP='UPDATE' THEN OLD.status ELSE NULL END);
   ELSE
     v_action:='player_search_privacy_changed'; v_target:=NEW.user_id;
+    v_actor:=COALESCE(auth.uid(),NEW.user_id);
     v_details:=jsonb_build_object('discoverable',NEW.discoverable,'show_presence',NEW.show_presence,'show_current_table',NEW.show_current_table);
   END IF;
-  INSERT INTO public.audit_logs(club_id,actor_id,action,target_type,target_id,details)
-  VALUES(v_club,auth.uid(),v_action,TG_TABLE_NAME,v_target,jsonb_strip_nulls(v_details));
+  INSERT INTO public.audit_trail(
+    club_id,actor_id,actor_role,action,target_type,target_id,after_state
+  ) VALUES(
+    v_club,v_actor,'system',v_action,TG_TABLE_NAME,v_target,jsonb_strip_nulls(v_details)
+  );
   RETURN NEW;
 END $$;
 DROP TRIGGER IF EXISTS trg_audit_club_created ON public.clubs;

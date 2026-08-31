@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ENGINE — XMTT (Cross-Club Multi-Table Tournament) Lobby
+ *  CLUB ENGINE - XMTT (Cross-Club Multi-Table Tournament) Lobby
  *  Ported from World Hub native page → Club Arena TSX
  * ═══════════════════════════════════════════════════════════════════════════════
  */
@@ -73,8 +73,21 @@ interface TournamentDetail {
     user_id: string;
     display_name?: string;
     username?: string;
-    chip_count?: number;
-    starting_chips?: number;
+    /**
+     * The player's live stack.
+     *
+     * This used to read `chip_count` with a `starting_chips` fallback, and
+     * rendered 0 for every player in the list. Both names are wrong:
+     * `tournament_players.chip_count` sits beside `chips` and has never been
+     * written by anything - 0 on all 13,623 rows registered in the 24h before
+     * this fix - and `starting_chips` is not a column of `tournament_players`
+     * at all, it lives on `tournaments`. So `chip_count || starting_chips || 0`
+     * was `0 || undefined || 0`.
+     *
+     * `chips` is the column the engine actually writes, and it was already in
+     * the `select('*')` this page issues.
+     */
+    chips?: number;
   }>;
 }
 
@@ -107,7 +120,7 @@ export default function XMTTPage() {
         // column matches nothing. (2) Union tournaments carry the union
         // container as club_id, so a plain club filter hid every union MTT.
         // (3) The type filter used the SELECT alias 'type' (not a real
-        // column) with lowercase values — tournament_type holds 'MTT'.
+        // column) with lowercase values - tournament_type holds 'MTT'.
         const uuid = await resolveClubUUID(targetClub);
         let query = supabase
           .from('tournaments')
@@ -153,8 +166,7 @@ export default function XMTTPage() {
             user_id: r.user_id,
             display_name: r.profiles?.display_name,
             username: r.profiles?.username,
-            chip_count: r.chip_count,
-            starting_chips: r.starting_chips,
+            chips: r.chips,
           })),
         });
       }
@@ -217,7 +229,7 @@ export default function XMTTPage() {
       // Phase 4: Cross-page sync (ported from World Hub xmtt.js)
       masterBus.subscribeDebounced('TOURNAMENT_CANCELLED', refresh, 500),
       // TOURNAMENT_LEVEL_CHANGE removed 2026-08-28: nothing emits it on the
-      // client bus — BlindsTab documents that it is DELIBERATELY not emitted
+      // client bus - BlindsTab documents that it is DELIBERATELY not emitted
       // (levels arrive on the snapshot), so this refresh never fired.
       // Phase 13: Waitlist position changes trigger tournament card refresh
       masterBus.subscribeDebounced('WAITLIST_POSITION_CHANGED', refresh, 500),
@@ -234,7 +246,7 @@ export default function XMTTPage() {
 
   // Register / Unregister
   /**
-   * Dan 2026-08-25 (binding): one confirmation per buy-in — and this page had
+   * Dan 2026-08-25 (binding): one confirmation per buy-in - and this page had
    * ZERO. It called `tournamentService.registerPlayer` directly, so an XMTT
    * entry was a single unconfirmed tap that debited the wallet, while
    * `registerMtt` sat destructured and unused at the top of the file.
@@ -310,7 +322,7 @@ export default function XMTTPage() {
         }
       } catch (e) {
         reportError(e, 'XMTTPage.setWaitlistPositions');
-        // Non-critical — position just won't show
+        // Non-critical - position just won't show
       }
     });
   }, [user?.id, tournaments.length]);
@@ -427,7 +439,7 @@ export default function XMTTPage() {
                 </div>
                 {t.status === 'registering' && (
                   <div className={styles.tournActions}>
-                    {/* Register/Unregister — show when not at capacity */}
+                    {/* Register/Unregister - show when not at capacity */}
                     {(t.registered_count || 0) < (t.max_players || Infinity) && (
                       <>
                         <button
@@ -450,7 +462,7 @@ export default function XMTTPage() {
                         </button>
                       </>
                     )}
-                    {/* Waitlist — show when at capacity */}
+                    {/* Waitlist - show when at capacity */}
                     {(t.registered_count || 0) >= (t.max_players || Infinity) && t.max_players && (
                       <>
                         {waitlistPositions[t.id] ? (
@@ -532,9 +544,7 @@ export default function XMTTPage() {
                     (detail.registrations || []).map((r, i) => (
                       <div key={r.user_id || i} className={styles.playerRow}>
                         <span>{r.display_name || r.username || 'Player'}</span>
-                        <span className={styles.playerChips}>
-                          {fmtChips(r.chip_count || r.starting_chips || 0)}
-                        </span>
+                        <span className={styles.playerChips}>{fmtChips(r.chips ?? 0)}</span>
                       </div>
                     ))
                   )}

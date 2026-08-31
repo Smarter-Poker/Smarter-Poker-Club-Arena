@@ -69,9 +69,17 @@ const ALIVE_DESPITE_APPEARANCES = [
   'auto_create_table',
   // Five club-data RPCs: COALESCE(t.game_mode,'') ILIKE '%mixed%'.
   'game_mode',
-  // 20260828_cash_buyins_are_40bb_to_200bb.sql resyncs both deliberately.
-  'min_buy_in_bb',
-  'max_buy_in_bb',
+  // NOTE 2026-08-31, corrected in the same day. min_buy_in_bb / max_buy_in_bb
+  // were listed here on the strength of 20260828_cash_buyins_are_40bb_to_200bb
+  // .sql, which resynced them "so the two column families cannot disagree".
+  // Phase 2 of the live cash audit then went further and settled it with a
+  // database census: no function, view, constraint or policy touches either
+  // column, the only writer was this form, and the 2/25 sitting on 103,684 of
+  // 103,690 rows is the 010_table_configuration default rather than a stale
+  // copy of the truth. They are no longer written; the band is derived from
+  // min_buy_in / max_buy_in, which is what atomic_table_buyin and the engine
+  // actually read. See docs/changelog/2026-08-31-one-buy-in-band.md and
+  // tests/unit/buyInBandIsOneColumnPair.test.ts, which owns that pin now.
   // Real readers in lobbyEntries, TablePage and HorseOrchestrator.
   'ante_bb',
 ];

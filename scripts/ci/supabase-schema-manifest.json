@@ -2238,6 +2238,7 @@
     "fn_unpriced_tournaments",
     "fn_unregister_from_tournament",
     "fn_unresolved_insurance_offers",
+    "fn_unscheduled_cap_bb",
     "fn_unthrottled_autovacuum_tables",
     "fn_update_comment_count",
     "fn_update_conversation_last_message",

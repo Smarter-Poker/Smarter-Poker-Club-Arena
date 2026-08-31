@@ -20,6 +20,7 @@ import nodeCrypto from 'node:crypto';
 import { DEFAULT_RAKE_RATE, buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { gameLaneFor, horseHash, isActiveNow } from './HorseBehavior.js';
 import { buildLadder } from '../tournament/blindLadder.js';
+import { clampSeatsForVariant } from '../config/tableSeating.js';
 
 /**
  * Derive the two buy-in columns from ONE whole-dollar total.
@@ -2462,6 +2463,25 @@ export class TournamentRecurringService {
             guaranteed_prize: wholeChips(config.guarantee),
             starting_chips: config.startingStack,
             max_players: config.maxPlayers,
+            /**
+             * SEATS AT THE TABLE (2026-08-31 audit). Neither the MTT nor the
+             * XMTT insert wrote this column, and it is `NOT NULL DEFAULT 9` —
+             * the same omission already found and fixed for SNG (10,315 rows)
+             * and Spin (28,731 rows), still open on these two.
+             *
+             * Measured live before the fix: 5,000 PLO6 tournaments sitting at
+             * table_size 9 against a deck that can serve 7. The row was not
+             * merely cosmetic-wrong, it disagreed with what the engine would
+             * actually do — TournamentManagerBase clamps the seat count through
+             * clampSeatsForVariant at deal time and logs "deck cannot serve
+             * more". So the database said 9, the felt said 6, and nothing
+             * reconciled them.
+             *
+             * Written through the SAME function the engine applies, so the row
+             * now states what will actually be dealt. Nine is full ring; the
+             * clamp takes it down per variant (plo6 6, plo5 7, plo4/plo8 8).
+             */
+            table_size: clampSeatsForVariant(config.gameVariant, 9),
             min_players: config.minPlayers || 3,
             current_players: 0,
             status: 'REGISTERING',
@@ -2672,6 +2692,25 @@ export class TournamentRecurringService {
             guaranteed_prize: wholeChips(config.guarantee),
             starting_chips: config.startingStack,
             max_players: config.maxPlayers,
+            /**
+             * SEATS AT THE TABLE (2026-08-31 audit). Neither the MTT nor the
+             * XMTT insert wrote this column, and it is `NOT NULL DEFAULT 9` —
+             * the same omission already found and fixed for SNG (10,315 rows)
+             * and Spin (28,731 rows), still open on these two.
+             *
+             * Measured live before the fix: 5,000 PLO6 tournaments sitting at
+             * table_size 9 against a deck that can serve 7. The row was not
+             * merely cosmetic-wrong, it disagreed with what the engine would
+             * actually do — TournamentManagerBase clamps the seat count through
+             * clampSeatsForVariant at deal time and logs "deck cannot serve
+             * more". So the database said 9, the felt said 6, and nothing
+             * reconciled them.
+             *
+             * Written through the SAME function the engine applies, so the row
+             * now states what will actually be dealt. Nine is full ring; the
+             * clamp takes it down per variant (plo6 6, plo5 7, plo4/plo8 8).
+             */
+            table_size: clampSeatsForVariant(config.gameVariant, 9),
             min_players: config.minPlayers || 3,
             current_players: 0,
             status: 'REGISTERING',

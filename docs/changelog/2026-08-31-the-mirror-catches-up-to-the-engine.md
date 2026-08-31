@@ -48,16 +48,16 @@ the tier gaps.
 
 ## Verified after applying
 
-| probe | result |
-|---|---|
-| rows mirrored / parked | 20 / **0** |
-| derived ratio | 15 BB |
+| probe                                | result                         |
+| ------------------------------------ | ------------------------------ |
+| rows mirrored / parked               | 20 / **0**                     |
+| derived ratio                        | 15 BB                          |
 | 0.05/0.10 (the stake this was about) | **$1.50**, matching the engine |
-| 1/2, 2/5, 25/50 | $5.00, $7.50, $20.00 — unmoved |
-| unscheduled 0.03/0.07 | $1.05, in proportion |
-| 0.45/0.9 (an old tier gap) | $5.00, no longer NULL |
-| `fn_rake_schedule_drift()` | **0 rows** |
-| `fn_rake_law_violations('3 hours')` | **zero `over_cap`** |
+| 1/2, 2/5, 25/50                      | $5.00, $7.50, $20.00 — unmoved |
+| unscheduled 0.03/0.07                | $1.05, in proportion           |
+| 0.45/0.9 (an old tier gap)           | $5.00, no longer NULL          |
+| `fn_rake_schedule_drift()`           | **0 rows**                     |
+| `fn_rake_law_violations('3 hours')`  | **zero `over_cap`**            |
 
 The only findings the alarm reports are 4 `no_flop_no_drop` and 3
 `board_not_recorded`, both at 1/2 — the pre-existing defects the alarm was

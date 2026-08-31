@@ -103,7 +103,7 @@ export class HorseSessionRotator {
     this.handle = setInterval(() => {
       this.rotate().catch((err) => reportError(err, 'HorseSessionRotator.cycle'));
     }, CYCLE_MS);
-    console.log(`[SessionRotator] Running — humanlike departures every ${CYCLE_MS / 1000}s cycle`);
+    console.log(`[SessionRotator] Running - humanlike departures every ${CYCLE_MS / 1000}s cycle`);
   }
 
   stop(): void {

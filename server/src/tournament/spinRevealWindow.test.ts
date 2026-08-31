@@ -68,7 +68,7 @@ describe('an on-time start keeps the third-payment anchor', () => {
   });
 });
 
-describe('the regression itself — the old hold-based form is not equivalent', () => {
+describe('the regression itself - the old hold-based form is not equivalent', () => {
   /* This is the whole point of the file. Both forms are evaluated on the same
      inputs, and the one that shipped says "re-anchor" where the correct one
      says "keep the anchor". */

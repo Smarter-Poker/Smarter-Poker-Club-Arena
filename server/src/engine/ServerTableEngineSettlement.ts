@@ -797,7 +797,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (this.currentHandShowdownResults.length >= 2 && bbjBoard.length < 5) {
         reportError(
           new Error(
-            `[BBJ] Board unavailable at settlement — jackpot detection will fail closed for ` +
+            `[BBJ] Board unavailable at settlement - jackpot detection will fail closed for ` +
               `table ${this.tableId} hand #${this.handCount}. ` +
               `raw=${JSON.stringify(this.currentHandCommunityCards)} parsed=${bbjBoard.length}. ` +
               `A qualifying hand cannot be verified without the board, so no payout is made; ` +
@@ -1839,7 +1839,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             this.preActionEngine.removePlayer(this.tableId, horse.user_id);
             this.horseRebuys.delete(horse.user_id);
             console.log(
-              `[ServerTableEngine:${this.tableId}] Horse ${horse.username} left — insufficient funds`
+              `[ServerTableEngine:${this.tableId}] Horse ${horse.username} left - insufficient funds`
             );
           }
         }

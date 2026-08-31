@@ -504,7 +504,7 @@ function checkMidHand(ctx: Ctx, where: string): void {
       'INV-10',
       `side-pot partition disagrees with the rules at ${where}` +
         (foldedEligible.length
-          ? ` — FOLDED player(s) ${JSON.stringify([...new Set(foldedEligible)])} are eligible to win`
+          ? ` - FOLDED player(s) ${JSON.stringify([...new Set(foldedEligible)])} are eligible to win`
           : '') +
         `\n  engine:   ${JSON.stringify(got)}` +
         `\n  expected: ${JSON.stringify(want)}`
@@ -847,7 +847,7 @@ export function fuzzOneHand(seed: number): FuzzHandResult {
     fail(
       ctx,
       'INV-9',
-      `sawFlop=${st.sawFlop} but the board has ${board.length} card(s) — ` +
+      `sawFlop=${st.sawFlop} but the board has ${board.length} card(s) - ` +
         `the rake / BBJ gate and the dealt board disagree`
     );
   }

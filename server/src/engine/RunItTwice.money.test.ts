@@ -104,7 +104,7 @@ function ritHarness(stacks: number[], runs: 2 | 3) {
   return { hc, events, e, st, complete, totalBuyin: stacks.reduce((s, x) => s + x, 0) };
 }
 
-describe('RIT money path — 2 runs, heads-up', () => {
+describe('RIT money path - 2 runs, heads-up', () => {
   it('conserves chips, takes rake + BBJ once, and records winners summing to the net pot', () => {
     const { e, st, complete, totalBuyin } = ritHarness([500, 500], 2);
 
@@ -142,7 +142,7 @@ describe('RIT money path — 2 runs, heads-up', () => {
   });
 });
 
-describe('RIT money path — 3 runs, heads-up', () => {
+describe('RIT money path - 3 runs, heads-up', () => {
   it('splits across three boards with the same conservation and single rake/BBJ', () => {
     const { st, complete, e, totalBuyin } = ritHarness([500, 500], 3);
 
@@ -163,7 +163,7 @@ describe('RIT money path — 3 runs, heads-up', () => {
   });
 });
 
-describe('RIT money path — 3-way with side pot', () => {
+describe('RIT money path - 3-way with side pot', () => {
   it('conserves chips across main + side pots with uncalled excess returned', () => {
     // 100 / 300 / 500: short stack caps the main pot; u3's excess over u2's
     // 300 is uncalled and returned before rake.
@@ -182,7 +182,7 @@ describe('RIT money path — 3-way with side pot', () => {
   });
 });
 
-describe('RAKE LEAK FIX — single-run preflop all-in runout', () => {
+describe('RAKE LEAK FIX - single-run preflop all-in runout', () => {
   it('collects rake and the BBJ fee when the runout deals the flop (noFlopNoDrop)', () => {
     const players = mkPlayers([500, 500]);
     const events: HandEvent[] = [];

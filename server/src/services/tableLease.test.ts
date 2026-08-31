@@ -57,7 +57,7 @@ describe('claimTable', () => {
     await expect(claimTable(TABLE)).resolves.toBe(true);
   });
 
-  it('refuses a table another live instance holds — but only with enforcement on', async () => {
+  it('refuses a table another live instance holds - but only with enforcement on', async () => {
     const denied = {
       data: [{ granted: false, holder: 'other-1', holder_age_seconds: 2.5 }],
       error: null,
@@ -72,7 +72,7 @@ describe('claimTable', () => {
     await expect(observing.claimTable(TABLE)).resolves.toBe(true);
   });
 
-  it('records the conflict for /health in BOTH modes — observation is the point of the off mode', async () => {
+  it('records the conflict for /health in BOTH modes - observation is the point of the off mode', async () => {
     const { claimTable, recentLeaseConflicts } = await loadLease(false);
     rpc.mockResolvedValue({
       data: [{ granted: false, holder: 'other-1', holder_age_seconds: 2.5 }],
@@ -84,7 +84,7 @@ describe('claimTable', () => {
     ]);
   });
 
-  it('FAILS OPEN on an RPC error — a database blip must not stop a table starting', async () => {
+  it('FAILS OPEN on an RPC error - a database blip must not stop a table starting', async () => {
     const { claimTable, leaseDiagnostics } = await loadLease(true);
     rpc.mockResolvedValue({ data: null, error: { message: 'function does not exist' } });
     await expect(claimTable(TABLE)).resolves.toBe(true);
@@ -133,7 +133,7 @@ describe('heartbeatTables', () => {
    * the holder went quiet. Neither is a takeover, and tearing a live table
    * down for one is the false alarm, not the safety measure.
    */
-  it('does NOT stop a table whose lease is merely missing or stale — nobody took it', async () => {
+  it('does NOT stop a table whose lease is merely missing or stale - nobody took it', async () => {
     const { heartbeatTables, recentLeaseConflicts, reclaimableLeaseCount } = await loadLease(true);
     rpc.mockResolvedValue({
       data: [
@@ -176,7 +176,7 @@ describe('heartbeatTables', () => {
     ).toEqual(['a', 'b']);
   });
 
-  it('treats "could not ask" as "lost nothing" — the inversion that would freeze the platform', async () => {
+  it('treats "could not ask" as "lost nothing" - the inversion that would freeze the platform', async () => {
     const { heartbeatTables } = await loadLease(true);
     rpc.mockResolvedValue({ data: null, error: { message: 'timeout' } });
     await expect(heartbeatTables(['a', 'b', 'c'])).resolves.toEqual([]);
@@ -203,7 +203,7 @@ describe('releaseTables', () => {
     });
   });
 
-  it('never throws — it runs on the shutdown path', async () => {
+  it('never throws - it runs on the shutdown path', async () => {
     const { releaseTables } = await loadLease(true);
     rpc.mockRejectedValue(new Error('gone'));
     await expect(releaseTables()).resolves.toBeUndefined();

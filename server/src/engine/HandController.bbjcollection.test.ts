@@ -53,7 +53,7 @@ function mkController(stackList: number[], over: Partial<HandConfig> = {}): Hand
   return hc;
 }
 
-describe('BBJ fee is collected on every flop with 3+ dealt — pot size is irrelevant', () => {
+describe('BBJ fee is collected on every flop with 3+ dealt - pot size is irrelevant', () => {
   it('tiny pot (blinds only, 1.5BB) with a flop: the drop IS taken', () => {
     const hc = mkController([1000, 1000, 1000]);
     // Pot is just the blinds (15 = 1.5BB), far under the old 10BB fee gate.

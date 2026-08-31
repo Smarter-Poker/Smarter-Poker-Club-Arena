@@ -98,7 +98,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('rit_offer — one shared 25s countdown on the wire', () => {
+describe('rit_offer - one shared 25s countdown on the wire', () => {
   it('carries the configured timeoutSeconds and a wall-clock deadline_ts', () => {
     vi.useFakeTimers();
     const { e, runoutEvent, emitted } = atAllIn();
@@ -115,7 +115,7 @@ describe('rit_offer — one shared 25s countdown on the wire', () => {
   });
 });
 
-describe('consent progress — live checkmarks and the accept banner', () => {
+describe('consent progress - live checkmarks and the accept banner', () => {
   it('broadcasts rit_response_update per accept and rit_all_accepted on unanimity', () => {
     vi.useFakeTimers();
     const { e, runoutEvent, emitted } = atAllIn();
@@ -152,7 +152,7 @@ describe('consent progress — live checkmarks and the accept banner', () => {
   });
 });
 
-describe('per-run pot awards — the split-pot ship sequence', () => {
+describe('per-run pot awards - the split-pot ship sequence', () => {
   function resolveRIT(stacks: number[], runs: 2 | 3) {
     const { e, hc, emitted } = atAllIn(stacks);
     const st = (hc as unknown as { state: { players: SeatPlayer[] } }).state;
@@ -241,8 +241,8 @@ describe('per-run pot awards — the split-pot ship sequence', () => {
   });
 });
 
-describe('RIT IS CASH-ONLY (Dan 2026-08-26) — with an integer backstop behind the gate', () => {
-  it('the enable formula in Base refuses tournaments — MTT, Spins, heads-up SNG', async () => {
+describe('RIT IS CASH-ONLY (Dan 2026-08-26) - with an integer backstop behind the gate', () => {
+  it('the enable formula in Base refuses tournaments - MTT, Spins, heads-up SNG', async () => {
     // Dan's ruling: "run it twice or 3 times is a cash game only area. it
     // should never be in MTT, SPINS OR HEADS UP." The gate lives in
     // ServerTableEngineBase's configure block and must stay there.
@@ -304,7 +304,7 @@ describe('RIT IS CASH-ONLY (Dan 2026-08-26) — with an integer backstop behind 
     return { e, hc, st, emitted, totalBuyin: stacks.reduce((s, x) => s + x, 0) };
   }
 
-  it('a tournament all-in gets NO offer — the engine is configured off, as Base does', () => {
+  it('a tournament all-in gets NO offer - the engine is configured off, as Base does', () => {
     vi.useFakeTimers();
     const players = mkPlayers([500, 500]);
     const events: HandEvent[] = [];

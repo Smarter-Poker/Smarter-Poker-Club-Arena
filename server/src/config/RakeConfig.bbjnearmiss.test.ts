@@ -64,7 +64,7 @@ describe('near miss fires only on a genuine qualifying losing hand', () => {
     expect(r.nearMiss).toBe(false);
   });
 
-  it('stays silent on a two-pair beat (the common case — no spam)', () => {
+  it('stays silent on a two-pair beat (the common case - no spam)', () => {
     const r = near([
       sd('W', 3, [10, 4], [c('T', 'clubs'), c('4', 'clubs')]),
       sd('L', 2, [9, 3], [c('9', 'hearts'), c('3', 'spades')]),

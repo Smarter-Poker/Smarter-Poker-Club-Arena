@@ -169,7 +169,7 @@ export async function gtoV31AggregationTick(): Promise<number> {
             if (stalledTicks >= BACKOFF_AFTER_STALLED_TICKS) {
               skipTicks = 5; // ~100s of quiet before trying again
               stalledTicks = 0;
-              console.warn('[GtoAggregationDriverV31] repeated timeouts — backing off for ~100s');
+              console.warn('[GtoAggregationDriverV31] repeated timeouts - backing off for ~100s');
             }
           }
         } else {
@@ -182,7 +182,7 @@ export async function gtoV31AggregationTick(): Promise<number> {
       rows += Number(row?.processed ?? 0);
       if (row?.is_done) {
         finished = true;
-        console.log('[GtoAggregationDriverV31] v2 aggregation complete — going silent');
+        console.log('[GtoAggregationDriverV31] v2 aggregation complete - going silent');
         stopGtoAggregationDriverV31();
         return rows;
       }

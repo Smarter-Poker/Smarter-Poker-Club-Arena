@@ -72,7 +72,7 @@ export async function loadGtoPostflopV31(): Promise<number> {
   } catch (err) {
     reportError(err, 'GtoPostflopV31Loader.load');
     console.warn(
-      `[GtoPostflopV31Loader] V31 cell load FAILED — the brain falls back to V30 and the heuristics (${gtoPostflopV31Count()} cached)`
+      `[GtoPostflopV31Loader] V31 cell load FAILED - the brain falls back to V30 and the heuristics (${gtoPostflopV31Count()} cached)`
     );
     return 0;
   }

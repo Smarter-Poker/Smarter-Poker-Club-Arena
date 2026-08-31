@@ -81,6 +81,38 @@ Cross-check after building: the rollup's 2026-08-24 totals are **564 users and
 Both functions are DB-side and the settler calls them by name, so the fix took
 effect immediately rather than waiting on the engine's drain gate.
 
+## Found while watching it drain: the horse fleet had lost its bankroll awareness
+
+The first healthy settler cycle put this next to it in the log:
+
+```
+[HorseFleet.bankrolls.missing_cursor_key] row is missing the keyset column "id"
+  — the select must include it or paging cannot advance. Returning a partial result.
+```
+
+`fetchAllRows` takes its cursor from `opts.idKey`, **which defaults to `'id'`**.
+The bankroll load pages `club_members` and selects only
+`(user_id, club_id, chip_balance)` — so every run past the first page read
+`row['id']`, found undefined, bailed with `complete: false`, and
+`bankrollsLoaded` stayed **false**. The fleet was choosing games with no idea
+what any horse could afford.
+
+**Credit where it is due: another agent found this in parallel and fixed it
+better.** My change was a one-line `idKey: 'user_id'`; theirs pages **per
+club**, because `club_members` has no `id` column at all (its key is
+`(club_id, user_id)`) and `user_id` is unique only _within_ a club. A
+cross-club keyset on `user_id` is therefore unsound — a page boundary landing
+mid-user would silently skip that user's remaining memberships. Their version
+won the rebase; mine was discarded on the merits.
+
+What survives from this branch is the part that was still missing: a guard that
+pins the invariant rather than the one bug. `paginationCursorKey.guard.test.ts`
+walks every `fetchAllRows` call in the server and fails if the `.order(...)`
+column is not the effective `idKey`. Verified it actually catches the defect —
+run against the pre-fix source it reports exactly one offender
+(`HorseFleet.bankrolls: orders user_id cursors id`); against the fixed source,
+none. This was the only mismatched call site.
+
 ## What was deliberately NOT changed
 
 - The watermark-holding behaviour on failure. It is the reason no player was

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceCssRule } from './helpers/sourceWindow';
 
 const root = resolve(__dirname, '..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
@@ -12,6 +13,11 @@ const findPlayer = read('src/components/modals/FindPlayerModal.tsx');
 const joinClub = read('src/components/modals/JoinClubModal.tsx');
 const joinService = read('src/services/ClubJoinService.ts');
 const header = read('src/components/navigation/GlobalHeader.tsx');
+const homeCss = read('src/pages/HomePage.module.css');
+const createCss = read('src/components/modals/CreateClubModal.module.css');
+const findCss = read('src/components/modals/FindPlayerModal.module.css');
+const joinCss = read('src/components/modals/JoinClubModal.module.css');
+const emptyStateCss = read('src/components/common/EmptyState.module.css');
 
 describe('Club Arena primary actions', () => {
   it('uses the approved action artwork with semantic controls', () => {
@@ -32,6 +38,11 @@ describe('Club Arena primary actions', () => {
     expect(home).toContain('setShowCreateClubModal(true)');
     expect(home).toContain('setShowFindPlayerModal(true)');
     expect(home).toContain('setShowJoinModal(true)');
+  });
+
+  it('scales the complete approved artwork without cropping its frame or corners', () => {
+    expect(sliceCssRule(homeCss, '.actionBarArtwork')).toMatch(/object-fit:\s*contain/);
+    expect(sliceCssRule(homeCss, '.actionBarWrapper')).not.toMatch(/overflow:\s*hidden/);
   });
 });
 
@@ -60,6 +71,26 @@ describe('Club entry dialogs', () => {
     expect(joinService).toContain("from '../utils/clubCode'");
     expect(joinClub).toContain('ClubJoinService.parseInput');
     expect(joinClub).toContain('ClubJoinService.join');
+  });
+
+  it.each([
+    ['Create Club', createCss, '.contentPanel'],
+    ['Find Player', findCss, '.modalContent'],
+    ['Join Club', joinCss, '.contentPanel'],
+  ])(
+    '%s keeps its full outer frame in short viewports and scrolls content inside it',
+    (_name, css, scrollSelector) => {
+      expect(sliceCssRule(css, '.overlay')).toMatch(/overflow-y:\s*auto/);
+      expect(sliceCssRule(css, scrollSelector)).toMatch(/overflow-y:\s*auto/);
+      expect(css).toMatch(/@media \(max-height:\s*560px\)/);
+      expect(css).toMatch(/max-height:\s*calc\(100dvh - 24px\)/);
+    }
+  );
+
+  it('keeps shared empty and permission panels inside a short landscape viewport', () => {
+    expect(emptyStateCss).toMatch(/@media \(max-height:\s*560px\)/);
+    expect(emptyStateCss).toMatch(/max-height:\s*calc\(100dvh - 96px\)/);
+    expect(emptyStateCss).toMatch(/overflow-y:\s*auto/);
   });
 });
 

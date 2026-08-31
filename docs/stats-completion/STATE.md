@@ -2,11 +2,11 @@
 
 - Program: Active
 - Current Phase: 1 Of 10
-- Current Phase Status: Complete, Published And Production-Certified
+- Current Phase Status: Reopened — Final Audit Repairs Awaiting Protected Merge And Production Recertification
 - Publication Status: Published By PR #2094; Production Certification Follow-Up Merged By PR #2150 At `0786a1ced8c4060a92c48d17a534eb2d5078690d`
 - Production Build: `6a1992d270ed001ce5b4fa7ea5603b6432dd6767`
-- Production Acceptance: Post-Deploy Run `33393028733` — Authenticated Stats `3/3` Passed
-- Next Gate: Ready To Begin Phase 2 Of 10.
+- Production Acceptance: Prior Stats Sub-Suite Passed `3/3`, But Its Overall Run Failed; Replacement Honest Gate Is Pending
+- Next Gate: Phase 2 Remains Blocked Until This Repair Is Merged, Published, And Fully Green In Production.
 
 ## Phase 1 Acceptance Checklist
 

@@ -31,6 +31,7 @@ describe('normalizeStatsContractMetadata', () => {
     });
 
     expect(result.contract_version).toBe(STATS_CONTRACT_VERSION);
+    expect(result.valid).toBe(true);
     expect(result.scope).toMatchObject({ club_id: 'club-1', range_days: 30 });
     expect(result.quality.cash_money_exact).toBe(true);
     expect(result.coverage.analysis_hands_capped).toBe(true);
@@ -45,14 +46,17 @@ describe('normalizeStatsContractMetadata', () => {
     });
 
     expect(result.generated_at).toBeNull();
+    expect(result.contract_version).toBeNull();
+    expect(result.valid).toBe(false);
     expect(result.scope.visibility).toBe('owner');
-    expect(result.scope.range_days).toBe(0);
+    expect(result.scope.range_days).toBeNull();
     expect(result.quality).toMatchObject({
       cash_money_source: 'reconstructed_actions',
       cash_money_exact: false,
       historical_club_breakdown_available: false,
     });
-    expect(result.coverage.analysis_hand_cap).toBe(0);
+    expect(result.coverage.analysis_hand_cap).toBe(750);
+    expect(result.quality.live_tail_included).toBe(false);
   });
 
   it('ships definitions with source and minimum sample for every registered metric', () => {

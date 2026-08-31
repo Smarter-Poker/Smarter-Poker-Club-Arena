@@ -364,3 +364,55 @@ export function canEnterTournament(
   if (!(bankroll > 0)) return false;
   return bankroll >= cost * policy.tournamentBuyInsToEnter;
 }
+
+/**
+ * Rule 9: the REBUY decision, for a horse that just busted a cash seat.
+ *
+ * Two separate questions, and the old code only asked the second one:
+ *
+ *  1. SHOULD it rebuy - is it still inside its stop-loss, and can its own roll
+ *     still support this stake at all? A horse that keeps reloading a game it
+ *     can no longer afford is the exact opposite of the discipline Dan asked
+ *     for; the correct move is to leave, drop down a rung, and come back.
+ *  2. FOR HOW MUCH - the old sites used `bigBlind * 100` flat, ignoring the
+ *     table's own limits and the share-of-roll ceiling both.
+ *
+ * `rebuysTaken` counts reloads already made, so the buy-ins COMMITTED to this
+ * session is `rebuysTaken + 1` - the initial buy-in plus each reload. The
+ * comparison is therefore against `rebuysTaken + 1`, not `rebuysTaken`.
+ *
+ * That off-by-one is not academic. `rebuysTaken >= stopLossBuyIns` would let
+ * the standard temperament - six in ten of the fleet - take THREE reloads for
+ * four buy-ins committed, where the hard-coded `>= 2` it replaces allowed two
+ * reloads for three. The first draft of this module carried that comparison
+ * while its own comment claimed parity, so 60% of the fleet would have
+ * quietly gained a buy-in of rope in a change described as a refactor.
+ *
+ * With `rebuysTaken + 1`: standard stops at exactly the old place, the nit
+ * gives up a buy-in earlier, and the gambler takes one more.
+ *
+ * Returns the amount to rebuy for, or 0 for "do not rebuy - stand up".
+ *
+ * WHERE THE CHIPS COME FROM IS UNCHANGED. A horse is still funded from the
+ * club treasury (`fn_horse_fund_from_treasury`); this is a DECISION, not a
+ * money path. And it makes a horse MORE like a human, not less (CLAUDE.md
+ * 10.5): a human's reload is limited by their own wallet, and until now a
+ * horse's was limited by nothing at all.
+ */
+export function rebuyDecision(args: {
+  bankroll: number;
+  refBuyIn: number;
+  minBuyIn: number;
+  maxBuyIn: number;
+  desired: number;
+  rebuysTaken: number;
+  policy: BankrollPolicy;
+}): number {
+  const { bankroll, refBuyIn, minBuyIn, maxBuyIn, desired, rebuysTaken, policy } = args;
+  if (rebuysTaken + 1 >= policy.stopLossBuyIns) return 0;
+  // Can the roll still carry this stake? If not, this is a move-down, not a
+  // reload. Unknown or zero reference falls through to the old flat sizing
+  // rather than standing a horse up on a number we could not read.
+  if (refBuyIn > 0 && bankroll > 0 && !canSit(bankroll, refBuyIn, policy)) return 0;
+  return bankrollBuyIn({ bankroll, desired, minBuyIn, maxBuyIn, policy });
+}

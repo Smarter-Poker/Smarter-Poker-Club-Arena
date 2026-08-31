@@ -1149,11 +1149,68 @@ export abstract class TournamentManagerBase {
        * touches 'registered' rows), and createTablesAndSeatPlayers skips
        * players who are already seated.
        */
-      const { count: regCount } = await supabase
-        .from('tournament_players')
-        .select('*', { count: 'exact', head: true })
-        .eq('tournament_id', this.tournamentId)
-        .in('status', ['registered', 'playing']);
+      /**
+       * ═════════════════════════════════════════════════════════════════
+       *  ONE READ, NOT TWO (2026-08-31 audit)
+       * ═════════════════════════════════════════════════════════════════
+       *
+       * This head-count and the paid-entry roster below issued the SAME
+       * query — `tournament_players` for this tournament with status in
+       * ('registered','playing') — one asking for the count and one for the
+       * rows, back to back, both on the critical path between the third
+       * payment and the wheel.
+       *
+       * `spin_reveal_lag_ms` now measures that path (p50 4.2s, and 93% of
+       * spins miss Dan's one-second rule outright), and five sequential
+       * round trips sit inside it. This is the one that was free to remove:
+       * a Spin holds three players, so the rows ARE the count.
+       *
+       * Only for a Spin with a buy-in — i.e. only where the paid gate below
+       * is going to read them anyway. An MTT keeps the head count, because
+       * reading 390 player rows to learn there are 390 would be the same
+       * trade made backwards.
+       */
+      const spinPaidGateWillRun =
+        (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') &&
+        Number(tournament.buy_in_amount || 0) > 0;
+
+      let regCount: number | null = null;
+      let spinRoster: Array<{ user_id?: string | null; table_id?: string | null }> | null = null;
+
+      if (spinPaidGateWillRun) {
+        /* THE GATE MUST NOT DISABLE ITSELF ON A FAILED READ (2026-08-28).
+           Unreadable evidence is not evidence of an empty field: stand down
+           and let the next pass retry, exactly as the paid gate below does
+           with its own read. Hoisting the read must not weaken that. */
+        const { data: roster, error: rosterErr } = await supabase
+          .from('tournament_players')
+          /* `table_id` costs nothing here — this read already happens — and
+             it is what lets the wheel fire the INSTANT the draw resolves
+             rather than after the settle, the row write, the per-player
+             updates and the table build (round 18). */
+          .select('user_id, table_id')
+          .eq('tournament_id', this.tournamentId)
+          .in('status', ['registered', 'playing']);
+        if (rosterErr) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Paid-entry roster unreadable (${rosterErr.message}) - standing down, will retry`
+            ),
+            'Tournament.spin_paid_roster_unreadable'
+          );
+          this.running = false;
+          return;
+        }
+        spinRoster = roster ?? [];
+        regCount = spinRoster.length;
+      } else {
+        const { count } = await supabase
+          .from('tournament_players')
+          .select('*', { count: 'exact', head: true })
+          .eq('tournament_id', this.tournamentId)
+          .in('status', ['registered', 'playing']);
+        regCount = count ?? 0;
+      }
 
       /**
        * Never more than the table holds, never fewer than two -- a game of
@@ -1214,27 +1271,14 @@ export abstract class TournamentManagerBase {
              above), reopened by any transient failure. The very next read
              already treats unreadable evidence as a stand-down; these two
              adjacent reads had opposite failure policies. */
-          const { data: regs, error: regsErr } = await supabase
-            .from('tournament_players')
-            /* `table_id` costs nothing here — this read already happens — and
-               it is what lets the wheel fire the INSTANT the draw resolves
-               rather than after the settle, the row write, the per-player
-               updates and the table build. See emitSpinRevealNow (round 18):
-               a seat-first player is already sitting at that table, so its id
-               is all the reveal needs to reach them. */
-            .select('user_id, table_id')
-            .eq('tournament_id', this.tournamentId)
-            .in('status', ['registered', 'playing']);
-          if (regsErr) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Paid-entry roster unreadable (${regsErr.message}) - standing down, will retry`
-              ),
-              'Tournament.spin_paid_roster_unreadable'
-            );
-            this.running = false;
-            return;
-          }
+          /* ALREADY READ, ABOVE. The head-count gate issued this exact query
+             and kept the rows (see "ONE READ, NOT TWO"). Its failure policy
+             is identical — an unreadable roster stands the start down — so
+             nothing this gate depends on has been weakened; the second round
+             trip is simply gone from the path between the third payment and
+             the wheel. `spinRoster` is non-null here by construction:
+             spinPaidGateWillRun is the same condition as this block. */
+          const regs = spinRoster ?? [];
           const regIds = (regs ?? []).map((r: any) => r.user_id).filter(Boolean);
           /* The tables these paid seats are already sitting at. Distinct, and
              usually exactly one for a Spin. Used only by the early reveal. */

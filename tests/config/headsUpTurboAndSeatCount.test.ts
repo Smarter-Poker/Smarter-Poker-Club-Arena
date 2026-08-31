@@ -31,6 +31,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { HEADS_UP_SEATS, HEADS_UP_STACKS } from '../../src/config/headsUpSpec';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const stripComments = (src: string) =>
@@ -53,14 +54,25 @@ describe('1. the Heads-Up board offers BOTH bands', () => {
   });
 
   it('gives the turbo Dan-s 300 stack and the deep stack its 1000', () => {
-    expect(shapes).toMatch(/turbo:\s*true,\s*startingStack:\s*300/);
-    expect(shapes).toMatch(/turbo:\s*false,\s*startingStack:\s*1000/);
+    /**
+     * 2026-08-31 (Phase 3): the numbers moved into src/config/headsUpSpec.ts,
+     * so this follows them there rather than being deleted. The guarantee is
+     * unchanged and now stronger -- the literal is asserted against the spec,
+     * and the board is asserted to read the spec, so a change to either side
+     * alone fails.
+     */
+    expect(HEADS_UP_STACKS.turbo).toBe(300);
+    expect(HEADS_UP_STACKS.deep).toBe(1000);
+    expect(shapes).toMatch(/turbo:\s*true,\s*startingStack:\s*HEADS_UP_STACKS\.turbo/);
+    expect(shapes).toMatch(/turbo:\s*false,\s*startingStack:\s*HEADS_UP_STACKS\.deep/);
   });
 
   it('keeps both bands two-handed', () => {
-    const seatDecls = shapes.match(/seats:\s*\d+/g) ?? [];
+    expect(HEADS_UP_SEATS).toBe(2);
+    // The type annotation says `seats: number`; only the DECLARATIONS count.
+    const seatDecls = shapes.match(/seats:\s*(?:\d+|HEADS_UP_SEATS)/g) ?? [];
     expect(seatDecls.length).toBe(2);
-    for (const d of seatDecls) expect(d).toBe('seats: 2');
+    for (const d of seatDecls) expect(d).toBe('seats: HEADS_UP_SEATS');
   });
 
   it('makes the " Turbo" name suffix reachable, so the two boards differ', () => {

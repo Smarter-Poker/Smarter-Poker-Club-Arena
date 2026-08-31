@@ -251,27 +251,21 @@ export const BLIND_STRUCTURES = {
    * rule spinSpec already settled on: tier identity lives in stack depth, not
    * in the clock.
    */
-  HEADS_UP_3MIN: [
-    { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 3 },
-    { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 3 },
-    { level: 3, smallBlind: 20, bigBlind: 40, ante: 0, durationMinutes: 3 },
-    { level: 4, smallBlind: 30, bigBlind: 60, ante: 0, durationMinutes: 3 },
-    { level: 5, smallBlind: 40, bigBlind: 80, ante: 0, durationMinutes: 3 },
-    { level: 6, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 3 },
-    { level: 7, smallBlind: 60, bigBlind: 120, ante: 0, durationMinutes: 3 },
-    { level: 8, smallBlind: 75, bigBlind: 150, ante: 0, durationMinutes: 3 },
-    { level: 9, smallBlind: 90, bigBlind: 180, ante: 0, durationMinutes: 3 },
-    { level: 10, smallBlind: 105, bigBlind: 210, ante: 0, durationMinutes: 3 },
-    { level: 11, smallBlind: 150, bigBlind: 300, ante: 0, durationMinutes: 3 },
-    { level: 12, smallBlind: 200, bigBlind: 400, ante: 0, durationMinutes: 3 },
-  ],
-  SPIN: [
-    { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 2 },
-    { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 2 },
-    { level: 3, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 2 },
-    { level: 4, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 1 },
-    { level: 5, smallBlind: 100, bigBlind: 200, ante: 0, durationMinutes: 1 },
-  ],
+  /**
+   * THE DUEL'S LADDER IS THE SPEC'S (2026-08-31, Phase 3). This was a second
+   * hand-typed copy of the same twelve rows; the name is kept because the
+   * board and its pinning test both read it, but the numbers now have exactly
+   * one home -- src/config/headsUpSpec.ts, mirrored byte-for-byte here.
+   */
+  HEADS_UP_3MIN: HEADS_UP_BLIND_STRUCTURE,
+  /**
+   * BLIND_STRUCTURES.SPIN IS GONE (2026-08-31, Phase 3). It was a five-level,
+   * two-minute ladder that contradicted spinSpec from level 3 up (25/50 where
+   * the spec says 20/40, then 50/100 and 100/200 against 30/60 and 40/80) and
+   * claimed a two-minute clock the spec sets at three. Nothing should ever
+   * hand-type a Spin ladder again: createSpin builds its twelve rows from
+   * spinBlindsForLevel, and so does the schedule path as of this change.
+   */
 };
 
 const PAYOUT_STRUCTURES = {
@@ -301,6 +295,14 @@ const PAYOUT_STRUCTURES = {
 };
 
 import { SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
+import {
+  HEADS_UP_BLIND_STRUCTURE,
+  HEADS_UP_BUYINS,
+  HEADS_UP_GAME_TYPES,
+  HEADS_UP_PAYOUTS,
+  HEADS_UP_SEATS,
+  HEADS_UP_STACKS,
+} from '../config/headsUpSpec.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
 
 /**
@@ -1440,18 +1442,21 @@ function horsesForSeatHeldGame(maxPlayers: number): { horses: number; isSim: boo
  * are deliberately outside it because they run many same-named instances at
  * once.
  */
+/* Every number below now comes from headsUpSpec -- the seats, both stacks, the
+   rungs and the variants. The shapes array is what turns two stacks into two
+   independently-refilled boards; the STACKS themselves are the spec's. */
 const SNG_BOARD_SHAPES: { seats: number; label: string; turbo: boolean; startingStack: number }[] =
   [
-    { seats: 2, label: 'Heads-Up', turbo: false, startingStack: 1000 },
-    { seats: 2, label: 'Heads-Up', turbo: true, startingStack: 300 },
+    { seats: HEADS_UP_SEATS, label: 'Heads-Up', turbo: false, startingStack: HEADS_UP_STACKS.deep },
+    { seats: HEADS_UP_SEATS, label: 'Heads-Up', turbo: true, startingStack: HEADS_UP_STACKS.turbo },
   ];
 
-const SNG_BOARD_VARIANTS: { key: string; label: string }[] = [
-  { key: 'nlh', label: 'NLH' },
-  { key: 'plo4', label: 'PLO4' },
-];
+const SNG_BOARD_VARIANTS: { key: string; label: string }[] = HEADS_UP_GAME_TYPES.map((key) => ({
+  key,
+  label: key.toUpperCase(),
+}));
 
-const SNG_BOARD_BUYINS = [1, 2, 5, 10, 20, 25, 50, 100];
+const SNG_BOARD_BUYINS = [...HEADS_UP_BUYINS];
 
 const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
   SNG_BOARD_VARIANTS.flatMap((v) =>
@@ -1471,8 +1476,8 @@ const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
          turbo flag now chooses the STACK, not the level length. */
       blindStructure: BLIND_STRUCTURES.HEADS_UP_3MIN,
       payoutStructure:
-        shape.seats <= 2
-          ? [{ place: 1, percentage: 100 }]
+        shape.seats <= HEADS_UP_SEATS
+          ? HEADS_UP_PAYOUTS
           : shape.seats <= 6
             ? [
                 { place: 1, percentage: 65 },
@@ -1567,7 +1572,18 @@ export const SPIN_CONFIGS: SpinConfig[] = SPIN_BOARD_VARIANTS.flatMap((v) =>
        seat empty means the table sits open indefinitely, and the first human
        to take that seat starts the game, which is the whole point of a spin. */
     horsesToRegister: SPIN_SEATS - 1,
-    blindStructure: BLIND_STRUCTURES.SPIN,
+    /* Built from the spec, exactly as createSpin does below -- the constant
+       this used to name was a five-level ladder that contradicted it. */
+    blindStructure: Array.from({ length: 12 }, (_, i) => {
+      const b = spinBlindsForLevel(i + 1);
+      return {
+        level: i + 1,
+        smallBlind: b.small,
+        bigBlind: b.big,
+        ante: 0,
+        durationMinutes: SPIN_TIERS[0].levelMinutes,
+      };
+    }),
     payoutStructure: [{ place: 1, percentage: 100 }],
   }))
 );

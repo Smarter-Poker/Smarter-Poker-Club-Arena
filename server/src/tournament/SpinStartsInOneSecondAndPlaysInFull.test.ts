@@ -202,3 +202,41 @@ describe('the anchor still does the job it was written for', () => {
     expect(block).toContain('this.spinRevealAt = now;');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  THE PATH BETWEEN THE THIRD PAYMENT AND THE WHEEL IS ONE READ SHORTER
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// `tournaments.spin_reveal_lag_ms` (2026-08-31) finally measures that path:
+// p50 4.2s, and 93% of spins past Dan's one-second rule. Five sequential
+// round trips sit inside it, and two of them were the SAME query — a head
+// count of tournament_players, then the paid-entry roster of the same rows,
+// back to back. A Spin holds three players, so the rows are the count.
+describe('the spin start does not read its own roster twice', () => {
+  it('reads the roster once, for a spin with a buy-in', () => {
+    expect(BASE_CODE).toContain('const spinPaidGateWillRun =');
+    expect(BASE_CODE).toContain('spinRoster = roster ?? [];');
+    expect(BASE_CODE).toContain('regCount = spinRoster.length;');
+  });
+
+  it('and the paid gate consumes that roster instead of re-reading it', () => {
+    expect(BASE_CODE).toContain('const regs = spinRoster ?? [];');
+  });
+
+  it('an MTT still uses the head count, not 390 rows', () => {
+    /* The trade only pays when the rows are needed anyway AND there are
+       three of them. Reading a full MTT field to learn its size would be
+       the same mistake made backwards. */
+    expect(BASE_CODE).toContain("select('*', { count: 'exact', head: true })");
+  });
+
+  it("the hoisted read keeps the gate's failure policy", () => {
+    /* THE GATE MUST NOT DISABLE ITSELF ON A FAILED READ (2026-08-28). An
+       unreadable roster must stand the start down, not fall through to a
+       gate that then verifies zero payments and passes. Moving the read
+       earlier must not weaken that, so the stand-down moved with it. */
+    const block = blockAfter(BASE_CODE, 'if (rosterErr)');
+    expect(block).toContain('Tournament.spin_paid_roster_unreadable');
+    expect(block).toContain('this.running = false;');
+  });
+});

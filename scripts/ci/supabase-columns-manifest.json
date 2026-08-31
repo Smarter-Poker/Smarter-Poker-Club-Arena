@@ -932,6 +932,11 @@
       "user_id",
       "created_at"
     ],
+    "ca_browser_definer_allowlist": [
+      "proname",
+      "reason",
+      "recorded_at"
+    ],
     "ca_chip_baseline": [
       "club_id",
       "user_id",
@@ -1046,6 +1051,14 @@
       "frozen_total",
       "frozen_at",
       "note"
+    ],
+    "ca_gate_runs": [
+      "id",
+      "run_at",
+      "pass",
+      "window_hours",
+      "failing",
+      "result"
     ],
     "ca_guard_inventory": [
       "id",

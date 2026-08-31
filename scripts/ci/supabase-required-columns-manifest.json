@@ -286,6 +286,10 @@
     "bus_event_log": [
       "event_type"
     ],
+    "ca_browser_definer_allowlist": [
+      "proname",
+      "reason"
+    ],
     "ca_chip_baseline": [
       "club_id",
       "user_id",
@@ -333,6 +337,11 @@
     "ca_frozen_pool_baseline": [
       "pool",
       "frozen_total"
+    ],
+    "ca_gate_runs": [
+      "pass",
+      "window_hours",
+      "result"
     ],
     "ca_guard_inventory": [
       "kind",

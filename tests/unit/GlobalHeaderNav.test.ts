@@ -200,10 +200,14 @@ describe('mobile uses the identical desktop header', () => {
       'vip.png',
       'messenger.png',
       'notifications.png',
-      'brand.png',
     ]) {
       expect(TSX).toContain(`APPROVED_HEADER_ASSET}${file}`);
     }
+    // The user-requested Club Arena identity replaces the old baked wordmark
+    // with a live, responsive emblem and HTML label inside the same approved
+    // one-row header composition.
+    expect(TSX).toContain('images/club-arena/vault-iris-emblem-v1-320.webp');
+    expect(TSX).toContain('className={styles.brandName}>Club Arena');
   });
 
   it('locks the approved desktop bytes and excludes global-header art from resizing', () => {

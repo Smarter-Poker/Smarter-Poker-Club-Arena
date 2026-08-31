@@ -367,6 +367,452 @@
   z-index: 11;
 }
 
+/* ═══ 2026 SmarterCasinoRealism shell ═══════════════════════════════════════ */
+.overlay {
+  background: rgba(0, 2, 5, 0.92);
+  backdrop-filter: blur(14px) saturate(0.8);
+}
+
+.modalContainer {
+  width: min(860px, 100%);
+  max-width: none;
+  aspect-ratio: auto;
+  min-height: 680px;
+  max-height: min(900px, calc(100dvh - 40px));
+  display: grid;
+  grid-template-columns: 0.78fr 1.22fr;
+  overflow: hidden;
+  border: 1px solid rgba(177, 202, 218, 0.5);
+  border-radius: 6px;
+  background: #05080c;
+  box-shadow:
+    0 30px 90px #000,
+    inset 0 0 0 1px #020304,
+    inset 0 0 0 2px rgba(255, 255, 255, 0.055);
+  animation: createClubEnter 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.modalContainer::before {
+  content: '';
+  position: absolute;
+  z-index: 4;
+  inset: 0 18% auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #00a9ff, transparent);
+  box-shadow: 0 0 11px #008fda;
+}
+
+.artPanel {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-right: 1px solid rgba(174, 200, 217, 0.22);
+  background: radial-gradient(circle at 50% 42%, rgba(0, 153, 234, 0.16), transparent 48%), #020406;
+}
+.artPanel::after {
+  content: '';
+  position: absolute;
+  inset: 8%;
+  border: 1px solid rgba(127, 154, 171, 0.16);
+  clip-path: polygon(
+    12px 0,
+    100% 0,
+    100% calc(100% - 12px),
+    calc(100% - 12px) 100%,
+    0 100%,
+    0 12px
+  );
+}
+.artPanel img {
+  width: 96%;
+  filter: drop-shadow(0 18px 24px #000) drop-shadow(0 0 20px rgba(0, 157, 236, 0.18));
+}
+.artPanel span {
+  position: absolute;
+  bottom: 14%;
+  z-index: 2;
+  color: #78909f;
+  font: 600 9px/1 var(--font-mono, monospace);
+  letter-spacing: 0.26em;
+}
+
+.contentPanel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  overflow-y: auto;
+  padding: 46px 48px 38px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.025), transparent 40%);
+}
+
+.eyebrow,
+.fieldLabel {
+  color: #6cbfe8;
+  font: 600 10px/1 var(--font-mono, monospace);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.title {
+  margin: 12px 0 8px;
+  color: #eef7fc;
+  font:
+    400 clamp(34px, 5vw, 50px)/0.95 'Rajdhani',
+    'Arial Narrow',
+    sans-serif;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+.subtitle {
+  margin: 0 0 12px;
+  color: #8a9aa6;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.creationMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-bottom: 18px;
+  color: #718692;
+  font: 600 9px/1.2 var(--font-mono, monospace);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.creationMeta span:last-child:not(:first-child) {
+  color: #d5a84c;
+}
+.metaRetryButton {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #e5b651;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+.metaRetryButton:focus-visible {
+  outline: 2px solid #25b7ff;
+  outline-offset: 3px;
+}
+.fieldLabel {
+  margin: 0 0 8px;
+  color: #798c99;
+}
+
+.clubNameInput {
+  position: static;
+  width: 100%;
+  height: 50px;
+  margin: 0;
+  padding: 0 15px;
+  border: 1px solid rgba(160, 190, 207, 0.32);
+  border-radius: 3px;
+  background: #020406;
+  box-shadow: inset 0 2px 12px #000;
+  font: 500 16px/1 var(--font-sans, sans-serif);
+  letter-spacing: 0.02em;
+}
+.nameStatus {
+  min-height: 24px;
+  padding-top: 5px;
+  color: #71818b;
+  font-size: 10px;
+}
+.nameStatus.available {
+  color: #48d8a0;
+}
+.nameStatus.taken,
+.nameStatus.error {
+  color: #ff7777;
+}
+.descriptionInput {
+  width: 100%;
+  min-height: 58px;
+  margin-bottom: 16px;
+  resize: vertical;
+  border: 1px solid rgba(160, 190, 207, 0.28);
+  border-radius: 3px;
+  background: #020406;
+  color: #dce8ee;
+  padding: 10px 12px;
+  font: 500 12px/1.4 var(--font-sans, sans-serif);
+}
+.descriptionInput:focus {
+  outline: 2px solid rgba(85, 200, 255, 0.35);
+  outline-offset: 1px;
+  border-color: #1ba9ee;
+}
+.fieldLabel span {
+  color: #50616c;
+  font-size: 8px;
+}
+.clubNameInput:focus {
+  border-color: #1ba9ee;
+  box-shadow:
+    inset 0 2px 12px #000,
+    0 0 0 2px rgba(0, 169, 255, 0.13);
+}
+
+.logoWorkspace {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 12px;
+  margin-bottom: 19px;
+}
+.logoPreview {
+  display: grid;
+  place-items: center;
+  min-height: 92px;
+  overflow: hidden;
+  border: 1px solid rgba(160, 190, 207, 0.28);
+  border-radius: 3px;
+  background: #020406;
+  color: #31414b;
+  font:
+    300 35px/1 'Rajdhani',
+    sans-serif;
+}
+.logoThumb {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  object-fit: cover;
+  box-shadow: none;
+}
+.logoActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.uploadLogoBtn,
+.createLogoBtn {
+  position: static;
+  width: auto;
+  height: auto;
+  min-height: 92px;
+  padding: 12px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  overflow: hidden;
+  border: 1px solid rgba(160, 190, 207, 0.25);
+  border-radius: 3px;
+  background: #080d12;
+  color: #dbe8ef;
+  text-align: left;
+}
+.uploadLogoBtn span,
+.createLogoBtn span {
+  font:
+    600 12px/1.2 'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.uploadLogoBtn small,
+.createLogoBtn small {
+  color: #62737e;
+  font-size: 9px;
+  line-height: 1.4;
+}
+.uploadLogoBtn:active,
+.createLogoBtn:active {
+  border-color: #168bc4;
+  background: #09141b;
+}
+
+.termsLabel {
+  position: static;
+  width: auto;
+  height: auto;
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 10px;
+  align-items: start;
+  margin: 0 0 20px;
+  color: #7f909b;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.accessSettings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin: 0 0 16px;
+  padding: 10px 12px 12px;
+  border: 1px solid rgba(160, 190, 207, 0.2);
+  color: #81939e;
+}
+.accessSettings legend {
+  padding: 0 6px;
+  color: #6cbfe8;
+  font: 600 9px/1 var(--font-mono, monospace);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.accessSettings label {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 10px;
+}
+.accessSettings input {
+  accent-color: #0786c5;
+}
+.termsCheckbox {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+}
+.checkboxVisual {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid #43535e;
+  border-radius: 2px;
+  background: #020406;
+}
+.checkboxVisual::after {
+  width: 4px;
+  height: 9px;
+  border-width: 0 2px 2px 0;
+}
+.termsCheckbox:focus-visible + .checkboxVisual {
+  outline: 2px solid #55c8ff;
+  outline-offset: 2px;
+}
+
+.createButton {
+  position: static;
+  width: 100%;
+  min-height: 50px;
+  border: 1px solid #6dcfff;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #087bb2, #04557f);
+  color: #f5fbff;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.22),
+    0 0 18px rgba(0, 151, 226, 0.16);
+  font:
+    600 14px/1 'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.createButton:disabled {
+  border-color: #27323a;
+  background: #10161b;
+  color: #46545d;
+  box-shadow: none;
+}
+.contentPanel > .closeButton {
+  top: 15px;
+  right: 15px;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(164, 190, 207, 0.3);
+  border-radius: 2px;
+  background: #070b0f;
+}
+.contentPanel > .closeButton::before,
+.contentPanel > .closeButton::after {
+  content: '';
+  position: absolute;
+  top: 16px;
+  left: 9px;
+  width: 14px;
+  height: 1px;
+  background: #8ea0ad;
+}
+.contentPanel > .closeButton::before {
+  transform: rotate(45deg);
+}
+.contentPanel > .closeButton::after {
+  transform: rotate(-45deg);
+}
+
+@keyframes createClubEnter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+}
+@media (max-width: 700px) {
+  .overlay {
+    align-items: flex-start;
+    overflow-y: auto;
+  }
+  .modalContainer {
+    min-height: 0;
+    grid-template-columns: 1fr;
+    margin-block: auto;
+  }
+  .artPanel {
+    height: 112px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(174, 200, 217, 0.22);
+  }
+  .artPanel img {
+    width: 130px;
+    transform: translateY(13px);
+  }
+  .artPanel span {
+    display: none;
+  }
+  .contentPanel {
+    padding: 34px 22px 25px;
+  }
+  .logoWorkspace {
+    grid-template-columns: 74px 1fr;
+  }
+  .logoPreview,
+  .uploadLogoBtn,
+  .createLogoBtn {
+    min-height: 78px;
+  }
+  .title {
+    font-size: 34px;
+  }
+}
+@media (max-width: 430px) {
+  .logoActions {
+    grid-template-columns: 1fr;
+  }
+  .uploadLogoBtn,
+  .createLogoBtn {
+    min-height: 56px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modalContainer {
+    animation: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .modalContainer,
+  .clubNameInput,
+  .descriptionInput,
+  .logoPreview,
+  .accessSettings,
+  .uploadLogoBtn,
+  .createLogoBtn {
+    border-color: #fff;
+  }
+
+  .subtitle,
+  .fieldLabel,
+  .uploadLogoBtn small,
+  .createLogoBtn small {
+    color: #fff;
+  }
+}
+
 /* Legacy styles - keep for preview mode */
 .logoGeneratorModal {
   background: linear-gradient(145deg, #0a1929, #0d2137);

@@ -31,12 +31,12 @@
     "db:push": "node scripts/orb-sql-deploy.cjs",
     "prepare": "git config core.hooksPath .husky || true",
     "check:title-case": "node scripts/ci/check-title-case.mjs",
-    "fix:title-case": "node scripts/ci/check-title-case.mjs --fix"
+    "fix:title-case": "node scripts/ci/check-title-case.mjs --fix",
+    "check:club-entry-budgets": "node scripts/check-club-entry-budgets.mjs"
   },
   "dependencies": {
     "@rive-app/canvas": "^2.40.1",
     "@sentry/react": "^10.38.0",
-    "@sentry/vite-plugin": "^4.8.0",
     "@supabase/supabase-js": "^2.49.0",
     "@types/md5": "^2.3.6",
     "canvas-confetti": "^1.9.4",
@@ -47,7 +47,7 @@
     "qrcode.react": "^4.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.1.1",
+    "react-router-dom": "7.18.3",
     "react-virtuoso": "^4.18.12",
     "recharts": "^3.7.0",
     "three": "^0.172.0",
@@ -58,6 +58,7 @@
     "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^9.18.0",
     "@playwright/test": "^1.58.0",
+    "@sentry/vite-plugin": "4.8.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",

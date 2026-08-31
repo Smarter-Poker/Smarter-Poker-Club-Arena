@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadSharp } from './lib/sharp-loader.mjs';
+import { shouldGenerateCustomizationThumbnail } from './lib/customization-thumbnail-policy.mjs';
 
 const args = process.argv.slice(2);
 const force = args.includes('--force');
@@ -54,7 +55,7 @@ for (const target of targets) {
      * existing derivative is an explicit authoring action (`--force`) so the
      * reviewed bytes are committed before the production build starts.
      */
-    if (existsSync(output) && !force) {
+    if (!shouldGenerateCustomizationThumbnail({ outputExists: existsSync(output), force })) {
       skipped++;
       continue;
     }

@@ -1,15 +1,18 @@
-import { readFileSync } from 'node:fs';
+import packageJson from '../../package.json';
+// @ts-expect-error - plain .mjs build helper, no type declarations by design
+import { shouldGenerateCustomizationThumbnail } from '../../scripts/lib/customization-thumbnail-policy.mjs';
 
 describe('customization thumbnail builds are hermetic', () => {
-  const generator = readFileSync('scripts/generate-customization-thumbnails.mjs', 'utf8');
-  const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as {
-    scripts?: Record<string, string>;
-  };
+  it('skips a committed derivative during an ordinary production build', () => {
+    expect(shouldGenerateCustomizationThumbnail({ outputExists: true, force: false })).toBe(false);
+  });
 
-  it('does not use checkout mtimes to rewrite committed thumbnails during a build', () => {
-    expect(generator).toContain("const force = args.includes('--force')");
-    expect(generator).toContain('if (existsSync(output) && !force)');
-    expect(generator).not.toContain('statSync(output).mtimeMs >= statSync(source).mtimeMs');
+  it('generates a missing derivative automatically', () => {
+    expect(shouldGenerateCustomizationThumbnail({ outputExists: false, force: false })).toBe(true);
+  });
+
+  it('regenerates an existing derivative only for an explicit authoring run', () => {
+    expect(shouldGenerateCustomizationThumbnail({ outputExists: true, force: true })).toBe(true);
   });
 
   it('keeps regeneration available as an explicit authoring command', () => {

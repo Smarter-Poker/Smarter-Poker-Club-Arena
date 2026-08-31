@@ -51,6 +51,7 @@ import {
   removeClubDataCaches,
   writeClubDataCache,
 } from '../../lib/clubDataCache';
+import { auditClubDataSnapshot, formatClubDataAge } from '../../lib/clubDataIntegrity';
 import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import type { BusEventType } from '../../core/MasterBus';
@@ -223,6 +224,14 @@ const CLUB_DATA_BUS_EVENTS: BusEventType[] = [
   'SETTLEMENT_CYCLE_COMPLETED',
   'MEMBER_ROLE_CHANGED',
 ];
+type RealtimeFeed = 'tables' | 'tournaments' | 'invoices' | 'members';
+type RealtimeFeedState = 'connecting' | 'live' | 'degraded';
+const INITIAL_REALTIME_FEEDS: Record<RealtimeFeed, RealtimeFeedState> = {
+  tables: 'connecting',
+  tournaments: 'connecting',
+  invoices: 'connecting',
+  members: 'connecting',
+};
 
 interface CachedGameLedger {
   snapshot: Snapshot;
@@ -438,6 +447,11 @@ export default function ClubDataPage() {
   const [playersHasMore, setPlayersHasMore] = useState(false);
   const [playersLoadingMore, setPlayersLoadingMore] = useState(false);
   const [playersPageError, setPlayersPageError] = useState<string | null>(null);
+  const [lastVerifiedAt, setLastVerifiedAt] = useState<number | null>(null);
+  const [lastRequestMs, setLastRequestMs] = useState<number | null>(null);
+  const [telemetryClock, setTelemetryClock] = useState(() => Date.now());
+  const [realtimeFeeds, setRealtimeFeeds] =
+    useState<Record<RealtimeFeed, RealtimeFeedState>>(INITIAL_REALTIME_FEEDS);
 
   // cancelledRef guards UNMOUNT. It cannot tell a stale response from a fresh
   // one, and this page reloads on six different inputs plus a 60s poll plus
@@ -531,6 +545,9 @@ export default function ClubDataPage() {
     setExportNote(null);
     setRefreshNote(null);
     setLedgerSource('cold');
+    setLastVerifiedAt(null);
+    setLastRequestMs(null);
+    setRealtimeFeeds(INITIAL_REALTIME_FEEDS);
     restoredGameKeyRef.current = null;
     restoredGameCacheHitRef.current = false;
     restoredPlayerKeyRef.current = null;
@@ -607,6 +624,7 @@ export default function ClubDataPage() {
   const load = useCallback(
     async (showSpinner: boolean, preserveOnError = false): Promise<boolean> => {
       if (!clubUuid || isHydrating || !user) return false;
+      const requestStartedAt = performance.now();
       const myVersion = ++loadVersion.current;
       const stale = () => cancelledRef.current || loadVersion.current !== myVersion;
       if (showSpinner) setLoading(true);
@@ -670,8 +688,7 @@ export default function ClubDataPage() {
           if (isAuthzError(rpcError) || !preserveOnError) setSnapshot(null);
           return false;
         } else if (
-          !data ||
-          !Array.isArray((data as Snapshot).rows) ||
+          !auditClubDataSnapshot(data).renderable ||
           (gameSort !== 'recent' && (!page || !Array.isArray(page.rows)))
         ) {
           // A null or shapeless payload used to be stored as success, leaving a
@@ -701,6 +718,7 @@ export default function ClubDataPage() {
           setGameCursor(nextCursor);
           setGamesHasMore(nextHasMore);
           setLedgerSource('live');
+          setLastVerifiedAt(Date.now());
           writeClubDataCache<CachedGameLedger>(user.id, clubUuid, gameCacheKey, {
             snapshot: nextSnapshot,
             cursor: nextCursor,
@@ -723,7 +741,10 @@ export default function ClubDataPage() {
         // Only the newest request may clear the skeleton. A background poll that
         // finished first used to pull it out from under a load the user had just
         // started, leaving stale rows looking settled.
-        if (!stale()) setLoading(false);
+        if (!stale()) {
+          setLastRequestMs(Math.max(0, Math.round(performance.now() - requestStartedAt)));
+          setLoading(false);
+        }
       }
     },
     [clubUuid, startDate, endDate, game, stakes, search, gameSort, isHydrating, user, gameCacheKey]
@@ -736,7 +757,10 @@ export default function ClubDataPage() {
     restoredGameKeyRef.current = restoreKey;
     restoredGameCacheHitRef.current = false;
     const cached = readClubDataCache<CachedGameLedger>(user.id, clubUuid, gameCacheKey);
-    if (!cached?.snapshot || !Array.isArray(cached.snapshot.rows)) return;
+    if (!cached?.snapshot || !auditClubDataSnapshot(cached.snapshot).renderable) {
+      if (cached) removeClubDataCaches(user.id, clubUuid);
+      return;
+    }
     restoredGameCacheHitRef.current = true;
     setSnapshot(cached.snapshot);
     setGameCursor(cached.cursor);
@@ -744,7 +768,16 @@ export default function ClubDataPage() {
     setLoading(false);
     setError(null);
     setLedgerSource('cached');
+    const generatedAt = Date.parse(cached.snapshot.generated_at);
+    setLastVerifiedAt(Number.isFinite(generatedAt) ? generatedAt : Date.now());
   }, [clubUuid, gameCacheKey, isHydrating, user]);
+
+  useEffect(() => {
+    if (!snapshot) return;
+    setTelemetryClock(Date.now());
+    const id = setInterval(() => setTelemetryClock(Date.now()), 1_000);
+    return () => clearInterval(id);
+  }, [snapshot]);
 
   useEffect(() => {
     if (!clubUuid || isHydrating || !user) return;
@@ -1169,6 +1202,17 @@ export default function ClubDataPage() {
 
   const realtimeFilter = clubUuid ? `club_id=eq.${clubUuid}` : null;
   const realtimeEnabled = Boolean(clubUuid && user && !isHydrating);
+  const markRealtimeStatus = useCallback((feed: RealtimeFeed, status: string) => {
+    const next: RealtimeFeedState =
+      status === 'SUBSCRIBED'
+        ? 'live'
+        : status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED'
+          ? 'degraded'
+          : 'connecting';
+    setRealtimeFeeds((current) =>
+      current[feed] === next ? current : { ...current, [feed]: next }
+    );
+  }, []);
 
   useMasterBusChannel({
     channelName: clubUuid ? `club-data-tables-${clubUuid}` : null,
@@ -1176,7 +1220,11 @@ export default function ClubDataPage() {
     filter: realtimeFilter,
     event: '*',
     onPayload: () => queueEventRefresh('ledger'),
-    onSubscriptionError: () => queueEventRefresh('ledger'),
+    onSubscriptionError: (status) => {
+      markRealtimeStatus('tables', status);
+      queueEventRefresh('ledger');
+    },
+    onSubscriptionStatus: (status) => markRealtimeStatus('tables', status),
     enabled: realtimeEnabled,
   });
   useMasterBusChannel({
@@ -1185,7 +1233,11 @@ export default function ClubDataPage() {
     filter: realtimeFilter,
     event: '*',
     onPayload: () => queueEventRefresh('ledger'),
-    onSubscriptionError: () => queueEventRefresh('ledger'),
+    onSubscriptionError: (status) => {
+      markRealtimeStatus('tournaments', status);
+      queueEventRefresh('ledger');
+    },
+    onSubscriptionStatus: (status) => markRealtimeStatus('tournaments', status),
     enabled: realtimeEnabled,
   });
   useMasterBusChannel({
@@ -1194,7 +1246,11 @@ export default function ClubDataPage() {
     filter: realtimeFilter,
     event: '*',
     onPayload: () => queueEventRefresh('invoices'),
-    onSubscriptionError: () => queueEventRefresh('invoices'),
+    onSubscriptionError: (status) => {
+      markRealtimeStatus('invoices', status);
+      queueEventRefresh('invoices');
+    },
+    onSubscriptionStatus: (status) => markRealtimeStatus('invoices', status),
     enabled: realtimeEnabled,
   });
   useMasterBusChannel({
@@ -1203,7 +1259,11 @@ export default function ClubDataPage() {
     filter: realtimeFilter,
     event: '*',
     onPayload: () => queueEventRefresh('all'),
-    onSubscriptionError: () => queueEventRefresh('all'),
+    onSubscriptionError: (status) => {
+      markRealtimeStatus('members', status);
+      queueEventRefresh('all');
+    },
+    onSubscriptionStatus: (status) => markRealtimeStatus('members', status),
     enabled: realtimeEnabled,
   });
 
@@ -1218,6 +1278,18 @@ export default function ClubDataPage() {
       queueEventRefresh('all');
     },
     { debounce: 750 }
+  );
+
+  const integrity = useMemo(() => (snapshot ? auditClubDataSnapshot(snapshot) : null), [snapshot]);
+  const liveFeedCount = useMemo(
+    () => Object.values(realtimeFeeds).filter((state) => state === 'live').length,
+    [realtimeFeeds]
+  );
+  const integrityNeedsAttention = Boolean(
+    integrity &&
+    (integrity.level === 'attention' ||
+      ledgerSource === 'degraded' ||
+      (lastRequestMs !== null && lastRequestMs > COLD_READ_ATTEMPT_TIMEOUT_MS))
   );
 
   const shiftRange = useCallback(
@@ -1549,6 +1621,55 @@ export default function ClubDataPage() {
             : 'Live Refresh Is Delayed. Showing The Last Verified Snapshot And Retrying Automatically.'}
         </div>
       )}
+
+      <section
+        className={`${styles.integrityPanel} ${integrityNeedsAttention ? styles.integrityAttention : ''}`}
+        aria-labelledby="club-data-integrity-title"
+      >
+        <div className={styles.integrityHeading}>
+          <div>
+            <span>Operator Trust Layer</span>
+            <h2 id="club-data-integrity-title">Data Integrity</h2>
+          </div>
+          <span className={styles.integrityBadge} role="status" aria-live="polite">
+            {!snapshot ? 'Checking' : integrityNeedsAttention ? 'Recovery Active' : 'Verified'}
+          </span>
+        </div>
+        <dl className={styles.integrityGrid}>
+          <div>
+            <dt>Payload Checks</dt>
+            <dd>{integrity ? `${integrity.passed} / ${integrity.checks}` : NO_VALUE}</dd>
+          </div>
+          <div>
+            <dt>Live Feeds</dt>
+            <dd>{realtimeEnabled ? `${liveFeedCount} / 4` : 'Standby'}</dd>
+          </div>
+          <div>
+            <dt>Last Verified</dt>
+            <dd>
+              {lastVerifiedAt ? formatClubDataAge(telemetryClock - lastVerifiedAt) : 'Checking'}
+            </dd>
+          </div>
+          <div>
+            <dt>Ledger Read</dt>
+            <dd>{lastRequestMs === null ? 'Checking' : `${lastRequestMs.toLocaleString()}ms`}</dd>
+          </div>
+        </dl>
+        <p className={styles.integrityNote}>
+          {integrity?.issues.length
+            ? `${integrity.issues.length} Integrity Check${integrity.issues.length === 1 ? '' : 's'} Need Review. Verified Rows Stay Visible While Recovery Runs.`
+            : liveFeedCount < 4 && realtimeEnabled
+              ? 'The 60-Second Verified Poll Remains Active While Live Feeds Reconnect.'
+              : 'Internal Totals Reconcile. Live Invalidations And The 60-Second Verified Poll Are Active.'}
+        </p>
+        {integrity?.issues.length ? (
+          <ul className={styles.integrityIssues}>
+            {integrity.issues.map((issue) => (
+              <li key={issue}>{issue}</li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
 
       <section className={styles.controlDeck} aria-label="Reporting period">
         <div className={styles.controlLabel}>Reporting Window</div>
@@ -1924,6 +2045,7 @@ export default function ClubDataPage() {
             role={snapshot?.rows.length ? 'list' : undefined}
             aria-busy={loading}
             aria-label="Games"
+            tabIndex={0}
           >
             {loading && !snapshot && !error && (
               <>
@@ -2129,6 +2251,7 @@ export default function ClubDataPage() {
             role={sortedPlayers.length ? 'list' : undefined}
             aria-busy={playersLoading}
             aria-label="Players"
+            tabIndex={0}
           >
             {playersLoading && !players && !playersError && (
               <>

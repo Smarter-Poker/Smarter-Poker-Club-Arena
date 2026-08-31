@@ -35,6 +35,8 @@ test.describe('Club Data production experience', () => {
   test('reflows without horizontal loss from desktop through 320px and 200% text', async ({
     page,
   }) => {
+    await expect(page.getByRole('heading', { name: 'Data Integrity' })).toBeVisible();
+    await expect(page.getByText('12 / 12')).toBeVisible();
     for (const viewport of [
       { width: 1280, height: 900 },
       { width: 768, height: 1024 },

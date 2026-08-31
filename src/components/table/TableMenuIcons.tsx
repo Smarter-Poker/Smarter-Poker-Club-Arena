@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * ☰ TABLE MENU ICONS — Premium SVG Icons for Hamburger Menu
+ * TABLE MENU ICONS — Premium SVG Icons for the Command Center
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Inline SVG icons designed for the dark glassmorphic table menu.

@@ -80,7 +80,7 @@ const ICON_GLYPHS: Record<string, string> = {
   crossed_swords: '✦',
   target: '◎',
   brain: '◈',
-  memo: '≡',
+  memo: '✧',
   person: '◍',
   heart: '♥',
   comment: '❝',

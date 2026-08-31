@@ -4630,7 +4630,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       <p>Nothing On This Tab Right Now</p>
                       <p className="empty-hint">
                         {totalHere.toLocaleString()}
-                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
+                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 'S Are'} Open In
                         This Club. Spins And Heads Up Have Their Own Tabs, And So Do Tournaments
                         Already Under Way.
                       </p>
@@ -4643,7 +4643,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       <p>Nothing Here On This Tab</p>
                       <p className="empty-hint">
                         {totalHere.toLocaleString()}
-                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
+                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 'S Are'} Open In
                         This Club, Just None Of This Type Right Now.
                       </p>
                       <div className="empty-actions">
@@ -4657,7 +4657,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       <p>Nothing Matches Your Filters</p>
                       <p className="empty-hint">
                         {totalHere.toLocaleString()}
-                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
+                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 'S Are'} Open In
                         This Club, But The Filters On This Tab Hide{' '}
                         {totalHere === 1 ? 'It' : 'Them All'}.
                       </p>

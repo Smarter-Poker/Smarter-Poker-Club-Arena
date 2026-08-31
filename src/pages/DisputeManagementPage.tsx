@@ -277,7 +277,7 @@ export default function DisputeManagementPage() {
       <ClubIntegrityHeader
         clubId={clubId}
         active="disputes"
-        eyebrow={clubId ? 'Case investigation / financial integrity' : 'Personal casework'}
+        eyebrow={clubId ? 'Case Investigation / Financial Integrity' : 'Personal Casework'}
         title={clubId ? 'Dispute Resolution Desk' : 'My Disputes'}
         description={
           clubId

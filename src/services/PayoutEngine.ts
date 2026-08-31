@@ -404,18 +404,18 @@ class PayoutEngineClass {
    */
   getTemplateOptions(): { value: PayoutTemplate; label: string; description: string }[] {
     return [
-      { value: 'top15', label: 'Top 15%', description: 'Standard MTT - pays top 15% of field' },
-      { value: 'top20', label: 'Top 20%', description: 'Generous MTT - pays top 20% of field' },
+      { value: 'top15', label: 'Top 15%', description: 'Standard MTT - Pays Top 15% Of Field' },
+      { value: 'top20', label: 'Top 20%', description: 'Generous MTT - Pays Top 20% Of Field' },
       {
         value: 'winner_take_all',
         label: 'Winner Take All',
-        description: 'All chips go to 1st place',
+        description: 'All Chips Go To 1st Place',
       },
-      { value: '50_30_20', label: '50/30/20', description: 'Classic 3-way split' },
-      { value: 'sng3', label: 'SNG (3-way)', description: '65/35 two-player SNG' },
-      { value: 'sng6', label: 'SNG (6-max)', description: 'Standard 6-max payout' },
-      { value: 'sng9', label: 'SNG (9-max)', description: 'Standard 9-max payout' },
-      { value: 'custom', label: 'Custom', description: 'Define your own payout structure' },
+      { value: '50_30_20', label: '50/30/20', description: 'Classic 3-Way Split' },
+      { value: 'sng3', label: 'SNG (3-Way)', description: '65/35 Two-Player SNG' },
+      { value: 'sng6', label: 'SNG (6-Max)', description: 'Standard 6-Max Payout' },
+      { value: 'sng9', label: 'SNG (9-Max)', description: 'Standard 9-Max Payout' },
+      { value: 'custom', label: 'Custom', description: 'Define Your Own Payout Structure' },
     ];
   }
 }

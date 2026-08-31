@@ -73,7 +73,7 @@ export const TimebankCounter: React.FC<TimebankCounterProps> = ({
       title={
         count === null
           ? 'Loading Your Time Banks'
-          : `${count} Time bank${count === 1 ? '' : 's'} Remaining (${bankSeconds}s Each)`
+          : `${count} Time Bank${count === 1 ? '' : 's'} Remaining (${bankSeconds}s Each)`
       }
     >
       {/* Resolved 2026-08-26: main replaced the outline glyph with the

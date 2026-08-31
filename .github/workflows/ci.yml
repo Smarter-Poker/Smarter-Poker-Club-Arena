@@ -256,12 +256,11 @@ jobs:
       - name: UI copy — page copy is Title Cased
         run: node scripts/ci/check-title-case.mjs
 
-      # The other half of the same rule (Dan 2026-08-30: "AS WELL AS EVERY
-      # CLICKABLE PAGE AND SUBPAGE"). The gate above inspects JsxText only and
-      # documents that expression values are "cased at their source" — nothing
-      # enforced that. Navigation surfaces all render {item.label} from a config
-      # registry, so 55 menu strings across six surfaces were never checked by
-      # anything. Autofix: node scripts/ci/check-nav-title-case.mjs --fix
+      # Focused defense in depth for the same rule (Dan 2026-08-30: "AS WELL AS
+      # EVERY CLICKABLE PAGE AND SUBPAGE"). The general gate now covers static
+      # JSX, accessible names, conditional/template copy and known copy fields;
+      # this gate keeps every canonical navigation registry explicit.
+      # Autofix: node scripts/ci/check-nav-title-case.mjs --fix
       - name: UI copy — navigation labels are Title Cased at source
         run: node scripts/ci/check-nav-title-case.mjs
 

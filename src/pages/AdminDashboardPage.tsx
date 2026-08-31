@@ -1218,7 +1218,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
   const handleDelete = async (id: string) => {
     if (
       !(await confirmDialog({
-        title: 'Delete announcement',
+        title: 'Delete Announcement',
         message: 'Delete this announcement?',
         confirmText: 'Delete',
         variant: 'danger',
@@ -1450,8 +1450,8 @@ function SettingsTab({ clubId }: { clubId: string }) {
   const TOGGLES = [
     { key: 'allow_observer', label: 'Allow Observers' },
     { key: 'show_hand_history', label: 'Show Hand History' },
-    { key: 'auto_cashout', label: 'Auto Cashout on Leave' },
-    { key: 'require_kyc', label: 'Require KYC for Cashouts' },
+    { key: 'auto_cashout', label: 'Auto Cashout On Leave' },
+    { key: 'require_kyc', label: 'Require KYC For Cashouts' },
     { key: 'gps_verification', label: 'GPS Verification' },
     { key: 'ip_restriction', label: 'IP Restriction' },
     { key: 'emulator_detection', label: 'Emulator Detection' },
@@ -2178,7 +2178,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                     onClick={async () => {
                       if (
                         !(await confirmDialog({
-                          title: 'Delete template',
+                          title: 'Delete Template',
                           message: `Delete template "${tmpl.name}"?`,
                           confirmText: 'Delete',
                           variant: 'danger',

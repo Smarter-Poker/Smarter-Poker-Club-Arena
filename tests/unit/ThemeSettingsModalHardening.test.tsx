@@ -542,7 +542,7 @@ describe('ThemeSettingsModal hardening', () => {
     expect(readTableStudioCheckoutIntent('user-1')).not.toBeNull();
   });
 
-  it('keeps the pending design available after a canceled Stripe checkout', async () => {
+  it('keeps the Pending design available after a canceled Stripe checkout', async () => {
     rememberTableStudioCheckoutIntent({
       userId: 'user-1',
       tab: 'table',

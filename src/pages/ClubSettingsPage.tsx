@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { retryFetch } from '../utils/retryFetch';
 import { masterBus } from '../core/MasterBus';
 import { ClubsService } from '../services/ClubsService';
+import { MembershipService } from '../services/MembershipService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import SpinActivationPanel from '../components/club/SpinActivationPanel';
@@ -21,6 +22,35 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
 import '../components/common/ButtonSpinner.css';
 import './ClubSettingsPage.css';
+
+/**
+ * The handover picker shows each candidate's current role so the owner is not
+ * choosing from a list of bare names. Title Cased at the source, like every
+ * other label the estate renders.
+ */
+/** The membership states transfer_club_ownership accepts as a recipient. */
+const HANDOVER_ELIGIBLE_STATUSES = new Set(['active', 'approved']);
+
+function roleLabelForHandover(role: string): string {
+  switch (role) {
+    case 'owner':
+      return 'Owner';
+    case 'co_owner':
+      return 'Co Owner';
+    case 'admin':
+      return 'Admin';
+    case 'manager':
+      return 'Manager';
+    case 'super_agent':
+      return 'Super Agent';
+    case 'agent':
+      return 'Agent';
+    case 'sub_agent':
+      return 'Sub Agent';
+    default:
+      return 'Player';
+  }
+}
 import { reportError } from '../utils/errorReporter';
 import {
   MAX_RAKE_CAP_BB,
@@ -166,6 +196,29 @@ export default function ClubSettingsPage() {
   const [serverChanged, setServerChanged] = useState(false);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // HANDING THE CLUB OVER
+  // ───────────────────────────────────────────────────────────────────────────
+  // transfer_club_ownership has always permitted the owner to do this - it
+  // checks `v_actor <> v_old` and refuses anybody else - but the only screen
+  // that called it was AdminDashboardPage, which a club owner cannot open. So
+  // the one person the rule was written for had to ask a platform admin to do
+  // it for them. This is that screen.
+  //
+  // The RPC does the rest: it refuses a recipient who is not an active member,
+  // demotes the outgoing owner to admin, writes both role_changes rows and the
+  // audit row, and tells both people. Nothing here re-implements any of that.
+  const [showHandoverModal, setShowHandoverModal] = useState(false);
+  const [handoverCandidates, setHandoverCandidates] = useState<
+    { userId: string; displayName: string; role: string }[]
+  >([]);
+  const [handoverLoading, setHandoverLoading] = useState(false);
+  const [handoverTarget, setHandoverTarget] = useState('');
+  const [handoverConfirm, setHandoverConfirm] = useState('');
+  const [isHandingOver, setIsHandingOver] = useState(false);
+  const [handoverError, setHandoverError] = useState<string | null>(null);
+  const handoverTriggerRef = useRef<HTMLButtonElement | null>(null);
   // What a delete would actually destroy. tables and club_wallets are both
   // ON DELETE CASCADE from clubs, so the modal must show real numbers and
   // refuse while anything is live.
@@ -350,6 +403,105 @@ export default function ClubSettingsPage() {
    * on `showDeleteModal` means the cleanup runs when the modal actually closes,
    * which is the only time returning focus is correct.
    */
+  /**
+   * Who may receive the club. The RPC's own rule is "an active member of this
+   * club", so this asks for exactly that set and nothing cleverer - a list on
+   * screen that disagrees with the write behind it is how somebody ends up
+   * picking a name and being told no.
+   */
+  const loadHandoverCandidates = async () => {
+    if (!clubId) return;
+    setHandoverLoading(true);
+    setHandoverError(null);
+    try {
+      const members = await MembershipService.getClubMembers(clubId);
+      const eligible = members
+        .filter((m) => m.userId !== user?.id)
+        // The server's rule is status IN ('active','approved'). MemberStatus does
+        // not list 'approved', but club_members does hold it, so narrowing to the
+        // TS union here would hide real members from a list whose whole job is to
+        // agree with the write behind it. Compared as strings, deliberately.
+        .filter((m) => HANDOVER_ELIGIBLE_STATUSES.has(m.status as string))
+        .map((m) => ({
+          userId: m.userId,
+          displayName: m.displayName || 'Unnamed Member',
+          role: m.role as string,
+        }))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
+      if (!isMountedRef.current) return;
+      setHandoverCandidates(eligible);
+    } catch (e) {
+      reportError(e, 'ClubSettingsPage.loadHandoverCandidates');
+      if (isMountedRef.current) setHandoverError('Could Not Load The Member List. Try Again.');
+    } finally {
+      if (isMountedRef.current) setHandoverLoading(false);
+    }
+  };
+
+  /**
+   * The write. Everything that makes this safe lives in the RPC, so the only
+   * job here is to not swallow its reason: it refuses a non-member, a recipient
+   * who already owns the club, and any caller who is not the current owner, and
+   * each of those refusals is a sentence worth showing.
+   */
+  const handOverClub = async () => {
+    if (!clubId || !handoverTarget || isHandingOver) return;
+    setIsHandingOver(true);
+    setHandoverError(null);
+    try {
+      const uuid = await resolveClubUUID(clubId);
+      const { error } = await supabase.rpc('transfer_club_ownership', {
+        p_club_id: uuid,
+        p_new_owner_id: handoverTarget,
+      });
+      if (error) throw error;
+
+      const recipient =
+        handoverCandidates.find((c) => c.userId === handoverTarget)?.displayName ?? 'The New Owner';
+      toast.success(`${savedClubName} Now Belongs To ${recipient}. You Are An Admin Of It.`);
+      masterBus.emit('CLUB_UPDATED', { clubId: uuid });
+      masterBus.emit('MEMBER_ROLE_CHANGED', {
+        clubId: uuid,
+        userId: handoverTarget,
+        newRole: 'owner',
+        previousRole: 'admin',
+      });
+
+      // Every permission on this page just changed hands. Reloading is the
+      // honest response: staying put would leave owner-only controls on screen
+      // for somebody who is now an admin, and every one of them would fail.
+      setShowHandoverModal(false);
+      navigate(`/clubs/${clubId}`, { replace: true });
+    } catch (e) {
+      reportError(e, 'ClubSettingsPage.handOverClub');
+      if (isMountedRef.current) {
+        setHandoverError(
+          e instanceof Error && e.message
+            ? e.message
+            : 'The Handover Was Refused. Nothing Was Changed.'
+        );
+      }
+    } finally {
+      if (isMountedRef.current) setIsHandingOver(false);
+    }
+  };
+
+  // Escape closes the handover dialog, and focus goes back to the control that
+  // opened it - the same contract the delete dialog got on 2026-08-25.
+  const isHandingOverRef = useRef(isHandingOver);
+  isHandingOverRef.current = isHandingOver;
+  useEffect(() => {
+    if (!showHandoverModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isHandingOverRef.current) setShowHandoverModal(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      handoverTriggerRef.current?.focus();
+    };
+  }, [showHandoverModal]);
+
   const isDeletingRef = useRef(isDeleting);
   isDeletingRef.current = isDeleting;
   useEffect(() => {
@@ -1523,6 +1675,35 @@ export default function ClubSettingsPage() {
           </section>
         )}
 
+        {/* Ownership - Owner Only */}
+        {isOwner && (
+          <section className="settings-section handover-section">
+            <h3>Ownership</h3>
+            <div className="danger-item">
+              <div className="danger-info">
+                <span className="danger-label">Hand Over This Club</span>
+                <span className="danger-desc">
+                  Another Active Member Becomes The Owner And You Become An Admin. Only You Can Do
+                  This, And Only The New Owner Can Undo It.
+                </span>
+              </div>
+              <button
+                ref={handoverTriggerRef}
+                className="btn btn-secondary"
+                onClick={() => {
+                  setHandoverTarget('');
+                  setHandoverConfirm('');
+                  setHandoverError(null);
+                  setShowHandoverModal(true);
+                  void loadHandoverCandidates();
+                }}
+              >
+                Hand Over Club
+              </button>
+            </div>
+          </section>
+        )}
+
         {/* Danger Zone - Owner Only */}
         {isOwner && (
           <section className="settings-section danger-zone">
@@ -1569,6 +1750,116 @@ export default function ClubSettingsPage() {
           </button>
         )}
       </div>
+
+      {/* Handover Confirmation Modal */}
+      {showHandoverModal && (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => !isHandingOver && setShowHandoverModal(false)}
+        >
+          <div
+            className="modal-content handover-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="handover-club-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="handover-club-title">Hand Over {savedClubName}</h3>
+            <p>
+              The Member You Choose Becomes The Owner Of <strong>{savedClubName}</strong> And Holds
+              Every Permission In It. You Become An <strong>Admin</strong>. Only The New Owner Can
+              Hand It Back.
+            </p>
+
+            {handoverLoading && <p className="delete-impact">Loading Members...</p>}
+
+            {!handoverLoading && handoverCandidates.length === 0 && (
+              <p className="delete-impact">
+                This Club Has No Other Active Members, So There Is Nobody To Hand It To.
+              </p>
+            )}
+
+            {!handoverLoading && handoverCandidates.length > 0 && (
+              <>
+                <label className="handover-label" htmlFor="handover-target">
+                  New Owner
+                </label>
+                <select
+                  id="handover-target"
+                  className="handover-select"
+                  value={handoverTarget}
+                  onChange={(e) => setHandoverTarget(e.target.value)}
+                  disabled={isHandingOver}
+                >
+                  <option value="">Choose A Member...</option>
+                  {handoverCandidates.map((c) => (
+                    <option key={c.userId} value={c.userId}>
+                      {c.displayName} ({roleLabelForHandover(c.role)})
+                    </option>
+                  ))}
+                </select>
+
+                {/* Typing the name is the same guard the delete dialog uses. A
+                    handover is not destructive, but it is the one action on
+                    this page the owner cannot reverse alone. */}
+                <label className="handover-label" htmlFor="handover-confirm">
+                  Type <strong>{savedClubName}</strong> To Confirm
+                </label>
+                <input
+                  id="handover-confirm"
+                  className="handover-input"
+                  type="text"
+                  value={handoverConfirm}
+                  onChange={(e) => setHandoverConfirm(e.target.value)}
+                  disabled={isHandingOver}
+                  autoComplete="off"
+                />
+              </>
+            )}
+
+            {handoverError && (
+              <p className="handover-error" role="alert">
+                {handoverError}
+              </p>
+            )}
+
+            <div className="modal-actions">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowHandoverModal(false)}
+                disabled={isHandingOver}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={handOverClub}
+                disabled={
+                  isHandingOver ||
+                  !handoverTarget ||
+                  handoverConfirm.trim() !== savedClubName.trim()
+                }
+                title={
+                  !handoverTarget
+                    ? 'Choose A Member First'
+                    : handoverConfirm.trim() !== savedClubName.trim()
+                      ? 'Type The Club Name To Confirm'
+                      : undefined
+                }
+              >
+                {isHandingOver ? (
+                  <>
+                    <span className="btn-spinner" /> Handing Over...
+                  </>
+                ) : (
+                  'Hand Over Club'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {/* Dialog semantics (Dan 2026-08-25). The overlay was an interactive div

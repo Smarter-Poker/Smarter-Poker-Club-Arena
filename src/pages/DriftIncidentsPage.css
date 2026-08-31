@@ -692,3 +692,12 @@
     flex: 1;
   }
 }
+
+/* ── Notification deep link: flash the card the push was about ── */
+@keyframes di-deep-link-flash {
+  0%   { box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.9); }
+  100% { box-shadow: 0 0 0 3px rgba(96, 165, 250, 0); }
+}
+.di-card.deep-linked {
+  animation: di-deep-link-flash 1.2s ease-out 3;
+}

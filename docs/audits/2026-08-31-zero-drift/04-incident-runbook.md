@@ -68,14 +68,14 @@ flag content changes to hashed fields as `unauthorized_adjustment`.
 
 ## Standing schedules
 
-| Cron                                                                     | Cadence        | Job                                                                                                             |
-| ------------------------------------------------------------------------ | -------------- | --------------------------------------------------------------------------------------------------------------- |
-| ca-incident-escalation-tick                                              | every minute   | 5/10/15/20-minute escalations, storm-capped                                                                     |
-| ca-auto-reconcile-tick                                                   | every minute   | automated repair + re-verify + auto-resolve                                                                     |
-| ca-quick-reconcile-5m                                                    | every 5 min    | negatives, frozen pool, stuck settlements, fresh unaccounted seat exits, ledger-write failures, suspense rollup |
-| ca-supply-snapshot-hourly                                                | hourly         | full supply totals vs ledgered mint/burn                                                                        |
-| ca-ledger-chain-verify-daily                                             | 04:35 UTC      | checksum verification (raises on breaks)                                                                        |
-| (pre-existing) reconcile_ledger_nightly, rake/BBJ/tournament/spin audits | nightly/hourly | now feed incidents automatically                                                                                |
+| Cron | Cadence | Job |
+|------|---------|-----|
+| ca-incident-escalation-tick | every minute | 5/10/15/20-minute escalations, storm-capped |
+| ca-auto-reconcile-tick | every minute | automated repair + re-verify + auto-resolve |
+| ca-quick-reconcile-5m | every 5 min | negatives, frozen pool, stuck settlements, fresh unaccounted seat exits, ledger-write failures, suspense rollup |
+| ca-supply-snapshot-hourly | hourly | full supply totals vs ledgered mint/burn |
+| ca-ledger-chain-verify-daily | 04:35 UTC | checksum verification (raises on breaks) |
+| (pre-existing) reconcile_ledger_nightly, rake/BBJ/tournament/spin audits | nightly/hourly | now feed incidents automatically |
 
 ## Probe suite
 
@@ -91,3 +91,25 @@ post-target repeats; **warning** = one 5-minute update and one past-target notic
 dashboard-only, no pushes. The daily unclassified-flow (suspense) rollup is info severity — read
 it on the dashboard's "Unclassified Flow Today" card. New standing cron:
 `ca-bbj-repair-unbanked-15m` re-banks any BBJ drop the engine failed to bank, within 15 minutes.
+
+## Phase-2 cadence update (2026-08-31 19:00 UTC)
+
+The suspense flow is drained: spin settlements, tournament rake banking, guarantee overlays,
+BBJ repair, and bare `increment_union_wallet` calls all declare categories now, so NEW
+unclassified flow is a regression, not a migration artifact. New standing cron
+`ca-suspense-regression-15m`: more than 10 suspense rows or 50 chips of suspense flow in any
+hour (after the 19:01 UTC cutover) raises a warning incident (deduped hourly) — it means a
+money path lost, or never had, its category declaration. The daily info rollup remains the
+dashboard's "Unclassified Flow Today" card.
+
+## Phase-3/4 cadence update (2026-08-31 19:45 UTC)
+
+New standing schedules: `ca-settlement-correctness-30m` (cross-club postings, rakeback chain
+invariants, ticket conservation, insurance pair-match), `ca-daily-attestation` (06:10 UTC digest
+push — green days say "all green"), `ca-ledger-day-manifest` (04:25 UTC SHA-256 manifest per
+ledger day; recompute mismatch = critical tamper incident), `ca-hand-facts-prune-daily` (90-day
+retention on `ca_hand_financial_facts`). A `tourney-cashout-blocked:*` warning means the engine
+tried to cash a tournament play-chip stack out as real chips — the guard blocked the credit and
+closed the seat; fix the engine exit path, never re-enable the credit. `fn_ca_balance_asof`
+answers "what did this account hold at time T"; `fn_ca_gdpr_financial_precheck` lists why an
+account cannot close financially.

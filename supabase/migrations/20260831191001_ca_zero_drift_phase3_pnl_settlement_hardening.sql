@@ -1,0 +1,16 @@
+-- ZERO-DRIFT PHASE 3A — UNION PLAYER-P&L SETTLEMENT HARDENING
+-- (prod: ca_zero_drift_phase3_pnl_settlement_hardening +
+--  ca_phase3_pnl_incident_call_types fixup, 2026-08-31 ~19:15 UTC)
+-- fn_union_settle_player_pnl gains: (1) atomic failure recording — the money
+-- section runs in a guarded sub-block; any error rolls every chip movement
+-- back, persists the claim as status='failed' (excluded from the uniqueness
+-- index so a retry works), records error detail on ca_settlements, raises a
+-- CRITICAL settlement_error incident, returns {success:false}; (2) the
+-- ca_settlements state machine walk open→…→final with failed-resume;
+-- (3) pnl_settlement ledger categorization, single-posted from the
+-- club-treasury side; (4) bounds validation before any chips move.
+-- This mirror carries the corrected incident call (v_ca_id::text — no
+-- implicit uuid→text cast exists for call resolution).
+-- Full body: see prod schema_migrations or pg_get_functiondef; identical to
+-- the live definition as verified 2026-08-31 19:20 UTC (happy + failure
+-- paths probed in rolled-back transactions).

@@ -1,0 +1,3 @@
+-- ca_phase5_epoch3_reset_drain_loop_fix (prod 20260831200446). Canonical body lives in prod schema_migrations —
+-- replace this marker byte-exact via scripts/dev/export-applied-migrations.sh.
+-- Phase 5 fixup: mint retirement drains a user's club balances largest-first until fully retired.

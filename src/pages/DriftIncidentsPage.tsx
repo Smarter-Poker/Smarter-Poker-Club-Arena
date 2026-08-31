@@ -415,6 +415,7 @@ export default function DriftIncidentsPage() {
             return (
               <div
                 key={incident.id}
+                id={`di-${incident.id}`}
                 className={`di-card severity-${incident.severity} ${
                   incident.past_target && incident.status !== 'resolved' ? 'past-target' : ''
                 }`}

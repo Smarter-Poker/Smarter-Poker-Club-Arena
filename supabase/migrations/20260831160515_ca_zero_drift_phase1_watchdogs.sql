@@ -1,0 +1,3 @@
+-- ca_zero_drift_phase1_watchdogs (prod 20260831160515). Canonical body lives in prod schema_migrations —
+-- replace this marker byte-exact via scripts/dev/export-applied-migrations.sh.
+-- Phase 1: ca_guard_inventory (63 guards) + integrity check; ca_money_rpc_registry + drift scan; supply thresholds; escrow TTL sweep; idempotency retention 30d.

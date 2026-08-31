@@ -248,7 +248,7 @@ describe('the profile region shows the complete live profile picture', () => {
     expect(slot).toContain('aspect-ratio: 1');
     expect(slot).toContain('transform: translate(-50%, -50%) !important');
     expect(slot).toContain('box-sizing: border-box');
-    expect(slot).toContain('border: 1px solid rgba(0, 0, 0, 0.94)');
+    expect(slot).toContain('border: 0.5px solid rgba(0, 0, 0, 0.94)');
     expect(slot).toContain('border-radius: 50%');
     expect(slot).toContain('background: transparent');
     expect(slot).toContain('z-index: 1');
@@ -257,6 +257,12 @@ describe('the profile region shows the complete live profile picture', () => {
     expect(portrait).toContain('border-radius: 50% !important');
     expect(portrait).toContain('background: transparent !important');
     expect(portrait).toContain('object-fit: cover !important');
+  });
+
+  it('keeps the desktop profile mask inside the compressed 96px header rail', () => {
+    expect(CSS).toMatch(
+      /@media \(min-width: 901px\)[\s\S]*?\.profileBtn\s*\{[\s\S]*?top: 13%;[\s\S]*?height: 74%;[\s\S]*?aspect-ratio: auto;/
+    );
   });
 });
 

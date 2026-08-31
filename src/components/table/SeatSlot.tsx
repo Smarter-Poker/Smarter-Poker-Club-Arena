@@ -67,7 +67,12 @@ export type PositionBadge =
   | 'HJ'
   | 'CO'
   | null;
-export type LastAction = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | null;
+/* CRAZY PINEAPPLE PHASE 3 2026-08-31: 'discard' was missing from this union
+   even though the engine has emitted PLAYER_ACTION action:'discard' since the
+   variant shipped and TablePage writes it into lastActions like any other
+   action. The seat therefore had a live action it could not name, could not
+   label and could not animate. */
+export type LastAction = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'discard' | null;
 
 /**
  * AVATAR CHOREOGRAPHY 2026-08-21 (Dan: "if they could move to put chips in the
@@ -327,6 +332,24 @@ export interface SeatSlotProps {
    */
   holeCardCount?: number;
   /**
+   * CRAZY PINEAPPLE PHASE 3 2026-08-31 - the card this seat just discarded,
+   * for the ghost that flies to the muck.
+   *
+   * HERO ONLY, and it never crosses the wire. In Crazy Pineapple the discarded
+   * card is never revealed to opponents - not on the discard, not at showdown -
+   * and hole cards on this platform do not travel on the public broadcast at
+   * all: they go through the RLS-protected `table_hole_cards` table, which
+   * exists because of a god-mode vulnerability (migration
+   * 20260312_secure_hole_cards_fix.sql). The public `player_action` event
+   * carries a seat and the word 'discard' and NOTHING card-shaped, so a
+   * villain's ghost is drawn face DOWN from that event alone. The hero's own
+   * card is already in their own client, and they are the one who chose it.
+   *
+   * Null or undefined = draw a back, which is the correct treatment for every
+   * seat that is not the hero.
+   */
+  discardFlightCard?: Card | null;
+  /**
    * Is there a HAND at this table right now?
    *
    * Dan 2026-08-28, on a Spin still selling its third seat: the two players
@@ -532,6 +555,9 @@ function getActionLabel(action: LastAction, amount?: number): string {
       return amount ? `Raise ${formatStack(amount)}` : 'Raise';
     case 'all_in':
       return 'ALL IN';
+    case 'discard':
+      /* CLAUDE.md 5.7: Title Case Every Word. */
+      return 'Discard';
     default:
       return '';
   }
@@ -614,6 +640,7 @@ function HoleCard({
   cardBack = 'classic_blue',
   eager = false,
   fanIndex,
+  discardFlight = false,
 }: {
   card?: Card | null;
   hidden?: boolean;
@@ -637,22 +664,37 @@ function HoleCard({
    * Undefined for hero cards, whose row derives its index via nth-child.
    */
   fanIndex?: number;
+  /**
+   * CRAZY PINEAPPLE PHASE 3 2026-08-31: this card is the one being thrown, and
+   * is drawn only for as long as it takes to reach the muck. It is a GHOST -
+   * the hand it came from has already lost it (hero's row shrank the instant
+   * the engine accepted; a villain's back count dropped on the public event) -
+   * so it must never be counted, clicked or read as part of the holding.
+   * `seat__card--discarding` in SeatSlot.css carries the flight.
+   */
+  discardFlight?: boolean;
 }) {
   const size = isHero ? 'md' : 'sm';
   const fanStyle =
     fanIndex !== undefined ? ({ '--vh-i': fanIndex } as React.CSSProperties) : undefined;
+  const flightClass = discardFlight ? ' seat__card--discarding' : '';
 
   if (hidden || !card) {
     return (
-      <div className="seat__card seat__card--back" style={fanStyle}>
+      <div
+        className={`seat__card seat__card--back${flightClass}`}
+        style={fanStyle}
+        aria-hidden={discardFlight || undefined}
+      >
         <CardBack size={size} style={cardBack} />
       </div>
     );
   }
   return (
     <div
-      className={`seat__card seat__card--face${isWinner ? ' seat__card--winner' : ''}${isDimmed ? ' seat__card--dimmed' : ''}`}
+      className={`seat__card seat__card--face${isWinner ? ' seat__card--winner' : ''}${isDimmed ? ' seat__card--dimmed' : ''}${flightClass}`}
       style={fanStyle}
+      aria-hidden={discardFlight || undefined}
     >
       <CardImage
         card={card}
@@ -741,6 +783,7 @@ export const SeatSlot = memo(
       deckStyle,
       cardBack = 'classic_blue',
       holeCardCount = 2,
+      discardFlightCard = null,
       handInPlay = true,
       showStackInBB = false,
       onSit,
@@ -1105,6 +1148,43 @@ export const SeatSlot = memo(
         return () => clearTimeout(timer);
       }
       prevActionRef.current = lastAction;
+    }, [lastAction]);
+
+    /**
+     * CRAZY PINEAPPLE PHASE 3 2026-08-31 — one card leaves the hand.
+     *
+     * Deliberately its own effect, its own ref and its own timer, for the same
+     * reason the avatar choreography below is: the all-in/fold effect above
+     * early-returns per branch to scope its cleanup to a single timer, so a
+     * third branch added there would be unreachable (all_in and fold both
+     * return first) or would silently change which timeout gets cleaned up.
+     *
+     * Fired off `lastAction` and NOTHING else, which is what makes a horse's
+     * discard identical to a human's (CLAUDE.md §10.5): both arrive as the
+     * same PLAYER_ACTION event, on the same code path, at the horse's own
+     * humanlike delay. There is no `is_horse` anywhere near this.
+     *
+     * The window outlasts the CSS the way the fold's does — cardDiscardOut is
+     * 420ms and this is 500ms, both scaled by --animation-speed, so the ghost
+     * is never unmounted mid-flight at any speed setting (ANIMATION AUDIT
+     * 2026-08-19 found exactly that bug on the fold).
+     *
+     * NOT marked data-motion="keep", and that is deliberate: the length of
+     * this animation carries no information. What it MEANS — a card left this
+     * hand — is carried by its final frame and by the row that is now one card
+     * shorter, both of which reduced motion preserves (reducedMotion.css
+     * collapses to 1ms rather than `animation: none` precisely so `forwards`
+     * animations still land). Motion collapses; the meaning does not.
+     */
+    const [discardFlight, setDiscardFlight] = useState(false);
+    const prevDiscardActionRef = React.useRef<LastAction>(null);
+    useEffect(() => {
+      const rising = lastAction === 'discard' && prevDiscardActionRef.current !== 'discard';
+      prevDiscardActionRef.current = lastAction;
+      if (!rising) return;
+      setDiscardFlight(true);
+      const timer = setTimeout(() => setDiscardFlight(false), 500 * getAnimationSpeed());
+      return () => clearTimeout(timer);
     }, [lastAction]);
 
     /**
@@ -2004,7 +2084,11 @@ export const SeatSlot = memo(
               className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length && !revealHeld ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
               style={
                 {
-                  '--vh-n': opponentCardCount,
+                  /* PHASE 3 2026-08-31: the flying card still counts toward
+                     the fan's geometry while it is on screen. Without this the
+                     cluster re-centres for two cards the same frame the third
+                     starts leaving, and the two survivors visibly slide. */
+                  '--vh-n': opponentCardCount + (discardFlight ? 1 : 0),
                   '--vh-rot-step': `${(VILLAIN_FAN[opponentCardCount] ?? VILLAIN_FAN[2]).rot}deg`,
                   /* -base, not --vh-step-f itself: the showdown reveal widens
                      the step to 0.55 via a class rule, and an inline value
@@ -2078,6 +2162,21 @@ export const SeatSlot = memo(
                       fanIndex={i}
                     />
                   ))}
+              {/* PHASE 3 2026-08-31: the card on its way to the muck. Drawn
+                  OUTSIDE the count above, at the fan position the hand just
+                  gave up, so the two remaining backs never reflow to make room
+                  for a card that is leaving. Face DOWN, always: this is a
+                  villain, and their discard is not revealed in this variant. */}
+              {discardFlight && (
+                <HoleCard
+                  key="discard-flight"
+                  hidden={true}
+                  deckStyle={deckStyle}
+                  cardBack={cardBack}
+                  fanIndex={opponentCardCount}
+                  discardFlight
+                />
+              )}
             </div>
           )}
 
@@ -2561,6 +2660,30 @@ export const SeatSlot = memo(
                 )}
               </span>
             ))}
+            {/* PHASE 3 2026-08-31: hero's discarded card, on its way out.
+                By the time this renders the row above is already two cards -
+                the engine accepted, TablePage took the card off the felt, and
+                that removal is also what closes the picker. So the card the
+                player just chose has nowhere left to live, and without a ghost
+                the hero's hand simply pops from three to two.
+
+                Deliberately NOT inside a .seat__card-pick wrapper: this card
+                is gone, so it must not be clickable, focusable, or markable as
+                "show after the hand". Face UP, because it is the hero's own
+                card and they are the one who picked it - see discardFlightCard
+                on the interface for why nobody else's is. */}
+            {discardFlight && (
+              <HoleCard
+                key="discard-flight"
+                card={discardFlightCard}
+                hidden={!discardFlightCard}
+                isHero={true}
+                deckStyle={deckStyle}
+                cardBack={cardBack}
+                eager
+                discardFlight
+              />
+            )}
           </div>
         )}
 
@@ -2714,6 +2837,12 @@ export const SeatSlot = memo(
      * seat is supposed to read YOUR SEAT instead of EMPTY, and it never did.
      */
     if (prev.holeCardCount !== next.holeCardCount) return false;
+    /* PHASE 3 2026-08-31: without this the ghost would render whatever card
+       was in the prop at the last render this comparator DID let through -
+       i.e. the previous hand's discard, or nothing at all. `lastAction` is
+       compared above and is what starts the flight, but the two arrive in
+       different renders. */
+    if (prev.discardFlightCard !== next.discardFlightCard) return false;
     /* The first hand of a Spin flips this from false to true, and it is what
        puts every villain's cards on the felt. Swallowed here, the table would
        stay card-less through the whole hand. */

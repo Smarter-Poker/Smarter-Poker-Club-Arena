@@ -449,6 +449,26 @@ describe('handleGetState', () => {
     });
     expect((engine as any).getTableState).not.toHaveBeenCalled();
   });
+
+  it('403 prevents a non-seated member from reading an observer-restricted table', async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'member-1' });
+    vi.mocked(authorizeTableViewer).mockResolvedValue({
+      allowed: false,
+      reason: 'observers_restricted',
+      clubId: 'club-1',
+    });
+    const engine = mockEngine();
+    const { res, captured } = mockRes();
+
+    await handleGetState(mockReq(), res, 't1', { gameServer: mockGameServer(engine, 't1') });
+
+    expect(captured.statusCode).toBe(403);
+    expect(parseJson(captured)).toMatchObject({
+      code: 'OBSERVERS_RESTRICTED',
+      club_id: 'club-1',
+    });
+    expect((engine as any).getTableState).not.toHaveBeenCalled();
+  });
 });
 
 // ── /leave has a special 200 path when engine missing ──────────────────

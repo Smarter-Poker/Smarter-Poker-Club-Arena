@@ -332,7 +332,9 @@ jobs:
               return 0
             fi
             echo "running:$specs"
-            PLAYWRIGHT_JSON_OUTPUT_NAME="e2e-report/$json" npx playwright test $specs $flags
+            output_dir="${json%.json}"
+            PLAYWRIGHT_JSON_OUTPUT_NAME="e2e-report/$json" npx playwright test $specs $flags \
+              --output="test-results/$output_dir"
           }
 
           # Certify Stats first among the broader route checks. Cashier has its

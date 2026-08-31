@@ -22,6 +22,7 @@ import {
   gameLaneFor,
   isActiveNow,
   occupancyTargetFor,
+  setSoleOpenCashTables,
   stakeBandAllows,
   stakeBandForBigBlind,
 } from './HorseBehavior.js';
@@ -568,6 +569,25 @@ export class HorseFleetManager {
         reportError(new Error(errMsg), 'HorseFleet.Failed_to_fetch_tables');
         return;
       }
+
+      // A VARIANT MUST NEVER GO FULLY DARK (2026-08-30): publish which tables
+      // are currently the ONLY open one for their variant config, so the
+      // held-empty hold in HorseBehavior never applies to them. Grouped by the
+      // real config identity (variant + blinds + seats), not by name, so a
+      // renamed table cannot orphan its family. This list is exactly the open
+      // (waiting/running, non-tournament) tables fetched above.
+      const openByVariantConfig = new Map<string, string[]>();
+      for (const t of tables) {
+        const key = `${t.game_variant}:${t.small_blind}/${t.big_blind}:${t.max_players}`;
+        const arr = openByVariantConfig.get(key) ?? [];
+        arr.push(t.id);
+        openByVariantConfig.set(key, arr);
+      }
+      const soleOpenIds: string[] = [];
+      for (const ids of openByVariantConfig.values()) {
+        if (ids.length === 1) soleOpenIds.push(ids[0]);
+      }
+      setSoleOpenCashTables(soleOpenIds);
 
       // Optimization: Fetch all active seats once to build an in-memory map of
       // who is seated where.

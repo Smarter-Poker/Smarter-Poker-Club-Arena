@@ -64,6 +64,13 @@ export interface WaitlistEntry {
   /** Player display name, resolved by getTableWaitlist (Dan 2026-08-26: "your
    *  name needs to appear on the waiting list"). '' when unresolved. */
   displayName: string;
+  /**
+   * While status is 'notified', the instant the EXCLUSIVE seat hold lapses
+   * (Dan 2026-08-30: sixty seconds to get to the seat). Null on every other
+   * status, and on rows written before the column existed. The UI counts down
+   * to this; atomic_table_buyin enforces it.
+   */
+  holdExpiresAt: string | null;
 }
 
 export interface WaitlistPosition {
@@ -84,6 +91,7 @@ function mapRow(
     status: string;
     created_at: string;
     notified_at: string | null;
+    hold_expires_at?: string | null;
   },
   extras?: { position?: number; tableName?: string; displayName?: string }
 ): WaitlistEntry {
@@ -99,6 +107,10 @@ function mapRow(
     joinedAt: row.created_at,
     tableName: extras?.tableName ?? '',
     displayName: extras?.displayName ?? '',
+    // Only meaningful while the offer is live. Undefined (an older row, or a
+    // select that did not ask for it) reads as null rather than as "expired",
+    // so a missing column can never make the UI claim a hold has lapsed.
+    holdExpiresAt: row.hold_expires_at ?? null,
   };
 }
 
@@ -162,7 +174,7 @@ export const WaitlistService = {
     // Return existing active row if present (idempotent join).
     const { data: existing, error: existingErr } = await supabase
       .from('table_waitlist')
-      .select('id, table_id, user_id, status, created_at, notified_at')
+      .select('id, table_id, user_id, status, created_at, notified_at, hold_expires_at')
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .in('status', ACTIVE_STATES)
@@ -194,7 +206,7 @@ export const WaitlistService = {
     const { data: inserted, error: insErr } = await supabase
       .from('table_waitlist')
       .insert({ table_id: tableId, user_id: userId, status: 'waiting' })
-      .select('id, table_id, user_id, status, created_at, notified_at')
+      .select('id, table_id, user_id, status, created_at, notified_at, hold_expires_at')
       .maybeSingle();
     /**
      * RULE 1 (2026-08-21): this was `.single()` — the last one left in the
@@ -214,7 +226,7 @@ export const WaitlistService = {
       // Unique-violation → a concurrent join won the race; fetch and return it.
       const { data: raced } = await supabase
         .from('table_waitlist')
-        .select('id, table_id, user_id, status, created_at, notified_at')
+        .select('id, table_id, user_id, status, created_at, notified_at, hold_expires_at')
         .eq('table_id', tableId)
         .eq('user_id', userId)
         .in('status', ACTIVE_STATES)
@@ -317,7 +329,7 @@ export const WaitlistService = {
     if (!userId) return [];
     const { data, error } = await supabase
       .from('table_waitlist')
-      .select('id, table_id, user_id, status, created_at, notified_at')
+      .select('id, table_id, user_id, status, created_at, notified_at, hold_expires_at')
       .eq('user_id', userId)
       .in('status', ACTIVE_STATES)
       .order('created_at', { ascending: true });
@@ -387,7 +399,7 @@ export const WaitlistService = {
     if (!tableId) return [];
     const { data, error } = await supabase
       .from('table_waitlist')
-      .select('id, table_id, user_id, status, created_at, notified_at')
+      .select('id, table_id, user_id, status, created_at, notified_at, hold_expires_at')
       .eq('table_id', tableId)
       .in('status', ACTIVE_STATES)
       .order('created_at', { ascending: true });
@@ -439,7 +451,7 @@ export const WaitlistService = {
 
     const { data: mine, error: mineErr } = await supabase
       .from('table_waitlist')
-      .select('id, table_id, user_id, status, created_at, notified_at')
+      .select('id, table_id, user_id, status, created_at, notified_at, hold_expires_at')
       .eq('user_id', uid)
       .in('status', ACTIVE_STATES)
       .order('created_at', { ascending: true });

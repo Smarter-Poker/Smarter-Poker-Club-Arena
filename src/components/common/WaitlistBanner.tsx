@@ -8,27 +8,90 @@
  * v2.0: Supports multiple simultaneous waitlists with stacked display.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 
 interface WaitlistInfo {
   tableId: string;
   position: number;
   tableName: string;
+  /**
+   * Set only while an EXCLUSIVE seat hold is live (Dan 2026-08-30: sixty
+   * seconds to get to the seat). An ISO instant rather than a duration, so a
+   * backgrounded tab resumes on the real remaining time instead of restarting
+   * the clock.
+   */
+  holdExpiresAt?: string | null;
+}
+
+/** Whole seconds left until an ISO instant. Never negative. */
+function secondsLeft(iso: string | null | undefined): number {
+  if (!iso) return 0;
+  const ms = new Date(iso).getTime() - Date.now();
+  return Number.isFinite(ms) ? Math.max(0, Math.ceil(ms / 1000)) : 0;
 }
 
 export default function WaitlistBanner() {
   const [waitlistEntries, setWaitlistEntries] = useState<Map<string, WaitlistInfo>>(new Map());
+  const navigate = useNavigate();
+
+  /**
+   * ONE TICK FOR THE WHOLE BANNER, and only while something is actually
+   * counting down. A timer per entry would multiply renders for no gain, and
+   * a timer that runs when no hold is live is a wakeup every second for a
+   * component showing a static number.
+   */
+  const [, setTick] = useState(0);
+  const hasLiveHold = Array.from(waitlistEntries.values()).some(
+    (e) => secondsLeft(e.holdExpiresAt) > 0
+  );
+  useEffect(() => {
+    if (!hasLiveHold) return;
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [hasLiveHold]);
+
+  /**
+   * THE SEAT OFFER. Before this, the banner DELETED the badge the moment the
+   * player was offered a seat: WAITLIST_POSITION_CHANGED reports position 0
+   * for a 'notified' row, and position 0 was treated as "seated or removed".
+   * So the one moment that is actually urgent - a seat held for you, right
+   * now, for sixty seconds - was the moment the UI went blank.
+   */
+  useMasterBusSubscription('WAITLIST_SEAT_OFFERED', (payload) => {
+    const { tableId, tableName, holdExpiresAt } = payload || ({} as any);
+    if (!tableId) return;
+    setWaitlistEntries((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(tableId);
+      next.set(tableId, {
+        tableId,
+        position: 0,
+        tableName: tableName || existing?.tableName || '',
+        holdExpiresAt: holdExpiresAt ?? null,
+      });
+      return next;
+    });
+  });
 
   useMasterBusSubscription('WAITLIST_POSITION_CHANGED', (payload) => {
     const { tableId, position, tableName } = payload || ({} as any);
     setWaitlistEntries((prev) => {
       const next = new Map(prev);
       if (position && position > 0) {
-        next.set(tableId, { tableId, position, tableName });
+        next.set(tableId, { tableId, position, tableName, holdExpiresAt: null });
       } else {
-        // Position 0 or null means user was seated or removed from waitlist
-        next.delete(tableId);
+        /* Position 0 means seated, removed - OR being offered a seat right
+           now. Deleting unconditionally is what used to blank the banner at
+           the only moment it mattered, so a live hold survives; anything
+           else is still cleared. */
+        const existing = next.get(tableId);
+        if (existing && secondsLeft(existing.holdExpiresAt) > 0) {
+          next.set(tableId, { ...existing, position: 0 });
+        } else {
+          next.delete(tableId);
+        }
       }
       return next;
     });
@@ -76,102 +139,151 @@ export default function WaitlistBanner() {
         maxWidth: 'min(90vw, 420px)',
       }}
     >
-      {entries.map((entry, index) => (
-        <div
-          key={entry.tableId}
-          style={{
-            background:
-              'linear-gradient(135deg, rgba(0, 20, 40, 0.95) 0%, rgba(10, 30, 60, 0.95) 100%)',
-            backdropFilter: 'blur(20px) saturate(1.5)',
-            WebkitBackdropFilter: 'blur(20px) saturate(1.5)',
-            border: '1px solid rgba(0, 212, 255, 0.3)',
-            borderRadius: 14,
-            padding: '10px 20px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            boxShadow:
-              '0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 212, 255, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
-            animation: `animationsWaitlistSlideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) ${index * 100}ms both`,
-            minWidth: 260,
-          }}
-        >
-          {/* Pulsing dot indicator */}
+      {entries.map((entry, index) => {
+        const left = secondsLeft(entry.holdExpiresAt);
+        const held = left > 0;
+        return (
           <div
+            key={entry.tableId}
+            onClick={held ? () => navigate(`/table/${entry.tableId}?buyin=1`) : undefined}
+            role={held ? 'button' : undefined}
+            tabIndex={held ? 0 : undefined}
+            onKeyDown={
+              held
+                ? (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      navigate(`/table/${entry.tableId}?buyin=1`);
+                    }
+                  }
+                : undefined
+            }
+            aria-label={
+              held ? `Your Seat Is Held For ${left} More Seconds. Tap To Take It.` : undefined
+            }
             style={{
-              width: 10,
-              height: 10,
-              borderRadius: '50%',
-              background: '#00d4ff',
-              boxShadow: '0 0 8px rgba(0, 212, 255, 0.6)',
-              animation: 'animationsWaitlistPulse 1.5s ease-in-out infinite',
-              flexShrink: 0,
+              background:
+                'linear-gradient(135deg, rgba(0, 20, 40, 0.95) 0%, rgba(10, 30, 60, 0.95) 100%)',
+              backdropFilter: 'blur(20px) saturate(1.5)',
+              WebkitBackdropFilter: 'blur(20px) saturate(1.5)',
+              border: held
+                ? `1px solid ${left <= 10 ? 'rgba(255, 92, 92, 0.85)' : 'rgba(0, 212, 255, 0.85)'}`
+                : '1px solid rgba(0, 212, 255, 0.3)',
+              cursor: held ? 'pointer' : 'default',
+              borderRadius: 14,
+              padding: '10px 20px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              boxShadow:
+                '0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 212, 255, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+              animation: `animationsWaitlistSlideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) ${index * 100}ms both`,
+              minWidth: 260,
             }}
-          />
-
-          <div style={{ flex: 1 }}>
+          >
+            {/* Pulsing dot indicator */}
             <div
               style={{
-                fontSize: '0.72rem',
-                fontWeight: 800,
-                color: '#e0e8f0',
-                lineHeight: 1.3,
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                background: held && left <= 10 ? '#ff5c5c' : '#00d4ff',
+                boxShadow:
+                  held && left <= 10
+                    ? '0 0 8px rgba(255, 92, 92, 0.7)'
+                    : '0 0 8px rgba(0, 212, 255, 0.6)',
+                animation: 'animationsWaitlistPulse 1.5s ease-in-out infinite',
+                flexShrink: 0,
               }}
-            >
-              You Are{' '}
-              <span
+            />
+
+            <div style={{ flex: 1 }}>
+              <div
                 style={{
-                  color: '#00d4ff',
-                  fontSize: '0.85rem',
+                  fontSize: '0.72rem',
+                  fontWeight: 800,
+                  color: '#e0e8f0',
+                  lineHeight: 1.3,
                 }}
               >
-                #{entry.position}
-              </span>{' '}
-              In Line
+                {held ? (
+                  <>
+                    Seat Held{' '}
+                    <span
+                      style={{
+                        color: left <= 10 ? '#ff5c5c' : '#00d4ff',
+                        fontSize: '0.85rem',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      0:{String(left).padStart(2, '0')}
+                    </span>{' '}
+                    Tap To Take It
+                  </>
+                ) : (
+                  <>
+                    You Are{' '}
+                    <span
+                      style={{
+                        color: '#00d4ff',
+                        fontSize: '0.85rem',
+                      }}
+                    >
+                      #{entry.position}
+                    </span>{' '}
+                    In Line
+                  </>
+                )}
+              </div>
+              <div
+                style={{
+                  fontSize: '0.62rem',
+                  color: '#6a7a8a',
+                  marginTop: 2,
+                }}
+              >
+                {entry.tableName}
+              </div>
             </div>
-            <div
-              style={{
-                fontSize: '0.62rem',
-                color: '#6a7a8a',
-                marginTop: 2,
-              }}
-            >
-              {entry.tableName}
-            </div>
-          </div>
 
-          {/* Close button */}
-          {/* 2026-08-28: was a 22x22 tap target with no accessible name —
+            {/* Close button */}
+            {/* 2026-08-28: was a 22x22 tap target with no accessible name —
               half the 44px floor, and a screen reader announced nothing.
               Painted size is unchanged; the hit area is expanded to 44x44
               with a pseudo-element, the pattern ActionPanel already uses for
               its raise-adjust buttons. */}
-          <button
-            onClick={() => dismiss(entry.tableId)}
-            aria-label={`Dismiss The Waitlist Notice For ${entry.tableName}`}
-            className="waitlist-banner__dismiss"
-            style={{
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              borderRadius: '50%',
-              width: 22,
-              height: 22,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              color: '#5a6a7a',
-              fontSize: '0.65rem',
-              flexShrink: 0,
-              transition: 'all 0.2s',
-              position: 'relative',
-            }}
-            title="Dismiss"
-          >
-            <span aria-hidden="true">✕</span>
-          </button>
-        </div>
-      ))}
+            <button
+              onClick={(e) => {
+                // The card itself navigates while a hold is live; dismissing
+                // must not also open the table.
+                e.stopPropagation();
+                dismiss(entry.tableId);
+              }}
+              aria-label={`Dismiss The Waitlist Notice For ${entry.tableName}`}
+              className="waitlist-banner__dismiss"
+              style={{
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '50%',
+                width: 22,
+                height: 22,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: '#5a6a7a',
+                fontSize: '0.65rem',
+                flexShrink: 0,
+                transition: 'all 0.2s',
+                position: 'relative',
+              }}
+              title="Dismiss"
+            >
+              <span aria-hidden="true">✕</span>
+            </button>
+          </div>
+        );
+      })}
 
       <style>{`
                 @keyframes waitlistSlideUp {

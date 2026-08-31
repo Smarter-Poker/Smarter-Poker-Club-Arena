@@ -250,7 +250,12 @@ export default function GlobalWaitlistListener() {
                notifications-page row are the out-of-app copies of the same
                offer. */
             type WaitlistPayload = {
-              new?: { status?: string; table_id?: string | number };
+              new?: {
+                status?: string;
+                table_id?: string | number;
+                notified_at?: string | null;
+                hold_expires_at?: string | null;
+              };
               old?: { status?: string };
               eventType?: string;
             };
@@ -263,6 +268,21 @@ export default function GlobalWaitlistListener() {
               newRow?.table_id
             ) {
               const offeredTableId = String(newRow.table_id);
+              /* The banner needs the DEADLINE, not a duration: a tab that was
+                 backgrounded, or a component that mounts late, must show the
+                 true remaining time instead of restarting the clock at sixty.
+                 Falls back to notified_at + 60s for a row written before
+                 hold_expires_at existed. */
+              const holdExpiresAt =
+                newRow.hold_expires_at ??
+                (newRow.notified_at
+                  ? new Date(new Date(newRow.notified_at).getTime() + 60_000).toISOString()
+                  : null);
+              masterBus.emit('WAITLIST_SEAT_OFFERED', {
+                tableId: offeredTableId,
+                tableName: '',
+                holdExpiresAt,
+              });
               /* 60 SECONDS, NOT 15 (Dan 2026-08-30): the seat is now HELD for
                  this player for 60s (fn_offer_open_seat + atomic_table_buyin
                  SEAT_RESERVED guard), so the popup lives exactly as long as

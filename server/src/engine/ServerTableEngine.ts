@@ -202,6 +202,18 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       current_player: currentSeatPlayer?.user_id ?? null,
       dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,
       stage: state.stage ?? 'preflop',
+      /* THE THIRD PAYLOAD, AND THE ONE THAT MATTERS MOST (2026-08-31 audit).
+         `GET /state/:id` is what the client fetches on a websocket SEQUENCE
+         GAP and dispatches as GAME_START — the full-state resync. Phase 1 put
+         `max_seats` on the two hub payloads and stopped there, so a client
+         that had just lost frames — which is precisely a client whose local
+         view may be wrong — resynced from the one payload that could not tell
+         it how wide the table is. It would then fall back to inferring the
+         width from the players in the response, and the hand roster omits
+         anybody not dealt in: a player waiting for the big blind, say. That is
+         the original bug's own starting position, reached through the recovery
+         path. Same source as the other two: the table row, never the roster. */
+      max_seats: Number(this.tableInfo?.max_players) || 0,
       min_raise: state.minRaise ?? 0,
       last_raise: state.lastRaise ?? 0,
       // 2026-08-23: publish the betting structure rather than leaving the

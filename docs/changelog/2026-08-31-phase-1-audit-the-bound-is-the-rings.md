@@ -41,3 +41,27 @@ red.
 
 - Full client tree: **701 files, 9,950 tests, 0 failures**.
 - `tsc --noEmit` clean.
+
+---
+
+## And a third payload the seat count was missing from
+
+Same audit, found by asking where else a client can receive state. Phase 1 put
+`max_seats` on the two hub payloads — `broadcastCurrentState` and
+`publishIdleState` — and stopped there. There is a THIRD:
+
+`getTableState()` answers `GET /state/:id`, which `TableWebSocket.resync()`
+fetches on a websocket **sequence gap** and dispatches to the page as
+`GAME_START`, the full-state resync. So the one payload without the seat count
+was the one a client asks for after losing frames — precisely the client whose
+local view is most likely to be wrong.
+
+Worse, the fallback there is inference from the response's `players`, and that
+list is the HAND roster: it omits anybody not dealt in, including a player
+waiting for the big blind. The inference can therefore land BELOW the truth.
+That is the original bug's exact starting position, reached through the
+recovery path.
+
+Fixed, from the same source as the other two (the table row, never the roster),
+and `SeatCountIsPublished.test.ts` now requires all three payloads. Verified
+real: removing the field turns two pins red.

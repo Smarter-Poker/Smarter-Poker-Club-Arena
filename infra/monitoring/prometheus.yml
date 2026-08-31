@@ -29,6 +29,10 @@ rule_files:
   # /metrics carried 895 poker_* series and none mentioned a tournament, so a
   # tournament could fail for hours with every dashboard green.
   - /etc/prometheus/tournament-rules.yml
+  # 2026-08-31 - Spin fairness. Spin charges no rake: the 8% IS the multiplier
+  # distribution, so E[multiplier] = 2.7638 is the only evidence the house
+  # takes what it advertises. Nothing had ever checked it before these gauges.
+  - /etc/prometheus/spin-rules.yml
   - /etc/prometheus/slo-rules.yml
   - /etc/prometheus/slo-alerts.yml
 

@@ -427,6 +427,15 @@
     "ca_money_rpc_registry": [
       "proname"
     ],
+    "ca_pending_promo_accruals": [
+      "club_id",
+      "user_id",
+      "wagered"
+    ],
+    "ca_pgrst_reload_log": [
+      "ddl_events",
+      "reason"
+    ],
     "ca_rake_schedule": [
       "sb",
       "bb",

@@ -7,7 +7,7 @@ const root = resolve(__dirname, '..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
 const migration = read('supabase/migrations/20260831150100_club_creation_atomic_workflow.sql');
 const auditMigration = read(
-  'supabase/migrations/20260901000003_club_entry_four_phase_audit_fixes.sql'
+  'supabase/migrations/20260831140909_club_entry_four_phase_audit_fixes.sql'
 );
 const service = read('src/services/ClubsService.ts');
 const modal = read('src/components/modals/CreateClubModal.tsx');

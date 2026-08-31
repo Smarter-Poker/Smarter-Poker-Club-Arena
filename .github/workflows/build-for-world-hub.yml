@@ -273,6 +273,16 @@ jobs:
       contents: write
 
     steps:
+      # This job does not inherit the source checkout from build-and-store.
+      # Keep the retention helper beside the downloaded artifact so both the
+      # initial sync and push-retry path execute code from this exact CA SHA.
+      - name: Checkout Club Arena sync tooling
+        uses: actions/checkout@v4
+        with:
+          path: club-arena-source
+          sparse-checkout: scripts/ci/sync-club-arena-dist.mjs
+          sparse-checkout-cone-mode: false
+
       - name: Download the dist built by the previous job
         uses: actions/download-artifact@v4
         with:
@@ -331,7 +341,7 @@ jobs:
 
       - name: Sync dist/ to World Hub public/hub/club-arena/
         run: |
-          node scripts/ci/sync-club-arena-dist.mjs \
+          node club-arena-source/scripts/ci/sync-club-arena-dist.mjs \
             club-arena-build/dist \
             world-hub/public/hub/club-arena
 
@@ -443,7 +453,7 @@ jobs:
               exit 0
             fi
 
-            node ../scripts/ci/sync-club-arena-dist.mjs \
+            node ../club-arena-source/scripts/ci/sync-club-arena-dist.mjs \
               ../club-arena-build/dist \
               public/hub/club-arena
             git add -A public/hub/club-arena/

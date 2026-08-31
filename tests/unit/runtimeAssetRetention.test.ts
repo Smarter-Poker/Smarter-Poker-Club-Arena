@@ -64,4 +64,17 @@ describe('Club Arena runtime asset retention', () => {
       'current'
     );
   });
+
+  it('checks out the sync helper in the isolated World Hub publish job', async () => {
+    const workflow = await readFile(
+      path.join(process.cwd(), '.github', 'workflows', 'build-for-world-hub.yml'),
+      'utf8'
+    );
+
+    expect(workflow).toContain('- name: Checkout Club Arena sync tooling');
+    expect(workflow).toContain('path: club-arena-source');
+    expect(workflow).toContain('sparse-checkout: scripts/ci/sync-club-arena-dist.mjs');
+    expect(workflow).toContain('node club-arena-source/scripts/ci/sync-club-arena-dist.mjs');
+    expect(workflow).toContain('node ../club-arena-source/scripts/ci/sync-club-arena-dist.mjs');
+  });
 });

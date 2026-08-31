@@ -86,7 +86,7 @@ describe('responsive premium Club Arena', () => {
       /\.lobby-top__main\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/s
     );
     expect(mobile).toMatch(
-      /\.lobby-top__identity,[\s\S]*?\.lobby-bbj\s*\{[^}]*height:\s*auto[^}]*aspect-ratio:\s*var\(--lobby-paired-card-ratio\)/s
+      /\.lobby-top \.club-identity\.lobby-top__identity,[\s\S]*?\.lobby-bbj\s*\{[^}]*height:\s*auto[^}]*aspect-ratio:\s*var\(--lobby-paired-card-ratio\)/s
     );
     expect(mobile).toContain('--lobby-paired-card-ratio: 2.4 / 1');
     expect(mobile).toMatch(

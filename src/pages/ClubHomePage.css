@@ -2506,7 +2506,11 @@
     gap: 10px;
   }
 
-  .lobby-top__identity,
+  /* The base .club-identity artwork ratio is declared after this page in the
+     runtime cascade. Match its specificity so the paired mobile frames both
+     honor this shared ratio instead of letting the Club card grow taller than
+     the BBJ plaque. */
+  .lobby-top .club-identity.lobby-top__identity,
   .lobby-bbj {
     width: 100%;
     height: auto;

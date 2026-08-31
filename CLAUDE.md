@@ -52,9 +52,24 @@ That script builds CA with NODE_ENV=production, copies the new build to the Hub,
 
 **To actually deploy to production:**
 
-1. Commit your changes in the `club-arena` repository.
-2. `git push` to `main` in `club-arena`.
-3. A GitHub Action (`build-for-world-hub.yml`) will automatically build and sync it to the World Hub repository, which triggers the Vercel deploy.
+1. Commit your changes in the `club-arena` repository, on a branch of your own.
+2. Ship it with `bash scripts/git-safe-push.sh "feat(ca): what changed"`. That
+   pushes the branch, opens the pull request and merges it when the checks go
+   green. **A direct `git push` to `main` is REFUSED** — section 1.2.5 has the
+   ruleset that refuses it and the six checks it requires, and `.husky/pre-push`
+   check 5 refuses it locally as well.
+
+   CORRECTED 2026-08-31: this step used to read "`git push` to `main`", which
+   has been impossible since the ruleset went active on 2026-08-21 and which
+   contradicted 1.2.5 sixty lines below it. An agent who tried it got a
+   rejection with no explanation and reached for `--force` or
+   `git pull --rebase origin main` — the exact move section 12 records as
+   having stranded this clone through 40 attempts and 10 emergency rescues.
+   Verified the same day with
+   `gh api repos/Smarter-Poker/Smarter-Poker-Club-Arena/rulesets`.
+3. Once the pull request merges, a GitHub Action (`build-for-world-hub.yml`)
+   automatically builds and syncs it to the World Hub repository, which triggers
+   the Vercel deploy.
 
 `SENTRY_AUTH_TOKEN/ORG/PROJECT` are read from `~/Documents/club-arena/.env` if
 not already exported. Bulky static dirs (`cards/`, `images/`, `club-logos/`,
@@ -73,7 +88,13 @@ already exits non-zero on build/push failure.
 
 `.husky/pre-push` is a seatbelt on an unlocked door: `--no-verify` skips it and
 a push made through the GitHub API never runs it. The lock is a ruleset, which
-GitHub enforces for every client. Private repos need GitHub Pro for that.
+GitHub enforces for every client.
+
+CORRECTED 2026-08-31: this used to end "Private repos need GitHub Pro for that."
+Two rulesets are active on main on this repo, and `gh api repos/... --jq .private`
+says `true`. Whatever the plan situation was when that line was written, it is
+not the reason anything is or is not enforced now. Check, do not assume:
+`gh api repos/Smarter-Poker/Smarter-Poker-Club-Arena/rulesets`.
 
 `scripts/ci/apply-main-ruleset.mjs` applies it in one command the moment Pro is
 on, in two stages:
@@ -84,9 +105,13 @@ on, in two stages:
 Stage 1 changes nothing about how you work and would have prevented the
 2026-08-21 rewind that dropped four commits already serving in production.
 Stage 2 is the one that makes a red test impossible to land - and it ends
-direct pushes to main, so read section 1.3 again after it is applied. The two
-required checks (`TypeScript Check`, `Client Unit Tests (vitest)`) already exist
-in ci.yml and already run on pull_request.
+direct pushes to main, so read section 1.3 again after it is applied.
+
+Both stages are applied. The live ruleset requires SIX checks, not the two this
+paragraph used to name; section 1.2.5 lists them, and all six exist as real jobs
+(five in `ci.yml`, `Silent Revert Guard` in its own workflow) — verified
+2026-08-31 by matching the ruleset's `required_status_checks` against the `name:`
+of every job in `.github/workflows/`.
 
 The token also needs `Administration: Read and write`; one that can push code
 cannot change protection rules. The script says which of the two is missing.
@@ -127,7 +152,8 @@ because the ruleset makes the pull-request path the only path.
 
 Two documents disagree with the API and are wrong. Believe the API.
 
-- Section 1.1.5 above is titled "prepared, not yet active". It is active.
+- Section 1.1.5 above described the ruleset as prepared rather than applied. It
+  is applied, and that section has been corrected (2026-08-31).
 - `.husky/pre-push` check 0 says "making the repos private ... silently
   disabled required status checks and rulesets ... nothing enforces it
   server-side any more". That was true when it was written and is not true
@@ -552,9 +578,23 @@ ask Dan for a manual handoff again:
 ### What works from the cloud sandbox
 
 - Supabase MCP: full production DB access (migrations, SQL). USE IT.
-- GitHub MCP via device bridge (`mcp__remote-devices__github__*`): full repo
-  read/write with Dan's token. `push_files` works for files up to ~65KB each
-  (HorseLogic.ts at 63KB pushed clean). Branch -> PR -> merge = ONE deploy.
+- The host's authenticated `gh` at `/opt/homebrew/bin/gh`, reached through a
+  host shell (not `device_bash`): full repo read/write, PRs, Actions, rulesets.
+  This is the sanctioned path — every guard, script and workflow in the estate
+  is written against `gh` and the REST API.
+- GitHub MCP via device bridge (`mcp__remote-devices__github__*`): **DEAD as of
+  2026-08-31 — every call returns `Bad credentials`.** It carries its own
+  static token, separate from the one `gh` uses, and a token nobody watches
+  eventually expires; it did the same thing on 2026-08-22. This is NOT a
+  blocker and NOT a reason to hand the job back to Dan (World Hub RULE 0
+  forbids converting it into a handoff). Say so once, and do the same work with
+  `gh`:
+
+      gh pr create --draft --fill               # not create_pull_request
+      gh api repos/OWNER/REPO/contents/PATH     # not get_file_contents
+
+  `gh auth status` tells you whether the credential that matters is alive; it
+  was, on 2026-08-31, while the MCP was not. Do not ask for a credential.
 - Device bridge: stage files FROM Dan's disk, commit files TO Dan's disk.
   `device_bash` runs in a NO-NETWORK Linux VM with the folders mounted.
   rm is forbidden — mv junk into a `_to_delete/` folder instead.
@@ -562,9 +602,12 @@ ask Dan for a manual handoff again:
 ### What is BLOCKED from the cloud sandbox (do not waste time retrying)
 
 - Direct git clone/push (proxy MITM: "repo not enabled for this session")
-- `api.github.com` from cloud Bash — same repo gate. Only the device-bridge
-  GitHub MCP has repo access (so GitHub Actions run status is NOT readable;
-  verify deploys through the DB instead, see below).
+- `api.github.com` from cloud Bash — same repo gate. Reach GitHub through the
+  host's `gh` instead (corrected 2026-08-31: this used to say the device-bridge
+  GitHub MCP was the ONLY thing with repo access, and that MCP now answers
+  `Bad credentials` to every call while `gh` on the host works). A local PAT
+  cannot read Checks, so GitHub Actions run status is still NOT readable from a
+  token — verify deploys through the DB instead, see below.
 - npm/pip/apt/cargo/go registries (403), raw curl to the engine, SSH clients
   (none installed, none installable)
 - Terminal/IDE computer-use is click-only (no typing)
@@ -589,8 +632,14 @@ ask Dan for a manual handoff again:
 
 ### Pushing code (in order of preference)
 
-1. Files < ~65KB: GitHub MCP `push_files` to a branch, then
-   `create_pull_request` + `merge_pull_request`. One merge = one deploy.
+1. Edit in your own worktree on the host, then commit and push the BRANCH with
+   the host's `gh`/`git` and open the pull request with
+   `gh pr create --draft`. One merge = one deploy.
+
+   Corrected 2026-08-31: preference 1 used to be the GitHub MCP's `push_files`.
+   That MCP is returning `Bad credentials` for every call, and even when it
+   worked it re-created the same content under a DIFFERENT SHA, which is the
+   root cause section 12 names for this clone's rebase loop. Use `gh`.
 2. Large files (e.g. ServerTableEngine.ts, 227KB): CHUNK them. Write base64
    chunks to Dan's disk via device_commit_files, reassemble with `device_bash`
    (cat chunks | base64 -d > file). Commit/push must then happen on the Mac
@@ -641,10 +690,18 @@ and `reconcile_ledger_nightly` now files each of those into
 can refuse a seat exit can strand a player mid-hand — so this makes the failure
 LOUD, not impossible. Rule 3 below is still the rule.
 
-`fn_club_chip_circulation()` prints the two pools that reconciliation had never
-looked at: `club_members.chip_balance` and `table_seats.stack`. As this was
-written that was 121,417,782 chips in member wallets and 1,139,873 on the felt,
-none of it reconciled by anything before today.
+`fn_club_chip_circulation()` prints, per club, the pools that reconciliation had
+never looked at: `club_members.chip_balance`, `table_seats.stack` for live seats,
+and `clubs.chip_pool`. **Run it; do not quote it.** Two figures used to stand
+here as if they were the size of the float. They were a 2026-08-25 snapshot, and
+by 2026-08-31 member wallets had grown from 121,417,782 to 167,893,041.19 and the
+felt from 1,139,873 to 6,657,465.35 — so a reader six days later was reasoning
+about a third of the real number.
+
+That function does NOT count `public.wallets`, and neither does anything else.
+On 2026-08-31 that table held more than four times the three pools above put
+together. Read the correction under rule 3 before you treat a circulation total
+as the whole float.
 
 THE RULE:
 
@@ -676,9 +733,55 @@ THE RULE:
    | Cash, explicit leave | Hetzner engine cash-out (`"Cash-out from table"`)        | `club_members.chip_balance`                                                                                                                         |
    | Cash, tab close      | `player_leave_table(table_id, user_id)` via `sendBeacon` | `club_members.chip_balance` (since `20260826_retire_dead_leave_rpcs_and_fix_tabclose_pool`; it credited the dead `public.wallets` pool before that) |
 
-   `public.wallets` is **not** the live chip pool. It has been frozen since
-   2026-08-21 with 732,591,994.33 chips stranded in it. Nothing reads it. If you
-   find a money path writing to it, that path is broken.
+   `public.wallets` is **not** the club chip pool. Club chips are
+   `club_members.chip_balance` — that is what all three rows above settle into.
+   `public.wallets` is the older global smarter.poker wallet, keyed
+   `(user_id, wallet_type)`, and it is still wired into live code.
+
+   **CORRECTED 2026-08-31 — every sentence that stood here was wrong, and the
+   last one instructed the reader to detach a live money path.** It said the
+   table was frozen, that nothing reads it, and that any money path writing to
+   it is broken. Re-verified against production (`kuklfnapbkmacvwxktbh`) that
+   day, with the queries to repeat rather than the numbers to trust:
+
+   - **Only the BALANCES are frozen.** No row's `balance` has moved since
+     2026-08-20 23:45:28Z. Rows are still INSERTed daily — `create_user_wallets`
+     provisions a zero-balance wallet per signup — so a `max(updated_at)` of
+     today means a new empty wallet, not money. Ask the question that separates
+     them:
+     `SELECT max(updated_at) FILTER (WHERE updated_at > created_at + interval '1 second') FROM wallets;`
+   - **Things read it.** `fn_player_spendable_balance` and
+     `atomic_table_withdraw` both fall back to
+     `SELECT balance FROM wallets WHERE wallet_type = 'PLAYER'` when the user
+     belongs to no club — that is the balance a pure smarter.poker account is
+     shown and spends against. For the rest, count them, do not believe a
+     number in a doc:
+     `SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prosrc ~* '(from|join|update|into|delete\s+from)\s+(public\.)?wallets\M';`
+     (36 on 2026-08-31.)
+   - **A write to it is not evidence of a bug.** `wallet_user_transfer` reads
+     it, debits the sender and credits the receiver, and is allowed to. Two
+     ENABLED triggers on the table — `trg_guard_wallets_balance_ins` and
+     `trg_guard_wallets_balance_upd` — run `guard_wallet_balance_write`, which
+     inspects `PG_CONTEXT` and raises `insufficient_privilege` unless the call
+     stack names a function on an allowlist (45 entries on 2026-08-31, extended
+     on 2026-08-15, 2026-08-21 and 2026-08-23). A write that lands here got
+     past that guard, which means someone put it on the list deliberately.
+
+   **So when you find a money path writing to `public.wallets`, do not "fix" it
+   by cutting it.** Read the allowlist first —
+   `SELECT prosrc FROM pg_proc WHERE proname = 'guard_wallet_balance_write';` —
+   and look for the caller. If it is there, the write is sanctioned and removing
+   it strands a real balance. If it is NOT there, the write is already being
+   refused, or someone set `app.bypass_wallet_guard` — find who, that is the
+   actual bug. When a path genuinely belongs on `club_members.chip_balance`
+   instead, move it with a migration the way
+   `20260826_retire_dead_leave_rpcs_and_fix_tabclose_pool` moved tab close.
+   Nothing about this table is safe to detach on sight.
+
+   The balance sitting in it is a real, unreconciled pool that no one has
+   decided about. Read it when you need it — `SELECT sum(balance) FROM wallets;`
+   — rather than carrying the figure around; the last doc that carried it went
+   stale in ten days.
 
 4. **Helper functions go in `pg_temp`, never `public`.** The same incident left
    three `zz_probe*` functions in the public schema that needed a second
@@ -738,7 +841,11 @@ is deleted** — the backup branch and the stash are both printed at the end.
 ### The rule
 
 1. The Mac's `main` is a **mirror of origin**, not a place work originates.
-   Ship through `scripts/git-safe-push.sh` or the GitHub MCP.
+   Ship through `scripts/git-safe-push.sh`, or by pushing a branch and opening
+   a pull request with `gh pr create`. (Corrected 2026-08-31: this used to
+   offer the GitHub MCP as the second option. It answers `Bad credentials`
+   now, and it was the source of the different-SHA duplicates described
+   directly above — it is the wrong tool here twice over.)
 2. To sync it, **fetch + fast-forward** (or `git-unstick.sh`). Never rebase it.
 3. Deliberate override, when you actually know why:
    `CA_GIT_GUARD_ALLOW=1 git pull --rebase origin main`.

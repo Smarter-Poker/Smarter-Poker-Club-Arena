@@ -141,10 +141,25 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   # know it was an accident and not a revert — nobody writes a changelog for
   # work they meant to drop.
   #
-  # WHY A HOOK AND NOT BRANCH PROTECTION: branch protection is unavailable on
-  # a private repo without GitHub Pro (see the note under check 0). Server
-  # side there is nothing left to refuse a force-push, so the last place it
-  # can be caught is here, on the machine doing it.
+  # WHY A HOOK AS WELL AS BRANCH PROTECTION:
+  #
+  # CORRECTED 2026-08-31. This paragraph used to say branch protection is
+  # unavailable on a private repo without GitHub Pro and that "server side
+  # there is nothing left to refuse a force-push". That is false, and it was
+  # already known to be false: the same correction was applied to check 0 on
+  # 2026-08-28 and simply never reached this comment, so half this file said
+  # one thing and half said the other. Checked against the API again on
+  # 2026-08-31, on this repo, which IS private: TWO rulesets cover main and
+  # both are ACTIVE with bypass_actors [] - `main protection` (21163380,
+  # deletion + non_fast_forward + pull_request + six required checks) and
+  # `main: no rewinds` (21185142, non_fast_forward + deletion). The server
+  # refuses a force-push. Do not take this line's word for it:
+  #
+  #     gh api repos/Smarter-Poker/Smarter-Poker-Club-Arena/rulesets
+  #
+  # This check still earns its place: it catches the rewind BEFORE the objects
+  # leave the machine and prints the commits that would be dropped by name,
+  # which a server-side rejection cannot do.
   #
   # This is deliberately not a lint. Every other check in this file is about
   # the CONTENT of a push; this one is about whether the push DESTROYS
@@ -176,9 +191,14 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
           git log --oneline --max-count=15 "$LOCAL_SHA..$REMOTE_SHA" 2>/dev/null | sed 's/^/    /'
           echo ""
           echo "  This is how four production-serving commits were lost on 2026-08-21."
-          echo "  Almost always the fix is to REBASE ONTO them rather than over them:"
+          echo "  Almost always the fix is to land ON TOP of them rather than over them."
+          echo "  Corrected 2026-08-31: this used to print 'git pull --rebase $REMOTE main',"
+          echo "  which .husky/pre-rebase refuses on main and which CLAUDE.md section 12"
+          echo "  records as the loop that stranded this clone (40 attempts, 10 rescues)."
+          echo "  Do this instead:"
           echo ""
-          echo "      git pull --rebase $REMOTE main && git push"
+          echo "      bash scripts/git-safe-push.sh \"<what changed>\"   # branch + pull request"
+          echo "      bash scripts/git-unstick.sh                         # if already stranded"
           echo ""
           echo "  If you are deliberately reverting, revert with a commit - that keeps"
           echo "  the history and is reviewable. A rewind leaves no trace of what went."

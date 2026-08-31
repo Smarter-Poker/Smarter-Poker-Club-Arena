@@ -16,12 +16,18 @@
  * Every gate in this repo checks the CODE against the live schema. Nothing
  * checked the MIGRATIONS against it. This does.
  *
- * SCOPE: only migrations this branch ADDS or MODIFIES. The 432 files already in
- * the directory are intentionally stale — CLAUDE.md is explicit that schema is
+ * SCOPE: only migrations this branch ADDS or MODIFIES. The files already in the
+ * directory are intentionally stale — CLAUDE.md is explicit that schema is
  * applied straight to production via the Supabase MCP and the older files are
- * history, not truth (68 functions and 80 tables in them no longer exist).
- * Auditing those is a separate archaeology project; letting a NEW one slip is a
- * bug that ships today.
+ * history, not truth; many of the functions and tables they declare no longer
+ * exist. Auditing those is a separate archaeology project; letting a NEW one
+ * slip is a bug that ships today.
+ *
+ * This comment used to say "the 432 files" and "68 functions and 80 tables".
+ * On 2026-08-31 `ls supabase/migrations | wc -l` said 1129. A count written
+ * into a comment is always stale by the time someone reads it, so it is gone:
+ * run the count when you need it, and get the dead-object figures from
+ * `scripts/ci/supabase-schema-manifest.json` against the live schema.
  *
  * HOW IT DECIDES: `scripts/ci/supabase-schema-manifest.json` is a snapshot of
  * the live public schema, regenerated with `gen-schema-manifest.mjs`. If a new

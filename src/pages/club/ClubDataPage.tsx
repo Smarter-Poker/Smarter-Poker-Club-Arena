@@ -1550,7 +1550,7 @@ export default function ClubDataPage() {
         </div>
       )}
 
-      <section className={styles.controlDeck} aria-label="Reporting period">
+      <section className={styles.controlDeck} aria-label="Reporting Period">
         <div className={styles.controlLabel}>Reporting Window</div>
         <div className={styles.rangeBar}>
           <button

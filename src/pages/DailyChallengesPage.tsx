@@ -1607,7 +1607,7 @@ export default function DailyChallengesPage() {
                 {reward.name}
               </p>
 
-              <div className={styles.celebratePayouts} aria-label="Rewards earned">
+              <div className={styles.celebratePayouts} aria-label="Rewards Earned">
                 {reward.chips > 0 && (
                   <div>
                     <span className={styles.celebratePayoutValue}>

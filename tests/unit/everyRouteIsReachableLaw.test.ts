@@ -86,6 +86,7 @@ const ALLOWED_ORPHANS: Record<string, string> = {
   'dev/game-cards': 'developer component showcase',
   health: 'diagnostic endpoint, probed by monitoring not by people',
   engine: 'diagnostic endpoint, probed by monitoring not by people',
+  'stats/:userId': 'intentional owner-privacy boundary retained for old bookmarks',
 
   // ── ORPHANED PRODUCT PAGES — real features with no door (phase 7) ────────
   'tournament-lobby': 'ORPHANED PRODUCT PAGE',

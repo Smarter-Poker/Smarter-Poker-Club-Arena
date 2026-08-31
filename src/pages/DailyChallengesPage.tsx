@@ -800,15 +800,15 @@ export default function DailyChallengesPage() {
 
     const reconcileRevision = async () => {
       try {
-        if (initialLoadSettledRef.current) {
+        if (document.visibilityState === 'visible' && initialLoadSettledRef.current) {
           const revision = await dailyChallengeService.getDashboardRevision(userId);
           if (!cancelled && revision > dashboardRevisionRef.current) {
             scheduleRealtimeRefresh();
           }
         }
       } catch {
-        // The Realtime channel remains the primary path. The service records a
-        // bounded error receipt, and the next cursor pass retries naturally.
+        // The Realtime channel remains the primary path. The service records
+        // the cursor error, and the next visible-tab pass retries naturally.
       } finally {
         if (!cancelled) timer = setTimeout(reconcileRevision, 15_000);
       }
@@ -839,8 +839,9 @@ export default function DailyChallengesPage() {
       realtimeStatusRef.current = 'degraded';
       setRealtimeState('degraded');
       recordDailyMissionOperation({ userId, event: 'realtime_degraded' });
-      // One event-driven reconciliation while the channel factory reconnects;
-      // there is deliberately no UX polling fallback.
+      // Reconcile immediately while the channel factory reconnects. The
+      // visible-tab cursor watchdog below remains the bounded missed-frame
+      // fallback when a joined channel never reports an error.
       scheduleRealtimeRefresh();
     },
     onSubscriptionStatus: (status) => {

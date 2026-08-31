@@ -593,6 +593,8 @@ interface TableState {
   actionTimerDeadline?: number;
   /** Hero's own pineapple discard deadline, absolute epoch ms, from the engine. */
   discardDeadline?: number | null;
+  /** How long the discard round runs, ms, as the engine reports it. */
+  discardDurationMs?: number;
   /** Wall-clock turn start (server-authoritative). Drives the CSS ring
    * animation via SeatSlot turnStartTimeMs/turnDeadlineMs props. */
   actionTimerStartTime?: number;
@@ -2292,6 +2294,7 @@ export default function TablePage({
         })) as SidePot[],
         actionTimerDeadline: mapped.actionTimerDeadline,
         discardDeadline: mapped.discardDeadline ?? null,
+        discardDurationMs: mapped.discardDurationMs ?? 0,
         actionTimerStartTime: mapped.actionTimerStartTime,
         actionTimerPlayerId: mapped.actionTimerPlayerId,
         isTimeBankActive: mapped.isTimeBankActive,
@@ -21494,6 +21497,7 @@ export default function TablePage({
         cards={heroPineappleCards ?? []}
         onDiscard={handlePineappleDiscard}
         deadline={pineappleDeadline}
+        durationMs={tableState.discardDurationMs}
         deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
       />
 

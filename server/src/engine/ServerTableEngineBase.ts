@@ -1180,7 +1180,7 @@ export abstract class ServerTableEngineBase {
     });
     this.actionValidator = new ServerActionValidator((event) => {
       console.warn(
-        `[ServerTableEngine:${tableId}] Action rejected: ${event.code} — ${event.reason}`
+        `[ServerTableEngine:${tableId}] Action rejected: ${event.code} - ${event.reason}`
       );
     });
     this.stateVerifier = new StateVerifier((event) => {
@@ -1704,7 +1704,7 @@ export abstract class ServerTableEngineBase {
           if (!this.running) return;
           const backoff = Math.min(500 * 2 ** (attempt - 1), 8_000);
           console.warn(
-            `[ServerTableEngine:${this.tableId}] loadTable blipped on start (attempt ${attempt}/${ServerTableEngineBase.START_LOAD_ATTEMPTS}) — retrying in ${backoff}ms`
+            `[ServerTableEngine:${this.tableId}] loadTable blipped on start (attempt ${attempt}/${ServerTableEngineBase.START_LOAD_ATTEMPTS}) - retrying in ${backoff}ms`
           );
           await this.sleep(backoff);
         }
@@ -1804,7 +1804,7 @@ export abstract class ServerTableEngineBase {
       const recovered = await this.checkCrashRecovery();
       if (recovered) {
         console.log(
-          `[ServerTableEngine:${this.tableId}] Crash recovery complete — resuming from hand #${this.handCount}`
+          `[ServerTableEngine:${this.tableId}] Crash recovery complete - resuming from hand #${this.handCount}`
         );
       }
 
@@ -2299,7 +2299,7 @@ export abstract class ServerTableEngineBase {
     reportError(
       new Error(
         `[HandNumber] Could not allocate a global hand number for table ${this.tableId} ` +
-          `after ${MAX_ATTEMPTS} attempts — refusing to deal. A hand that cannot be numbered ` +
+          `after ${MAX_ATTEMPTS} attempts - refusing to deal. A hand that cannot be numbered ` +
           `cannot be settled or audited. Underlying error: ${String(
             (lastErr as { message?: string })?.message ?? lastErr
           )}`
@@ -2503,7 +2503,7 @@ export abstract class ServerTableEngineBase {
       this.tableFSM.transition('paused');
     }
     console.log(
-      `[ServerTableEngine:${this.tableId}] Parked between hands — waiting for the pause to lift...`
+      `[ServerTableEngine:${this.tableId}] Parked between hands - waiting for the pause to lift...`
     );
     await new Promise<void>((resolve) => {
       this.handForHandResolve = resolve;
@@ -2523,7 +2523,7 @@ export abstract class ServerTableEngineBase {
           console.warn(
             `[ServerTableEngine:${this.tableId}] Pause safety timeout after ${Math.round(
               maxWaitMs / 1000
-            )}s — resuming to avoid a wedged table`
+            )}s - resuming to avoid a wedged table`
           );
           this.handForHandResolve = null;
           resolve();
@@ -3436,7 +3436,7 @@ export abstract class ServerTableEngineBase {
 
       if (error) {
         console.warn(
-          `[ServerTableEngine:${this.tableId}] Could not seed hand counter (${error.message}) — ` +
+          `[ServerTableEngine:${this.tableId}] Could not seed hand counter (${error.message}) - ` +
             `continuing from #${this.handCount}. Hand numbers may repeat for this table.`
         );
         return;
@@ -3455,7 +3455,7 @@ export abstract class ServerTableEngineBase {
       }
     } catch (err) {
       console.warn(
-        `[ServerTableEngine:${this.tableId}] Hand counter seed threw (${(err as Error)?.message}) — ` +
+        `[ServerTableEngine:${this.tableId}] Hand counter seed threw (${(err as Error)?.message}) - ` +
           `continuing from #${this.handCount}.`
       );
     }
@@ -3548,7 +3548,7 @@ export abstract class ServerTableEngineBase {
       const evictSelf = evictHand?.players.find((p) => p.user_id === userId);
       if (evictSelf?.is_all_in && !evictSelf.is_folded) {
         console.log(
-          `[ServerTableEngine:${this.tableId}] NOT evicting ${userId} — all-in in a live hand`
+          `[ServerTableEngine:${this.tableId}] NOT evicting ${userId} - all-in in a live hand`
         );
         continue;
       }
@@ -3556,10 +3556,10 @@ export abstract class ServerTableEngineBase {
       const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
       console.log(
         awayBlindEvict
-          ? `[ServerTableEngine:${this.tableId}] evicting ${userId} — away, already charged one SB and one BB`
+          ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - away, already charged one SB and one BB`
           : nitEvict
-            ? `[ServerTableEngine:${this.tableId}] evicting ${userId} — below this nit game's VPIP floor`
-            : `[ServerTableEngine:${this.tableId}] evicting ${userId} — sat out past the 2-orbit / 5-minute limit`
+            ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - below this nit game's VPIP floor`
+            : `[ServerTableEngine:${this.tableId}] evicting ${userId} - sat out past the 2-orbit / 5-minute limit`
       );
       this.hub?.emitEvent(this.tableId, {
         type: 'seat_left',
@@ -3837,7 +3837,7 @@ export abstract class ServerTableEngineBase {
 
       if (error) {
         console.warn(
-          `[ServerTableEngine:${this.tableId}] Could not restore button seat (${error.message}) — ` +
+          `[ServerTableEngine:${this.tableId}] Could not restore button seat (${error.message}) - ` +
             `it will start at the lowest occupied seat and blinds may be re-taken for one orbit.`
         );
         return;
@@ -3872,7 +3872,7 @@ export abstract class ServerTableEngineBase {
       }
     } catch (err) {
       console.warn(
-        `[ServerTableEngine:${this.tableId}] Button restore threw (${(err as Error)?.message}) — ` +
+        `[ServerTableEngine:${this.tableId}] Button restore threw (${(err as Error)?.message}) - ` +
           `starting from the lowest occupied seat.`
       );
     }
@@ -3919,9 +3919,9 @@ export abstract class ServerTableEngineBase {
     console.warn(
       `[ServerTableEngine:${this.tableId}] CRASH RECOVERY: Found incomplete hand #${snapshot.handNumber} ` +
         `(stage: ${snapshot.stage}, last updated: ${snapshot.updatedAt}). ` +
-        `${snapshot.pendingDeadlines.length} pending deadlines (not rehydrated — they belong to the abandoned hand), ` +
+        `${snapshot.pendingDeadlines.length} pending deadlines (not rehydrated - they belong to the abandoned hand), ` +
         `${Object.keys(snapshot.disconnectStates).length} disconnect-FSM entries, ${restoredFsm} restored. ` +
-        `Marking hand complete and starting fresh — players retain their last-known stacks.`
+        `Marking hand complete and starting fresh - players retain their last-known stacks.`
     );
 
     // For now: mark the orphaned hand as complete so we don't get stuck.

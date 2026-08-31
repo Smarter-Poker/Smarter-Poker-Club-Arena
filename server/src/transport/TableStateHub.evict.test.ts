@@ -33,7 +33,7 @@ function mkSub(buffered: number): HubSubscriber & { sent: string[]; evicted: num
   return sub;
 }
 
-describe('TableStateHub — hard backpressure evicts the transport', () => {
+describe('TableStateHub - hard backpressure evicts the transport', () => {
   it('calls evict() on a subscriber past the hard limit and removes it', () => {
     const hub = new TableStateHub();
     const healthy = mkSub(0);

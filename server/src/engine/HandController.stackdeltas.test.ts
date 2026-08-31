@@ -66,7 +66,7 @@ function hcOf(stacks: number[]) {
 const stackOf = (hc: HandController, userId: string) =>
   hc.getState().players.find((p) => p.user_id === userId)!.stack;
 
-describe('getState() copy semantics — why applyStackDeltas exists', () => {
+describe('getState() copy semantics - why applyStackDeltas exists', () => {
   it('writing through getState() does NOT move the engine', () => {
     const hc = hcOf([200, 200, 200]);
     const before = stackOf(hc, 'u3');
@@ -127,7 +127,7 @@ describe('applyStackDeltas', () => {
     expect(hc.getState().players.map((p) => p.stack)).toEqual(before);
   });
 
-  it('does not touch the pot — these are transfers, not awards from the pot', () => {
+  it('does not touch the pot - these are transfers, not awards from the pot', () => {
     const hc = hcOf([200, 200, 200]);
     const pot = hc.getState().pot;
     hc.applyStackDeltas(new Map([['u1', -5]]));

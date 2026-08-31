@@ -107,8 +107,8 @@
 }
 
 .profileBtn {
-  /* Cover the complete baked profile ornament, including its blue outer glow.
-     A smaller inner slot leaves the source ring visible around the live photo. */
+  /* Cover the baked silver/blue profile ornament with the header's black field.
+     Only the live circular portrait and its nearly invisible edge remain. */
   top: 15%;
   left: 66.75%;
   width: 7.15%;
@@ -119,23 +119,26 @@
   overflow: hidden;
   contain: layout paint;
   isolation: isolate;
-  border: 1px solid rgba(0, 0, 0, 0.92);
-  border-radius: 0;
+  border: 0;
+  border-radius: 50%;
   background: #000;
 }
 
 .profileAvatarSlot {
   position: absolute !important;
-  inset: 1px !important;
+  top: 50% !important;
+  left: 50% !important;
   z-index: 1;
   display: block;
-  width: auto;
+  width: 72%;
   height: auto;
-  aspect-ratio: auto;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%) !important;
   overflow: hidden;
-  border: 0;
-  border-radius: 0;
-  background: #000;
+  box-sizing: border-box;
+  border: 1px solid rgba(0, 0, 0, 0.94);
+  border-radius: 50%;
+  background: transparent;
   pointer-events: none;
 }
 
@@ -149,9 +152,9 @@
   aspect-ratio: auto !important;
   transform: none !important;
   border: 0 !important;
-  border-radius: 0 !important;
-  background: #000;
-  object-fit: contain !important;
+  border-radius: 50% !important;
+  background: transparent !important;
+  object-fit: cover !important;
   object-position: center !important;
   opacity: 1 !important;
   pointer-events: none;

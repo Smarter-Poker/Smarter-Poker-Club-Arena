@@ -134,8 +134,8 @@ beforeEach(async () => {
   mockReportError.mockReset();
 });
 
-describe('logHandHistory — the hot path', () => {
-  it('writes ONE row — the guaranteed-400 4-tier attempt is gone', async () => {
+describe('logHandHistory - the hot path', () => {
+  it('writes ONE row - the guaranteed-400 4-tier attempt is gone', async () => {
     const res = await logHandHistory(params());
 
     expect(res.handId).toBe('inserted');
@@ -183,7 +183,7 @@ describe('logHandHistory — the hot path', () => {
     expect(inserts().at(-1)!.row!.rit_boards).toEqual(withBoards.ritBoards);
   });
 
-  it('COSTS EXACTLY ONE ROUND TRIP WHEN IT FAILS — it must never stall the table', async () => {
+  it('COSTS EXACTLY ONE ROUND TRIP WHEN IT FAILS - it must never stall the table', async () => {
     // This is the regression guard for the review finding that mattered most.
     //
     // The first version retried 3x in line with an existence pre-check before
@@ -507,7 +507,7 @@ describe('buildHandHistoryTiers (Bible V8 §2.18, derived not stored)', () => {
     expect(tiers.dispute_review.revealed_hole_cards).toHaveProperty('u1');
   });
 
-  it('does NOT call the stored stack a starting stack — it is post-settlement', () => {
+  it('does NOT call the stored stack a starting stack - it is post-settlement', () => {
     const [winner] = buildHandHistoryTiers(storedRow).player_summaries;
     // Settlement mutates SeatedPlayer.stack in place before the row is written,
     // so 118 already includes the 38 that was just won.

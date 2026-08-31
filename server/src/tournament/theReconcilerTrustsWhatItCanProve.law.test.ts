@@ -30,7 +30,7 @@ const MIGRATIONS = join(__dirname, '..', '..', '..', 'supabase', 'migrations');
 
 const migration = (needle: string): string => {
   const file = readdirSync(MIGRATIONS).find((f) => f.includes(needle));
-  if (!file) throw new Error(`no migration matching "${needle}" — was it renamed?`);
+  if (!file) throw new Error(`no migration matching "${needle}" - was it renamed?`);
   return readFileSync(join(MIGRATIONS, file), 'utf8');
 };
 

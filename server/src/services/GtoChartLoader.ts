@@ -42,7 +42,7 @@ export async function loadGtoCharts(): Promise<number> {
   } catch (err) {
     reportError(err, 'GtoChartLoader.load');
     console.warn(
-      `[GtoChartLoader] chart load FAILED — the brain falls back to heuristics (${gtoChartCount()} cached)`
+      `[GtoChartLoader] chart load FAILED - the brain falls back to heuristics (${gtoChartCount()} cached)`
     );
     return 0;
   }

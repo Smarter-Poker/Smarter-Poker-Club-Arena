@@ -1,0 +1,88 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# A MIGRATION THE DATABASE HAS APPLIED MUST HAVE A FILE IN THIS REPO
+#
+# check-migrations-applied.mjs runs on every PR and asks whether the migrations
+# a branch ADDS exist in the live schema. This asks the other direction, which
+# no gate has ever asked: what has production applied that nobody wrote down.
+#
+# Measured on 2026-08-31: 41 of the 90 migrations applied that afternoon had no
+# file on main, including all thirteen zero-drift ledger-hardening migrations.
+#
+# SCHEDULED, NOT A PR GATE. There is a real backlog of in-flight work on any
+# given day, and failing every PR until somebody else's branch lands would be an
+# outage of its own. This runs on a schedule and goes red in the Actions tab
+# when the gap exists, which is a signal somebody can act on without blocking
+# the queue.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Applied Migrations Are Recorded
+
+on:
+  schedule:
+    # Twice a day. An unrecorded migration is not an emergency, it is a debt.
+    - cron: '25 7,19 * * *'
+  workflow_dispatch:
+    inputs:
+      since:
+        description: 'Version floor, e.g. 20260825000000 (default: 7 days ago)'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: applied-migrations-recorded
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Every applied migration has a file
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Use Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Compare the live migration history against this repo
+        id: compare
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          ARGS=""
+          if [ -n "${{ inputs.since }}" ]; then ARGS="--since ${{ inputs.since }}"; fi
+
+          # --fail makes the run go red when the gap exists. The script exits 2
+          # on its own errors (missing credentials, missing RPC), which is a
+          # different failure and should also be visible rather than swallowed.
+          set +e
+          node scripts/ci/check-applied-migrations-are-recorded.mjs $ARGS --fail 2>&1 | tee /tmp/recorded.log
+          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          set -e
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Applied migrations without a file in this repo"
+            echo ""
+            echo '```'
+            cat /tmp/recorded.log 2>/dev/null || echo "(the check produced no output)"
+            echo '```'
+            echo ""
+            echo "The applied SQL for each one is in"
+            echo "\`supabase_migrations.schema_migrations.statements\`. Name the file for the"
+            echo "version it was applied under so the two can be tied together."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail the run when migrations are unrecorded
+        if: steps.compare.outputs.status != '0'
+        run: |
+          echo "::error title=Unrecorded migrations::Production has applied migrations that this repo has no file for. See the job summary."
+          exit 1

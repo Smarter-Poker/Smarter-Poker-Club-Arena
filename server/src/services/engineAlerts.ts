@@ -65,7 +65,7 @@ async function post(payload: unknown): Promise<boolean> {
     if (!warnedUnconfigured) {
       warnedUnconfigured = true;
       console.warn(
-        '[engineAlerts] ALERT_WEBHOOK_SECRET is not set — alerts stay in Sentry only. ' +
+        '[engineAlerts] ALERT_WEBHOOK_SECRET is not set - alerts stay in Sentry only. ' +
           'Set it on the engine host to turn on durable recording + critical email.'
       );
     }

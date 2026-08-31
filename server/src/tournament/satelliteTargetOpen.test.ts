@@ -20,7 +20,7 @@ const RUNNING_IN_LATE_REG = {
 };
 
 describe('a running target is open while late registration is', () => {
-  it('is open at level 6 of 12 — the live Sunday $200 Deep Stack', () => {
+  it('is open at level 6 of 12 - the live Sunday $200 Deep Stack', () => {
     expect(isSatelliteTargetOpen(RUNNING_IN_LATE_REG)).toBe(true);
   });
 
@@ -53,7 +53,7 @@ describe('a running target is open while late registration is', () => {
     expect(isSatelliteTargetOpen(null)).toBe(false);
   });
 
-  it('refuses a full field — seating into no seat is not a favour', () => {
+  it('refuses a full field - seating into no seat is not a favour', () => {
     expect(
       isSatelliteTargetOpen({ ...RUNNING_IN_LATE_REG, current_players: 1000, max_players: 1000 })
     ).toBe(false);
@@ -73,7 +73,7 @@ describe('a ticket that cannot be spent is worth nothing', () => {
     expect(satelliteTicketCost(target, true)).toBe(200);
   });
 
-  it('is worth zero when it cannot — the row existing is not the test', () => {
+  it('is worth zero when it cannot - the row existing is not the test', () => {
     expect(satelliteTicketCost(target, false)).toBe(0);
     expect(satelliteTicketCost(null, true)).toBe(0);
   });
@@ -110,7 +110,7 @@ describe('the pool bounds the payout (the 2026-08-30 leak)', () => {
     expect(plan.cashWholePoolToFirst).toBe(true);
   });
 
-  it('an OPEN target still awards the seats, overlay and all — that is the promise', () => {
+  it('an OPEN target still awards the seats, overlay and all - that is the promise', () => {
     // The deliberate exposure is untouched: 5 real entries into the target,
     // funded by tickets, with the house covering the 460 difference.
     const ticketCost = satelliteTicketCost({ buy_in_amount: 180, buy_in_fee: 20 }, true);

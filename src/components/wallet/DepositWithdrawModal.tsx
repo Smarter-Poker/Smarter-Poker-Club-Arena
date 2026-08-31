@@ -215,7 +215,7 @@ const PAYMENT_METHODS: PaymentMethodInfo[] = [
     id: 'zelle',
     icon: 'Z',
     label: 'Zelle',
-    description: 'pay@clubarena.com',
+    description: 'Pay@Clubarena.Com',
     minAmount: 10,
     maxAmount: 10000,
     fee: 2,

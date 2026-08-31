@@ -109,7 +109,7 @@ describe('chooser = best ACTUAL hand, not best equity', () => {
   });
 });
 
-describe('full-table 6-way consent — unanimous or run once', () => {
+describe('full-table 6-way consent - unanimous or run once', () => {
   const stub = { start() {}, schedule() {}, cancel() {} } as unknown as DeadlineScheduler;
   const ids = ['A', 'B', 'C', 'D', 'E', 'F'];
 
@@ -121,7 +121,7 @@ describe('full-table 6-way consent — unanimous or run once', () => {
     return e;
   }
 
-  it('all six must consent — five accepts are not enough', () => {
+  it('all six must consent - five accepts are not enough', () => {
     const e = offer6();
     for (const id of ['B', 'C', 'D', 'E']) {
       expect(e.accept('t6', id)).toBe(false);
@@ -132,7 +132,7 @@ describe('full-table 6-way consent — unanimous or run once', () => {
     expect(e.getChosenRuns('t6')).toBe(3);
   });
 
-  it('ONE decline anywhere kills it for everyone — the pot runs once', () => {
+  it('ONE decline anywhere kills it for everyone - the pot runs once', () => {
     const e = offer6();
     for (const id of ['B', 'C', 'D', 'F']) e.accept('t6', id);
     e.decline('t6', 'E'); // a single decline
@@ -141,7 +141,7 @@ describe('full-table 6-way consent — unanimous or run once', () => {
   });
 });
 
-describe('6-way all-in money path — side pots, three boards, cent conservation', () => {
+describe('6-way all-in money path - side pots, three boards, cent conservation', () => {
   it('conserves every chip across a full-table 3-run RIT with five side pots', () => {
     const stacks = [50, 120, 200, 350, 500, 800];
     const players = mkPlayers(stacks);

@@ -47,7 +47,7 @@ describe('the rakeback settlement watermark', () => {
     expect(finalAdvance).toBeGreaterThan(-1);
     expect(
       guard,
-      'the watermark advances past a failed recompute — those rake_records are then never settled'
+      'the watermark advances past a failed recompute - those rake_records are then never settled'
     ).toBeLessThan(finalAdvance);
   });
 

@@ -101,7 +101,7 @@ describe('every_n_hands', () => {
 });
 
 describe('once_per_orbit (spec §4.2, T01/T02)', () => {
-  it('fires once per completed button orbit — three-handed', () => {
+  it('fires once per completed button orbit - three-handed', () => {
     const sch = new BombPotScheduler();
     const s = base({ triggerMode: 'once_per_orbit' });
     const fires: number[] = [];
@@ -381,7 +381,7 @@ describe('disable mid-session', () => {
  * pinned. Both were found by reading, and both are the kind that a source pin
  * can only describe — these run the state machine and watch what it does.
  */
-describe('once_per_orbit — the button must not stand still', () => {
+describe('once_per_orbit - the button must not stand still', () => {
   const orbit = (over: Partial<BombPotSchedulerSettings> = {}) =>
     base({ triggerMode: 'once_per_orbit', frequency: 0, minPlayers: 2, ...over });
 

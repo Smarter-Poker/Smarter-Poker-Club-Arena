@@ -40,11 +40,23 @@ const HTML_FILES = [
   'index.html',
   'public/offline.html',
 ];
-/** Server copy proven to flow into player toasts or transaction history. */
-const SERVER_UI_FILES = [
-  'server/src/config/RakeConfig.ts',
-  'server/src/tournament/tournamentRecovery.ts',
-];
+/**
+ * THE WHOLE ENGINE, NOT TWO FILES OF IT (2026-08-31).
+ *
+ * This started as a two-file list - RakeConfig and tournamentRecovery - because
+ * those were the server files someone had traced to a player's screen. Scanning
+ * all of server/src found 38 em dashes in string literals, and nine of them are
+ * copy a player reads that the two-file list did not cover: every fixed-limit
+ * and pot-limit betting refusal in PokerEngine, "Rate limited" in the action
+ * handler, "Action already being processed", "Add-on exceeded table max buy-in
+ * - refunded", "Bet was placed - auto-check cleared", and "Bad Beat Jackpot -
+ * you got paid!".
+ *
+ * A list of the files somebody happened to check is a cleanup. The directory is
+ * the gate. Comments are still ignored, so the engine's decision records are
+ * untouched.
+ */
+const SERVER_SRC = join(ROOT, 'server/src');
 const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 'test-results']);
 /**
  * The one file that is ALLOWED to contain these characters is the one whose job
@@ -100,7 +112,7 @@ for (const file of [
   ...walk(SRC),
   ...walk(PUBLIC),
   ...HTML_FILES.map((f) => join(ROOT, f)),
-  ...SERVER_UI_FILES.map((f) => join(ROOT, f)),
+  ...walk(SERVER_SRC),
 ]) {
   const rel = file.replace(ROOT, '');
   if (SKIP_FILES.has(rel)) continue;

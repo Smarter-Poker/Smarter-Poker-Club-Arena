@@ -11,7 +11,7 @@ import { PreActionEngine } from './PreActionEngine.js';
 const T = 'table-1';
 const P = 'player-1';
 
-describe('PreActionEngine — auto_call respects maxCallAmount (A9)', () => {
+describe('PreActionEngine - auto_call respects maxCallAmount (A9)', () => {
   let eng: PreActionEngine;
   beforeEach(() => {
     eng = new PreActionEngine();
@@ -84,7 +84,7 @@ describe('PreActionEngine — auto_call respects maxCallAmount (A9)', () => {
   });
 });
 
-describe('PreActionEngine — auto_call can NEVER call a raise past the armed price (Dan 2026-08-28)', () => {
+describe('PreActionEngine - auto_call can NEVER call a raise past the armed price (Dan 2026-08-28)', () => {
   // Dan, verbatim: "I was in the small blind and clicked the Call 15 button
   // (NOT the Call Any button), it auto called a raise which was more than the
   // 15. THAT CAN NEVER EVER EVER HAPPEN." The engine records the price at arm
@@ -97,7 +97,7 @@ describe('PreActionEngine — auto_call can NEVER call a raise past the armed pr
     eng = new PreActionEngine((ev) => events.push(ev as never));
   });
 
-  it('THE 10/25 SB BUG: armed at 15, raised to 65 — invalidated, nothing called', () => {
+  it('THE 10/25 SB BUG: armed at 15, raised to 65 - invalidated, nothing called', () => {
     eng.setPreAction(T, P, 'auto_call', undefined, 15);
     const r = eng.executePreAction(T, P, false, 65, 1000);
     expect(r.executed).toBe(false);
@@ -134,7 +134,7 @@ describe('PreActionEngine — auto_call can NEVER call a raise past the armed pr
   });
 });
 
-describe('PreActionEngine — single-shot, never re-arms (Dan 2026-08-28)', () => {
+describe('PreActionEngine - single-shot, never re-arms (Dan 2026-08-28)', () => {
   // Reverses the 2026-08-21 sticky re-arm: "the check fold, folds... but then
   // re-appears again after the fold, same bug for check or call any." One
   // press, one action — the engine forgets the entry the moment it executes.
@@ -166,7 +166,7 @@ describe('PreActionEngine — single-shot, never re-arms (Dan 2026-08-28)', () =
   });
 });
 
-describe('PreActionEngine — auto_call_any is deliberately uncapped', () => {
+describe('PreActionEngine - auto_call_any is deliberately uncapped', () => {
   let eng: PreActionEngine;
   beforeEach(() => {
     eng = new PreActionEngine();
@@ -182,7 +182,7 @@ describe('PreActionEngine — auto_call_any is deliberately uncapped', () => {
   });
 });
 
-describe('PreActionEngine — lifecycle', () => {
+describe('PreActionEngine - lifecycle', () => {
   let eng: PreActionEngine;
   beforeEach(() => {
     eng = new PreActionEngine();

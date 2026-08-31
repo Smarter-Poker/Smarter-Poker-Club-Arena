@@ -51,6 +51,16 @@ DECLARE
   v_total     numeric(14,4);
   v_pts       bigint;
 BEGIN
+  -- SERVER ONLY (added the same day; see 20260831c). CI's
+  -- definer-authorization check caught that this SECURITY DEFINER writer was
+  -- reachable from an authenticated browser session, which could have minted
+  -- its own points. Carried here too so a clean replay of this file is never
+  -- the exposed version, even for the moments before 20260831c runs.
+  IF NOT public.fn_caller_is_engine() THEN
+    RAISE EXCEPTION 'fn_award_vip_credit is a server-side path'
+      USING ERRCODE = '42501';
+  END IF;
+
   IF p_user_id IS NULL OR COALESCE(p_credit, 0) <= 0 THEN
     RETURN 0;
   END IF;
@@ -90,6 +100,11 @@ BEGIN
   RETURN v_pts;
 END;
 $function$;
+
+REVOKE EXECUTE ON FUNCTION public.fn_award_vip_credit(uuid, numeric, text, uuid, text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.fn_award_vip_credit(uuid, numeric, text, uuid, text) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.fn_award_vip_credit(uuid, numeric, text, uuid, text) FROM authenticated;
+GRANT  EXECUTE ON FUNCTION public.fn_award_vip_credit(uuid, numeric, text, uuid, text) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.fn_award_vip_points_from_rake()
 RETURNS trigger

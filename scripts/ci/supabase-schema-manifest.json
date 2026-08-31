@@ -842,6 +842,7 @@
     "user_feedback",
     "user_leaks",
     "user_level_progress",
+    "user_lobby_filters",
     "user_lucky_wheel_spins",
     "user_media",
     "user_mfa_factors",

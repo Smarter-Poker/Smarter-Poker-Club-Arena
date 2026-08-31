@@ -11447,6 +11447,12 @@
       "accuracy",
       "attempts"
     ],
+    "user_lobby_filters": [
+      "user_id",
+      "club_id",
+      "filters",
+      "updated_at"
+    ],
     "user_lucky_wheel_spins": [
       "user_id",
       "total_spins",

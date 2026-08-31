@@ -144,3 +144,30 @@ One process note worth keeping: the first version of that assertion used `<>`,
 and `NULL <> 1.05` is NULL, so the check passed on the very NULL it existed to
 catch. The assertions use `IS DISTINCT FROM` now. An assertion that cannot fail
 is the same class of bug as an alarm that cannot fire.
+
+## And the form now says the price out loud
+
+The two rake sliders read "Schedule" by default, and the schedule is a
+fourteen-row table in a config file. An owner could set a game up without ever
+seeing what it costs to play — which is exactly why the gap above survived in
+the product for months. Nothing on the authoring screen said the number.
+
+The create-table form now shows, under the rake sliders, what the table will
+actually charge: the percentage, the cap in both dollars and big blinds, the
+Bad Beat Jackpot drop per flopped hand, and whether that came from the
+published schedule or from the owner's own override.
+
+The risk in adding such a panel is the other failure this repo has already had.
+On 2026-08-15 the Game Rules modal told every player "Rake 5% (Cap $3)" at
+every stake, because its props were never assigned and it fell through to
+placeholder defaults — we understated the cap five-fold at 10/25. A price
+display that can disagree with the engine is worse than none.
+
+So the panel resolves through `getRakeConfig` with the overrides passed in —
+the same function and the same precedence the engine applies, where an override
+may only ever move DOWN from the published schedule. It hard-codes no
+percentage and no cash figure of its own, and
+`tests/unit/theFormSaysWhatTheTableWillCharge.test.ts` pins that: it asserts
+the panel calls the resolver, passes the sliders in, contains no literal rate,
+and that a greedy override (10 BB, worth $20 at 1/2) is still displayed as the
+$5 the schedule allows.

@@ -349,7 +349,11 @@ test.describe('production Daily Missions certification', () => {
         );
         await page.getByRole('button', { name: 'Turn Off Without Reconnecting' }).click();
         expect((await update).ok()).toBe(true);
-        await expect(page.getByText('Off Until You Opt In')).toBeVisible();
+        // Headless and policy-managed browsers can truthfully remain "Blocked
+        // In Browser Settings" after opt-out. The stable UI contract is that
+        // the preference-on recovery controls disappear and opt-in returns.
+        await expect(page.getByRole('button', { name: 'Turn On Mission Alerts' })).toBeVisible();
+        await expect(page.getByText('Preference On, Device Disconnected')).toHaveCount(0);
         const preferences = await serviceRows<{ daily_mission_reminders: boolean }>(
           environment,
           'user_notification_preferences',

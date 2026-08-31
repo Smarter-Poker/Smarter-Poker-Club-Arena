@@ -109,7 +109,6 @@ const authState = vi.hoisted(() => ({
 const routeState = vi.hoisted(() => ({ clubId: 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4' }));
 const rpcMock = vi.hoisted(() => vi.fn());
 const fromMock = vi.hoisted(() => vi.fn());
-const downloadMock = vi.hoisted(() => vi.fn(() => true));
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => authState.current,
@@ -128,13 +127,6 @@ vi.mock('../../src/lib/supabase', () => ({
   },
 }));
 
-vi.mock('../../src/utils/downloadCsv', async () => {
-  const actual = await vi.importActual<typeof import('../../src/utils/downloadCsv')>(
-    '../../src/utils/downloadCsv'
-  );
-  return { ...actual, downloadCsv: downloadMock };
-});
-
 import ClubDataPage from '../../src/pages/club/ClubDataPage';
 
 afterEach(() => cleanup());
@@ -143,7 +135,6 @@ beforeEach(() => {
   authState.current = { user: { id: 'owner-1' }, isHydrating: false };
   routeState.clubId = CLUB_ID;
   rpcMock.mockReset();
-  downloadMock.mockClear();
   rpcMock.mockImplementation(async (fn: string) => {
     if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
     if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
@@ -173,45 +164,6 @@ describe('ClubDataPage', () => {
       expect.objectContaining({ p_limit: 100 })
     );
     expect(rpcMock.mock.calls.some(([fn]) => fn === 'ca_club_game_page')).toBe(false);
-  });
-
-  it('exports the exact prepared game snapshot instead of only the visible page', async () => {
-    const secondRow = { ...snapshot.rows[0], id: 'game-2', name: 'Shark Table Two' };
-    rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
-      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
-      if (fn === 'ca_club_game_export_start') {
-        return { data: { export_id: 'export-1', total_rows: 2, status: 'ready' }, error: null };
-      }
-      if (fn === 'ca_club_data_export_page') {
-        return {
-          data: {
-            rows: [snapshot.rows[0], secondRow],
-            total_rows: 2,
-            next_offset: 2,
-            has_more: false,
-          },
-          error: null,
-        };
-      }
-      if (fn === 'ca_club_data_export_cancel') return { data: true, error: null };
-      return { data: null, error: null };
-    });
-
-    render(<ClubDataPage />);
-    const exportButton = await screen.findByRole('button', { name: 'Export as CSV' });
-    fireEvent.click(exportButton);
-
-    expect(await screen.findAllByText('Exported all 2 games.')).toHaveLength(2);
-    expect(downloadMock).toHaveBeenCalledOnce();
-    expect(downloadMock.mock.calls[0][1].split('\n')).toHaveLength(3);
-    expect(rpcMock).toHaveBeenCalledWith(
-      'ca_club_game_export_start',
-      expect.objectContaining({ p_sort: 'recent', p_request_id: expect.any(String) })
-    );
-    expect(rpcMock).toHaveBeenCalledWith('ca_club_data_export_cancel', {
-      p_export_id: 'export-1',
-    });
   });
 
   it('keeps internal player automation metadata out of the operator UI', async () => {

@@ -38,13 +38,7 @@ import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
 import { isAuthzError } from '../../utils/clubDashboard';
 import { reportError } from '../../utils/errorReporter';
 import { downloadCsv, csvEscape } from '../../utils/downloadCsv';
-import {
-  fetchClubDataExport,
-  isClubDataExportAbort,
-  type ClubDataExportProgress,
-} from '../../utils/clubDataExport';
 import { retryFetch } from '../../utils/retryFetch';
-import { uuid } from '../../utils/uuid';
 import { useVirtualScroll } from '../../hooks/useVirtualScroll';
 import { EmptyState, LoadingState, PermissionState } from '../../components/common/EmptyState';
 import styles from './ClubDataPage.module.css';
@@ -197,6 +191,7 @@ const PLAYER_SORTS: Array<{ id: PlayerSort; label: string }> = [
 const REFRESH_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 const PLAYER_REQUEST_TIMEOUT_MS = 25_000;
+const EXPORT_REQUEST_TIMEOUT_MS = 30_000;
 const PLAYER_PAGE_SIZE = 100;
 const GAME_PAGE_SIZE = 100;
 const DATA_ROW_HEIGHT = 92;
@@ -388,7 +383,6 @@ export default function ClubDataPage() {
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [exportProgress, setExportProgress] = useState<ClubDataExportProgress | null>(null);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [refreshNote, setRefreshNote] = useState<string | null>(null);
   const [tab, setTab] = useState<'games' | 'players'>('games');
@@ -418,7 +412,6 @@ export default function ClubDataPage() {
   const clubNameVersion = useRef(0);
   const gamesMoreRef = useRef(false);
   const playersMoreRef = useRef(false);
-  const exportControllerRef = useRef<AbortController | null>(null);
   const cancelledRef = useRef(false);
   const gamesTabRef = useRef<HTMLButtonElement>(null);
   const playersTabRef = useRef<HTMLButtonElement>(null);
@@ -426,7 +419,6 @@ export default function ClubDataPage() {
     cancelledRef.current = false;
     return () => {
       cancelledRef.current = true;
-      exportControllerRef.current?.abort();
     };
   }, []);
 
@@ -1022,81 +1014,75 @@ export default function ClubDataPage() {
     }
   }, [manualRefreshing, clubUuid, isHydrating, user, load, loadInvoices, loadPlayers, tab]);
 
+  // The screen holds one page of rows. Exporting that silently would hand
+  // someone a CSV of 200 games labelled as the period's data when the period
+  // has thousands - on a financial page that is not acceptable, so the export
+  // re-fetches at the RPC's ceiling and says so when even that is not enough.
   const exportCsv = useCallback(async () => {
     if (!clubUuid || exporting) return;
-    const controller = new AbortController();
-    exportControllerRef.current = controller;
     setExporting(true);
     setExportNote(null);
-    setExportProgress({ stage: 'preparing', loaded: 0, total: null });
     try {
-      const requestId = uuid();
       if (tab === 'players') {
-        const rows = await fetchClubDataExport<PlayerRow>({
-          rpc: supabase.rpc.bind(supabase),
-          startRpc: 'ca_club_player_export_start',
-          startArgs: {
-            p_club_id: clubUuid,
-            p_start: startDate,
-            p_end: endDate,
-            p_sort: playerSort,
-          },
-          requestId,
-          signal: controller.signal,
-          rowKey: (row) => row.user_id,
-          onProgress: setExportProgress,
-        });
-        if (!downloadCsv(`club_players_${startDate}_${endDate}.csv`, playersToCsv(rows))) {
+        if (!sortedPlayers.length) return;
+        if (players && players.player_count > sortedPlayers.length) {
+          setExportNote(
+            `Exported ${sortedPlayers.length} of ${players.player_count} players. Narrow the date range to export the rest.`
+          );
+        }
+        if (!downloadCsv(`club_players_${startDate}_${endDate}.csv`, playersToCsv(sortedPlayers))) {
           setExportNote('This browser could not start the download.');
-        } else {
-          setExportNote(`Exported all ${compactInt(rows.length)} players.`);
         }
         return;
       }
 
-      const rows = await fetchClubDataExport<SnapshotRow>({
-        rpc: supabase.rpc.bind(supabase),
-        startRpc: 'ca_club_game_export_start',
-        startArgs: {
-          p_club_id: clubUuid,
-          p_start: startDate,
-          p_end: endDate,
-          p_game: game,
-          p_stakes: stakes,
-          p_search: search || null,
-          p_sort: gameSort,
-        },
-        requestId,
-        signal: controller.signal,
-        rowKey: (row) => `${row.kind}:${row.id}`,
-        onProgress: setExportProgress,
-      });
-      if (!downloadCsv(`club_data_${startDate}_${endDate}.csv`, rowsToCsv(rows))) {
-        setExportNote('This browser could not start the download.');
-      } else {
-        setExportNote(`Exported all ${compactInt(rows.length)} games.`);
+      if (!snapshot) return;
+      let rows = snapshot.rows;
+      if (snapshot.row_count > rows.length) {
+        const { data, error: exportError } = await withTimeout(
+          supabase.rpc('ca_club_data_snapshot', {
+            p_club_id: clubUuid,
+            p_start: startDate,
+            p_end: endDate,
+            p_game: game,
+            p_stakes: stakes,
+            p_search: search || null,
+            p_limit: 500,
+          }),
+          'Club data export timed out',
+          EXPORT_REQUEST_TIMEOUT_MS
+        );
+        if (exportError) throw exportError;
+        if (Array.isArray((data as Snapshot)?.rows)) rows = (data as Snapshot).rows;
       }
-    } catch (e) {
-      if (isClubDataExportAbort(e)) {
-        setExportNote('Export cancelled. No partial file was downloaded.');
-      } else {
-        reportError(e, 'ClubDataPage.export_prepare');
+      if (!rows.length) return;
+      if (snapshot.row_count > rows.length) {
         setExportNote(
-          'The complete export could not be prepared. No partial file was downloaded. Try again.'
+          `Exported the ${rows.length} most recent of ${snapshot.row_count} games. Narrow the date range to export the rest.`
         );
       }
-    } finally {
-      if (!cancelledRef.current) {
-        setExporting(false);
-        setExportProgress(null);
+      if (!downloadCsv(`club_data_${startDate}_${endDate}.csv`, rowsToCsv(rows))) {
+        setExportNote('This browser could not start the download.');
       }
-      if (exportControllerRef.current === controller) exportControllerRef.current = null;
+    } catch (e) {
+      reportError(e, 'ClubDataPage.export_refetch');
+      setExportNote('The full export could not be prepared. Try again or narrow the date range.');
+    } finally {
+      if (!cancelledRef.current) setExporting(false);
     }
-  }, [clubUuid, exporting, tab, startDate, endDate, playerSort, game, stakes, search, gameSort]);
-
-  const cancelExport = useCallback(() => {
-    exportControllerRef.current?.abort();
-  }, []);
+  }, [
+    clubUuid,
+    exporting,
+    tab,
+    sortedPlayers,
+    players,
+    startDate,
+    endDate,
+    snapshot,
+    game,
+    stakes,
+    search,
+  ]);
 
   /**
    * The RPC is asked for 8 statements and nothing orders the result, so
@@ -1247,28 +1233,21 @@ export default function ClubDataPage() {
             type="button"
             className={`${styles.headerBtn} ${styles.exportButton}`}
             onClick={() => {
-              if (exporting) cancelExport();
-              else void exportCsv();
+              void exportCsv();
             }}
             disabled={
-              !exporting && (tab === 'players' ? !sortedPlayers.length : !snapshot?.rows?.length)
+              exporting || (tab === 'players' ? !sortedPlayers.length : !snapshot?.rows?.length)
             }
-            aria-label={exporting ? 'Cancel CSV export' : 'Export as CSV'}
-            title={exporting ? 'Cancel CSV export' : 'Export as CSV'}
+            aria-label="Export as CSV"
+            title="Export as CSV"
           >
-            {exporting ? 'Cancel Export' : 'Export CSV'}
+            {exporting ? 'Exporting' : 'Export CSV'}
           </button>
         </div>
       </header>
 
       <div className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true">
-        {refreshNote ||
-          exportNote ||
-          (exportProgress?.stage === 'preparing'
-            ? 'Preparing complete export.'
-            : exportProgress?.total !== null && exportProgress
-              ? `Exporting ${compactInt(exportProgress.loaded)} of ${compactInt(exportProgress.total)} rows.`
-              : '')}
+        {refreshNote || exportNote || ''}
       </div>
 
       <section className={styles.hero} aria-labelledby="club-data-title">
@@ -2025,14 +2004,6 @@ export default function ClubDataPage() {
       {exportNote && (
         <div className={styles.footNote} role="status">
           {exportNote}
-        </div>
-      )}
-
-      {exportProgress && (
-        <div className={styles.footNote} role="status" aria-live="polite">
-          {exportProgress.stage === 'preparing'
-            ? 'Preparing an exact snapshot for export...'
-            : `Downloading ${compactInt(exportProgress.loaded)} Of ${compactInt(exportProgress.total)} Rows...`}
         </div>
       )}
 

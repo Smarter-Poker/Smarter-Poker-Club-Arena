@@ -298,17 +298,6 @@
       "ledger_at_baseline",
       "unledgered_gap"
     ],
-    "ca_club_data_export_rows": [
-      "export_id",
-      "ordinal",
-      "payload"
-    ],
-    "ca_club_data_exports": [
-      "user_id",
-      "club_id",
-      "request_id",
-      "kind"
-    ],
     "ca_club_player_daily": [
       "club_id",
       "user_id",
@@ -324,13 +313,6 @@
       "tournament_id",
       "user_id",
       "stat_date"
-    ],
-    "ca_drift_incidents": [
-      "source",
-      "dedupe_key"
-    ],
-    "ca_financial_epochs": [
-      "name"
     ],
     "ca_frozen_pool_baseline": [
       "pool",
@@ -393,39 +375,6 @@
       "loser_id",
       "amount",
       "played_at"
-    ],
-    "ca_incident_events": [
-      "incident_id",
-      "kind"
-    ],
-    "ca_incident_recipients": [
-      "user_id"
-    ],
-    "ca_ledger_accounts": [
-      "account_type",
-      "side",
-      "backing"
-    ],
-    "ca_ledger_mutation_log": [
-      "source_table",
-      "operation",
-      "db_role",
-      "reason",
-      "old_row"
-    ],
-    "ca_rake_schedule": [
-      "sb",
-      "bb",
-      "rake_percent",
-      "rake_cap",
-      "bbj_fee_bb"
-    ],
-    "ca_rake_tier": [
-      "label",
-      "min_bb",
-      "rake_percent",
-      "rake_cap",
-      "bbj_fee_bb"
     ],
     "ca_seat_stack_exits": [
       "table_id",
@@ -2047,9 +1996,6 @@
     "orders": [
       "user_id"
     ],
-    "pa_leak_audit_jobs": [
-      "user_id"
-    ],
     "page_activity": [
       "page_type",
       "page_id",
@@ -2760,10 +2706,6 @@
       "kind",
       "amount",
       "balance_after"
-    ],
-    "spin_tier_spec": [
-      "multiplier",
-      "freq"
     ],
     "spin_tournaments": [
       "club_id",

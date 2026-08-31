@@ -103,3 +103,9 @@ BEGIN
   END LOOP;
   RAISE NOTICE 'spin_sync_survives_closed_tables: cancelled % zombie spin(s), % failed', v_cancelled, v_failed;
 END $$;
+
+-- Definer Authorization (added same day, applied as 20260830114000): this is
+-- a SECURITY DEFINER writer with no auth check - it is the ENGINE's resync
+-- primitive, never a browser's.
+REVOKE ALL ON FUNCTION public.fn_sync_seat_first_player_count(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sync_seat_first_player_count(uuid) TO service_role;

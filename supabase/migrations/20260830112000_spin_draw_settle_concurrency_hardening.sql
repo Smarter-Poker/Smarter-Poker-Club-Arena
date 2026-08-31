@@ -284,3 +284,8 @@ BEGIN
     'owner_id', v_owner, 'source_wallet_after', v_wallet_after);
 END;
 $function$;
+
+-- Definer Authorization (added same day, applied as 20260830114000): the
+-- settle moves pool money and is the ENGINE's alone.
+REVOKE ALL ON FUNCTION public.fn_spin_settle_game(uuid, uuid, numeric, integer, numeric, numeric) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_spin_settle_game(uuid, uuid, numeric, integer, numeric, numeric) TO service_role;

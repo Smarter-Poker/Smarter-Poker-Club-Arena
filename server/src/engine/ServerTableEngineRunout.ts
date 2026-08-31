@@ -993,17 +993,70 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     };
 
     if (horseIds.has(chooserPlayerId)) {
-      const runs = (this.handCount % 3 === 0 ? 3 : 2) as 2 | 3;
+      // A chooser who never picks 1 is a chooser who never runs it once.
+      const runs = this.horseRitVerdict(chooserPlayerId) === 'once'
+        ? (1 as const)
+        : ((this.handCount % 3 === 0 ? 3 : 2) as 2 | 3);
       respond(1200 + (this.handCount % 5) * 240, () => {
         this.respondToRIT(chooserPlayerId, undefined, runs);
       });
     }
     for (const pid of allPlayerIds) {
       if (pid === chooserPlayerId || !horseIds.has(pid)) continue;
+      const answer = this.horseRitVerdict(pid) === 'once' ? 'decline' : 'accept';
       respond(2500 + ((pid.charCodeAt(0) + this.handCount) % 4) * 400, () => {
-        this.respondToRIT(pid, 'accept');
+        this.respondToRIT(pid, answer);
       });
     }
+  }
+
+  /**
+   * ── A HORSE THAT ALWAYS SAYS YES IS NOT A PLAYER (2026-08-31) ──────────
+   *
+   * scheduleHorseRITResponses taught horses to answer the run-it-twice offer
+   * on 2026-08-18, which fixed a real bug: before it, every offer at a table
+   * with a horse in the all-in set expired and the hand always ran once. But
+   * the answer it taught them was a constant. A horse chooser picked 2 or 3
+   * every single time and a horse responder sent 'accept' every single time,
+   * with no branch in the code that could ever produce anything else.
+   *
+   * Two things follow from that, and both are live on the floor today.
+   *
+   * First, section 10.5. A seat that has agreed to run it twice on every
+   * all-in it has ever faced is identifiable from the outside without seeing
+   * a single hole card - the same rhythm leak the insurance responder was
+   * rewritten to close ("the old ~1s decline was a TELL"). Humans decline
+   * this offer; a lot of them decline it always. A seat that cannot is
+   * wearing a sign.
+   *
+   * Second, and this is what the Phase 3 sweep actually found: it silently
+   * turned insurance off across the entire floor. checkAllInRunout asks the
+   * RIT question FIRST (Dan's leader-seat sequencing, 2026-08-26) and only
+   * reaches startInsuranceFlow() on the single-run branch. Every one of the
+   * 27 live cash tables has both features on. So with horses unable to
+   * decline, every multiway all-in resolved to RIT accepted, the single-run
+   * branch was unreachable, and insurance was never offered: 270 hands in 24h
+   * met every precondition for an offer and insurance_offer_events recorded
+   * zero. The only rows that table has ever held came from four hand-built
+   * INSURANCE test tables, all now closed. A whole priced feature was dark by
+   * arithmetic, with nothing failing and nothing logging.
+   *
+   * The verdict is deterministic in (hand, player) rather than random so a
+   * replay of a hand answers the same way twice, and so this is testable. It
+   * is NOT a coin flip: 'once' lands on roughly three hands in ten, which is
+   * inside the range of ordinary human decline rates and leaves run-it-twice
+   * the common outcome it should be.
+   *
+   * This is not an is_horse EXCLUSION (section 10.5): it does not withhold
+   * anything a human gets. It is the horse's input device choosing between
+   * two answers a human chooses between, instead of being wired to one.
+   */
+  protected horseRitVerdict(playerId: string): 'once' | 'multi' {
+    let h = 0;
+    for (let i = 0; i < playerId.length; i++) {
+      h = (h * 31 + playerId.charCodeAt(i)) % 100000;
+    }
+    return (h + this.handCount * 7) % 10 < 3 ? 'once' : 'multi';
   }
 
   protected waitForRITResponse(onComplete: () => void): void {

@@ -680,6 +680,12 @@ function RoleSection({
   // pre-filled is a rate nobody chose, which is the bug this pair fixes.
   const [commissionPct, setCommissionPct] = useState('');
   const [rakebackPct, setRakebackPct] = useState('');
+  // Prepaid or a credit line, and how much. Blank for the same reason the rates
+  // are blank: Dan asked for the funding to be ASSIGNED at promotion, and a
+  // default sitting in the box is not a choice anybody made. The server refuses
+  // an agent role that arrives without one (needs_funding).
+  const [funding, setFunding] = useState<'' | 'prepaid' | 'credit'>('');
+  const [creditLimit, setCreditLimit] = useState('');
 
   // CA-18 BUG FIX: the 1.2s "show success then refresh" timer was fire-and-forget.
   // If the user left the screen before 1.2s, the component unmounted and the
@@ -753,7 +759,14 @@ function RoleSection({
     // row did not already exist. fn_club_set_member_role now refuses an agent
     // role that arrives without a rate, so the two fields below are the whole
     // point of the confirm step rather than decoration on it.
-    let rates: { p_commission_rate: number; p_player_rakeback_rate: number } | undefined;
+    let rates:
+      | {
+          p_commission_rate: number;
+          p_player_rakeback_rate: number;
+          p_is_prepaid: boolean;
+          p_credit_limit: number;
+        }
+      | undefined;
     if (isAgentRole(newRole)) {
       const comm = Number(commissionPct);
       const rake = Number(rakebackPct);
@@ -777,8 +790,36 @@ function RoleSection({
         setPromoting(false);
         return;
       }
+      // THE FUNDING IS CHOSEN HERE TOO.
+      //
+      // Dan, 2026-08-31: "THEY ALSO NEED TO BE ASSIGNED 'PRE PAID' OR CREDIT
+      // LINE, (AND IF SO, THEN HOW MUCH)". Every promotion before this one sent
+      // no funding at all, so the server stored the single combination that can
+      // send nothing: not prepaid, and no line to draw on.
+      if (funding === '') {
+        setError('Choose Prepaid Or A Credit Line.');
+        setPromoting(false);
+        return;
+      }
+      const limit = funding === 'prepaid' ? 0 : Number(creditLimit);
+      if (funding === 'credit' && (creditLimit.trim() === '' || !Number.isFinite(limit))) {
+        setError('Enter A Credit Limit.');
+        setPromoting(false);
+        return;
+      }
+      if (funding === 'credit' && limit <= 0) {
+        setError('A Credit Limit Must Be Greater Than 0, Or The Agent Should Be Prepaid.');
+        setPromoting(false);
+        return;
+      }
+
       // The database stores a fraction. The field asks for a percentage.
-      rates = { p_commission_rate: comm / 100, p_player_rakeback_rate: rake / 100 };
+      rates = {
+        p_commission_rate: comm / 100,
+        p_player_rakeback_rate: rake / 100,
+        p_is_prepaid: funding === 'prepaid',
+        p_credit_limit: limit,
+      };
     }
 
     try {
@@ -882,9 +923,63 @@ function RoleSection({
                   disabled={promoting}
                 />
               </label>
+              <div className="mm-roles__funding">
+                <span className="mm-field__label">Funding</span>
+                <div className="mm-roles__funding-choice" role="group" aria-label="Funding">
+                  <button
+                    type="button"
+                    className={`mm-roles__funding-option${
+                      funding === 'prepaid' ? ' mm-roles__funding-option--on' : ''
+                    }`}
+                    aria-pressed={funding === 'prepaid'}
+                    onClick={() => {
+                      setFunding('prepaid');
+                      setCreditLimit('');
+                    }}
+                    disabled={promoting}
+                  >
+                    Prepaid
+                  </button>
+                  <button
+                    type="button"
+                    className={`mm-roles__funding-option${
+                      funding === 'credit' ? ' mm-roles__funding-option--on' : ''
+                    }`}
+                    aria-pressed={funding === 'credit'}
+                    onClick={() => setFunding('credit')}
+                    disabled={promoting}
+                  >
+                    Credit Line
+                  </button>
+                </div>
+              </div>
+
+              {funding === 'prepaid' && (
+                <p className="mm-roles__rates-note">
+                  A Prepaid Agent Sends Only Chips They Already Hold.
+                </p>
+              )}
+
+              {funding === 'credit' && (
+                <label className="mm-field">
+                  <span className="mm-field__label">Credit Limit In Chips</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step={1}
+                    value={creditLimit}
+                    placeholder="e.g. 50000"
+                    onChange={(e) => setCreditLimit(e.target.value)}
+                    disabled={promoting}
+                  />
+                </label>
+              )}
+
               <p className="mm-roles__rates-note">
                 Rakeback Is Paid Out Of The Commission, So It Cannot Be The Larger Of The Two, And
-                Neither May Exceed The Upline They Report To.
+                Neither May Exceed The Upline They Report To. A Credit Line Cannot Exceed The Upline
+                Limit Either, And It Is Owed Back Weekly.
               </p>
             </div>
           )}
@@ -925,6 +1020,8 @@ function RoleSection({
                 setError('');
                 setCommissionPct('');
                 setRakebackPct('');
+                setFunding('');
+                setCreditLimit('');
                 setConfirmRole(role);
               }}
               disabled={role === targetRole || promoting}

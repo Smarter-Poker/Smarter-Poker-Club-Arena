@@ -619,6 +619,46 @@
   margin: 0;
 }
 
+.mm-roles__funding {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+/* Two equal targets at 375px, side by side. Neither carries the selected
+   styling until the user picks one, so the screen never shows a funding
+   arrangement nobody chose. */
+.mm-roles__funding-choice {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.mm-roles__funding-option {
+  flex: 1;
+  min-height: 44px;
+  padding: 0.55rem 0.4rem;
+  border: 1px solid var(--ca-border-hi);
+  border-radius: 8px;
+  background: var(--ca-surface);
+  color: var(--ca-text-dim);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: all 0.2s ease;
+}
+
+.mm-roles__funding-option--on {
+  border-color: var(--ca-cyan);
+  background: rgba(0, 194, 255, 0.14);
+  color: var(--ca-text);
+}
+
+.mm-roles__funding-option:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .mm-roles__rates-note {
   margin: 0;
   font-size: 0.75rem;

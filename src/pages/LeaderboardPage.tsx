@@ -917,7 +917,7 @@ export default function LeaderboardPage() {
         />
         {entry.isVIP && <span className="vip-badge">VIP</span>}
         {(entry.change || 0) >= 3 && (
-          <span className="hot-streak-badge" title="Hot streak: climbing fast">
+          <span className="hot-streak-badge" title="Hot Streak: Climbing Fast">
             {'↑'}
           </span>
         )}
@@ -1028,7 +1028,7 @@ export default function LeaderboardPage() {
                   : `Updated ${lastUpdated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}
             </span>
             {activeTab === 'rankings' && windowLabel && (
-              <span className="lb-window-label" title="The snapshot this period is measured from">
+              <span className="lb-window-label" title="The Snapshot This Period Is Measured From">
                 {windowLabel}
               </span>
             )}
@@ -1487,7 +1487,7 @@ export default function LeaderboardPage() {
                       {entry.username}
                       {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
                       {(entry.change || 0) >= 3 && (
-                        <span className="hot-streak-badge" title="Hot streak: climbing fast">
+                        <span className="hot-streak-badge" title="Hot Streak: Climbing Fast">
                           {'↑'}
                         </span>
                       )}

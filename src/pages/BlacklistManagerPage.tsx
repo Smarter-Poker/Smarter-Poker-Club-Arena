@@ -187,7 +187,7 @@ export default function BlacklistManagerPage() {
                 <label htmlFor="blacklist-reason">Reason</label>
                 <input
                   id="blacklist-reason"
-                  placeholder="Document the control decision"
+                  placeholder="Document The Control Decision"
                   value={newReason}
                   onChange={(event) => setNewReason(event.target.value)}
                   required

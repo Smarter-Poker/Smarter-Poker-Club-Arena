@@ -3416,7 +3416,7 @@ export default function MultiTablePage() {
                     pnlPressTimerRef.current = null;
                   }
                 }}
-                title="Session across cash tables (right-click or hold to turn off)"
+                title="Session Across Cash Tables (Right-Click Or Hold To Turn Off)"
                 aria-label="Session across cash tables"
               >
                 {sessionAgg.net > 0 ? '+' : ''}

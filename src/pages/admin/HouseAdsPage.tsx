@@ -703,7 +703,7 @@ export default function HouseAdsPage() {
                   id="ad-key"
                   className="admin-input"
                   value={form.ad_key}
-                  placeholder="spring_spins_push"
+                  placeholder="Spring_spins_push"
                   onChange={(e) => setForm((f) => ({ ...f, ad_key: e.target.value }))}
                 />
                 <div className="admin-text-secondary" style={{ fontSize: 12, marginTop: 4 }}>
@@ -821,7 +821,7 @@ export default function HouseAdsPage() {
                   id="ad-target"
                   className="admin-input"
                   value={form.target_url}
-                  placeholder="/vip"
+                  placeholder="/Vip"
                   onChange={(e) => setForm((f) => ({ ...f, target_url: e.target.value }))}
                 />
               </div>
@@ -860,7 +860,7 @@ export default function HouseAdsPage() {
                 <input
                   id="ad-image"
                   className="admin-input"
-                  placeholder="/images/promo.png"
+                  placeholder="/Images/Promo.png"
                   value={form.image_url}
                   onChange={(e) => setForm((f) => ({ ...f, image_url: e.target.value }))}
                 />
@@ -876,7 +876,7 @@ export default function HouseAdsPage() {
                 <input
                   id="ad-experiment"
                   className="admin-input"
-                  placeholder="spins_headline_test"
+                  placeholder="Spins_headline_test"
                   value={form.experiment_key}
                   onChange={(e) => setForm((f) => ({ ...f, experiment_key: e.target.value }))}
                 />
@@ -1237,7 +1237,7 @@ export default function HouseAdsPage() {
                                         <span
                                           className="admin-badge-yellow"
                                           style={{ marginLeft: 6, fontSize: 10 }}
-                                          title="Players who have already hit this placement's daily cap in the last 24 hours, and so cannot see it again today"
+                                          title="Players Who Have Already Hit This Placement's Daily Cap In The Last 24 Hours, And So Cannot See It Again Today"
                                         >
                                           {sup.cappedUsers24h} Of {sup.servedUsers24h} Capped Out
                                         </span>

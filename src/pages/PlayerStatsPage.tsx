@@ -2188,7 +2188,7 @@ export default function PlayerStatsPage() {
                       color="#f59e0b"
                     />
                     <StatRow
-                      label="Fold to 3-Bet"
+                      label="Fold To 3-Bet"
                       value={`${(overall.fold_to_three_bet * 100).toFixed(1)}%`}
                       color="#ef4444"
                     />
@@ -2337,7 +2337,7 @@ export default function PlayerStatsPage() {
                       color="#8b5cf6"
                     />
                     <StatRow
-                      label="Total Buy-ins"
+                      label="Total Buy-Ins"
                       value={tourn.total_buyins.toLocaleString()}
                       color="#06b6d4"
                     />

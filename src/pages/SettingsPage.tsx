@@ -1429,7 +1429,7 @@ export default function SettingsPage() {
             <input
               aria-label="Six-digit authenticator code"
               type="text"
-              placeholder="Enter 6-digit Code"
+              placeholder="Enter 6-Digit Code"
               value={verificationCode}
               onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
               className={styles.input}

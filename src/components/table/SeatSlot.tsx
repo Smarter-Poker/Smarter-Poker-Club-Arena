@@ -1682,7 +1682,7 @@ export const SeatSlot = memo(
           {/* 2026-08-26: replaced +/SIT text stack with the SIT coin image. */}
           <img
             src={`${import.meta.env.BASE_URL}images/icons/sit-button.png`}
-            alt="Sit down"
+            alt="Sit Down"
             className="seat__empty-img seat__empty-img--sit"
             draggable={false}
           />
@@ -2380,7 +2380,7 @@ export const SeatSlot = memo(
           )}
           {/* FIX 186: Disconnected overlay — shows DISCONNECTED label + countdown */}
           {player.status === 'disconnected' && (
-            <div className="seat__disconnect-overlay" title="Player disconnected">
+            <div className="seat__disconnect-overlay" title="Player Disconnected">
               <span className="seat__disconnect-label">DISCONNECTED</span>
               {secondsLeft != null && secondsLeft > 0 && (
                 <span className="seat__disconnect-timer">{Math.ceil(secondsLeft)}s</span>

@@ -1177,7 +1177,7 @@ export default function ActionPanel({
                   className="raise-value__amount"
                   onClick={beginEditAmount}
                   aria-label={`Edit bet amount ${formatChips(raiseAmount)} - opens numeric keyboard`}
-                  title="Tap to type exact amount"
+                  title="Tap To Type Exact Amount"
                 >
                   {formatChips(raiseAmount)}
                 </button>

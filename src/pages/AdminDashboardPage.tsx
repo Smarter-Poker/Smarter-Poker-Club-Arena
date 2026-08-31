@@ -1063,7 +1063,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
               }
             }}
             className="admin-btn admin-btn-ghost admin-btn-sm"
-            title="Export audit log as CSV"
+            title="Export Audit Log As CSV"
           >
             Export
           </button>
@@ -1803,7 +1803,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
             <input
               value={theme.bannerUrl || ''}
               onChange={(e) => setTheme((prev) => ({ ...prev, bannerUrl: e.target.value }))}
-              placeholder="Https://example.com/banner.png"
+              placeholder="Https://Example.com/Banner.png"
               className="admin-input"
             />
           </div>

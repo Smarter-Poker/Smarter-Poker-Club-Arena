@@ -1479,7 +1479,7 @@ export default function ClubDetailPage() {
                               });
                             }}
                             disabled={deletingTableId === table.id}
-                            title="Delete table"
+                            title="Delete Table"
                           >
                             {deletingTableId === table.id ? '...' : '✕'}
                           </button>

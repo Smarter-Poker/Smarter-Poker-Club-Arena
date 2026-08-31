@@ -537,7 +537,7 @@ export function HandDetailModal({
             {onReplay && (
               <button
                 className="hdm-icon-btn"
-                title="Video replay"
+                title="Video Replay"
                 aria-label="Video replay"
                 onClick={() => onReplay(hand)}
               >
@@ -550,7 +550,7 @@ export function HandDetailModal({
             {onShare && (
               <button
                 className="hdm-icon-btn"
-                title="Share hand"
+                title="Share Hand"
                 aria-label="Share hand"
                 onClick={() => onShare(hand)}
               >

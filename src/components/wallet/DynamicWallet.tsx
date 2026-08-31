@@ -1511,7 +1511,7 @@ export default function DynamicWallet({
             fetchData();
           }}
           aria-label="Retry loading wallet data"
-          title="Failed to load - tap to retry"
+          title="Failed To Load - Tap To Retry"
         >
           Balances Unavailable · Retry
         </button>

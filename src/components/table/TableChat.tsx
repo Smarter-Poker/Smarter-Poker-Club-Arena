@@ -168,7 +168,7 @@ function MessageRow({ message, isOwnMessage, isNew = false }: MessageRowProps) {
               loading="lazy"
               decoding="async"
               src={message.playerAvatar}
-              alt="Player avatar"
+              alt="Player Avatar"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = generateDefaultAvatar();
               }}
@@ -450,7 +450,7 @@ export function TableChat({
       <button
         className="chat-collapsed chat-collapsed--muted"
         onClick={onToggleCollapse}
-        title="Chat is muted"
+        title="Chat Is Muted"
         aria-label="Chat is muted"
       >
         <span className="chat-collapsed__icon" style={{ opacity: 0.4 }}>
@@ -546,7 +546,7 @@ export function TableChat({
           <button
             className="table-chat__close"
             onClick={handleClose}
-            title="Close chat"
+            title="Close Chat"
             aria-label="Close chat"
           >
             &#10005;
@@ -577,7 +577,7 @@ export function TableChat({
             <button
               className="table-chat__scroll-fab"
               onClick={scrollToBottom}
-              title="Jump to latest"
+              title="Jump To Latest"
               aria-label="Jump to latest message"
             >
               &#8595;

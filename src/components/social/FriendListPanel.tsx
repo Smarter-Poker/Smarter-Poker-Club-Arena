@@ -421,7 +421,7 @@ function FriendListPanelInner({
                       haptic.light();
                       onInviteClick(friend.friendId);
                     }}
-                    title="Invite to table"
+                    title="Invite To Table"
                     aria-label="Invite to table"
                   ></button>
                 )}

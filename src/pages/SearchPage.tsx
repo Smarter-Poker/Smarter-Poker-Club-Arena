@@ -417,7 +417,7 @@ export default function SearchPage() {
               id="community-search"
               type="search"
               autoComplete="off"
-              placeholder="Player, club, table, or tournament"
+              placeholder="Player, Club, Table, Or Tournament"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               autoFocus

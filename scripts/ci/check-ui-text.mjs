@@ -40,6 +40,24 @@ const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 't
 const SKIP_FILES = new Set(['src/utils/titleCase.ts', 'scripts/ci/check-ui-text.mjs']);
 const EM_DASHES = /[—–―‒]/;
 
+/**
+ * AN ENTITY IS AN EM DASH THE MOMENT A BROWSER PAINTS IT (2026-08-31).
+ *
+ * This gate reported OK for months while six em dashes were shipping to
+ * players, because they were written as `&mdash;` rather than as the
+ * character. The header above says the rule is "no em dashes in anything a
+ * player can read", and `<span>&mdash;</span>` is read as an em dash by every
+ * reader that matters. Found by scanning the DEPLOYED bundle rather than the
+ * source: BadBeatJackpotPage and ClubDataPage were serving them.
+ *
+ * Numeric forms are included because &#8212; and &#x2014; paint identically,
+ * and a rule that only knows the friendly spelling is a rule with a hole in
+ * it. Checked against the same comment-stripped copy as the characters, so a
+ * decision record that mentions `&mdash;` in prose is still allowed.
+ */
+const DASH_ENTITIES = /&(?:mdash|ndash|horbar|#8212|#8211|#x2014|#x2013|#X2014|#X2013);/i;
+const hasDash = (text) => EM_DASHES.test(text) || DASH_ENTITIES.test(text);
+
 const fix = process.argv.includes('--fix');
 
 /** Strip comments so the scan only sees code and copy. */
@@ -70,11 +88,26 @@ for (const file of walk(SRC)) {
   const rel = file.replace(ROOT, '');
   if (SKIP_FILES.has(rel)) continue;
   const original = readFileSync(file, 'utf8');
-  if (!EM_DASHES.test(original)) continue;
+  if (!hasDash(original)) continue;
 
   const isCss = extname(file) === '.css';
   const scannable = stripComments(original, isCss);
-  if (!EM_DASHES.test(scannable)) continue; // only in comments -> allowed
+  if (!hasDash(scannable)) continue; // only in comments -> allowed
+
+  // An entity is reported rather than auto-rewritten: the right replacement
+  // depends on what the dash was doing. A clause break wants a period, a range
+  // divider wants a hyphen, and a label wants a colon. Guessing produces the
+  // sentence-mangling the --fix path was careful to avoid elsewhere.
+  if (DASH_ENTITIES.test(scannable)) {
+    const lines = scannable.split('\n');
+    lines.forEach((line, i) => {
+      if (DASH_ENTITIES.test(line)) {
+        offenders.push(
+          `${rel}:${i + 1}: ${line.trim().slice(0, 120)}   <- entity em dash, replace by hand`
+        );
+      }
+    });
+  }
 
   if (fix) {
     // Rewrite only OUTSIDE comments: walk the stripped copy to find real

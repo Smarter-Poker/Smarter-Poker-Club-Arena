@@ -256,6 +256,16 @@ jobs:
       - name: UI copy — page copy is Title Cased
         run: node scripts/ci/check-title-case.mjs
 
+      # The THIRD surface of the same rule (Dan 2026-08-31: "MAKE SURE THE
+      # FIRST LETTER OF EVERY WORD ON EVERY SINGLE PAGE AND SUB PAGE IS
+      # CAPITALIZED"). The two gates above read JsxText and the nav registry.
+      # Neither can see text a browser paints from a string ATTRIBUTE --
+      # placeholder, title, alt, and component label props -- and 125 of those
+      # were lower case when this was added.
+      # Autofix locally with: node scripts/ci/check-visible-attribute-case.mjs --fix
+      - name: UI copy — painted attributes are Title Cased
+        run: node scripts/ci/check-visible-attribute-case.mjs
+
       # The other half of the same rule (Dan 2026-08-30: "AS WELL AS EVERY
       # CLICKABLE PAGE AND SUBPAGE"). The gate above inspects JsxText only and
       # documents that expression values are "cased at their source" — nothing

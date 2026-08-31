@@ -1553,7 +1553,7 @@ export default function TournamentDetails({
                   className="btn btn-watch"
                   type="button"
                   onClick={() => watchTable(featuredTableId)}
-                  title="Watch the featured table"
+                  title="Watch The Featured Table"
                 >
                   WATCH
                 </button>

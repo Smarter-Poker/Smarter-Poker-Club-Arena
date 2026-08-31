@@ -204,7 +204,7 @@ export default function PreActionBar({
             className={`pre-action-btn check ${preAction === 'check' ? 'active' : ''}`}
             aria-pressed={preAction === 'check'}
             onClick={() => handleToggle('check')}
-            title="Check when action reaches you"
+            title="Check When Action Reaches You"
           >
             <ToggleDot active={preAction === 'check'} />
             <span className="pre-action-btn__label">Check</span>
@@ -235,7 +235,7 @@ export default function PreActionBar({
           className={`pre-action-btn call-any ${preAction === 'callAny' ? 'active' : ''}`}
           aria-pressed={preAction === 'callAny'}
           onClick={() => handleToggle('callAny')}
-          title="Call any bet when action reaches you"
+          title="Call Any Bet When Action Reaches You"
         >
           <ToggleDot active={preAction === 'callAny'} />
           <span className="pre-action-btn__label">Call Any</span>

@@ -613,7 +613,7 @@ export function AvatarGallery({
             <img
               decoding="async"
               src={currentAvatarUrl}
-              alt="Current avatar"
+              alt="Current Avatar"
               className="ag-preview__img ag-preview__img--current"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = generateDefaultAvatar();
@@ -633,7 +633,7 @@ export function AvatarGallery({
             <img
               decoding="async"
               src={selectedAvatar}
-              alt="Selected avatar"
+              alt="Selected Avatar"
               className="ag-preview__img ag-preview__img--selected"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = generateDefaultAvatar();
@@ -743,7 +743,7 @@ export function AvatarGallery({
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search this collection"
+              placeholder="Search This Collection"
             />
             <span aria-hidden="true">⌕</span>
           </label>

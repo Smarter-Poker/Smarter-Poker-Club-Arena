@@ -59,7 +59,7 @@ export default function StatsExportButton({
     <button
       className="stats-export-btn"
       onClick={handleExport}
-      title="Download as CSV"
+      title="Download As CSV"
       aria-label={`Export ${filename} data as CSV`}
     >
       {label}

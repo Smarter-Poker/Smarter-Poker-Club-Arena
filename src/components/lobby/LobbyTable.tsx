@@ -385,7 +385,7 @@ function LobbyFlagChips({ entry }: { entry: LobbyEntry }) {
       {entry.featured && (
         <span
           className="lt-flag lt-flag--featured"
-          title="Pinned to the top of the board by the host"
+          title="Pinned To The Top Of The Board By The Host"
         >
           FEATURED
         </span>
@@ -393,13 +393,13 @@ function LobbyFlagChips({ entry }: { entry: LobbyEntry }) {
       {entry.vipOnly && (
         <span
           className="lt-flag lt-flag--vip"
-          title="VIP members only. A seat here needs VIP membership"
+          title="VIP Members Only. A Seat Here Needs VIP Membership"
         >
           VIP
         </span>
       )}
       {entry.isNew && (
-        <span className="lt-flag lt-flag--new" title="Recently opened">
+        <span className="lt-flag lt-flag--new" title="Recently Opened">
           NEW
         </span>
       )}

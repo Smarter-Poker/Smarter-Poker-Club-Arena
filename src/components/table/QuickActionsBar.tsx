@@ -120,7 +120,7 @@ export function QuickActionsBar({
               haptic.light();
               setIsExpanded(true);
             }}
-            title="More actions"
+            title="More Actions"
           >
             <span className="qab-btn__icon">•••</span>
           </button>

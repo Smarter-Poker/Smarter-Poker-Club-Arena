@@ -380,6 +380,17 @@ if [ -f scripts/ci/check-title-case.mjs ]; then
   fi
 fi
 
+# The third surface of the same rule: text a browser paints from a string
+# ATTRIBUTE (placeholder, title, alt, label props). Neither check-title-case
+# (JsxText) nor check-nav-title-case (the nav registry) can see those, and 125
+# were lower case when this was added. Autofix:
+#   node scripts/ci/check-visible-attribute-case.mjs --fix
+if [ -f scripts/ci/check-visible-attribute-case.mjs ]; then
+  if ! node scripts/ci/check-visible-attribute-case.mjs; then
+    FAIL=1
+  fi
+fi
+
 # The other half of the same rule. check-title-case.mjs inspects JsxText only
 # and states in its own header that expression values "are cased at their
 # source" - a promise nothing enforced. Every navigation surface renders its

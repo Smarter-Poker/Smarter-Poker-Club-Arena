@@ -2380,7 +2380,7 @@ export default function CashierTradePage() {
                     className={styles.plusBtn}
                     disabled={!isOnline}
                     aria-label="Open the Club Bank Cashier"
-                    title="Club Bank Cashier - fund agent wallets, ledger, chip mint"
+                    title="Club Bank Cashier - Fund Agent Wallets, Ledger, Chip Mint"
                     onClick={() => setActiveCashier('club_bank')}
                   >
                     +
@@ -2669,7 +2669,7 @@ export default function CashierTradePage() {
               type="search"
               value={recordQuery}
               onChange={(event) => setRecordQuery(event.target.value)}
-              placeholder="Search person or entry type"
+              placeholder="Search Person Or Entry Type"
               aria-label="Search trade record"
             />
             <div className={styles.ledgerFilters} aria-label="Filter trade direction">

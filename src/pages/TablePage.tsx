@@ -18810,7 +18810,7 @@ export default function TablePage({
                   soundService.playButtonClick();
                   masterBus.emit('OPEN_LOBBY_TAB', { requestedBy: userId });
                 }}
-                title="Open the lobby in a new tab"
+                title="Open The Lobby In A New Tab"
                 aria-label="Open the lobby in a new tab"
               >
                 <img

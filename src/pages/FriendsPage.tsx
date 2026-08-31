@@ -598,7 +598,7 @@ export default function FriendsPage() {
                   type="search"
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Search by player name"
+                  placeholder="Search By Player Name"
                 />
                 {filteredFriends.length > 0 && (
                   <button type="button" onClick={exportFriends}>
@@ -650,7 +650,7 @@ export default function FriendsPage() {
               <div className="friends-groups">
                 {visibleOnlineFriends.length > 0 && (
                   <FriendGroup
-                    label="Online now"
+                    label="Online Now"
                     friends={visibleOnlineFriends}
                     totalCount={onlineFriends.length}
                     navigate={navigate}

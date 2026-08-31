@@ -336,7 +336,7 @@ export default function DisputeManagementPage() {
           <input
             id="dispute-search"
             type="text"
-            placeholder="Player, reason, target, or amount"
+            placeholder="Player, Reason, Target, Or Amount"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />

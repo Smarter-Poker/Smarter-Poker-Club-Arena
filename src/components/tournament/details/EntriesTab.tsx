@@ -397,7 +397,7 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
               <span className="et-marks">
                 {isSatellite && <SatelliteSeatBadge />}
                 {isReentry && (
-                  <span className="tl-badge tl-badge--action" title="Re-entry">
+                  <span className="tl-badge tl-badge--action" title="Re-Entry">
                     RE
                   </span>
                 )}
@@ -407,7 +407,7 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
                   </span>
                 )}
                 {showAddOns && addOn && (
-                  <span className="tl-badge tl-badge--good" title="Add-on taken">
+                  <span className="tl-badge tl-badge--good" title="Add-On Taken">
                     AO
                   </span>
                 )}

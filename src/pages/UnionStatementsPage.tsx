@@ -524,7 +524,7 @@ export default function UnionStatementsPage() {
           <span>Insurance Last 14 Days:</span>
           <span
             className={insurancePnl.totals.net < 0 ? styles.neg : styles.pos}
-            title="Premiums collected minus payouts paid, settled to the union insurance wallet"
+            title="Premiums Collected Minus Payouts Paid, Settled To The Union Insurance Wallet"
           >
             {money(insurancePnl.totals.net)} Net
           </span>

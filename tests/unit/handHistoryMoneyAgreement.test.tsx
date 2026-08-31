@@ -221,7 +221,10 @@ describe('the exported text says what the screen says', () => {
     URL.revokeObjectURL = vi.fn() as unknown as typeof URL.revokeObjectURL;
     try {
       render(<HandHistoryPanel isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
-      fireEvent.click(screen.getByTitle('Export all hands'));
+      // Title Cased 2026-08-31 with every other painted attribute, per Dan's
+      // rule that the first letter of every word on a page is capitalised.
+      // The query follows the button; the behaviour under test is unchanged.
+      fireEvent.click(screen.getByTitle('Export All Hands'));
       expect(captured).not.toBeNull();
       const text = await (captured as unknown as Blob).text();
       /* "collected N from pot" is the PokerStars wording, and the number after

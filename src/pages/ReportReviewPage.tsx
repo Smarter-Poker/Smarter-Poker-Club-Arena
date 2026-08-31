@@ -350,7 +350,7 @@ export default function ReportReviewPage() {
                       id="report-admin-notes"
                       value={adminNotes}
                       onChange={(event) => setAdminNotes(event.target.value)}
-                      placeholder="Record the evidence and decision rationale"
+                      placeholder="Record The Evidence And Decision Rationale"
                       rows={4}
                     />
                   </div>

@@ -281,12 +281,12 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
           }}
         >
           <Stat
-            label="Player coverage"
+            label="Player Coverage"
             value={`${coverage.player_coverage_pct}%`}
             sub={`${coverage.players_with_agent}/${coverage.players_total} have an agent`}
             bad={coverage.players_without_agent > 0}
           />
-          <Stat label="Super agents" value={coverage.super_agents} />
+          <Stat label="Super Agents" value={coverage.super_agents} />
           <Stat
             label="Agents"
             value={coverage.agents}
@@ -294,20 +294,20 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
             bad={coverage.agents_orphaned > 0}
           />
           <Stat
-            label="Sub agents"
+            label="Sub Agents"
             value={coverage.sub_agents}
             sub={`${coverage.sub_agents_under_an_agent} under an agent`}
             bad={coverage.sub_agents_orphaned > 0}
           />
-          <Stat label="Agents with sub agents" value={coverage.agents_that_have_sub_agents} />
+          <Stat label="Agents With Sub Agents" value={coverage.agents_that_have_sub_agents} />
           <Stat
-            label="Rakeback deals"
+            label="Rakeback Deals"
             value={coverage.player_rakeback_deals}
             sub={`${coverage.player_rakeback_gap_breaches} gap breaches`}
             bad={coverage.player_rakeback_gap_breaches > 0}
           />
           <Stat
-            label="Rates out of policy"
+            label="Rates Out Of Policy"
             value={coverage.commission_rates_out_of_policy}
             sub={`band ${Math.round(coverage.policy_band.min * 100)}-${Math.round(coverage.policy_band.max * 100)}%`}
             bad={coverage.commission_rates_out_of_policy > 0}
@@ -529,7 +529,7 @@ function SettlementConfirm({
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '14px 0' }}>
           <Row
-            label="Round 1 · union → clubs"
+            label="Round 1 · Union → Clubs"
             value={
               preview.round1.already_executed
                 ? 'already settled'

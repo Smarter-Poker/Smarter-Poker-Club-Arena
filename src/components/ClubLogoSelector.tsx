@@ -151,7 +151,7 @@ export default function ClubLogoSelector({
             loading="lazy"
             decoding="async"
             src={preview}
-            alt="Club logo preview"
+            alt="Club Logo Preview"
             className="logo-preview__image"
           />
         ) : (

@@ -932,6 +932,11 @@
       "user_id",
       "created_at"
     ],
+    "ca_browser_definer_allowlist": [
+      "proname",
+      "reason",
+      "recorded_at"
+    ],
     "ca_chip_baseline": [
       "club_id",
       "user_id",
@@ -1046,6 +1051,14 @@
       "frozen_total",
       "frozen_at",
       "note"
+    ],
+    "ca_gate_runs": [
+      "id",
+      "run_at",
+      "pass",
+      "window_hours",
+      "failing",
+      "result"
     ],
     "ca_guard_inventory": [
       "id",
@@ -1231,6 +1244,13 @@
       "notes",
       "added_at"
     ],
+    "ca_op_claims": [
+      "op_id",
+      "fn_name",
+      "result",
+      "claimed_at",
+      "finalized_at"
+    ],
     "ca_pending_promo_accruals": [
       "id",
       "club_id",
@@ -1326,7 +1346,8 @@
       "burn_since_prev",
       "delta_vs_prev",
       "unexplained",
-      "tournament_liability"
+      "tournament_liability",
+      "leaderboard_liability"
     ],
     "ca_treasury_baseline": [
       "club_id",
@@ -5371,6 +5392,15 @@
       "audited_at",
       "created_at",
       "updated_at"
+    ],
+    "hand_discards": [
+      "id",
+      "table_id",
+      "hand_number",
+      "user_id",
+      "seat_number",
+      "discarded_card",
+      "created_at"
     ],
     "hand_histories": [
       "id",

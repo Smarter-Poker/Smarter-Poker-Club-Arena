@@ -11855,6 +11855,7 @@ export default function TablePage({
           buy_in?: number;
           locked_tiers?: unknown;
           reveal_at?: number;
+          hold_until?: number;
         };
         const mult = Number(d?.multiplier) || 0;
         if (!mult) break;
@@ -11886,6 +11887,11 @@ export default function TablePage({
           // The shared clock. A client that joins mid-sequence starts partway
           // through rather than replaying from the top.
           revealAtMs,
+          /* The engine's own deal hold (2026-08-30 audit): hold_until has been
+             on the packet since round 18 but was never read, so the clamp
+             always fell back to the spec default. Wiring it means a future
+             change to the engine's hold cannot desynchronize clients again. */
+          revealDeadlineMs: Number(d?.hold_until) || undefined,
         });
         break;
       }

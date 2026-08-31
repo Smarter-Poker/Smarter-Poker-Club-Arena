@@ -11812,6 +11812,19 @@
       "stale_checks",
       "stale_pct"
     ],
+    "v_spin_draw_booking_gaps": [
+      "tournament_id",
+      "club_id",
+      "name",
+      "buy_in_amount",
+      "spin_multiplier",
+      "started_at",
+      "ended_at",
+      "drawn_at",
+      "prize_drawn",
+      "prize_credited",
+      "draw_under_booked_by"
+    ],
     "v_spin_reserve_health": [
       "club_id",
       "club_name",

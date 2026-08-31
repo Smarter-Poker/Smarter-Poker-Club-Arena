@@ -24,6 +24,44 @@ import { STORAGE_KEYS } from '../lib/storage';
 const RELOAD_KEY = STORAGE_KEYS.CHUNK_RELOAD;
 const MAX_RELOADS = 2; // Max full-page reloads before giving up
 
+export function isChunkLoadError(error: unknown): boolean {
+  const candidate = error as { name?: string; message?: string } | null;
+  return (
+    candidate?.name === 'ChunkLoadError' ||
+    candidate?.message?.includes('Importing a module script failed') === true ||
+    candidate?.message?.includes('error loading dynamically imported module') === true ||
+    candidate?.message?.includes('Unable to preload CSS') === true ||
+    candidate?.message?.includes('dynamically imported module') === true ||
+    candidate?.message?.includes('Failed to fetch') === true ||
+    candidate?.message?.includes('Loading chunk') === true ||
+    candidate?.message?.includes('Loading CSS chunk') === true
+  );
+}
+
+/**
+ * Retry a deferred, non-render-blocking module during an atomic publish.
+ * Unlike lazyWithRetry, this never reloads the page: callers use it for boot
+ * warmers and telemetry that must not interrupt a usable route.
+ */
+export async function importWithRetry<T>(
+  importFn: () => Promise<T>,
+  retries = 4,
+  baseDelayMs = 500
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    try {
+      return await importFn();
+    } catch (error) {
+      lastError = error;
+      if (!isChunkLoadError(error) || attempt === retries - 1) throw error;
+      const delay = Math.min(baseDelayMs * 2 ** attempt, 4_000);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError;
+}
+
 function getReloadCount(): number {
   try {
     return parseInt(sessionStorage.getItem(RELOAD_KEY) || '0', 10);
@@ -105,15 +143,7 @@ export function lazyWithRetry<T extends ComponentType<any>>(
            the hard reload, and the app just showed its error card — which is
            why Register, Details and Join all died on the same screen while
            the desktop recovered silently. */
-        const isChunkError =
-          error?.name === 'ChunkLoadError' ||
-          error?.message?.includes('Importing a module script failed') ||
-          error?.message?.includes('error loading dynamically imported module') ||
-          error?.message?.includes('Unable to preload CSS') ||
-          error?.message?.includes('dynamically imported module') ||
-          error?.message?.includes('Failed to fetch') ||
-          error?.message?.includes('Loading chunk') ||
-          error?.message?.includes('Loading CSS chunk');
+        const isChunkError = isChunkLoadError(error);
 
         if (!isChunkError || attempt === retries - 1) {
           // Not a chunk error or final retry — try a full reload

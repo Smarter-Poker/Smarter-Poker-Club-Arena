@@ -936,7 +936,7 @@
 
   .club-lobby-command-top__campaign {
     height: 112px;
-    min-height: 112px;
+    min-height: 122px;
     margin-top: -2px;
     padding: 5px 7px;
     border-width: 14px;
@@ -1138,9 +1138,12 @@
     height: 12px;
   }
 
-  .club-lobby-command-top__campaign,
+  .club-lobby-command-top__campaign {
+    min-height: 116px;
+  }
+
   .club-lobby-command-top__campaign-button {
-    min-height: 106px;
+    min-height: 78px;
   }
 
   .club-lobby-command-top__campaign-button img {

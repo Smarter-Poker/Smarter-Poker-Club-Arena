@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { resolvePreloadRouteKey } from '../src/utils/ChunkPreloader';
 
 const root = resolve(import.meta.dirname, '..');
 const page = readFileSync(resolve(root, 'src/pages/CashierTradePage.tsx'), 'utf8');
 const home = readFileSync(resolve(root, 'src/pages/HomePage.tsx'), 'utf8');
 const union = readFileSync(resolve(root, 'src/pages/UnionDashboardPage.tsx'), 'utf8');
-const preloader = readFileSync(resolve(root, 'src/utils/ChunkPreloader.ts'), 'utf8');
 const quickLinkTile = readFileSync(
   resolve(root, 'src/components/home/ClubQuickLinkTile.tsx'),
   'utf8'
@@ -44,7 +44,8 @@ describe('cashier integrity and wallet launcher', () => {
     expect(home).toContain(
       "preloadPath={tile.alt === 'Cashier' ? '/cashier/trade' : '/marketplace'}"
     );
-    expect(preloader).toContain("'/cashier/trade': () => import('../pages/CashierTradePage')");
+    expect(resolvePreloadRouteKey('/cashier/trade')).toBe('/cashier/trade');
+    expect(resolvePreloadRouteKey('/cashier')).toBe('/cashier');
   });
 
   it('versions union dashboard loads so an old route cannot paint under a new URL', () => {

@@ -187,8 +187,9 @@ const ROUTE_CHUNKS: Record<string, () => Promise<any>> = {
 /** Keys already warmed this session; a chunk only needs importing once. */
 const warmedKeys = new Set<string>();
 
-export function preloadRoute(path: string): void {
-  if (!path) return;
+/** Pure route resolver, exported so intent wiring is behaviorally testable. */
+export function resolvePreloadRouteKey(path: string): string | null {
+  if (!path) return null;
   /* ROUND 10 (2026-08-29): menu links may carry a query string now (the
      deep-linked results filters). The chunk is keyed by the PATH; a query
      made every key miss and the prefetch silently did nothing. */
@@ -205,6 +206,11 @@ export function preloadRoute(path: string): void {
       if (bestKey === null || key.length > bestKey.length) bestKey = key;
     }
   }
+  return bestKey;
+}
+
+export function preloadRoute(path: string): void {
+  const bestKey = resolvePreloadRouteKey(path);
   if (!bestKey) return;
   // A hover that also focuses fired the same dynamic import twice.
   if (warmedKeys.has(bestKey)) return;

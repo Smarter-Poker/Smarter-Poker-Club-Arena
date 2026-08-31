@@ -26,12 +26,30 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { sliceYamlBlock } from '../helpers/sourceWindow';
 
 const ROOT = resolve(__dirname, '../..');
 const WORKFLOW = readFileSync(join(ROOT, '.github/workflows/post-deploy-e2e.yml'), 'utf8');
 const GLOBAL_SETUP = readFileSync(join(ROOT, 'tests/e2e/global-setup.ts'), 'utf8');
 const CHECKER = join(ROOT, 'scripts/ci/assert-e2e-actually-ran.mjs');
+
+/**
+ * ONE WORKFLOW STEP, bounded by the next step at the same indent.
+ *
+ * tests/helpers/sourceWindow.ts is the right idea in the wrong language: its
+ * extractors match braces and parens, and YAML has neither. So the structure
+ * here is the step list itself. A byte count would drift the moment a comment
+ * is added inside a step, which is exactly the outage
+ * noFixedSizeSourceWindows.test.ts exists to prevent - and this file was caught
+ * by that test, correctly, on its first full-suite run.
+ */
+function step(workflow: string, name: string): string {
+  const at = workflow.indexOf(`- name: ${name}`);
+  if (at < 0) throw new Error(`step: "${name}" not found in the workflow`);
+  const lineStart = workflow.lastIndexOf('\n', at) + 1;
+  const indent = workflow.slice(lineStart, at);
+  const next = workflow.indexOf(`\n${indent}- name: `, at + 1);
+  return next < 0 ? workflow.slice(at) : workflow.slice(at, next);
+}
 
 /** Run the checker over throwaway reports and return its exit code. */
 function check(reports: unknown[]): number {
@@ -101,6 +119,22 @@ describe('the checker refuses a run that verified nothing', () => {
   it('counts a failed test as executed - a red run is honest, just red', () => {
     expect(check([spec('tests/e2e/a.spec.ts', ['failed'])])).toBe(0);
   });
+
+  it('accepts a stated notRunReason alongside a real report', () => {
+    // The workflow writes this when it decides not to invoke Playwright for a
+    // path at all, because the file does not exist at the deployed commit.
+    expect(
+      check([
+        { notRunReason: 'absent at the deployed commit' },
+        spec('tests/e2e/a.spec.ts', ['passed']),
+      ])
+    ).toBe(0);
+  });
+
+  it('refuses a run in which EVERY invocation was declined', () => {
+    // Reasons are not a verdict. If nothing was invoked, nothing was verified.
+    expect(check([{ notRunReason: 'absent' }, { notRunReason: 'absent' }])).toBe(1);
+  });
 });
 
 describe('the allowlist is a ratchet, not an escape hatch', () => {
@@ -118,6 +152,17 @@ describe('the allowlist is a ratchet, not an escape hatch', () => {
     }
   });
 
+  it('spells paths the way the JSON report does, or the exemption is a no-op', () => {
+    // Playwright reports `file` relative to testDir. An entry written from the
+    // repo root matches nothing, exempts nothing, and looks exactly like an
+    // exemption that works - the quietest possible way for this ratchet to
+    // stop holding. Verified against a real report, not assumed.
+    for (const entry of allowlist.allowed) {
+      expect(entry.file, `${entry.file} must be relative to tests/e2e`).not.toMatch(/^tests\//);
+      expect(entry.file).toMatch(/\.spec\.ts$/);
+    }
+  });
+
   it('holds the number of specs allowed to verify nothing at or below its ceiling', () => {
     // Lower this when a spec is made to run. Never raise it to make a run green.
     expect(allowlist.allowed.length).toBeLessThanOrEqual(6);
@@ -127,8 +172,7 @@ describe('the allowlist is a ratchet, not an escape hatch', () => {
 describe('the workflow cannot go back to reporting success dishonestly', () => {
   it('runs the honesty check, and runs it even when the suite went red', () => {
     expect(WORKFLOW).toContain('assert-e2e-actually-ran.mjs');
-    const step = sliceYamlBlock(WORKFLOW, '- name: Did the suite actually verify production?');
-    expect(step).toContain('if: always()');
+    expect(step(WORKFLOW, 'Did the suite actually verify production?')).toContain('if: always()');
   });
 
   it('emits the JSON the honesty check reads, from every playwright invocation', () => {
@@ -155,8 +199,16 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     ).toMatch(/E2E_REQUIRE_AUTH === '1'[\s\S]{0,200}throw new Error/);
   });
 
+  it('does not let the spec swap silently restore the signed-out fallback', () => {
+    // Taking tests/e2e wholesale from the deployed commit would also take
+    // global-setup.ts back to before E2E_REQUIRE_AUTH existed - disabling the
+    // fix on precisely the runs it was written for.
+    const align = step(WORKFLOW, 'Take the specs from the commit production is actually serving');
+    expect(align).toContain('git checkout "$HERE" -- tests/e2e/global-setup.ts tests/e2e/support');
+  });
+
   it('never lets one red step hide the rest of the production sweep', () => {
-    const sweep = sliceYamlBlock(WORKFLOW, '- name: Run the specs that need a deployed page');
+    const sweep = step(WORKFLOW, 'Run the specs that need a deployed page');
     expect(sweep, 'a failed Cashier step used to skip this one entirely').toContain(
       "if: always() && steps.live.outputs.ready == 'true'"
     );

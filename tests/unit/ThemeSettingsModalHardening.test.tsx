@@ -88,9 +88,20 @@ vi.mock('../../src/hooks/useTableStudioCollections', () => ({
 }));
 
 vi.mock('../../src/components/table/TableStudioGameplayPreview', () => ({
-  default: ({ selection }: { selection: { button_id: string; cards_id: string } }) => (
+  default: ({
+    selection,
+  }: {
+    selection: {
+      table_id: string;
+      background_id: string;
+      button_id: string;
+      cards_id: string;
+    };
+  }) => (
     <div
       data-testid="gameplay-preview"
+      data-table-theme={selection.table_id}
+      data-background-theme={selection.background_id}
       data-button-theme={selection.button_id}
       data-card-back={selection.cards_id}
     />
@@ -773,6 +784,86 @@ describe('ThemeSettingsModal hardening', () => {
     expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
       'data-button-theme',
       'blue-crystal'
+    );
+  });
+
+  it('repairs an open studio when the appearance realtime event was entirely missed', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+      'data-table-theme',
+      'classic_green'
+    );
+
+    mocks.themeResult = Promise.resolve({
+      data: [
+        {
+          ...savedTheme,
+          theme_id: 'ocean-suite',
+          table_id: 'ocean_blue',
+          background_id: 'royal_indigo',
+          button_id: 'classic-white',
+          cards_id: 'classic_blue',
+          updated_at: '2026-08-31T13:30:00.000Z',
+        },
+      ],
+      error: null,
+    });
+
+    await waitFor(
+      () =>
+        expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+          'data-table-theme',
+          'ocean_blue'
+        ),
+      { timeout: 3_500 }
+    );
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+      'data-background-theme',
+      'royal_indigo'
+    );
+    expect(screen.getByText('Table Art Live')).toBeVisible();
+  });
+
+  it('does not let an in-flight appearance snapshot roll back a newer realtime change', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+
+    const staleRefresh = deferred<{ data: unknown[]; error: null }>();
+    mocks.themeResult = staleRefresh.promise;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 2_100));
+    });
+
+    act(() => {
+      masterBus.emit('UI_THEME_CHANGED', {
+        key: 'ALL',
+        value: {
+          theme_id: 'ocean-suite',
+          table_id: 'ocean_blue',
+          background_id: 'royal_indigo',
+          cards_id: 'classic_blue',
+        },
+        userId: 'user-1',
+        updatedAt: '2026-08-31T13:31:00.000Z',
+      });
+    });
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+      'data-table-theme',
+      'ocean_blue'
+    );
+
+    await act(async () => {
+      staleRefresh.resolve({ data: [savedTheme], error: null });
+      await staleRefresh.promise;
+    });
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+      'data-table-theme',
+      'ocean_blue'
     );
   });
 });

@@ -26,7 +26,10 @@
  *   is a file that verified nothing, and it must be named.
  *
  * A file is exempt only if it is listed in e2e-may-skip-entirely.json WITH a
- * reason. That list is a ratchet, not an escape hatch: adding a line is a
+ * reason. NOTE the spelling: Playwright's JSON reports `file` RELATIVE TO
+ * testDir (`smoke.spec.ts`, `routes/clubs.spec.ts`), not from the repo root.
+ * An entry written as `tests/e2e/smoke.spec.ts` matches nothing and exempts
+ * nothing - verified against a real report, not assumed. That list is a ratchet, not an escape hatch: adding a line is a
  * visible, reviewable admission that one more spec cannot verify production.
  *
  * WHY PER-FILE AND NOT A RATIO. A ratio hides the shape. "88% executed" is the
@@ -36,6 +39,13 @@
  * A MISSING REPORT IS A FAILURE, NOT AN ABSENCE. If a Playwright invocation
  * produced no JSON at all it did not run — that is the exact condition this
  * script exists to catch, so it is never treated as "nothing to check".
+ *
+ * The one sanctioned exception is a report containing only `notRunReason`. The
+ * workflow writes that when it has DECIDED not to invoke Playwright for a path
+ * — today, when the specs were taken from an older deployed commit at which
+ * that file did not yet exist. That is a stated, printed reason rather than a
+ * hole, so it is reported and not failed. It is deliberately the only shape
+ * that gets this treatment: anything else missing is still a red.
  *
  * Usage:
  *   node scripts/ci/assert-e2e-actually-ran.mjs report-a.json [report-b.json ...]
@@ -99,6 +109,8 @@ function collect(suite, out) {
 /** @type {Map<string, {executed:number, skipped:number, failed:number, reasons:Set<string>}>} */
 const byFile = new Map();
 const missing = [];
+/** Invocations the workflow deliberately declined, with a stated reason. */
+const declined = [];
 
 for (const p of reportPaths) {
   if (!existsSync(p)) {
@@ -110,6 +122,10 @@ for (const p of reportPaths) {
     report = JSON.parse(readFileSync(p, 'utf8'));
   } catch (err) {
     missing.push(`${p} (unreadable: ${err.message})`);
+    continue;
+  }
+  if (report.notRunReason) {
+    declined.push({ path: p, reason: String(report.notRunReason) });
     continue;
   }
   for (const suite of report.suites ?? []) collect(suite, byFile);
@@ -142,8 +158,7 @@ if (rows.length) {
   lines.push('| Spec file | Executed | Skipped |');
   lines.push('| --- | --- | --- |');
   for (const [file, s] of rows) {
-    const mark =
-      s.executed === 0 ? (exempt.has(file) ? ' (allowed to skip)' : ' **VERIFIED NOTHING**') : '';
+    const mark = s.executed === 0 ? (exempt.has(file) ? ' (allowed to skip)' : ' **VERIFIED NOTHING**') : '';
     lines.push(`| \`${file}\`${mark} | ${s.executed} | ${s.skipped} |`);
   }
   lines.push('');
@@ -161,9 +176,22 @@ if (missing.length) {
   lines.push('');
 }
 
+if (declined.length) {
+  lines.push('**Not invoked, by decision:**');
+  lines.push('');
+  for (const d of declined) lines.push(`- \`${d.path}\` — ${d.reason}`);
+  lines.push('');
+}
+
 if (rows.length === 0 && missing.length === 0) {
+  // Declining EVERY invocation is not a partial absence, it is a run that
+  // verified nothing while stating reasons for it. Reasons are not a verdict.
   failed = true;
-  lines.push('**The report contains no specs at all.** Nothing was verified.');
+  lines.push(
+    declined.length
+      ? '**Every invocation was declined.** Reasons were given for each, but nothing was verified.'
+      : '**The report contains no specs at all.** Nothing was verified.'
+  );
   lines.push('');
 }
 
@@ -194,7 +222,10 @@ if (exemptSilent.length) {
 }
 
 if (!failed) {
-  lines.push(`Every spec file executed at least one test against production.`);
+  lines.push(
+    `Every spec file that ran executed at least one test against production ` +
+      `(${totals.executed} executed across ${rows.length} file(s)).`
+  );
 }
 
 const summary = lines.join('\n');

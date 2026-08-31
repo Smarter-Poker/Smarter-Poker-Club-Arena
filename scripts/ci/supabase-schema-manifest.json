@@ -927,6 +927,7 @@
     "vip_subscription_checkout_claims",
     "vip_subscriptions",
     "w2g_forms",
+    "waitlist_policy",
     "wallet_audit_backfill_log",
     "wallet_credit_idempotency",
     "wallet_transactions",

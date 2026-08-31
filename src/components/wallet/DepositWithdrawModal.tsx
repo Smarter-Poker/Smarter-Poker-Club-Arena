@@ -185,7 +185,7 @@ const PAYMENT_METHODS: PaymentMethodInfo[] = [
     id: 'agent',
     icon: '',
     label: 'Agent',
-    description: 'Transfer through your agent',
+    description: 'Transfer Through Your Agent',
     minAmount: 10,
     maxAmount: 50000,
     fee: 0,

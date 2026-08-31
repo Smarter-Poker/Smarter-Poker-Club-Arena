@@ -202,10 +202,10 @@ const GAME_SORTS: Array<{ id: GameSort; label: string }> = [
 type PlayerSort = 'winners' | 'losers' | 'rake' | 'hands';
 
 const PLAYER_SORTS: Array<{ id: PlayerSort; label: string }> = [
-  { id: 'winners', label: 'Biggest winners' },
-  { id: 'losers', label: 'Biggest losers' },
-  { id: 'rake', label: 'Most rake' },
-  { id: 'hands', label: 'Most hands' },
+  { id: 'winners', label: 'Biggest Winners' },
+  { id: 'losers', label: 'Biggest Losers' },
+  { id: 'rake', label: 'Most Rake' },
+  { id: 'hands', label: 'Most Hands' },
 ];
 
 const REFRESH_MS = 60_000;

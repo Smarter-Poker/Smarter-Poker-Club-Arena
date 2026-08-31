@@ -164,7 +164,7 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
                     key={d.date}
                     className={styles.chartBar}
                     style={{ height: `${Math.round((d.revenue / peak) * 100)}%` }}
-                    title={`${d.date}: ${d.sales} Sale(s), ${d.revenue} Diamonds`}
+                    title={`${d.date}: ${d.sales} Sale(S), ${d.revenue} Diamonds`}
                   />
                 ))}
               </div>

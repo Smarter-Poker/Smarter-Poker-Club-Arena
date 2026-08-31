@@ -102,7 +102,7 @@ export default function BadBeatJackpotPage() {
     }
     if (
       !(await confirmDialog({
-        title: 'Distribute promo pool',
+        title: 'Distribute Promo Pool',
         message: `Rain ${amount.toLocaleString()} chips from the promo pool, split evenly among all currently-active players? This can't be undone.`,
         confirmText: 'Rain it',
         variant: 'default',

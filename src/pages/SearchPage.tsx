@@ -197,7 +197,7 @@ export default function SearchPage() {
               id: club.id,
               type: 'club' as const,
               name: club.name,
-              subtitle: `${club.member_count || 0} members`,
+              subtitle: `${club.member_count || 0} Members`,
               avatar: club.avatar_url,
             }));
           })()
@@ -242,7 +242,7 @@ export default function SearchPage() {
               id: table.id,
               type: 'table' as const,
               name: table.name,
-              subtitle: `${table.stakes} · ${table.current_players}/${table.max_players} seated`,
+              subtitle: `${table.stakes} · ${table.current_players}/${table.max_players} Seated`,
             }));
           })()
         );
@@ -266,7 +266,7 @@ export default function SearchPage() {
               subtitle: `${tournament.status} · ${formatBuyInShort(
                 tournament.buy_in_amount || 0,
                 tournament.buy_in_fee
-              )} buy-in · ${tournament.current_players || 0}/${tournament.max_players || '∞'}`,
+              )} Buy-In · ${tournament.current_players || 0}/${tournament.max_players || '∞'}`,
             }));
           })()
         );
@@ -386,8 +386,8 @@ export default function SearchPage() {
         title="Find Your Next Game"
         description="Scan Live Players, Clubs, Open Tables, And Active Tournaments From One Precise Community Index."
         metrics={[
-          { label: 'Live indexes', value: 4, tone: 'live' },
-          { label: 'Current scope', value: category === 'all' ? 'Network' : category },
+          { label: 'Live Indexes', value: 4, tone: 'live' },
+          { label: 'Current Scope', value: category === 'all' ? 'Network' : category },
           { label: 'Results', value: loading ? 'Scanning' : results.length },
         ]}
       />

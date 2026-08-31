@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  check-title-case — the first letter of every word, on every forward-facing page
- * ═══════════════════════════════════════════════════════════════════════════════
+ * check-title-case - every static player-facing word starts with a capital
  *
- * Dan 2026-08-21: "First letter of every word is capitalized, that's a hard rule
- * for all forward facing pages."
+ * Dan 2026-08-21: "First letter of every word is capitalized, that's a hard
+ * rule for all forward facing pages."
+ * Dan 2026-08-31: the rule covers every page and subpage, including accessible
+ * names, placeholders, tooltips and conditional copy.
  *
- * The rule already existed for popups (src/utils/popupStyle.ts applies it to
- * every toast at render). Pages were left to remember it by hand, and 1,282
- * pieces of copy across 300 files did not. A rule a person has to remember is a
- * rule that decays, so this makes it mechanical.
+ * The TypeScript parser keeps this safe. It identifies actual render nodes and
+ * known copy-bearing fields instead of treating every quoted value as prose.
+ * Routes, URLs, emails, translation keys, comments, style/script bodies and
+ * dynamic server-fed values are deliberately left alone.
  *
  * WHY THE TYPESCRIPT PARSER AND NOT A REGEX
  *
@@ -37,13 +37,45 @@
  * Run:  node scripts/ci/check-title-case.mjs [--fix]
  */
 
-import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { extname, join, resolve } from 'node:path';
+import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import ts from 'typescript';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
-const SRC = join(ROOT, 'src');
+const SRC = process.env.TITLE_CASE_SOURCE_DIR
+  ? resolve(process.env.TITLE_CASE_SOURCE_DIR)
+  : join(ROOT, 'src');
 const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 'test-results']);
+const COPY_REGISTRY_FILES = new Set(['src/i18n/index.ts']);
+
+const UI_ATTRIBUTE_NAMES = new Set([
+  'alt',
+  'aria-description',
+  'aria-label',
+  'caption',
+  'description',
+  'emptyMessage',
+  'eyebrow',
+  'helperText',
+  'label',
+  'placeholder',
+  'statusText',
+  'subtitle',
+  'title',
+]);
+
+const UI_PROPERTY_NAMES = new Set([
+  'caption',
+  'description',
+  'emptyMessage',
+  'eyebrow',
+  'helperText',
+  'label',
+  'placeholder',
+  'statusText',
+  'subtitle',
+  'title',
+]);
 
 /** Initialisms that are shouted, not Title Cased. Mirrors src/utils/titleCase.ts. */
 const ACRONYMS = new Set([
@@ -101,6 +133,10 @@ const ACRONYMS = new Set([
   '2fa',
 ]);
 
+const PLURAL_OR_UNIT_FRAGMENTS = new Set([
+  's', 'es', 'ies', 'y', 'st', 'nd', 'rd', 'th', 'x', 'm', 'h',
+]);
+
 const fix = process.argv.includes('--fix');
 
 /**
@@ -134,18 +170,12 @@ function walk(dir, acc = []) {
     const full = join(dir, entry);
     const st = statSync(full);
     if (st.isDirectory()) walk(full, acc);
-    else if (extname(entry) === '.tsx') acc.push(full);
+    else if (extname(entry) === '.tsx' || extname(entry) === '.ts') acc.push(full);
   }
   return acc;
 }
 
-/**
- * Capitalise the first letter of every word.
- *
- * Interior capitals are preserved so camel-case product names and proper nouns
- * survive. Hyphen and slash compounds are cased on both sides, because "add-on"
- * and "win/loss" read as two words.
- */
+/** Capitalize every word while preserving acronyms and numeric suffix tokens. */
 export function titleCaseText(text) {
   const trimmed = text.trim();
   // Machine-readable examples are not prose. Re-casing them can make a URL,
@@ -293,46 +323,32 @@ function jsxTextNodes(file, source) {
   const continuesAWord = (node) => {
     const parent = node.parent;
     if (!parent || !parent.children) return false;
-    const i = parent.children.indexOf(node);
-    if (i <= 0) return false;
-    const prev = parent.children[i - 1];
-    return !!prev && ts.isJsxExpression(prev);
+    const index = parent.children.indexOf(node);
+    return index > 0 && ts.isJsxExpression(parent.children[index - 1]);
   };
 
-  /**
-   * The mirror of continuesAWord: this text node STARTS a word that an
-   * expression finishes, i.e. `x{count}` in a truncated chip stack. The letter
-   * is a multiplier or unit PREFIX, not a word, and "X1,234" is not a chip
-   * count anybody writes.
-   *
-   * Same tell, reversed: the text ends with a letter, with no space after it,
-   * and the node immediately following is an expression container. Found by
-   * this gate on 2026-08-23 blocking three files (ChipPhysics, ChipStack,
-   * PotDisplay) that all render the identical `x{count.toLocaleString()}`.
-   */
   const precedesAnExpression = (node) => {
     const parent = node.parent;
     if (!parent || !parent.children) return false;
-    const i = parent.children.indexOf(node);
-    if (i < 0 || i >= parent.children.length - 1) return false;
-    const next = parent.children[i + 1];
-    return !!next && ts.isJsxExpression(next);
+    const index = parent.children.indexOf(node);
+    return index >= 0 && index < parent.children.length - 1 &&
+      ts.isJsxExpression(parent.children[index + 1]);
   };
 
   const visit = (node) => {
-    if (node.kind === ts.SyntaxKind.JsxText) {
-      // node.pos, NOT getStart(). getStart() skips leading trivia, and for
-      // JsxText the leading WHITESPACE is trivia - so "{amount} chips" arrived
-      // here as "chips" with the space invisible, the suffix guard below fired,
-      // and a perfectly ordinary word was left lowercase. pos keeps the space,
-      // which is the only thing that distinguishes "{n} chips" from "{n}s".
+    if (ts.isJsxText(node) && !isInsideStyleOrScript(node, sf)) {
       const start = node.pos;
       const end = node.end;
       const text = source.slice(start, end);
-      if (/[A-Za-z]/.test(text)) {
-        const suffix = /^[A-Za-z]/.test(text) && continuesAWord(node);
-        const prefix = /[A-Za-z]$/.test(text) && precedesAnExpression(node);
-        out.push({ start, end, text, suffix, prefix });
+      if (/[A-Za-z]/.test(text) && !isMachineString(text)) {
+        out.push({
+          start,
+          end,
+          text,
+          suffix: /^[A-Za-z]/.test(text) && continuesAWord(node),
+          prefix: /[A-Za-z]$/.test(text) && precedesAnExpression(node),
+          context: 'JSX text',
+        });
       }
     } else if (ts.isJsxAttribute(node)) {
       const name = node.name.getText(sf);
@@ -393,50 +409,64 @@ let fixedFiles = 0;
 
 for (const file of walk(SRC)) {
   const original = readFileSync(file, 'utf8');
-  if (!original.includes('<')) continue;
-
-  let nodes;
+  let sf;
   try {
-    nodes = jsxTextNodes(file, original);
+    sf = ts.createSourceFile(
+      file,
+      original,
+      ts.ScriptTarget.Latest,
+      true,
+      file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+    );
   } catch {
-    continue; // a file the parser cannot read is not this gate's problem
+    continue;
   }
 
   const changes = [];
-  for (const n of nodes) {
-    let cased;
-    if (n.suffix) {
-      // Leave the suffix word alone, case the rest of the node.
-      const m = n.text.match(/^[A-Za-z][A-Za-z0-9'’]*/);
-      const head = m ? m[0] : '';
-      cased = head + titleCaseText(n.text.slice(head.length));
-    } else {
-      cased = titleCaseText(n.text);
+  if (file.endsWith('.tsx')) {
+    for (const node of jsxTextNodes(original, sf)) {
+      let cased;
+      if (node.suffix) {
+        const match = node.text.match(/^[A-Za-z][A-Za-z0-9'’]*/);
+        const head = match ? match[0] : '';
+        cased = head + titleCaseText(node.text.slice(head.length));
+      } else {
+        cased = titleCaseText(node.text);
+      }
+      if (node.prefix) {
+        const match = node.text.match(/[A-Za-z][A-Za-z0-9'’]*$/);
+        if (match) cased = cased.slice(0, cased.length - match[0].length) + match[0];
+      }
+      if (cased !== node.text) changes.push({ ...node, cased });
     }
-    if (n.prefix) {
-      // Leave the trailing prefix-word alone, keep the casing of the rest.
-      // `x{count}` stays `x`; "Buy In x{n}" keeps "Buy In" cased and its x.
-      const m = n.text.match(/[A-Za-z][A-Za-z0-9'’]*$/);
-      if (m) cased = cased.slice(0, cased.length - m[0].length) + m[0];
-    }
-    if (cased !== n.text) changes.push({ ...n, cased });
   }
-  if (changes.length === 0) continue;
+  changes.push(...staticCopyChanges(original, sf, file));
+
+  const uniqueChanges = [
+    ...new Map(changes.map((change) => [`${change.start}:${change.end}`, change])).values(),
+  ].sort((a, b) => a.start - b.start);
+  if (uniqueChanges.length === 0) continue;
 
   if (fix) {
     let out = original;
-    // Back to front, so earlier offsets stay valid.
-    for (let i = changes.length - 1; i >= 0; i--) {
-      const c = changes[i];
-      out = out.slice(0, c.start) + c.cased + out.slice(c.end);
+    let applied = 0;
+    for (let index = uniqueChanges.length - 1; index >= 0; index--) {
+      const change = uniqueChanges[index];
+      if (change.replaceable === false) continue;
+      out = out.slice(0, change.start) + change.cased + out.slice(change.end);
+      applied++;
     }
-    writeFileSync(file, out, 'utf8');
-    fixedNodes += changes.length;
-    fixedFiles++;
+    if (out !== original) {
+      writeFileSync(file, out, 'utf8');
+      fixedNodes += applied;
+      fixedFiles++;
+    }
   } else {
-    for (const c of changes) {
-      const line = original.slice(0, c.start).split('\n').length;
-      offenders.push(`${file.replace(ROOT, '')}:${line}: ${c.text.trim().slice(0, 90)}`);
+    for (const change of uniqueChanges) {
+      const line = original.slice(0, change.start).split('\n').length;
+      offenders.push(
+        `${file.replace(ROOT, '')}:${line}: [${change.context}] ${change.text.trim().slice(0, 90)}`
+      );
     }
   }
 }
@@ -466,7 +496,7 @@ if (indexChanges.length > 0) {
 }
 
 if (fix) {
-  console.log(`check-title-case: fixed ${fixedNodes} text node(s) across ${fixedFiles} file(s).`);
+  console.log(`check-title-case: fixed ${fixedNodes} copy node(s) across ${fixedFiles} file(s).`);
   process.exit(0);
 }
 
@@ -480,4 +510,4 @@ if (offenders.length > 0) {
   process.exit(1);
 }
 
-console.log('check-title-case: OK - every word on every page starts with a capital.');
+console.log('check-title-case: OK - every static word on every page starts with a capital.');

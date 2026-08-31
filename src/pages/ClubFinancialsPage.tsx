@@ -337,7 +337,7 @@ export default function ClubFinancialsPage() {
           id: r.id,
           type: 'rake' as const,
           amount: r.rake_amount || 0,
-          description: `${(r.rake_amount || 0).toLocaleString()} chips raked from a ${(r.pot_size || 0).toLocaleString()} pot`,
+          description: `${(r.rake_amount || 0).toLocaleString()} Chips Raked From A ${(r.pot_size || 0).toLocaleString()} Pot`,
           created_at: r.created_at,
         }));
         setTransactions(mappedTx);

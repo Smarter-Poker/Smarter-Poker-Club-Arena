@@ -20,8 +20,34 @@ test.describe('Club Operations', () => {
 
        Target something that is actually a link to a club, and bound the click
        so a failure names this step rather than a locator. */
-    const clubCard = page.getByRole('button', { name: /Click to enter lobby/i }).first();
+    /* Scope to the positioned active item. The carousel also owns an
+       aria-hidden in-flow measuring copy, and a document-wide `.first()` is a
+       fragile way to express "the club currently presented in the centre". */
+    const clubCard = page
+      .locator('.sp-carousel__item.is-active')
+      .getByRole('button', { name: /Click to enter lobby/i });
     if ((await clubCard.count()) > 0 && (await clubCard.isVisible())) {
+      /* This caught the production regression where .carouselScrollFade
+         flex-shrank to zero and Quick actions occupied the club card's entire
+         rectangle. Visibility alone cannot detect occlusion. */
+      await expect
+        .poll(
+          async () => {
+            const cardBox = await clubCard.evaluate((el) => {
+              const r = el.getBoundingClientRect();
+              return { top: r.top, bottom: r.bottom };
+            });
+            const quickBox = await page
+              .getByRole('navigation', { name: 'Quick actions' })
+              .evaluate((el) => {
+                const r = el.getBoundingClientRect();
+                return { top: r.top, bottom: r.bottom };
+              });
+            return cardBox.bottom <= quickBox.top + 1 || quickBox.bottom <= cardBox.top + 1;
+          },
+          { timeout: 8000, message: 'Club card must not overlap the quick-actions row' }
+        )
+        .toBe(true);
       await clubCard.click({ timeout: 8000 });
       await expect(page).toHaveURL(/.*clubs\/.+/, { timeout: 10000 });
     }

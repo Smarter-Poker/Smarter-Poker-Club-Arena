@@ -222,7 +222,7 @@ describe('mobile uses the identical desktop header', () => {
 });
 
 describe('the profile region shows the complete live profile picture', () => {
-  it('covers the complete profile region without a crop or decorative frame', () => {
+  it('uses a square portrait with a thin black edge and no circular ring', () => {
     expect(TSX_CODE).toContain('avatarUrl');
     expect(TSX).toContain('className={styles.profileAvatarSlot}');
     expect(TSX).toContain('className={styles.profileAvatar}');
@@ -234,12 +234,12 @@ describe('the profile region shows the complete live profile picture', () => {
     expect(profileButton).toContain('contain: layout paint');
     expect(profileButton).toContain('left: 66.75%');
     expect(profileButton).toContain('width: 7.15%');
-    expect(profileButton).toContain('top: 13%');
-    expect(profileButton).toContain('height: 75%');
+    expect(profileButton).toContain('top: 15%');
+    expect(profileButton).toContain('aspect-ratio: 1');
+    expect(profileButton).toContain('border: 1px solid rgba(0, 0, 0, 0.92)');
+    expect(profileButton).toContain('border-radius: 0');
     expect(profileButton).toContain('background: #000');
-    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('inset: 0 !important');
-    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('width: 100%');
-    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('height: 100%');
+    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('inset: 1px !important');
     expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('border-radius: 0');
     expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('z-index: 1');
     const portrait = ruleBody(CSS, '.profileAvatarSlot > .profileAvatar');
@@ -249,16 +249,19 @@ describe('the profile region shows the complete live profile picture', () => {
   });
 });
 
-describe('VIP membership state', () => {
-  it('dims non-members and schedules one member shimmer after each random pause', () => {
+describe('VIP membership state and icon-bank shimmer', () => {
+  it('dims non-members, outlines active VIP, and shimmers all right icons every 15-20 seconds', () => {
     expect(TSX_CODE).toContain('isVipActive');
     expect(TSX).toContain("data-vip-active={isVipActive ? 'true' : 'false'}");
-    expect(TSX_CODE).toContain('5_000 + Math.floor(Math.random() * 5_001)');
-    expect(TSX_CODE).toContain('setVipShimmerVisible(true)');
-    expect(TSX_CODE).toContain('setVipShimmerVisible(false)');
+    expect(TSX_CODE).toContain('15_000 + Math.floor(Math.random() * 5_001)');
+    expect(TSX_CODE).toContain('setIconShimmerVisible(true)');
+    expect(TSX_CODE).toContain('setIconShimmerVisible(false)');
     expect(CSS).toContain('.vipBtn:not(.vipActive)::after');
-    expect(CSS).toContain('.vipShimmer::before');
-    expect(CSS).toContain('animation: vipHeaderShimmer 1.25s cubic-bezier(0.2, 0.7, 0.25, 1) 1');
+    expect(CSS).toContain('.vipActive');
+    expect(CSS).toContain('rgba(255, 255, 255, 0.92)');
+    expect(CSS).toContain('.headerControlsShimmer .artButton::before');
+    expect(TSX).toContain('data-header-icons-shimmer=');
+    expect(CSS).toContain('animation: rightIconBankShimmer 1.5s cubic-bezier(0.2, 0.7, 0.25, 1) 1');
     expect(CSS).not.toContain('infinite');
   });
 });

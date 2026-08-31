@@ -67,42 +67,42 @@ export function getClubArenaNavigation({
         {
           label: 'Play & Review',
           path: '/play',
-          description: 'Competition, hands, sessions, and rankings',
+          description: 'Competition, Hands, Sessions, And Rankings',
         },
         {
           label: 'Club Arena',
           path: '/',
-          description: 'Your clubs and live games',
+          description: 'Your Clubs And Live Games',
         },
         {
           label: 'Tournaments',
           path: '/tournaments',
-          description: 'Schedule, registration, and live events',
+          description: 'Schedule, Registration, And Live Events',
         },
         {
           label: 'Tournament Results',
           path: '/tournament-results',
-          description: 'Finishes, prizes, and past events',
+          description: 'Finishes, Prizes, And Past Events',
         },
         {
           label: 'My Spin Results',
           path: '/tournament-results?filter=mine&type=spin',
-          description: 'Your Spin finishes and prizes',
+          description: 'Your Spin Finishes And Prizes',
         },
         {
           label: 'Hand History',
           path: '/hand-history',
-          description: 'Review, replay, and share hands',
+          description: 'Review, Replay, And Share Hands',
         },
         {
           label: 'Session History',
           path: '/session-history',
-          description: 'Session results and performance',
+          description: 'Session Results And Performance',
         },
         {
           label: 'Leaderboards',
           path: '/leaderboard',
-          description: 'Club and global rankings',
+          description: 'Club And Global Rankings',
         },
       ],
     },
@@ -112,12 +112,12 @@ export function getClubArenaNavigation({
         {
           label: 'Community Center',
           path: '/community',
-          description: 'Discovery, connections, activity, and conversation',
+          description: 'Discovery, Connections, Activity, And Conversation',
         },
         {
           label: 'Find Players & Clubs',
           path: '/search',
-          description: 'One search for the whole arena',
+          description: 'One Search For The Whole Arena',
         },
         {
           label: 'Messages',
@@ -128,12 +128,12 @@ export function getClubArenaNavigation({
         {
           label: 'Friends',
           path: '/friends',
-          description: 'Friends, requests, and challenges',
+          description: 'Friends, Requests, And Challenges',
         },
         {
           label: 'Unions',
           path: '/unions',
-          description: 'Browse and manage club networks',
+          description: 'Browse And Manage Club Networks',
         },
       ],
     },
@@ -143,37 +143,37 @@ export function getClubArenaNavigation({
         {
           label: 'Rewards Center',
           path: '/rewards',
-          description: 'All balances, benefits, offers, and milestones',
+          description: 'All Balances, Benefits, Offers, And Milestones',
         },
         {
           label: 'Wallet',
           path: '/wallet',
-          description: 'Balances, transfers, and ledger',
+          description: 'Balances, Transfers, And Ledger',
         },
         {
           label: 'Cashier',
           path: clubId ? clubPath('/cashier') : '/cashier',
-          description: 'Club chips and trade records',
+          description: 'Club Chips And Trade Records',
         },
         {
           label: 'Marketplace',
           path: '/marketplace',
-          description: 'Diamonds, membership, and items',
+          description: 'Diamonds, Membership, And Items',
         },
         {
           label: 'VIP & Rakeback',
           path: '/vip',
-          description: 'Tier benefits and earning rate',
+          description: 'Tier Benefits And Earning Rate',
         },
         {
           label: 'Promotions',
           path: '/promotions',
-          description: 'Active offers, bonuses, and rewards',
+          description: 'Active Offers, Bonuses, And Rewards',
         },
         {
           label: 'Achievements',
           path: '/achievements',
-          description: 'Progress, milestones, and unlocks',
+          description: 'Progress, Milestones, And Unlocks',
         },
       ],
     },
@@ -188,7 +188,7 @@ export function getClubArenaNavigation({
       {
         label: 'Club Lobby',
         path: clubPath(),
-        description: 'Games, schedule, and club activity',
+        description: 'Games, Schedule, And Club Activity',
       },
     ];
 
@@ -197,10 +197,10 @@ export function getClubArenaNavigation({
         label: 'Operations Center',
         path: clubPath('/operations'),
         description: canControlClub
-          ? 'People, finance, safety, and club controls'
+          ? 'People, Finance, Safety, And Club Controls'
           : canViewFinance
-            ? 'People, finance, reports, and settlement'
-            : 'Players, agents, reports, and announcements',
+            ? 'People, Finance, Reports, And Settlement'
+            : 'Players, Agents, Reports, And Announcements',
       });
     }
 
@@ -217,12 +217,12 @@ export function getClubArenaNavigation({
         {
           label: 'Administration',
           path: '/admin',
-          description: 'Platform and club operations',
+          description: 'Platform And Club Operations',
         },
         {
           label: 'House Ads',
           path: '/house-ads',
-          description: 'Platform campaign controls',
+          description: 'Platform Campaign Controls',
         },
       ],
     });
@@ -235,31 +235,31 @@ export const CLUB_ARENA_SUPPORT_NAV: ClubArenaNavItem[] = [
   {
     label: 'Help Center',
     path: '/help',
-    description: 'Answers, support, and account help',
+    description: 'Answers, Support, And Account Help',
   },
   {
     label: 'Legal Center',
     path: '/legal',
-    description: 'All platform rules and privacy commitments',
+    description: 'All Platform Rules And Privacy Commitments',
   },
   {
     label: 'Fair Gaming',
     path: '/legal/fair-gaming',
-    description: 'Integrity, security, and reporting',
+    description: 'Integrity, Security, And Reporting',
   },
   {
     label: 'Terms Of Service',
     path: '/legal/tos',
-    description: 'Platform and account terms',
+    description: 'Platform And Account Terms',
   },
   {
     label: 'Privacy Policy',
     path: '/legal/privacy',
-    description: 'Data collection, use, and controls',
+    description: 'Data Collection, Use, And Controls',
   },
   {
     label: 'Promotion Rules',
     path: '/legal/promotions',
-    description: 'Eligibility and live campaign governance',
+    description: 'Eligibility And Live Campaign Governance',
   },
 ];

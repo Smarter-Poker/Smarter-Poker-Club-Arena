@@ -142,7 +142,8 @@ if (rows.length) {
   lines.push('| Spec file | Executed | Skipped |');
   lines.push('| --- | --- | --- |');
   for (const [file, s] of rows) {
-    const mark = s.executed === 0 ? (exempt.has(file) ? ' (allowed to skip)' : ' **VERIFIED NOTHING**') : '';
+    const mark =
+      s.executed === 0 ? (exempt.has(file) ? ' (allowed to skip)' : ' **VERIFIED NOTHING**') : '';
     lines.push(`| \`${file}\`${mark} | ${s.executed} | ${s.skipped} |`);
   }
   lines.push('');

@@ -640,6 +640,9 @@ export default function PlayerStatsPage() {
   const targetUserId = userId || user?.id;
   const isOwnProfile = !userId || userId === user?.id;
   const [full, setFull] = useState<FullStats | null>(null);
+  // Keep the payload scope explicit. A failed range request must never leave
+  // old numbers on screen under the newly selected range label.
+  const loadedRangeKeyRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -838,9 +841,11 @@ export default function PlayerStatsPage() {
   // from the same allocator the money pipeline uses. Own profile only — the
   // RPC derives identity from auth.uid() and would refuse anyone else anyway.
   const [rakeStats, setRakeStats] = useState<PlayerRakeStats | null>(null);
+  const [rakeLoading, setRakeLoading] = useState(false);
   useEffect(() => {
     if (!isOwnProfile || !user?.id) {
       setRakeStats(null);
+      setRakeLoading(false);
       return;
     }
     let cancelled = false;
@@ -850,20 +855,26 @@ export default function PlayerStatsPage() {
     const load = StatsFactsService?.getRakeStats;
     if (typeof load !== 'function') {
       setRakeStats(null);
+      setRakeLoading(false);
       return;
     }
+    setRakeLoading(true);
+    setRakeStats(null);
     void load
-      .call(StatsFactsService, null)
+      .call(StatsFactsService, windowDays)
       .then((r) => {
         if (!cancelled) setRakeStats(r);
       })
       .catch(() => {
         if (!cancelled) setRakeStats(null);
+      })
+      .finally(() => {
+        if (!cancelled) setRakeLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [isOwnProfile, user?.id]);
+  }, [isOwnProfile, user?.id, windowDays]);
 
   const canSeeRake = (agentRoles?.length ?? 0) > 0;
   const TABS = useMemo<StatCategory[]>(() => {
@@ -910,12 +921,26 @@ export default function PlayerStatsPage() {
   // instead of dropped: the bus events are debounced, not queued, so a discarded
   // HAND_COMPLETED used to leave the page stale until some later event.
   const pendingRefreshRef = useRef(false);
+  const activeRangeKeyRef = useRef(rangeKey);
+  const changeRange = useCallback((nextRangeKey: string) => {
+    if (nextRangeKey === activeRangeKeyRef.current) return;
+    // Clear the prior scope before changing the label. A matching per-range
+    // memo may hydrate immediately; otherwise the page shows its loader/error
+    // state instead of relabelling stale figures.
+    setFull(null);
+    loadedRangeKeyRef.current = null;
+    hasStatsRef.current = false;
+    setServingCache(false);
+    setLoadError(false);
+    setLoading(true);
+    activeRangeKeyRef.current = nextRangeKey;
+    setRangeKey(nextRangeKey);
+  }, []);
   /**
    * The CURRENT loader. Both the shared debouncer and the in-flight replay
    * below read it, so neither can fire a copy captured under an older range.
    */
   const loadRef = useRef<((opts?: { fresh?: boolean }) => Promise<void>) | null>(null);
-  const activeRangeKeyRef = useRef(rangeKey);
   const openHandEvidence = useCallback(
     (filters: { variant?: string; position?: string; bigBlind?: number } = {}) => {
       const params = new URLSearchParams({ source: 'stats' });
@@ -954,6 +979,7 @@ export default function PlayerStatsPage() {
         const memo = readStatsRangeMemo(targetUserId, rangeKey) as FullStats | null;
         if (memo) {
           setFull(memo);
+          loadedRangeKeyRef.current = rangeKey;
           setLastUpdatedAt(
             memo.contract?.generated_at ? Date.parse(memo.contract.generated_at) : Date.now()
           );
@@ -994,12 +1020,14 @@ export default function PlayerStatsPage() {
           return;
         }
 
-        if (!error && data && data.overall) {
+        const contract = normalizeStatsContractMetadata(data);
+        if (!error && data && data.overall && contract.valid) {
           const resolved = normalizeFull(data);
           const loadedAt = resolved.contract.generated_at
             ? Date.parse(resolved.contract.generated_at)
             : Date.now();
           setFull(resolved);
+          loadedRangeKeyRef.current = rangeKey;
           setLastUpdatedAt(loadedAt);
           setStatsDataSource('live');
           hasStatsRef.current = true;
@@ -1047,12 +1075,14 @@ export default function PlayerStatsPage() {
           // So this call was redundant as well as harmful, and the index it
           // maintains stays just as fresh without it.
         } else {
-          if (hasStatsRef.current) {
+          if (hasStatsRef.current && loadedRangeKeyRef.current === rangeKey) {
             // Something is already on screen (cache or an earlier load). Keep it,
             // but say it is stale rather than pretending it is current.
             setServingCache(true);
           } else {
             setFull(null);
+            loadedRangeKeyRef.current = null;
+            hasStatsRef.current = false;
             setLoadError(true);
           }
           if (error) reportError(error, 'PlayerStatsPage.rpc_ca_player_stats_overview_v2');
@@ -1060,7 +1090,8 @@ export default function PlayerStatsPage() {
             duration_ms: Math.round(performance.now() - loadStartedAt),
             payload_bytes: 0,
             range: rangeKey,
-            cache_source: hasStatsRef.current ? 'cache' : 'none',
+            cache_source:
+              hasStatsRef.current && loadedRangeKeyRef.current === rangeKey ? 'cache' : 'none',
             outcome: 'error',
           });
         }
@@ -1078,10 +1109,12 @@ export default function PlayerStatsPage() {
           });
           reportError(err, 'PlayerStatsPage.Failed_to_load_stats');
           if (isMounted.current) {
-            if (hasStatsRef.current) {
+            if (hasStatsRef.current && loadedRangeKeyRef.current === rangeKey) {
               setServingCache(true);
             } else {
               setFull(null);
+              loadedRangeKeyRef.current = null;
+              hasStatsRef.current = false;
               setLoadError(true);
               toast.error('Failed to load player stats');
             }
@@ -1207,6 +1240,7 @@ export default function PlayerStatsPage() {
     const cached = getCachedFull(targetUserId);
     if (cached) {
       setFull(cached.full);
+      loadedRangeKeyRef.current = 'all';
       setLastUpdatedAt(
         cached.full.contract.generated_at
           ? Date.parse(cached.full.contract.generated_at)
@@ -1602,9 +1636,11 @@ export default function PlayerStatsPage() {
               >
                 {refreshing
                   ? 'Updating'
-                  : statsContract.quality.live_tail_included
-                    ? 'Live'
-                    : 'Snapshot'}
+                  : !statsContract.valid
+                    ? 'Unavailable'
+                    : statsContract.quality.live_tail_included
+                      ? 'Live'
+                      : 'Snapshot'}
               </span>
             </span>
             <div className="stats-range-row" role="group" aria-label="Analysis Range">
@@ -1613,7 +1649,7 @@ export default function PlayerStatsPage() {
                   key={r.key}
                   className={rangeKey === r.key ? 'active' : ''}
                   aria-pressed={rangeKey === r.key}
-                  onClick={() => setRangeKey(r.key)}
+                  onClick={() => changeRange(r.key)}
                 >
                   {r.label}
                 </button>
@@ -1853,6 +1889,28 @@ export default function PlayerStatsPage() {
             Rake opts out: an agent who has played no hands themselves still has
             a downline generating rake, and that is the whole point of the tab. */}
             {!hasData && category !== 'rake' && emptyState}
+
+            {showTab('rake') && rakeLoading && (
+              <div className="stats-section-loading" role="status">
+                Loading Rake For This Analysis Window...
+              </div>
+            )}
+
+            {showTab('rake') &&
+              !rakeLoading &&
+              agentRoles !== null &&
+              (!rakeStats || rakeStats.hands === 0) &&
+              agentRoles.length === 0 && (
+                <div className="stats-empty-state" role="status">
+                  <span className="empty-icon" aria-hidden="true">
+                    $
+                  </span>
+                  <span className="empty-title">No Rake In This Window</span>
+                  <span className="empty-description">
+                    Player-Attributed Rake Will Appear Here After A Raked Cash Hand Is Recorded.
+                  </span>
+                </div>
+              )}
 
             {/* ── RAKE TAB — live downline earnings, agents only ── */}
             {showTab('rake') && isOwnProfile && rakeStats && rakeStats.hands > 0 && (

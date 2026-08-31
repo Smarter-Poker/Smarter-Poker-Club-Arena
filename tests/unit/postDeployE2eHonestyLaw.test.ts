@@ -26,6 +26,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { sliceYamlBlock } from '../helpers/sourceWindow';
 
 const ROOT = resolve(__dirname, '../..');
 const WORKFLOW = readFileSync(join(ROOT, '.github/workflows/post-deploy-e2e.yml'), 'utf8');
@@ -126,8 +127,8 @@ describe('the allowlist is a ratchet, not an escape hatch', () => {
 describe('the workflow cannot go back to reporting success dishonestly', () => {
   it('runs the honesty check, and runs it even when the suite went red', () => {
     expect(WORKFLOW).toContain('assert-e2e-actually-ran.mjs');
-    const step = WORKFLOW.slice(WORKFLOW.indexOf('Did the suite actually verify production?'));
-    expect(step.slice(0, 200)).toContain('if: always()');
+    const step = sliceYamlBlock(WORKFLOW, '- name: Did the suite actually verify production?');
+    expect(step).toContain('if: always()');
   });
 
   it('emits the JSON the honesty check reads, from every playwright invocation', () => {
@@ -155,8 +156,8 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
   });
 
   it('never lets one red step hide the rest of the production sweep', () => {
-    const sweep = WORKFLOW.slice(WORKFLOW.indexOf('Run the specs that need a deployed page'));
-    expect(sweep.slice(0, 200), 'a failed Cashier step used to skip this one entirely').toContain(
+    const sweep = sliceYamlBlock(WORKFLOW, '- name: Run the specs that need a deployed page');
+    expect(sweep, 'a failed Cashier step used to skip this one entirely').toContain(
       "if: always() && steps.live.outputs.ready == 'true'"
     );
     expect(

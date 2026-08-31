@@ -108,7 +108,7 @@ export function gtoV30CellMatrix(
   street: string,
   family: 'cash' | 'spin' | 'tourney_icm' | 'tourney_ev',
   position: string,
-  depth: number,
+  stackBB: number,
   texture: string
 ): Record<string, Record<string, number>> | null {
   const families: string[] =
@@ -117,7 +117,7 @@ export function gtoV30CellMatrix(
       : family === 'tourney_ev'
         ? ['tourney_ev']
         : [family];
-  const depths = [depth, ...DEPTH_BUCKETS.filter((d) => d !== depth)].slice(0, 2);
+  const depths = depthCandidates(stackBB);
   for (const fam of families) {
     for (const d of depths) {
       const m = store.get(key(street, fam, position, d, texture));
@@ -233,6 +233,38 @@ export function textureClass(board: Card[]): string | null {
 }
 
 /** Snap a live depth onto the aggregation's buckets. */
+/**
+ * The candidate depth buckets for a lookup, NEAREST FIRST (2026-08-31).
+ *
+ * The lookup docstring always said "Depth fallback: the neighbouring
+ * bucket". The code did not: it built `[depth, ...others].slice(0, 2)`, and
+ * `others` begins at DEPTH_BUCKETS[0] — so the fallback for EVERY depth
+ * except 10 was the 10bb cell. A 150bb hero whose 150 cell was missing was
+ * answered with short-stack strategy: the one substitution more dangerous
+ * than the texture substitution these files explicitly refuse to make,
+ * because a 10bb solver jams and stacks off exactly where a 150bb player
+ * must not.
+ *
+ * Nearness is measured in LOG space against the RAW stack, not its snapped
+ * bucket: stacks are geometric (the gap 10->20 equals 80->150), and a 35bb
+ * stack whose 40 cell is missing is better served by 20 than by anything
+ * arithmetic distance would pick. Ties at exact geometric midpoints resolve
+ * to the SHALLOWER bucket by sort stability — the milder error at the
+ * depths where ties occur.
+ */
+export function depthCandidates(stackBB: number): number[] {
+  const raw = stackBB > 0 && isFinite(stackBB) ? stackBB : 40;
+  // The PRIMARY stays snapDepthBucket, whose boundaries are hand-tuned and
+  // are what the cells were built against — a pure log-nearest primary would
+  // silently re-home live hits (snap(30) is 20; log-nearest is 40). Only the
+  // FALLBACK is chosen by log distance, from the remaining buckets.
+  const primary = snapDepthBucket(raw);
+  const fallback = DEPTH_BUCKETS.filter((d) => d !== primary).sort(
+    (a, b) => Math.abs(Math.log(raw / a)) - Math.abs(Math.log(raw / b))
+  )[0];
+  return [primary, fallback];
+}
+
 export function snapDepthBucket(stackBB: number): number {
   if (!(stackBB > 0)) return 40;
   if (stackBB <= 12) return 10;
@@ -263,7 +295,6 @@ export function gtoStreetAdvice(args: {
   if (!args.hand) return null;
   const tex = textureClass(args.board);
   if (!tex) return null;
-  const depth = snapDepthBucket(args.stackBB);
 
   const families: string[] =
     args.family === 'tourney_icm'
@@ -272,7 +303,7 @@ export function gtoStreetAdvice(args: {
         ? ['tourney_ev']
         : [args.family];
 
-  const depths = [depth, ...DEPTH_BUCKETS.filter((d) => d !== depth)].slice(0, 2);
+  const depths = depthCandidates(args.stackBB);
 
   for (const fam of families) {
     for (const d of depths) {

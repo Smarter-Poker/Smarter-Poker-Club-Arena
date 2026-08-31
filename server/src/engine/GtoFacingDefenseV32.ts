@@ -50,7 +50,7 @@
 
 import type { Card, CardRank, CardSuit } from '../types.js';
 import { evaluateHand, compareHands } from './PokerEngine.js';
-import { textureClass, snapDepthBucket } from './GtoPostflop.js';
+import { textureClass } from './GtoPostflop.js';
 import { gtoV30CellMatrix } from './GtoPostflop.js';
 import { gtoV31CellMatrix, boardFlushSuit } from './GtoPostflopV31.js';
 
@@ -134,7 +134,6 @@ export function solverBettingRange(args: {
   if (!bucket) return null;
   const tex = textureClass(args.board);
   if (!tex) return null;
-  const depth = snapDepthBucket(args.stackBB);
   const dead = new Set<number>([...args.board, ...args.heroCards].map(cardKey));
 
   const build = (
@@ -182,7 +181,7 @@ export function solverBettingRange(args: {
     args.street,
     args.family,
     args.bettorPosition,
-    depth,
+    args.stackBB,
     tex,
     args.board
   );
@@ -190,7 +189,7 @@ export function solverBettingRange(args: {
     const r = build(m31, true, 'v31');
     if (r) return r;
   }
-  const m30 = gtoV30CellMatrix(args.street, args.family, args.bettorPosition, depth, tex);
+  const m30 = gtoV30CellMatrix(args.street, args.family, args.bettorPosition, args.stackBB, tex);
   if (m30) {
     const r = build(m30, false, 'v30');
     if (r) return r;

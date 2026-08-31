@@ -4387,7 +4387,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           <AdvancedFilters
             clubId={resolvedClubId || club!.id}
             initialType={gameType as FilterGameType}
-            onClose={() => setFiltersOpen(false)}
+            onClose={() => {
+              /* Filters save on every click inside the sheet (Dan 2026-08-30),
+                 so closing without Apply must still show what was saved -
+                 re-read storage so the lobby matches the persisted store. */
+              setFiltersOpen(false);
+              setAdvFilters(loadFilters(resolvedClubId || club!.id));
+            }}
             onApply={setAdvFilters}
             sortKey={sortKey}
             onSortChange={selectSortKey}

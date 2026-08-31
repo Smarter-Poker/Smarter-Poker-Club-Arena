@@ -677,7 +677,10 @@ export default function ClubDataPage() {
               p_game: game,
               p_stakes: stakes,
               p_search: search || null,
-              p_limit: gameSort === 'recent' ? GAME_PAGE_SIZE : 1,
+              // Keep the first continuation inside the same bounded snapshot
+              // read. Only the first 100 rows paint; the verified remainder is
+              // held locally until the operator asks for it.
+              p_limit: gameSort === 'recent' ? GAME_PAGE_SIZE * 2 : 1,
             }),
           'Club data request timed out'
         );
@@ -742,14 +745,11 @@ export default function ClubDataPage() {
         } else {
           const snapshot = data as Snapshot;
           const currentRows = snapshotRef.current?.rows || [];
-          const keepExpandedMetricRows =
-            gameSort !== 'recent' && preserveOnError && currentRows.length > GAME_PAGE_SIZE;
-          const refreshedRows =
-            gameSort === 'recent'
-              ? snapshot.rows
-              : keepExpandedMetricRows
-                ? page!.rows
-                : page!.rows.slice(0, GAME_PAGE_SIZE);
+          const sourceRows = gameSort === 'recent' ? snapshot.rows : page!.rows;
+          const keepExpandedSourceRows = preserveOnError && currentRows.length > GAME_PAGE_SIZE;
+          const refreshedRows = keepExpandedSourceRows
+            ? sourceRows
+            : sourceRows.slice(0, GAME_PAGE_SIZE);
           const rows = preserveExpandedClubDataRows(currentRows, refreshedRows, preserveOnError);
           const nextSnapshot = {
             ...snapshot,
@@ -757,23 +757,22 @@ export default function ClubDataPage() {
             row_count: Number(page?.filtered_count ?? snapshot.row_count),
           };
           const keptExpandedRows = rows.length > refreshedRows.length;
-          const prefetchedRows =
-            gameSort !== 'recent' && !keepExpandedMetricRows
-              ? page!.rows.slice(GAME_PAGE_SIZE)
-              : [];
+          const sourceCursor =
+            gameSort === 'recent' ? recentCursor(sourceRows) : page!.next_cursor || null;
+          const sourceHasMore =
+            gameSort === 'recent'
+              ? Number(snapshot.row_count) > sourceRows.length
+              : Boolean(page!.has_more);
+          const prefetchedRows = keepExpandedSourceRows ? [] : sourceRows.slice(GAME_PAGE_SIZE);
           prefetchedGamePageRef.current = prefetchedRows.length
             ? {
                 key: gameCacheKey,
                 rows: prefetchedRows,
-                nextCursor: page!.next_cursor || null,
-                hasMore: Boolean(page!.has_more),
+                nextCursor: sourceCursor,
+                hasMore: sourceHasMore,
               }
             : null;
-          const nextCursor = keptExpandedRows
-            ? gameCursorRef.current
-            : gameSort === 'recent'
-              ? recentCursor(rows)
-              : page!.next_cursor || null;
+          const nextCursor = keptExpandedRows ? gameCursorRef.current : sourceCursor;
           const nextHasMore = Number(nextSnapshot.row_count) > rows.length;
           setError(null);
           setSnapshot(nextSnapshot);
@@ -788,8 +787,8 @@ export default function ClubDataPage() {
             : nextSnapshot;
           writeClubDataCache<CachedGameLedger>(user.id, clubUuid, gameCacheKey, {
             snapshot: cachedSnapshot,
-            cursor: prefetchedRows.length ? page!.next_cursor || null : nextCursor,
-            hasMore: prefetchedRows.length ? Boolean(page!.has_more) : nextHasMore,
+            cursor: prefetchedRows.length ? sourceCursor : nextCursor,
+            hasMore: prefetchedRows.length ? sourceHasMore : nextHasMore,
           });
           return true;
         }

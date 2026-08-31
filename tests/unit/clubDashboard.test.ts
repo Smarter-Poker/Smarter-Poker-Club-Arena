@@ -63,7 +63,14 @@ describe('rangeLabel', () => {
 describe('rankPlayers', () => {
   const players = [
     mk({ userId: 'a', totalProfit: 10, handsPlayed: 5, winRate: 50, biggestPotWon: 3 }),
-    mk({ userId: 'b', totalProfit: 50, handsPlayed: 1, winRate: 10, biggestPotWon: 99, isHorse: true }),
+    mk({
+      userId: 'b',
+      totalProfit: 50,
+      handsPlayed: 1,
+      winRate: 10,
+      biggestPotWon: 99,
+      isHorse: true,
+    }),
     mk({ userId: 'c', totalProfit: -5, handsPlayed: 90, winRate: 80, biggestPotWon: 1 }),
   ];
 
@@ -119,6 +126,14 @@ describe('chip formatting', () => {
 describe('CSV export', () => {
   it('escapes quotes and commas in player names', () => {
     expect(csvEscape('Bob "The Rock", Jr')).toBe('"Bob ""The Rock"", Jr"');
+  });
+
+  it('neutralizes spreadsheet formulas in user-controlled string cells', () => {
+    expect(csvEscape('=HYPERLINK("https://bad.example")')).toBe(
+      '"\'=HYPERLINK(""https://bad.example"")"'
+    );
+    expect(csvEscape('+SUM(1,2)')).toBe('"\'+SUM(1,2)"');
+    expect(csvEscape(-42)).toBe('"-42"');
   });
 
   it('emits a header plus one line per player', () => {

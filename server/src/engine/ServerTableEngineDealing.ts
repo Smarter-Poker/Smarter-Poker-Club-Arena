@@ -24,6 +24,7 @@ import {
   readClubChipBalances,
 } from '../services/supabase.js';
 import { cashMinBuyIn } from '../config/cashBuyIn.js';
+import { horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
@@ -2697,13 +2698,25 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         continue;
       }
 
-      const rebuyAmount = this.tableInfo?.big_blind ? this.tableInfo.big_blind * 100 : 200;
-      const success = await autoRebuyHorse(
-        this.tableId,
-        horse.user_id,
-        rebuyAmount,
-        this.tableInfo?.club_id || ''
-      );
+      // Same decision as the settlement path, for the same reasons - see
+      // HorseRebuyPolicy. Two sites reloading on two different rules is how a
+      // horse ends up disciplined on one code path and not the other.
+      const rebuyAmount = await horseRebuyAmount({
+        clubId: this.tableInfo?.club_id || '',
+        userId: horse.user_id,
+        bigBlind: Number(this.tableInfo?.big_blind) || 0,
+        minBuyIn: this.tableInfo?.min_buy_in as number | null | undefined,
+        maxBuyIn: this.tableInfo?.max_buy_in as number | null | undefined,
+        rebuysTaken: currentRebuys,
+      });
+      const success =
+        rebuyAmount > 0 &&
+        (await autoRebuyHorse(
+          this.tableId,
+          horse.user_id,
+          rebuyAmount,
+          this.tableInfo?.club_id || ''
+        ));
       if (success) {
         horse.stack = rebuyAmount;
         this.horseRebuys.set(horse.user_id, currentRebuys + 1);

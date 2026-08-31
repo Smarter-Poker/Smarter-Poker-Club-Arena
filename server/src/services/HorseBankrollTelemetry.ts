@@ -45,15 +45,18 @@ export type BankrollEvent =
   | 'tournament_refused_underrolled'
   /** Entered a freeroll while unable to afford any paid game. */
   | 'freeroll_entered_broke'
+  /** Declined to rebuy after busting: the roll no longer carries this stake. */
+  | 'rebuy_refused_underrolled'
+  /** Declined to rebuy after busting: at the temperament's stop-loss. */
+  | 'rebuy_refused_stop_loss'
   | 'ladder_exhausted';
 
 /**
  * WHAT IS DELIBERATELY NOT HERE YET.
  *
- * The reverted work also emitted `seat_refused_aggregate_exposure`,
- * `rebuy_refused_underrolled` and `rebuy_refused_stop_loss`. Those
- * decisions do not exist in `main` right now, so naming them here would put
- * five reasons in the vocabulary that can never be counted - and a reason
+ * The reverted work also emitted `seat_refused_aggregate_exposure`. That
+ * decision does not exist in `main` right now, so naming it here would put
+ * a reason in the vocabulary that can never be counted - and a reason
  * that is always zero reads as a decision that never fires, which is exactly
  * the confusion this module exists to end. Each name lands in the PR that
  * lands the decision behind it.

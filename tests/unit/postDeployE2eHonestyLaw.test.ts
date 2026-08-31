@@ -207,6 +207,18 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     expect(align).toContain('git checkout "$HERE" -- tests/e2e/global-setup.ts tests/e2e/support');
   });
 
+  it('annotates the run when a supplied credential silently did not work', () => {
+    // ci.yml's scheduled Live Production E2E tolerates MISSING secrets on
+    // purpose. It must not tolerate a BROKEN one in silence: that is 47 route
+    // specs skipping inside a green job.
+    const fn = GLOBAL_SETUP.slice(
+      GLOBAL_SETUP.indexOf('function signedOut'),
+      GLOBAL_SETUP.indexOf('export default')
+    );
+    expect(fn).toContain('process.env.SP_EMAIL && process.env.SP_PASS');
+    expect(fn).toContain('::error title=');
+  });
+
   it('never lets one red step hide the rest of the production sweep', () => {
     const sweep = step(WORKFLOW, 'Run the specs that need a deployed page');
     expect(sweep, 'a failed Cashier step used to skip this one entirely').toContain(

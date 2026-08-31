@@ -849,7 +849,15 @@ export function ThemeSettingsModal({
       );
       setOwnedCardBacks((current) => [...new Set([...current, ...purchasedCardBacks])]);
       setOwnedThemeAssets((current) => [...new Set([...current, ...unlockedAssets])]);
-      if (requestId === ownershipRequestRef.current) setOwnershipState('ready');
+      // Ownership only grows and every same-scope snapshot is merged. A newer
+      // two-second reconciliation may already be in flight when this one
+      // succeeds, especially on a slow mobile/database connection. Requiring
+      // this response to still be the newest request starves `ready` forever
+      // when each SELECT takes longer than the cadence: the Studio stays
+      // aria-busy even though valid snapshots keep arriving. Any successful
+      // response for the active user proves the ledger is readable; a later
+      // current failure can still move the state back to error.
+      setOwnershipState('ready');
     });
     return undefined;
   }, [isOpen, userId, ownershipRevision]);

@@ -3683,6 +3683,9 @@
     "vip_points": [
       "user_id"
     ],
+    "vip_points_carry": [
+      "user_id"
+    ],
     "vip_points_ledger": [
       "user_id",
       "points"

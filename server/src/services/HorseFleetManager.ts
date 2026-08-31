@@ -703,30 +703,60 @@ export class HorseFleetManager {
       const bankrolls = new Map<string, number>();
       let bankrollsLoaded = false;
       try {
-        const brPage = await fetchAllRows<{
-          user_id: string;
-          club_id: string;
-          chip_balance: number | string | null;
-        }>(
-          (cursor, want) => {
-            let q = supabase
-              .from('club_members')
-              .select('user_id, club_id, chip_balance')
-              .in('club_id', this.clubIds)
-              .order('user_id', { ascending: true })
-              .limit(want);
-            if (cursor) q = q.gt('user_id', cursor);
-            return q;
-          },
-          { label: 'HorseFleet.bankrolls', maxRows: 50_000 }
-        );
-        if (brPage.complete) {
+        /**
+         * PAGED PER CLUB (2026-08-31). `club_members` has NO `id` column — its
+         * primary key is (club_id, user_id) — and `fetchAllRows` defaults its
+         * keyset column to `id`. A single cross-club read therefore looked for
+         * `id` on the last row of the first full page, found undefined, and
+         * returned `complete: false` EVERY cycle: 1,505 membership rows against
+         * a 1,000-row page always fills page one. The bankroll gate had never
+         * once been applied in production (76 `missing_cursor_key` alarms in a
+         * 41-minute window on 2026-08-31), and the failure was silent because
+         * the fail-open branch below is the correct behaviour for a genuinely
+         * bad page.
+         *
+         * `user_id` is unique WITHIN a club but not across clubs, so it is only
+         * a legal cursor once the query is narrowed to one club. Paging per
+         * club is therefore not an optimisation, it is what makes the keyset
+         * sound: a page boundary landing mid-user in a cross-club scan would
+         * have skipped that user's remaining memberships outright.
+         *
+         * A partial read on ANY club abandons the whole map rather than seating
+         * from a half-loaded one, because a horse missing from the map reads as
+         * a zero roll to the gate below.
+         */
+        let allComplete = true;
+        for (const clubId of this.clubIds) {
+          const brPage = await fetchAllRows<{
+            user_id: string;
+            club_id: string;
+            chip_balance: number | string | null;
+          }>(
+            (cursor, want) => {
+              let q = supabase
+                .from('club_members')
+                .select('user_id, club_id, chip_balance')
+                .eq('club_id', clubId)
+                .order('user_id', { ascending: true })
+                .limit(want);
+              if (cursor) q = q.gt('user_id', cursor);
+              return q;
+            },
+            { label: 'HorseFleet.bankrolls', maxRows: 50_000, idKey: 'user_id' }
+          );
+          if (!brPage.complete) {
+            allComplete = false;
+            break;
+          }
           for (const r of brPage.rows) {
             const v = Number(r.chip_balance);
             if (Number.isFinite(v)) bankrolls.set(`${r.club_id}:${r.user_id}`, v);
           }
+        }
+        if (allComplete) {
           bankrollsLoaded = true;
         } else {
+          bankrolls.clear();
           console.warn(
             '[HorseFleet] bankroll read incomplete — seating this cycle without the bankroll gate.'
           );

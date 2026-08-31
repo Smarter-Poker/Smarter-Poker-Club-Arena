@@ -1179,7 +1179,7 @@ export default function ClubDashboard() {
                       key={player.userId}
                       to={`/profile/${player.userId}`}
                       className={styles.playerRow}
-                      title={`View ${player.displayName}'S Profile`}
+                      title={`View ${player.displayName}'s Profile`}
                       style={{
                         textDecoration: 'none',
                         color: 'inherit',
@@ -1412,7 +1412,7 @@ export default function ClubDashboard() {
                     key={m.userId}
                     to={`/profile/${m.userId}`}
                     className={styles.playerCard}
-                    title={`View ${m.displayName}'S Profile`}
+                    title={`View ${m.displayName}'s Profile`}
                     style={{ textDecoration: 'none', color: 'inherit' }}
                   >
                     <div className={styles.playerAvatar} style={{ position: 'relative' }}>

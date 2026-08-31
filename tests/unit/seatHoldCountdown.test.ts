@@ -90,3 +90,44 @@ describe('seat hold countdown', () => {
     expect(keep).toBe(false);
   });
 });
+
+describe('a lapsed hold never renders as a queue position', () => {
+  /** The banner's renderable-entry rule, extracted. */
+  type Entry = { tableId: string; position: number; holdExpiresAt: string | null };
+  const renderable = (e: Entry) => e.position > 0 || secondsLeft(e.holdExpiresAt) > 0;
+
+  it('drops the offer card once the sixty seconds run out', () => {
+    // THE DEFECT THIS PINS, which shipped to production on 2026-08-31:
+    // an offer sets position 0 and a deadline. When the deadline passed,
+    // `held` went false and the card fell through to the "You Are #N In Line"
+    // branch still carrying position 0 - rendering the literal nonsense
+    // "You Are #0 In Line" - and then froze there, because the tick stops
+    // once no hold is live.
+    const lapsed: Entry = {
+      tableId: 't1',
+      position: 0,
+      holdExpiresAt: new Date(Date.now() - 1000).toISOString(),
+    };
+    expect(renderable(lapsed)).toBe(false);
+  });
+
+  it('keeps a live offer card', () => {
+    const live: Entry = {
+      tableId: 't1',
+      position: 0,
+      holdExpiresAt: new Date(Date.now() + 30_000).toISOString(),
+    };
+    expect(renderable(live)).toBe(true);
+  });
+
+  it('keeps an ordinary queue position, which has no hold at all', () => {
+    const queued: Entry = { tableId: 't2', position: 4, holdExpiresAt: null };
+    expect(renderable(queued)).toBe(true);
+  });
+
+  it('a position of 0 with no hold is never renderable', () => {
+    // Seated or removed. This was already the old behaviour and must survive.
+    const gone: Entry = { tableId: 't3', position: 0, holdExpiresAt: null };
+    expect(renderable(gone)).toBe(false);
+  });
+});

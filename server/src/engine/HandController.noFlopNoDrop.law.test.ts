@@ -17,6 +17,10 @@ import { HandController } from './HandController.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
 
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
+const raiseFinancialAlert = vi.fn(() => Promise.resolve({ persisted: true, alertId: 'a1' }));
+vi.mock('../services/financialAlerts.js', () => ({
+  raiseFinancialAlert: (...args: unknown[]) => raiseFinancialAlert(...(args as [])),
+}));
 
 function mkPlayers(stacks: number[]): SeatPlayer[] {
   return stacks.map(
@@ -80,6 +84,29 @@ describe('no flop, no drop is settled by the board', () => {
     expect(complete()!.bbjFee).toBe(0);
   });
 
+  it('records the refusal durably, where it can be joined to a hand id', () => {
+    // Refusing the money must not also make the bug invisible. Sentry is not
+    // queryable next to the rake-law alarm; financial_alerts is.
+    raiseFinancialAlert.mockClear();
+    const players = mkPlayers([200, 200, 200]);
+    const { hc, internal } = harness(mkConfig({ handNumber: 4242 }), players, 1);
+    hc.start();
+    internal.state.sawFlop = true;
+    hc.performAction(1, 'fold', 0);
+    hc.performAction(2, 'fold', 0);
+
+    expect(raiseFinancialAlert).toHaveBeenCalled();
+    const call = raiseFinancialAlert.mock.calls[0] as unknown as unknown[];
+    const context = call[3] as Record<string, unknown>;
+    expect(call[0]).toBe('critical');
+    expect(call[1]).toBe('HandController.saw_flop_without_board');
+    expect(context.handNumber).toBe(4242);
+    expect(context.boardLength).toBe(0);
+    // The stage each action was taken at is the thread to pull on the live
+    // hands, so it has to survive into the record.
+    expect(Array.isArray(context.recentActions)).toBe(true);
+  });
+
   it('still rakes a hand that actually saw a flop', () => {
     const players = mkPlayers([200, 200]);
     const { hc, complete } = harness(mkConfig(), players, 1);
@@ -102,8 +129,14 @@ describe('no flop, no drop is settled by the board', () => {
   it('markFlopSeen() still authorises the drop when the board lives outside this state', () => {
     // The RIT path: boards are built in dealAndResolveRIT, so
     // state.communityCards stays empty and markFlopSeen() is the evidence.
-    const players = mkPlayers([200, 200]);
-    const { hc, internal } = harness(mkConfig(), players, 1);
+    // 2026-08-31: markFlopSeen is runout-only now (the stale-runout guard),
+    // so stand in the state the RIT path actually calls it from: both all-in.
+    const players = mkPlayers([3, 8]);
+    const { hc, internal } = harness(
+      mkConfig({ smallBlind: 5, bigBlind: 10 } as never),
+      players,
+      1
+    );
     hc.start();
     internal.state.pot = 100;
     hc.markFlopSeen();

@@ -30,6 +30,7 @@ import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
 import { spinRevealWouldSkipABeat, spinRevealLag } from './spinRevealWindow.js';
+import { SpinOverrunReporter, describeOverrun } from './spinOverrunReporter.js';
 import { isShortFormat, mayTakeSynchronizedBreak } from './breakEligibility.js';
 import {
   capLevelToChipsInPlay,
@@ -255,7 +256,7 @@ export abstract class TournamentManagerBase {
   // FIX 154: TableBalancer for proper gap-1 rebalancing across tournament tables
   protected tableBalancer: TableBalancer = new TableBalancer((event) => {
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] TableBalance: ${event.type} — ${(event as any).moveCount || 0} moves`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] TableBalance: ${event.type} - ${(event as any).moveCount || 0} moves`
     );
   });
   // Reusable broadcast channel (prevents memory leak from creating per-event)
@@ -385,7 +386,7 @@ export abstract class TournamentManagerBase {
      */
     if (!(await this.breakApplies())) {
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Break refused — this format does not take the :55 break`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Break refused - this format does not take the :55 break`
       );
       return;
     }
@@ -419,7 +420,7 @@ export abstract class TournamentManagerBase {
     this.suspendLevelClock();
 
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] SYNCHRONIZED BREAK — ${Math.round(breakDurationMs / 60000)} minutes`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] SYNCHRONIZED BREAK - ${Math.round(breakDurationMs / 60000)} minutes`
     );
 
     /**
@@ -613,7 +614,7 @@ export abstract class TournamentManagerBase {
     await this.clearPersistedBreak();
     if (!this.running) return;
 
-    console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED — resuming play`);
+    console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED - resuming play`);
 
     await this.broadcast('break_ended', { level: this.currentLevel });
 
@@ -926,7 +927,7 @@ export abstract class TournamentManagerBase {
       if (seedErr) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty seed FAILED (${seedErr.message}) — chests never opened, knockouts keep paying the flat bounty`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty seed FAILED (${seedErr.message}) - chests never opened, knockouts keep paying the flat bounty`
           ),
           'Tournament.mystery_bounty_seed_failed'
         );
@@ -955,7 +956,7 @@ export abstract class TournamentManagerBase {
         profile,
       });
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY BOUNTY OPEN — ${decision.drawCount} chests, ${poolCents}c, profile ${profile}`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY BOUNTY OPEN - ${decision.drawCount} chests, ${poolCents}c, profile ${profile}`
       );
     } catch (err) {
       reportError(err, 'Tournament.mystery_bounty_activation_threw');
@@ -1038,7 +1039,7 @@ export abstract class TournamentManagerBase {
       const allWaiting = engines.every((e) => e.isWaitingForHandForHand());
       if (allWaiting) {
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Hand-for-hand: all ${engines.length} tables done — resuming for next hand`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Hand-for-hand: all ${engines.length} tables done - resuming for next hand`
         );
         // Resume all engines together for the next hand, then immediately re-pause
         for (const engine of engines) {
@@ -1194,7 +1195,7 @@ export abstract class TournamentManagerBase {
         if (rosterErr) {
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Paid-entry roster unreadable (${rosterErr.message}) — standing down, will retry`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Paid-entry roster unreadable (${rosterErr.message}) - standing down, will retry`
             ),
             'Tournament.spin_paid_roster_unreadable'
           );
@@ -1232,7 +1233,7 @@ export abstract class TournamentManagerBase {
          * scheduled game disappears from the lobby.
          */
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Only ${regCount} of ${requiredField} player(s) — standing down so the field can be filled (NOT cancelling)`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Only ${regCount} of ${requiredField} player(s) - standing down so the field can be filled (NOT cancelling)`
         );
         this.running = false;
         return;
@@ -1303,7 +1304,7 @@ export abstract class TournamentManagerBase {
             // try again next pass rather than kicking players over a blip.
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Paid-entry check unreadable (${debitErr.message}) — standing down, will retry`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Paid-entry check unreadable (${debitErr.message}) - standing down, will retry`
               ),
               'Tournament.spin_paid_check_unreadable'
             );
@@ -1322,7 +1323,7 @@ export abstract class TournamentManagerBase {
               new Error(
                 `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN PAID-GATE: ${unpaid.length} registration(s) with no ${buyIn}-chip buy-in ledger row (${unpaid
                   .map((u) => u.slice(0, 8))
-                  .join(', ')}) — removing them; a spin NEVER starts until 3 players have paid`
+                  .join(', ')}) - removing them; a spin NEVER starts until 3 players have paid`
               ),
               'Tournament.spin_unpaid_registration_removed'
             );
@@ -1572,12 +1573,12 @@ export abstract class TournamentManagerBase {
           if (!spinMultiplier || spinMultiplier <= 0) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw UNAVAILABLE after 3 attempts (${drawFailure ?? 'no multiplier returned'}) — standing down; NO multiplier is invented and NO wheel is shown`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw UNAVAILABLE after 3 attempts (${drawFailure ?? 'no multiplier returned'}) - standing down; NO multiplier is invented and NO wheel is shown`
               ),
               'Tournament.spin_draw_unavailable'
             );
             console.error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw unavailable — standing down so the start can be retried (NOT cancelling, NOT defaulting to a tier)`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw unavailable - standing down so the start can be retried (NOT cancelling, NOT defaulting to a tier)`
             );
             this.running = false;
             return; // discovery calls start() again once the RPC answers
@@ -1654,7 +1655,7 @@ export abstract class TournamentManagerBase {
             }
           }
           console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reveal broadcast EARLY — ${spinMultiplier}x to ${this.seatFirstTableIds.length} table(s), ${this.spinRevealLagMs}ms behind the third payment, settle and table build still to come inside the hold`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reveal broadcast EARLY - ${spinMultiplier}x to ${this.seatFirstTableIds.length} table(s), ${this.spinRevealLagMs}ms behind the third payment, settle and table build still to come inside the hold`
           );
         }
 
@@ -1706,13 +1707,13 @@ export abstract class TournamentManagerBase {
               // full regardless; this says the club needs seeding.
               reportError(
                 new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Spin pool SHORTFALL ${settle.operator_shortfall} on a ${spinMultiplier}x — club ${tournament.club_id} needs a larger reserve seed`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Spin pool SHORTFALL ${settle.operator_shortfall} on a ${spinMultiplier}x - club ${tournament.club_id} needs a larger reserve seed`
                 ),
                 'Tournament.spin_pool_shortfall'
               );
             }
             console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ${spinMultiplier}x — pool ${prizePool}, rake ${settle.house_rake}, reserve ${settle.balance}`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ${spinMultiplier}x - pool ${prizePool}, rake ${settle.house_rake}, reserve ${settle.balance}`
             );
           } catch (settleErr: any) {
             if (attempt === 3) {
@@ -1721,7 +1722,7 @@ export abstract class TournamentManagerBase {
               // fn_spin_sweep_unbooked() will catch it on the next pass.
               reportError(
                 new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reserve settlement FAILED after 3 attempts (${settleErr?.message}) — prize pool is correct but this game is unbooked`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reserve settlement FAILED after 3 attempts (${settleErr?.message}) - prize pool is correct but this game is unbooked`
                 ),
                 'Tournament.spin_settle_failed'
               );
@@ -1809,7 +1810,7 @@ export abstract class TournamentManagerBase {
             // the multiplier from the prize actually paid on the next sweep.
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw row write FAILED after 3 attempts (${spinRowErr.message}) — ${spinMultiplier}x was drawn but the row still reads NULL; this game will run on the placeholder structure and NO client can show the wheel until the row is repaired`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw row write FAILED after 3 attempts (${spinRowErr.message}) - ${spinMultiplier}x was drawn but the row still reads NULL; this game will run on the placeholder structure and NO client can show the wheel until the row is repaired`
               ),
               'Tournament.spin_draw_row_write_failed'
             );
@@ -1819,7 +1820,7 @@ export abstract class TournamentManagerBase {
         }
         if (!spinRowWritten) {
           console.error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ROW NOT WRITTEN (${spinRowLastError}) — ${spinMultiplier}x drawn, starting background repair`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ROW NOT WRITTEN (${spinRowLastError}) - ${spinMultiplier}x drawn, starting background repair`
           );
           // Safe to keep trying: the repair only ever writes the value THIS
           // start already drew and settled against, and only while the column
@@ -1944,7 +1945,7 @@ export abstract class TournamentManagerBase {
           engine.holdDealingUntil(scheduledStartMs);
         }
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Pre-seated ${this.tableEngines.size} table(s) — holding the deal ${Math.round(this.preStartLeadMs / 1000)}s until the advertised start ${new Date(scheduledStartMs).toISOString()}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Pre-seated ${this.tableEngines.size} table(s) - holding the deal ${Math.round(this.preStartLeadMs / 1000)}s until the advertised start ${new Date(scheduledStartMs).toISOString()}`
         );
       }
 
@@ -2075,7 +2076,7 @@ export abstract class TournamentManagerBase {
         }
         this.scheduleSpinPostReveal(tournament, revealAt);
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reveal broadcast — ${revealMultiplier}x, holding the deal until ${new Date(holdUntil).toISOString()} (${Math.max(0, holdUntil - Date.now())}ms from now, ${this.spinRevealLagMs}ms behind the third payment)`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reveal broadcast - ${revealMultiplier}x, holding the deal until ${new Date(holdUntil).toISOString()} (${Math.max(0, holdUntil - Date.now())}ms from now, ${this.spinRevealLagMs}ms behind the third payment)`
         );
       }
 
@@ -2164,7 +2165,7 @@ export abstract class TournamentManagerBase {
         // safety net that settles it if this never lands.
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] RUNNING flip FAILED after 3 attempts — the game is starting with its row still REGISTERING`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] RUNNING flip FAILED after 3 attempts - the game is starting with its row still REGISTERING`
           ),
           'Tournament.running_flip_failed'
         );
@@ -2299,7 +2300,7 @@ export abstract class TournamentManagerBase {
       this.startEliminationChecker();
 
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] RUNNING — ${this.tableEngines.size} tables`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] RUNNING - ${this.tableEngines.size} tables`
       );
     } catch (err) {
       reportError(err, 'TournamentthistournamentIdslic.Start_failed');
@@ -2365,7 +2366,7 @@ export abstract class TournamentManagerBase {
 
         if ((liveEntrants || 0) > 0) {
           console.warn(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Resuming with NO open tables — rebuilding for ${liveEntrants} entrant(s) instead of abandoning the tournament`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Resuming with NO open tables - rebuilding for ${liveEntrants} entrant(s) instead of abandoning the tournament`
           );
           /**
            * NON-FATAL (2026-08-25). createTablesAndSeatPlayers throws
@@ -2538,7 +2539,7 @@ export abstract class TournamentManagerBase {
           // then granted a fresh full level on top. See suspendLevelClock.
           this.suspendLevelClock();
           console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed DURING a break — re-pausing for the remaining ${Math.round(remainingMs / 1000)}s`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed DURING a break - re-pausing for the remaining ${Math.round(remainingMs / 1000)}s`
           );
           for (const engine of this.tableEngines.values()) {
             try {
@@ -2568,7 +2569,7 @@ export abstract class TournamentManagerBase {
       }
 
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed — ${this.tableEngines.size} tables, level ${this.currentLevel}`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed - ${this.tableEngines.size} tables, level ${this.currentLevel}`
       );
     } catch (err) {
       reportError(err, 'TournamentthistournamentIdslic.Resume_failed');
@@ -2689,11 +2690,67 @@ export abstract class TournamentManagerBase {
       );
       return 0;
     }
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A CREDIT MAY FUND AN EMPTY SEAT. IT MAY NOT RESCUE A LOSING ONE.
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * `stack < target` is the right question BEFORE a hand is dealt and the
+     * wrong one after it. Every seat that is losing is below the starting
+     * stack by definition, so once play is under way this raised the loser
+     * back to a full stack and MINTED the difference onto the felt.
+     *
+     * Measured on production 2026-08-31, spins completed in 24 hours:
+     *
+     *     2,168 games at a 300 stack   418 drifted, worst +470
+     *       305 games at a 1,000 stack  84 drifted, worst +1,603
+     *
+     * and NOT ONE of the 502 exceeded twice the starting stack - exactly the
+     * ceiling of topping up the two players who can be behind. That is the
+     * signature of this line and nothing else.
+     *
+     * A Spin's prize is buy_in x multiplier, so no money is created directly.
+     * What is created is a different WINNER: the engine decides the game on
+     * chips, and a player who was busting got their stack back. On an MTT,
+     * where finishing position is the payout, it moves real money.
+     *
+     * All four callers are pre-deal by intent - start(), the post-reveal beat,
+     * its safety net, and resume(), whose own note scopes it to "a process
+     * restart INSIDE THAT WINDOW". None of them checked, and resume() runs on
+     * every restart forever, which is why this fired on one game in five.
+     *
+     * So the question is now asked against the state of the game:
+     *   - no hand dealt yet  -> fund anything short of the target, unchanged;
+     *   - play under way     -> fund ONLY a seat still sitting on zero, which
+     *                           is the stranded reservation the resume path
+     *                           exists for. A losing stack is left alone.
+     *
+     * If the hand read itself fails, take the conservative branch and say so.
+     * The stranded-at-zero case is still rescued either way; the only thing
+     * given up is raising a placeholder tier, which the next call redoes.
+     */
+    const { data: dealtRows, error: dealtErr } = await supabase
+      .from('hand_history')
+      .select('id')
+      .eq('tournament_id', this.tournamentId)
+      .limit(1);
+
+    if (dealtErr) {
+      reportError(
+        new Error(`seat stack credit could not tell whether play had started: ${dealtErr.message}`),
+        'Tournament.' + this.tournamentId.slice(0, 8) + '.seat_stack_dealt_probe_failed'
+      );
+    }
+
+    const playUnderWay = dealtErr ? true : (dealtRows?.length ?? 0) > 0;
+
     // Strictly RAISE, never lower: the legitimate case is a reservation seat
     // holding 0 (or a smaller placeholder tier) waiting on the drawn stack.
     // An early-bird seat (starting chips + bonus, 2026-08-22) sits ABOVE the
     // plain starting stack, and flattening it here would destroy the bonus.
-    const stale = (seatRows ?? []).filter((r: any) => Number(r.stack) < target);
+    const stale = (seatRows ?? []).filter((r: any) =>
+      playUnderWay ? Number(r.stack) <= 0 : Number(r.stack) < target
+    );
     if (stale.length === 0) return 0;
     const { error } = await supabase
       .from('table_seats')
@@ -2764,7 +2821,7 @@ export abstract class TournamentManagerBase {
         .maybeSingle();
       if (Number(before?.spin_multiplier) > 0) {
         console.warn(
-          `[Tournament:${tag}] Spin row repair: multiplier already present (${before?.spin_multiplier}x) after ${pass} pass(es) — nothing to do`
+          `[Tournament:${tag}] Spin row repair: multiplier already present (${before?.spin_multiplier}x) after ${pass} pass(es) - nothing to do`
         );
         return;
       }
@@ -2783,7 +2840,7 @@ export abstract class TournamentManagerBase {
         .maybeSingle();
       if (Number(after?.spin_multiplier) > 0) {
         console.warn(
-          `[Tournament:${tag}] Spin row repair SUCCEEDED on pass ${pass} — ${drawnMultiplier}x is on the row; the wheel can fire again`
+          `[Tournament:${tag}] Spin row repair SUCCEEDED on pass ${pass} - ${drawnMultiplier}x is on the row; the wheel can fire again`
         );
         return;
       }
@@ -2791,7 +2848,7 @@ export abstract class TournamentManagerBase {
       if (pass >= MAX_PASSES) {
         reportError(
           new Error(
-            `[Tournament:${tag}] Spin row repair EXHAUSTED after ${MAX_PASSES} passes — ${drawnMultiplier}x was drawn and settled but spin_multiplier is still empty; no client can show the wheel for this game`
+            `[Tournament:${tag}] Spin row repair EXHAUSTED after ${MAX_PASSES} passes - ${drawnMultiplier}x was drawn and settled but spin_multiplier is still empty; no client can show the wheel for this game`
           ),
           'Tournament.spin_row_repair_exhausted'
         );
@@ -2892,6 +2949,13 @@ export abstract class TournamentManagerBase {
    * player who refreshes mid-spin rejoins the shared moment already in
    * progress. What it no longer has to absorb is the engine's own delay.
    */
+  /**
+   * Process-wide overrun aggregator. STATIC on purpose: the overrun is a
+   * property of the ENGINE being late, not of any one tournament, so a
+   * per-instance limiter would report once per spin exactly as before.
+   */
+  private static readonly spinOverruns = new SpinOverrunReporter();
+
   protected resolveSpinReveal(): { revealAt: number; holdUntil: number } {
     const now = Date.now();
     if (this.spinRevealAt <= 0) {
@@ -2920,12 +2984,21 @@ export abstract class TournamentManagerBase {
        times a day. See spinRevealWindow.ts for the full account. */
     const wouldSkipABeat = spinRevealWouldSkipABeat({ now, revealAt: this.spinRevealAt });
     if (wouldSkipABeat) {
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Spin start overran its own reveal window by ${this.spinRevealLagMs}ms — the wheel is being re-anchored to now so it plays in full, and the three players see it start late`
-        ),
-        'Tournament.spin_reveal_window_overrun'
-      );
+      /* AGGREGATED, NOT SILENCED (2026-08-31). This fired once per spin, on
+         88-97% of ~2,500 spins a day, which is over a thousand identical
+         reports daily out of one call site - loud enough to bury every other
+         error in the stream. The per-spin number now lives at full
+         resolution on poker_spin_reveal_lag_p50_ms and
+         poker_spin_reveal_past_lead_in; what survives here is one report per
+         incident, opening immediately and then carrying the count. See
+         spinOverrunReporter.ts. */
+      const overrun = TournamentManagerBase.spinOverruns.record(this.spinRevealLagMs, now);
+      if (overrun) {
+        reportError(
+          new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] ${describeOverrun(overrun)}`),
+          'Tournament.spin_reveal_window_overrun'
+        );
+      }
       this.spinRevealAt = now;
       this.spinHoldUntil = now + spinRevealToDealMs();
     }
@@ -2971,7 +3044,7 @@ export abstract class TournamentManagerBase {
           // already have dealt" — re-forcing the button on a live table is the
           // damaging direction.
           console.warn(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Could not check hand history for table ${table.id.slice(0, 8)} (${error.message}) — leaving the drawn button alone`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Could not check hand history for table ${table.id.slice(0, 8)} (${error.message}) - leaving the drawn button alone`
           );
           continue;
         }
@@ -3095,7 +3168,7 @@ export abstract class TournamentManagerBase {
             .then(({ error }: { error: { message?: string } | null }) => {
               if (error) {
                 console.warn(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Drawn button seat ${seat} not persisted for table ${tableId.slice(0, 8)} (${error.message}) — a restart before the first hand would revert it to the lowest seat`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Drawn button seat ${seat} not persisted for table ${tableId.slice(0, 8)} (${error.message}) - a restart before the first hand would revert it to the lowest seat`
                 );
               }
             })
@@ -3326,7 +3399,7 @@ export abstract class TournamentManagerBase {
     const toSeat = players.filter((p: any) => !alreadySeated.has(p.user_id));
     if (toSeat.length < players.length) {
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] ${players.length - toSeat.length} player(s) already seated — seating the remaining ${toSeat.length}`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ${players.length - toSeat.length} player(s) already seated - seating the remaining ${toSeat.length}`
       );
     }
     /**
@@ -3374,7 +3447,7 @@ export abstract class TournamentManagerBase {
         if (claim.unknown) {
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Not seating ${toSeat[i].user_id.slice(0, 8)} — ${claim.reason}. Leaving them to the 5s seat sweep rather than risking a second live seat.`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Not seating ${toSeat[i].user_id.slice(0, 8)} - ${claim.reason}. Leaving them to the 5s seat sweep rather than risking a second live seat.`
             ),
             'Tournament.seat_claim_unreadable'
           );
@@ -3412,7 +3485,7 @@ export abstract class TournamentManagerBase {
          */
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] No seat within capacity for ${toSeat.length - i} player(s) across ${tableIds.length} table(s) — leaving them unseated for the 5s seat sweep rather than writing a seat past a table's max_players`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] No seat within capacity for ${toSeat.length - i} player(s) across ${tableIds.length} table(s) - leaving them unseated for the 5s seat sweep rather than writing a seat past a table's max_players`
           ),
           'Tournament.seating_capacity_exhausted'
         );
@@ -3564,7 +3637,7 @@ export abstract class TournamentManagerBase {
               Math.round(engine.msSinceProgress() / 1000) +
               's (running=' +
               engine.isRunning() +
-              ') — rebuilding'
+              ') - rebuilding'
           ),
           'Tournament.' + this.tournamentId.slice(0, 8) + '.table_engine_rebuilt',
           { tableId }
@@ -3751,7 +3824,7 @@ export abstract class TournamentManagerBase {
     if (!this.blindCapReported) {
       this.blindCapReported = true;
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Blind cap engaged — level would have been ` +
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Blind cap engaged - level would have been ` +
           `${Number((level as any).smallBlind)}/${Number((level as any).bigBlind)} against ~${Math.round(total)} chips in play; ` +
           `capped to ${capped.smallBlind}/${capped.bigBlind} so the event keeps at least 20 big blinds on the felt`
       );
@@ -3795,7 +3868,7 @@ export abstract class TournamentManagerBase {
       if (fieldErr || typeof field !== 'number' || field < 1) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] payout widen skipped — entrant count unreadable (${fieldErr?.message ?? 'null count'}); the advertised structure stands`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] payout widen skipped - entrant count unreadable (${fieldErr?.message ?? 'null count'}); the advertised structure stands`
           ),
           'Tournament.payout_widen_field_unreadable'
         );
@@ -3815,7 +3888,7 @@ export abstract class TournamentManagerBase {
       if (writeErr) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] payout widen write failed (${writeErr.message}) — the advertised ${current.length}-place structure stands`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] payout widen write failed (${writeErr.message}) - the advertised ${current.length}-place structure stands`
           ),
           'Tournament.payout_widen_write_failed'
         );
@@ -3978,7 +4051,7 @@ export abstract class TournamentManagerBase {
         if (this.onBreak) {
           this.savedBlindTimerRemaining = 1000;
           console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Level was due during a break — holding it until play resumes`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Level was due during a break - holding it until play resumes`
           );
           return;
         }
@@ -4203,7 +4276,7 @@ export abstract class TournamentManagerBase {
             const finalPool = await this.applyPrizeGuarantee('late_reg_close');
             if (finalPool !== null) {
               console.log(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Late reg/rebuy closed at level ${this.currentLevel} — prize pool finalized: ${finalPool}`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Late reg/rebuy closed at level ${this.currentLevel} - prize pool finalized: ${finalPool}`
               );
             }
             // The close is still announced when funding failed — late
@@ -4266,7 +4339,7 @@ export abstract class TournamentManagerBase {
             } else {
               reportError(
                 new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] late reg closed but no pool to price by (guarantee funding returned ${finalPool}, cached pool ${this.tournamentCache?.prize_pool}) — eliminated prizes NOT repriced against the now-trimmed structure`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] late reg closed but no pool to price by (guarantee funding returned ${finalPool}, cached pool ${this.tournamentCache?.prize_pool}) - eliminated prizes NOT repriced against the now-trimmed structure`
                 ),
                 'Tournament.late_reg_close_no_pool_to_reprice'
               );
@@ -4415,7 +4488,7 @@ export abstract class TournamentManagerBase {
         console.log(
           `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ONS: ${taken} taken` +
             (declined.size > 0
-              ? ` — declined: ${[...declined.entries()].map(([m, n]) => `${m} x${n}`).join(', ')}`
+              ? ` - declined: ${[...declined.entries()].map(([m, n]) => `${m} x${n}`).join(', ')}`
               : '')
         );
       }
@@ -4458,7 +4531,7 @@ export abstract class TournamentManagerBase {
       this.tournamentCache?.late_reg_levels ?? this.tournamentCache?.rebuy_levels ?? 8;
 
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON PERIOD START — ${addonLevels} level(s) (Level ${rebuyLevelCap} to ${rebuyLevelCap + addonLevels}), cost: ${addonCost}, chips: ${addonChips}`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON PERIOD START - ${addonLevels} level(s) (Level ${rebuyLevelCap} to ${rebuyLevelCap + addonLevels}), cost: ${addonCost}, chips: ${addonChips}`
     );
 
     // Broadcast ADDON_PERIOD_START via Supabase Realtime (no fixed duration — level-based)
@@ -4574,7 +4647,7 @@ export abstract class TournamentManagerBase {
       if (error || res.ok !== true) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Prize guarantee could not be funded (${error?.message ?? res.reason ?? 'unknown'}) — the pool is NOT being bumped locally; no chips are being created`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Prize guarantee could not be funded (${error?.message ?? res.reason ?? 'unknown'}) - the pool is NOT being bumped locally; no chips are being created`
           ),
           'Tournament.prize_guarantee_unfunded'
         );
@@ -4615,7 +4688,7 @@ export abstract class TournamentManagerBase {
     if (this.prizePoolFinalized) return;
 
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON PERIOD ENDED at level ${this.currentLevel} — finalizing prize pool`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON PERIOD ENDED at level ${this.currentLevel} - finalizing prize pool`
     );
 
     this.prizePoolFinalized = true;

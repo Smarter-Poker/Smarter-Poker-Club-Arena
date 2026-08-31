@@ -40,7 +40,7 @@ const mkPlayer = (seat: number, over: Record<string, unknown> = {}) =>
     ...over,
   }) as never;
 
-describe('HorseLogic V12 (G) — river sizing polish', () => {
+describe('HorseLogic V12 (G) - river sizing polish', () => {
   it('nut hands overbet the river with v12River and never without', () => {
     const spot = (on: boolean) => {
       // Nut flush on the river, heads-up, hero has the lead and acts last.

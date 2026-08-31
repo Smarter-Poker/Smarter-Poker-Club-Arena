@@ -151,7 +151,7 @@ export async function claimTable(tableId: string): Promise<boolean> {
       // per table.
       if (claimErrors <= 3) {
         console.warn(
-          `[lease] claim_table_lease failed for ${tableId} (${error.message}) — proceeding without a lease`
+          `[lease] claim_table_lease failed for ${tableId} (${error.message}) - proceeding without a lease`
         );
       }
       return true;
@@ -176,14 +176,14 @@ export async function claimTable(tableId: string): Promise<boolean> {
         `(last heartbeat ${conflict.holderAgeSeconds}s ago). This instance is ${INSTANCE_ID}. ` +
         (LEASE_ENFORCED
           ? 'Refusing to deal it.'
-          : 'ENGINE_LEASE_ENFORCE is off, so dealing anyway — set it to "on" once these logs look right.')
+          : 'ENGINE_LEASE_ENFORCE is off, so dealing anyway - set it to "on" once these logs look right.')
     );
     return !LEASE_ENFORCED;
   } catch (err) {
     claimErrors++;
     if (claimErrors <= 3) {
       console.warn(
-        `[lease] claim threw for ${tableId} (${(err as Error)?.message}) — proceeding without a lease`
+        `[lease] claim threw for ${tableId} (${(err as Error)?.message}) - proceeding without a lease`
       );
     }
     return true;
@@ -231,7 +231,7 @@ export async function heartbeatTables(tableIds: string[]): Promise<string[]> {
     if (error) {
       heartbeatErrors++;
       if (heartbeatErrors <= 3) {
-        console.warn(`[lease] heartbeat failed (${error.message}) — keeping every table`);
+        console.warn(`[lease] heartbeat failed (${error.message}) - keeping every table`);
       }
       return [];
     }
@@ -265,7 +265,7 @@ export async function heartbeatTables(tableIds: string[]): Promise<string[]> {
     if (reclaimable > 0) {
       reclaimableHeartbeats += reclaimable;
       console.warn(
-        `[lease] ${reclaimable} of ${tableIds.length} table leases were missing or stale, not taken — re-claiming, still dealing`
+        `[lease] ${reclaimable} of ${tableIds.length} table leases were missing or stale, not taken - re-claiming, still dealing`
       );
     }
 
@@ -273,7 +273,7 @@ export async function heartbeatTables(tableIds: string[]): Promise<string[]> {
   } catch (err) {
     heartbeatErrors++;
     if (heartbeatErrors <= 3) {
-      console.warn(`[lease] heartbeat threw (${(err as Error)?.message}) — keeping every table`);
+      console.warn(`[lease] heartbeat threw (${(err as Error)?.message}) - keeping every table`);
     }
     return [];
   }

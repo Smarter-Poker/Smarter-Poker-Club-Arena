@@ -79,7 +79,7 @@ describe('the V30 batch floor cannot be silently raised again', () => {
     expect(
       floor,
       `${newest} clamps the batch floor to ${floor}, but the driver sends ${driverBatch}. ` +
-        'A floor above what the driver sends silently rounds every call back up — ' +
+        'A floor above what the driver sends silently rounds every call back up - ' +
         'that is the 2026-08-30 clobber, and 200 is the measured timeout cliff.'
     ).toBeLessThanOrEqual(driverBatch);
   });

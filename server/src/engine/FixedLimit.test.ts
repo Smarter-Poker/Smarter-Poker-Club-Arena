@@ -200,7 +200,7 @@ describe('the four-wager cap', () => {
     expect(fixedLimitWagerCount(noise, 'flop')).toBe(0);
   });
 
-  it('does not count a SHORT all-in — it is not a full raise', () => {
+  it('does not count a SHORT all-in - it is not a full raise', () => {
     const short = [rec({ action: 'bet' }), rec({ action: 'all_in', isFullRaise: false })];
     expect(fixedLimitWagerCount(short, 'flop')).toBe(1);
     const full = [rec({ action: 'bet' }), rec({ action: 'all_in', isFullRaise: true })];
@@ -335,7 +335,7 @@ describe('flo8 is dealt and judged as Omaha Hi-Lo', () => {
     expect(isHiLoVariant('flo8')).toBe(true);
   });
 
-  it('awards the pot by Omaha rules — determineWinners is where money moves', () => {
+  it('awards the pot by Omaha rules - determineWinners is where money moves', () => {
     // Board gives a Hold'em player a made flush from the board alone; the
     // Omaha rule forbids playing the board, so the winner must be decided from
     // exactly two hole cards. Under the old `startsWith('plo')` test this
@@ -500,9 +500,9 @@ describe('substituteOnCappedStreet', () => {
     // Cross-check against validateAction rather than trusting the mapping: on a
     // capped street the only two survivors are fold and call.
     const capped = calculateBettingState(20, 16, 4, 2, 0, false, { betSize: 4, capped: true });
-    expect(validateAction(substituteOnCappedStreet('raise', 12), undefined, 100, capped).valid).toBe(
-      true
-    );
+    expect(
+      validateAction(substituteOnCappedStreet('raise', 12), undefined, 100, capped).valid
+    ).toBe(true);
     // and the thing it replaced would NOT have been accepted
     expect(validateAction('raise', 20, 100, capped).valid).toBe(false);
   });

@@ -29,6 +29,7 @@ import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import haptic from '../services/HapticService';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
+import ClubLaunchProgress, { type ClubLaunchTask } from '../components/club/ClubLaunchProgress';
 /* LOBBY V2 (Dan 2026-08-22): the large card grid (DynamicGameCard) is replaced
    by the dense line-based LobbyTable + the CasinoPlaque game lobby panel.
    Selecting a row NEVER joins or spends; every commit action goes through the
@@ -237,6 +238,7 @@ interface ClubData {
   hierarchy_threshold_next: number;
   created_at: string;
   is_union: boolean;
+  chip_treasury?: number | null;
 }
 
 interface TableData {
@@ -275,6 +277,7 @@ interface TournamentData {
   late_reg_levels?: number | null;
   started_at?: string | null;
   current_level?: number | null;
+  variant?: string | null;
   /**
    * Dan 2026-08-24: the MTT title's late-reg countdown needs the level
    * window's real end, which only the blind structure can give.
@@ -327,6 +330,21 @@ const LOBBY_TOURNAMENT_STATUSES = ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTI
 
 const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'LIMIT', 'MIXED'];
 const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
+
+const CASH_CREATION_ROUTE: Partial<Record<GameType, string>> = {
+  HOLDEM: 'nlh',
+  OMAHA: 'plo4',
+  LIMIT: 'flh',
+};
+
+const CREATE_LABEL_FOR: Partial<Record<GameType, string>> = {
+  MTT: 'Create MTT',
+  HOLDEM: 'Create NLH Table',
+  OMAHA: 'Create PLO Table',
+  LIMIT: 'Create Limit Table',
+  SPIN: 'Create Spin',
+  SNG: 'Create Heads Up',
+};
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -552,13 +570,16 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
    * redirect is unchanged.
    */
   const [notAMember, setNotAMember] = useState(false);
-  const bounceToInvite = useCallback(() => {
-    if (clubIdOverride) {
-      setNotAMember(true);
-      return;
-    }
-    navigate(`/invite/${clubId}`);
-  }, [clubIdOverride, clubId, navigate]);
+  const bounceToInvite = useCallback(
+    (playerRequestedExit = false) => {
+      if (clubIdOverride && !playerRequestedExit) {
+        setNotAMember(true);
+        return;
+      }
+      navigate(`/invite/${clubId}`);
+    },
+    [clubIdOverride, clubId, navigate]
+  );
   /* THE LATEST loadClubData, ALWAYS.
      `loadClubData` is redefined every render and closes over that render's
      clubId. The bus effect below and the realtime member handler both have []
@@ -1561,7 +1582,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at, is_union, union_id'
+              'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, created_at, is_union, union_id'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -3839,6 +3860,100 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     })();
   };
 
+  const openCreationFor = (target: GameType) => {
+    haptic.selection();
+    selectGameType(target);
+    if (TOURNAMENT_TYPES.includes(target)) {
+      setShowCreateTournament(true);
+      return;
+    }
+    const routeVariant = CASH_CREATION_ROUTE[target];
+    if (routeVariant) navigate(`/clubs/${clubId}/create-table/${routeVariant}`);
+  };
+
+  const hasCashCategory = (category: 'HOLDEM' | 'OMAHA' | 'LIMIT') =>
+    tables.some((table) => cashKind(table) === category);
+  const tournamentKinds = tournaments.map((tournament) =>
+    classifyTournament(tournament as unknown as LobbyTournamentRow)
+  );
+  const launchTasks: ClubLaunchTask[] = [
+    {
+      id: 'identity',
+      label: 'Choose A Club Profile Picture',
+      detail: 'Add A Recognizable Club Mark',
+      complete: Boolean(club.logo_url || club.avatar_url),
+      actionLabel: 'Add Picture',
+      onAction: () => navigate(`/clubs/${clubId}/settings`),
+    },
+    {
+      id: 'tagline',
+      label: 'Write A Club Tag Line',
+      detail: 'Tell Players What Makes This Club Special',
+      complete: Boolean(club.description?.trim()),
+      actionLabel: 'Add Tag Line',
+      onAction: () => {
+        setNoticeDraft(club.description || '');
+        setIsEditingNotice(true);
+      },
+    },
+    {
+      id: 'nlh',
+      label: 'Open Your First NLH Table',
+      detail: 'Create A No-Limit Hold’em Cash Game',
+      complete: hasCashCategory('HOLDEM'),
+      actionLabel: 'Create Table',
+      onAction: () => openCreationFor('HOLDEM'),
+    },
+    {
+      id: 'plo',
+      label: 'Open Your First PLO Table',
+      detail: 'Create A Pot-Limit Omaha Cash Game',
+      complete: hasCashCategory('OMAHA'),
+      actionLabel: 'Create Table',
+      onAction: () => openCreationFor('OMAHA'),
+    },
+    {
+      id: 'limit',
+      label: 'Open Your First Limit Table',
+      detail: 'Create A Fixed-Limit Cash Game',
+      complete: hasCashCategory('LIMIT'),
+      actionLabel: 'Create Table',
+      onAction: () => openCreationFor('LIMIT'),
+    },
+    {
+      id: 'mtt',
+      label: 'Schedule Your First MTT',
+      detail: 'Publish A Multi-Table Tournament',
+      complete: tournamentKinds.includes('mtt'),
+      actionLabel: 'Create MTT',
+      onAction: () => openCreationFor('MTT'),
+    },
+    {
+      id: 'spin',
+      label: 'Launch Your First Spin',
+      detail: 'Create A Three-Player Spin Event',
+      complete: tournamentKinds.includes('spin'),
+      actionLabel: 'Create Spin',
+      onAction: () => openCreationFor('SPIN'),
+    },
+    {
+      id: 'heads-up',
+      label: 'Launch Your First Heads Up Game',
+      detail: 'Create A Two-Player Duel',
+      complete: tournamentKinds.includes('sng'),
+      actionLabel: 'Create Heads Up',
+      onAction: () => openCreationFor('SNG'),
+    },
+    {
+      id: 'first-player',
+      label: 'Invite Your First Player',
+      detail: 'Share Your Club Link And Build The Room',
+      complete: Number(club.member_count || 0) > 1,
+      actionLabel: 'Invite Player',
+      onAction: () => bounceToInvite(true),
+    },
+  ];
+
   return (
     <div className="club-home">
       <GlobalUXIndicators wsConnected={wsConnected} />
@@ -4477,6 +4592,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           }
         />
 
+        {noticeEditable && (
+          <ClubLaunchProgress
+            clubName={club.name}
+            openingBank={Number(club.chip_treasury) || 0}
+            tasks={launchTasks}
+          />
+        )}
+
         {/* ═══════════════════════════════════════════════════════════════════
           CLUB / UNION AD STRIP — directly under the action bar
       ═══════════════════════════════════════════════════════════════════ */}
@@ -4525,18 +4648,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           filter or a search is actively hiding games — that one is not a
           statistic, it is the explanation for why the list looks short, and
           it carries the one-tap clear. */}
-        {(isOwner || isClubStaff(userRole)) && club?.is_union === true && (
+        {noticeEditable && gameType !== 'ALL' && (
           <div className="lobby-resultsbar lobby-resultsbar--create-only">
             <button
               type="button"
               className="lobby-createbtn"
-              onClick={() => {
-                haptic.selection();
-                if (TOURNAMENT_TYPES.includes(gameType)) setShowCreateTournament(true);
-                else navigate(`/clubs/${clubId}/create-table`);
-              }}
+              onClick={() => openCreationFor(gameType)}
             >
-              + Create {TOURNAMENT_TYPES.includes(gameType) ? 'Tournament' : 'Cash Game'}
+              <span aria-hidden="true">＋</span> {CREATE_LABEL_FOR[gameType]}
             </button>
           </div>
         )}
@@ -4630,7 +4749,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       <p>Nothing On This Tab Right Now</p>
                       <p className="empty-hint">
                         {totalHere.toLocaleString()}
-                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 'S Are'} Open In
+                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
                         This Club. Spins And Heads Up Have Their Own Tabs, And So Do Tournaments
                         Already Under Way.
                       </p>
@@ -4643,7 +4762,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       <p>Nothing Here On This Tab</p>
                       <p className="empty-hint">
                         {totalHere.toLocaleString()}
-                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 'S Are'} Open In
+                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
                         This Club, Just None Of This Type Right Now.
                       </p>
                       <div className="empty-actions">
@@ -4657,7 +4776,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       <p>Nothing Matches Your Filters</p>
                       <p className="empty-hint">
                         {totalHere.toLocaleString()}
-                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 'S Are'} Open In
+                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
                         This Club, But The Filters On This Tab Hide{' '}
                         {totalHere === 1 ? 'It' : 'Them All'}.
                       </p>

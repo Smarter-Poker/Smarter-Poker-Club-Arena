@@ -26,6 +26,7 @@ import {
 } from './services/TournamentRecurringService.js';
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { TournamentMetrics } from './services/TournamentMetrics.js';
+import { SpinMetrics } from './services/SpinMetrics.js';
 import {
   planTableReopens,
   freshHumanWindowMs,
@@ -313,6 +314,7 @@ export class GameServer {
    * 2026-08-30/31 audit was found by a human running SQL by hand.
    */
   private tournamentMetrics = new TournamentMetrics();
+  private spinMetrics = new SpinMetrics();
   private lifecycle = new HorseLifecycleManager();
 
   /**
@@ -386,13 +388,13 @@ export class GameServer {
     initSentry();
 
     console.log('═══════════════════════════════════════════════════════════════');
-    console.log(' SMARTER POKER GAME SERVER — Starting...');
+    console.log(' SMARTER POKER GAME SERVER - Starting...');
     if (testTableId) {
-      console.log(` 🧪 E2E TEST MODE — single test table ${testTableId.slice(0, 8)} only`);
+      console.log(` 🧪 E2E TEST MODE - single test table ${testTableId.slice(0, 8)} only`);
     } else if (maintenanceMode) {
-      console.log(' ⚠️  MAINTENANCE MODE — No tables, tournaments, or horses will be created');
+      console.log(' ⚠️  MAINTENANCE MODE - No tables, tournaments, or horses will be created');
     } else {
-      console.log(' All game logic runs HERE — no browser needed');
+      console.log(' All game logic runs HERE - no browser needed');
     }
     console.log('═══════════════════════════════════════════════════════════════');
 
@@ -449,7 +451,7 @@ export class GameServer {
       }
       if (role === 'leader') {
         console.log(
-          '[GameServer] Boot claim granted on retry — the previous lease went stale inside the window. Booting as leader.'
+          '[GameServer] Boot claim granted on retry - the previous lease went stale inside the window. Booting as leader.'
         );
       }
     }
@@ -462,7 +464,7 @@ export class GameServer {
       markBootedAsStandby();
       const d = leadershipDiagnostics();
       console.log(
-        `[GameServer] STANDBY — ${d.holder} holds leadership. Claiming nothing, ` +
+        `[GameServer] STANDBY - ${d.holder} holds leadership. Claiming nothing, ` +
           'cleaning nothing, hydrating nothing. Will take the fleet if that lease goes stale.'
       );
       // Nothing below runs. The renewal interval is the only thing alive, and
@@ -557,6 +559,12 @@ export class GameServer {
       // never read as a healthy platform.
       this.tournamentMetrics.start();
 
+      // Step 3d: Spin gauges. Spin charges no rake — the 8% IS the multiplier
+      // distribution — so E[multiplier] = 2.7638 is the only evidence the house
+      // takes what it advertises, and until this collector shipped nothing had
+      // ever checked it except a human typing SQL. Same fail-loud contract.
+      this.spinMetrics.start();
+
       // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
       this.lifecycle.start();
 
@@ -618,7 +626,7 @@ export class GameServer {
       }
     } else {
       console.log(
-        '[GameServer] Running in MAINTENANCE MODE — only /health and /action endpoints active.'
+        '[GameServer] Running in MAINTENANCE MODE - only /health and /action endpoints active.'
       );
     }
   }
@@ -725,7 +733,7 @@ export class GameServer {
       console.log(
         pending === 0
           ? `[GameServer] Drained all ${engines.length} table(s) between hands`
-          : `[GameServer] Drain window elapsed with ${pending}/${engines.length} table(s) still mid-hand — stopping anyway`
+          : `[GameServer] Drain window elapsed with ${pending}/${engines.length} table(s) still mid-hand - stopping anyway`
       );
     }
 
@@ -764,7 +772,7 @@ export class GameServer {
         reportError(
           new Error(
             `[GameServer] shutting down with ${handHistoryQueueDepth()} hand_history row(s) ` +
-              `still unwritten — those hands will have no history row.`
+              `still unwritten - those hands will have no history row.`
           ),
           'GameServer.hand_history_queue_lost_on_shutdown'
         );
@@ -1120,7 +1128,7 @@ export class GameServer {
       '# HELP poker_stalled_tables Tables with 2+ dealable seats, not paused by design, and no progress for 2 minutes',
       '# TYPE poker_stalled_tables gauge',
       `poker_stalled_tables ${stalled.length}`,
-      '# HELP poker_paused_tables Tables paused on purpose (hand-for-hand/break) — excluded from stall detection',
+      '# HELP poker_paused_tables Tables paused on purpose (hand-for-hand/break) - excluded from stall detection',
       '# TYPE poker_paused_tables gauge',
       `poker_paused_tables ${pausedCount}`,
       '# HELP poker_discovery_stale_ms Milliseconds since the cash-table discovery loop last completed',
@@ -1177,6 +1185,11 @@ export class GameServer {
       // from the database because the database is the only thing that knows
       // what SHOULD exist. See services/TournamentMetrics.ts.
       ...this.tournamentMetrics.toPrometheus(),
+      // ── SPIN OBSERVABILITY (2026-08-31) ──────────────────────────────
+      // The tournament gauges above count events. These test the one
+      // EQUALITY the Spin format is sold on, and watch the punctuality of
+      // the wheel that sells it. See services/SpinMetrics.ts.
+      ...this.spinMetrics.toPrometheus(),
     ];
 
     if (allLines.length === 0) {
@@ -1252,7 +1265,7 @@ export class GameServer {
     const timedOut = drained < total;
     console.log(
       `[GameServer] Drain: ${drained}/${total} table(s) parked at a hand boundary` +
-        (timedOut ? ' — budget expired, stopping anyway' : '')
+        (timedOut ? ' - budget expired, stopping anyway' : '')
     );
     return { drained, total, timedOut };
   }
@@ -1575,7 +1588,7 @@ export class GameServer {
      * every table across every tournament is parked between hands.
      */
     console.log(
-      `[GameServer] ═══ LAST HAND ═══ Announcing final hand on ${breakEngines.length} tournament(s) (MTT / Spin / Heads-Up) — break starts when every table finishes`
+      `[GameServer] ═══ LAST HAND ═══ Announcing final hand on ${breakEngines.length} tournament(s) (MTT / Spin / Heads-Up) - break starts when every table finishes`
     );
 
     /**
@@ -1601,11 +1614,11 @@ export class GameServer {
 
     if (allParked) {
       console.log(
-        `[GameServer] Last hand complete on every table after ${Math.round(lastHandMs / 1000)}s — starting the ${GameServer.BREAK_DURATION_MS / 60000} minute break`
+        `[GameServer] Last hand complete on every table after ${Math.round(lastHandMs / 1000)}s - starting the ${GameServer.BREAK_DURATION_MS / 60000} minute break`
       );
     } else {
       console.warn(
-        `[GameServer] Last hand did not land on every table within ${Math.round(lastHandMs / 1000)}s — starting the break anyway so play resumes near the hour`
+        `[GameServer] Last hand did not land on every table within ${Math.round(lastHandMs / 1000)}s - starting the break anyway so play resumes near the hour`
       );
     }
 
@@ -1679,7 +1692,7 @@ export class GameServer {
     if (!tm.isRunning() || !tm.takesSynchronizedBreaks()) return;
     try {
       console.log(
-        `[GameServer] Tournament started during the break — holding it for the remaining ${Math.round(remaining / 1000)}s`
+        `[GameServer] Tournament started during the break - holding it for the remaining ${Math.round(remaining / 1000)}s`
       );
       await tm.pauseForBreak(remaining);
       await tm.beginBreakCountdown(remaining);
@@ -1714,7 +1727,7 @@ export class GameServer {
     console.log('[GameServer] Cleaning up stale data from previous runs...');
     if (protectedTableId) {
       console.log(
-        `[GameServer] E2E test mode — table ${protectedTableId.slice(0, 8)} is PROTECTED from cleanup.`
+        `[GameServer] E2E test mode - table ${protectedTableId.slice(0, 8)} is PROTECTED from cleanup.`
       );
     }
     try {
@@ -1794,7 +1807,7 @@ export class GameServer {
       const canSweepSeats = horsePage.complete && horseIdList.length > 0;
       if (!canSweepSeats) {
         console.warn(
-          '[GameServer] Stale-seat sweep SKIPPED — could not resolve the horse list ' +
+          '[GameServer] Stale-seat sweep SKIPPED - could not resolve the horse list ' +
             `(complete=${horsePage.complete}, horses=${horseIdList.length}). ` +
             'The rest of the cleanup still runs.'
         );
@@ -1834,7 +1847,7 @@ export class GameServer {
           : [];
         if (!seatPage.complete) {
           console.warn(
-            '[GameServer] Stale-seat sweep SKIPPED — the seat read was incomplete. ' +
+            '[GameServer] Stale-seat sweep SKIPPED - the seat read was incomplete. ' +
               'The rest of the cleanup still runs.'
           );
         }
@@ -1907,7 +1920,7 @@ export class GameServer {
                   if (error) {
                     console.warn(
                       `[GameServer] Startup cash-out failed for ${seat.user_id} at ` +
-                        `${seat.table_id} seat ${seat.seat_number} — seat preserved: ${error.message}`
+                        `${seat.table_id} seat ${seat.seat_number} - seat preserved: ${error.message}`
                     );
                     failedUserIds.add(seat.user_id);
                     seatsFailed++;
@@ -1919,7 +1932,7 @@ export class GameServer {
                 } catch (err: any) {
                   console.warn(
                     `[GameServer] Startup cash-out threw for ${seat.user_id} at ` +
-                      `${seat.table_id} seat ${seat.seat_number} — seat preserved: ${err?.message}`
+                      `${seat.table_id} seat ${seat.seat_number} - seat preserved: ${err?.message}`
                   );
                   failedUserIds.add(seat.user_id);
                   seatsFailed++;
@@ -1937,7 +1950,7 @@ export class GameServer {
           if (seatsFailed > 0) {
             console.warn(
               `[GameServer] ${seatsFailed} seat(s) across ${failedUserIds.size} player(s) could ` +
-                'not be cashed out — their stacks are still on the felt and the next boot retries them'
+                'not be cashed out - their stacks are still on the felt and the next boot retries them'
             );
           }
         } else {
@@ -2063,7 +2076,7 @@ export class GameServer {
        */
       if ((stalePreStart?.length || 0) > 0) {
         console.log(
-          `[GameServer] ${stalePreStart!.length} past-due REGISTERING/ANNOUNCED tournament(s) found — leaving them for the fill-and-start path (never cancelled)`
+          `[GameServer] ${stalePreStart!.length} past-due REGISTERING/ANNOUNCED tournament(s) found - leaving them for the fill-and-start path (never cancelled)`
         );
       }
 
@@ -2170,7 +2183,7 @@ export class GameServer {
 
             await recoverStuckCompletingTournaments('startup-stale-12h-settle', t.id);
             console.log(
-              `[GameServer] Settled genuinely stalled tournament ${t.id.slice(0, 8)} "${t.name}" (>12h, no hands) — paid out and COMPLETED, not cancelled`
+              `[GameServer] Settled genuinely stalled tournament ${t.id.slice(0, 8)} "${t.name}" (>12h, no hands) - paid out and COMPLETED, not cancelled`
             );
           }
           console.log(
@@ -2498,7 +2511,7 @@ export class GameServer {
             `[GameServer] Starting engine for cash table ${row.table_id} ` +
               `(${row.player_count} seated, ${row.human_count ?? 0} human)` +
               (row.player_count < 2
-                ? ' — lone seat, engine exists so the table is not a spinner'
+                ? ' - lone seat, engine exists so the table is not a spinner'
                 : '')
           );
           const engine = new ServerTableEngine(row.table_id);
@@ -2644,7 +2657,7 @@ export class GameServer {
                   id +
                   ' shows no progress for ' +
                   Math.round(engine.msSinceProgress() / 1000) +
-                  's — rebuilding'
+                  's - rebuilding'
               ),
               'GameServer.zombie_engine_rebuilt'
             );
@@ -2736,13 +2749,13 @@ export class GameServer {
 
           // Guard: skip tournaments with no start_time set
           if (!tournament.start_time) {
-            console.warn(`[GameServer] Tournament ${tournament.name} has no start_time — skipping`);
+            console.warn(`[GameServer] Tournament ${tournament.name} has no start_time - skipping`);
             continue;
           }
           const startTime = new Date(tournament.start_time).getTime();
           if (isNaN(startTime)) {
             console.warn(
-              `[GameServer] Tournament ${tournament.name} has invalid start_time — skipping`
+              `[GameServer] Tournament ${tournament.name} has invalid start_time - skipping`
             );
             continue;
           }
@@ -2846,7 +2859,7 @@ export class GameServer {
             const added = await this.tournamentRecurring.topUpWithHorses(tournament.id, target);
             if (added > 0) {
               console.log(
-                `[GameServer] Filled "${tournament.name}" with ${added} player(s) toward ${target} seats — running it instead of cancelling`
+                `[GameServer] Filled "${tournament.name}" with ${added} player(s) toward ${target} seats - running it instead of cancelling`
               );
             }
             // Re-evaluate on the next discovery pass with the refreshed count.
@@ -3001,7 +3014,7 @@ export class GameServer {
             reportError(
               new Error(
                 `[GameServer] ${t.name} (${id.slice(0, 8)}) fully paid ${paid}/${seats} and ` +
-                  `still REGISTERING after ${Math.round((stallNow - fullSince) / 60000)}m — force-starting`
+                  `still REGISTERING after ${Math.round((stallNow - fullSince) / 60000)}m - force-starting`
               ),
               'GameServer.seat_first_fully_paid_never_started'
             );
@@ -3353,6 +3366,36 @@ export class GameServer {
           } catch (attEx) {
             reportError(attEx, 'GameServer.rake_attribution_repair_threw');
           }
+
+          // ── AND THE BACKLOG BEHIND IT (2026-08-31) ──
+          // fn_repair_ retries settlements the settle path recorded as FAILED.
+          // It cannot see the ones that were never measured at all, because
+          // before attributed_users existed there was nothing to record — and
+          // that was 40,055 rows on 2026-08-31, four years of VIP points and
+          // agent commission owed to 585 players and never paid. Draining it
+          // was a one-off by hand; keeping it drained cannot be, or the next
+          // outage rebuilds the same silent backlog. Small limit, on the same
+          // 15-minute clock: this is a floor sweeper, not a migration.
+          try {
+            const { data: bp, error: bpErr } = await supabase.rpc(
+              'fn_backpay_tournament_rake_attribution',
+              { p_limit: 200 }
+            );
+            if (bpErr) {
+              reportError(
+                new Error(`[GameServer] rake attribution back-pay failed: ${bpErr.message}`),
+                'GameServer.rake_attribution_backpay_failed'
+              );
+            } else if (Number(bp?.paid) > 0 || Number(bp?.errors) > 0) {
+              console.log(
+                `[GameServer] Rake attribution back-pay: ${bp.paid} paid ` +
+                  `(${bp.chips} chips), ${bp.retried} retried, ${bp.errors} threw, ` +
+                  `${bp.remaining} unmeasured left, ${bp.needs_a_human} need a human`
+              );
+            }
+          } catch (bpEx) {
+            reportError(bpEx, 'GameServer.rake_attribution_backpay_threw');
+          }
         }
 
         // ── SPIN WINNER BACK-PAY (2026-08-28) ──
@@ -3547,7 +3590,7 @@ export class GameServer {
           if (stillErr || stillPlaying === null || stillPlaying === undefined) continue;
 
           console.warn(
-            `[GameServer] ${t.name} (${t.id.slice(0, 8)}) dealt but never left ${t.status} — ${playedCount} finished, ${stillPlaying} playing; relabelling`
+            `[GameServer] ${t.name} (${t.id.slice(0, 8)}) dealt but never left ${t.status} - ${playedCount} finished, ${stillPlaying} playing; relabelling`
           );
 
           if (stillPlaying > 1) {
@@ -3579,7 +3622,7 @@ export class GameServer {
           if (stillPlaying === 0) {
             reportError(
               new Error(
-                `[GameServer] ${t.name} (${t.id.slice(0, 8)}) is ${t.status} with ${playedCount} finished and NOBODY playing — that is not a decided game, it is a mislabelled one. Not settling; left ${t.status} for review.`
+                `[GameServer] ${t.name} (${t.id.slice(0, 8)}) is ${t.status} with ${playedCount} finished and NOBODY playing - that is not a decided game, it is a mislabelled one. Not settling; left ${t.status} for review.`
               ),
               'GameServer.played_registering_zero_playing'
             );
@@ -3632,7 +3675,7 @@ export class GameServer {
           if (playingErr || playingCount === null || playingCount === undefined) continue;
           if (playingCount > 1) continue; // still a live contest
           console.warn(
-            `[GameServer] RUNNING tournament ${t.name} (${t.id.slice(0, 8)}) is decided (${playingCount} playing) — recovering the winner`
+            `[GameServer] RUNNING tournament ${t.name} (${t.id.slice(0, 8)}) is decided (${playingCount} playing) - recovering the winner`
           );
           const idleTm = this.tournamentEngines.get(t.id);
           if (idleTm) {
@@ -3914,7 +3957,7 @@ export class GameServer {
         if (total > tbl.seats) {
           console.warn(
             `[GameServer] Seat-first game ${tid.slice(0, 8)} has ${total} paid seat(s) split across ` +
-              `duplicate live tables (primary ${tbl.id.slice(0, 8)} holds ${tbl.seats}) — counting all of them`
+              `duplicate live tables (primary ${tbl.id.slice(0, 8)} holds ${tbl.seats}) - counting all of them`
           );
         }
         paidSeatsByTournament.set(tid, total);
@@ -4284,7 +4327,7 @@ export class GameServer {
         if (!claim || claim.length === 0) continue; // somebody else has it
 
         console.warn(
-          `[GameServer] Seat-first game ${id.slice(0, 8)} "${t.name}" is over but never finished (${liveStacks} live stack(s), no hand for >${Math.round(STUCK_NO_HAND_MS / 60000)}m) — settling and paying out`
+          `[GameServer] Seat-first game ${id.slice(0, 8)} "${t.name}" is over but never finished (${liveStacks} live stack(s), no hand for >${Math.round(STUCK_NO_HAND_MS / 60000)}m) - settling and paying out`
         );
         await recoverStuckCompletingTournaments('seat-first-finish-sweep', id);
       } catch (err) {

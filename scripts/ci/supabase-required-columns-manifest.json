@@ -113,11 +113,6 @@
       "id",
       "source"
     ],
-    "avatar_photo_migration_backup": [
-      "user_id",
-      "old_avatar_url",
-      "new_avatar_url"
-    ],
     "avatar_shop_aliases": [
       "alias",
       "avatar_id"
@@ -358,6 +353,9 @@
       "ev_net",
       "ev_net_bb"
     ],
+    "ca_hand_financial_facts": [
+      "hand_id"
+    ],
     "ca_hand_player_idx": [
       "user_id",
       "created_at",
@@ -413,6 +411,12 @@
       "side",
       "backing"
     ],
+    "ca_ledger_day_manifests": [
+      "day",
+      "row_count",
+      "net_amount",
+      "sha256"
+    ],
     "ca_ledger_mutation_log": [
       "source_table",
       "operation",
@@ -422,6 +426,15 @@
     ],
     "ca_money_rpc_registry": [
       "proname"
+    ],
+    "ca_pending_promo_accruals": [
+      "club_id",
+      "user_id",
+      "wagered"
+    ],
+    "ca_pgrst_reload_log": [
+      "ddl_events",
+      "reason"
     ],
     "ca_rake_schedule": [
       "sb",
@@ -647,11 +660,6 @@
       "user_id",
       "stat_date"
     ],
-    "club_member_daily_stats_profit_backup_20260826": [
-      "club_id",
-      "user_id",
-      "stat_date"
-    ],
     "club_member_table_state": [
       "table_id",
       "user_id",
@@ -741,10 +749,6 @@
       "actor_type",
       "action",
       "action_category"
-    ],
-    "commander_blind_structure_backup_20260822": [
-      "tournament_id",
-      "blind_structure"
     ],
     "commander_buyin_transactions": [
       "session_id"
@@ -1608,11 +1612,6 @@
     ],
     "horse_analytics": [
       "metric_type"
-    ],
-    "horse_avatar_swap_backup": [
-      "user_id",
-      "old_avatar_url",
-      "new_avatar_url"
     ],
     "horse_brain_telemetry": [
       "day",
@@ -2752,9 +2751,6 @@
       "author_id",
       "content"
     ],
-    "social_posts_thumbnail_backup_20260815": [
-      "post_id"
-    ],
     "social_reels": [
       "author_id",
       "video_url"
@@ -3796,9 +3792,6 @@
       "description",
       "bluff_frequency"
     ],
-    "vip_backfill_20260812_backup": [
-      "user_id"
-    ],
     "vip_diamond_purchase_requests": [
       "reference_id",
       "user_id",
@@ -3876,11 +3869,6 @@
       "type",
       "category"
     ],
-    "wallet_transactions_phantom_archive": [
-      "id",
-      "reason",
-      "row"
-    ],
     "wallets": [
       "user_id",
       "wallet_type"
@@ -3893,15 +3881,6 @@
     ],
     "youtube_embed_failures": [
       "video_id"
-    ],
-    "zz_reopen2_20260830_backup": [
-      "table_id"
-    ],
-    "zz_reopen3_20260830_backup": [
-      "table_id"
-    ],
-    "zz_reopen_20260830_backup": [
-      "table_id"
     ]
   }
 }

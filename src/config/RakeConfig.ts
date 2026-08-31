@@ -95,7 +95,15 @@ export const RAKE_SCHEDULE: RakeScheduleEntry[] = [
   { sb: 1, bb: 2, rakePercent: 10, rakeCap: 5, bbjFeeBB: 0.25 },
   { sb: 2, bb: 4, rakePercent: 10, rakeCap: 7.5, bbjFeeBB: 0.12 },
   { sb: 2, bb: 5, rakePercent: 10, rakeCap: 7.5, bbjFeeBB: 0.12 },
-  { sb: 5, bb: 5, rakePercent: 10, rakeCap: 7.5, bbjFeeBB: 0.12 },
+  // A 5/5 row sat here until 2026-09-01 (sb 5, bb 5). Nothing could ever
+  // match it: fn_tables_creation_guard refuses a cash table whose big blind
+  // does not exceed its small blind, so no 5/5 table has ever existed and no
+  // hand was ever priced by it. It also sorted out of order, between 2/5 and
+  // 3/6, which is the tell that it was a typo placed by big blind. Dan ruled
+  // it a typo; deleted, not legalised. Do not re-add it - if a 5-small-blind
+  // stake is wanted, 5/10 already exists and 2.5/5 would fit the ladder.
+  // Removed from the DB mirror by
+  // supabase/migrations/20260901050000_the_rake_row_no_table_can_match.sql.
   { sb: 3, bb: 6, rakePercent: 10, rakeCap: 8, bbjFeeBB: 0.12 },
   { sb: 4, bb: 8, rakePercent: 10, rakeCap: 10, bbjFeeBB: 0.12 },
   { sb: 5, bb: 10, rakePercent: 10, rakeCap: 12.5, bbjFeeBB: 0.06 },

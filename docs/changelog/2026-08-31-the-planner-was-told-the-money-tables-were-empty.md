@@ -5,12 +5,12 @@
 Found while asking what was left to optimise, not while looking for it.
 `pg_stat_user_tables`, before:
 
-| table | size | planner thinks | autoanalyze_count |
-|---|---|---|---|
-| `wallet_transactions` | 963 MB | **330** | 0 |
-| `chip_ledger` | 151 MB | **920** | 0 |
-| `tournaments` | 113 MB | **80** | 0 |
-| `ca_seat_stack_exits` | 15 MB | **7** | 0 |
+| table                 | size   | planner thinks | autoanalyze_count |
+| --------------------- | ------ | -------------- | ----------------- |
+| `wallet_transactions` | 963 MB | **330**        | 0                 |
+| `chip_ledger`         | 151 MB | **920**        | 0                 |
+| `tournaments`         | 113 MB | **80**         | 0                 |
+| `ca_seat_stack_exits` | 15 MB  | **7**          | 0                 |
 
 A 963 MB table the planner believes holds 330 rows gets nested loops and
 sequential scans for everything, and its indexes are never chosen - an index is
@@ -77,7 +77,8 @@ every INSERT and UPDATE. But that census was taken while the planner believed
 these tables were nearly empty, so an unknown share of it is an artefact of the
 very problem this migration fixes. The honest sequence is: let the corrected
 statistics run for a few days, re-take the census, and only then drop in batches
+
 - biggest and most write-heavy first, with the `CREATE INDEX` statements kept as
-the rollback. Dropping 1,352 MB of indexes on evidence gathered under a lie
-would be exactly the kind of confident mistake this estate keeps writing
-changelogs about.
+  the rollback. Dropping 1,352 MB of indexes on evidence gathered under a lie
+  would be exactly the kind of confident mistake this estate keeps writing
+  changelogs about.

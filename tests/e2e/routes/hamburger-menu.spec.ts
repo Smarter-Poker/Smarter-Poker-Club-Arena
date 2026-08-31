@@ -39,9 +39,22 @@ async function openHamburgerMenu(page: any) {
   } catch {
     return false;
   }
-  await btn.click({ timeout: 8000 });
-  await page.waitForTimeout(400);
-  return true;
+  const drawer = page.getByRole('dialog', { name: 'Club Arena' });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    // Resolve the opener again on retry. Session/profile hydration can replace
+    // the header immediately after the first click; a successful click on that
+    // retiring node does not prove the newly mounted drawer is open.
+    await page.locator('button[aria-label="Open Menu"]').first().click({ timeout: 8000 });
+    if (
+      await drawer
+        .waitFor({ state: 'visible', timeout: 5000 })
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      return true;
+    }
+  }
+  throw new Error('The hamburger opener was clickable, but its Club Arena drawer never opened.');
 }
 
 /* Open the menu, or account honestly for why we could not.

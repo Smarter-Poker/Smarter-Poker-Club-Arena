@@ -250,6 +250,11 @@ interface PrefetchedGamePage {
   hasMore: boolean;
 }
 
+interface PrefetchedGameRequest {
+  key: string;
+  promise: Promise<PrefetchedGamePage | null>;
+}
+
 interface CachedPlayerLedger {
   players: PlayerBreakdown;
   cursor: PageCursor | null;
@@ -478,6 +483,7 @@ export default function ClubDataPage() {
   const snapshotRef = useRef<Snapshot | null>(null);
   const gameCursorRef = useRef<PageCursor | null>(null);
   const prefetchedGamePageRef = useRef<PrefetchedGamePage | null>(null);
+  const prefetchedGameRequestRef = useRef<PrefetchedGameRequest | null>(null);
   const playersRef = useRef<PlayerBreakdown | null>(null);
   const playerCursorRef = useRef<PageCursor | null>(null);
   const playersMoreRef = useRef(false);
@@ -561,6 +567,7 @@ export default function ClubDataPage() {
     setGameCursor(null);
     gameCursorRef.current = null;
     prefetchedGamePageRef.current = null;
+    prefetchedGameRequestRef.current = null;
     setGamesHasMore(false);
     setGamesLoadingMore(false);
     setGamesPageError(null);
@@ -677,10 +684,10 @@ export default function ClubDataPage() {
               p_game: game,
               p_stakes: stakes,
               p_search: search || null,
-              // Keep the first continuation inside the same bounded snapshot
-              // read. Only the first 100 rows paint; the verified remainder is
-              // held locally until the operator asks for it.
-              p_limit: gameSort === 'recent' ? GAME_PAGE_SIZE * 2 : 1,
+              // Keep first paint inside the production-proven 100-row budget.
+              // The next Recent slice is warmed only after these rows settle,
+              // so a continuation can never make the initial ledger heavier.
+              p_limit: gameSort === 'recent' ? GAME_PAGE_SIZE : 1,
             }),
           'Club data request timed out'
         );
@@ -745,11 +752,14 @@ export default function ClubDataPage() {
         } else {
           const snapshot = data as Snapshot;
           const currentRows = snapshotRef.current?.rows || [];
-          const sourceRows = gameSort === 'recent' ? snapshot.rows : page!.rows;
-          const keepExpandedSourceRows = preserveOnError && currentRows.length > GAME_PAGE_SIZE;
-          const refreshedRows = keepExpandedSourceRows
-            ? sourceRows
-            : sourceRows.slice(0, GAME_PAGE_SIZE);
+          const keepExpandedMetricRows =
+            gameSort !== 'recent' && preserveOnError && currentRows.length > GAME_PAGE_SIZE;
+          const refreshedRows =
+            gameSort === 'recent'
+              ? snapshot.rows
+              : keepExpandedMetricRows
+                ? page!.rows
+                : page!.rows.slice(0, GAME_PAGE_SIZE);
           const rows = preserveExpandedClubDataRows(currentRows, refreshedRows, preserveOnError);
           const nextSnapshot = {
             ...snapshot,
@@ -757,22 +767,23 @@ export default function ClubDataPage() {
             row_count: Number(page?.filtered_count ?? snapshot.row_count),
           };
           const keptExpandedRows = rows.length > refreshedRows.length;
-          const sourceCursor =
-            gameSort === 'recent' ? recentCursor(sourceRows) : page!.next_cursor || null;
-          const sourceHasMore =
-            gameSort === 'recent'
-              ? Number(snapshot.row_count) > sourceRows.length
-              : Boolean(page!.has_more);
-          const prefetchedRows = keepExpandedSourceRows ? [] : sourceRows.slice(GAME_PAGE_SIZE);
+          const prefetchedRows =
+            gameSort !== 'recent' && !keepExpandedMetricRows
+              ? page!.rows.slice(GAME_PAGE_SIZE)
+              : [];
           prefetchedGamePageRef.current = prefetchedRows.length
             ? {
                 key: gameCacheKey,
                 rows: prefetchedRows,
-                nextCursor: sourceCursor,
-                hasMore: sourceHasMore,
+                nextCursor: page!.next_cursor || null,
+                hasMore: Boolean(page!.has_more),
               }
             : null;
-          const nextCursor = keptExpandedRows ? gameCursorRef.current : sourceCursor;
+          const nextCursor = keptExpandedRows
+            ? gameCursorRef.current
+            : gameSort === 'recent'
+              ? recentCursor(rows)
+              : page!.next_cursor || null;
           const nextHasMore = Number(nextSnapshot.row_count) > rows.length;
           setError(null);
           setSnapshot(nextSnapshot);
@@ -787,9 +798,59 @@ export default function ClubDataPage() {
             : nextSnapshot;
           writeClubDataCache<CachedGameLedger>(user.id, clubUuid, gameCacheKey, {
             snapshot: cachedSnapshot,
-            cursor: prefetchedRows.length ? sourceCursor : nextCursor,
-            hasMore: prefetchedRows.length ? sourceHasMore : nextHasMore,
+            cursor: prefetchedRows.length ? page!.next_cursor || null : nextCursor,
+            hasMore: prefetchedRows.length ? Boolean(page!.has_more) : nextHasMore,
           });
+
+          // Recent first paint is intentionally lighter than the ranked sorts.
+          // Warm its continuation only after the authoritative 100-row snapshot
+          // is visible. Load More can await this exact in-flight request, so it
+          // never starts a duplicate query when the operator gets there first.
+          if (gameSort === 'recent' && !keptExpandedRows && nextCursor && nextHasMore) {
+            const prefetchKey = gameCacheKey;
+            const prefetchPromise = coldRead(
+              () =>
+                supabase.rpc('ca_club_game_page', {
+                  p_club_id: clubUuid,
+                  p_start: startDate,
+                  p_end: endDate,
+                  p_game: game,
+                  p_stakes: stakes,
+                  p_search: search || null,
+                  p_sort: 'recent',
+                  p_cursor: nextCursor,
+                  p_limit: GAME_PAGE_SIZE,
+                }),
+              'Recent games prefetch timed out',
+              1
+            )
+              .then(({ data: prefetchedData, error: prefetchError }) => {
+                const prefetchPage = prefetchedData as GamePage | null;
+                if (prefetchError || !prefetchPage || !Array.isArray(prefetchPage.rows))
+                  return null;
+                return {
+                  key: prefetchKey,
+                  rows: prefetchPage.rows,
+                  nextCursor: prefetchPage.next_cursor || null,
+                  hasMore: Boolean(prefetchPage.has_more),
+                } satisfies PrefetchedGamePage;
+              })
+              .catch(() => null);
+            prefetchedGameRequestRef.current = { key: prefetchKey, promise: prefetchPromise };
+            void prefetchPromise.then((prefetchedPage) => {
+              if (stale() || prefetchedGameRequestRef.current?.promise !== prefetchPromise) return;
+              prefetchedGameRequestRef.current = null;
+              if (!prefetchedPage) return;
+              prefetchedGamePageRef.current = prefetchedPage;
+              writeClubDataCache<CachedGameLedger>(user.id, clubUuid, prefetchKey, {
+                snapshot: { ...nextSnapshot, rows: [...rows, ...prefetchedPage.rows] },
+                cursor: prefetchedPage.nextCursor,
+                hasMore: prefetchedPage.hasMore,
+              });
+            });
+          } else {
+            prefetchedGameRequestRef.current = null;
+          }
           return true;
         }
       } catch (err) {
@@ -988,7 +1049,24 @@ export default function ClubDataPage() {
 
   const loadMoreGames = useCallback(async () => {
     if (!clubUuid || gamesMoreRef.current || isHydrating || !user) return;
-    const prefetched = prefetchedGamePageRef.current;
+    let prefetched = prefetchedGamePageRef.current;
+    const pendingPrefetch = prefetchedGameRequestRef.current;
+    if (!prefetched && pendingPrefetch?.key === gameCacheKey) {
+      gamesMoreRef.current = true;
+      setGamesLoadingMore(true);
+      setGamesPageError(null);
+      const myVersion = loadVersion.current;
+      try {
+        prefetched = await pendingPrefetch.promise;
+        if (cancelledRef.current || loadVersion.current !== myVersion) return;
+        if (prefetched) prefetchedGamePageRef.current = prefetched;
+      } finally {
+        gamesMoreRef.current = false;
+        if (!cancelledRef.current && loadVersion.current === myVersion) {
+          setGamesLoadingMore(false);
+        }
+      }
+    }
     const current = snapshotRef.current;
     if (prefetched?.key === gameCacheKey && prefetched.rows.length && current) {
       const known = new Set(current.rows.map((row) => `${row.kind}:${row.id}`));
@@ -2032,7 +2110,7 @@ export default function ClubDataPage() {
                 // The figures come from the invoice; the percentages used to be
                 // literals, so any club on a non-standard deal got a label that
                 // contradicted its own numbers. Derive them or omit them.
-                ['Rake generated', latestInvoice.breakdown.rake_generated],
+                ['Rake Generated', latestInvoice.breakdown.rake_generated],
                 [
                   `Your rakeback${splitPct(latestInvoice.breakdown.rakeback_due, latestInvoice.breakdown.rake_generated)}`,
                   latestInvoice.breakdown.rakeback_due,
@@ -2041,10 +2119,10 @@ export default function ClubDataPage() {
                   `Union fee kept${splitPct(latestInvoice.breakdown.union_fee_kept, latestInvoice.breakdown.rake_generated)}`,
                   latestInvoice.breakdown.union_fee_kept,
                 ],
-                ['Player win/loss', latestInvoice.breakdown.players_won],
-                ['Settled in chips', latestInvoice.breakdown.settled_in_chips],
-                ['ECO adjustment', latestInvoice.breakdown.eco_amount],
-                ['Payments received', latestInvoice.breakdown.presettled],
+                ['Player Win/Loss', latestInvoice.breakdown.players_won],
+                ['Settled In Chips', latestInvoice.breakdown.settled_in_chips],
+                ['ECO Adjustment', latestInvoice.breakdown.eco_amount],
+                ['Payments Received', latestInvoice.breakdown.presettled],
               ].map(([label, value]) => (
                 <div className={styles.invoiceLine} key={String(label)}>
                   <span>{String(label)}</span>

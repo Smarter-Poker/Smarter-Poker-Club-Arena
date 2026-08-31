@@ -144,8 +144,8 @@ export const HAND_COMPLETION = {
    */
   DISCARD_SETTLE_MS: 600,
   /**
-   * When several seats discard inside the same instant — a table of horses,
-   * or an all-in resolve — their tosses are staggered by this much so the
+   * When several seats discard inside the same instant - a table of horses,
+   * or an all-in resolve - their tosses are staggered by this much so the
    * felt reads as several separate decisions rather than one flush. Same idea
    * and the same order of magnitude as SHOWDOWN_REVEAL_STAGGER_MS, and small
    * enough that a full ring's stagger still finishes inside DISCARD_SETTLE_MS.

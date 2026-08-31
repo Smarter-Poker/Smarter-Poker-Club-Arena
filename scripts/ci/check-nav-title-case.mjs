@@ -68,6 +68,56 @@ const REGISTRIES = [
   'src/config/clubIntegrityNavigation.ts',
   'src/components/navigation/QuickActionsBar.tsx',
   'src/components/club/ClubBottomNav.tsx',
+
+  /*
+   * EVERY PAGE, NOT ONLY THE MENU (2026-08-31).
+   *
+   * Dan: "make sure the first letter of every word on every single page and
+   * sub page is capitalized."
+   *
+   * check-title-case reads JSX TEXT only, and its header says expression
+   * values "are cased at their source". Until now the only source anything
+   * checked was the six files above, so `{item.label}` anywhere else in the
+   * app was covered by a promise nothing kept. Measured: 241
+   * label/description/eyebrow literals outside the six sat in sentence case
+   * and reached players - the command palette, the report-a-player reasons,
+   * the achievement, VIP and stats copy, the password-strength checklist.
+   *
+   * The header below warns against widening this to "all string literals",
+   * and that warning is right: an arbitrary `label:` may be an analytics key
+   * or an enum value, not copy. So the test it already applies is applied per
+   * file instead of assumed - every file added here contains offending
+   * literals AND renders them itself through an expression, which is the same
+   * "forward-facing copy by construction" property that makes the six above
+   * safe to case.
+   *
+   * Ten more files hold offending literals but do NOT render them in-file -
+   * RakeConfig, AchievementService, VIPService, PayoutEngine, club.types and
+   * others. Their consumers have to be read one at a time before their copy
+   * can be cased safely, and that is deliberately not done blind here.
+   */
+  'src/components/admin/AdminCommandPalette.tsx',
+  'src/components/gamification/FinancialAchievementBadge.tsx',
+  'src/components/moderation/ReportPlayerModal.tsx',
+  'src/components/navigation/HamburgerMenu.tsx',
+  'src/components/security/PasswordStrength.tsx',
+  'src/components/social/FriendChallengeModal.tsx',
+  'src/components/stats/AdvancedStatsSummary.tsx',
+  'src/components/stats/TrophyRoom.tsx',
+  'src/components/table/RealTimeResultPanel.tsx',
+  'src/components/vip/RewardsMarketplace.tsx',
+  'src/components/vip/VIPBenefitsGrid.tsx',
+  'src/components/wallet/DepositWithdrawModal.tsx',
+  'src/pages/AchievementsPage.tsx',
+  'src/pages/FinancialAdminHub.tsx',
+  'src/pages/LeaderboardPage.tsx',
+  'src/pages/PlayerStatsPage.tsx',
+  'src/pages/SearchPage.tsx',
+  'src/pages/VIPPage.tsx',
+  'src/pages/club/ClubDashboard.tsx',
+  'src/pages/club/ClubDataPage.tsx',
+  'src/pages/tournament/TournamentLobbyPage.tsx',
+  'src/pages/workspaces/ArenaWorkspacePages.tsx',
 ];
 
 const KEYS = new Set(['label', 'description', 'eyebrow']);

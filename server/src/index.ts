@@ -416,7 +416,7 @@ const fatal = (err: unknown, kind: string) => {
   reportError(err, kind);
   if (exiting) return;
   exiting = true;
-  console.error(`[GameServer] FATAL (${kind}) — exiting for supervisor restart`);
+  console.error(`[GameServer] FATAL (${kind}) - exiting for supervisor restart`);
   // REVIEW FIX 2026-08-20: this path never calls gameServer.stop(), so anything
   // still held in the hand_history retry queue dies with the process. That loss
   // is accepted by design (the queue is in-process), but it must not be
@@ -428,7 +428,7 @@ const fatal = (err: unknown, kind: string) => {
       reportError(
         new Error(
           `[GameServer] exiting fatally with ${held} unwritten hand_history row(s) still ` +
-            `queued — those hands will have no history row.`
+            `queued - those hands will have no history row.`
         ),
         'GameServer.hand_history_queue_lost_on_fatal'
       );

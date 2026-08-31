@@ -171,7 +171,7 @@ describe('no target to send anyone to', () => {
 });
 
 describe('nothing pays out twice, and nothing pays out negative', () => {
-  it('a remainder is never negative — a shortfall is the house, not a debt', () => {
+  it('a remainder is never negative - a shortfall is the house, not a debt', () => {
     const p = planSatelliteAwards({
       pool: 100,
       ticketCost: TICKET,
@@ -280,7 +280,7 @@ describe('the guarantee is a floor, not a cap (2026-08-30)', () => {
     expect(p.remainder).toBe(50);
   });
 
-  it('an under-funded guarantee still wins — the floor holds from below', () => {
+  it('an under-funded guarantee still wins - the floor holds from below', () => {
     const p = planSatelliteAwards({
       pool: 540,
       ticketCost: 200,

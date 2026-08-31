@@ -425,7 +425,7 @@ export class RakebackSettlerService {
     // described on the isSettling field). The guard wraps the whole run in try/finally
     // so the flag always clears even on a thrown error.
     if (this.isSettling) {
-      console.warn('[RakebackSettler] settlement already in progress — skipping overlapping run');
+      console.warn('[RakebackSettler] settlement already in progress - skipping overlapping run');
       return;
     }
     this.isSettling = true;
@@ -443,7 +443,7 @@ export class RakebackSettlerService {
           backlogRemains = true;
           console.warn(
             `[RakebackSettler] drain cap reached after ${batch} full batches ` +
-              `(${batch * FETCH_LIMIT} records) — backlog REMAINS, resuming in ` +
+              `(${batch * FETCH_LIMIT} records) - backlog REMAINS, resuming in ` +
               `${CATCH_UP_DELAY_MS / 1000}s instead of waiting the full interval`
           );
           break;
@@ -576,7 +576,7 @@ export class RakebackSettlerService {
         .eq('daemon', SENTINEL_KEY)
         .maybeSingle();
       if (stateErr) {
-        console.warn('[TournamentSentinel] watermark read failed — skipping cycle');
+        console.warn('[TournamentSentinel] watermark read failed - skipping cycle');
         return;
       }
       // Epoch fallback on genuine first run so we don't rescan all history at once;
@@ -834,7 +834,7 @@ export class RakebackSettlerService {
       if (rows.length > 0) {
         reportError(
           new Error(
-            `TOURNAMENT CHIPS: ${rows.length} live tournament(s) do not hold the chips they issued — ` +
+            `TOURNAMENT CHIPS: ${rows.length} live tournament(s) do not hold the chips they issued - ` +
               rows
                 .map(
                   (r) =>
@@ -986,7 +986,7 @@ export class RakebackSettlerService {
         const t = data as { candidates_matched?: number; candidates_scanned?: number } | null;
         reportError(
           new Error(
-            `fn_tournament_payout_sweep (${label}: ${days}d/${limit}) was TRUNCATED — ` +
+            `fn_tournament_payout_sweep (${label}: ${days}d/${limit}) was TRUNCATED - ` +
               `${t?.candidates_matched ?? '?'} completed event(s) in the window, only ` +
               `${t?.candidates_scanned ?? '?'} examined. The rest were not checked and their ` +
               `findings are not in this result. Raise the limit.`
@@ -1217,7 +1217,7 @@ export class RakebackSettlerService {
         .eq('daemon', WEEKLY_KEY)
         .maybeSingle();
       if (stateErr) {
-        console.warn('[RakebackSettler] weekly-close state read failed — will retry next cycle');
+        console.warn('[RakebackSettler] weekly-close state read failed - will retry next cycle');
         return;
       }
       const lastClosedWeek = state?.high_water_mark
@@ -1301,7 +1301,7 @@ export class RakebackSettlerService {
       if (!hwm.ok) {
         // RAKE-AUDIT 2026-07-24: watermark read failed — do NOT fall back to a
         // 7-day rescan (double-credits player_stats). Retry next interval.
-        console.warn('[RakebackSettler] high-water-mark read failed — skipping cycle');
+        console.warn('[RakebackSettler] high-water-mark read failed - skipping cycle');
         return 'halted';
       }
       this.cursor = hwm.value;
@@ -1543,7 +1543,7 @@ export class RakebackSettlerService {
 
     if (buckets.size === 0) {
       console.log(
-        `[RakebackSettler] Processed ${rows.length} rake_records — no eligible player-credits`
+        `[RakebackSettler] Processed ${rows.length} rake_records - no eligible player-credits`
       );
       this.cursor = nextCursor;
       await this.saveHighWaterMark(nextCursor);
@@ -1632,7 +1632,7 @@ export class RakebackSettlerService {
       console.log(
         `[RakebackSettler] Agent-commission credits: ${agentCreditsAttempted - agentCreditsFailed}/${agentCreditsAttempted} OK` +
           (agentCreditsSkippedNoHand > 0
-            ? `, ${agentCreditsSkippedNoHand} skipped (no hand_id — pre-R38 legacy rows)`
+            ? `, ${agentCreditsSkippedNoHand} skipped (no hand_id - pre-R38 legacy rows)`
             : '') +
           ' (RPC silently skips non-agent players)'
       );
@@ -1833,7 +1833,7 @@ export class RakebackSettlerService {
     if (failures > 0) {
       reportError(
         new Error(
-          `[RakebackSettler] ${failures} period recompute(s) failed across ${buckets.size} bucket(s) — ` +
+          `[RakebackSettler] ${failures} period recompute(s) failed across ${buckets.size} bucket(s) - ` +
             `holding the watermark at ${this.cursor?.createdAt ?? 'start'} so the next cycle retries them. ` +
             `Advancing would leave those rake_records permanently unsettled, and rake_generated selects the ` +
             `rakeback tier, so a partial period can pay a whole band low.`

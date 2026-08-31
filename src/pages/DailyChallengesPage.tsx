@@ -616,6 +616,7 @@ export default function DailyChallengesPage() {
   const lastSyncedAtRef = useRef(0);
   const lastResumeRefreshRef = useRef(0);
   const initialLoadSettledRef = useRef(false);
+  const dashboardRevisionRef = useRef(0);
   const realtimeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const realtimeStatusRef = useRef<'connecting' | 'live' | 'degraded'>('connecting');
 
@@ -639,6 +640,7 @@ export default function DailyChallengesPage() {
         setStreak(dashboard.streak);
         setDiamondBalance(dashboard.diamondBalance);
         setRewardVault(dashboard.vault);
+        dashboardRevisionRef.current = dashboard.revision;
         setLoadError(null);
         const receiptTime = Date.parse(dashboard.syncedAt);
         const syncedAt = Number.isFinite(receiptTime) ? receiptTime : Date.now();
@@ -787,6 +789,38 @@ export default function DailyChallengesPage() {
     }, 250);
   }, [userId, loadChallenges]);
 
+  // Realtime is the immediate path, while this tiny cursor read is the durable
+  // repair path for a WebSocket event that was lost after subscription. It
+  // never polls the full dashboard and only schedules a receipt when the
+  // server cursor is newer than the one rendered on screen.
+  useEffect(() => {
+    if (!userId) return undefined;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const reconcileRevision = async () => {
+      try {
+        if (document.visibilityState === 'visible' && initialLoadSettledRef.current) {
+          const revision = await dailyChallengeService.getDashboardRevision(userId);
+          if (!cancelled && revision > dashboardRevisionRef.current) {
+            scheduleRealtimeRefresh();
+          }
+        }
+      } catch {
+        // The Realtime channel remains the primary path. The service records
+        // the cursor error, and the next visible-tab pass retries naturally.
+      } finally {
+        if (!cancelled) timer = setTimeout(reconcileRevision, 15_000);
+      }
+    };
+
+    timer = setTimeout(reconcileRevision, 15_000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [userId, scheduleRealtimeRefresh]);
+
   useEffect(
     () => () => {
       if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
@@ -805,8 +839,9 @@ export default function DailyChallengesPage() {
       realtimeStatusRef.current = 'degraded';
       setRealtimeState('degraded');
       recordDailyMissionOperation({ userId, event: 'realtime_degraded' });
-      // One event-driven reconciliation while the channel factory reconnects;
-      // there is deliberately no UX polling fallback.
+      // Reconcile immediately while the channel factory reconnects. The
+      // visible-tab cursor watchdog below remains the bounded missed-frame
+      // fallback when a joined channel never reports an error.
       scheduleRealtimeRefresh();
     },
     onSubscriptionStatus: (status) => {

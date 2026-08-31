@@ -50,7 +50,7 @@ describe('the reveal is emitted on the draw', () => {
     const emit = CODE.indexOf('spin_reveal_early_emit');
     const settle = CODE.indexOf("supabase.rpc('fn_spin_settle_game'");
     expect(emit, 'the early emit is missing').toBeGreaterThan(-1);
-    expect(settle, 'the settle call moved — re-check this pin').toBeGreaterThan(-1);
+    expect(settle, 'the settle call moved - re-check this pin').toBeGreaterThan(-1);
     expect(emit, 'the wheel must not wait on the settle').toBeLessThan(settle);
   });
 

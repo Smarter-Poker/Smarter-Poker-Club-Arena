@@ -113,7 +113,10 @@ describe('WIRING - the module exists and something calls it', () => {
 
   it('counts a genuine refusal at the refusal itself', () => {
     expect(FLEET).toMatch(/bankrollEvent\('seat_refused_underrolled'\);\s*return false;/);
-    expect(FLEET).toMatch(/bankrollEvent\('seat_refused_share_below_min'\);\s*continue;/);
+    /* 2026-08-31: this refusal now lives in `computeHorseBuyIn`, which reports a
+       refused seat by returning 0 rather than by `continue`-ing a loop it is no
+       longer inside. The counter must still fire AT the refusal. */
+    expect(FLEET).toMatch(/bankrollEvent\('seat_refused_share_below_min'\);\s*return 0;/);
   });
 
   it('counts a cap only when the policy actually cut the buy-in', () => {

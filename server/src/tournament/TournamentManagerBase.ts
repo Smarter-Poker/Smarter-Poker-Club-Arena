@@ -2383,28 +2383,17 @@ export abstract class TournamentManagerBase {
       // every restart (which nearly froze blind escalation across restarts).
       {
         /**
-         * THE RESUMED LEVEL'S OWN LENGTH, NOT LEVEL 1'S (2026-08-31).
+         * THROUGH resolveBlindLevel, NOT AN INDEX (2026-08-31, Phase 2.3).
          *
-         * This read the array directly and fell back to `[0]`, so a tournament
-         * PAST THE END of its structure resumed on LEVEL 1's duration - the
-         * one case `resolveBlindLevel` exists to answer. Measured over 14 days:
-         * 1,499 tournaments ran past their structure with level lengths that
-         * vary across it (a live Mystery Bounty opens on 4-minute levels and
-         * closes on 2-minute ones), and every restart of one of those resumed
-         * its clock on the wrong number.
-         *
-         * It failed in the expensive direction. A structure that SHORTENS
-         * toward the end - which is most of them, because that is what makes a
-         * final table - resumed a 2-minute level as a 4-minute one, so the
-         * blinds stalled for twice as long at exactly the depth where blind
-         * speed decides the tournament. The staleness window below
-         * (`durationMs * 4`) was doubled by the same mistake, so a level that
-         * had genuinely gone stale was accepted as resumable.
-         *
-         * That is the same defect the note above describes - a restart nearly
-         * freezing blind escalation - fixed for the in-structure case and left
-         * behind here. `resolveBlindLevel` derives the level for any index,
-         * identically across restarts, and keeps a Spin on the spin ladder.
+         * This was the one caller that ignored resolveBlindLevel's own closing
+         * instruction ("callers must read levels through THIS function rather
+         * than indexing the array"). Past the end of a persisted structure --
+         * which every deep Spin and every long duel reaches, the ladders are
+         * 10-12 rows -- the index is undefined and this fell back to level 0,
+         * so a restarted late-stage game timed its level off the FIRST row of
+         * the ladder. Engine restarts are frequent (auto-deploy on server/**),
+         * and the resumed clock is what decides when the next escalation
+         * lands.
          */
         const levelData =
           this.resolveBlindLevel(tournament.blind_structure || [], this.currentLevel) ||

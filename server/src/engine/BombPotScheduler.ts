@@ -103,7 +103,24 @@ export function bombPotSettingsFromTable(t: {
  * differs from the table's game. Whitelisted — an unknown value silently
  * playing Hold'em rules on six-card hands is exactly the class of bug the
  * override must never introduce, so anything outside this set means "same as
- * table". Mirrored by the tables_bomb_pot_variant_check DB constraint.
+ * table".
+ *
+ * MIRRORING NOTE (2026-08-31). tables_bomb_pot_variant_check no longer mirrors
+ * this set exactly, and the difference is deliberate. The constraint used to
+ * be a single-column `IN` list that could not see game_variant, so the
+ * database would store a `plo4` bomb on an `flh` table — a row the engine
+ * refuses at deal time but that get_club_home still publishes to the lobby as
+ * "PLO4 bomb pots" on a table that only ever deals FLH. It is a two-column
+ * constraint now and it enforces the fixed-limit rule below.
+ *
+ * While rewriting it, `flh` and `flo8` were admitted to the DB whitelist so
+ * the LEGAL case — a fixed-limit bomb on a fixed-limit table — is not
+ * structurally impossible. They are deliberately NOT admitted here: no
+ * control anywhere offers them, and adding an engine capability nothing can
+ * reach is the same "finished feature with no switch" shape this audit spent
+ * the day removing. A fixed-limit table's bombs deal its own game, which is
+ * the correct behaviour and what happens today. Add them here in the commit
+ * that adds the control, not before.
  */
 const BOMB_VARIANT_WHITELIST = new Set(['nlh', 'plo4', 'plo5', 'plo6']);
 

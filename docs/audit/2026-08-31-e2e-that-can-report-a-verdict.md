@@ -106,22 +106,80 @@ it was written for is worse than no fix. `global-setup.ts` and `support/` stay a
 
 ## What the guard found once it could speak
 
-The first full authenticated sweep measured after this work (run `33395347273`,
-on `main`): **136 passed, 7 skipped, 4 failed** across 147 tests. So the suite
-does run substantially - the earlier picture of "7 skipped, 1 failure" described
-workflow _conclusions_, not specs.
+The first run of the fixed workflow (`33398218482`, this branch, 2026-08-31
+13:43-13:52 UTC) reported, for the first time in this workflow's history, a
+verdict with its working shown:
 
-The 4 failures share one cause, and it is not a spec defect. The log carries
-repeated `PGRST002 - Could not query the database for the schema cache. Retrying.`
-and HTTP 503 against `/rest/v1/*` throughout the run. PostgREST was reloading its
-schema cache while the suite ran. DDL applied to production reloads that cache,
-and this estate applies DDL to production from agent sessions continuously.
+```
+| Executed | Skipped | Failed | Flaky | Spec files |
+|      148 |       4 |      3 |     1 |         23 |
+```
 
-**This is worth someone's attention and is deliberately not fixed here:** the
-post-deploy guard and the migration path contend for the same production, so a
-red run may be reporting another agent's DDL rather than a defect in the code
-just published. That is a real, recurring source of false reds, and it is the
-next thing that will teach people to ignore this guard.
+Every one of the 23 spec files executed at least one test, so
+`e2e-may-skip-entirely.json` ships **empty** - the honesty check passed, on
+evidence, rather than on an allowance. `routes/hamburger-menu.spec.ts` alone
+executed 33 tests against production, which is Phase 1 and Phase 2's work being
+verified on the live site for the first time.
+
+The drift path was exercised too, and correctly. This branch is not an ancestor
+of what production serves, so the workflow refused to swap the specs and said so:
+
+```
+::warning::deployed sha 09bd8409… is NOT an ancestor of 701c729a… -
+specs left at 701c729a… and may not match the bundle.
+```
+
+That is the behaviour that matters: it did not guess.
+
+## The failures are real, and they are not this repo's specs
+
+Two specs failed, both reproducibly, and both on `main`'s run
+(`33395347273`) before any of this work existed:
+
+- `smoke.spec.ts:88 - No console errors on critical pages` - **88 console errors**
+  across three page loads
+- `routes/clubs.spec.ts:9 - should show create club page` - the Create Club
+  dialog never appeared
+
+They share one cause, and it is a live production defect:
+
+```
+[useWalletStore.Load_transactions_failed] {code: PGRST002, message: Could not
+query the database for the schema cache. Retrying.}
+Failed to load resource: the server responded with a status of 503
+```
+
+Measured against the project's own logs rather than inferred from the test:
+
+| Measure                                            | Value          |
+| -------------------------------------------------- | -------------- |
+| 503 responses, 13:00-14:00 UTC                     | **47,202**     |
+| All requests, same hour                            | ~793,000       |
+| **Share of API requests failing**                  | **~6%**        |
+| 503s on `/rest/v1/table_seats` (live seating)      | 8,758          |
+| 503s on `/rest/v1/profiles`                        | 9,130          |
+| 503s on `/rest/v1/rpc/insert_hole_cards` (dealing) | 674            |
+| 503/429 per hour, 02:00-07:00 UTC                  | **4**          |
+| 503/429 per hour, working hours                    | 5,000 - 46,000 |
+
+The 503s are spread across every table rather than concentrated on one, which is
+what a missing PostgREST schema cache looks like rather than a broken endpoint.
+The schema is very large - **966 relations, 2,729 functions, 15,288 columns** -
+and PostgREST's schema-cache load query is logged at 18-31 seconds routinely,
+with one outlier at 125 seconds, against its own `statement_timeout` of 58s. The
+overnight/working-hours split points at DDL frequency: this estate applies DDL to
+production from agent sessions continuously, and every DDL asks PostgREST to
+reload that cache.
+
+**This is deliberately not fixed here.** It is not a Club Arena spec defect, it
+is a platform-level production degradation that needs an owner, and it is
+affecting live gameplay - `table_seats` and `insert_hole_cards` are the seating
+and dealing paths. It is recorded here because the whole point of Phase 6 was to
+have a guard that can say something true about production after a deploy, and the
+first thing it said was this.
+
+The correct outcome for those two specs is therefore to **stay red**. They are
+not flaky and they are not stale; they are reporting a fault.
 
 ## Verification
 

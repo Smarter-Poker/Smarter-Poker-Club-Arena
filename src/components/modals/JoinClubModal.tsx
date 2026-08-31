@@ -126,9 +126,12 @@ export default function JoinClubModal({
       return;
     }
     toast.success(`Welcome to ${club.name}!`);
-    onSuccess?.(club.id);
-    onClose();
-    navigate(`/clubs/${club.slug || club.id}`);
+    if (onSuccess) {
+      onSuccess(club.id);
+    } else {
+      onClose();
+      navigate(`/clubs/${club.slug || club.id}`);
+    }
   };
 
   const handleJoin = async () => {
@@ -139,8 +142,12 @@ export default function JoinClubModal({
       return;
     }
     if (preview.membership_status && preview.membership_status !== 'pending') {
-      onClose();
-      navigate(`/clubs/${preview.slug || preview.id}`);
+      if (onSuccess) {
+        onSuccess(preview.id);
+      } else {
+        onClose();
+        navigate(`/clubs/${preview.slug || preview.id}`);
+      }
       return;
     }
     setIsJoining(true);

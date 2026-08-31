@@ -21,7 +21,9 @@ test.describe('Production Cashier Certification', () => {
     });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
     await expect(page.locator('[data-cashier-surface="trade"]')).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByRole('heading', { name: 'CASHIER', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Every Chip. Accounted For.', exact: true })
+    ).toBeVisible();
 
     const tablist = page.getByRole('tablist', { name: 'Cashier actions' });
     await expect(tablist).toBeVisible();

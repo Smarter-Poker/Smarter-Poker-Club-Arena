@@ -31,6 +31,7 @@ describe('post-deploy E2E concurrency', () => {
       'club-lobby.spec.ts',
       'production-customization-realtime.spec.ts',
       'production-customization-commerce.spec.ts',
+      'production-daily-missions.spec.ts',
     ]) {
       expect(workflow).toMatch(
         new RegExp(`${spec.replaceAll('.', '\\.')}[\\s\\S]{0,120}--workers=1 --retries=0`)

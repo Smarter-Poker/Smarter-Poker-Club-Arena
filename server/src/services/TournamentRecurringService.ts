@@ -2192,8 +2192,7 @@ export class TournamentRecurringService {
         rows
           .filter(
             (r) =>
-              !isSeatFirstFormat(variant, Number(r.max_players) || 0) ||
-              withJoinableTable.has(r.id)
+              !isSeatFirstFormat(variant, Number(r.max_players) || 0) || withJoinableTable.has(r.id)
           )
           .map((r) => String(r.name))
       );

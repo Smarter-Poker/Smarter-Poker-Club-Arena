@@ -26,8 +26,8 @@ the last one starting 2026-08-30 17:30 - the minute this state formed.
    (`paid > 0 && paid < seats`), so it could never fill them.
 3. They therefore never started, and never left REGISTERING.
 4. **And they permanently poisoned the spawner.** `ensureBoardOpen` treated a
-   REGISTERING seat-first instance as covering its config when it *owned a
-   table* - existence, not joinability. All thirty-two configs read as covered,
+   REGISTERING seat-first instance as covering its config when it _owned a
+   table_ - existence, not joinability. All thirty-two configs read as covered,
    `missing.length` was 0 on every tick, and not one new SNG was ever opened.
    An absorbing state: the board could not recover on its own, ever.
 

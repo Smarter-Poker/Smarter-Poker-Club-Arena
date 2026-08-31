@@ -92,11 +92,12 @@ describe('cashier integrity and wallet launcher', () => {
   });
 
   it('loads roster horse flags in the scoped RPC response', () => {
-    expect(page).toMatch(/supabase\s*\.rpc\(\s*'fn_club_cashier_members_v2'/);
+    expect(page).toMatch(/supabase\.rpc\(\s*'fn_club_cashier_members_page_v3'/);
     expect(page).not.toContain(".select('id, is_horse')");
     expect(sql).toContain('coalesce(p.is_horse, false)');
     expect(sql).toContain('order by m.role_rank desc, m.user_id');
-    expect(page).toContain('.range(offset, offset + rosterPageSize - 1)');
+    expect(page).toContain('p_after_role_rank: afterRoleRank');
+    expect(page).toContain('setDownline(mapCashierRoster(dl, user.id))');
   });
 
   it('blocks money submissions while role and roster authority are refreshing', () => {

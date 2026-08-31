@@ -67,7 +67,9 @@ describe('ensureBoardOpen asks for joinability, not existence', () => {
   });
 
   it('filters the set through isJoinableTableRow', () => {
-    expect(RECURRING).toContain('.filter((r) => isJoinableTableRow(r as TournamentTableJoinability))');
+    expect(RECURRING).toContain(
+      '.filter((r) => isJoinableTableRow(r as TournamentTableJoinability))'
+    );
   });
 
   it('coverage is decided from the joinable set', () => {

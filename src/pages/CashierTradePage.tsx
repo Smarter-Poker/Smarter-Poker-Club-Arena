@@ -100,6 +100,30 @@ interface DownlineRow {
   playerNumber: string | null;
 }
 
+interface CashierRosterRpcRow extends Record<string, unknown> {
+  user_id: string;
+  role_rank: number;
+}
+
+const mapCashierRoster = (rows: CashierRosterRpcRow[], viewerId: string): DownlineRow[] =>
+  rows
+    .filter((row) => String(row.user_id) !== viewerId)
+    .map((row) => {
+      const depth = Number(row.depth) || 0;
+      return {
+        userId: String(row.user_id),
+        name: (row.name as string) || 'Player',
+        username: (row.username as string) || '',
+        avatarUrl: (row.avatar_url as string) || null,
+        role: (row.role as string) || 'player',
+        chipBalance: Number(row.chip_balance) || 0,
+        isHorse: row.is_horse === true,
+        depth,
+        isMine: depth === 1,
+        playerNumber: (row.player_number as string) || null,
+      };
+    });
+
 /**
  * One agent wallet send still inside its ten minute window, straight off
  * fn_agent_wallet_reversible. `seconds_left` is computed by the DATABASE, so a
@@ -261,6 +285,8 @@ export default function CashierTradePage() {
   const [mineOnly, setMineOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [rosterLoadingMore, setRosterLoadingMore] = useState(false);
+  const [rosterWarning, setRosterWarning] = useState<string | null>(null);
   // isMounted is an UNMOUNT guard, not a request guard. loadClub fires from
   // three places at once - the effect, every balance bus event, and after each
   // transfer - so without a version the response for the club you just left
@@ -359,6 +385,9 @@ export default function CashierTradePage() {
   >([]);
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ processed: number; total: number } | null>(
+    null
+  );
   // AUDIT 2026-08-21: the "+" on Available Chips used to punt to the classic
   // cashier, then opened the Chip Mint directly.
   // Dan 2026-08-23: it opens the CLUB BANK CASHIER now. The mint lives inside
@@ -603,6 +632,8 @@ export default function CashierTradePage() {
     const stale = () => loadVersion.current !== myVersion;
     setLoading(true);
     setLoadError(null);
+    setRosterWarning(null);
+    setRosterLoadingMore(false);
     try {
       const [meRes, floatRes] = await Promise.all([
         supabase
@@ -652,71 +683,70 @@ export default function CashierTradePage() {
        * nobody for a plain player. It also carries `depth`, so "Assigned To Me"
        * is a direct hop rather than a second query for agent_id.
        */
-      const dl: Array<Record<string, unknown>> = [];
+      const dl: CashierRosterRpcRow[] = [];
       if (role !== 'player') {
-        // PostgREST caps a response at 1,000 rows. Stable server ordering plus
-        // explicit ranges keeps a 1,001+ member club complete without bringing
-        // back the old per-profile request waterfall.
-        const rosterPageSize = 1000;
-        for (let offset = 0; ; offset += rosterPageSize) {
-          const { data: memberRows, error: dlErr } = await supabase
-            .rpc('fn_club_cashier_members_v2', { p_club_id: clubUuid })
-            .range(offset, offset + rosterPageSize - 1);
-          if (dlErr) throw dlErr;
+        // Paint page one instead of holding the whole workspace hostage while
+        // a large club downloads. The cursor is deterministic and avoids the
+        // repeated OFFSET walk; later pages enrich the same authoritative list.
+        const rosterPageSize = 500;
+        let afterRoleRank: number | null = null;
+        let afterUserId: string | null = null;
+        let pageNumber = 0;
+        for (;;) {
+          const { data: memberRows, error: dlErr } = await supabase.rpc(
+            'fn_club_cashier_members_page_v3',
+            {
+              p_club_id: clubUuid,
+              p_after_role_rank: afterRoleRank,
+              p_after_user_id: afterUserId,
+              p_limit: rosterPageSize,
+            }
+          );
+          if (dlErr) {
+            if (pageNumber === 0) throw dlErr;
+            reportError(dlErr, 'CashierTradePage.rosterContinuation');
+            if (isMounted.current && !stale()) {
+              setRosterWarning(
+                `Loaded ${dl.length.toLocaleString()} Members. The Rest Could Not Be Reached.`
+              );
+            }
+            break;
+          }
           if (stale()) return;
-          const page = (memberRows || []) as Array<Record<string, unknown>>;
+          const page = (memberRows || []) as CashierRosterRpcRow[];
           dl.push(...page);
+          pageNumber++;
+
+          if (isMounted.current && !stale()) {
+            setMyRole(role);
+            setRoleResolved(true);
+            setMyBalance(bal);
+            setAgentWallet(float);
+            setDownline(mapCashierRoster(dl, user.id));
+            setLoading(false);
+            setRosterLoadingMore(page.length === rosterPageSize);
+          }
           if (page.length < rosterPageSize) break;
+          const cursor = page[page.length - 1];
+          afterRoleRank = Number(cursor.role_rank);
+          afterUserId = String(cursor.user_id);
         }
       }
-
-      /**
-       * NEVER LIST YOURSELF AS A TARGET (2026-08-25).
-       *
-       * fn_club_cashier_members returns the caller in its own result for a
-       * staff viewer (scope 'all' has no self exclusion - it is every active
-       * member of the club). fn_agent_wallet_send then refuses
-       * `p_to_user_id = auth.uid()` outright, so an owner could tick their own
-       * row, hit Send Out, and collect "You Cannot Send Chips To Yourself" for
-       * a target the grid had offered them. Worse in a batch: one silent
-       * failure row among twenty successes.
-       *
-       * An agent never saw this because the downline walk starts at their
-       * CHILDREN, so their own row was never in the list to begin with.
-       */
-      const rows: DownlineRow[] = dl
-        .filter((r) => String(r.user_id) !== user.id)
-        .map((r) => {
-          const uid = String(r.user_id);
-          const depth = Number(r.depth) || 0;
-          return {
-            userId: uid,
-            name: (r.name as string) || 'Player',
-            username: (r.username as string) || '',
-            avatarUrl: (r.avatar_url as string) || null,
-            role: (r.role as string) || 'player',
-            chipBalance: Number(r.chip_balance) || 0,
-            isHorse: r.is_horse === true,
-            depth,
-            // depth 1 is a DIRECT assignee. Deeper rows belong to an agent
-            // beneath this one, and are still transactable - just not "mine".
-            isMine: depth === 1,
-            playerNumber: (r.player_number as string) || null,
-          };
-        });
 
       if (!isMounted.current || stale()) return;
       setMyRole(role);
       setRoleResolved(true);
       setMyBalance(bal);
       setAgentWallet(float);
-      setDownline(rows);
+      setDownline(mapCashierRoster(dl, user.id));
+      setRosterLoadingMore(false);
     } catch (e) {
       reportError(e, 'CashierTradePage.loadClub');
       // An empty list used to be the only symptom of a failed load, so the
       // owner of a 588-member club was told they had no downline.
       if (isMounted.current && !stale()) {
         setDownline([]);
+        setRosterLoadingMore(false);
         setLoadError('Could not load this club. Check your connection and try again.');
       }
     } finally {
@@ -794,9 +824,12 @@ export default function CashierTradePage() {
     setMyBalance(0);
     setAgentWallet(null);
     setDownline([]);
+    setRosterLoadingMore(false);
+    setRosterWarning(null);
     setSelected(new Set());
     setVisibleCount(25);
     setTransferFailures([]);
+    setBatchProgress(null);
     // The claimable list belongs to the club it was read from. Leaving it up
     // would offer a claim against a send made in a DIFFERENT club, which the
     // server refuses - after the user has already tapped it.
@@ -1392,6 +1425,7 @@ export default function CashierTradePage() {
     if (busyRef.current) return; // a fast double-tap must not send twice
     busyRef.current = true;
     setBusy(true);
+    setBatchProgress({ processed: 0, total: targets.length });
     /**
      * IDEMPOTENCY (2026-08-24). busyRef stops a double-TAP, but it cannot stop
      * a double-CHARGE. The dangerous shape is a claim that COMMITTED on the
@@ -1423,81 +1457,83 @@ export default function CashierTradePage() {
     let ok = 0;
     const failed: Array<{ userId: string; name: string; message: string }> = [];
     try {
-      const transferOne = async (t: DownlineRow) => {
+      // The server processes one bounded chunk in one round trip. Every item
+      // still owns a retry key, and the response names every recipient, so a
+      // partial refusal remains retryable and auditable without six browser
+      // lanes fighting for the same club wallet lock.
+      const batchSize = 25;
+      for (let offset = 0; offset < targets.length; offset += batchSize) {
+        const chunk = targets.slice(offset, offset + batchSize);
         try {
-          if (kind === 'send') {
-            /**
-             * THE AGENT WALLET IS THE SOURCE (Dan 2026-08-25).
-             *
-             * fn_agent_wallet_send debits agents.agent_wallet_balance for
-             * auth.uid(), credits the recipient, writes ONE chip_transactions
-             * row and stamps reversible_until ten minutes out. It refuses a
-             * recipient outside the caller's downline BEFORE any money moves,
-             * on the same fn_club_cashier_can_transact the member list is built
-             * from.
-             *
-             * `p_destination` follows the RECIPIENT's role: chips to a player
-             * land in the player wallet they buy in with; chips to a sub agent
-             * land in the float they distribute from, which is the account
-             * their own Send Out spends.
-             */
-            const { data, error } = await supabase.rpc('fn_agent_wallet_send', {
-              p_club_id: clubUuid,
-              p_to_user_id: t.userId,
-              p_amount: value,
-              p_destination: canHoldAgentWallet(t.role) ? 'agent_wallet' : 'player_wallet',
-              p_reason: `Cashier Send Out To ${t.name}`,
-              p_op_id: opIdFor(t.userId),
-            });
-            if (error) throw error;
-            const res = (Array.isArray(data) ? data[0] : data) as {
-              success?: boolean;
-              error?: string;
-            } | null;
-            if (!res?.success) throw new Error(res?.error || 'refused');
-          } else {
-            // Tournament ticket: the value is ESCROWED off the issuer now and
-            // held on the ticket until the player redeems it. This one still
-            // spends club_members.chip_balance - a ticket is not agent float.
-            const { data, error } = await supabase.rpc('fn_issue_tournament_ticket', {
-              p_club_id: clubUuid,
-              p_holder_id: t.userId,
-              p_value: value,
-              p_note: `Cashier ticket for ${t.name}`,
-              // A replay must not mint a second ticket, not just avoid a second
-              // debit - the ticket row is inside the same guarded block, so it
-              // rolls back with the money.
-              p_idempotency_key: `ticket:${clubUuid}:${submissionId}:${t.userId}:${value}`,
-            });
-            if (error) throw error;
-            const res = data as { success?: boolean; error?: string } | null;
-            if (res && res.success === false) throw new Error(res.error || 'refused');
+          const items = chunk.map((target) => ({
+            user_id: target.userId,
+            amount: value,
+            ...(kind === 'send'
+              ? {
+                  destination: canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet',
+                  reason: `Cashier Send Out To ${target.name}`,
+                  op_id: opIdFor(target.userId),
+                }
+              : {
+                  note: `Cashier ticket for ${target.name}`,
+                  idempotency_key: `ticket:${clubUuid}:${submissionId}:${target.userId}:${value}`,
+                }),
+          }));
+          const { data, error } = await supabase.rpc('fn_cashier_batch_transfer', {
+            p_club_id: clubUuid,
+            p_kind: kind,
+            p_items: items,
+            p_batch_id: submissionId,
+          });
+          if (error) throw error;
+          const envelope = data as {
+            success?: boolean;
+            error?: string;
+            results?: Array<{ user_id?: string; success?: boolean; error?: string }>;
+          } | null;
+          if (!envelope?.success || !Array.isArray(envelope.results)) {
+            throw new Error(envelope?.error || 'Batch Was Refused');
           }
-          ok++;
+
+          const byUser = new Map(envelope.results.map((result) => [result.user_id, result]));
+          for (const target of chunk) {
+            const result = byUser.get(target.userId);
+            if (result?.success) ok++;
+            else {
+              failed.push({
+                userId: target.userId,
+                name: target.name,
+                message: result?.error || 'Transfer Failed',
+              });
+            }
+          }
         } catch (e) {
-          reportError(e, 'CashierTradePage.' + kind);
-          // Collected, not just toasted. showToast drops the network/timeout/
-          // rateLimit/server categories entirely, and rewrites a funds refusal
-          // to a generic sentence that loses the player's NAME - so on a
-          // dropped connection every per-target toast vanished and the summary
-          // below had no branch for "nothing succeeded at all".
-          // The user was left not knowing whether ten transfers had happened.
-          // Keyed on userId, not name: `name` falls back to 'Player' for anyone
-          // with no display name, so two such recipients failing in one batch
-          // produced duplicate React keys and one row was dropped - from the
-          // list telling you which transfers did not happen.
-          failed.push({
-            userId: t.userId,
-            name: t.name,
-            message: (e as Error)?.message || 'Transfer Failed',
+          for (const target of chunk) {
+            failed.push({
+              userId: target.userId,
+              name: target.name,
+              message: (e as Error)?.message || 'Transfer Failed',
+            });
+          }
+        }
+        if (isMounted.current) {
+          setBatchProgress({
+            processed: Math.min(offset + chunk.length, targets.length),
+            total: targets.length,
           });
         }
-      };
-      // Bound concurrency: a large roster no longer waits for one complete
-      // browser round-trip per recipient, while six lanes avoid flooding the
-      // database connection pool. Wallet row locks still preserve ordering.
-      for (let offset = 0; offset < targets.length; offset += 6) {
-        await Promise.all(targets.slice(offset, offset + 6).map(transferOne));
+      }
+      if (failed.length > 0) {
+        reportError(
+          new Error(
+            `${kind} batch ${submissionId}: ${failed.length}/${targets.length} failed; ` +
+              failed
+                .slice(0, 5)
+                .map((entry) => `${entry.userId}:${entry.message}`)
+                .join(', ')
+          ),
+          `CashierTradePage.${kind}Batch`
+        );
       }
     } finally {
       // A throw between here and the end used to leave `busy` true forever,
@@ -1514,6 +1550,7 @@ export default function CashierTradePage() {
       }
       if (isMounted.current) {
         setBusy(false);
+        setBatchProgress(null);
         setTransferFailures(failed);
         // Only close on a clean batch. Closing on failure wiped the amount and
         // the selection, which is the worst possible moment to lose them.
@@ -1742,13 +1779,15 @@ export default function CashierTradePage() {
   const cashierSyncMessage =
     loading || isHydrating
       ? 'Synchronizing cashier balances'
-      : clubResolveFailed
-        ? 'Club could not be resolved'
-        : loadError
-          ? 'Cashier sync requires attention'
-          : agentWallet === null
-            ? 'Agent wallet could not be verified'
-            : 'Balances synchronized';
+      : rosterLoadingMore
+        ? `Cashier ready; loading the rest of the roster after ${downline.length.toLocaleString()} members`
+        : clubResolveFailed
+          ? 'Club could not be resolved'
+          : loadError
+            ? 'Cashier sync requires attention'
+            : agentWallet === null
+              ? 'Agent wallet could not be verified'
+              : 'Balances synchronized';
   const currentClubLabel = membershipsLoading
     ? 'Loading Club'
     : currentClub?.name || 'Club Cashier';
@@ -2065,6 +2104,19 @@ export default function CashierTradePage() {
                 the whole not-found / empty-club branch below while auth was
                 still settling and `user` was null. */}
             {(loading || isHydrating) && <div className={styles.empty}>Loading Members...</div>}
+            {!loading && rosterLoadingMore && (
+              <div className={styles.empty} role="status" aria-live="polite">
+                {downline.length.toLocaleString()} Members Ready. Loading The Rest...
+              </div>
+            )}
+            {!loading && rosterWarning && (
+              <div className={styles.empty} role="alert">
+                {rosterWarning}{' '}
+                <button type="button" className={styles.retryBtn} onClick={() => void loadClub()}>
+                  Retry Full Roster
+                </button>
+              </div>
+            )}
             {!loading && !isHydrating && loadError && (
               <div className={styles.empty} role="alert">
                 {loadError}{' '}
@@ -2683,6 +2735,7 @@ export default function CashierTradePage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="cashier-amount-title"
+            aria-busy={busy}
             tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
           >
@@ -2762,6 +2815,12 @@ export default function CashierTradePage() {
                 ))}
               </div>
             )}
+            {busy && batchProgress && (
+              <div className={styles.modalHint} role="status" aria-live="polite">
+                Processing {batchProgress.processed.toLocaleString()} Of{' '}
+                {batchProgress.total.toLocaleString()} Recipients
+              </div>
+            )}
             <div className={styles.modalActions}>
               <button
                 disabled={busy}
@@ -2777,7 +2836,9 @@ export default function CashierTradePage() {
                 disabled={busy || picked.length === 0 || loading || !roleResolved || !!loadError}
                 onClick={() => runTransfers(amountModal)}
               >
-                {busy ? 'Working...' : 'Confirm'}
+                {busy && batchProgress
+                  ? `Processing ${batchProgress.processed}/${batchProgress.total}`
+                  : 'Confirm'}
               </button>
             </div>
           </div>

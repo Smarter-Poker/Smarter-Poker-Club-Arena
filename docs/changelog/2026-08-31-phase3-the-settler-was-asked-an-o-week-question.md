@@ -113,6 +113,37 @@ run against the pre-fix source it reports exactly one offender
 (`HorseFleet.bankrolls: orders user_id cursors id`); against the fixed source,
 none. This was the only mismatched call site.
 
+## Verification pass: two sweeps that could never finish, and one was mine
+
+Checking phase 1-3 end to end before phase 4 turned up two more, both the same
+shape — PostgREST cancels at ~8s unless a function raises its own ceiling, and
+neither of these did.
+
+**Mine, shipped broken hours earlier.** `fn_requeue_unbanked_cash_rake` went
+into the reconciler cycle in phase 2. Its very first production run logged
+`[FeeReconciler.requeue_unbanked_query_failed] 57014 canceling statement due to
+statement timeout`. Measured: the 48-hour scan takes **12.9s** — the index hands
+back 380,864 rows for the window, 325,039 are thrown away as tournament or
+zero-rake hands, and 55,825 anti-join probes remain to find a handful. **The
+self-healing sweep had never once healed anything.** Fixed with a 120s ceiling
+and a window that matches the cadence: 6 hours, **3.3s**, and at a 5-minute
+cycle that is ~72 chances to catch an orphaned hand instead of one. 48h stays
+available by argument for an outage catch-up.
+
+**Pre-existing, and its own comment called it.** The note above
+`runTournamentPayoutSweep` reads _"ten seconds is close enough to that edge to
+be a coin flip"_. It had been losing that flip on **both** passes, not just the
+deep one — measured, the 2-day "narrow" pass takes **15.6s** and the 30-day deep
+pass about two minutes. The sweep that exists to catch under-paid tournaments
+had been completely dead, which is why the ~169 stale events it was widened to
+reach were never reached.
+
+With a 600s ceiling it completes: a 7-day dry run scans **32,531 events in
+53.6s, `truncated: false`**, and finds six events with findings — every one an
+**overpayment**, which the function reports and deliberately never claws back,
+with `total_top_up: 0`. **Nobody is owed money.** Two of the six are the already
+acknowledged ones; the rest are 0.01 rounding and one 3.50.
+
 ## What was deliberately NOT changed
 
 - The watermark-holding behaviour on failure. It is the reason no player was

@@ -1164,6 +1164,10 @@
       "reward_chips",
       "label"
     ],
+    "daily_mission_operations": [
+      "user_id",
+      "event"
+    ],
     "daily_spins": [
       "user_id",
       "reward_type"

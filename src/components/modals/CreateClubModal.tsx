@@ -9,9 +9,10 @@
  * - CREATE button
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { ClubsService } from '../../services/ClubsService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
@@ -20,19 +21,17 @@ import styles from './CreateClubModal.module.css';
 import { reportError } from '../../utils/errorReporter';
 
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
+import { optimizeClubLogo } from '../../utils/clubLogoImage';
+import { useDialogEscape } from '../../hooks/useDialogEscape';
+import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
+
+const CREATE_DRAFT_KEY = 'club-arena:create-draft:v1';
+
 interface CreateClubModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: (clubId: string) => void;
 }
-
-// High-fidelity modal frame
-// PERF 2026-08-23: both of this modal's frames ship as PNG *and* WebP, and
-// the code asked for the PNG - so every open pulled the larger twin while
-// the smaller one sat unused beside it in the bundle. 260KB -> 158KB and
-// 272KB -> 155KB at source. WebP is referenced directly elsewhere in this
-// app (images/mystery-chest.webp), so no fallback shim is warranted.
-const MODAL_FRAME_URL = `${MEDIA_BASE}images/modals/create-club-modal-frame.webp`;
 
 // All new clubs start at Level 1 — server-side trigger will recompute
 // after the owner membership row is inserted into club_members.
@@ -43,16 +42,64 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   const toast = useToast();
 
   const [clubName, setClubName] = useState('');
+  const [description, setDescription] = useState('');
+  const [isPublic, setIsPublic] = useState(true);
+  const [requiresApproval, setRequiresApproval] = useState(false);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [hasAgreed, setHasAgreed] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [showLogoGenerator, setShowLogoGenerator] = useState(false);
   const [visibleFormElements, setVisibleFormElements] = useState<boolean[]>([]);
+  const [nameStatus, setNameStatus] = useState<
+    'idle' | 'checking' | 'available' | 'taken' | 'error'
+  >('idle');
+  const [allowance, setAllowance] = useState<{
+    canCreate: boolean;
+    membershipCount: number;
+    maxClubs: number | null;
+    remaining: number | null;
+  } | null>(null);
+  const [allowanceError, setAllowanceError] = useState(false);
+  const [allowanceRetry, setAllowanceRetry] = useState(0);
+  const [isOptimizingLogo, setIsOptimizingLogo] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const trapRef = useFocusTrap(isOpen && !showLogoGenerator);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const creationRequestIdRef = useRef<string>(crypto.randomUUID());
+  const eligibilitySequenceRef = useRef(0);
 
   useEffect(() => {
     if (!isOpen) return;
+    setAllowance(null);
+    setAllowanceError(false);
+    setDraftRestored(false);
+    ClubEntryTrustService.track('create', 'opened', { outcome: 'viewed' });
+    try {
+      const saved = window.localStorage.getItem(CREATE_DRAFT_KEY);
+      if (saved) {
+        const draft = JSON.parse(saved) as {
+          name?: string;
+          description?: string;
+          isPublic?: boolean;
+          requiresApproval?: boolean;
+          requestId?: string;
+        };
+        setClubName(draft.name || '');
+        setDescription(draft.description || '');
+        setIsPublic(draft.isPublic ?? true);
+        setRequiresApproval(draft.requiresApproval ?? false);
+        if (/^[0-9a-f-]{36}$/i.test(draft.requestId || '')) {
+          creationRequestIdRef.current = draft.requestId!;
+        }
+        setDraftRestored(Boolean(draft.name || draft.description));
+        if (draft.name || draft.description) {
+          ClubEntryTrustService.track('create', 'draft_restored', { outcome: 'succeeded' });
+        }
+      }
+    } catch (error) {
+      reportError(error, 'CreateClubModal.RestoreDraft');
+    }
     setVisibleFormElements([]);
     const timers = [0, 1, 2, 3, 4].map((i) =>
       setTimeout(() => {
@@ -62,25 +109,72 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     return () => timers.forEach((t) => clearTimeout(t));
   }, [isOpen]);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const draft = {
+      name: clubName,
+      description,
+      isPublic,
+      requiresApproval,
+      requestId: creationRequestIdRef.current,
+    };
+    try {
+      if (clubName || description)
+        window.localStorage.setItem(CREATE_DRAFT_KEY, JSON.stringify(draft));
+      else window.localStorage.removeItem(CREATE_DRAFT_KEY);
+    } catch (error) {
+      reportError(error, 'CreateClubModal.SaveDraft');
+    }
+  }, [clubName, description, isPublic, requiresApproval, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || clubName.trim().length < 3) {
+      setNameStatus('idle');
+      return;
+    }
+    setNameStatus('checking');
+    const timer = window.setTimeout(async () => {
+      try {
+        const available = await ClubsService.checkNameAvailability(clubName);
+        if (isMounted.current) setNameStatus(available ? 'available' : 'taken');
+      } catch {
+        if (isMounted.current) setNameStatus('error');
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [clubName, isOpen, isMounted]);
+
+  useEffect(() => {
+    if (!isOpen || !user?.id) return;
+    const sequence = ++eligibilitySequenceRef.current;
+    setAllowance(null);
+    setAllowanceError(false);
+    ClubsService.getCreationEligibility()
+      .then((result) => {
+        if (isMounted.current && sequence === eligibilitySequenceRef.current) setAllowance(result);
+      })
+      .catch((error) => {
+        reportError(error, 'CreateClubModal.CreationEligibility');
+        if (isMounted.current && sequence === eligibilitySequenceRef.current) {
+          setAllowance(null);
+          setAllowanceError(true);
+        }
+      });
+  }, [allowanceRetry, isOpen, user?.id, isMounted]);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please select an image file');
-      return;
+    setIsOptimizingLogo(true);
+    try {
+      setLogoPreview(await optimizeClubLogo(file));
+      toast.success('Logo optimized for Club Arena');
+    } catch (error) {
+      toast.error(safeErrorMessage(error, 'Could not process that image'));
+    } finally {
+      setIsOptimizingLogo(false);
+      e.target.value = '';
     }
-
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image must be less than 5MB');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setLogoPreview(e.target?.result as string);
-    };
-    reader.readAsDataURL(file);
   };
 
   const handleLogoGenerated = (logoDataUrl: string) => {
@@ -116,23 +210,48 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     }
 
     if (isCreating) return;
+    if (nameStatus !== 'available') {
+      toast.error(
+        nameStatus === 'taken'
+          ? 'That club name is already taken'
+          : 'Wait for the name availability check'
+      );
+      return;
+    }
+    if (!allowance?.canCreate) {
+      toast.error('Your four-club allowance is full. Leave a club before creating another.');
+      return;
+    }
     setIsCreating(true);
+    const startedAt = performance.now();
+    ClubEntryTrustService.track('create', 'submitted', { outcome: 'started' });
 
     try {
       const clubData = await ClubsService.create({
+        request_id: creationRequestIdRef.current,
         name: clubName.trim(),
-        is_public: true,
-        requires_approval: false,
+        description: description.trim(),
+        is_public: isPublic,
+        requires_approval: requiresApproval,
         logoPreview: logoPreview,
       });
 
       if (!isMounted.current) return;
 
+      haptic.success();
       toast.success(`Club "${clubName}" created successfully!`);
 
       setClubName('');
+      setDescription('');
       setLogoPreview(null);
       setHasAgreed(false);
+      setDraftRestored(false);
+      window.localStorage.removeItem(CREATE_DRAFT_KEY);
+      creationRequestIdRef.current = crypto.randomUUID();
+      ClubEntryTrustService.track('create', 'completed', {
+        outcome: 'succeeded',
+        durationMs: Math.round(performance.now() - startedAt),
+      });
 
       onClose();
       onSuccess?.(clubData.id);
@@ -141,6 +260,11 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       // the owner auto-join inside joinClub(). This modal's second emit made
       // every subscriber refetch twice per created club.
     } catch (err: any) {
+      ClubEntryTrustService.track('create', 'completed', {
+        outcome: 'failed',
+        durationMs: Math.round(performance.now() - startedAt),
+        metadata: { error_code: err?.code || 'unknown' },
+      });
       reportError(err, 'CreateClubModal.Failed_to_create_club');
       if (isMounted.current) toast.error(err.message || 'Failed to create club');
     } finally {
@@ -148,154 +272,226 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     }
   };
 
+  const hasDraft = Boolean(clubName.trim() || description.trim() || logoPreview);
+  const requestClose = useCallback(() => {
+    if (isCreating) return;
+    if (
+      hasDraft &&
+      !window.confirm('Close Create Club? Your text settings will remain saved as a draft.')
+    )
+      return;
+    ClubEntryTrustService.track('create', 'closed', { outcome: 'cancelled' });
+    onClose();
+  }, [hasDraft, isCreating, onClose]);
+  useDialogEscape(isOpen, requestClose, showLogoGenerator);
+
   if (!isOpen) return null;
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
+    <div className={styles.overlay} onClick={requestClose}>
       <div
+        ref={trapRef}
         className={styles.modalContainer}
         role="dialog"
         aria-modal="true"
-        aria-label="Create Club"
+        aria-labelledby="create-club-title"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* High-fidelity frame background - hidden when logo generator is open */}
-        <img
-          loading="lazy"
-          decoding="async"
-          src={MODAL_FRAME_URL}
-          alt=""
-          className={styles.frameImage}
-          draggable={false}
-          style={{ display: showLogoGenerator ? 'none' : 'block' }}
-        />
-
-        {/* Close button - positioned over the X in frame */}
-        <button
-          className={styles.closeButton}
-          onClick={() => {
-            haptic.light();
-            onClose();
-          }}
-          aria-label="Close"
-        />
-
-        {/* Club Name Input - positioned over the input field in frame */}
-        <input
-          type="text"
-          className={styles.clubNameInput}
-          placeholder=""
-          value={clubName}
-          onChange={(e) => setClubName(e.target.value)}
-          maxLength={30}
-          autoComplete="off"
-          style={{
-            opacity: visibleFormElements[0] ? 1 : 0,
-            transition: 'opacity 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          }}
-        />
-
-        {/* Upload Logo button zone */}
-        <button
-          className={styles.uploadLogoBtn}
-          onClick={() => {
-            haptic.medium();
-            fileInputRef.current?.click();
-          }}
-          aria-label="Upload Logo"
-          style={{
-            opacity: visibleFormElements[1] ? 1 : 0,
-            transform: visibleFormElements[1] ? 'scale(1)' : 'scale(0.9)',
-            transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          }}
-        >
-          {logoPreview && (
-            <img
-              loading="lazy"
-              decoding="async"
-              src={logoPreview}
-              alt="Logo preview"
-              className={styles.logoThumb}
-            />
-          )}
-        </button>
-
-        {/* Create Logo button zone */}
-        <button
-          className={styles.createLogoBtn}
-          onClick={() => {
-            haptic.medium();
-            setShowLogoGenerator(true);
-          }}
-          aria-label="Create Logo"
-          style={{
-            opacity: visibleFormElements[2] ? 1 : 0,
-            transform: visibleFormElements[2] ? 'scale(1)' : 'scale(0.9)',
-            transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          }}
-        >
-          {logoPreview && (
-            <img
-              loading="lazy"
-              decoding="async"
-              src={logoPreview}
-              alt="Logo preview"
-              className={styles.logoThumb}
-            />
-          )}
-        </button>
-
-        {/* Hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className={styles.hiddenInput}
-          onChange={handleFileSelect}
-        />
-
-        {/* Terms checkbox - positioned over the checkbox area */}
-        <label
-          className={styles.termsLabel}
-          style={{
-            opacity: visibleFormElements[3] ? 1 : 0,
-            transform: visibleFormElements[3] ? 'scale(1)' : 'scale(0.9)',
-            transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={hasAgreed}
-            onChange={(e) => {
-              haptic.selection();
-              setHasAgreed(e.target.checked);
-            }}
-            className={styles.termsCheckbox}
+        <div className={styles.artPanel} aria-hidden="true">
+          <img
+            src="/hub/club-arena/images/club-arena/vault-iris-emblem-v1-320.webp"
+            alt=""
+            width="320"
+            height="296"
           />
-          <span className={styles.checkboxVisual} />
-        </label>
+          <span>OWNER CONSOLE</span>
+        </div>
+        <div className={styles.contentPanel}>
+          <button
+            className={styles.closeButton}
+            onClick={() => {
+              haptic.light();
+              requestClose();
+            }}
+            aria-label="Close"
+          />
 
-        {/* CREATE button zone */}
-        <button
-          className={styles.createButton}
-          onClick={() => {
-            haptic.success();
-            handleCreate();
-          }}
-          disabled={isCreating || !hasAgreed || !clubName.trim() || !logoPreview}
-          aria-label="Create Club"
-          style={{
-            opacity: visibleFormElements[4] ? 1 : 0,
-            transform: visibleFormElements[4] ? 'scale(1)' : 'scale(0.9)',
-            transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          }}
-        >
-          {isCreating && <span className={styles.spinner}>⟳</span>}
-        </button>
+          <span className={styles.eyebrow}>Club Arena / New Organization</span>
+          <h2 id="create-club-title" className={styles.title}>
+            Create A Club
+          </h2>
+          <p className={styles.subtitle}>
+            Name your room, establish its identity, and open the doors.
+          </p>
+
+          <div className={styles.creationMeta} aria-live="polite">
+            {allowance ? (
+              <span>{`${allowance.remaining ?? 'Unlimited'} club slots remaining`}</span>
+            ) : allowanceError ? (
+              <button
+                type="button"
+                className={styles.metaRetryButton}
+                onClick={() => setAllowanceRetry((attempt) => attempt + 1)}
+              >
+                Allowance Check Failed · Retry
+              </button>
+            ) : (
+              <span>Verifying club allowance…</span>
+            )}
+            {draftRestored && <span>Draft restored</span>}
+          </div>
+
+          <label className={styles.fieldLabel} htmlFor="new-club-name">
+            Club Name
+          </label>
+          <input
+            id="new-club-name"
+            type="text"
+            className={styles.clubNameInput}
+            placeholder="e.g. River Room"
+            value={clubName}
+            onChange={(e) => setClubName(e.target.value)}
+            maxLength={30}
+            autoComplete="off"
+            style={{
+              opacity: visibleFormElements[0] ? 1 : 0,
+              transition: 'opacity 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+            }}
+          />
+          <div className={`${styles.nameStatus} ${styles[nameStatus]}`} aria-live="polite">
+            {nameStatus === 'checking' && 'Checking availability…'}
+            {nameStatus === 'available' && 'Name available'}
+            {nameStatus === 'taken' && 'Name already in use'}
+            {nameStatus === 'error' && 'Availability check unavailable'}
+          </div>
+
+          <label className={styles.fieldLabel} htmlFor="new-club-description">
+            Description <span>Optional</span>
+          </label>
+          <textarea
+            id="new-club-description"
+            className={styles.descriptionInput}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            maxLength={180}
+            placeholder="What kind of room are you building?"
+          />
+
+          <span className={styles.fieldLabel}>Club Identity</span>
+          <div className={styles.logoWorkspace}>
+            <div className={styles.logoPreview}>
+              {logoPreview ? (
+                <img src={logoPreview} alt="Selected club logo" className={styles.logoThumb} />
+              ) : (
+                <span aria-hidden="true">♣</span>
+              )}
+            </div>
+            <div className={styles.logoActions}>
+              <button
+                className={styles.uploadLogoBtn}
+                onClick={() => {
+                  haptic.medium();
+                  fileInputRef.current?.click();
+                }}
+              >
+                <span>{isOptimizingLogo ? 'Optimizing…' : 'Upload Image'}</span>
+                <small>PNG, JPG or WEBP · 5MB max</small>
+              </button>
+              <button
+                className={styles.createLogoBtn}
+                onClick={() => {
+                  haptic.medium();
+                  setShowLogoGenerator(true);
+                }}
+              >
+                <span>Generate With AI</span>
+                <small>Describe a custom club mark</small>
+              </button>
+            </div>
+          </div>
+
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className={styles.hiddenInput}
+            onChange={handleFileSelect}
+          />
+
+          <fieldset className={styles.accessSettings}>
+            <legend>Launch Settings</legend>
+            <label>
+              <input
+                type="checkbox"
+                checked={isPublic}
+                onChange={(event) => setIsPublic(event.target.checked)}
+              />{' '}
+              Discoverable in Club Arena
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={requiresApproval}
+                onChange={(event) => setRequiresApproval(event.target.checked)}
+              />{' '}
+              Review join requests
+            </label>
+          </fieldset>
+
+          <label
+            className={styles.termsLabel}
+            style={{
+              opacity: visibleFormElements[3] ? 1 : 0,
+              transform: visibleFormElements[3] ? 'scale(1)' : 'scale(0.9)',
+              transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={hasAgreed}
+              onChange={(e) => {
+                haptic.selection();
+                setHasAgreed(e.target.checked);
+              }}
+              className={styles.termsCheckbox}
+            />
+            <span className={styles.checkboxVisual} aria-hidden="true" />
+            <span>I confirm I can manage this club and accept the Club Arena terms.</span>
+          </label>
+
+          {/* CREATE button zone */}
+          <button
+            className={styles.createButton}
+            onClick={() => {
+              haptic.medium();
+              handleCreate();
+            }}
+            disabled={
+              isCreating ||
+              isOptimizingLogo ||
+              !hasAgreed ||
+              !clubName.trim() ||
+              !logoPreview ||
+              nameStatus !== 'available' ||
+              allowance?.canCreate !== true
+            }
+            aria-label="Create Club"
+            style={{
+              opacity: visibleFormElements[4] ? 1 : 0,
+              transform: visibleFormElements[4] ? 'scale(1)' : 'scale(0.9)',
+              transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+            }}
+          >
+            {isCreating && <span className={styles.spinner}>⟳</span>}
+            {isCreating ? 'Creating Club…' : 'Create Club'}
+          </button>
+        </div>
 
         {/* Logo Generator Modal */}
         {showLogoGenerator && (
           <LogoGeneratorModal
+            clubName={clubName.trim()}
             onSelect={handleLogoGenerated}
             onClose={() => setShowLogoGenerator(false)}
           />
@@ -317,10 +513,12 @@ interface LogoGeneratorModalProps {
 
 function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorModalProps) {
   const isMounted = useIsMounted();
+  const trapRef = useFocusTrap(true);
   const [logoDescription, setLogoDescription] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  useDialogEscape(true, onClose);
 
   const handleGenerate = async () => {
     if (!logoDescription.trim()) {
@@ -345,6 +543,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
 
       if (result.success && result.logoUrl) {
         setPreviewUrl(result.logoUrl);
+        ClubEntryTrustService.track('create', 'logo_generated', { outcome: 'succeeded' });
       } else {
         if (isMounted.current) setError(safeErrorMessage(result.error, 'Failed to generate logo'));
       }
@@ -365,7 +564,11 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
   return (
     <div className={styles.logoGeneratorOverlay} onClick={onClose}>
       <div
+        ref={trapRef}
         className={styles.logoGeneratorModalContainer}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Generate a club logo"
         onClick={(e) => e.stopPropagation()}
         style={{
           backgroundColor: isGenerating || previewUrl ? 'rgba(10, 10, 26, 0.98)' : 'transparent',

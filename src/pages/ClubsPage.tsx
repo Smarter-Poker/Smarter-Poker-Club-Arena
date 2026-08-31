@@ -12,6 +12,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { ClubsService } from '../services/ClubsService';
+import { ClubJoinService } from '../services/ClubJoinService';
 import { unionService } from '../services/UnionService';
 import type { Union } from '../services/UnionService';
 import { NoClubsEmpty } from '../components/common/EmptyState';
@@ -362,9 +363,12 @@ export default function ClubsPage() {
               <ClubDiscovery
                 onJoinRequest={async (clubId) => {
                   try {
-                    const membership = await ClubsService.join(clubId);
+                    const joinResult = await ClubJoinService.join({ identifier: clubId });
+                    if (!joinResult.success) {
+                      throw new Error(joinResult.error || 'Failed to join club');
+                    }
                     await loadMyClubs();
-                    if (membership?.status === 'pending') {
+                    if (joinResult.status === 'pending') {
                       // Approval-gated club — not a member until approved.
                       toast.success('Request submitted - pending owner approval.');
                     } else {

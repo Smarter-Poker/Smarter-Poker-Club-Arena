@@ -52,17 +52,18 @@ describe('GlobalHeader Component', () => {
     headerData.clearUnreadMessages.mockClear();
   });
 
-  it('renders the brand text image', () => {
+  it('renders the live Club Arena identity', () => {
     render(
       <MemoryRouter>
         <GlobalHeader />
       </MemoryRouter>
     );
-    const brandImage = screen.getByAltText('Smarter.Poker');
-    expect(brandImage).toBeInTheDocument();
+    expect(screen.getByLabelText('Club Arena by Smarter.Poker')).toBeInTheDocument();
+    expect(screen.getByText('Club Arena')).toBeInTheDocument();
+    const brandImage = document.querySelector('img[src*="vault-iris-emblem-v1-320.webp"]');
     expect(brandImage).toHaveAttribute(
       'src',
-      expect.stringContaining('images/global-header/brand.png')
+      expect.stringContaining('images/club-arena/vault-iris-emblem-v1-320.webp')
     );
   });
 

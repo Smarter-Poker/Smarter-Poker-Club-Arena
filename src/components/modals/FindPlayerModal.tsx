@@ -1,657 +1,214 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  FindPlayerModal — Role-Based Player Search with Permission Enforcement
- * ═══════════════════════════════════════════════════════════════════════════════
- * Search visibility is determined by user's role:
- *
- * NORMAL USERS: Can only search friends (from friendships table)
- * AGENTS / SUB-AGENTS / SUPER AGENTS: Can search all players in their downline + club
- * CLUB ADMIN / CLUB OWNER: Can search all players in their club(s)
- * UNION OWNER / UNION ADMIN: Can search all players in their union's clubs
- *
- * Features:
- * - Auto-suggest after typing 3+ characters (typeahead)
- * - Results sortable by Real Name and Poker Alias
- * - Multi-result display with table presence
- */
-
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { isClubStaff } from '../../types/clubRoles';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase, getAuthUser } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase';
 import haptic from '../../services/HapticService';
-import styles from './FindPlayerModal.module.css';
-import { generateDefaultAvatar } from '../../utils/avatarGenerator';
-import { sizedStorageUrl } from '../../utils/avatarGenerator';
-import { sanitizeInput } from '../../utils/sanitizeInput';
+import {
+  PlayerSearchService,
+  type PlayerPresenceFilter,
+  type PlayerSearchPreferences,
+  type PlayerSearchResult,
+  type PlayerSearchScope,
+  type PlayerSearchSort,
+  type PlayerSearchTable,
+} from '../../services/PlayerSearchService';
+import { generateDefaultAvatar, sizedStorageUrl } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { useDialogEscape } from '../../hooks/useDialogEscape';
+import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
+import styles from './FindPlayerModal.module.css';
 
 interface FindPlayerModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-interface PlayerTable {
-  id: string;
-  name: string;
-  game_variant: string;
-  stakes: string;
-  club_name?: string;
-  is_tournament?: boolean;
-}
-
-interface PlayerResult {
-  id: string;
-  username: string;
-  display_name: string | null;
-  avatar_url: string | null;
-  tables: PlayerTable[];
-}
-
-interface SuggestedPlayer {
-  id: string;
-  username: string;
-  display_name: string | null;
-  avatar_url: string | null;
-}
-
-type SortField = 'display_name' | 'username';
-
-/** Capitalize the first letter of every word */
-function toTitleCase(str: string): string {
-  return str.replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-/**
- * Make user input safe for use inside a PostgREST .or(`...ilike.%q%...`) filter:
- * strip the or() delimiter characters (comma, parens, dot sequences that could
- * terminate the expression) and escape ilike wildcards so "100%" matches
- * literally instead of matching everything.
- */
-function escapeSearchQuery(raw: string): string {
-  return raw
-    .replace(/[(),]/g, ' ') // PostgREST or() syntax delimiters
-    .replace(/[\\%_]/g, (m) => `\\${m}`) // ilike wildcards / escape char
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/** Role scope for search permissions */
-interface SearchScope {
-  role: 'player' | 'agent' | 'admin' | 'owner' | 'union';
-  clubIds: string[];
-  friendIds: string[];
-  searchableUserIds: string[];
-}
-
-/** Determine the user's highest privilege role across all clubs/unions and cache searchable IDs */
-async function getUserSearchScope(userId: string): Promise<SearchScope> {
-  const result: SearchScope = {
-    role: 'player',
-    clubIds: [],
-    friendIds: [],
-    searchableUserIds: [],
-  };
-
-  try {
-    // ── 1. Get all club memberships to determine role ──
-    const { data: memberships } = await supabase
-      .from('club_members')
-      .select('club_id, role')
-      .eq('user_id', userId)
-      .in('status', ['active', 'approved']);
-
-    if (memberships && memberships.length > 0) {
-      const clubIds = memberships.map((m: any) => m.club_id);
-      result.clubIds = [...new Set(clubIds)];
-
-      // Determine highest role
-      for (const m of memberships) {
-        const r = (m as any).role as string;
-        if (r === 'owner' && result.role !== 'union') {
-          result.role = 'owner';
-        } else if (
-          (r === 'admin' || r === 'co_owner') &&
-          result.role !== 'owner' &&
-          result.role !== 'union'
-        ) {
-          // co_owner is a first-class role in club_members_role_check and an
-          // owner can grant it, but this ladder never tested for it, so a
-          // co-owner fell through to 'player' and was silently demoted to
-          // searching their friends list.
-          result.role = 'admin';
-        } else if (
-          (r === 'agent' || r === 'super_agent' || r === 'sub_agent') &&
-          result.role !== 'owner' &&
-          result.role !== 'admin' &&
-          result.role !== 'union'
-        ) {
-          result.role = 'agent';
-        }
-      }
-    }
-
-    // ── 2. Check if user is a union owner/admin ──
-    try {
-      const { data: ownedUnions } = await supabase
-        .from('unions')
-        .select('id')
-        .eq('owner_id', userId);
-
-      if (ownedUnions && ownedUnions.length > 0) {
-        result.role = 'union';
-        const unionIds = ownedUnions.map((u: any) => u.id);
-        const { data: unionClubs } = await supabase
-          .from('union_clubs')
-          .select('club_id')
-          .in('union_id', unionIds);
-
-        if (unionClubs) {
-          const additionalClubIds = unionClubs.map((uc: any) => uc.club_id);
-          result.clubIds = [...new Set([...result.clubIds, ...additionalClubIds])];
-        }
-      }
-    } catch {
-      // unions table may not exist — non-blocking
-    }
-
-    // ── 3. Get friend IDs ──
-    const [outbound, inbound] = await Promise.all([
-      supabase
-        .from('friendships')
-        .select('friend_id')
-        .eq('user_id', userId)
-        .eq('status', 'accepted'),
-      supabase
-        .from('friendships')
-        .select('user_id')
-        .eq('friend_id', userId)
-        .eq('status', 'accepted'),
-    ]);
-
-    const outIds = (outbound.data || []).map((f: any) => f.friend_id);
-    const inIds = (inbound.data || []).map((f: any) => f.user_id);
-    result.friendIds = [...new Set([...outIds, ...inIds])];
-
-    // ── 4. Build searchable user ID pool based on role ──
-    if (result.role === 'player') {
-      result.searchableUserIds = [...new Set([...result.friendIds, userId])];
-    } else {
-      // Elevated role: get all club member IDs
-      if (result.clubIds.length > 0) {
-        const { data: clubMembers } = await supabase
-          .from('club_members')
-          .select('user_id')
-          .in('club_id', result.clubIds)
-          .in('status', ['active', 'approved']);
-
-        if (clubMembers) {
-          const memberIds = clubMembers.map((cm: any) => cm.user_id);
-          result.searchableUserIds = [...new Set([...memberIds, ...result.friendIds, userId])];
-        }
-      }
-
-      if (result.searchableUserIds.length === 0) {
-        result.searchableUserIds = [...new Set([...result.friendIds, userId])];
-      }
-    }
-  } catch (err) {
-    reportError(err, 'FindPlayerModal.getUserSearchScope');
-  }
-
-  return result;
-}
+const PAGE_SIZE = 20;
+const DEFAULT_PRIVACY: PlayerSearchPreferences = {
+  discoverable: true,
+  showDisplayName: true,
+  showPresence: true,
+  showCurrentTable: true,
+};
 
 export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProps) {
   const navigate = useNavigate();
+  const trapRef = useFocusTrap(isOpen);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState<PlayerResult[]>([]);
-  const [notFound, setNotFound] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [visibleResults, setVisibleResults] = useState<Set<number>>(new Set());
-  const [sortField, setSortField] = useState<SortField>('display_name');
-  const [scopeLabel, setScopeLabel] = useState('');
-
-  // Auto-suggest state
-  const [suggestions, setSuggestions] = useState<SuggestedPlayer[]>([]);
+  const [results, setResults] = useState<PlayerSearchResult[]>([]);
+  const [suggestions, setSuggestions] = useState<PlayerSearchResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [isSuggesting, setIsSuggesting] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const suggestDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [scope, setScope] = useState<PlayerSearchScope>('all');
+  const [presence, setPresence] = useState<PlayerPresenceFilter>('all');
+  const [sort, setSort] = useState<PlayerSearchSort>('relevance');
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [privacy, setPrivacy] = useState<PlayerSearchPreferences>(DEFAULT_PRIVACY);
+  const [privacyLoadState, setPrivacyLoadState] = useState<'loading' | 'ready' | 'error'>(
+    'loading'
+  );
+  const [isSavingPrivacy, setIsSavingPrivacy] = useState(false);
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const suggestionAbortRef = useRef<AbortController | null>(null);
+  const suggestionTimerRef = useRef<number | null>(null);
+  const lastCompletedQueryRef = useRef('');
 
-  // Cached search scope — computed once when modal opens
-  const searchScopeRef = useRef<SearchScope | null>(null);
-  const scopeLoadingRef = useRef(false);
-
-  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const isMountedRef = useRef(true);
-
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-      staggerTimersRef.current.forEach((t) => clearTimeout(t));
-      if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
-    };
+  const loadPrivacy = useCallback(async () => {
+    setPrivacyLoadState('loading');
+    try {
+      setPrivacy(await PlayerSearchService.getPreferences());
+      setPrivacyLoadState('ready');
+    } catch (preferenceError) {
+      reportError(preferenceError, 'FindPlayerModal.LoadPreferences');
+      setPrivacyLoadState('error');
+    }
   }, []);
 
-  // Pre-load search scope when modal opens
-  useEffect(() => {
-    if (!isOpen) {
-      searchScopeRef.current = null;
-      return;
-    }
-
-    let cancelled = false;
-    async function loadScope() {
-      if (scopeLoadingRef.current) return;
-      scopeLoadingRef.current = true;
-      try {
-        const {
-          data: { user: authUser },
-        } = await getAuthUser();
-        if (!authUser?.id || cancelled) return;
-        const scope = await getUserSearchScope(authUser.id);
-        if (cancelled) return;
-        searchScopeRef.current = scope;
-
-        // Set scope label
-        if (scope.role === 'union') {
-          setScopeLabel('Searching union members');
-        } else if (isClubStaff(scope.role)) {
-          setScopeLabel('Searching club members');
-        } else if (scope.role === 'agent') {
-          setScopeLabel('Searching club members');
-        } else {
-          setScopeLabel('Searching friends');
-        }
-      } catch (err) {
-        reportError(err, 'FindPlayerModal.loadScope');
-      } finally {
-        scopeLoadingRef.current = false;
+  const runSearch = useCallback(
+    async (query: string, offset = 0, append = false) => {
+      const normalized = query.trim();
+      if (normalized.length < 2) {
+        setError('Enter at least two characters.');
+        return;
       }
-    }
-
-    loadScope();
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen]);
-
-  // Stagger result entrance animations
-  useEffect(() => {
-    if (searchResults.length > 0) {
-      staggerTimersRef.current.forEach((t) => clearTimeout(t));
-      staggerTimersRef.current = searchResults.map((_, i) =>
-        setTimeout(() => setVisibleResults((prev) => new Set(prev).add(i)), i * 60)
-      );
-    }
-  }, [searchResults]);
-
-  // Sort helper
-  const sortResults = useCallback((results: PlayerResult[], field: SortField): PlayerResult[] => {
-    return [...results].sort((a, b) => {
-      const aVal =
-        field === 'display_name'
-          ? (a.display_name || a.username || '').toLowerCase()
-          : (a.username || '').toLowerCase();
-      const bVal =
-        field === 'display_name'
-          ? (b.display_name || b.username || '').toLowerCase()
-          : (b.username || '').toLowerCase();
-      return aVal.localeCompare(bVal);
-    });
-  }, []);
-
-  const handleSortChange = useCallback(
-    (field: SortField) => {
-      setSortField(field);
-      setSearchResults((prev) => sortResults(prev, field));
-      setVisibleResults(new Set());
-      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+      searchAbortRef.current?.abort();
+      const controller = new AbortController();
+      searchAbortRef.current = controller;
+      if (append) setIsLoadingMore(true);
+      else setIsSearching(true);
+      if (!append) {
+        setResults([]);
+        setTotal(0);
+      }
+      setError(null);
+      setShowSuggestions(false);
+      try {
+        const page = await PlayerSearchService.search({
+          query: normalized,
+          limit: PAGE_SIZE,
+          offset,
+          scope,
+          presence,
+          sort,
+          signal: controller.signal,
+        });
+        setResults((current) => (append ? [...current, ...page.items] : page.items));
+        setTotal(page.total);
+        setHasMore(page.hasMore);
+        lastCompletedQueryRef.current = normalized;
+      } catch (searchError) {
+        if (searchError instanceof DOMException && searchError.name === 'AbortError') return;
+        reportError(searchError, 'FindPlayerModal.Search');
+        setError('Could not search right now. Please try again.');
+      } finally {
+        if (searchAbortRef.current === controller) {
+          setIsSearching(false);
+          setIsLoadingMore(false);
+        }
+      }
     },
-    [sortResults]
+    [presence, scope, sort]
   );
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // AUTO-SUGGEST — fires after 3+ characters with 350ms debounce
-  // ═══════════════════════════════════════════════════════════════════════════
-  const fetchSuggestions = useCallback(async (query: string) => {
-    const scope = searchScopeRef.current;
-    if (!scope || scope.searchableUserIds.length === 0) return;
+  useEffect(() => {
+    if (!isOpen) return;
+    ClubEntryTrustService.track('find', 'opened', { outcome: 'viewed' });
+    void loadPrivacy();
 
-    const safeQuery = escapeSearchQuery(sanitizeInput(query.trim()));
-    if (!safeQuery || safeQuery.length < 3) {
+    const channel = supabase
+      .channel('club-arena-player-locator')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_presence' },
+        (payload: { new?: Record<string, unknown> }) => {
+          const update = payload.new;
+          if (!update?.user_id || !update.status) return;
+          setResults((current) =>
+            current.map((player) =>
+              player.id === update.user_id && player.presence_status !== 'hidden'
+                ? {
+                    ...player,
+                    presence_status: String(update.status) as PlayerSearchResult['presence_status'],
+                  }
+                : player
+            )
+          );
+        }
+      )
+      .subscribe();
+    return () => {
+      searchAbortRef.current?.abort();
+      suggestionAbortRef.current?.abort();
+      if (suggestionTimerRef.current) window.clearTimeout(suggestionTimerRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [isOpen, loadPrivacy]);
+
+  useEffect(() => {
+    if (!isOpen || !lastCompletedQueryRef.current) return;
+    runSearch(lastCompletedQueryRef.current);
+  }, [scope, presence, sort, isOpen, runSearch]);
+
+  const fetchSuggestions = useCallback(
+    async (query: string) => {
+      suggestionAbortRef.current?.abort();
+      const controller = new AbortController();
+      suggestionAbortRef.current = controller;
+      setIsSuggesting(true);
+      try {
+        const page = await PlayerSearchService.search({
+          query,
+          limit: 6,
+          scope,
+          presence,
+          sort: 'relevance',
+          signal: controller.signal,
+        });
+        setSuggestions(page.items);
+        setShowSuggestions(page.items.length > 0);
+        setHighlightedIndex(-1);
+      } catch (suggestionError) {
+        if (!(suggestionError instanceof DOMException && suggestionError.name === 'AbortError')) {
+          reportError(suggestionError, 'FindPlayerModal.Suggestions');
+        }
+      } finally {
+        if (suggestionAbortRef.current === controller) setIsSuggesting(false);
+      }
+    },
+    [presence, scope]
+  );
+
+  const handleInputChange = (value: string) => {
+    setSearchQuery(value);
+    setError(null);
+    if (suggestionTimerRef.current) window.clearTimeout(suggestionTimerRef.current);
+    suggestionAbortRef.current?.abort();
+    if (value.trim().length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
+    suggestionTimerRef.current = window.setTimeout(() => fetchSuggestions(value.trim()), 300);
+  };
 
-    setIsSuggesting(true);
-    try {
-      // WALK THE WHOLE ROSTER, not the first 200 ids of it.
-      //
-      // This used to be `slice(0, 200)` in arbitrary database order while the
-      // GO button walked every batch. For an owner with 1502 memberships that
-      // is 13% coverage: typing a real member's name produced no dropdown, and
-      // then pressing GO found them. It read as random breakage.
-      //
-      // Batched at 200 because that is a filter list a PostgREST URL comfortably
-      // carries, and stopped as soon as six suggestions exist - for a matching
-      // name that is almost always the first batch, so the common case costs
-      // exactly what it did before.
-      const BATCH = 200;
-      const players: Array<{
-        id: string;
-        username: string | null;
-        display_name: string | null;
-        avatar_url: string | null;
-      }> = [];
-
-      for (let i = 0; i < scope.searchableUserIds.length && players.length < 6; i += BATCH) {
-        const batch = scope.searchableUserIds.slice(i, i + BATCH);
-        const { data: page, error: pageError } = await supabase
-          .from('profiles')
-          .select('id, username, display_name, avatar_url:arena_avatar_url')
-          .in('id', batch)
-          .or(`username.ilike.%${safeQuery}%,display_name.ilike.%${safeQuery}%`)
-          .limit(6 - players.length);
-
-        // Report it. A dropped error here is why a failing typeahead was
-        // indistinguishable from a roster with nobody in it.
-        if (pageError) {
-          reportError(pageError, 'FindPlayerModal.fetchSuggestions');
-          break;
-        }
-        if (page?.length) players.push(...page);
-      }
-
-      if (!isMountedRef.current) return;
-
-      if (players && players.length > 0) {
-        setSuggestions(
-          players.map((p: any) => ({
-            id: p.id,
-            username: p.username || '',
-            display_name: p.display_name || null,
-            avatar_url: p.avatar_url || null,
-          }))
-        );
-        setHighlightedIndex(-1);
-        setShowSuggestions(true);
-      } else {
-        setSuggestions([]);
-        setShowSuggestions(false);
-      }
-    } catch (err) {
-      reportError(err, 'FindPlayerModal.fetchSuggestions');
-    } finally {
-      if (isMountedRef.current) setIsSuggesting(false);
-    }
-  }, []);
-
-  const handleInputChange = useCallback(
-    (value: string) => {
-      setSearchQuery(value);
-
-      // Clear previous debounce
-      if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
-
-      if (value.trim().length >= 3) {
-        suggestDebounceRef.current = setTimeout(() => {
-          fetchSuggestions(value);
-        }, 350);
-      } else {
-        setSuggestions([]);
-        setShowSuggestions(false);
-      }
-    },
-    [fetchSuggestions]
-  );
-
-  const handleSuggestionClick = (player: SuggestedPlayer) => {
+  const chooseSuggestion = (player: PlayerSearchResult) => {
+    const value = player.display_name || player.username;
     haptic.selection();
-    setSearchQuery(player.display_name || player.username);
+    setSearchQuery(value);
     setShowSuggestions(false);
-    setSuggestions([]);
-    // Trigger full search for this specific player
-    performFullSearch(player.id);
+    runSearch(value);
   };
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // FULL SEARCH — fetches table presence for matched players
-  // ═══════════════════════════════════════════════════════════════════════════
-  const performFullSearch = async (specificPlayerId?: string) => {
-    setIsSearching(true);
-    setSearchResults([]);
-    setNotFound(false);
-    setError(null);
-    setVisibleResults(new Set());
-    setShowSuggestions(false);
-
-    try {
-      const scope = searchScopeRef.current;
-      if (!scope) {
-        // Scope not loaded yet — try loading
-        const {
-          data: { user: authUser },
-        } = await getAuthUser();
-        if (!authUser?.id) {
-          setError('You must be logged in to search.');
-          return;
-        }
-        const freshScope = await getUserSearchScope(authUser.id);
-        if (!isMountedRef.current) return;
-        searchScopeRef.current = freshScope;
-        // Continue with freshScope below
-      }
-
-      const activeScope = searchScopeRef.current!;
-
-      if (activeScope.searchableUserIds.length === 0) {
-        setNotFound(true);
-        if (activeScope.role === 'player') {
-          setError('Add friends to search for players. Only friends are visible in search.');
-        }
-        return;
-      }
-
-      let allPlayers: any[] = [];
-
-      if (specificPlayerId) {
-        // Direct lookup for a specific player
-        const { data: player } = await supabase
-          .from('profiles')
-          .select('id, username, display_name, avatar_url:arena_avatar_url')
-          .eq('id', specificPlayerId)
-          .maybeSingle();
-
-        if (!isMountedRef.current) return;
-        if (player) allPlayers = [player];
-      } else {
-        // Search by query
-        const safeQuery = escapeSearchQuery(sanitizeInput(searchQuery.trim()));
-        if (!safeQuery) return;
-
-        const BATCH_SIZE = 100;
-        for (let i = 0; i < activeScope.searchableUserIds.length; i += BATCH_SIZE) {
-          const batch = activeScope.searchableUserIds.slice(i, i + BATCH_SIZE);
-          const { data: players, error: searchError } = await supabase
-            .from('profiles')
-            .select('id, username, display_name, avatar_url:arena_avatar_url')
-            .in('id', batch)
-            .or(`username.ilike.%${safeQuery}%,display_name.ilike.%${safeQuery}%`)
-            .limit(20);
-
-          if (!isMountedRef.current) return;
-          if (searchError) throw searchError;
-          if (players) allPlayers = [...allPlayers, ...players];
-          if (allPlayers.length >= 20) {
-            allPlayers = allPlayers.slice(0, 20);
-            break;
-          }
-        }
-      }
-
-      if (allPlayers.length === 0) {
-        setNotFound(true);
-        return;
-      }
-
-      // ── Fetch table presence for matched players (parallel) ──
-      const results: PlayerResult[] = await Promise.all(
-        allPlayers.map(async (player: any) => {
-          const tables: PlayerTable[] = [];
-
-          // Cash Game Presence
-          try {
-            const { data: seatData } = await supabase
-              .from('table_seats')
-              .select(
-                `
-                id,
-                table_id,
-                tables:table_id (
-                  id, name, game_variant, small_blind, big_blind, status, club_id,
-                  clubs:club_id (name)
-                )
-              `
-              )
-              .eq('user_id', player.id)
-              .is('left_at', null)
-              .limit(4);
-
-            if (seatData) {
-              for (const seat of seatData) {
-                const table = (seat as Record<string, unknown>).tables as {
-                  id: string;
-                  name: string;
-                  game_variant: string;
-                  small_blind: number;
-                  big_blind: number;
-                  status: string;
-                  clubs: { name: string } | { name: string }[] | null;
-                } | null;
-                // 'active' is not a value tables.status holds (running / waiting
-                // / closed). Compared case-insensitively so a future casing
-                // change cannot silently empty this list the way it did for
-                // tournaments above.
-                const tableStatus = (table?.status || '').toLowerCase();
-                if (table && (tableStatus === 'running' || tableStatus === 'waiting')) {
-                  const clubName = Array.isArray(table.clubs)
-                    ? table.clubs[0]?.name
-                    : table.clubs?.name;
-                  tables.push({
-                    id: table.id,
-                    name: toTitleCase(table.name || 'Cash Game'),
-                    game_variant: toTitleCase(table.game_variant || 'NLH'),
-                    stakes: `$${table.small_blind}/$${table.big_blind}`,
-                    club_name: clubName ? toTitleCase(clubName) : undefined,
-                    is_tournament: false,
-                  });
-                }
-              }
-            }
-          } catch {
-            /* non-critical */
-          }
-
-          // Tournament Presence
-          if (tables.length < 4) {
-            try {
-              const { data: tournamentData } = await supabase
-                .from('tournament_players')
-                .select(
-                  `
-                  id, tournament_id,
-                  tournaments:tournament_id (
-                    id, name, status, buy_in_amount, club_id,
-                    clubs:club_id (name)
-                  )
-                `
-                )
-                .eq('user_id', player.id)
-                .in('status', ['registered', 'playing'])
-                .limit(4 - tables.length);
-
-              if (tournamentData) {
-                for (const reg of tournamentData) {
-                  const tournament = (reg as Record<string, unknown>).tournaments as {
-                    id: string;
-                    name: string;
-                    status: string;
-                    buy_in_amount: number;
-                    clubs: { name: string } | { name: string }[] | null;
-                  } | null;
-                  // CASE-INSENSITIVE, and 'REGISTERING' not 'late_reg'.
-                  // tournaments.status is stored UPPERCASE - COMPLETED,
-                  // CANCELLED, RUNNING, REGISTERING - and 'late_reg' is not a
-                  // value the column has ever held. Both comparisons were
-                  // therefore always false, so the entire tournament half of
-                  // this feature was dead: 356 live registrations were being
-                  // fetched and then silently discarded, and a player sitting
-                  // in an MTT showed as "Not Currently Playing".
-                  const tourneyStatus = (tournament?.status || '').toUpperCase();
-                  if (
-                    tournament &&
-                    (tourneyStatus === 'RUNNING' || tourneyStatus === 'REGISTERING')
-                  ) {
-                    const clubName = Array.isArray(tournament.clubs)
-                      ? tournament.clubs[0]?.name
-                      : tournament.clubs?.name;
-                    tables.push({
-                      id: tournament.id,
-                      name: toTitleCase(tournament.name || 'Tournament'),
-                      game_variant: 'MTT',
-                      stakes: `$${tournament.buy_in_amount || 0} Buy-In`,
-                      club_name: clubName ? toTitleCase(clubName) : undefined,
-                      is_tournament: true,
-                    });
-                  }
-                }
-              }
-            } catch {
-              /* non-critical */
-            }
-          }
-
-          return {
-            id: player.id,
-            username: toTitleCase(player.username || ''),
-            display_name: player.display_name ? toTitleCase(player.display_name) : null,
-            avatar_url: player.avatar_url,
-            tables,
-          };
-        })
-      );
-
-      if (!isMountedRef.current) return;
-      const sorted = sortResults(results, sortField);
-      setSearchResults(sorted);
-    } catch (err) {
-      if (!isMountedRef.current) return;
-      reportError(err, 'FindPlayerModal.Search_error');
-      setError('Search failed. Please try again.');
-    } finally {
-      if (isMountedRef.current) setIsSearching(false);
-    }
-  };
-
-  const handleSearch = () => {
-    if (!searchQuery.trim()) return;
-    haptic.medium();
-    performFullSearch();
-  };
-
-  const handleTableClick = (table: PlayerTable) => {
+  const handleTableClick = (table: PlayerSearchTable) => {
     haptic.success();
     onClose();
-    if (table.is_tournament) {
-      navigate(`/tournaments/${table.id}`);
-    } else {
-      navigate(`/table/${table.id}`);
-    }
+    navigate(table.is_tournament ? `/tournaments/${table.id}` : `/table/${table.id}`);
   };
 
   const handleProfileClick = (playerId: string) => {
@@ -660,210 +217,274 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
     navigate(`/profile/${playerId}`);
   };
 
+  const savePrivacy = async () => {
+    if (privacyLoadState !== 'ready') return;
+    setIsSavingPrivacy(true);
+    setError(null);
+    try {
+      setPrivacy(await PlayerSearchService.setPreferences(privacy));
+      setShowPrivacy(false);
+    } catch (privacyError) {
+      reportError(privacyError, 'FindPlayerModal.SavePreferences');
+      setError('Could not save your search privacy.');
+    } finally {
+      setIsSavingPrivacy(false);
+    }
+  };
+
   const handleClose = () => {
     haptic.light();
+    searchAbortRef.current?.abort();
+    suggestionAbortRef.current?.abort();
     setSearchQuery('');
-    setSearchResults([]);
+    setResults([]);
     setSuggestions([]);
-    setShowSuggestions(false);
-    setHighlightedIndex(-1);
-    setNotFound(false);
     setError(null);
-    setScopeLabel('');
+    setTotal(0);
+    setHasMore(false);
+    lastCompletedQueryRef.current = '';
+    ClubEntryTrustService.track('find', 'closed', { outcome: 'cancelled' });
     onClose();
   };
+
+  useDialogEscape(isOpen, () => (showPrivacy ? setShowPrivacy(false) : handleClose()));
 
   if (!isOpen) return null;
 
   return (
     <div className={styles.overlay} onClick={handleClose}>
-      <div className={styles.modalContainer} onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={trapRef}
+        className={styles.modalContainer}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="find-player-title"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className={styles.modalContent}>
-          <h2 className={styles.title}>Find A Player</h2>
+          <header className={styles.machineHeader}>
+            <img
+              src="/hub/club-arena/images/club-arena/vault-iris-emblem-v1-320.webp"
+              alt=""
+              width="320"
+              height="296"
+            />
+            <div>
+              <span className={styles.eyebrow}>Network Locator / Live Presence</span>
+              <h2 id="find-player-title" className={styles.title}>
+                Find A Player
+              </h2>
+              <p>Search only the friends, clubs, and unions your role permits.</p>
+            </div>
+            <button
+              className={styles.privacyButton}
+              onClick={() => {
+                if (privacyLoadState === 'error') void loadPrivacy();
+                else setShowPrivacy((value) => !value);
+              }}
+              disabled={privacyLoadState === 'loading'}
+              title={
+                privacyLoadState === 'error'
+                  ? 'Visibility settings failed to load. Select to retry.'
+                  : undefined
+              }
+              aria-expanded={showPrivacy}
+            >
+              {privacyLoadState === 'loading'
+                ? 'Loading Visibility'
+                : privacyLoadState === 'error'
+                  ? 'Retry Visibility'
+                  : 'My Visibility'}
+            </button>
+          </header>
 
-          {/* Search input with auto-suggest */}
+          {showPrivacy && (
+            <section className={styles.privacyPanel} aria-label="Player search privacy">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={privacy.discoverable}
+                  onChange={(event) =>
+                    setPrivacy((value) => ({ ...value, discoverable: event.target.checked }))
+                  }
+                />{' '}
+                Allow club and union members to find me
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={privacy.showDisplayName}
+                  onChange={(event) =>
+                    setPrivacy((value) => ({ ...value, showDisplayName: event.target.checked }))
+                  }
+                />{' '}
+                Show my display name
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={privacy.showPresence}
+                  onChange={(event) =>
+                    setPrivacy((value) => ({ ...value, showPresence: event.target.checked }))
+                  }
+                />{' '}
+                Show online presence
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={privacy.showCurrentTable}
+                  disabled={!privacy.showPresence}
+                  onChange={(event) =>
+                    setPrivacy((value) => ({ ...value, showCurrentTable: event.target.checked }))
+                  }
+                />{' '}
+                Show my current table
+              </label>
+              <button onClick={savePrivacy} disabled={isSavingPrivacy}>
+                {isSavingPrivacy ? 'Saving…' : 'Save Visibility'}
+              </button>
+            </section>
+          )}
+
           <div className={styles.searchSection}>
             <div className={styles.searchInputWrapper}>
               <input
-                type="text"
+                type="search"
                 className={styles.searchInput}
-                placeholder="Search By Name Or Alias..."
+                placeholder="Name, alias, or player number…"
                 value={searchQuery}
-                onChange={(e) => handleInputChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'ArrowDown' && showSuggestions && suggestions.length > 0) {
-                    e.preventDefault();
-                    setHighlightedIndex((prev) => (prev + 1) % suggestions.length);
-                    return;
-                  }
-                  if (e.key === 'ArrowUp' && showSuggestions && suggestions.length > 0) {
-                    e.preventDefault();
+                onChange={(event) => handleInputChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowDown' && suggestions.length) {
+                    event.preventDefault();
+                    setHighlightedIndex((value) => (value + 1) % suggestions.length);
+                  } else if (event.key === 'ArrowUp' && suggestions.length) {
+                    event.preventDefault();
                     setHighlightedIndex(
-                      (prev) => (prev - 1 + suggestions.length) % suggestions.length
+                      (value) => (value - 1 + suggestions.length) % suggestions.length
                     );
-                    return;
-                  }
-                  if (e.key === 'Enter') {
-                    if (
-                      showSuggestions &&
-                      highlightedIndex >= 0 &&
-                      highlightedIndex < suggestions.length
-                    ) {
-                      handleSuggestionClick(suggestions[highlightedIndex]);
-                      return;
-                    }
-                    setShowSuggestions(false);
-                    handleSearch();
-                  }
-                  if (e.key === 'Escape') {
-                    setShowSuggestions(false);
-                    setHighlightedIndex(-1);
-                  }
+                  } else if (event.key === 'Enter') {
+                    if (showSuggestions && highlightedIndex >= 0)
+                      chooseSuggestion(suggestions[highlightedIndex]);
+                    else runSearch(searchQuery);
+                  } else if (event.key === 'Escape') setShowSuggestions(false);
                 }}
-                onFocus={() => {
-                  if (suggestions.length > 0) setShowSuggestions(true);
-                }}
+                onFocus={() => suggestions.length && setShowSuggestions(true)}
+                aria-label="Player name, poker alias, or number"
+                aria-autocomplete="list"
+                aria-expanded={showSuggestions}
                 autoFocus
               />
-
-              {/* Auto-suggest dropdown */}
-              {showSuggestions && suggestions.length > 0 && (
-                <div className={styles.suggestDropdown}>
-                  {suggestions.map((s, i) => (
+              {showSuggestions && (
+                <div className={styles.suggestDropdown} role="listbox">
+                  {suggestions.map((player, index) => (
                     <button
-                      key={s.id}
+                      key={player.id}
+                      role="option"
+                      aria-selected={index === highlightedIndex}
                       className={styles.suggestItem}
-                      style={
-                        i === highlightedIndex
-                          ? { background: 'rgba(0, 212, 255, 0.15)' }
-                          : undefined
-                      }
-                      onMouseEnter={() => setHighlightedIndex(i)}
-                      onClick={() => handleSuggestionClick(s)}
+                      onPointerMove={() => setHighlightedIndex(index)}
+                      onClick={() => chooseSuggestion(player)}
                     >
-                      <div className={styles.suggestAvatar}>
-                        {s.avatar_url ? (
-                          <img
-                            loading="lazy"
-                            decoding="async"
-                            src={sizedStorageUrl(s.avatar_url, 44)}
-                            alt=""
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = generateDefaultAvatar();
-                            }}
-                          />
-                        ) : (
-                          <span>?</span>
+                      <PlayerAvatar player={player} className={styles.suggestAvatar} />
+                      <span className={styles.suggestInfo}>
+                        <span className={styles.suggestName}>
+                          {player.display_name || player.username}
+                        </span>
+                        {player.display_name && (
+                          <span className={styles.suggestAlias}>@{player.username}</span>
                         )}
-                      </div>
-                      <div className={styles.suggestInfo}>
-                        <span className={styles.suggestName}>{s.display_name || s.username}</span>
-                        {s.display_name && s.username && (
-                          <span className={styles.suggestAlias}>@{s.username}</span>
-                        )}
-                      </div>
+                      </span>
                     </button>
                   ))}
                 </div>
               )}
-
-              {/* Suggest loading indicator */}
               {isSuggesting && (
-                <div className={styles.suggestLoading}>
-                  <span className={styles.suggestSpinner}>⟳</span>
-                </div>
+                <span className={styles.suggestLoading} aria-label="Loading suggestions">
+                  ⟳
+                </span>
               )}
             </div>
-
             <button
               className={styles.searchButton}
-              onClick={handleSearch}
-              disabled={isSearching || !searchQuery.trim()}
+              onClick={() => runSearch(searchQuery)}
+              disabled={isSearching || searchQuery.trim().length < 2}
             >
-              {isSearching ? '...' : 'GO'}
+              {isSearching ? 'Scanning…' : 'Search'}
             </button>
           </div>
 
-          {/* Sort controls — show when we have multiple results */}
-          {searchResults.length > 1 && (
-            <div className={styles.sortControls}>
-              <span className={styles.sortLabel}>Sort By:</span>
-              <button
-                className={`${styles.sortBtn} ${sortField === 'display_name' ? styles.sortBtnActive : ''}`}
-                onClick={() => handleSortChange('display_name')}
+          <div className={styles.filterControls} aria-label="Player search filters">
+            <label>
+              Network
+              <select
+                value={scope}
+                onChange={(event) => setScope(event.target.value as PlayerSearchScope)}
               >
-                Real Name
-              </button>
-              <button
-                className={`${styles.sortBtn} ${sortField === 'username' ? styles.sortBtnActive : ''}`}
-                onClick={() => handleSortChange('username')}
+                <option value="all">Best available</option>
+                <option value="friends">Friends</option>
+                <option value="clubs">My clubs</option>
+                <option value="union">My unions</option>
+              </select>
+            </label>
+            <label>
+              Status
+              <select
+                value={presence}
+                onChange={(event) => setPresence(event.target.value as PlayerPresenceFilter)}
               >
-                Poker Alias
-              </button>
-            </div>
-          )}
+                <option value="all">Any status</option>
+                <option value="online">Online</option>
+                <option value="playing">Playing now</option>
+              </select>
+            </label>
+            <label>
+              Sort
+              <select
+                value={sort}
+                onChange={(event) => setSort(event.target.value as PlayerSearchSort)}
+              >
+                <option value="relevance">Best match</option>
+                <option value="name">Name</option>
+              </select>
+            </label>
+            <span className={styles.scopeLabel}>
+              {total
+                ? `${total} eligible match${total === 1 ? '' : 'es'}`
+                : 'Privacy-scoped results'}
+            </span>
+          </div>
 
-          {/* Scope label */}
-          {scopeLabel && <div className={styles.scopeLabel}>{scopeLabel}</div>}
-
-          {/* Results area */}
-          <div className={styles.resultsArea}>
+          <div className={styles.resultsArea} aria-live="polite" aria-busy={isSearching}>
             {error && <div className={styles.errorMessage}>{error}</div>}
-
-            {notFound && !error && (
+            {!error && !isSearching && lastCompletedQueryRef.current && results.length === 0 && (
               <div className={styles.notFoundMessage}>
-                <span className={styles.notFoundIcon}></span>
-                <p>No Matching Players Found In Your Network</p>
+                <p>No matching players in your permitted network.</p>
               </div>
             )}
-
-            {searchResults.length > 0 && (
+            {results.length > 0 && (
               <div className={styles.resultsList}>
-                {searchResults.map((player, idx) => (
-                  <div
-                    key={player.id}
-                    className={styles.playerResult}
-                    style={{
-                      opacity: visibleResults.has(idx) ? 1 : 0,
-                      transform: visibleResults.has(idx) ? 'translateY(0)' : 'translateY(8px)',
-                      transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                    }}
-                  >
-                    <div
+                {results.map((player) => (
+                  <article key={player.id} className={styles.playerResult}>
+                    <button
                       className={styles.playerHeader}
                       onClick={() => handleProfileClick(player.id)}
-                      style={{ cursor: 'pointer' }}
                     >
-                      <div className={styles.playerAvatar}>
-                        {player.avatar_url ? (
-                          <img
-                            loading="lazy"
-                            decoding="async"
-                            src={sizedStorageUrl(player.avatar_url, 44)}
-                            alt=""
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = generateDefaultAvatar();
-                            }}
-                          />
-                        ) : (
-                          <span>?</span>
-                        )}
-                      </div>
-                      <div className={styles.playerInfo}>
+                      <PlayerAvatar player={player} className={styles.playerAvatar} />
+                      <span className={styles.playerInfo}>
                         <span className={styles.playerName}>
                           {player.display_name || player.username}
                         </span>
-                        {player.display_name && player.username && (
+                        {player.display_name && (
                           <span className={styles.playerAlias}>@{player.username}</span>
                         )}
-                        <span className={styles.playerStatus}>
-                          {player.tables.length > 0
-                            ? `Playing At ${player.tables.length} Table${player.tables.length > 1 ? 's' : ''}`
-                            : 'Not Currently Playing'}
+                        <span className={styles.playerStatus} data-status={player.presence_status}>
+                          {presenceCopy(player)}
                         </span>
-                      </div>
-                    </div>
-
+                      </span>
+                      <span className={styles.relationshipBadge}>{player.relationship}</span>
+                    </button>
                     {player.tables.length > 0 && (
                       <div className={styles.tablesList}>
                         {player.tables.map((table) => (
@@ -872,36 +493,73 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                             className={styles.tableCard}
                             onClick={() => handleTableClick(table)}
                           >
-                            <div className={styles.tableInfo}>
+                            <span className={styles.tableInfo}>
                               <span className={styles.tableName}>{table.name}</span>
                               <span className={styles.tableDetails}>
                                 {table.game_variant} • {table.stakes}
                                 {table.club_name && ` • ${table.club_name}`}
                               </span>
-                            </div>
+                            </span>
                             <span className={styles.watchButton}>Watch</span>
                           </button>
                         ))}
                       </div>
                     )}
-                  </div>
+                  </article>
                 ))}
+                {hasMore && (
+                  <button
+                    className={styles.loadMoreButton}
+                    disabled={isLoadingMore}
+                    onClick={() => runSearch(lastCompletedQueryRef.current, results.length, true)}
+                  >
+                    {isLoadingMore ? 'Loading…' : 'Load More Players'}
+                  </button>
+                )}
               </div>
             )}
-
-            {!error && !notFound && searchResults.length === 0 && !isSearching && (
+            {!error && !isSearching && !lastCompletedQueryRef.current && (
               <div className={styles.hintMessage}>
-                <p>Search For A Player To See Their Active Tables</p>
+                <p>Search by alias, display name, or player number.</p>
               </div>
             )}
           </div>
 
-          {/* Close button */}
           <button className={styles.closeButton} onClick={handleClose}>
-            Close
+            Close Locator
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+function presenceCopy(player: PlayerSearchResult): string {
+  if (player.presence_status === 'hidden') return 'Presence private';
+  if (player.tables.length)
+    return `Playing at ${player.tables.length} table${player.tables.length === 1 ? '' : 's'}`;
+  if (player.presence_status === 'playing') return 'Playing now';
+  if (player.presence_status === 'online') return 'Online';
+  if (player.presence_status === 'away') return 'Away';
+  return 'Offline';
+}
+
+function PlayerAvatar({ player, className }: { player: PlayerSearchResult; className: string }) {
+  return (
+    <span className={className}>
+      {player.avatar_url ? (
+        <img
+          loading="lazy"
+          decoding="async"
+          src={sizedStorageUrl(player.avatar_url, 44)}
+          alt=""
+          onError={(event) => {
+            event.currentTarget.src = generateDefaultAvatar();
+          }}
+        />
+      ) : (
+        <span aria-hidden="true">?</span>
+      )}
+    </span>
   );
 }

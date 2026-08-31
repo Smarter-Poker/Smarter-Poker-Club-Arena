@@ -48,7 +48,34 @@
 }
 
 .headerCenter {
-  display: none;
+  position: absolute;
+  z-index: 2;
+  top: 4%;
+  bottom: 5%;
+  left: 32.6%;
+  right: 33.7%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(5px, 1vw, 14px);
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 115%, rgba(0, 151, 232, 0.22), transparent 54%),
+    linear-gradient(180deg, #06080a, #000 76%);
+  border-block: 1px solid rgba(193, 213, 225, 0.18);
+  line-height: 1;
+  pointer-events: none;
+}
+
+.headerCenter::after {
+  content: '';
+  position: absolute;
+  right: 12%;
+  bottom: 0;
+  left: 12%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #00a9ff, transparent);
+  box-shadow: 0 0 10px #008dd8;
 }
 
 .artButton {
@@ -231,11 +258,58 @@
 
 .brandArtwork {
   display: block;
-  max-width: 100%;
-  height: auto;
+  width: auto;
+  height: 72%;
+  aspect-ratio: 1;
   object-fit: contain;
+  filter: drop-shadow(0 0 8px rgba(0, 148, 229, 0.28));
   user-select: none;
   pointer-events: none;
+}
+
+.brandType {
+  display: grid;
+  min-width: 0;
+  justify-items: start;
+  gap: clamp(1px, 0.28vw, 5px);
+}
+
+.brandName {
+  color: #edf6fb;
+  font:
+    500 clamp(12px, 2.5vw, 38px)/0.9 'Rajdhani',
+    'Arial Narrow',
+    sans-serif;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow:
+    0 1px 0 #000,
+    0 0 14px rgba(0, 157, 236, 0.14);
+}
+
+.brandByline {
+  color: #758895;
+  font: 600 clamp(5px, 0.65vw, 10px)/1 var(--font-mono, monospace);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .headerCenter {
+    gap: 3px;
+  }
+  .brandArtwork {
+    height: 64%;
+  }
+  .brandName {
+    font-size: clamp(9px, 2.65vw, 16px);
+    letter-spacing: 0.02em;
+  }
+  .brandByline {
+    display: none;
+  }
 }
 
 @media (display-mode: standalone), (display-mode: fullscreen) {

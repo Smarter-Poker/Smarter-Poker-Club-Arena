@@ -6194,6 +6194,12 @@
       "weight",
       "active"
     ],
+    "member_fee_lifetime": [
+      "user_id",
+      "fees",
+      "hands",
+      "updated_at"
+    ],
     "member_fee_rollup": [
       "user_id",
       "day",

@@ -30,6 +30,9 @@ test.describe('Club Data production experience', () => {
       timeout: 60_000,
     });
     await expect(page.locator('[data-page="club-data"]')).toBeVisible();
+    await expect(
+      page.getByRole('list', { name: 'Games' }).getByRole('listitem').first()
+    ).toBeVisible({ timeout: 60_000 });
   });
 
   test('reflows without horizontal loss from desktop through 320px and 200% text', async ({

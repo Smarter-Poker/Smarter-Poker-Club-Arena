@@ -96,12 +96,13 @@ describe('the bar stretches across the top', () => {
     const profile = ruleBody(CSS, '.profileBtn');
 
     // The shipped bug combined `height: 84px` with aspect-ratio. That made the
-    // containing block 824px wide on a 1179px screen, so 66.5% placed the
-    // profile at x=548 over the logo instead of x=779 over its artwork frame.
+    // containing block 824px wide on a 1179px screen and placed the portrait
+    // over the logo. The source crop starts at pixel 1111 of 1648, so that
+    // exact ratio must keep scaling with the complete artwork plane.
     expect(controls).not.toContain('height: var(');
-    expect(profile).toContain('left: 66.5%');
-    expect(1171 * 0.665).toBeCloseTo(778.7, 1);
-    expect(390 * 0.665).toBeCloseTo(259.4, 1);
+    expect(profile).toContain('left: 67.415049%');
+    expect(1171 * (1111 / 1648)).toBeCloseTo(789.43, 2);
+    expect(390 * (1111 / 1648)).toBeCloseTo(262.92, 2);
   });
 
   it('is not capped by a max-width anywhere in the file', () => {
@@ -226,7 +227,12 @@ describe('the profile frame contains the live profile picture', () => {
     expect(CSS).toContain('.profileAvatarSlot');
     expect(CSS).toContain('.profileAvatar');
     expect(CSS).toContain('.profileFrameOverlay');
-    expect(ruleBody(CSS, '.profileBtn')).toContain('contain: layout paint');
+    const profileButton = ruleBody(CSS, '.profileBtn');
+    expect(profileButton).toContain('contain: layout paint');
+    expect(profileButton).toContain('left: 67.415049%');
+    expect(profileButton).toContain('width: 5.946602%');
+    expect(profileButton).toContain('top: 19.642857%');
+    expect(profileButton).toContain('height: 60.714286%');
     expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('width: 54%');
     expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('height: 64%');
     expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('border-radius: 50%');
@@ -236,5 +242,14 @@ describe('the profile frame contains the live profile picture', () => {
     expect(ruleBody(CSS, '.profileAvatarSlot > .profileAvatar')).toContain(
       'width: 100% !important'
     );
+  });
+});
+
+describe('VIP membership state', () => {
+  it('keeps the base artwork for non-members and adds a glow only when active', () => {
+    expect(TSX_CODE).toContain('isVipActive');
+    expect(TSX).toContain("data-vip-active={isVipActive ? 'true' : 'false'}");
+    expect(CSS).toContain('.vipActive::before');
+    expect(CSS).toContain('.vipActive > img');
   });
 });

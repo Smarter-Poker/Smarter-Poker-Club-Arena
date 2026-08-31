@@ -1,10 +1,10 @@
 /**
- * STANDALONE LEGACY THREE-BAR ARTWORK IS BANNED (2026-08-31).
+ * THREE-BAR ARTWORK IS BANNED (2026-08-31).
  *
  * A navigation drawer may keep its behaviour and accessible name, but its
- * visible trigger uses the metallic command-center artwork outside the global
- * header. The global header is the explicit exception: its complete approved
- * raster contains the user-selected three-bar hamburger and must remain exact.
+ * visible trigger must use the metallic command-center artwork. The legacy
+ * three-horizontal-line glyphs and raster assets may not return through a
+ * stale component, a table-only trigger, or a copied public file.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -34,7 +34,7 @@ const sourceFiles = [
   join(ROOT, 'public/sw-bus.js'),
 ];
 
-describe('standalone three-horizontal-line artwork cannot replace approved navigation', () => {
+describe('three-horizontal-line artwork can never return', () => {
   it('contains no three-bar glyph in production source, including comments', () => {
     const offenders = sourceFiles
       .filter((file) => /[☰≡≣]/u.test(readFileSync(file, 'utf8')))
@@ -65,7 +65,9 @@ describe('standalone three-horizontal-line artwork cannot replace approved navig
       'public/images/btn-hamburger.png',
       'public/images/btn-hamburger.webp',
       'public/images/global-header/menu.png',
+      'public/images/global-header/global-header-approved-source.png',
       'public/images/global-header/command-center.png',
+      'public/images/global-header/global-header-desktop.png',
     ];
     expect(removedAssets.filter((path) => existsSync(join(ROOT, path)))).toEqual([]);
 
@@ -79,23 +81,23 @@ describe('standalone three-horizontal-line artwork cannot replace approved navig
     expect(offenders).toEqual([]);
   });
 
-  it('locks auxiliary command-center artwork and the user-approved global header', () => {
+  it('locks the premium command-center replacement and the rebuilt header', () => {
     const commandCenter = readFileSync(
       join(ROOT, 'public/images/global-header/command-center-v1.png')
     );
     const header = readFileSync(
-      join(ROOT, 'public/images/global-header/global-header-desktop.png')
+      join(ROOT, 'public/images/global-header/global-header-command-center-v1.png')
     );
 
     expect(createHash('sha256').update(commandCenter).digest('hex')).toBe(
       '11f1a8f09f01be94d9f0cc3f5838a463d72f3efa396515236685ef319beafac8'
     );
     expect(createHash('sha256').update(header).digest('hex')).toBe(
-      '7c5613a84a395abd6b9527785b46c99fb28b6264e2258bee366a04cac5500c7f'
+      'bb62242b86cef3eb440e152390b09e966f5a4fc28487ddf2ed701a2c4adae3f9'
     );
   });
 
-  it('keeps the approved hamburger in the global header and command-center art elsewhere', () => {
+  it('wires the command-center art to every navigation drawer trigger', () => {
     const header = readFileSync(join(ROOT, 'src/components/navigation/GlobalHeader.tsx'), 'utf8');
     const floating = readFileSync(
       join(ROOT, 'src/components/navigation/FloatingHamburger.tsx'),
@@ -104,9 +106,7 @@ describe('standalone three-horizontal-line artwork cannot replace approved navig
     const table = readFileSync(join(ROOT, 'src/components/table/TableMenu.tsx'), 'utf8');
     const shell = readFileSync(join(ROOT, 'src/components/Shell.tsx'), 'utf8');
 
-    expect(header).toContain('global-header-desktop.png');
-    expect(header).not.toContain('global-header-command-center-v1.png');
-    for (const source of [floating, table, shell]) {
+    for (const source of [header, floating, table, shell]) {
       expect(source).toContain('command-center-v1.png');
     }
   });
@@ -118,6 +118,7 @@ describe('standalone three-horizontal-line artwork cannot replace approved navig
       '/hub/club-arena/images/btn-hamburger.png',
       '/hub/club-arena/images/btn-hamburger.webp',
       '/hub/club-arena/images/global-header/menu.png',
+      '/hub/club-arena/images/global-header/global-header-desktop.png',
     ]) {
       expect(worker).toContain(path);
     }

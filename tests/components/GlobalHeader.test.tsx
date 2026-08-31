@@ -63,10 +63,12 @@ describe('GlobalHeader Component', () => {
     expect(screen.getByLabelText('Smarter.Poker Global Header')).toBeInTheDocument();
     expect(screen.queryByText('Club Arena')).not.toBeInTheDocument();
     expect(document.querySelector('img[src*="vault-iris-emblem"]')).not.toBeInTheDocument();
-    const approvedArtwork = document.querySelector('img[src*="global-header-desktop.png"]');
+    const approvedArtwork = document.querySelector(
+      'img[src*="global-header-command-center-v1.png"]'
+    );
     expect(approvedArtwork).toHaveAttribute(
       'src',
-      expect.stringContaining('images/global-header/global-header-desktop.png')
+      expect.stringContaining('images/global-header/global-header-command-center-v1.png')
     );
   });
 
@@ -80,7 +82,7 @@ describe('GlobalHeader Component', () => {
    * Depth-conditional assertions would now pin the exact behaviour that was
    * reported as a bug, so they are replaced with unconditional ones.
    */
-  it('always renders the approved hamburger, Back and Hub in the left slot', () => {
+  it('always renders the command center, Back and Hub in the left slot', () => {
     render(
       <MemoryRouter>
         <GlobalHeader />
@@ -91,7 +93,10 @@ describe('GlobalHeader Component', () => {
     expect(screen.getByRole('button', { name: /Go Back/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Go To The Hub/i })).toBeInTheDocument();
 
-    expect(screen.queryByAltText('Command Center')).not.toBeInTheDocument();
+    expect(screen.getByAltText('Command Center')).toHaveAttribute(
+      'src',
+      expect.stringContaining('images/global-header/command-center-v1.png')
+    );
     expect(screen.getByAltText('Back')).toHaveAttribute(
       'src',
       expect.stringContaining('images/global-header/back.png')

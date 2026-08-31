@@ -2152,6 +2152,7 @@
     "fn_tournament_register_counter",
     "fn_tournament_unregister_counter",
     "fn_tournament_waitlist_position",
+    "fn_tournaments_creation_guard",
     "fn_tournaments_refuse_unbuilt_multi_day",
     "fn_track_club_entry_event",
     "fn_track_flake_strike",

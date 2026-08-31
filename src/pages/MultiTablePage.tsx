@@ -1112,17 +1112,20 @@ export default function MultiTablePage() {
    * Dan 2026-08-25 — OBSERVE A TABLE IN A NEW SCREEN.
    *
    * The tournament lobby's Ranking and Tables tabs let a player watch any
-   * table in the event. "Watch" must never cost them a screen they are
-   * already using, so this ADDS a tab rather than converting one, and the
-   * screens already open keep dealing behind it.
+   * table in the event. "Watch" must never cost them a SEATED screen (chips,
+   * live engine socket) — those keep dealing behind it. A free screen (lobby
+   * tab, unseated observer) is a different story: see case 2.
    *
-   * Three cases, in this order:
+   * Four cases, in this order:
    *   1. Already open  -> focus it. Watching a table twice is not a thing,
    *                       and stacking duplicates burns the cap.
-   *   2. A lobby tab is parked -> take THAT slot. A lobby tab holds no chips
-   *                       and no engine socket, so reusing it is free, and it
-   *                       is what the player was just looking at.
-   *   3. Otherwise     -> append if under the cap, else say so out loud.
+   *   2. The ACTIVE tab is a lobby tab or an unseated observer -> take THAT
+   *                       slot, in place (Dan 2026-08-30 — changing tables
+   *                       from the lobby must change the screen you are on,
+   *                       not park a new one in another slot).
+   *   3. A lobby tab is parked -> take THAT slot. A lobby tab holds no chips
+   *                       and no engine socket, so reusing it is free.
+   *   4. Otherwise     -> append if under the cap, else say so out loud.
    *                       Silently doing nothing is how "the button is
    *                       broken" bugs are born (see the route effect below).
    */
@@ -1148,6 +1151,28 @@ export default function MultiTablePage() {
         // `seated` stays undefined on purpose: that is what marks this tab an
         // observer. TABLE_SEATED flips it if the player later takes a seat.
       };
+
+      /* Dan 2026-08-30: "WHEN I WENT INTO THE LOBBY TO CHANGE A TABLE, IT
+         DIDN'T CHANGE THE TABLE FOR THE PAGE I WAS IN, IT CREATED A NEW
+         ACTION BAR AND ADDED IT IN THE FIRST SLOT."
+
+         "Watch must never cost a screen you are already USING" was written to
+         protect SEATED screens: chips and a live engine socket. The screen
+         the player initiated this from is, by definition, the one they want
+         to change. If it is a lobby tab or an unseated OBSERVER tab, it holds
+         no chips and no seat, so the new table takes ITS slot, in place, same
+         index. Seated tabs are still never replaced. This is a user gesture,
+         so keeping focus on the replaced slot does not violate the
+         no-auto-switch law (10.6.2). */
+      const activeIdx = activeIndexRef.current;
+      const active = prev[activeIdx];
+      if (active && (isLobbyTab(active) || (active.kind === 'table' && !active.seated))) {
+        const next = [...prev];
+        next[activeIdx] = observerTab;
+        setTables(next);
+        setActiveIndex(activeIdx);
+        return;
+      }
 
       const lobbyIdx = prev.findIndex(isLobbyTab);
       if (lobbyIdx !== -1) {

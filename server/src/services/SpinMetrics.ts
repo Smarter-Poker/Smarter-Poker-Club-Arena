@@ -209,7 +209,7 @@ export class SpinMetrics {
       this.reportedBlind = true;
       reportError(
         new Error(
-          `[SpinMetrics] ${this.consecutiveFailures} consecutive refresh failures (${reason}) — spin gauges are STALE. poker_spin_metrics_stale_seconds is climbing, and nothing is checking that E[multiplier] still equals the 2.7638 the format is sold on.`
+          `[SpinMetrics] ${this.consecutiveFailures} consecutive refresh failures (${reason}) - spin gauges are STALE. poker_spin_metrics_stale_seconds is climbing, and nothing is checking that E[multiplier] still equals the 2.7638 the format is sold on.`
         ),
         'SpinMetrics.refresh_failed'
       );
@@ -236,7 +236,7 @@ export class SpinMetrics {
 
     gauge(
       'poker_spin_reveal_window_spins',
-      `Spins that started in the last ${LAG_WINDOW_MINUTES}m and recorded a reveal lag. When this is 0 the percentile gauges below are ABSENT, not zero — 0ms lag is the perfect score and must never be faked.`,
+      `Spins that started in the last ${LAG_WINDOW_MINUTES}m and recorded a reveal lag. When this is 0 the percentile gauges below are ABSENT, not zero - 0ms lag is the perfect score and must never be faked.`,
       s.revealSpins
     );
     gauge(
@@ -249,7 +249,7 @@ export class SpinMetrics {
     gauge('poker_spin_reveal_lag_worst_ms', 'Worst reveal lag in the window (ms)', s.revealWorstMs);
     gauge(
       'poker_spin_reveal_past_lead_in',
-      'Spins whose reveal fired after its own 1s lead-in had already elapsed — the wheel had to be re-anchored and the players saw it start late',
+      'Spins whose reveal fired after its own 1s lead-in had already elapsed - the wheel had to be re-anchored and the players saw it start late',
       s.revealPastLeadIn
     );
 
@@ -280,7 +280,7 @@ export class SpinMetrics {
     );
     gauge(
       'poker_spin_draw_constrained',
-      'Draws made while the reserve pool had tiers locked out. Not a fault, but it lowers the conditional mean — check this BEFORE concluding the RNG drifted.',
+      'Draws made while the reserve pool had tiers locked out. Not a fault, but it lowers the conditional mean - check this BEFORE concluding the RNG drifted.',
       s.fairnessConstrained
     );
 

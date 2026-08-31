@@ -152,7 +152,7 @@ describe('the engine exposes spin gauges', () => {
     );
   });
 
-  it('the lag window is an hour — the same window fn_spin_metrics is asked for', () => {
+  it('the lag window is an hour - the same window fn_spin_metrics is asked for', () => {
     expect(LAG_WINDOW_MINUTES).toBe(60);
   });
 });
@@ -169,7 +169,7 @@ describe('the spin alert rules are wired and reference only real gauges', () => 
     );
   });
 
-  it('declares real rule groups — a file that alerts on nothing is worse than none', () => {
+  it('declares real rule groups - a file that alerts on nothing is worse than none', () => {
     const src = rules();
     expect(src).toContain('groups:');
     expect(src.match(/- alert: /g)?.length ?? 0).toBeGreaterThanOrEqual(8);

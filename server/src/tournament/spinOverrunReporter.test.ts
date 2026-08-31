@@ -21,7 +21,7 @@ import {
 const T0 = 1_700_000_000_000;
 
 describe('SpinOverrunReporter', () => {
-  it('reports the very first overrun immediately — an incident never opens in silence', () => {
+  it('reports the very first overrun immediately - an incident never opens in silence', () => {
     const r = new SpinOverrunReporter();
     const out = r.record(4200, T0);
     expect(out).not.toBeNull();

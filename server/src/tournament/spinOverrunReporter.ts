@@ -96,8 +96,8 @@ export class SpinOverrunReporter {
 /** Human-readable body for a report. Separated so a test can assert on it. */
 export function describeOverrun(r: OverrunReport): string {
   if (r.count === 1) {
-    return `Spin start overran its own reveal window by ${r.worstMs}ms — the wheel was re-anchored to now so it plays in full, and the three players saw it start late`;
+    return `Spin start overran its own reveal window by ${r.worstMs}ms - the wheel was re-anchored to now so it plays in full, and the three players saw it start late`;
   }
   const over = r.windowMs > 0 ? ` in the last ${Math.round(r.windowMs / 1000)}s` : '';
-  return `${r.count} spin starts overran their own reveal window${over} (worst ${r.worstMs}ms) — each wheel was re-anchored to now so it plays in full, and those players saw it start late. Per-spin detail is on poker_spin_reveal_lag_p50_ms and poker_spin_reveal_past_lead_in.`;
+  return `${r.count} spin starts overran their own reveal window${over} (worst ${r.worstMs}ms) - each wheel was re-anchored to now so it plays in full, and those players saw it start late. Per-spin detail is on poker_spin_reveal_lag_p50_ms and poker_spin_reveal_past_lead_in.`;
 }

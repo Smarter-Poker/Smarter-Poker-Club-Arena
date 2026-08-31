@@ -273,6 +273,16 @@ jobs:
       contents: write
 
     steps:
+      # This job runs on a fresh runner. The build job uploaded dist/, but job
+      # filesystems are not shared, so the retention script must be checked out
+      # here before it can be executed. Keep this sparse: the World Hub checkout
+      # below is separate and the publisher only needs scripts/ci/ from CA.
+      - name: Checkout Club Arena publisher source
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci
+          sparse-checkout-cone-mode: true
+
       - name: Download the dist built by the previous job
         uses: actions/download-artifact@v4
         with:

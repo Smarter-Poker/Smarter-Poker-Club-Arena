@@ -178,4 +178,21 @@ describe('the publish path cannot be left waiting on a push that never comes', (
     const sync = sliceYamlBlock(SYNC, '  sync-to-world-hub:');
     expect(sync).not.toMatch(/if: always\(\)/);
   });
+
+  it('checks out the publisher script in the fresh sync job before executing it', () => {
+    /* GitHub jobs do not share a filesystem. The build job uploads dist/, but
+       sync-to-world-hub still needs its own Club Arena checkout for the asset
+       retention script. Run 33441726756 proved that omitting this checkout
+       makes an otherwise-green release fail with MODULE_NOT_FOUND. */
+    const sync = sliceYamlBlock(SYNC, '  sync-to-world-hub:');
+    const checkout = sync.indexOf('name: Checkout Club Arena publisher source');
+    const execute = sync.indexOf('node scripts/ci/sync-club-arena-dist.mjs');
+
+    expect(checkout, 'the fresh sync runner never checks out the publisher source').toBeGreaterThan(
+      -1
+    );
+    expect(sync).toMatch(/sparse-checkout: scripts\/ci/);
+    expect(execute, 'the asset-retention publisher is never executed').toBeGreaterThan(-1);
+    expect(checkout, 'the publisher script is executed before its checkout').toBeLessThan(execute);
+  });
 });

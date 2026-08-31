@@ -9,8 +9,8 @@ import {
 
 import { DAILY_MISSIONS_RESPONSE_TIMEOUT, DailyMissionsPage } from './support/DailyMissionsPage';
 import {
-  cleanupTemporaryCustomizationAccount,
   callServiceRpc,
+  cleanupTemporaryCustomizationAccount,
   createTemporaryCustomizationAccount,
   readServiceRows,
   requireCustomizationCertificationEnvironment,

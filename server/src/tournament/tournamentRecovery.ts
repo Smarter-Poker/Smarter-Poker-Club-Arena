@@ -11,6 +11,7 @@
 import { supabase } from '../services/supabase.js';
 import { computePlacePrize } from './payoutMath.js';
 import { resolvePayoutStructure } from './payoutStructure.js';
+import { fieldIsStillLive } from './recoveryFieldGuard.js';
 import { reportError } from '../services/errorReporter.js';
 
 /**
@@ -473,6 +474,64 @@ export async function recoverStuckCompletingTournaments(
           );
         }
         const rows = players ?? [];
+
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  A TOURNAMENT WITH MORE SURVIVORS THAN PRIZES IS NOT FINISHING
+         *  (2026-08-30)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * This rescue exists for a tournament that crashed BETWEEN the
+         * COMPLETING claim and the payout — the finish had happened, the money
+         * had not. It ranks whoever is left by chip count and pays the
+         * structure. That is right for a finish, and catastrophic for a
+         * tournament that was merely still being played when the engine died,
+         * because it has no idea which of the two it is looking at.
+         *
+         * On 2026-08-30 it paid a 20,880 prize pool to the top nine by
+         * chipstack on the Sunday $200 Deep Stack. That event was at LEVEL 7
+         * of twelve late-registration levels with NINETY players still holding
+         * 2,730,654 chips. Nothing was finishing. Supabase had gone into
+         * RESIZING, the engine died mid-flight, the tournament was left in
+         * COMPLETING, and this function — which runs on EVERY boot, via
+         * `recoverStuckCompletingTournaments('startup-cleanup')` — settled it
+         * on the way back up. The places were chip counts, not results.
+         *
+         * The sibling sweep thirty lines above it in GameServer already knows
+         * how to ask this question ("found recent hands in last hour (still
+         * active) — skipping"). That guard was simply never given to this path.
+         *
+         * WHY THIS TEST AND NOT A TIME-BASED ONE. "Dealt a hand recently" does
+         * not separate the two cases: a tournament that crashes during
+         * finishTournament also dealt its last hand seconds earlier, so any
+         * recency window short enough to catch a live event would also block
+         * the legitimate rescue this function exists to perform. The structural
+         * question has no such overlap — an event at its finish cannot have
+         * more players left than it has places to pay. Ninety survivors against
+         * eighteen paid places is not a close call, and it needs no clock.
+         *
+         * REFUSING IS THE SAFE SIDE. A refusal leaves the tournament in
+         * COMPLETING, which is where it already was; every step below is
+         * idempotent, the next pass retries, and the alert names the numbers so
+         * a human can settle it deliberately. Paying wrongly moves real chips
+         * out of the club to players who did not win them, and today that took
+         * an approved reversal to undo.
+         */
+        const livePlayers = rows.filter((r) => r.status === 'playing').length;
+        const paidPlaces = payouts.length;
+        if (fieldIsStillLive({ livePlayers, paidPlaces })) {
+          reportError(
+            new Error(
+              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} "${t.name}" ` +
+                `has ${livePlayers} player(s) still playing against ${paidPlaces} paid place(s) — ` +
+                'that is a tournament that was still being PLAYED when its engine died, not one ' +
+                'that was finishing. Refusing to rank it by chipstack and pay the structure; left ' +
+                'in COMPLETING for a live engine to resume or an operator to settle.'
+            ),
+            'GameServer.recoverStuckCompleting_field_still_live'
+          );
+          continue;
+        }
 
         /**
          * @returns true when this call actually moved chips; false when the

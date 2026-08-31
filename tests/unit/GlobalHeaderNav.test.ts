@@ -222,7 +222,7 @@ describe('mobile uses the identical desktop header', () => {
 });
 
 describe('the profile region shows the complete live profile picture', () => {
-  it('uses a square portrait with a thin black edge and no circular ring', () => {
+  it('removes the baked ornament and centers one thin black-framed circle', () => {
     expect(TSX_CODE).toContain('avatarUrl');
     expect(TSX).toContain('className={styles.profileAvatarSlot}');
     expect(TSX).toContain('className={styles.profileAvatar}');
@@ -236,16 +236,25 @@ describe('the profile region shows the complete live profile picture', () => {
     expect(profileButton).toContain('width: 7.15%');
     expect(profileButton).toContain('top: 15%');
     expect(profileButton).toContain('aspect-ratio: 1');
-    expect(profileButton).toContain('border: 1px solid rgba(0, 0, 0, 0.92)');
-    expect(profileButton).toContain('border-radius: 0');
+    expect(profileButton).toContain('border: 0');
+    expect(profileButton).toContain('border-radius: 50%');
     expect(profileButton).toContain('background: #000');
-    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('inset: 1px !important');
-    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('border-radius: 0');
-    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('z-index: 1');
+    const slot = ruleBody(CSS, '.profileAvatarSlot');
+    expect(slot).toContain('top: 50% !important');
+    expect(slot).toContain('left: 50% !important');
+    expect(slot).toContain('width: 72%');
+    expect(slot).toContain('aspect-ratio: 1');
+    expect(slot).toContain('transform: translate(-50%, -50%) !important');
+    expect(slot).toContain('box-sizing: border-box');
+    expect(slot).toContain('border: 1px solid rgba(0, 0, 0, 0.94)');
+    expect(slot).toContain('border-radius: 50%');
+    expect(slot).toContain('background: transparent');
+    expect(slot).toContain('z-index: 1');
     const portrait = ruleBody(CSS, '.profileAvatarSlot > .profileAvatar');
     expect(portrait).toContain('width: 100% !important');
-    expect(portrait).toContain('object-fit: contain !important');
-    expect(portrait).not.toContain('object-fit: cover');
+    expect(portrait).toContain('border-radius: 50% !important');
+    expect(portrait).toContain('background: transparent !important');
+    expect(portrait).toContain('object-fit: cover !important');
   });
 });
 

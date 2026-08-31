@@ -19,6 +19,8 @@ import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
 import { DEFAULT_RAKE_RATE, buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { gameLaneFor, horseHash, isActiveNow } from './HorseBehavior.js';
+import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
+import { bankrollEvent } from './HorseBankrollTelemetry.js';
 import { buildLadder } from '../tournament/blindLadder.js';
 
 /**
@@ -4130,8 +4132,122 @@ export class TournamentRecurringService {
         if (!ok) laneDropped++;
         return ok;
       });
-      const rot = eligible.length > 0 ? (new Date().getUTCHours() * 7919) % eligible.length : 0;
-      const horses = eligible.slice(rot).concat(eligible.slice(0, rot)).slice(0, count);
+      /**
+       * BANKROLL (Dan 2026-08-31), and the freeroll is the other half of it.
+       *
+       * `fn_register_horse_for_tournament` refuses on `insufficient_balance`
+       * and nothing else, so a horse with 1,000 chips to its name could enter
+       * a 950 event and be broke on one hand of it. Solvency is not
+       * discipline.
+       *
+       * The bar is much higher than the cash bar and that is deliberate: an
+       * MTT pays nothing to most of the field most of the time, so a roll that
+       * comfortably survives 25 cash buy-ins is busted by an ordinary run of
+       * 25 tournaments. See `tournamentBuyInsToEnter`.
+       *
+       * A FREEROLL IS NEVER GATED, and better than that, a broke horse goes
+       * to the FRONT of the queue for one. That is the whole recovery loop Dan
+       * described - "if they run out of chips, they must play freerolls to
+       * earn their chips back, and wait for their weekly rakeback" - and until
+       * now nothing anywhere preferred a broke horse for free money; the
+       * hourly rotation picked by id, so the horses that most needed a
+       * freeroll were no likelier to get one than anybody else.
+       *
+       * FAILS OPEN, like every other bankroll gate: an unreadable roll, a
+       * missing club or an incomplete page leaves the pool exactly as it was.
+       * Refusing to register on a failed read would silently starve every
+       * event on the platform, which is a far worse failure than one
+       * underrolled entry - and is the shape of the bug that emptied the cash
+       * floor on 2026-08-31.
+       */
+      let pool = eligible;
+      try {
+        const { data: t } = await supabase
+          .from('tournaments')
+          .select('club_id, buy_in_amount, buy_in_fee')
+          .eq('id', tournamentId)
+          .maybeSingle();
+        const cost =
+          (Number((t as any)?.buy_in_amount) || 0) + (Number((t as any)?.buy_in_fee) || 0);
+        const clubId = (t as any)?.club_id as string | undefined;
+
+        if (clubId && eligible.length > 0) {
+          const ids = eligible.map((h) => h.id);
+          const rolls = new Map<string, number>();
+          const rollPage = await fetchAllRows<{ user_id: string; chip_balance: number | null }>(
+            (cursor, want) => {
+              let q = supabase
+                .from('club_members')
+                .select('user_id, chip_balance')
+                .eq('club_id', clubId)
+                .in('user_id', ids)
+                .order('user_id', { ascending: true })
+                .limit(want);
+              if (cursor) q = q.gt('user_id', cursor);
+              return q;
+            },
+            { label: 'TournamentRecurring.bankrolls', maxRows: 50_000, idKey: 'user_id' }
+          );
+          if (rollPage.complete) {
+            for (const r of rollPage.rows) {
+              const v = Number(r.chip_balance);
+              if (Number.isFinite(v)) rolls.set(r.user_id, v);
+            }
+
+            if (cost > 0) {
+              const before = pool.length;
+              pool = pool.filter((h) => {
+                const roll = rolls.get(h.id);
+                if (roll === undefined) return true; // unread -> fail open
+                return canEnterTournament(roll, cost, bankrollPolicyFor(h.id));
+              });
+              if (pool.length < before) {
+                bankrollEvent('tournament_refused_underrolled', before - pool.length);
+              }
+            } else {
+              /* A FREEROLL. Broke horses first - stable within each group, so
+                 the hourly rotation below still spreads who leads the queue.
+
+                 "Broke" is measured against the cheapest PAID event actually
+                 on the board, not a constant: a hard-coded floor goes stale
+                 the day the schedule changes, and the question being asked is
+                 exactly "is there a paid game this horse could be playing
+                 instead?" If that read fails, nobody is marked broke and the
+                 order is simply left alone. */
+              const { data: cheapest } = await supabase
+                .from('tournaments')
+                .select('buy_in_amount, buy_in_fee')
+                .eq('club_id', clubId)
+                .in('status', ['REGISTERING', 'SCHEDULED'])
+                .order('buy_in_amount', { ascending: true })
+                .limit(50);
+              const paid = (cheapest ?? [])
+                .map((r: any) => (Number(r.buy_in_amount) || 0) + (Number(r.buy_in_fee) || 0))
+                .filter((c: number) => c > 0);
+              const floor = paid.length > 0 ? Math.min(...paid) : 0;
+              const broke = (id: string) => {
+                if (!(floor > 0)) return false;
+                const roll = rolls.get(id);
+                return (
+                  roll !== undefined && !canEnterTournament(roll, floor, bankrollPolicyFor(id))
+                );
+              };
+              const needy = pool.filter((h) => broke(h.id));
+              if (needy.length > 0) {
+                bankrollEvent('freeroll_entered_broke', Math.min(needy.length, count));
+                pool = needy.concat(pool.filter((h) => !broke(h.id)));
+              }
+            }
+          }
+        }
+      } catch (err) {
+        reportError(err, 'TournamentRecurring.bankroll_gate');
+      }
+
+      const eligiblePool = pool;
+      const rot =
+        eligiblePool.length > 0 ? (new Date().getUTCHours() * 7919) % eligiblePool.length : 0;
+      const horses = eligiblePool.slice(rot).concat(eligiblePool.slice(0, rot)).slice(0, count);
 
       if (!horses || horses.length === 0) {
         // Say WHY the pool came up empty — "added NONE" with no numbers is

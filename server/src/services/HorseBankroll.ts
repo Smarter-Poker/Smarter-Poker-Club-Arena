@@ -72,6 +72,17 @@ export interface BankrollPolicy {
   stopWinBuyIns: number;
   /** Down this many buy-ins for the session: done for now. */
   stopLossBuyIns: number;
+  /**
+   * Buy-ins of an EVENT required before entering it.
+   *
+   * Much higher than the cash bar, and not out of caution - out of variance.
+   * A cash session is a shallow, continuous distribution: a bad night costs a
+   * couple of buy-ins. A tournament pays nothing to most of the field most of
+   * the time, so a roll that survives 25 cash buy-ins is busted by a routine
+   * run of 25 min-cashes. The textbook figures are 20-40 buy-ins for cash and
+   * 100+ for MTTs; these keep that ratio while staying inside the temperament.
+   */
+  tournamentBuyInsToEnter: number;
 }
 
 const POLICIES: Record<BankrollTemperament, Omit<BankrollPolicy, 'temperament'>> = {
@@ -83,6 +94,7 @@ const POLICIES: Record<BankrollTemperament, Omit<BankrollPolicy, 'temperament'>>
     maxBankrollFraction: 0.03,
     stopWinBuyIns: 2,
     stopLossBuyIns: 2,
+    tournamentBuyInsToEnter: 100,
   },
   // The middle of the road, and most of the fleet.
   standard: {
@@ -92,6 +104,7 @@ const POLICIES: Record<BankrollTemperament, Omit<BankrollPolicy, 'temperament'>>
     maxBankrollFraction: 0.05,
     stopWinBuyIns: 3,
     stopLossBuyIns: 3,
+    tournamentBuyInsToEnter: 60,
   },
   // Rolls thinner and takes shots. Still books wins and still moves down —
   // a gambler is not a player with no rules, it is a player with looser ones.
@@ -102,6 +115,7 @@ const POLICIES: Record<BankrollTemperament, Omit<BankrollPolicy, 'temperament'>>
     maxBankrollFraction: 0.1,
     stopWinBuyIns: 5,
     stopLossBuyIns: 4,
+    tournamentBuyInsToEnter: 30,
   },
 };
 
@@ -326,4 +340,27 @@ export function canOpenAnotherTable(args: {
   if (!(bankroll > 0) || !(nextBuyIn > 0)) return false;
   const ceiling = bankroll * policy.maxBankrollFraction * AGGREGATE_EXPOSURE_MULTIPLE;
   return liveExposure + nextBuyIn <= ceiling;
+}
+
+/**
+ * Rule 8: may this bankroll enter this EVENT?
+ *
+ * A FREEROLL IS ALWAYS YES. Free money is not a bankroll decision - it is the
+ * recovery path a broke horse is supposed to take, and gating it behind a roll
+ * the horse does not have is precisely the loop that never closes. This mirrors
+ * the `allLanes` freeroll override the tournament service already applies to
+ * game lanes (Dan 2026-08-27: "free money is not a lane decision").
+ *
+ * `cost` is the full entry - buy-in PLUS fee - because that is what leaves the
+ * wallet. Pricing the rule off the prize contribution alone understates a
+ * turbo's real cost by its whole rake.
+ */
+export function canEnterTournament(
+  bankroll: number,
+  cost: number,
+  policy: BankrollPolicy
+): boolean {
+  if (!(cost > 0)) return true; // freeroll
+  if (!(bankroll > 0)) return false;
+  return bankroll >= cost * policy.tournamentBuyInsToEnter;
 }

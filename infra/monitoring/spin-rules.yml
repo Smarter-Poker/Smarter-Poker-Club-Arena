@@ -85,19 +85,29 @@ groups:
         annotations:
           summary: "{{ $value }} Spin prize(s) drawn from the pool and paid to nobody"
           description: |
-            v_spin_unpaid_settlements compares what the reserve pool DREW for
-            a Spin against what reached a player's wallet. fn_backpay_spin_
-            unpaid_winners runs every 10 minutes and should clear these. Ten
-            minutes of a standing count means the repair is not working.
+            fn_spin_unpaid_settlements(24) compares what the reserve pool
+            DREW for each recent Spin against what reached a player's wallet.
+            fn_backpay_spin_unpaid_winners sweeps a 6-hour window every 10
+            minutes and should clear these, so ten minutes of a standing count
+            means the repair is not working. It was not working AT ALL before
+            2026-08-31: it read the unbounded auditor three times and timed
+            out on every call. Check that first.
           runbook: https://monitor.smarter.poker/runbooks/spin-prize-unpaid
 
-      # NEW gaps only. Eleven historical rows (2026-08-22 to 08-24, cause
-      # closed, 293.00 chips of pool overstatement) are a remediation
-      # decision, not an ongoing incident — alerting on the standing count
-      # would fire forever and teach everyone to ignore this rule. A rising
-      # count means the cause reopened.
+      # NEW gaps only, and the gauge itself is what makes that simple. The
+      # eleven historical rows (2026-08-22 to 08-24, cause closed, 293.00
+      # chips of pool overstatement) are a remediation decision, not an
+      # ongoing incident, and a rule on a lifetime count would fire forever
+      # and teach everyone to ignore it.
+      #
+      # The first cut used delta() over the lifetime count for exactly that
+      # reason. It does not need to any more: poker_spin_draw_booking_gaps
+      # now counts only spins that ENDED IN THE LAST 24 HOURS, so the closed
+      # eleven are already outside it and a plain `> 0` is both simpler and
+      # strictly more robust. delta() over a gauge cannot tell a real new gap
+      # from the counter resetting on an engine restart.
       - alert: SpinDrawBookingGapOpened
-        expr: delta(poker_spin_draw_booking_gaps[1h]) > 0
+        expr: poker_spin_draw_booking_gaps > 0
         for: 5m
         labels:
           severity: critical
@@ -105,10 +115,12 @@ groups:
         annotations:
           summary: "A new Spin booked a different multiplier than it paid"
           description: |
-            v_spin_draw_booking_gaps grew in the last hour. The reserve pool
-            was debited for one multiplier step and the players were paid at
+            A Spin that ended in the last 24 hours had the reserve pool
+            debited for one multiplier step while the players were paid at
             another, so the pool's books and the wallets disagree. This class
             of defect was closed on 2026-08-24; a new row means it reopened.
+            v_spin_draw_booking_gaps holds the full history, including the
+            eleven closed rows this gauge deliberately cannot see.
           runbook: https://monitor.smarter.poker/runbooks/spin-booking-gap
 
       # Every row is a player who lost VIP points and an agent who lost

@@ -215,10 +215,12 @@ describe('the spin alert rules are wired and reference only real gauges', () => 
       .split('\n')
       .find((l) => l.includes('poker_spin_draw_booking_gaps') && l.includes('expr:'));
     expect(expr, 'the booking-gap rule exists').toBeTruthy();
-    expect(expr, 'it measures change, not level').toContain('delta(');
-    // Any growth at all. A threshold above zero would be the historical
-    // count smuggled into a rule, and would go stale the moment it moved.
-    expect(expr, 'any growth alerts').toMatch(/>\s*0\s*$/);
+    /* Any gap at all in the window. A threshold ABOVE zero would be the
+       historical count smuggled into a rule, and it would go stale the moment
+       that count moved. The gauge is bounded to 24h, so the closed eleven are
+       outside it and zero is the honest floor. */
+    expect(expr, 'any gap alerts').toMatch(/>\s*0\s*$/);
+    expect(expr, 'no magic threshold').not.toMatch(/>\s*[1-9]/);
   });
 
   /**

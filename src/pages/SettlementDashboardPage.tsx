@@ -870,7 +870,7 @@ export default function SettlementDashboardPage() {
           disabled={runningSettlement}
           title={
             rakebackStatus
-              ? `${rakebackStatus.pendingPeriods} Pending Period(S), ~${rakebackStatus.estimatedOwed.toLocaleString()} Chips Owed`
+              ? `${rakebackStatus.pendingPeriods} Pending Period(s), ~${rakebackStatus.estimatedOwed.toLocaleString()} Chips Owed`
               : 'Player Rakeback Settles Automatically; Click To Force It Now'
           }
           style={{
@@ -932,9 +932,9 @@ export default function SettlementDashboardPage() {
           {rakebackStatus.pendingPeriods > 0 ? (
             <>
               <strong style={{ color: '#8b5cf6' }}>
-                {rakebackStatus.pendingPeriods} Period(S)
+                {rakebackStatus.pendingPeriods} Period(s)
               </strong>{' '}
-              Across {rakebackStatus.pendingClubs} Club(S) Pending (~
+              Across {rakebackStatus.pendingClubs} Club(s) Pending (~
               {rakebackStatus.estimatedOwed.toLocaleString()} Chips) - Use “Settle Rakeback” To
               Clear Now.
             </>

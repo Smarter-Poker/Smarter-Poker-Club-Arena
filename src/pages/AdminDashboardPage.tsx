@@ -1803,7 +1803,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
             <input
               value={theme.bannerUrl || ''}
               onChange={(e) => setTheme((prev) => ({ ...prev, bannerUrl: e.target.value }))}
-              placeholder="Https://example.com/banner.png"
+              placeholder="https://example.com/banner.png"
               className="admin-input"
             />
           </div>

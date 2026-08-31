@@ -2043,12 +2043,12 @@ export default function CreateTournamentModal({
                   <span key={i} className={styles.payoutItem}>
                     {p.place}
                     {p.place === 1
-                      ? 'st'
+                      ? 'St'
                       : p.place === 2
-                        ? 'nd'
+                        ? 'Nd'
                         : p.place === 3
-                          ? 'rd'
-                          : 'th'}: {p.percentage}%
+                          ? 'Rd'
+                          : 'Th'}: {p.percentage}%
                   </span>
                 ))}
               </div>

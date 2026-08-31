@@ -32,27 +32,39 @@ const UI_ATTRIBUTE_NAMES = new Set([
   'aria-label',
   'caption',
   'description',
+  'emptyLabel',
   'emptyMessage',
+  'errorMessage',
   'eyebrow',
   'helperText',
+  'hint',
   'label',
+  'loadingLabel',
   'placeholder',
   'statusText',
   'subtitle',
+  'successMessage',
   'title',
+  'tooltip',
 ]);
 
 const UI_PROPERTY_NAMES = new Set([
   'caption',
   'description',
+  'emptyLabel',
   'emptyMessage',
+  'errorMessage',
   'eyebrow',
   'helperText',
+  'hint',
   'label',
+  'loadingLabel',
   'placeholder',
   'statusText',
   'subtitle',
+  'successMessage',
   'title',
+  'tooltip',
 ]);
 
 /** Initialisms that are shouted, not Title Cased. Mirrors src/utils/titleCase.ts. */
@@ -94,6 +106,7 @@ export function titleCaseText(text) {
     }
     if (/^[0-9]/.test(word)) return word;
     const lower = word.toLowerCase();
+    if (before === '(' && (lower === 's' || lower === 'es')) return lower;
     if (ACRONYMS.has(lower)) return lower.toUpperCase();
     if (word.length > 1 && word === word.toUpperCase()) return word;
     return word.charAt(0).toUpperCase() + word.slice(1);
@@ -108,6 +121,7 @@ function propertyName(node) {
 function isMachineString(text) {
   const value = text.trim();
   if (!/[A-Za-z]/.test(value)) return true;
+  if (/^(?:\\u[0-9a-f]{4}|\\x[0-9a-f]{2})+$/i.test(value)) return true;
   if (/^(?:https?:\/\/|\/|\.\/|\.\.\/)/i.test(value)) return true;
   if (/\S+@\S+\.\S+/.test(value)) return true;
   if (/^[a-z0-9]+(?:_[a-z0-9]+)+$/.test(value)) return true;
@@ -378,6 +392,32 @@ function staticCopyChanges(source, sf, file) {
   return changes;
 }
 
+/** Static copy that ships before React: metadata and the fatal boot fallback. */
+function indexHtmlTextNodes(source) {
+  const scannable = source.replace(/<!--[\s\S]*?-->/g, (match) => match.replace(/[^\n]/g, ' '));
+  const out = [];
+  const addGroup = (match, group) => {
+    if (!group || !/[A-Za-z]/.test(group) || isMachineString(group)) return;
+    const withinMatch = match[0].indexOf(group);
+    if (withinMatch < 0) return;
+    out.push({
+      start: match.index + withinMatch,
+      end: match.index + withinMatch + group.length,
+      text: group,
+      cased: titleCaseText(group),
+      context: 'index metadata',
+    });
+  };
+
+  const metaCopy =
+    /<meta\b[^>]*(?:name|property)="(?:description|og:title|og:description|twitter:title|twitter:description|apple-mobile-web-app-title)"[^>]*\bcontent="([^"]*)"[^>]*>/gi;
+  for (const match of scannable.matchAll(metaCopy)) addGroup(match, match[1]);
+
+  const staticElementCopy = /<(title|h1|p|button)\b[^>]*>([^<]*)<\/\1>/gi;
+  for (const match of scannable.matchAll(staticElementCopy)) addGroup(match, match[2]);
+  return out.filter((change) => change.cased !== change.text);
+}
+
 const offenders = [];
 let fixedNodes = 0;
 let fixedFiles = 0;
@@ -442,6 +482,27 @@ for (const file of walk(SRC)) {
       offenders.push(
         `${file.replace(ROOT, '')}:${line}: [${change.context}] ${change.text.trim().slice(0, 90)}`
       );
+    }
+  }
+}
+
+const indexFile = join(ROOT, 'index.html');
+const indexOriginal = readFileSync(indexFile, 'utf8');
+const indexChanges = indexHtmlTextNodes(indexOriginal);
+if (indexChanges.length > 0) {
+  if (fix) {
+    let out = indexOriginal;
+    for (let index = indexChanges.length - 1; index >= 0; index--) {
+      const change = indexChanges[index];
+      out = out.slice(0, change.start) + change.cased + out.slice(change.end);
+    }
+    writeFileSync(indexFile, out, 'utf8');
+    fixedNodes += indexChanges.length;
+    fixedFiles++;
+  } else {
+    for (const change of indexChanges) {
+      const line = indexOriginal.slice(0, change.start).split('\n').length;
+      offenders.push(`index.html:${line}: [${change.context}] ${change.text.trim().slice(0, 90)}`);
     }
   }
 }

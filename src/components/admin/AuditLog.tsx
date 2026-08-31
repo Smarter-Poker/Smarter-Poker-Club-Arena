@@ -336,7 +336,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
           <>
             <p className="audit-log__summary">
               Showing {filteredEntries.length}
-              {filteredEntries.length !== entries.length ? ` of ${entries.length}` : ''} Entr
+              {filteredEntries.length !== entries.length ? ` Of ${entries.length}` : ''} Entr
               {filteredEntries.length === 1 ? 'y' : 'ies'}
               {hasMore ? ' (Newest First)' : ''}
             </p>

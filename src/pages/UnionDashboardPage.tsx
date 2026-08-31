@@ -1877,7 +1877,7 @@ export default function UnionDashboardPage() {
                   </h3>
                   <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
                     Move Chips Into The Wallet That Seeds Every Spin Bonus Pool This Union Owns.
-                    {wallets ? ` Reserve holds ${fmt(wallets.spin_reserve_wallet)}.` : ''}
+                    {wallets ? ` Reserve Holds ${fmt(wallets.spin_reserve_wallet)}.` : ''}
                   </p>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <select

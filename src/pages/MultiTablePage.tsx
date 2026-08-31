@@ -3484,7 +3484,7 @@ export default function MultiTablePage() {
                 </span>
                 <span className="multi-table-page__session-hands">
                   {sessionAgg.hands} Hands
-                  {sessionAgg.handsPerHour > 0 ? ` - ${sessionAgg.handsPerHour}/hr` : ''}
+                  {sessionAgg.handsPerHour > 0 ? ` - ${sessionAgg.handsPerHour}/Hr` : ''}
                 </span>
                 <span
                   className={`multi-table-page__session-net${

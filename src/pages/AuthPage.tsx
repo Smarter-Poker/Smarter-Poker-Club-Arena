@@ -319,7 +319,7 @@ export default function AuthPage() {
         {/* Success Message */}
         {success && (
           <div className={styles.successMessage}>
-            <span>\U2713</span> {success}
+            <span>\u2713</span> {success}
           </div>
         )}
 
@@ -340,7 +340,7 @@ export default function AuthPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Your@email.com"
+                placeholder="your@email.com"
                 required
                 autoComplete="email"
               />
@@ -422,7 +422,7 @@ export default function AuthPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Your@email.com"
+                placeholder="your@email.com"
                 required
                 autoComplete="email"
               />
@@ -516,7 +516,7 @@ export default function AuthPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Your@email.com"
+                placeholder="your@email.com"
                 required
                 autoComplete="email"
               />

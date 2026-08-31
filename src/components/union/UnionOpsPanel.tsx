@@ -430,7 +430,7 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
               }}
             >
               <strong style={{ color: law.healthy ? '#37e7c7' : '#ff7676' }}>
-                Union Law {law.healthy ? 'Healthy' : `- ${law.breaches.length} Breach(Es)`}
+                Union Law {law.healthy ? 'Healthy' : `- ${law.breaches.length} Breach(es)`}
               </strong>
               {law.breaches.length > 0 && (
                 <ul style={{ color: '#ff9c9c', fontSize: '0.82rem', margin: '8px 0 0 18px' }}>
@@ -569,7 +569,7 @@ function SettlementConfirm({
             }}
           >
             <strong style={{ color: '#ffb347' }}>
-              {preview.round2.clubs_short + preview.round3.agents_short} Payer(S) Cannot Cover Their
+              {preview.round2.clubs_short + preview.round3.agents_short} Payer(s) Cannot Cover Their
               Obligation
             </strong>
             <p style={{ color: '#c8a15e', fontSize: '0.78rem', margin: '6px 0 8px' }}>

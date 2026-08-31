@@ -189,7 +189,7 @@ describe('GlobalHeader Component', () => {
 
     expect(badge).toHaveTextContent('5');
     expect(profile).not.toContainElement(badge);
-    expect(within(profile).queryByLabelText(/unread notifications/i)).not.toBeInTheDocument();
+    expect(within(profile).queryByLabelText(/Unread Notifications/i)).not.toBeInTheDocument();
   });
 
   it('acknowledges unread messages before leaving for Messenger', async () => {

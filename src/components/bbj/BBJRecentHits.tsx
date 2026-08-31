@@ -505,9 +505,9 @@ export function BBJRecentHits({
             tabIndex={clickable ? 0 : undefined}
             aria-label={
               clickable
-                ? `${hit.bad_beat_name} won ${money(amount, 0)} with ${label}` +
-                  (beatByLabel ? `, beaten by ${hit.hand_winner_name} with ${beatByLabel}` : '') +
-                  '. Open the hand.'
+                ? `${hit.bad_beat_name} Won ${money(amount, 0)} With ${label}` +
+                  (beatByLabel ? `, Beaten By ${hit.hand_winner_name} With ${beatByLabel}` : '') +
+                  '. Open The Hand.'
                 : undefined
             }
             onClick={clickable ? () => onOpenHand(hit.payout_id) : undefined}

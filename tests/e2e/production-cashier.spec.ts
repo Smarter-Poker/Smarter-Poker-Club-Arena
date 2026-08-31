@@ -28,7 +28,7 @@ test.describe('Production Cashier Certification', () => {
       page.getByRole('heading', { name: 'Every Chip. Accounted For.', exact: true })
     ).toBeVisible();
 
-    const tablist = page.getByRole('tablist', { name: 'Cashier actions' });
+    const tablist = page.getByRole('tablist', { name: 'Cashier Actions' });
     await expect(tablist).toBeVisible();
     const tabs = tablist.getByRole('tab');
     await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');

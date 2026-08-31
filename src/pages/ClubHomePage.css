@@ -2551,7 +2551,9 @@
   .lobby-wallets-content {
     display: grid;
     grid-template-rows: 0fr;
+    visibility: hidden;
     opacity: 0;
+    pointer-events: none;
     transition:
       grid-template-rows 220ms ease,
       opacity 180ms ease;
@@ -2559,7 +2561,9 @@
 
   .lobby-wallets-content[data-expanded='true'] {
     grid-template-rows: 1fr;
+    visibility: visible;
     opacity: 1;
+    pointer-events: auto;
   }
 
   .lobby-wallets-content__inner {

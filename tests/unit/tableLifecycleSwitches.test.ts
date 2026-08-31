@@ -92,16 +92,16 @@ describe('the tooltips say what the switches actually do', () => {
   const page = src('src/pages/TableConfigPage.tsx');
 
   it('Auto Restart has one at all now', () => {
-    expect(page).toContain('Reopen this table if it closes');
+    expect(page).toContain('Reopen This Table If It Closes');
   });
 
   it('Auto Extension says what it extends', () => {
     // "Extend table automatically" left a host guessing what was extended.
-    expect(page).toContain('Keep this table open when it empties');
+    expect(page).toContain('Keep This Table Open When It Empties');
     expect(page).not.toContain('Extend table automatically');
   });
 
   it('Auto Create Table was already clear and is unchanged', () => {
-    expect(page).toContain('Create new table when full');
+    expect(page).toContain('Create New Table When Full');
   });
 });

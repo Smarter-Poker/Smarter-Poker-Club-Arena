@@ -60,6 +60,14 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    // App.tsx intentionally requests the slashless Club Arena scope so the
+    // World Hub's `/hub/club-arena` entry URL is controlled. Match the
+    // production Vercel header in local/E2E serving; without it Chromium
+    // rejects the first registration and emits a console error before the
+    // default-scope fallback succeeds.
+    headers: {
+      'Service-Worker-Allowed': '/hub/club-arena',
+    },
   },
   define: {
     // Prevent process errors in browser

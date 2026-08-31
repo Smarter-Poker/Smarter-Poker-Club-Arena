@@ -48,6 +48,13 @@ after the Phase 4 squash merge, not against the older feature branch.
   singleton. The suite now hoists the real module and its stores during
   collection, removing the false red while preserving the production-bus
   assertions.
+- The final authenticated production sweep exposed a 375px Club lobby seam
+  outside the Cashier route: the Share artwork owned only 8px of reliable
+  vertical reach, while collapsed Diamond and Player wallet controls remained
+  discoverable inside a zero-height clipped disclosure. Share now owns a real
+  44px coarse-pointer hit area, collapsed wallet content is removed from hit,
+  focus, and accessibility visibility, and a self-contained Chromium geometry
+  beat blocks both regressions before merge.
 
 ## Evidence Contract
 

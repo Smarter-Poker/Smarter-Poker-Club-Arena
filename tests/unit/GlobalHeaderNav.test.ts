@@ -121,7 +121,7 @@ describe('both ways out are always there', () => {
   });
 
   it('neither is behind a page-depth condition any more', () => {
-    // The exact shape of the old bug: `{isSubPage && (<button ... Go back`.
+    // The exact shape of the old bug: `{isSubPage && (<button ... Go Back`.
     expect(TSX_CODE).not.toContain('isSubPage');
     expect(TSX_CODE).not.toContain('pageDepth');
   });

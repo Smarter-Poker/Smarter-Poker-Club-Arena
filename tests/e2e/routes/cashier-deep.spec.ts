@@ -40,7 +40,7 @@ test.describe('Cashier Page — Deep UX Tests', () => {
     const tablistCount = await tablist.count();
 
     if (tablistCount > 0) {
-      await expect(tablist).toHaveAttribute('aria-label', 'Cashier actions');
+      await expect(tablist).toHaveAttribute('aria-label', 'Cashier Actions');
 
       const tabs = page.locator('[role="tab"]');
       const count = await tabs.count();
@@ -177,7 +177,7 @@ test.describe('Club CashierModal — ARIA Tests', () => {
 
     // These tests verify the club CashierModal ARIA wiring added in Phase 3.
     // If the modal is not open, the test passes gracefully.
-    const tablist = page.locator('[role="tablist"][aria-label="Cashier actions"]');
+    const tablist = page.locator('[role="tablist"][aria-label="Cashier Actions"]');
     if ((await tablist.count()) > 0) {
       const tabs = page.locator('[role="tab"]');
       const count = await tabs.count();

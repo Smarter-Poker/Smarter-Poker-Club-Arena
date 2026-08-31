@@ -67,10 +67,10 @@ const shownAmount = (): string =>
 /**
  * The confirm button, whichever of its three labels it is wearing.
  *
- * The naive /^(Raise|Bet|All in) / also matched the ALL IN PRESET, whose label
- * is "Bet all in for 200" - two buttons, and getByRole throws. Requiring a
+ * The naive /^(Raise|Bet|All In) / also matched the ALL IN PRESET, whose label
+ * is "Bet All In For 200" - two buttons, and getByRole throws. Requiring a
  * digit straight after the verb separates them: the confirm reads "Raise 15",
- * "Bet 15" or "All in for 200"; the preset never does.
+ * "Bet 15" or "All In For 200"; the preset never does.
  */
 const confirmBtn = () =>
   screen.queryByRole('button', { name: /^(Raise|Bet) [\d.,]/ }) ??

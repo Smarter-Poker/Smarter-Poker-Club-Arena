@@ -431,7 +431,7 @@ export class ScheduledTournamentService {
       return;
     }
     this.isRunning = true;
-    console.log('[ScheduledTournaments] Service started — polling every 60s');
+    console.log('[ScheduledTournaments] Service started - polling every 60s');
     this.pollTimer = setInterval(() => void this.poll(), POLL_INTERVAL_MS);
     void this.poll();
   }
@@ -639,7 +639,7 @@ export class ScheduledTournamentService {
         // the key would burn the 21:00 game for the day. Releasing lets it be
         // retried each poll and spawn the moment the earlier instance starts.
         console.log(
-          `[ScheduledTournaments] "${row.name}" already live pre-start — spawn ${spawnKey} deferred`
+          `[ScheduledTournaments] "${row.name}" already live pre-start - spawn ${spawnKey} deferred`
         );
         await supabase
           .from('tournament_schedule_spawns')
@@ -731,7 +731,7 @@ export class ScheduledTournamentService {
     }
 
     console.log(
-      `[ScheduledTournaments] Spawned "${row.name}" (${spawnKey}) start ${startTime.toISOString()} — ${
+      `[ScheduledTournaments] Spawned "${row.name}" (${spawnKey}) start ${startTime.toISOString()} - ${
         seedNow ? `${seeded} horse(s) seeded` : 'open for registration, horses join at start'
       }`
     );
@@ -772,7 +772,7 @@ export class ScheduledTournamentService {
     if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) {
       reportError(
         new Error(
-          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} config is not an object — skipping`
+          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} config is not an object - skipping`
         ),
         'ScheduledTournaments.config_invalid'
       );
@@ -800,7 +800,7 @@ export class ScheduledTournamentService {
     if (!KNOWN_TYPES.has(rawType)) {
       reportError(
         new Error(
-          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} has unknown type "${rawType}" — skipping`
+          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} has unknown type "${rawType}" - skipping`
         ),
         'ScheduledTournaments.unknown_type'
       );
@@ -880,7 +880,7 @@ export class ScheduledTournamentService {
     if (blinds.length === 0 || payouts.length === 0) {
       reportError(
         new Error(
-          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} missing blind/payout structure — skipping`
+          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} missing blind/payout structure - skipping`
         ),
         'ScheduledTournaments.structure_missing'
       );
@@ -923,7 +923,7 @@ export class ScheduledTournamentService {
     if (payouts.length > maxPlayers) {
       reportError(
         new Error(
-          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} pays ${payouts.length} places on ${maxPlayers} seats — skipping`
+          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} pays ${payouts.length} places on ${maxPlayers} seats - skipping`
         ),
         'ScheduledTournaments.more_paid_places_than_players'
       );
@@ -984,7 +984,7 @@ export class ScheduledTournamentService {
       if (bountyAmount <= 0) {
         reportError(
           new Error(
-            `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} bounty type with no bounty head — skipping`
+            `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} bounty type with no bounty head - skipping`
           ),
           'ScheduledTournaments.bounty_missing'
         );
@@ -1011,7 +1011,7 @@ export class ScheduledTournamentService {
       const target = targetName ? await this.resolveSatelliteTarget(schedule, targetName) : null;
       if (!target) {
         console.log(
-          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)}: no pre-start satellite target matching "${targetName}" — skipping this spawn`
+          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)}: no pre-start satellite target matching "${targetName}" - skipping this spawn`
         );
         return null;
       }
@@ -1390,7 +1390,7 @@ export class ScheduledTournamentService {
     // No horse seeding here: restart clones are manual club events, and
     // GameServer's past-start top-up fills any short field once the clock hits.
     console.log(
-      `[ScheduledTournaments] Restarted "${old.name}" as ${String(created.id).slice(0, 8)} — start ${startTime.toISOString()} (restart:${String(old.id).slice(0, 8)})`
+      `[ScheduledTournaments] Restarted "${old.name}" as ${String(created.id).slice(0, 8)} - start ${startTime.toISOString()} (restart:${String(old.id).slice(0, 8)})`
     );
   }
 }

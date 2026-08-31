@@ -1776,7 +1776,7 @@ export class TournamentRecurringService {
     this.seatFirstHeldIds.clear();
     console.log(
       `[TournamentRecurring] held-empty: ${n} seat-first board(s) skipped in the last ` +
-        `${TournamentRecurringService.HELD_REPORT_EVERY_MS / 60000}m — they open for a human and ` +
+        `${TournamentRecurringService.HELD_REPORT_EVERY_MS / 60000}m - they open for a human and ` +
         `rotate out on the next ${SEAT_FIRST_EMPTY_BUCKET_MS / 60000}m bucket`
     );
   }
@@ -1825,7 +1825,7 @@ export class TournamentRecurringService {
 
     this.isRunning = true;
     console.log(
-      '[TournamentRecurring] Service started — MTTs every 5 min, SNG + Spin boards every 30 s, XMTTs every 5 min'
+      '[TournamentRecurring] Service started - MTTs every 5 min, SNG + Spin boards every 30 s, XMTTs every 5 min'
     );
 
     // Tournament check: every 5 minutes
@@ -1935,7 +1935,7 @@ export class TournamentRecurringService {
           const msg = String(createErr?.message ?? createErr ?? '');
           if (createErr?.code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
             console.log(
-              `[TournamentRecurring] "${config.name}" was created concurrently — skipping (this is the duplicate guard working)`
+              `[TournamentRecurring] "${config.name}" was created concurrently - skipping (this is the duplicate guard working)`
             );
             continue;
           }
@@ -2006,7 +2006,7 @@ export class TournamentRecurringService {
    */
   private async withBoardTick(variant: 'spin' | 'sng', run: () => Promise<void>): Promise<void> {
     if (this.boardTickInFlight[variant]) {
-      console.log(`[TournamentRecurring] ${variant} board tick still running — skipping this one`);
+      console.log(`[TournamentRecurring] ${variant} board tick still running - skipping this one`);
       return;
     }
     this.boardTickInFlight[variant] = true;
@@ -3978,7 +3978,7 @@ export class TournamentRecurringService {
         if (added === 0 && candidates.length > 0) {
           console.warn(
             `[TournamentRecurring] seat-first fill added nobody to ${tournamentId.slice(0, 8)} ` +
-              `from ${own.length} own registrant(s) + ${pool.length} free horse(s) — shortfall ${shortfall}`
+              `from ${own.length} own registrant(s) + ${pool.length} free horse(s) - shortfall ${shortfall}`
           );
         }
       } else {
@@ -4356,7 +4356,7 @@ export class TournamentRecurringService {
       if (failures.size > 0) {
         const summary = [...failures.entries()].map(([r, n]) => `${r} x${n}`).join(', ');
         console.warn(
-          `[TournamentRecurring] Horse registration: ${registered} seated, skipped — ${summary}`
+          `[TournamentRecurring] Horse registration: ${registered} seated, skipped - ${summary}`
         );
       }
 

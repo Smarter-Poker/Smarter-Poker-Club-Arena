@@ -39,7 +39,7 @@ describe('standard allocation below the pivot', () => {
 });
 
 describe('pivot allocation at and above 100k', () => {
-  it('is 25 / 25 / 50 — the back-up share stays flat, promo takes the surplus', () => {
+  it('is 25 / 25 / 50 - the back-up share stays flat, promo takes the surplus', () => {
     expect(BBJ_POOL_ALLOCATION_PIVOT.mainBBJ).toBe(0.25);
     expect(BBJ_POOL_ALLOCATION_PIVOT.backUpBBJ).toBe(0.25);
     expect(BBJ_POOL_ALLOCATION_PIVOT.promotional).toBe(0.5);

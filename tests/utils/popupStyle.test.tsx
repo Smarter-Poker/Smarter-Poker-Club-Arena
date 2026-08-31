@@ -34,6 +34,27 @@ describe('formatPopupText — Title Case', () => {
     expect(formatPopupText('rebuy failed (insufficient chips)')).toBe(
       'Rebuy Failed (Insufficient Chips)'
     );
+    // A quote that OPENS a phrase still starts a word.
+    expect(formatPopupText("'quoted phrase' here")).toBe("'Quoted Phrase' Here");
+  });
+
+  it('does not break a contraction, which is not a word boundary', () => {
+    /**
+     * 2026-08-31. The straight apostrophe sat in the word-boundary class next
+     * to the quote characters, so every contraction in every toast rendered
+     * with a capital in the middle of it. The live one is TablePage's
+     * seat-taken error, shown on the felt to a player who clicks a seat they
+     * already occupy:
+     *
+     *     toast.error(`You're already seated at seat ${n}.`)
+     *       rendered  "You'Re Already Seated At Seat 3."
+     */
+    expect(formatPopupText("you're already seated at seat 3")).toBe(
+      "You're Already Seated At Seat 3"
+    );
+    expect(formatPopupText("we can't reach the table")).toBe("We Can't Reach The Table");
+    expect(formatPopupText("it's your turn")).toBe("It's Your Turn");
+    expect(formatPopupText("that didn't work")).toBe("That Didn't Work");
   });
 
   it('leaves numbers and punctuation alone', () => {

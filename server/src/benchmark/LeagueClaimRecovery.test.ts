@@ -139,7 +139,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
-describe('claimNightlyJob — first claim', () => {
+describe('claimNightlyJob - first claim', () => {
   it('an unclaimed day is claimed', async () => {
     expect(await claimNightlyJob('league', DAY)).toBe(true);
     expect(state.jobRuns).toHaveLength(1);
@@ -157,7 +157,7 @@ describe('claimNightlyJob — first claim', () => {
   });
 });
 
-describe('claimNightlyJob — the 2026-08-28 crash', () => {
+describe('claimNightlyJob - the 2026-08-28 crash', () => {
   it('an OLD claim that produced NOTHING is taken over', async () => {
     // Exactly the production shape: claimed at 04:04, no result rows.
     state.jobRuns.push({
@@ -211,7 +211,7 @@ describe('claimNightlyJob — the 2026-08-28 crash', () => {
  *   horse_job_runs  self_tuner   2026-08-26  claimed 08:03  by 6f03494b94b4
  *   horse_self_tune_log for 2026-08-26: NO ROWS, ever.
  */
-describe('claimNightlyJob — daily_audit and self_tuner recovery', () => {
+describe('claimNightlyJob - daily_audit and self_tuner recovery', () => {
   it('a dead daily_audit claim that wrote no audit row is taken over', async () => {
     state.jobRuns.push({
       job: 'daily_audit',
@@ -269,10 +269,9 @@ describe('claimNightlyJob — daily_audit and self_tuner recovery', () => {
     expect(await claimNightlyJob('daily_audit', DAY)).toBe(false);
     expect(state.jobRuns[0].claimed_by).toBe('container-B');
   });
-
 });
 
-describe('claimNightlyJob — concurrency and window independence', () => {
+describe('claimNightlyJob - concurrency and window independence', () => {
   it('two rescuers race and exactly ONE wins', async () => {
     state.jobRuns.push({
       job: 'league',

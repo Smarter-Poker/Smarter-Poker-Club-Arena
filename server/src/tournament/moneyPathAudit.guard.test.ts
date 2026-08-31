@@ -46,7 +46,7 @@ describe('a column that is read is a column that is selected', () => {
     expect(reads, 'the read moved; re-point this guard').toBe(true);
     expect(
       BASE,
-      'mystery_bounty_top_percent is read but not selected — it will always be undefined'
+      'mystery_bounty_top_percent is read but not selected - it will always be undefined'
     ).toMatch(/select\([\s\S]{0,600}?mystery_bounty_top_percent/);
   });
 });

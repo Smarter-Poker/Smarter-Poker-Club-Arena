@@ -106,7 +106,7 @@ function runoutHarness(opts: { insurance: boolean; rit: boolean }) {
   return { engine };
 }
 
-describe('insurance x run-it-twice — the RIT question first, insurance on a single run', () => {
+describe('insurance x run-it-twice - the RIT question first, insurance on a single run', () => {
   it('both enabled: the RIT offer fires FIRST and no insurance offer exists yet', async () => {
     const { engine } = runoutHarness({ insurance: true, rit: true });
     await sleep(300);

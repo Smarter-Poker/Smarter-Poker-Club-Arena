@@ -30,8 +30,28 @@
 /**
  * Words start after whitespace, an opening bracket/quote, or a hyphen —
  * "auto-fold" is two words to a reader, so both halves get their capital.
+ *
+ * AN APOSTROPHE IS NOT A WORD BOUNDARY IN A CONTRACTION (2026-08-31).
+ *
+ * The straight apostrophe used to sit in this class alongside the quote
+ * characters, which is right for 'a quoted phrase' and wrong for every
+ * contraction in English. Every toast carrying one rendered mangled:
+ *
+ *     "You're already seated at seat 3"  ->  "You'Re Already Seated At Seat 3"
+ *     "we can't reach the table"         ->  "We Can'T Reach The Table"
+ *     "it's your turn"                   ->  "It'S Your Turn"
+ *
+ * TablePage's seat-taken toast is the live one. It renders on the felt, to a
+ * player, every time they click a seat they already occupy.
+ *
+ * A quote now opens a word only when it FOLLOWS a boundary itself, so
+ * 'quoted phrase' still capitalises and You're is left alone. Both cases are
+ * pinned in tests/utils/popupStyle.test.tsx.
  */
-const WORD_START = /(^|[\s([{"'‘“-])([a-z])/g;
+const WORD_START = /(^|[\s([{"‘“-])([a-z])/g;
+
+/** A quote that OPENS a phrase: at the start, or after whitespace/bracket. */
+const QUOTED_WORD_START = /(^|[\s([{])(['’])([a-z])/g;
 
 /** An em/en dash used as a clause break: surrounded by spaces. */
 // FORMATTER-PROOF 2026-08-21: a format pass once mangled literal em/en
@@ -53,5 +73,12 @@ export function formatPopupText(message: string): string {
       .replace(DASH_ANY, '-')
       // First letter of every word up. Interior capitals untouched.
       .replace(WORD_START, (_, boundary: string, letter: string) => boundary + letter.toUpperCase())
+      // …and a word opened by a quote, which the class above no longer covers
+      // so that contractions survive.
+      .replace(
+        QUOTED_WORD_START,
+        (_, boundary: string, quote: string, letter: string) =>
+          boundary + quote + letter.toUpperCase()
+      )
   );
 }

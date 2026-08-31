@@ -234,7 +234,7 @@ export class StateVerifier {
       };
 
       reportError(
-        violations.map((v) => `${v.severity.toUpperCase()}: ${v.type} — ${v.message}`).join('; '),
+        violations.map((v) => `${v.severity.toUpperCase()}: ${v.type} - ${v.message}`).join('; '),
         'StateVerifier.violationslength_violations_de'
       );
 
@@ -555,7 +555,7 @@ export class StateVerifier {
     if (actual > MAX_BOARD) {
       violations.push({
         type: 'COMMUNITY_CARD_COUNT',
-        message: `Stage ${context.stage} has ${actual} community cards — more than a full board (${MAX_BOARD})`,
+        message: `Stage ${context.stage} has ${actual} community cards - more than a full board (${MAX_BOARD})`,
         severity: 'critical',
         details: { stage: context.stage, expected, actual, reason: 'board_overflow' },
       });
@@ -572,7 +572,7 @@ export class StateVerifier {
       if ((context.ritBoards ?? 0) >= 2) return;
       violations.push({
         type: 'COMMUNITY_CARD_COUNT',
-        message: `Stage ${context.stage} expects ${expected} community cards, got only ${actual} — cards are missing`,
+        message: `Stage ${context.stage} expects ${expected} community cards, got only ${actual} - cards are missing`,
         severity: 'warning',
         details: { stage: context.stage, expected, actual, reason: 'board_behind_stage' },
       });

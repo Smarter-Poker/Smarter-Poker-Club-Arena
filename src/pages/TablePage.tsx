@@ -591,6 +591,8 @@ interface TableState {
   postBBDeferredUserIds?: string[];
   // Phase 8: Action timer state
   actionTimerDeadline?: number;
+  /** Hero's own pineapple discard deadline, absolute epoch ms, from the engine. */
+  discardDeadline?: number | null;
   /** Wall-clock turn start (server-authoritative). Drives the CSS ring
    * animation via SeatSlot turnStartTimeMs/turnDeadlineMs props. */
   actionTimerStartTime?: number;
@@ -2289,6 +2291,7 @@ export default function TablePage({
             .filter((n): n is string => typeof n === 'string'),
         })) as SidePot[],
         actionTimerDeadline: mapped.actionTimerDeadline,
+        discardDeadline: mapped.discardDeadline ?? null,
         actionTimerStartTime: mapped.actionTimerStartTime,
         actionTimerPlayerId: mapped.actionTimerPlayerId,
         isTimeBankActive: mapped.isTimeBankActive,
@@ -2322,6 +2325,25 @@ export default function TablePage({
    *  one, never into what the felt shows. Written in handleHoleCardPayload. */
   const heroEngineCardOrderRef = useRef<string[] | null>(null);
   const heroPineappleCards = useMemo(() => {
+    /* ═══ A BACKGROUND TABLE MAY NOT PUT A PICKER ON YOUR SCREEN ═══════════
+       MultiTablePage mounts up to four TablePages at once and only the active
+       slot is `--active`; the others stay rendered (they keep their engine
+       sockets alive) with `pointer-events: none`. This panel is
+       `position: fixed`, so it escapes its slot and paints over the middle of
+       whatever table you ARE playing — and it arrives INERT, because
+       pointer-events is inherited, so it is a picker you can see and cannot
+       click. The old full-screen version of this blacked out your live table
+       outright.
+
+       Dan 2026-08-28, binding: "YOU CAN NEVER EVER AUTO CHANGE TABLES FOR A
+       USER, THEY MUST CHANGE IT BY THEM SELF." So a background table asks for
+       attention rather than taking it: setDecisionDeadline below already feeds
+       the tab strip's countdown and alarm on a `discard` decision, exactly like
+       a turn. Switch to that table and the picker is there.
+
+       Gated at the RENDER, not here: this value also drives pineappleDeadline,
+       which is what feeds that alarm. Blanking it on a background table would
+       have silenced the very notice that replaces the picker. */
     if (tableState.engineStage !== 'pineapple_discard') return null;
     const hero = tableState.players[tableState.heroSeat - 1];
     if (!hero || hero.status === 'folded') return null;
@@ -2329,20 +2351,38 @@ export default function TablePage({
     return cards.length === 3 ? (cards as NonNullable<(typeof cards)[number]>[]) : null;
   }, [tableState.engineStage, tableState.players, tableState.heroSeat]);
 
-  // The engine starts its auto-discard timer the moment the stage opens, so the
-  // countdown is anchored to when we first see the stage rather than to a
-  // separate broadcast.
-  // `actionTimeSeconds` is declared further down this component, so naming it in
-  // the dep array would be a temporal-dead-zone error rather than a lint gripe.
-  // Same ref pattern the all-in hotkey uses.
+  /* ═══ THE DISCARD CLOCK IS THE SERVER'S (2026-08-31) ═══════════════════
+     This used to be `Date.now() + actionTimeSecondsRef.current * 1000`,
+     anchored with `prev ?? ...` to the first frame the client saw the stage in.
+     Three ways that lied to the player, and all three end the same way - folded
+     on a clock that still read time:
+
+       - the client's 15 was its OWN default, so a table configured with a
+         different action_time_seconds showed a number the engine did not use;
+       - `prev ??` anchors to FIRST SIGHT, so a reconnect mid-round started a
+         fresh 15 seconds over a server deadline that was half spent;
+       - switching to the table from another tab re-anchored it again.
+
+     The engine now publishes `discard_deadlines` (per seat, absolute epoch ms)
+     and the mapper hands the hero its own entry. serverNow() subtracts the
+     device's clock skew from the same sample the turn ring already uses, so
+     what the panel counts down is what folds you.
+
+     The local guess survives ONLY as a fallback for an engine build that does
+     not publish the field yet, and it is deliberately the last resort. */
   const actionTimeSecondsRef = useRef(15);
   useEffect(() => {
-    if (heroPineappleCards) {
-      setPineappleDeadline((prev) => prev ?? Date.now() + actionTimeSecondsRef.current * 1000);
-    } else {
+    if (!heroPineappleCards) {
       setPineappleDeadline(null);
+      return;
     }
-  }, [heroPineappleCards]);
+    const authoritative = tableState.discardDeadline;
+    if (typeof authoritative === 'number' && authoritative > 0) {
+      setPineappleDeadline((prev) => (prev === authoritative ? prev : authoritative));
+      return;
+    }
+    setPineappleDeadline((prev) => prev ?? Date.now() + actionTimeSecondsRef.current * 1000);
+  }, [heroPineappleCards, tableState.discardDeadline]);
 
   // Mirror the discard clock into the shared decision channel so the tab strip
   // can show and alarm it on a table the player is not looking at.
@@ -8127,6 +8167,16 @@ export default function TablePage({
               rank: c.rank,
               suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as any),
             }));
+            /* The same record the realtime path keeps, for the same reason: a
+               Crazy Pineapple discard is an INDEX into the engine's order, and
+               cards_pre_sort is about to reorder this array. Without it, a hero
+               who recovered their cards by polling — a mid-hand reload, a
+               missed INSERT — fell back to the DISPLAY index and discarded the
+               wrong card, which is exactly the bug the realtime path was fixed
+               for on 2026-08-31. Two ways in, one rule. */
+            heroEngineCardOrderRef.current = parsedCards.map(
+              (c: { rank: string; suit: string }) => `${c.rank}${c.suit}`
+            );
             if (cardsPreSortRef.current) parsedCards = sortCardsByRank(parsedCards);
             updatedPlayers[heroIdx] = {
               ...updatedPlayers[heroIdx]!,
@@ -17077,6 +17127,27 @@ export default function TablePage({
       toast?.error?.(result?.error || 'Could Not Start Your Time Bank');
       return;
     }
+
+    /* A DISCARD BANK IS NOT A TURN BANK (2026-08-31).
+
+       Everything below this point is the TURN presentation. `timeBankActive`
+       drives the hero seat's ring and the multi-table tab's "1:<deadline>"
+       string, and the effect that owns it cancels the moment
+       `currentPlayerSeat !== heroSeat`. The Crazy Pineapple discard round has
+       no current player at all, so setting it here would paint a ring for one
+       frame, publish a bogus deadline to the tab strip, and then cancel itself.
+
+       Nothing needs painting: the engine has already moved THIS seat's discard
+       deadline and re-broadcast it, so the picker's own countdown is the
+       feedback. And no toast on the armed case either - Dan 2026-08-24 on the
+       turn path, "it gives you this generic pop up, instead of resetting the
+       countdown clock on the hero's box". The same reasoning holds here, so the
+       armed state is returned and the picker renders it in place.
+       Pinned by tests/unit/timeBankSeatFeedbackAndCards.test.ts. */
+    if (heroPineappleCards) {
+      soundService.playTimeBankActivated();
+      return { armed: !!(result as { armed?: boolean }).armed };
+    }
     /* Dan 2026-08-23: "it should not take a time bank or add more time until you
        have truly used your entire 15 seconds." The engine now ARMS a bank
        pressed while ordinary clock remains and redeems it at expiry, so a press
@@ -17103,7 +17174,7 @@ export default function TablePage({
     // ANIMATION/SOUND AUDIT 2026-08-19: was playChips (a wager sound) — the
     // dedicated time-bank cue existed and was only wired to the REMOTE event.
     soundService.playTimeBankActivated();
-  }, [tableId, userId, timeBanksRemaining, toast]);
+  }, [tableId, userId, timeBanksRemaining, toast, heroPineappleCards]);
 
   /* An arm belongs to ONE turn. Hero acts, folds, times out or the hand moves
      on, and a leftover `true` would keep the pending indicator lit on a seat
@@ -21356,7 +21427,15 @@ export default function TablePage({
           Leaderboard, Session Summary, Tournament Screens — all modals/overlays.
           Extracted to TableModalsLayer to keep TablePage under control. */}
       <PineappleDiscard
-        isOpen={!!heroPineappleCards}
+        /* `isActive` is the gate: see heroPineappleCards. A background table
+           alarms through the tab strip instead of painting a dead, unclickable
+           panel across the table you are actually playing. */
+        isOpen={isActive && !!heroPineappleCards}
+        /* The discard is a decision, so it can buy time like any other. The
+           same endpoint and the same bank; the engine routes a press made
+           during the round to this seat's own deadline. */
+        timeBanksRemaining={timeBanksRemaining ?? 0}
+        onTimeBank={handleActivateTimeBank}
         cards={heroPineappleCards ?? []}
         onDiscard={handlePineappleDiscard}
         deadline={pineappleDeadline}

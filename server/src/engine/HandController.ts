@@ -1023,6 +1023,29 @@ export class HandController {
     return true;
   }
 
+  /**
+   * Does this seat still owe a discard? (2026-08-31)
+   *
+   * The engine keeps its own per-seat DEADLINE map so a time bank can extend
+   * one player without touching anyone else. That map can only ever be a cache
+   * of this set, and there are three ways a seat leaves the round WITHOUT
+   * passing through `submitDiscard`, which is the only place the engine used to
+   * prune it:
+   *
+   *   - a HORSE discards by calling performDiscard directly (HorseLogic picks
+   *     the card, ServerTableEngineRunout submits it);
+   *   - an all-in seat is resolved by resolvePendingPineappleDiscards when the
+   *     flop lands, because the round never opens for it;
+   *   - a seat folded for missing the round is already gone from here.
+   *
+   * So the deadline map is reconciled against THIS on every sweep and before
+   * every publish, and the engine can never announce or enforce a deadline for
+   * a seat that has nothing left to decide.
+   */
+  public owesPineappleDiscard(seat: number): boolean {
+    return this.pineappleDiscardsRemaining.has(seat);
+  }
+
   /** FIX 120: Check if all players have discarded; if so, advance to flop betting */
   private checkPineappleDiscardsComplete(): void {
     if (this.pineappleDiscardsRemaining.size === 0) {

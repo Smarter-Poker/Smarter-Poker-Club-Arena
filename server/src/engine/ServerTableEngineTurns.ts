@@ -784,6 +784,19 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const state = this.handController.getState();
     const player = state.players.find((p) => p.user_id === userId);
 
+    /* THE DISCARD IS A DECISION, SO IT CAN BUY TIME (2026-08-31).
+       Everything below this line is written against `currentPlayerSeat`, and
+       the Crazy Pineapple discard round has no turn - every seat decides at
+       once - so the press landed on "Not Your Turn", and the one action most
+       likely to make a player hesitate was the only one on the table with no
+       way to think. Missing it folds the hand outright.
+
+       Routed to the round's own per-seat deadline, which applies the same
+       exhaustion rule, the same pool and the same per-street cap as a turn. */
+    if (state.stage === 'pineapple_discard') {
+      return this.extendPineappleDiscard(userId);
+    }
+
     if (!player || state.currentPlayerSeat !== player.seat) {
       return { success: false, error: 'Not Your Turn' };
     }

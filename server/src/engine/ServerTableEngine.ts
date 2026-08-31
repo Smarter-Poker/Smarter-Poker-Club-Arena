@@ -178,6 +178,41 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
   /**
    * GET /state/:tableId — Bible V8 §2.4: Get current hand state (scrubbed for requesting player)
    */
+  /**
+   * The discard clock, as the engine knows it (2026-08-31).
+   *
+   * `discard_deadlines` is keyed by user_id so a client picks out its OWN
+   * deadline; `discard_deadline_ms` is the unextended round deadline, which is
+   * what a spectator or a seat that has already discarded should see. Both are
+   * absolute epoch ms and both are null outside the round, so a client can
+   * never keep counting down a clock that has stopped.
+   *
+   * Deadlines are not secret - they are on everybody's screen already - so
+   * publishing the map on the shared broadcast leaks nothing.
+   */
+  protected pineappleDiscardSnapshotFields(): Record<string, unknown> {
+    if (
+      this.pineappleDiscardBaseDeadlineMs === null ||
+      this.handController?.getState().stage !== 'pineapple_discard'
+    ) {
+      return { discard_deadline_ms: null, discard_deadlines: {}, discard_duration_ms: 0 };
+    }
+    /* Never announce a deadline for a seat that has already settled its round.
+       A horse discards through performDiscard and an all-in seat through
+       resolvePendingPineappleDiscards, so the map is reconciled here too. */
+    this.pruneSettledPineappleDeadlines();
+    const byUser: Record<string, number> = {};
+    for (const [seat, at] of this.pineappleDiscardDeadlines) {
+      const p = this.seatedPlayers.find((sp) => sp.seat_number === seat);
+      if (p) byUser[p.user_id] = at;
+    }
+    return {
+      discard_deadline_ms: this.pineappleDiscardBaseDeadlineMs,
+      discard_deadlines: byUser,
+      discard_duration_ms: this.pineappleDiscardDurationMs,
+    };
+  }
+
   public getTableState(requestingUserId: string): Record<string, any> | null {
     if (!this.handController || !this.tableInfo) return null;
 
@@ -234,6 +269,15 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // that offset and subtract it, so the ring reflects the real remaining
       // time regardless of what the device clock says.
       server_time_ms: Date.now(),
+      // ── PINEAPPLE DISCARD CLOCK (2026-08-31) ─────────────────────────────
+      // Absolute, server-authored, per seat. Before this the client counted
+      // down from its own copy of action_time_seconds anchored to the moment it
+      // first saw the stage - so a reconnect restarted a clock the server had
+      // half spent, and a differently-configured table showed a number that was
+      // simply wrong. Paired with server_time_ms above, which the client already
+      // uses to subtract its own clock skew, this is the same deadline that
+      // folds you.
+      ...this.pineappleDiscardSnapshotFields(),
       pots: (state.pots ?? []).map((p) => ({
         amount: p.amount,
         eligible: p.eligiblePlayers ?? [],
@@ -415,6 +459,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // that offset and subtract it, so the ring reflects the real remaining
       // time regardless of what the device clock says.
       server_time_ms: Date.now(),
+      // ── PINEAPPLE DISCARD CLOCK (2026-08-31) — see getTableState above.
+      ...this.pineappleDiscardSnapshotFields(),
       // Phase 1.2 PR-F: absolute wall-clock deadline. Client reads this
       // directly rather than computing start+duration locally, eliminating
       // client/server clock skew for the countdown.
@@ -623,6 +669,12 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       turn_duration_ms: 0,
       server_time_ms: Date.now(),
       turn_deadline_ms: 0,
+      /* Explicit, not omitted: an idle snapshot must actively CLEAR the discard
+         clock. Leaving the key out would let the client hold the last live
+         deadline and keep a dead countdown on the felt between hands. */
+      discard_deadline_ms: null,
+      discard_deadlines: {},
+      discard_duration_ms: 0,
       time_bank_active: false,
       disconnect_states: this.disconnectEngine.getFsmStatesForTable(this.tableId),
       /* HOW MANY SEATS THIS TABLE HAS — FROM THE ONLY PARTY THAT KNOWS

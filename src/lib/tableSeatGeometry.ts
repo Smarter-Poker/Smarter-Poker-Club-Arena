@@ -367,9 +367,30 @@ export function seatCardSide(xPercent: number, _yPercent: number): CardSide {
   return outboardCardSide(xPercent);
 }
 
-/** Ring for a table size; clamps to [2, 9] so unknown sizes never crash. */
+/**
+ * The largest table this client can DRAW, derived from the layouts themselves
+ * (Dan 2026-08-31, phase 1 audit).
+ *
+ * Computed rather than written as a literal, because a hand-copied second
+ * number is exactly what went wrong: `heroSeatReconcile` was given
+ * `MAX_SUPPORTED_SEATS = 10` while `SEAT_LAYOUTS` stops at 9. A ten-seat table
+ * would then have grown ten rows of state against nine drawable positions —
+ * seat 10 existing and rendering nowhere, which is the whole bug this audit
+ * exists to kill, planted fresh by the fix for it. Two numbers that must agree,
+ * living in two files, is a defect waiting for whoever adds a 10-max table.
+ * Now there is ONE number, and it comes from the rings: adding a `10:` layout
+ * below raises this and everything that reads it, in the same edit.
+ */
+export const MAX_SUPPORTED_SEATS = Object.keys(SEAT_LAYOUTS).reduce(
+  (max, k) => Math.max(max, Number(k)),
+  2
+);
+
+/** Ring for a table size; clamps to [2, MAX_SUPPORTED_SEATS] so unknown sizes never crash. */
 export function seatLayoutFor(maxPlayers: number): Array<{ x: number; y: number }> {
-  return SEAT_LAYOUTS[Math.min(9, Math.max(2, maxPlayers || 9))];
+  return SEAT_LAYOUTS[
+    Math.min(MAX_SUPPORTED_SEATS, Math.max(2, maxPlayers || MAX_SUPPORTED_SEATS))
+  ];
 }
 
 // Create empty player slots for a table

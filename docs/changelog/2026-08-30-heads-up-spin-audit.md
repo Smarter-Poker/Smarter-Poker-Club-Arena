@@ -9,6 +9,7 @@ all 41 shortfall backpay rows paid. Multiplier distribution matches spinSpec.
 fn_spin_sweep_unbooked() run post-change: ok, settled 0, failed 0.
 
 ## Fixed
+
 1. **fn_spin_rake_rate (DB) was still banded 8/7/6/5%** while spinSpec is flat
    8% (Dan 2026-08-27 ruling) — the sweep recovery path booked a different
    rake/reserve deposit than the engine for buy-ins over 5. Flattened to 0.08.
@@ -31,6 +32,7 @@ fn_spin_sweep_unbooked() run post-change: ok, settled 0, failed 0.
 6. **World Hub create-table.js**: emoji removed from notification title.
 
 ## Create Table — dead route removed, validation ported to the DB (2026-08-31)
+
 The World Hub route pages/api/club-arena/create-table.js had ZERO callers, so
 none of its validation ever ran on a real table. Route deleted (World Hub PR
 #1051, merged) along with its RateLimiter entry, and the validation that
@@ -52,6 +54,7 @@ match, rake/BBJ tier auto-fill, and the settings JSONB payload the dead route
 carried. Live tables already sit outside those, so they need a ruling first.
 
 ## Noted, not changed (need Dan / follow-up)
+
 - Repo migration 20260827 still contains the banded fn_spin_rake_rate +
   assertions; superseded by the 20260830 migration on replay order.
 - trg_tables_union_ownership DOES exist in production (verified 2026-08-31) but is in no repo migration — repo/DB drift to reconcile.

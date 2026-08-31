@@ -950,7 +950,12 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // fold equity of a raise and then declines the equity it paid for. This
     // fires only when hero PUT the money in (raises >= 2 means hero's raise
     // got re-raised) and the price is genuinely committing.
-    if (ploT && investedShare >= 0.28 && guardOdds <= 0.45 && strength >= t(0.42)) {
+    // 2026-08-31: the `ploT` gate is REMOVED. The argument this guard rests
+    // on — PLO equities are compressed, so a committed stack facing a price
+    // cannot fold — is about the VARIANT, not the format. Gating it on
+    // tournaments left every PLO CASH table with no protection at all, which
+    // is where Dan watched it happen.
+    if (ctx.isOmaha && investedShare >= 0.28 && guardOdds <= 0.45 && strength >= t(0.42)) {
       return { a: 'call' };
     }
 
@@ -999,7 +1004,36 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       return { a: 'fold' };
     }
 
-    if (strength >= callThresh && toCall <= stack * 0.35) return { a: 'call' };
+    // ═══ THE PRICE IS PART OF THE DECISION (Dan 2026-08-31) ═══════════
+    // This branch demanded a FIXED top-20% hand whatever the pot laid, and
+    // capped the call at 35% of stack — a cap that bites hardest exactly
+    // when hero is most committed and the odds are best. Three hands Dan
+    // watched live, all folded 40/40 by the probe that reproduced them:
+    //
+    //   PLO6, raised to 12 with 35 behind, faced 48 -> all-in for 35 to win
+    //     95 (1.7:1). Strength 0.753, a TOP-25% hand. The bar was 0.803, and
+    //     the cap refused the call before strength was even consulted.
+    //   Heads-up, raised to 6, faced a MIN-CLICK to 12 -> 6 to call into 18,
+    //     THREE TO ONE, in position. Bar 0.803. Fold.
+    //   Min-raised to 4, faced 16 -> 12 into 20. Bar 0.803. Fold.
+    //
+    // In PLO6 essentially any six cards hold more than 25% against a
+    // 3-betting range, so a 3:1 price is a call with the whole range. The
+    // single-raise branch already knows this (V24 price defense); the 3-bet
+    // branch never learned it.
+    //
+    // TWO CORRECTIONS, both anchored on the price rather than invented:
+    //  1. The bar drops as the price improves, more steeply in Omaha where
+    //     the equities compress. Floors stop it becoming a calling station.
+    //  2. The stack cap protects DEEP stacks from light stack-offs. It must
+    //     not veto a committed short stack taking a price it already paid
+    //     for — the chips hero raised are not somebody else's money.
+    const relief3 = Math.max(0, 0.5 - guardOdds) * (ctx.isOmaha ? 1.6 : 0.9);
+    const commit3 = investedShare >= 0.12 ? Math.min(0.1, investedShare * 0.5) : 0;
+    const floor3 = ctx.isOmaha ? 0.3 : 0.42;
+    const pricedCallThresh = Math.max(floor3, callThresh - relief3 - commit3);
+    const capOK3 = toCall <= stack * 0.35 || (investedShare >= 0.1 && guardOdds <= 0.45);
+    if (strength >= pricedCallThresh && capOK3) return { a: 'call' };
     if (toCall > 0 && toCall <= pot * 0.15 && strength >= 0.45) return { a: 'call' };
     if (toCall === 0) return { a: 'check' };
     return { a: 'fold' };

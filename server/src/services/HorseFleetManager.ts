@@ -256,11 +256,20 @@ export class HorseFleetManager {
     hourUTC: number
   ): Promise<void> {
     try {
+      /* BOTH ACTIVE STATES, not just 'waiting' (2026-08-31).
+         The partial unique index now covers 'waiting' AND 'notified', so a
+         row in either state occupies the (table_id, user_id) slot. Reading
+         only 'waiting' would leave a horse holding an offer out of `already`
+         below, put it back in the batch, and take 23505 - which throws and
+         loses the WHOLE batch, so the table quietly stops being topped up.
+         Horses are filtered out of fn_offer_open_seat today and so should
+         never be 'notified', which is exactly why this would have been an
+         invisible trap the first time that changed. */
       const { data: existing, error } = await supabase
         .from('table_waitlist')
         .select('user_id, position')
         .eq('table_id', tableId)
-        .eq('status', 'waiting');
+        .in('status', ['waiting', 'notified']);
       if (error) throw new Error(error.message);
       const have = existing?.length ?? 0;
       if (have >= waitTarget) return;

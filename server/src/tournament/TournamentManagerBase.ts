@@ -30,6 +30,7 @@ import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
 import { spinRevealWouldSkipABeat, spinRevealLag } from './spinRevealWindow.js';
+import { SpinOverrunReporter, describeOverrun } from './spinOverrunReporter.js';
 import { isShortFormat, mayTakeSynchronizedBreak } from './breakEligibility.js';
 import {
   capLevelToChipsInPlay,
@@ -2948,6 +2949,13 @@ export abstract class TournamentManagerBase {
    * player who refreshes mid-spin rejoins the shared moment already in
    * progress. What it no longer has to absorb is the engine's own delay.
    */
+  /**
+   * Process-wide overrun aggregator. STATIC on purpose: the overrun is a
+   * property of the ENGINE being late, not of any one tournament, so a
+   * per-instance limiter would report once per spin exactly as before.
+   */
+  private static readonly spinOverruns = new SpinOverrunReporter();
+
   protected resolveSpinReveal(): { revealAt: number; holdUntil: number } {
     const now = Date.now();
     if (this.spinRevealAt <= 0) {
@@ -2976,12 +2984,21 @@ export abstract class TournamentManagerBase {
        times a day. See spinRevealWindow.ts for the full account. */
     const wouldSkipABeat = spinRevealWouldSkipABeat({ now, revealAt: this.spinRevealAt });
     if (wouldSkipABeat) {
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Spin start overran its own reveal window by ${this.spinRevealLagMs}ms - the wheel is being re-anchored to now so it plays in full, and the three players see it start late`
-        ),
-        'Tournament.spin_reveal_window_overrun'
-      );
+      /* AGGREGATED, NOT SILENCED (2026-08-31). This fired once per spin, on
+         88-97% of ~2,500 spins a day, which is over a thousand identical
+         reports daily out of one call site - loud enough to bury every other
+         error in the stream. The per-spin number now lives at full
+         resolution on poker_spin_reveal_lag_p50_ms and
+         poker_spin_reveal_past_lead_in; what survives here is one report per
+         incident, opening immediately and then carrying the count. See
+         spinOverrunReporter.ts. */
+      const overrun = TournamentManagerBase.spinOverruns.record(this.spinRevealLagMs, now);
+      if (overrun) {
+        reportError(
+          new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] ${describeOverrun(overrun)}`),
+          'Tournament.spin_reveal_window_overrun'
+        );
+      }
       this.spinRevealAt = now;
       this.spinHoldUntil = now + spinRevealToDealMs();
     }

@@ -813,6 +813,36 @@ export class ScheduledTournamentService {
      * is why the rate could only ever be keyed on the format label.
      */
     const maxPlayers = clampInt(cfg.maxPlayers, 2, 10000, 0) || (isSpin ? 3 : isSng ? 6 : 100);
+    /**
+     * MORE PAID PLACES THAN SEATS (2026-08-31 audit).
+     *
+     * Non-empty was the only test on this array. This service writes the row
+     * DIRECTLY rather than through fn_create_tournament, so it never met that
+     * function's `more_paid_places_than_players` guard — the one the modal
+     * surfaces as "There are more paid places than players allowed to enter".
+     * A schedule row carrying `"maxPlayers": 2` with a five-place preset would
+     * have created a two-handed game paying five.
+     *
+     * Not live today: the only 2-seat seeded schedule uses HEADS_UP. It was a
+     * gap in the writer, not an incident.
+     *
+     * As of the same day `tournaments_creation_guard` refuses this at the
+     * DATABASE, so it can no longer reach a row from any of the four writers.
+     * This check stays anyway, one layer earlier, because a refusal that
+     * arrives as a Postgres error in a background poll names the constraint
+     * and not the schedule — and the operator needs to know WHICH schedule is
+     * misconfigured. Paying every seat is legal (a Spin pays 3 of 3); paying
+     * more places than can enter is not.
+     */
+    if (payouts.length > maxPlayers) {
+      reportError(
+        new Error(
+          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} pays ${payouts.length} places on ${maxPlayers} seats — skipping`
+        ),
+        'ScheduledTournaments.more_paid_places_than_players'
+      );
+      return null;
+    }
     const minPlayers = Math.min(Math.max(clampInt(cfg.minPlayers, 2, 10000, 3), 2), maxPlayers);
 
     /**

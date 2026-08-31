@@ -957,8 +957,9 @@
 
 @media (min-width: 768px) {
   .arena-game-card:not([data-presentation='mobile']) {
-    width: min(100%, 520px);
+    width: min(var(--agc-desktop-canvas-width, 100%), var(--agc-desktop-canvas-max-width, 520px));
     aspect-ratio: var(--agc-desktop-ratio);
+    margin-inline: auto;
   }
 
   .arena-game-card:not([data-presentation='mobile']) .arena-game-card__art {
@@ -975,8 +976,9 @@
 }
 
 .arena-game-card[data-presentation='desktop'] {
-  width: min(100%, 520px);
+  width: min(var(--agc-desktop-canvas-width, 100%), var(--agc-desktop-canvas-max-width, 520px));
   aspect-ratio: var(--agc-desktop-ratio);
+  margin-inline: auto;
 }
 
 .arena-game-card[data-presentation='desktop'] .arena-game-card__art {
@@ -984,9 +986,10 @@
 }
 
 .arena-game-card[data-presentation='mobile'] {
-  width: 100%;
+  width: var(--agc-mobile-canvas-width, 100%);
   max-width: none;
   aspect-ratio: var(--agc-mobile-ratio);
+  margin-inline: auto;
 }
 
 @container (max-width: 350px) {
@@ -1395,6 +1398,10 @@
 }
 
 .arena-game-card[data-skin$='-v2'] .agc-action {
+  --agc-action-fill: linear-gradient(180deg, rgb(26 34 41 / 68%), rgb(2 6 10 / 82%));
+  --agc-action-fill-shadow: inset 0 0 0 1px rgb(146 176 200 / 28%), inset 0 0 18px #000;
+  position: relative;
+  isolation: isolate;
   min-width: 0;
   min-height: 44px;
   padding: 0 4%;
@@ -1405,11 +1412,9 @@
   border: 0;
   border-radius: 0;
   color: #f2f4f6;
-  background: linear-gradient(180deg, rgb(26 34 41 / 68%), rgb(2 6 10 / 82%));
-  clip-path: polygon(6% 0, 94% 0, 100% 14%, 100% 86%, 94% 100%, 6% 100%, 0 86%, 0 14%);
-  box-shadow:
-    inset 0 0 0 1px rgb(146 176 200 / 28%),
-    inset 0 0 18px #000;
+  background: transparent;
+  clip-path: none;
+  box-shadow: none;
   font-family: 'Roboto Condensed', 'Oswald', Impact, sans-serif;
   font-size: clamp(11px, 4.35cqw, 23px);
   letter-spacing: 0.025em;
@@ -1418,58 +1423,60 @@
     0 4px 7px #000;
 }
 
+.arena-game-card[data-skin$='-v2'] .agc-action::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: var(--agc-action-fill-inset, 7% 4.5%);
+  border-radius: 1px;
+  background: var(--agc-action-fill);
+  clip-path: polygon(6% 0, 94% 0, 100% 14%, 100% 86%, 94% 100%, 6% 100%, 0 86%, 0 14%);
+  box-shadow: var(--agc-action-fill-shadow);
+  pointer-events: none;
+}
+
 .arena-game-card[data-skin$='-v2'] .agc-action--blue,
 .arena-game-card[data-skin$='-v2']
   .agc-action--primary:not(.agc-action--green):not(.agc-action--gold):not(.agc-action--red):not(
     .agc-action--neutral
   ) {
-  background:
+  --agc-action-fill:
     radial-gradient(circle at 50% 32%, rgb(62 168 255 / 48%), transparent 67%),
     linear-gradient(180deg, rgb(13 115 213 / 88%), rgb(3 41 91 / 96%));
-  box-shadow:
-    inset 0 0 0 1px #63baff,
-    inset 0 0 20px #031329,
-    0 0 11px rgb(35 147 255 / 34%);
+  --agc-action-fill-shadow:
+    inset 0 0 0 1px #63baff, inset 0 0 20px #031329, 0 0 11px rgb(35 147 255 / 34%);
 }
 
 .arena-game-card[data-skin$='-v2'] .agc-action--green {
-  background:
+  --agc-action-fill:
     radial-gradient(circle at 50% 30%, rgb(59 190 89 / 34%), transparent 65%),
     linear-gradient(180deg, rgb(22 115 44 / 91%), rgb(3 42 16 / 96%));
-  box-shadow:
-    inset 0 0 0 1px #55d878,
-    inset 0 0 20px #041a0a,
-    0 0 11px rgb(45 183 75 / 30%);
+  --agc-action-fill-shadow:
+    inset 0 0 0 1px #55d878, inset 0 0 20px #041a0a, 0 0 11px rgb(45 183 75 / 30%);
 }
 
 .arena-game-card[data-skin$='-v2'] .agc-action--gold {
   color: #fff2b8;
-  background:
+  --agc-action-fill:
     radial-gradient(circle at 50% 30%, rgb(255 202 66 / 34%), transparent 65%),
     linear-gradient(180deg, rgb(145 98 12 / 94%), rgb(55 32 2 / 98%));
-  box-shadow:
-    inset 0 0 0 1px #f3c54e,
-    inset 0 0 20px #241500,
-    0 0 11px rgb(230 172 38 / 28%);
+  --agc-action-fill-shadow:
+    inset 0 0 0 1px #f3c54e, inset 0 0 20px #241500, 0 0 11px rgb(230 172 38 / 28%);
 }
 
 .arena-game-card[data-skin$='-v2'] .agc-action--red {
   color: #ffe6e6;
-  background:
+  --agc-action-fill:
     radial-gradient(circle at 50% 30%, rgb(255 83 83 / 33%), transparent 65%),
     linear-gradient(180deg, rgb(139 27 32 / 94%), rgb(54 5 10 / 98%));
-  box-shadow:
-    inset 0 0 0 1px #e65b61,
-    inset 0 0 20px #260307,
-    0 0 11px rgb(210 45 53 / 28%);
+  --agc-action-fill-shadow:
+    inset 0 0 0 1px #e65b61, inset 0 0 20px #260307, 0 0 11px rgb(210 45 53 / 28%);
 }
 
 .arena-game-card[data-skin$='-v2'] .agc-action--neutral {
   color: #a2abb4;
-  background: linear-gradient(180deg, rgb(31 38 44 / 90%), rgb(7 10 13 / 98%));
-  box-shadow:
-    inset 0 0 0 1px #58636d,
-    inset 0 0 20px #000;
+  --agc-action-fill: linear-gradient(180deg, rgb(31 38 44 / 90%), rgb(7 10 13 / 98%));
+  --agc-action-fill-shadow: inset 0 0 0 1px #58636d, inset 0 0 20px #000;
 }
 
 .arena-game-card[data-skin$='-v2'] .agc-action__icon {
@@ -1477,8 +1484,16 @@
   height: clamp(17px, 5.2cqw, 28px);
 }
 
+/* Each approved bitmap has a different amount of black export canvas around
+   its physical chassis. These family widths normalize the VISIBLE chrome to
+   one centered rail without distorting or cropping the manufactured art. */
+
 /* NLH: compact casino table module. */
 .arena-game-card--nlh[data-skin='shark-nlh-v2'] {
+  --agc-mobile-canvas-width: 92.1%;
+  --agc-desktop-canvas-width: 96%;
+  --agc-desktop-canvas-max-width: 500px;
+  --agc-action-fill-inset: 7% 5.5%;
   --agc-header-top: 8.5%;
   --agc-header-left: 11.5%;
   --agc-header-right: 9.5%;
@@ -1524,6 +1539,10 @@
 
 /* PLO: Omaha/card-fan module with a state-focused waitlist rail. */
 .arena-game-card--plo[data-skin='shark-plo-v2'] {
+  --agc-mobile-canvas-width: 90.7%;
+  --agc-desktop-canvas-width: 100%;
+  --agc-desktop-canvas-max-width: 520px;
+  --agc-action-fill-inset: 7% 5.5%;
   --agc-header-top: 8.5%;
   --agc-header-left: 13.5%;
   --agc-header-right: 13.5%;
@@ -1572,6 +1591,10 @@
 
 /* Spins: prize-machine cartridge; the payout chamber is the single hero. */
 .arena-game-card--spins[data-skin='shark-spins-v2'] {
+  --agc-mobile-canvas-width: 87.3%;
+  --agc-desktop-canvas-width: 95.5%;
+  --agc-desktop-canvas-max-width: 497px;
+  --agc-action-fill-inset: 8% 5%;
   --agc-header-top: 7.4%;
   --agc-header-left: 12%;
   --agc-header-right: 10%;
@@ -1698,6 +1721,10 @@
 
 /* Heads-Up: symmetrical duel machine on desktop, scan-line roster on mobile. */
 .arena-game-card--heads-up[data-skin='shark-headsup-v2'] {
+  --agc-mobile-canvas-width: 100%;
+  --agc-desktop-canvas-width: 91.9%;
+  --agc-desktop-canvas-max-width: 478px;
+  --agc-action-fill-inset: 8% 5%;
   --agc-header-top: 5.4%;
   --agc-header-left: 9.5%;
   --agc-header-right: 9.5%;
@@ -2085,6 +2112,13 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: 1fr;
   gap: 3.5%;
+}
+
+.arena-game-card--mtt[data-skin='shark-mtt-v2'] {
+  --agc-mobile-canvas-width: 92.7%;
+  --agc-desktop-canvas-width: 96.4%;
+  --agc-desktop-canvas-max-width: 502px;
+  --agc-action-fill-inset: 7% 4.5%;
 }
 
 /* Final optical alignment pass against the approved rendered shells. */

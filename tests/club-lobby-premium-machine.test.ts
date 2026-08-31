@@ -74,8 +74,9 @@ describe('responsive premium Club Arena', () => {
       /\.lobby-top__main\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/s
     );
     expect(mobile).toMatch(
-      /\.lobby-top__identity,[\s\S]*?\.lobby-bbj\s*\{[^}]*height:\s*clamp\(158px, 39vw, 190px\)/s
+      /\.lobby-top__identity,[\s\S]*?\.lobby-bbj\s*\{[^}]*height:\s*auto[^}]*aspect-ratio:\s*var\(--lobby-paired-card-ratio\)/s
     );
+    expect(mobile).toContain('--lobby-paired-card-ratio: 2.4 / 1');
     expect(mobile).toMatch(/\.lobby-wallets-content\s*\{[^}]*grid-template-rows:\s*0fr/s);
     expect(mobile).toMatch(
       /\.lobby-wallets-content\[data-expanded='true'\]\s*\{[^}]*grid-template-rows:\s*1fr/s
@@ -105,7 +106,10 @@ describe('responsive premium Club Arena', () => {
     expect(PAGE).not.toContain("toLocaleLowerCase() === 'shark club'");
     expect(TOP).not.toContain('exactDesktopWelcome');
     expect(PAGE).toContain('<h1 id="club-mobile-welcome-title" title={club.name}>');
-    expect(PAGE_CSS).toMatch(/\.club-mobile-welcome::before\s*\{[^}]*z-index:\s*0/s);
+    expect(PAGE_CSS).toMatch(
+      /\.club-mobile-welcome\s*\{[^}]*lobby-header-frame-universal-v4\.png/s
+    );
+    expect(PAGE_CSS).not.toMatch(/\.club-mobile-welcome::before\s*\{/s);
     expect(PAGE_CSS).toContain('club-nav-shell.webp');
   });
 
@@ -170,7 +174,7 @@ describe('responsive premium Club Arena', () => {
       /@media \(max-width: 900px\)[\s\S]*?\.club-lobby-machine\s*\{[^}]*520px/s
     );
     expect(CARD_CSS).toMatch(
-      /\.arena-game-card\[data-presentation='mobile'\]\s*\{[^}]*width:\s*100%[^}]*max-width:\s*none/s
+      /\.arena-game-card\[data-presentation='mobile'\]\s*\{[^}]*width:\s*var\(--agc-mobile-canvas-width, 100%\)[^}]*max-width:\s*none/s
     );
   });
 });

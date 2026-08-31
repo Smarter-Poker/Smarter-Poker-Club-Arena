@@ -15,6 +15,8 @@ const PAGE = readFileSync(resolve(__dirname, '../../src/pages/ClubMembersPage.ts
 const SERVICE = readFileSync(resolve(__dirname, '../../src/services/ClubRosterService.ts'), 'utf8');
 const CHANNEL = readFileSync(resolve(__dirname, '../../src/hooks/useMasterBusChannel.ts'), 'utf8');
 const CACHE = readFileSync(resolve(__dirname, '../../src/lib/rosterCache.ts'), 'utf8');
+const CSS = readFileSync(resolve(__dirname, '../../src/pages/ClubMembersPage.css'), 'utf8');
+const POLICY = readFileSync(resolve(__dirname, '../../src/lib/rosterLoadPolicy.ts'), 'utf8');
 
 describe('Player Command resilient reads', () => {
   beforeEach(() => vi.useFakeTimers());
@@ -221,5 +223,26 @@ describe('Player Command resilience wiring', () => {
 
   it('maps a failed online read to a retryable connection state', () => {
     expect(PAGE).toContain("dataFreshness === 'failed'");
+  });
+
+  it('settles summary and directory reads independently', () => {
+    expect(PAGE).toContain('settleRosterReadsIndependently');
+    expect(POLICY).toContain('Promise.allSettled');
+    expect(PAGE).toContain('RosterSummaryCoordinator');
+    expect(PAGE).toContain("reportError(error, 'ClubMembersPage.loadSummary')");
+    expect(PAGE).toMatch(/onPage: \(page\) => {[\s\S]*setMembers\(page\.items\)/);
+  });
+
+  it('announces a summary label before its value and exposes independent freshness', () => {
+    expect(PAGE).toMatch(
+      /<dt className="stat-label">\{label\}<\/dt>[\s\S]*<dd className="stat-value">\{value\}<\/dd>/
+    );
+    expect(PAGE).toContain('members-summary__status');
+    expect(PAGE).toContain("summaryFreshness === 'failed'");
+  });
+
+  it('compresses the cinematic command deck on short desktop viewports', () => {
+    expect(CSS).toContain('@media (min-width: 721px) and (max-height: 820px)');
+    expect(CSS).toMatch(/max-height:\s*820px[\s\S]*\.members-hero[\s\S]*min-height:\s*222px/);
   });
 });

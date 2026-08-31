@@ -25,14 +25,16 @@ import {
   referenceBuyIn,
 } from './HorseBankroll.js';
 import { bankrollEvent, bankrollSummaryLine } from './HorseBankrollTelemetry.js';
+import { resolveStakeBand } from './HorseStakeDescent.js';
 import {
   buyInBBFor,
   gameLaneFor,
   isActiveNow,
   occupancyTargetFor,
   setSoleOpenCashTables,
-  stakeBandAllows,
+  stakeBandFor,
   stakeBandForBigBlind,
+  type HorseStakeBand,
 } from './HorseBehavior.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -874,6 +876,27 @@ export class HorseFleetManager {
         );
       }
 
+      /**
+       * CHEAPEST OPEN GAME IN EACH BAND - the ladder's actual rungs, priced
+       * from the tables that really exist rather than from a constant. A band
+       * with no entry here HAS NO TABLE, which on 2026-08-31 was true of both
+       * `micro` (every micro table closed) and `high` (nothing above 2/5), and
+       * is exactly what `resolveStakeBand` falls through.
+       */
+      const bandRef = new Map<HorseStakeBand, number>();
+      for (const t of tables) {
+        if (surplusTableIds.has(t.id)) continue;
+        const r = referenceBuyIn(
+          Number(t.big_blind),
+          Number((t as any).min_buy_in) || undefined,
+          Number((t as any).max_buy_in) || undefined
+        );
+        if (!(r > 0)) continue;
+        const b = stakeBandForBigBlind(Number(t.big_blind));
+        const cur = bandRef.get(b);
+        if (cur === undefined || r < cur) bandRef.set(b, r);
+      }
+
       let totalSeated = 0;
 
       // ── FLEET ACTIVITY FLOOR (Dan 2026-08-26: "a minimum of 1 out of 3
@@ -985,7 +1008,35 @@ export class HorseFleetManager {
             // picked - before it, they were read solely to size a buy-in, and
             // 64 of 210 horses were sitting across multiple stakes in 48
             // hours, one of them at 0.10/0.20 and 25.00/50.00 both.
-            if (!stakeBandAllows(h.id, table.big_blind)) return false;
+            /**
+             * MERIT IS A CEILING, THE BANKROLL PICKS BENEATH IT.
+             *
+             * This was an exact match - band `mid` sits `mid` tables and
+             * nothing else - so a horse whose roll could no longer carry its
+             * own band did not move down, it stopped playing. Measured before
+             * any reset: 175 of 584 horses were banded into a stake with NO
+             * OPEN TABLE and had nowhere legal to go.
+             *
+             * A horse still NEVER plays above the band it earned. See
+             * HorseStakeDescent for why this is not the escape hatch
+             * `stakeBandAllows` deliberately refuses.
+             */
+            const homeBand = stakeBandFor(h.id);
+            const tableBand = stakeBandForBigBlind(table.big_blind);
+            let allowedBand = homeBand;
+            if (bankrollsLoaded) {
+              const rollForBand = bankrolls.get(`${table.club_id}:${h.id}`);
+              if (rollForBand !== undefined) {
+                allowedBand = resolveStakeBand({
+                  horseId: h.id,
+                  homeBand,
+                  bankroll: rollForBand,
+                  bandRef,
+                  policy: bankrollPolicyFor(h.id),
+                }).band;
+              }
+            }
+            if (tableBand !== allowedBand) return false;
             /**
              * BANKROLL GATE (Dan 2026-08-31). A stake band says which games a
              * horse has EARNED; the bankroll says which it can AFFORD. Both

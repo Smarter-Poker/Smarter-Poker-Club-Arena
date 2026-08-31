@@ -50,6 +50,12 @@ export type BankrollEvent =
   | 'rebuy_refused_underrolled'
   /** Declined to rebuy after busting: at the temperament's stop-loss. */
   | 'rebuy_refused_stop_loss'
+  /** Dropped to a cheaper band because the roll no longer carried the home one. */
+  | 'moved_down_a_stake'
+  /** Climbed back toward the earned band at the stricter bar. */
+  | 'moved_up_a_stake'
+  /** Stood up mid-session: the roll fell under the level that justifies this stake. */
+  | 'left_underrolled'
   /** Could not afford ANY open cash game - the move-down ladder ran out. */
   | 'ladder_exhausted';
 

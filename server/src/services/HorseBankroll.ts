@@ -194,18 +194,12 @@ export function bankrollBuyIn(args: {
   return Math.floor(clamped * 100) / 100;
 }
 
-/** Rule 7: below one buy-in of the cheapest game, there is no cash play. */
-export function isBroke(bankroll: number, cheapestBuyIn: number): boolean {
-  if (!(cheapestBuyIn > 0)) return false;
-  return bankroll < cheapestBuyIn;
-}
-
 export type SessionVerdict = 'play_on' | 'book_win' | 'stop_loss';
 
 /**
  * Rules 5 and 6, from the session's own P&L in buy-ins.
  *
- * `netChips` is this session's profit or loss — what the horse is up or down
+ * `netChips` is this session's profit or loss - what the horse is up or down
  * since it sat, NOT its stack, so a deep-stacked horse that is stuck is not
  * mistaken for a winner.
  */
@@ -221,48 +215,23 @@ export function sessionVerdict(
   return 'play_on';
 }
 
-export interface GameOption {
-  bigBlind: number;
-  minBuyIn: number;
-  maxBuyIn: number;
-}
-
 /**
- * Rules 1-3 together: of the games on offer, the biggest this bankroll
- * genuinely covers — with the move-up cushion applied when it would be a
- * step ABOVE what it is already playing.
+ * RETIRED 2026-08-31: `isBroke` and `bestAffordableGame` lived here - correct,
+ * tested, and with zero callers. That is the same "shipped but unwired"
+ * failure the audit of this module was written to find, so leaving two more
+ * behind would have been the wrong lesson. Both were superseded the moment
+ * something real needed the job doing:
  *
- * Returns null when nothing is affordable, which is the broke path: the
- * caller sends it to the freerolls.
+ *   - `bestAffordableGame` picked the best game from a synthetic ladder.
+ *     `resolveStakeBand` (HorseStakeDescent) does it against the bands and
+ *     tables that actually exist, and adds the hysteresis it lacked.
+ *   - `isBroke` compared a roll to a hard-coded cheapest buy-in. The freeroll
+ *     router asks the better question - can this horse afford the cheapest
+ *     PAID event ON THE BOARD - which cannot go stale when the schedule moves.
+ *
+ * Deleted rather than kept "just in case": dead code with passing tests reads
+ * as working machinery, and this layer has already been bitten by that once.
  */
-export function bestAffordableGame(
-  bankroll: number,
-  options: GameOption[],
-  policy: BankrollPolicy,
-  currentBigBlind?: number
-): GameOption | null {
-  const ranked = [...options]
-    .filter((o) => Number(o.bigBlind) > 0)
-    .sort((a, b) => b.bigBlind - a.bigBlind);
-  for (const o of ranked) {
-    const ref = referenceBuyIn(o.bigBlind, o.minBuyIn, o.maxBuyIn);
-    const movingUp = currentBigBlind !== undefined && o.bigBlind > currentBigBlind;
-    const ok = movingUp ? canMoveUp(bankroll, ref, policy) : canSit(bankroll, ref, policy);
-    if (
-      ok &&
-      bankrollBuyIn({
-        bankroll,
-        desired: ref,
-        minBuyIn: o.minBuyIn,
-        maxBuyIn: o.maxBuyIn,
-        policy,
-      }) > 0
-    ) {
-      return o;
-    }
-  }
-  return null;
-}
 
 /**
  * TOP-UP DISCIPLINE (2026-08-31).

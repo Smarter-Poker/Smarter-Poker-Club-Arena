@@ -46,6 +46,7 @@ import {
   bankrollPolicyFor,
   referenceBuyIn,
   sessionVerdict,
+  shouldMoveDown,
   topUpAllowance,
 } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
@@ -404,6 +405,39 @@ export class HorseSessionRotator {
          * a decision a player makes, not a coin they flip. Without the
          * figure we fall through to the original swing heuristic unchanged.
          */
+        /**
+         * NO LONGER AFFORD THE GAME? THEN LEAVE IT.
+         *
+         * Distinct from the session verdict below, which is about how this
+         * SESSION is going. This is about the ROLL: after buy-ins and reloads
+         * a horse's wallet can fall under the level that justifies sitting in
+         * this stake at all, and until now nothing stood it up for that - the
+         * seating gate only ever ran before it sat. So the ladder could
+         * demote a horse in principle while it went on playing a game it
+         * could not afford in practice.
+         *
+         * The LOOSER bar deliberately (`shouldMoveDown`, 17 buy-ins, against
+         * `canSit`'s 25). A horse that merely dips under the entry bar mid
+         * session does not jump up from the table; it finishes what it is
+         * doing. That gap is the same hysteresis the stake ladder uses, and
+         * for the same reason: one threshold makes a horse flap.
+         */
+        const rollNow = rolls.get(
+          `${(seat as { club_id?: string }).club_id ?? ''}:${seat.user_id}`
+        );
+        if (
+          rollNow !== undefined &&
+          shouldMoveDown(
+            rollNow,
+            referenceBuyIn(bb, bb * 40, bb * 200),
+            bankrollPolicyFor(seat.user_id)
+          )
+        ) {
+          bankrollEvent('left_underrolled');
+          best = { seat, p: Number.POSITIVE_INFINITY };
+          break;
+        }
+
         const invested = investedBySeat.get(`${tableId}:${seat.user_id}`);
         if (invested !== undefined && invested > 0) {
           const verdict = sessionVerdict(

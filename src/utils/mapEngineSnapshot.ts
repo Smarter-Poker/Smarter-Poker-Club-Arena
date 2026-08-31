@@ -234,6 +234,18 @@ export interface MappedTableStatePatch {
    * reload. The engine replays the agreement itself once the seat clears.
    */
   postBBDeferredUserIds: string[];
+  /**
+   * How many seats this table has, as the MAPPER resolved it (phase 1,
+   * 2026-08-31): the engine's published `max_seats` when present, otherwise
+   * the highest occupied seat, never below the caller's own belief.
+   *
+   * It is the exact length of `players`, `positions`, `lastActions` and
+   * `lastBetAmounts` above — published rather than left implicit so the page
+   * can adopt it as `maxPlayers` and the seat ring, the geometry and these
+   * arrays cannot drift apart again. Every one of them disagreeing with the
+   * others is the shape of the seat-7 incident.
+   */
+  maxSeats: number;
 }
 
 // ─── Mapping ──────────────────────────────────────────────────────────────────
@@ -321,9 +333,30 @@ export function mapEngineSnapshot(
      blind, even paid them a pot — and their own client never showed one frame
      of it). The engine's snapshot is authoritative about which seats exist,
      so the arrays size themselves to it and can never disagree with it.
-     Pinned by tests/unit/snapshotNeverDropsASeat.law.test.ts. */
+     Pinned by tests/unit/snapshotNeverDropsASeat.law.test.ts.
+
+     ── PHASE 1, 2026-08-31: STOP INFERRING, START READING ──────────────────
+     `max_seats` is now published by the engine, which is the only party that
+     actually knows (ServerTableEngine, both the live and the idle payload).
+     When it is present it WINS outright — including over the caller's
+     `maxSeats`, because the caller is guessing and the engine is not, and
+     because the inference below has a blind spot the engine does not: it can
+     only see OCCUPIED seats, so a 9-max table with nobody past seat 4 still
+     drew as a 6-max one and the empty high seats were unclickable.
+
+     The occupied-seat floor survives as the fallback for a snapshot from an
+     engine that predates the field — never worse than today, and still
+     incapable of dropping a seated player. */
   const highestSeat = (s.players ?? []).reduce((m, p) => Math.max(m, p.seat ?? 0), 0);
-  const effectiveMaxSeats = Math.max(maxSeats, highestSeat);
+  const publishedMaxSeats = Number((s as unknown as { max_seats?: number }).max_seats ?? 0);
+  const effectiveMaxSeats =
+    Number.isFinite(publishedMaxSeats) && publishedMaxSeats > 0
+      ? /* Even the engine's own number may not drop a player it is dealing: if
+           the roster somehow exceeds the stated capacity, the seated player
+           still wins. A rendered ghost seat is a cosmetic bug; an erased hero
+           costs somebody their stack. */
+        Math.max(publishedMaxSeats, highestSeat)
+      : Math.max(maxSeats, highestSeat);
 
   // Current player: engine emits a user_id; tableState stores a seat number.
   let currentPlayerSeat = 0;
@@ -501,5 +534,8 @@ export function mapEngineSnapshot(
     // pre-fix behaviour exactly as it was rather than hiding a live prompt.
     postBBDeferredUserIds:
       (s as unknown as { post_bb_deferred_user_ids?: string[] }).post_bb_deferred_user_ids ?? [],
+    // Phase 1 (2026-08-31): the resolved seat count, identical to the length
+    // of every per-seat array in this patch. See the field docs above.
+    maxSeats: effectiveMaxSeats,
   };
 }

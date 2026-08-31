@@ -504,7 +504,24 @@ interface TableState {
   blinds: string;
   minBuyIn: number;
   maxBuyIn: number;
-  maxPlayers: 6 | 9;
+  /**
+   * SEATS AT THIS TABLE. A PLAIN NUMBER, because that is what it is
+   * (Dan 2026-08-31, phase 1 of the seat-truth contract).
+   *
+   * This was typed `6 | 9`. The estate holds 102,664 tables and **43,226 of
+   * them are 2, 3, 7 or 8-max** — a third of the platform outside the type
+   * that claimed to describe it. Every assignment therefore had to be cast
+   * (`as 6 | 9`), and a cast is not a check: it is an instruction to the
+   * compiler to stop looking. So the one tool that could have caught a 9-max
+   * table being drawn with six seats had been told, at every single site, to
+   * ignore precisely that. The code already knew — see the heads-up guard
+   * below, which admits in a comment that the value "carries 2 at runtime".
+   *
+   * `SEAT_LAYOUTS` has always defined 2 through 9, so widening this removes
+   * casts without moving a pixel. What it buys is that the next wrong seat
+   * count is a compile error rather than a player erased from his own screen.
+   */
+  maxPlayers: number;
   pot: number;
   sidePots: SidePot[];
   communityCards: Card[];
@@ -2195,14 +2212,23 @@ export default function TablePage({
         ...prev,
         /* NEVER RENDER FEWER SEATS THAN THE ENGINE DEALS (Dan 2026-08-30).
            `maxPlayers` boots at 6 and a mount without navigation state keeps
-           that default until the table-row load lands. mapEngineSnapshot now
-           sizes its arrays to the highest seat the engine actually published,
-           so when the snapshot proves more seats exist, the ring must grow
-           with it — otherwise a hero in seat 7-9 has state but no rendered
-           seat, no cards, no action bar, and the engine times them out into
-           a forced sit-out and the five-minute eviction. Grow-only: a
-           snapshot between hands never shrinks the ring. */
-        maxPlayers: Math.max(prev.maxPlayers, mapped.players.length) as 6 | 9,
+           that default until the table-row load lands. mapEngineSnapshot
+           resolves the true count — the engine's published `max_seats` where
+           available, the highest occupied seat otherwise — and the ring adopts
+           it, because a hero in seat 7-9 with no rendered seat has no cards,
+           no action bar, and gets timed out into a forced sit-out and the
+           five-minute eviction.
+
+           PHASE 1 (2026-08-31): this now ADOPTS `mapped.maxSeats` rather than
+           growing monotonically toward it. Grow-only was the right shape while
+           the count was inferred from occupied seats — a shrink would then
+           just mean "the high seats emptied", and dropping them mid-hand would
+           re-create the bug. Now that the number comes from the engine, it is
+           a fact rather than a floor, and a table genuinely reconfigured from
+           9-max to 6-max must be allowed to shrink. `mapped.maxSeats` is
+           itself already clamped never to fall below an occupied seat, so this
+           still cannot erase a seated player. */
+        maxPlayers: mapped.maxSeats || prev.maxPlayers,
         pot: mapped.pot,
         communityCards: nextCards,
         communityCards2: nextCards2,
@@ -2271,6 +2297,10 @@ export default function TablePage({
    * variant correctly and the people never got to play it at all.
    */
   const [pineappleDeadline, setPineappleDeadline] = useState<number | null>(null);
+  /** Hero's hole cards as `${rank}${suit}` in the ENGINE's delivery order, which
+   *  cards_pre_sort re-orders for display. `submitDiscard` indexes into this
+   *  one, never into what the felt shows. Written in handleHoleCardPayload. */
+  const heroEngineCardOrderRef = useRef<string[] | null>(null);
   const heroPineappleCards = useMemo(() => {
     if (tableState.engineStage !== 'pineapple_discard') return null;
     const hero = tableState.players[tableState.heroSeat - 1];
@@ -2305,9 +2335,26 @@ export default function TablePage({
   }, [pineappleDeadline]);
 
   const handlePineappleDiscard = useCallback(
-    async (cardIndex: number): Promise<boolean> => {
+    async (displayIndex: number): Promise<boolean> => {
       if (!tableId) return false;
-      const res = await GameServerAPI.submitDiscard(tableId, cardIndex);
+      const shown = heroPineappleCards;
+      if (!shown || !shown[displayIndex]) return false;
+      const chosen = shown[displayIndex];
+
+      /* ── DISCARD THE CARD THE PLAYER POINTED AT ────────────────────────────
+         The panel hands back an index into what it RENDERED, which
+         cards_pre_sort has re-ordered. `performDiscard` splices
+         `player.cards[cardIndex]` - the engine's own delivery order. Translate
+         by identity through the order recorded in handleHoleCardPayload; fall
+         back to the display index only when that record is missing (a mid-hand
+         mount that recovered cards by polling), which is the pre-existing
+         behaviour and no worse than it was. */
+      const key = `${chosen.rank}${chosen.suit}`;
+      const engineOrder = heroEngineCardOrderRef.current;
+      let engineIndex = engineOrder ? engineOrder.indexOf(key) : -1;
+      if (engineIndex < 0) engineIndex = displayIndex;
+
+      const res = await GameServerAPI.submitDiscard(tableId, engineIndex);
       if (!res?.success) {
         reportError(
           new Error(res?.error || 'submitDiscard rejected by engine'),
@@ -2315,10 +2362,34 @@ export default function TablePage({
         );
         return false;
       }
+
+      /* Take it off the felt NOW. The engine re-pushes the remaining two cards
+         through table_hole_cards and that is still the authority, but it is a
+         round trip through Postgres and Realtime; the card the player just
+         threw away must not linger in their hand while it happens. Removing it
+         here also closes the picker, because `heroPineappleCards` requires
+         exactly three. */
+      if (engineOrder) {
+        heroEngineCardOrderRef.current = engineOrder.filter((_, i) => i !== engineIndex);
+      }
+      setTableState((prev) => {
+        const players = [...prev.players];
+        const heroIdx = players.findIndex((pl) => pl && pl.id === userId);
+        const hero = heroIdx >= 0 ? players[heroIdx] : null;
+        if (!hero || !hero.holeCards || hero.holeCards.length !== 3) return prev;
+        const at = hero.holeCards.findIndex((c) => c && `${c.rank}${c.suit}` === key);
+        if (at < 0) return prev;
+        players[heroIdx] = {
+          ...hero,
+          holeCards: hero.holeCards.filter((_, i) => i !== at),
+        };
+        return { ...prev, players };
+      });
+
       soundService.playFold();
       return true;
     },
-    [tableId]
+    [tableId, userId, heroPineappleCards]
   );
 
   /**
@@ -7839,6 +7910,21 @@ export default function TablePage({
               rank: c.rank,
               suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
             }));
+            /* ═══ THE ENGINE'S OWN CARD ORDER, KEPT SEPARATELY (2026-08-31) ═══
+               `submitDiscard` takes an INDEX into the engine's `player.cards`
+               array. Two lines below, cards_pre_sort re-orders this array for
+               display — so on every table with that setting on (it is on by
+               default) the index the player clicked and the index the engine
+               splices were DIFFERENT ARRAYS. Dan, from a live Crazy Pineapple
+               seat: "IT DOESN'T REMOVE THE CARD FROM YOU HAND AFTER YOU
+               DISCARD IT." It removed a card - just not the one he picked, and
+               since the felt never repainted (see the '*' on the subscription
+               below) nothing about the hand appeared to change at all.
+
+               So the unsorted delivery order is kept here, and
+               handlePineappleDiscard translates the clicked card back into it
+               by identity. Display order stays whatever the player asked for. */
+            heroEngineCardOrderRef.current = formattedCards.map((c: Card) => `${c.rank}${c.suit}`);
             // Bible V8 §11.1: cards_pre_sort — sort by rank high→low
             // FIX-232: Use ref to avoid stale closure (callback deps are [userId] only)
             if (cardsPreSortRef.current) formattedCards = sortCardsByRank(formattedCards);
@@ -7858,11 +7944,21 @@ export default function TablePage({
     [userId]
   );
 
+  /* ═══ 'INSERT' MISSED EVERY PINEAPPLE DISCARD (2026-08-31) ═════════════
+     `insert_hole_cards` is an upsert - `ON CONFLICT (table_id, hand_number,
+     user_id) DO UPDATE SET cards = EXCLUDED.cards` (20260312_secure_hole_
+     cards_fix.sql). The deal is the INSERT; the engine's re-push of the hero's
+     remaining two cards after `performDiscard` splices one out hits the same
+     unique key and is therefore an UPDATE. Subscribing to INSERT only meant
+     the client was never told, and the third card sat on the felt for the rest
+     of the hand. Every other hole-card re-push - a RESYNC, a reconnect - was
+     invisible for the same reason. '*' is INSERT + UPDATE + DELETE, and the
+     handler already reads `payload.new`, which UPDATE carries. */
   useMasterBusChannel({
     channelName: `table-cards-secure-${tableId}-${userId}`,
     table: 'table_hole_cards',
     filter: tableId ? `table_id=eq.${tableId}` : null,
-    event: 'INSERT',
+    event: '*',
     onPayload: handleHoleCardPayload,
     enabled: !!tableId && !!userId,
   });
@@ -9209,8 +9305,8 @@ export default function TablePage({
                 : table.small_blind != null && table.big_blind != null
                   ? formatBlindPair(table.small_blind, table.big_blind)
                   : '?/?',
-          maxPlayers: (table.max_players || 6) as 6 | 9,
-          players: createEmptySeats((table.max_players || 6) as 6 | 9),
+          maxPlayers: table.max_players || 6,
+          players: createEmptySeats(table.max_players || 6),
           positions: Array(table.max_players || 6).fill(null),
           lastActions: Array(table.max_players || 6).fill(null),
           lastBetAmounts: Array(table.max_players || 6).fill(0),
@@ -11861,6 +11957,83 @@ export default function TablePage({
     });
   }, [tableState.players, tableState.heroSeat, userId]);
 
+  /* ═══════════════════════════════════════════════════════════════════════════
+     THE OTHER HALF OF THE INVARIANT: THE ENGINE SEATS YOU, THE CLIENT DOES NOT
+     (Dan 2026-08-31, phase 1 of the seat-truth contract)
+
+     The invariant directly above asserts ONE direction — `players[]` holds the
+     hero but `heroSeat` disagrees — and self-heals it. The opposite direction
+     was silent, and that is exactly the shape of the 2026-08-30 incident: the
+     engine's snapshot NAMED the hero at seat 7, the mapper dropped every seat
+     above the client's guessed six, so `players[]` had no hero row at all, and
+     the invariant above could not fire because it iterates the very array the
+     hero was missing from. Nothing anywhere noticed for ten minutes, while the
+     engine dealt him in, took his big blind, timed out his turns, force-sat
+     him out and finally evicted the seat.
+
+     The contradiction is cheap to state and impossible to argue with: the
+     server says this user occupies a seat at this table; the client is
+     rendering no such seat. One of the two is wrong, and it is never the
+     server. So: report it (this is the alarm that was missing), and heal it by
+     adopting the seat the engine named.
+
+     Deliberately NOT gated on the mapper, the transport, or any particular
+     cause. It is a statement about the OUTCOME, so it will fire for the next
+     bug of this class too — a mapping regression, a bad merge, a stale
+     reducer — none of which have been imagined yet. That is the whole point:
+     the 2026-08-30 fix stops one known cause; this notices any unknown one.
+
+     `reportErrorOnce` semantics via a ref: the effect re-runs on every
+     snapshot, and an alarm that fires sixty times a second is noise, not an
+     alarm. One report per (table, seat) per session is enough to find it. */
+  const engineSeatMismatchReportedRef = useRef<string>('');
+  useEffect(() => {
+    if (!USE_ENGINE_WS || !engineSnapshot || !userId || userId === 'guest') return;
+    const enginePlayers =
+      (engineSnapshot as unknown as { players?: Array<{ seat?: number; user_id?: string }> })
+        .players ?? [];
+    const mine = enginePlayers.find((p) => p?.user_id === userId);
+    if (!mine || !mine.seat || mine.seat < 1) return; // engine does not seat us — nothing to assert
+
+    const renderedHero = tableState.players.findIndex((p) => p && p.id === userId) + 1;
+    if (renderedHero === mine.seat) return; // the two agree; the common case
+
+    const key = `${tableState.tableId}:${mine.seat}`;
+    if (engineSeatMismatchReportedRef.current !== key) {
+      engineSeatMismatchReportedRef.current = key;
+      reportError(
+        new Error(
+          `engine seats hero at ${mine.seat} but client renders ` +
+            `${renderedHero || 'no seat'} (maxPlayers=${tableState.maxPlayers}, ` +
+            `rows=${tableState.players.length})`
+        ),
+        'TablePage.EngineHeroSeatNotRendered'
+      );
+    }
+
+    /* Heal, on the server's word. Growing the array is safe in a way that
+       trimming never is: a null row renders an empty seat, whereas dropping a
+       row erases a player. */
+    setTableState((prev) => {
+      if (prev.players[mine.seat! - 1]?.id === userId) return prev;
+      const players = [...prev.players];
+      while (players.length < mine.seat!) players.push(null);
+      return {
+        ...prev,
+        players,
+        maxPlayers: Math.max(prev.maxPlayers, mine.seat!),
+        heroSeat: prev.heroSeat > 0 ? prev.heroSeat : mine.seat!,
+      };
+    });
+  }, [
+    engineSnapshot,
+    USE_ENGINE_WS,
+    userId,
+    tableState.players,
+    tableState.tableId,
+    tableState.maxPlayers,
+  ]);
+
   // ═══════════════════════════════════════════════════════════════════════════
   //startNextHand removed — server manages the game loop
   // The entire HandController creation, event subscription, and hand lifecycle
@@ -12164,8 +12337,17 @@ export default function TablePage({
             boardStage: (syncData.stage || 'preflop') as BoardStage,
             dealerSeat: syncData.dealer_seat || 0,
             players: updatedPlayers,
-            // Grow-only ring size, same rule as the snapshot merge above.
-            maxPlayers: Math.max(prev.maxPlayers, updatedPlayers.length) as 6 | 9,
+            /* Ring size, same rule as the snapshot merge above: prefer the
+               engine's own `max_seats` when this resync payload carries it
+               (phase 1, 2026-08-31), never below a seat that actually holds a
+               player. GAME_START is the full-state resync fired on any
+               websocket sequence gap, so it must not be the one path that
+               reintroduces a six-seat view of a nine-seat table. */
+            maxPlayers:
+              Math.max(
+                Number((syncData as { max_seats?: number }).max_seats) || 0,
+                updatedPlayers.length
+              ) || prev.maxPlayers,
             // Only overwrite heroSeat when the snapshot actually located the
             // hero, so a partial/empty snapshot never falsely resets a seated
             // player to 0.

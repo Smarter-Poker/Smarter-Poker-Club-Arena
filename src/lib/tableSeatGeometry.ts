@@ -373,7 +373,13 @@ export function seatLayoutFor(maxPlayers: number): Array<{ x: number; y: number 
 }
 
 // Create empty player slots for a table
-export const createEmptySeats = (count: 6 | 9): (SeatPlayer | null)[] => {
+/**
+ * Dan 2026-08-31: `count` was typed `6 | 9` while real tables are 2, 3, 6, 7,
+ * 8 or 9-max, so every caller had to cast — and a cast is the compiler being
+ * told to stop looking. SEAT_LAYOUTS covers 2 through 9; the type now says
+ * what the function has always actually accepted.
+ */
+export const createEmptySeats = (count: number): (SeatPlayer | null)[] => {
   return Array(count).fill(null);
 };
 

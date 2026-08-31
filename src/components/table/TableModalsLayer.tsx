@@ -93,7 +93,9 @@ export interface TableModalsLayerProps {
   gameType: string;
   isTournament: boolean;
   tournamentId: string | undefined;
-  maxPlayers: 6 | 9;
+  /** Seats at the table. Widened from `6 | 9` on 2026-08-31 — a third of the
+   *  estate is 2/3/7/8-max and the narrow type forced a cast at every site. */
+  maxPlayers: number;
   players: (SeatPlayer | null)[];
   heroStack: number;
   rakePercent: number | undefined;

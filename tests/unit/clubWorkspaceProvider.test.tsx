@@ -40,12 +40,14 @@ vi.mock('../../src/lib/supabase', () => ({
 }));
 
 import { ClubWorkspaceProvider, useClubWorkspace } from '../../src/contexts/ClubWorkspaceContext';
+import { writeClubWorkspaceCache } from '../../src/lib/clubWorkspaceCache';
 
 function WorkspaceProbe() {
   const workspace = useClubWorkspace();
   return (
     <div>
       <span>{workspace.status}</span>
+      {workspace.isStale && <span>stale</span>}
       {workspace.error && <span>{workspace.error}</span>}
     </div>
   );
@@ -57,6 +59,7 @@ describe('ClubWorkspaceProvider transient reads', () => {
     profileRead.mockReset();
     abortRead.mockReset();
     abortState.signal = null;
+    localStorage.clear();
     membershipRead
       .mockResolvedValueOnce({ data: null, error: { code: '503', message: 'fetch failed' } })
       .mockResolvedValueOnce({ data: { role: 'owner', status: 'active' }, error: null });
@@ -118,5 +121,38 @@ describe('ClubWorkspaceProvider transient reads', () => {
     for (const [signal] of abortRead.mock.calls) {
       expect(signal).toBeInstanceOf(AbortSignal);
     }
+  });
+
+  it('keeps a recently verified member in the route when live reads are temporarily down', async () => {
+    vi.useFakeTimers();
+    membershipRead.mockReset();
+    membershipRead.mockRejectedValue(new Error('database connection unavailable'));
+    writeClubWorkspaceCache({
+      userId: 'user-1',
+      routeClubId: 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4',
+      clubUUID: 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4',
+      clubRole: 'owner',
+      membershipStatus: 'active',
+      isPlatformStaff: false,
+      verifiedAt: Date.now(),
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/clubs/a41434bb-8d0c-400a-8f0d-e8b3d65afed4/data']}>
+        <ClubWorkspaceProvider>
+          <WorkspaceProbe />
+        </ClubWorkspaceProvider>
+      </MemoryRouter>
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(3_100);
+    });
+
+    expect(screen.getByText('ready')).toBeInTheDocument();
+    expect(screen.getByText('stale')).toBeInTheDocument();
+    expect(screen.queryByText(/access could not be verified/i)).not.toBeInTheDocument();
+    expect(membershipRead).toHaveBeenCalledTimes(3);
   });
 });

@@ -24,18 +24,6 @@ const DASHBOARD_RPC_BUDGET_MS = 8_000;
 
 type JsonObject = Record<string, unknown>;
 
-function isDailyMissionRevisionFrame(message: string | Buffer): boolean {
-  try {
-    const frame = JSON.parse(typeof message === 'string' ? message : message.toString('utf8'));
-    const event = Array.isArray(frame) ? frame[3] : frame?.event;
-    const payload = Array.isArray(frame) ? frame[4] : frame?.payload;
-    const change = payload?.data ?? payload;
-    return event === 'postgres_changes' && change?.table === 'daily_challenge_dashboard_revisions';
-  } catch {
-    return false;
-  }
-}
-
 function exactQuery(select: string, column: string, value: string): URLSearchParams {
   return new URLSearchParams({ select, [column]: `eq.${value}` });
 }
@@ -170,10 +158,15 @@ test.describe('production Daily Missions certification', () => {
       });
       contexts.push(desktopContext);
       let blockedRevisionFrames = 0;
+      let blockRealtimeFrames = false;
       await desktopContext.routeWebSocket(/\/realtime\/v1\/websocket/, (socket) => {
         const server = socket.connectToServer();
         server.onMessage((message) => {
-          if (isDailyMissionRevisionFrame(message)) {
+          // Protocol payload shapes vary across Realtime client versions. Once
+          // armed, drop the wire itself rather than guessing which JSON field
+          // names the revision event. This reproduces a silently missed frame
+          // while keeping the already-SUBSCRIBED channel open.
+          if (blockRealtimeFrames) {
             blockedRevisionFrames += 1;
             return;
           }
@@ -371,6 +364,7 @@ test.describe('production Daily Missions certification', () => {
         );
         expect(incrementForbidden, 'authenticated row progress must be denied').toBeTruthy();
         blockedRevisionFrames = 0;
+        blockRealtimeFrames = true;
         await completeEveryAssignedMission(environment, account!);
         const completed = await serviceRows<{ id: string; completed: boolean }>(
           environment,
@@ -385,9 +379,12 @@ test.describe('production Daily Missions certification', () => {
             timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
           })
           .toBeGreaterThan(revisionBefore);
-        await expect.poll(() => blockedRevisionFrames).toBeGreaterThan(0);
+        await expect
+          .poll(() => blockedRevisionFrames, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT })
+          .toBeGreaterThan(0);
         const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
         await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
+        blockRealtimeFrames = false;
         expect(navigations).toBe(0);
         report.blockedRevisionFrames = blockedRevisionFrames;
       });

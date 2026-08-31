@@ -2,6 +2,68 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-09-01 - THE SIBLINGS OF THE buy_in_fee DRIFT GET GUARDED FORWARD
+
+`tournaments.buy_in_fee` drifted on 9,357 rows because it is a derived money
+column with six independent writers and only a ceiling CHECK. A sweep found the
+siblings. These five migrations guard them the same way: **forward only, never
+a backfill.** Every number below was measured in production read-only on
+2026-08-31 and is quoted in the migration headers. **None of these five is
+applied; Dan applies them.**
+
+1. **`20260901100000_a_commission_rate_is_a_fraction_and_two_writers_must_agree`**
+   Two writers of `agent_commissions` disagreed on what `commission_rate`
+   means. `credit_agent_commission_from_rake` (live, 1,507,337 rows) always
+   reads it as a fraction; `calculate_cascading_commission` (reached from
+   `settle_hand_atomically`) reinterpreted any value above 1 as a percent and
+   rounded to 4dp. Nothing is wrong today - all 113 agents carry 0.20-0.70 -
+   but an admin typing 25 for "25%" would have the live writer pay 2,500% of
+   the rake while the other writer quietly looked correct. Bounds ten
+   fraction-scaled rate columns to [0,1] (NOT VALID then VALIDATE, each proved
+   against live rows first), deletes the coercion, and rounds both writers at
+   2dp. `rakeback_period_payouts.rakeback_pct` is deliberately NOT bounded: all
+   1,014 rows hold 5.00-20.00 and it is genuinely a percent.
+
+2. **`20260901100100_a_bonus_pool_has_one_floor_and_it_is_zero`**
+   `spin_bonus_pools` carried `balance >= -500` and `balance >= 0`. Postgres
+   ANDs them, so `spin_pool_draw` - which computes a partial draw down to -500 -
+   raised 23514 out of itself and aborted its caller's transaction. Zero is the
+   real rule: 1,835,446 chips have been drawn from the two live pools and
+   neither has ever gone below zero, and a negative pool is minted chips no
+   ledger accounts for. Drops the -500 CHECK and clamps the draw at the balance.
+
+3. **`20260901100200_the_tournament_pools_get_a_floor_and_an_alarm`**
+   14 SQL writers plus the engine move `prize_pool` and `total_rake` and
+   nothing guarded either. Ships a **blocking** non-negativity floor (zero
+   violations across all 54,275 rows) and a **read-only alarm** for the
+   equality. Deliberately NOT a trigger - see the migration header: the columns
+   are only ever written by UPDATE, and the shipped tournament guard is BEFORE
+   INSERT only precisely because a guard that can refuse an update can strand a
+   running tournament. The identity holds on 7,423 consecutive tournaments
+   since 2026-08-26 with zero exceptions in the scope where it is unambiguous.
+
+4. **`20260901100300_a_bounty_pool_pays_out_what_it_collected`**
+   Adds the equality assertion to both funded exits of `fn_finalize_bounty_pool`
+   plus an hourly sweep. It **records rather than raises**: a RAISE inside
+   settlement leaves the champion unpaid over a reporting disagreement.
+   Historical, for Dan: 35 COMPLETED tournaments retain 1,730.16 chips; 10
+   overpaid by 150.40, every one of them a mystery bounty inside one 13-hour
+   window on 2026-08-29/30. Not backfilled.
+
+5. **`20260901100400_the_roster_reads_the_real_lifetime_rake`**
+   `club_members.total_rake_paid` is an abandoned mirror: 5,555.00 chips stored
+   against 3,520,325.33 of real lifetime rake, agreeing with the truth on **zero
+   of 1,471** members, and its only writer has no callers anywhere. The column
+   is documented and left alone; the five readers move to
+   `fn_club_member_lifetime_rake`, which sums `club_rake_daily_user` - the
+   source the agent downline and union rake ledger already trust.
+
+Also verified and NOT re-fixed: `fn_rake_law_check`'s `board_not_recorded`
+severity. The repo corrected it in `20260831141042` and production carries
+`warn`. Pinned in `tests/money-guards-are-forward-law.law.test.ts` so it cannot
+regress.
+
+
 ## Cowork session 2026-08-31 - NOTHING SCHEDULED FAILS SILENTLY (hardening phase 2 of 6)
 
 `sp_upcoming_tournament_pushes` runs every minute. It failed **4,017

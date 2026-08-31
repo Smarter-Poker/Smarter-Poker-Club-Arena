@@ -128,7 +128,13 @@ export interface ClubMember {
   hands_played?: number; // DB column name (was 'total_hands')
   chips_won?: number; // DB column name (was 'total_won')
   chips_lost?: number; // DB column name (was 'total_lost')
-  total_rake_paid?: number; // DB column name (was 'rake_generated')
+  /**
+   * Lifetime rake. NOT read from the club_members column of the same name -
+   * that is an abandoned mirror. Populated by ClubsService.attachLifetimeRake
+   * from club_rake_daily_user, the source the agent downline and union rake
+   * ledger already trust.
+   */
+  total_rake_paid?: number;
   notes?: string; // Admin notes
   joined_at: string;
   last_active?: string;

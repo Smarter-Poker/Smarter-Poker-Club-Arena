@@ -13,6 +13,7 @@ import { masterBus } from '../../core/MasterBus';
 import { MembershipService } from '../../services/MembershipService';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { attachLifetimeRake } from '../../services/ClubsService';
 import './ClubMemberManagement.css';
 import { reportError } from '../../utils/errorReporter';
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
@@ -71,12 +72,18 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       const { data, error } = await supabase
         .from('club_members')
         .select(
-          'user_id, role, chip_balance, hands_played, created_at, last_active, status, total_rake:total_rake_paid'
+          // total_rake is NOT read from club_members any more. That column is
+          // an abandoned mirror (see ClubsService.attachLifetimeRake); it held
+          // 5,555.00 chips against 3,520,325.33 of real rake on 2026-08-31 and
+          // agreed with the truth for nobody. It comes from the rollup below.
+          'user_id, role, chip_balance, hands_played, created_at, last_active, status'
         )
         .eq('club_id', resolvedId)
         .order('created_at', { ascending: true });
 
       if (!error && data && isMounted.current) {
+        await attachLifetimeRake(resolvedId, data as any[]);
+        for (const m of data as any[]) m.total_rake = m.total_rake_paid ?? 0;
         // Batch-fetch profiles (no FK between club_members → profiles)
         const cmUserIds = data.map((m: any) => m.user_id);
         const cmProfileMap: Record<string, any> = {};

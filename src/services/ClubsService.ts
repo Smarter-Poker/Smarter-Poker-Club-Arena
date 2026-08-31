@@ -759,7 +759,7 @@ async function _getUserMembershipsUncached(
         .from('club_members')
         .select(
           `
-      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
+      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost,
       club:clubs(id, club_id, name, slug, description, avatar_url, logo_url, card_image_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, is_union, requires_approval, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next)
     `
         )
@@ -818,6 +818,58 @@ async function _getUserMembershipsUncached(
 }
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  LIFETIME RAKE COMES FROM THE ROLLUP, NOT FROM THE MIRROR
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `club_members.total_rake_paid` is an abandoned lifetime mirror. Its only
+ * writer, increment_rake_generated(uuid, uuid, numeric), has no callers
+ * anywhere - not in the database, not in this repository - and on 2026-08-31
+ * it held 5,555.00 chips across 76 memberships against 3,520,325.33 chips of
+ * REAL lifetime rake for the same people. It agreed with the truth on zero of
+ * 1,471 members. Every roster that rendered it printed a number that was wrong
+ * for everyone it was not zero for.
+ *
+ * `club_rake_daily_user` is the source the agent downline and the union rake
+ * ledger already treat as the truth. fn_club_member_lifetime_rake sums it per
+ * member for one club, and answers only for a club the caller belongs to.
+ *
+ * Shaped after the fn_batch_club_member_counts enrichment above: one grouped
+ * RPC per roster load, and a failure degrades to 0 rather than throwing, since
+ * a wrong rake figure must never take the member list down with it.
+ */
+export async function attachLifetimeRake<T extends { user_id?: string }>(
+  clubId: string,
+  members: T[]
+): Promise<T[]> {
+  if (!clubId || members.length === 0) return members;
+  try {
+    const { data, error } = await supabase.rpc('fn_club_member_lifetime_rake', {
+      p_club_id: clubId,
+    });
+    // Report it, but do not fail closed: this is a DISPLAY number. A roster
+    // that refuses to render because a rake figure could not be summed is a
+    // worse outcome than a roster that shows 0 and says so in the console.
+    if (error) {
+      reportError(error, 'ClubsService.Lifetime_rake_enrichment_failed');
+    }
+    const rakeMap = new Map<string, number>();
+    for (const row of data || []) {
+      rakeMap.set(row.user_id, Number(row.rake_amount) || 0);
+    }
+    for (const m of members) {
+      (m as any).total_rake_paid = rakeMap.get((m as any).user_id) ?? 0;
+    }
+  } catch (e) {
+    console.warn('[ClubsService] Lifetime rake enrichment failed (showing 0):', e);
+    for (const m of members) {
+      (m as any).total_rake_paid = (m as any).total_rake_paid ?? 0;
+    }
+  }
+  return members;
+}
+
+/**
  * Get club members with profiles
  */
 export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
@@ -825,7 +877,7 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
   const { data, error } = await supabase
     .from('club_members')
     .select(
-      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
+      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost'
     )
     .eq('club_id', resolvedId)
     // was .order('reputation_xp'), a column that is 0 on all 1,499 rows in
@@ -860,6 +912,10 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
       (m as any).profile = profileMap[(m as any).user_id] || null;
     }
   }
+
+  // The roster shows lifetime rake. It comes from the rollup, never from the
+  // abandoned club_members.total_rake_paid mirror - see attachLifetimeRake.
+  await attachLifetimeRake(resolvedId, members as any[]);
 
   return members;
 }
@@ -908,7 +964,7 @@ export async function getClubLeaderboard(
   const { data, error } = await supabase
     .from('club_members')
     .select(
-      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
+      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost'
     )
     .eq('club_id', resolvedId)
     // same as above: reputation_xp was always 0, so "top 50" was 50 arbitrary
@@ -938,6 +994,9 @@ export async function getClubLeaderboard(
       (m as any).profile = profileMap[(m as any).user_id] || null;
     }
   }
+
+  // Same rule as the roster: lifetime rake comes from the rollup.
+  await attachLifetimeRake(resolvedId, members as any[]);
 
   return members;
 }

@@ -18,6 +18,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
+import { attachLifetimeRake } from '../../services/ClubsService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
@@ -101,13 +102,19 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
         supabase
           .from('club_members')
           .select(
-            'user_id, role, status, joined_at, hands_played, sessions_played, total_rake_paid, chips_won, chips_lost, biggest_pot'
+            // total_rake_paid is deliberately absent: it is an abandoned
+            // mirror (see ClubsService.attachLifetimeRake). The real lifetime
+            // rake is attached from club_rake_daily_user below, so an export
+            // an owner trusts carries the number the ledger agrees with.
+            'user_id, role, status, joined_at, hands_played, sessions_played, chips_won, chips_lost, biggest_pot'
           )
           .eq('club_id', resolvedId)
           .order('hands_played', { ascending: false })
           .range(from, to),
       { label: 'StatsExport.memberStats' }
     );
+
+    await attachLifetimeRake(resolvedId, (members || []) as any[]);
 
     const ids = [...new Set((members || []).map((m: any) => m.user_id).filter(Boolean))];
     const nameMap: Record<string, string> = {};

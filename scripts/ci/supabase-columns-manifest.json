@@ -12621,5 +12621,17 @@
       "open_seats",
       "captured_at"
     ]
-  }
+  },
+  "rakeback_daily_state": [
+    "club_id",
+    "computed_at",
+    "day",
+    "rows_seen"
+  ],
+  "rakeback_daily_user": [
+    "cents",
+    "club_id",
+    "day",
+    "user_id"
+  ]
 }

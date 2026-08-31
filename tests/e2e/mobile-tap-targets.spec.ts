@@ -198,15 +198,33 @@ test('every control answers to a thumb at 375px', async ({ page }) => {
 
           n += 1;
 
+          const inFixedLayer = (node: Element | null) => {
+            let q: Element | null = node;
+            while (q) {
+              if (getComputedStyle(q).position === 'fixed') return true;
+              q = q.parentElement;
+            }
+            return false;
+          };
+
           /* Walk outward from the centre and find how far the control still
-             wins the hit test. Stop at the first point it loses. */
+             wins the hit test. Record WHO wins the first failed probes: a
+             large campaign button can keep its centre while its lower thumb
+             band is already behind the fixed footer. Looking only at centre
+             mislabeled that scroll-reachable state as a broken control. */
           let reach = 0;
+          let firstBlockersAreFixedChrome = false;
           for (let d = 0; d <= REACH; d += 4) {
             const up = document.elementFromPoint(cx, Math.max(1, cy - d));
             const down = document.elementFromPoint(cx, Math.min(window.innerHeight - 1, cy + d));
             const owns = (t: Element | null) =>
               !!t && (t === el || el.contains(t) || t.contains(el));
-            if (!owns(up) || !owns(down)) break;
+            if (!owns(up) || !owns(down)) {
+              const blockers = [up, down].filter((candidate) => !owns(candidate));
+              firstBlockersAreFixedChrome =
+                blockers.length > 0 && blockers.every((candidate) => inFixedLayer(candidate));
+              break;
+            }
             reach = d;
           }
           const reachablePx = reach * 2;
@@ -234,25 +252,10 @@ test('every control answers to a thumb at 375px', async ({ page }) => {
              (so the player has a way to bring it out). A control pinned
              under fixed chrome on a page that cannot scroll has nowhere to
              go and is still reported. */
-          const topAtCentre = document.elementFromPoint(cx, cy);
-          const inFixedLayer = (node: Element | null) => {
-            let q: Element | null = node;
-            while (q) {
-              if (getComputedStyle(q).position === 'fixed') return true;
-              q = q.parentElement;
-            }
-            return false;
-          };
           const pageScrolls =
             document.documentElement.scrollHeight > window.innerHeight + 1 ||
             document.body.scrollHeight > window.innerHeight + 1;
-          if (
-            reachablePx < REACH * 2 &&
-            pageScrolls &&
-            topAtCentre &&
-            !el.contains(topAtCentre) &&
-            inFixedLayer(topAtCentre)
-          ) {
+          if (reachablePx < REACH * 2 && pageScrolls && firstBlockersAreFixedChrome) {
             unmeasured.push(
               el.tagName.toLowerCase() +
                 (el.className ? '.' + String(el.className).split(' ')[0].slice(0, 26) : '') +

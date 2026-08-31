@@ -6,6 +6,10 @@ const workflow = readFileSync(
   resolve(__dirname, '../../.github/workflows/post-deploy-e2e.yml'),
   'utf8'
 );
+const realtimeCertification = readFileSync(
+  resolve(__dirname, '../e2e/production-customization-realtime.spec.ts'),
+  'utf8'
+);
 
 describe('post-deploy E2E concurrency', () => {
   it('does not let a skipped workflow_run cancel a real production check', () => {
@@ -38,5 +42,18 @@ describe('post-deploy E2E concurrency', () => {
       );
     }
     expect(workflow).toContain('--reporter=line,json --workers=2 --retries=0');
+  });
+
+  it('hard-deletes disposable realtime fixtures without restoring cosmetics first', () => {
+    expect(realtimeCertification).not.toContain('restoreState(');
+    expect(realtimeCertification).toContain(
+      'cleanupTemporaryCustomizationAccount(environment, primaryAccount)'
+    );
+    expect(realtimeCertification).toContain(
+      'cleanupTemporaryCustomizationAccount(environment, otherAccount)'
+    );
+    expect(realtimeCertification).toContain(
+      '[customization-realtime] second player remained isolated'
+    );
   });
 });

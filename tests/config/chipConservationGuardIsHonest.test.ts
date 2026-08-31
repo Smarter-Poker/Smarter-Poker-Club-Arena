@@ -3,10 +3,10 @@
  *  A GUARD THAT FIRES ON A FIFTH OF ALL GAMES IS NOT A GUARD
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * `fn_tournament_chip_conservation_check` closes a real hole: every money
+ * `fn_spin_chip_conservation_check` closes a real hole: every money
  * guard in the estate watches the prize, and none of them counts the chips on
- * the felt. A chip mint moves no money — the prize pool is fixed at buy-in
- * time — so a bug that hands a busted player a fresh stack keeps every
+ * the felt. A chip mint moves no money - the prize pool is fixed at buy-in
+ * time - so a bug that hands a busted player a fresh stack keeps every
  * existing audit green while changing who WINS.
  *
  * The first cut of the check measured every variant, and reported 281 of 1,341
@@ -17,7 +17,7 @@
  * close this alert unread, which is worse than having no alert at all.
  *
  * So the check is scoped to 'spin' and 'sng', the two variants where the
- * identity is exact — over the 3,307 such games completed in the 24h before it
+ * identity is exact - over the 3,307 such games completed in the 24h before it
  * shipped, ZERO had late registration, re-entry, add-ons or early-bird chips.
  *
  * This test pins that scope in the migration text. If someone widens the check
@@ -32,8 +32,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const DIR = resolve(__dirname, '../../supabase/migrations');
-const GUARD = resolve(DIR, '20260831_tournament_chip_conservation_guard.sql');
-const SCHEDULE = resolve(DIR, '20260831_tournament_chip_conservation_guard_schedule.sql');
+const GUARD = resolve(DIR, '20260831234000_spin_chip_conservation_guard.sql');
+const SCHEDULE = resolve(DIR, '20260831234100_spin_chip_conservation_guard_schedule.sql');
 
 const guardSql = readFileSync(GUARD, 'utf8');
 const scheduleSql = readFileSync(SCHEDULE, 'utf8');
@@ -71,7 +71,7 @@ describe('the chip conservation guard measures only what it can measure', () => 
     expect(body).toMatch(/sum\(tp\.chips\)/);
   });
 
-  it('treats horses as players — CLAUDE.md 10.5', () => {
+  it('treats horses as players, CLAUDE.md 10.5', () => {
     expect(guardCode).not.toMatch(/is_horse/i);
     expect(guardCode).not.toMatch(/p_include_horses/i);
   });
@@ -101,14 +101,14 @@ describe('the schedule points at the function it claims to', () => {
   });
 
   it('calls the function this migration pair defines', () => {
-    expect(scheduleSql).toContain('public.fn_tournament_chip_conservation_check(');
+    expect(scheduleSql).toContain('public.fn_spin_chip_conservation_check(');
   });
 
   it('takes the advisory lock so two runs cannot overlap', () => {
-    expect(scheduleSql).toMatch(/pg_try_advisory_lock\(hashtext\('tournament_chip_conservation'\)\)/);
+    expect(scheduleSql).toMatch(/pg_try_advisory_lock\(hashtext\('spin_chip_conservation'\)\)/);
   });
 
   it('verifies the job landed instead of trusting cron.schedule', () => {
-    expect(scheduleSql).toMatch(/RAISE EXCEPTION 'tournament_chip_conservation_hourly was not scheduled'/);
+    expect(scheduleSql).toMatch(/RAISE EXCEPTION 'spin_chip_conservation_hourly was not scheduled'/);
   });
 });

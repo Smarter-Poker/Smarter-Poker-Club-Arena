@@ -1838,16 +1838,25 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // The player has already decided, so this is shorter than a horse's think
       // time — but it is never zero. The seat lights up, holds a readable beat,
       // and only then does the action land.
+      // ═══ 2026-08-31: IDENTITY, not null-ness. The null-check below let a
+      // pre-action from hand N land in hand N+1 whenever the hand was
+      // replaced during the beat and the SAME seat happened to be on turn in
+      // the new hand - the same player's next hand opens on the same seat, so
+      // that is the common case, and their turn was consumed by an intent
+      // they formed for a different hand. Same bug class as the stale-runout
+      // race (#2318): a delayed continuation acting on whatever controller
+      // the table holds when it wakes.
+      const controllerAtBeat = this.handController;
       await this.sleep(this.preActionVisibleMs);
       // The hand can be replaced while we hold that beat.
-      if (!this.running || !this.handController) return;
+      if (!this.running || this.handController !== controllerAtBeat || !controllerAtBeat) return;
       {
-        const st = this.handController.getState();
+        const st = controllerAtBeat.getState();
         if (st.currentPlayerSeat !== seat) return;
       }
       let preApplied = false;
       try {
-        preApplied = this.handController!.performAction(
+        preApplied = controllerAtBeat.performAction(
           seat,
           preResult.action as any,
           preResult.amount

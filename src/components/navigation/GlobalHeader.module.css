@@ -136,7 +136,7 @@
   transform: translate(-50%, -50%) !important;
   overflow: hidden;
   box-sizing: border-box;
-  border: 1px solid rgba(0, 0, 0, 0.94);
+  border: 0.5px solid rgba(0, 0, 0, 0.94);
   border-radius: 50%;
   background: transparent;
   pointer-events: none;
@@ -170,15 +170,6 @@
   width: 6.5%;
   overflow: hidden;
   isolation: isolate;
-}
-
-/* Active members keep a restrained white-neon trace around the VIP card. */
-.vipActive {
-  border-radius: 12%;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.92),
-    0 0 5px rgba(255, 255, 255, 0.75),
-    0 0 10px rgba(210, 240, 255, 0.38);
 }
 
 /* The card is deliberately subdued until membership is active. The approved
@@ -240,6 +231,17 @@
     height: 96px;
     aspect-ratio: auto;
   }
+
+  .profileBtn {
+    /* Desktop deliberately compresses the artwork into a 96px chrome band.
+       A width-derived square is taller than that band at common laptop widths
+       and paints black over the lower silver rail. Keep the opaque ornament
+       mask inside the same 74%-high control band while the portrait remains a
+       centered circle with its own 0.5px edge. */
+    top: 13%;
+    height: 74%;
+    aspect-ratio: auto;
+  }
 }
 
 /* These semantic anchors make each count belong to its own control. A generic
@@ -249,6 +251,21 @@
 .notificationBadge {
   top: 3px;
   right: 8%;
+}
+
+/* Keep unread counts readable without turning the compact mobile bell into a
+   red dot. Offset the number beyond the bell's right edge, matching desktop. */
+@media (max-width: 900px) {
+  .badge {
+    top: 0;
+    right: -2px;
+    min-width: clamp(12px, 1.7vw, 18px);
+    min-height: clamp(12px, 1.7vw, 18px);
+    padding: 0 2px;
+    border-width: 1px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.72);
+    font-size: clamp(7px, 1vw, 10px);
+  }
 }
 
 @media (display-mode: standalone), (display-mode: fullscreen) {

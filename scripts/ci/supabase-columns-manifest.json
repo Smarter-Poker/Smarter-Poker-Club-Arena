@@ -1962,6 +1962,39 @@
       "trust_score",
       "sessions_played"
     ],
+    "club_opening_setup_funding": [
+      "id",
+      "club_id",
+      "operation_id",
+      "destination",
+      "amount",
+      "balance_after",
+      "created_by",
+      "created_at"
+    ],
+    "club_opening_setups": [
+      "club_id",
+      "owner_id",
+      "rake_mode",
+      "rake_percent",
+      "rake_cap_bb",
+      "bbj_enabled",
+      "bbj_seeded_amount",
+      "spins_enabled",
+      "spin_seeded_amount",
+      "spin_max_stake",
+      "promo_enabled",
+      "promo_budget",
+      "promotion_id",
+      "leaderboard_rewards_enabled",
+      "leaderboard_metric",
+      "leaderboard_prize_budget",
+      "leaderboard_seed_remaining",
+      "completed_at",
+      "last_operation_id",
+      "created_at",
+      "updated_at"
+    ],
     "club_profit_reconcile_log": [
       "id",
       "ran_at",
@@ -2170,7 +2203,8 @@
       "spins_wallet_funding",
       "ticker_enabled",
       "guarantee_treasury_floor",
-      "guarantee_enforcement_enabled"
+      "guarantee_enforcement_enabled",
+      "tagline"
     ],
     "collusion_tracking": [
       "id",
@@ -6077,6 +6111,33 @@
       "created_at",
       "updated_at"
     ],
+    "leaderboard_payout_batches": [
+      "id",
+      "club_id",
+      "period",
+      "period_start",
+      "period_end",
+      "metric",
+      "program_id",
+      "program_version",
+      "program_hash",
+      "funding_owner_type",
+      "funding_union_id",
+      "total_paid",
+      "seed_funded",
+      "promo_funded",
+      "overlay_funded",
+      "winner_count",
+      "settled_at"
+    ],
+    "leaderboard_payout_failures": [
+      "id",
+      "club_id",
+      "period",
+      "period_start",
+      "error_message",
+      "failed_at"
+    ],
     "leaderboard_payouts": [
       "id",
       "club_id",
@@ -9282,7 +9343,16 @@
       "strategy_matrix",
       "created_at",
       "strategy_matrix_v2",
-      "solved_v2_at"
+      "solved_v2_at",
+      "solver_version",
+      "solver_binary_checksum",
+      "machine_id",
+      "pipeline_commit",
+      "manifest_version",
+      "manifest_checksum",
+      "source_artifact_checksum",
+      "quality_status",
+      "audited_at"
     ],
     "solver_manifest": [
       "id",

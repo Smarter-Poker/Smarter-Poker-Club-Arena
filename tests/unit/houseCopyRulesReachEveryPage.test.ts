@@ -65,17 +65,65 @@ describe('the em dash ban sees the form CSS actually uses', () => {
     expect(gate).toContain('CSS `content:` values');
   });
 
-  it('keeps the strippers exempt, because they hold the characters on purpose', () => {
-    // Removing these re-runs the incident where --fix rewrote titleCase.ts's own
-    // character class into a meaningless range and disabled the rule.
-    for (const f of [
-      'src/utils/titleCase.ts',
-      'src/utils/popupStyle.ts',
-      'src/components/lobby/lobbyEntries.ts',
-      'src/components/bbj/BBJBasicPanel.tsx',
-    ]) {
-      expect(gate, `${f} must stay exempt`).toContain(f);
+  it('protects the strippers by the LINE, not by exempting whole files', () => {
+    /**
+     * This pin used to read: titleCase.ts, popupStyle.ts, lobbyEntries.ts and
+     * BBJBasicPanel.tsx must all appear in the gate's SKIP_FILES, because
+     * --fix once rewrote titleCase.ts's own character class into a meaningless
+     * range and disabled the rule.
+     *
+     * The incident is real and the protection is still required. The whole-file
+     * exemption was the wrong shape for it: two of those four render copy a
+     * player reads, so `'Jackpot - You Got Paid'` added to either was invisible
+     * to the gate forever, and the exemption was held safe only by somebody
+     * re-reading all four by hand.
+     *
+     * The property that actually matters is behavioural, so it is asserted
+     * behaviourally now: run the real gate, with --fix, over a file shaped like
+     * a stripper, and require that the regex survives byte-for-byte while the
+     * player-visible string beside it is fixed.
+     */
+    const dir = mkdtempSync(join(tmpdir(), 'ui-text-fix-'));
+    const STRIPPER = 'const DASH_ANY = /[\\u2014\\u2013]/g;';
+    const COPY = "const LABEL = 'Held In Trust \u2014 400';";
+    const file = join(dir, 'stripper.ts');
+    writeFileSync(file, `${STRIPPER}\n${COPY}\n`);
+
+    execFileSync(process.execPath, [UI_TEXT, '--fix'], {
+      stdio: 'pipe',
+      env: { ...process.env, UI_TEXT_SOURCE_DIR: dir },
+    });
+
+    const after = readFileSync(file, 'utf8');
+    expect(after, 'the stripper regex must survive --fix untouched').toContain(STRIPPER);
+    expect(after, 'the copy beside it must be fixed').toContain("'Held In Trust - 400'");
+  });
+
+  it('reports a player-visible dash in a stripper file instead of skipping it', () => {
+    // The half the whole-file exemption gave away: a real string in one of the
+    // four formerly-exempt files is a violation and must be named as one.
+    const dir = mkdtempSync(join(tmpdir(), 'ui-text-report-'));
+    writeFileSync(
+      join(dir, 'panel.tsx'),
+      `const DASH_ANY = /[\\u2014\\u2013]/g;\nconst LABEL = 'Jackpot \u2014 You Got Paid';\n`
+    );
+
+    let status = 0;
+    let out = '';
+    try {
+      execFileSync(process.execPath, [UI_TEXT], {
+        stdio: 'pipe',
+        env: { ...process.env, UI_TEXT_SOURCE_DIR: dir },
+      });
+    } catch (err) {
+      const e = err as { status?: number; stderr?: Buffer };
+      status = e.status ?? -1;
+      out = e.stderr?.toString() ?? '';
     }
+    expect(status).toBe(1);
+    expect(out).toContain('Jackpot');
+    // ...and it did not fire on the stripper's own regex.
+    expect(out).not.toContain('DASH_ANY');
   });
 
   it('exempts titleCase.ts because the stripper WORKS, proven by running it', () => {

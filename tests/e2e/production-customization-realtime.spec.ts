@@ -269,40 +269,10 @@ function differentFrom(disallowed: readonly string[], options: readonly string[]
   return result;
 }
 
-async function restoreState(studio: Locator, state: SavedStudioState) {
-  await selectAsset(studio, 'Looks', state.selections.Looks);
-  await selectAsset(studio, 'Tables', state.selections.Tables);
-  await activateCategory(studio, 'Scenes');
-  await studio.getByRole('button', { name: new RegExp(`^${state.sceneGroup}`) }).click();
-  const scene = studio.getByRole('button', { name: state.selections.Scenes, exact: true });
-  await expect(scene).toBeEnabled({ timeout: 20_000 });
-  if ((await scene.getAttribute('aria-pressed')) !== 'true') {
-    const scenePersisted = studio
-      .page()
-      .waitForResponse(
-        (response) =>
-          response.request().method() === 'POST' &&
-          response.url().includes('/rest/v1/user_theme_settings'),
-        { timeout: PRODUCTION_RESPONSE_TIMEOUT }
-      );
-    await scene.click();
-    await expect(scene).toHaveAttribute('aria-pressed', 'true', { timeout: 20_000 });
-    const sceneResponse = await scenePersisted;
-    if (!sceneResponse.ok()) {
-      throw new Error(`Table Studio restoration failed with HTTP ${sceneResponse.status()}.`);
-    }
-  }
-  await selectAsset(studio, 'Buttons', state.selections.Buttons);
-  await selectAsset(studio, 'Cards', state.selections.Cards);
-  await studio.getByRole('button', { name: state.mode, exact: true }).click();
-  await expectAppearance(studio, state.appearance);
-}
-
 test.describe('production Table Studio realtime contract', () => {
-  // This test deliberately performs and verifies a dozen durable production
-  // writes, then restores two accounts. Publish bursts can make the cleanup
-  // slower without making it less necessary, so give the live contract its
-  // own budget instead of letting Playwright close the browser mid-restore.
+  // This test performs and verifies durable production writes on two reserved
+  // identities, then hard-deletes both. Restoring disposable cosmetics before
+  // deletion adds no evidence and can hide the original journey failure.
   test.describe.configure({ mode: 'serial', timeout: 600_000 });
 
   test('every free cosmetic applies, persists, syncs to another device, and stays isolated from another player', async ({
@@ -358,6 +328,7 @@ test.describe('production Table Studio realtime contract', () => {
       mobileStudio = await openStudio(mobilePage);
       const otherPage = await signIn(otherPlayer, baseURL, otherAccount);
       otherStudio = await openStudio(otherPage);
+      console.log('[customization-realtime] three isolated sessions ready');
       const primaryUserId = await sessionUserId(primaryPage);
       expect(await sessionUserId(mobilePage)).toBe(primaryUserId);
       expect(await sessionUserId(otherPage)).not.toBe(primaryUserId);
@@ -365,12 +336,14 @@ test.describe('production Table Studio realtime contract', () => {
       primaryOriginal = await captureState(primaryStudio);
       otherOriginal = await captureState(otherStudio);
       const otherBefore = otherOriginal.appearance;
+      console.log('[customization-realtime] account baselines captured');
 
       const primaryPreset = different(primaryOriginal.selections.Looks, Object.keys(PRESETS));
       await selectAsset(primaryStudio, 'Looks', primaryPreset);
       await expectAppearance(primaryStudio, PRESETS[primaryPreset]);
       await expectAppearance(mobileStudio, PRESETS[primaryPreset]);
       await expectAppearance(otherStudio, otherBefore);
+      console.log('[customization-realtime] preset synced and remained account-scoped');
 
       for (const category of ['Tables', 'Scenes', 'Buttons', 'Cards'] as const) {
         await activateCategory(primaryStudio, category);
@@ -394,33 +367,25 @@ test.describe('production Table Studio realtime contract', () => {
         const updated = await readAppearance(primaryStudio);
         await expectAppearance(mobileStudio, updated);
         await expectAppearance(otherStudio, otherBefore);
+        console.log(`[customization-realtime] ${category} synced and remained account-scoped`);
       }
 
       const finalPrimary = await readAppearance(primaryStudio);
       await mobilePage.reload({ waitUntil: 'domcontentloaded' });
       mobileStudio = await openStudio(mobilePage);
       await expectAppearance(mobileStudio, finalPrimary);
+      console.log('[customization-realtime] persisted appearance survived a device reload');
 
       const otherPreset = different(primaryPreset, Object.keys(PRESETS));
       await selectAsset(otherStudio, 'Looks', otherPreset);
       await expectAppearance(otherStudio, PRESETS[otherPreset]);
       await expectAppearance(primaryStudio, finalPrimary);
+      console.log('[customization-realtime] second player remained isolated');
     } catch (error) {
       journeyFailure = error;
     } finally {
-      // Restoration is useful evidence when the test reaches it, but reserved
-      // fixtures must be closed and hard-deleted even if restoration itself
-      // exposes a regression. Collect every teardown failure and report them
-      // together after all recoverable cleanup has run.
-      const restored = await Promise.allSettled([
-        primaryStudio && primaryOriginal
-          ? restoreState(primaryStudio, primaryOriginal)
-          : Promise.resolve(),
-        otherStudio && otherOriginal ? restoreState(otherStudio, otherOriginal) : Promise.resolve(),
-      ]);
-      restored.forEach((result) => {
-        if (result.status === 'rejected') teardownFailures.push(result.reason);
-      });
+      // Close all realtime sockets before hard-deleting the reserved Auth and
+      // database rows. Cleanup must still run when the journey itself fails.
       const closed = await Promise.allSettled([
         primaryDesktop?.close(),
         primaryMobile?.close(),

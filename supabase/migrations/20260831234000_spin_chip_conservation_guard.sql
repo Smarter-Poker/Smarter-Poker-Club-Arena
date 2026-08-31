@@ -30,7 +30,7 @@
 --
 -- The function reads and raises an alert. It moves no money and repairs nothing.
 
-CREATE OR REPLACE FUNCTION public.fn_tournament_chip_conservation_check(
+CREATE OR REPLACE FUNCTION public.fn_spin_chip_conservation_check(
   p_since_hours integer DEFAULT 6
 )
 RETURNS jsonb
@@ -118,10 +118,10 @@ BEGIN
 
   IF v_severity IS NOT NULL THEN
     INSERT INTO public.financial_alerts (severity, source, message, context)
-    SELECT v_severity, 'fn_tournament_chip_conservation_check', v_message, v_context
+    SELECT v_severity, 'fn_spin_chip_conservation_check', v_message, v_context
      WHERE NOT EXISTS (
        SELECT 1 FROM public.financial_alerts fa
-        WHERE fa.source = 'fn_tournament_chip_conservation_check'
+        WHERE fa.source = 'fn_spin_chip_conservation_check'
           AND fa.resolved IS NOT TRUE
           AND fa.context->>'verdict' = v_verdict);
     IF FOUND THEN v_alerts := 1; END IF;
@@ -131,24 +131,24 @@ BEGIN
 END;
 $function$;
 
-REVOKE ALL ON FUNCTION public.fn_tournament_chip_conservation_check(integer) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_tournament_chip_conservation_check(integer) FROM anon;
-REVOKE ALL ON FUNCTION public.fn_tournament_chip_conservation_check(integer) FROM authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_tournament_chip_conservation_check(integer) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_spin_chip_conservation_check(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.fn_spin_chip_conservation_check(integer) FROM anon;
+REVOKE ALL ON FUNCTION public.fn_spin_chip_conservation_check(integer) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_spin_chip_conservation_check(integer) TO service_role;
 
 -- Prove the grants, in the migration, rather than trusting that they took.
 DO $$
 BEGIN
   IF has_function_privilege('anon',
-       'public.fn_tournament_chip_conservation_check(integer)', 'EXECUTE') THEN
+       'public.fn_spin_chip_conservation_check(integer)', 'EXECUTE') THEN
     RAISE EXCEPTION 'anon can execute the chip conservation check';
   END IF;
   IF has_function_privilege('authenticated',
-       'public.fn_tournament_chip_conservation_check(integer)', 'EXECUTE') THEN
+       'public.fn_spin_chip_conservation_check(integer)', 'EXECUTE') THEN
     RAISE EXCEPTION 'authenticated can execute the chip conservation check';
   END IF;
   IF NOT has_function_privilege('service_role',
-       'public.fn_tournament_chip_conservation_check(integer)', 'EXECUTE') THEN
+       'public.fn_spin_chip_conservation_check(integer)', 'EXECUTE') THEN
     RAISE EXCEPTION 'service_role cannot execute the chip conservation check';
   END IF;
 END $$;

@@ -71,6 +71,25 @@ describe('responsive premium Club Arena', () => {
     expect(APP_LAYOUT).toContain("normalizedPath.endsWith('/notifications') || isClubLobbyPage");
   });
 
+  it('keeps the approved desktop control order on the populated ALL lobby', () => {
+    const controls = PAGE.indexOf('className="lobby-controls"');
+    const gameTypes = PAGE.indexOf('className="game-bar"', controls);
+    const allStatuses = PAGE.indexOf('ALL_STATUS_FILTERS.map', gameTypes);
+    const campaign = PAGE.indexOf('campaign={', allStatuses);
+    const launch = PAGE.indexOf('<ClubLaunchProgress', campaign);
+    const games = PAGE.indexOf('className="club-home__games club-home__games--v2"', launch);
+
+    expect(PAGE).toContain('type AllStatusFilter =');
+    expect(PAGE).toContain("{ key: 'OPEN_REGISTRATION', label: 'Open Registration' }");
+    expect(PAGE).toContain("{ key: 'STARTING_SOON', label: 'Starting Soon' }");
+    expect(gameTypes).toBeGreaterThan(controls);
+    expect(allStatuses).toBeGreaterThan(gameTypes);
+    expect(campaign).toBeGreaterThan(allStatuses);
+    expect(launch).toBeGreaterThan(campaign);
+    expect(games).toBeGreaterThan(launch);
+    expect(PAGE).toContain('noticeEditable && totalGameCount === 0');
+  });
+
   it('builds the approved mobile welcome, owner message, identity/jackpot pair, and wallet accordion', () => {
     expect(PAGE).toContain('className="club-mobile-welcome"');
     expect(PAGE).toContain('className={`club-mobile-owner-message');
@@ -86,7 +105,7 @@ describe('responsive premium Club Arena', () => {
       /\.lobby-top__main\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/s
     );
     expect(mobile).toMatch(
-      /\.lobby-top__identity,[\s\S]*?\.lobby-bbj\s*\{[^}]*height:\s*auto[^}]*aspect-ratio:\s*var\(--lobby-paired-card-ratio\)/s
+      /\.lobby-top \.club-identity\.lobby-top__identity,[\s\S]*?\.lobby-bbj\s*\{[^}]*height:\s*auto[^}]*aspect-ratio:\s*var\(--lobby-paired-card-ratio\)/s
     );
     expect(mobile).toContain('--lobby-paired-card-ratio: 2.4 / 1');
     expect(mobile).toMatch(
@@ -201,6 +220,24 @@ describe('responsive premium Club Arena', () => {
     expect(campaignImage).toContain('object-fit: cover');
     expect(campaignImage).not.toContain('object-fit: fill');
     expect(campaignImage).not.toContain('scaleY(');
+  });
+
+  it('contains the complete mobile campaign control inside its framed hit area', () => {
+    const tablet = TOP_CSS.slice(
+      TOP_CSS.indexOf('@media (max-width: 900px)'),
+      TOP_CSS.indexOf('@media (max-width: 430px)')
+    );
+    expect(tablet).toMatch(/\.club-lobby-command-top__campaign\s*\{[^}]*min-height:\s*122px/s);
+    expect(tablet).toMatch(
+      /\.club-lobby-command-top__campaign-button\s*\{[^}]*min-height:\s*84px/s
+    );
+
+    const phone = TOP_CSS.slice(
+      TOP_CSS.indexOf('@media (max-width: 430px)'),
+      TOP_CSS.indexOf('@media (max-width: 900px)', TOP_CSS.indexOf('@media (max-width: 430px)'))
+    );
+    expect(phone).toMatch(/\.club-lobby-command-top__campaign\s*\{[^}]*min-height:\s*116px/s);
+    expect(phone).toMatch(/\.club-lobby-command-top__campaign-button\s*\{[^}]*min-height:\s*78px/s);
   });
 
   it('keeps the desktop ledger readable and the production premium card renderer on mobile', () => {

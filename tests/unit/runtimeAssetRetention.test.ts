@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { syncClubArenaDist } from '../../scripts/ci/sync-club-arena-dist.mjs';
 
+const workflowPath = path.join(process.cwd(), '.github/workflows/build-for-world-hub.yml');
+
 const roots: string[] = [];
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'club-arena-sync-'));
@@ -63,5 +65,38 @@ describe('Club Arena runtime asset retention', () => {
     await expect(readFile(path.join(target, 'assets', 'current.js'), 'utf8')).resolves.toBe(
       'current'
     );
+  });
+
+  it('does not rotate away the retained generation when the same build is republished', async () => {
+    const { source, target } = await fixture();
+    await writeFile(path.join(source, 'index.html'), 'rebuilt shell');
+    await writeFile(path.join(source, 'assets', 'current.js'), 'current');
+    await writeFile(path.join(target, 'index.html'), 'deployed shell');
+    await writeFile(path.join(target, 'assets', 'current.js'), 'current');
+    await writeFile(path.join(target, 'assets', 'previous.js'), 'previous');
+    await writeFile(
+      path.join(target, 'runtime-asset-manifest.json'),
+      JSON.stringify({ assets: ['current.js'] })
+    );
+
+    const result = await syncClubArenaDist(source, target);
+
+    expect(result).toEqual({ currentRuntimeAssets: 1, retainedPreviousRuntimeAssets: 1 });
+    await expect(readFile(path.join(target, 'index.html'), 'utf8')).resolves.toBe('rebuilt shell');
+    await expect(readFile(path.join(target, 'assets', 'previous.js'), 'utf8')).resolves.toBe(
+      'previous'
+    );
+  });
+
+  it('checks out the publish helper and invokes the sync exactly once after the verdict', async () => {
+    const workflow = await readFile(workflowPath, 'utf8');
+    const scriptCalls = workflow.match(
+      /node \.\.\/club-arena-source\/scripts\/ci\/sync-club-arena-dist\.mjs/g
+    );
+
+    expect(workflow).toContain('- name: Checkout Club Arena publish support');
+    expect(workflow).toContain('sparse-checkout: scripts/ci');
+    expect(scriptCalls).toHaveLength(1);
+    expect(workflow).not.toContain('- name: Sync dist/ to World Hub');
   });
 });

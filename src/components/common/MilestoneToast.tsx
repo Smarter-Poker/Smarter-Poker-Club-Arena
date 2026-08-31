@@ -68,7 +68,7 @@ export const MilestoneToast: React.FC = () => {
     const notification: MilestoneNotification = {
       id: `milestone-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       title: data.title || data.milestoneName || 'Milestone Unlocked!',
-      description: data.description || data.message || 'You reached a new milestone!',
+      description: data.description || data.message || 'You Reached A New Milestone!',
       icon: data.icon || 'Trophy',
       reward: data.reward || data.rewardText,
     };

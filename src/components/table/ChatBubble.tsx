@@ -137,7 +137,7 @@ export function ChatBubble({
       }`}
       role="status"
       aria-live="polite"
-      aria-label={isSpeaking ? `${playerName || 'Player'} is speaking` : undefined}
+      aria-label={isSpeaking ? `${playerName || 'Player'} Is Speaking` : undefined}
     >
       {playerName ? <span className="chat-bubble__name">{playerName}</span> : null}
       {isSpeaking ? (

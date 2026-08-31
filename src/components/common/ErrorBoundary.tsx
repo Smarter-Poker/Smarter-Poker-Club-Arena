@@ -107,8 +107,8 @@ class ErrorBoundary extends Component<Props, State> {
         if (!Sentry) return;
         Sentry.showReportDialog({
           eventId,
-          title: 'Help us fix this issue',
-          subtitle: 'Tell us what happened',
+          title: 'Help Us Fix This Issue',
+          subtitle: 'Tell Us What Happened',
           subtitle2: 'Your feedback helps us improve Club Arena',
         });
       })

@@ -2108,7 +2108,7 @@ export default function TableConfigPage() {
               onChange={(v) => updateConfig('banChat', v)}
             />
             <Toggle
-              label="Label as NEW"
+              label="Label As NEW"
               value={config.labelAsNew}
               onChange={(v) => updateConfig('labelAsNew', v)}
               tooltip="Show NEW badge"
@@ -2369,7 +2369,7 @@ export default function TableConfigPage() {
               <div className="config-toggle">
                 <span className="toggle-label">
                   Players
-                  <span className="tooltip-icon" title="Number of players in SNG">
+                  <span className="tooltip-icon" title="Number Of Players In SNG">
                     ?
                   </span>
                 </span>
@@ -2419,13 +2419,13 @@ export default function TableConfigPage() {
               tooltip="Table chat is disabled for players in this tournament"
             />
             <Toggle
-              label="All-in or Fold"
+              label="All-In Or Fold"
               value={config.allInOrFold}
               onChange={(v) => updateConfig('allInOrFold', v)}
               tooltip="Players may only move all-in or fold"
             />
             <Toggle
-              label="Label as NEW"
+              label="Label As NEW"
               value={config.labelAsNew}
               onChange={(v) => updateConfig('labelAsNew', v)}
               tooltip="Show NEW badge in the lobby"
@@ -2471,7 +2471,7 @@ export default function TableConfigPage() {
                 Fee
                 <span
                   className="tooltip-icon"
-                  title="Taken out of the buy-in, never added on top. Spins carry no fee."
+                  title="Taken Out Of The Buy-In, Never Added On Top. Spins Carry No Fee."
                 >
                   ?
                 </span>
@@ -2486,14 +2486,14 @@ export default function TableConfigPage() {
             </div>
 
             <Toggle
-              label="Custom Buy-in"
+              label="Custom Buy-In"
               value={config.customBuyIn}
               onChange={(v) => updateConfig('customBuyIn', v)}
               tooltip="Type any whole-number buy-in instead of using the slider"
             />
             {config.customBuyIn ? (
               <NumberField
-                label="Buy-in"
+                label="Buy-In"
                 value={config.buyIn}
                 onChange={(v) => updateConfig('buyIn', v)}
                 min={0}
@@ -2501,7 +2501,7 @@ export default function TableConfigPage() {
               />
             ) : (
               <Slider
-                label="Buy-in"
+                label="Buy-In"
                 value={config.buyIn}
                 onChange={(v) => updateConfig('buyIn', v)}
                 min={10}
@@ -2557,7 +2557,7 @@ export default function TableConfigPage() {
             <div className="config-toggle">
               <span className="toggle-label">
                 Payout Structure
-                <span className="tooltip-icon" title="Prize distribution">
+                <span className="tooltip-icon" title="Prize Distribution">
                   ?
                 </span>
               </span>
@@ -2598,7 +2598,7 @@ export default function TableConfigPage() {
               tooltip="The big blind posts the ante for the whole table"
             />
             <Toggle
-              label="Authorized to Register"
+              label="Authorized To Register"
               value={config.authorizedToRegister}
               onChange={(v) => updateConfig('authorizedToRegister', v)}
               tooltip="Only players you approve can register"
@@ -2623,7 +2623,7 @@ export default function TableConfigPage() {
             />
 
             <Slider
-              label="Number of Rebuys/Re-entries"
+              label="Number Of Rebuys/Re-Entries"
               value={config.numberOfRebuysReentries}
               onChange={(v) => updateConfig('numberOfRebuysReentries', v)}
               min={0}
@@ -2632,14 +2632,14 @@ export default function TableConfigPage() {
             {config.numberOfRebuysReentries > 0 && (
               <>
                 <Toggle
-                  label="Custom Rebuy/Re-entry Cost"
+                  label="Custom Rebuy/Re-Entry Cost"
                   value={config.customRebuyReentryCost}
                   onChange={(v) => updateConfig('customRebuyReentryCost', v)}
                   tooltip="Charge a different price than the buy-in"
                 />
                 {config.customRebuyReentryCost && (
                   <NumberField
-                    label="Rebuy/Re-entry Cost"
+                    label="Rebuy/Re-Entry Cost"
                     value={config.rebuyReentryCost}
                     onChange={(v) => updateConfig('rebuyReentryCost', v)}
                     min={0}
@@ -2651,7 +2651,7 @@ export default function TableConfigPage() {
 
             {/* Add-on Options */}
             <Slider
-              label="Add-on"
+              label="Add-On"
               value={config.addOnMultiplier}
               onChange={(v) => updateConfig('addOnMultiplier', v)}
               min={0}
@@ -2663,14 +2663,14 @@ export default function TableConfigPage() {
             {config.addOnMultiplier > 0 && (
               <>
                 <Toggle
-                  label="Custom Add-on"
+                  label="Custom Add-On"
                   value={config.customAddOn}
                   onChange={(v) => updateConfig('customAddOn', v)}
                   tooltip="Charge a different add-on price than the buy-in"
                 />
                 {config.customAddOn && (
                   <NumberField
-                    label="Add-on Cost"
+                    label="Add-On Cost"
                     value={config.customAddOnCost}
                     onChange={(v) => updateConfig('customAddOnCost', v)}
                     min={0}
@@ -2678,7 +2678,7 @@ export default function TableConfigPage() {
                   />
                 )}
                 <Slider
-                  label="Add-on Break Length"
+                  label="Add-On Break Length"
                   value={config.addOnBreakLengthMinutes}
                   onChange={(v) => updateConfig('addOnBreakLengthMinutes', v)}
                   min={1}
@@ -2796,7 +2796,7 @@ export default function TableConfigPage() {
                 Multi-Day MTT
                 <span
                   className="tooltip-icon"
-                  title="Day 2 resume and flight merging are not built. Setting this would badge the event Multi-Day while it played down to one winner in a single session, so it is refused rather than promised."
+                  title="Day 2 Resume And Flight Merging Are Not Built. Setting This Would Badge The Event Multi-Day While It Played Down To One Winner In A Single Session, So It Is Refused Rather Than Promised."
                 >
                   ?
                 </span>
@@ -2846,14 +2846,14 @@ export default function TableConfigPage() {
                 picked start time in localStorage per club and prefills it on
                 the next visit — simple and honest about what it does. */}
             <Toggle
-              label="Save the Start Time"
+              label="Save The Start Time"
               value={config.saveStartTime}
               onChange={(v) => updateConfig('saveStartTime', v)}
               tooltip="Remember this start time on this device and prefill it next time"
             />
 
             <Toggle
-              label="Restart the Tournament"
+              label="Restart The Tournament"
               value={config.restartTournamentEvery}
               onChange={(v) => updateConfig('restartTournamentEvery', v)}
               tooltip="Automatically respawn this tournament on a fixed interval"
@@ -3023,7 +3023,7 @@ export default function TableConfigPage() {
       {/* Footer Buttons */}
       <footer className="config-footer">
         <button className="btn-template" onClick={handleSaveAsTemplate} disabled={savingTemplate}>
-          {savingTemplate ? 'Saving...' : 'Save as Template'}
+          {savingTemplate ? 'Saving...' : 'Save As Template'}
         </button>
         <button className="btn-save" onClick={handleSave} disabled={saving}>
           {saving ? 'Saving...' : 'Save'}

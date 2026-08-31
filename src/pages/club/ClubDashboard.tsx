@@ -924,7 +924,7 @@ export default function ClubDashboard() {
             </h1>
             <p>
               {formatInt(club.memberCount)} Members {'•'} {club.tableCount} Active{' '}
-              {club.tableCount === 1 ? 'table' : 'tables'}
+              {club.tableCount === 1 ? 'Table' : 'Tables'}
               {dashStats && dashStats.seatedNow > 0 && (
                 <>
                   {' '}
@@ -992,7 +992,7 @@ export default function ClubDashboard() {
 
       {/* Tab Navigation — real tablist semantics so screen readers announce
           the selected tab and arrow keys move between them. */}
-      <nav className={styles.tabNav} role="tablist" aria-label="Club dashboard sections">
+      <nav className={styles.tabNav} role="tablist" aria-label="Club Dashboard Sections">
         {(
           [
             { id: 'overview', label: 'Overview' },
@@ -1048,7 +1048,7 @@ export default function ClubDashboard() {
         <button
           onClick={() => loadDashboardData()}
           disabled={loading}
-          aria-label="Refresh dashboard data"
+          aria-label="Refresh Dashboard Data"
           style={{
             background: 'rgba(255,255,255,0.06)',
             color: 'inherit',
@@ -1116,7 +1116,7 @@ export default function ClubDashboard() {
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as SortId)}
-                    aria-label="Sort leaderboard"
+                    aria-label="Sort Leaderboard"
                     style={{
                       background: 'rgba(255,255,255,0.06)',
                       color: 'inherit',
@@ -1170,8 +1170,8 @@ export default function ClubDashboard() {
                 {rankedPlayers.length === 0 ? (
                   <p className={styles.empty}>
                     {hideHorses && topPlayers.length > 0
-                      ? `No human players with hands ${rangeLabel}`
-                      : `No hands played ${rangeLabel}`}
+                      ? `No Human Players With Hands ${rangeLabel}`
+                      : `No Hands Played ${rangeLabel}`}
                   </p>
                 ) : (
                   rankedPlayers.slice(0, LEADERBOARD_VISIBLE).map((player) => (
@@ -1179,7 +1179,7 @@ export default function ClubDashboard() {
                       key={player.userId}
                       to={`/profile/${player.userId}`}
                       className={styles.playerRow}
-                      title={`View ${player.displayName}'s profile`}
+                      title={`View ${player.displayName}'S Profile`}
                       style={{
                         textDecoration: 'none',
                         color: 'inherit',
@@ -1334,7 +1334,7 @@ export default function ClubDashboard() {
               value={memberSearch}
               onChange={(e) => setMemberSearch(e.target.value)}
               placeholder="Search Members By Name"
-              aria-label="Search members"
+              aria-label="Search Members"
               style={{
                 width: '100%',
                 boxSizing: 'border-box',
@@ -1363,7 +1363,7 @@ export default function ClubDashboard() {
               <select
                 value={memberSort}
                 onChange={(e) => setMemberSort(e.target.value as MemberSortId)}
-                aria-label="Sort members"
+                aria-label="Sort Members"
                 style={selectStyle}
               >
                 <option value="hands">Most Hands</option>
@@ -1375,7 +1375,7 @@ export default function ClubDashboard() {
               <select
                 value={memberRole}
                 onChange={(e) => setMemberRole(e.target.value)}
-                aria-label="Filter members by role"
+                aria-label="Filter Members By Role"
                 style={selectStyle}
               >
                 <option value="">All Roles</option>
@@ -1394,8 +1394,8 @@ export default function ClubDashboard() {
                 {membersLoading
                   ? 'Loading...'
                   : memberFiltered
-                    ? `${formatInt(memberTotal)} of ${formatInt(club.memberCount)} match`
-                    : `${formatInt(memberTotal)} members`}
+                    ? `${formatInt(memberTotal)} Of ${formatInt(club.memberCount)} Match`
+                    : `${formatInt(memberTotal)} Members`}
               </span>
             </div>
 
@@ -1404,7 +1404,7 @@ export default function ClubDashboard() {
                 <p className={styles.empty}>Loading Members...</p>
               ) : members.length === 0 ? (
                 <p className={styles.empty}>
-                  {memberSearch ? `No members matching "${memberSearch}"` : 'No members yet'}
+                  {memberSearch ? `No Members Matching "${memberSearch}"` : 'No Members Yet'}
                 </p>
               ) : (
                 members.map((m) => (
@@ -1412,7 +1412,7 @@ export default function ClubDashboard() {
                     key={m.userId}
                     to={`/profile/${m.userId}`}
                     className={styles.playerCard}
-                    title={`View ${m.displayName}'s profile`}
+                    title={`View ${m.displayName}'S Profile`}
                     style={{ textDecoration: 'none', color: 'inherit' }}
                   >
                     <div className={styles.playerAvatar} style={{ position: 'relative' }}>
@@ -1612,12 +1612,12 @@ export default function ClubDashboard() {
                   }}
                 >
                   {[
-                    { label: 'Rake collected', value: formatChips(revenue.totals.rake) },
-                    { label: 'Bad beat drop', value: formatChips(revenue.totals.bbj) },
-                    { label: 'Hands dealt', value: formatInt(revenue.totals.hands) },
-                    { label: 'Rake per hand', value: formatChips(revenue.totals.rake_per_hand) },
-                    { label: 'Average pot', value: formatChips(revenue.totals.avg_pot) },
-                    { label: 'Total pots', value: formatChips(revenue.totals.pot_total) },
+                    { label: 'Rake Collected', value: formatChips(revenue.totals.rake) },
+                    { label: 'Bad Beat Drop', value: formatChips(revenue.totals.bbj) },
+                    { label: 'Hands Dealt', value: formatInt(revenue.totals.hands) },
+                    { label: 'Rake Per Hand', value: formatChips(revenue.totals.rake_per_hand) },
+                    { label: 'Average Pot', value: formatChips(revenue.totals.avg_pot) },
+                    { label: 'Total Pots', value: formatChips(revenue.totals.pot_total) },
                     // INSURANCE P&L 2026-08-27 (Dan): net = premiums - payouts
                     // over the window. The bank suffix says whose profit it is
                     // - a union-affiliated club's insurance settles to the
@@ -1627,12 +1627,12 @@ export default function ClubDashboard() {
                           {
                             label:
                               revenue.insurance.bank === 'union'
-                                ? 'Insurance net (to union)'
-                                : 'Insurance net (club bank)',
+                                ? 'Insurance Net (To Union)'
+                                : 'Insurance Net (Club Bank)',
                             value: formatChips(revenue.insurance.net),
                           },
                           {
-                            label: 'Insurance premiums / payouts',
+                            label: 'Insurance Premiums / Payouts',
                             value: `${formatChips(revenue.insurance.premiums)} / ${formatChips(revenue.insurance.payouts)}`,
                           },
                         ]

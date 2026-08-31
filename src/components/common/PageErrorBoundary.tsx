@@ -109,7 +109,7 @@ export class PageErrorBoundary extends React.Component<
           eyebrow="Page Recovery"
           tone="error"
           title={`${this.props.pageName || 'This Page'} Could Not Render`}
-          description="The failure was recorded. Retry this surface, or return to the previous page without losing the rest of your Club Arena session."
+          description="The Failure Was Recorded. Retry This Surface, Or Return To The Previous Page Without Losing The Rest Of Your Club Arena Session."
           action={{ label: 'Try Again', onClick: this.handleRetry }}
           secondaryAction={{ label: 'Go Back', onClick: () => window.history.back() }}
         >

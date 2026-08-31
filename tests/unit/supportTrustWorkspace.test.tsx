@@ -72,9 +72,9 @@ describe('Support And Trust Workspace', () => {
     expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Legal Center' })).toHaveAttribute('href', '/legal');
     expect(screen.getAllByText(documentCode)).toHaveLength(2);
-    expect(screen.getByRole('navigation', { name: `${title} sections` })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: `${title} Sections` })).toBeInTheDocument();
     expect(screen.getByRole('article', { name: title })).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Legal documents' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Legal Documents' })).toBeInTheDocument();
   });
 
   it('removes unsupported certification claims from the fair gaming policy', () => {

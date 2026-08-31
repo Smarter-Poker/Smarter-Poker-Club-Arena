@@ -53,22 +53,22 @@ const en: TranslationMap = {
   pot_amount: 'Pot: {{amount}}',
   total: 'TOTAL',
   side_pot: 'Side Pot {{index}}',
-  community_cards: 'Community cards',
-  no_cards_dealt: 'none dealt',
+  community_cards: 'Community Cards',
+  no_cards_dealt: 'None Dealt',
   stage_flop: 'FLOP',
   stage_turn: 'TURN',
   stage_river: 'RIVER',
   stage_showdown: 'SHOWDOWN',
 
   // ── Seat ──
-  seat_empty: 'Seat {{number}}: empty',
-  seat_open: 'Seat {{number}}: open - click to sit',
+  seat_empty: 'Seat {{number}}: Empty',
+  seat_open: 'Seat {{number}}: Open - Click To Sit',
   seat_player: 'Seat {{number}}: {{name}}',
-  seat_active: '(acting now)',
-  seat_folded: '(folded)',
-  seat_all_in: '(all in)',
+  seat_active: '(Acting Now)',
+  seat_folded: '(Folded)',
+  seat_all_in: '(All In)',
   sit: '+ SIT',
-  stack: 'stack {{amount}}',
+  stack: 'Stack {{amount}}',
 
   // ── Actions ──
   fold: 'Fold',
@@ -84,19 +84,19 @@ const en: TranslationMap = {
   call_amount: 'Call {{amount}}',
 
   // ── Action shortcuts ──
-  shortcut_fold: 'Fold (F or Q)',
-  shortcut_check_call: 'Check/Call (C or W)',
-  shortcut_raise: 'Raise/Bet (R or E)',
+  shortcut_fold: 'Fold (F Or Q)',
+  shortcut_check_call: 'Check/Call (C Or W)',
+  shortcut_raise: 'Raise/Bet (R Or E)',
 
   // ── Raise panel ──
-  raise_amount_label: 'Raise amount',
-  raise_amount_edit: 'Edit bet amount {{amount}} - opens numeric keyboard',
-  type_exact_amount: 'Type exact bet amount',
+  raise_amount_label: 'Raise Amount',
+  raise_amount_edit: 'Edit Bet Amount {{amount}} - Opens Numeric Keyboard',
+  type_exact_amount: 'Type Exact Bet Amount',
   bet_preset: 'Bet {{label}}',
-  bet_all_in: 'Bet all in',
-  open_raise_panel: 'Open raise panel',
-  confirm_all_in_amount: 'Confirm all in {{amount}}',
-  cancel_all_in: 'Cancel all in',
+  bet_all_in: 'Bet All In',
+  open_raise_panel: 'Open Raise Panel',
+  confirm_all_in_amount: 'Confirm All In {{amount}}',
+  cancel_all_in: 'Cancel All In',
 
   // ── Pre-actions ──
   check_fold: 'Check/Fold',
@@ -104,14 +104,14 @@ const en: TranslationMap = {
   check_back: 'Check',
 
   // ── Timer ──
-  time_remaining: '{{seconds}} seconds remaining',
-  time_bank: 'Time bank',
-  time_bank_active: 'Time bank active',
-  time_expired: 'Time expired',
+  time_remaining: '{{seconds}} Seconds Remaining',
+  time_bank: 'Time Bank',
+  time_bank_active: 'Time Bank Active',
+  time_expired: 'Time Expired',
 
   // ── Chat ──
-  send_message: 'Send message',
-  type_message: 'Type a message...',
+  send_message: 'Send Message',
+  type_message: 'Type A Message...',
   chat: 'Chat',
 
   // ── Tournament ──
@@ -119,8 +119,8 @@ const en: TranslationMap = {
   cash_game: 'Cash Game',
   blinds: 'Blinds',
   level: 'Level {{number}}',
-  players_remaining: { one: '{{count}} player remaining', other: '{{count}} players remaining' },
-  buy_in: 'Buy-in',
+  players_remaining: { one: '{{count}} Player Remaining', other: '{{count}} Players Remaining' },
+  buy_in: 'Buy-In',
   prize_pool: 'Prize Pool',
   next_break: 'Next Break',
 
@@ -137,21 +137,21 @@ const en: TranslationMap = {
   connecting: 'Connecting...',
   reconnecting: 'Reconnecting...',
   disconnected: 'Disconnected',
-  connection_lost: 'Connection lost',
-  connection_restored: 'Connection restored',
+  connection_lost: 'Connection Lost',
+  connection_restored: 'Connection Restored',
 
   // ── Notifications ──
-  your_turn: 'Your turn to act',
-  your_turn_reminder: 'Still your turn!',
-  you_won: 'You won {{amount}}!',
-  hand_result: '{{name}} wins {{amount}}',
+  your_turn: 'Your Turn To Act',
+  your_turn_reminder: 'Still Your Turn!',
+  you_won: 'You Won {{amount}}!',
+  hand_result: '{{name}} Wins {{amount}}',
 
   // ── Errors ──
-  action_failed: 'Action failed',
-  invalid_amount: 'Invalid amount',
-  insufficient_chips: 'Not enough chips',
-  table_full: 'Table is full',
-  not_your_turn: 'Not your turn',
+  action_failed: 'Action Failed',
+  invalid_amount: 'Invalid Amount',
+  insufficient_chips: 'Not Enough Chips',
+  table_full: 'Table Is Full',
+  not_your_turn: 'Not Your Turn',
 
   // ── Misc ──
   loading: 'Loading...',

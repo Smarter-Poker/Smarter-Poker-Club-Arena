@@ -101,19 +101,19 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
     hand_for_hand: {
       icon: 'H',
       title: 'HAND FOR HAND',
-      subtitle: 'All tables play one hand at a time - bubble approaching!',
+      subtitle: 'All Tables Play One Hand At A Time - Bubble Approaching!',
       color: '#f59e0b',
     },
     bubble_burst: {
       icon: '$',
       title: 'BUBBLE BURST!',
-      subtitle: 'Congratulations - all remaining players are in the money!',
+      subtitle: 'Congratulations - All Remaining Players Are In The Money!',
       color: '#3fb950',
     },
     final_table: {
       icon: 'FT',
       title: 'FINAL TABLE',
-      subtitle: `${data?.playersRemaining || 'All'} players remain - final table begins!`,
+      subtitle: `${data?.playersRemaining || 'All'} Players Remain - Final Table Begins!`,
       color: '#d9aa4e',
     },
     level_up: {
@@ -172,8 +172,8 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
       icon: '72',
       title: 'SEVEN-DEUCE BOUNTY',
       subtitle: data?.winnerName
-        ? `${data.winnerName} won with 7-2 - collected ${data?.amount ?? ''} from the table`
-        : `Won with 7-2 - collected ${data?.amount ?? ''} from the table`,
+        ? `${data.winnerName} Won With 7-2 - Collected ${data?.amount ?? ''} From The Table`
+        : `Won With 7-2 - Collected ${data?.amount ?? ''} From The Table`,
       color: '#ef4444',
     },
   };

@@ -95,7 +95,7 @@ describe('the reserve offers no way to move money out', () => {
     // The send button must sit AFTER the first guard - i.e. inside a guarded
     // region - and never before one.
     const firstGuard = modal.indexOf('{!readOnly && (');
-    const sendButton = modal.indexOf('Pick a member');
+    const sendButton = modal.indexOf('Pick A Member');
     expect(firstGuard).toBeGreaterThan(-1);
     expect(sendButton).toBeGreaterThan(firstGuard);
   });

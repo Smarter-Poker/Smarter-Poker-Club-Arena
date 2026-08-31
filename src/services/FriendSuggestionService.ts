@@ -85,7 +85,7 @@ class FriendSuggestionServiceClass {
             reasons: [
               {
                 type: 'shared_club',
-                label: `Member of ${candidate.clubName}`,
+                label: `Member Of ${candidate.clubName}`,
                 count: 1,
               },
             ],
@@ -102,7 +102,7 @@ class FriendSuggestionServiceClass {
           existing.score += 2;
           existing.reasons.push({
             type: 'recent_opponent',
-            label: 'Played together recently',
+            label: 'Played Together Recently',
           });
         } else {
           candidates.set(opponent.userId, {
@@ -111,7 +111,7 @@ class FriendSuggestionServiceClass {
             reasons: [
               {
                 type: 'recent_opponent',
-                label: 'Played together recently',
+                label: 'Played Together Recently',
               },
             ],
           });

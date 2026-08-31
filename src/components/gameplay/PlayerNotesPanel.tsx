@@ -325,7 +325,7 @@ export default function PlayerNotesPanel({
         {loading ? (
           <div className={styles.loading}>Loading Notes...</div>
         ) : filteredNotes.length === 0 ? (
-          <div className={styles.empty}>{searchQuery ? 'No matching notes' : 'No notes yet'}</div>
+          <div className={styles.empty}>{searchQuery ? 'No Matching Notes' : 'No Notes Yet'}</div>
         ) : (
           filteredNotes.map((note, idx) => (
             <div

@@ -525,7 +525,7 @@ export default function HandReplayerPage() {
             void (async () => {
               try {
                 if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-                  await navigator.share({ url: shareUrl, title: 'Check out this hand!' });
+                  await navigator.share({ url: shareUrl, title: 'Check Out This Hand!' });
                   return;
                 }
                 await navigator.clipboard.writeText(shareUrl);

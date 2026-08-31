@@ -383,7 +383,7 @@ export default function AuthPage() {
                   }}
                 />
               )}
-              {isLoading ? 'Logging in...' : 'Login'}
+              {isLoading ? 'Logging In...' : 'Login'}
             </button>
 
             <button
@@ -467,7 +467,7 @@ export default function AuthPage() {
                 type="text"
                 value={referralCode}
                 onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                placeholder="E.g. ABCD1234"
+                placeholder="E.G. ABCD1234"
                 autoComplete="off"
                 style={{ textTransform: 'uppercase', letterSpacing: '1px' }}
               />

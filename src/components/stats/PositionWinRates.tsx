@@ -298,7 +298,7 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId, initialPosi
                      every browser this app supports. */
                   tabIndex={0}
                   role="button"
-                  aria-label={`${pos.position}, ${pos.winRate.toFixed(1)} BB per 100`}
+                  aria-label={`${pos.position}, ${pos.winRate.toFixed(1)} BB Per 100`}
                   onMouseEnter={() => setHoveredPosition(i)}
                   onMouseLeave={() => setHoveredPosition(null)}
                   onFocus={() => setHoveredPosition(i)}

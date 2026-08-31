@@ -84,8 +84,8 @@ function SitOutBadgeInner({ sitOutAt }: SitOutBadgeProps) {
          number that promises them longer than they have. */
       title={
         msRemaining === null
-          ? 'This player is sitting out'
-          : 'This player is sitting out. Their seat is held for up to this long, or two orbits, whichever comes first'
+          ? 'This Player Is Sitting Out'
+          : 'This Player Is Sitting Out. Their Seat Is Held For Up To This Long, Or Two Orbits, Whichever Comes First'
       }
       data-testid="seat-sitout-badge"
     >

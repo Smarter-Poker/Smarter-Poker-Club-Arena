@@ -282,7 +282,7 @@ export default function GlobalHeader() {
             <button
               onClick={handleBackClick}
               className={`${styles.artButton} ${styles.backBtn}`}
-              aria-label="Go back"
+              aria-label="Go Back"
               title="Back"
             >
               <img src={`${APPROVED_HEADER_ASSET}back.png`} alt="Back" />
@@ -290,7 +290,7 @@ export default function GlobalHeader() {
             <button
               onClick={handleHubClick}
               className={`${styles.artButton} ${styles.hubBtn}`}
-              aria-label="Go to the Hub"
+              aria-label="Go To The Hub"
               title="Hub"
             >
               <img src={`${APPROVED_HEADER_ASSET}hub.png`} alt="Hub" />
@@ -349,7 +349,7 @@ export default function GlobalHeader() {
               {unreadMessages > 0 && (
                 <span
                   className={`${styles.badge} ${styles.messageBadge}`}
-                  aria-label={`${unreadMessages} unread messages`}
+                  aria-label={`${unreadMessages} Unread Messages`}
                   aria-live="polite"
                 >
                   {unreadMessages > 99 ? '99+' : unreadMessages}
@@ -371,7 +371,7 @@ export default function GlobalHeader() {
               {notificationCount > 0 && (
                 <span
                   className={`${styles.badge} ${styles.notificationBadge}`}
-                  aria-label={`${notificationCount} unread notifications`}
+                  aria-label={`${notificationCount} Unread Notifications`}
                   aria-live="polite"
                 >
                   {notificationCount > 99 ? '99+' : notificationCount}

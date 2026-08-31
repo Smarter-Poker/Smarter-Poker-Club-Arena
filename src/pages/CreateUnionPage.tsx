@@ -192,7 +192,7 @@ export default function CreateUnionPage() {
         <CasinoSurfaceHeader
           eyebrow="Union Network / Creation"
           title="Forge A Union"
-          description="Configure a governed club network, revenue rules, and shared features through the existing server-authorized creation workflow."
+          description="Configure A Governed Club Network, Revenue Rules, And Shared Features Through The Existing Server-Authorized Creation Workflow."
           artPath="assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp"
           status="UNION FORGE // SECURE"
           metrics={[

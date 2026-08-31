@@ -438,7 +438,7 @@ export function BBJRecentHits({
             className="bbj-hits__row is-example"
             key={ex.id}
             role="img"
-            aria-label={`Example only: ${ex.hand}`}
+            aria-label={`Example Only: ${ex.hand}`}
           >
             <img
               className="bbj-hits__avatar"

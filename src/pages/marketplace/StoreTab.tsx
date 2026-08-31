@@ -431,7 +431,7 @@ export default function StoreTab({
           buttons: without aria-pressed a screen reader reads seven identical
           "button" nodes and cannot say which category is active. The visual
           state was carried only by a CSS class. */}
-      <div className={styles.categoryFilters} role="group" aria-label="Filter items by category">
+      <div className={styles.categoryFilters} role="group" aria-label="Filter Items By Category">
         {categoryNames.map((cat) => (
           <button
             key={cat}
@@ -462,7 +462,7 @@ export default function StoreTab({
           value={sortMode}
           onChange={(e) => setSortMode(e.target.value as SortMode)}
           className={styles.sortSelect}
-          aria-label="Sort shop items"
+          aria-label="Sort Shop Items"
         >
           <option value="newest">Featured</option>
           <option value="price-low">Price: Low To High</option>
@@ -589,7 +589,7 @@ export default function StoreTab({
                       disabled={!!blocked || processing}
                       title={
                         blocked === 'not_yet' && item.available_from
-                          ? `Available from ${new Date(item.available_from).toLocaleString()}`
+                          ? `Available From ${new Date(item.available_from).toLocaleString()}`
                           : undefined
                       }
                     >

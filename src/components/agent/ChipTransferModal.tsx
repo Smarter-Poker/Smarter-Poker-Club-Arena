@@ -630,7 +630,7 @@ export default function ChipTransferModal({
               type="text"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="E.g., Weekly Allocation, Player Funding..."
+              placeholder="E.G., Weekly Allocation, Player Funding..."
             />
           </div>
 

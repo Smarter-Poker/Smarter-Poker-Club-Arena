@@ -199,6 +199,26 @@ function loadAllowlist() {
  *
  * Returns the names this SQL declares that break the rule.
  */
+/**
+ * True when the body derives identity from auth.uid() but FALLS BACK to
+ * something the caller controls.
+ *
+ * `COALESCE(auth.uid(), p_actor_user_id)` is the shape that shipped in
+ * fn_club_set_member_role. A LITERAL fallback is deliberately allowed:
+ * `COALESCE(auth.role(), 'service_role')` is the documented way to recognise a
+ * trusted backend and cannot be steered from a browser.
+ */
+export function spoofableIdentityFallback(body) {
+  const re = /coalesce\s*\(\s*auth\.(?:uid|role|jwt)\s*\(\s*\)\s*,\s*([^),]+)/gi;
+  let m;
+  while ((m = re.exec(body)) !== null) {
+    const fallback = m[1].trim();
+    if (/^'([^']*)'$/.test(fallback) || /^[0-9.]+$/.test(fallback)) continue;
+    return true;
+  }
+  return false;
+}
+
 export function unauthorisedWriters(sql, allowlist = new Set()) {
   const clean = stripComments(sql);
   const out = [];
@@ -207,6 +227,21 @@ export function unauthorisedWriters(sql, allowlist = new Set()) {
     if (/RETURNS\s+trigger\b/i.test(fn.header)) continue;
     if (!/(?:^|[^a-z_])(?:insert\s+into|update\s+[a-z_"]|delete\s+from)/i.test(fn.body)) continue;
     if (!browserReachable(clean, fn.name)) continue;
+    /* ASKING, THEN ACCEPTING THE CALLER'S ANSWER, IS NOT ASKING (2026-08-31).
+       The test below used to be the whole rule: mention auth.uid() anywhere and
+       you were cleared. `fn_club_set_member_role` mentioned it - inside
+       `COALESCE(auth.uid(), p_actor_user_id)` - and held EXECUTE for PUBLIC and
+       anon. auth.uid() is NULL for anon BY DEFINITION, so that COALESCE fell
+       through to a value the CALLER supplied, and fn_club_grantable_roles then
+       authorised against the spoofed actor: an unauthenticated caller could
+       name any club owner and set any member's role, co_owner included.
+
+       The guidance this script prints already said "Never from a parameter: a
+       caller-supplied ...". It did not enforce its own sentence. It does now. */
+    if (spoofableIdentityFallback(fn.body) && !allowlist.has(fn.name)) {
+      out.push(fn.name);
+      continue;
+    }
     if (/auth\.(?:uid|role|jwt)\s*\(/i.test(fn.body)) continue;
     if (allowlist.has(fn.name)) continue;
     out.push(fn.name);

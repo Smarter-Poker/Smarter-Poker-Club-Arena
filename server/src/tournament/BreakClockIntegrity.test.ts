@@ -81,7 +81,7 @@ function methodBody(src: string, signature: string): string {
   throw new Error(`unbalanced braces in ${signature}`);
 }
 
-describe('DEFECT 1 — the level clock neither ticks nor advances during a break', () => {
+describe('DEFECT 1 - the level clock neither ticks nor advances during a break', () => {
   const advance = methodBody(BASE, 'protected async advanceBlindLevel(');
 
   it('refuses to advance a level while the tournament is on break', () => {
@@ -110,7 +110,7 @@ describe('DEFECT 1 — the level clock neither ticks nor advances during a break
   });
 });
 
-describe('DEFECT 2 — a break with no end time yet is still a break', () => {
+describe('DEFECT 2 - a break with no end time yet is still a break', () => {
   it('resume() reacts to on_break without requiring break_ends_at', () => {
     expect(BASE).not.toMatch(/tournament\.on_break\s*&&\s*tournament\.break_ends_at/);
     expect(BASE).toMatch(/if\s*\(tournament\.on_break\)\s*\{/);
@@ -142,7 +142,7 @@ describe('DEFECT 2 — a break with no end time yet is still a break', () => {
   });
 });
 
-describe('DEFECT 3 — a tournament that ends on a break still comes off it', () => {
+describe('DEFECT 3 - a tournament that ends on a break still comes off it', () => {
   const resume = methodBody(BASE, 'async resumeFromBreak()');
 
   it('does not skip the persisted clear when the tournament has stopped', () => {
@@ -162,7 +162,7 @@ describe('DEFECT 3 — a tournament that ends on a break still comes off it', ()
   });
 });
 
-describe('DEFECT 4 — a break countdown is started once, never restarted', () => {
+describe('DEFECT 4 - a break countdown is started once, never restarted', () => {
   const countdown = methodBody(BASE, 'async beginBreakCountdown(');
   const pause = methodBody(BASE, 'async pauseForBreak(');
 

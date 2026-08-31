@@ -102,7 +102,7 @@ const ACTUAL_MATCH: EngineFinalState = {
   pot: 0,
 };
 
-describe('ShadowRecorder — records + replays + verifies', () => {
+describe('ShadowRecorder - records + replays + verifies', () => {
   it('reports NO divergence when the replay matches the engine', () => {
     const sink = new InMemoryEventSink();
     const log = new EventLog(sink);
@@ -158,7 +158,7 @@ describe('ShadowRecorder — records + replays + verifies', () => {
   });
 });
 
-describe('EventLog — append-only + durable sink', () => {
+describe('EventLog - append-only + durable sink', () => {
   it('enforces monotonic seq per hand', () => {
     const log = new EventLog();
     log.append({ type: 'HandEnded', handNumber: 1, handId: 'h', seq: 0, ts: 1, v: 1 });

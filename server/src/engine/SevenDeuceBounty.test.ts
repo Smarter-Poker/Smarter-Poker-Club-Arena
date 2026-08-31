@@ -50,7 +50,7 @@ describe('computeSevenDeuceBounties', () => {
     expect(computeSevenDeuceBounties(['w'], dealtIn, 4)).toEqual([]);
   });
 
-  it('caps each payer at their remaining stack — never mints chips', () => {
+  it('caps each payer at their remaining stack - never mints chips', () => {
     const dealtIn = [
       P('w', ['7', '2'], 500),
       P('short', ['A', 'K'], 1.5), // can only pay 1.5 of the 4 bounty

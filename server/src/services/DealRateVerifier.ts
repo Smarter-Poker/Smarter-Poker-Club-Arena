@@ -208,7 +208,7 @@ export class DealRateVerifier {
             kills +
             ' engine kills in ' +
             Math.round(KILL_WINDOW_MS / 60_000) +
-            'min — tables are being destroyed and rebuilt in a loop',
+            'min - tables are being destroyed and rebuilt in a loop',
           description:
             'Healthy is under one an hour. Read engine_recovery_events.detail: it names ' +
             'the phase or stage each kill happened in.',
@@ -309,7 +309,7 @@ export class DealRateVerifier {
           severity: 'critical',
           component: COMPONENT,
           summary:
-            'Only ' + tableIds.length + ' table(s) should be dealing — the fleet has collapsed',
+            'Only ' + tableIds.length + ' table(s) should be dealing - the fleet has collapsed',
           description:
             'The horse fleet normally keeps dozens of tables dealing around the clock. ' +
             'Below ' +

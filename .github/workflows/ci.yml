@@ -256,6 +256,14 @@ jobs:
       - name: UI copy — page copy is Title Cased
         run: node scripts/ci/check-title-case.mjs
 
+      # The THIRD surface of the same rule (Dan 2026-08-31). check-title-case
+      # reads JsxText and check-nav-title-case reads the nav registry; neither
+      # can see text a browser paints from a string ATTRIBUTE or from a string
+      # literal inside a JSX EXPRESSION.
+      # Autofix locally with: node scripts/ci/check-painted-text-case.mjs --fix
+      - name: UI copy — painted attributes and expressions are Title Cased
+        run: node scripts/ci/check-painted-text-case.mjs
+
       # Focused defense in depth for the same rule (Dan 2026-08-30: "AS WELL AS
       # EVERY CLICKABLE PAGE AND SUBPAGE"). The general gate now covers static
       # JSX, accessible names, conditional/template copy and known copy fields;

@@ -254,7 +254,7 @@ export class PreActionEngine {
           return {
             executed: false,
             invalidated: true,
-            reason: 'Bet was placed — auto-check cleared',
+            reason: 'Bet was placed - auto-check cleared',
           };
         }
         break;

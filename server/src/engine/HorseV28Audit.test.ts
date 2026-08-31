@@ -81,7 +81,7 @@ beforeEach(() => _clearGtoCharts());
 // top ~25% just to CALL half a big blind more. The fleet folded KJ getting
 // better than 5:1, on essentially every tournament short-stack under-shove.
 // ═══════════════════════════════════════════════════════════════════════════
-describe('C1 — the short all-in is visible to preflop routing', () => {
+describe('C1 - the short all-in is visible to preflop routing', () => {
   const shove: ActionRecord = {
     stage: 'preflop',
     seat: 7,
@@ -146,7 +146,7 @@ describe('C1 — the short all-in is visible to preflop routing', () => {
 // actor. Before the fix, one fold killed the straddle awareness and 5 of 6
 // seats played "facing a 3-bet" thresholds against dead money.
 // ═══════════════════════════════════════════════════════════════════════════
-describe('A1a — the straddle fix survives a fold in front', () => {
+describe('A1a - the straddle fix survives a fold in front', () => {
   it('a playable hand continues after a fold in a straddled pot', () => {
     const fold: ActionRecord = {
       stage: 'preflop',
@@ -189,7 +189,7 @@ describe('A1a — the straddle fix survives a fold in front', () => {
 // 'early', the middle threshold tables were dead code, and V27 could never
 // pick the MP chart.
 // ═══════════════════════════════════════════════════════════════════════════
-describe('A4 — the hijack is middle position at 6-max', () => {
+describe('A4 - the hijack is middle position at 6-max', () => {
   it('classifyPosition yields early, middle, late, late for the non-blind seats', () => {
     // 6 players, dealer at seat 5 → SB 0, BB 1, UTG 2, HJ 3, CO 4, BTN 5.
     const players = ringPlayers(6);
@@ -219,7 +219,7 @@ describe('A4 — the hijack is middle position at 6-max', () => {
 // A3 — "everyone folded to the BB" is not heads-up. Before the fix the BB
 // defended ~70% of hands against an UNDER-THE-GUN open in a full ring.
 // ═══════════════════════════════════════════════════════════════════════════
-describe('A3 — the heads-up defense does not fire against a ring UTG open', () => {
+describe('A3 - the heads-up defense does not fire against a ring UTG open', () => {
   const spot = {
     ...baseCtx,
     mode: 'cash' as const,
@@ -268,7 +268,7 @@ describe('A3 — the heads-up defense does not fire against a ring UTG open', ()
 // tightness 1.12 pushed the 4-bet bar to clamp01(1.04) = 1.0, above every
 // hand but jittered aces: the grinder never value-4-bet KK, AKs or QQ.
 // ═══════════════════════════════════════════════════════════════════════════
-describe('the bar cap — a grinder can 4-bet kings again', () => {
+describe('the bar cap - a grinder can 4-bet kings again', () => {
   it('KK (0.98) clears the 4-bet bar at tightness 1.12', () => {
     let aggressive = 0;
     for (let i = 0; i < 40; i++) {
@@ -297,7 +297,7 @@ describe('the bar cap — a grinder can 4-bet kings again', () => {
 // C5 — the small blind folds junk again. Before the fix `|| position==='sb'`
 // bypassed the strength test: the SB completed ANY two cards 70% of the time.
 // ═══════════════════════════════════════════════════════════════════════════
-describe('C5 — the SB does not complete with any two cards', () => {
+describe('C5 - the SB does not complete with any two cards', () => {
   it('72o folds from the SB in an unopened multiway pot', () => {
     let completes = 0;
     for (let i = 0; i < 40; i++) {
@@ -321,7 +321,7 @@ describe('C5 — the SB does not complete with any two cards', () => {
 // D — the preflop ladder respects domination. Each inversion here shipped:
 // 72s above 43s, J8s below T8s, J9s above K9s.
 // ═══════════════════════════════════════════════════════════════════════════
-describe('D — ladder ordering', () => {
+describe('D - ladder ordering', () => {
   const s = (a: string, b: string, suited = true) =>
     holdemPreflopScore(c(a, 'hearts'), c(b, suited ? 'hearts' : 'clubs'), false);
 
@@ -338,7 +338,7 @@ describe('D — ladder ordering', () => {
     expect(s('K', '9')).toBeGreaterThan(s('J', '9'));
   });
 
-  it('wheel aces sit above the 3-bet bluff floor — the canonical blocker bluff is playable', () => {
+  it('wheel aces sit above the 3-bet bluff floor - the canonical blocker bluff is playable', () => {
     for (const lo of ['2', '3', '4', '5']) {
       expect(s('A', lo)).toBeGreaterThanOrEqual(0.55);
     }
@@ -442,7 +442,7 @@ describe('V27 guards', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // M4 — a poisoned horse_profile cannot lobotomize the brain.
 // ═══════════════════════════════════════════════════════════════════════════
-describe('M4 — profile dials are clamped at the read boundary', () => {
+describe('M4 - profile dials are clamped at the read boundary', () => {
   it('tightness 0 and bluffFreq 5 are pulled into a sane range', () => {
     const { mods } = resolveHorseStyle(
       { style: 'balanced', tightness: 0, bluffFreq: 5, aggression: -3, sizingMultiplier: 99 },

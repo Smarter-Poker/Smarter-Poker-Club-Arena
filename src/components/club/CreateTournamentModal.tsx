@@ -1816,7 +1816,7 @@ export default function CreateTournamentModal({
                     [
                       ['VIP Only', isVipOnly, setIsVipOnly],
                       ['Ban Chat', banChat, setBanChat],
-                      ['All-in Or Fold', allInOrFold, setAllInOrFold],
+                      ['All-In Or Fold', allInOrFold, setAllInOrFold],
                       ['Label As NEW', labelAsNew, setLabelAsNew],
                       ['Hide Club Name', hideClubName, setHideClubName],
                       ['Featured (Pinned)', isFeatured, setIsFeatured],

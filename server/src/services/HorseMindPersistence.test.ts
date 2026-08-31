@@ -18,7 +18,7 @@ const act = (
 ): ActionRecord =>
   ({ seat: 1, userId, action, amount, timestamp: ts, stage }) as unknown as ActionRecord;
 
-describe('HorseMind V12 — persistence contract', () => {
+describe('HorseMind V12 - persistence contract', () => {
   beforeEach(() => HorseMind.reset());
 
   it('marks observed players dirty and exportDirty drains the set', () => {

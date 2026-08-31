@@ -5,9 +5,13 @@ import { resolve } from 'node:path';
 const root = resolve(__dirname, '..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
 const migration = read('supabase/migrations/20260901040000_new_club_opening_bank.sql');
+const repairMigration = read(
+  'supabase/migrations/20260901075500_repair_pre_trigger_opening_bank.sql'
+);
 const lobby = read('src/pages/ClubHomePage.tsx');
 const progress = read('src/components/club/ClubLaunchProgress.tsx');
 const progressCss = read('src/components/club/ClubLaunchProgress.css');
+const machineCss = read('src/components/lobby/ClubLobbyCommandTop.css');
 
 describe('new club opening bank', () => {
   it('seeds exactly 100,000 chips at the authoritative club insert boundary', () => {
@@ -22,6 +26,15 @@ describe('new club opening bank', () => {
     expect(migration).toContain('club_opening_grant');
     expect(migration).toContain("'destination', 'club_bank'");
     expect(migration).toContain('balance_after');
+  });
+
+  it('repairs the one pre-trigger club and labels future opening grants as mint', () => {
+    expect(repairMigration).toContain('v_club.club_id <> 11192');
+    expect(repairMigration).toContain("v_club.name <> 'Deep Stack Society'");
+    expect(repairMigration).toContain("'club-opening-grant:' || NEW.id::text");
+    expect(repairMigration).toContain("set_config('app.ledger_counterparty', 'system_mint'");
+    expect(repairMigration).toContain('COALESCE(chip_treasury, 0) = 0');
+    expect(repairMigration).toContain("transaction_type = 'club_opening_grant'");
   });
 });
 
@@ -72,5 +85,12 @@ describe('owner launch controls', () => {
     expect(progressCss).toContain('@media (max-width: 760px)');
     expect(progressCss).toContain('grid-template-columns: 1fr');
     expect(progressCss).not.toContain('clip-path');
+    expect(lobby).toContain('data-opening-checklist={noticeEditable || undefined}');
+    expect(machineCss).toMatch(
+      /\.club-lobby-machine\[data-opening-checklist='true'\]\s*\{[\s\S]*overflow-y:\s*auto;/
+    );
+    expect(machineCss).toMatch(
+      /\.club-lobby-machine\[data-opening-checklist='true'\]\s*>\s*\.club-launch\s*\{[\s\S]*flex:\s*0 0 auto;/
+    );
   });
 });

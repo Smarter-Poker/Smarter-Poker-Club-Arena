@@ -101,6 +101,31 @@ const DEFINITIONS: OperationDefinition[] = [
     access: 'staff',
     rail: true,
   },
+  /**
+   * PHASE 7 — two built tools that had no door.
+   *
+   * `agent-dashboard` renders SuperAgentDashboard, the club-scoped view of an
+   * agent network. `anti-cheat` renders AntiCheatPage, five tabs of collusion
+   * and anomaly review. Both were reachable only by typing the URL while
+   * agent_commissions carried 1,490,109 rows and anti_cheat_flags carried
+   * live flags. Neither is new work; both are doors onto work already shipped.
+   */
+  {
+    id: 'agent-network',
+    label: 'Agent Network',
+    description: 'Downlines, Live Agent Activity, And Network Performance',
+    suffix: 'agent-dashboard',
+    group: 'people',
+    access: 'staff',
+  },
+  {
+    id: 'anti-cheat',
+    label: 'Anti-Cheat',
+    description: 'Collusion Flags, Player Anomalies, And Review Decisions',
+    suffix: 'anti-cheat',
+    group: 'people',
+    access: 'staff',
+  },
   {
     id: 'disputes',
     label: 'Disputes',

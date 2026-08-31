@@ -264,6 +264,13 @@
   color: #ff9a9a;
 }
 
+/* Report sits beside Block but reads as the milder of the two: reporting asks
+   a human to look, blocking is the player acting alone. Amber, not red. */
+.public-profile-page .report-btn {
+  border-color: rgba(245, 166, 35, 0.48);
+  color: #f5a623;
+}
+
 .public-profile-page .mutual-friends-section,
 .public-profile-page .achievement-showcase,
 .public-profile-page .profile-qr-section {

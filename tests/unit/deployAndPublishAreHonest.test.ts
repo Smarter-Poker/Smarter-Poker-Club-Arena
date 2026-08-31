@@ -75,16 +75,16 @@ describe('the engine deploy tells the truth when it skips', () => {
     expect(triggers).toMatch(/^\s{2}workflow_dispatch:/m);
   });
 
-  it('fires only at the hours that can be 7am or 7pm in Chicago', () => {
+  it('fires only at the hours that can be 6pm, 10pm, 4am, 10am, 2pm in Chicago', () => {
     // Four UTC hours because CDT and CST put the two windows an hour apart;
     // the gate keeps whichever two are genuinely 07 and 19 local.
-    expect(HETZNER).toMatch(/cron: '0 0,1,12,13 \* \* \*'/);
+    expect(HETZNER).toMatch(/cron: '0 0,3,4,9,10,15,16,19,20,23 \* \* \*'/);
     expect(cronEveryMinutes(HETZNER)).toBeNull();
   });
 
   it('resolves the window from the tz database, not from a baked offset', () => {
     expect(HETZNER).toMatch(/TZ=America\/Chicago date \+%H/);
-    expect(HETZNER).toMatch(/case "\$HOUR" in\s*\n\s*07\|19\)/);
+    expect(HETZNER).toMatch(/case "\$HOUR" in\s*\n\s*18\|22\|04\|10\|14\)/);
   });
 
   it('a plain dispatch is subject to the window; only force overrides it', () => {

@@ -185,7 +185,9 @@ describe('V23 blind-clock anticipation', () => {
     riskAdd: 0.04,
     mode: 'tournament' as const,
     anteInPlay: true,
-    anteBB: 0.125,
+    // 0.125/player x 8 seats = a 1.0bb ante per ORBIT (orbit total 2.5bb),
+    // the same figure the old per-player field produced here.
+    anteOrbitBB: 1.0,
     tableSize: 8,
     v13: true,
     rand: () => 0.5,

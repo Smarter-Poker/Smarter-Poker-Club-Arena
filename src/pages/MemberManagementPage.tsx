@@ -37,7 +37,7 @@
  * colours that carry meaning here beyond the role badge.
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { sizedStorageUrl, generateAvatarSvg } from '../utils/avatarGenerator';
@@ -223,19 +223,6 @@ export default function MemberManagementPage() {
   const identity = detail?.identity;
   const found = !!identity?.user_id;
 
-  const isSelf = !!user?.id && !!identity?.user_id && user.id === identity.user_id;
-
-  /**
-   * The nickname and the remark are notes an upline keeps about someone beneath
-   * them, so only someone above the member may write them. Everyone else sees
-   * what is there, read only, rather than a field that silently refuses.
-   */
-  const canEditNotes = useMemo(() => {
-    if (!identity) return false;
-    if (isSelf) return false;
-    return roleRank(myRole) > roleRank(identity.role);
-  }, [identity, myRole, isSelf]);
-
   const shownDownline = downline.slice(0, DOWNLINE_RENDER_CAP);
 
   /* ── Render ─────────────────────────────────────────────────────────────── */
@@ -312,18 +299,22 @@ export default function MemberManagementPage() {
 
       {/* ── Nickname and remark ──────────────────────────────────────────── */}
 
-      <NotesEditor
-        clubId={resolvedClubId}
-        userId={identity!.user_id!}
-        initialNickname={identity!.nickname}
-        initialRemark={identity!.remark}
-        editable={canEditNotes}
-      />
+      {detail!.capabilities.can_view_notes && (
+        <NotesEditor
+          clubId={resolvedClubId}
+          userId={identity!.user_id!}
+          initialNickname={identity!.nickname}
+          initialRemark={identity!.remark}
+          editable={detail!.capabilities.can_edit_notes}
+        />
+      )}
 
       {/* ── Provenance ───────────────────────────────────────────────────── */}
 
       <section className="mm-card mm-provenance">
-        <InfoLine label="Last Login" value={formatTimestamp(identity!.last_login)} />
+        {detail!.capabilities.can_view_financials && (
+          <InfoLine label="Last Login" value={formatTimestamp(identity!.last_login)} />
+        )}
         <InfoLine label="Joined" value={formatTimestamp(identity!.joined_at)} />
         <InfoLine
           label="Upline Agent"
@@ -342,123 +333,131 @@ export default function MemberManagementPage() {
 
       {/* ── Range control (requirement 5) ────────────────────────────────── */}
 
-      <section className="mm-range">
-        <div className="mm-range__tabs" role="group" aria-label="Statistics Date Range">
-          {(Object.keys(RANGE_LABEL) as RangeMode[]).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              className={rangeMode === mode ? 'active' : ''}
-              onClick={() => chooseRange(mode)}
-            >
-              {RANGE_LABEL[mode]}
-            </button>
-          ))}
-        </div>
-
-        {rangeMode === 'custom' && (
-          <div className="mm-range__custom">
-            <label className="mm-date">
-              <span>From</span>
-              <input
-                type="date"
-                value={customFrom}
-                max={customTo || undefined}
-                onChange={(e) => setCustomFrom(e.target.value)}
-              />
-            </label>
-            <label className="mm-date">
-              <span>To</span>
-              <input
-                type="date"
-                value={customTo}
-                min={customFrom || undefined}
-                onChange={(e) => setCustomTo(e.target.value)}
-              />
-            </label>
-            <button type="button" className="mm-range__confirm" onClick={confirmCustomRange}>
-              Confirm
-            </button>
+      {stats && (
+        <section className="mm-range">
+          <div className="mm-range__tabs" role="group" aria-label="Statistics Date Range">
+            {(Object.keys(RANGE_LABEL) as RangeMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={rangeMode === mode ? 'active' : ''}
+                onClick={() => chooseRange(mode)}
+              >
+                {RANGE_LABEL[mode]}
+              </button>
+            ))}
           </div>
-        )}
 
-        <p className="mm-range__caption">
-          {detail!.range.is_overall
-            ? 'Showing Lifetime Totals'
-            : `Showing ${detail!.range.from ?? '?'} To ${detail!.range.to ?? '?'}`}
-        </p>
-      </section>
+          {rangeMode === 'custom' && (
+            <div className="mm-range__custom">
+              <label className="mm-date">
+                <span>From</span>
+                <input
+                  type="date"
+                  value={customFrom}
+                  max={customTo || undefined}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                />
+              </label>
+              <label className="mm-date">
+                <span>To</span>
+                <input
+                  type="date"
+                  value={customTo}
+                  min={customFrom || undefined}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                />
+              </label>
+              <button type="button" className="mm-range__confirm" onClick={confirmCustomRange}>
+                Confirm
+              </button>
+            </div>
+          )}
+
+          <p className="mm-range__caption">
+            {detail!.range.is_overall
+              ? 'Showing Lifetime Totals'
+              : `Showing ${detail!.range.from ?? '?'} To ${detail!.range.to ?? '?'}`}
+          </p>
+        </section>
+      )}
 
       {/* ── Stats ────────────────────────────────────────────────────────── */}
 
-      <section className="mm-card mm-stats">
-        <h2 className="mm-card__title">Activity</h2>
-        <StatRow label="Hands" value={count(stats.hands)} />
-        <StatRow label="Total Fee" value={money(stats.total_fee)} />
-        <StatRow label="MTT Fee" value={money(stats.mtt_fee)} />
-        <StatRow label="Claimed Back" value={money(stats.claimed_back)} />
-        <StatRow label="Sent Out" value={money(stats.sent_out)} />
-        <StatRow
-          label="Total Winnings"
-          value={money(stats.total_winnings)}
-          signed={stats.total_winnings}
-        />
-        <StatRow
-          label="MTT Winnings"
-          value={money(stats.mtt_winnings)}
-          signed={stats.mtt_winnings}
-        />
-      </section>
+      {stats && (
+        <section className="mm-card mm-stats">
+          <h2 className="mm-card__title">Activity</h2>
+          <StatRow label="Hands" value={count(stats.hands)} />
+          <StatRow label="Total Fee" value={money(stats.total_fee)} />
+          <StatRow label="MTT Fee" value={money(stats.mtt_fee)} />
+          <StatRow label="Claimed Back" value={money(stats.claimed_back)} />
+          <StatRow label="Sent Out" value={money(stats.sent_out)} />
+          <StatRow
+            label="Total Winnings"
+            value={money(stats.total_winnings)}
+            signed={stats.total_winnings}
+          />
+          <StatRow
+            label="MTT Winnings"
+            value={money(stats.mtt_winnings)}
+            signed={stats.mtt_winnings}
+          />
+        </section>
+      )}
 
       {/* ── Wallets ──────────────────────────────────────────────────────── */}
 
-      <section className="mm-card mm-stats">
-        <h2 className="mm-card__title">Wallets</h2>
-        <StatRow label="Club Chips" value={chips(wallets.chip_balance)} />
-        <StatRow label="Player Wallet" value={chips(wallets.player_wallet)} />
-        <StatRow label="Agent Wallet" value={chips(wallets.agent_wallet)} />
-        <StatRow label="Promo Wallet" value={chips(wallets.promo_wallet)} />
-      </section>
+      {wallets && (
+        <section className="mm-card mm-stats">
+          <h2 className="mm-card__title">Wallets</h2>
+          <StatRow label="Club Chips" value={chips(wallets.chip_balance)} />
+          <StatRow label="Player Wallet" value={chips(wallets.player_wallet)} />
+          <StatRow label="Agent Wallet" value={chips(wallets.agent_wallet)} />
+          <StatRow label="Promo Wallet" value={chips(wallets.promo_wallet)} />
+        </section>
+      )}
 
       {/* ── Downline ─────────────────────────────────────────────────────── */}
 
-      <section className="mm-card mm-stats">
-        <h2 className="mm-card__title">Downline</h2>
-        <StatRow label="Downlines Direct" value={count(counts.downline_direct)} />
-        <StatRow label="Downlines Total" value={count(counts.downline_total)} />
+      {counts && (
+        <section className="mm-card mm-stats">
+          <h2 className="mm-card__title">Downline</h2>
+          <StatRow label="Downlines Direct" value={count(counts.downline_direct)} />
+          <StatRow label="Downlines Total" value={count(counts.downline_total)} />
 
-        {shownDownline.length > 0 && (
-          <div className="mm-downline">
-            {shownDownline.map((d) => (
-              <div key={d.user_id} className="mm-downline__row">
-                <RoleBadge role={d.role} size="sm" />
-                <span className="mm-downline__names">
-                  <span className="mm-downline__alias">{d.alias}</span>
-                  {d.username && d.username.toLowerCase() !== d.alias.toLowerCase() && (
-                    <span className="mm-downline__username">{d.username}</span>
+          {shownDownline.length > 0 && (
+            <div className="mm-downline">
+              {shownDownline.map((d) => (
+                <div key={d.user_id} className="mm-downline__row">
+                  <RoleBadge role={d.role} size="sm" />
+                  <span className="mm-downline__names">
+                    <span className="mm-downline__alias">{d.alias}</span>
+                    {d.username && d.username.toLowerCase() !== d.alias.toLowerCase() && (
+                      <span className="mm-downline__username">{d.username}</span>
+                    )}
+                  </span>
+                  {d.player_number && (
+                    <span className="mm-downline__number">No. {d.player_number}</span>
                   )}
-                </span>
-                {d.player_number && (
-                  <span className="mm-downline__number">No. {d.player_number}</span>
-                )}
-                <span className="mm-downline__fees">{money(d.total_fees)}</span>
-              </div>
-            ))}
-            {downline.length > DOWNLINE_RENDER_CAP && (
-              <p className="mm-downline__more">
-                Showing {count(shownDownline.length)} Of {count(downline.length)}
-              </p>
-            )}
-          </div>
-        )}
-      </section>
+                  <span className="mm-downline__fees">{money(d.total_fees)}</span>
+                </div>
+              ))}
+              {downline.length > DOWNLINE_RENDER_CAP && (
+                <p className="mm-downline__more">
+                  Showing {count(shownDownline.length)} Of {count(downline.length)}
+                </p>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ── Role ─────────────────────────────────────────────────────────── */}
 
-      {resolvedClubId && (
+      {detail!.capabilities.can_manage_role && identity!.home_club_id && (
         <RoleSection
           clubId={clubId!}
-          resolvedClubId={resolvedClubId}
+          resolvedClubId={identity!.home_club_id}
           targetUserId={identity!.user_id!}
           targetName={alias}
           targetRole={identity!.role}
@@ -470,26 +469,30 @@ export default function MemberManagementPage() {
       {/* ── Navigation rows ──────────────────────────────────────────────── */}
 
       <nav className="mm-nav">
-        <button
-          type="button"
-          className="mm-nav__row"
-          onClick={() => navigate(`/clubs/${clubId}/promo-vault?player=${identity!.user_id}`)}
-        >
-          <span className="mm-nav__label">Promo Vault</span>
-          <span className="mm-nav__chevron" aria-hidden="true">
-            ›
-          </span>
-        </button>
-        <button
-          type="button"
-          className="mm-nav__row"
-          onClick={() => navigate(`/clubs/${clubId}/members/${identity!.user_id}/statistics`)}
-        >
-          <span className="mm-nav__label">Player Statistics</span>
-          <span className="mm-nav__chevron" aria-hidden="true">
-            ›
-          </span>
-        </button>
+        {detail!.capabilities.can_view_financials && (
+          <button
+            type="button"
+            className="mm-nav__row"
+            onClick={() => navigate(`/clubs/${clubId}/promo-vault?player=${identity!.user_id}`)}
+          >
+            <span className="mm-nav__label">Promo Vault</span>
+            <span className="mm-nav__chevron" aria-hidden="true">
+              ›
+            </span>
+          </button>
+        )}
+        {detail!.capabilities.can_view_financials && (
+          <button
+            type="button"
+            className="mm-nav__row"
+            onClick={() => navigate(`/clubs/${clubId}/members/${identity!.user_id}/statistics`)}
+          >
+            <span className="mm-nav__label">Player Statistics</span>
+            <span className="mm-nav__chevron" aria-hidden="true">
+              ›
+            </span>
+          </button>
+        )}
       </nav>
     </div>
   );
@@ -562,39 +565,38 @@ function NotesEditor({
     setRemarkUnsaved(false);
   }, [initialNickname, initialRemark, userId]);
 
-  const save = useCallback(
-    async (field: 'nickname' | 'remark', value: string) => {
-      if (!clubId) return;
-      if (savedRef.current[field] === value) return;
+  const save = useCallback(async () => {
+    if (!clubId) return;
+    if (savedRef.current.nickname === nickname && savedRef.current.remark === remark) return;
 
-      const markUnsaved = field === 'nickname' ? setNicknameUnsaved : setRemarkUnsaved;
-      // The remark lives in club_members.notes; the column predates the word.
-      const column = field === 'nickname' ? 'nickname' : 'notes';
-      const patch: Record<string, string | null> = {
-        [column]: value.trim() === '' ? null : value,
+    try {
+      const requestId =
+        typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const result = await ClubRosterService.updateMemberNotes(
+        clubId,
+        userId,
+        nickname,
+        remark,
+        requestId
+      );
+      savedRef.current = {
+        nickname: result.nickname ?? '',
+        remark: result.remark ?? '',
       };
-
-      try {
-        const { error } = await supabase
-          .from('club_members')
-          .update(patch)
-          .eq('club_id', clubId)
-          .eq('user_id', userId);
-        if (error) throw error;
-
-        savedRef.current[field] = value;
-        if (!isMountedRef.current) return;
-        markUnsaved(false);
-        toast.success(field === 'nickname' ? 'Nickname Saved' : 'Remark Saved');
-      } catch (e) {
-        reportError(e, 'MemberManagementPage.saveNotes');
-        if (!isMountedRef.current) return;
-        markUnsaved(true);
-        toast.error(safeErrorMessage(e, 'Could Not Save. Your Text Is Still Here'));
-      }
-    },
-    [clubId, userId, toast, isMountedRef]
-  );
+      if (!isMountedRef.current) return;
+      setNicknameUnsaved(false);
+      setRemarkUnsaved(false);
+      toast.success('Member Notes Saved');
+    } catch (e) {
+      reportError(e, 'MemberManagementPage.saveNotes');
+      if (!isMountedRef.current) return;
+      setNicknameUnsaved(savedRef.current.nickname !== nickname);
+      setRemarkUnsaved(savedRef.current.remark !== remark);
+      toast.error(safeErrorMessage(e, 'Could Not Save. Your Text Is Still Here'));
+    }
+  }, [clubId, isMountedRef, nickname, remark, toast, userId]);
 
   if (!editable) {
     return (
@@ -614,8 +616,11 @@ function NotesEditor({
           value={nickname}
           maxLength={64}
           placeholder={toTitleCase('enter the nickname here...')}
-          onChange={(e) => setNickname(e.target.value)}
-          onBlur={() => void save('nickname', nickname)}
+          onChange={(e) => {
+            setNickname(e.target.value);
+            setNicknameUnsaved(savedRef.current.nickname !== e.target.value);
+          }}
+          onBlur={() => void save()}
         />
         {nicknameUnsaved && <span className="mm-field__unsaved">Not Saved Yet</span>}
       </label>
@@ -627,8 +632,11 @@ function NotesEditor({
           value={remark}
           maxLength={240}
           placeholder={toTitleCase('enter remark here...')}
-          onChange={(e) => setRemark(e.target.value)}
-          onBlur={() => void save('remark', remark)}
+          onChange={(e) => {
+            setRemark(e.target.value);
+            setRemarkUnsaved(savedRef.current.remark !== e.target.value);
+          }}
+          onBlur={() => void save()}
         />
         {remarkUnsaved && <span className="mm-field__unsaved">Not Saved Yet</span>}
       </label>

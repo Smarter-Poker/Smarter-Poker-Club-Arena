@@ -320,6 +320,13 @@ const isLobbyTab = (t: TableInstance) => t.kind === 'lobby' || t.id.startsWith(L
  * Read once at module load: a mid-session rotation cannot strand open tables,
  * and the server still has the final say on every buy-in.
  */
+/* Dan 2026-08-30: the 4-square (tile view) artwork - brushed-metal icon Dan
+   supplied, served from the same buttons bucket as every other table icon.
+   One artwork for both button skins: the metal piece is skin-neutral. */
+const fourScreenIcon = `${
+  import.meta.env.VITE_SUPABASE_URL || 'https://kuklfnapbkmacvwxktbh.supabase.co'
+}/storage/v1/object/public/assets/buttons/black/icon-fourscreen.webp`;
+
 const MAX_TABLES = typeof window !== 'undefined' && window.innerWidth >= 1024 ? 6 : 4;
 
 /**
@@ -827,6 +834,121 @@ export default function MultiTablePage() {
     // seatResyncToken: bumped by WS_CONNECTED so a reconnect re-reads server
     // truth. See the block comment above (b).
   }, [user?.id, seatResyncToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ═══ THE BALANCER MOVED YOU: THE TAB FOLLOWS, IN PLACE, INSTANTLY ═══════
+     Dan 2026-08-30, from the first live auto table break: the move opened the
+     new table as ANOTHER tab ("that can never ever happen"), the old tab sat
+     frozen on "Reconnecting To The Table" with action pointed at him and no
+     buttons, the heartbeat toasted "This Table Is No Longer Running", and the
+     removal notice was the CASH one ("your chips are back in your wallet").
+
+     The server does the move right - old seat closed and new seat opened
+     within ~300ms (see movedTableTabIsClosed.test.ts's production trace). The
+     client just had no LIVE ear for it: the server-truth rebuild that would
+     have caught it runs only on mount and reconnect. This subscription is
+     that ear. On an INSERT of a hero seat row:
+
+       - same tournament as an existing tab  -> that tab is REPLACED in place
+         (same slot, active state preserved by position), so the new table
+         mounts inside the very game the player is looking at, and the toast
+         says what actually happened: "You Were Moved To <table>".
+       - anything else -> bump the server-truth rebuild, which appends or
+         prunes with all of its existing guards.
+
+     The dead old TablePage unmounts with the swap, which is also what ends
+     the frozen "Reconnecting" state and the ghost action prompts it showed. */
+  const heroSeatMoveBusyRef = useRef(false);
+  useEffect(() => {
+    if (!user?.id) return;
+    const chanKey = `hero-seat-moves-${user.id}`;
+    const channel = masterBus.getOrCreateChannel(chanKey);
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'table_seats',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload: { new?: { table_id?: string; left_at?: string | null } }) => {
+          const row = payload.new;
+          const newId = row?.table_id;
+          if (!newId || row?.left_at) return;
+          if (tablesRef.current.some((t) => t.id === newId)) return;
+          if (heroSeatMoveBusyRef.current) return;
+          heroSeatMoveBusyRef.current = true;
+          void (async () => {
+            try {
+              const tabIds = tablesRef.current.filter((t) => !isLobbyTab(t)).map((t) => t.id);
+              const { data: rows, error: rowsErr } = await supabase
+                .from('tables')
+                .select('id, name, game_variant, game_type, max_players, small_blind, big_blind, tournament_id')
+                .in('id', [newId, ...tabIds]);
+              if (rowsErr) {
+                /* Cannot identify the move - the rebuild path re-reads server
+                   truth with its own guards rather than guessing here. */
+                setSeatResyncToken((n) => n + 1);
+                return;
+              }
+              const newRow = rows?.find((r) => r.id === newId);
+              const tourId = newRow?.tournament_id as string | null | undefined;
+              const oldTab = tourId
+                ? tablesRef.current.find(
+                    (t) =>
+                      t.id !== newId &&
+                      !isLobbyTab(t) &&
+                      rows?.some((r) => r.id === t.id && r.tournament_id === tourId)
+                  )
+                : undefined;
+              if (!newRow || !oldTab) {
+                // Not a recognisable balancer move - let the rebuild sort it out.
+                setSeatResyncToken((n) => n + 1);
+                return;
+              }
+              const name = formatGameTitle(newRow.name as string) || 'Your New Table';
+              const stakes =
+                newRow.small_blind != null && newRow.big_blind != null
+                  ? `${newRow.small_blind}/${newRow.big_blind}`
+                  : '';
+              setTables((prev) =>
+                prev.map((t) =>
+                  t.id === oldTab.id
+                    ? {
+                        id: newId,
+                        name,
+                        stakes,
+                        gameCode: gameCode({
+                          variant: newRow.game_variant as string | undefined,
+                          isTournament: true,
+                          maxPlayers: newRow.max_players as number | undefined,
+                        }),
+                        isMyTurn: false,
+                        pot: 0,
+                        kind: 'table' as const,
+                        seated: true,
+                      }
+                    : t
+                )
+              );
+              toast.info(`You Were Moved To ${name}`, 6000);
+            } catch {
+              setSeatResyncToken((n) => n + 1);
+            } finally {
+              heroSeatMoveBusyRef.current = false;
+            }
+          })();
+        }
+      )
+      .subscribe();
+    return () => {
+      try {
+        masterBus.removeRegisteredChannel(chanKey);
+      } catch {
+        /* channel cleanup is best-effort */
+      }
+    };
+  }, [user?.id]);
 
   useMasterBusSubscription('TABLE_SEATED', (payload: SeatedPayload) => {
     const e = payload;
@@ -1521,6 +1643,32 @@ export default function MultiTablePage() {
   } | null>(null);
   const [showSessionAgg, setShowSessionAgg] = useState(false);
 
+  /* Dan 2026-08-30: "MULTI TABLE PROFIT TRACKING" is a switch the player owns.
+     OFF kills the chip and the aggregation loop entirely; ON restores it.
+     Persisted per device - a preference, not account data. Also togglable by
+     right-click / long-press on the chip itself. */
+  const [profitTracking, setProfitTracking] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('ca-multi-table-profit-tracking') !== 'off';
+    } catch {
+      return true;
+    }
+  });
+  const toggleProfitTracking = useCallback(() => {
+    setProfitTracking((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('ca-multi-table-profit-tracking', next ? 'on' : 'off');
+      } catch {
+        /* preference only */
+      }
+      return next;
+    });
+    setShowSessionAgg(false);
+  }, []);
+  /* Long-press (mobile) support for turning the chip off. */
+  const pnlPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     /* Dan 2026-08-28: the P&L tracker "should only appear once a user is
        playing MULTIPLE tables. It should never engage while playing 1 table."
@@ -1529,13 +1677,20 @@ export default function MultiTablePage() {
        single-table play. Count actual game tables only, here AND inside
        compute() (a tab closing between ticks must retire the chip too). */
     const liveTableCount = tables.filter((t) => !isLobbyTab(t)).length;
-    if (hidden || liveTableCount < 2) {
+    /* Dan 2026-08-30: "THE PROFIT COUNTER NUMBER SHOULD NEVER WORK OR ENGAGE
+       OR TRACK ANYTHING FOR TOURNAMENTS, THIS IS A 'CASHGAME ONLY FEATURE'."
+       Tournament tables are excluded from the aggregation entirely - a
+       tournament stack is not a cash result, and mixing the two printed a
+       meaningless number. The chip therefore renders only when at least one
+       CASH table is being tracked, and the whole feature obeys the
+       Multi Table Profit Tracking switch. */
+    if (hidden || liveTableCount < 2 || !profitTracking) {
       setSessionAgg(null);
       return;
     }
     const compute = () => {
-      const live = tablesRef.current.filter((t) => !isLobbyTab(t));
-      if (live.length < 2) {
+      const live = tablesRef.current.filter((t) => !isLobbyTab(t) && !t.isTournament);
+      if (live.length < 1 || tablesRef.current.filter((t) => !isLobbyTab(t)).length < 2) {
         setSessionAgg(null);
         return;
       }
@@ -1569,7 +1724,7 @@ export default function MultiTablePage() {
     return () => clearInterval(iv);
     // `tables`, not `tables.length`: a lobby tab converting into a game table
     // keeps the length constant while the live-table count changes.
-  }, [hidden, tables]);
+  }, [hidden, tables, profitTracking]);
 
   // ─── Batch 4: playable tile view ──────────────────────────────────────
   // Fold / Check / Call directly from a 2x2 tile - true simultaneous play on
@@ -3029,6 +3184,8 @@ export default function MultiTablePage() {
             onQuickAction={handleQuickAction}
             onSitOutAll={handleSitOutAll}
             onBackAll={handleBackAll}
+            profitTrackingEnabled={profitTracking}
+            onToggleProfitTracking={toggleProfitTracking}
           />
         </div>
       )}
@@ -3077,6 +3234,8 @@ export default function MultiTablePage() {
               onQuickAction={handleQuickAction}
               onSitOutAll={handleSitOutAll}
               onBackAll={handleBackAll}
+              profitTrackingEnabled={profitTracking}
+              onToggleProfitTracking={toggleProfitTracking}
             />
             {/* Batch 5: live multi-table P&L chip -> session breakdown */}
             {sessionAgg && sessionAgg.rows.some((r) => r.tracked) && (
@@ -3090,73 +3249,67 @@ export default function MultiTablePage() {
                       : ''
                 }`}
                 onClick={() => setShowSessionAgg((v) => !v)}
-                title="Session across all tables"
-                aria-label="Session across all tables"
+                /* Dan 2026-08-30: "IF YOU RIGHT CLICK OR HOLD DOWN AND MOBILE,
+                   YOU SHOULD BE ABLE TO TURN IT OFF." Right-click and a 600ms
+                   long-press both flip the same switch the hamburger owns. */
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  toggleProfitTracking();
+                }}
+                onTouchStart={() => {
+                  pnlPressTimerRef.current = setTimeout(() => {
+                    pnlPressTimerRef.current = null;
+                    toggleProfitTracking();
+                  }, 600);
+                }}
+                onTouchEnd={() => {
+                  if (pnlPressTimerRef.current) {
+                    clearTimeout(pnlPressTimerRef.current);
+                    pnlPressTimerRef.current = null;
+                  }
+                }}
+                onTouchMove={() => {
+                  if (pnlPressTimerRef.current) {
+                    clearTimeout(pnlPressTimerRef.current);
+                    pnlPressTimerRef.current = null;
+                  }
+                }}
+                title="Session across cash tables (right-click or hold to turn off)"
+                aria-label="Session across cash tables"
               >
                 {sessionAgg.net > 0 ? '+' : ''}
                 {sessionAgg.net.toLocaleString('en-US')}
               </button>
             )}
-            {tables.length > 1 && (
-              <button
-                className="tile-toggle-btn"
-                onClick={() => setIsTileView((prev) => !prev)}
-                title={isTileView ? 'Single view' : 'Tile view'}
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  {isTileView ? (
-                    <rect
-                      x="2"
-                      y="2"
-                      width="12"
-                      height="12"
-                      rx="2"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                    />
-                  ) : (
-                    <>
-                      <rect
-                        x="2"
-                        y="2"
-                        width="5"
-                        height="5"
-                        rx="1"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                      />
-                      <rect
-                        x="9"
-                        y="2"
-                        width="5"
-                        height="5"
-                        rx="1"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                      />
-                      <rect
-                        x="2"
-                        y="9"
-                        width="5"
-                        height="5"
-                        rx="1"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                      />
-                      <rect
-                        x="9"
-                        y="9"
-                        width="5"
-                        height="5"
-                        rx="1"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                      />
-                    </>
-                  )}
-                </svg>
-              </button>
-            )}
+            {/* Dan 2026-08-30: the 4-square multi-table button. FIXED on the
+                right edge - the opposite side from the hamburger - the same
+                40px size as the hamburger trigger, wearing Dan's brushed-metal
+                four-screen artwork. Rendered always so the position is stable,
+                but it only ENGAGES with 2+ tables open (4 max); with one
+                table it is inert and dimmed. Positioning lives in
+                MultiTablePage.css (.tile-toggle-btn). */}
+            <button
+              className={`tile-toggle-btn${tables.length > 1 ? '' : ' tile-toggle-btn--inert'}`}
+              onClick={() => {
+                if (tables.length > 1) setIsTileView((prev) => !prev);
+              }}
+              aria-disabled={tables.length <= 1}
+              title={
+                tables.length > 1
+                  ? isTileView
+                    ? 'Single view'
+                    : 'Tile view'
+                  : 'Open a second table to use tile view'
+              }
+              aria-label={isTileView ? 'Single view' : 'Tile view'}
+            >
+              <img
+                className="tile-toggle-btn__img"
+                src={fourScreenIcon}
+                alt=""
+                draggable={false}
+              />
+            </button>
           </div>
         )}
 

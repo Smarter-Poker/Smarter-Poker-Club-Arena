@@ -93,10 +93,17 @@ export interface PreflopCtx {
    *  folds 70% to 3-bets gets 3-bet-bluffed relentlessly; one who never
    *  folds gets bluffed at all only with real equity. */
   raiserFoldTo3Bet?: number | null;
-  /** V20 M-ZONES (2026-08-27): per-player ante in BB units (0 = no ante).
+  /** V20 M-ZONES (2026-08-27): ante cost of ONE ORBIT in BB units, already
+   *  resolved for the table's ante style by AnteMath.anteOrbitCostBB (0 = no
+   *  ante). NOT per-player: multiplying this by the seat count is the bug of
+   *  2026-08-30.
    *  Undefined = layer off — every M computation degrades to legacy
    *  stackBB-only behavior. */
-  anteBB?: number;
+  anteOrbitBB?: number;
+  /** ALL-IN-OR-FOLD table: the preflop menu is fold or shove, nothing else.
+   *  The brain must KNOW this — see the AoF block for why coercing its answer
+   *  downstream is not the same thing. */
+  allInOrFold?: boolean;
   /** V20 M-ZONES: players dealt in (for the orbit cost and Harrington's
    *  effective-M table-size scaling). Undefined = layer off. */
   tableSize?: number;
@@ -144,6 +151,14 @@ export interface PreflopCtx {
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 
 /** Open-raise strength floors by position (percentile space). */
+/** No stack deeper than this plays jam-or-fold, however burnt its M is.
+ *  Matches the cap the V20 reshove branches already use. */
+/** AoF shove bar tightens above the depth where push/fold is already tuned. */
+const AOF_TIGHTEN_PER_BB = 0.006;
+const AOF_MAX_TIGHTEN = 0.3;
+
+const PUSH_FOLD_MAX_BB = 22;
+
 const OPEN_THRESH: Record<PreflopPosition, number> = {
   early: 0.62,
   middle: 0.54,
@@ -172,6 +187,14 @@ const CALL_VS: Record<PreflopPosition, number> = {
   sb: 0.46,
   bb: 0.54,
 };
+
+/**
+ * The floor for limping BEHIND another limper, set at the single-raise
+ * calling threshold on purpose: a hand that cannot call a raise has no
+ * business putting a chip in, because the only thing it can do next is fold.
+ * See the no-open-limp note in the unopened branch.
+ */
+const LIMP_BEHIND_MIN = 0.5;
 
 /**
  * ── V13 (2026-08-23): THE PRICE-IN GUARD WAS EATING EVERY RAISE ────────────
@@ -216,7 +239,39 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
     (guardOdds <= 0.15 ||
       (effCall <= bb && guardOdds <= 0.22) ||
       (isTourney && stackBB <= 2 && guardOdds <= 0.34));
-  return pricedIn ? { a: 'call' } : out;
+  if (!pricedIn) return out;
+
+  // ── THE PRICE IS ONLY REAL WHEN THE CALL CLOSES THE ACTION ──────────────
+  //
+  // (Dan 2026-08-30.) V13 stopped this guard from eating raises. It went on
+  // eating FOLDS in unopened pots, and with a big blind ante that is every
+  // fold, because the ante alone makes the price look irresistible:
+  //
+  //     hand #3761806, blinds 75/150, big blind ante 1,200
+  //     pot before the action 1,425, toCall 150
+  //     guardOdds = 150 / (1425 + 150) = 0.095  ->  <= 0.15, priced in
+  //
+  // So every hand the range wanted to fold called instead. Six seats limped,
+  // the big blind raised to 1,125, and five of the six folded. Measured over
+  // 596 tournament hands: 852 open-limps against 214 open-raises (35% of all
+  // unraised first actions), and of the 458 limps that later faced a raise,
+  // 419 FOLDED - 91.5%.
+  //
+  // The arithmetic is not wrong, the premise is. Pot odds justify a call
+  // when calling CLOSES the action. In an unopened pot it never does: the
+  // big blind still has the option and everyone behind can raise, so the
+  // horse is not being laid 9.5% on a showdown, it is paying to enter a pot
+  // it will be blown out of. That is why the same guard is harmless in cash
+  // (no ante: pot 1.5bb, toCall 1bb, odds 0.4 - never triggers) and ruinous
+  // in an ante tournament.
+  //
+  // The one survivor is the call that ends the decision anyway: if calling
+  // puts the stack in, there is no later fold to regret and no limp to
+  // punish. That keeps the desperate <=2bb case the guard was widened for.
+  const unopenedForGuard = ctx.raises === 0 && ctx.currentBet <= bb * 1.05;
+  const callIsAllIn = effCall >= stack * 0.99;
+  if (unopenedForGuard && !callIsAllIn) return out;
+  return { a: 'call' };
 }
 
 function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
@@ -339,9 +394,16 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   // Effective M scales by table size over 10 (short tables burn orbits
   // faster). Layer off (anteBB undefined) = legacy behavior everywhere.
   const players20 = ctx.tableSize ?? Math.max(2, ctx.oppsLeft + 1);
-  const orbitBB20 = 1.5 + Math.max(0, ctx.anteBB ?? 0) * players20;
-  const mzOn = isTourney && ctx.anteBB !== undefined;
+  // `anteOrbitBB` is the ante cost of a WHOLE ORBIT, already resolved by
+  // AnteMath for the table's ante style. It used to be a per-player figure
+  // multiplied by the seat count right here, which read a big-blind-ante
+  // structure as seat-count times too expensive and made a 39bb stack look
+  // like an M of 3 — every tournament became jam-or-fold.
+  const orbitBB20 = 1.5 + Math.max(0, ctx.anteOrbitBB ?? 0);
+  const mzOn = isTourney && ctx.anteOrbitBB !== undefined;
   let effM = mzOn ? (stackBB / orbitBB20) * Math.min(1, players20 / 10) : Infinity;
+  /** stackBB as the NEXT level will see it — see the blind clock below. */
+  let effStackBB = stackBB;
   // ═══ V23 BLIND CLOCK (2026-08-28) ═══ the M that matters is the one the
   // NEXT level gives you. Within three minutes of a level that raises the
   // blinds, play the shrunken M now — the fold that "waits for a better
@@ -354,8 +416,13 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     (ctx.nextBlindMult ?? 1) > 1.15
   ) {
     effM = effM / (ctx.nextBlindMult ?? 1);
+    // ...and the DEPTH moves with it. A 30bb stack two minutes from a level
+    // that doubles the blinds is a 15bb stack, and the push/fold depth cap
+    // has to be read in the same currency as the M it guards, or the cap
+    // silently repeals the blind clock.
+    effStackBB = stackBB / (ctx.nextBlindMult ?? 1);
   }
-  const v20Wired = ctx.anteBB !== undefined; // layer on (cash or tournament)
+  const v20Wired = ctx.anteOrbitBB !== undefined; // layer on (cash or tournament)
 
   // ═══ V25 PLO TOURNAMENTS ARE NOT PUSH/FOLD (Dan 2026-08-28) ═════════════
   // THE STRUCTURAL FACT the brain did not model: POT LIMIT MEANS YOU CANNOT
@@ -392,6 +459,53 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   // everything hero started with. Past ~30% a fold surrenders a stake big
   // enough that folding is worse than the worst call.
   const investedShare = stack + toCall > 0 ? (currentBet - toCall) / (stack + currentBet) : 0;
+
+  // ═══ ALL-IN-OR-FOLD (2026-08-30) ══════════════════════════════════════
+  // At an AoF table the preflop menu is fold or shove. The engine enforced
+  // that by COERCING the horse's answer — "any non-fold intent becomes the
+  // all-in" — while the brain went on choosing from a normal menu. So every
+  // hand it would have opened for 2.5bb, and every hand it would have called
+  // a raise with, was silently converted into a shove of the entire stack.
+  // Its OPENING range became its SHOVING range.
+  //
+  // Same shape as the big blind ante bug fixed earlier today: the brain does
+  // not know a rule, and a downstream layer rewrites its answer into
+  // something strategically wrong. A coercion cannot fix a range.
+  //
+  // The thresholds are the push/fold block's own, deliberately, so AoF does
+  // not invent a second set of numbers — plus one depth term, because a shove
+  // risks the whole stack to win the blinds and that price rises with depth.
+  // It is anchored at 12bb, where the push/fold numbers are already tuned, so
+  // a short AoF table behaves exactly as push/fold does today.
+  //
+  // The downstream coercion stays as the legality guarantee. This makes it a
+  // no-op instead of a strategy.
+  if (ctx.allInOrFold === true) {
+    const aofDepth = Math.min(AOF_MAX_TIGHTEN, Math.max(0, stackBB - 12) * AOF_TIGHTEN_PER_BB);
+    if (unopened) {
+      let bar = position === 'late' || position === 'sb' ? 0.5 : 0.6;
+      if (ctx.isOmaha) bar += 0.08;
+      if (isTourney) {
+        bar -= anteWiden + (stackBB <= 7 ? 0.08 : 0.03);
+        if (mzOn && effM < 5) bar -= effM < 3 ? 0.1 : 0.05;
+      }
+      bar += aofDepth;
+      if (strength >= t(bar)) return { a: 'jam' };
+      if (toCall === 0) return { a: 'check' };
+      return { a: 'fold' };
+    }
+    // Calling a shove buys no fold equity, so it needs the hand outright.
+    let callBar = raises >= 2 ? 0.85 : 0.72;
+    if (ctx.mode !== undefined && guardOdds <= 0.35) callBar -= 0.12;
+    if (isTourney) callBar -= anteWiden * 0.5;
+    if (v20Wired && callers >= 1) callBar += Math.min(0.1, callers * 0.05);
+    if (mzOn && effM >= 5) callBar += ctx.riskAdd;
+    if (ctx.isOmaha) callBar += 0.03;
+    callBar += aofDepth;
+    if (strength >= t(callBar)) return { a: 'jam' };
+    if (toCall === 0) return { a: 'check' };
+    return { a: 'fold' };
+  }
 
   // ── Short stacks: push/fold and reshove stacks ──
   // V20: the gate is M-based in tournaments (red zone M<5 and most of
@@ -441,7 +555,24 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     return { a: 'fold' };
   }
 
-  const pushFoldNlh = !ctx.isOmaha && (stackBB <= 12 || (mzOn && effM < 6));
+  // PUSH/FOLD IS A SHORT-STACK STRATEGY, AT ANY M (2026-08-30). The M-zone
+  // disjunct below used to carry no depth cap at all, so a table with a large
+  // ante could put a stack of ANY size into jam-or-fold. Both later jam
+  // branches were written with `stackBB <= 22` and comments saying exactly
+  // why ("so a big-ante deep stack does not jam 30 blinds") — this, the gate
+  // that decides whether the WHOLE strategy is jam-or-fold, was the one
+  // without it.
+  //
+  // Measured in production before the fix, over 40 minutes of tournaments:
+  //     open jams              416,   182 of them deeper than 25bb (max 72bb)
+  //     3-bets                 254,   85.4% of them all-in (max 184bb)
+  // Cash, where the ante bug could not reach, ran 3.7% and 0.0%.
+  //
+  // 22bb is not a new number: it is the one the sibling branches already
+  // chose for this exact failure, and inventing a second convention here
+  // would be worse than reusing theirs.
+  const pushFoldNlh =
+    !ctx.isOmaha && (stackBB <= 12 || (mzOn && effM < 6 && effStackBB <= PUSH_FOLD_MAX_BB));
   // V25: the old Omaha gate (<=8bb / M<4) is superseded by the commitment
   // zone above, which triggers on the pot-limit arithmetic rather than a bb
   // count. It stays for the ablation path (ploTourney off).
@@ -461,9 +592,16 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       }
       if (strength >= t(jamThresh)) return { a: 'jam' };
       if (toCall === 0) return { a: 'check' };
-      // V11: never open-limp/call off a push/fold stack — jam or fold. The
-      // price-in guard above already caught every call that math forces.
-      if (!isTourney && toCall <= bb && strength >= 0.3) return { a: 'call' };
+      // V11: never open-limp/call off a push/fold stack — jam or fold.
+      //
+      // The line that used to sit here did the opposite of what that sentence
+      // says: `!isTourney && toCall <= bb && strength >= 0.3` OPEN-LIMPED a
+      // cash push/fold stack with any hand of strength 0.3. It is unreachable
+      // in practice today - measured across 7 hands x 6 seats x 2 depths, a
+      // <=12bb cash stack jams or folds every time, because the jam bar
+      // catches everything at 0.3 or better first - but a rule that reads
+      // "never" must not carry its own exception, and the surrounding
+      // thresholds move.
       return { a: 'fold' };
     }
     // Facing action short-stacked: jam on real strength; the threshold eases
@@ -566,7 +704,13 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       // start jamming its whole opening range.
       if (mzOn && effM < 10 && stackBB <= 22 && !ctx.isOmaha) return { a: 'jam' };
       // Trap mix with true premiums (cheap to see a flop disguised).
-      if (strength > 0.93 && rand() < ctx.slowplayFreq * 0.4 && toCall <= bb) {
+      //
+      // `limpers >= 1` added 2026-08-30: an open-limp with aces is still an
+      // open-limp. It surrenders the dead money the same way, and on screen
+      // it teaches every watching player that limping is normal here. Over-
+      // limping a monster BEHIND other limpers is a real trap and survives;
+      // opening the pot by calling does not.
+      if (limpers >= 1 && strength > 0.93 && rand() < ctx.slowplayFreq * 0.4 && toCall <= bb) {
         if (toCall === 0) return { a: 'check' };
         return { a: 'call' };
       }
@@ -590,17 +734,38 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       return { a: 'call' };
     }
     if (toCall === 0) return { a: 'check' };
+
+    // ── NO OPEN-LIMP: first in, it is raise or fold (Dan 2026-08-30) ───────
+    //
+    // Two branches used to call here. One limped anything within 0.12 of the
+    // opening bar 70% of the time; the other limped ANY hand of strength
+    // >= 0.3 for up to 1.5bb, from any position, unconditionally. Neither
+    // asked whether a single player had actually limped first, so both
+    // OPENED pots by calling - the play that fed the 91.5% limp-fold rate
+    // measured above the price-in guard.
+    //
+    // Limping BEHIND survives, because real players do it, under two rules
+    // that make it honest:
+    //   - somebody must have limped first, so this can never open a pot; and
+    //   - the hand must be able to CONTINUE against a raise. Anything weaker
+    //     is limping in order to fold, which is the whole disease.
+    // Because a hand at or above the opening bar RAISES, the surviving band
+    // is [LIMP_BEHIND_MIN, openThresh) - empty in late position until several
+    // limpers widen it. Late position isolating limpers instead of joining
+    // them is correct, and the V10 isolation layer above already does it.
+    const canLimpBehind = limpers >= 1 && strength >= LIMP_BEHIND_MIN;
     const limpable = strength >= openThresh - 0.12;
     // V28 AUDIT FIX: `|| position === 'sb'` short-circuited the strength test
     // entirely — the SB completed with ANY two cards 70% of the time and was
     // play-visible as "the small blind never folds". The SB still completes
-    // wider than other seats (good price, closes half the action), but from a
-    // real range: a deeper shelf below the open bar, not all 169 hands.
+    // wider than other seats, but from a real range. It is now also subject
+    // to the limpers-first rule: with the pot unopened, the small blind has
+    // the big blind still to act behind it, so completing is an open-limp
+    // like any other.
     const sbCompletable = position === 'sb' && strength >= openThresh - 0.22;
-    if (toCall <= bb && (limpable || sbCompletable) && rand() < 0.7) {
+    if (canLimpBehind && toCall <= bb && (limpable || sbCompletable) && rand() < 0.7) {
       return { a: 'call' };
     }
-    if (toCall <= bb * 1.5 && strength >= 0.3) return { a: 'call' };
     return { a: 'fold' };
   }
 

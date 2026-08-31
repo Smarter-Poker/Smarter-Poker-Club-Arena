@@ -57,6 +57,19 @@ interface ProfileRow {
 }
 
 export type LeaderboardPeriod = 'daily' | 'weekly' | 'monthly' | 'all_time';
+
+export interface LeaderboardPeriodWindow {
+  period: LeaderboardPeriod;
+  period_offset: number;
+  timezone: 'UTC';
+  start_date: string;
+  /** Exclusive period boundary. Closed periods read the snapshot at this date. */
+  end_date: string;
+  start_at: string;
+  end_at: string;
+  is_current: boolean;
+  label: string;
+}
 export type LeaderboardMetric =
   | 'profit'
   | 'hands_played'
@@ -66,11 +79,43 @@ export type LeaderboardMetric =
   | 'bb100'
   | 'tournaments_won';
 
+export interface LeaderboardPrize {
+  rank: number;
+  amount: number;
+}
+
+export type LeaderboardPrizePlanKey = 'balanced' | 'top_heavy' | 'even' | 'custom';
+
 export interface LeaderboardSettings {
   club_id: string;
-  payout_currency: 'diamonds' | 'chips';
-  weekly_prizes: { rank: number; amount: number }[];
-  monthly_prizes: { rank: number; amount: number }[];
+  club_name: string;
+  union_id: string | null;
+  union_name: string | null;
+  funding_owner_type: 'union' | 'club';
+  funding_source: 'union_promo_wallet' | 'club_promo_balance';
+  funding_label: string;
+  available_balance: number | null;
+  can_manage: boolean;
+  setup_complete: boolean;
+  rewards_enabled: boolean;
+  payout_currency: 'chips';
+  payout_metric: Extract<LeaderboardMetric, 'profit' | 'hands_played' | 'tournaments_won' | 'roi'>;
+  weekly_prizes: LeaderboardPrize[];
+  monthly_prizes: LeaderboardPrize[];
+  suggestion_key: LeaderboardPrizePlanKey;
+  setup_completed_at: string | null;
+  updated_at: string | null;
+}
+
+export interface LeaderboardRewardContext {
+  club_id: string;
+  club_name: string;
+  union_id: string | null;
+  union_name: string | null;
+  funding_owner_type: 'union' | 'club';
+  funding_source: 'union_promo_wallet' | 'club_promo_balance';
+  setup_complete: boolean;
+  rewards_enabled: boolean;
 }
 
 export interface LeaderboardPayout {
@@ -257,6 +302,42 @@ async function decorateWithProfiles(
 
 export const LeaderboardService = {
   /**
+   * Load the one canonical calendar window used by rankings, prize display and
+   * eventual settlement. The database owns these boundaries so a browser's
+   * locale or daylight-saving transition can never change a leaderboard.
+   */
+  async getPeriodWindow(
+    period: LeaderboardPeriod,
+    periodOffset: number = 0
+  ): Promise<LeaderboardPeriodWindow> {
+    const { data, error } = await supabase.rpc('fn_leaderboard_period_window', {
+      p_period: period,
+      p_period_offset: periodOffset,
+    });
+    if (error) {
+      reportError(error, 'LeaderboardService.getPeriodWindow');
+      throw error;
+    }
+
+    const row = (Array.isArray(data) ? data[0] : data) as Partial<LeaderboardPeriodWindow> | null;
+    if (
+      !row ||
+      row.period !== period ||
+      row.period_offset !== periodOffset ||
+      row.timezone !== 'UTC' ||
+      typeof row.start_date !== 'string' ||
+      typeof row.end_date !== 'string' ||
+      typeof row.start_at !== 'string' ||
+      typeof row.end_at !== 'string' ||
+      typeof row.is_current !== 'boolean' ||
+      typeof row.label !== 'string'
+    ) {
+      throw new Error('Leaderboard Period Window Returned Invalid Data');
+    }
+    return row as LeaderboardPeriodWindow;
+  },
+
+  /**
    * Get leaderboard for a club. Non-ratio metrics use the snapshot-delta RPC
    * (v2, with real rank_change) for every period including all_time. Ratio
    * metrics (vpip/pfr) have no meaningful period delta and query all-time
@@ -280,12 +361,12 @@ export const LeaderboardService = {
       if (!isRatio) {
         let data, error;
         if (periodOffset < 0) {
-          const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+          const window = await this.getPeriodWindow(period, periodOffset);
           const result = await supabase.rpc('fn_club_leaderboard_by_dates', {
             p_club_id: resolvedClubId,
             p_metric: metric,
-            p_start_date: start.toISOString().split('T')[0],
-            p_end_date: end.toISOString().split('T')[0],
+            p_start_date: window.start_date,
+            p_end_date: window.end_date,
             p_limit: limit,
             p_offset: offset,
           });
@@ -361,11 +442,11 @@ export const LeaderboardService = {
       if (metric === 'vpip' || metric === 'pfr') return [];
       let data, error;
       if (periodOffset < 0) {
-        const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+        const window = await this.getPeriodWindow(period, periodOffset);
         const result = await supabase.rpc('fn_global_leaderboard_by_dates', {
           p_metric: metric,
-          p_start_date: start.toISOString().split('T')[0],
-          p_end_date: end.toISOString().split('T')[0],
+          p_start_date: window.start_date,
+          p_end_date: window.end_date,
           p_limit: limit,
           p_offset: offset,
         });
@@ -536,13 +617,13 @@ export const LeaderboardService = {
       if (!isRatio) {
         let data, error;
         if (periodOffset < 0) {
-          const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+          const window = await this.getPeriodWindow(period, periodOffset);
           const result = await supabase.rpc('fn_user_rank_by_dates', {
             p_user_id: userId,
             p_club_id: resolvedClubId,
             p_metric: metric,
-            p_start_date: start.toISOString().split('T')[0],
-            p_end_date: end.toISOString().split('T')[0],
+            p_start_date: window.start_date,
+            p_end_date: window.end_date,
           });
           data = result.data;
           error = result.error;
@@ -556,14 +637,20 @@ export const LeaderboardService = {
           data = result.data;
           error = result.error;
         }
-        if (error || !data?.found) {
+        const rankData = (Array.isArray(data) ? data[0] : data) as {
+          rank?: number;
+          total?: number;
+          value?: number;
+          found?: boolean;
+        } | null;
+        if (error || !rankData?.found) {
           if (error) reportError(error, 'LeaderboardService.getUserRank_period');
           return null;
         }
         return {
-          rank: Number(data.rank || 0),
-          total: Number(data.total || 0),
-          value: Number(data.value || 0),
+          rank: Number(rankData.rank || 0),
+          total: Number(rankData.total || 0),
+          value: Number(rankData.value || 0),
         };
       }
 
@@ -607,12 +694,12 @@ export const LeaderboardService = {
       if (metric === 'vpip' || metric === 'pfr') return null;
       let data, error;
       if (periodOffset < 0) {
-        const { start, end } = this.getPeriodBoundaries(period, periodOffset);
+        const window = await this.getPeriodWindow(period, periodOffset);
         const result = await supabase.rpc('fn_user_rank_global_by_dates', {
           p_user_id: userId,
           p_metric: metric,
-          p_start_date: start.toISOString().split('T')[0],
-          p_end_date: end.toISOString().split('T')[0],
+          p_start_date: window.start_date,
+          p_end_date: window.end_date,
         });
         data = result.data;
         error = result.error;
@@ -625,14 +712,20 @@ export const LeaderboardService = {
         data = result.data;
         error = result.error;
       }
-      if (error || !data?.found) {
+      const rankData = (Array.isArray(data) ? data[0] : data) as {
+        rank?: number;
+        total?: number;
+        value?: number;
+        found?: boolean;
+      } | null;
+      if (error || !rankData?.found) {
         if (error) reportError(error, 'LeaderboardService.getGlobalUserRank');
         return null;
       }
       return {
-        rank: Number(data.rank || 0),
-        total: Number(data.total || 0),
-        value: Number(data.value || 0),
+        rank: Number(rankData.rank || 0),
+        total: Number(rankData.total || 0),
+        value: Number(rankData.value || 0),
       };
     } catch (err: unknown) {
       reportError(err, 'LeaderboardService.getGlobalUserRank_err');
@@ -802,39 +895,50 @@ export const LeaderboardService = {
     }
   },
 
-  /**
-   * Get period date boundaries
-   */
-
-  async getLeaderboardSettings(clubId: string): Promise<LeaderboardSettings | null> {
+  async getManageableRewardContexts(): Promise<LeaderboardRewardContext[]> {
     try {
-      const { data, error } = await supabase
-        .from('club_leaderboard_settings')
-        .select('*')
-        .eq('club_id', clubId)
-        .maybeSingle();
+      const { data, error } = await supabase.rpc('fn_leaderboard_reward_contexts');
       if (error) throw error;
-      return data as LeaderboardSettings;
+      return (data as LeaderboardRewardContext[]) || [];
     } catch (err) {
-      reportError(err, 'LeaderboardService.getLeaderboardSettings');
-      return null;
+      reportError(err, 'LeaderboardService.getManageableRewardContexts');
+      return [];
     }
   },
 
-  async updateLeaderboardSettings(
-    clubId: string,
-    updates: Partial<LeaderboardSettings>
-  ): Promise<boolean> {
-    try {
-      const { error } = await supabase
-        .from('club_leaderboard_settings')
-        .upsert({ club_id: clubId, ...updates }, { onConflict: 'club_id' });
-      if (error) throw error;
-      return true;
-    } catch (err) {
-      reportError(err, 'LeaderboardService.updateLeaderboardSettings');
-      return false;
+  async getLeaderboardRewardSetup(clubId: string): Promise<LeaderboardSettings> {
+    const { data, error } = await supabase.rpc('fn_get_leaderboard_reward_setup', {
+      p_club_id: clubId,
+    });
+    if (error) {
+      reportError(error, 'LeaderboardService.getLeaderboardRewardSetup');
+      throw error;
     }
+    if (!data || typeof data !== 'object') throw new Error('Prize Setup Returned No Data');
+    return data as LeaderboardSettings;
+  },
+
+  async saveLeaderboardRewardSetup(
+    clubId: string,
+    setup: Pick<
+      LeaderboardSettings,
+      'rewards_enabled' | 'payout_metric' | 'weekly_prizes' | 'monthly_prizes' | 'suggestion_key'
+    >
+  ): Promise<LeaderboardSettings> {
+    const { data, error } = await supabase.rpc('fn_save_leaderboard_reward_setup', {
+      p_club_id: clubId,
+      p_rewards_enabled: setup.rewards_enabled,
+      p_metric: setup.payout_metric,
+      p_weekly_prizes: setup.weekly_prizes,
+      p_monthly_prizes: setup.monthly_prizes,
+      p_suggestion_key: setup.suggestion_key,
+    });
+    if (error) {
+      reportError(error, 'LeaderboardService.saveLeaderboardRewardSetup');
+      throw error;
+    }
+    if (!data || typeof data !== 'object') throw new Error('Prize Setup Could Not Be Saved');
+    return data as LeaderboardSettings;
   },
 
   async getPayoutsForPeriod(
@@ -859,29 +963,6 @@ export const LeaderboardService = {
     }
   },
 
-  async payoutLeaderboardPeriod(
-    clubId: string,
-    period: string,
-    metric: string,
-    startDate: string,
-    endDate: string
-  ): Promise<boolean> {
-    try {
-      const { error } = await supabase.rpc('fn_payout_leaderboard', {
-        p_club_id: clubId,
-        p_period: period,
-        p_metric: metric,
-        p_start_date: startDate,
-        p_end_date: endDate,
-      });
-      if (error) throw error;
-      return true;
-    } catch (err) {
-      reportError(err, 'LeaderboardService.payoutLeaderboardPeriod');
-      throw err;
-    }
-  },
-
   async getUserTrophies(userId: string): Promise<LeaderboardPayout[]> {
     try {
       const { data, error } = await supabase
@@ -895,47 +976,6 @@ export const LeaderboardService = {
       reportError(err, 'LeaderboardService.getUserTrophies');
       return [];
     }
-  },
-
-  getPeriodBoundaries(
-    period: LeaderboardPeriod,
-    periodOffset: number = 0
-  ): { start: Date; end: Date } {
-    const now = new Date();
-    let start: Date;
-
-    // Apply offset logic based on period type
-    if (period === 'weekly') {
-      const offsetDays = periodOffset * 7;
-      now.setDate(now.getDate() + offsetDays);
-    } else if (period === 'monthly') {
-      now.setMonth(now.getMonth() + periodOffset);
-    } else if (period === 'daily') {
-      now.setDate(now.getDate() + periodOffset);
-    }
-
-    const end = new Date(now);
-
-    switch (period) {
-      case 'daily':
-        start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        break;
-      case 'weekly': {
-        const dayOfWeek = now.getDay();
-        start = new Date(now);
-        start.setDate(now.getDate() - dayOfWeek);
-        start.setHours(0, 0, 0, 0);
-        break;
-      }
-      case 'monthly':
-        start = new Date(now.getFullYear(), now.getMonth(), 1);
-        break;
-      case 'all_time':
-        start = new Date(0);
-        break;
-    }
-
-    return { start, end };
   },
 };
 

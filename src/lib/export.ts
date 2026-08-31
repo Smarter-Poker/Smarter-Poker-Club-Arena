@@ -280,6 +280,28 @@ export function downloadBlob(blob: Blob, filename: string) {
 /**
  * Export data to CSV
  */
+export function escapeCSVCell(value: unknown): string {
+  let text = String(value ?? '');
+
+  // Spreadsheet applications execute cells beginning with these characters as
+  // formulas. A roster contains user-controlled aliases, usernames and notes,
+  // so neutralise the formula while preserving the visible text.
+  if (/^[\t\r ]*[=+\-@]/.test(text)) text = `'${text}`;
+
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+export function buildCSV<T extends object>(
+  data: T[],
+  columns?: Array<{ key: keyof T; label: string }>
+): string {
+  if (data.length === 0) return '';
+  const cols = columns || Object.keys(data[0]).map((key) => ({ key: key as keyof T, label: key }));
+  const header = cols.map((column) => escapeCSVCell(column.label)).join(',');
+  const rows = data.map((row) => cols.map((column) => escapeCSVCell(row[column.key])).join(','));
+  return [header, ...rows].join('\r\n');
+}
+
 export function exportToCSV<T extends object>(
   data: T[],
   filename: string,
@@ -287,25 +309,8 @@ export function exportToCSV<T extends object>(
 ) {
   if (data.length === 0) return;
 
-  const cols = columns || Object.keys(data[0]).map((key) => ({ key: key as keyof T, label: key }));
-
-  // Header row
-  const header = cols.map((c) => c.label).join(',');
-
-  // Data rows
-  const rows = data.map((row) =>
-    cols
-      .map((c) => {
-        const val = row[c.key];
-        // Escape commas and quotes
-        const str = String(val ?? '');
-        return str.includes(',') || str.includes('"') ? `"${str.replace(/"/g, '""')}"` : str;
-      })
-      .join(',')
-  );
-
-  const csv = [header, ...rows].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const csv = buildCSV(data, columns);
+  const blob = new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8;' });
   downloadBlob(blob, filename);
 }
 

@@ -179,8 +179,38 @@ function emit(): void {
   }
 }
 
+/**
+ * Later publishes must not swallow an unacknowledged TOURNAMENT card
+ * (Dan 2026-08-30: "IT SHOULD NEVER 'AUTO CLOSE', USER MUST CLICK THE 'X'").
+ * A second table's exit used to overwrite `pending` outright, so the ranking
+ * card - place, medal, prize - vanished mid-read, which from the felt reads
+ * as the card auto-closing. Held publishes wait here and surface when the X
+ * clears the card in front of them.
+ */
+let heldQueue: SessionSummaryPayload[] = [];
+
 /** Publish a finished session. Called by TablePage immediately before it navigates. */
 export function publishSessionSummary(payload: SessionSummaryPayload): void {
+  if (pending?.tournament) {
+    if (payload.tournament?.tournamentId === pending.tournament.tournamentId) {
+      /* Same event re-publishing (the bust path fires once early, once with
+         the settled row): MERGE, never downgrade - a place or prize already
+         on screen must not be replaced with a null. */
+      pending = {
+        ...payload,
+        tournament: {
+          ...payload.tournament!,
+          finishPlace: payload.tournament!.finishPlace ?? pending.tournament.finishPlace,
+          prize: payload.tournament!.prize || pending.tournament.prize,
+        },
+      };
+      emit();
+      return;
+    }
+    /* A different session finished while the ranking card is up: hold it. */
+    heldQueue = [...heldQueue.filter((q) => q.tableName !== payload.tableName), payload];
+    return;
+  }
   pending = payload;
   emit();
 }
@@ -207,10 +237,11 @@ export function settlePendingSummary(settledProfitLoss: number): void {
   emit();
 }
 
-/** Clear it. Called when the player dismisses the popup. */
+/** Clear it. Called when the player dismisses the popup. A publish that was
+ *  held behind an unacknowledged tournament card surfaces now. */
 export function clearSessionSummary(): void {
   if (pending === null) return;
-  pending = null;
+  pending = heldQueue.shift() ?? null;
   emit();
 }
 

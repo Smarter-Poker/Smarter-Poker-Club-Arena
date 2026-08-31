@@ -23,6 +23,9 @@ import {
   type TieredUserChallenge,
   type Tier,
   type ChallengeType,
+  type ChallengeStreak,
+  type DailyChallengeStats,
+  type DailyChallengeRewardVault,
 } from '../services/DailyChallengeService';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
@@ -45,23 +48,6 @@ import {
 // server-catalog fetch returns -- one definition, so a tier added there cannot
 // silently disagree with the tabs here.
 type TieredChallenge = TieredUserChallenge;
-
-interface StreakInfo {
-  streak: number;
-  freezesAvailable: number;
-  usedFreeze: boolean;
-  frozenDate: string | null;
-  nextFreezeIn: number | null;
-}
-
-interface ChallengeStats {
-  totalCompleted: number;
-  currentStreak: number;
-  totalChipsEarned: number;
-  totalDiamondsEarned: number;
-  nextMilestone: number;
-  milestoneReward: number;
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -312,14 +298,21 @@ export default function DailyChallengesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [loadWarning, setLoadWarning] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [activeTier, setActiveTier] = useState<Tier>('daily');
 
   const [challenges, setChallenges] = useState<TieredChallenge[]>([]);
-  const [stats, setStats] = useState<ChallengeStats | null>(null);
-  const [streak, setStreak] = useState<StreakInfo | null>(null);
+  const [stats, setStats] = useState<DailyChallengeStats | null>(null);
+  const [streak, setStreak] = useState<ChallengeStreak | null>(null);
   const [diamondBalance, setDiamondBalance] = useState(0);
+  const [rewardVault, setRewardVault] = useState<DailyChallengeRewardVault>({
+    count: 0,
+    chips: 0,
+    diamonds: 0,
+    items: [],
+    pageSize: 100,
+    hasMore: false,
+  });
 
   // Claiming state
   const [claimingIds, setClaimingIds] = useState<Set<string>>(new Set());
@@ -328,6 +321,7 @@ export default function DailyChallengesPage() {
   const [confirmingRerollId, setConfirmingRerollId] = useState<string | null>(null);
   const claimGuardRef = useRef(new Set<string>()); // Prevent double-clicks bypassing React state
   const rerollGuardRef = useRef(new Set<string>());
+  const buyFreezeGuardRef = useRef(false);
 
   // Celebration state
   const [celebratingIds, setCelebratingIds] = useState<Set<string>>(new Set());
@@ -355,43 +349,17 @@ export default function DailyChallengesPage() {
       }
 
       try {
-        const [missionResult, statsResult, streakResult, balanceResult] = await Promise.allSettled([
-          dailyChallengeService.getAllChallenges(uid),
-          dailyChallengeService.getStats(uid),
-          dailyChallengeService.getStreak(uid),
-          dailyChallengeService.getDiamondBalance(uid),
-        ]);
+        const dashboard = await dailyChallengeService.getDashboard(uid);
         if (!isMountedRef.current || requestId !== loadRequestRef.current) return;
 
-        if (missionResult.status === 'rejected') throw missionResult.reason;
-
-        const { daily, weekly, monthly } = missionResult.value;
-        setChallenges([...daily, ...weekly, ...monthly]);
+        setChallenges(dashboard.missions);
+        setStats(dashboard.stats);
+        setStreak(dashboard.streak);
+        setDiamondBalance(dashboard.diamondBalance);
+        setRewardVault(dashboard.vault);
         setLoadError(null);
-
-        const auxiliaryFailures: string[] = [];
-        if (statsResult.status === 'fulfilled') setStats(statsResult.value);
-        else {
-          auxiliaryFailures.push('Career Totals');
-          reportError(statsResult.reason, 'DailyChallengesPage.stats_load_failed');
-        }
-        if (streakResult.status === 'fulfilled') setStreak(streakResult.value);
-        else {
-          auxiliaryFailures.push('Streak Status');
-          reportError(streakResult.reason, 'DailyChallengesPage.streak_load_failed');
-        }
-        if (balanceResult.status === 'fulfilled') setDiamondBalance(balanceResult.value);
-        else {
-          auxiliaryFailures.push('Diamond Balance');
-          reportError(balanceResult.reason, 'DailyChallengesPage.balance_load_failed');
-        }
-
-        setLoadWarning(
-          auxiliaryFailures.length > 0
-            ? `Missions Are Live, But ${auxiliaryFailures.join(', ')} Could Not Be Refreshed.`
-            : null
-        );
-        const syncedAt = Date.now();
+        const receiptTime = Date.parse(dashboard.syncedAt);
+        const syncedAt = Number.isFinite(receiptTime) ? receiptTime : Date.now();
         lastSyncedAtRef.current = syncedAt;
         setLastSyncedAt(syncedAt);
       } catch (err: any) {
@@ -647,12 +615,13 @@ export default function DailyChallengesPage() {
 
   const [buyingFreeze, setBuyingFreeze] = useState(false);
   const handleBuyFreeze = useCallback(async () => {
-    if (!userId || buyingFreeze) return;
+    if (!userId || buyingFreeze || buyFreezeGuardRef.current) return;
     if (diamondBalance < 5000) {
       toast.error('Not enough diamonds. You need 5,000 Diamonds to buy a freeze.');
       return;
     }
 
+    buyFreezeGuardRef.current = true;
     setBuyingFreeze(true);
     setDiamondBalance((prev) => Math.max(0, prev - 5000));
     setStreak((prev) => (prev ? { ...prev, freezesAvailable: prev.freezesAvailable + 1 } : prev));
@@ -660,9 +629,17 @@ export default function DailyChallengesPage() {
     try {
       const res = await dailyChallengeService.buyStreakFreeze(userId);
       if (res.success) {
-        toast.success('Streak Freeze purchased.');
-        const currentBalance = await dailyChallengeService.getDiamondBalance(userId);
-        if (isMountedRef.current) setDiamondBalance(currentBalance);
+        toast.success(
+          res.alreadyPurchased ? 'Streak Freeze Purchase Confirmed.' : 'Streak Freeze Purchased.'
+        );
+        if (isMountedRef.current) {
+          if (res.diamondBalance != null) setDiamondBalance(res.diamondBalance);
+          if (res.freezesAvailable != null) {
+            setStreak((prev) =>
+              prev ? { ...prev, freezesAvailable: res.freezesAvailable as number } : prev
+            );
+          }
+        }
       } else {
         toast.error(res.error || 'Failed to buy freeze');
         // Revert UI on fail
@@ -672,6 +649,7 @@ export default function DailyChallengesPage() {
       toast.error('Failed to buy freeze');
       loadChallenges(userId, false);
     } finally {
+      buyFreezeGuardRef.current = false;
       if (isMountedRef.current) setBuyingFreeze(false);
     }
   }, [userId, buyingFreeze, diamondBalance, toast, loadChallenges, isMountedRef]);
@@ -719,7 +697,10 @@ export default function DailyChallengesPage() {
 
   const handleClaimAll = useCallback(async () => {
     if (!userId || claimingAll) return;
-    const ready = challenges.filter((c) => c.completed && !c.claimed);
+    // The server vault includes completed contracts from expired periods. The
+    // previous client-only filter saw only today's/this week's/this month's
+    // active rows, so an unclaimed reward vanished at rollover.
+    const ready = rewardVault.items;
     if (ready.length === 0) return;
 
     setClaimingAll(true);
@@ -783,7 +764,7 @@ export default function DailyChallengesPage() {
       loadChallenges(userId, false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, challenges, claimingAll, toast, loadChallenges]);
+  }, [userId, rewardVault.items, claimingAll, toast, loadChallenges]);
 
   // ── Derived ──
   const tierCounts = useMemo(() => {
@@ -800,19 +781,7 @@ export default function DailyChallengesPage() {
     return counts;
   }, [challenges]);
 
-  const unclaimed = useMemo(() => {
-    let count = 0;
-    let chips = 0;
-    let diamonds = 0;
-    challenges.forEach((c) => {
-      if (c.completed && !c.claimed) {
-        count++;
-        chips += c.challenge.chipReward;
-        diamonds += c.challenge.diamondReward;
-      }
-    });
-    return { count, chips, diamonds };
-  }, [challenges]);
+  const unclaimed = rewardVault;
 
   const tierResetMs: Record<Tier, number> = {
     daily: msUntilChallengeReset('daily', now),
@@ -945,16 +914,11 @@ export default function DailyChallengesPage() {
           </div>
         </section>
 
-        {(loadError || loadWarning) && (
-          <aside
-            className={`${styles.syncNotice} ${loadError ? styles.syncNoticeError : ''}`}
-            role={loadError ? 'alert' : 'status'}
-          >
+        {loadError && (
+          <aside className={`${styles.syncNotice} ${styles.syncNoticeError}`} role="alert">
             <div>
-              <span className={styles.panelLabel}>
-                {loadError ? 'Connection Interrupted' : 'Partial Sync'}
-              </span>
-              <strong>{loadError || loadWarning}</strong>
+              <span className={styles.panelLabel}>Connection Interrupted</span>
+              <strong>{loadError}</strong>
             </div>
             <button
               type="button"
@@ -989,7 +953,7 @@ export default function DailyChallengesPage() {
                   className={styles.milestoneFill}
                   initial={{ width: 0 }}
                   animate={{
-                    width: `${Math.min((((streak?.streak ?? stats?.currentStreak ?? 0) % 7) / 7) * 100, 100)}%`,
+                    width: `${stats?.milestoneProgressPercent ?? 0}%`,
                   }}
                   transition={{ duration: 1, ease: 'easeOut' }}
                 />
@@ -1081,7 +1045,11 @@ export default function DailyChallengesPage() {
               onClick={handleClaimAll}
               disabled={claimingAll}
             >
-              {claimingAll ? 'Claiming Rewards...' : `Claim All ${unclaimed.count}`}
+              {claimingAll
+                ? 'Claiming Rewards...'
+                : unclaimed.hasMore
+                  ? `Claim Next ${unclaimed.items.length} Of ${unclaimed.count}`
+                  : `Claim All ${unclaimed.count}`}
             </button>
           </aside>
         )}

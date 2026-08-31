@@ -13,7 +13,14 @@
   inset: 0;
   display: flex;
   flex-direction: column;
-  background: #0a0c12;
+  /* #000 (2026-08-30). This is the shell BEHIND the felt and the strip either
+     side of the table on a wide screen - a page ground, not a raised surface -
+     and #0a0c12 is a visibly different black from the body, the action bar and
+     the route shell now that those are all true black. Dan: "THE WHOLE
+     BACKGROUND SHOULD BE SOLID BLACK AND ALL THE SAME COLOR." The three
+     full-bleed states below (loading, loading-overlay, crashed) take the same
+     value for the same reason: each one fills the screen on its own. */
+  background: #000;
   overflow: hidden;
   z-index: 1;
 }
@@ -149,7 +156,8 @@
   gap: 12px;
   width: 100%;
   height: 100%;
-  background: #0a0c12;
+  /* One black with the shell above (2026-08-30). */
+  background: #000;
 }
 
 .multi-table-page__spinner {
@@ -184,6 +192,10 @@
 
 .multi-table-page__tab-bar-wrapper {
   display: flex;
+  /* Reserve the right-edge band the fixed 4-square button occupies (40px +
+     6px inset + breathing room), so the tab strip and the profit chip can
+     never slide underneath it. */
+  padding-right: 50px;
   /* Dan 2026-08-28: "the profit tracker and the 4 screen box need to be
      lowered down so the 4 screen box is touching the top of where the table
      meets." `center` floated both chips in the middle of the bar's full
@@ -199,12 +211,23 @@
      its darker gradient over the rest — "a slightly different black". One
      ground, same gradient as .table-tab-bar, so the whole bar reads as one
      surface. */
-  background: linear-gradient(180deg, rgba(8, 10, 16, 0.96) 0%, rgba(14, 17, 24, 0.93) 100%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  /* Dan 2026-08-30 closed the same complaint for good: "THE WHOLE BACKGROUND
+     SHOULD BE SOLID BLACK AND ALL THE SAME COLOR. (INCLUDING THE ACTION TAB
+     AREA.)" One opaque black - no gradient, no alpha, no blur, no inset sheen
+     - which is the exact ground .table-tab-bar now paints, so the strip and
+     the wrapper either side of it are the SAME colour rather than two blacks
+     that happen to agree at one blend. */
+  background: #000;
+  border-bottom: 1px solid #000;
   z-index: 350;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  /* ON /table/*, START BELOW THE TICKER (Dan 2026-08-30).
+     The ticker is fixed to the top of the felt on this route, so this wrapper
+     is in normal flow under nothing and the ticker would draw straight through
+     it. `--mtt-ticker-h` is published by TournamentStartingTicker and is
+     ABSENT while no ticker is up, so the 0px fallback is what applies almost
+     always and the bar does not move on a quiet schedule. The pinned modifier
+     below overrides this with a `top` instead: it is fixed, not in flow. */
+  margin-top: var(--mtt-ticker-h, 0px);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -224,9 +247,17 @@
   /* GlobalHeader publishes its responsive rendered height before this pinned
      state is enabled. The global header therefore owns viewport y=0 and this
      action strip begins at the header's exact bottom edge. */
-  top: var(--ca-global-header-height, 0px);
+  /* 2026-08-30: and the TICKER owns the band immediately under the header, so
+     this strip begins after it. Dan: "THE TICKER MUST ALWAYS BE AT THE VERY
+     TOP OF THE PAGE, DIRECTLY UNDER THE GLOBAL HEADER, THE 'ACTION TAB' SHOULD
+     NEVER BE ABOVE IT." `--mtt-ticker-h` is absent unless a ticker is actually
+     on screen, so this reduces to the header height on a quiet schedule. */
+  top: calc(var(--ca-global-header-height, 0px) + var(--mtt-ticker-h, 0px));
   left: 0;
   right: 0;
+  /* The flow margin belongs to the in-flow copy of this wrapper only; here the
+     offset is the `top` above, and a margin would double it. */
+  margin-top: 0;
   /* Above the app's own headers and bottom nav, below the table's modals and
      the urgent dock (400/401) — a countdown the player is about to lose money
      to must never be covered by a navigation control. */
@@ -234,6 +265,18 @@
   /* The global header already owns the notch inset. Reapplying it here would
      create a second safe-area band between the two bars. */
   padding-top: 0;
+  /* AND THE SAME GOES FOR THE STRIP INSIDE THIS WRAPPER (2026-08-30 audit).
+     Zeroing the wrapper's padding was only half the job: `.table-tab-bar` pays
+     its OWN `calc(6px + env(safe-area-inset-top))`, and this wrapper is fixed
+     at `var(--ca-global-header-height)` - a height GlobalHeader measures AFTER
+     paying that inset itself (GlobalHeader.module.css pads by it;
+     GlobalHeader.tsx publishes getBoundingClientRect().height). So on a
+     notched iPhone the bar sat ~47px below where it belonged, in the lobby,
+     with a dead black band above it. One declaration fixes it because the bar
+     now reads its inset from a property instead of env() directly, and this is
+     scoped to the pinned wrapper: the in-flow bar on /table/* still pays the
+     notch when nothing above it has. */
+  --sp-tabbar-inset: 0px;
 }
 
 /**
@@ -246,7 +289,12 @@
  * fixed strip while the global header remains at viewport y=0.
  */
 body[data-ca-pinned-bar='1'] {
-  --ca-pinned-bar-offset: 48px;
+  /* The ticker's height rides in the same clearance: the strip is fixed below
+     the header and this pinned bar is fixed below the strip, so page content
+     has to clear BOTH or the first rows of the lobby end up under them.
+     `--mtt-ticker-h` is absent with no ticker on screen, so this stays exactly
+     48px on a quiet schedule. */
+  --ca-pinned-bar-offset: calc(48px + var(--mtt-ticker-h, 0px));
 }
 
 /* Full-screen surfaces that already position themselves from the viewport
@@ -299,7 +347,8 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   justify-content: center;
   width: 100%;
   height: 100%;
-  background: #0a0c12;
+  /* One black with the shell above (2026-08-30). */
+  background: #000;
   color: rgba(255, 255, 255, 0.5);
   font-size: 0.875rem;
 }
@@ -308,22 +357,46 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
    TILE TOGGLE BUTTON
    ───────────────────────────────────────────────────────────────────────────── */
 
+/* Dan 2026-08-30: the 4-square button is FIXED on the right edge - the mirror
+   of the hamburger trigger on the left - and the same 40px square that
+   .table-menu__trigger paints (TableMenu.css), wearing the brushed-metal
+   four-screen artwork. Vertically it sits in the tab-bar band, below the
+   action ticker when one is up (--mtt-ticker-h, 0px otherwise). With fewer
+   than 2 tables it stays put but is inert and dimmed - the position is a
+   fixture, the function needs a second table. */
 .tile-toggle-btn {
-  width: 28px;
-  height: 28px;
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + var(--mtt-ticker-h, 0px) + 5px);
+  right: 6px;
+  z-index: 210;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 10px;
   border: none;
-  background: rgba(255, 255, 255, 0.08);
+  background: transparent;
+  padding: 0;
   color: rgba(255, 255, 255, 0.6);
   cursor: pointer;
-  transition:
-    background 0.15s,
-    color 0.15s;
+  transition: opacity 0.15s;
   flex-shrink: 0;
-  margin-right: 6px;
+}
+
+.tile-toggle-btn--inert {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.tile-toggle-btn__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -378,14 +451,9 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   }
 
   .tile-toggle-btn {
-    /* 2026-08-23: 36px was still under the 44px tap minimum */
-    min-height: 44px;
-    min-width: 44px;
+    /* The 40px square matches the hamburger; touch-action stays for taps.
+       (It is fixed-positioned now, so it no longer eats tab-strip budget.) */
     touch-action: manipulation;
-    /* Dan 2026-08-25: the tab strip beside this has to hold four tables at
-       375px, and the base 6px right margin was 6px of that budget. The 44px
-       tap target is untouched — only the empty space next to it. */
-    margin-right: 2px;
   }
 
   /* The strip is the thing that must survive a narrow screen, so give it every
@@ -1005,7 +1073,8 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   gap: 10px;
   padding: 24px;
   text-align: center;
-  background: #0a0c12;
+  /* One black with the shell above (2026-08-30). */
+  background: #000;
   color: #e4e6eb;
 }
 

@@ -478,6 +478,10 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
 export function useCompleteProfile(user: any) {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [decision, setDecision] = useState<{
+    userId: string | null;
+    status: 'pending' | 'complete' | 'incomplete' | 'unavailable';
+  }>({ userId: null, status: 'pending' });
   /** Account id this hook has already decided for. Null means undecided. */
   const decidedForRef = useRef<string | null>(null);
 
@@ -487,6 +491,7 @@ export function useCompleteProfile(user: any) {
     if (!userId) {
       decidedForRef.current = null;
       setShowProfileModal(false);
+      setDecision({ userId: null, status: 'complete' });
       setIsReady(true);
       return;
     }
@@ -512,6 +517,7 @@ export function useCompleteProfile(user: any) {
           if (error) reportError(error, 'useCompleteProfile.ProfileReadFailed');
           decidedForRef.current = null;
           setShowProfileModal(false);
+          setDecision({ userId, status: 'unavailable' });
           setIsReady(true);
           return;
         }
@@ -520,13 +526,16 @@ export function useCompleteProfile(user: any) {
         const needsAlias = !username || /^Player\d{4}$/.test(username);
         const needsAvatar = !String(data.arena_avatar_url || '').trim();
 
-        setShowProfileModal(needsAlias || needsAvatar);
+        const incomplete = needsAlias || needsAvatar;
+        setShowProfileModal(incomplete);
+        setDecision({ userId, status: incomplete ? 'incomplete' : 'complete' });
         setIsReady(true);
       } catch (err) {
         if (cancelled) return;
         reportError(err, 'useCompleteProfile.ProfileReadThrew');
         decidedForRef.current = null;
         setShowProfileModal(false);
+        setDecision({ userId, status: 'unavailable' });
         setIsReady(true);
       }
     })();
@@ -538,11 +547,19 @@ export function useCompleteProfile(user: any) {
 
   const finishProfile = useCallback(() => {
     setShowProfileModal(false);
-  }, []);
+    setDecision({ userId: userId ?? null, status: 'complete' });
+  }, [userId]);
+
+  const profileStatus = !userId
+    ? 'complete'
+    : decision.userId === userId
+      ? decision.status
+      : 'pending';
 
   return {
     showProfileModal,
     isReady,
+    profileStatus,
     finishProfile,
   };
 }

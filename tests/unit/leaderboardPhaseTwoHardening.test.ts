@@ -4,6 +4,14 @@ import { join } from 'node:path';
 
 const page = readFileSync(join(__dirname, '../../src/pages/LeaderboardPage.tsx'), 'utf8');
 const service = readFileSync(join(__dirname, '../../src/services/LeaderboardService.ts'), 'utf8');
+const wizard = readFileSync(
+  join(__dirname, '../../src/components/leaderboard/LeaderboardPrizeWizard.tsx'),
+  'utf8'
+);
+const migration = readFileSync(
+  join(__dirname, '../../supabase/migrations/20260830223000_leaderboard_reward_setup_safe.sql'),
+  'utf8'
+);
 
 describe('leaderboard phase two operational hardening', () => {
   it('bounds and expires the session cache instead of keeping raw rankings forever', () => {
@@ -42,22 +50,22 @@ describe('leaderboard phase two operational hardening', () => {
     expect(page).toContain('Showing The Last Verified Board.');
   });
 
-  it('limits payouts to configured periods and refreshes payout badges after issuance', () => {
-    expect(page).toContain("const canPayout = period === 'weekly' || period === 'monthly'");
-    expect(page).toContain('if (payingOut) return');
-    expect(page).toContain(
-      "if (!payoutSucceeded) throw new Error('Payout Could Not Be Completed.')"
-    );
-    expect(page).toContain('const refreshedPayouts = await LeaderboardService.getPayoutsForPeriod');
-    expect(page).toContain('setPayouts(refreshedPayouts)');
+  it('retires the unsafe payout path while keeping verified payout history visible', () => {
+    expect(page).not.toContain('payoutLeaderboardPeriod');
+    expect(service).not.toContain("supabase.rpc('fn_payout_leaderboard'");
+    expect(page).toContain('const payout = payoutsByUser.get(entry.userId)');
+    expect(page).toContain('Prize Planning Does Not Move Promo Chips.');
+    expect(migration).toContain('Automated Leaderboard Payouts Are Paused');
+    expect(migration).toContain('FROM PUBLIC, anon, authenticated');
   });
 
-  it('makes tabs and the settings dialog keyboard-operable and save-safe', () => {
+  it('makes tabs and the prize wizard keyboard-operable and save-safe', () => {
     expect(page).toContain('role="tablist"');
     expect(page).toContain('onKeyDown={handleTabKeyDown}');
     expect(page).toContain('role="tabpanel"');
-    expect(page).toContain('const settingsModalRef = useFocusTrap(showSettings)');
-    expect(page).toContain('if (!selectedClubId || !settings || settingsSaving) return');
-    expect(page).toContain("settingsSaving ? 'Saving Settings' : 'Save Settings'");
+    expect(wizard).toContain('const dialogRef = useFocusTrap(isOpen)');
+    expect(wizard).toContain("event.key === 'Escape' && !saving");
+    expect(wizard).toContain('if (saving || (enabled && !hasPrizes)) return');
+    expect(wizard).toContain("saving ? 'Saving Prize Setup' : 'Save Prize Setup'");
   });
 });

@@ -276,8 +276,13 @@
 .rk-list {
   flex: 1 1 auto;
   min-height: 0;
-  /* Tall enough to be a list, capped so the page's own footer stays put. */
-  max-height: min(62vh, 620px);
+  /* `max-height: min(62vh, 620px)` used to close this rule, to keep the page's
+     footer put. It measured against the WRONG BOX: rendered inside
+     TournamentLobbyModal's 75dvh sheet, `vh` is the viewport, so the cap could
+     sit below the content and above the space available at the same time - the
+     list clipped and the panel had nothing to scroll. `.details-content` is the
+     one scroller now (Dan 2026-08-30) and it keeps the footer put by being a
+     flex sibling of it, which no viewport unit can get wrong. */
   padding-right: 4px;
 }
 
@@ -605,9 +610,8 @@
   .rk-hero__figure {
     padding: 6px 7px;
   }
-  .rk-list {
-    max-height: min(56vh, 520px);
-  }
+  /* The phone `max-height: min(56vh, 520px)` went with its desktop twin above -
+     same wrong box, same clip. */
   .rk-list--dense .rk-item {
     contain-intrinsic-size: auto 48px;
   }

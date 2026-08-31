@@ -8,13 +8,13 @@ behaviour the repository did not record.
 
 ## What was missing
 
-| version        | file                                                         | what it does                                                                                   |
-| -------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| 20260831002318 | `20260831002318_backfill_completed_tournaments_ended_at.sql` | stamps `ended_at` on 10 tournaments flipped to COMPLETED without it                            |
-| 20260831090516 | `20260831090516_repair_double_stamped_spin_prize_column.sql` | realigns a double-stamped `tournament_players.prize` with the money actually paid              |
-| 20260831101605 | `20260831101605_schedule_reconcile_ledger_nightly.sql`       | schedules `reconcile-ledger-integrity-6h` (pg_cron, `55 */6 * * *`)                            |
+| version        | file                                                       | what it does                                                  |
+| -------------- | ---------------------------------------------------------- | ------------------------------------------------------------- |
+| 20260831002318 | `20260831002318_backfill_completed_tournaments_ended_at.sql` | stamps `ended_at` on 10 tournaments flipped to COMPLETED without it |
+| 20260831090516 | `20260831090516_repair_double_stamped_spin_prize_column.sql` | realigns a double-stamped `tournament_players.prize` with the money actually paid |
+| 20260831101605 | `20260831101605_schedule_reconcile_ledger_nightly.sql`       | schedules `reconcile-ledger-integrity-6h` (pg_cron, `55 */6 * * *`) |
 | 20260831111557 | `20260831111557_bomb_backfill_repairs_multi_winner_pots.sql` | creates `fn_backfill_bomb_multi_winner_units` so multi-winner bomb pots can be repaired at all |
-| 20260831112020 | `20260831112020_schedule_bomb_multi_winner_repair.sql`       | schedules `bomb-multi-winner-repair-hourly` (pg_cron, `20 * * * *`)                            |
+| 20260831112020 | `20260831112020_schedule_bomb_multi_winner_repair.sql`       | schedules `bomb-multi-winner-repair-hourly` (pg_cron, `20 * * * *`) |
 
 ## Why it mattered
 

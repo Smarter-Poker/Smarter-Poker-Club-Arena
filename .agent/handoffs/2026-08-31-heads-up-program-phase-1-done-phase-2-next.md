@@ -31,10 +31,10 @@ phase and explicit permission before starting the next.
 There are **TWO** heads-up products, not one. This is the single most
 important fact in this document, and the first audit missed it for a while.
 
-| Product           | Shape                                                               | Volume (7 days) | Where                                                       |
-| ----------------- | ------------------------------------------------------------------- | --------------- | ----------------------------------------------------------- |
-| **Spin & Go**     | 3-max hyper, multiplier wheel decides the prize                     | 20,932          | `tournament_type='SPIN'`, `variant='spin'`, `max_players=3` |
-| **Heads-Up duel** | true 2-max SNG ("NLH Heads-Up 10/25/50/100", "Heads-Up Hyper Duel") | 10,989          | `tournament_type='SNG'`, `variant='sng'`, `max_players=2`   |
+| Product | Shape | Volume (7 days) | Where |
+|---|---|---|---|
+| **Spin & Go** | 3-max hyper, multiplier wheel decides the prize | 20,932 | `tournament_type='SPIN'`, `variant='spin'`, `max_players=3` |
+| **Heads-Up duel** | true 2-max SNG ("NLH Heads-Up 10/25/50/100", "Heads-Up Hyper Duel") | 10,989 | `tournament_type='SNG'`, `variant='sng'`, `max_players=2` |
 
 41,641 genuinely heads-up hands were dealt in 24h. Both formats are live.
 
@@ -49,7 +49,6 @@ rely on "someone would have noticed" as evidence that anything works.
 # 2. YOUR ENVIRONMENT — READ BEFORE YOU TRY TO SHIP
 
 ## 2.1 Repos and mounts
-
 - `~/Documents/club-arena` -> GitHub `Smarter-Poker/Smarter-Poker-Club-Arena`
   (client + server engine + supabase/migrations). In the Linux sandbox:
   `/sessions/<id>/mnt/club-arena`.
@@ -60,7 +59,6 @@ rely on "someone would have noticed" as evidence that anything works.
   (`execute_sql`, `apply_migration`) — it works and is the sanctioned path.
 
 ## 2.2 Credentials — WHERE they live, never the values
-
 - **GitHub token that works:** `GITHUB_TOKEN` in `~/Documents/club-arena/.env`.
   Verified against `api.github.com/user` -> login `Smarter-Poker`.
 - **The GitHub MCP servers are DEAD** (`mcp__github__*` and
@@ -75,7 +73,6 @@ rely on "someone would have noticed" as evidence that anything works.
   `~/Documents/club-arena/.env` (used by `scripts/ci/gen-schema-manifest.mjs`).
 
 ## 2.3 HOW TO SHIP (both repos)
-
 `main` is protected by a ruleset in both repos: **no direct pushes**, squash
 merges only, required status checks. The reliable flow, used ~10 times today:
 
@@ -95,14 +92,13 @@ merges only, required status checks. The reliable flow, used ~10 times today:
 from the sandbox the API flow above is what actually works.
 
 ## 2.4 LANDMINES — every one of these cost real time today
-
 1. **The local worktree gets wiped.** An Antigravity loop runs
    `git reset --hard origin/main` on Dan's Mac. It ate my edits TWICE
    mid-session. **Never leave work uncommitted.** If files vanish, recover them
    from the PR branch via the contents API — that is how I recovered.
 2. **GitHub secondary rate limits.** Rapid blob creation starts returning
    `403 API rate limit exceeded` while `/rate_limit` still shows 5000/5000
-   remaining (it is the _content creation_ bucket). Wait 3-5 minutes and retry;
+   remaining (it is the *content creation* bucket). Wait 3-5 minutes and retry;
    do not thrash.
 3. **`/sessions` disk fills to 100%.** `vitest` then dies with `ENOSPC`. Fix:
    `TMPDIR=/tmp npx vitest run ...` and `rm -rf ~/.npm/_cacache`.
@@ -134,7 +130,6 @@ from the sandbox the API flow above is what actually works.
 # 3. WHAT IS ALREADY DONE (do not redo)
 
 ## 3.1 Pre-Phase work — 2026-08-30 spin audit (merged: CA #2011, WH #1051)
-
 - `fn_spin_rake_rate` flattened to a single 0.08 (it was still banded 8/7/6/5%
   while the engine booked 8% — the recovery sweep and the engine disagreed).
 - `fn_spin_sweep_unbooked` now settles at `SPIN_SEATS = 3` instead of
@@ -171,7 +166,6 @@ nothing; 19+ chips earned 2-24. That is ~55% of all games on both flagship
 formats, at exactly the stakes a new player starts on.
 
 **The fix (live in production).**
-
 - `vip_points_carry(user_id, carry numeric CHECK 0 <= carry < 1)` +
   `vip_points_ledger.credit` — migration `20260831a`.
 - `fn_award_vip_credit(user, credit, source_type, source_id, reason)` — banks
@@ -192,7 +186,6 @@ formats, at exactly the stakes a new player starts on.
 schedule for weeks against handlers **that never existed** (they were written
 for `smarter-poker-workers`, a repo Phase 2B never created) — every fire hit a
 404, and a 404 looks exactly like a healthy job.
-
 - `rakeback-period-settle`: pages the pending set, calls `settle_club_rakeback`
   per club (idempotent; service role passes `fn_caller_is_engine`), supports
   `?dry=1`. **Dry run reports 2,456 pending periods, 278,579.42 chips owed to
@@ -252,8 +245,7 @@ table creation guard live; spin rake flat 8%; dead create-table route 404.
 
 ## PHASE 1 — Money owed to players. **DONE** (section 3.2).
 
-## PHASE 2 — FAIRNESS IN THE HAND _(NEXT — build this)_
-
+## PHASE 2 — FAIRNESS IN THE HAND *(NEXT — build this)*
 1. **The heads-up first button is never randomised.** The secure random
    first-button draw exists ONLY inside the Spin reveal path
    (`server/src/tournament/TournamentManagerBase.ts` ~:2914). A 2-max SNG never
@@ -272,12 +264,11 @@ table creation guard live; spin rake flat 8%; dead create-table route 404.
    `resolveBlindLevel()` (`TournamentManagerBase.ts` ~:2315) — the one caller
    that ignores that function's own warning. After an engine restart a
    late-stage game resumes on the wrong clock.
-   Tests to write/extend: heads-up button randomisation, dead-button rotation,
-   resume-level fidelity. Do not weaken existing law tests
-   (`tests/animations-always-play.law.test.ts`, `no-auto-table-switch.law.test.ts`).
+Tests to write/extend: heads-up button randomisation, dead-button rotation,
+resume-level fidelity. Do not weaken existing law tests
+(`tests/animations-always-play.law.test.ts`, `no-auto-table-switch.law.test.ts`).
 
 ## PHASE 3 — CONFIG GUARDRAILS
-
 1. **Create `src/config/headsUpSpec.ts`** — the 2-max product has NO spec file.
    Its truth is scattered across `SNG_BOARD_SHAPES`,
    `BLIND_STRUCTURES.HEADS_UP_3MIN`, two `SCHEDULE_*_PRESETS` maps and a JSON
@@ -298,7 +289,6 @@ table creation guard live; spin rake flat 8%; dead create-table route 404.
 5. `is_premium_spin` is write-only (no reader) — remove or wire.
 
 ## PHASE 4 — LIVENESS
-
 1. **No "RUNNING but not dealing" watchdog.** 141 of 20,900 Spins (0.67%) over
    7 days ran past an hour; 120 of those with under 30 hands; average 22
    minutes of dead table after the last hand; **worst case 11 hours, 13 hands,
@@ -320,7 +310,6 @@ table creation guard live; spin rake flat 8%; dead create-table route 404.
    zero of. Net: ~1-3 minutes of joinability per ~35-minute cycle.
 
 ## PHASE 5 — INTEGRITY AND SAFETY
-
 1. **Chip-dump scanning is dead.** Last CHIP_DUMP scan 14 Aug, last win-rate
    scan 18 Aug, `anti_cheat_events` 0 rows in 7 days. The
    `/api/cron/anti-cheat-{chip-dump,bot-timing,multi-account}` and
@@ -341,7 +330,6 @@ table creation guard live; spin rake flat 8%; dead create-table route 404.
    stays. Do not "fix" it.**
 
 ## PHASE 6 — PRESENTATION AND UX (all code-verified, none eyes-on)
-
 1. **Every Spin lobby card says "300 chips / Turbo"**, including the 12.6% that
    deal 1,000 or 5,000. The recycler seeds `starting_chips: 300` and the real
    stack is written at draw time (`TournamentManagerBase.ts` ~:1661/:1712);
@@ -388,7 +376,6 @@ table creation guard live; spin rake flat 8%; dead create-table route 404.
     player "already registered" after charging them.
 
 ## PHASE 7 — PRODUCT AND PERFORMANCE
-
 1. **Rematch does not exist** — the single highest-leverage retention feature
    for a 2-max format. Winner is auto-navigated back to the lobby.
 2. **Heads-up CASH does not exist** — the engine supports 2 players
@@ -413,7 +400,6 @@ table creation guard live; spin rake flat 8%; dead create-table route 404.
 ---
 
 # 6. VERIFIED CLEAN — do not re-audit these
-
 - Spin money path: 2,698 completed spins in 48h, every winner paid exactly
   `buy_in x multiplier` via `fn_credit_and_log`; 0 unpaid, 0 wrong amounts;
   multi-row payouts only on 10x+ premium splits by design.

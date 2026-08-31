@@ -31,13 +31,13 @@ unpaid_completed, and `metrics_stale_seconds`.
 It comes from the **database**, not from in-memory managers, deliberately: the
 most valuable signal is "a tournament that should be running is not", and an
 engine reporting only on tournaments it owns can never see that — the failure
-_is_ the absence of a manager.
+*is* the absence of a manager.
 
 **Fail-closed, loudly.** A failed refresh keeps the last good snapshot rather
 than zeroing it, because a row of zeroes is indistinguishable from perfect
 health — the defect shape this codebase keeps re-learning (`remainingCount ||
 0`, `players ?? []`, `takenRows || []`). `metrics_stale_seconds` is what proves
-the other six are current, and a collector that has _never_ succeeded reports
+the other six are current, and a collector that has *never* succeeded reports
 86,400 rather than 0, so a permanently-broken boot is a firing alert instead of
 a healthy-looking platform. Refresh failures are reported once per outage, not
 once per attempt — an every-minute timer would otherwise turn one broken query
@@ -61,7 +61,7 @@ read is ~470ms once a minute.
 
 ## The finding that changed the design
 
-The first cut counted _every_ format past its start time and read **31 on
+The first cut counted *every* format past its start time and read **31 on
 production** — all SNG or Spin with **zero entrants**. That is not a fault: a
 seat-first game sits open with a nominal start time and begins when its seats
 fill, so "past start time with nobody in it" is its resting state. An alert

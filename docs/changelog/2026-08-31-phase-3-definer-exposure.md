@@ -62,7 +62,8 @@ candidate was read individually:
 - `promote_member` — looks alarming (takes `p_promoted_by` as a parameter) but
   delegates to `fn_club_set_member_role`, which sets `v_actor := auth.uid()`
   and only believes a caller-supplied actor for `service_role`.
-- `ca_union_record_presettlement` — guarded by `ca_can_oversee_union`, raises 42501.
+- `ca_union_record_presettlement` — guarded by `ca_can_oversee_union`, raises
+  42501.
 - `fn_save_leaderboard_reward_setup` — delegates to
   `fn_publish_leaderboard_reward_program`, which refuses a NULL `auth.uid()`.
 - `increment_promotion_claim_count` — read-only despite the name.

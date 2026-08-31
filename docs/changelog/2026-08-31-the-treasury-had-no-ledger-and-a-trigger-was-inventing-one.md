@@ -50,12 +50,12 @@ History was NOT rewritten. Every existing row stands.
 migration 1 the treasury therefore had an honest but EMPTY ledger. The four
 with real volume now journal:
 
-| function                       | movement                       | live volume                                      |
-| ------------------------------ | ------------------------------ | ------------------------------------------------ |
-| `fn_horse_fund_from_treasury`  | `club_treasury -> table_stack` | 9,076,675 chips over 20,806 calls for one club   |
-| `fn_horse_seat_from_treasury`  | `club_treasury -> table_stack` | the same movement through the other door         |
-| `credit_club_rake_to_treasury` | `table_stack -> club_treasury` | rake credited direct                             |
-| `atomic_distribute_rake`       | `table_stack -> club_treasury` | the `v_route = 'club_chip_treasury'` branch only |
+| function | movement | live volume |
+| --- | --- | --- |
+| `fn_horse_fund_from_treasury` | `club_treasury -> table_stack` | 9,076,675 chips over 20,806 calls for one club |
+| `fn_horse_seat_from_treasury` | `club_treasury -> table_stack` | the same movement through the other door |
+| `credit_club_rake_to_treasury` | `table_stack -> club_treasury` | rake credited direct |
+| `atomic_distribute_rake` | `table_stack -> club_treasury` | the `v_route = 'club_chip_treasury'` branch only |
 
 `fn_horse_seat_from_treasury` was not in the brief. It was included because it
 is the same money movement as `fn_horse_fund_from_treasury` by a different
@@ -86,11 +86,11 @@ The player-wallet pool solved exactly this on 2026-08-26
 WRITTEN DOWN rather than invented, and reconciliation runs forward from the
 line. `ca_treasury_baseline` is that, for the treasury:
 
-| club       | opening balance | ledger at baseline | unledgered gap |
-| ---------- | --------------- | ------------------ | -------------- |
-| `a41434bb` | 1,376,610.47    | -7,073,839.25      | 8,450,449.72   |
-| `a0000000` | 1,051,788.71    | -32,171,602.52     | 33,223,391.23  |
-| `fade0000` | 0.00            | -9,766.78          | 9,766.78       |
+| club | opening balance | ledger at baseline | unledgered gap |
+| --- | --- | --- | --- |
+| `a41434bb` | 1,376,610.47 | -7,073,839.25 | 8,450,449.72 |
+| `a0000000` | 1,051,788.71 | -32,171,602.52 | 33,223,391.23 |
+| `fade0000` | 0.00 | -9,766.78 | 9,766.78 |
 
 The line is drawn AFTER migrations 1 and 2 on purpose. Drawn before them it
 would have been a line under a lie, and every row after it would have kept
@@ -107,12 +107,12 @@ same class of mistake as the one being fixed.
 
 ## Result
 
-|                      | before          | after                                                 |
-| -------------------- | --------------- | ----------------------------------------------------- |
-| `club_treasury` rows | 3, all critical | 2, all `ok`, drift 0.00                               |
-| worst treasury drift | 33,248,242.62   | 0.00                                                  |
-| second worst         | 8,467,853.85    | 0.00                                                  |
-| third                | 9,766.78        | not checked -- 0 stored, 0 flow, nothing to reconcile |
+| | before | after |
+| --- | --- | --- |
+| `club_treasury` rows | 3, all critical | 2, all `ok`, drift 0.00 |
+| worst treasury drift | 33,248,242.62 | 0.00 |
+| second worst | 8,467,853.85 | 0.00 |
+| third | 9,766.78 | not checked -- 0 stored, 0 flow, nothing to reconcile |
 
 The 7 remaining criticals in the run are `bomb_award_ledger_gap`, which predate
 this work and are untouched by it.

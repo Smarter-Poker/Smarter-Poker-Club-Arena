@@ -11,6 +11,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { getAuthUser } from '../lib/supabase';
 import { StreakFire } from '../components/gamification/StreakFire';
@@ -1573,75 +1574,77 @@ export default function DailyChallengesPage() {
         </footer>
       </div>
 
-      {reward && (
-        <div
-          className={styles.celebrateOverlay}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="challenge-reward-title"
-          aria-describedby="challenge-reward-description"
-          onClick={dismissReward}
-        >
-          {!reduceMotion && (
-            <ConfettiEffect
-              isActive={true}
-              intensity="heavy"
-              colors={['#00f0ff', '#0ff', '#ffffff']}
-              duration={4000}
-            />
-          )}
+      {reward &&
+        createPortal(
           <div
-            ref={celebrateDialogRef}
-            className={styles.celebrateCard}
-            onClick={(event) => event.stopPropagation()}
+            className={styles.celebrateOverlay}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="challenge-reward-title"
+            aria-describedby="challenge-reward-description"
+            onClick={dismissReward}
           >
-            <div className={styles.celebrateBurst} aria-hidden="true">
-              {'\u25C6'}
-            </div>
-            <h2 id="challenge-reward-title" className={styles.celebrateTitle}>
-              Reward Settled
-            </h2>
-            <p id="challenge-reward-description" className={styles.celebrateName}>
-              {reward.name}
-            </p>
-
-            <div className={styles.celebratePayouts} aria-label="Rewards Earned">
-              {reward.chips > 0 && (
-                <div>
-                  <span className={styles.celebratePayoutValue}>
-                    +{reward.chips.toLocaleString()}
-                  </span>
-                  <span className={styles.celebratePayoutLabel}>Chips</span>
-                </div>
-              )}
-              {reward.diamonds > 0 && (
-                <div className={styles.celebrateDiamondPayout}>
-                  <span className={styles.celebratePayoutValue}>
-                    +{reward.diamonds.toLocaleString()}
-                  </span>
-                  <span className={styles.celebratePayoutLabel}>
-                    {reward.diamonds === 1 ? 'Diamond' : 'Diamonds'}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {reward.diamonds > 0 && (
-              <p className={styles.celebrateBalance}>
-                New Balance: {reward.diamondBalance.toLocaleString()} Diamonds
-              </p>
+            {!reduceMotion && (
+              <ConfettiEffect
+                isActive={true}
+                intensity="heavy"
+                colors={['#00f0ff', '#0ff', '#ffffff']}
+                duration={4000}
+              />
             )}
+            <div
+              ref={celebrateDialogRef}
+              className={styles.celebrateCard}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className={styles.celebrateBurst} aria-hidden="true">
+                {'\u25C6'}
+              </div>
+              <h2 id="challenge-reward-title" className={styles.celebrateTitle}>
+                Reward Settled
+              </h2>
+              <p id="challenge-reward-description" className={styles.celebrateName}>
+                {reward.name}
+              </p>
 
-            <p className={styles.celebrateReceipt} role="status">
-              Deposited Securely To Your Club Arena Balances
-            </p>
+              <div className={styles.celebratePayouts} aria-label="Rewards earned">
+                {reward.chips > 0 && (
+                  <div>
+                    <span className={styles.celebratePayoutValue}>
+                      +{reward.chips.toLocaleString()}
+                    </span>
+                    <span className={styles.celebratePayoutLabel}>Chips</span>
+                  </div>
+                )}
+                {reward.diamonds > 0 && (
+                  <div className={styles.celebrateDiamondPayout}>
+                    <span className={styles.celebratePayoutValue}>
+                      +{reward.diamonds.toLocaleString()}
+                    </span>
+                    <span className={styles.celebratePayoutLabel}>
+                      {reward.diamonds === 1 ? 'Diamond' : 'Diamonds'}
+                    </span>
+                  </div>
+                )}
+              </div>
 
-            <button className={styles.celebrateButton} onClick={dismissReward}>
-              Continue
-            </button>
-          </div>
-        </div>
-      )}
+              {reward.diamonds > 0 && (
+                <p className={styles.celebrateBalance}>
+                  New Balance: {reward.diamondBalance.toLocaleString()} Diamonds
+                </p>
+              )}
+
+              <p className={styles.celebrateReceipt} role="status">
+                Deposited Securely To Your Club Arena Balances
+              </p>
+
+              <button className={styles.celebrateButton} onClick={dismissReward}>
+                Continue
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
     </StandardContentLayout>
   );
 }

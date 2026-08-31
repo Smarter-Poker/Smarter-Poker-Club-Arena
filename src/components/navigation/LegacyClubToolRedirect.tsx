@@ -5,7 +5,7 @@ import { fetchQuickLinkClubs, readLastClubId, resolveTargetClub } from '../../ut
 import { EmptyState, ErrorState, LoadingState } from '../common/EmptyState';
 
 interface LegacyClubToolRedirectProps {
-  destination: 'agents' | 'data' | 'invite' | 'members';
+  destination: 'agents' | 'anti-cheat' | 'data' | 'invite' | 'members';
   toolName: string;
 }
 

@@ -249,19 +249,14 @@ describe('the profile region shows the complete live profile picture', () => {
   });
 });
 
-describe('VIP membership state and icon-bank shimmer', () => {
-  it('dims non-members, outlines active VIP, and shimmers all right icons every 15-20 seconds', () => {
+describe('VIP membership state without header shimmer', () => {
+  it('dims non-members, outlines active VIP, and keeps every header control free of shimmer effects', () => {
     expect(TSX_CODE).toContain('isVipActive');
     expect(TSX).toContain("data-vip-active={isVipActive ? 'true' : 'false'}");
-    expect(TSX_CODE).toContain('15_000 + Math.floor(Math.random() * 5_001)');
-    expect(TSX_CODE).toContain('setIconShimmerVisible(true)');
-    expect(TSX_CODE).toContain('setIconShimmerVisible(false)');
     expect(CSS).toContain('.vipBtn:not(.vipActive)::after');
     expect(CSS).toContain('.vipActive');
     expect(CSS).toContain('rgba(255, 255, 255, 0.92)');
-    expect(CSS).toContain('.headerControlsShimmer .artButton::before');
-    expect(TSX).toContain('data-header-icons-shimmer=');
-    expect(CSS).toContain('animation: rightIconBankShimmer 1.5s cubic-bezier(0.2, 0.7, 0.25, 1) 1');
-    expect(CSS).not.toContain('infinite');
+    expect(TSX_CODE).not.toMatch(/shimmer/i);
+    expect(CSS).not.toMatch(/shimmer/i);
   });
 });

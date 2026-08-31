@@ -133,6 +133,7 @@ export default function MemberManagementPage() {
   const [detail, setDetail] = useState<MemberDetail | null>(null);
   const [downline, setDownline] = useState<DownlineMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [myRole, setMyRole] = useState<ClubRole>('player');
 
   const [rangeMode, setRangeMode] = useState<RangeMode>('overall');
@@ -147,7 +148,10 @@ export default function MemberManagementPage() {
       if (!clubId || !userId) return;
       const live = () => (getIsMounted ? getIsMounted() : true) && isMountedRef.current;
 
-      if (live()) setLoading(true);
+      if (live()) {
+        setLoading(true);
+        setLoadError(false);
+      }
       try {
         const resolved = await resolveClubUUID(clubId);
         if (!live()) return;
@@ -178,7 +182,10 @@ export default function MemberManagementPage() {
         }
       } catch (error) {
         reportError(error, 'MemberManagementPage.loadDetail');
-        if (live()) toast.error('Failed To Load This Member');
+        if (live()) {
+          setLoadError(true);
+          toast.error('Failed To Load This Member');
+        }
       } finally {
         if (live()) setLoading(false);
       }
@@ -234,6 +241,26 @@ export default function MemberManagementPage() {
       <div className="member-mgmt-page">
         <PageHeader onBack={() => navigate(-1)} />
         <PageSkeleton variant="settings" />
+      </div>
+    );
+  }
+
+  if (loadError && !detail) {
+    return (
+      <div className="member-mgmt-page">
+        <PageHeader onBack={() => navigate(-1)} />
+        <div className="mm-empty" role="alert">
+          <span className="mm-empty__mark" aria-hidden="true">
+            ↻
+          </span>
+          <p className="mm-empty__heading">The Member Ledger Did Not Respond</p>
+          <p className="mm-empty__body">
+            Your Access Has Not Changed. Retry The Live Record Without Leaving This Page.
+          </p>
+          <button type="button" className="mm-empty__retry" onClick={reload}>
+            Retry Member
+          </button>
+        </div>
       </div>
     );
   }

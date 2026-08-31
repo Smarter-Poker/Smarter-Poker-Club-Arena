@@ -21,7 +21,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import './TableConfigPage.css';
 import { reportError } from '../utils/errorReporter';
 import { formatCurrency } from '../lib/utils';
-import { RAKE_INHERIT } from '../config/RakeConfig';
+import { RAKE_INHERIT, getRakeConfig } from '../config/RakeConfig';
 import { stakesLabel, isFixedLimitVariant } from '../lib/bettingStructure';
 import {
   DEFAULT_BLINDS_INDEX,
@@ -1329,6 +1329,9 @@ export default function TableConfigPage() {
      *                (COALESCE(t.game_mode,'') ILIKE '%mixed%').
      *   ante_bb      live readers use the authored BB value while the engine
      *                posts the derived chip value in `ante`.
+     * min_buy_in_bb / max_buy_in_bb are intentionally absent here: the schema
+     * now generates them from min_buy_in / max_buy_in (see the buy-in comment
+     * above), and Postgres refuses an explicit write to either mirror.
      * The rest that remain below have real readers on `tables` rows.
      */
     // SNG/MTT specific
@@ -2937,6 +2940,65 @@ export default function TableConfigPage() {
               }
               tooltip="Most That Can Be Raked From One Pot. Schedule = Use The House Cap For This Stake."
             />
+
+            {/*
+              WHAT THIS TABLE WILL ACTUALLY CHARGE (2026-08-31).
+
+              The two sliders above say "Schedule" by default and the schedule
+              is a fourteen-row table in a config file, so an owner could set
+              up a game without ever seeing its price. That is not
+              hypothetical: the rake gap this audit found - six of the twelve
+              blind presets had no schedule row, and the DEFAULT preset was
+              being priced off a tier fallback at 30 big blinds - sat in the
+              product for months precisely because nothing on this screen ever
+              said the number out loud.
+
+              Resolved through getRakeConfig, the same function and the same
+              precedence the engine applies (an override may only ever move
+              DOWN from the published schedule), so this cannot drift into
+              advertising a rate we do not charge. The Game Rules modal made
+              exactly that mistake in 2026-08 by rendering placeholder props.
+            */}
+            {(() => {
+              const priced = getRakeConfig(config.bigBlind, gameType || 'nlh', config.smallBlind, {
+                rakePercent: config.rakePercent,
+                rakeCapBB: config.rakeCapBB,
+              });
+              const capInBB = config.bigBlind > 0 ? priced.rakeCap / config.bigBlind : 0;
+              const overridden =
+                config.rakePercent !== RAKE_INHERIT || config.rakeCapBB !== RAKE_INHERIT;
+              return (
+                <div className="config-slider">
+                  <div className="slider-header">
+                    <span className="slider-label">
+                      This Table Charges {priced.rakePercent}% Of Each Raked Pot, Up To{' '}
+                      {formatCurrency(priced.rakeCap)} ({Number(capInBB.toFixed(1))} Big Blinds)
+                    </span>
+                  </div>
+                  <div className="slider-header">
+                    <span className="slider-label">
+                      {priced.bbjEnabled ? (
+                        <>
+                          Bad Beat Jackpot Drop {formatCurrency(config.bigBlind * priced.bbjFeeBB)}{' '}
+                          Per Flopped Hand ({priced.bbjFeeBB} Big Blinds)
+                        </>
+                      ) : (
+                        <>No Bad Beat Jackpot On This Game</>
+                      )}
+                    </span>
+                  </div>
+                  <div className="slider-header">
+                    <span className="slider-label">
+                      {overridden ? (
+                        <>Your Override, Held To The Published Schedule</>
+                      ) : (
+                        <>Published Schedule For {priced.tier} Stakes</>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* SECTION: Security */}
             <Toggle

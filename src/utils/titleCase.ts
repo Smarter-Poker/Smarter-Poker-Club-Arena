@@ -129,7 +129,7 @@ export function titleCase(input: string | null | undefined): string {
          hero line ("3rd Of 128"). A token that begins with a digit is an
          ordinal, a stake or a seat count ("6max", "2x"); its letters are a
          suffix and are never title-cased. */
-      return part.replace(/[A-Za-z0-9][A-Za-z0-9'’]*/g, (word, offset, whole) => {
+      return part.replace(/[A-Za-z0-9][A-Za-z0-9'’]*/g, (word) => {
         if (/^[0-9]/.test(word)) return word;
         const lower = word.toLowerCase();
         if (whole[offset - 1] === '(' && (lower === 's' || lower === 'es')) return lower;

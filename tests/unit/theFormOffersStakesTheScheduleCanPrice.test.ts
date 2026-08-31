@@ -12,7 +12,7 @@ import {
   presetsFor,
   blindsIndexFor,
 } from '../../src/config/blindsPresets';
-import { findScheduleMatch, getTierForBB, MAX_RAKE_CAP_BB } from '../../src/config/RakeConfig';
+import { findScheduleMatch, getRakeConfig, UNSCHEDULED_CAP_BB } from '../../src/config/RakeConfig';
 
 describe('a fixed-limit table is only offered blinds its bet ladder can describe', () => {
   /**
@@ -51,82 +51,89 @@ describe('a fixed-limit table is only offered blinds its bet ladder can describe
   });
 });
 
-describe('the rake schedule does not cover the ladder the form offers', () => {
+describe('every stake the form offers is on the published schedule', () => {
   /**
-   * NOT A FIX — A RECORD, and Dan's decision to make. RAKE_SCHEDULE is a money
-   * table; the DB creation guard says so itself, declining to police this:
-   * "NOT enforced here and left for Dan: the official stakes schedule."
+   * DAN'S RULING, 2026-08-31, applied: "WE HAVE A SCALE THAT WE USE FOR THE
+   * CASH GAME FOR RAKE AND BBJ, USE THE SAME PERCENTAGES WE USE FOR THE OTHER
+   * GAMES, IF YOU DON'T HAVE A RAKE OR BBJ SCHEDULE FOR A SPECIFIC GAME."
    *
-   * Six of the twelve presets have no schedule row, so findScheduleMatch
-   * returns null and getRakeConfig falls back to getTierForBB — a tier whose
-   * cap is an absolute dollar amount. Expressed in big blinds, that fallback
-   * prices the four cheapest games ABOVE MAX_RAKE_CAP_BB, which is the
-   * ceiling the same file enforces on an explicit override:
+   * Six of the twelve presets had no row, so the price fell through to a
+   * stakes TIER whose cap is an absolute dollar amount applied regardless of
+   * stake. $3 on a $0.02 big blind is 150 BB; on the DEFAULT preset it was
+   * 30 BB, against a published ladder whose most generous row is 15 BB and
+   * whose typical row is 1 to 6 BB.
    *
-   *     0.01/0.02   $3 cap = 150 BB
-   *     0.02/0.05   $3 cap =  60 BB
-   *     0.05/0.10   $3 cap =  30 BB   <- THE DEFAULT PRESET
-   *     0.10/0.25   $3 cap =  12 BB
-   *
-   * Every schedule-covered preset is 6 BB or less. Live exposure as of
-   * 2026-08-31 is small — 2 cash tables at 0.05/0.10, both closed; the 972
-   * others sit on covered stakes, 794 of them at 1/2 — but the DEFAULT sits
-   * in the gap, so the next owner who accepts the defaults creates one.
-   *
-   * The fix is either to extend RAKE_SCHEDULE or to narrow BLINDS_PRESETS,
-   * and both change what players pay. This test pins the gap at its current
-   * size so it cannot grow unnoticed while that decision is open.
+   * Both halves of the ruling are pinned here: the six rows exist now, and
+   * the FALLBACK for any stake nobody scheduled is held to the same
+   * proportion rather than to a flat dollar figure.
    */
-  const unpriced = BLINDS_PRESETS.filter((p) => findScheduleMatch(p.sb, p.bb) === null);
-
-  it('is exactly these six presets, no more', () => {
-    expect(unpriced.map((p) => p.label)).toEqual([
-      '0.01/0.02',
-      '0.02/0.05',
-      '0.05/0.10',
-      '0.10/0.25',
-      '25/50',
-      '50/100',
-    ]);
+  it('leaves no preset priced by fallback', () => {
+    const unpriced = BLINDS_PRESETS.filter((p) => findScheduleMatch(p.sb, p.bb) === null);
+    expect(unpriced.map((p) => p.label)).toEqual([]);
   });
 
-  it('includes the default preset, which is why this matters', () => {
-    const fallback = BLINDS_PRESETS.filter(
-      (p) =>
-        findScheduleMatch(p.sb, p.bb) === null &&
-        getTierForBB(p.bb).rakeCap / p.bb > MAX_RAKE_CAP_BB
-    );
-    expect(fallback.map((p) => p.label)).toEqual([
-      '0.01/0.02',
-      '0.02/0.05',
-      '0.05/0.10',
-      '0.10/0.25',
-    ]);
-  });
-
-  it('every preset the schedule DOES cover is capped at or under the ceiling', () => {
+  it('charges the same percentage at every stake', () => {
     for (const preset of BLINDS_PRESETS) {
-      const match = findScheduleMatch(preset.sb, preset.bb);
-      if (!match) continue;
-      expect(match.rakeCap / preset.bb).toBeLessThanOrEqual(MAX_RAKE_CAP_BB);
+      expect(getRakeConfig(preset.bb, 'nlh', preset.sb).rakePercent).toBe(10);
     }
   });
 
-  it.skip('AWAITING DAN: no offered preset may be priced above MAX_RAKE_CAP_BB', () => {
-    // Delete the .skip in the commit that either extends RAKE_SCHEDULE to
-    // cover all twelve presets, or narrows BLINDS_PRESETS to the schedule.
+  it("never caps any offered stake above the ladder's own most generous row", () => {
+    // This is the invariant the old code broke. It was written as a .skip
+    // against MAX_RAKE_CAP_BB, which was the wrong constant — that one bounds
+    // operator OVERRIDES, and the schedule's own bottom rung has always been
+    // 15 BB. Now it runs.
+    expect(UNSCHEDULED_CAP_BB).toBe(15);
     for (const preset of BLINDS_PRESETS) {
-      const match = findScheduleMatch(preset.sb, preset.bb);
-      const cap = match ? match.rakeCap : getTierForBB(preset.bb).rakeCap;
-      expect(cap / preset.bb).toBeLessThanOrEqual(MAX_RAKE_CAP_BB);
+      const { rakeCap } = getRakeConfig(preset.bb, 'nlh', preset.sb);
+      expect(rakeCap / preset.bb).toBeLessThanOrEqual(UNSCHEDULED_CAP_BB);
     }
+  });
+
+  it('prices a stake nobody scheduled in proportion, not by a flat dollar cap', () => {
+    // A fleet config or a direct writer can produce a stake the form never
+    // offers. Before the ruling this took the tier's flat cap: $3 on a $0.07
+    // big blind, 43 BB. It is held to the ladder now.
+    const odd = getRakeConfig(0.07, 'nlh', 0.03);
+    expect(findScheduleMatch(0.03, 0.07)).toBeNull();
+    expect(odd.rakeCap / 0.07).toBeLessThanOrEqual(UNSCHEDULED_CAP_BB);
+    expect(odd.rakeCap).toBe(1.05);
+  });
+
+  it('gives every offered stake a BBJ fee from the same tier scale', () => {
+    for (const preset of BLINDS_PRESETS) {
+      const { bbjFeeBB } = getRakeConfig(preset.bb, 'nlh', preset.sb);
+      expect([0.6, 0.25, 0.12, 0.06, 0.03]).toContain(bbjFeeBB);
+    }
+  });
+
+  it('moves no price except the two cheapest, and only downward', () => {
+    // Measured against production before the change: of 972 cash tables, only
+    // the two at 0.05/0.10 sit on a stake whose cap moves, $3 -> $1.50. Every
+    // other live stake was already scheduled. No player pays more than before.
+    const byLabel = (l: string) => BLINDS_PRESETS.find((p) => p.label === l)!;
+    for (const [label, cap] of [
+      ['0.25/0.50', 3],
+      ['0.50/1', 5],
+      ['1/2', 5],
+      ['2/5', 7.5],
+      ['5/10', 12.5],
+      ['10/25', 15],
+      ['25/50', 20],
+    ] as const) {
+      const p = byLabel(label);
+      expect(getRakeConfig(p.bb, 'nlh', p.sb).rakeCap).toBe(cap);
+    }
+    const dflt = byLabel('0.05/0.10');
+    expect(getRakeConfig(dflt.bb, 'nlh', dflt.sb).rakeCap).toBe(1.5);
   });
 
   it.skip('AWAITING DAN: the 5/5 schedule row can never match a legal table', () => {
     // RAKE_SCHEDULE contains { sb: 5, bb: 5 }. The table-creation guard
-    // refuses "big blind must exceed small blind", so no table can ever
-    // match it. 5/10 already exists; 2.5/5 would fit the ladder. It is a
-    // money row — confirm the intended stakes with Dan before editing.
+    // refuses "big blind must exceed small blind", so no table can ever match
+    // it. 5/10 already exists; 2.5/5 would fit the ladder. It is a money row
+    // and a separate question from the coverage ruling above — confirm the
+    // intended stakes with Dan before editing it.
     expect(findScheduleMatch(5, 5)).toBeNull();
   });
 });

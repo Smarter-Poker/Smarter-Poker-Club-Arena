@@ -74,6 +74,7 @@ import {
   createTurnStateMachine,
   type TurnFSMState,
 } from './StateMachine.js';
+import { headsUpButtonSeat } from './headsUpButton.js';
 import type { StateMachine } from './StateMachine.js';
 import type { TableStatus } from '../types.js';
 
@@ -2887,9 +2888,29 @@ export abstract class ServerTableEngineBase {
     const eligible = this.buttonEligible(roster);
     const sortedSeats = eligible.map((p) => p.seat_number).sort((a, b) => a - b);
     if (sortedSeats.length === 0) return -1;
-    return this.lastButtonSeat > 0
-      ? this.getNextSeat(this.lastButtonSeat, eligible)
-      : sortedSeats[0];
+    if (this.lastButtonSeat > 0) {
+      /**
+       * HEADS-UP, THE BLINDS ADVANCE AND THE BUTTON FOLLOWS (2026-08-31,
+       * Phase 3, carried from the Phase 2 audit).
+       *
+       * The dealing loop stopped rotating the button at two players and started
+       * deriving it from the last big blind (TDA Rule 33 -- see
+       * headsUpButton.ts). This predictor kept walking the old rotation, so for
+       * every heads-up hand the wait-for-BB gate and the deal disagreed about
+       * which seat was about to hold the button. Nothing broke, because at two
+       * players there is no joiner to hold out, but two walks that disagree are
+       * how the ORIGINAL bug got in: the dealing loop's comment says the shared
+       * sb/bb computation exists precisely so "the day somebody fixes the
+       * heads-up rule in one of them" the other cannot silently keep billing
+       * the wrong seat. Same argument, one layer up.
+       */
+      if (sortedSeats.length === 2 && this.lastBigBlindSeat > 0) {
+        const headsUp = headsUpButtonSeat(sortedSeats, this.lastBigBlindSeat);
+        if (headsUp !== null && headsUp > 0) return headsUp;
+      }
+      return this.getNextSeat(this.lastButtonSeat, eligible);
+    }
+    return sortedSeats[0];
   }
 
   /**

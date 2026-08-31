@@ -918,6 +918,7 @@
   background: var(--card-tier-color);
   box-shadow: 0 0 12px color-mix(in srgb, var(--card-tier-color) 65%, transparent);
   content: '';
+  pointer-events: none;
 }
 
 .challengeCard::after {
@@ -929,6 +930,7 @@
   border: 1px solid rgba(180, 194, 204, 0.08);
   border-radius: 50%;
   content: '';
+  pointer-events: none;
 }
 
 .cardCompleted {

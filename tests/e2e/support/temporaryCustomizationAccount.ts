@@ -57,23 +57,33 @@ async function serviceRequest<T>(
   path: string,
   init: RequestInit = {}
 ): Promise<T> {
-  const response = await fetch(`${environment.supabaseUrl}${path}`, {
-    ...init,
-    headers: serverHeaders(environment.serviceRoleKey, {
-      Accept: 'application/json',
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...((init.headers as Record<string, string> | undefined) || {}),
-    }),
-  });
-  const text = await response.text();
-  const body = text ? (JSON.parse(text) as T) : (undefined as T);
-  if (!response.ok) {
-    throw new Error(
-      `Supabase service request ${init.method || 'GET'} ${path} failed ` +
-        `(${response.status}): ${text.slice(0, 400)}`
-    );
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const response = await fetch(`${environment.supabaseUrl}${path}`, {
+      ...init,
+      headers: serverHeaders(environment.serviceRoleKey, {
+        Accept: 'application/json',
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...((init.headers as Record<string, string> | undefined) || {}),
+      }),
+    });
+    const text = await response.text();
+    const body = text ? (JSON.parse(text) as T) : (undefined as T);
+    if (response.ok) return body;
+
+    const retryable = response.status === 429 || response.status >= 502;
+    if (!retryable || attempt === 4) {
+      throw new Error(
+        `Supabase service request ${init.method || 'GET'} ${path} failed ` +
+          `(${response.status}): ${text.slice(0, 400)}`
+      );
+    }
+    const retryAfterSeconds = Number(response.headers.get('retry-after'));
+    const retryDelayMs = Number.isFinite(retryAfterSeconds)
+      ? Math.max(250, retryAfterSeconds * 1_000)
+      : attempt * 250;
+    await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
   }
-  return body;
+  throw new Error(`Supabase service request ${init.method || 'GET'} ${path} exhausted retries.`);
 }
 
 export async function readServiceRows<T>(
@@ -242,7 +252,7 @@ export async function createTemporaryCustomizationAccount(
 async function deleteRows(
   environment: CustomizationCertificationEnvironment,
   table: string,
-  column: 'user_id' | 'id',
+  column: 'user_id' | 'recipient_user_id' | 'from_user_id' | 'to_user_id' | 'id',
   userId: string
 ): Promise<void> {
   const query = new URLSearchParams({ [column]: `eq.${userId}` });
@@ -250,6 +260,22 @@ async function deleteRows(
     method: 'DELETE',
     headers: { Prefer: 'return=minimal' },
   });
+}
+
+async function assertRowsRemoved(
+  environment: CustomizationCertificationEnvironment,
+  table: string,
+  column: 'user_id' | 'recipient_user_id' | 'from_user_id' | 'to_user_id',
+  userId: string
+): Promise<void> {
+  const rows = await readServiceRows<{ id?: string }>(
+    environment,
+    table,
+    new URLSearchParams({ select: column, [column]: `eq.${userId}`, limit: '1' })
+  );
+  if (rows.length > 0) {
+    throw new Error(`${table}.${column}: reserved fixture residue remains after cleanup`);
+  }
 }
 
 async function authUserExists(
@@ -286,6 +312,21 @@ export async function cleanupTemporaryCustomizationAccount(
   await account.client.auth.signOut().catch(() => undefined);
   const failures: string[] = [];
   const userTables = [
+    // Daily Missions certification state. Child/outbox rows are removed before
+    // their parent notification or account rows so cleanup remains explicit
+    // even if a production FK temporarily loses ON DELETE CASCADE.
+    'daily_mission_operations',
+    'daily_challenge_claim_batches',
+    'user_daily_challenges',
+    'challenge_streak_state',
+    'user_notification_preferences',
+    'notifications',
+    // Deleting mission state intentionally bumps the dashboard revision. This
+    // row therefore belongs after every trigger-producing mission table.
+    'daily_challenge_dashboard_revisions',
+    'wallet_credit_idempotency',
+    'wallet_transactions',
+    'wallets',
     'customization_operations',
     'user_theme_settings',
     'user_table_studio_preferences',
@@ -297,9 +338,30 @@ export async function cleanupTemporaryCustomizationAccount(
     'signup_errors',
   ];
 
+  const relatedTables = [
+    { table: 'push_outbox', column: 'recipient_user_id' as const },
+    { table: 'chip_transactions', column: 'from_user_id' as const },
+    { table: 'chip_transactions', column: 'to_user_id' as const },
+  ];
+
+  for (const { table, column } of relatedTables) {
+    await deleteRows(environment, table, column, account.id).catch((error) => {
+      failures.push(`${table}.${column}: ${(error as Error).message}`);
+    });
+  }
+
   for (const table of userTables) {
     await deleteRows(environment, table, 'user_id', account.id).catch((error) => {
       failures.push(`${table}: ${(error as Error).message}`);
+    });
+  }
+
+  for (const { table, column } of [
+    ...relatedTables,
+    ...userTables.map((table) => ({ table, column: 'user_id' as const })),
+  ]) {
+    await assertRowsRemoved(environment, table, column, account.id).catch((error) => {
+      failures.push((error as Error).message);
     });
   }
 

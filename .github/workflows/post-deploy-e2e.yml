@@ -178,6 +178,10 @@ jobs:
           # above. It creates, funds and hard-deletes reserved temporary Auth
           # users so every live SKU can traverse checkout safely.
           CUSTOMIZATION_COMMERCE_CERTIFICATION: '1'
+          # Daily Missions uses the same reserved hard-delete harness for one
+          # production player, then proves the complete economy/realtime/error
+          # journey and verifies that no account or ledger residue remains.
+          DAILY_MISSIONS_CERTIFICATION: '1'
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
@@ -213,6 +217,7 @@ jobs:
             tests/e2e/tournament-watch.spec.ts \
             tests/e2e/production-customization-realtime.spec.ts \
             tests/e2e/production-customization-commerce.spec.ts \
+            tests/e2e/production-daily-missions.spec.ts \
             tests/e2e/footer-route.spec.ts \
             tests/e2e/routes \
             --reporter=line --retries=1

@@ -303,6 +303,7 @@ export default function MemberManagementPage() {
 
       {detail!.capabilities.can_view_notes && (
         <NotesEditor
+          key={identity!.user_id!}
           clubId={resolvedClubId}
           userId={identity!.user_id!}
           initialNickname={identity!.nickname}
@@ -552,25 +553,42 @@ function NotesEditor({
   const [remark, setRemark] = useState(initialRemark ?? '');
   const [nicknameUnsaved, setNicknameUnsaved] = useState(false);
   const [remarkUnsaved, setRemarkUnsaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // The saved values, so a blur that changed nothing does not write anything.
   const savedRef = useRef({
     nickname: initialNickname ?? '',
     remark: initialRemark ?? '',
   });
+  const draftRef = useRef({
+    nickname: initialNickname ?? '',
+    remark: initialRemark ?? '',
+  });
+  const savingRef = useRef(false);
+  const queuedSaveRef = useRef(false);
 
   useEffect(() => {
     setNickname(initialNickname ?? '');
     setRemark(initialRemark ?? '');
     savedRef.current = { nickname: initialNickname ?? '', remark: initialRemark ?? '' };
+    draftRef.current = { nickname: initialNickname ?? '', remark: initialRemark ?? '' };
+    queuedSaveRef.current = false;
     setNicknameUnsaved(false);
     setRemarkUnsaved(false);
   }, [initialNickname, initialRemark, userId]);
 
   const save = useCallback(async () => {
     if (!clubId) return;
-    if (savedRef.current.nickname === nickname && savedRef.current.remark === remark) return;
+    if (savingRef.current) {
+      queuedSaveRef.current = true;
+      return;
+    }
+    const draft = { ...draftRef.current };
+    if (savedRef.current.nickname === draft.nickname && savedRef.current.remark === draft.remark)
+      return;
 
+    savingRef.current = true;
+    setSaving(true);
     try {
       const requestId =
         typeof crypto.randomUUID === 'function'
@@ -579,26 +597,43 @@ function NotesEditor({
       const result = await ClubRosterService.updateMemberNotes(
         clubId,
         userId,
-        nickname,
-        remark,
+        draft.nickname,
+        draft.remark,
         requestId
       );
-      savedRef.current = {
+      const persisted = {
         nickname: result.nickname ?? '',
         remark: result.remark ?? '',
       };
+      savedRef.current = persisted;
       if (!isMountedRef.current) return;
-      setNicknameUnsaved(false);
-      setRemarkUnsaved(false);
+      setNicknameUnsaved(draftRef.current.nickname !== persisted.nickname);
+      setRemarkUnsaved(draftRef.current.remark !== persisted.remark);
       toast.success('Member Notes Saved');
     } catch (e) {
       reportError(e, 'MemberManagementPage.saveNotes');
       if (!isMountedRef.current) return;
-      setNicknameUnsaved(savedRef.current.nickname !== nickname);
-      setRemarkUnsaved(savedRef.current.remark !== remark);
+      setNicknameUnsaved(savedRef.current.nickname !== draftRef.current.nickname);
+      setRemarkUnsaved(savedRef.current.remark !== draftRef.current.remark);
       toast.error(safeErrorMessage(e, 'Could Not Save. Your Text Is Still Here'));
+    } finally {
+      savingRef.current = false;
+      if (isMountedRef.current) setSaving(false);
+      if (isMountedRef.current && queuedSaveRef.current) {
+        queuedSaveRef.current = false;
+        queueMicrotask(() => void save());
+      }
     }
-  }, [clubId, isMountedRef, nickname, remark, toast, userId]);
+  }, [clubId, isMountedRef, toast, userId]);
+
+  const discardDraft = useCallback(() => {
+    const saved = savedRef.current;
+    draftRef.current = { ...saved };
+    setNickname(saved.nickname);
+    setRemark(saved.remark);
+    setNicknameUnsaved(false);
+    setRemarkUnsaved(false);
+  }, []);
 
   if (!editable) {
     return (
@@ -620,6 +655,7 @@ function NotesEditor({
           placeholder={toTitleCase('enter the nickname here...')}
           onChange={(e) => {
             setNickname(e.target.value);
+            draftRef.current.nickname = e.target.value;
             setNicknameUnsaved(savedRef.current.nickname !== e.target.value);
           }}
           onBlur={() => void save()}
@@ -636,12 +672,39 @@ function NotesEditor({
           placeholder={toTitleCase('enter remark here...')}
           onChange={(e) => {
             setRemark(e.target.value);
+            draftRef.current.remark = e.target.value;
             setRemarkUnsaved(savedRef.current.remark !== e.target.value);
           }}
           onBlur={() => void save()}
         />
         {remarkUnsaved && <span className="mm-field__unsaved">Not Saved Yet</span>}
       </label>
+
+      <div className="mm-notes__actions">
+        <span className="mm-notes__status" role="status" aria-live="polite">
+          {saving
+            ? 'Saving Through The Audited Club Ledger...'
+            : nicknameUnsaved || remarkUnsaved
+              ? 'Changes Are Still Local To This Device.'
+              : 'Notes Match The Audited Club Record.'}
+        </span>
+        <button
+          type="button"
+          className="mm-notes__discard"
+          onClick={discardDraft}
+          disabled={saving || (!nicknameUnsaved && !remarkUnsaved)}
+        >
+          Revert
+        </button>
+        <button
+          type="button"
+          className="mm-notes__save"
+          onClick={() => void save()}
+          disabled={saving || (!nicknameUnsaved && !remarkUnsaved)}
+        >
+          {saving ? 'Saving...' : 'Save Notes'}
+        </button>
+      </div>
     </section>
   );
 }

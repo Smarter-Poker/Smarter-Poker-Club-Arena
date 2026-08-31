@@ -374,6 +374,20 @@ END;
 $function$;
 
 -- ---------------------------------------------------------------------------
+-- 3. This is a SWEEP. Nobody in a browser runs it.
+--
+-- reconcile_ledger_nightly is SECURITY DEFINER and it writes
+-- (ledger_reconcile_log), so the migration that declares it has to say who may
+-- call it -- otherwise a future re-install of the function silently inherits
+-- whatever the default happens to be. Production already had exactly this ACL;
+-- these statements make the intent survive the next rewrite. PUBLIC is named
+-- as well as the roles, because revoking a role while PUBLIC still holds
+-- EXECUTE reads as a fix and does nothing. Idempotent.
+-- ---------------------------------------------------------------------------
+REVOKE ALL ON FUNCTION public.reconcile_ledger_nightly() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.reconcile_ledger_nightly() TO service_role;
+
+-- ---------------------------------------------------------------------------
 -- POST-APPLY ASSERTIONS
 -- ---------------------------------------------------------------------------
 DO $postapply$
@@ -405,6 +419,12 @@ BEGIN
     RAISE EXCEPTION 'POST-APPLY: the club_treasury severity thresholds were changed. They must not be.';
   END IF;
 
+
+  IF (SELECT COALESCE(proacl::text,'') FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+       WHERE n.nspname='public' AND p.proname='reconcile_ledger_nightly')
+     NOT LIKE '%service_role=X%' THEN
+    RAISE EXCEPTION 'POST-APPLY: service_role lost EXECUTE on reconcile_ledger_nightly.';
+  END IF;
   SELECT count(*) INTO v_clubs FROM public.clubs;
   SELECT count(*) INTO v_base  FROM public.ca_treasury_baseline;
   IF v_base <> v_clubs THEN

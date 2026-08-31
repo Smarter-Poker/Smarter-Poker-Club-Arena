@@ -3,9 +3,14 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(__dirname, '..');
+const clubEntryMigrationNames = new Set([
+  'club_creation_atomic_workflow.sql',
+  'player_search_authoritative.sql',
+  'club_entry_trust_layer.sql',
+  'club_join_atomic_workflow.sql',
+]);
 const migrations = readdirSync(resolve(root, 'supabase/migrations'))
-  .filter((file) => file.includes('club_') || file.includes('player_search_authoritative'))
-  .filter((file) => file.startsWith('2026083101'))
+  .filter((file) => clubEntryMigrationNames.has(file.replace(/^\d+_/, '')))
   .sort();
 
 describe('Phase 7 Club Entry release ordering', () => {

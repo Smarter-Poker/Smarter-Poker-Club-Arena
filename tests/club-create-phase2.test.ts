@@ -1,13 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { optimizeClubLogo } from '../src/utils/clubLogoImage';
 
 const root = resolve(__dirname, '..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
 const migration = read('supabase/migrations/20260831150100_club_creation_atomic_workflow.sql');
 const service = read('src/services/ClubsService.ts');
 const modal = read('src/components/modals/CreateClubModal.tsx');
-const imageUtility = read('src/utils/clubLogoImage.ts');
 
 describe('Phase 2 atomic club creation', () => {
   it('commits the club, owner membership, and idempotency record in one RPC', () => {
@@ -54,11 +54,53 @@ describe('Phase 2 create experience', () => {
     expect(modal).toContain('new-club-description');
   });
 
-  it('decodes and normalizes logos before upload', () => {
-    expect(imageUtility).toContain('createImageBitmap(file)');
-    expect(imageUtility).toContain("'image/webp'");
-    expect(imageUtility).toContain('MAX_OUTPUT_BYTES');
+  it('decodes, center-crops, and normalizes logos to a 512px WEBP', async () => {
+    const close = vi.fn();
+    const bitmap = { width: 1200, height: 800, close } as ImageBitmap;
+    const drawImage = vi.fn();
+    const toBlob = vi.fn((callback: BlobCallback, type?: string) => {
+      callback(new Blob(['optimized-logo'], { type }));
+    });
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn(() => ({ drawImage })),
+      toBlob,
+    } as unknown as HTMLCanvasElement;
+    const originalCreateElement = document.createElement.bind(document);
+
+    vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue(bitmap));
+    vi.spyOn(document, 'createElement').mockImplementation((tagName, options) =>
+      tagName === 'canvas' ? canvas : originalCreateElement(tagName, options)
+    );
+
+    const file = new File(['source-logo'], 'club.png', { type: 'image/png' });
+    const result = await optimizeClubLogo(file);
+
+    expect(createImageBitmap).toHaveBeenCalledWith(file);
+    expect(canvas.width).toBe(512);
+    expect(canvas.height).toBe(512);
+    expect(drawImage).toHaveBeenCalledWith(bitmap, 200, 0, 800, 800, 0, 0, 512, 512);
+    expect(toBlob).toHaveBeenCalledWith(expect.any(Function), 'image/webp', 0.88);
+    expect(close).toHaveBeenCalledOnce();
+    expect(result).toMatch(/^data:image\/webp;base64,/);
     expect(modal).toContain('optimizeClubLogo(file)');
     expect(modal).toContain('image/png,image/jpeg,image/webp');
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('rejects unsupported or oversized source images before decoding', async () => {
+    await expect(
+      optimizeClubLogo(new File(['vector'], 'club.svg', { type: 'image/svg+xml' }))
+    ).rejects.toThrow('Choose a PNG, JPG, or WEBP image.');
+
+    const oversized = new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'club.png', {
+      type: 'image/png',
+    });
+    await expect(optimizeClubLogo(oversized)).rejects.toThrow(
+      'The source image must be 5MB or smaller.'
+    );
   });
 });

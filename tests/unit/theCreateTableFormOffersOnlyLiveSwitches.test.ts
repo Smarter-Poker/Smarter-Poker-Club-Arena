@@ -55,6 +55,29 @@ const DEAD_ON_A_CASH_ROW = [
   'save_start_time',
   'restart_tournament_every',
   'tournament_schedule',
+  /**
+   * MOVED HERE 2026-08-31. These two sat in ALIVE_DESPITE_APPEARANCES below on
+   * the strength of 20260828_cash_buyins_are_40bb_to_200bb.sql "resyncing them
+   * deliberately". #2191 removed the write and left this list untouched, which
+   * turned the client suite red on main and, since a red client suite stops
+   * `build-for-world-hub.yml`, stopped the publish for the whole estate.
+   *
+   * Re-verified against PRODUCTION rather than against either migration:
+   *   - no function, view, constraint or policy in the database mentions
+   *     either column (pg_proc census, 0 hits);
+   *   - no reader in src/ or server/src/ outside database.types.ts and the
+   *     doc comments in TableConfigPage that explain the removal.
+   * `atomic_table_buyin`, the engine and src/lib/cashBuyIn.ts all read
+   * min_buy_in / max_buy_in, in chips. That pair is the band.
+   *
+   * The resync those two names were kept for reached six rows and left 103,684
+   * on the 2/25 default from 010_table_configuration.sql, so what the write
+   * actually produced was a column that LOOKS authoritative and is wrong -
+   * on a 1/2 table it would cap a player at 50 chips on a table advertising
+   * 400. Not writing it is the fix, and this pin now says so.
+   */
+  'min_buy_in_bb',
+  'max_buy_in_bb',
 ];
 
 /**
@@ -69,9 +92,6 @@ const ALIVE_DESPITE_APPEARANCES = [
   'auto_create_table',
   // Five club-data RPCs: COALESCE(t.game_mode,'') ILIKE '%mixed%'.
   'game_mode',
-  // 20260828_cash_buyins_are_40bb_to_200bb.sql resyncs both deliberately.
-  'min_buy_in_bb',
-  'max_buy_in_bb',
   // Real readers in lobbyEntries, TablePage and HorseOrchestrator.
   'ante_bb',
 ];

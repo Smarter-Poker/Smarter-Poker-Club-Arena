@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { fieldIsStillLive } from './recoveryFieldGuard.js';
+import { sliceBlockAfter } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 /** Strip comments so a guard cannot pass on a mention in prose. */
@@ -74,11 +75,15 @@ describe('the guard is actually wired into the rescue', () => {
   it('refuses by CONTINUING — it must not fall through and pay', () => {
     // The whole failure was paying. A guard that reports and then proceeds is
     // the same bug with better logging.
-    const at = RECOVERY.indexOf('fieldIsStillLive({ livePlayers, paidPlaces })');
-    expect(at).toBeGreaterThan(-1);
-    const window = RECOVERY.slice(at, at + 700);
-    expect(window).toMatch(/recoverStuckCompleting_field_still_live/);
-    expect(window).toMatch(/continue;/);
+    // Bounded by the `if` block, not by a byte count. The original
+    // `slice(at, at + 700)` is the shape noFixedSizeSourceWindows.test.ts
+    // exists to refuse: the refusal message here is eight lines of prose, so a
+    // sentence added to it would push `continue;` past the window and fail a
+    // guard that had not changed - or, worse, drift green while the `continue`
+    // it watches moved outside the window entirely.
+    const block = sliceBlockAfter(RECOVERY, 'if (fieldIsStillLive({ livePlayers, paidPlaces }))');
+    expect(block).toMatch(/recoverStuckCompleting_field_still_live/);
+    expect(block).toMatch(/continue;/);
   });
 
   it('decides BEFORE any credit is issued', () => {

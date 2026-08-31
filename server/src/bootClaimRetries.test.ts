@@ -28,6 +28,7 @@
  * against a real database and killing it on a timer.
  */
 import { describe, it, expect } from 'vitest';
+import { sliceBlockAfter } from './testHelpers/sourceWindow.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -52,10 +53,16 @@ describe('start() retries the boot claim before accepting standby', () => {
   });
 
   it('re-asks inside the loop rather than spinning on a stale answer', () => {
-    const at = GAMESERVER.indexOf('bootClaimDeadline');
-    const window = GAMESERVER.slice(at, at + 600);
-    expect(window).toMatch(/await new Promise\(\(r\) => setTimeout\(r, \d+\)\)/);
-    expect(window).toMatch(/role = await renewLeadership\(\)/);
+    // Bounded by the retry loop itself, not by a byte count - the shape
+    // tests/unit/noFixedSizeSourceWindows.test.ts refuses. A comment added
+    // inside this loop would have pushed renewLeadership() past a 600-byte
+    // window and failed a guard whose code had not changed.
+    const loop = sliceBlockAfter(
+      GAMESERVER,
+      "while (role === 'standby' && Date.now() < bootClaimDeadline)"
+    );
+    expect(loop).toMatch(/await new Promise\(\(r\) => setTimeout\(r, \d+\)\)/);
+    expect(loop).toMatch(/role = await renewLeadership\(\)/);
   });
 
   it('only takes the standby early-return after the retries are exhausted', () => {

@@ -30,6 +30,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { sliceMethod } from '../../tests/helpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 /** Strip comments so a guard cannot pass on a mention in prose. */
@@ -52,8 +53,7 @@ describe('start() retries the boot claim before accepting standby', () => {
   });
 
   it('re-asks inside the loop rather than spinning on a stale answer', () => {
-    const at = GAMESERVER.indexOf('bootClaimDeadline');
-    const window = GAMESERVER.slice(at, at + 600);
+    const window = sliceMethod(GAMESERVER, 'async start(): Promise<void>');
     expect(window).toMatch(/await new Promise\(\(r\) => setTimeout\(r, \d+\)\)/);
     expect(window).toMatch(/role = await renewLeadership\(\)/);
   });

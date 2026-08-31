@@ -33,11 +33,15 @@ const BOUNDED_V2 = readFileSync(
   'utf8'
 );
 const LOCKED_ROLLUPS = readFileSync(
-  resolve(DIR, '20260901000002_stats_rollups_bounded_locked.sql'),
+  resolve(DIR, '20260901000005_stats_rollups_bounded_locked.sql'),
   'utf8'
 );
 const RECOVERY_BATCH = readFileSync(
-  resolve(DIR, '20260901000003_stats_rollup_recovery_batch.sql'),
+  resolve(DIR, '20260901000006_stats_rollup_recovery_batch.sql'),
+  'utf8'
+);
+const MAINTENANCE_PROBES = readFileSync(
+  resolve(DIR, '20260901000007_stats_maintenance_probes_bounded.sql'),
   'utf8'
 );
 
@@ -69,6 +73,28 @@ describe('recoverable Stats rollup operations', () => {
   it('keeps outage recovery inside the proven checkpointing batch', () => {
     expect(RECOVERY_BATCH).toContain('v_max_hands constant int := 3000');
     expect(RECOVERY_BATCH).toContain('coalesce(p_max_hands, 3000), 1), 3000');
+  });
+});
+
+describe('scheduled Stats maintenance probes stay bounded', () => {
+  it('indexes and reads the live daily ledger instead of 103k table records', () => {
+    expect(MAINTENANCE_PROBES).toContain('idx_cmds_stat_date_table_club');
+    expect(MAINTENANCE_PROBES).toMatch(
+      /ca_clubs_with_rebuild_backlog[\s\S]*?FROM public\.club_member_daily_stats/
+    );
+    expect(MAINTENANCE_PROBES).toMatch(
+      /ca_clubs_missing_hand_daily[\s\S]*?FROM public\.club_member_daily_stats/
+    );
+  });
+
+  it('checks the daily shard directly and preserves service-only execution', () => {
+    expect(MAINTENANCE_PROBES).toContain('FROM public.club_hand_daily_shard');
+    expect(MAINTENANCE_PROBES).toMatch(
+      /REVOKE ALL ON FUNCTION public\.ca_clubs_with_rebuild_backlog[\s\S]*?authenticated/
+    );
+    expect(MAINTENANCE_PROBES).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.ca_clubs_missing_hand_daily\(date\)[\s\S]*?service_role/
+    );
   });
 });
 

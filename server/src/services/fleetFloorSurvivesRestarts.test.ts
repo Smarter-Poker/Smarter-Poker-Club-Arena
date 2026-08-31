@@ -25,6 +25,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { sliceMethod } from '../../../tests/helpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 /** Strip comments so a guard cannot pass on a mention in prose. */
@@ -35,24 +36,19 @@ const SRC = code(read('src/services/DealRateVerifier.ts'));
 describe('the startup grace must justify itself against the database', () => {
   it('no longer returns blind just because the process is young', () => {
     // The bug in one line: `if (young) return;` with nothing else asked.
-    const at = SRC.indexOf('Date.now() - this.startedAt < STARTUP_GRACE_MS');
-    expect(at).toBeGreaterThan(-1);
-    const window = SRC.slice(at, at + 500);
+    const window = sliceMethod(SRC, 'async check(): Promise<void>');
     expect(window).toMatch(/fleetDarkAcrossRestarts\(\)/);
   });
 
   it('only stands down when the fleet is NOT dark', () => {
-    const at = SRC.indexOf('Date.now() - this.startedAt < STARTUP_GRACE_MS');
-    const window = SRC.slice(at, at + 500);
+    const window = sliceMethod(SRC, 'async check(): Promise<void>');
     // Stand down on "not dark"; fall through to judge otherwise.
     expect(window).toMatch(/if \(!darkAcrossRestarts\)/);
     expect(window).toMatch(/return;/);
   });
 
   it('asks a question that outlives a restart, unfiltered by table', () => {
-    const at = SRC.indexOf('private async fleetDarkAcrossRestarts');
-    expect(at).toBeGreaterThan(-1);
-    const fn = SRC.slice(at, at + 700);
+    const fn = sliceMethod(SRC, 'private async fleetDarkAcrossRestarts');
     expect(fn).toMatch(/from\('hand_history'\)/);
     // Unfiltered BY DESIGN: a collapsed fleet has no table ids left to filter
     // by, which is the entire hole being closed.
@@ -62,15 +58,13 @@ describe('the startup grace must justify itself against the database', () => {
 
   it('treats a failed query as NOT dark — could-not-ask is never evidence', () => {
     // A flaky database must not manufacture a critical page.
-    const at = SRC.indexOf('private async fleetDarkAcrossRestarts');
-    const fn = SRC.slice(at, at + 700);
+    const fn = sliceMethod(SRC, 'private async fleetDarkAcrossRestarts');
     expect(fn).toMatch(/if \(error\) return false;/);
     expect(fn).toMatch(/catch \{[\s\S]*?return false;/);
   });
 
   it('only calls the fleet dark when the count is exactly zero', () => {
-    const at = SRC.indexOf('private async fleetDarkAcrossRestarts');
-    const fn = SRC.slice(at, at + 700);
+    const fn = sliceMethod(SRC, 'private async fleetDarkAcrossRestarts');
     expect(fn).toMatch(/\(count \?\? 0\) === 0/);
   });
 

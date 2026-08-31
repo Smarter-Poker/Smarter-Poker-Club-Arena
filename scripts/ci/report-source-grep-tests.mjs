@@ -47,7 +47,7 @@
  *   node scripts/ci/report-source-grep-tests.mjs --json
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -143,7 +143,34 @@ function pinnedPaths(body) {
  * middle of somebody's test run. Guarded so the CLI only runs when this file
  * IS the entry point.
  */
-const RUN_AS_CLI = !!(SELF && process.argv[1] && SELF === process.argv[1]);
+/**
+ * Resolve symlinks before comparing, or the gate disables ITSELF in silence.
+ *
+ * `import.meta.url` is always the REAL path; `process.argv[1]` is whatever the
+ * caller typed. Invoke this through a symlinked absolute path - which is how
+ * every scratch worktree on this machine is reached, /tmp being a symlink to
+ * /private/tmp on macOS - and the two strings differ, RUN_AS_CLI is false, and
+ * the script prints nothing and exits 0. A required check that passes by doing
+ * nothing is the precise failure this whole file exists to catch, so it must
+ * not be the way this file fails.
+ *
+ * Verified before the fix: `node /tmp/ca-symlink/scripts/ci/...mjs --ratchet`
+ * produced no output and exit 0. GitHub runners use real paths, and the CI log
+ * for #2082 shows the inventory printing, so it was never inert in practice -
+ * it was one workflow edit away from being so.
+ */
+const realOrSelf = (p) => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+};
+const RUN_AS_CLI = !!(
+  SELF &&
+  process.argv[1] &&
+  realOrSelf(SELF) === realOrSelf(process.argv[1])
+);
 
 const files = RUN_AS_CLI ? testFiles(TESTS) : [];
 const textOnly = [];
@@ -169,6 +196,24 @@ const json = RUN_AS_CLI && process.argv.includes('--json');
 const strict = RUN_AS_CLI && process.argv.includes('--strict');
 const ratchet = RUN_AS_CLI && process.argv.includes('--ratchet');
 
+/**
+ * AN EMPTY SCAN IS A BROKEN SCAN, NOT A CLEAN ONE.
+ *
+ * If `testFiles` ever returns nothing - a moved directory, a renamed suffix, a
+ * ROOT that resolved somewhere unexpected - then `utilViolations` is 0, 0 is
+ * under the baseline, and the gate reports "ratchet OK" while having inspected
+ * not one file. Zero findings from zero inputs is the oldest silent pass there
+ * is. A missing `tests/` already throws ENOENT out of readdirSync; this covers
+ * the case where the directory exists and yields nothing.
+ */
+if ((ratchet || strict) && files.length === 0) {
+  console.error(
+    '[source-grep-tests] FAILED: scanned 0 test files. That is a broken scan, not a clean repo.'
+  );
+  console.error(`                    Looked in: ${TESTS || '(unresolved)'}`);
+  process.exit(1);
+}
+
 if (!RUN_AS_CLI) {
   // Imported for `classify`. Say nothing, exit nothing.
 } else if (json) {
@@ -180,7 +225,9 @@ if (!RUN_AS_CLI) {
     )
   );
 } else {
-  const pct = ((textOnly.length / files.length) * 100).toFixed(0);
+  // `files.length` is 0 only on the inventory run (the gating modes bail out
+  // above), and 0/0 prints "NaN%" rather than saying what happened.
+  const pct = files.length > 0 ? ((textOnly.length / files.length) * 100).toFixed(0) : '0';
   console.log(
     `[source-grep-tests] ${textOnly.length} of ${files.length} test files (${pct}%) assert on source TEXT and never import or render the unit.`
   );

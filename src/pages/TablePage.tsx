@@ -2189,6 +2189,16 @@ export default function TablePage({
 
       return {
         ...prev,
+        /* NEVER RENDER FEWER SEATS THAN THE ENGINE DEALS (Dan 2026-08-30).
+           `maxPlayers` boots at 6 and a mount without navigation state keeps
+           that default until the table-row load lands. mapEngineSnapshot now
+           sizes its arrays to the highest seat the engine actually published,
+           so when the snapshot proves more seats exist, the ring must grow
+           with it — otherwise a hero in seat 7-9 has state but no rendered
+           seat, no cards, no action bar, and the engine times them out into
+           a forced sit-out and the five-minute eviction. Grow-only: a
+           snapshot between hands never shrinks the ring. */
+        maxPlayers: Math.max(prev.maxPlayers, mapped.players.length) as 6 | 9,
         pot: mapped.pot,
         communityCards: nextCards,
         communityCards2: nextCards2,
@@ -11961,7 +11971,15 @@ export default function TablePage({
 
           serverPlayers.forEach((sp: any) => {
             const seatIdx = sp.seat - 1;
-            if (seatIdx >= 0 && seatIdx < updatedPlayers.length) {
+            /* NEVER DROP A SEAT THE SERVER SAYS EXISTS (Dan 2026-08-30): the
+               old `seatIdx < updatedPlayers.length` guard silently discarded
+               seats above the client's (possibly still-default-6) ring size —
+               including the hero's own, which left them stuck on "Seat
+               Reserved" while the engine dealt and folded them. Grow instead. */
+            while (seatIdx >= 0 && updatedPlayers.length <= seatIdx) {
+              updatedPlayers.push(null);
+            }
+            if (seatIdx >= 0) {
               const existing = updatedPlayers[seatIdx];
               if (sp.user_id === userId) syncedHeroSeat = sp.seat;
               updatedPlayers[seatIdx] = {
@@ -12088,6 +12106,8 @@ export default function TablePage({
             boardStage: (syncData.stage || 'preflop') as BoardStage,
             dealerSeat: syncData.dealer_seat || 0,
             players: updatedPlayers,
+            // Grow-only ring size, same rule as the snapshot merge above.
+            maxPlayers: Math.max(prev.maxPlayers, updatedPlayers.length) as 6 | 9,
             // Only overwrite heroSeat when the snapshot actually located the
             // hero, so a partial/empty snapshot never falsely resets a seated
             // player to 0.

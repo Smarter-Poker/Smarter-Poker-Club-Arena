@@ -306,6 +306,25 @@ export function mapEngineSnapshot(
 ): MappedTableStatePatch {
   const s = raw as unknown as EnginePublishedState;
 
+  /* ═══ NEVER DROP A SEAT THE ENGINE SAYS EXISTS (Dan 2026-08-30) ═══════════
+     `maxSeats` is caller state (`tableState.maxPlayers`), which BOOTS AT 6 and
+     is only corrected when the table row load lands — and a TablePage mounted
+     without navigation state (multi-table screens, deep links, tournament
+     auto-seat) starts from that default. The loop below used to
+     `continue` on any seat above it, so a hero seated in seat 7, 8 or 9 of a
+     larger table was silently ERASED from every snapshot: no hole cards, no
+     action bar, the footer stuck on "Seat Reserved, You'll Be Dealt In Next
+     Hand" while the engine dealt them in, timed out their turns, force-sat
+     them out after three strikes, and evicted them at the five-minute mark.
+     That is the 2026-08-30 report, verbatim (table 08746c1a, seat 7: the
+     engine released the wait-for-BB hold correctly, posted the player's big
+     blind, even paid them a pot — and their own client never showed one frame
+     of it). The engine's snapshot is authoritative about which seats exist,
+     so the arrays size themselves to it and can never disagree with it.
+     Pinned by tests/unit/snapshotNeverDropsASeat.law.test.ts. */
+  const highestSeat = (s.players ?? []).reduce((m, p) => Math.max(m, p.seat ?? 0), 0);
+  const effectiveMaxSeats = Math.max(maxSeats, highestSeat);
+
   // Current player: engine emits a user_id; tableState stores a seat number.
   let currentPlayerSeat = 0;
   if (s.current_player) {
@@ -314,11 +333,11 @@ export function mapEngineSnapshot(
   }
 
   // Per-seat mapping: players array indexed by seat-1.
-  const players: MappedTableStatePatch['players'] = Array(maxSeats).fill(null);
-  const positions: Array<string | null> = Array(maxSeats).fill(null);
+  const players: MappedTableStatePatch['players'] = Array(effectiveMaxSeats).fill(null);
+  const positions: Array<string | null> = Array(effectiveMaxSeats).fill(null);
   for (const p of s.players) {
     const idx = p.seat - 1;
-    if (idx < 0 || idx >= maxSeats) continue;
+    if (idx < 0 || idx >= effectiveMaxSeats) continue;
     players[idx] = {
       id: p.user_id,
       name: p.username ?? '',
@@ -340,7 +359,7 @@ export function mapEngineSnapshot(
 
   const { lastActions, lastBetAmounts } = derivePerSeatLastAction(
     s.action_history ?? [],
-    maxSeats,
+    effectiveMaxSeats,
     s.stage ?? 'preflop'
   );
 
@@ -355,7 +374,7 @@ export function mapEngineSnapshot(
   // — blinds carry no action label, only chips + a position badge).
   for (const p of s.players) {
     const idx = p.seat - 1;
-    if (idx < 0 || idx >= maxSeats) continue;
+    if (idx < 0 || idx >= effectiveMaxSeats) continue;
     if (p.is_folded) continue; // folded seats show no chips in front
     lastBetAmounts[idx] = p.bet ?? 0;
   }

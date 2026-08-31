@@ -591,7 +591,7 @@ describe('ROUND 7 (2026-08-29) — the audit sweep', () => {
     // with no announcement of any kind (§10.6: reduced motion collapses the
     // motion, never the meaning; the same applies when it is hidden).
     expect(OVERLAY).toMatch(/role="status" aria-live="assertive"/);
-    expect(OVERLAY).toMatch(/Everyone antes \$\{anteAmount\.toLocaleString\(\)\}/);
+    expect(OVERLAY).toMatch(/Everyone Antes \$\{anteAmount\.toLocaleString\(\)\}/);
   });
 
   it('urgency is not the steady state on a bomb-pot-only table', () => {

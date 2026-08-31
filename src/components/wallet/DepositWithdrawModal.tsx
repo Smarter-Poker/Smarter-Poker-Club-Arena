@@ -592,7 +592,7 @@ export default function DepositWithdrawModal({
                 <span className={styles.methodLabel}>{method.label}</span>
                 <span className={styles.methodDesc}>{method.description}</span>
                 <span className={styles.methodFee}>
-                  {method.fee > 0 ? `${method.fee}% fee` : 'No fee'}
+                  {method.fee > 0 ? `${method.fee}% Fee` : 'No Fee'}
                 </span>
               </button>
             ))}

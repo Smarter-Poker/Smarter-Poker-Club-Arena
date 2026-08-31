@@ -994,7 +994,7 @@ function RoleSection({
                   max={70}
                   step={1}
                   value={commissionPct}
-                  placeholder="e.g. 40"
+                  placeholder="E.G. 40"
                   onChange={(e) => setCommissionPct(e.target.value)}
                   disabled={promoting}
                 />
@@ -1008,7 +1008,7 @@ function RoleSection({
                   max={50}
                   step={1}
                   value={rakebackPct}
-                  placeholder="e.g. 30"
+                  placeholder="E.G. 30"
                   onChange={(e) => setRakebackPct(e.target.value)}
                   disabled={promoting}
                 />
@@ -1059,7 +1059,7 @@ function RoleSection({
                     min={0}
                     step={1}
                     value={creditLimit}
-                    placeholder="e.g. 50000"
+                    placeholder="E.G. 50000"
                     onChange={(e) => setCreditLimit(e.target.value)}
                     disabled={promoting}
                   />

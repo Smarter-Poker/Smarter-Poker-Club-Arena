@@ -52,7 +52,7 @@ function atWidth(w: number) {
 
 const openPanel = () => {
   const opener =
-    screen.queryByLabelText('Open bet panel') ?? screen.getByLabelText('Open raise panel');
+    screen.queryByLabelText('Open Bet Panel') ?? screen.getByLabelText('Open Raise Panel');
   fireEvent.click(opener);
 };
 

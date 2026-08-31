@@ -116,7 +116,7 @@ export function BBJHitNotification({
       className={`bbj-hit${leaving ? ' bbj-hit--leaving' : ''}${reduced ? ' bbj-hit--still' : ''}`}
       role="status"
       aria-live="polite"
-      aria-label={`Bad Beat Jackpot hit. ${winnerName} won ${money} dollars on ${tableName}.`}
+      aria-label={`Bad Beat Jackpot Hit. ${winnerName} Won ${money} Dollars On ${tableName}.`}
     >
       {!reduced && (
         <div className="bbj-hit__burst" aria-hidden="true">

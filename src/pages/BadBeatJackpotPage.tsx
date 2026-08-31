@@ -561,7 +561,7 @@ export default function BadBeatJackpotPage() {
               value={promoAmount}
               onChange={(e) => setPromoAmount(e.target.value)}
               placeholder="Amount"
-              aria-label="Promo rain amount"
+              aria-label="Promo Rain Amount"
               style={{
                 flex: '1 1 120px',
                 minWidth: 0,
@@ -607,7 +607,7 @@ export default function BadBeatJackpotPage() {
                 opacity: distributingPromo ? 0.6 : 1,
               }}
             >
-              {distributingPromo ? 'Raining…' : 'Rain to Active Players'}
+              {distributingPromo ? 'Raining…' : 'Rain To Active Players'}
             </button>
           </div>
         </div>

@@ -185,7 +185,7 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
               <article className="challenge-card is-incoming" key={row.id}>
                 <ChallengeHeader row={row} />
                 <p>
-                  <strong>{names[row.challenger_id] || 'A friend'}</strong> Challenged You ·{' '}
+                  <strong>{names[row.challenger_id] || 'A Friend'}</strong> Challenged You ·{' '}
                   {timeLeft(row.expires_at)}
                 </p>
                 <div className="challenge-actions">
@@ -253,7 +253,7 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
               <article className="challenge-card" key={row.id}>
                 <ChallengeHeader row={row} />
                 <p>
-                  Waiting For <strong>{names[row.challengee_id] || 'your friend'}</strong> ·{' '}
+                  Waiting For <strong>{names[row.challengee_id] || 'Your Friend'}</strong> ·{' '}
                   {timeLeft(row.expires_at)}
                 </p>
               </article>

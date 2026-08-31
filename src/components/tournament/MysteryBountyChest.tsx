@@ -668,7 +668,7 @@ export default function MysteryBountyChest({
       style={{ ['--mbc-tension' as string]: tension, ['--mbc-tier' as string]: tier.color }}
       role="dialog"
       aria-modal="true"
-      aria-label="Mystery bounty"
+      aria-label="Mystery Bounty"
     >
       <div className="mbc__backdrop" />
 
@@ -729,7 +729,7 @@ export default function MysteryBountyChest({
           onPointerLeave={() => setPressed(false)}
           onPointerCancel={() => setPressed(false)}
           disabled={!canTap}
-          aria-label={canTap ? 'Tap to open the mystery bounty chest' : 'Mystery bounty chest'}
+          aria-label={canTap ? 'Tap To Open The Mystery Bounty Chest' : 'Mystery Bounty Chest'}
         >
           <span className="mbc__glow" aria-hidden="true" />
 

@@ -109,7 +109,7 @@ describe('Choosing an avatar is never hidden behind the gate that demands one', 
   it('keeps the alias the player typed while the gallery is up', async () => {
     render(<CompleteProfileModal isOpen onComplete={vi.fn()} />);
 
-    const input = screen.getByPlaceholderText('E.g. SharkPro99') as HTMLInputElement;
+    const input = screen.getByPlaceholderText('E.G. SharkPro99') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'RiverShark42' } });
 
     fireEvent.click(screen.getByRole('button', { name: /Avatar/i }));
@@ -117,7 +117,7 @@ describe('Choosing an avatar is never hidden behind the gate that demands one', 
     fireEvent.click(screen.getByText('Close Gallery'));
 
     await waitFor(() =>
-      expect((screen.getByPlaceholderText('E.g. SharkPro99') as HTMLInputElement).value).toBe(
+      expect((screen.getByPlaceholderText('E.G. SharkPro99') as HTMLInputElement).value).toBe(
         'RiverShark42'
       )
     );

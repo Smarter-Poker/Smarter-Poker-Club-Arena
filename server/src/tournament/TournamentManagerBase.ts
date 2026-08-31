@@ -2382,8 +2382,21 @@ export abstract class TournamentManagerBase {
       // persisted level_started_at instead of granting a fresh full level on
       // every restart (which nearly froze blind escalation across restarts).
       {
+        /**
+         * THROUGH resolveBlindLevel, NOT AN INDEX (2026-08-31, Phase 2.3).
+         *
+         * This was the one caller that ignored resolveBlindLevel's own closing
+         * instruction ("callers must read levels through THIS function rather
+         * than indexing the array"). Past the end of a persisted structure --
+         * which every deep Spin and every long duel reaches, the ladders are
+         * 10-12 rows -- the index is undefined and this fell back to level 0,
+         * so a restarted late-stage game timed its level off the FIRST row of
+         * the ladder. Engine restarts are frequent (auto-deploy on server/**),
+         * and the resumed clock is what decides when the next escalation
+         * lands.
+         */
         const levelData =
-          (tournament.blind_structure || [])[this.currentLevel] ||
+          this.resolveBlindLevel(tournament.blind_structure || [], this.currentLevel) ||
           (tournament.blind_structure || [])[0];
         const durationMs = this.levelDurationMs(levelData);
         let remainingMs: number | undefined;

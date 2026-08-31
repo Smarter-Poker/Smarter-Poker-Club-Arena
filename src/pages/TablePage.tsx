@@ -18588,11 +18588,13 @@ export default function TablePage({
                           board.boardIndex > 0 ? ' community-area__run--extra' : ''
                         }`}
                         key={`rit-run-${board.boardIndex + 1}`}
-                        /* Runs 2+ re-deal only the streets past the shared
-                           base board — the shared prefix renders dimmed on
-                           those rows (CSS keys off data-base-count), so the
-                           re-dealt cards read as the new information, like
-                           the reference. */
+                        /* RIT BOARD FIX (Dan 2026-08-30): runs 2+ render the
+                           FULL board — the shared flop/turn appear on every
+                           run exactly as dealt, plus that run's re-dealt
+                           streets. CSS previously hid the shared prefix on
+                           extra runs (a turn all-in run 3x showed runs 2/3 as
+                           a lone river card); that rule is deleted.
+                           data-base-count remains as data only. */
                         data-base-count={
                           board.boardIndex > 0 ? (ritResult?.baseBoardCount ?? 0) : 0
                         }

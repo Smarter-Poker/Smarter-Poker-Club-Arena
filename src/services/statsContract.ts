@@ -10,8 +10,9 @@ export interface StatsScopeContract {
 export interface StatsQualityContract {
   cash_money_source: 'exact_settlement' | 'reconstructed_actions' | 'mixed';
   cash_money_exact: boolean;
-  advanced_facts_source: 'ca_hand_facts';
+  advanced_facts_source: 'ca_hand_facts' | 'ca_hand_player_stat';
   historical_club_breakdown_available: boolean;
+  live_tail_included: boolean;
 }
 
 export interface StatsCoverageContract {
@@ -20,6 +21,8 @@ export interface StatsCoverageContract {
   lifetime_index_complete: boolean;
   first_hand_at: string | null;
   last_hand_at: string | null;
+  rollup_covered_through: string | null;
+  rollup_updated_at: string | null;
 }
 
 export interface StatsContractMetadata {
@@ -134,8 +137,12 @@ export function normalizeStatsContractMetadata(data: unknown): StatsContractMeta
           ? quality.cash_money_source
           : 'reconstructed_actions',
       cash_money_exact: quality.cash_money_exact === true,
-      advanced_facts_source: 'ca_hand_facts',
+      advanced_facts_source:
+        quality.advanced_facts_source === 'ca_hand_player_stat'
+          ? 'ca_hand_player_stat'
+          : 'ca_hand_facts',
       historical_club_breakdown_available: quality.historical_club_breakdown_available === true,
+      live_tail_included: quality.live_tail_included !== false,
     },
     coverage: {
       analysis_hand_cap: finite(coverage.analysis_hand_cap, 750),
@@ -143,6 +150,8 @@ export function normalizeStatsContractMetadata(data: unknown): StatsContractMeta
       lifetime_index_complete: coverage.lifetime_index_complete === true,
       first_hand_at: isoOrNull(coverage.first_hand_at),
       last_hand_at: isoOrNull(coverage.last_hand_at),
+      rollup_covered_through: isoOrNull(coverage.rollup_covered_through),
+      rollup_updated_at: isoOrNull(coverage.rollup_updated_at),
     },
   };
 }

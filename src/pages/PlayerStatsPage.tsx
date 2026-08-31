@@ -1600,7 +1600,11 @@ export default function PlayerStatsPage() {
                 className={`stats-range-status ${refreshing ? 'is-refreshing' : ''}`}
                 role="status"
               >
-                {refreshing ? 'Updating' : 'Live'}
+                {refreshing
+                  ? 'Updating'
+                  : statsContract.quality.live_tail_included
+                    ? 'Live'
+                    : 'Snapshot'}
               </span>
             </span>
             <div className="stats-range-row" role="group" aria-label="Analysis Range">
@@ -1709,6 +1713,20 @@ export default function PlayerStatsPage() {
             This Contract.
           </div>
         )}
+        {hasData &&
+          !statsContract.quality.live_tail_included &&
+          statsContract.coverage.rollup_covered_through && (
+            <div className="stats-notice">
+              Snapshot Includes Recorded Hands Through{' '}
+              {new Date(statsContract.coverage.rollup_covered_through).toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+              })}
+              . Newer Hands Appear After The Next Stats Rollup.
+            </div>
+          )}
         {servingCache && (
           <div className="stats-notice stats-notice-warn">
             Showing Your Last Loaded Stats - The Refresh Did Not Go Through.

@@ -232,6 +232,7 @@ export default function LeaderboardPage() {
 
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState<LeaderboardSettings | null>(null);
+  const [editingSettings, setEditingSettings] = useState<LeaderboardSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [payouts, setPayouts] = useState<LeaderboardPayout[]>([]);
   const [rewardPlan, setRewardPlan] = useState<LeaderboardRewardPlan | null>(null);
@@ -287,6 +288,7 @@ export default function LeaderboardPage() {
     setUserRank(null);
     setPayouts([]);
     setSettings(null);
+    setEditingSettings(null);
     setShowSettings(false);
     if (user?.id) {
       loadUserClubs(() => isMounted);
@@ -379,7 +381,6 @@ export default function LeaderboardPage() {
 
   useEffect(() => {
     const requestId = ++settingsRequestRef.current;
-    setShowSettings(false);
     setSettings(null);
     if (!selectedClubId) {
       setSettingsLoading(false);
@@ -1065,7 +1066,11 @@ export default function LeaderboardPage() {
             {canManagePrizes && scope !== 'global' && activeTab === 'rankings' && (
               <button
                 className="lb-action-btn lb-action-prize"
-                onClick={() => setShowSettings(true)}
+                onClick={() => {
+                  if (!settings) return;
+                  setEditingSettings(settings);
+                  setShowSettings(true);
+                }}
                 title="Set Up Leaderboard Prizes"
                 disabled={settingsLoading || !settings}
               >
@@ -1557,14 +1562,18 @@ export default function LeaderboardPage() {
         ) : null}
       </div>
 
-      {showSettings && settings?.can_manage && (
+      {showSettings && editingSettings?.can_manage && (
         <LeaderboardPrizeWizard
           isOpen={showSettings}
-          setup={settings}
-          onClose={() => setShowSettings(false)}
+          setup={editingSettings}
+          onClose={() => {
+            setShowSettings(false);
+            setEditingSettings(null);
+          }}
           onSaved={(savedSetup) => {
             setSettings(savedSetup);
             setShowSettings(false);
+            setEditingSettings(null);
             toast.success(`Prize Program V${savedSetup.program_version} Published.`);
           }}
         />

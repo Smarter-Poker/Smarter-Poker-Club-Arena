@@ -70,4 +70,13 @@ describe('leaderboard phase two operational hardening', () => {
     expect(wizard).toContain('if (saving || (enabled && !hasPrizes)) return');
     expect(wizard).toContain("saving ? 'Publishing Prize Program' : 'Publish Prize Program'");
   });
+
+  it('keeps an open prize wizard stable while the leaderboard refreshes its club context', () => {
+    expect(page).toContain(
+      'const [editingSettings, setEditingSettings] = useState<LeaderboardSettings | null>(null)'
+    );
+    expect(page).toContain('setEditingSettings(settings);');
+    expect(page).toContain('setup={editingSettings}');
+    expect(page).not.toContain('showSettings && settings?.can_manage');
+  });
 });

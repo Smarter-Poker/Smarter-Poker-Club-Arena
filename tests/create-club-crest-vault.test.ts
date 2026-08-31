@@ -22,6 +22,8 @@ describe('Create Club Crest Vault', () => {
       /Generate With AI|Create Image With AI|LogoGenerator|generateClubLogo/
     );
     expect(existsSync(resolve(root, 'src/services/LogoGeneratorService.ts'))).toBe(false);
+    expect(existsSync(resolve(root, 'public/images/logo-generator-frame.png'))).toBe(false);
+    expect(existsSync(resolve(root, 'public/images/logo-generator-frame.webp'))).toBe(false);
   });
 
   it('keeps custom upload and sends presets directly through the atomic create contract', () => {

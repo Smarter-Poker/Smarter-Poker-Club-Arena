@@ -80,6 +80,7 @@ import { gtoOpenJam, gtoBbVsSbJam, handClass as gtoHandClass } from './GtoCharts
 // GtoPostflopLoader. See engine/GtoPostflop.ts for scope and honesty notes.
 import { gtoStreetAdvice, rollMix } from './GtoPostflop.js';
 import { gtoStreetAdviceV31 } from './GtoPostflopV31.js';
+import { gtoFacingDefense } from './GtoFacingDefenseV32.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
 // HorseEval.ts (extracted verbatim; zero behavior change).
 import {
@@ -976,6 +977,8 @@ export interface HorseDecideOpts {
    *  cannot express at all. Consulted BEFORE V30; empty store = inert
    *  (default: enabled) */
   v31GtoSuitAware?: boolean;
+  /** V32: facing-a-bet defence from the solver's own betting range. */
+  v32FacingDefense?: boolean;
 }
 
 /**
@@ -2455,6 +2458,84 @@ export class HorseLogic {
           : 'foldToRaise';
 
     const useV11 = opts.v11 !== false;
+    // ═══ V32 FACING A BET — the solver's own betting range (2026-08-30) ═══
+    // Phase 2 of 7. V29/V30/V31 answer only with the LEAD; this is the other
+    // half. The bettor's open-node cell gives P(bet at this size | holding)
+    // for every holding — which IS the betting range. Hero's equity against
+    // that range vs pot odds is the fold/call line; hands above the strong
+    // threshold PASS (null) so the aggression layers keep owning raises.
+    // Gate mirrors the open consult exactly: heads-up hold'em, one board.
+    if (
+      (opts.v32FacingDefense ?? true) !== false &&
+      facingBet &&
+      // NOT `initiative === 'opp'`: readInitiative reads EARLIER streets only,
+      // so a villain betting THIS street after the action checked to them
+      // reads 'none' — and that spontaneous lead is exactly the open-node bet
+      // the cells model. Only a bet made INTO hero's own lead (hero raised,
+      // villain donks) is excluded: the cell for that node does not exist,
+      // and pretending the open-node range covers it would price the donk
+      // range as an opening range.
+      initiative !== 'hero' &&
+      (street === 'flop' || street === 'turn' || street === 'river') &&
+      player.cards.length === 2 &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      // NOT oppCount: `Math.max(1, opponents.length)` reads 1 even when the
+      // array is EMPTY, and the bettor is indexed out of it below.
+      opponents.length === 1 &&
+      !(gs.communityCards2 && gs.communityCards2.length > 0)
+    ) {
+      const bettor = opponents[0];
+      const bettorPos32 = classifyPosition(
+        bettor.seat,
+        gs.dealerSeat,
+        gs.players,
+        opts.v13 !== false
+      );
+      const chartPos32 =
+        bettorPos32 === 'sb'
+          ? 'SB'
+          : bettorPos32 === 'bb'
+            ? 'BB'
+            : bettorPos32 === 'early'
+              ? 'UTG'
+              : bettorPos32 === 'middle'
+                ? 'MP'
+                : bettor.seat === gs.dealerSeat
+                  ? 'BTN'
+                  : 'CO';
+      const family32: 'cash' | 'spin' | 'tourney_icm' = !isTournamentMode(gs)
+        ? 'cash'
+        : gs.format === 'spin'
+          ? 'spin'
+          : 'tourney_icm';
+      const stackBB32 = gs.bigBlind > 0 ? player.stack / gs.bigBlind : 100;
+      const defense = gtoFacingDefense({
+        street,
+        family: family32,
+        bettorPosition: chartPos32,
+        stackBB: stackBB32,
+        board: gs.communityCards,
+        heroCards: player.cards,
+        pot,
+        toCall,
+        rand: fastRandom,
+      });
+      if (defense) {
+        if (defense.action === 'pass_strong') {
+          if (telemetryOn(opts)) noteFire('v32_defend_pass_strong');
+          // fall through: the aggression layers play this hand
+        } else if (defense.action === 'call') {
+          if (telemetryOn(opts)) noteFire('v32_defend_call');
+          return { action: 'call', amount: toCall, thinkTime: 0 };
+        } else {
+          if (telemetryOn(opts)) noteFire('v32_defend_fold');
+          return { action: 'fold', thinkTime: 0 };
+        }
+      } else if (telemetryOn(opts)) {
+        noteFire('v32_defend_no_range');
+      }
+    }
 
     // ═══ Not facing a bet ═══
     if (!facingBet) {

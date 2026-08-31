@@ -794,6 +794,10 @@ interface TablePageProps {
     /** Amount the hero must call right now (0 = check is legal). Only
      *  meaningful while isMyTurn; drives the tile-view action strip. */
     toCall?: number;
+    /** Raise-TO bounds for the tile-view raise slider, "minTo:maxTo:bb"
+     *  ('' / undefined = no raise legal). One string on purpose — the
+     *  container's shallow !== bail-out (P1-2) must keep working. */
+    raiseBounds?: string;
     /** Hero's current stack, for the aggregated session view. */
     heroStack?: number;
     /** Hero is sitting out at this table (drives the long-press menu's
@@ -2189,6 +2193,16 @@ export default function TablePage({
 
       return {
         ...prev,
+        /* NEVER RENDER FEWER SEATS THAN THE ENGINE DEALS (Dan 2026-08-30).
+           `maxPlayers` boots at 6 and a mount without navigation state keeps
+           that default until the table-row load lands. mapEngineSnapshot now
+           sizes its arrays to the highest seat the engine actually published,
+           so when the snapshot proves more seats exist, the ring must grow
+           with it — otherwise a hero in seat 7-9 has state but no rendered
+           seat, no cards, no action bar, and the engine times them out into
+           a forced sit-out and the five-minute eviction. Grow-only: a
+           snapshot between hands never shrinks the ring. */
+        maxPlayers: Math.max(prev.maxPlayers, mapped.players.length) as 6 | 9,
         pot: mapped.pot,
         communityCards: nextCards,
         communityCards2: nextCards2,
@@ -4831,6 +4845,58 @@ export default function TablePage({
     [tableState.currentBet, tableState.lastBetAmounts, tableState.heroSeat]
   );
 
+  /**
+   * Variant A tile band (Dan 2026-08-30): raise-TO bounds for the tile-view
+   * raise slider, as ONE primitive string "minTo:maxTo:bb" ('' = no raise is
+   * legal right now). The math is the SAME structure-aware derivation the
+   * ActionPanel block in the render gets (raise-TO absolutes, pot-limit cap,
+   * fixed-limit single wager, all-in ceiling) — duplicated as a memo because
+   * that block is inline in JSX and the reporting effect must depend only on
+   * primitives (P1-2 render-loop rule). If you change one, change both.
+   */
+  const heroTabRaiseBounds = useMemo(() => {
+    const heroPlayer = tableState.players[tableState.heroSeat - 1];
+    const heroStack = heroPlayer?.stack || 0;
+    const heroBet = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
+    const bb = safeBB(tableState.blinds);
+    const serverCurrentBet = tableState.currentBet || 0;
+    const callAmount = Math.min(Math.max(0, serverCurrentBet - heroBet), heroStack);
+    const raiseIncrement =
+      tableState.minRaise && tableState.minRaise > 0 ? tableState.minRaise : bb;
+    const allInTo = heroStack + heroBet;
+    const structure =
+      tableState.bettingStructure ?? bettingStructureFor(tableState.gameType?.toLowerCase() || '');
+    const isPotLimit = structure === 'pot_limit';
+    const isFixedLimit = structure === 'fixed_limit';
+    const potLimitRaiseTo = potSizedRaiseTo(serverCurrentBet, tableState.pot, callAmount);
+    const flBetSize = tableState.fixedBetSize ?? fixedLimitBetSize(bb, tableState.boardStage);
+    const flWagerTo = Math.min(allInTo, serverCurrentBet + flBetSize);
+    const wagersCapped = isFixedLimit && tableState.wagersCapped === true;
+    const minRaiseTo = isFixedLimit ? flWagerTo : serverCurrentBet + raiseIncrement;
+    const maxRaiseTo = isFixedLimit
+      ? flWagerTo
+      : isPotLimit
+        ? Math.min(allInTo, potLimitRaiseTo)
+        : allInTo;
+    const canRaise = heroStack > callAmount && allInTo >= minRaiseTo && !wagersCapped;
+    if (!canRaise || maxRaiseTo < minRaiseTo) return '';
+    const r = (n: number) => Math.round(n * 100) / 100;
+    return `${r(minRaiseTo)}:${r(maxRaiseTo)}:${r(bb)}`;
+  }, [
+    tableState.players,
+    tableState.heroSeat,
+    tableState.lastBetAmounts,
+    tableState.blinds,
+    tableState.currentBet,
+    tableState.minRaise,
+    tableState.bettingStructure,
+    tableState.gameType,
+    tableState.pot,
+    tableState.fixedBetSize,
+    tableState.boardStage,
+    tableState.wagersCapped,
+  ]);
+
   /** Dan 2026-08-21: the tab's game label. Primitive memo, same reason as
    *  every other reported value - the effect below must not re-fire on an
    *  array identity that changes each snapshot. */
@@ -4952,6 +5018,7 @@ export default function TablePage({
       folded: heroTabFolded,
       handResult: heroTabResult,
       toCall: isHeroTurn ? heroTabToCall : undefined,
+      raiseBounds: isHeroTurn ? heroTabRaiseBounds : undefined,
       heroStack: heroTabStack,
       sittingOut: heroTabSittingOut,
       sitOutDeadlineMs: heroTabSitOutDeadlineMs,
@@ -4971,6 +5038,7 @@ export default function TablePage({
     tableState.actionTimerDeadline,
     tableState.actionTimerStartTime,
     heroTabToCall,
+    heroTabRaiseBounds,
     heroTabStack,
     heroTabSittingOut,
     heroTabGameCode,
@@ -11961,7 +12029,15 @@ export default function TablePage({
 
           serverPlayers.forEach((sp: any) => {
             const seatIdx = sp.seat - 1;
-            if (seatIdx >= 0 && seatIdx < updatedPlayers.length) {
+            /* NEVER DROP A SEAT THE SERVER SAYS EXISTS (Dan 2026-08-30): the
+               old `seatIdx < updatedPlayers.length` guard silently discarded
+               seats above the client's (possibly still-default-6) ring size —
+               including the hero's own, which left them stuck on "Seat
+               Reserved" while the engine dealt and folded them. Grow instead. */
+            while (seatIdx >= 0 && updatedPlayers.length <= seatIdx) {
+              updatedPlayers.push(null);
+            }
+            if (seatIdx >= 0) {
               const existing = updatedPlayers[seatIdx];
               if (sp.user_id === userId) syncedHeroSeat = sp.seat;
               updatedPlayers[seatIdx] = {
@@ -12088,6 +12164,8 @@ export default function TablePage({
             boardStage: (syncData.stage || 'preflop') as BoardStage,
             dealerSeat: syncData.dealer_seat || 0,
             players: updatedPlayers,
+            // Grow-only ring size, same rule as the snapshot merge above.
+            maxPlayers: Math.max(prev.maxPlayers, updatedPlayers.length) as 6 | 9,
             // Only overwrite heroSeat when the snapshot actually located the
             // hero, so a partial/empty snapshot never falsely resets a seated
             // player to 0.

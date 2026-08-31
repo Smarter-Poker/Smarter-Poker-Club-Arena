@@ -100,14 +100,23 @@ describe('the entry hold is written down', () => {
     // acting on it. And a tournament seat has no cash entry hold to record.
     const body = sliceMethod(BASE, 'protected persistEntryHold(');
     expect(body).toMatch(/if \(this\.isTournamentTable\(\)\) return;/);
-    /* `void Promise.resolve(supabase...)`, not `void supabase...`. A PostgREST
+    /* `Promise.resolve(supabase...)`, not bare `supabase...`. A PostgREST
        query builder is a THENABLE, not a Promise — it has `.then` and no
        `.catch` — so the fire-and-forget form the house style requires
        (`.then().catch()`, pinned by noUnhandledRejections.test.ts) does not
        typecheck against the builder directly. Promise.resolve is what gives it
        both halves; without it CI fails TS2339 on the missing `.catch`, which
-       is exactly what happened on the first push of this change. */
-    expect(body).toMatch(/void Promise\.resolve\(\s*supabase/);
+       is exactly what happened on the first push of this change.
+
+       2026-08-30: the write is now CHAINED PER USER rather than a bare
+       `void` fire — two forgotten fires for the same player raced in
+       production (register 'waiting' vs release null, same loop iteration:
+       table 08746c1a seat 7) and the CLEAR lost, leaving a 'waiting' row on a
+       player the engine was dealing. The chain keeps the fire-and-forget
+       property (nothing awaits it) while making same-user writes land in
+       decision order. */
+    expect(body).toMatch(/entryHoldWriteChains\.get\(userId\)/);
+    expect(body).toMatch(/Promise\.resolve\(\s*supabase/);
     expect(body).toMatch(/\.catch\(/);
     expect(body).not.toMatch(/await /);
   });

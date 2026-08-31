@@ -387,6 +387,12 @@
       "metric",
       "sample_size"
     ],
+    "cashier_operations": [
+      "user_id",
+      "club_id",
+      "event",
+      "operation"
+    ],
     "cashout_requests": [
       "club_id",
       "player_id",

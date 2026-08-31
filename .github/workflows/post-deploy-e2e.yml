@@ -131,6 +131,20 @@ jobs:
           echo "::error::production did not serve a readable build-info.json - the site may be down."
           exit 1
 
+      - name: Certify the live cashier database contract
+        if: steps.live.outputs.ready == 'true'
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          psql \
+            "host=aws-0-us-west-2.pooler.supabase.com port=6543 dbname=postgres user=postgres.kuklfnapbkmacvwxktbh sslmode=require connect_timeout=8" \
+            -X -v ON_ERROR_STOP=1 \
+            -f scripts/verification-harness/cashier-release-contract.sql
+          psql \
+            "host=aws-0-us-west-2.pooler.supabase.com port=6543 dbname=postgres user=postgres.kuklfnapbkmacvwxktbh sslmode=require connect_timeout=8" \
+            -X -v ON_ERROR_STOP=1 \
+            -f scripts/verification-harness/cashier-telemetry-rls.sql
+
       - name: Run the specs that need a deployed page
         if: steps.live.outputs.ready == 'true'
         env:
@@ -170,6 +184,7 @@ jobs:
           # leading command guarantees a prompt, named production verdict.
           npx playwright test \
             tests/e2e/stats-deep.spec.ts \
+            tests/e2e/production-cashier.spec.ts \
             --project=chromium --reporter=line --retries=1
 
           npx playwright test \

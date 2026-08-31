@@ -230,6 +230,16 @@ export const MembershipService = {
    * an agent role to somebody who has no agents row yet - MemberManagementPage
    * is the screen that collects them.
    *
+   * `funding` is required alongside them, on the same terms. Dan, 2026-08-31:
+   * "THEY ALSO NEED TO BE ASSIGNED 'PRE PAID' OR CREDIT LINE, (AND IF SO, THEN
+   * HOW MUCH)". Omitting it returns needs_funding rather than storing a default,
+   * because a promotion that silently picks "not prepaid, zero limit" produces
+   * an agent who cannot send a single chip.
+   *
+   * Neither is defaulted from the agents row when the member is being PROMOTED
+   * rather than re-graded: a demoted agent's old deal does not return on its own
+   * (Dan's ruling on re-promotion, 2026-08-31).
+   *
    * Throws with the server's own reason so the caller can show it, rather than
    * returning false and leaving the user to guess.
    */
@@ -237,7 +247,8 @@ export const MembershipService = {
     clubId: string,
     userId: string,
     newRole: ClubRole,
-    rates?: { commissionRate: number; playerRakebackRate: number }
+    rates?: { commissionRate: number; playerRakebackRate: number },
+    funding?: { isPrepaid: boolean; creditLimit: number }
   ): Promise<boolean> {
     const resolvedId = await resolveClubUUID(clubId);
     const { data, error } = await supabase.rpc('fn_club_set_member_role', {
@@ -248,6 +259,12 @@ export const MembershipService = {
         ? {
             p_commission_rate: rates.commissionRate,
             p_player_rakeback_rate: rates.playerRakebackRate,
+          }
+        : {}),
+      ...(funding
+        ? {
+            p_is_prepaid: funding.isPrepaid,
+            p_credit_limit: funding.creditLimit,
           }
         : {}),
     });

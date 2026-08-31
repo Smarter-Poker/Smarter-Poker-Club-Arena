@@ -133,6 +133,16 @@ describe('LeaderboardService', () => {
       expect(contexts[0].funding_source).toBe('union_promo_wallet');
     });
 
+    it('can surface owner-context transport failures instead of misreporting no authority', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+      rpc.mockResolvedValueOnce({ data: null, error: { message: 'identity read unavailable' } });
+
+      await expect(LeaderboardService.getManageableRewardContexts(true)).rejects.toMatchObject({
+        message: 'identity read unavailable',
+      });
+    });
+
     it('saves plans without accepting a client-selected funding source', async () => {
       const { supabase } = await import('../../src/lib/supabase');
       const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;

@@ -645,6 +645,10 @@ export function ThemeSettingsModal({
   userIdRef.current = userId;
   const ownershipScopeRef = useRef<string | null>(null);
   const ownershipRequestRef = useRef(0);
+  const themeLoadScopeRef = useRef<string | null>(null);
+  const themeLoadRequestRef = useRef(0);
+  const themeLoadReadyScopeRef = useRef<string | null>(null);
+  const selectionMutationRevisionRef = useRef(0);
   const pendingSavesRef = useRef(0);
   useEffect(() => {
     selectionRef.current = selection;
@@ -659,6 +663,7 @@ export function ThemeSettingsModal({
   useEffect(() => stopCheckoutBalancePolling, [stopCheckoutBalancePolling]);
 
   const replaceSelection = useCallback((next: ThemeSelection) => {
+    selectionMutationRevisionRef.current += 1;
     selectionRef.current = next;
     setSelection(next);
   }, []);
@@ -701,6 +706,7 @@ export function ThemeSettingsModal({
 
       setSelection((current) => {
         const next = { ...current, ...patch };
+        selectionMutationRevisionRef.current += 1;
         selectionRef.current = next;
         return next;
       });
@@ -1121,15 +1127,28 @@ export function ThemeSettingsModal({
 
   // Load existing theme for selected game type
   useEffect(() => {
-    if (!isOpen) return undefined;
+    const nextScope = isOpen ? `${userId || 'anonymous'}:${canonicalGameType(gameType)}` : null;
+    const scopeChanged = themeLoadScopeRef.current !== nextScope;
+    themeLoadScopeRef.current = nextScope;
+    if (scopeChanged) themeLoadReadyScopeRef.current = null;
+    if (!isOpen) {
+      themeLoadRequestRef.current += 1;
+      setThemeLoadState('idle');
+      return undefined;
+    }
     if (!userId) {
+      themeLoadRequestRef.current += 1;
       replaceSelection({ ...DEFAULT_SELECTION });
+      themeLoadReadyScopeRef.current = nextScope;
       setThemeLoadState('ready');
       return undefined;
     }
 
     let mounted = true;
-    setThemeLoadState('loading');
+    const requestedScope = nextScope;
+    const requestId = ++themeLoadRequestRef.current;
+    const mutationRevision = selectionMutationRevisionRef.current;
+    if (scopeChanged) setThemeLoadState('loading');
     const load = async () => {
       try {
         const { data, error } = await supabase
@@ -1145,14 +1164,35 @@ export function ThemeSettingsModal({
           // touched would overwrite the theme they could not see.
           console.warn('[ThemeSettings] Load failed:', error.message);
           reportError(error, 'ThemeSettingsModal.Load_failed');
-          if (mounted) {
+          if (
+            mounted &&
+            themeLoadScopeRef.current === requestedScope &&
+            requestId === themeLoadRequestRef.current &&
+            themeLoadReadyScopeRef.current !== requestedScope
+          ) {
             setThemeLoadState('error');
             toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
           }
           return;
         }
 
-        if (mounted) {
+        if (
+          mounted &&
+          themeLoadScopeRef.current === requestedScope &&
+          requestId === themeLoadRequestRef.current
+        ) {
+          // A reconciliation SELECT may have started immediately before a local
+          // tap or a Realtime row arrived. Never let that older snapshot paint
+          // over a newer visible choice; the next bounded cadence will read the
+          // now-durable row. This is the appearance equivalent of the permanent
+          // ownership ledger's monotonic merge.
+          if (
+            pendingSavesRef.current > 0 ||
+            selectionMutationRevisionRef.current !== mutationRevision
+          ) {
+            if (themeLoadReadyScopeRef.current === requestedScope) setThemeLoadState('ready');
+            return;
+          }
           /* The reader and this editor now use the same precedence: exact
              bucket, then a legacy raw variant that canonicalises to it, then
              ALL. A stored `plo4` row can no longer paint the table while this
@@ -1174,12 +1214,18 @@ export function ThemeSettingsModal({
             // tile at all and the tab looks like it forgot the user's choice.
             cards_id: normalizeCardBack(row?.cards_id || DEFAULT_SELECTION.cards_id),
           });
+          themeLoadReadyScopeRef.current = requestedScope;
           setThemeLoadState('ready');
         }
       } catch (err) {
         console.warn('[ThemeSettings] Unexpected error:', err);
         reportError(err, 'ThemeSettingsModal.Load_failed');
-        if (mounted) {
+        if (
+          mounted &&
+          themeLoadScopeRef.current === requestedScope &&
+          requestId === themeLoadRequestRef.current &&
+          themeLoadReadyScopeRef.current !== requestedScope
+        ) {
           setThemeLoadState('error');
           toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
         }
@@ -1201,6 +1247,28 @@ export function ThemeSettingsModal({
     themeLoadRevision,
     appearanceRealtime.reconciliationRevision,
   ]);
+
+  // Postgres Changes is a low-latency signal, not a durable queue. Keep the
+  // open Studio's preview honest if a mobile radio handoff or a busy Realtime
+  // connection drops the appearance event: one authoritative, visible-only
+  // snapshot every two seconds repairs the editor without reloading the page.
+  // The request guard above prevents an older snapshot from rolling back a tap
+  // or a newer event while the read is in flight.
+  useEffect(() => {
+    if (!isOpen || !userId || appearanceRealtime.state !== 'live') return undefined;
+    const reconcile = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      setThemeLoadRevision((revision) => revision + 1);
+    };
+    const interval = window.setInterval(reconcile, 2_000);
+    window.addEventListener('focus', reconcile);
+    window.addEventListener('online', reconcile);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', reconcile);
+      window.removeEventListener('online', reconcile);
+    };
+  }, [appearanceRealtime.state, isOpen, userId]);
 
   const handleUiModeChange = useCallback(
     async (mode: InterfaceTheme) => {

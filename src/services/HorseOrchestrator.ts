@@ -30,7 +30,8 @@ import { tournamentService } from './TournamentService';
 import { QUERY_LIMITS } from '../lib/constants';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
-import { buyInFor } from '../utils/buyIn';
+import { buyInFor, rakeRateFor } from '../utils/buyIn';
+import { clampSeatsForVariant } from '../config/tableSeating';
 
 /**
  * Derive the two buy-in columns from ONE whole-dollar total.
@@ -46,8 +47,21 @@ import { buyInFor } from '../utils/buyIn';
  * generates the same games server-side. Spins are exempt and stay rake-free —
  * their edge lives in the multiplier distribution (src/config/spinSpec.ts).
  */
-function buyInColumns(buyIn: number): { buy_in_amount: number; buy_in_fee: number } {
-  const { prize, fee } = buyInFor(buyIn);
+/**
+ * 2026-08-31 audit: this took the DEFAULT rate and never asked rakeRateFor.
+ * The rule is keyed on SEATS, not on the word "SNG" — a two-handed game is a
+ * duel whatever its label says — and buyIn.ts's own header names "the client
+ * horse orchestrator" among the six writers that were supposed to have been
+ * routed through the helper. It was not. Harmless today, because every
+ * SNG_CONFIGS shape here is 6- or 9-max and 10% is the right answer for
+ * those, but the guard was missing: add one 2-max config and this quietly
+ * overcharges.
+ */
+function buyInColumns(
+  buyIn: number,
+  subject: Parameters<typeof rakeRateFor>[0]
+): { buy_in_amount: number; buy_in_fee: number } {
+  const { prize, fee } = buyInFor(buyIn, rakeRateFor(subject));
   return { buy_in_amount: prize, buy_in_fee: fee };
 }
 
@@ -1253,9 +1267,22 @@ class HorseOrchestrator {
             big_blind: config.bigBlind,
             min_buy_in: config.bigBlind * 40,
             max_buy_in: config.bigBlind * 200,
-            max_players: config.maxPlayers,
+            // SEAT LAW, enforced at the INSERT and not only in the config
+            // above, the same place HorseFleetManager enforces it and for the
+            // same reason: a future config edit must not be able to put an
+            // illegal table in the database. Seven configs in this file are
+            // over the law today (plo4 and plo8 at 9 seats, cap 8), so
+            // without this the creation guard added on 2026-08-31 refuses
+            // them and they are silently skipped.
+            max_players: clampSeatsForVariant(config.gameVariant || 'nlh', config.maxPlayers),
             current_players: 0,
-            status: 'active',
+            // 'waiting', NOT 'active' (2026-08-31 audit). The engine finds
+            // cash tables through cash_tables_needing_engine, whose WHERE is
+            // status IN ('waiting', 'running'). 'active' is a legal value no
+            // engine query has ever matched, so a table created here sat in
+            // the lobby, accepted seats and never dealt a hand. Every working
+            // writer uses 'waiting'; the engine flips it to 'running'.
+            status: 'waiting',
             settings: {
               straddle_enabled: true,
               straddle_type: 'utg',
@@ -1451,7 +1478,11 @@ class HorseOrchestrator {
           name: config.name,
           game_type: dbGameType,
           variant: config.type === 'mtt' ? 'freezeout' : config.type, // freezeout/bounty/progressive_bounty/mystery_bounty
-          ...buyInColumns(config.buyIn),
+          ...buyInColumns(config.buyIn, {
+            tournamentType: 'MTT',
+            variant: config.type,
+            maxPlayers: config.maxPlayers,
+          }),
           guaranteed_prize: config.guarantee || 0,
           starting_chips: config.startingStack,
           max_players: config.maxPlayers,
@@ -1559,8 +1590,13 @@ class HorseOrchestrator {
           club_id: this.getNextClubId(),
           name: config.name,
           game_type: dbGameType,
-          variant: 'SNG',
-          ...buyInColumns(config.buyIn),
+          // Lower case: every reader compares lower case (variant === 'satellite',
+          // t.variant = 'spin'), and TournamentRecurringService writes 'sng'.
+          variant: 'sng',
+          ...buyInColumns(config.buyIn, {
+            tournamentType: 'SNG',
+            maxPlayers: config.maxPlayers,
+          }),
           guaranteed_prize: null,
           starting_chips: config.startingStack,
           max_players: config.maxPlayers,

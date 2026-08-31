@@ -7,11 +7,15 @@
   padding: 18px;
   background: rgba(3, 6, 12, 0.86);
   backdrop-filter: blur(10px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .lb-prize-wizard {
   width: min(780px, 100%);
   max-height: min(900px, calc(100dvh - 36px));
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   color: #f7f2e5;
   border: 1px solid rgba(224, 180, 77, 0.42);
@@ -119,9 +123,10 @@
 }
 
 .lb-prize-wizard-body {
-  min-height: 390px;
-  max-height: calc(100dvh - 270px);
+  min-height: 0;
+  flex: 1 1 auto;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 24px;
 }
 
@@ -394,8 +399,7 @@
   }
 
   .lb-prize-wizard-body {
-    max-height: calc(94dvh - 222px);
-    min-height: 380px;
+    min-height: 0;
     padding: 20px 16px;
   }
 

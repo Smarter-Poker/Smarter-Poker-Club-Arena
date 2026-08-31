@@ -120,7 +120,7 @@ export default function WeeklyScheduleEditor({
                 <button
                   type="button"
                   className="wse-remove-time"
-                  aria-label="Remove this start time"
+                  aria-label="Remove This Start Time"
                   onClick={() =>
                     onChange({
                       ...value,

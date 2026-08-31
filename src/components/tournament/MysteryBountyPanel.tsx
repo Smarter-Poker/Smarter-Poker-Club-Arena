@@ -434,7 +434,7 @@ export default function MysteryBountyPanel({
               type="button"
               className={styles.playerClose}
               onClick={() => setSelectedUserId(null)}
-              aria-label="Close player payout"
+              aria-label="Close Player Payout"
             >
               X
             </button>

@@ -40,7 +40,7 @@ function WorkspacePage({
         </div>
       </header>
 
-      <section className={styles.grid} aria-label={`${title} tools`}>
+      <section className={styles.grid} aria-label={`${title} Tools`}>
         {links.map((item, index) => (
           <Link to={item.path} className={styles.card} key={item.path}>
             <span className={styles.index}>{String(index + 1).padStart(2, '0')}</span>

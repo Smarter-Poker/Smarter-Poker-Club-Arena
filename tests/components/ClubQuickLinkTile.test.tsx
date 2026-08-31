@@ -87,7 +87,7 @@ describe('ClubQuickLinkTile', () => {
     const onSelect = vi.fn();
     renderTile({ onSelect });
     // The v8 tile art owns the visual — the club name lives in aria-label + title
-    const tileBtn = screen.getByRole('button', { name: /Cashier for Alpha Club/ });
+    const tileBtn = screen.getByRole('button', { name: /Cashier For Alpha Club/ });
     expect(tileBtn).toHaveAttribute('title', 'Cashier - Alpha Club');
     await user.click(tileBtn);
     expect(onSelect).toHaveBeenCalledWith(A);
@@ -97,13 +97,13 @@ describe('ClubQuickLinkTile', () => {
     const user = userEvent.setup();
     const onEmpty = vi.fn();
     renderTile({ clubs: [], targetClub: null, onEmpty });
-    await user.click(screen.getByRole('button', { name: /Cashier \(press 4\)/ }));
+    await user.click(screen.getByRole('button', { name: /Cashier \(Press 4\)/ }));
     expect(onEmpty).toHaveBeenCalledOnce();
   });
 
   it('opens the wallet directory for a single eligible club too', async () => {
     renderTile({ clubs: [A] });
-    const tileBtn = screen.getByRole('button', { name: /Cashier for Alpha Club/ });
+    const tileBtn = screen.getByRole('button', { name: /Cashier For Alpha Club/ });
     fireEvent.contextMenu(tileBtn);
     expect(screen.getByRole('menuitem', { name: /Alpha Club/ })).toBeInTheDocument();
     await act(async () => {});
@@ -189,7 +189,7 @@ describe('ClubQuickLinkTile', () => {
   it('prefetches the destination chunk on pointer intent, once', async () => {
     const user = userEvent.setup();
     renderTile({ clubs: [A], preloadPath: '/cashier' });
-    const tileBtn = screen.getByRole('button', { name: /Cashier for Alpha Club/ });
+    const tileBtn = screen.getByRole('button', { name: /Cashier For Alpha Club/ });
     await user.hover(tileBtn);
     await user.hover(tileBtn);
     expect(preloadRouteMock).toHaveBeenCalledTimes(1);
@@ -199,7 +199,7 @@ describe('ClubQuickLinkTile', () => {
   it('opens the popover on a long press', async () => {
     vi.useFakeTimers();
     renderTile();
-    const tileBtn = screen.getByRole('button', { name: /Cashier for Alpha Club/ });
+    const tileBtn = screen.getByRole('button', { name: /Cashier For Alpha Club/ });
     fireEvent.pointerDown(tileBtn);
     act(() => {
       vi.advanceTimersByTime(600);
@@ -236,7 +236,7 @@ describe('ClubQuickLinkTile', () => {
   it('does not open the popover when the press is cancelled early', () => {
     vi.useFakeTimers();
     renderTile();
-    const tileBtn = screen.getByRole('button', { name: /Cashier for Alpha Club/ });
+    const tileBtn = screen.getByRole('button', { name: /Cashier For Alpha Club/ });
     fireEvent.pointerDown(tileBtn);
     act(() => {
       vi.advanceTimersByTime(200);
@@ -254,7 +254,7 @@ describe('ClubQuickLinkTile', () => {
     vi.useFakeTimers();
     const onSelect = vi.fn();
     renderTile({ onSelect });
-    const tileBtn = screen.getByRole('button', { name: /Cashier for Alpha Club/ });
+    const tileBtn = screen.getByRole('button', { name: /Cashier For Alpha Club/ });
 
     fireEvent.pointerDown(tileBtn);
     act(() => {
@@ -271,16 +271,16 @@ describe('ClubQuickLinkTile', () => {
 
   it('marks the tile as a popup trigger whenever a wallet directory exists', () => {
     const { unmount } = renderTile({ clubs: [], targetClub: null });
-    expect(screen.getByRole('button', { name: /Cashier \(press 4\)/ })).not.toHaveAttribute(
+    expect(screen.getByRole('button', { name: /Cashier \(Press 4\)/ })).not.toHaveAttribute(
       'aria-haspopup'
     );
     unmount();
     renderTile({ clubs: [A] });
-    expect(screen.getByRole('button', { name: /Cashier for Alpha Club/ })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /Cashier For Alpha Club/ })).toHaveAttribute(
       'aria-haspopup',
       'menu'
     );
-    expect(screen.getByRole('button', { name: /Cashier for Alpha Club/ })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /Cashier For Alpha Club/ })).toHaveAttribute(
       'aria-keyshortcuts',
       'ArrowDown Shift+F10'
     );

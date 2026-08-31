@@ -40,7 +40,7 @@ describe('ActionPanel - main panel ALL IN', () => {
   it('fires on the first tap, even with confirmAllIn explicitly true', () => {
     const onAction = vi.fn();
     render(<ActionPanel {...baseProps} canRaise={false} confirmAllIn onAction={onAction} />);
-    fireEvent.click(screen.getByLabelText('All in'));
+    fireEvent.click(screen.getByLabelText('All In'));
     expect(onAction).toHaveBeenCalledTimes(1);
     expect(onAction.mock.calls[0][0]).toBe('allin');
   });
@@ -48,7 +48,7 @@ describe('ActionPanel - main panel ALL IN', () => {
   it('never renders a confirmation step', () => {
     const onAction = vi.fn();
     render(<ActionPanel {...baseProps} canRaise={false} confirmAllIn onAction={onAction} />);
-    fireEvent.click(screen.getByLabelText('All in'));
+    fireEvent.click(screen.getByLabelText('All In'));
     expect(screen.queryByText(/CONFIRM ALL-IN/i)).toBeNull();
     expect(screen.queryByLabelText(/Confirm all in/i)).toBeNull();
     expect(screen.queryByLabelText(/Cancel all in/i)).toBeNull();
@@ -67,7 +67,7 @@ describe('ActionPanel - main panel ALL IN', () => {
         onAction={onAction}
       />
     );
-    fireEvent.click(screen.getByLabelText('All in'));
+    fireEvent.click(screen.getByLabelText('All In'));
     expect(onAction).toHaveBeenCalledWith('allin', 500);
   });
 });
@@ -76,11 +76,11 @@ describe('ActionPanel - bet-sizing panel ALL IN', () => {
   it('fires on the first tap, even with confirmAllIn explicitly true', () => {
     const onAction = vi.fn();
     render(<ActionPanel {...baseProps} canRaise confirmAllIn onAction={onAction} />);
-    fireEvent.click(screen.getByLabelText('Open raise panel'));
-    // 2026-08-20: the label now carries the amount ("Bet all in for 500"),
+    fireEvent.click(screen.getByLabelText('Open Raise Panel'));
+    // 2026-08-20: the label now carries the amount ("Bet All In For 500"),
     // because in pot-limit the shove and the pot cap are different numbers and
     // a screen reader was told neither. Match on the prefix.
-    fireEvent.click(screen.getByLabelText(/^Bet all in/));
+    fireEvent.click(screen.getByLabelText(/^Bet All In/));
     expect(onAction).toHaveBeenCalledTimes(1);
     expect(onAction.mock.calls[0][0]).toBe('allin');
     expect(screen.queryByText(/CONFIRM ALL-IN/i)).toBeNull();

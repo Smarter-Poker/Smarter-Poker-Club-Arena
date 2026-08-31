@@ -73,7 +73,7 @@ describe('CashierClubSwitcher', () => {
     localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify([A, B]));
     renderSwitcher(A.id);
 
-    await user.click(screen.getByRole('button', { name: /Current club: Alpha Club/ }));
+    await user.click(screen.getByRole('button', { name: /Current Club: Alpha Club/ }));
     await user.click(screen.getByRole('menuitem', { name: /Bravo Club/ }));
     expect(navigateMock).toHaveBeenCalledWith(`/clubs/${B.id}/cashier`);
   });
@@ -83,7 +83,7 @@ describe('CashierClubSwitcher', () => {
     localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify([A, B]));
     renderSwitcher(A.id);
 
-    await user.click(screen.getByRole('button', { name: /Current club: Alpha Club/ }));
+    await user.click(screen.getByRole('button', { name: /Current Club: Alpha Club/ }));
     await user.click(screen.getByRole('menuitem', { name: /Alpha Club/ }));
     expect(navigateMock).not.toHaveBeenCalled();
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
@@ -100,7 +100,7 @@ describe('CashierClubSwitcher', () => {
       error: null,
     });
     renderSwitcher(A.id);
-    await user.click(screen.getByRole('button', { name: /Current club: Alpha Club/ }));
+    await user.click(screen.getByRole('button', { name: /Current Club: Alpha Club/ }));
     expect(
       await screen.findByText(new RegExp(`${(4200).toLocaleString()} chips`, 'i'))
     ).toBeInTheDocument();
@@ -118,7 +118,7 @@ describe('CashierClubSwitcher', () => {
   it('resolves numeric club-code route params against the cache', () => {
     localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify([A, B]));
     renderSwitcher('22222');
-    expect(screen.getByRole('button', { name: /Current club: Bravo Club/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Current Club: Bravo Club/ })).toBeInTheDocument();
   });
 
   it('renders a static chip (no dropdown) for single-club users', () => {
@@ -132,7 +132,7 @@ describe('CashierClubSwitcher', () => {
     inMock.mockResolvedValue({ data: [{ club: A }, { club: B }], error: null });
     renderSwitcher(A.id, 'Alpha Club');
     expect(
-      await screen.findByRole('button', { name: /Current club: Alpha Club/ })
+      await screen.findByRole('button', { name: /Current Club: Alpha Club/ })
     ).toBeInTheDocument();
   });
 

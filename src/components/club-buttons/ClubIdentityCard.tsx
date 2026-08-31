@@ -70,14 +70,14 @@ export function ClubIdentityCard({
   return (
     <section
       className={`club-identity ${className}`.trim()}
-      aria-label={`${clubName} club identity`}
+      aria-label={`${clubName} Club Identity`}
     >
       <picture className="club-identity__shell" aria-hidden="true">
         <img src={CLUB_IDENTITY_SHELL} alt="" />
       </picture>
 
       <div className="club-identity__logo">
-        {logoUrl ? <img src={logoUrl} alt={`${clubName} logo`} loading="lazy" /> : logoFallback}
+        {logoUrl ? <img src={logoUrl} alt={`${clubName} Logo`} loading="lazy" /> : logoFallback}
       </div>
 
       <div className="club-identity__details">
@@ -109,7 +109,7 @@ export function ClubIdentityCard({
           type="button"
           className="club-identity__share"
           onClick={onShare}
-          aria-label="Copy referral link"
+          aria-label="Copy Referral Link"
           title="Copy Referral Link"
         >
           {shareIcon}

@@ -29,6 +29,35 @@
  *   - HTML entities (&nbsp; &rsquo;)
  *   - comments, which never reach a player
  *
+ * ATTRIBUTES THAT ARE ALSO TEXT (added 2026-08-31)
+ *   JsxText is not the only copy a browser paints. `placeholder` sits inside
+ *   the field, `title` is the tooltip, `alt` is what replaces a missing image,
+ *   and `aria-label` is the ONLY text a screen-reader user gets for a control
+ *   that has no visible label. Those were never scanned, and three
+ *   `aria-label="required"` were sitting in the shared Input.
+ *
+ *   The allowlist is deliberately short and the exemptions are deliberately
+ *   generous: an attribute is only copy when it reads as prose, so slugs
+ *   (`spring_spins_push`), example values (`e.g. 40`), URLs and anything with
+ *   no letters are left alone. A gate that renames an identifier is worse than
+ *   one that misses a word.
+ *
+ * THE STRING TABLE (added 2026-08-31)
+ *   src/i18n/index.ts is copy by definition and reaches the screen through
+ *   `t(...)`, which is an expression - so neither pass above could ever see
+ *   it. It held 36 uncased strings, and every one of them is what a screen
+ *   reader announces at the table: "Seat {{number}}: open - click to sit",
+ *   "(all in)", "Raise amount", "Bet all in".
+ *
+ *   That one bit the codebase on the day this was written: MultiTablePage
+ *   carried a literal `aria-label="Raise amount"` AND the table carried
+ *   `raise_amount_label`, the attribute pass cased the literal, and the two
+ *   spellings of the same label silently diverged.
+ *
+ *   Interpolation tokens are protected. `{{amount}}` is a lookup key, not a
+ *   word, and casing it to `{{Amount}}` breaks the substitution rather than
+ *   the sentence.
+ *
  * Run:  node scripts/ci/check-title-case.mjs [--fix]
  */
 
@@ -50,6 +79,25 @@ const ACRONYMS = new Set([
 ]);
 
 const fix = process.argv.includes('--fix');
+
+/** Copy modules whose string VALUES are user-facing text. */
+const STRING_TABLES = new Set(['src/i18n/index.ts']);
+
+/** Attributes a browser paints, or a screen reader announces, as text. */
+const TEXT_ATTRS = new Set(['placeholder', 'aria-label', 'alt', 'title']);
+
+/**
+ * True when an attribute value is an identifier, an example or a URL rather
+ * than a sentence a player reads.
+ */
+function notProse(value) {
+  const v = value.trim();
+  if (!/[A-Za-z]/.test(v)) return true;                 // "40", "%s"
+  if (/^(e\.g\.|i\.e\.|etc\.|vs\.)/i.test(v)) return true; // "e.g. 40"
+  if (/:\/\//.test(v) || v.startsWith('/')) return true;   // URLs and routes
+  if (!/\s/.test(v) && /[_.]/.test(v)) return true;      // slug_or.identifier
+  return false;
+}
 
 function walk(dir, acc = []) {
   for (const entry of readdirSync(dir)) {
@@ -154,22 +202,203 @@ function jsxTextNodes(file, source) {
   return out;
 }
 
+/**
+ * Every JSX string attribute in TEXT_ATTRS, as {start, end, text}. Only plain
+ * string literals: `placeholder={t('x')}` is an expression and is cased at its
+ * source, exactly as the JsxText pass treats `{}`.
+ */
+function textAttributeNodes(file, source) {
+  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const out = [];
+
+  /**
+   * A template attribute is copy too: `aria-label={`${wagerVerb} amount`}`
+   * rendered "Raise amount" for every screen-reader user at the table, and no
+   * pass above could see it.
+   *
+   * Only the LITERAL spans are cased. The `${...}` holes are expressions, cased
+   * at their source exactly as `{}` is in JSX - and one of them here
+   * (`${wagerVerb.toLowerCase()}`) is deliberately lower, which a naive rewrite
+   * would fight forever.
+   *
+   * The same unit-suffix guard as the JsxText pass applies: a span that starts
+   * with a letter immediately after a hole is finishing that hole's word
+   * (`${n}s`, `${x}px`), not starting a new one.
+   */
+  const pushTemplate = (tpl, name) => {
+    const spans = [];
+    if (ts.isNoSubstitutionTemplateLiteral(tpl)) {
+      spans.push({ node: tpl, continues: false });
+    } else {
+      spans.push({ node: tpl.head, continues: false });
+      for (const span of tpl.templateSpans) spans.push({ node: span.literal, continues: true });
+    }
+    for (const { node, continues } of spans) {
+      const raw = node.text;
+      if (!/[A-Za-z]/.test(raw) || notProse(raw)) continue;
+      let cased;
+      if (continues && /^[A-Za-z]/.test(raw)) {
+        const m = raw.match(/^[A-Za-z][A-Za-z0-9'’]*/);
+        const head = m ? m[0] : '';
+        cased = head + titleCaseText(raw.slice(head.length));
+      } else {
+        cased = titleCaseText(raw);
+      }
+      if (cased === raw) continue;
+      // getStart()+1 skips the opening backtick/brace; getEnd()-1 the closing.
+      const startOffset = node.getStart(sf) + 1;
+      const endOffset = node.getEnd() - (ts.isTemplateTail(node) || ts.isNoSubstitutionTemplateLiteral(node) ? 1 : 2);
+      out.push({ start: startOffset, end: endOffset, text: raw, attr: name, preCased: cased });
+    }
+  };
+
+  const visit = (node) => {
+    if (ts.isJsxAttribute(node) && node.initializer) {
+      const name = node.name.getText(sf);
+      if (TEXT_ATTRS.has(name)) {
+        const init = node.initializer;
+        if (ts.isStringLiteral(init)) {
+          const text = init.text;
+          if (!notProse(text)) {
+            // Inside the quotes only, so the quote characters survive a rewrite.
+            out.push({ start: init.getStart(sf) + 1, end: init.getEnd() - 1, text, attr: name });
+          }
+        } else if (ts.isJsxExpression(init) && init.expression) {
+          const e = init.expression;
+          if (ts.isTemplateExpression(e) || ts.isNoSubstitutionTemplateLiteral(e)) {
+            pushTemplate(e, name);
+          } else if (ts.isConditionalExpression(e)) {
+            /**
+             * A label that switches on state is still a label:
+             * `aria-label={exporting ? 'Cancel CSV export' : 'Export as CSV'}`
+             * put two spellings of the same control on the page, and only the
+             * branch nobody was looking at stayed lowercase.
+             *
+             * Only the two BRANCHES are read, and only when they are plain
+             * strings or templates. The condition is code.
+             */
+            for (const branch of [e.whenTrue, e.whenFalse]) {
+              if (ts.isStringLiteral(branch)) {
+                if (notProse(branch.text)) continue;
+                out.push({
+                  start: branch.getStart(sf) + 1,
+                  end: branch.getEnd() - 1,
+                  text: branch.text,
+                  attr: name,
+                });
+              } else if (ts.isTemplateExpression(branch) || ts.isNoSubstitutionTemplateLiteral(branch)) {
+                pushTemplate(branch, name);
+              }
+            }
+          }
+        }
+      }
+    }
+    node.forEachChild(visit);
+  };
+  visit(sf);
+  return out;
+}
+
+/**
+ * Title Case a string-table value, leaving `{{token}}` interpolation keys
+ * exactly as they are.
+ */
+function titleCaseTemplate(value) {
+  const slots = [];
+  const masked = value.replace(/\{\{[^}]+\}\}/g, (t) => {
+    slots.push(t);
+    return `\u0000${slots.length - 1}\u0000`;
+  });
+  return titleCaseText(masked).replace(/\u0000(\d+)\u0000/g, (_, i) => slots[Number(i)]);
+}
+
+/**
+ * Every string-literal VALUE of a property in a copy module, as
+ * {start, end, text}. Keys are identifiers and are left alone.
+ */
+function stringTableNodes(file, source) {
+  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const out = [];
+  const visit = (node) => {
+    if (
+      ts.isPropertyAssignment(node) &&
+      node.initializer &&
+      ts.isStringLiteral(node.initializer) &&
+      /[A-Za-z]/.test(node.initializer.text)
+    ) {
+      const lit = node.initializer;
+      if (!notProse(lit.text)) {
+        out.push({ start: lit.getStart(sf) + 1, end: lit.getEnd() - 1, text: lit.text });
+      }
+    }
+    node.forEachChild(visit);
+  };
+  visit(sf);
+  return out;
+}
+
 const offenders = [];
 let fixedNodes = 0;
 let fixedFiles = 0;
+
+// ── Pass 3: the string tables ────────────────────────────────────────────
+for (const rel of STRING_TABLES) {
+  const file = join(ROOT, rel);
+  let original;
+  try {
+    original = readFileSync(file, 'utf8');
+  } catch {
+    continue; // a table that has moved is not this gate's problem
+  }
+  const nodes = stringTableNodes(file, original);
+  const changes = [];
+  for (const n of nodes) {
+    const cased = titleCaseTemplate(n.text);
+    if (cased !== n.text) changes.push({ ...n, cased });
+  }
+  if (changes.length === 0) continue;
+  changes.sort((a, b) => a.start - b.start);
+
+  if (fix) {
+    let out = original;
+    for (let i = changes.length - 1; i >= 0; i--) {
+      const c = changes[i];
+      out = out.slice(0, c.start) + c.cased + out.slice(c.end);
+    }
+    writeFileSync(file, out, 'utf8');
+    fixedNodes += changes.length;
+    fixedFiles++;
+  } else {
+    for (const c of changes) {
+      const line = original.slice(0, c.start).split('\n').length;
+      offenders.push(`${rel}:${line}: ${c.text.trim().slice(0, 90)}`);
+    }
+  }
+}
 
 for (const file of walk(SRC)) {
   const original = readFileSync(file, 'utf8');
   if (!original.includes('<')) continue;
 
   let nodes;
+  let attrs;
   try {
     nodes = jsxTextNodes(file, original);
+    attrs = textAttributeNodes(file, original);
   } catch {
     continue; // a file the parser cannot read is not this gate's problem
   }
 
   const changes = [];
+
+  // Attributes first; they carry no suffix/prefix subtleties, because an
+  // attribute value is a whole string rather than a fragment sitting beside an
+  // expression.
+  for (const a of attrs) {
+    const cased = a.preCased ?? titleCaseText(a.text);
+    if (cased !== a.text) changes.push({ ...a, cased });
+  }
   for (const n of nodes) {
     let cased;
     if (n.suffix) {
@@ -189,6 +418,9 @@ for (const file of walk(SRC)) {
     if (cased !== n.text) changes.push({ ...n, cased });
   }
   if (changes.length === 0) continue;
+  // The rewrite below walks back to front, which is only correct on a list in
+  // source order; attributes were collected in a separate pass.
+  changes.sort((a, b) => a.start - b.start);
 
   if (fix) {
     let out = original;

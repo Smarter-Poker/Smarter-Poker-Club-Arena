@@ -557,7 +557,7 @@ export default function FriendsPage() {
           )}
         </div>
 
-        <div className="friends-tab-rail" role="tablist" aria-label="Connection views">
+        <div className="friends-tab-rail" role="tablist" aria-label="Connection Views">
           {FRIEND_TABS.map((tab) => {
             const count =
               tab.id === 'friends'
@@ -598,7 +598,7 @@ export default function FriendsPage() {
                   type="search"
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Search by player name"
+                  placeholder="Search By Player Name"
                 />
                 {filteredFriends.length > 0 && (
                   <button type="button" onClick={exportFriends}>
@@ -622,7 +622,7 @@ export default function FriendsPage() {
             )}
 
             {loading ? (
-              <div className="friends-skeleton-list" role="status" aria-label="Loading friends">
+              <div className="friends-skeleton-list" role="status" aria-label="Loading Friends">
                 {Array.from({ length: 5 }).map((_, index) => (
                   <div className="friends-skeleton-row" key={index}>
                     <span />
@@ -864,7 +864,7 @@ function FriendGroup({
             </button>
             <div
               className={`friend-actions ${friend.profile_available ? '' : 'is-unavailable'}`}
-              aria-label={`Actions for ${friend.username}`}
+              aria-label={`Actions For ${friend.username}`}
             >
               {friend.profile_available && (
                 <>

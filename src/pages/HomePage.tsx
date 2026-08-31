@@ -1305,7 +1305,7 @@ function HomePageInner() {
         {/* ═══════════════════════════════════════════════════════════════════════
                     BOTTOM ROW — from lobbyTiles.config.ts (#18)
                 ═══════════════════════════════════════════════════════════════════════ */}
-        <div className={styles.bottomRow} role="navigation" aria-label="Quick actions">
+        <div className={styles.bottomRow} role="navigation" aria-label="Quick Actions">
           {LOBBY_TILES.map((tile) =>
             tile.alt === 'Cashier' || tile.alt === 'Marketplace' ? (
               /* Club-aware quick links — club name on the tile, quick-switch
@@ -1339,7 +1339,7 @@ function HomePageInner() {
                 onMouseEnter={() => tile.route && preloadRoute(tile.route)}
                 onTouchStart={() => tile.route && preloadRoute(tile.route)}
                 onFocus={() => tile.route && preloadRoute(tile.route)}
-                aria-label={`${tile.alt} (press ${tile.shortcutKey})`}
+                aria-label={`${tile.alt} (Press ${tile.shortcutKey})`}
               >
                 <div className={styles.tilePedestal}></div>
                 <div className={styles.tileImageWrapper}>

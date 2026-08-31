@@ -222,7 +222,7 @@ export default function ReportReviewPage() {
             <p className="case-kicker">Moderation Queue</p>
             <h2>Conduct Reports</h2>
           </div>
-          <div className="filter-tabs" role="tablist" aria-label="Filter reports by status">
+          <div className="filter-tabs" role="tablist" aria-label="Filter Reports By Status">
             {REPORT_FILTERS.map((item) => (
               <button
                 key={item}
@@ -318,7 +318,7 @@ export default function ReportReviewPage() {
                 ref={closeButtonRef}
                 type="button"
                 onClick={() => setSelectedReport(null)}
-                aria-label="Close report details"
+                aria-label="Close Report Details"
               >
                 Close
               </button>
@@ -350,7 +350,7 @@ export default function ReportReviewPage() {
                       id="report-admin-notes"
                       value={adminNotes}
                       onChange={(event) => setAdminNotes(event.target.value)}
-                      placeholder="Record the evidence and decision rationale"
+                      placeholder="Record The Evidence And Decision Rationale"
                       rows={4}
                     />
                   </div>

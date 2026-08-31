@@ -3416,8 +3416,8 @@ export default function MultiTablePage() {
                     pnlPressTimerRef.current = null;
                   }
                 }}
-                title="Session across cash tables (right-click or hold to turn off)"
-                aria-label="Session across cash tables"
+                title="Session Across Cash Tables (Right-Click Or Hold To Turn Off)"
+                aria-label="Session Across Cash Tables"
               >
                 {sessionAgg.net > 0 ? '+' : ''}
                 {sessionAgg.net.toLocaleString('en-US')}
@@ -3441,9 +3441,9 @@ export default function MultiTablePage() {
                   ? isTileView
                     ? 'Single view'
                     : 'Tile view'
-                  : 'Open a second table to use tile view'
+                  : 'Open A Second Table To Use Tile View'
               }
-              aria-label={isTileView ? 'Single view' : 'Tile view'}
+              aria-label={isTileView ? 'Single View' : 'Tile View'}
             >
               <img className="tile-toggle-btn__img" src={fourScreenIcon} alt="" draggable={false} />
             </button>
@@ -3507,7 +3507,7 @@ export default function MultiTablePage() {
         {quickJoin.open && (
           <>
             <div className="multi-table-page__quickjoin-backdrop" onClick={closeQuickJoin} />
-            <div className="multi-table-page__quickjoin" role="dialog" aria-label="Quick join">
+            <div className="multi-table-page__quickjoin" role="dialog" aria-label="Quick Join">
               <div className="multi-table-page__quickjoin-title">Quick Join</div>
               {quickJoin.loading ? (
                 <div className="multi-table-page__quickjoin-empty">Finding Games…</div>
@@ -3636,7 +3636,7 @@ export default function MultiTablePage() {
                               max={maxTo}
                               step={step}
                               value={draft}
-                              aria-label="Raise amount"
+                              aria-label="Raise Amount"
                               onChange={(e) =>
                                 setTileRaiseDraft((p) => ({
                                   ...p,

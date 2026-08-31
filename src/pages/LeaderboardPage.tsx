@@ -917,7 +917,7 @@ export default function LeaderboardPage() {
         />
         {entry.isVIP && <span className="vip-badge">VIP</span>}
         {(entry.change || 0) >= 3 && (
-          <span className="hot-streak-badge" title="Hot streak: climbing fast">
+          <span className="hot-streak-badge" title="Hot Streak: Climbing Fast">
             {'↑'}
           </span>
         )}
@@ -1028,13 +1028,13 @@ export default function LeaderboardPage() {
                   : `Updated ${lastUpdated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}
             </span>
             {activeTab === 'rankings' && windowLabel && (
-              <span className="lb-window-label" title="The snapshot this period is measured from">
+              <span className="lb-window-label" title="The Snapshot This Period Is Measured From">
                 {windowLabel}
               </span>
             )}
           </div>
         </div>
-        <div className="lb-hero-telemetry" aria-label="Current leaderboard summary">
+        <div className="lb-hero-telemetry" aria-label="Current Leaderboard Summary">
           <div>
             <span className="lb-telemetry-label">Field</span>
             <strong>{totalRanked != null ? totalRanked.toLocaleString('en-US') : '-'}</strong>
@@ -1055,9 +1055,9 @@ export default function LeaderboardPage() {
         </div>
       </section>
 
-      <section className="lb-control-deck" aria-label="Leaderboard controls">
+      <section className="lb-control-deck" aria-label="Leaderboard Controls">
         <div className="lb-control-header">
-          <div className="leaderboard-tabs" role="tablist" aria-label="Leaderboard views">
+          <div className="leaderboard-tabs" role="tablist" aria-label="Leaderboard Views">
             <button
               id="leaderboard-rankings-tab"
               className={`tab-btn ${activeTab === 'rankings' ? 'active' : ''}`}
@@ -1247,7 +1247,7 @@ export default function LeaderboardPage() {
       </section>
 
       {scope === 'my-clubs' && settings?.setup_complete && (
-        <section className="lb-prize-program" aria-label="Leaderboard prize program">
+        <section className="lb-prize-program" aria-label="Leaderboard Prize Program">
           <div className="lb-prize-program-mark" aria-hidden="true">
             ◆
           </div>
@@ -1487,7 +1487,7 @@ export default function LeaderboardPage() {
                       {entry.username}
                       {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
                       {(entry.change || 0) >= 3 && (
-                        <span className="hot-streak-badge" title="Hot streak: climbing fast">
+                        <span className="hot-streak-badge" title="Hot Streak: Climbing Fast">
                           {'↑'}
                         </span>
                       )}
@@ -1508,7 +1508,7 @@ export default function LeaderboardPage() {
                 className="lb-load-more"
                 onClick={loadMore}
                 disabled={loadingMore}
-                aria-label={`Load more, showing ${entries.length} of ${totalRanked}`}
+                aria-label={`Load More, Showing ${entries.length} Of ${totalRanked}`}
               >
                 {loadingMore
                   ? 'Loading...'
@@ -1529,7 +1529,7 @@ export default function LeaderboardPage() {
                   onKeyDown={user?.id ? rowKeyActivate(user.id) : undefined}
                   role="button"
                   tabIndex={0}
-                  aria-label={`Your position, ${getRankLabel(userRank.rank)}, ${formatValue(userRank.value, metric)}`}
+                  aria-label={`Your Position, ${getRankLabel(userRank.rank)}, ${formatValue(userRank.value, metric)}`}
                   style={{ cursor: 'pointer' }}
                 >
                   <span className="entry-rank">{getRankLabel(userRank.rank)}</span>
@@ -1575,7 +1575,7 @@ export default function LeaderboardPage() {
                   onKeyDown={rowKeyActivate(stat.userId)}
                   role="button"
                   tabIndex={0}
-                  aria-label={`Rank ${index + 1}, ${stat.username}, ${stat.totalPrizes.toLocaleString()} total prizes`}
+                  aria-label={`Rank ${index + 1}, ${stat.username}, ${stat.totalPrizes.toLocaleString()} Total Prizes`}
                   style={{ cursor: 'pointer' }}
                 >
                   <div className="stats-cell player-cell">

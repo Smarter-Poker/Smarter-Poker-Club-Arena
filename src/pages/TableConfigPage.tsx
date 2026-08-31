@@ -2369,7 +2369,7 @@ export default function TableConfigPage() {
               <div className="config-toggle">
                 <span className="toggle-label">
                   Players
-                  <span className="tooltip-icon" title="Number of players in SNG">
+                  <span className="tooltip-icon" title="Number Of Players In SNG">
                     ?
                   </span>
                 </span>
@@ -2471,7 +2471,7 @@ export default function TableConfigPage() {
                 Fee
                 <span
                   className="tooltip-icon"
-                  title="Taken out of the buy-in, never added on top. Spins carry no fee."
+                  title="Taken Out Of The Buy-In, Never Added On Top. Spins Carry No Fee."
                 >
                   ?
                 </span>
@@ -2557,7 +2557,7 @@ export default function TableConfigPage() {
             <div className="config-toggle">
               <span className="toggle-label">
                 Payout Structure
-                <span className="tooltip-icon" title="Prize distribution">
+                <span className="tooltip-icon" title="Prize Distribution">
                   ?
                 </span>
               </span>
@@ -2796,7 +2796,7 @@ export default function TableConfigPage() {
                 Multi-Day MTT
                 <span
                   className="tooltip-icon"
-                  title="Day 2 resume and flight merging are not built. Setting this would badge the event Multi-Day while it played down to one winner in a single session, so it is refused rather than promised."
+                  title="Day 2 Resume And Flight Merging Are Not Built. Setting This Would Badge The Event Multi-Day While It Played Down To One Winner In A Single Session, So It Is Refused Rather Than Promised."
                 >
                   ?
                 </span>

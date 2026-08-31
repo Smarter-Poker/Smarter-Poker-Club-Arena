@@ -325,7 +325,7 @@ function PotDisplayComponent({
       <div
         className={`pot-display__main ${onToggleDisplayMode ? 'pot-display__main--clickable' : ''}`}
         onClick={onToggleDisplayMode}
-        title={onToggleDisplayMode ? 'Click to toggle Chips/BB display' : undefined}
+        title={onToggleDisplayMode ? 'Click To Toggle Chips/BB Display' : undefined}
       >
         <span className="pot-display__label">POT</span>
         <span className="pot-display__amount">

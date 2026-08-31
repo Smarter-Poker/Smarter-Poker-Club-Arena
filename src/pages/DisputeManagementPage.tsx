@@ -310,7 +310,7 @@ export default function DisputeManagementPage() {
         </div>
 
         {/* Filter Tabs */}
-        <div className="dispute-tabs" role="tablist" aria-label="Filter disputes by status">
+        <div className="dispute-tabs" role="tablist" aria-label="Filter Disputes By Status">
           {FILTER_TABS.map((tab) => (
             <button
               key={tab}
@@ -336,7 +336,7 @@ export default function DisputeManagementPage() {
           <input
             id="dispute-search"
             type="text"
-            placeholder="Player, reason, target, or amount"
+            placeholder="Player, Reason, Target, Or Amount"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -450,7 +450,7 @@ export default function DisputeManagementPage() {
                           <>
                             <div className="resolution-form">
                               <textarea
-                                aria-label="Resolution notes"
+                                aria-label="Resolution Notes"
                                 placeholder="Enter Resolution Notes..."
                                 value={resolutionText}
                                 onChange={(e) => setResolutionText(e.target.value)}
@@ -458,7 +458,7 @@ export default function DisputeManagementPage() {
                               />
                               <div className="adjustment-row">
                                 <select
-                                  aria-label="Balance adjustment type"
+                                  aria-label="Balance Adjustment Type"
                                   value={adjustmentType}
                                   onChange={(e) => setAdjustmentType(e.target.value as any)}
                                 >
@@ -468,7 +468,7 @@ export default function DisputeManagementPage() {
                                 </select>
                                 {adjustmentType !== 'none' && (
                                   <input
-                                    aria-label="Balance adjustment amount"
+                                    aria-label="Balance Adjustment Amount"
                                     type="number"
                                     placeholder="Amount"
                                     value={adjustmentAmount}

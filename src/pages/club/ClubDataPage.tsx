@@ -1157,7 +1157,7 @@ export default function ClubDataPage() {
     return (
       <span
         className={`${styles.delta} ${cls}`}
-        title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}
+        title={prevRange ? `Previous Period ${prevRange.start} To ${prevRange.end}` : undefined}
       >
         {v > 0 ? '+' : ''}
         {/* prevRange, not `preset`: the preset flips the instant the button is
@@ -1175,7 +1175,7 @@ export default function ClubDataPage() {
     return (
       <span
         className={`${styles.delta} ${cls}`}
-        title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}
+        title={prevRange ? `Previous Period ${prevRange.start} To ${prevRange.end}` : undefined}
       >
         {v > 0 ? '+' : ''}
         {money(v)} Vs Prev {prevRange?.days ?? preset}d
@@ -1227,7 +1227,7 @@ export default function ClubDataPage() {
           type="button"
           className={`${styles.headerBtn} ${styles.backButton}`}
           onClick={() => navigate(-1)}
-          aria-label="Go back"
+          aria-label="Go Back"
         >
           <span aria-hidden="true">&#8592;</span>
           <span>Back</span>
@@ -1239,7 +1239,7 @@ export default function ClubDataPage() {
             className={styles.headerBtn}
             onClick={() => void refreshAll()}
             disabled={manualRefreshing || loading || playersLoading || invoicesLoading}
-            aria-label="Refresh club ledger"
+            aria-label="Refresh Club Ledger"
           >
             {manualRefreshing ? 'Refreshing' : 'Refresh'}
           </button>
@@ -1253,8 +1253,8 @@ export default function ClubDataPage() {
             disabled={
               !exporting && (tab === 'players' ? !sortedPlayers.length : !snapshot?.rows?.length)
             }
-            aria-label={exporting ? 'Cancel CSV export' : 'Export as CSV'}
-            title={exporting ? 'Cancel CSV export' : 'Export as CSV'}
+            aria-label={exporting ? 'Cancel CSV Export' : 'Export As CSV'}
+            title={exporting ? 'Cancel CSV Export' : 'Export As CSV'}
           >
             {exporting ? 'Cancel Export' : 'Export CSV'}
           </button>
@@ -1307,14 +1307,14 @@ export default function ClubDataPage() {
         </div>
       </section>
 
-      <section className={styles.controlDeck} aria-label="Reporting period">
+      <section className={styles.controlDeck} aria-label="Reporting Period">
         <div className={styles.controlLabel}>Reporting Window</div>
         <div className={styles.rangeBar}>
           <button
             type="button"
             className={styles.arrow}
             onClick={() => shiftRange(-1)}
-            aria-label="Previous period"
+            aria-label="Previous Period"
           >
             &#8592;
           </button>
@@ -1329,7 +1329,7 @@ export default function ClubDataPage() {
             className={styles.arrow}
             onClick={() => shiftRange(1)}
             disabled={isToday}
-            aria-label="Next period"
+            aria-label="Next Period"
           >
             &#8594;
           </button>
@@ -1399,7 +1399,7 @@ export default function ClubDataPage() {
           Fee 0.00" in confident green with the real message buried in the list
           below. On the screen that answers "what do I owe the union", a zero
           has to mean zero. Dashes while there is no snapshot to read. */}
-      <dl className={styles.summary} aria-busy={loading} aria-label="Club performance summary">
+      <dl className={styles.summary} aria-busy={loading} aria-label="Club Performance Summary">
         <div className={styles.tile}>
           <dt className={styles.tileLabel}>Games</dt>
           <dd className={styles.tileValue}>{summary ? compactInt(summary.games) : NO_VALUE}</dd>

@@ -185,7 +185,7 @@ describe('GlobalHeader Component', () => {
 
     const notifications = screen.getByRole('link', { name: /^Notifications$/i });
     const profile = screen.getByRole('button', { name: /My Profile/i });
-    const badge = within(notifications).getByLabelText('5 unread notifications');
+    const badge = within(notifications).getByLabelText('5 Unread Notifications');
 
     expect(badge).toHaveTextContent('5');
     expect(profile).not.toContainElement(badge);

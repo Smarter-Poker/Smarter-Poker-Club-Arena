@@ -620,7 +620,7 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
       className={`sw sw--${phase} ${tierClass(data.multiplier)}`}
       role="dialog"
       aria-modal="true"
-      aria-label="Spin multiplier draw"
+      aria-label="Spin Multiplier Draw"
     >
       {/* The table stays visible: a vignette dims it and a spotlight beam
           falls from the top of the screen, exactly like the reference. */}

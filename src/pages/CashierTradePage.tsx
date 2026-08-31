@@ -2092,7 +2092,7 @@ export default function CashierTradePage() {
             aria-expanded={pickerOpen}
             aria-haspopup="listbox"
             aria-controls="cashier-club-picker"
-            aria-label={`Open another club cashier. Current club: ${currentClubLabel}`}
+            aria-label={`Open Another Club Cashier. Current Club: ${currentClubLabel}`}
           >
             {currentClub?.logoUrl ? (
               <img src={currentClub.logoUrl} alt="" className={styles.entityLogo} />
@@ -2126,7 +2126,7 @@ export default function CashierTradePage() {
           </div>
         </div>
 
-        <div className={styles.heroMetrics} aria-label="Current cashier balances">
+        <div className={styles.heroMetrics} aria-label="Current Cashier Balances">
           <div className={styles.heroMetric}>
             <span className={styles.heroMetricLabel}>Club Chips</span>
             <strong className={styles.heroMetricValue}>
@@ -2160,7 +2160,7 @@ export default function CashierTradePage() {
           className={styles.picker}
           role="region"
           tabIndex={-1}
-          aria-label="Club cashier switcher"
+          aria-label="Club Cashier Switcher"
           onKeyDown={(event) => {
             if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
             const options = Array.from(
@@ -2197,7 +2197,7 @@ export default function CashierTradePage() {
             </div>
           )}
           {!membershipsLoading && !membershipsError && (
-            <div role="listbox" aria-label="Club cashiers">
+            <div role="listbox" aria-label="Club Cashiers">
               {memberships.map((m) => (
                 <button
                   key={m.clubUuid}
@@ -2229,7 +2229,7 @@ export default function CashierTradePage() {
       <nav
         className={styles.tabs}
         role="tablist"
-        aria-label="Cashier actions"
+        aria-label="Cashier Actions"
         onKeyDown={(event) => {
           if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();
@@ -2379,8 +2379,8 @@ export default function CashierTradePage() {
                   <button
                     className={styles.plusBtn}
                     disabled={!isOnline}
-                    aria-label="Open the Club Bank Cashier"
-                    title="Club Bank Cashier - fund agent wallets, ledger, chip mint"
+                    aria-label="Open The Club Bank Cashier"
+                    title="Club Bank Cashier - Fund Agent Wallets, Ledger, Chip Mint"
                     onClick={() => setActiveCashier('club_bank')}
                   >
                     +
@@ -2397,7 +2397,7 @@ export default function CashierTradePage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search Members"
-              aria-label={`Search ${downline.length} member${downline.length === 1 ? '' : 's'}`}
+              aria-label={`Search ${downline.length} Member${downline.length === 1 ? '' : 's'}`}
             />
             <span className={styles.memberCount} aria-hidden="true">
               {downline.length}
@@ -2639,7 +2639,7 @@ export default function CashierTradePage() {
             <span className={styles.sectionMeta}>Newest Entries First</span>
           </div>
 
-          <div className={styles.ledgerSummary} aria-label="Loaded ledger totals">
+          <div className={styles.ledgerSummary} aria-label="Loaded Ledger Totals">
             <div className={styles.summaryCell}>
               <span className={styles.summaryLabel}>In</span>
               <strong className={`${styles.summaryValue} ${styles.amtIn}`}>
@@ -2669,10 +2669,10 @@ export default function CashierTradePage() {
               type="search"
               value={recordQuery}
               onChange={(event) => setRecordQuery(event.target.value)}
-              placeholder="Search person or entry type"
-              aria-label="Search trade record"
+              placeholder="Search Person Or Entry Type"
+              aria-label="Search Trade Record"
             />
-            <div className={styles.ledgerFilters} aria-label="Filter trade direction">
+            <div className={styles.ledgerFilters} aria-label="Filter Trade Direction">
               {(['all', 'in', 'out'] as const).map((direction) => (
                 <button
                   key={direction}
@@ -2718,7 +2718,7 @@ export default function CashierTradePage() {
                     dialogTriggerRef.current = event.currentTarget;
                     setReceipt(r);
                   }}
-                  aria-label={`Open receipt for ${r.direction === 'out' ? 'payment to' : 'payment from'} ${r.counterparty}, ${fmt(r.amount)} chips`}
+                  aria-label={`Open Receipt For ${r.direction === 'out' ? 'payment to' : 'payment from'} ${r.counterparty}, ${fmt(r.amount)} Chips`}
                 >
                   <div className={styles.rowInfo}>
                     <span className={styles.rowName}>
@@ -3174,7 +3174,7 @@ export default function CashierTradePage() {
                 if (transferFailures.length) setTransferFailures([]);
               }}
               placeholder={
-                amountModal === 'ticket' ? 'Ticket value per player' : 'Amount per player'
+                amountModal === 'ticket' ? 'Ticket Value Per Player' : 'Amount Per Player'
               }
               autoFocus
             />

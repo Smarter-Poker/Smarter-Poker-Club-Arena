@@ -895,7 +895,7 @@ export default function SettingsPage() {
         </span>
       </AccountSurfaceHeader>
 
-      <nav className={styles.controlIndex} aria-label="Settings sections">
+      <nav className={styles.controlIndex} aria-label="Settings Sections">
         {[
           { id: 'audio' as const, label: 'Audio', ref: audioRef },
           { id: 'display' as const, label: 'Table & Display', ref: appearanceRef },
@@ -1427,9 +1427,9 @@ export default function SettingsPage() {
             </p>
 
             <input
-              aria-label="Six-digit authenticator code"
+              aria-label="Six-Digit Authenticator Code"
               type="text"
-              placeholder="Enter 6-digit Code"
+              placeholder="Enter 6-Digit Code"
               value={verificationCode}
               onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
               className={styles.input}

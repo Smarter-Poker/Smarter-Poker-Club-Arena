@@ -2405,7 +2405,7 @@ export default function UnionDashboardPage() {
                                 }}
                                 title={
                                   review
-                                    ? 'Club nets did not balance to zero across the union - no chips were moved, pending review.'
+                                    ? 'Club Nets Did Not Balance To Zero Across The Union - No Chips Were Moved, Pending Review.'
                                     : undefined
                                 }
                               >

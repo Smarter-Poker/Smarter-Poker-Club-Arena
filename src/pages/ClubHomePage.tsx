@@ -4293,7 +4293,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             </div>
           }
           controls={
-            <section className="lobby-controls" aria-label="Browse games">
+            <section className="lobby-controls" aria-label="Browse Games">
               <div className="lobby-controls__heading">
                 <div>
                   <span className="lobby-controls__eyebrow">Live Club Schedule</span>
@@ -4308,7 +4308,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 </span>
               </div>
               <div className="game-bar">
-                <div className="game-bar__types" role="tablist" aria-label="Game type">
+                <div className="game-bar__types" role="tablist" aria-label="Game Type">
                   {GAME_TYPE_TABS.map((tab) => (
                     <button
                       key={tab.key}
@@ -4382,7 +4382,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     <div className="quickprefs">
                       <div
                         className="quickprefs__row quickprefs__row--status"
-                        aria-label="Game status"
+                        aria-label="Game Status"
                       >
                         <button
                           type="button"

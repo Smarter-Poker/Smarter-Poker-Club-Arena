@@ -1484,7 +1484,7 @@ export default function DynamicWallet({
         className={`dw dw--loading${compactLobby ? ' dw--lobby-board' : ''}`}
         role="region"
         aria-busy="true"
-        aria-label="Loading wallet"
+        aria-label="Loading Wallet"
       >
         {showBBJ && <div className="dw__shimmer dw__shimmer--bbj" />}
         <div className={`dw__rows${compactLobby ? ' dw__rows--count-3' : ''}`}>
@@ -1500,7 +1500,7 @@ export default function DynamicWallet({
     <div
       className={`dw dw--${effectiveVariant}${compactLobby ? ' dw--lobby-board' : ''}`}
       role="region"
-      aria-label="Wallet balances"
+      aria-label="Wallet Balances"
     >
       {/* ── Error indicator — subtle, non-blocking ──────────────────────── */}
       {fetchError && (
@@ -1510,8 +1510,8 @@ export default function DynamicWallet({
             setFetchError(false);
             fetchData();
           }}
-          aria-label="Retry loading wallet data"
-          title="Failed to load - tap to retry"
+          aria-label="Retry Loading Wallet Data"
+          title="Failed To Load - Tap To Retry"
         >
           Balances Unavailable · Retry
         </button>

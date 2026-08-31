@@ -573,7 +573,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
         className={styles.logoGeneratorModalContainer}
         role="dialog"
         aria-modal="true"
-        aria-label="Generate a club logo"
+        aria-label="Generate A Club Logo"
         onClick={(e) => e.stopPropagation()}
         style={{
           backgroundColor: isGenerating || previewUrl ? 'rgba(10, 10, 26, 0.98)' : 'transparent',

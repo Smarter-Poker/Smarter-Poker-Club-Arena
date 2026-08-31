@@ -123,7 +123,7 @@ export default function ClubContextMenu({
         className={styles.contextMenu}
         style={{ top: adjustedY, left: Math.min(x, window.innerWidth - 200) }}
         role="menu"
-        aria-label="Club actions"
+        aria-label="Club Actions"
         onKeyDown={handleKeyDown}
       >
         <button className={styles.contextMenuItem} onClick={handleGoToLobby} role="menuitem">

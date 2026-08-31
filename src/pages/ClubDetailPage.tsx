@@ -1479,7 +1479,7 @@ export default function ClubDetailPage() {
                               });
                             }}
                             disabled={deletingTableId === table.id}
-                            title="Delete table"
+                            title="Delete Table"
                           >
                             {deletingTableId === table.id ? '...' : '✕'}
                           </button>
@@ -1647,7 +1647,7 @@ export default function ClubDetailPage() {
                               onClick={() =>
                                 setShowMemberMenu(showMemberMenu === member.id ? null : member.id)
                               }
-                              aria-label={`Actions for ${member.username}`}
+                              aria-label={`Actions For ${member.username}`}
                               disabled={memberActionLoading === member.id}
                             >
                               {memberActionLoading === member.id ? '◷' : '⋮'}
@@ -1657,7 +1657,7 @@ export default function ClubDetailPage() {
                                 {member.role !== 'admin' && member.role !== 'owner' && (
                                   <button
                                     onClick={() => handleMemberAction(member.id, 'promote')}
-                                    aria-label="Promote member to admin"
+                                    aria-label="Promote Member To Admin"
                                   >
                                     {' '}
                                     Promote
@@ -1666,7 +1666,7 @@ export default function ClubDetailPage() {
                                 {member.role === 'admin' && (
                                   <button
                                     onClick={() => handleMemberAction(member.id, 'demote')}
-                                    aria-label="Demote admin to member"
+                                    aria-label="Demote Admin To Member"
                                   >
                                     {' '}
                                     Demote
@@ -1675,7 +1675,7 @@ export default function ClubDetailPage() {
                                 {member.status === 'active' && member.role !== 'owner' && (
                                   <button
                                     onClick={() => handleMemberAction(member.id, 'suspend')}
-                                    aria-label="Suspend member"
+                                    aria-label="Suspend Member"
                                   >
                                     Suspend
                                   </button>
@@ -1683,7 +1683,7 @@ export default function ClubDetailPage() {
                                 {member.role !== 'owner' && (
                                   <button
                                     onClick={() => handleMemberAction(member.id, 'remove')}
-                                    aria-label="Remove member from club"
+                                    aria-label="Remove Member From Club"
                                   >
                                     Remove
                                   </button>
@@ -1925,7 +1925,7 @@ export default function ClubDetailPage() {
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalHeader}>
               <h3>Agent Management</h3>
-              <button onClick={() => setShowAgentManager(false)} aria-label="Close agent manager">
+              <button onClick={() => setShowAgentManager(false)} aria-label="Close Agent Manager">
                 ×
               </button>
             </div>

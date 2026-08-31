@@ -283,7 +283,7 @@ export default function FirstRunPushPrompt() {
       className="ca-push-prompt"
       role="dialog"
       aria-modal="true"
-      aria-label="Enable notifications"
+      aria-label="Enable Notifications"
       onClick={handleDismiss}
     >
       <div className="ca-push-prompt__sheet" onClick={(e) => e.stopPropagation()}>

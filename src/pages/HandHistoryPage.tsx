@@ -417,7 +417,7 @@ export default function HandHistoryPage() {
           <button
             className="export-btn"
             onClick={handleExport}
-            aria-label="Export the loaded hands to CSV"
+            aria-label="Export The Loaded Hands To CSV"
           >
             {' '}
             Export

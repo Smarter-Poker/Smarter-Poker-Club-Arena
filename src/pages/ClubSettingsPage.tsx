@@ -1228,7 +1228,7 @@ export default function ClubSettingsPage() {
                   className="btn btn-secondary"
                   style={{ padding: '4px 12px', fontSize: '0.75rem' }}
                   onClick={copyClubCode}
-                  aria-label="Copy club code"
+                  aria-label="Copy Club Code"
                 >
                   Copy
                 </button>
@@ -1244,7 +1244,7 @@ export default function ClubSettingsPage() {
               {pendingLogo?.preview || currentLogoUrl ? (
                 <img
                   src={pendingLogo?.preview || currentLogoUrl || undefined}
-                  alt="Club logo"
+                  alt="Club Logo"
                   style={{
                     width: 56,
                     height: 56,
@@ -1398,7 +1398,7 @@ export default function ClubSettingsPage() {
               <input
                 id="club-rake-percent"
                 type="number"
-                placeholder="Use house schedule"
+                placeholder="Use House Schedule"
                 /* DECIMALS HAVE TO BE TYPEABLE (Dan 2026-08-25).
                  This clamped on every keystroke against a CONTROLLED value, so
                  typing "0.5" went "0" -> 0, then "0." -> parseFloat -> 0 -> the
@@ -1438,7 +1438,7 @@ export default function ClubSettingsPage() {
               <input
                 id="club-rake-cap"
                 type="number"
-                placeholder="Use house schedule"
+                placeholder="Use House Schedule"
                 /* Same shape as the rake field above: raw while typing, clamp on
                  blur, so "1.5" cannot be read as 15. */
                 value={rakeCapText}

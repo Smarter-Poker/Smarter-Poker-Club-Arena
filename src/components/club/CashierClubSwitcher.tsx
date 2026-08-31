@@ -204,7 +204,7 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
           }}
           aria-expanded={menuOpen}
           aria-haspopup="menu"
-          aria-label={`Switch club cashier. Current club: ${displayName || 'unknown'}`}
+          aria-label={`Switch Club Cashier. Current Club: ${displayName || 'unknown'}`}
           title={displayName || undefined}
         >
           {logo(currentClub, displayName)}
@@ -229,7 +229,7 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
           <div
             className={styles.menu}
             role="menu"
-            aria-label="Open cashier for club"
+            aria-label="Open Cashier For Club"
             onKeyDown={handleMenuKeyDown}
           >
             <div className={styles.menuTitle}>Open Cashier For</div>

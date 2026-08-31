@@ -488,7 +488,7 @@ export default function AdvancedFilters({
             type="button"
             className="afx-close"
             onClick={onClose}
-            aria-label={sortOnly ? 'Close sort' : 'Close game filters'}
+            aria-label={sortOnly ? 'Close Sort' : 'Close Game Filters'}
           >
             Close
           </button>
@@ -674,7 +674,7 @@ export default function AdvancedFilters({
                     />
                     <input
                       type="range"
-                      aria-label="Minimum seats"
+                      aria-label="Minimum Seats"
                       min={spec.seats.min}
                       max={spec.seats.max}
                       value={value.seatMin}
@@ -689,7 +689,7 @@ export default function AdvancedFilters({
                     />
                     <input
                       type="range"
-                      aria-label="Maximum seats"
+                      aria-label="Maximum Seats"
                       min={spec.seats.min}
                       max={spec.seats.max}
                       value={value.seatMax}

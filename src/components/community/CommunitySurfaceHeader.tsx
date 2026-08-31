@@ -35,7 +35,7 @@ export default function CommunitySurfaceHeader({
         {(metrics.length > 0 || actions) && (
           <div className={styles.commandRow}>
             {metrics.length > 0 && (
-              <dl className={styles.metrics} aria-label={`${title} summary`}>
+              <dl className={styles.metrics} aria-label={`${title} Summary`}>
                 {metrics.map((metric) => (
                   <div
                     className={`${styles.metric} ${styles[metric.tone || 'default']}`}

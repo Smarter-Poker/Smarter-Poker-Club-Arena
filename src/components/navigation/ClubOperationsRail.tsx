@@ -23,7 +23,7 @@ export default function ClubOperationsRail() {
   const activePath = getActiveClubOperationPath(location.pathname, items);
 
   return (
-    <nav className={styles.rail} aria-label="Club Operations sections">
+    <nav className={styles.rail} aria-label="Club Operations Sections">
       <div className={styles.chassis}>
         <div className={styles.identity} aria-hidden="true">
           <span className={styles.statusLight} />

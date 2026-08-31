@@ -54,27 +54,27 @@ const base = {
 
 const openPanel = () => {
   const opener =
-    screen.queryByLabelText('Open bet panel') ?? screen.getByLabelText('Open raise panel');
+    screen.queryByLabelText('Open Bet Panel') ?? screen.getByLabelText('Open Raise Panel');
   fireEvent.click(opener);
 };
 
-const slider = () => screen.getByLabelText('Raise amount') as HTMLInputElement;
+const slider = () => screen.getByLabelText('Raise Amount') as HTMLInputElement;
 
 /** The amount the panel is currently sized to, read off the editable field. */
 const shownAmount = (): string =>
-  screen.getByRole('button', { name: /^Edit bet amount/ }).textContent ?? '';
+  screen.getByRole('button', { name: /^Edit Bet Amount/ }).textContent ?? '';
 
 /**
  * The confirm button, whichever of its three labels it is wearing.
  *
  * The naive /^(Raise|Bet|All in) / also matched the ALL IN PRESET, whose label
- * is "Bet all in for 200" - two buttons, and getByRole throws. Requiring a
+ * is "Bet All In For 200" - two buttons, and getByRole throws. Requiring a
  * digit straight after the verb separates them: the confirm reads "Raise 15",
  * "Bet 15" or "All in for 200"; the preset never does.
  */
 const confirmBtn = () =>
   screen.queryByRole('button', { name: /^(Raise|Bet) [\d.,]/ }) ??
-  screen.getByRole('button', { name: /^All in for [\d.,]/ });
+  screen.getByRole('button', { name: /^All In For [\d.,]/ });
 
 describe('betSliderStep - the step is one chip, never one big blind', () => {
   it('is the small blind on a 1/2 table, not the big blind', () => {
@@ -237,8 +237,8 @@ describe('sanitizeAmountDraft - the typed field can only hold a number', () => {
 
 describe('click and type an exact amount', () => {
   const typeAmount = (text: string) => {
-    fireEvent.click(screen.getByRole('button', { name: /^Edit bet amount/ }));
-    const input = screen.getByLabelText(/^Type exact bet amount/) as HTMLInputElement;
+    fireEvent.click(screen.getByRole('button', { name: /^Edit Bet Amount/ }));
+    const input = screen.getByLabelText(/^Type Exact Bet Amount/) as HTMLInputElement;
     fireEvent.change(input, { target: { value: text } });
     fireEvent.keyDown(input, { key: 'Enter' });
   };
@@ -246,8 +246,8 @@ describe('click and type an exact amount', () => {
   it('offers a decimal keypad on a phone', () => {
     render(<ActionPanel {...base} onAction={vi.fn()} />);
     openPanel();
-    fireEvent.click(screen.getByRole('button', { name: /^Edit bet amount/ }));
-    expect(screen.getByLabelText(/^Type exact bet amount/).getAttribute('inputmode')).toBe(
+    fireEvent.click(screen.getByRole('button', { name: /^Edit Bet Amount/ }));
+    expect(screen.getByLabelText(/^Type Exact Bet Amount/).getAttribute('inputmode')).toBe(
       'decimal'
     );
   });
@@ -293,8 +293,8 @@ describe('click and type an exact amount', () => {
     render(<ActionPanel {...base} onAction={vi.fn()} />);
     openPanel();
     fireEvent.change(slider(), { target: { value: '40' } });
-    fireEvent.click(screen.getByRole('button', { name: /^Edit bet amount/ }));
-    const input = screen.getByLabelText(/^Type exact bet amount/);
+    fireEvent.click(screen.getByRole('button', { name: /^Edit Bet Amount/ }));
+    const input = screen.getByLabelText(/^Type Exact Bet Amount/);
     fireEvent.change(input, { target: { value: '99' } });
     fireEvent.keyDown(input, { key: 'Escape' });
     expect(shownAmount()).toBe('40');

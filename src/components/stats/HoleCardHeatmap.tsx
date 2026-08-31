@@ -190,7 +190,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
       </div>
 
       <div className="heatmap-controls">
-        <div className="heatmap-modes" role="group" aria-label="View mode">
+        <div className="heatmap-modes" role="group" aria-label="View Mode">
           {(
             [
               ['frequency', 'How Often'],
@@ -253,7 +253,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
         <div
           className="heatmap-grid"
           role="grid"
-          aria-label="Starting hand grid, 13 by 13"
+          aria-label="Starting Hand Grid, 13 By 13"
           onMouseLeave={() => setHovered(null)}
         >
           {RANKS.map((rowRank, rowIdx) => (
@@ -303,7 +303,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
                     aria-expanded={cell ? selected === key : undefined}
                     aria-label={
                       !cell
-                        ? `${key}, never dealt`
+                        ? `${key}, Never Dealt`
                         : confident
                           ? `${key}, ${hands} hands, ${cell.bb100.toFixed(0)} big blinds per 100`
                           : // Deliberately does NOT state bb/100 below the

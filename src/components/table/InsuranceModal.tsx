@@ -459,7 +459,7 @@ export function InsuranceModal({
                     const raw = parseFloat(e.target.value);
                     setFeeAmount(clampFee(raw >= feeGridMax ? feeMax : raw));
                   }}
-                  aria-label={`Insurance fee, ${feeMin} to ${feeMax}`}
+                  aria-label={`Insurance Fee, ${feeMin} To ${feeMax}`}
                 />
                 <div className="insurance-modal__slider-range">
                   <span>{feeMin.toLocaleString()}</span>
@@ -473,7 +473,7 @@ export function InsuranceModal({
                       haptic.light();
                       setFeeAmount(breakEvenFee);
                     }}
-                    title="Fee sized so a loss returns exactly your committed chips"
+                    title="Fee Sized So A Loss Returns Exactly Your Committed Chips"
                   >
                     Break Even
                   </button>
@@ -483,7 +483,7 @@ export function InsuranceModal({
                       haptic.light();
                       setFeeAmount(constantProfitFee);
                     }}
-                    title="Fee sized so winning and losing pay the same"
+                    title="Fee Sized So Winning And Losing Pay The Same"
                   >
                     Constant Profit
                   </button>
@@ -579,7 +579,7 @@ export function InsuranceModal({
             <button
               className="insurance-modal__btn insurance-modal__btn--decline"
               onClick={handleDeclineForHand}
-              title="Decline insurance for the rest of this hand"
+              title="Decline Insurance For The Rest Of This Hand"
             >
               No
             </button>

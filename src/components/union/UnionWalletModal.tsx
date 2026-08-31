@@ -472,7 +472,7 @@ export function UnionWalletModal({
                         disabled={isDisabled}
                         title={
                           isDisabled
-                            ? 'Member clawbacks must be performed by the club owner.'
+                            ? 'Member Clawbacks Must Be Performed By The Club Owner.'
                             : undefined
                         }
                         aria-pressed={

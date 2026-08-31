@@ -572,7 +572,7 @@ export default function MarketplacePage() {
         }
       />
 
-      <div className={styles.marketStatusBar} aria-label="Marketplace wallet status">
+      <div className={styles.marketStatusBar} aria-label="Marketplace Wallet Status">
         <div className={styles.walletBar}>
           {/* One wallet, one currency: diamonds. The shop API and the VIP
                 status API both report the same profiles.diamonds balance. */}

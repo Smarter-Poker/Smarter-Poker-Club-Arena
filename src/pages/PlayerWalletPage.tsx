@@ -487,7 +487,7 @@ export default function PlayerWalletPage() {
           <span className="diamond-glyph" aria-hidden="true">
             ◆
           </span>
-          <span aria-label={`${animatedDiamonds.toLocaleString()} diamonds`}>
+          <span aria-label={`${animatedDiamonds.toLocaleString()} Diamonds`}>
             {animatedDiamonds.toLocaleString()}
           </span>
         </div>
@@ -546,7 +546,7 @@ export default function PlayerWalletPage() {
       <div
         className="wallet-tabs"
         role="tablist"
-        aria-label="Wallet sections"
+        aria-label="Wallet Sections"
         onKeyDown={handleTabKeyDown}
       >
         {WALLET_TABS.map((tab) => (
@@ -619,7 +619,7 @@ export default function PlayerWalletPage() {
                   className="transfer-select"
                   value={transferFrom}
                   onChange={(e) => setTransferFrom(e.target.value as WalletType)}
-                  aria-label="Transfer from wallet"
+                  aria-label="Transfer From Wallet"
                 >
                   {(Object.keys(WALLET_CONFIG) as WalletType[]).map((type) => (
                     <option key={type} value={type}>
@@ -640,7 +640,7 @@ export default function PlayerWalletPage() {
                   className="transfer-select"
                   value={transferTo}
                   onChange={(e) => setTransferTo(e.target.value as WalletType)}
-                  aria-label="Transfer to wallet"
+                  aria-label="Transfer To Wallet"
                 >
                   {(Object.keys(WALLET_CONFIG) as WalletType[]).map((type) => (
                     <option key={type} value={type}>
@@ -657,7 +657,7 @@ export default function PlayerWalletPage() {
                   placeholder="0.00"
                   value={transferAmount}
                   onChange={(e) => setTransferAmount(e.target.value)}
-                  aria-label="Transfer amount"
+                  aria-label="Transfer Amount"
                   inputMode="decimal"
                   min="0"
                 />

@@ -336,7 +336,7 @@ export default function FindPlayerModal({
                   </div>
                 )}
                 {isSuggesting && (
-                  <span className={styles.suggestLoading} aria-label="Loading suggestions">
+                  <span className={styles.suggestLoading} aria-label="Loading Suggestions">
                     <span className={styles.suggestSpinner} aria-hidden="true" />
                   </span>
                 )}

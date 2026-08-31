@@ -76,7 +76,7 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
       <Link
         to={`/unions/${union.id}`}
         className="union-card"
-        aria-label={`Open ${union.name} union`}
+        aria-label={`Open ${union.name} Union`}
       >
         <div className="union-header">
           <span className="union-icon" aria-hidden="true">
@@ -94,7 +94,7 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
         <p className="union-description">
           {union.description || 'A connected club network with shared games and events.'}
         </p>
-        <div className="union-stats" aria-label={`${union.name} network statistics`}>
+        <div className="union-stats" aria-label={`${union.name} Network Statistics`}>
           <div className="union-stat">
             <span className="stat-value">{union.clubCount.toLocaleString()}</span>
             <span className="stat-label">Clubs</span>
@@ -119,7 +119,7 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
         <div
           className="union-progress"
           role="progressbar"
-          aria-label={`${union.name} level progress`}
+          aria-label={`${union.name} Level Progress`}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={uLevel.progressPercent}

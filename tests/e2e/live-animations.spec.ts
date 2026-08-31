@@ -525,7 +525,7 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
       `const s = document.createElement('div');
        s.className = 'seat seat--empty';
        s.innerHTML = '<img class="seat__empty-img seat__empty-img--sit" ' +
-                     'src="/images/icons/sit-button.png" alt="Sit down" draggable="false">';
+                     'src="/images/icons/sit-button.png" alt="Sit Down" draggable="false">';
        $('sw').appendChild(s);`
     );
     // No emptyPulse animation to assert — the coin image IS the affordance.

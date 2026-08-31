@@ -86,7 +86,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
         {useBakedCard ? (
           <img
             src={cardImageUrl}
-            alt={`${clubName} card`}
+            alt={`${clubName} Card`}
             className="club-card-viewport-img"
             loading="lazy"
             decoding="async"
@@ -98,7 +98,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             <div className="club-card-logo-backdrop"></div>
             <img
               src={logoUrl}
-              alt={`${clubName} logo`}
+              alt={`${clubName} Logo`}
               className="club-card-viewport-logo"
               loading="lazy"
               decoding="async"
@@ -164,7 +164,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             aria-valuenow={Math.round(levelProgressPercent)}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={`Progress to level ${Math.max(1, clubLevel) + 1}`}
+            aria-label={`Progress To Level ${Math.max(1, clubLevel) + 1}`}
           >
             <span
               className="club-card-level-fill"

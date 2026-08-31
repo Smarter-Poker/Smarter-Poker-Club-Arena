@@ -206,7 +206,7 @@ export function HandReveal({
          tries on an overlay, did nothing. */
       role="dialog"
       aria-modal="true"
-      aria-label={isWinner ? 'Show or muck your hand' : `${winnerName} won this pot`}
+      aria-label={isWinner ? 'Show Or Muck Your Hand' : `${winnerName} Won This Pot`}
       tabIndex={-1}
       onKeyDown={(e) => {
         if (e.key !== 'Escape') return;

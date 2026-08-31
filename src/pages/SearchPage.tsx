@@ -417,7 +417,7 @@ export default function SearchPage() {
               id="community-search"
               type="search"
               autoComplete="off"
-              placeholder="Player, club, table, or tournament"
+              placeholder="Player, Club, Table, Or Tournament"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               autoFocus
@@ -433,7 +433,7 @@ export default function SearchPage() {
           </div>
         </form>
 
-        <div className="search-category-rail" role="tablist" aria-label="Search categories">
+        <div className="search-category-rail" role="tablist" aria-label="Search Categories">
           {CATEGORIES.map((item) => (
             <button
               key={item.id}
@@ -473,7 +473,7 @@ export default function SearchPage() {
           )}
 
           {loading ? (
-            <div className="search-skeletons" role="status" aria-label="Scanning community index">
+            <div className="search-skeletons" role="status" aria-label="Scanning Community Index">
               {Array.from({ length: 4 }).map((_, index) => (
                 <div className="search-skeleton" key={index}>
                   <span />

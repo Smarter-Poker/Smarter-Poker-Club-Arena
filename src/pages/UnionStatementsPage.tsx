@@ -438,7 +438,7 @@ export default function UnionStatementsPage() {
               type="button"
               className={styles.headerBtn}
               onClick={() => navigate(-1)}
-              aria-label="Go back"
+              aria-label="Go Back"
             >
               Back
             </button>
@@ -447,7 +447,7 @@ export default function UnionStatementsPage() {
               className={styles.headerBtn}
               onClick={exportCsv}
               disabled={!board?.clubs?.length}
-              aria-label="Export as CSV"
+              aria-label="Export As CSV"
             >
               Export CSV
             </button>
@@ -461,7 +461,7 @@ export default function UnionStatementsPage() {
       </div>
 
       {board && (board.history?.length ?? 0) > 1 && (
-        <div className={styles.periodChips} role="tablist" aria-label="Statement period">
+        <div className={styles.periodChips} role="tablist" aria-label="Statement Period">
           {(board.history || []).map((h) => (
             <button
               key={h.period_end}
@@ -524,7 +524,7 @@ export default function UnionStatementsPage() {
           <span>Insurance Last 14 Days:</span>
           <span
             className={insurancePnl.totals.net < 0 ? styles.neg : styles.pos}
-            title="Premiums collected minus payouts paid, settled to the union insurance wallet"
+            title="Premiums Collected Minus Payouts Paid, Settled To The Union Insurance Wallet"
           >
             {money(insurancePnl.totals.net)} Net
           </span>
@@ -677,7 +677,7 @@ export default function UnionStatementsPage() {
                           value={payAmount}
                           onChange={(e) => setPayAmount(e.target.value)}
                           placeholder="Amount Received"
-                          aria-label={`Payment received from ${c.club_name}`}
+                          aria-label={`Payment Received From ${c.club_name}`}
                         />
                         <button
                           type="button"

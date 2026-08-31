@@ -1668,7 +1668,7 @@ export default function PlayerStatsPage() {
           </div>
         </div>
 
-        <div className="stats-hero" role="group" aria-label="Headline performance">
+        <div className="stats-hero" role="group" aria-label="Headline Performance">
           <HandsWonGauge handsWonPct={handsWonPct} />
           <div className="hero-stats">
             <div className="hero-stat">
@@ -1793,7 +1793,7 @@ export default function PlayerStatsPage() {
             ))}
           </div>
 
-          <div className="stats-brief-actions" aria-label="Dossier shortcuts">
+          <div className="stats-brief-actions" aria-label="Dossier Shortcuts">
             <button type="button" onClick={() => selectSection('analysis', true)}>
               Open Deep Analysis
             </button>
@@ -2016,7 +2016,7 @@ export default function PlayerStatsPage() {
                 <div className="stats-ledger-grid">
                   {/* Per-variant breakdown */}
                   {(full?.variants?.length ?? 0) > 0 && (
-                    <div className="variant-table" role="region" aria-label="Performance by game">
+                    <div className="variant-table" role="region" aria-label="Performance By Game">
                       <h3 className="variant-title">Game Mix</h3>
                       <div className="variant-row variant-head">
                         <span>Game</span>
@@ -2031,7 +2031,7 @@ export default function PlayerStatsPage() {
                           className="variant-row stats-evidence-row"
                           key={v.variant}
                           onClick={() => openHandEvidence({ variant: v.variant })}
-                          aria-label={`Review ${String(v.variant).toUpperCase()} hands`}
+                          aria-label={`Review ${String(v.variant).toUpperCase()} Hands`}
                         >
                           <span className="variant-name">{String(v.variant).toUpperCase()}</span>
                           <span>{v.hands.toLocaleString()}</span>
@@ -2051,7 +2051,7 @@ export default function PlayerStatsPage() {
                   {/* Per-stake breakdown: which game size is actually carrying (or
                   bleeding) the results, instead of one blended number. */}
                   {(full?.stakes?.length ?? 0) > 1 && (
-                    <div className="variant-table" role="region" aria-label="Performance by stake">
+                    <div className="variant-table" role="region" aria-label="Performance By Stake">
                       <h3 className="variant-title">Stake Ledger</h3>
                       <div className="variant-row variant-head">
                         <span>Stake</span>
@@ -2066,7 +2066,7 @@ export default function PlayerStatsPage() {
                           className="variant-row stats-evidence-row"
                           key={`stake-${st.big_blind}`}
                           onClick={() => openHandEvidence({ bigBlind: st.big_blind })}
-                          aria-label={`Review hands at ${st.big_blind} big blind`}
+                          aria-label={`Review Hands At ${st.big_blind} Big Blind`}
                         >
                           <span className="variant-name">{st.big_blind} BB</span>
                           <span>{st.hands.toLocaleString()}</span>
@@ -2269,7 +2269,7 @@ export default function PlayerStatsPage() {
             {/* ── POSITIONS TAB ── */}
             {showTab('positions') && hasData && (
               <div>
-                <div className="stats-position-evidence" aria-label="Review hands by position">
+                <div className="stats-position-evidence" aria-label="Review Hands By Position">
                   {(full?.positions || []).map((position) => (
                     <button
                       type="button"

@@ -21,7 +21,7 @@ const emptyStateCss = read('src/components/common/EmptyState.module.css');
 
 describe('Club Arena primary actions', () => {
   it('uses the approved action artwork with semantic controls', () => {
-    expect(actionBar).toContain('aria-label="Club Arena actions"');
+    expect(actionBar).toContain('aria-label="Club Arena Actions"');
     expect(actionBar).toContain('aria-label="Create A Club"');
     expect(actionBar).toContain('aria-label="Find A Player"');
     expect(actionBar).toContain('aria-label="Join A Club"');

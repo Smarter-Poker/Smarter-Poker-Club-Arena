@@ -561,7 +561,7 @@ export default function BadBeatJackpotPage() {
               value={promoAmount}
               onChange={(e) => setPromoAmount(e.target.value)}
               placeholder="Amount"
-              aria-label="Promo rain amount"
+              aria-label="Promo Rain Amount"
               style={{
                 flex: '1 1 120px',
                 minWidth: 0,

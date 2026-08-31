@@ -187,7 +187,7 @@ export default function BlacklistManagerPage() {
                 <label htmlFor="blacklist-reason">Reason</label>
                 <input
                   id="blacklist-reason"
-                  placeholder="Document the control decision"
+                  placeholder="Document The Control Decision"
                   value={newReason}
                   onChange={(event) => setNewReason(event.target.value)}
                   required
@@ -241,7 +241,7 @@ export default function BlacklistManagerPage() {
               <div
                 className={styles.tableScroll}
                 tabIndex={0}
-                aria-label="Scrollable exclusion ledger"
+                aria-label="Scrollable Exclusion Ledger"
               >
                 <table>
                   <caption className={styles.srOnly}>Club Player Exclusion Records</caption>

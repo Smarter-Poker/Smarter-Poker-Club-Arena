@@ -79,7 +79,7 @@ export function BBJRulesPanel({ poolAmount = 0 }: BBJRulesPanelProps) {
         <div
           className="bbj-rules__tabs"
           role="tablist"
-          aria-label="Jackpot rules"
+          aria-label="Jackpot Rules"
           onKeyDown={(e) => {
             // Half a tablist is worse than none: a reader announced "tab 1 of 2"
             // and the arrow keys did nothing.

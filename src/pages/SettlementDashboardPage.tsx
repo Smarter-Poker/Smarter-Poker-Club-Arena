@@ -870,8 +870,8 @@ export default function SettlementDashboardPage() {
           disabled={runningSettlement}
           title={
             rakebackStatus
-              ? `${rakebackStatus.pendingPeriods} pending period(s), ~${rakebackStatus.estimatedOwed.toLocaleString()} chips owed`
-              : 'Player rakeback settles automatically; click to force it now'
+              ? `${rakebackStatus.pendingPeriods} Pending Period(S), ~${rakebackStatus.estimatedOwed.toLocaleString()} Chips Owed`
+              : 'Player Rakeback Settles Automatically; Click To Force It Now'
           }
           style={{
             padding: '10px 18px',
@@ -1035,7 +1035,7 @@ export default function SettlementDashboardPage() {
         <div
           style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '24px' }}
           role="table"
-          aria-label="Agent payouts"
+          aria-label="Agent Payouts"
         >
           {agentPayouts.map((agent, idx) => {
             const statusStyle = getStatusColor(agent.status);
@@ -1138,7 +1138,7 @@ export default function SettlementDashboardPage() {
         <div
           style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}
           role="table"
-          aria-label="Settlement period history"
+          aria-label="Settlement Period History"
         >
           {periodHistory.map((period) => {
             const statusStyle = getStatusColor(period.status);

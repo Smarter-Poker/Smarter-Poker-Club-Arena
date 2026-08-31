@@ -992,7 +992,7 @@ export default function ClubDashboard() {
 
       {/* Tab Navigation — real tablist semantics so screen readers announce
           the selected tab and arrow keys move between them. */}
-      <nav className={styles.tabNav} role="tablist" aria-label="Club dashboard sections">
+      <nav className={styles.tabNav} role="tablist" aria-label="Club Dashboard Sections">
         {(
           [
             { id: 'overview', label: 'Overview' },
@@ -1048,7 +1048,7 @@ export default function ClubDashboard() {
         <button
           onClick={() => loadDashboardData()}
           disabled={loading}
-          aria-label="Refresh dashboard data"
+          aria-label="Refresh Dashboard Data"
           style={{
             background: 'rgba(255,255,255,0.06)',
             color: 'inherit',
@@ -1116,7 +1116,7 @@ export default function ClubDashboard() {
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as SortId)}
-                    aria-label="Sort leaderboard"
+                    aria-label="Sort Leaderboard"
                     style={{
                       background: 'rgba(255,255,255,0.06)',
                       color: 'inherit',
@@ -1179,7 +1179,7 @@ export default function ClubDashboard() {
                       key={player.userId}
                       to={`/profile/${player.userId}`}
                       className={styles.playerRow}
-                      title={`View ${player.displayName}'s profile`}
+                      title={`View ${player.displayName}'S Profile`}
                       style={{
                         textDecoration: 'none',
                         color: 'inherit',
@@ -1334,7 +1334,7 @@ export default function ClubDashboard() {
               value={memberSearch}
               onChange={(e) => setMemberSearch(e.target.value)}
               placeholder="Search Members By Name"
-              aria-label="Search members"
+              aria-label="Search Members"
               style={{
                 width: '100%',
                 boxSizing: 'border-box',
@@ -1363,7 +1363,7 @@ export default function ClubDashboard() {
               <select
                 value={memberSort}
                 onChange={(e) => setMemberSort(e.target.value as MemberSortId)}
-                aria-label="Sort members"
+                aria-label="Sort Members"
                 style={selectStyle}
               >
                 <option value="hands">Most Hands</option>
@@ -1375,7 +1375,7 @@ export default function ClubDashboard() {
               <select
                 value={memberRole}
                 onChange={(e) => setMemberRole(e.target.value)}
-                aria-label="Filter members by role"
+                aria-label="Filter Members By Role"
                 style={selectStyle}
               >
                 <option value="">All Roles</option>
@@ -1412,7 +1412,7 @@ export default function ClubDashboard() {
                     key={m.userId}
                     to={`/profile/${m.userId}`}
                     className={styles.playerCard}
-                    title={`View ${m.displayName}'s profile`}
+                    title={`View ${m.displayName}'S Profile`}
                     style={{ textDecoration: 'none', color: 'inherit' }}
                   >
                     <div className={styles.playerAvatar} style={{ position: 'relative' }}>

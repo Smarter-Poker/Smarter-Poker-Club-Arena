@@ -199,7 +199,7 @@ export function CashierModal({
         <div
           className="cashier-tabs"
           role="tablist"
-          aria-label="Cashier actions"
+          aria-label="Cashier Actions"
           onKeyDown={handleTabKeyDown}
         >
           <button

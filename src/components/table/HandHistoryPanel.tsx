@@ -551,7 +551,7 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
           div, so "tap anywhere else to close" — the gesture every other sheet
           in Club Arena answers — did nothing at all here. */}
       <div className="hh-backdrop" onClick={onClose} aria-hidden="true" />
-      <div className="hh-panel" role="dialog" aria-label="Hand history">
+      <div className="hh-panel" role="dialog" aria-label="Hand History">
         {/* Bottom-sheet grab handle. CSS shows it only where the panel IS a
             bottom sheet (<=640px); on the desktop drawer it stays hidden. */}
         <div className="hh-panel__grab" aria-hidden="true">
@@ -561,7 +561,7 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
         <div className="hh-panel__header">
           <h3 className="hh-panel__title">Hand History</h3>
           <div className="hh-panel__header-actions">
-            <button className="hh-panel__export" onClick={exportAll} title="Export all hands">
+            <button className="hh-panel__export" onClick={exportAll} title="Export All Hands">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <path
                   d="M8 2v8M4 7l4 4 4-4M2 12h12"

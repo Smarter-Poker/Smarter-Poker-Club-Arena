@@ -990,7 +990,7 @@ export default function ProfilePage() {
       {/* Dedicated workspaces own reward claims, deep analytics, promotions,
           and ranking. Profile is their identity index, not a second copy of
           their data loaders and mutation guards. */}
-      <nav className={styles.destinationGrid} aria-label="Player workspaces">
+      <nav className={styles.destinationGrid} aria-label="Player Workspaces">
         {[
           { label: 'Player Analytics', meta: 'Deep stats and leak analysis', path: '/stats' },
           { label: 'Bonus Center', meta: 'Daily and special claims', path: '/bonuses' },
@@ -1041,7 +1041,7 @@ export default function ProfilePage() {
       )}
 
       {/* Tab Navigation */}
-      <nav className={styles.tabNav} role="tablist" aria-label="Profile details">
+      <nav className={styles.tabNav} role="tablist" aria-label="Profile Details">
         {PROFILE_TABS.map((tab, index) => (
           <button
             type="button"

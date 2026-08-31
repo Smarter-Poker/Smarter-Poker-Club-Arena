@@ -1138,7 +1138,7 @@ export default function PlayerSessionsPage() {
                           fontSize: '14px',
                           color: notes[p.userId] ? '#F7C52A' : '#6B7280',
                         }}
-                        title={notes[p.userId] ? 'Edit note' : 'Add note'}
+                        title={notes[p.userId] ? 'Edit Note' : 'Add Note'}
                       >
                         {notes[p.userId] ? '▤' : '✏'}
                       </button>

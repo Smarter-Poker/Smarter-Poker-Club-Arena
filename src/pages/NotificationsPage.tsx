@@ -517,7 +517,7 @@ export default function NotificationsPage() {
       </AccountSurfaceHeader>
 
       <div className="ca-notif__bar">
-        <div className="ca-notif__filters" role="group" aria-label="Filter notifications">
+        <div className="ca-notif__filters" role="group" aria-label="Filter Notifications">
           <button type="button" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
             All <span>{notifications.length}</span>
           </button>

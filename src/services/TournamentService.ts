@@ -907,6 +907,28 @@ class TournamentService {
         '0A000': 'Could not create the tournament. That option is not available yet.',
         '42501': 'You do not have permission to create games for this club.',
       };
+      /**
+       * 55000 IS THE GUARANTEE REFUSAL, AND ITS MESSAGE IS ALREADY WRITTEN
+       * FOR THE OWNER (2026-08-31 audit).
+       *
+       * trg_tournaments_guarantee_affordable raises, verbatim: "Club X cannot
+       * guarantee N chips: <bank> holds A, floor B, already promised C on live
+       * events — short by D. Add chips to the bank to cover the guarantee."
+       * That sentence names the shortfall and the remedy.
+       *
+       * It was not in this map, so it fell to the default — "Please try again"
+       * — which describes a transient blip. The condition is neither
+       * transient nor mysterious: the owner is short by a stated number of
+       * chips and nothing they retry will change that. The migration that
+       * added the trigger even records the assumption this broke: "The UI
+       * already shows the raise verbatim as a toast."
+       *
+       * Passed through as written. The Toast layer applies the house style
+       * (Title Case, no em dashes) at render, so the raise text needs no
+       * massaging here.
+       */
+      const raised = String((rpcError as { message?: string }).message ?? '').trim();
+      if (code === '55000' && raised) throw new Error(raised);
       throw new Error(friendly[code] ?? 'Could not create the tournament. Please try again.');
     }
     const result = rpcResult as {

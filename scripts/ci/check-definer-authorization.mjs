@@ -257,14 +257,29 @@ export function spoofableIdentityFallback(body) {
   return false;
 }
 
-export function unauthorisedWriters(sql, allowlist = new Set()) {
+export function unauthorisedWriters(sql, allowlist = new Set(), grantSql = sql) {
   const clean = stripComments(sql);
+  /* GRANTS ARE READ ACROSS THE WHOLE BRANCH (2026-08-31). A branch's migrations
+     are applied as a unit, so a REVOKE landing in a sibling migration in the
+     same pull request really does close the function. Reading one file alone
+     reports a hole that will never exist — which is exactly what happened to
+     fn_definer_exposure_audit, whose body contains the literal string
+     '(insert into|update |delete from)' as its own detection regex and so reads
+     as a writer. Its REVOKE is in the next migration along.
+
+     The write-detection regex is deliberately NOT taught to ignore string
+     literals: `EXECUTE 'insert into ...'` is a real write, and a blind spot
+     there would be worse than an occasional false positive here.
+
+     `grantSql` defaults to `sql`, so every test that passes a single migration
+     behaves exactly as before. */
+  const grants = grantSql === sql ? clean : stripComments(grantSql);
   const out = [];
   for (const fn of declaredFunctions(clean)) {
     if (!/SECURITY\s+DEFINER/i.test(fn.header)) continue;
     if (/RETURNS\s+trigger\b/i.test(fn.header)) continue;
     if (!/(?:^|[^a-z_])(?:insert\s+into|update\s+[a-z_"]|delete\s+from)/i.test(fn.body)) continue;
-    if (!browserReachable(clean, fn.name)) continue;
+    if (!browserReachable(grants, fn.name)) continue;
     /* ASKING, THEN ACCEPTING THE CALLER'S ANSWER, IS NOT ASKING (2026-08-31).
        The test below used to be the whole rule: mention auth.uid() anywhere and
        you were cleared. `fn_club_set_member_role` mentioned it - inside
@@ -393,7 +408,7 @@ function main() {
     inspected += declaredFunctions(stripComments(sql)).filter((f) =>
       /SECURITY\s+DEFINER/i.test(f.header)
     ).length;
-    for (const name of unauthorisedWriters(sql, allowlist)) {
+    for (const name of unauthorisedWriters(sql, allowlist, branchSql)) {
       offenders.push({ name, file });
     }
     // A writer already reported above is not reported twice: the writer verdict

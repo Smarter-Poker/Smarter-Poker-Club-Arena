@@ -238,6 +238,42 @@ describe('a new definer that answers a caller with no account', () => {
     expect(anonReadableDefiners(sql)).toEqual([]);
   });
 
+  /**
+   * A branch's migrations are APPLIED AS A UNIT, so a REVOKE in a sibling
+   * migration really does close the function. Reading one file in isolation
+   * reported a hole that would never exist — and the first thing it reported
+   * that way was fn_definer_exposure_audit, the security audit itself, whose
+   * REVOKE lives in the very next migration of the same branch.
+   */
+  it('sees a REVOKE that lands in a sibling migration of the same branch', () => {
+    const declaring = fn('fn_audit_thing');
+    const sibling =
+      'REVOKE ALL ON FUNCTION public.fn_audit_thing(int) FROM PUBLIC, anon, authenticated;\n' +
+      'GRANT EXECUTE ON FUNCTION public.fn_audit_thing(int) TO service_role;';
+
+    // On its own the declaring file looks wide open, and honestly so.
+    expect(anonReadableDefiners(declaring)).toEqual(['fn_audit_thing']);
+    // Read against the whole branch, it is closed.
+    expect(anonReadableDefiners(declaring, new Set(), `${declaring}\n${sibling}`)).toEqual([]);
+  });
+
+  it('applies the same branch-wide reading to the writer rule', () => {
+    // A function whose body merely NAMES the write verbs - which is what the
+    // exposure audit's own detection regex does - still reads as a writer, on
+    // purpose: EXECUTE 'insert into ...' is a real write and must not become a
+    // blind spot. The branch's REVOKE is what clears it.
+    const declaring = fn(
+      'fn_names_the_verbs',
+      '',
+      "SELECT 1 WHERE 'x' ~ '(insert into|update |delete from)';"
+    );
+    expect(unauthorisedWriters(declaring)).toEqual(['fn_names_the_verbs']);
+
+    const sibling =
+      'REVOKE ALL ON FUNCTION public.fn_names_the_verbs(int) FROM PUBLIC, anon, authenticated;';
+    expect(unauthorisedWriters(declaring, new Set(), `${declaring}\n${sibling}`)).toEqual([]);
+  });
+
   it('starts with an empty anonPublicSurface, so the first entry costs a decision', () => {
     const allow = JSON.parse(
       readFileSync(

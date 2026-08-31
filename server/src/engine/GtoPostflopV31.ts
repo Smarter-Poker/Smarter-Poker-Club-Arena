@@ -66,7 +66,7 @@
  */
 
 import type { Card } from '../types.js';
-import { textureClass, snapDepthBucket } from './GtoPostflop.js';
+import { textureClass, snapDepthBucket, depthCandidates } from './GtoPostflop.js';
 
 export interface GtoPostflopV31Row {
   street: string;
@@ -198,7 +198,7 @@ export function gtoV31CellMatrix(
   street: string,
   family: 'cash' | 'spin' | 'tourney_icm' | 'tourney_ev',
   position: string,
-  depth: number,
+  stackBB: number,
   texture: string,
   _board: Card[]
 ): Record<string, Record<string, number>> | null {
@@ -208,7 +208,7 @@ export function gtoV31CellMatrix(
       : family === 'tourney_ev'
         ? ['tourney_ev']
         : [family];
-  const depths = [depth, ...DEPTH_BUCKETS.filter((d) => d !== depth)].slice(0, 2);
+  const depths = depthCandidates(stackBB);
   for (const fam of families) {
     for (const d of depths) {
       const cell = store.get(key(street, fam, position, d, texture));
@@ -257,14 +257,13 @@ export function gtoStreetAdviceV31(args: {
   const handKey = v31HandKey(args.hand, args.holeCards, args.board);
   if (!handKey) return { hit: false, miss: 'no_hand' };
 
-  const depth = snapDepthBucket(args.stackBB);
   const families: string[] =
     args.family === 'tourney_icm'
       ? ['tourney_icm', 'tourney_ev']
       : args.family === 'tourney_ev'
         ? ['tourney_ev']
         : [args.family];
-  const depths = [depth, ...DEPTH_BUCKETS.filter((d) => d !== depth)].slice(0, 2);
+  const depths = depthCandidates(args.stackBB);
 
   for (const fam of families) {
     for (const d of depths) {

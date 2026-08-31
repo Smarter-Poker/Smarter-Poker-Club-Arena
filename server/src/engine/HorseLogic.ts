@@ -78,7 +78,7 @@ import { gtoOpenJam, gtoBbVsSbJam, handClass as gtoHandClass } from './GtoCharts
 // V29 (Dan 2026-08-29): the flop plays from the solver — class-mean mixes
 // aggregated offline from the 8.8M-solution warehouse, preloaded by
 // GtoPostflopLoader. See engine/GtoPostflop.ts for scope and honesty notes.
-import { gtoStreetAdvice, rollMix } from './GtoPostflop.js';
+import { gtoStreetAdvice, rollMix, snapDepthBucket } from './GtoPostflop.js';
 import { gtoStreetAdviceV31 } from './GtoPostflopV31.js';
 import { gtoFacingDefense } from './GtoFacingDefenseV32.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
@@ -410,6 +410,20 @@ const STAGE_ORDER: Record<string, number> = {
  * the LAST aggressive action on any earlier street. The preflop raiser owns
  * the flop; a flop check-raiser owns the turn. Drives the c-bet/probe split.
  */
+/**
+ * True when the advice cell's depth bucket is the PRIMARY snap for this
+ * stack — false means the answer came from the neighbouring bucket. The
+ * cell key is `street|family|position|depth|texture`; parsing it here keeps
+ * the stores' return shape untouched.
+ */
+function cellDepthIsPrimary(cell: string, stackBB: number): boolean {
+  const parts = cell.split('|');
+  if (parts.length < 5) return true; // unknown shape: do not invent a miss
+  const d = Number(parts[3]);
+  if (!isFinite(d)) return true;
+  return d === snapDepthBucket(stackBB);
+}
+
 function readInitiative(
   history: ActionRecord[] | undefined,
   heroUserId: string,
@@ -2514,7 +2528,13 @@ export class HorseLogic {
         : gs.format === 'spin'
           ? 'spin'
           : 'tourney_icm';
-      const stackBB32 = gs.bigBlind > 0 ? player.stack / gs.bigBlind : 100;
+      // Effective stack, same reasoning as stackBB29: the cell is keyed by
+      // the shorter stack, and here the BETTOR's wager is already out.
+      const bettorTotal32 =
+        (isFinite(bettor.stack) ? bettor.stack : 0) + (isFinite(bettor.bet) ? bettor.bet : 0);
+      const heroTotal32 = player.stack + (isFinite(player.bet) ? player.bet : 0);
+      const effStack32 = bettorTotal32 > 0 ? Math.min(heroTotal32, bettorTotal32) : heroTotal32;
+      const stackBB32 = gs.bigBlind > 0 ? effStack32 / gs.bigBlind : 100;
       // Bucket by the size the bettor CHOSE (raw), price by what hero pays
       // (effective). A jam of three pots into a short stack is still a
       // bet_big for range purposes even when hero's call is small.
@@ -2591,7 +2611,17 @@ export class HorseLogic {
           : gs.format === 'spin'
             ? 'spin'
             : 'tourney_icm';
-        const stackBB29 = gs.bigBlind > 0 ? player.stack / gs.bigBlind : 100;
+        // EFFECTIVE stack (2026-08-31, Phase 3): the cells are keyed by
+        // eff_stack_bb — the shorter of the two stacks — because that is the
+        // number the solver solved for. Keying on hero's stack alone sent a
+        // deep hero against a short villain to a cell solved for money that
+        // cannot go in. Known deferred gap from Phase 1, now closed.
+        const opp29 = opponents[0];
+        const oppTotal29 =
+          (isFinite(opp29?.stack) ? opp29.stack : 0) + (isFinite(opp29?.bet) ? opp29.bet : 0);
+        const heroTotal29 = player.stack + (isFinite(player.bet) ? player.bet : 0);
+        const effStack29 = oppTotal29 > 0 ? Math.min(heroTotal29, oppTotal29) : heroTotal29;
+        const stackBB29 = gs.bigBlind > 0 ? effStack29 / gs.bigBlind : 100;
 
         // ═══ V31 FIRST (2026-08-30) ═══ The v2 export is DISJOINT from the
         // v1 one V29/V30 read - zero of 9,584 sampled turn rows carry both -
@@ -2620,6 +2650,13 @@ export class HorseLogic {
               })
             : null;
         if (v31?.hit) {
+          // Phase 3 observability: a hit from a NON-primary depth bucket is
+          // an answer of degraded fidelity. Count it, so "hit rate" can be
+          // split into "right cell" and "neighbour cell" instead of lumping
+          // a 150bb answer served from the 80 cell in with the real thing.
+          if (telemetryOn(opts) && !cellDepthIsPrimary(v31.cell, stackBB29)) {
+            noteFire('gto_depth_fallback');
+          }
           const pick31 = rollMix(v31.mix, fastRandom);
           if (!pick31) {
             // A cell whose mix carries no mass. Counted on its own, because
@@ -2675,6 +2712,9 @@ export class HorseLogic {
           else noteFire('gto_miss_empty_store');
         }
         if (advice29) {
+          if (telemetryOn(opts) && !cellDepthIsPrimary(advice29.cell, stackBB29)) {
+            noteFire('gto_depth_fallback');
+          }
           const pick = rollMix(advice29.mix, fastRandom);
           if (pick) {
             if (telemetryOn(opts)) {

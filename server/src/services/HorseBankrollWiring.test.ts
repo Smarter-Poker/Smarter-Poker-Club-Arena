@@ -59,7 +59,10 @@ describe('both decision points consult it', () => {
       SRC.indexOf('const success = await this.seatHorse')
     );
     expect(sizing).toContain('bankrollBuyIn(');
-    expect(sizing).toMatch(/if \(capped <= 0\) continue;/);
+    /* Same widening as the gate pin: `capped <= 0` gained a
+       `seat_refused_share_below_min` counter, so the refusal is now a block.
+       The skip is what matters and is still required. */
+    expect(sizing).toMatch(/if \(capped <= 0\) \{[^{}]*continue;\s*\}/);
   });
 
   it('the bankroll gate sits alongside the stake band, not instead of it', () => {

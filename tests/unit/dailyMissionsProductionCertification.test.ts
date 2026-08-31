@@ -71,6 +71,12 @@ describe('Daily Missions production certification', () => {
     expect(page).toContain('document.body');
   });
 
+  it('keeps every mission control above the fixed Club Arena footer', () => {
+    const css = source('src/pages/DailyChallengesPage.module.css');
+    expect(css).toContain('padding: 24px 18px calc(var(--bottom-nav-clearance, 74px) + 24px)');
+    expect(css).toContain('padding: 0 0 max(84px, calc(var(--bottom-nav-clearance, 74px) + 12px))');
+  });
+
   it('bounds player-scoped wallet receipt cleanup with an online index', () => {
     const migration = source(
       'supabase/migrations/20260901010000_daily_missions_certification_cleanup_index.sql'
@@ -93,6 +99,15 @@ describe('Daily Missions production certification', () => {
     );
     expect(migration).toContain(
       'REVOKE ALL ON FUNCTION public.cleanup_reserved_certification_account(uuid) FROM authenticated'
+    );
+    const orderFix = source(
+      'supabase/migrations/20260901020100_reserved_certification_cleanup_order_fix.sql'
+    );
+    expect(orderFix.indexOf('DELETE FROM public.user_daily_challenges')).toBeLessThan(
+      orderFix.indexOf('DELETE FROM public.daily_challenge_dashboard_revisions')
+    );
+    expect(orderFix.indexOf('DELETE FROM public.daily_challenge_dashboard_revisions')).toBeLessThan(
+      orderFix.indexOf('DELETE FROM auth.users')
     );
   });
 });

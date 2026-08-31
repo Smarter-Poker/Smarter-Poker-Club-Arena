@@ -7,8 +7,9 @@
 - Added a Page Object for deterministic Daily Missions authentication and navigation with role-based locators and condition-based waits.
 - Extended the prefix-guarded temporary-account cleanup to remove and verify mission, notification, push outbox, wallet, idempotency, diamond, and chip-ledger residue before hard-deleting the Auth identity.
 - Added an online `wallet_credit_idempotency(user_id)` index after the first real cleanup exposed a player-scoped receipt scan timing out in production.
-- Added a service-role-only, certification-email-guarded cleanup RPC with a bounded extended statement window after the full production account graph exceeded the generic Auth Admin request timeout; the RPC proves Auth, profile, and legacy identity rows are all gone.
+- Added a service-role-only, certification-email-guarded cleanup RPC with a bounded extended statement window after the full production account graph exceeded the generic Auth Admin request timeout; its forward correction removes mission/reward rows in trigger-safe order before Auth and proves Auth, profile, and legacy identity rows are all gone.
 - Moved the reward-settlement dialog into a document-body portal and removed pointer events from decorative card chrome so fixed global navigation cannot intercept confirmation or Continue controls.
+- Reserved the live responsive Club Arena footer clearance at desktop and mobile widths so mission controls cannot sit underneath its navigation hit targets.
 - Wired the suite into the post-deploy production workflow so a spec that needs a real deployed page cannot silently become orphaned.
 
 ## Release Gate

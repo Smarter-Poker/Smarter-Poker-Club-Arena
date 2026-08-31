@@ -293,21 +293,6 @@ export async function createTemporaryCustomizationAccount(
   }
 }
 
-async function deleteRows(
-  environment: CustomizationCertificationEnvironment,
-  table: string,
-  column: 'user_id' | 'recipient_user_id' | 'from_user_id' | 'to_user_id' | 'id',
-  userId: string
-): Promise<void> {
-  const query = new URLSearchParams({ [column]: `eq.${userId}` });
-  await withCleanupRetries(() =>
-    serviceRequest<void>(environment, `/rest/v1/${table}?${query.toString()}`, {
-      method: 'DELETE',
-      headers: { Prefer: 'return=minimal' },
-    })
-  );
-}
-
 async function assertRowsRemoved(
   environment: CustomizationCertificationEnvironment,
   table: string,
@@ -391,17 +376,6 @@ export async function cleanupTemporaryCustomizationAccount(
     { table: 'chip_transactions', column: 'from_user_id' as const },
     { table: 'chip_transactions', column: 'to_user_id' as const },
   ];
-
-  for (const { table, column } of relatedTables) {
-    // These targeted deletes keep the final account cascade small. A transient
-    // edge failure is not itself residue: the guarded cleanup RPC below owns
-    // the authoritative deletion, and every surface is verified afterwards.
-    await deleteRows(environment, table, column, account.id).catch(() => undefined);
-  }
-
-  for (const table of userTables) {
-    await deleteRows(environment, table, 'user_id', account.id).catch(() => undefined);
-  }
 
   await callServiceRpc<JsonObject>(environment, 'cleanup_reserved_certification_account', {
     p_user_id: account.id,

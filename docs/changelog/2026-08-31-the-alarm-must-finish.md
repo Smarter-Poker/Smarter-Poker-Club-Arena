@@ -83,6 +83,37 @@ The file in this repo is **byte-identical to the function running in
 production** - `md5(prosrc) = 96f69ec47495684dd5dd42315155c999`, matched against
 the committed body.
 
+## And the guard found something while it was looking
+
+`scripts/ci/check-definer-authorization.mjs` blocked the push the moment the
+migration re-declared the function - and it was right about something that
+**pre-dates this work**:
+
+```
+fn_unaccounted_seat_exits
+  SECURITY DEFINER, anon can execute it, and it never calls auth.uid(),
+  auth.role() or auth.jwt(). It runs as the owner, past RLS, for a caller
+  with no account - and it never asks who that caller is.
+```
+
+Grants were `postgres, authenticated, service_role` plus PUBLIC. Any signed-in
+player could ask it for **every seat exit on the platform** - `user_id`,
+`club_id`, `table_id` and the exact stack that walked off each seat. A
+per-player chip-movement feed for the whole estate. Read-only is not the same as
+harmless.
+
+Nothing in either repo calls it from a browser; its one real caller is
+`reconcile_ledger_nightly`, running as postgres/service_role. Closed in
+`20260831142600_the_seat_exit_alarm_is_not_a_browser_api.sql`, verified live:
+
+```
+anon_can  false      auth_can  false      svc_can  true
+```
+
+`fn_club_chip_circulation()` is the neighbouring function of the same kind and
+was deliberately NOT swept along with it - a different decision on a different
+function deserves its own migration.
+
 ## Still open
 
 `ca_seat_stack_exits` records **1,736 cash-table seat rows a day ending by

@@ -3,6 +3,8 @@ import { expect, test } from '@playwright/test';
 const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 
 test.describe('Production Cashier Certification', () => {
+  test.describe.configure({ timeout: 90_000 });
+
   test.skip(
     !process.env.SP_EMAIL || !process.env.SP_PASS,
     'Dedicated production credentials are required for the authenticated cashier canary.'
@@ -23,7 +25,7 @@ test.describe('Production Cashier Certification', () => {
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
     await expect(page.locator('[data-cashier-surface="trade"]')).toBeVisible({ timeout: 60_000 });
     await expect(
-      page.getByRole('heading', { name: /Every Chip\.\s*Accounted For\./i })
+      page.getByRole('heading', { name: 'Every Chip. Accounted For.', exact: true })
     ).toBeVisible();
 
     const tablist = page.getByRole('tablist', { name: 'Cashier actions' });

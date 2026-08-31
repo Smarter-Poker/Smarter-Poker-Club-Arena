@@ -139,14 +139,27 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
       setError(null);
       try {
         const resolvedId = await resolveClubUUIDStrict(routeClubId);
+        // This provider is mounted in the global shell. Keep the retry helper
+        // out of the first-load bundle and fetch it only for contextual club
+        // routes that actually need authorization reads.
+        const { retryFetch } = await import('../utils/retryFetch');
+        // These are authorization reads, but a transient PostgREST/network
+        // failure is not an authorization verdict. Retry the existing
+        // idempotent reads before the guard renders its recoverable fault
+        // state; otherwise a single cold request can hide every club surface
+        // from a member whose access is still valid.
         const [membershipResult, profileResult] = await Promise.all([
-          supabase
-            .from('club_members')
-            .select('role,status')
-            .eq('club_id', resolvedId)
-            .eq('user_id', user.id)
-            .maybeSingle(),
-          supabase.from('profiles').select('role').eq('id', user.id).maybeSingle(),
+          retryFetch(() =>
+            supabase
+              .from('club_members')
+              .select('role,status')
+              .eq('club_id', resolvedId)
+              .eq('user_id', user.id)
+              .maybeSingle()
+          ),
+          retryFetch(() =>
+            supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
+          ),
         ]);
         if (cancelled) return;
         if (membershipResult.error) throw membershipResult.error;

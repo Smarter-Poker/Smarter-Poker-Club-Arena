@@ -480,8 +480,16 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
        Before per-seat deadlines this was implicit in the single table-wide
        timer; now it has to be said. */
     this.pineappleDiscardDeadlines.delete(player.seat_number);
-    if (this.handController.getState().stage !== 'pineapple_discard') {
-      // Stage already advanced — all discards are in
+    /* PHASE 3 2026-08-31: was `getState().stage !== 'pineapple_discard'`. That
+       read the ADVANCE as the answer to "is the round over", which held only
+       while the advance was synchronous. The last discard now buys a
+       DISCARD_SETTLE_MS beat so the toss can finish before betting opens, and
+       during that beat the stage is still 'pineapple_discard' — so the old
+       reading would have re-armed the fold sweep against a table where every
+       seat had already acted, and folded them all when it fired. Ask the
+       question the engine actually means. */
+    if (this.handController.allPineappleDiscardsIn()) {
+      // Everyone is in — the beat, then the flop
       if (this.pineappleDiscardTimer) {
         clearTimeout(this.pineappleDiscardTimer);
         this.pineappleDiscardTimer = null;

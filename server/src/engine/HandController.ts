@@ -56,6 +56,7 @@ import type {
 import { reportError } from '../services/errorReporter.js';
 import { createHandStateMachine, type HandFSMState } from './StateMachine.js';
 import { bigBlindAnteTotal } from './AnteMath.js';
+import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HAND CONTROLLER
@@ -1046,12 +1047,103 @@ export class HandController {
     return this.pineappleDiscardsRemaining.has(seat);
   }
 
+  /**
+   * PHASE 3 2026-08-31 — the ONE timer this class owns, and why.
+   *
+   * `checkPineappleDiscardsComplete` used to call `advanceStage()` on the same
+   * synchronous tick as the last discard, so the flop's betting round opened
+   * over the top of a card that was still in the air. Every other cadence on
+   * this platform is a named beat in `handCompletionSpec.ts`; the discard had
+   * none, which is why the felt read as a pause followed by a jump.
+   *
+   * Everything about this is written so it can never park a hand at
+   * `pineapple_discard`, which is the one catastrophic failure available here
+   * (three pineapple tables run in production, and a hand stuck in the discard
+   * stage never deals again):
+   *
+   *   - a zero/negative beat, or an environment with no usable setTimeout,
+   *     advances SYNCHRONOUSLY, exactly as before;
+   *   - the callback re-reads the stage, so an advance that happened by any
+   *     other route in the meantime is a no-op rather than a double-advance;
+   *   - `cancelPineappleSettle()` is called from `completeHand` and by the
+   *     engine when it drops a controller, so a superseded hand's beat cannot
+   *     fire into a live one;
+   *   - `unref()` where the runtime has it, so a pending beat never holds a
+   *     test process (or the server) open.
+   */
+  private pineappleSettleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Drop a pending discard beat. Safe to call at any time and any number of
+   * times. Public because the engine has to be able to call it when it
+   * replaces or discards this controller.
+   */
+  public cancelPineappleSettle(): void {
+    if (this.pineappleSettleTimer) {
+      clearTimeout(this.pineappleSettleTimer);
+      this.pineappleSettleTimer = null;
+    }
+  }
+
+  /**
+   * Collapse a pending discard beat to nothing and open the street NOW.
+   *
+   * The beat is measured in WALL CLOCK, and there are drivers that have no
+   * clock at all — HandFuzzer walks a whole hand inside one synchronous loop,
+   * and its LIVENESS check (`no player to act and hand is not complete`) is a
+   * real law: outside this one deliberate beat, a HandController that is
+   * neither complete nor waiting on somebody is a hung table. A driver with
+   * no clock collapses the beat here rather than the class pretending it does
+   * not have one.
+   *
+   * Returns true when there was a beat to collapse.
+   */
+  public flushPineappleSettle(): boolean {
+    if (!this.pineappleSettleTimer) return false;
+    this.cancelPineappleSettle();
+    if (this.state.stage !== 'pineapple_discard') return false;
+    this.advanceStage();
+    return true;
+  }
+
+  /**
+   * Has the discard round finished — i.e. is there nobody left who owes one?
+   *
+   * The engine used to answer this by re-reading `stage !== 'pineapple_discard'`
+   * immediately after `performDiscard`, which was true only because the
+   * advance was synchronous. With the beat above in place the stage is still
+   * `pineapple_discard` for DISCARD_SETTLE_MS after the last card is in, so
+   * that reading would re-arm the fold sweep against seats that have already
+   * acted. This is the question the engine actually meant to ask.
+   */
+  public allPineappleDiscardsIn(): boolean {
+    return this.pineappleDiscardsRemaining.size === 0;
+  }
+
   /** FIX 120: Check if all players have discarded; if so, advance to flop betting */
   private checkPineappleDiscardsComplete(): void {
-    if (this.pineappleDiscardsRemaining.size === 0) {
-      // All players have discarded — advance to flop betting
-      this.advanceStage(); // stage is 'pineapple_discard' → will set to 'flop' and begin betting
+    if (this.pineappleDiscardsRemaining.size !== 0) return;
+    // Already holding for the beat — do not schedule a second one.
+    if (this.pineappleSettleTimer) return;
+
+    const settleMs = HAND_COMPLETION.DISCARD_SETTLE_MS;
+    if (!(settleMs > 0) || typeof setTimeout !== 'function') {
+      this.advanceStage();
+      return;
     }
+
+    this.pineappleSettleTimer = setTimeout(() => {
+      this.pineappleSettleTimer = null;
+      // Anything else that moved the hand on (a fold that ended it, a runout)
+      // has already done this job.
+      if (this.state.stage !== 'pineapple_discard') return;
+      try {
+        this.advanceStage(); // 'pineapple_discard' → 'flop', and betting opens
+      } catch (err) {
+        reportError(err, 'HandController.pineappleSettle');
+      }
+    }, settleMs);
+    (this.pineappleSettleTimer as unknown as { unref?: () => void })?.unref?.();
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1684,6 +1776,8 @@ export class HandController {
   }
 
   private completeHand(): void {
+    // A hand that is over does not owe anybody a flop. PHASE 3 2026-08-31.
+    this.cancelPineappleSettle();
     try {
       this.completeHandInner();
     } catch (err) {

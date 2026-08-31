@@ -671,6 +671,11 @@ export abstract class ServerTableEngineBase {
   }
 
   protected clearLooseHandTimers(): void {
+    /* PHASE 3 2026-08-31: the discard settle beat is a timer on the hand
+       controller, and this is the one place that knows a hand is being torn
+       down. Without it a superseded hand's beat could advance a stage on a
+       controller nobody is reading any more. */
+    this.handController?.cancelPineappleSettle?.();
     if (this.horseActionTimer) {
       clearTimeout(this.horseActionTimer);
       this.horseActionTimer = null;

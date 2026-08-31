@@ -2394,6 +2394,30 @@ export default function TablePage({
     }
   }, [pineappleDeadline]);
 
+  /* ── CRAZY PINEAPPLE PHASE 3 2026-08-31: MAKE THE DISCARD VISIBLE ─────────
+     Until today a discard rendered NOTHING. No card left a seat, no villain's
+     hand got smaller, no cue fired - the engine emitted PLAYER_ACTION with
+     action 'discard' and the client's handler had no arm for it. Horses
+     discard on a deliberate 1.2s-5.2s humanlike delay (ServerTableEngineRunout
+     .handlePineappleDiscard), so the felt simply PAUSED and then jumped: the
+     pause was there and the thing it was hiding was not. CLAUDE.md 10.5 says
+     timing is part of the treatment and the tell is the rhythm.
+
+     Two pieces of state, both hand-scoped and both cleared on HAND_STARTED:
+
+       heroDiscardFlight  the card hero threw, so their own seat can fly a
+                          ghost of it after the row has already shrunk.
+       discardedSeats     every seat that has discarded this hand, so a
+                          villain's face-down fan drops from three backs to
+                          two. Nothing else on the client knew a villain's
+                          hand had changed size - holeCardCount is the
+                          variant's number and the variant never changes. */
+  const [heroDiscardFlight, setHeroDiscardFlight] = useState<{
+    card: Card;
+    nonce: number;
+  } | null>(null);
+  const [discardedSeats, setDiscardedSeats] = useState<readonly number[]>([]);
+
   const handlePineappleDiscard = useCallback(
     async (displayIndex: number): Promise<boolean> => {
       if (!tableId) return false;
@@ -2432,6 +2456,14 @@ export default function TablePage({
       if (engineOrder) {
         heroEngineCardOrderRef.current = engineOrder.filter((_, i) => i !== engineIndex);
       }
+      /* PHASE 3 2026-08-31: the card the hero just threw is gone from the row
+         above, so the seat has nothing left to animate. Hand it the identity
+         here and SeatSlot flies a ghost of it to the muck. Hero only, and it
+         never leaves this client: an opponent's discarded card is not revealed
+         in Crazy Pineapple, and hole cards do not ride the public broadcast at
+         all (table_hole_cards, RLS - migration 20260312_secure_hole_cards_fix).
+         A villain's ghost is a card BACK, from the same event everyone sees. */
+      setHeroDiscardFlight({ card: chosen, nonce: Date.now() });
       setTableState((prev) => {
         const players = [...prev.players];
         const heroIdx = players.findIndex((pl) => pl && pl.id === userId);
@@ -2443,10 +2475,20 @@ export default function TablePage({
           ...hero,
           holeCards: hero.holeCards.filter((_, i) => i !== at),
         };
-        return { ...prev, players };
+        /* The seat animates off `lastAction`, exactly like a fold. Setting it
+           HERE rather than waiting for the engine's echo is what keeps the
+           hero's toss and the hero's sound in the same beat - the echo is a
+           round trip and the sound below is immediate. The echo re-asserts the
+           same value, and SeatSlot's prevAction guard makes that a no-op. */
+        const nextActions = [...prev.lastActions];
+        if (heroIdx >= 0) nextActions[heroIdx] = 'discard';
+        return { ...prev, players, lastActions: nextActions };
       });
 
-      soundService.playFold();
+      /* Was playFold(). Wrong action's cue - and a two-card brush for a
+         one-card decision, in the one variant where throwing a card is how you
+         STAY IN. CLAUDE.md 10.6: a discard is owed its own cue. */
+      soundService.playDiscard();
       return true;
     },
     [tableId, userId, heroPineappleCards]
@@ -12678,6 +12720,23 @@ export default function TablePage({
             soundService.playChips();
           else if (action === 'check') soundService.playCheck();
           else if (action === 'fold') soundService.playFold();
+          /* PHASE 3 2026-08-31: there was no arm here at all, so a discard was
+             SILENT for every opponent - human and horse alike. The hero half
+             of the split fires in handlePineappleDiscard the instant they
+             click; this is the other half, and the isHeroEcho guard above is
+             what keeps the hero from hearing their own discard twice. */ else if (
+            action === 'discard'
+          )
+            soundService.playDiscard();
+        }
+
+        /* PHASE 3 2026-08-31: this seat is now holding one card fewer, and
+           this event is the only place the client is ever told. Recorded for
+           every seat identically - hero, villain, human, horse (CLAUDE.md
+           10.5) - and NOTHING about which card it was, because this is the
+           public broadcast. Cleared on HAND_STARTED below. */
+        if (action === 'discard' && actionSeat > 0) {
+          setDiscardedSeats((prev) => (prev.includes(actionSeat) ? prev : [...prev, actionSeat]));
         }
         // Bible V8 §5.2: All-in dramatic mode activates on ANY player all-in.
         //
@@ -12725,6 +12784,11 @@ export default function TablePage({
         // (emitted after HAND_STARTED in the engine's dealing path) re-arms it.
         // Items 11 + 16: a fresh hand has not reached showdown yet.
         handShowdownRef.current = { wentToShowdown: false, hands: 2 };
+        /* PHASE 3 2026-08-31: the discard belongs to the hand it was made in.
+           Both of these shrink a card row, so carrying either into the next
+           hand would deal a seat a hand that is visibly one card short. */
+        setDiscardedSeats((prev) => (prev.length === 0 ? prev : []));
+        setHeroDiscardFlight(null);
         setBombPotActive(false);
         setBombPotHoldFlop(false);
         if (bombPotHoldTimerRef.current) {
@@ -20050,7 +20114,20 @@ export default function TablePage({
                      The seat cannot work this out for itself - a hidden hand's
                      holeCards array is empty, so there is nothing there to
                      count. Only the table knows the variant. */
-                  holeCardCount={seatHoleCardCount}
+                  /* PHASE 3 2026-08-31 (Crazy Pineapple): minus the card this
+                     seat has already thrown. seatHoleCardCount is the VARIANT's
+                     hand size, so without this a villain kept three backs on
+                     the felt for the whole hand after discarding one - the
+                     table never showed that anybody's hand had got smaller.
+                     Floored at one by SeatSlot's own sane-band clamp. */
+                  holeCardCount={seatHoleCardCount - (discardedSeats.includes(seatNumber) ? 1 : 0)}
+                  /* Hero's own discarded card, for the ghost that flies to the
+                     muck after the row has already shrunk. Never set for a
+                     villain: their discard is not revealed in this variant, so
+                     their ghost is a card back. */
+                  discardFlightCard={
+                    player?.isHero && heroDiscardFlight ? heroDiscardFlight.card : null
+                  }
                   /* Dan 2026-08-28: a Spin waiting on its third seat drew the
                      two seated players holding face-down hands. A villain's
                      fan belongs to a HAND — see SeatSlot's `handInPlay`. The

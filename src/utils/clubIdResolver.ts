@@ -123,6 +123,12 @@ export function clearClubUUIDCache(): void {
   persistedLoaded = false;
 }
 
+/** Cache a strict lookup without exposing the resolver's storage internals. */
+export function rememberClubUUID(clubIdParam: string, clubUUID: string): void {
+  uuidCache.set(clubIdParam, clubUUID);
+  persistMap();
+}
+
 export class ClubNotFoundError extends Error {
   constructor(clubIdParam: string) {
     super(`Club "${clubIdParam}" was not found.`);
@@ -191,34 +197,6 @@ export async function resolveClubUUIDStrict(clubIdParam: string): Promise<string
   if (isUUID(clubIdParam)) return clubIdParam;
   const cached = resolveClubUUIDSync(clubIdParam);
   if (cached) return cached;
-  const filter = resolveClubIdFilter(clubIdParam);
-
-  let data: { id: string } | null;
-  try {
-    const { runRosterReadWithRetry } = await import('./rosterReadReliability');
-    data = await runRosterReadWithRetry(
-      async (signal) => {
-        let request = supabase
-          .from('clubs')
-          .select('id')
-          .eq(filter.column, filter.value)
-          .maybeSingle();
-        if (typeof (request as any).abortSignal === 'function') {
-          request = (request as any).abortSignal(signal);
-        }
-        const result = await request;
-        if (result.error) throw result.error;
-        return result.data as { id: string } | null;
-      },
-      { attempts: 3, timeoutMs: 8_000 }
-    );
-  } catch (error) {
-    reportError(error, 'clubIdResolver.resolveClubUUIDStrict', { clubIdParam });
-    throw new ClubResolutionError(clubIdParam, error);
-  }
-
-  if (!data?.id || !isUUID(data.id)) throw new ClubNotFoundError(clubIdParam);
-  uuidCache.set(clubIdParam, data.id);
-  persistMap();
-  return data.id;
+  const { resolveClubUUIDStrictRead } = await import('./strictClubIdResolver');
+  return resolveClubUUIDStrictRead(clubIdParam);
 }

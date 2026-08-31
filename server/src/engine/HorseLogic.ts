@@ -2483,6 +2483,11 @@ export class HorseLogic {
       // NOT oppCount: `Math.max(1, opponents.length)` reads 1 even when the
       // array is EMPTY, and the bettor is indexed out of it below.
       opponents.length === 1 &&
+      // Hero has put nothing in voluntarily this street: the wager faced is
+      // a BET, not a raise of hero's own bet. A check-raise's range comes
+      // from a raise node the warehouse does not hold — pricing it with the
+      // open-bet cell would be the donk mistake with the seats swapped.
+      player.bet === 0 &&
       !(gs.communityCards2 && gs.communityCards2.length > 0)
     ) {
       const bettor = opponents[0];
@@ -2510,6 +2515,11 @@ export class HorseLogic {
           ? 'spin'
           : 'tourney_icm';
       const stackBB32 = gs.bigBlind > 0 ? player.stack / gs.bigBlind : 100;
+      // Bucket by the size the bettor CHOSE (raw), price by what hero pays
+      // (effective). A jam of three pots into a short stack is still a
+      // bet_big for range purposes even when hero's call is small.
+      const bettorWager32 = isFinite(bettor.bet) ? Math.max(0, bettor.bet) : 0;
+      const rawPotBefore32 = gs.pot - bettorWager32;
       const defense = gtoFacingDefense({
         street,
         family: family32,
@@ -2519,6 +2529,7 @@ export class HorseLogic {
         heroCards: player.cards,
         pot,
         toCall,
+        rawBetFraction: rawPotBefore32 > 0 ? bettorWager32 / rawPotBefore32 : undefined,
         rand: fastRandom,
       });
       if (defense) {

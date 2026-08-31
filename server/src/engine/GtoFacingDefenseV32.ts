@@ -273,12 +273,24 @@ export function gtoFacingDefense(args: {
   heroCards: Card[];
   pot: number;
   toCall: number;
+  /**
+   * The bettor's RAW bet as a fraction of the pot before it — for the size
+   * bucket. Without it the fraction is derived from pot/toCall, which are
+   * EFFECTIVE (clamped to hero's stack): a villain jamming three pots into a
+   * short hero would read as a mid bet and consult the wrong range. The
+   * range is defined by the size the bettor CHOSE; the odds by what hero
+   * actually pays. Two different numbers, deliberately.
+   */
+  rawBetFraction?: number;
   rand?: () => number;
 }): FacingDefense {
   if (!(args.toCall > 0) || !(args.pot > 0)) return null;
   const potBefore = args.pot - args.toCall;
   if (potBefore <= 0) return null;
-  const betFraction = args.toCall / potBefore;
+  const betFraction =
+    typeof args.rawBetFraction === 'number' && args.rawBetFraction > 0
+      ? args.rawBetFraction
+      : args.toCall / potBefore;
   const range = solverBettingRange({ ...args, betFraction });
   if (!range) return null;
   const equity = equityVsWeightedRange(args.heroCards, args.board, range, args.rand ?? Math.random);

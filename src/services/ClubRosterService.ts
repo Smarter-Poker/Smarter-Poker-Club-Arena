@@ -26,7 +26,6 @@
 import { supabase } from '../lib/supabase';
 import { normaliseRole, type ClubRole } from '../types/clubRoles';
 import { reportError } from '../utils/errorReporter';
-import { runRosterReadWithRetry } from '../utils/rosterReadReliability';
 
 /** PostgREST hands back `numeric` as a string. Make it a number, exactly once. */
 function num(value: unknown): number {
@@ -274,6 +273,7 @@ export interface DownlineMember {
 
 export const ClubRosterService = {
   async getSummary(clubId: string, signal?: AbortSignal): Promise<RosterSummary | null> {
+    const { runRosterReadWithRetry } = await import('../utils/rosterReadReliability');
     return runRosterReadWithRetry(
       async (attemptSignal) => {
         let request = supabase.rpc('ca_club_members_summary', { p_club_id: clubId });
@@ -308,6 +308,7 @@ export const ClubRosterService = {
   },
 
   async getRosterPage(clubId: string, query: RosterQuery = {}): Promise<RosterPage> {
+    const { runRosterReadWithRetry } = await import('../utils/rosterReadReliability');
     return runRosterReadWithRetry(
       async (attemptSignal) => {
         let request = supabase.rpc('ca_club_members_page', {

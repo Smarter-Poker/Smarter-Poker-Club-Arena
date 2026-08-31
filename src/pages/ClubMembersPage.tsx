@@ -269,8 +269,13 @@ export default function ClubMembersPage() {
       if (controller.signal.aborted || epoch !== requestEpochRef.current) return;
       if (!nextSummary) {
         setAccessDenied(true);
+        if (user?.id) purgeRosterCache(user.id, resolvedClubId);
+        setSummary(DEFAULT_SUMMARY);
         membersRef.current = [];
         setMembers([]);
+        setCursor(null);
+        setHasMore(false);
+        setFilteredTotal(0);
         setDataFreshness('fresh');
         setLastSuccessfulSyncAt(Date.now());
         return;
@@ -351,10 +356,9 @@ export default function ClubMembersPage() {
 
   const refresh = useCallback(async () => {
     if (!resolvedClubId) return;
-    if (user?.id) purgeRosterCache(user.id, resolvedClubId);
     setIsRefreshing(true);
     await latestLoadRef.current();
-  }, [resolvedClubId, user?.id]);
+  }, [resolvedClubId]);
 
   const retryLiveSync = useCallback(() => {
     if (resolvedClubId) {
@@ -369,23 +373,21 @@ export default function ClubMembersPage() {
 
   const scheduleStructuralRefresh = useCallback(() => {
     if (!resolvedClubId || refreshTimerRef.current) return;
-    if (user?.id) purgeRosterCache(user.id, resolvedClubId);
     refreshTimerRef.current = setTimeout(() => {
       refreshTimerRef.current = null;
       void latestLoadRef.current();
     }, 1200);
-  }, [resolvedClubId, user?.id]);
+  }, [resolvedClubId]);
 
   const scheduleConnectionRecovery = useCallback(() => {
     if (!resolvedClubId || refreshTimerRef.current || !browserOnline) return;
-    if (user?.id) purgeRosterCache(user.id, resolvedClubId);
     const delay = computeRosterRetryDelay(recoveryAttemptRef.current, 1_200, 30_000);
     recoveryAttemptRef.current += 1;
     refreshTimerRef.current = setTimeout(() => {
       refreshTimerRef.current = null;
       void latestLoadRef.current();
     }, delay);
-  }, [browserOnline, resolvedClubId, user?.id]);
+  }, [browserOnline, resolvedClubId]);
 
   useEffect(
     () => () => {
@@ -561,7 +563,7 @@ export default function ClubMembersPage() {
   const stat = (value: number) => (loading && !hasPaintedRoster ? '...' : value.toLocaleString());
   const connectionState: RosterConnectionState = !browserOnline
     ? 'offline'
-    : dataFreshness === 'stale'
+    : dataFreshness === 'stale' || (dataFreshness === 'failed' && !notFound && !accessDenied)
       ? 'stale'
       : realtimeConnection === 'degraded'
         ? 'reconnecting'

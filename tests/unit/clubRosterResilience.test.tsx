@@ -112,11 +112,20 @@ describe('Player Command connection truth', () => {
     );
 
     const status = screen.getByRole('status');
+    const retryButton = screen.getByRole('button', { name: /Retry Live Sync/i });
     expect(status).toHaveAttribute('data-connection-state', 'stale');
     expect(status).toHaveTextContent(/Showing The Last Verified Roster/i);
     expect(status).toHaveTextContent(/Last Live Sync/i);
-    fireEvent.click(screen.getByRole('button', { name: /Retry Live Sync/i }));
+    expect(status).not.toContainElement(retryButton);
+    fireEvent.click(retryButton);
     expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not claim a saved roster exists when the first live read failed', () => {
+    render(<RosterConnectionStatus state="stale" hasData={false} onRetry={() => undefined} />);
+
+    expect(screen.getByRole('status')).toHaveTextContent(/Could Not Be Loaded/i);
+    expect(screen.getByRole('status')).not.toHaveTextContent(/Showing The Last Verified Roster/i);
   });
 
   it('distinguishes offline and realtime-reconnecting states', () => {
@@ -196,5 +205,21 @@ describe('Player Command resilience wiring', () => {
     expect(PAGE).toContain("setDataFreshness(membersRef.current.length > 0 ? 'stale' : 'failed')");
     expect(PAGE).not.toContain("toast.error('Failed To Load Members')");
     expect(PAGE).toContain('<RosterConnectionStatus');
+  });
+
+  it('keeps the last-known-good cache through transient refreshes', () => {
+    expect(PAGE.match(/purgeRosterCache/g)?.length).toBe(2);
+    expect(PAGE).toMatch(/if \(!nextSummary\) {[\s\S]*purgeRosterCache/);
+    expect(PAGE).not.toMatch(/const refresh = useCallback\([\s\S]*purgeRosterCache/);
+  });
+
+  it('revokes every previously loaded capability and cursor when access disappears', () => {
+    expect(PAGE).toMatch(
+      /if \(!nextSummary\) {[\s\S]*setSummary\(DEFAULT_SUMMARY\)[\s\S]*setCursor\(null\)[\s\S]*setHasMore\(false\)[\s\S]*setFilteredTotal\(0\)/
+    );
+  });
+
+  it('maps a failed online read to a retryable connection state', () => {
+    expect(PAGE).toContain("dataFreshness === 'failed'");
   });
 });

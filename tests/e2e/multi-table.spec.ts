@@ -272,7 +272,49 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
     expect(styles.foldImage, 'fold must be the red gradient').toContain('185, 28, 28');
     expect(styles.callImage, 'call must be the green gradient').toContain('22, 163, 74');
     expect(styles.clockColor, 'the countdown must read gold').toBe('rgb(250, 204, 21)');
-    expect(styles.stripPosition, 'the strip must overlay its tile').toBe('absolute');
+    /* Variant A (Dan 2026-08-30): the strip moved INTO the reserved in-flow
+       band below the felt — an absolute overlay here is the old bug that
+       covered the hero's hole cards. The mechanism this pin guards moved, so
+       the pin moved with it (in the same commit, per the red-test rule). */
+    expect(styles.stripPosition, 'the strip must be in-flow, never an overlay').toBe('static');
+  });
+
+  test('Variant A: the tile band reserves space and the cell is a column', async ({ page }) => {
+    // Dan 2026-08-30: "YOU CAN NOT SEE YOUR CARDS WHEN THE ACTION BAR
+    // APPEARS." The fix is structural: the cell is a flex column, the stage
+    // shrinks, and the band is in-flow below it. Pin all three so the overlay
+    // bug cannot come back by CSS drift.
+    const read = await page.evaluate(() => {
+      const cell = document.createElement('div');
+      cell.className = 'multi-table-grid__cell';
+      cell.innerHTML =
+        '<div class="multi-table-grid__stage"></div>' +
+        '<div class="multi-table-grid__band">' +
+        '<div class="multi-table-grid__slider-row">' +
+        '<input type="range" class="multi-table-grid__slider"/>' +
+        '<span class="multi-table-grid__slider-amount">120</span></div>' +
+        '<div class="multi-table-grid__raises"></div>' +
+        '<div class="multi-table-grid__actions"></div></div>';
+      document.body.appendChild(cell);
+      const cellS = getComputedStyle(cell);
+      const stage = getComputedStyle(cell.children[0]);
+      const band = getComputedStyle(cell.children[1]);
+      const amount = getComputedStyle(cell.querySelector('.multi-table-grid__slider-amount')!);
+      return {
+        cellDisplay: cellS.display,
+        cellDirection: cellS.flexDirection,
+        stagePosition: stage.position,
+        stageFlexGrow: stage.flexGrow,
+        bandPosition: band.position,
+        amountColor: amount.color,
+      };
+    });
+    expect(read.cellDisplay, 'the cell must be a flex column').toBe('flex');
+    expect(read.cellDirection, 'the cell must stack stage over band').toBe('column');
+    expect(read.stagePosition, 'the stage anchors the scaled felt').toBe('relative');
+    expect(read.stageFlexGrow, 'the stage must take the remaining height').toBe('1');
+    expect(read.bandPosition, 'the band must be in-flow, never an overlay').toBe('static');
+    expect(read.amountColor, 'the raise amount must read gold').toBe('rgb(250, 204, 21)');
   });
 
   test('CARD ART: nothing crops the indices and nothing stair-steps the pips', async ({ page }) => {

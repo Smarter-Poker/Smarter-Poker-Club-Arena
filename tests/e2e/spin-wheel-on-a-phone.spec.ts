@@ -166,6 +166,15 @@ test.describe('LIVE E2E — the spin wheel on a 375px phone', () => {
     expect(disc.insideX, 'the disc must not run off the side of a 375px screen').toBe(true);
 
     // The number the sequence exists to announce.
+    // The shipped multiplier intentionally begins at opacity: 0 and pops in
+    // over 450ms. Wait for that real animation instead of sampling its first
+    // frame, which made this browser gate deterministically fail on CI.
+    await expect
+      .poll(async () => (await paintedInside(page, '.sw__hub-mult')).visible, {
+        message: 'the drawn multiplier must finish its entrance animation',
+        timeout: 2_000,
+      })
+      .toBe(true);
     const hub = await paintedInside(page, '.sw__hub-mult');
     expect(hub.found, 'the drawn multiplier must be rendered').toBe(true);
     expect(hub.visible, 'the drawn multiplier must be visible').toBe(true);
@@ -177,7 +186,10 @@ test.describe('LIVE E2E — the spin wheel on a 375px phone', () => {
     expect(prize.found, 'the prize must be rendered').toBe(true);
     expect(prize.visible, 'the prize must be visible').toBe(true);
     expect(prize.insideX, 'the prize must be on screen horizontally').toBe(true);
-    expect(prize.insideY, 'the prize must be on screen vertically — the insurance modal shipped its buttons below the clip line on this exact viewport').toBe(true);
+    expect(
+      prize.insideY,
+      'the prize must be on screen vertically — the insurance modal shipped its buttons below the clip line on this exact viewport'
+    ).toBe(true);
 
     await ctx.close();
   });
@@ -198,7 +210,9 @@ test.describe('LIVE E2E — the spin wheel on a 375px phone', () => {
       return { w: Math.round(r.width), h: Math.round(r.height) };
     });
     expect(dim, 'the dim layer must exist').not.toBeNull();
-    expect(dim!.w, 'the dim must span the width of the phone').toBeGreaterThanOrEqual(PHONE.width - 2);
+    expect(dim!.w, 'the dim must span the width of the phone').toBeGreaterThanOrEqual(
+      PHONE.width - 2
+    );
 
     await ctx.close();
   });
@@ -236,7 +250,11 @@ test.describe('LIVE E2E — the shipped wheel CSS still lasts as long as the eng
           const dur = st.animationDuration || st.getPropertyValue('animation-duration');
           if (!dur) continue;
           for (const d of dur.split(',').map((x) => x.trim())) {
-            const ms = d.endsWith('ms') ? parseFloat(d) : d.endsWith('s') ? parseFloat(d) * 1000 : 0;
+            const ms = d.endsWith('ms')
+              ? parseFloat(d)
+              : d.endsWith('s')
+                ? parseFloat(d) * 1000
+                : 0;
             if (ms > 0) out[sel + '|' + d] = Math.round(ms);
           }
         }
@@ -269,7 +287,6 @@ test.describe('LIVE E2E — the shipped wheel CSS still lasts as long as the eng
   });
 });
 
-
 // ═══════════════════════════════════════════════════════════════════════════
 // CLAUDE.md 10.6: reduced motion collapses MOTION, never MEANING.
 // ═══════════════════════════════════════════════════════════════════════════
@@ -298,7 +315,10 @@ test.describe('LIVE E2E — the wheel under reduced motion', () => {
 
     const prize = await paintedInside(page, '.sw__prize');
     expect(prize.found, 'the prize must still be rendered under reduced motion').toBe(true);
-    expect(prize.visible, 'reduced motion must not hide the result — that is meaning, not motion').toBe(true);
+    expect(
+      prize.visible,
+      'reduced motion must not hide the result — that is meaning, not motion'
+    ).toBe(true);
     expect(prize.insideY, 'the prize must still be on screen').toBe(true);
 
     const hub = await paintedInside(page, '.sw__hub-mult');

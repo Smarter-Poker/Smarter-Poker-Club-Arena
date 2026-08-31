@@ -56,9 +56,11 @@ name: Auto-Deploy Hetzner Engine (on server/ changes)
 
 on:
   # ═══════════════════════════════════════════════════════════════════════════
-  #  THE ENGINE RESTARTS AT 7AM AND 7PM. NOT WHEN CODE MERGES.
-  #  (Dan, 2026-08-31, binding: "STOP THE ENGINE FROM RESTARTING. IT SHOULD
-  #   ONLY BE RESTARTING AT 7AM AND 7PM FROM NOW ON.")
+  #  THE ENGINE RESTARTS ON A FIXED CLOCK. NOT WHEN CODE MERGES.
+  #  (Dan, 2026-08-31, binding: "STOP THE ENGINE FROM RESTARTING" -- then, the
+  #   same day: "ENGINE RESETS NEED TO BE AT 6PM 10PM 4AM 10AM AND 2PM.")
+  #
+  #  FIVE WINDOWS, America/Chicago: 04:00, 10:00, 14:00, 18:00, 22:00.
   # ═══════════════════════════════════════════════════════════════════════════
   #
   # WHAT THIS REPLACES. Every merge touching `server/**` restarted production
@@ -68,15 +70,23 @@ on:
   # Two scheduled windows a day replace that entirely -- merged engine code now
   # WAITS for the next window, by design, and the wait is the feature.
   #
-  # WHY FOUR CRONS FOR TWO WINDOWS. GitHub cron is UTC and has no notion of
-  # DST. 07:00 and 19:00 America/Chicago are 12:00/00:00 UTC on CDT and
-  # 13:00/01:00 UTC on CST, so all four fire and the window gate (first step)
-  # keeps only the two that are genuinely 7 or 19 o'clock in Chicago. Getting
-  # this wrong by an hour twice a year is exactly the kind of drift this
-  # program keeps finding, so the hour is resolved from the tz database at run
-  # time rather than baked into the cron.
+  # WHY TEN CRONS FOR FIVE WINDOWS. GitHub cron is UTC and has no notion of
+  # DST. Each Chicago window is one UTC hour on CDT and another on CST:
+  #
+  #     local   CDT (UTC-5)   CST (UTC-6)
+  #     04:00      09:00         10:00
+  #     10:00      15:00         16:00
+  #     14:00      19:00         20:00
+  #     18:00      23:00         00:00
+  #     22:00      03:00         04:00
+  #
+  # All ten fire and the window gate (first step) keeps only the five that are
+  # genuinely 4, 10, 14, 18 or 22 o'clock in Chicago. Getting this wrong by an
+  # hour twice a year is exactly the kind of drift this program keeps finding,
+  # so the hour is resolved from the tz database at run time rather than baked
+  # into the cron.
   schedule:
-    - cron: '0 0,1,12,13 * * *'
+    - cron: '0 0,3,4,9,10,15,16,19,20,23 * * *'
 
   # The override, and the only path that may restart outside a window:
   # a deliberate `force: true` dispatch. A plain dispatch -- which is what
@@ -86,7 +96,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: 'Restart NOW, outside the 7am/7pm window (and even while humans are seated)'
+        description: 'Restart NOW, outside the scheduled windows (and even while humans are seated)'
         type: boolean
         default: false
       ref_sha:
@@ -125,7 +135,7 @@ jobs:
       # catch-up schedule nearly free, and it also absorbs redundant push
       # triggers (263 server-touching commits landed in the week before this
       # was written; every one was a full restart).
-      - name: Restart window — 7am and 7pm America/Chicago
+      - name: Restart window — 4am, 10am, 2pm, 6pm and 10pm America/Chicago
         id: window
         run: |
           # Chicago time, from the tz database on the runner, so DST is not a
@@ -135,16 +145,16 @@ jobs:
           FORCED="${{ github.event.inputs.force }}"
           if [ "$FORCED" = "true" ]; then
             echo "open=true" >> $GITHUB_OUTPUT
-            echo "::warning title=FORCED RESTART::force=true — restarting outside the 7am/7pm window ($LOCAL)."
+            echo "::warning title=FORCED RESTART::force=true — restarting outside the scheduled windows ($LOCAL)."
             exit 0
           fi
           case "$HOUR" in
-            07|19)
+            04|10|14|18|22)
               echo "open=true" >> $GITHUB_OUTPUT
               echo "Restart window OPEN — $LOCAL." ;;
             *)
               echo "open=false" >> $GITHUB_OUTPUT
-              echo "::notice title=OUTSIDE THE RESTART WINDOW::$LOCAL is not 7am or 7pm in Chicago. Nothing was deployed and the engine was not touched. Merged engine code lands at the next window; dispatch this workflow with force=true to land it now." ;;
+              echo "::notice title=OUTSIDE THE RESTART WINDOW::$LOCAL is not 4am, 10am, 2pm, 6pm or 10pm in Chicago. Nothing was deployed and the engine was not touched. Merged engine code lands at the next window; dispatch this workflow with force=true to land it now." ;;
           esac
 
       - name: Skip if production already serves this commit
@@ -334,6 +344,7 @@ jobs:
             echo "force=true — skipping drain gate"; exit 0
           fi
           # A SCHEDULED WINDOW IS THE SANCTIONED RESTART TIME (2026-08-31).
+          # Five a day: 04:00, 10:00, 14:00, 18:00 and 22:00 America/Chicago.
           #
           # The poll below waits for handsInFlightTotal to reach zero, and the
           # comments further down record why it never does on this platform: a
@@ -343,8 +354,8 @@ jobs:
           # consecutive deploy runs reported success and left production on
           # older code.
           #
-          # With two windows a day that failure mode would mean the engine
-          # NEVER updates. Inside a window the deploy therefore proceeds, and
+          # With a fixed number of windows a day that failure mode would mean
+          # the engine NEVER updates. Inside a window the deploy therefore proceeds, and
           # hands are protected the way the staleness-cap path below already
           # argues is sufficient and equal for everyone: GameServer.drainHands
           # parks EVERY table at a hand boundary on SIGTERM -- horses included,

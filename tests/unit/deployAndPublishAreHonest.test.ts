@@ -60,8 +60,10 @@ describe('the engine deploy tells the truth when it skips', () => {
   });
 
   /**
-   * 2026-08-31, Dan, binding: "STOP THE ENGINE FROM RESTARTING. IT SHOULD ONLY
-   * BE RESTARTING AT 7AM AND 7PM FROM NOW ON."
+   * 2026-08-31, Dan, binding: "STOP THE ENGINE FROM RESTARTING", and then, the
+   * same day: "ENGINE RESETS NEED TO BE AT 6PM 10PM 4AM 10AM AND 2PM."
+   *
+   * Five windows, America/Chicago: 04:00, 10:00, 14:00, 18:00, 22:00.
    *
    * This replaces the old cadence pin, which asserted that an every-20-minutes
    * catch-up came round at least as often as the coalescing window. There is no
@@ -75,16 +77,29 @@ describe('the engine deploy tells the truth when it skips', () => {
     expect(triggers).toMatch(/^\s{2}workflow_dispatch:/m);
   });
 
-  it('fires only at the hours that can be 7am or 7pm in Chicago', () => {
-    // Four UTC hours because CDT and CST put the two windows an hour apart;
-    // the gate keeps whichever two are genuinely 07 and 19 local.
-    expect(HETZNER).toMatch(/cron: '0 0,1,12,13 \* \* \*'/);
+  it('fires only at the hours that can be one of the five Chicago windows', () => {
+    // Ten UTC hours for five local windows, because CDT and CST put each one
+    // an hour apart; the gate keeps whichever five are genuinely 04, 10, 14,
+    // 18 or 22 local.
+    expect(HETZNER).toMatch(/cron: '0 0,3,4,9,10,15,16,19,20,23 \* \* \*'/);
     expect(cronEveryMinutes(HETZNER)).toBeNull();
+
+    // Both UTC hours must be declared for EVERY window, or the window
+    // silently disappears for half the year when the clocks change.
+    const utcHours = new Set(
+      HETZNER.match(/cron: '0 ([0-9,]+) \* \* \*'/)![1]
+        .split(',')
+        .map(Number)
+    );
+    for (const local of [4, 10, 14, 18, 22]) {
+      expect(utcHours.has((local + 5) % 24), `CDT hour for ${local}:00 local`).toBe(true);
+      expect(utcHours.has((local + 6) % 24), `CST hour for ${local}:00 local`).toBe(true);
+    }
   });
 
   it('resolves the window from the tz database, not from a baked offset', () => {
     expect(HETZNER).toMatch(/TZ=America\/Chicago date \+%H/);
-    expect(HETZNER).toMatch(/case "\$HOUR" in\s*\n\s*07\|19\)/);
+    expect(HETZNER).toMatch(/case "\$HOUR" in\s*\n\s*04\|10\|14\|18\|22\)/);
   });
 
   it('a plain dispatch is subject to the window; only force overrides it', () => {

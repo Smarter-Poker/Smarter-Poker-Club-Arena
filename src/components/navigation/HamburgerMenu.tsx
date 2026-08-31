@@ -565,6 +565,15 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     onClose();
   };
 
+  // Table Studio is a modal destination, not content inside the command
+  // drawer. Hand ownership to it in the same click: leaving the drawer open
+  // puts its higher stacking layer and focus trap over the studio, so every
+  // design tile looks visible but cannot be tapped on mobile or desktop.
+  const handleOpenTableStudio = () => {
+    setShowThemeSettings(true);
+    onClose();
+  };
+
   const togglePinnedPath = (path: string) => {
     const nextPinnedPaths = pinnedPaths.includes(path)
       ? pinnedPaths.filter((item) => item !== path)
@@ -1217,7 +1226,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           <button
             type="button"
             className={styles.navItem}
-            onClick={() => setShowThemeSettings(true)}
+            onClick={handleOpenTableStudio}
             aria-label="Open Table Studio"
           >
             <span>

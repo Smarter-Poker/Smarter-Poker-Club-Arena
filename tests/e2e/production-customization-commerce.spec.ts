@@ -81,7 +81,15 @@ async function signInTemporaryAccount(
   }
 
   await page.evaluate(() => localStorage.setItem('club_arena_welcome_accepted', 'true'));
-  await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: RESPONSE_TIMEOUT });
+  // The canonical lobby is intentionally a standalone full-bleed route. It
+  // does not mount AppLayout, which owns the server-backed profile decision
+  // used by ensurePlayableProfile. Probe a known protected layout route just
+  // like global setup and the realtime certification do; otherwise the test
+  // waits for a gate that cannot exist on `/` and can never reach checkout.
+  await page.goto(new URL('notifications', baseURL).toString(), {
+    waitUntil: 'domcontentloaded',
+    timeout: RESPONSE_TIMEOUT,
+  });
   if (page.url().includes('/auth')) {
     throw new Error(`Temporary customization account ${account.id} did not remain signed in.`);
   }

@@ -13,6 +13,7 @@ import fs from 'fs';
 import path from 'path';
 import { sliceEnclosingBlock } from '../../../tests/helpers/sourceWindow.js';
 import { fieldIsStillLive } from './recoveryFieldGuard.js';
+import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 /** Strip comments so a guard cannot pass on a mention in prose. */

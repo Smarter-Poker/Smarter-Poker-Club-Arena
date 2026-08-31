@@ -19,15 +19,23 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { isFixedLimitVariant, stakesLabel } from '../../src/lib/bettingStructure';
-import { variantDisplay, cashEntry, type LobbyTableRow } from '../../src/components/lobby/lobbyEntries';
-import { FILTER_SPECS, rowPassesFilter, emptyFilterValue } from '../../src/components/lobby/advancedFilterSpec';
+import {
+  variantDisplay,
+  cashEntry,
+  type LobbyTableRow,
+} from '../../src/components/lobby/lobbyEntries';
+import {
+  FILTER_SPECS,
+  rowPassesFilter,
+  emptyFilterValue,
+} from '../../src/components/lobby/advancedFilterSpec';
 
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
 const createPage = read('src/pages/CreateTablePage.tsx');
 const clubHome = read('src/pages/ClubHomePage.tsx');
 
 describe("HALF 1 — 'Create New Table' offers limit poker games", () => {
-  it('lists a Fixed Limit Hold\'em card', () => {
+  it("lists a Fixed Limit Hold'em card", () => {
     expect(createPage).toMatch(/id:\s*'flh'/);
     expect(createPage).toMatch(/FIXED LIMIT HOLD'EM/);
   });
@@ -58,7 +66,10 @@ describe('HALF 2 — a table created from those cards lands in the LIMIT tab', (
   it('asks BettingStructure first, so flo8 cannot fall through to MIXED', () => {
     // flo8 contains neither "flh" nor "limit" nor "plo", so every substring
     // test in the old cashKind missed it and it landed in the Mixed bucket.
-    const kind = clubHome.slice(clubHome.indexOf('function cashKind'), clubHome.indexOf('function cashRank'));
+    const kind = clubHome.slice(
+      clubHome.indexOf('function cashKind'),
+      clubHome.indexOf('function cashRank')
+    );
     expect(kind).toMatch(/isFixedLimitVariant\(v\)\)?\s*return 'LIMIT'/);
     // and the guard is genuinely needed:
     expect('flo8'.includes('plo')).toBe(false);
@@ -76,9 +87,15 @@ describe('HALF 2 — a table created from those cards lands in the LIMIT tab', (
   it('renders a lobby row whose stakes match the table it links to', () => {
     const row = (variant: string) =>
       cashEntry({
-        id: 't', name: `${variant} 2/4`, game_variant: variant,
-        small_blind: 1, big_blind: 2, min_buy_in: 40, max_buy_in: 200,
-        max_players: 6, status: 'running',
+        id: 't',
+        name: `${variant} 2/4`,
+        game_variant: variant,
+        small_blind: 1,
+        big_blind: 2,
+        min_buy_in: 40,
+        max_buy_in: 200,
+        max_players: 6,
+        status: 'running',
       } as LobbyTableRow);
     expect(row('flh').stakesLabel).toBe('2/4');
     expect(row('flh').stakesLabel).toBe(stakesLabel(1, 2, 'flh'));
@@ -88,11 +105,19 @@ describe('HALF 2 — a table created from those cards lands in the LIMIT tab', (
   it('passes the LIMIT tab filter with no saved preference', () => {
     const empty = emptyFilterValue(FILTER_SPECS.LIMIT);
     for (const variant of ['flh', 'flo8']) {
-      expect(rowPassesFilter(FILTER_SPECS.LIMIT, empty, { variant, price: 2, seatsTaken: 1, seats: 6, settings: {} } as never)).toBe(true);
+      expect(
+        rowPassesFilter(FILTER_SPECS.LIMIT, empty, {
+          variant,
+          price: 2,
+          seatsTaken: 1,
+          seats: 6,
+          settings: {},
+        } as never)
+      ).toBe(true);
     }
   });
 
-  it('no longer offers a HOLDEM chip that could empty the Hold\'em list', () => {
+  it("no longer offers a HOLDEM chip that could empty the Hold'em list", () => {
     // cashKind sends every limit table to LIMIT, so an FLH chip on the HOLDEM
     // tab could never match a row — ticking it read as "there are no Hold'em games".
     expect((FILTER_SPECS.HOLDEM.games ?? []).map((g) => g.key)).not.toContain('flh');
@@ -142,23 +167,54 @@ describe('HALF 2b — the LIMIT tab can be sub-divided now that the keys exist',
     const spec = FILTER_SPECS.LIMIT;
     const empty = emptyFilterValue(spec);
     for (const v of ['flh', 'flo8', 'limit_holdem', 'limit_omaha']) {
-      expect(rowPassesFilter(spec, empty, { variant: v, price: 2, seatsTaken: 2, seats: 6, settings: {} } as never)).toBe(true);
+      expect(
+        rowPassesFilter(spec, empty, {
+          variant: v,
+          price: 2,
+          seatsTaken: 2,
+          seats: 6,
+          settings: {},
+        } as never)
+      ).toBe(true);
     }
   });
 });
 
-describe('a control that promised a different game is gone', () => {
-  it('no longer offers a Pineapple toggle on the config screen', () => {
-    // Nothing in server/src has ever read `pineapple_holdem`, so the toggle
-    // promised "3 hole cards, discard 1" and delivered ordinary Hold'em. Crazy
-    // Pineapple works properly as its own variant card, which deals three and
-    // runs a real discard street.
+describe('the Pineapple control tracks whether the engine honours it', () => {
+  /**
+   * PIN DELIBERATELY REVERSED 2026-08-31 (CLAUDE.md rule 8).
+   *
+   * It read "no longer offers a Pineapple toggle on the config screen", and
+   * its reason was stated in the body: "Nothing in server/src has ever read
+   * `pineapple_holdem`". That was true when it was written on 2026-08-24. It
+   * stopped being true on 2026-08-25, when #840 taught
+   * ServerTableEngineBase.dealtGameVariant to deal a Hold'em table carrying
+   * the flag as pineapple.
+   *
+   * So the pin outlived its reason by six days and then held a working
+   * feature shut for a week: the engine deals it, BettingStructure has the
+   * discard street, lobbyEntries badges it, and the only live cash-creation
+   * path had no way to set it. Removing the control was right in a world
+   * where nothing read the column; it is wrong in this one.
+   */
+  it('offers the toggle now that the engine deals it', () => {
     const cfg = read('src/pages/TableConfigPage.tsx');
-    // Assert on the CONTROL, not on the words: the commit note in that file
-    // legitimately quotes the old label to explain why it went.
-    expect(cfg).not.toMatch(/label="Pineapple Hold'em"/);
-    expect(cfg).not.toMatch(/value=\{config\.pineappleHoldem\}/);
-    expect(cfg).not.toMatch(/updateConfig\('pineappleHoldem'/);
+    expect(cfg).toMatch(/label="Pineapple Hold'em"/);
+    expect(cfg).toMatch(/updateConfig\('pineappleHoldem'/);
+  });
+
+  it('offers it only on the variants dealtGameVariant will honour', () => {
+    // "Pineapple PLO is not a game and a stray flag must not silently turn a
+    // PLO table into one" — ServerTableEngineBase.
+    const cfg = read('src/pages/TableConfigPage.tsx');
+    expect(cfg).toMatch(/PINEAPPLE_VARIANTS = new Set\(\['nlh', 'nlhe'\]\)/);
+    expect(cfg).toContain('{canDealPineapple(gameType) && (');
+  });
+
+  it('the engine still reads the column this switch writes', () => {
+    const engine = read('server/src/engine/ServerTableEngineBase.ts');
+    expect(engine).toContain('pineapple_holdem');
+    expect(engine).toMatch(/variant === 'nlh' \|\| variant === 'nlhe'/);
   });
 
   it('still offers Pineapple where it actually works — the variant card', () => {

@@ -25,7 +25,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { sliceMethod } from '../../../tests/helpers/sourceWindow.js';
+import { sliceEnclosingBlock, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 /** Strip comments so a guard cannot pass on a mention in prose. */
@@ -36,12 +36,12 @@ const SRC = code(read('src/services/DealRateVerifier.ts'));
 describe('the startup grace must justify itself against the database', () => {
   it('no longer returns blind just because the process is young', () => {
     // The bug in one line: `if (young) return;` with nothing else asked.
-    const window = sliceMethod(SRC, 'async check(): Promise<void>');
+    const window = sliceEnclosingBlock(SRC, 'Date.now() - this.startedAt < STARTUP_GRACE_MS');
     expect(window).toMatch(/fleetDarkAcrossRestarts\(\)/);
   });
 
   it('only stands down when the fleet is NOT dark', () => {
-    const window = sliceMethod(SRC, 'async check(): Promise<void>');
+    const window = sliceEnclosingBlock(SRC, 'Date.now() - this.startedAt < STARTUP_GRACE_MS');
     // Stand down on "not dark"; fall through to judge otherwise.
     expect(window).toMatch(/if \(!darkAcrossRestarts\)/);
     expect(window).toMatch(/return;/);

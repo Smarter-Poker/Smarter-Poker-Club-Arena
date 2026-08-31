@@ -18,6 +18,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { sliceEnclosingBlock, sliceMethod } from './testHelpers/sourceWindow.js';
 
 const ROOT = process.cwd();
 const GS = fs.readFileSync(path.join(ROOT, 'src/GameServer.ts'), 'utf8');
@@ -29,24 +30,11 @@ function stripComments(src: string): string {
 
 const GS_CODE = stripComments(GS);
 
-/** The `if (canSweepSeats)` body: the only place that touches cash seats. */
-function seatSweepBody(src: string): string {
-  const start = src.indexOf('if (canSweepSeats) {');
-  expect(start, 'the seat sweep guard is gone').toBeGreaterThan(-1);
-  const i = src.indexOf('{', start);
-  let depth = 0;
-  for (let j = i; j < src.length; j++) {
-    if (src[j] === '{') depth++;
-    else if (src[j] === '}') {
-      depth--;
-      if (depth === 0) return src.slice(start, j + 1);
-    }
-  }
-  throw new Error('unbalanced braces reading the seat sweep');
-}
-
 describe('GameServer boot sweep - chips leave the felt the way everyone else does', () => {
-  const sweep = seatSweepBody(GS_CODE);
+  /* Bounded by the structure it is about, never by a byte count - a window
+     that can drift off the end of what it guards can also drift off it while
+     staying green. See tests/unit/noFixedSizeSourceWindows.test.ts. */
+  const sweep = sliceEnclosingBlock(GS_CODE, 'let cashedOut = 0;');
 
   it('cashes each seat out through the locked RPC', () => {
     expect(sweep).toMatch(/rpc\(\s*'atomic_seat_cashout_locked'/);
@@ -85,9 +73,7 @@ describe('the bomb-pot award ledger is repaired, not just retried', () => {
   });
 
   it('it runs on a schedule and calls the arithmetic backfill for real', () => {
-    const idx = GS_CODE.indexOf('private startBombLedgerRepairSweep');
-    expect(idx, 'the repair sweep is gone').toBeGreaterThan(-1);
-    const body = GS_CODE.slice(idx, idx + 2500);
+    const body = sliceMethod(GS_CODE, 'private startBombLedgerRepairSweep');
     expect(body).toMatch(/rpc\(\s*'fn_backfill_bomb_pot_award_units'/);
     expect(body).toMatch(/p_dry_run:\s*false/);
     expect(body).toMatch(/setInterval\(/);

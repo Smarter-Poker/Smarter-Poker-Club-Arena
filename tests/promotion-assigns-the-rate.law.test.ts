@@ -99,7 +99,7 @@ describe('the promote screen asks for the rate it is granting', () => {
   });
 
   it('says out loud that co owners and admins earn none', () => {
-    expect(MEMBER_MANAGEMENT).toMatch(/Co Owners And Admins Earn No Rakeback/);
+    expect(MEMBER_MANAGEMENT).toMatch(/This Role Earns No Rakeback/);
     expect(MEMBER_MANAGEMENT).toMatch(/isClubStaff\(/);
   });
 });

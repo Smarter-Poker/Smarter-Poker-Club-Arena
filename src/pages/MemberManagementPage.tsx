@@ -891,7 +891,7 @@ function RoleSection({
 
           {isClubStaff(confirmRole) && (
             <p className="mm-roles__rates-note">
-              Co Owners And Admins Earn No Rakeback. Any Rate This Member Carries Is Set To Zero.
+              This Role Earns No Rakeback. Any Rate This Member Carries Is Set To Zero.
             </p>
           )}
 

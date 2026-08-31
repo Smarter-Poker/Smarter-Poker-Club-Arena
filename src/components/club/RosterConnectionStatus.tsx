@@ -42,7 +42,9 @@ export default function RosterConnectionStatus({
       : 'Connection Lost. Reconnect To Load The Roster.';
     retryable = true;
   } else if (state === 'stale') {
-    message = 'Live Sync Failed. Showing The Last Verified Roster.';
+    message = hasData
+      ? 'Live Sync Failed. Showing The Last Verified Roster.'
+      : 'The Live Roster Could Not Be Loaded.';
     retryable = true;
   } else if (state === 'reconnecting') {
     message = hasData
@@ -56,13 +58,8 @@ export default function RosterConnectionStatus({
   }
 
   return (
-    <div
-      className="members-refreshing members-connection-status"
-      role="status"
-      aria-live="polite"
-      data-connection-state={state}
-    >
-      <span>
+    <div className="members-refreshing members-connection-status" data-connection-state={state}>
+      <span role="status" aria-live="polite" aria-atomic="true" data-connection-state={state}>
         {message}
         {lastSync ? ` Last Live Sync ${lastSync}.` : ''}
       </span>

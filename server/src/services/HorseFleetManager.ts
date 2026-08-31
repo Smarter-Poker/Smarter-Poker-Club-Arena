@@ -17,6 +17,7 @@ import { supabase } from './supabase.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
+import { bankrollBuyIn, bankrollPolicyFor, canSit, referenceBuyIn } from './HorseBankroll.js';
 import {
   buyInBBFor,
   gameLaneFor,
@@ -682,6 +683,58 @@ export class HorseFleetManager {
       }
       const validHorses = horsePage.rows;
 
+      /**
+       * BANKROLLS (Dan 2026-08-31). A horse's `club_members.chip_balance` is
+       * its bankroll, and from the 10,000-chip reset onward it decides which
+       * games it may sit in. It is per (club, user) because a horse belongs
+       * to several clubs and its roll in one is not its roll in another.
+       *
+       * Loaded ONCE per seeding cycle rather than per seat: 1,487 horse
+       * memberships against a loop that considers every table x every empty
+       * seat would be thousands of point reads a cycle.
+       *
+       * An INCOMPLETE read is not treated as "everyone is broke" — that would
+       * empty the entire floor on one bad page. It is treated as "no bankroll
+       * opinion", the gate below is skipped, and the cycle behaves exactly as
+       * it did before this layer existed. Failing open is right here because
+       * `atomic_table_buyin` still refuses a seat the balance cannot cover;
+       * this layer decides which games are SENSIBLE, not which are possible.
+       */
+      const bankrolls = new Map<string, number>();
+      let bankrollsLoaded = false;
+      try {
+        const brPage = await fetchAllRows<{
+          user_id: string;
+          club_id: string;
+          chip_balance: number | string | null;
+        }>(
+          (cursor, want) => {
+            let q = supabase
+              .from('club_members')
+              .select('user_id, club_id, chip_balance')
+              .in('club_id', this.clubIds)
+              .order('user_id', { ascending: true })
+              .limit(want);
+            if (cursor) q = q.gt('user_id', cursor);
+            return q;
+          },
+          { label: 'HorseFleet.bankrolls', maxRows: 50_000 }
+        );
+        if (brPage.complete) {
+          for (const r of brPage.rows) {
+            const v = Number(r.chip_balance);
+            if (Number.isFinite(v)) bankrolls.set(`${r.club_id}:${r.user_id}`, v);
+          }
+          bankrollsLoaded = true;
+        } else {
+          console.warn(
+            '[HorseFleet] bankroll read incomplete — seating this cycle without the bankroll gate.'
+          );
+        }
+      } catch (err) {
+        reportError(err, 'HorseFleet.bankroll_load_failed');
+      }
+
       // V8: full horse-id set (any status) so we can tell HUMAN seats from
       // horse seats — humans get rescue priority below.
       // Paged: a horse missing from this set reads as a HUMAN, which triggers
@@ -841,6 +894,27 @@ export class HorseFleetManager {
             // 64 of 210 horses were sitting across multiple stakes in 48
             // hours, one of them at 0.10/0.20 and 25.00/50.00 both.
             if (!stakeBandAllows(h.id, table.big_blind)) return false;
+            /**
+             * BANKROLL GATE (Dan 2026-08-31). A stake band says which games a
+             * horse has EARNED; the bankroll says which it can AFFORD. Both
+             * must agree, and this is the second one.
+             *
+             * The rule is denominated in buy-ins of THIS game, because a
+             * chip figure means nothing across a ladder — 10,000 is fifty
+             * buy-ins at 1/2 and twenty at 2/5. A horse under its policy's
+             * buy-in requirement simply is not a candidate: it moves down,
+             * and if nothing is left it goes to the freerolls.
+             */
+            if (bankrollsLoaded) {
+              const roll = bankrolls.get(`${table.club_id}:${h.id}`);
+              if (roll === undefined) return false; // no membership, no seat
+              const ref = referenceBuyIn(
+                table.big_blind,
+                Number((table as any).min_buy_in) || undefined,
+                Number((table as any).max_buy_in) || undefined
+              );
+              if (!canSit(roll, ref, bankrollPolicyFor(h.id))) return false;
+            }
             const tablesForHorse = horseTables.get(h.id);
             if (!tablesForHorse) return true;
             if (tablesForHorse.size >= MAX_TABLES_PER_HORSE) return false;
@@ -902,8 +976,36 @@ export class HorseFleetManager {
             // then clamp to the table's real limits.
             const step = table.big_blind * 5;
             const raw = table.big_blind * buyInBBFor(horse.id);
-            const buyIn =
+            let buyIn =
               Math.round(Math.max(minB, Math.min(maxB, Math.round(raw / step) * step)) * 100) / 100;
+
+            /**
+             * NEVER BRING TOO MUCH OF THE ROLL TO ONE TABLE. The table's max
+             * buy-in is what the GAME allows, not what this bankroll should
+             * put at risk in a single seat — a 400 max is not an instruction
+             * to a horse with 3,000 to its name. bankrollBuyIn caps the
+             * profiled amount at the policy's share of the roll and re-clamps
+             * to the table's own limits.
+             *
+             * Zero means the share cannot even reach the table minimum, so
+             * this is not a game for this bankroll: skip the seat rather than
+             * buy in short. The candidate gate above should already have
+             * excluded it; this is the belt to that braces.
+             */
+            if (bankrollsLoaded) {
+              const roll = bankrolls.get(`${table.club_id}:${horse.id}`) ?? 0;
+              const capped = bankrollBuyIn({
+                bankroll: roll,
+                desired: buyIn,
+                minBuyIn: minB,
+                maxBuyIn: maxB,
+                policy: bankrollPolicyFor(horse.id),
+              });
+              if (capped <= 0) continue;
+              // keep the human-looking 5bb rounding after the cap
+              const snapped = Math.round(capped / step) * step;
+              buyIn = Math.round(Math.max(minB, Math.min(capped, snapped)) * 100) / 100;
+            }
 
             const success = await this.seatHorse(
               table.id,

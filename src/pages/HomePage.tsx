@@ -1288,7 +1288,7 @@ function HomePageInner() {
                 menuTitle={tile.alt === 'Cashier' ? 'Open Cashier For' : 'Open Marketplace For'}
                 onSelect={tile.alt === 'Cashier' ? openClubCashier : openClubMarketplace}
                 onEmpty={tile.alt === 'Cashier' ? cashierEmpty : marketplaceEmpty}
-                preloadPath={tile.alt === 'Cashier' ? '/cashier' : '/marketplace'}
+                preloadPath={tile.alt === 'Cashier' ? '/cashier/trade' : '/marketplace'}
               />
             ) : (
               <button

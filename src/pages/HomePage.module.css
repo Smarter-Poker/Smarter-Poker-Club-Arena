@@ -2548,6 +2548,41 @@
   color: rgba(255, 255, 255, 0.5);
 }
 
+.cashierSwitchStatus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 5px 10px;
+  color: rgba(221, 237, 250, 0.72);
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.cashierSwitchStatus button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(0, 212, 255, 0.55);
+  border-radius: 5px;
+  color: #dff8ff;
+  background: rgba(8, 33, 49, 0.96);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cashierSwitchStatus button:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.8);
+  outline-offset: 2px;
+}
+
+.cashierSwitchItems {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .cashierSwitchItem {
   display: flex;
   align-items: center;

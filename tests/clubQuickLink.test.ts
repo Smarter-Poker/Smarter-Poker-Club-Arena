@@ -91,6 +91,16 @@ describe('eligibleCashierWallets', () => {
     ).toEqual([A, { ...U, is_owner: true }, B]);
   });
 
+  it('does not role-filter club wallets for the permitted cashier hierarchy', () => {
+    const roles = ['owner', 'co_owner', 'admin', 'super_agent', 'agent', 'sub_agent'];
+    const roleClubs = roles.map((role, index) => ({
+      ...A,
+      id: `aaaaaaaa-0000-0000-0000-00000000000${index + 1}`,
+      role,
+    }));
+    expect(eligibleCashierWallets(roleClubs).map((club) => club.role)).toEqual(roles);
+  });
+
   it('resolves an owned union when it is the requested wallet', () => {
     const owned = { ...U_FLAG, is_owner: true };
     expect(resolveCashierWallet([A, owned], owned.id)).toEqual(owned);

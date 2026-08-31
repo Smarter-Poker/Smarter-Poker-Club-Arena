@@ -61,11 +61,11 @@ const countsByFile = (): Map<string, number> => {
   return map;
 };
 
-/** Frozen 2026-08-30 (Community Command Center). 265 occurrences. Only ever shrink. */
+/** Frozen 2026-08-30 (Community Command Center). 262 occurrences. Only ever shrink. */
 const BASELINE = new Map<string, number>([
   ['src/services/HorseOrchestrator.ts', 11],
   ['src/services/AgentService.ts', 13],
-  ['src/pages/UnionDashboardPage.tsx', 13],
+  ['src/pages/UnionDashboardPage.tsx', 10],
   ['src/services/UnionService.ts', 12],
   ['src/pages/AdminDashboardPage.tsx', 7],
   ['src/components/modals/FindPlayerModal.tsx', 7],

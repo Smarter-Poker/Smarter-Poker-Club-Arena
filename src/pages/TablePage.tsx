@@ -11069,9 +11069,22 @@ export default function TablePage({
           setTableState((prev) => {
             // FIX: Start from CLEAN slate — DB is the source of truth for seated players.
             // This prevents ghost players from stale engine broadcasts or failed buy-ins.
-            const updatedPlayers: ((typeof prev.players)[0] | null)[] = Array(
-              prev.players.length
-            ).fill(null) as any;
+            /* SIZED TO THE SEAT ROWS, NOT TO WHAT WE ALREADY DREW
+               (Dan 2026-08-31, phase 1 audit). This was
+               `Array(prev.players.length)` with a `seatIdx >= length continue`
+               below, so a DB rebuild inherited whatever width the client had
+               guessed — and this path can run BEFORE the first engine snapshot,
+               when that guess is still the default 6. Every seat above it was
+               dropped, hero included: the same defect that cost seat 7 a
+               ten-minute erasure, on a third code path. The rows we are
+               rebuilding FROM say how wide the table is. */
+            const widestSeat = existingSeats.reduce((m: number, s: { seat_number?: number }) => {
+              const n = Number(s?.seat_number);
+              return Number.isInteger(n) && n > m && n <= MAX_SUPPORTED_SEATS ? n : m;
+            }, prev.players.length);
+            const updatedPlayers: ((typeof prev.players)[0] | null)[] = Array(widestSeat).fill(
+              null
+            ) as any;
             let resolvedHeroSeat = 0; // Reset — only set if hero is in DB
             let heroAlreadyAssigned = false;
 
@@ -11172,6 +11185,9 @@ export default function TablePage({
               ...prev,
               players: updatedPlayers as typeof prev.players,
               heroSeat: resolvedHeroSeat,
+              // The ring must be able to draw every row we just built, or the
+              // seats exist in state and render nowhere (2026-08-31 audit).
+              maxPlayers: Math.max(prev.maxPlayers, updatedPlayers.length),
             };
           });
           // heroSeat already set inside the setTableState callback above (L1796)
@@ -16036,7 +16052,16 @@ export default function TablePage({
       if (cancelled) return;
 
       setTableState((prev) => {
-        const rebuilt: (typeof prev.players)[number][] = Array(prev.players.length).fill(
+        /* Sized to the seat rows, not to the width we happened to be drawing
+           (Dan 2026-08-31, phase 1 audit) — the fourth instance of the same
+           drop. This is the seat-first roster rebuild, which runs on a table
+           that has not dealt a hand yet, so `prev.players.length` is very
+           often still the guessed default and every seat above it vanished. */
+        const widest = seatRows.reduce((m: number, s: { seat_number?: number }) => {
+          const n = Number(s?.seat_number);
+          return Number.isInteger(n) && n > m && n <= MAX_SUPPORTED_SEATS ? n : m;
+        }, prev.players.length);
+        const rebuilt: (typeof prev.players)[number][] = Array(widest).fill(
           null
         ) as (typeof prev.players)[number][];
         for (const seat of seatRows) {
@@ -16085,7 +16110,12 @@ export default function TablePage({
             horseProfile: undefined,
           } as unknown as (typeof prev.players)[number];
         }
-        return { ...prev, players: rebuilt as typeof prev.players };
+        return {
+          ...prev,
+          players: rebuilt as typeof prev.players,
+          // Draw what we just built (2026-08-31 audit).
+          maxPlayers: Math.max(prev.maxPlayers, rebuilt.length),
+        };
       });
     };
 

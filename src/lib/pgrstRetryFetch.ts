@@ -52,6 +52,46 @@ function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {
 }
 
 /**
+ * Resume-style entry point for the lazy path: the caller already made the
+ * first attempt, got a 503 whose body carries a retryable code, and hands us
+ * the request to retry. Lives here so the entry bundle only pays for a
+ * ~10-line shim (see src/lib/supabase.ts) and this module loads as its own
+ * chunk the first time a retryable 503 actually appears.
+ */
+export async function retryPgrst503(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  firstResponse: Response
+): Promise<Response> {
+  let lastResponse = firstResponse;
+  for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt++) {
+    await sleep(RETRY_DELAYS_MS[attempt] + Math.random() * 250);
+    const attemptInput =
+      typeof Request !== 'undefined' && input instanceof Request ? input.clone() : input;
+    let response: Response;
+    try {
+      response = await globalThis.fetch(attemptInput, init);
+    } catch (err) {
+      // The first attempt proved the request reaches the server and is not
+      // executed (pre-execution 503); a throw now is a transient network
+      // failure. Surface the last 503 rather than the throw so callers keep
+      // the structured PostgREST error.
+      continue;
+    }
+    lastResponse = response;
+    if (response.status !== 503) return response;
+    let code: unknown;
+    try {
+      code = (await response.clone().json())?.code;
+    } catch {
+      return response;
+    }
+    if (typeof code !== 'string' || !RETRYABLE_PRE_EXECUTION_CODES.has(code)) return response;
+  }
+  return lastResponse;
+}
+
+/**
  * Wrap a fetch implementation with pre-execution-503 retry.
  * Pass the result to supabase-js `createClient(..., { global: { fetch } })`.
  */

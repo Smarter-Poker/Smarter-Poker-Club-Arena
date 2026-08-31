@@ -219,7 +219,7 @@ export default function ClubAnnouncementBanner({
           <div className={styles.pagination}>
             <button
               onClick={() => setCurrentIndex((prev) => prev - 1)}
-              aria-label="Previous announcement"
+              aria-label="Previous Announcement"
             >
               ‹
             </button>
@@ -228,7 +228,7 @@ export default function ClubAnnouncementBanner({
             </span>
             <button
               onClick={() => setCurrentIndex((prev) => prev + 1)}
-              aria-label="Next announcement"
+              aria-label="Next Announcement"
             >
               ›
             </button>
@@ -237,7 +237,7 @@ export default function ClubAnnouncementBanner({
         <button
           className={styles.dismissBtn}
           onClick={() => dismiss(current.id)}
-          aria-label="Dismiss announcement"
+          aria-label="Dismiss Announcement"
         >
           ✕
         </button>

@@ -1386,7 +1386,7 @@ export default function ClubDataPage() {
     return (
       <span
         className={`${styles.delta} ${cls}`}
-        title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}
+        title={prevRange ? `Previous Period ${prevRange.start} To ${prevRange.end}` : undefined}
       >
         {v > 0 ? '+' : ''}
         {/* prevRange, not `preset`: the preset flips the instant the button is
@@ -1404,7 +1404,7 @@ export default function ClubDataPage() {
     return (
       <span
         className={`${styles.delta} ${cls}`}
-        title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}
+        title={prevRange ? `Previous Period ${prevRange.start} To ${prevRange.end}` : undefined}
       >
         {v > 0 ? '+' : ''}
         {money(v)} Vs Prev {prevRange?.days ?? preset}d
@@ -1424,7 +1424,7 @@ export default function ClubDataPage() {
       <div className={styles.page}>
         <PermissionState
           title="Sign In To View Club Data"
-          description="Financial and player analytics are restricted to authenticated club operators."
+          description="Financial And Player Analytics Are Restricted To Authenticated Club Operators."
           onBack={() => navigate('/')}
         />
       </div>
@@ -1441,7 +1441,7 @@ export default function ClubDataPage() {
           eyebrow="Club Context Required"
           tone="permission"
           title="Choose A Club To View Its Data"
-          description="Revenue, rake, player results, and union invoices belong to a specific club. Open Club Data from that club's Operations menu."
+          description="Revenue, Rake, Player Results, And Union Invoices Belong To A Specific Club. Open Club Data From That Club's Operations Menu."
           action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
           secondaryAction={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
         />
@@ -1456,7 +1456,7 @@ export default function ClubDataPage() {
           type="button"
           className={`${styles.headerBtn} ${styles.backButton}`}
           onClick={() => navigate(-1)}
-          aria-label="Go back"
+          aria-label="Go Back"
         >
           <span aria-hidden="true">&#8592;</span>
           <span>Back</span>
@@ -1468,7 +1468,7 @@ export default function ClubDataPage() {
             className={styles.headerBtn}
             onClick={() => void refreshAll()}
             disabled={manualRefreshing || loading || playersLoading || invoicesLoading}
-            aria-label="Refresh club ledger"
+            aria-label="Refresh Club Ledger"
           >
             {manualRefreshing ? 'Refreshing' : 'Refresh'}
           </button>
@@ -1482,8 +1482,8 @@ export default function ClubDataPage() {
             disabled={
               !exporting && (tab === 'players' ? !sortedPlayers.length : !snapshot?.rows?.length)
             }
-            aria-label={exporting ? 'Cancel CSV export' : 'Export as CSV'}
-            title={exporting ? 'Cancel CSV export' : 'Export as CSV'}
+            aria-label={exporting ? 'Cancel CSV Export' : 'Export As CSV'}
+            title={exporting ? 'Cancel CSV Export' : 'Export As CSV'}
           >
             {exporting ? 'Cancel Export' : 'Export CSV'}
           </button>
@@ -1494,9 +1494,9 @@ export default function ClubDataPage() {
         {refreshNote ||
           exportNote ||
           (exportProgress?.stage === 'preparing'
-            ? 'Preparing complete export.'
+            ? 'Preparing Complete Export.'
             : exportProgress?.total !== null && exportProgress
-              ? `Exporting ${compactInt(exportProgress.loaded)} of ${compactInt(exportProgress.total)} rows.`
+              ? `Exporting ${compactInt(exportProgress.loaded)} Of ${compactInt(exportProgress.total)} Rows.`
               : '')}
       </div>
 
@@ -1550,14 +1550,14 @@ export default function ClubDataPage() {
         </div>
       )}
 
-      <section className={styles.controlDeck} aria-label="Reporting period">
+      <section className={styles.controlDeck} aria-label="Reporting Period">
         <div className={styles.controlLabel}>Reporting Window</div>
         <div className={styles.rangeBar}>
           <button
             type="button"
             className={styles.arrow}
             onClick={() => shiftRange(-1)}
-            aria-label="Previous period"
+            aria-label="Previous Period"
           >
             &#8592;
           </button>
@@ -1572,7 +1572,7 @@ export default function ClubDataPage() {
             className={styles.arrow}
             onClick={() => shiftRange(1)}
             disabled={isToday}
-            aria-label="Next period"
+            aria-label="Next Period"
           >
             &#8594;
           </button>
@@ -1591,7 +1591,7 @@ export default function ClubDataPage() {
               className={`${styles.preset} ${preset === p ? styles.active : ''}`}
               onClick={() => setPreset(p)}
             >
-              {p === 1 ? '1 day' : `${p} days`}
+              {p === 1 ? '1 Day' : `${p} Days`}
             </button>
           ))}
         </div>
@@ -1642,7 +1642,7 @@ export default function ClubDataPage() {
           Fee 0.00" in confident green with the real message buried in the list
           below. On the screen that answers "what do I owe the union", a zero
           has to mean zero. Dashes while there is no snapshot to read. */}
-      <dl className={styles.summary} aria-busy={loading} aria-label="Club performance summary">
+      <dl className={styles.summary} aria-busy={loading} aria-label="Club Performance Summary">
         <div className={styles.tile}>
           <dt className={styles.tileLabel}>Games</dt>
           <dd className={styles.tileValue}>{summary ? compactInt(summary.games) : NO_VALUE}</dd>
@@ -1769,8 +1769,8 @@ export default function ClubDataPage() {
           <div className={styles.invoiceTop}>
             <span className={styles.invoiceLabel}>
               {latestInvoice.direction === 'union owes club'
-                ? 'Union owes you'
-                : 'Weekly square-up'}
+                ? 'Union Owes You'
+                : 'Weekly Square-Up'}
             </span>
             <span className={styles.invoiceAmount}>
               {unionOwesClub ? '+' : Number(latestInvoice.amount) > 0 ? '-' : ''}
@@ -1780,7 +1780,7 @@ export default function ClubDataPage() {
           <div className={styles.invoiceMeta}>
             {String(latestInvoice.period_start || '').slice(0, 10)} To{' '}
             {String(latestInvoice.period_end || '').slice(0, 10)}
-            {latestInvoice.due_at ? ` - due ${String(latestInvoice.due_at).slice(0, 10)}` : ''}
+            {latestInvoice.due_at ? ` - Due ${String(latestInvoice.due_at).slice(0, 10)}` : ''}
             {latestInvoice.status ? ` - ${invoiceStatusLabel(latestInvoice.status)}` : ''}
           </div>
 
@@ -1826,8 +1826,8 @@ export default function ClubDataPage() {
             {!latestInvoice.breakdown
               ? 'No Statement Detail'
               : showInvoiceDetail
-                ? 'Hide statement'
-                : 'View statement'}
+                ? 'Hide Statement'
+                : 'View Statement'}
           </button>
         </div>
       )}
@@ -2258,7 +2258,7 @@ export default function ClubDataPage() {
                   : '';
               })()}
               {players.player_count > sortedPlayers.length
-                ? ` Showing ${compactInt(sortedPlayers.length)} of ${compactInt(players.player_count)} players, ordered by ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label.toLowerCase() || 'server rank'}.`
+                ? ` Showing ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)} Players, Ordered By ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label.toLowerCase() || 'Server Rank'}.`
                 : ''}
             </div>
           )}
@@ -2274,7 +2274,7 @@ export default function ClubDataPage() {
       {exportProgress && (
         <div className={styles.footNote} role="status" aria-live="polite">
           {exportProgress.stage === 'preparing'
-            ? 'Preparing an exact snapshot for export...'
+            ? 'Preparing An Exact Snapshot For Export...'
             : `Downloading ${compactInt(exportProgress.loaded)} Of ${compactInt(exportProgress.total)} Rows...`}
         </div>
       )}
@@ -2284,7 +2284,7 @@ export default function ClubDataPage() {
           {clubName ? `${clubName} - ` : ''}
           Showing {compactInt(snapshot.rows.length)} Of {compactInt(snapshot.row_count)} Games
           {snapshot.data_updated_at
-            ? ` - cash data updated ${utcTime(snapshot.data_updated_at)}`
+            ? ` - Cash Data Updated ${utcTime(snapshot.data_updated_at)}`
             : ''}
         </div>
       )}

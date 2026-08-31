@@ -67,8 +67,8 @@ export default function LegacyClubToolRedirect({
       title={`Choose A Club Before Opening ${toolName}`}
       description={
         destination === 'invite'
-          ? 'Join or create a club first so Club Arena can build an invitation for the right community.'
-          : 'This tool changes club-owned data. Join or create a club first so Club Arena can open the correct workspace and permissions.'
+          ? 'Join Or Create A Club First So Club Arena Can Build An Invitation For The Right Community.'
+          : 'This Tool Changes Club-Owned Data. Join Or Create A Club First So Club Arena Can Open The Correct Workspace And Permissions.'
       }
       action={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
       secondaryAction={{ label: 'Return To Arena', onClick: () => navigate('/') }}

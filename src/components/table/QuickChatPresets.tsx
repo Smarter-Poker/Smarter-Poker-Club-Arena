@@ -97,7 +97,7 @@ export function QuickChatPresets({
   const inert = disabled || isCoolingDown;
 
   return (
-    <div className="quick-chat" aria-label="Quick chat">
+    <div className="quick-chat" aria-label="Quick Chat">
       <div className="qc-presets">
         {presets.map((text) => (
           <button

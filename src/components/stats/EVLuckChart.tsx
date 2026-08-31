@@ -172,7 +172,7 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
               {fmtBB(luck)} BB ({fmtBB(luckPer100)} BB/100)
             </strong>{' '}
             {running} Expectation Across {summary?.hands.toLocaleString()} Cash Hands, Measured Over{' '}
-            {allIns.toLocaleString()} All-In {allIns === 1 ? 'spot' : 'spots'}.
+            {allIns.toLocaleString()} All-In {allIns === 1 ? 'Spot' : 'Spots'}.
           </p>
         )}
       </div>
@@ -201,19 +201,8 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
-            <XAxis
-              dataKey="i"
-              tick={axisTick}
-              tickLine={false}
-              axisLine={false}
-              minTickGap={40}
-            />
-            <YAxis
-              tick={axisTick}
-              tickLine={false}
-              axisLine={false}
-              width={46}
-            />
+            <XAxis dataKey="i" tick={axisTick} tickLine={false} axisLine={false} minTickGap={40} />
+            <YAxis tick={axisTick} tickLine={false} axisLine={false} width={46} />
             <Tooltip
               contentStyle={{
                 background: 'rgba(10,14,24,0.95)',
@@ -277,7 +266,7 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
 
       {allIns > 0 && allIns < MEANINGFUL_ALL_INS && (
         <p className="evluck-note">
-          Based On {allIns} All-In {allIns === 1 ? 'spot' : 'spots'}. All-In EV Is Extremely
+          Based On {allIns} All-In {allIns === 1 ? 'Spot' : 'Spots'}. All-In EV Is Extremely
           High-Variance And A Sample This Small Can Swing Wildly. Treat It As A Curiosity Until It
           Is Well Past {MEANINGFUL_ALL_INS}.
         </p>

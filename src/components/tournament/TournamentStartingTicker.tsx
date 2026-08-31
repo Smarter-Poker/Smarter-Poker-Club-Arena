@@ -679,7 +679,7 @@ export function TournamentStartingTicker() {
       <button
         className="mtt-ticker__close"
         onClick={() => (primaryOverlay ? dismissOverlay(primaryOverlay.id) : dismiss(primary!.id))}
-        aria-label={`Dismiss the announcement for ${targetName}`}
+        aria-label={`Dismiss The Announcement For ${targetName}`}
       >
         ×
       </button>

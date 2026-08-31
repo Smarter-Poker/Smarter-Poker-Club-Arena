@@ -208,7 +208,7 @@ export function DiamondTopUpModal({
                     className="diamond-package__btn"
                     onClick={() => handlePurchase(pkg)}
                     disabled={redirecting !== null}
-                    aria-label={`Buy ${pkg.name}, ${(pkg.diamonds + pkg.bonus).toLocaleString()} diamonds for $${pkg.priceUsd.toFixed(2)}`}
+                    aria-label={`Buy ${pkg.name}, ${(pkg.diamonds + pkg.bonus).toLocaleString()} Diamonds For $${pkg.priceUsd.toFixed(2)}`}
                   >
                     {/* DOLLARS, LABELLED AS DOLLARS. */}
                     {redirecting === pkg.id ? '...' : `$${pkg.priceUsd.toFixed(2)}`}
@@ -219,7 +219,7 @@ export function DiamondTopUpModal({
           </>
         )}
 
-        <div className="diamond-modal__trust" aria-label="Checkout assurances">
+        <div className="diamond-modal__trust" aria-label="Checkout Assurances">
           <span>Stripe Checkout</span>
           <span>Server-Priced</span>
           <span>Permanent Balance</span>

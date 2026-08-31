@@ -391,7 +391,7 @@ export function LeaderboardPrizeWizard({
                               onChange={(event) =>
                                 updateCustomPrize(rewardPeriod, row.rank, event.target.value)
                               }
-                              aria-label={`${rewardPeriod} prize for rank ${row.rank}`}
+                              aria-label={`${rewardPeriod} Prize For Rank ${row.rank}`}
                             />
                           </label>
                         ))}

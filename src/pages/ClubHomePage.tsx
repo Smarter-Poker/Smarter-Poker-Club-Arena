@@ -3746,8 +3746,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         <h2>{loadStalled ? 'Still Loading' : 'Club Not Found'}</h2>
         <p style={{ color: '#888', fontSize: '0.9rem', margin: '0 0 1rem' }}>
           {loadStalled
-            ? 'This is taking longer than usual - the connection may be slow right now. Your chips and seats are safe.'
-            : 'The club may have been moved or deleted.'}
+            ? 'This Is Taking Longer Than Usual - The Connection May Be Slow Right Now. Your Chips And Seats Are Safe.'
+            : 'The Club May Have Been Moved Or Deleted.'}
         </p>
         {/* The cause, verbatim. A player can read it out and it names the bug
             immediately; without it every failure mode looks the same. */}
@@ -4293,7 +4293,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             </div>
           }
           controls={
-            <section className="lobby-controls" aria-label="Browse games">
+            <section className="lobby-controls" aria-label="Browse Games">
               <div className="lobby-controls__heading">
                 <div>
                   <span className="lobby-controls__eyebrow">Live Club Schedule</span>
@@ -4308,7 +4308,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 </span>
               </div>
               <div className="game-bar">
-                <div className="game-bar__types" role="tablist" aria-label="Game type">
+                <div className="game-bar__types" role="tablist" aria-label="Game Type">
                   {GAME_TYPE_TABS.map((tab) => (
                     <button
                       key={tab.key}
@@ -4382,7 +4382,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     <div className="quickprefs">
                       <div
                         className="quickprefs__row quickprefs__row--status"
-                        aria-label="Game status"
+                        aria-label="Game Status"
                       >
                         <button
                           type="button"

@@ -120,7 +120,7 @@ export default function LuckyDrawWheel({
         {/* Header */}
         <div className="ldw-header">
           <span className="ldw-title">Lucky Draw</span>
-          <button className="ldw-close" onClick={onClose} aria-label="Close lucky draw">
+          <button className="ldw-close" onClick={onClose} aria-label="Close Lucky Draw">
             ✕
           </button>
         </div>

@@ -317,7 +317,7 @@ export function UnionWalletModal({
                 <>
                   Send Chips, Diamonds Or Promo Funds To Any Member Of The Union.
                   {walletKey === 'bbj' &&
-                    ' BBJ funds are reserved for jackpots, so chips sent here draw on the main bank.'}
+                    ' BBJ Funds Are Reserved For Jackpots, So Chips Sent Here Draw On The Main Bank.'}
                 </>
               )}
             </p>
@@ -472,7 +472,7 @@ export function UnionWalletModal({
                         disabled={isDisabled}
                         title={
                           isDisabled
-                            ? 'Member clawbacks must be performed by the club owner.'
+                            ? 'Member Clawbacks Must Be Performed By The Club Owner.'
                             : undefined
                         }
                         aria-pressed={
@@ -545,9 +545,9 @@ export function UnionWalletModal({
                     : 'Pulling…'
                   : target
                     ? mode === 'send'
-                      ? `Send to ${target.type === 'club' ? target.data.name : target.data.display_name || target.data.username}`
-                      : `Pull from ${target.type === 'club' ? target.data.name : 'Target'}`
-                    : 'Pick a member or club'}
+                      ? `Send To ${target.type === 'club' ? target.data.name : target.data.display_name || target.data.username}`
+                      : `Pull From ${target.type === 'club' ? target.data.name : 'Target'}`
+                    : 'Pick A Member Or Club'}
               </button>
             </div>
           </>
@@ -600,7 +600,7 @@ export function UnionWalletModal({
                       </span>
                       <span style={{ color: '#6b7392', fontSize: 11 }}>
                         {new Date(r.created_at).toLocaleString()}
-                        {r.balance_after != null && ` · balance ${fmt(r.balance_after)}`}
+                        {r.balance_after != null && ` · Balance ${fmt(r.balance_after)}`}
                       </span>
                     </span>
                     <span
@@ -654,7 +654,7 @@ export function UnionWalletModal({
                   }}
                 >
                   {r.notes ||
-                    (r.transaction_type === 'union_promo_send' ? 'Promo send' : 'Chip send')}
+                    (r.transaction_type === 'union_promo_send' ? 'Promo Send' : 'Chip Send')}
                 </span>
                 <span style={{ color: '#e74c3c', fontWeight: 700, flexShrink: 0 }}>
                   -{fmt(r.amount)}

@@ -34,7 +34,7 @@ export default function CasinoPlaque({ entry, children }: CasinoPlaqueProps) {
           : 'HEADS UP';
 
   return (
-    <section className="cplaque" aria-label={`${entry.name} game details`}>
+    <section className="cplaque" aria-label={`${entry.name} Game Details`}>
       <div className="cplaque__screws" aria-hidden="true">
         <i />
         <i />
@@ -69,7 +69,7 @@ export default function CasinoPlaque({ entry, children }: CasinoPlaqueProps) {
       </div>
 
       {/* ── CENTER: rule medallions (active rules only) ── */}
-      <div className="cplaque__rules" role="list" aria-label="Table rules">
+      <div className="cplaque__rules" role="list" aria-label="Table Rules">
         {entry.rules.length === 0 ? (
           <span className="cplaque__norules">Standard Rules</span>
         ) : (
@@ -107,7 +107,7 @@ export function PlaqueSeats({
 }) {
   if (bareCount) {
     return (
-      <div className="cplaque__seats" aria-label={`${players} entered`}>
+      <div className="cplaque__seats" aria-label={`${players} Entered`}>
         <span className="cplaque__seats-num">{players.toLocaleString()} Entered</span>
       </div>
     );
@@ -120,8 +120,8 @@ export function PlaqueSeats({
       className="cplaque__seats"
       aria-label={
         capacity > 0
-          ? `${players} of ${capacity} seats filled`
-          : `${players} seated, capacity unknown`
+          ? `${players} Of ${capacity} Seats Filled`
+          : `${players} Seated, Capacity Unknown`
       }
     >
       <span className="cplaque__seats-num">

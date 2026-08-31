@@ -583,7 +583,7 @@ export default function AgentDashboardPage() {
           title="No Agent Workspace Is Available"
           description={
             error ||
-            'Agent balances, downlines, cashouts, and commissions belong to a club. Open the Agent Team from an authorized club workspace.'
+            'Agent Balances, Downlines, Cashouts, And Commissions Belong To A Club. Open The Agent Team From An Authorized Club Workspace.'
           }
           action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
           secondaryAction={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
@@ -666,7 +666,7 @@ export default function AgentDashboardPage() {
                 >
                   {processing
                     ? 'Processing...'
-                    : `Transfer ${transferAmount ? fmtChips(parseFloat(transferAmount)) : '0'} chips`}
+                    : `Transfer ${transferAmount ? fmtChips(parseFloat(transferAmount)) : '0'} Chips`}
                 </button>
               </div>
             </div>
@@ -872,7 +872,7 @@ export default function AgentDashboardPage() {
                       {paginatedTx.map((tx, i: number) => (
                         <tr key={tx.id || i}>
                           <td>
-                            <span className="admin-badge">{tx.transaction_type || 'transfer'}</span>
+                            <span className="admin-badge">{tx.transaction_type || 'Transfer'}</span>
                           </td>
                           <td style={{ fontWeight: 600 }}>{fmtChips(tx.amount)}</td>
                           <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
@@ -949,8 +949,8 @@ export default function AgentDashboardPage() {
                 <span className="admin-empty-icon">◉</span>
                 <span>
                   {playerSearch
-                    ? 'No players match your search'
-                    : 'No players in your downline yet'}
+                    ? 'No Players Match Your Search'
+                    : 'No Players In Your Downline Yet'}
                 </span>
               </div>
             ) : (
@@ -1137,7 +1137,7 @@ export default function AgentDashboardPage() {
                       <tr key={c.id || i}>
                         <td style={{ fontWeight: 700, color: '#31A24C' }}>{fmtChips(c.amount)}</td>
                         <td>
-                          <span className="admin-badge">{c.source_type || 'rake'}</span>
+                          <span className="admin-badge">{c.source_type || 'Rake'}</span>
                         </td>
                         <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                           {c.notes || '-'}

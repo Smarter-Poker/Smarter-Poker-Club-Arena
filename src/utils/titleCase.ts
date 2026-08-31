@@ -97,13 +97,23 @@ export function stripEmDashes(input: string): string {
  * Title Case a user-facing string.
  *
  * Preserves any word that is ALREADY all-caps (so "BBJ" and a deliberately
- * shouted "LIVE" survive), uppercases known acronyms, keeps minor words down
- * mid-phrase, and capitalises everything else. Hyphenated and slashed
- * compounds are cased on both sides: "add-ons" -> "Add-Ons".
+ * shouted "LIVE" survive), uppercases known acronyms, and capitalises every
+ * prose word. Hyphenated and slashed compounds are cased on both sides:
+ * "add-ons" -> "Add-Ons". Machine-readable examples remain unchanged.
  */
 export function titleCase(input: string | null | undefined): string {
   if (!input) return '';
   const cleaned = stripEmDashes(String(input));
+  const trimmed = cleaned.trim();
+
+  if (
+    /^\S+:\/\/\S+$/.test(trimmed) ||
+    /^\S+@\S+\.\S+$/.test(trimmed) ||
+    /^\/\S+$/.test(trimmed) ||
+    /^[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+$/.test(trimmed)
+  ) {
+    return cleaned;
+  }
 
   // Split on whitespace but KEEP it, so the original spacing survives verbatim.
   const parts = cleaned.split(/(\s+)/);
@@ -119,9 +129,10 @@ export function titleCase(input: string | null | undefined): string {
          hero line ("3rd Of 128"). A token that begins with a digit is an
          ordinal, a stake or a seat count ("6max", "2x"); its letters are a
          suffix and are never title-cased. */
-      return part.replace(/[A-Za-z0-9][A-Za-z0-9'’]*/g, (word) => {
+      return part.replace(/[A-Za-z0-9][A-Za-z0-9'’]*/g, (word, offset, whole) => {
         if (/^[0-9]/.test(word)) return word;
         const lower = word.toLowerCase();
+        if (whole[offset - 1] === '(' && (lower === 's' || lower === 'es')) return lower;
         if (ACRONYMS.has(lower)) return lower.toUpperCase();
         // Already shouting (LIVE, GTD, a name in caps) - leave it alone.
         if (word.length > 1 && word === word.toUpperCase()) return word;

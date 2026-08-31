@@ -669,7 +669,7 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
       className={`sw sw--${phase} ${tierClass(data.multiplier)}`}
       role="dialog"
       aria-modal="true"
-      aria-label="Spin multiplier draw"
+      aria-label="Spin Multiplier Draw"
     >
       {/* The table stays visible: a vignette dims it and a spotlight beam
           falls from the top of the screen, exactly like the reference. */}
@@ -765,9 +765,9 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
                       </text>
                       {unlocksAt ? (
                         <title>
-                          {`${tier.multiplier}x unlocks at a ${currency}${Number(
+                          {`${tier.multiplier}x Unlocks At A ${currency}${Number(
                             unlocksAt
-                          ).toLocaleString(undefined, { maximumFractionDigits: 0 })} reserve`}
+                          ).toLocaleString(undefined, { maximumFractionDigits: 0 })} Reserve`}
                         </title>
                       ) : null}
                     </g>

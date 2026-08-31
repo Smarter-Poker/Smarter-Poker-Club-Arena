@@ -138,7 +138,7 @@ export default function TOSAcceptanceModal({ onAccept }: TOSAcceptanceModalProps
           <p>For Questions About These Terms, Please Contact Us At Support@Smarter.Poker</p>
 
           <div className="tos-scroll-hint">
-            {!hasScrolledToBottom && '↓ Scroll to read all terms'}
+            {!hasScrolledToBottom && '↓ Scroll To Read All Terms'}
           </div>
         </div>
 

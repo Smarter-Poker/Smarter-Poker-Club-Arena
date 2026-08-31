@@ -570,7 +570,7 @@ export default function AgentManagementPage() {
           eyebrow="Club Context Required"
           tone="permission"
           title="Choose A Club To Manage Agents"
-          description="Agent roles, commissions, credit lines, and players belong to one club. Open this tool from that club's Operations menu."
+          description="Agent Roles, Commissions, Credit Lines, And Players Belong To One Club. Open This Tool From That Club's Operations Menu."
           action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
         />
       </div>
@@ -952,8 +952,8 @@ export default function AgentManagementPage() {
                           {tx.transaction_type} •{' '}
                           <span style={{ color: remainingSec > 0 ? '#F5A623' : '#FA383E' }}>
                             {remainingSec > 0
-                              ? `${remainingMin}:${String(remainingSecMod).padStart(2, '0')} left`
-                              : 'expired'}
+                              ? `${remainingMin}:${String(remainingSecMod).padStart(2, '0')} Left`
+                              : 'Expired'}
                           </span>
                         </div>
                       </div>

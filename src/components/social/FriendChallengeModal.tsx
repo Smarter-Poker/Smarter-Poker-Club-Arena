@@ -147,7 +147,7 @@ export default function FriendChallengeModal({
             className="fcm-close"
             type="button"
             onClick={onClose}
-            aria-label="Close challenge dialog"
+            aria-label="Close Challenge Dialog"
             disabled={sending}
           >
             ✕

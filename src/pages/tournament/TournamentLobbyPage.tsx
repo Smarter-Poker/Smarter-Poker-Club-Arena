@@ -713,7 +713,7 @@ export default function TournamentLobbyPage() {
       <CasinoSurfaceHeader
         eyebrow="Play & Review / Tournament Lobby"
         title="Tournament Command"
-        description="Discover scheduled fields, inspect live events, and enter registration through the existing tournament service and server-authoritative buy-in flow."
+        description="Discover Scheduled Fields, Inspect Live Events, And Enter Registration Through The Existing Tournament Service And Server-Authoritative Buy-In Flow."
         artPath="assets/club-buttons/lobby/shark-club-championship-ad-v2.png"
         status="TOURNAMENT NETWORK // LIVE"
         metrics={[

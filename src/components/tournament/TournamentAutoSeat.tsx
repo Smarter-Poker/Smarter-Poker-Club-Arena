@@ -284,7 +284,7 @@ export default function TournamentAutoSeat() {
    */
   if (blindingOff) {
     return (
-      <div className="tas-overlay" role="dialog" aria-label="You are being blinded off">
+      <div className="tas-overlay" role="dialog" aria-label="You Are Being Blinded Off">
         <div className="tas-panel tas-panel--urgent">
           <div className="tas-flag tas-flag--urgent">You Are Being Blinded Off</div>
           <div className="tas-title">{renderTwoLineTitle(blindingOff.name)}</div>
@@ -322,7 +322,7 @@ export default function TournamentAutoSeat() {
   if (!blocked) return null;
 
   return (
-    <div className="tas-overlay" role="dialog" aria-label="Tournament started">
+    <div className="tas-overlay" role="dialog" aria-label="Tournament Started">
       <div className="tas-panel">
         <div className="tas-flag">TOURNAMENT STARTED</div>
         <div className="tas-title">{renderTwoLineTitle(blocked.name)}</div>

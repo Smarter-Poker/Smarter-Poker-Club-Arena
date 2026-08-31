@@ -503,7 +503,7 @@ export default function NotificationsPage() {
       <AccountSurfaceHeader
         eyebrow="Signal Inbox // Live Player Network"
         title="Notifications"
-        description="Seat calls, tournament movement, messages, rewards, and club operations, resolved by the same canonical destination service used across Smarter.Poker."
+        description="Seat Calls, Tournament Movement, Messages, Rewards, And Club Operations, Resolved By The Same Canonical Destination Service Used Across Smarter.Poker."
         status={loading ? 'Synchronizing' : 'Live Feed'}
       >
         <span className="ca-notif__heroMetric">
@@ -517,7 +517,7 @@ export default function NotificationsPage() {
       </AccountSurfaceHeader>
 
       <div className="ca-notif__bar">
-        <div className="ca-notif__filters" role="group" aria-label="Filter notifications">
+        <div className="ca-notif__filters" role="group" aria-label="Filter Notifications">
           <button type="button" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
             All <span>{notifications.length}</span>
           </button>
@@ -623,7 +623,7 @@ export default function NotificationsPage() {
                   type="button"
                   className="ca-notif__delete"
                   title="Dismiss"
-                  aria-label={`Dismiss ${n.title || n.message || 'notification'}`}
+                  aria-label={`Dismiss ${n.title || n.message || 'Notification'}`}
                   onClick={() => handleDelete(n.id)}
                 >
                   <svg

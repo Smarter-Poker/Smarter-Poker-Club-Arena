@@ -315,9 +315,9 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
             onKeyDown={(e) => {
               if (e.key === 'Enter') lookupHand();
             }}
-            placeholder="Hand Id Or Hand Number"
+            placeholder="Hand ID Or Hand Number"
             style={{ flex: 1, padding: '8px 10px', borderRadius: 8 }}
-            aria-label="Hand Id Or Hand Number"
+            aria-label="Hand ID Or Hand Number"
           />
           <button className="export-btn" onClick={lookupHand} disabled={lookupBusy}>
             {lookupBusy ? 'Loading' : 'Look Up'}

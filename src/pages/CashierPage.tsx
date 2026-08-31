@@ -57,6 +57,7 @@ import styles from './CashierPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import { reportError } from '../utils/errorReporter';
+import { formatPopupText } from '../utils/popupStyle';
 
 type CashierAction = 'send' | 'distribute' | 'buyin' | 'cashout' | 'mint' | 'history';
 
@@ -162,7 +163,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   rebuy: '↺',
   addon: '⊞',
   mint: '◆',
-  settlement: '≡',
+  settlement: '◇',
   commission: '◈',
   INSURANCE: '⊕',
   funding: '→',
@@ -1943,7 +1944,7 @@ export default function CashierPage() {
       <nav
         className={styles.tabNav}
         role="tablist"
-        aria-label="Cashier actions"
+        aria-label="Cashier Actions"
         onKeyDown={handleTabKeyDown}
       >
         {tabs.map((act) => (
@@ -2188,7 +2189,7 @@ export default function CashierPage() {
 
             <button
               className={styles.btnPrimary}
-              aria-label={`Send ${amount || '0'} chips to selected recipient`}
+              aria-label={`Send ${amount || '0'} Chips To Selected Recipient`}
               onClick={() => {
                 const value = parseFloat(amount);
                 if (!isNaN(value) && value >= 10000 && selectedRecipientData) {
@@ -2671,7 +2672,7 @@ export default function CashierPage() {
       {action === 'history' && (
         <section className={styles.card} id="cashier-panel-history" role="tabpanel">
           <h2 className={styles.cardTitle}>
-            <span className={styles.cardTitleIcon}>≡</span>Transaction History
+            <span className={styles.cardTitleIcon}>↺</span>Transaction History
           </h2>
           <div className={styles.txContainer}>
             {/* Filters */}
@@ -2755,7 +2756,7 @@ export default function CashierPage() {
                             {CATEGORY_LABELS[tx.category] ||
                               (tx.category || tx.type || '').replace(/_/g, ' ').toUpperCase()}
                           </span>
-                          <span className={styles.txDesc}>{tx.description}</span>
+                          <span className={styles.txDesc}>{formatPopupText(tx.description)}</span>
                         </div>
                         <div className={styles.txAmounts}>
                           <span
@@ -2784,7 +2785,7 @@ export default function CashierPage() {
                   <button
                     className={styles.loadMoreBtn}
                     onClick={() => setTxPage((p) => p + 1)}
-                    aria-label="Load more transactions"
+                    aria-label="Load More Transactions"
                   >
                     Load More ({filteredTransactions.length - txPage * TX_PAGE_SIZE} Remaining)
                   </button>

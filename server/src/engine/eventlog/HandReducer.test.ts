@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { replay, apply, deriveDeck, buildOrderedDeck } from './HandReducer.js';
 import { buildExampleHand, buildSeedOnlyHand } from './testFixtures.js';
 
-describe('HandReducer — replay of a full example hand', () => {
+describe('HandReducer - replay of a full example hand', () => {
   it('replays blinds -> deal -> bets -> showdown -> payout to the correct stacks', () => {
     const events = buildExampleHand();
     const state = replay(events);
@@ -38,7 +38,7 @@ describe('HandReducer — replay of a full example hand', () => {
   });
 });
 
-describe('HandReducer — determinism', () => {
+describe('HandReducer - determinism', () => {
   it('produces structurally identical state for the same events, twice', () => {
     const a = replay(buildExampleHand());
     const b = replay(buildExampleHand());
@@ -76,7 +76,7 @@ describe('HandReducer — determinism', () => {
   });
 });
 
-describe('HandReducer — purity', () => {
+describe('HandReducer - purity', () => {
   it('does not mutate the input state', () => {
     const events = buildExampleHand();
     const s0 = apply(undefined, events[0]);

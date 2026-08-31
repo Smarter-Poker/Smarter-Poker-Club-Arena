@@ -703,7 +703,7 @@ export default function UnionDetailPage() {
           icon="UNION"
           eyebrow="Network Unavailable"
           title="Union Not Found"
-          description="This union may have been removed, or the link may use an outdated identifier."
+          description="This Union May Have Been Removed, Or The Link May Use An Outdated Identifier."
           action={{ label: 'Browse Unions', onClick: () => navigate('/unions', { replace: true }) }}
           secondaryAction={{ label: 'Return To Arena', onClick: () => navigate('/') }}
         />
@@ -718,7 +718,7 @@ export default function UnionDetailPage() {
         title={union.name}
         description={
           union.description ||
-          'Inspect this connected club network, its live games, player scale, and governed operations.'
+          'Inspect This Connected Club Network, Its Live Games, Player Scale, And Governed Operations.'
         }
         artPath="assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp"
         status="UNION NETWORK // LIVE"
@@ -738,7 +738,7 @@ export default function UnionDetailPage() {
         </div>
         <div className={styles.headerActions}>
           <button className={styles.applyButton} onClick={handleApplyClick} disabled={applying}>
-            {applying ? 'Applying...' : 'Apply to Join'}
+            {applying ? 'Applying...' : 'Apply To Join'}
           </button>
         </div>
       </div>
@@ -1071,7 +1071,7 @@ export default function UnionDetailPage() {
                           >
                             Lv.{cLevel.level}
                           </span>
-                          {club.memberCount} {club.memberCount === 1 ? 'member' : 'members'}
+                          {club.memberCount} {club.memberCount === 1 ? 'Member' : 'Members'}
                         </span>
                       </div>
                     </Link>
@@ -1186,10 +1186,10 @@ export default function UnionDetailPage() {
                       </h4>
                       <p>Owner: {club.ownerName || 'Unknown'}</p>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {club.memberCount} {club.memberCount === 1 ? 'member' : 'members'}
+                        {club.memberCount} {club.memberCount === 1 ? 'Member' : 'Members'}
                         {activeTableCount > 0 && (
                           <span style={{ color: '#6ee7b7', fontSize: '0.7rem', fontWeight: 600 }}>
-                            {activeTableCount} {activeTableCount === 1 ? 'table' : 'tables'}
+                            {activeTableCount} {activeTableCount === 1 ? 'Table' : 'Tables'}
                           </span>
                         )}
                       </span>

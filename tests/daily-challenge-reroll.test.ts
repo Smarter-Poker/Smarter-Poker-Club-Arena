@@ -225,6 +225,7 @@ describe('the page ships the casino-realism surface without the old stubs', () =
     expect(page).toContain('dailyChallengeService.getDashboard(uid)');
     expect(page).toContain("document.addEventListener('visibilitychange'");
     expect(page).toContain('requestId !== loadRequestRef.current');
+    expect(page).toContain('if (!initialLoadSettledRef.current) return;');
     expect(page).toContain('MissionLoadingState');
     expect(page).toContain('Retry Mission Link');
   });

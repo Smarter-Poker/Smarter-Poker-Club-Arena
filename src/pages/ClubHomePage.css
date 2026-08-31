@@ -1702,9 +1702,49 @@
 }
 
 .lobby-resultsbar--create-only {
-  justify-content: flex-end;
-  border: 0;
-  background: transparent;
+  justify-content: stretch;
+  margin-top: 12px;
+  padding: 7px;
+  overflow: visible;
+  border: 1px solid rgb(77 151 204 / 44%);
+  border-radius: 12px;
+  background: #0b1b27;
+  box-shadow:
+    inset 0 1px 0 rgb(198 231 255 / 12%),
+    0 8px 24px rgb(0 0 0 / 30%);
+}
+
+.lobby-resultsbar--create-only .lobby-createbtn {
+  width: 100%;
+  min-height: 50px;
+  justify-content: center;
+  gap: 8px;
+  overflow: visible;
+  border: 1px solid #438cb9;
+  border-bottom-color: #153b55;
+  border-radius: 8px;
+  background: #123f5b;
+  color: #effaff;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-shadow: 0 1px 2px #000;
+  text-transform: uppercase;
+  box-shadow:
+    inset 0 1px 0 rgb(221 244 255 / 30%),
+    inset 0 -8px 18px rgb(0 0 0 / 18%),
+    0 3px 0 #02080c;
+}
+
+.lobby-resultsbar--create-only .lobby-createbtn span {
+  color: #f3d67c;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.lobby-resultsbar--create-only .lobby-createbtn:focus-visible {
+  outline: 2px solid #8edbff;
+  outline-offset: 3px;
 }
 
 .lobby-resultsbar .lobby-createbtn:active {
@@ -2178,10 +2218,16 @@
     min-height: 0;
     display: grid;
     grid-template-columns: clamp(320px, 26vw, 434px) minmax(0, 1fr);
-    grid-template-rows: minmax(610px, calc(100dvh - 274px));
+    grid-template-rows: minmax(
+      0,
+      calc(
+        100dvh - var(--ca-global-header-height, 0px) - var(--mtt-ticker-h, 0px) -
+          var(--bottom-nav-clearance, 86px) - 20px
+      )
+    );
     align-items: stretch;
     gap: clamp(12px, 1.15vw, 20px);
-    padding: 10px 16px calc(132px + 8px);
+    padding: 10px 16px calc(var(--bottom-nav-clearance, 86px) + 8px);
     background: #000;
   }
 
@@ -2191,13 +2237,16 @@
     min-width: 0;
     height: 100%;
     padding: 0;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     border: 1px solid rgb(119 145 166 / 24%);
     background: #020507;
     box-shadow:
       inset 0 0 0 2px #020305,
       inset 0 0 24px #000,
       0 8px 24px rgb(0 0 0 / 70%);
+    scrollbar-color: rgb(62 126 174 / 66%) #020507;
+    scrollbar-width: thin;
   }
 
   .lobby-top__main {
@@ -2209,18 +2258,25 @@
     padding: 2px;
   }
 
-  .lobby-top__identity {
-    flex: 0 0 auto;
-  }
-
+  .lobby-top .club-identity.lobby-top__identity,
   .lobby-bbj {
     flex: 0 0 auto;
     width: 100%;
+    height: auto;
+    aspect-ratio: 2.4 / 1;
+  }
+
+  .lobby-top__identity .club-identity__shell img,
+  .lobby-bbj__shell {
+    object-fit: fill;
   }
 
   .lobby-top__wallet {
     grid-column: auto;
     flex: 1 1 auto;
+    align-self: stretch;
+    width: 100%;
+    max-width: 100%;
     min-height: 0;
     display: flex;
     flex-direction: column;
@@ -2240,6 +2296,8 @@
 
   .lobby-top__wallet .dw {
     flex: 1 1 auto;
+    width: 100%;
+    max-width: 100%;
     min-height: 0;
   }
 
@@ -2258,25 +2316,34 @@
   /* The approved desktop command column has three visible accounts. The
      authorized remainder stays in this same live wallet DOM and remains
      available through Cashier; mobile reveals the complete list. */
-  .lobby-top__wallet .dw__row {
+  .lobby-top__wallet .dw--lobby-board .dw__row {
     display: none;
   }
 
-  .lobby-top__wallet .dw__row[data-wallet-key='diamonds'],
-  .lobby-top__wallet .dw__row[data-wallet-key='club_bank'],
-  .lobby-top__wallet .dw__row[data-wallet-key='agent_wallet'],
-  .lobby-top__wallet .dw__row[data-wallet-key='player_wallet'] {
+  .lobby-top__wallet .dw--lobby-board .dw__row[data-wallet-key='diamonds'],
+  .lobby-top__wallet .dw--lobby-board .dw__row[data-wallet-key='club_bank'],
+  .lobby-top__wallet .dw--lobby-board .dw__row[data-wallet-key='agent_wallet'],
+  .lobby-top__wallet .dw--lobby-board .dw__row[data-wallet-key='player_wallet'] {
     display: block;
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 1800 / 334;
   }
 
-  .lobby-top__wallet .dw__row[data-wallet-key='player_wallet'] {
+  .lobby-top__wallet .dw--lobby-board .dw__row[data-wallet-key='player_wallet'] {
     order: 4;
   }
 
   .lobby-top__wallet
+    .dw--lobby-board
     .dw__row[data-wallet-key='club_bank']
     ~ .dw__row[data-wallet-key='player_wallet'] {
     display: none;
+  }
+
+  .lobby-top__wallet .dw--lobby-board .dw__row--wallet-art .dw__row-shell {
+    object-fit: fill;
   }
 
   .club-lobby-machine {
@@ -2291,7 +2358,12 @@
     flex-direction: column;
     width: 100%;
     max-width: none;
-    padding-bottom: calc(var(--bottom-nav-height, 74px) + 18px);
+    /* Use the page-clearance contract, not the artwork height. The latter
+       omits the home-indicator inset and left a populated lobby's last image
+       25px beneath the fixed nav in the authenticated production audit. A
+       full coarse-pointer target of breathing room also absorbs late image
+       layout without making the final row unreachable. */
+    padding-bottom: calc(var(--bottom-nav-clearance, 74px) + 44px);
     background: #000;
   }
 
@@ -2525,7 +2597,9 @@
   .lobby-wallets-content {
     display: grid;
     grid-template-rows: 0fr;
+    visibility: hidden;
     opacity: 0;
+    pointer-events: none;
     transition:
       grid-template-rows 220ms ease,
       opacity 180ms ease;
@@ -2533,7 +2607,9 @@
 
   .lobby-wallets-content[data-expanded='true'] {
     grid-template-rows: 1fr;
+    visibility: visible;
     opacity: 1;
+    pointer-events: auto;
   }
 
   .lobby-wallets-content__inner {

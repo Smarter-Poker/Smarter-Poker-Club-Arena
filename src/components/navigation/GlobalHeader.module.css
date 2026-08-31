@@ -107,32 +107,38 @@
 }
 
 .profileBtn {
-  /* Cover the complete baked profile ornament, including its blue outer glow.
-     A smaller inner slot leaves the source ring visible around the live photo. */
-  top: 13%;
+  /* Cover the baked silver/blue profile ornament with the header's black field.
+     Only the live circular portrait and its nearly invisible edge remain. */
+  top: 15%;
   left: 66.75%;
   width: 7.15%;
-  height: 75%;
+  height: auto;
+  aspect-ratio: 1;
   position: absolute !important;
+  box-sizing: border-box;
   overflow: hidden;
   contain: layout paint;
   isolation: isolate;
-  border-radius: 0;
+  border: 0;
+  border-radius: 50%;
   background: #000;
 }
 
 .profileAvatarSlot {
   position: absolute !important;
-  inset: 0 !important;
+  top: 50% !important;
+  left: 50% !important;
   z-index: 1;
   display: block;
-  width: 100%;
-  height: 100%;
-  aspect-ratio: auto;
+  width: 72%;
+  height: auto;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%) !important;
   overflow: hidden;
-  border: 0;
-  border-radius: 0;
-  background: #000;
+  box-sizing: border-box;
+  border: 1px solid rgba(0, 0, 0, 0.94);
+  border-radius: 50%;
+  background: transparent;
   pointer-events: none;
 }
 
@@ -146,9 +152,9 @@
   aspect-ratio: auto !important;
   transform: none !important;
   border: 0 !important;
-  border-radius: 0 !important;
-  background: #000;
-  object-fit: contain !important;
+  border-radius: 50% !important;
+  background: transparent !important;
+  object-fit: cover !important;
   object-position: center !important;
   opacity: 1 !important;
   pointer-events: none;
@@ -166,6 +172,15 @@
   isolation: isolate;
 }
 
+/* Active members keep a restrained white-neon trace around the VIP card. */
+.vipActive {
+  border-radius: 12%;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.92),
+    0 0 5px rgba(255, 255, 255, 0.75),
+    0 0 10px rgba(210, 240, 255, 0.38);
+}
+
 /* The card is deliberately subdued until membership is active. The approved
    art remains beneath this neutral veil; no replacement graphic is used. */
 .vipBtn:not(.vipActive)::after {
@@ -176,49 +191,6 @@
   background: rgba(0, 0, 0, 0.48);
   content: '';
   pointer-events: none;
-}
-
-/* Members receive one fast diagonal shimmer. React adds this class for one
-   second only after a newly selected random 5–10 second pause. */
-.vipShimmer::before {
-  position: absolute;
-  z-index: 3;
-  top: 2%;
-  bottom: 2%;
-  left: -65%;
-  width: 45%;
-  border-radius: 35%;
-  background: linear-gradient(
-    105deg,
-    transparent 0%,
-    rgba(60, 165, 255, 0.22) 25%,
-    #fff 48%,
-    rgba(255, 224, 112, 0.95) 58%,
-    transparent 100%
-  );
-  box-shadow: 0 0 18px 7px rgba(56, 174, 255, 0.75);
-  content: '';
-  filter: blur(0.4px);
-  mix-blend-mode: screen;
-  pointer-events: none;
-  animation: vipHeaderShimmer 1.25s cubic-bezier(0.2, 0.7, 0.25, 1) 1;
-}
-
-@keyframes vipHeaderShimmer {
-  0% {
-    left: -65%;
-    opacity: 0;
-  }
-
-  12%,
-  78% {
-    opacity: 1;
-  }
-
-  100% {
-    left: 125%;
-    opacity: 0;
-  }
 }
 
 .messengerBtn {
@@ -251,6 +223,25 @@
     sans-serif;
 }
 
+/* The approved desktop authority is 1680 x 932 and gives the shared header a
+   96px chrome band. Letting the 1648 x 168 source ratio dictate height made
+   that band 171px at the authority viewport, taking 75px from the lobby and
+   forcing the wallet stack beneath the footer. The artwork and its semantic
+   hit plane stay on the same coordinate system; desktop only compresses that
+   system to the approved height. Mobile keeps the lossless proportional row. */
+@media (min-width: 901px) {
+  .desktopArtwork {
+    height: 96px;
+    aspect-ratio: auto;
+    object-fit: fill;
+  }
+
+  .headerControls {
+    height: 96px;
+    aspect-ratio: auto;
+  }
+}
+
 /* These semantic anchors make each count belong to its own control. A generic
    absolute badge must never fall back to the header control plane, where the
    notification count previously appeared over Profile. */
@@ -273,9 +264,5 @@
 @media (prefers-reduced-motion: reduce) {
   .artButton {
     scroll-behavior: auto;
-  }
-
-  .vipShimmer::before {
-    animation: none;
   }
 }

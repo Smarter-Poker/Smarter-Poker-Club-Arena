@@ -754,6 +754,7 @@ export default function ClubMembersPage() {
             placeholder={titleCase('search name, number, club, or upline')}
             aria-label="Search Club Members"
             value={searchQuery}
+            maxLength={120}
             autoComplete="off"
             spellCheck={false}
             onChange={(event) => setSearchQuery(event.target.value)}
@@ -809,6 +810,23 @@ export default function ClubMembersPage() {
                 )}
               </div>
             </details>
+          )}
+
+          {summary.capabilities.can_export && members.length > 0 && (
+            <button
+              type="button"
+              className="members-select-loaded"
+              aria-pressed={selected.size === members.length}
+              onClick={() =>
+                setSelected(
+                  selected.size === members.length
+                    ? new Set()
+                    : new Set(members.map((row) => row.user_id))
+                )
+              }
+            >
+              {selected.size === members.length ? 'Clear Selection' : 'Select Loaded'}
+            </button>
           )}
 
           <button

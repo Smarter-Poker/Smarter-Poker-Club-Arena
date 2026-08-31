@@ -67,6 +67,7 @@ import {
   type TableStudioCheckoutResult,
 } from '../../lib/tableStudioCheckoutResume';
 import { recordCustomizationOperation } from '../../services/CustomizationOperationsTelemetry';
+import { retryFetch } from '../../utils/retryFetch';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -87,6 +88,15 @@ type ThemeSelection = Omit<TableStudioLoadout, 'name' | 'saved_at'>;
 type ThemeTab = 'themes' | 'table' | 'button' | 'background' | 'cards';
 type BackgroundGroup = 'places-rooms' | 'skins';
 type AssetFilter = 'all' | 'free' | 'vip' | 'favorites' | 'recent';
+
+/**
+ * Table Studio opens several independent, security-sensitive reads at once.
+ * PostgREST can briefly answer PGRST002 while its schema cache reconnects;
+ * treating that one response as permanent leaves the editor locked until the
+ * player manually retries every panel. Keep the retry window bounded and
+ * short enough that the modal still reports a real outage promptly.
+ */
+const STUDIO_READ_RETRY = { maxRetries: 4, baseDelayMs: 500 } as const;
 
 interface ThemeAsset {
   id: string;
@@ -645,6 +655,10 @@ export function ThemeSettingsModal({
   userIdRef.current = userId;
   const ownershipScopeRef = useRef<string | null>(null);
   const ownershipRequestRef = useRef(0);
+  const themeLoadScopeRef = useRef<string | null>(null);
+  const themeLoadRequestRef = useRef(0);
+  const themeLoadReadyScopeRef = useRef<string | null>(null);
+  const selectionMutationRevisionRef = useRef(0);
   const pendingSavesRef = useRef(0);
   useEffect(() => {
     selectionRef.current = selection;
@@ -659,6 +673,7 @@ export function ThemeSettingsModal({
   useEffect(() => stopCheckoutBalancePolling, [stopCheckoutBalancePolling]);
 
   const replaceSelection = useCallback((next: ThemeSelection) => {
+    selectionMutationRevisionRef.current += 1;
     selectionRef.current = next;
     setSelection(next);
   }, []);
@@ -701,6 +716,7 @@ export function ThemeSettingsModal({
 
       setSelection((current) => {
         const next = { ...current, ...patch };
+        selectionMutationRevisionRef.current += 1;
         selectionRef.current = next;
         return next;
       });
@@ -808,43 +824,70 @@ export function ThemeSettingsModal({
     // initial loading transition; every subsequent snapshot is merged in place.
     if (scopeChanged) setOwnershipState('loading');
     Promise.all([
-      supabase
-        .from('feature_purchases')
-        .select('feature')
-        .eq('user_id', userId)
-        .like('feature', 'card_back_%'),
-      supabase.from('theme_asset_unlocks').select('category, asset_id').eq('user_id', userId),
-    ]).then(([cardBacks, assets]) => {
-      // Ownership is permanent and snapshots are merged, so an older read is
-      // still safe to apply after a newer reconciliation starts. Its status is
-      // not authoritative, though, and a response for a closed/different user
-      // must never touch the current Studio.
-      if (ownershipScopeRef.current !== requestedScope) return;
-      if (cardBacks.error || assets.error) {
-        // Not fatal, and not silently swallowed either: a failure here means
-        // paid designs read as locked, so it has to be visible somewhere.
-        reportError(
-          cardBacks.error || assets.error,
-          'ThemeSettingsModal.Cosmetic_ownership_load_failed'
+      retryFetch(
+        () =>
+          supabase
+            .from('feature_purchases')
+            .select('feature')
+            .eq('user_id', userId)
+            .like('feature', 'card_back_%')
+            .then((result) => result),
+        STUDIO_READ_RETRY
+      ),
+      retryFetch(
+        () =>
+          supabase
+            .from('theme_asset_unlocks')
+            .select('category, asset_id')
+            .eq('user_id', userId)
+            .then((result) => result),
+        STUDIO_READ_RETRY
+      ),
+    ])
+      .then(([cardBacks, assets]) => {
+        // Ownership is permanent and snapshots are merged, so an older read is
+        // still safe to apply after a newer reconciliation starts. Its status is
+        // not authoritative, though, and a response for a closed/different user
+        // must never touch the current Studio.
+        if (ownershipScopeRef.current !== requestedScope) return;
+        if (cardBacks.error || assets.error) {
+          // Not fatal, and not silently swallowed either: a failure here means
+          // paid designs read as locked, so it has to be visible somewhere.
+          reportError(
+            cardBacks.error || assets.error,
+            'ThemeSettingsModal.Cosmetic_ownership_load_failed'
+          );
+          if (requestId === ownershipRequestRef.current) setOwnershipState('error');
+          return;
+        }
+        // Merge the authoritative snapshot into any INSERT events that arrived
+        // while this read was in flight. Replacing either array here opens a
+        // second race: an entitlement can be delivered after the SELECT snapshot
+        // was taken but before React applies its result, and the stale snapshot
+        // would put the lock back on that just-purchased design.
+        const purchasedCardBacks = (cardBacks.data || []).map((r: { feature: string }) =>
+          r.feature.replace('card_back_', '')
         );
+        const unlockedAssets = (assets.data || []).map(
+          (row: { category: string; asset_id: string }) => `${row.category}:${row.asset_id}`
+        );
+        setOwnedCardBacks((current) => [...new Set([...current, ...purchasedCardBacks])]);
+        setOwnedThemeAssets((current) => [...new Set([...current, ...unlockedAssets])]);
+        // Ownership only grows and every same-scope snapshot is merged. A newer
+        // two-second reconciliation may already be in flight when this one
+        // succeeds, especially on a slow mobile/database connection. Requiring
+        // this response to still be the newest request starves `ready` forever
+        // when each SELECT takes longer than the cadence: the Studio stays
+        // aria-busy even though valid snapshots keep arriving. Any successful
+        // response for the active user proves the ledger is readable; a later
+        // current failure can still move the state back to error.
+        setOwnershipState('ready');
+      })
+      .catch((error) => {
+        if (ownershipScopeRef.current !== requestedScope) return;
+        reportError(error, 'ThemeSettingsModal.Cosmetic_ownership_load_failed');
         if (requestId === ownershipRequestRef.current) setOwnershipState('error');
-        return;
-      }
-      // Merge the authoritative snapshot into any INSERT events that arrived
-      // while this read was in flight. Replacing either array here opens a
-      // second race: an entitlement can be delivered after the SELECT snapshot
-      // was taken but before React applies its result, and the stale snapshot
-      // would put the lock back on that just-purchased design.
-      const purchasedCardBacks = (cardBacks.data || []).map((r: { feature: string }) =>
-        r.feature.replace('card_back_', '')
-      );
-      const unlockedAssets = (assets.data || []).map(
-        (row: { category: string; asset_id: string }) => `${row.category}:${row.asset_id}`
-      );
-      setOwnedCardBacks((current) => [...new Set([...current, ...purchasedCardBacks])]);
-      setOwnedThemeAssets((current) => [...new Set([...current, ...unlockedAssets])]);
-      if (requestId === ownershipRequestRef.current) setOwnershipState('ready');
-    });
+      });
     return undefined;
   }, [isOpen, userId, ownershipRevision]);
 
@@ -855,9 +898,14 @@ export function ThemeSettingsModal({
     if (!isOpen) return undefined;
     let mounted = true;
     setPricingState('loading');
-    supabase
-      .from('feature_pricing')
-      .select('feature, diamond_cost')
+    retryFetch(
+      () =>
+        supabase
+          .from('feature_pricing')
+          .select('feature, diamond_cost')
+          .then((result) => result),
+      STUDIO_READ_RETRY
+    )
       .then(({ data, error }) => {
         if (!mounted) return;
         if (error) {
@@ -881,6 +929,12 @@ export function ThemeSettingsModal({
           )
         );
         setPricingState('ready');
+      })
+      .catch((error) => {
+        if (!mounted) return;
+        reportError(error, 'ThemeSettingsModal.Asset_pricing_load_failed');
+        setAssetPrices({});
+        setPricingState('error');
       });
     return () => {
       mounted = false;
@@ -1121,21 +1175,41 @@ export function ThemeSettingsModal({
 
   // Load existing theme for selected game type
   useEffect(() => {
-    if (!isOpen) return undefined;
+    const nextScope = isOpen ? `${userId || 'anonymous'}:${canonicalGameType(gameType)}` : null;
+    const scopeChanged = themeLoadScopeRef.current !== nextScope;
+    themeLoadScopeRef.current = nextScope;
+    if (scopeChanged) themeLoadReadyScopeRef.current = null;
+    if (!isOpen) {
+      themeLoadRequestRef.current += 1;
+      setThemeLoadState('idle');
+      return undefined;
+    }
     if (!userId) {
+      themeLoadRequestRef.current += 1;
       replaceSelection({ ...DEFAULT_SELECTION });
+      themeLoadReadyScopeRef.current = nextScope;
       setThemeLoadState('ready');
       return undefined;
     }
 
     let mounted = true;
-    setThemeLoadState('loading');
+    const requestedScope = nextScope;
+    const requestId = ++themeLoadRequestRef.current;
+    const mutationRevision = selectionMutationRevisionRef.current;
+    if (scopeChanged) setThemeLoadState('loading');
     const load = async () => {
       try {
-        const { data, error } = await supabase
-          .from('user_theme_settings')
-          .select('game_type, theme_id, table_id, button_id, background_id, cards_id, updated_at')
-          .eq('user_id', userId);
+        const { data, error } = await retryFetch(
+          () =>
+            supabase
+              .from('user_theme_settings')
+              .select(
+                'game_type, theme_id, table_id, button_id, background_id, cards_id, updated_at'
+              )
+              .eq('user_id', userId)
+              .then((result) => result),
+          STUDIO_READ_RETRY
+        );
 
         if (error) {
           // A FAILED READ IS NOT "YOU HAVE THE DEFAULT THEME" (2026-08-25).
@@ -1145,14 +1219,35 @@ export function ThemeSettingsModal({
           // touched would overwrite the theme they could not see.
           console.warn('[ThemeSettings] Load failed:', error.message);
           reportError(error, 'ThemeSettingsModal.Load_failed');
-          if (mounted) {
+          if (
+            mounted &&
+            themeLoadScopeRef.current === requestedScope &&
+            requestId === themeLoadRequestRef.current &&
+            themeLoadReadyScopeRef.current !== requestedScope
+          ) {
             setThemeLoadState('error');
             toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
           }
           return;
         }
 
-        if (mounted) {
+        if (
+          mounted &&
+          themeLoadScopeRef.current === requestedScope &&
+          requestId === themeLoadRequestRef.current
+        ) {
+          // A reconciliation SELECT may have started immediately before a local
+          // tap or a Realtime row arrived. Never let that older snapshot paint
+          // over a newer visible choice; the next bounded cadence will read the
+          // now-durable row. This is the appearance equivalent of the permanent
+          // ownership ledger's monotonic merge.
+          if (
+            pendingSavesRef.current > 0 ||
+            selectionMutationRevisionRef.current !== mutationRevision
+          ) {
+            if (themeLoadReadyScopeRef.current === requestedScope) setThemeLoadState('ready');
+            return;
+          }
           /* The reader and this editor now use the same precedence: exact
              bucket, then a legacy raw variant that canonicalises to it, then
              ALL. A stored `plo4` row can no longer paint the table while this
@@ -1174,12 +1269,18 @@ export function ThemeSettingsModal({
             // tile at all and the tab looks like it forgot the user's choice.
             cards_id: normalizeCardBack(row?.cards_id || DEFAULT_SELECTION.cards_id),
           });
+          themeLoadReadyScopeRef.current = requestedScope;
           setThemeLoadState('ready');
         }
       } catch (err) {
         console.warn('[ThemeSettings] Unexpected error:', err);
         reportError(err, 'ThemeSettingsModal.Load_failed');
-        if (mounted) {
+        if (
+          mounted &&
+          themeLoadScopeRef.current === requestedScope &&
+          requestId === themeLoadRequestRef.current &&
+          themeLoadReadyScopeRef.current !== requestedScope
+        ) {
           setThemeLoadState('error');
           toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
         }
@@ -1201,6 +1302,34 @@ export function ThemeSettingsModal({
     themeLoadRevision,
     appearanceRealtime.reconciliationRevision,
   ]);
+
+  // Postgres Changes is a low-latency signal, not a durable queue. Keep the
+  // open Studio's preview honest if a mobile radio handoff or a busy Realtime
+  // connection drops the appearance event: one authoritative snapshot every
+  // two seconds repairs the editor without reloading the page.
+  //
+  // Do this while the Studio is OPEN even when the document is backgrounded.
+  // A second device/tab can miss one websocket frame while its Studio remains
+  // mounted; pausing the only durable reconciliation merely because that page
+  // is hidden leaves its preview stale indefinitely. This is one five-column
+  // row read at most every two seconds, bounded to an open modal. Browsers may
+  // throttle the timer, but the application must not disable it itself.
+  // The request guard above prevents an older snapshot from rolling back a tap
+  // or a newer event while the read is in flight.
+  useEffect(() => {
+    if (!isOpen || !userId || appearanceRealtime.state !== 'live') return undefined;
+    const reconcile = () => {
+      setThemeLoadRevision((revision) => revision + 1);
+    };
+    const interval = window.setInterval(reconcile, 2_000);
+    window.addEventListener('focus', reconcile);
+    window.addEventListener('online', reconcile);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', reconcile);
+      window.removeEventListener('online', reconcile);
+    };
+  }, [appearanceRealtime.state, isOpen, userId]);
 
   const handleUiModeChange = useCallback(
     async (mode: InterfaceTheme) => {
@@ -1711,7 +1840,7 @@ export function ThemeSettingsModal({
               Make The Table Yours
             </h3>
           </div>
-          <button className="theme-modal__close" onClick={onClose} aria-label="Close table studio">
+          <button className="theme-modal__close" onClick={onClose} aria-label="Close Table Studio">
             ×
           </button>
         </div>
@@ -1771,8 +1900,8 @@ export function ThemeSettingsModal({
         </div>
 
         <div className="theme-modal__workspace">
-          <aside className="theme-modal__visual-rail" aria-label="Live table design preview">
-            <fieldset className="theme-modal__mode" aria-label="Club Arena appearance mode">
+          <aside className="theme-modal__visual-rail" aria-label="Live Table Design Preview">
+            <fieldset className="theme-modal__mode" aria-label="Club Arena Appearance Mode">
               <legend>Interface</legend>
               <div className="theme-modal__mode-options">
                 {(['light', 'dark'] as const).map((mode) => (
@@ -1798,7 +1927,7 @@ export function ThemeSettingsModal({
             </fieldset>
 
             <div className="theme-modal__preview-shell">
-              <div className="theme-modal__preview-switch" aria-label="Preview table state">
+              <div className="theme-modal__preview-switch" aria-label="Preview Table State">
                 <button
                   type="button"
                   className={!previewFinalTable ? 'active' : ''}
@@ -1831,7 +1960,7 @@ export function ThemeSettingsModal({
               </div>
             </div>
 
-            <div className="theme-modal__selection-ledger" aria-label="Current table configuration">
+            <div className="theme-modal__selection-ledger" aria-label="Current Table Configuration">
               {[
                 ['Table', selectedTableName],
                 ['Background', selectedBackgroundName],
@@ -1851,7 +1980,7 @@ export function ThemeSettingsModal({
             <div
               className="theme-modal__tabs"
               role="tablist"
-              aria-label="Table customization categories"
+              aria-label="Table Customization Categories"
             >
               {TABS.map((tab) => (
                 <button
@@ -1890,7 +2019,7 @@ export function ThemeSettingsModal({
               aria-labelledby={`theme-tab-${activeTab}`}
             >
               {activeTab === 'background' && (
-                <div className="theme-modal__background-groups" aria-label="Background categories">
+                <div className="theme-modal__background-groups" aria-label="Background Categories">
                   {(
                     [
                       ['places-rooms', 'Places & Rooms'],
@@ -1931,7 +2060,7 @@ export function ThemeSettingsModal({
                     placeholder={`Search ${TABS.find((tab) => tab.key === activeTab)?.label}`}
                   />
                 </label>
-                <div className="theme-modal__filters" aria-label="Filter customization choices">
+                <div className="theme-modal__filters" aria-label="Filter Customization Choices">
                   {(['all', 'free', 'vip', 'favorites', 'recent'] as const).map((filter) => (
                     <button
                       type="button"
@@ -2073,7 +2202,7 @@ export function ThemeSettingsModal({
                           themeLoadState !== 'ready' || ownershipPending || ownershipUnavailable
                         }
                         aria-pressed={isSelected}
-                        aria-label={`${asset.name}${ownershipPending ? ', checking ownership' : ownershipUnavailable ? ', ownership unavailable' : isLocked ? ', purchase or VIP required' : ''}`}
+                        aria-label={`${asset.name}${ownershipPending ? ', Checking Ownership' : ownershipUnavailable ? ', Ownership Unavailable' : isLocked ? ', Purchase Or VIP Required' : ''}`}
                       >
                         <div className={`theme-asset__preview theme-asset__preview--${activeTab}`}>
                           {/* ── Dan 2026-08-18: show the actual thing, not a colour ──
@@ -2113,7 +2242,7 @@ export function ThemeSettingsModal({
                       <button
                         type="button"
                         className={`theme-asset__favorite ${collections.favorites.includes(`${activeTab}:${asset.id}`) ? 'active' : ''}`}
-                        aria-label={`${collections.favorites.includes(`${activeTab}:${asset.id}`) ? 'Remove' : 'Add'} ${asset.name} ${collections.favorites.includes(`${activeTab}:${asset.id}`) ? 'from' : 'to'} favorites`}
+                        aria-label={`${collections.favorites.includes(`${activeTab}:${asset.id}`) ? 'Remove' : 'Add'} ${asset.name} ${collections.favorites.includes(`${activeTab}:${asset.id}`) ? 'From' : 'To'} Favorites`}
                         aria-pressed={collections.favorites.includes(`${activeTab}:${asset.id}`)}
                         title={
                           collections.favorites.includes(`${activeTab}:${asset.id}`)

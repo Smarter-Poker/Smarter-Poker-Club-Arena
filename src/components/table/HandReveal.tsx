@@ -206,7 +206,7 @@ export function HandReveal({
          tries on an overlay, did nothing. */
       role="dialog"
       aria-modal="true"
-      aria-label={isWinner ? 'Show or muck your hand' : `${winnerName} won this pot`}
+      aria-label={isWinner ? 'Show Or Muck Your Hand' : `${winnerName} Won This Pot`}
       tabIndex={-1}
       onKeyDown={(e) => {
         if (e.key !== 'Escape') return;
@@ -219,7 +219,7 @@ export function HandReveal({
       <div className="hand-reveal" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="hand-reveal__header">
-          <h3 className="hand-reveal__title">{isWinner ? 'Show or Muck?' : `${winnerName} Won`}</h3>
+          <h3 className="hand-reveal__title">{isWinner ? 'Show Or Muck?' : `${winnerName} Won`}</h3>
           {isWinner && !revealed && !mucked && <span className="hand-reveal__timer">{timer}s</span>}
         </div>
 

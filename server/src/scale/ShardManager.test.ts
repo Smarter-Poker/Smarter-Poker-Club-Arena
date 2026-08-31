@@ -52,7 +52,7 @@ function makeManager() {
 
 const TABLES = Array.from({ length: 40 }, (_, i) => `table-${i}`);
 
-describe('InProcessShardManager — lifecycle & routing', () => {
+describe('InProcessShardManager - lifecycle & routing', () => {
   it('spawns workers and reports health', async () => {
     const { mgr } = makeManager();
     await mgr.start();
@@ -120,7 +120,7 @@ describe('InProcessShardManager — lifecycle & routing', () => {
   });
 });
 
-describe('InProcessShardManager — graceful drain + handoff (zero-downtime primitive)', () => {
+describe('InProcessShardManager - graceful drain + handoff (zero-downtime primitive)', () => {
   it('drains a worker, closes its tables via the hand-boundary path, and hands them to survivors', async () => {
     const { mgr, hosts } = makeManager();
     await mgr.spawnWorker('w1');

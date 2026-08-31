@@ -352,7 +352,7 @@ export default function HandHistoryPage() {
       <CasinoSurfaceHeader
         eyebrow="Play & Review / Hands"
         title="Hand Archive"
-        description="Filter, replay, export, share, or send loaded hands into Jarvis analysis while the existing hand-history service remains the record authority."
+        description="Filter, Replay, Export, Share, Or Send Loaded Hands Into Jarvis Analysis While The Existing Hand-History Service Remains The Record Authority."
         artPath="assets/club-buttons/lobby/lobby-command-chassis-v2.png"
         status="HAND INDEX // SYNCHRONIZED"
         metrics={[
@@ -417,7 +417,7 @@ export default function HandHistoryPage() {
           <button
             className="export-btn"
             onClick={handleExport}
-            aria-label="Export the loaded hands to CSV"
+            aria-label="Export The Loaded Hands To CSV"
           >
             {' '}
             Export

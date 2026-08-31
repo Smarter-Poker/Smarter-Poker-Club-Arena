@@ -357,7 +357,7 @@ export function TournamentHUD({
          tree below, since a value that changes every second is noise there. */
       role={onOpen ? 'button' : 'group'}
       tabIndex={onOpen ? 0 : undefined}
-      aria-label={onOpen ? 'Tournament clock - open tournament lobby' : 'Tournament clock'}
+      aria-label={onOpen ? 'Tournament Clock - Open Tournament Lobby' : 'Tournament Clock'}
       onClick={onOpen}
       onKeyDown={
         onOpen

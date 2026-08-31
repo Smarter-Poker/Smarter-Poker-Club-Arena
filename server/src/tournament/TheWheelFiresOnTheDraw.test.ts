@@ -50,7 +50,7 @@ describe('the reveal is emitted on the draw', () => {
     const emit = CODE.indexOf('spin_reveal_early_emit');
     const settle = CODE.indexOf("supabase.rpc('fn_spin_settle_game'");
     expect(emit, 'the early emit is missing').toBeGreaterThan(-1);
-    expect(settle, 'the settle call moved — re-check this pin').toBeGreaterThan(-1);
+    expect(settle, 'the settle call moved - re-check this pin').toBeGreaterThan(-1);
     expect(emit, 'the wheel must not wait on the settle').toBeLessThan(settle);
   });
 
@@ -98,7 +98,12 @@ describe('a public moment does not move', () => {
 
   it('the freeze is checked BEFORE the re-anchor could fire', () => {
     const freeze = CODE.indexOf('if (this.spinRevealEmitted) {');
-    const reanchor = CODE.indexOf('if (this.spinHoldUntil - now < spinRevealToDealMs()) {');
+    /* 2026-08-31 (audit part 2): the threshold moved out of an inline
+       hold comparison and into spinRevealWindow, because expressing it in
+       terms of a DERIVED quantity is how it silently inverted. The ordering
+       this test guards is unchanged - the freeze must still be read before
+       the re-anchor can fire. */
+    const reanchor = CODE.indexOf('if (wouldSkipABeat) {');
     expect(freeze).toBeGreaterThan(-1);
     expect(reanchor).toBeGreaterThan(-1);
     expect(freeze, 'a freeze after the re-anchor would not freeze anything').toBeLessThan(reanchor);

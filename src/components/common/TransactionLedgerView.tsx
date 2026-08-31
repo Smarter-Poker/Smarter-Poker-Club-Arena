@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { reportError } from '../../utils/errorReporter';
+import { formatPopupText } from '../../utils/popupStyle';
 
 interface LedgerEntry {
   id: string;
@@ -212,7 +213,7 @@ export default function TransactionLedgerView({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {e.description}
+                    {formatPopupText(e.description)}
                   </div>
                 )}
               </div>

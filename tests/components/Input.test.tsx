@@ -48,7 +48,7 @@ describe('Input Component', () => {
 
   it('shows required indicator', () => {
     render(<Input id="test-input" label="Name" required />);
-    expect(screen.getByLabelText('required')).toBeInTheDocument();
+    expect(screen.getByLabelText('Required')).toBeInTheDocument();
   });
 
   it('applies aria attributes correctly', () => {

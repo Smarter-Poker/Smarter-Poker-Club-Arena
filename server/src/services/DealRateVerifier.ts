@@ -208,7 +208,7 @@ export class DealRateVerifier {
             kills +
             ' engine kills in ' +
             Math.round(KILL_WINDOW_MS / 60_000) +
-            'min — tables are being destroyed and rebuilt in a loop',
+            'min - tables are being destroyed and rebuilt in a loop',
           description:
             'Healthy is under one an hour. Read engine_recovery_events.detail: it names ' +
             'the phase or stage each kill happened in.',
@@ -227,6 +227,33 @@ export class DealRateVerifier {
     }
   }
 
+  /**
+   * Has the WHOLE fleet dealt nothing for a full startup-grace window?
+   *
+   * Deliberately unfiltered by table: when the fleet has collapsed there are no
+   * table ids left to filter by, which is precisely the hole this closes. It
+   * asks the one question that outlives a restart — "has this platform dealt a
+   * hand recently" — so a process two minutes old can still tell the difference
+   * between booting and dark.
+   *
+   * Returns false when the database cannot be asked. Could-not-ask is not
+   * evidence, the same rule every other guard in this file follows; a flaky
+   * database must not manufacture a critical alarm.
+   */
+  private async fleetDarkAcrossRestarts(): Promise<boolean> {
+    const since = new Date(Date.now() - STARTUP_GRACE_MS).toISOString();
+    try {
+      const { count, error } = await supabase
+        .from('hand_history')
+        .select('id', { count: 'exact', head: true })
+        .gt('created_at', since);
+      if (error) return false;
+      return (count ?? 0) === 0;
+    } catch {
+      return false;
+    }
+  }
+
   /** Exposed for tests; the timer calls this. */
   async check(): Promise<void> {
     const tableIds = this.dealingTableIds();
@@ -237,12 +264,40 @@ export class DealRateVerifier {
     // empties the fleet would switch this detector off exactly when it matters.
     // So the floor is watched separately, and losing it is its own alarm.
     if (tableIds.length < FLEET_FLOOR_TABLES) {
-      // Still booting: an empty fleet is expected, not an incident.
+      /**
+       * ── A RESTART LOOP NEVER OUTLIVES THE STARTUP GRACE (2026-08-30) ─────
+       *
+       * The grace is right: a cold start genuinely has no dealable tables for
+       * minutes, and crying wolf during a slow boot is worse than not alarming
+       * at all. But `startedAt` is THIS PROCESS's clock, and it resets on every
+       * restart — so the grace silences the alarm completely in the one
+       * scenario it exists for.
+       *
+       * Observed on 2026-08-30: Supabase went into RESIZING, the engine could
+       * not win its leadership claim, and it restarted roughly every two
+       * minutes for over forty minutes. Every one of those processes died well
+       * inside the five-minute grace, so `belowFloorChecks` was never even
+       * INCREMENTED, let alone reached three. The entire fleet was dark, the
+       * detector written for exactly that was structurally unable to fire, and
+       * nobody was told. It was found by a person looking at a lobby.
+       *
+       * So the grace now has to justify itself against something that survives
+       * a restart. The database remembers when the fleet last dealt a hand; a
+       * booting engine and a dead one look identical from inside the process
+       * and completely different from there.
+       */
       if (Date.now() - this.startedAt < STARTUP_GRACE_MS) {
-        this.silentChecks = 0;
-        this.handsInWindow = null;
-        this.lastCheckedAt = Date.now();
-        return;
+        const darkAcrossRestarts = await this.fleetDarkAcrossRestarts();
+        if (!darkAcrossRestarts) {
+          // Genuinely still booting — hands are being dealt somewhere, or the
+          // database could not be asked, and neither is evidence of collapse.
+          this.silentChecks = 0;
+          this.handsInWindow = null;
+          this.lastCheckedAt = Date.now();
+          return;
+        }
+        // Not booting: nothing has dealt anywhere for the whole grace window.
+        // Fall through and judge the floor on this process's first check.
       }
       this.belowFloorChecks++;
       this.silentChecks = 0;
@@ -254,7 +309,7 @@ export class DealRateVerifier {
           severity: 'critical',
           component: COMPONENT,
           summary:
-            'Only ' + tableIds.length + ' table(s) should be dealing — the fleet has collapsed',
+            'Only ' + tableIds.length + ' table(s) should be dealing - the fleet has collapsed',
           description:
             'The horse fleet normally keeps dozens of tables dealing around the clock. ' +
             'Below ' +

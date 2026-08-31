@@ -64,7 +64,9 @@ const countsByFile = (): Map<string, number> => {
 /** Frozen 2026-08-30 (Community Command Center). 262 occurrences. Only ever shrink. */
 const BASELINE = new Map<string, number>([
   ['src/services/HorseOrchestrator.ts', 11],
-  ['src/services/AgentService.ts', 13],
+  // 13 -> 12: phase 3 of 7 removed distributeFromTreasury, distributeChips and
+  // transferToAgent, and rewired transferToPlayer onto fn_agent_wallet_send.
+  ['src/services/AgentService.ts', 12],
   ['src/pages/UnionDashboardPage.tsx', 10],
   ['src/services/UnionService.ts', 12],
   ['src/pages/AdminDashboardPage.tsx', 7],
@@ -72,7 +74,7 @@ const BASELINE = new Map<string, number>([
   ['src/services/PromotionService.ts', 2],
   ['src/services/CreditService.ts', 5],
   ['src/pages/ClubDetailPage.tsx', 5],
-  ['src/services/FriendSuggestionService.ts', 4],
+  ['src/services/FriendSuggestionService.ts', 1],
   ['src/services/CreditRequestService.ts', 4],
   ['src/services/ChipFlowService.ts', 4],
   ['src/pages/HomePage.tsx', 4],
@@ -94,7 +96,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/PlayerSessionsPage.tsx', 3],
   ['src/pages/NotificationsPage.tsx', 3],
   ['src/pages/ClubRulesPage.tsx', 3],
-  ['src/pages/CashierTradePage.tsx', 2],
+  ['src/pages/CashierTradePage.tsx', 0],
   ['src/pages/AntiCheatPage.tsx', 3],
   ['src/components/wallet/ChipMintModal.tsx', 3],
   ['src/components/agent/AgentCommissionDashboard.tsx', 3],

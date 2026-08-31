@@ -119,7 +119,7 @@ describe('C20 engine adoption budget', () => {
  * to Supabase on every line; these assert the exact structural properties
  * whose absence caused the defect.
  */
-describe('C20 wiring — the verdict is unskippable', () => {
+describe('C20 wiring - the verdict is unskippable', () => {
   const SRC = readFileSync(join(process.cwd(), 'src/GameServer.ts'), 'utf8');
   const sweep = SRC.slice(
     SRC.indexOf('private async discoverCashTables'),

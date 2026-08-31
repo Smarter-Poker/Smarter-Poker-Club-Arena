@@ -15,6 +15,7 @@
 import { supabase } from '../lib/supabase';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { retryAsync } from '../utils/retryAsync';
+import { retryFetch } from '../utils/retryFetch';
 import { masterBus } from '../core/MasterBus';
 import { FinancialAlertService } from './FinancialAlertService';
 import { reportError } from '../utils/errorReporter';
@@ -881,11 +882,17 @@ export const WalletService = {
       // If opts.clubId is explicitly passed (even as null), use it. Otherwise fall back to currentClubId.
       const clubId =
         opts && 'clubId' in opts ? opts.clubId : (useUserStore.getState().currentClubId ?? null);
-      const { data, error } = await supabase.rpc('fn_player_spendable_balance', {
-        p_user_id: userId,
-        p_club_id: clubId,
-        p_table_id: opts?.tableId ?? null,
-      });
+      const { data, error } = await retryFetch(
+        () =>
+          supabase
+            .rpc('fn_player_spendable_balance', {
+              p_user_id: userId,
+              p_club_id: clubId,
+              p_table_id: opts?.tableId ?? null,
+            })
+            .then((result) => result),
+        { maxRetries: 4, baseDelayMs: 500 }
+      );
       if (!error && data && typeof (data as any).balance !== 'undefined') {
         return { balance: Number((data as any).balance) || 0, source: 'rpc' };
       }

@@ -319,7 +319,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       return;
     }
     let cancelled = false;
-    void LeaderboardService.getManageableRewardContexts()
+    void LeaderboardService.getManageableRewardContexts(true)
       .then((contexts) => {
         if (cancelled) return;
         setRewardContexts(contexts);
@@ -872,7 +872,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
         <div style={dividerStyle} />
 
-        <section className={styles.contextDeck} aria-label="Current arena context">
+        <section className={styles.contextDeck} aria-label="Current Arena Context">
           <div className={styles.contextStatus}>
             <span
               className={`${styles.statusLamp} ${workspace.isOffline ? styles.statusLampOffline : ''}`}
@@ -916,9 +916,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="Search Destinations Or The Arena"
-              aria-label="Search destinations or the arena"
+              aria-label="Search Destinations Or The Arena"
             />
-            <button type="submit" aria-label="Search all players and clubs">
+            <button type="submit" aria-label="Search All Players And Clubs">
               Search
             </button>
           </form>
@@ -994,7 +994,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           </>
         )}
 
-        <div className={styles.quickActions} aria-label="Context actions">
+        <div className={styles.quickActions} aria-label="Context Actions">
           {clubId && workspace.isClubStaff ? (
             <button
               type="button"
@@ -1041,7 +1041,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         </div>
 
         {(pinnedItems.length > 0 || recentItems.length > 0) && !searchQuery && (
-          <section className={styles.memoryRail} aria-label="Pinned and recent destinations">
+          <section className={styles.memoryRail} aria-label="Pinned And Recent Destinations">
             {pinnedItems.length > 0 && (
               <div>
                 <h2 className={styles.sectionHeader}>Pinned</h2>
@@ -1212,7 +1212,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             <button
               type="button"
               onClick={handleUseRealNameToggle}
-              aria-label="Use real name instead of poker alias"
+              aria-label="Use Real Name Instead Of Poker Alias"
               aria-checked={useRealName}
               role="switch"
               className={styles.toggleButton}
@@ -1276,12 +1276,12 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             {
               label: 'App Settings',
               path: '/settings',
-              description: 'Audio, gameplay, privacy, and account',
+              description: 'Audio, Gameplay, Privacy, And Account',
             },
             {
               label: 'Notifications',
               path: '/notifications',
-              description: 'Alerts and notification preferences',
+              description: 'Alerts And Notification Preferences',
             },
           ].map((item) => {
             const active = isActivePath(item.path);
@@ -1306,7 +1306,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
         <div className={styles.divider} />
 
-        <section className={styles.navGroup} aria-label="Support and legal">
+        <section className={styles.navGroup} aria-label="Support And Legal">
           <h2 className={styles.sectionHeader}>Support & Legal</h2>
           {CLUB_ARENA_SUPPORT_NAV.map((item) => {
             const active = isActivePath(item.path);

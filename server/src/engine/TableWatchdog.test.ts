@@ -138,7 +138,7 @@ function harness(opts: {
 const run = (h: Harness) => (h.engine as any).runTableWatchdog();
 const trips = (h: Harness) => (h.engine as any).watchdogTrips;
 
-describe('table watchdog — when it must stay out of the way', () => {
+describe('table watchdog - when it must stay out of the way', () => {
   beforeEach(() => vi.restoreAllMocks());
 
   it('never kills a table paused by design, no matter how stale (hand-for-hand)', () => {
@@ -216,7 +216,7 @@ describe('table watchdog — when it must stay out of the way', () => {
  * These pin the distinction that ends it: a loop still moving between steps
  * is ALIVE, however slow the step is.
  */
-describe('table watchdog — a slow database is not a dead engine', () => {
+describe('table watchdog - a slow database is not a dead engine', () => {
   beforeEach(() => vi.restoreAllMocks());
 
   it('does not kill a table whose loop is still moving, only waiting on the database', () => {
@@ -251,7 +251,7 @@ describe('table watchdog — a slow database is not a dead engine', () => {
   });
 });
 
-describe('table watchdog — escalation ladder', () => {
+describe('table watchdog - escalation ladder', () => {
   it('TIER 1: a stalled seat with no clock is given one, and is NOT force-folded', () => {
     const h = harness({ hasClock: false });
     h.setStale(STALL_MS + 1_000);
@@ -309,7 +309,7 @@ describe('table watchdog — escalation ladder', () => {
   });
 });
 
-describe('table watchdog — a parked runout is not a stall', () => {
+describe('table watchdog - a parked runout is not a stall', () => {
   it('finishes the runout instead of forcing an action when no seat is actionable', () => {
     const h = harness({ currentSeat: -1, hasClock: false });
     h.setStale(STALL_MS + 1_000);

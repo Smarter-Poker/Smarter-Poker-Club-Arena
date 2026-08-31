@@ -48,6 +48,7 @@ import { useStaggerAnimation } from '../../hooks/useStaggerAnimation';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import './TransactionHistory.css';
 import { reportError } from '../../utils/errorReporter';
+import { formatPopupText } from '../../utils/popupStyle';
 
 interface TransactionHistoryProps {
   /**
@@ -169,7 +170,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   rebuy: '↺',
   addon: '⊞',
   mint: '◆',
-  settlement: '≡',
+  settlement: '◇',
   commission: '◈',
   INSURANCE: '⊕',
   funding: '→',
@@ -431,7 +432,7 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
         <h3>Transaction History</h3>
         <select
           value={filter}
-          aria-label="Filter transactions"
+          aria-label="Filter Transactions"
           onChange={(e) => setFilter(e.target.value)}
         >
           {FILTERS.map((f) => (
@@ -465,7 +466,7 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
                 <span className="type" style={{ color: CATEGORY_COLORS[tx.category] || '#94a3b8' }}>
                   {formatCategory(tx.category)}
                 </span>
-                <span className="description">{tx.description}</span>
+                <span className="description">{formatPopupText(tx.description)}</span>
               </div>
               <div className="amounts">
                 <span className={`amount ${tx.type === 'credit' ? 'positive' : 'negative'}`}>

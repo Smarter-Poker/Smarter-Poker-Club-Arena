@@ -27,7 +27,7 @@ describe('premium tournament break machine', () => {
     expect(SCREEN).toContain('aria-labelledby="break-title"');
     expect(SCREEN).toContain('className="break-screen__medallion"');
     expect(SCREEN).toContain('className="break-screen__close"');
-    expect(SCREEN).toContain('aria-label="Close break screen"');
+    expect(SCREEN).toContain('aria-label="Close Break Screen"');
     expect(SCREEN).not.toContain('break-screen__minimize-btn');
     expect(CSS).toMatch(/\.break-screen__medallion\s*\{[^}]*z-index:\s*4/s);
     const medallionRule =

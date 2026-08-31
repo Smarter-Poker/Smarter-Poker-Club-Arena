@@ -74,6 +74,7 @@ import {
   createTurnStateMachine,
   type TurnFSMState,
 } from './StateMachine.js';
+import { headsUpButtonSeat } from './headsUpButton.js';
 import type { StateMachine } from './StateMachine.js';
 import type { TableStatus } from '../types.js';
 
@@ -232,6 +233,14 @@ export abstract class ServerTableEngineBase {
   // index) so roster changes (bust/leave/join) can't move it backward, skip a
   // seat, or double-post a blind. 0 = no hand dealt yet.
   protected lastButtonSeat: number = 0;
+  /**
+   * The seat that posted the big blind on the last hand dealt here. Heads-up,
+   * the button is derived from THIS rather than from the previous button, so
+   * that no player posts the big blind twice running when a 3-handed table
+   * drops to two (TDA Rule 33 -- see the dealing loop). Restored from
+   * hand_history on restart alongside the button, for the same reason.
+   */
+  protected lastBigBlindSeat: number = 0;
   protected consecutiveErrors: number = 0;
 
   // Bankroll Management: Track how many times a horse has re-bought at this table.
@@ -682,6 +691,11 @@ export abstract class ServerTableEngineBase {
   }
 
   protected clearLooseHandTimers(): void {
+    /* PHASE 3 2026-08-31: the discard settle beat is a timer on the hand
+       controller, and this is the one place that knows a hand is being torn
+       down. Without it a superseded hand's beat could advance a stage on a
+       controller nobody is reading any more. */
+    this.handController?.cancelPineappleSettle?.();
     if (this.horseActionTimer) {
       clearTimeout(this.horseActionTimer);
       this.horseActionTimer = null;
@@ -1166,7 +1180,7 @@ export abstract class ServerTableEngineBase {
     });
     this.actionValidator = new ServerActionValidator((event) => {
       console.warn(
-        `[ServerTableEngine:${tableId}] Action rejected: ${event.code} — ${event.reason}`
+        `[ServerTableEngine:${tableId}] Action rejected: ${event.code} - ${event.reason}`
       );
     });
     this.stateVerifier = new StateVerifier((event) => {
@@ -1690,7 +1704,7 @@ export abstract class ServerTableEngineBase {
           if (!this.running) return;
           const backoff = Math.min(500 * 2 ** (attempt - 1), 8_000);
           console.warn(
-            `[ServerTableEngine:${this.tableId}] loadTable blipped on start (attempt ${attempt}/${ServerTableEngineBase.START_LOAD_ATTEMPTS}) — retrying in ${backoff}ms`
+            `[ServerTableEngine:${this.tableId}] loadTable blipped on start (attempt ${attempt}/${ServerTableEngineBase.START_LOAD_ATTEMPTS}) - retrying in ${backoff}ms`
           );
           await this.sleep(backoff);
         }
@@ -1790,7 +1804,7 @@ export abstract class ServerTableEngineBase {
       const recovered = await this.checkCrashRecovery();
       if (recovered) {
         console.log(
-          `[ServerTableEngine:${this.tableId}] Crash recovery complete — resuming from hand #${this.handCount}`
+          `[ServerTableEngine:${this.tableId}] Crash recovery complete - resuming from hand #${this.handCount}`
         );
       }
 
@@ -2285,7 +2299,7 @@ export abstract class ServerTableEngineBase {
     reportError(
       new Error(
         `[HandNumber] Could not allocate a global hand number for table ${this.tableId} ` +
-          `after ${MAX_ATTEMPTS} attempts — refusing to deal. A hand that cannot be numbered ` +
+          `after ${MAX_ATTEMPTS} attempts - refusing to deal. A hand that cannot be numbered ` +
           `cannot be settled or audited. Underlying error: ${String(
             (lastErr as { message?: string })?.message ?? lastErr
           )}`
@@ -2489,7 +2503,7 @@ export abstract class ServerTableEngineBase {
       this.tableFSM.transition('paused');
     }
     console.log(
-      `[ServerTableEngine:${this.tableId}] Parked between hands — waiting for the pause to lift...`
+      `[ServerTableEngine:${this.tableId}] Parked between hands - waiting for the pause to lift...`
     );
     await new Promise<void>((resolve) => {
       this.handForHandResolve = resolve;
@@ -2509,7 +2523,7 @@ export abstract class ServerTableEngineBase {
           console.warn(
             `[ServerTableEngine:${this.tableId}] Pause safety timeout after ${Math.round(
               maxWaitMs / 1000
-            )}s — resuming to avoid a wedged table`
+            )}s - resuming to avoid a wedged table`
           );
           this.handForHandResolve = null;
           resolve();
@@ -2874,9 +2888,29 @@ export abstract class ServerTableEngineBase {
     const eligible = this.buttonEligible(roster);
     const sortedSeats = eligible.map((p) => p.seat_number).sort((a, b) => a - b);
     if (sortedSeats.length === 0) return -1;
-    return this.lastButtonSeat > 0
-      ? this.getNextSeat(this.lastButtonSeat, eligible)
-      : sortedSeats[0];
+    if (this.lastButtonSeat > 0) {
+      /**
+       * HEADS-UP, THE BLINDS ADVANCE AND THE BUTTON FOLLOWS (2026-08-31,
+       * Phase 3, carried from the Phase 2 audit).
+       *
+       * The dealing loop stopped rotating the button at two players and started
+       * deriving it from the last big blind (TDA Rule 33 -- see
+       * headsUpButton.ts). This predictor kept walking the old rotation, so for
+       * every heads-up hand the wait-for-BB gate and the deal disagreed about
+       * which seat was about to hold the button. Nothing broke, because at two
+       * players there is no joiner to hold out, but two walks that disagree are
+       * how the ORIGINAL bug got in: the dealing loop's comment says the shared
+       * sb/bb computation exists precisely so "the day somebody fixes the
+       * heads-up rule in one of them" the other cannot silently keep billing
+       * the wrong seat. Same argument, one layer up.
+       */
+      if (sortedSeats.length === 2 && this.lastBigBlindSeat > 0) {
+        const headsUp = headsUpButtonSeat(sortedSeats, this.lastBigBlindSeat);
+        if (headsUp !== null && headsUp > 0) return headsUp;
+      }
+      return this.getNextSeat(this.lastButtonSeat, eligible);
+    }
+    return sortedSeats[0];
   }
 
   /**
@@ -3402,7 +3436,7 @@ export abstract class ServerTableEngineBase {
 
       if (error) {
         console.warn(
-          `[ServerTableEngine:${this.tableId}] Could not seed hand counter (${error.message}) — ` +
+          `[ServerTableEngine:${this.tableId}] Could not seed hand counter (${error.message}) - ` +
             `continuing from #${this.handCount}. Hand numbers may repeat for this table.`
         );
         return;
@@ -3421,7 +3455,7 @@ export abstract class ServerTableEngineBase {
       }
     } catch (err) {
       console.warn(
-        `[ServerTableEngine:${this.tableId}] Hand counter seed threw (${(err as Error)?.message}) — ` +
+        `[ServerTableEngine:${this.tableId}] Hand counter seed threw (${(err as Error)?.message}) - ` +
           `continuing from #${this.handCount}.`
       );
     }
@@ -3514,7 +3548,7 @@ export abstract class ServerTableEngineBase {
       const evictSelf = evictHand?.players.find((p) => p.user_id === userId);
       if (evictSelf?.is_all_in && !evictSelf.is_folded) {
         console.log(
-          `[ServerTableEngine:${this.tableId}] NOT evicting ${userId} — all-in in a live hand`
+          `[ServerTableEngine:${this.tableId}] NOT evicting ${userId} - all-in in a live hand`
         );
         continue;
       }
@@ -3522,10 +3556,10 @@ export abstract class ServerTableEngineBase {
       const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
       console.log(
         awayBlindEvict
-          ? `[ServerTableEngine:${this.tableId}] evicting ${userId} — away, already charged one SB and one BB`
+          ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - away, already charged one SB and one BB`
           : nitEvict
-            ? `[ServerTableEngine:${this.tableId}] evicting ${userId} — below this nit game's VPIP floor`
-            : `[ServerTableEngine:${this.tableId}] evicting ${userId} — sat out past the 2-orbit / 5-minute limit`
+            ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - below this nit game's VPIP floor`
+            : `[ServerTableEngine:${this.tableId}] evicting ${userId} - sat out past the 2-orbit / 5-minute limit`
       );
       this.hub?.emitEvent(this.tableId, {
         type: 'seat_left',
@@ -3795,7 +3829,7 @@ export abstract class ServerTableEngineBase {
       // Same (table_id, hand_number DESC) index seedHandCountFromHistory uses.
       const { data, error } = await supabase
         .from('hand_history')
-        .select('button_seat')
+        .select('button_seat, players')
         .eq('table_id', this.tableId)
         .order('hand_number', { ascending: false })
         .limit(1)
@@ -3803,13 +3837,33 @@ export abstract class ServerTableEngineBase {
 
       if (error) {
         console.warn(
-          `[ServerTableEngine:${this.tableId}] Could not restore button seat (${error.message}) — ` +
+          `[ServerTableEngine:${this.tableId}] Could not restore button seat (${error.message}) - ` +
             `it will start at the lowest occupied seat and blinds may be re-taken for one orbit.`
         );
         return;
       }
 
-      const seat = Number((data as { button_seat?: number } | null)?.button_seat ?? 0);
+      const row = data as { button_seat?: number; players?: Array<{ seat?: number }> } | null;
+      const seat = Number(row?.button_seat ?? 0);
+      /**
+       * The big blind seat comes back with the button, derived from the same
+       * row rather than stored separately: `players` carries the seats that
+       * were dealt in and `button_seat` says where the button was, which is
+       * all the blind walk needs. Without it a restart between two heads-up
+       * hands leaves lastBigBlindSeat at 0, the dead-button rule stands down,
+       * and the very bug it fixes reappears for one hand on every deploy.
+       */
+      const seats = Array.isArray(row?.players)
+        ? row.players
+            .map((p) => Number(p?.seat))
+            .filter((s) => Number.isFinite(s) && s > 0)
+            .sort((a, b) => a - b)
+        : [];
+      if (seats.length >= 2 && Number.isFinite(seat) && seat > 0) {
+        const nextOf = (from: number) => seats.find((s) => s > from) ?? seats[0];
+        const sb = seats.length === 2 ? seat : nextOf(seat);
+        this.lastBigBlindSeat = nextOf(sb);
+      }
       if (Number.isFinite(seat) && seat > 0) {
         this.lastButtonSeat = seat;
         console.log(
@@ -3818,7 +3872,7 @@ export abstract class ServerTableEngineBase {
       }
     } catch (err) {
       console.warn(
-        `[ServerTableEngine:${this.tableId}] Button restore threw (${(err as Error)?.message}) — ` +
+        `[ServerTableEngine:${this.tableId}] Button restore threw (${(err as Error)?.message}) - ` +
           `starting from the lowest occupied seat.`
       );
     }
@@ -3865,9 +3919,9 @@ export abstract class ServerTableEngineBase {
     console.warn(
       `[ServerTableEngine:${this.tableId}] CRASH RECOVERY: Found incomplete hand #${snapshot.handNumber} ` +
         `(stage: ${snapshot.stage}, last updated: ${snapshot.updatedAt}). ` +
-        `${snapshot.pendingDeadlines.length} pending deadlines (not rehydrated — they belong to the abandoned hand), ` +
+        `${snapshot.pendingDeadlines.length} pending deadlines (not rehydrated - they belong to the abandoned hand), ` +
         `${Object.keys(snapshot.disconnectStates).length} disconnect-FSM entries, ${restoredFsm} restored. ` +
-        `Marking hand complete and starting fresh — players retain their last-known stacks.`
+        `Marking hand complete and starting fresh - players retain their last-known stacks.`
     );
 
     // For now: mark the orphaned hand as complete so we don't get stuck.

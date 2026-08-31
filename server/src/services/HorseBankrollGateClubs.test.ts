@@ -44,7 +44,7 @@ describe('the bankroll gate reads the clubs whose seats it is deciding', () => {
 });
 
 describe('an unknown roll is unknown, not zero', () => {
-  it('fails OPEN — a missing membership row never refuses a seat', () => {
+  it('fails OPEN - a missing membership row never refuses a seat', () => {
     const gate = SRC.slice(
       SRC.indexOf('const roll = bankrolls.get(`${table.club_id}:${h.id}`);'),
       SRC.indexOf('const ref = referenceBuyIn(')
@@ -54,7 +54,7 @@ describe('an unknown roll is unknown, not zero', () => {
     expect(gate).not.toContain('return false');
   });
 
-  it('says so out loud — the silent version of this number cost 40 minutes', () => {
+  it('says so out loud - the silent version of this number cost 40 minutes', () => {
     expect(SRC).toContain('rollUnknown++');
     expect(SRC).toMatch(/bankroll gate skipped for \$\{rollUnknown\}/);
   });
@@ -64,6 +64,13 @@ describe('an unknown roll is unknown, not zero', () => {
    * missing row is not a licence to fail open on a poor one.
    */
   it('still refuses a KNOWN roll that cannot cover the stake', () => {
-    expect(SRC).toContain('if (!canSit(roll, ref, bankrollPolicyFor(h.id))) return false;');
+    /* Shape-tolerant, intent-strict. The refusal grew a telemetry counter in
+       the bankroll-telemetry PR, so the old exact-line assertion broke on a
+       change that strengthened the very thing it guards. What must hold is
+       that a failed canSit REFUSES: the counter may sit between, a `return
+       false` may not go missing. */
+    expect(SRC).toMatch(
+      /if \(!canSit\(roll, ref, bankrollPolicyFor\(h\.id\)\)\) \{[^{}]*return false;\s*\}/
+    );
   });
 });

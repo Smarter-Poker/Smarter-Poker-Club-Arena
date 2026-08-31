@@ -163,7 +163,7 @@ const POST_CASES: HandlerCase[] = [
 ];
 
 describe.each(POST_CASES)(
-  'POST /$name — uniform contract',
+  'POST /$name - uniform contract',
   ({ name: _name, body, invoke, engineMethod }) => {
     beforeEach(() => {
       vi.clearAllMocks();
@@ -202,7 +202,7 @@ describe.each(POST_CASES)(
 // sends only `{ tableId, runs }` - a human chooser's 1/2/3 pick was 400'd
 // at the HTTP layer, so no human could ever start a run-it-twice.
 
-describe('POST /rit — chooser phase sends runs without response', () => {
+describe('POST /rit - chooser phase sends runs without response', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'u1' });
@@ -265,7 +265,7 @@ describe.each([
     ) => handleAdminResume(req, res, { gameServer: gs }),
     engineMethod: 'adminResume',
   },
-])('POST /$name — club-admin authz contract', ({ name: _name, body, invoke, engineMethod }) => {
+])('POST /$name - club-admin authz contract', ({ name: _name, body, invoke, engineMethod }) => {
   beforeEach(() => {
     vi.clearAllMocks();
     // default: authenticated, table resolves to a club, caller is an owner
@@ -383,7 +383,7 @@ describe('handleGetActions', () => {
     expect(captured.statusCode).toBe(404);
   });
 
-  it('200 returns engine.getPlayerActions — uses JWT userId not URL param', async () => {
+  it('200 returns engine.getPlayerActions - uses JWT userId not URL param', async () => {
     vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'auth_user' });
     const engine = mockEngine();
     const { res, captured } = mockRes();
@@ -449,11 +449,31 @@ describe('handleGetState', () => {
     });
     expect((engine as any).getTableState).not.toHaveBeenCalled();
   });
+
+  it('403 prevents a non-seated member from reading an observer-restricted table', async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'member-1' });
+    vi.mocked(authorizeTableViewer).mockResolvedValue({
+      allowed: false,
+      reason: 'observers_restricted',
+      clubId: 'club-1',
+    });
+    const engine = mockEngine();
+    const { res, captured } = mockRes();
+
+    await handleGetState(mockReq(), res, 't1', { gameServer: mockGameServer(engine, 't1') });
+
+    expect(captured.statusCode).toBe(403);
+    expect(parseJson(captured)).toMatchObject({
+      code: 'OBSERVERS_RESTRICTED',
+      club_id: 'club-1',
+    });
+    expect((engine as any).getTableState).not.toHaveBeenCalled();
+  });
 });
 
 // ── /leave has a special 200 path when engine missing ──────────────────
 
-describe('handleLeave — engine-missing edge case', () => {
+describe('handleLeave - engine-missing edge case', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('200 with immediate:true when engine not running (client does DB cleanup)', async () => {

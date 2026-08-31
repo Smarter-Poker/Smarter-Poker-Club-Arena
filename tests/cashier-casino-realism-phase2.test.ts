@@ -23,7 +23,7 @@ describe('cashier phase 2 reports trustworthy operational state', () => {
 
   it('gives a failed ledger read a real retry and a truthful filtered empty state', () => {
     expect(PAGE).toContain('setRecordsReload((value) => value + 1)');
-    expect(PAGE).toContain('[tab, user?.id, clubUuid, recordsLimit, recordsReload]');
+    expect(PAGE).toContain('[tab, loadRecords, recordsReload]');
     expect(PAGE).toContain('No Ledger Entries Match Those Filters.');
   });
 });

@@ -67,7 +67,7 @@ export default function CreateUnionModal({ onClose, onSuccess }: CreateUnionModa
               <input
                 type="text"
                 className="input"
-                placeholder="E.g. Global Poker Alliance"
+                placeholder="E.G. Global Poker Alliance"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required

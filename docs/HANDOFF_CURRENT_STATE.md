@@ -3,6 +3,36 @@
 **Written:** 2026-08-31 ~12:30 UTC · **Author:** outgoing agent (Cowork session)
 **Status at handoff:** Phases 1-5 of 8 COMPLETE and merged. Phase 6 NOT STARTED.
 
+> **SUPERSEDED 2026-08-31 ~14:00 UTC — PHASE 6 IS NOW COMPLETE (PRs #2184,
+> #2201).** Everything below about Phase 6 being unstarted is stale; the rest of
+> the document still holds. Read
+> `docs/audit/2026-08-31-e2e-that-can-report-a-verdict.md` and
+> `docs/changelog/2026-08-31-e2e-honesty.md`, then **resume at Phase 7 (the 24
+> orphaned pages — needs Dan's per-page call)**.
+>
+> Two things the next agent should not have to rediscover:
+>
+> 1. **The E2E credential question in §19 is already answered.** `SP_EMAIL`,
+>    `SP_PASS`, `SP_EMAIL_2`, `SP_PASS_2` were added as repository secrets on
+>    2026-08-30. Do not ask Dan again.
+> 2. **Production is intermittently returning HTTP 503 to a large share of API
+>    traffic**, with `PGRST002 - Could not query the database for the schema
+cache` behind it. 15,729 503s in one five-minute window (about 28% of
+>    requests in that window), then zero, then thousands again. It hits
+>    `table_seats` and `insert_hole_cards`, so live seating and dealing are
+>    affected. **This has no owner yet and is not a Club Arena spec defect.** The
+>    post-deploy suite is red because of it, and those specs should STAY red.
+
+> **PHASE 7 IS ALSO COMPLETE (PR #2265, 2026-08-31).** Resume at **Phase 8**.
+> Read `docs/audit/2026-08-31-the-orphans-were-mostly-doors.md` first: the "24
+> orphaned pages / ~9,900 lines" figure repeated in §16 and §19 of this document
+> was **wrong**. Twelve of the 24 were legacy redirects with no page behind them,
+> three were duplicate doors onto components already reachable, and
+> `UnionDashboardPage`'s 3,130 lines were never invisible - they serve at
+> `/unions/:unionId/operations`. The real set was nine pages. Four are now
+> connected, three retired as redirects, and **two remain: `xmtt` and
+> `flash-pool`, parked by Dan as a launch decision.** The ratchet ceiling is 2.
+
 > **Read `AGENT-PLAYBOOK.md` and `CLAUDE.md` before touching anything.** This
 > document is the session record; those are the binding law.
 
@@ -744,7 +774,9 @@ line from `ALLOWED_ORPHANS`** and the ratchet keeps the number from rising.
       npx tsc --noEmit
 6.  DO NOT MODIFY: the 9 dirty files in the shared clone (§10);
     supabase/migrations history; other agents' .agent/handoffs/*.
-7.  RESUME AT: Phase 6 of 8 — E2E honesty (§21).
+7.  RESUME AT: Phase 8 of 8 — the small closables (§21). Phases 6 and 7 both
+    completed 2026-08-31 (PRs #2184, #2201, #2237, #2265); see the notes at the
+    top of this file.
 ```
 
 ---
@@ -820,3 +852,79 @@ the statistics environment and why `idx_scan` lies, the column-level grants on
 `profiles`, and each gate's real coverage versus its documented promise. Run the
 §22 checklist, read the three audits in `docs/audit/`, and begin at Phase 6. The
 five law tests are your regression net: if they pass, phases 1-5 are intact.
+
+---
+
+## 26. Phase 6 Addendum (2026-08-31, incoming agent)
+
+**Phase 6 of 8 — E2E honesty — is COMPLETE.** PRs #2184 and #2201, both merged,
+both verified against production.
+
+The post-deploy run could report success four ways without verifying anything:
+skips were never counted (Playwright exits 0 when everything skips); the
+signed-out fallback in `global-setup.ts` was silent; a failed Cashier step
+**skipped** the entire broader sweep despite its own comment promising the
+opposite; and inside that sweep `set -e` let a red Stats invocation abort the
+route invocation behind it.
+
+The "one genuine failure" named in §16 was **not a defect**. The workflow
+correctly stopped pinning to a sha, but the CHECKOUT never followed, so it tested
+the bundle players had using assertions from a newer commit. That is now
+reconciled: assertions come from the deployed commit when it is an ancestor, and
+the drift is reported loudly when it is not. The harness (`global-setup.ts`,
+`support/`) deliberately stays at HEAD — swapping it wholesale would have
+restored the signed-out fallback on exactly the runs the fix was written for.
+
+**New guardrail:** `tests/unit/postDeployE2eHonestyLaw.test.ts` (17 tests) joins
+the five law tests in §3 as the regression net. `scripts/ci/e2e-may-skip-entirely.json`
+is a ratchet and ships **empty** — the first measured run had all 23 spec files
+executing something.
+
+**First real verdict** (run `33398218482`): 148 executed, 4 skipped, 3 failed,
+1 flaky, 23 spec files. `routes/hamburger-menu.spec.ts` executed 33 tests against
+production — Phases 1 and 2 verified on the live site for the first time.
+
+**Still open, and now measured:** the PGRST002/503 storms above. Someone needs to
+own that. It is the single loudest thing in production right now.
+
+---
+
+## 27. Phase 7 Addendum (2026-08-31)
+
+**Phase 7 of 8 — the orphaned pages — is COMPLETE.** PR #2265, merged.
+
+**The count in §16 was wrong, and that is the main thing to carry forward.** The
+ratchet counts ROUTES; the sentence that travelled through two handoffs described
+PAGES. Of the 24:
+
+- **12 were legacy redirects** with no page at all - four through
+  `LegacyClubToolRedirect`, four to the World Hub messenger, three plain
+  `<Navigate>`, and `notification-center`, which Dan retired on 2026-08-25.
+  Being unreachable from navigation is the POINT of a legacy redirect. One
+  reason was not merely vague but false: `agent-management` was recorded as
+  rendering `RateAuditPage`, which it had not done for some time.
+- **3 were a second door** onto a component already reachable elsewhere.
+- **9 were real pages.** About 6,300 lines, not 9,900.
+
+**Two production numbers decided most of it.** `agent_commissions` holds
+**1,490,109 rows** against 113 agents with no door anywhere, and `user_reports`
+holds **zero** - never once - while the review page that reads it has always been
+reachable. The club had a moderation queue that could not receive anything.
+
+**Connected:** `agent-dashboard` (hamburger, Club Operations),
+`clubs/:clubId/agent-dashboard` (operations rail, "Agent Network"),
+`clubs/:clubId/anti-cheat` (new route, operations rail, "Anti-Cheat"), and
+`report/:playerId` (Report action on the public profile, beside Block).
+
+**Retired as redirects, nothing deleted:** `rakeback-dashboard`,
+`player-sessions`, `waitlist`, `union-dashboard`, `union-games`,
+`clubs/:clubId/dashboard`.
+
+**Still open and needing Dan:** `xmtt` (XMTTPage, 551 lines) and `flash-pool`
+(FlashPoolPage, 450 lines). Both built, both player-facing game modes, parked as
+a launch decision rather than a wiring one.
+
+**A pattern worth carrying into Phase 8:** every connection here was proven by
+BREAKING it - removing the nav entry and watching `everyRouteIsReachableLaw` go
+red naming the route that lost its door. A page is only connected if the ratchet
+can tell when it stops being connected.

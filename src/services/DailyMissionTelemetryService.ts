@@ -28,8 +28,6 @@ export type DailyMissionOperation = {
 };
 
 const SUCCESS_SAMPLE_RATE = 0.2;
-const SUCCESS_SAMPLE_WEIGHT = Math.round(1 / SUCCESS_SAMPLE_RATE);
-
 const FAILURE_EVENTS = new Set<DailyMissionOperationEvent>([
   'dashboard_failed',
   'claim_failed',
@@ -85,17 +83,15 @@ export function dailyMissionReasonCode(error: unknown): string {
 export function recordDailyMissionOperation(operation: DailyMissionOperation): void {
   try {
     if (!operation.userId || !shouldRecordDailyMissionOperation(operation.event)) return;
-    const routineSuccess = ROUTINE_SUCCESS_EVENTS.has(operation.event);
-    const row = {
-      user_id: operation.userId,
-      event: operation.event,
-      tier: operation.tier || null,
-      duration_ms: boundedInt(operation.durationMs),
-      item_count: boundedInt(operation.itemCount, 10_000),
-      reason_code: safeToken(operation.reasonCode),
-      sample_weight: routineSuccess ? SUCCESS_SAMPLE_WEIGHT : 1,
-    };
-    void Promise.resolve(supabase.from('daily_mission_operations').insert(row))
+    void Promise.resolve(
+      supabase.rpc('record_daily_mission_operation', {
+        p_event: operation.event,
+        p_tier: operation.tier || null,
+        p_duration_ms: boundedInt(operation.durationMs),
+        p_item_count: boundedInt(operation.itemCount, 10_000),
+        p_reason_code: safeToken(operation.reasonCode),
+      })
+    )
       .then(({ error }) => {
         if (error) console.debug('[daily-mission-telemetry] insert refused', error.message);
       })

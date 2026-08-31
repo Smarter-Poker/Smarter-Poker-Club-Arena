@@ -46,7 +46,7 @@ export default function ClubWalletPreviewPage() {
         <p>Nine Wallet Types And The BBJ Plaque. Values Below Are Live Text, Not Image Content.</p>
       </header>
 
-      <section className="club-wallet-preview__bbj" aria-label="Bad Beat Jackpot preview">
+      <section className="club-wallet-preview__bbj" aria-label="Bad Beat Jackpot Preview">
         <div className="dw__bbj">
           <ClubBBJShell />
           <span className="dw__bbj-label">Bad Beat Jackpot</span>
@@ -54,7 +54,7 @@ export default function ClubWalletPreviewPage() {
         </div>
       </section>
 
-      <section className="club-wallet-preview__grid" aria-label="All nine wallet types">
+      <section className="club-wallet-preview__grid" aria-label="All Nine Wallet Types">
         {wallets.map(({ kind, label, baseValue, decimals }) => (
           <article
             key={kind}

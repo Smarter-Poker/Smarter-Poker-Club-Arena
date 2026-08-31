@@ -640,6 +640,9 @@ export default function PlayerStatsPage() {
   const targetUserId = userId || user?.id;
   const isOwnProfile = !userId || userId === user?.id;
   const [full, setFull] = useState<FullStats | null>(null);
+  // Keep the payload scope explicit. A failed range request must never leave
+  // old numbers on screen under the newly selected range label.
+  const loadedRangeKeyRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -838,9 +841,11 @@ export default function PlayerStatsPage() {
   // from the same allocator the money pipeline uses. Own profile only — the
   // RPC derives identity from auth.uid() and would refuse anyone else anyway.
   const [rakeStats, setRakeStats] = useState<PlayerRakeStats | null>(null);
+  const [rakeLoading, setRakeLoading] = useState(false);
   useEffect(() => {
     if (!isOwnProfile || !user?.id) {
       setRakeStats(null);
+      setRakeLoading(false);
       return;
     }
     let cancelled = false;
@@ -850,20 +855,26 @@ export default function PlayerStatsPage() {
     const load = StatsFactsService?.getRakeStats;
     if (typeof load !== 'function') {
       setRakeStats(null);
+      setRakeLoading(false);
       return;
     }
+    setRakeLoading(true);
+    setRakeStats(null);
     void load
-      .call(StatsFactsService, null)
+      .call(StatsFactsService, windowDays)
       .then((r) => {
         if (!cancelled) setRakeStats(r);
       })
       .catch(() => {
         if (!cancelled) setRakeStats(null);
+      })
+      .finally(() => {
+        if (!cancelled) setRakeLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [isOwnProfile, user?.id]);
+  }, [isOwnProfile, user?.id, windowDays]);
 
   const canSeeRake = (agentRoles?.length ?? 0) > 0;
   const TABS = useMemo<StatCategory[]>(() => {
@@ -910,12 +921,26 @@ export default function PlayerStatsPage() {
   // instead of dropped: the bus events are debounced, not queued, so a discarded
   // HAND_COMPLETED used to leave the page stale until some later event.
   const pendingRefreshRef = useRef(false);
+  const activeRangeKeyRef = useRef(rangeKey);
+  const changeRange = useCallback((nextRangeKey: string) => {
+    if (nextRangeKey === activeRangeKeyRef.current) return;
+    // Clear the prior scope before changing the label. A matching per-range
+    // memo may hydrate immediately; otherwise the page shows its loader/error
+    // state instead of relabelling stale figures.
+    setFull(null);
+    loadedRangeKeyRef.current = null;
+    hasStatsRef.current = false;
+    setServingCache(false);
+    setLoadError(false);
+    setLoading(true);
+    activeRangeKeyRef.current = nextRangeKey;
+    setRangeKey(nextRangeKey);
+  }, []);
   /**
    * The CURRENT loader. Both the shared debouncer and the in-flight replay
    * below read it, so neither can fire a copy captured under an older range.
    */
   const loadRef = useRef<((opts?: { fresh?: boolean }) => Promise<void>) | null>(null);
-  const activeRangeKeyRef = useRef(rangeKey);
   const openHandEvidence = useCallback(
     (filters: { variant?: string; position?: string; bigBlind?: number } = {}) => {
       const params = new URLSearchParams({ source: 'stats' });
@@ -954,6 +979,7 @@ export default function PlayerStatsPage() {
         const memo = readStatsRangeMemo(targetUserId, rangeKey) as FullStats | null;
         if (memo) {
           setFull(memo);
+          loadedRangeKeyRef.current = rangeKey;
           setLastUpdatedAt(
             memo.contract?.generated_at ? Date.parse(memo.contract.generated_at) : Date.now()
           );
@@ -994,12 +1020,14 @@ export default function PlayerStatsPage() {
           return;
         }
 
-        if (!error && data && data.overall) {
+        const contract = normalizeStatsContractMetadata(data);
+        if (!error && data && data.overall && contract.valid) {
           const resolved = normalizeFull(data);
           const loadedAt = resolved.contract.generated_at
             ? Date.parse(resolved.contract.generated_at)
             : Date.now();
           setFull(resolved);
+          loadedRangeKeyRef.current = rangeKey;
           setLastUpdatedAt(loadedAt);
           setStatsDataSource('live');
           hasStatsRef.current = true;
@@ -1047,12 +1075,14 @@ export default function PlayerStatsPage() {
           // So this call was redundant as well as harmful, and the index it
           // maintains stays just as fresh without it.
         } else {
-          if (hasStatsRef.current) {
+          if (hasStatsRef.current && loadedRangeKeyRef.current === rangeKey) {
             // Something is already on screen (cache or an earlier load). Keep it,
             // but say it is stale rather than pretending it is current.
             setServingCache(true);
           } else {
             setFull(null);
+            loadedRangeKeyRef.current = null;
+            hasStatsRef.current = false;
             setLoadError(true);
           }
           if (error) reportError(error, 'PlayerStatsPage.rpc_ca_player_stats_overview_v2');
@@ -1060,7 +1090,8 @@ export default function PlayerStatsPage() {
             duration_ms: Math.round(performance.now() - loadStartedAt),
             payload_bytes: 0,
             range: rangeKey,
-            cache_source: hasStatsRef.current ? 'cache' : 'none',
+            cache_source:
+              hasStatsRef.current && loadedRangeKeyRef.current === rangeKey ? 'cache' : 'none',
             outcome: 'error',
           });
         }
@@ -1078,10 +1109,12 @@ export default function PlayerStatsPage() {
           });
           reportError(err, 'PlayerStatsPage.Failed_to_load_stats');
           if (isMounted.current) {
-            if (hasStatsRef.current) {
+            if (hasStatsRef.current && loadedRangeKeyRef.current === rangeKey) {
               setServingCache(true);
             } else {
               setFull(null);
+              loadedRangeKeyRef.current = null;
+              hasStatsRef.current = false;
               setLoadError(true);
               toast.error('Failed to load player stats');
             }
@@ -1207,6 +1240,7 @@ export default function PlayerStatsPage() {
     const cached = getCachedFull(targetUserId);
     if (cached) {
       setFull(cached.full);
+      loadedRangeKeyRef.current = 'all';
       setLastUpdatedAt(
         cached.full.contract.generated_at
           ? Date.parse(cached.full.contract.generated_at)
@@ -1413,7 +1447,7 @@ export default function PlayerStatsPage() {
         [
           { key: 'date', label: 'Started' },
           { key: 'ended', label: 'Ended' },
-          { key: 'duration_minutes', label: 'Duration (min)' },
+          { key: 'duration_minutes', label: 'Duration (Min)' },
           { key: 'hands', label: 'Hands' },
           { key: 'buy_in', label: 'Buy In' },
           { key: 'cash_out', label: 'Cash Out' },
@@ -1602,9 +1636,11 @@ export default function PlayerStatsPage() {
               >
                 {refreshing
                   ? 'Updating'
-                  : statsContract.quality.live_tail_included
-                    ? 'Live'
-                    : 'Snapshot'}
+                  : !statsContract.valid
+                    ? 'Unavailable'
+                    : statsContract.quality.live_tail_included
+                      ? 'Live'
+                      : 'Snapshot'}
               </span>
             </span>
             <div className="stats-range-row" role="group" aria-label="Analysis Range">
@@ -1613,7 +1649,7 @@ export default function PlayerStatsPage() {
                   key={r.key}
                   className={rangeKey === r.key ? 'active' : ''}
                   aria-pressed={rangeKey === r.key}
-                  onClick={() => setRangeKey(r.key)}
+                  onClick={() => changeRange(r.key)}
                 >
                   {r.label}
                 </button>
@@ -1632,7 +1668,7 @@ export default function PlayerStatsPage() {
           </div>
         </div>
 
-        <div className="stats-hero" role="group" aria-label="Headline performance">
+        <div className="stats-hero" role="group" aria-label="Headline Performance">
           <HandsWonGauge handsWonPct={handsWonPct} />
           <div className="hero-stats">
             <div className="hero-stat">
@@ -1675,13 +1711,13 @@ export default function PlayerStatsPage() {
         {hasData && overall.hands_capped && (
           <div className="stats-notice">
             Based On Your Most Recent {overall.hand_cap.toLocaleString()} Hands
-            {rangeKey !== 'all' ? ' in this range' : ''}.
+            {rangeKey !== 'all' ? ' In This Range' : ''}.
           </div>
         )}
         {hasData && !overall.hands_capped && rangeKey !== 'all' && (
           <div className="stats-notice">
             {overall.total_hands.toLocaleString()} Hands In The Last{' '}
-            {RANGES.find((r) => r.key === rangeKey)?.label.toLowerCase()}.
+            {RANGES.find((r) => r.key === rangeKey)?.label}.
           </div>
         )}
         {/* Small samples: bb/100 swings wildly over a few hundred hands, and a
@@ -1757,7 +1793,7 @@ export default function PlayerStatsPage() {
             ))}
           </div>
 
-          <div className="stats-brief-actions" aria-label="Dossier shortcuts">
+          <div className="stats-brief-actions" aria-label="Dossier Shortcuts">
             <button type="button" onClick={() => selectSection('analysis', true)}>
               Open Deep Analysis
             </button>
@@ -1853,6 +1889,28 @@ export default function PlayerStatsPage() {
             Rake opts out: an agent who has played no hands themselves still has
             a downline generating rake, and that is the whole point of the tab. */}
             {!hasData && category !== 'rake' && emptyState}
+
+            {showTab('rake') && rakeLoading && (
+              <div className="stats-section-loading" role="status">
+                Loading Rake For This Analysis Window...
+              </div>
+            )}
+
+            {showTab('rake') &&
+              !rakeLoading &&
+              agentRoles !== null &&
+              (!rakeStats || rakeStats.hands === 0) &&
+              agentRoles.length === 0 && (
+                <div className="stats-empty-state" role="status">
+                  <span className="empty-icon" aria-hidden="true">
+                    $
+                  </span>
+                  <span className="empty-title">No Rake In This Window</span>
+                  <span className="empty-description">
+                    Player-Attributed Rake Will Appear Here After A Raked Cash Hand Is Recorded.
+                  </span>
+                </div>
+              )}
 
             {/* ── RAKE TAB — live downline earnings, agents only ── */}
             {showTab('rake') && isOwnProfile && rakeStats && rakeStats.hands > 0 && (
@@ -1958,7 +2016,7 @@ export default function PlayerStatsPage() {
                 <div className="stats-ledger-grid">
                   {/* Per-variant breakdown */}
                   {(full?.variants?.length ?? 0) > 0 && (
-                    <div className="variant-table" role="region" aria-label="Performance by game">
+                    <div className="variant-table" role="region" aria-label="Performance By Game">
                       <h3 className="variant-title">Game Mix</h3>
                       <div className="variant-row variant-head">
                         <span>Game</span>
@@ -1973,7 +2031,7 @@ export default function PlayerStatsPage() {
                           className="variant-row stats-evidence-row"
                           key={v.variant}
                           onClick={() => openHandEvidence({ variant: v.variant })}
-                          aria-label={`Review ${String(v.variant).toUpperCase()} hands`}
+                          aria-label={`Review ${String(v.variant).toUpperCase()} Hands`}
                         >
                           <span className="variant-name">{String(v.variant).toUpperCase()}</span>
                           <span>{v.hands.toLocaleString()}</span>
@@ -1993,7 +2051,7 @@ export default function PlayerStatsPage() {
                   {/* Per-stake breakdown: which game size is actually carrying (or
                   bleeding) the results, instead of one blended number. */}
                   {(full?.stakes?.length ?? 0) > 1 && (
-                    <div className="variant-table" role="region" aria-label="Performance by stake">
+                    <div className="variant-table" role="region" aria-label="Performance By Stake">
                       <h3 className="variant-title">Stake Ledger</h3>
                       <div className="variant-row variant-head">
                         <span>Stake</span>
@@ -2008,7 +2066,7 @@ export default function PlayerStatsPage() {
                           className="variant-row stats-evidence-row"
                           key={`stake-${st.big_blind}`}
                           onClick={() => openHandEvidence({ bigBlind: st.big_blind })}
-                          aria-label={`Review hands at ${st.big_blind} big blind`}
+                          aria-label={`Review Hands At ${st.big_blind} Big Blind`}
                         >
                           <span className="variant-name">{st.big_blind} BB</span>
                           <span>{st.hands.toLocaleString()}</span>
@@ -2130,7 +2188,7 @@ export default function PlayerStatsPage() {
                       color="#f59e0b"
                     />
                     <StatRow
-                      label="Fold to 3-Bet"
+                      label="Fold To 3-Bet"
                       value={`${(overall.fold_to_three_bet * 100).toFixed(1)}%`}
                       color="#ef4444"
                     />
@@ -2211,7 +2269,7 @@ export default function PlayerStatsPage() {
             {/* ── POSITIONS TAB ── */}
             {showTab('positions') && hasData && (
               <div>
-                <div className="stats-position-evidence" aria-label="Review hands by position">
+                <div className="stats-position-evidence" aria-label="Review Hands By Position">
                   {(full?.positions || []).map((position) => (
                     <button
                       type="button"
@@ -2279,7 +2337,7 @@ export default function PlayerStatsPage() {
                       color="#8b5cf6"
                     />
                     <StatRow
-                      label="Total Buy-ins"
+                      label="Total Buy-Ins"
                       value={tourn.total_buyins.toLocaleString()}
                       color="#06b6d4"
                     />
@@ -2476,7 +2534,7 @@ export default function PlayerStatsPage() {
                                 {String(h.variant || '').toUpperCase()}
                                 {h.position ? ` · ${h.position}` : ''}
                                 {h.is_tournament ? ' · MTT' : ` · ${h.big_blind} BB`}
-                                {` · ${h.players} players`}
+                                {` · ${h.players} Players`}
                               </span>
                               {Array.isArray(h.board) && h.board.length > 0 && (
                                 <span className="hand-row-board">

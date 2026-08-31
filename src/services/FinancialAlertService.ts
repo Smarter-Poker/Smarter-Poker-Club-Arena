@@ -15,6 +15,15 @@ import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { reportError } from '../utils/errorReporter';
 
+/**
+ * Criticals are fetched outside the page budget, so they need a ceiling of
+ * their own rather than none at all — an unbounded select is how a browser
+ * tab dies on the day something goes badly wrong. Production carries nine
+ * unresolved criticals against 472 total rows, so this is roughly fifty times
+ * headroom; past it, the page is not the right tool anyway.
+ */
+const CRITICAL_CEILING = 500;
+
 export type AlertSeverity = 'critical' | 'warning' | 'info';
 
 export interface FinancialAlert {
@@ -161,19 +170,28 @@ export const FinancialAlertService = {
   },
 
   /**
-   * Get unresolved alerts (for admin dashboard)
+   * ═════════════════════════════════════════════════════════════════════════
+   *  A CRITICAL IS NEVER TRUNCATED AWAY BY NEWER NOISE (2026-08-31)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * This was one query — `resolved = false`, newest first, `.limit(n)` — and
+   * the admin page asked for 100. Production had 472 unresolved rows, so 372
+   * were never rendered at all, and TWO of the nine unresolved CRITICALS were
+   * among them: union treasury conservation breaches from 2026-08-21 and
+   * 08-24, sitting unseen for ten days underneath four hundred newer warnings.
+   *
+   * The page's severity tabs then filtered CLIENT-SIDE over that truncated
+   * hundred, so "Critical (7)" was not the number of unresolved criticals, it
+   * was the number that happened to survive the cut. A money alarm that can be
+   * pushed off the screen by unrelated chatter is not an alarm.
+   *
+   * So criticals are fetched on their own and never compete for the budget.
+   * They are few by construction (nine, against 472 rows), and if there are
+   * ever more than `limit` of them the caller gets all of them anyway — going
+   * over budget is the correct failure for this one severity.
    */
-  async getUnresolved(limit = 50): Promise<FinancialAlert[]> {
-    const { data } = await retryAsync(() =>
-      supabase
-        .from('financial_alerts')
-        .select('id, severity, source, message, context, resolved, created_at')
-        .eq('resolved', false)
-        .order('created_at', { ascending: false })
-        .limit(limit)
-    );
-
-    return (data || []).map((a: any) => ({
+  async getUnresolved(limit = 100): Promise<FinancialAlert[]> {
+    const map = (a: any): FinancialAlert => ({
       id: a.id,
       severity: a.severity,
       source: a.source,
@@ -181,7 +199,71 @@ export const FinancialAlertService = {
       context: a.context || {},
       resolved: a.resolved,
       createdAt: a.created_at,
-    }));
+    });
+
+    const COLUMNS = 'id, severity, source, message, context, resolved, created_at';
+
+    const { data: criticals } = await retryAsync(() =>
+      supabase
+        .from('financial_alerts')
+        .select(COLUMNS)
+        .eq('resolved', false)
+        .eq('severity', 'critical')
+        .order('created_at', { ascending: false })
+        .limit(CRITICAL_CEILING)
+    );
+
+    const rest = Math.max(limit - (criticals || []).length, 0);
+    let others: any[] = [];
+    if (rest > 0) {
+      const { data } = await retryAsync(() =>
+        supabase
+          .from('financial_alerts')
+          .select(COLUMNS)
+          .eq('resolved', false)
+          .neq('severity', 'critical')
+          .order('created_at', { ascending: false })
+          .limit(rest)
+      );
+      others = data || [];
+    }
+
+    return [...(criticals || []), ...others].map(map);
+  },
+
+  /**
+   * The TRUE unresolved counts, straight from the database.
+   *
+   * The page used to derive its tab counts from the rows it had loaded, so it
+   * reported "All (100)" while 472 were open. These are exact head counts: the
+   * operator is told how many there actually are, and how many they are
+   * looking at.
+   */
+  async getUnresolvedCounts(): Promise<{
+    total: number;
+    critical: number;
+    warning: number;
+    info: number;
+  }> {
+    const countOf = async (severity?: string): Promise<number> => {
+      const { count } = await retryAsync(() => {
+        const q = supabase
+          .from('financial_alerts')
+          .select('id', { count: 'exact', head: true })
+          .eq('resolved', false);
+        return severity ? q.eq('severity', severity) : q;
+      });
+      return count || 0;
+    };
+
+    const [total, critical, warning, info] = await Promise.all([
+      countOf(),
+      countOf('critical'),
+      countOf('warning'),
+      countOf('info'),
+    ]);
+
+    return { total, critical, warning, info };
   },
 
   /**

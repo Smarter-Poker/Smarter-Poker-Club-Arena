@@ -1,0 +1,18 @@
+{
+  "_comment": [
+    "Spec files permitted to skip every test they contain during a post-deploy run.",
+    "",
+    "This is a RATCHET, not an escape hatch. Every line here is a standing admission",
+    "that one more spec file cannot verify production, and it is reviewed as such.",
+    "The number should go down over time, never quietly up.",
+    "",
+    "Paths are RELATIVE TO playwright's testDir (tests/e2e), exactly as they appear",
+    "in the JSON report: \"smoke.spec.ts\", \"routes/clubs.spec.ts\". A repo-root path",
+    "exempts nothing.",
+    "A file NOT listed here must execute at least one test, or",
+    "scripts/ci/assert-e2e-actually-ran.mjs fails the run and names it.",
+    "",
+    "Adding a line requires a reason that says WHAT is missing, not that it skipped."
+  ],
+  "allowed": []
+}

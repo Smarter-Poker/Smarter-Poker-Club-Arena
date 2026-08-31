@@ -21,6 +21,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceMethod, sliceCssRule, sliceEnclosingBlock } from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../', p), 'utf8');
 
@@ -719,6 +720,189 @@ describe('LAW: no toggle may quietly turn the product animation-free or mute', (
     expect(hook).toContain('soundService.setEnabled(isSoundAllowed())');
     const menu = read('src/components/navigation/HamburgerMenu.tsx');
     expect(menu).toContain('soundService.setEnabled(newValue)');
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  CRAZY PINEAPPLE - THE DISCARD YOU CAN SEE AND HEAR (Phase 3, 2026-08-31)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan, from a live seat: "IT DOESN'T REMOVE THE CARD FROM YOU HAND AFTER YOU
+ * DISCARD IT" and "AUTO FOLDED MY HAND, EVEN THOUGH IT DIDN'T."
+ *
+ * The first was fixed in #2033 and the clock in #2074. What was left is the
+ * subject of these pins: a discard rendered NOTHING. The engine has emitted
+ * PLAYER_ACTION action:'discard' since the variant shipped, and the client's
+ * handler had no arm for it - no animation, no cue, and no change to a
+ * villain's card count. Horses discard on a deliberate 1.2s-5.2s humanlike
+ * delay, so the felt paused and then jumped: the pause was there and the thing
+ * it was hiding was not. The one cue that did fire was `playFold()` - the
+ * WRONG action's sound, in the one variant where throwing a card is how you
+ * stay in, which is very likely part of what "auto folded my hand, even though
+ * it didn't" actually looked like.
+ */
+describe('LAW: a Crazy Pineapple discard is seen and heard', () => {
+  it('the discard has its own cue, and that cue is not born silent', () => {
+    // §10.6: every animation is owed its own sound. Before this the discard
+    // played playFold() - a two-card brush for a one-card decision, and the
+    // sound the table makes when a hand DIES.
+    expect(SOUND).toContain('playDiscard()');
+    const cue = sliceMethod(SOUND, 'playDiscard() {');
+    expect(cue).toContain("this.shouldPlay('discard', 'action')");
+    // A cue that schedules nothing audible is a cue that does not exist. This
+    // is the same class of bug as the thirteen zero-volume playTone calls at
+    // the top of this file: no error, no sound, nobody notices for weeks.
+    expect(cue).toMatch(/createSweptNoiseBurst\(|createNoiseBurst\(/);
+    expect(cue).not.toMatch(/createSweptNoiseBurst\([^)]*,\s*0(\.0*)?\s*,/);
+    expect(cue).not.toMatch(/createNoiseBurst\([^)]*,\s*0(\.0*)?\s*,/);
+    expect(cue).toContain('haptic.');
+  });
+
+  it('the discard cue outranks the fold it replaced, so it cannot be eaten in its own round', () => {
+    // Several seats discard inside one 50ms priority window, and `shouldPlay`
+    // rejects `rank <= currentFramePriority`. playPotCollect is the cautionary
+    // tale directly above: wired, called, and permanently inaudible.
+    const ranks = sliceEnclosingBlock(SOUND, 'pot_collect: 88', 0, 1);
+    const rank = (name: string) => Number(new RegExp(`\\b${name}: (\\d+)`).exec(ranks)?.[1]);
+    expect(rank('discard')).toBeGreaterThan(rank('fold'));
+    expect(rank('discard')).toBeGreaterThan(rank('deal'));
+  });
+
+  it('hero fires locally and villains fire from the echo - exactly once each', () => {
+    // AUDIT-2 2026-08-20: the echo handler fires for EVERY seat, so a cue
+    // played both locally and on the echo is heard twice by the player who
+    // acted. `isHeroEcho` is the split, and the discard arm has to live on
+    // the same side of it as every other opponent cue.
+    expect(TABLE_PAGE).toContain('soundService.playDiscard()');
+    const echo = sliceEnclosingBlock(TABLE_PAGE, 'const isHeroEcho =', 0, 1);
+    expect(echo).toContain('!isHeroEcho');
+    expect(echo).toContain("action === 'discard'");
+    // And the hero's own half, at the click.
+    const local = sliceMethod(TABLE_PAGE, 'const handlePineappleDiscard = useCallback(');
+    expect(local).toContain('soundService.playDiscard()');
+    expect(local).not.toContain('soundService.playFold()');
+  });
+
+  it('one card leaves the hand, and it is speed-scaled like every other animation', () => {
+    // §10.6: --animation-speed is the ONLY sanctioned control. A hard-coded
+    // duration ignores the player's setting; a new toggle would be illegal.
+    const rule = sliceCssRule(SEAT_CSS, '.seat__card--discarding {');
+    expect(rule).toContain('cardDiscardOut');
+    expect(rule).toContain('var(--animation-speed, 1)');
+    expect(SEAT_CSS).toContain('@keyframes cardDiscardOut');
+    // ONE card, not the hand. cardFoldOut is applied to `.seat__card` - every
+    // card in the row - and reusing it would have mucked the whole holding.
+    expect(SEAT_CSS).not.toContain('.seat__cards--discarding .seat__card');
+  });
+
+  it('the seat animates a discard for EVERY seat, off lastAction alone', () => {
+    // §10.5 HORSES ARE PLAYERS: a horse's discard arrives as the same
+    // PLAYER_ACTION event on the same path. Nothing here may branch on who is
+    // sitting in the seat, so there is nothing for `is_horse` to reach.
+    expect(SEAT_TSX).toContain("| 'discard'");
+    const effect = sliceEnclosingBlock(SEAT_TSX, 'const rising = lastAction === ', 0, 1);
+    expect(effect).toContain('setDiscardFlight(true)');
+    expect(effect).toContain('getAnimationSpeed()');
+    expect(effect).not.toMatch(/is_horse|isHorse/);
+    // The JS removal window must outlast the CSS, or the ghost is unmounted
+    // mid-flight - the exact bug ANIMATION AUDIT 2026-08-19 found on the fold.
+    const windowMs = Number(/\}, (\d+) \* getAnimationSpeed\(\)\);/.exec(effect)?.[1]);
+    const cssMs = Number(/cardDiscardOut calc\(([\d.]+)s/.exec(SEAT_CSS)?.[1]) * 1000;
+    expect(windowMs).toBeGreaterThan(cssMs);
+  });
+
+  it("a villain's discarded card is never revealed, and never rides the public event", () => {
+    // In Crazy Pineapple the discard is private - not on the discard, not at
+    // showdown. Hole cards do not travel on the public broadcast at all; they
+    // go through RLS-protected table_hole_cards, which exists because of a
+    // god-mode vulnerability. Putting a rank or suit on `player_action` would
+    // re-open it. The villain ghost is therefore hidden, always.
+    const villainGhost = sliceEnclosingBlock(SEAT_TSX, 'key="discard-flight"', 0, 1);
+    expect(villainGhost).toContain('hidden={true}');
+    const engineEmit = sliceEnclosingBlock(
+      read('server/src/engine/HandController.ts'),
+      "action: 'discard'",
+      0,
+      1
+    );
+    expect(engineEmit).not.toMatch(/\bcards?\b|rank|suit/);
+  });
+
+  it('the street waits for the toss instead of opening over it', () => {
+    // Every other cadence on this platform is a named beat; this one was a
+    // synchronous advanceStage() on the same tick as the last discard.
+    const spec = read('server/src/config/handCompletionSpec.ts');
+    expect(spec).toContain('DISCARD_SETTLE_MS');
+    const settle = Number(/DISCARD_SETTLE_MS: (\d+)/.exec(spec)?.[1]);
+    const cssMs = Number(/cardDiscardOut calc\(([\d.]+)s/.exec(SEAT_CSS)?.[1]) * 1000;
+    expect(settle).toBeGreaterThanOrEqual(cssMs);
+    const hc = read('server/src/engine/HandController.ts');
+    const check = sliceMethod(hc, 'private checkPineappleDiscardsComplete(): void {');
+    expect(check).toContain('HAND_COMPLETION.DISCARD_SETTLE_MS');
+    // ...and it can never park a hand: a zero/absent timer advances at once,
+    // and the beat is cancellable by the engine that owns the hand.
+    expect(check).toContain('this.advanceStage()');
+    expect(hc).toContain('public cancelPineappleSettle()');
+  });
+
+  it('the discard is recorded on the hand, not only shouted on the wire', () => {
+    // AUDIT 2026-08-31. `state.actionHistory` is what getTableState() publishes
+    // as action_history, and it is where the client derives every seat's on-felt
+    // action label from. performDiscard never wrote to it (only processAction
+    // does), so the next snapshot of the discard round said nobody had acted:
+    // the "Discard" label was wiped a moment after it appeared, and lastAction
+    // fell and rose again - which re-triggers the toss, throwing one card twice.
+    const hc = read('server/src/engine/HandController.ts');
+    const perform = sliceMethod(hc, 'performDiscard(seat: number, cardIndex: number): boolean {');
+    expect(perform).toContain('this.state.actionHistory.push(');
+    expect(perform).toContain("action: 'discard'");
+    // And the seat may only fly one card per hand however lastAction gets there.
+    expect(SEAT_TSX).toContain('inFlightRef');
+  });
+
+  it('an all-in seat whose discard the engine makes for it is announced too', () => {
+    // AUDIT 2026-08-31: resolvePendingPineappleDiscards spliced the card and
+    // emitted CARDS_DEALT only. No PLAYER_ACTION meant no toss, no cue, three
+    // backs left on the felt, and the discard missing from hand_history - the
+    // Phase 3 bug still alive on the one path a player cannot see coming.
+    // CLAUDE.md 10.6: owed every time it is owed, not on the convenient paths.
+    const resolve = sliceMethod(
+      read('server/src/engine/HandController.ts'),
+      'private resolvePendingPineappleDiscards(): void {'
+    );
+    expect(resolve).toContain("action: 'discard'");
+    expect(resolve).toContain("type: 'PLAYER_ACTION'");
+  });
+
+  it('every surface that names an action can name a discard', () => {
+    // AUDIT 2026-08-31: TableTabBar renders `ACTION_LABEL[flash] ?? flash`, so a
+    // missing entry ships the RAW engine token to the multi-table tab strip.
+    // 'discard' was unreachable there until the engine started recording it;
+    // the moment it became reachable the tab would have flashed a lowercase
+    // "discard", against CLAUDE.md 5.7 (Title Case Every Word).
+    const tabs = read('src/components/table/TableTabBar.tsx');
+    expect(tabs).toMatch(/discard: 'Discard'/);
+    expect(SEAT_TSX).toMatch(/case 'discard':\s*\n[^\n]*\n\s*return 'Discard';/);
+  });
+
+  it('a discard never borrows the fold treatment', () => {
+    // A discard is not a dead hand. Every fold-shaped surface - the greyed
+    // seat, the avatar slump, the dimmed card row - is keyed on an exact
+    // 'fold', and the avatar gesture map has no discard entry ON PURPOSE:
+    // there is no rigged gesture that means "throws one card and plays on",
+    // and `fold` would tell the table a live hand had died. That is the exact
+    // confusion Dan reported.
+    const gestures = sliceEnclosingBlock(SEAT_TSX, "fold: { gesture: 'fold'", 0, 1);
+    expect(gestures).not.toMatch(/discard:/);
+    expect(SEAT_TSX).not.toMatch(/lastAction === 'fold' \|\| lastAction === 'discard'/);
+  });
+
+  it('nothing about the discard can be switched off', () => {
+    // §10.6: no new toggle may disable an animation or its cue. The only
+    // control is --animation-speed, asserted above.
+    expect(SEAT_CSS).not.toMatch(/discard[A-Za-z]*\s*:\s*(none|hidden)/i);
+    expect(SETTINGS_HOOK).not.toMatch(/discard_animation|show_discard|skip_discard/);
   });
 });
 

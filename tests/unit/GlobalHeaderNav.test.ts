@@ -38,7 +38,9 @@ const TSX = read('../../src/components/navigation/GlobalHeader.tsx');
 const CSS = read('../../src/components/navigation/GlobalHeader.module.css');
 const LAYOUT = read('../../src/components/layouts/AppLayout.tsx');
 const OPTIMIZER = read('../../scripts/optimize-dist-media.mjs');
-const APPROVED_DESKTOP = readBytes('../../public/images/global-header/global-header-desktop.png');
+const APPROVED_DESKTOP = readBytes(
+  '../../public/images/global-header/global-header-command-center-v1.png'
+);
 
 /**
  * Comments explain the bugs by name, so "the word is gone" is the wrong
@@ -113,15 +115,15 @@ describe('the bar stretches across the top', () => {
 
 describe('both ways out are always there', () => {
   it('renders a Back button', () => {
-    expect(TSX).toContain('aria-label="Go back"');
+    expect(TSX).toContain('aria-label="Go Back"');
   });
 
   it('renders a Hub button', () => {
-    expect(TSX).toContain('aria-label="Go to the Hub"');
+    expect(TSX).toContain('aria-label="Go To The Hub"');
   });
 
   it('neither is behind a page-depth condition any more', () => {
-    // The exact shape of the old bug: `{isSubPage && (<button ... Go back`.
+    // The exact shape of the old bug: `{isSubPage && (<button ... Go Back`.
     expect(TSX_CODE).not.toContain('isSubPage');
     expect(TSX_CODE).not.toContain('pageDepth');
   });
@@ -151,7 +153,7 @@ describe('no handler is left wired to nothing', () => {
 });
 
 describe('the button artwork exists', () => {
-  const IMAGES = ['menu.png', 'back.png', 'hub.png'] as const;
+  const IMAGES = ['command-center-v1.png', 'back.png', 'hub.png'] as const;
 
   it.each(IMAGES)('%s is referenced by the header', (file) => {
     expect(TSX).toContain(`APPROVED_HEADER_ASSET}${file}`);
@@ -191,9 +193,9 @@ describe('mobile uses the identical desktop header', () => {
   });
 
   it('uses only artwork derived from the approved source image', () => {
-    expect(TSX).toContain('global-header-desktop.png');
+    expect(TSX).toContain('global-header-command-center-v1.png');
     for (const file of [
-      'menu.png',
+      'command-center-v1.png',
       'back.png',
       'hub.png',
       'profile.png',
@@ -215,14 +217,14 @@ describe('mobile uses the identical desktop header', () => {
 
   it('locks the approved desktop bytes and excludes global-header art from resizing', () => {
     expect(createHash('sha256').update(APPROVED_DESKTOP).digest('hex')).toBe(
-      '7c5613a84a395abd6b9527785b46c99fb28b6264e2258bee366a04cac5500c7f'
+      'bb62242b86cef3eb440e152390b09e966f5a4fc28487ddf2ed701a2c4adae3f9'
     );
     expect(OPTIMIZER).toContain("{ prefix: 'images/global-header/', maxDim: 0 }");
   });
 });
 
 describe('the profile region shows the complete live profile picture', () => {
-  it('covers the complete profile region without a crop or decorative frame', () => {
+  it('removes the baked ornament and centers one thin black-framed circle', () => {
     expect(TSX_CODE).toContain('avatarUrl');
     expect(TSX).toContain('className={styles.profileAvatarSlot}');
     expect(TSX).toContain('className={styles.profileAvatar}');
@@ -234,31 +236,38 @@ describe('the profile region shows the complete live profile picture', () => {
     expect(profileButton).toContain('contain: layout paint');
     expect(profileButton).toContain('left: 66.75%');
     expect(profileButton).toContain('width: 7.15%');
-    expect(profileButton).toContain('top: 13%');
-    expect(profileButton).toContain('height: 75%');
+    expect(profileButton).toContain('top: 15%');
+    expect(profileButton).toContain('aspect-ratio: 1');
+    expect(profileButton).toContain('border: 0');
+    expect(profileButton).toContain('border-radius: 50%');
     expect(profileButton).toContain('background: #000');
-    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('inset: 0 !important');
-    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('width: 100%');
-    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('height: 100%');
-    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('border-radius: 0');
-    expect(ruleBody(CSS, '.profileAvatarSlot')).toContain('z-index: 1');
+    const slot = ruleBody(CSS, '.profileAvatarSlot');
+    expect(slot).toContain('top: 50% !important');
+    expect(slot).toContain('left: 50% !important');
+    expect(slot).toContain('width: 72%');
+    expect(slot).toContain('aspect-ratio: 1');
+    expect(slot).toContain('transform: translate(-50%, -50%) !important');
+    expect(slot).toContain('box-sizing: border-box');
+    expect(slot).toContain('border: 1px solid rgba(0, 0, 0, 0.94)');
+    expect(slot).toContain('border-radius: 50%');
+    expect(slot).toContain('background: transparent');
+    expect(slot).toContain('z-index: 1');
     const portrait = ruleBody(CSS, '.profileAvatarSlot > .profileAvatar');
     expect(portrait).toContain('width: 100% !important');
-    expect(portrait).toContain('object-fit: contain !important');
-    expect(portrait).not.toContain('object-fit: cover');
+    expect(portrait).toContain('border-radius: 50% !important');
+    expect(portrait).toContain('background: transparent !important');
+    expect(portrait).toContain('object-fit: cover !important');
   });
 });
 
-describe('VIP membership state', () => {
-  it('dims non-members and schedules one member shimmer after each random pause', () => {
+describe('VIP membership state without header shimmer', () => {
+  it('dims non-members, outlines active VIP, and keeps every header control free of shimmer effects', () => {
     expect(TSX_CODE).toContain('isVipActive');
     expect(TSX).toContain("data-vip-active={isVipActive ? 'true' : 'false'}");
-    expect(TSX_CODE).toContain('5_000 + Math.floor(Math.random() * 5_001)');
-    expect(TSX_CODE).toContain('setVipShimmerVisible(true)');
-    expect(TSX_CODE).toContain('setVipShimmerVisible(false)');
     expect(CSS).toContain('.vipBtn:not(.vipActive)::after');
-    expect(CSS).toContain('.vipShimmer::before');
-    expect(CSS).toContain('animation: vipHeaderShimmer 1.25s cubic-bezier(0.2, 0.7, 0.25, 1) 1');
-    expect(CSS).not.toContain('infinite');
+    expect(CSS).toContain('.vipActive');
+    expect(CSS).toContain('rgba(255, 255, 255, 0.92)');
+    expect(TSX_CODE).not.toMatch(/shimmer/i);
+    expect(CSS).not.toMatch(/shimmer/i);
   });
 });

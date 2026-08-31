@@ -55,8 +55,10 @@ import type {
 } from '../types.js';
 
 import { reportError } from '../services/errorReporter.js';
+import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { createHandStateMachine, type HandFSMState } from './StateMachine.js';
 import { bigBlindAnteTotal } from './AnteMath.js';
+import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HAND CONTROLLER
@@ -273,6 +275,39 @@ export class HandController {
   // ─────────────────────────────────────────────────────────────────────────
 
   start(): void {
+    /* ═══ A HAND THAT IS STARTING MUST BE A BLANK HAND (2026-08-31) ════════
+       The rake-law alarm's no_flop_no_drop criticals were hands played inside
+       a controller that a STALE runout continuation from the PREVIOUS hand
+       had already driven to showdown - sawFlop true, phantom board dealt into
+       the void - before start() ever ran. start() never reset the stage, so
+       live betting proceeded inside the corpse: no street could ever deal
+       (advanceStage has no 'showdown' case), big blinds were walked through
+       folds on uncontested pots, and the fold-out settlement priced rake on
+       sawFlop=true. The runout entry points now refuse an unstarted hand
+       (refuseUnlessRunout below), so this cannot recur by that path - but if
+       ANY path ever corrupts a pre-start controller again, say so loudly and
+       deal a clean hand instead of a broken one. */
+    if (
+      this.state.stage !== 'preflop' ||
+      this.state.sawFlop ||
+      this.state.communityCards.length > 0
+    ) {
+      reportError(
+        new Error(
+          `[HandController] hand ${this.config.handNumber} is starting DIRTY: ` +
+            `stage=${this.state.stage} sawFlop=${this.state.sawFlop} ` +
+            `board=${this.state.communityCards.length} - reset to a blank preflop hand`
+        ),
+        'HandController.dirty_start'
+      );
+      this.state.stage = 'preflop';
+      this.state.sawFlop = false;
+      this.state.communityCards = [];
+      this.state.communityCards2 = [];
+      this.state.communityCards3 = [];
+      this.boardDealtOutsideState = false;
+    }
+    this.handStarted = true;
     // FIX-225: FSM transitions for hand start sequence
     this.handFSM.transition('posting_blinds');
 
@@ -954,6 +989,42 @@ export class HandController {
     const discarded = player.cards.splice(cardIndex, 1);
     this.pineappleDiscardsRemaining.delete(seat);
 
+    /* PHASE 3 FOLLOW-UP 2026-08-31 - the discard has to be IN the hand's own
+       action history, not only on the wire.
+       
+       `currentHandActions` (what becomes hand_history.actions) is appended from
+       the PLAYER_ACTION event below, so the PERSISTED record has always had
+       discards. `state.actionHistory` did not: nothing in performDiscard ever
+       wrote to it, because only processAction does, and a discard does not go
+       through processAction.
+       
+       That gap was invisible until Phase 3 gave the discard something to
+       render. `getTableState()` publishes this array as `action_history`, and
+       the client derives every seat's on-felt action label from it
+       (mapEngineSnapshot.derivePerSeatLastAction, keyed on the CURRENT stage).
+       With no record here, the very next snapshot of the discard round told the
+       client that nobody had acted: the seat's "Discard" label appeared on the
+       event and was wiped a moment later, and `lastAction` fell back to
+       'discard' again on the next event - a fall-then-rise that re-triggers the
+       toss animation, so a seat could throw the same card twice.
+       
+       Recorded with the same shape and the same stage as any other action, so
+       it survives exactly as long as the round it belongs to and disappears
+       when the street changes, like a check or a fold does. Every consumer of
+       this array filters on stage and on bet/raise/all_in
+       (isFixedLimitCapped, canReopenBetting, readInitiative,
+       isBettingRoundComplete), so a zero-amount 'discard' on a stage none of
+       them bet in is inert to all of them - and it makes the in-memory history
+       agree with the persisted one, which is what HorseMind hydrates from. */
+    this.state.actionHistory.push({
+      seat,
+      userId: player.user_id,
+      action: 'discard',
+      amount: 0,
+      timestamp: Date.now(),
+      stage: this.state.stage,
+    });
+
     // Emit discard action for logging
     this.emit({ type: 'PLAYER_ACTION', seat, action: 'discard', amount: 0 });
     // Send updated cards to the player (secure per-player)
@@ -1047,12 +1118,103 @@ export class HandController {
     return this.pineappleDiscardsRemaining.has(seat);
   }
 
+  /**
+   * PHASE 3 2026-08-31 - the ONE timer this class owns, and why.
+   *
+   * `checkPineappleDiscardsComplete` used to call `advanceStage()` on the same
+   * synchronous tick as the last discard, so the flop's betting round opened
+   * over the top of a card that was still in the air. Every other cadence on
+   * this platform is a named beat in `handCompletionSpec.ts`; the discard had
+   * none, which is why the felt read as a pause followed by a jump.
+   *
+   * Everything about this is written so it can never park a hand at
+   * `pineapple_discard`, which is the one catastrophic failure available here
+   * (three pineapple tables run in production, and a hand stuck in the discard
+   * stage never deals again):
+   *
+   *   - a zero/negative beat, or an environment with no usable setTimeout,
+   *     advances SYNCHRONOUSLY, exactly as before;
+   *   - the callback re-reads the stage, so an advance that happened by any
+   *     other route in the meantime is a no-op rather than a double-advance;
+   *   - `cancelPineappleSettle()` is called from `completeHand` and by the
+   *     engine when it drops a controller, so a superseded hand's beat cannot
+   *     fire into a live one;
+   *   - `unref()` where the runtime has it, so a pending beat never holds a
+   *     test process (or the server) open.
+   */
+  private pineappleSettleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Drop a pending discard beat. Safe to call at any time and any number of
+   * times. Public because the engine has to be able to call it when it
+   * replaces or discards this controller.
+   */
+  public cancelPineappleSettle(): void {
+    if (this.pineappleSettleTimer) {
+      clearTimeout(this.pineappleSettleTimer);
+      this.pineappleSettleTimer = null;
+    }
+  }
+
+  /**
+   * Collapse a pending discard beat to nothing and open the street NOW.
+   *
+   * The beat is measured in WALL CLOCK, and there are drivers that have no
+   * clock at all - HandFuzzer walks a whole hand inside one synchronous loop,
+   * and its LIVENESS check (`no player to act and hand is not complete`) is a
+   * real law: outside this one deliberate beat, a HandController that is
+   * neither complete nor waiting on somebody is a hung table. A driver with
+   * no clock collapses the beat here rather than the class pretending it does
+   * not have one.
+   *
+   * Returns true when there was a beat to collapse.
+   */
+  public flushPineappleSettle(): boolean {
+    if (!this.pineappleSettleTimer) return false;
+    this.cancelPineappleSettle();
+    if (this.state.stage !== 'pineapple_discard') return false;
+    this.advanceStage();
+    return true;
+  }
+
+  /**
+   * Has the discard round finished - i.e. is there nobody left who owes one?
+   *
+   * The engine used to answer this by re-reading `stage !== 'pineapple_discard'`
+   * immediately after `performDiscard`, which was true only because the
+   * advance was synchronous. With the beat above in place the stage is still
+   * `pineapple_discard` for DISCARD_SETTLE_MS after the last card is in, so
+   * that reading would re-arm the fold sweep against seats that have already
+   * acted. This is the question the engine actually meant to ask.
+   */
+  public allPineappleDiscardsIn(): boolean {
+    return this.pineappleDiscardsRemaining.size === 0;
+  }
+
   /** FIX 120: Check if all players have discarded; if so, advance to flop betting */
   private checkPineappleDiscardsComplete(): void {
-    if (this.pineappleDiscardsRemaining.size === 0) {
-      // All players have discarded — advance to flop betting
-      this.advanceStage(); // stage is 'pineapple_discard' → will set to 'flop' and begin betting
+    if (this.pineappleDiscardsRemaining.size !== 0) return;
+    // Already holding for the beat - do not schedule a second one.
+    if (this.pineappleSettleTimer) return;
+
+    const settleMs = HAND_COMPLETION.DISCARD_SETTLE_MS;
+    if (!(settleMs > 0) || typeof setTimeout !== 'function') {
+      this.advanceStage();
+      return;
     }
+
+    this.pineappleSettleTimer = setTimeout(() => {
+      this.pineappleSettleTimer = null;
+      // Anything else that moved the hand on (a fold that ended it, a runout)
+      // has already done this job.
+      if (this.state.stage !== 'pineapple_discard') return;
+      try {
+        this.advanceStage(); // 'pineapple_discard' → 'flop', and betting opens
+      } catch (err) {
+        reportError(err, 'HandController.pineappleSettle');
+      }
+    }, settleMs);
+    (this.pineappleSettleTimer as unknown as { unref?: () => void })?.unref?.();
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1329,6 +1491,7 @@ export class HandController {
    * Used by non-insurance tables for instant runout.
    */
   public continueRunout(): void {
+    if (this.refuseUnlessRunout('continueRunout')) return;
     this.runOutCommunityCards();
   }
 
@@ -1343,6 +1506,11 @@ export class HandController {
    *   - complete: true if all 5 cards are now dealt (caller should complete the hand)
    */
   public dealNextStreet(): { board: Card[]; stage: string; complete: boolean } {
+    if (this.refuseUnlessRunout('dealNextStreet')) {
+      // complete:false and an unchanged board: the paced loop sees no growth
+      // and stops; nothing about this hand moves.
+      return { board: [...this.state.communityCards], stage: this.state.stage, complete: false };
+    }
     const deck = this.state.deck as unknown as Deck;
     const currentLength = this.state.communityCards.length;
 
@@ -1422,6 +1590,7 @@ export class HandController {
    * @param skipDistribution - true when caller (e.g. RIT) already distributed pots
    */
   public finalizeRunout(skipDistribution: boolean = false): void {
+    if (this.refuseUnlessRunout('finalizeRunout')) return;
     this.transitionStage('showdown');
     if (skipDistribution) {
       // RIT or other caller already distributed pots — just emit completion
@@ -1467,8 +1636,60 @@ export class HandController {
    * dealt. The engine calls this before computing rake for a RIT hand.
    */
   public markFlopSeen(): void {
+    if (this.refuseUnlessRunout('markFlopSeen')) return;
     this.state.sawFlop = true;
+    this.boardDealtOutsideState = true;
   }
+
+  /** True once start() has run. A controller that has not started has no
+   *  blinds, no hole cards and no hand - nothing about it may be run out. */
+  private handStarted = false;
+
+  /**
+   * ═══ RUNOUT CALLS ARE ONLY LEGAL DURING A RUNOUT (2026-08-31) ═══════════
+   *
+   * continueRunout, dealNextStreet, finalizeRunout, markFlopSeen and
+   * settleUncalledBet exist for exactly one situation: betting is over
+   * because everyone live is all-in (at most one player can still bet), and
+   * the board is being run out. They are called by the engine's insurance /
+   * run-it-twice / paced-runout cascade - async flows full of sleeps and
+   * 20-second offer windows whose catch handlers and safety timers can fire
+   * AFTER their hand has died. One of those firing into the NEXT hand's
+   * controller is what the rake-law alarm caught: a fresh preflop hand run
+   * out into the void before start(), then played to a raked walk inside the
+   * wreckage (32 live hands, docs/changelog/2026-08-31-a-stale-runout-
+   * cannot-reach-the-next-hand.md).
+   *
+   * The engine's continuations are now anchored to their controller, but this
+   * is the authoritative backstop: whatever the caller, a hand that is not in
+   * an all-in runout refuses the call and reports it. Returns true when the
+   * call must be refused.
+   */
+  private refuseUnlessRunout(op: string): boolean {
+    const live = this.state.players.filter((p) => !p.is_folded && !p.is_sitting_out);
+    const canStillBet = live.filter((p) => !p.is_all_in);
+    const inRunout = this.handStarted && (live.length <= 1 || canStillBet.length <= 1);
+    if (inRunout) return false;
+    reportError(
+      new Error(
+        `[HandController] ${op} refused on hand ${this.config.handNumber}: not an all-in ` +
+          `runout (started=${this.handStarted}, stage=${this.state.stage}, ` +
+          `${canStillBet.length} of ${live.length} live players can still bet). A stale ` +
+          `continuation from a previous hand is the only known way to get here.`
+      ),
+      'HandController.stale_runout_refused'
+    );
+    return true;
+  }
+
+  /**
+   * TRUE only when a real board exists that this controller's own
+   * `state.communityCards` does not hold — which today means exactly one
+   * thing: markFlopSeen() above, the RIT path. It is not a second copy of
+   * `sawFlop`; it is the evidence that makes an empty board legitimate, and
+   * priceDeductions is its only reader.
+   */
+  private boardDealtOutsideState = false;
 
   public creditRunoutWinnings(distribution: Map<string, number>): void {
     this.applyStackDeltas(distribution);
@@ -1605,6 +1826,36 @@ export class HandController {
       );
       player.cards.splice(bestIdx, 1);
       this.pineappleDiscardsRemaining.delete(player.seat);
+
+      /* PHASE 3 AUDIT 2026-08-31 - this discard was SILENT, on every layer.
+         
+         `performDiscard` announces itself with a PLAYER_ACTION; this path
+         never did. It is the same act - a card genuinely leaves a hand - and
+         the only difference is that the seat was already all-in when the flop
+         landed, so the round never opened and the engine chose for them.
+         Without the announcement:
+         
+           - the seat drew no toss, made no sound, and kept three backs on the
+             felt for the rest of the hand, which is exactly the Phase 3 bug
+             still alive on one path;
+           - `currentHandActions` never saw it, so the discard is missing from
+             hand_history.actions and would be missing from the replay too;
+           - the action history disagreed with the cards, on a hand that is by
+             definition heading to showdown.
+         
+         CLAUDE.md 10.6 says an animation is owed every time it is owed, not
+         on the paths that happen to be convenient. Announced identically here,
+         BEFORE the cards go out, so ordering matches performDiscard. */
+      this.state.actionHistory.push({
+        seat: player.seat,
+        userId: player.user_id,
+        action: 'discard',
+        amount: 0,
+        timestamp: Date.now(),
+        stage: this.state.stage,
+      });
+      this.emit({ type: 'PLAYER_ACTION', seat: player.seat, action: 'discard', amount: 0 });
+
       this.emit({ type: 'CARDS_DEALT', seat: player.seat, cards: [...player.cards] });
     }
   }
@@ -1690,10 +1941,12 @@ export class HandController {
   }
 
   private completeHand(): void {
+    // A hand that is over does not owe anybody a flop. PHASE 3 2026-08-31.
+    this.cancelPineappleSettle();
     try {
       this.completeHandInner();
     } catch (err) {
-      console.error('[HandController] completeHand threw — force-ending hand:', err);
+      console.error('[HandController] completeHand threw - force-ending hand:', err);
       try {
         this.emit({ type: 'WINNERS', winners: [] } as never);
       } catch {
@@ -2000,7 +2253,7 @@ export class HandController {
     if (winners.length === 0 || totalWinnerAmount === 0) {
       reportError(
         new Error(
-          `[HandController] CRITICAL: No winners and no active players — pot of ${this.state.pot} cannot be distributed`
+          `[HandController] CRITICAL: No winners and no active players - pot of ${this.state.pot} cannot be distributed`
         ),
         'HandController.CRITICAL'
       );
@@ -2477,7 +2730,7 @@ export class HandController {
       // did not. If there is no actionable seat, the street is over — run it
       // out rather than hang.
       console.warn(
-        '[HandController] No actionable seat at stage ' + this.state.stage + ' — advancing stage'
+        '[HandController] No actionable seat at stage ' + this.state.stage + ' - advancing stage'
       );
       this.advanceStage();
       return;
@@ -2793,6 +3046,7 @@ export class HandController {
 
   /** Return the uncalled bet to its bettor (idempotent-ish; call once). */
   public settleUncalledBet(): number {
+    if (this.refuseUnlessRunout('settleUncalledBet')) return 0;
     return this.returnUncalledBet();
   }
 
@@ -2826,13 +3080,97 @@ export class HandController {
    * INVARIANT, enforced here and nowhere else: rake + bbjFee <= pot, with
    * the BBJ drop yielding first (the pot is the only source of both).
    */
-  public priceDeductions(flopSeen: boolean, pot: number): { rake: number; bbjFee: number } {
+  public priceDeductions(
+    flopSeen: boolean,
+    pot: number,
+    opts: { forecast?: boolean } = {}
+  ): { rake: number; bbjFee: number } {
+    /* ═══ NO FLOP, NO DROP IS SETTLED BY THE BOARD, NOT BY A FLAG ══════════
+       2026-08-31. `sawFlop` is a mutable flag written in five places; the
+       board is the evidence. Every time the two have disagreed, the flag has
+       been the wrong one — HandFuzzer has asserted
+       `sawFlop === board.length >= 3` since the 2026-08-18 rake-leak fix, and
+       on 2026-08-31 the rake-law alarm (migration 20260831140000) caught the
+       same disagreement in production, which the fuzzer's seeded hands never
+       reach: 20 live cash hands that ended PREFLOP were charged the full 10%
+       (5% heads-up) of a pot no card was ever dealt to.
+
+       They are not ambiguous. Hand 3900820, NLH 2/4 heads-up: SB posts 2, BB
+       posts 4, SB folds, 2 returned — a walk, pot 4.00, raked 0.20, winner
+       paid 3.80. Hand 3805102, 1/2 seven-handed: one raise, everyone folds,
+       pot 5.00, raked 0.50. Board empty, no showdown, nothing to drop on.
+       9.15 chips across 20 hands, taken from players who folded before the
+       flop. Small money; the wrong money.
+
+       So the flag alone no longer authorises a drop. A drop needs a board:
+       three community cards in this controller's own state, or markFlopSeen()
+       — the RIT path, which builds its boards outside this state and is the
+       ONE legitimate way a fully-dealt hand has no board here. Anything else
+       is priced as what the record shows: no flop, no drop. The disagreement
+       is REPORTED rather than swallowed, because the flag going wrong is a
+       real bug that still needs finding, and this refuses its money without
+       hiding it.
+
+       `forecast` is the insurance dialog pricing a runout that has not been
+       dealt yet (computeRakeAndBBJ(true)). It moves no chips and must keep
+       quoting what the completed hand will pay, so it is exempt. */
+    const boardDealt = this.state.communityCards.length >= 3 || this.boardDealtOutsideState;
+    let flopCounts = flopSeen;
+    if (flopSeen && !boardDealt && !opts.forecast) {
+      flopCounts = false;
+      reportError(
+        new Error(
+          `[HandController] sawFlop was true with NO board on hand ` +
+            `${this.config.handNumber} (stage ${this.state.stage}, pot ${pot}, ` +
+            `${this.state.players.length} seats) - priced as no flop, no drop. ` +
+            `The rake and BBJ drop were refused; the flag is what needs fixing.`
+        ),
+        'HandController.saw_flop_without_board'
+      );
+      /* And durably, where it can be READ. Sentry is where the first version
+         of this sent the finding, and Sentry is not queryable from the place
+         the rake-law alarm lives, so the two halves of the same incident sat
+         in two systems and only one of them could be joined to a hand id.
+         financial_alerts is the server's durable money-alarm table and takes
+         a structured context; this is a money path refusing to pay, which is
+         exactly what it is for. Fire-and-forget on the settlement hot path —
+         raiseFinancialAlert never throws and never rejects (and re-escalates
+         a throttled critical to Sentry by itself). */
+      void raiseFinancialAlert(
+        'critical',
+        'HandController.saw_flop_without_board',
+        `Hand ${this.config.handNumber} asked for rake on a board that does not exist - refused`,
+        {
+          tableId: this.config.tableId,
+          handNumber: this.config.handNumber,
+          stage: this.state.stage,
+          pot,
+          seats: this.state.players.length,
+          boardLength: this.state.communityCards.length,
+          board: this.state.communityCards.map((c) => `${c.rank}${c.suit}`),
+          board2Length: this.state.communityCards2.length,
+          gameVariant: this.config.gameVariant,
+          bombPot: Boolean(this.config.bombPot),
+          // The last few actions say what the hand was actually doing when the
+          // flag went wrong. The live evidence is that these hands record a
+          // stage of 'showdown' on ordinary preflop folds, so the stage each
+          // action was taken at is the thread to pull.
+          recentActions: this.state.actionHistory.slice(-6).map((a) => ({
+            seat: a.seat,
+            action: a.action,
+            amount: a.amount,
+            stage: a.stage,
+          })),
+        }
+      );
+    }
+
     const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
-    const rake = calculateRake(pot, flopSeen, this.config.rakeConfig, playerCount);
+    const rake = calculateRake(pot, flopCounts, this.config.rakeConfig, playerCount);
 
     let bbjFee = 0;
     const bbjCfg = this.config.bbjConfig;
-    if (bbjCfg && bbjCfg.enabled && flopSeen && playerCount >= bbjCfg.minPlayersDealt) {
+    if (bbjCfg && bbjCfg.enabled && flopCounts && playerCount >= bbjCfg.minPlayersDealt) {
       bbjFee = Math.round(this.config.bigBlind * bbjCfg.feeBB * 100) / 100;
     }
 
@@ -2857,7 +3195,12 @@ export class HandController {
    * and overstated "For Winning" by the full rake + BBJ drop. Default false
    * keeps every other caller (RIT settlement, etc.) exactly as before. */
   public computeRakeAndBBJ(assumeFlop: boolean = false): { rake: number; bbjFee: number } {
-    return this.priceDeductions(this.state.sawFlop || assumeFlop, this.state.pot);
+    // `assumeFlop` is a FORECAST of a runout that has not been dealt yet, so
+    // it is exempt from the board-corroboration rule priceDeductions applies
+    // to money that is actually leaving a pot.
+    return this.priceDeductions(this.state.sawFlop || assumeFlop, this.state.pot, {
+      forecast: assumeFlop,
+    });
   }
 
   /** Dealer seat (for odd-chip allocation in RIT). */

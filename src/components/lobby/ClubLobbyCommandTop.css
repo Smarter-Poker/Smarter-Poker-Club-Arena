@@ -1206,8 +1206,10 @@
 @media (min-width: 901px) {
   .club-lobby-machine {
     width: 100%;
+    max-width: 100%;
     height: 100%;
     min-height: 0;
+    box-sizing: border-box;
     aspect-ratio: auto;
     margin: 0;
     display: flex;
@@ -1244,14 +1246,16 @@
     position: relative;
     inset: auto;
     width: 100%;
+    max-width: 100%;
     min-width: 0;
+    box-sizing: border-box;
   }
 
   .club-lobby-command-top__controls {
     height: auto;
     min-height: 122px;
     padding: 12px 14px 10px;
-    overflow: visible;
+    overflow: hidden;
     border: 14px solid transparent;
     border-image-source: var(--machine-controls-frame);
     border-image-slice: 20 38 20 38;
@@ -1307,6 +1311,8 @@
     z-index: 2;
     flex: 1 1 auto;
     min-height: 0;
+    max-width: calc(100% - 16px);
+    box-sizing: border-box;
     margin: 6px 8px 8px;
     padding: 0;
     overflow: hidden;
@@ -1358,6 +1364,47 @@
   .club-lobby-machine .lobby-table .lt-status {
     min-width: 92px;
     font-size: clamp(9px, 0.68vw, 13px);
+  }
+
+  /* ALL combines cash and tournaments, but its four deep-structure columns
+     are not common browse facts. They are already preserved in the dedicated
+     tabs and in every mobile premium card. Keeping them in the desktop summary
+     forced a 1302px table into a 1175px frame and clipped the right edge. */
+  .club-lobby-machine .lobby-table--all .lt-col-tstack,
+  .club-lobby-machine .lobby-table--all .lt-col-tlevel,
+  .club-lobby-machine .lobby-table--all .lt-col-leveltime,
+  .club-lobby-machine .lobby-table--all .lt-col-format {
+    display: none;
+  }
+
+  .club-lobby-machine .lobby-table--all .lt-col-fav {
+    width: 4%;
+  }
+
+  .club-lobby-machine .lobby-table--all .lt-col-name {
+    width: 36%;
+    min-width: 0;
+  }
+
+  .club-lobby-machine .lobby-table--all .lt-col-kind,
+  .club-lobby-machine .lobby-table--all .lt-col-variant {
+    width: 8%;
+  }
+
+  .club-lobby-machine .lobby-table--all .lt-col-num {
+    width: 10%;
+  }
+
+  .club-lobby-machine .lobby-table--all .lt-col-players {
+    width: 9%;
+  }
+
+  .club-lobby-machine .lobby-table--all .lt-col-starts {
+    width: 12%;
+  }
+
+  .club-lobby-machine .lobby-table--all .lt-col-status {
+    width: 13%;
   }
 }
 

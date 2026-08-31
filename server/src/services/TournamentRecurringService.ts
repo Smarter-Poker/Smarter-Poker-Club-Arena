@@ -19,7 +19,10 @@ import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
 import { DEFAULT_RAKE_RATE, buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { gameLaneFor, horseHash, isActiveNow } from './HorseBehavior.js';
+import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
+import { bankrollEvent } from './HorseBankrollTelemetry.js';
 import { buildLadder } from '../tournament/blindLadder.js';
+import { clampSeatsForVariant } from '../config/tableSeating.js';
 
 /**
  * Derive the two buy-in columns from ONE whole-dollar total.
@@ -248,27 +251,21 @@ export const BLIND_STRUCTURES = {
    * rule spinSpec already settled on: tier identity lives in stack depth, not
    * in the clock.
    */
-  HEADS_UP_3MIN: [
-    { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 3 },
-    { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 3 },
-    { level: 3, smallBlind: 20, bigBlind: 40, ante: 0, durationMinutes: 3 },
-    { level: 4, smallBlind: 30, bigBlind: 60, ante: 0, durationMinutes: 3 },
-    { level: 5, smallBlind: 40, bigBlind: 80, ante: 0, durationMinutes: 3 },
-    { level: 6, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 3 },
-    { level: 7, smallBlind: 60, bigBlind: 120, ante: 0, durationMinutes: 3 },
-    { level: 8, smallBlind: 75, bigBlind: 150, ante: 0, durationMinutes: 3 },
-    { level: 9, smallBlind: 90, bigBlind: 180, ante: 0, durationMinutes: 3 },
-    { level: 10, smallBlind: 105, bigBlind: 210, ante: 0, durationMinutes: 3 },
-    { level: 11, smallBlind: 150, bigBlind: 300, ante: 0, durationMinutes: 3 },
-    { level: 12, smallBlind: 200, bigBlind: 400, ante: 0, durationMinutes: 3 },
-  ],
-  SPIN: [
-    { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 2 },
-    { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 2 },
-    { level: 3, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 2 },
-    { level: 4, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 1 },
-    { level: 5, smallBlind: 100, bigBlind: 200, ante: 0, durationMinutes: 1 },
-  ],
+  /**
+   * THE DUEL'S LADDER IS THE SPEC'S (2026-08-31, Phase 3). This was a second
+   * hand-typed copy of the same twelve rows; the name is kept because the
+   * board and its pinning test both read it, but the numbers now have exactly
+   * one home -- src/config/headsUpSpec.ts, mirrored byte-for-byte here.
+   */
+  HEADS_UP_3MIN: HEADS_UP_BLIND_STRUCTURE,
+  /**
+   * BLIND_STRUCTURES.SPIN IS GONE (2026-08-31, Phase 3). It was a five-level,
+   * two-minute ladder that contradicted spinSpec from level 3 up (25/50 where
+   * the spec says 20/40, then 50/100 and 100/200 against 30/60 and 40/80) and
+   * claimed a two-minute clock the spec sets at three. Nothing should ever
+   * hand-type a Spin ladder again: createSpin builds its twelve rows from
+   * spinBlindsForLevel, and so does the schedule path as of this change.
+   */
 };
 
 const PAYOUT_STRUCTURES = {
@@ -298,7 +295,99 @@ const PAYOUT_STRUCTURES = {
 };
 
 import { SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
+import {
+  HEADS_UP_BLIND_STRUCTURE,
+  HEADS_UP_BUYINS,
+  HEADS_UP_GAME_TYPES,
+  HEADS_UP_PAYOUTS,
+  HEADS_UP_SEATS,
+  HEADS_UP_STACKS,
+} from '../config/headsUpSpec.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
+
+/**
+ * THE ONE MAP FROM A CONFIG'S VARIANT KEY TO THE `tournaments.game_type` VALUE.
+ *
+ * 2026-08-31 audit. There were FOUR hand-kept copies of this map in this file
+ * and three of them were incomplete. The Spin copy had already been fixed, and
+ * its comment stated the rule that the other three then went on to break:
+ *
+ *   "`plo6` was missing from it — so a PLO6 Spin config would have been
+ *    silently created as NLH, giving players a different game from the one on
+ *    the tile. Every member of SPIN_GAME_TYPES must have an entry here."
+ *
+ * The XMTT and MTT copies omitted `plo6`; the SNG copy omitted `plo6` AND
+ * `short_deck`; none of the four knew `flh` or `flo8`, which became creatable
+ * tournament variants on 2026-08-31. Because the fallback is a silent
+ * `|| 'NLH'`, every gap produces the same failure: the tile advertises one
+ * game and the players are dealt another.
+ *
+ * One map, so a variant added to the catalogue cannot be half-adopted. The
+ * fallback stays NLH so an unrecognised config still produces a game rather
+ * than a gap in the schedule, but it is REPORTED now instead of silent.
+ */
+const DB_GAME_TYPE: Record<string, string> = {
+  nlh: 'NLH',
+  plo4: 'PLO4',
+  plo5: 'PLO5',
+  plo6: 'PLO6',
+  plo8: 'PLO8',
+  short_deck: 'SHORT_DECK',
+  flh: 'FLH',
+  flo8: 'FLO8',
+};
+
+/**
+ * A GUARANTEE REFUSAL IS PERMANENT, AND SOMEBODY HAS TO BE TOLD.
+ *
+ * trg_tournaments_guarantee_affordable refuses an event whose guaranteed
+ * prize the funding bank cannot cover, raising "Club X cannot guarantee N
+ * chips ... Add chips to the bank to cover the guarantee." Every hourly config
+ * in this file carries a guarantee, so a short bank means the event silently
+ * never happens: this service retried three times, five seconds apart, logged
+ * to the error reporter and moved on. Nobody who could fix it was told, and
+ * the 2026-08-29 migration records what that looks like at scale — "Midway
+ * Union ... was refused ~570 spawns/hour".
+ *
+ * ScheduledTournamentService already does this half correctly. This is the
+ * same call from the same signature. fn_notify_guarantee_bank_short dedupes
+ * on unread per recipient per bank, so an hourly schedule that keeps failing
+ * produces ONE standing bell notification rather than a storm.
+ *
+ * Retrying is also pointless — the bank does not refill in ten seconds — so
+ * the caller breaks out of its retry loop on a true return.
+ */
+function isGuaranteeRefusal(error: { message?: string } | null | undefined): boolean {
+  return /cannot guarantee/i.test(String(error?.message ?? ''));
+}
+
+async function notifyGuaranteeShort(clubId: string | null | undefined, where: string) {
+  if (!clubId) return;
+  const { error } = await supabase.rpc('fn_notify_guarantee_bank_short', { p_club_id: clubId });
+  if (error) {
+    reportError(
+      new Error(
+        `[RecurringService] ${where}: guarantee refusal could not notify: ${error.message}`
+      ),
+      'TournamentRecurringService.guarantee_notify_failed'
+    );
+  }
+}
+
+/** The `game_type` a config's variant becomes, loudly if we do not know it. */
+function dbGameTypeFor(gameVariant: string | null | undefined, where: string): string {
+  const key = String(gameVariant ?? '').toLowerCase();
+  const mapped = DB_GAME_TYPE[key];
+  if (mapped) return mapped;
+  reportError(
+    new Error(
+      `[RecurringService] ${where}: unmapped game variant "${gameVariant}" - created as NLH. ` +
+        `Add it to DB_GAME_TYPE.`
+    ),
+    'TournamentRecurringService.unmapped_game_variant'
+  );
+  return 'NLH';
+}
 
 // The local SPIN_MULTIPLIERS table that lived here — one of THREE that
 // disagreed (EV 3.00 designed, 2.75 here, 2.24 in the engine fallback), and
@@ -1353,18 +1442,21 @@ function horsesForSeatHeldGame(maxPlayers: number): { horses: number; isSim: boo
  * are deliberately outside it because they run many same-named instances at
  * once.
  */
+/* Every number below now comes from headsUpSpec -- the seats, both stacks, the
+   rungs and the variants. The shapes array is what turns two stacks into two
+   independently-refilled boards; the STACKS themselves are the spec's. */
 const SNG_BOARD_SHAPES: { seats: number; label: string; turbo: boolean; startingStack: number }[] =
   [
-    { seats: 2, label: 'Heads-Up', turbo: false, startingStack: 1000 },
-    { seats: 2, label: 'Heads-Up', turbo: true, startingStack: 300 },
+    { seats: HEADS_UP_SEATS, label: 'Heads-Up', turbo: false, startingStack: HEADS_UP_STACKS.deep },
+    { seats: HEADS_UP_SEATS, label: 'Heads-Up', turbo: true, startingStack: HEADS_UP_STACKS.turbo },
   ];
 
-const SNG_BOARD_VARIANTS: { key: string; label: string }[] = [
-  { key: 'nlh', label: 'NLH' },
-  { key: 'plo4', label: 'PLO4' },
-];
+const SNG_BOARD_VARIANTS: { key: string; label: string }[] = HEADS_UP_GAME_TYPES.map((key) => ({
+  key,
+  label: key.toUpperCase(),
+}));
 
-const SNG_BOARD_BUYINS = [1, 2, 5, 10, 20, 25, 50, 100];
+const SNG_BOARD_BUYINS = [...HEADS_UP_BUYINS];
 
 const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
   SNG_BOARD_VARIANTS.flatMap((v) =>
@@ -1384,8 +1476,8 @@ const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
          turbo flag now chooses the STACK, not the level length. */
       blindStructure: BLIND_STRUCTURES.HEADS_UP_3MIN,
       payoutStructure:
-        shape.seats <= 2
-          ? [{ place: 1, percentage: 100 }]
+        shape.seats <= HEADS_UP_SEATS
+          ? HEADS_UP_PAYOUTS
           : shape.seats <= 6
             ? [
                 { place: 1, percentage: 65 },
@@ -1480,7 +1572,18 @@ export const SPIN_CONFIGS: SpinConfig[] = SPIN_BOARD_VARIANTS.flatMap((v) =>
        seat empty means the table sits open indefinitely, and the first human
        to take that seat starts the game, which is the whole point of a spin. */
     horsesToRegister: SPIN_SEATS - 1,
-    blindStructure: BLIND_STRUCTURES.SPIN,
+    /* Built from the spec, exactly as createSpin does below -- the constant
+       this used to name was a five-level ladder that contradicted it. */
+    blindStructure: Array.from({ length: 12 }, (_, i) => {
+      const b = spinBlindsForLevel(i + 1);
+      return {
+        level: i + 1,
+        smallBlind: b.small,
+        bigBlind: b.big,
+        ante: 0,
+        durationMinutes: SPIN_TIERS[0].levelMinutes,
+      };
+    }),
     payoutStructure: [{ place: 1, percentage: 100 }],
   }))
 );
@@ -1673,7 +1776,7 @@ export class TournamentRecurringService {
     this.seatFirstHeldIds.clear();
     console.log(
       `[TournamentRecurring] held-empty: ${n} seat-first board(s) skipped in the last ` +
-        `${TournamentRecurringService.HELD_REPORT_EVERY_MS / 60000}m — they open for a human and ` +
+        `${TournamentRecurringService.HELD_REPORT_EVERY_MS / 60000}m - they open for a human and ` +
         `rotate out on the next ${SEAT_FIRST_EMPTY_BUCKET_MS / 60000}m bucket`
     );
   }
@@ -1722,7 +1825,7 @@ export class TournamentRecurringService {
 
     this.isRunning = true;
     console.log(
-      '[TournamentRecurring] Service started — MTTs every 5 min, SNG + Spin boards every 30 s, XMTTs every 5 min'
+      '[TournamentRecurring] Service started - MTTs every 5 min, SNG + Spin boards every 30 s, XMTTs every 5 min'
     );
 
     // Tournament check: every 5 minutes
@@ -1832,7 +1935,7 @@ export class TournamentRecurringService {
           const msg = String(createErr?.message ?? createErr ?? '');
           if (createErr?.code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
             console.log(
-              `[TournamentRecurring] "${config.name}" was created concurrently — skipping (this is the duplicate guard working)`
+              `[TournamentRecurring] "${config.name}" was created concurrently - skipping (this is the duplicate guard working)`
             );
             continue;
           }
@@ -1903,7 +2006,7 @@ export class TournamentRecurringService {
    */
   private async withBoardTick(variant: 'spin' | 'sng', run: () => Promise<void>): Promise<void> {
     if (this.boardTickInFlight[variant]) {
-      console.log(`[TournamentRecurring] ${variant} board tick still running — skipping this one`);
+      console.log(`[TournamentRecurring] ${variant} board tick still running - skipping this one`);
       return;
     }
     this.boardTickInFlight[variant] = true;
@@ -2313,15 +2416,8 @@ export class TournamentRecurringService {
     hostClubId: string
   ): Promise<{ tournamentId: string | null; registered: number }> {
     try {
-      const startTime = new Date(Date.now() + 5 * 60 * 1000); // 5 min delay for XMTTs (more registration time)
-      const gameTypeMap: Record<string, string> = {
-        nlh: 'NLH',
-        plo4: 'PLO4',
-        plo5: 'PLO5',
-        plo8: 'PLO8',
-        short_deck: 'SHORT_DECK',
-      };
-      const dbGameType = gameTypeMap[config.gameVariant] || 'NLH';
+      const startTime = new Date(Date.now() + 5 * 60 * 1000);
+      const dbGameType = dbGameTypeFor(config.gameVariant, 'createXMTT');
 
       const isBountyType =
         config.type === 'bounty' ||
@@ -2385,6 +2481,25 @@ export class TournamentRecurringService {
             guaranteed_prize: wholeChips(config.guarantee),
             starting_chips: config.startingStack,
             max_players: config.maxPlayers,
+            /**
+             * SEATS AT THE TABLE (2026-08-31 audit). Neither the MTT nor the
+             * XMTT insert wrote this column, and it is `NOT NULL DEFAULT 9` —
+             * the same omission already found and fixed for SNG (10,315 rows)
+             * and Spin (28,731 rows), still open on these two.
+             *
+             * Measured live before the fix: 5,000 PLO6 tournaments sitting at
+             * table_size 9 against a deck that can serve 7. The row was not
+             * merely cosmetic-wrong, it disagreed with what the engine would
+             * actually do — TournamentManagerBase clamps the seat count through
+             * clampSeatsForVariant at deal time and logs "deck cannot serve
+             * more". So the database said 9, the felt said 6, and nothing
+             * reconciled them.
+             *
+             * Written through the SAME function the engine applies, so the row
+             * now states what will actually be dealt. Nine is full ring; the
+             * clamp takes it down per variant (plo6 6, plo5 7, plo4/plo8 8).
+             */
+            table_size: clampSeatsForVariant(config.gameVariant, 9),
             min_players: config.minPlayers || 3,
             current_players: 0,
             status: 'REGISTERING',
@@ -2427,6 +2542,8 @@ export class TournamentRecurringService {
           ),
           'RecurringService.XMTT_creation_attempt_attempt3'
         );
+        // A short funding bank will not refill in five seconds.
+        if (isGuaranteeRefusal(error)) break;
         if (attempt < 3) await new Promise((r) => setTimeout(r, 5000));
       }
       if (!tournament) {
@@ -2436,6 +2553,7 @@ export class TournamentRecurringService {
           ),
           'RecurringService.XMTT_creation_FAILED_after_3_r'
         );
+        if (isGuaranteeRefusal(lastError)) await notifyGuaranteeShort(hostClubId, 'createXMTT');
         return { tournamentId: null, registered: 0 };
       }
 
@@ -2526,14 +2644,7 @@ export class TournamentRecurringService {
       // MTTs keep their own 60s lead-in. OPEN_TABLE_WAIT_MS is the seat-held
       // wait for spins and SNGs only - an MTT is a scheduled event by nature.
       const startTime = new Date(Date.now() + 60 * 1000);
-      const gameTypeMap: Record<string, string> = {
-        nlh: 'NLH',
-        plo4: 'PLO4',
-        plo5: 'PLO5',
-        plo8: 'PLO8',
-        short_deck: 'SHORT_DECK',
-      };
-      const dbGameType = gameTypeMap[config.gameVariant] || 'NLH';
+      const dbGameType = dbGameTypeFor(config.gameVariant, 'createMTT');
 
       const isBountyType =
         config.type === 'bounty' ||
@@ -2599,6 +2710,25 @@ export class TournamentRecurringService {
             guaranteed_prize: wholeChips(config.guarantee),
             starting_chips: config.startingStack,
             max_players: config.maxPlayers,
+            /**
+             * SEATS AT THE TABLE (2026-08-31 audit). Neither the MTT nor the
+             * XMTT insert wrote this column, and it is `NOT NULL DEFAULT 9` —
+             * the same omission already found and fixed for SNG (10,315 rows)
+             * and Spin (28,731 rows), still open on these two.
+             *
+             * Measured live before the fix: 5,000 PLO6 tournaments sitting at
+             * table_size 9 against a deck that can serve 7. The row was not
+             * merely cosmetic-wrong, it disagreed with what the engine would
+             * actually do — TournamentManagerBase clamps the seat count through
+             * clampSeatsForVariant at deal time and logs "deck cannot serve
+             * more". So the database said 9, the felt said 6, and nothing
+             * reconciled them.
+             *
+             * Written through the SAME function the engine applies, so the row
+             * now states what will actually be dealt. Nine is full ring; the
+             * clamp takes it down per variant (plo6 6, plo5 7, plo4/plo8 8).
+             */
+            table_size: clampSeatsForVariant(config.gameVariant, 9),
             min_players: config.minPlayers || 3,
             current_players: 0,
             status: 'REGISTERING',
@@ -2641,6 +2771,8 @@ export class TournamentRecurringService {
           ),
           'RecurringService.Tournament_creation_attempt_at'
         );
+        // A short funding bank will not refill in five seconds.
+        if (isGuaranteeRefusal(error)) break;
         if (attempt < 3) await new Promise((r) => setTimeout(r, 5000));
       }
       if (!tournament) {
@@ -2650,6 +2782,9 @@ export class TournamentRecurringService {
           ),
           'RecurringService.Tournament_creation_FAILED_aft'
         );
+        if (isGuaranteeRefusal(lastError)) {
+          await notifyGuaranteeShort(this.ownerClubId, 'createTournament');
+        }
         return { tournamentId: null, registered: 0 };
       }
 
@@ -2706,13 +2841,7 @@ export class TournamentRecurringService {
             ? seatFirstHumanWindowMs()
             : OPEN_TABLE_WAIT_MS)
       );
-      const gameTypeMap: Record<string, string> = {
-        nlh: 'NLH',
-        plo4: 'PLO4',
-        plo5: 'PLO5',
-        plo8: 'PLO8',
-      };
-      const dbGameType = gameTypeMap[config.gameVariant] || 'NLH';
+      const dbGameType = dbGameTypeFor(config.gameVariant, 'createSNG');
 
       const { data: sng, error } = await supabase
         .from('tournaments')
@@ -3471,18 +3600,7 @@ export class TournamentRecurringService {
       });
       const spinPayouts = [{ place: 1, percentage: 100 }];
 
-      // SPIN_GAME_TYPES advertises NLH, PLO4, PLO5 and PLO6. This map decides
-      // what actually reaches the database, and `plo6` was missing from it —
-      // so a PLO6 Spin config would have been silently created as NLH, giving
-      // players a different game from the one on the tile. Every member of
-      // SPIN_GAME_TYPES must have an entry here.
-      const gameTypeMap: Record<string, string> = {
-        nlh: 'NLH',
-        plo4: 'PLO4',
-        plo5: 'PLO5',
-        plo6: 'PLO6',
-      };
-      const dbGameType = gameTypeMap[config.gameVariant] || 'NLH';
+      const dbGameType = dbGameTypeFor(config.gameVariant, 'createSpin');
 
       const { data: spin, error } = await supabase
         .from('tournaments')
@@ -3860,7 +3978,7 @@ export class TournamentRecurringService {
         if (added === 0 && candidates.length > 0) {
           console.warn(
             `[TournamentRecurring] seat-first fill added nobody to ${tournamentId.slice(0, 8)} ` +
-              `from ${own.length} own registrant(s) + ${pool.length} free horse(s) — shortfall ${shortfall}`
+              `from ${own.length} own registrant(s) + ${pool.length} free horse(s) - shortfall ${shortfall}`
           );
         }
       } else {
@@ -4069,8 +4187,122 @@ export class TournamentRecurringService {
         if (!ok) laneDropped++;
         return ok;
       });
-      const rot = eligible.length > 0 ? (new Date().getUTCHours() * 7919) % eligible.length : 0;
-      const horses = eligible.slice(rot).concat(eligible.slice(0, rot)).slice(0, count);
+      /**
+       * BANKROLL (Dan 2026-08-31), and the freeroll is the other half of it.
+       *
+       * `fn_register_horse_for_tournament` refuses on `insufficient_balance`
+       * and nothing else, so a horse with 1,000 chips to its name could enter
+       * a 950 event and be broke on one hand of it. Solvency is not
+       * discipline.
+       *
+       * The bar is much higher than the cash bar and that is deliberate: an
+       * MTT pays nothing to most of the field most of the time, so a roll that
+       * comfortably survives 25 cash buy-ins is busted by an ordinary run of
+       * 25 tournaments. See `tournamentBuyInsToEnter`.
+       *
+       * A FREEROLL IS NEVER GATED, and better than that, a broke horse goes
+       * to the FRONT of the queue for one. That is the whole recovery loop Dan
+       * described - "if they run out of chips, they must play freerolls to
+       * earn their chips back, and wait for their weekly rakeback" - and until
+       * now nothing anywhere preferred a broke horse for free money; the
+       * hourly rotation picked by id, so the horses that most needed a
+       * freeroll were no likelier to get one than anybody else.
+       *
+       * FAILS OPEN, like every other bankroll gate: an unreadable roll, a
+       * missing club or an incomplete page leaves the pool exactly as it was.
+       * Refusing to register on a failed read would silently starve every
+       * event on the platform, which is a far worse failure than one
+       * underrolled entry - and is the shape of the bug that emptied the cash
+       * floor on 2026-08-31.
+       */
+      let pool = eligible;
+      try {
+        const { data: t } = await supabase
+          .from('tournaments')
+          .select('club_id, buy_in_amount, buy_in_fee')
+          .eq('id', tournamentId)
+          .maybeSingle();
+        const cost =
+          (Number((t as any)?.buy_in_amount) || 0) + (Number((t as any)?.buy_in_fee) || 0);
+        const clubId = (t as any)?.club_id as string | undefined;
+
+        if (clubId && eligible.length > 0) {
+          const ids = eligible.map((h) => h.id);
+          const rolls = new Map<string, number>();
+          const rollPage = await fetchAllRows<{ user_id: string; chip_balance: number | null }>(
+            (cursor, want) => {
+              let q = supabase
+                .from('club_members')
+                .select('user_id, chip_balance')
+                .eq('club_id', clubId)
+                .in('user_id', ids)
+                .order('user_id', { ascending: true })
+                .limit(want);
+              if (cursor) q = q.gt('user_id', cursor);
+              return q;
+            },
+            { label: 'TournamentRecurring.bankrolls', maxRows: 50_000, idKey: 'user_id' }
+          );
+          if (rollPage.complete) {
+            for (const r of rollPage.rows) {
+              const v = Number(r.chip_balance);
+              if (Number.isFinite(v)) rolls.set(r.user_id, v);
+            }
+
+            if (cost > 0) {
+              const before = pool.length;
+              pool = pool.filter((h) => {
+                const roll = rolls.get(h.id);
+                if (roll === undefined) return true; // unread -> fail open
+                return canEnterTournament(roll, cost, bankrollPolicyFor(h.id));
+              });
+              if (pool.length < before) {
+                bankrollEvent('tournament_refused_underrolled', before - pool.length);
+              }
+            } else {
+              /* A FREEROLL. Broke horses first - stable within each group, so
+                 the hourly rotation below still spreads who leads the queue.
+
+                 "Broke" is measured against the cheapest PAID event actually
+                 on the board, not a constant: a hard-coded floor goes stale
+                 the day the schedule changes, and the question being asked is
+                 exactly "is there a paid game this horse could be playing
+                 instead?" If that read fails, nobody is marked broke and the
+                 order is simply left alone. */
+              const { data: cheapest } = await supabase
+                .from('tournaments')
+                .select('buy_in_amount, buy_in_fee')
+                .eq('club_id', clubId)
+                .in('status', ['REGISTERING', 'SCHEDULED'])
+                .order('buy_in_amount', { ascending: true })
+                .limit(50);
+              const paid = (cheapest ?? [])
+                .map((r: any) => (Number(r.buy_in_amount) || 0) + (Number(r.buy_in_fee) || 0))
+                .filter((c: number) => c > 0);
+              const floor = paid.length > 0 ? Math.min(...paid) : 0;
+              const broke = (id: string) => {
+                if (!(floor > 0)) return false;
+                const roll = rolls.get(id);
+                return (
+                  roll !== undefined && !canEnterTournament(roll, floor, bankrollPolicyFor(id))
+                );
+              };
+              const needy = pool.filter((h) => broke(h.id));
+              if (needy.length > 0) {
+                bankrollEvent('freeroll_entered_broke', Math.min(needy.length, count));
+                pool = needy.concat(pool.filter((h) => !broke(h.id)));
+              }
+            }
+          }
+        }
+      } catch (err) {
+        reportError(err, 'TournamentRecurring.bankroll_gate');
+      }
+
+      const eligiblePool = pool;
+      const rot =
+        eligiblePool.length > 0 ? (new Date().getUTCHours() * 7919) % eligiblePool.length : 0;
+      const horses = eligiblePool.slice(rot).concat(eligiblePool.slice(0, rot)).slice(0, count);
 
       if (!horses || horses.length === 0) {
         // Say WHY the pool came up empty — "added NONE" with no numbers is
@@ -4124,7 +4356,7 @@ export class TournamentRecurringService {
       if (failures.size > 0) {
         const summary = [...failures.entries()].map(([r, n]) => `${r} x${n}`).join(', ');
         console.warn(
-          `[TournamentRecurring] Horse registration: ${registered} seated, skipped — ${summary}`
+          `[TournamentRecurring] Horse registration: ${registered} seated, skipped - ${summary}`
         );
       }
 

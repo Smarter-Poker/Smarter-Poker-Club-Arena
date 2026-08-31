@@ -72,6 +72,18 @@ export interface PlayerSearchPage {
   limit: number;
 }
 
+export interface TableWatchAccess {
+  found: boolean;
+  table_id?: string;
+  club_uuid?: string;
+  club_id?: number | null;
+  club_slug?: string | null;
+  club_name?: string;
+  membership_status?: string | null;
+  can_watch: boolean;
+  action: PlayerSearchTable['access_action'];
+}
+
 export interface PlayerSearchPreferences {
   discoverable: boolean;
   showDisplayName: boolean;
@@ -132,6 +144,23 @@ export async function searchPlayers(options: {
   return result;
 }
 
+/** Revalidate a search result at click time so stale presence or membership cannot route access. */
+export async function getTableWatchAccess(tableId: string): Promise<TableWatchAccess> {
+  const { data, error } = await supabase.rpc('fn_get_table_watch_access', {
+    p_table_id: tableId,
+  });
+  if (error || !data || typeof data !== 'object') {
+    throw new Error(error?.message || 'Could not verify table access.');
+  }
+  const value = data as Record<string, unknown>;
+  return {
+    ...(value as unknown as TableWatchAccess),
+    found: value.found === true,
+    can_watch: value.can_watch === true,
+    action: (value.action || 'unavailable') as TableWatchAccess['action'],
+  };
+}
+
 export async function getPlayerSearchPreferences(): Promise<PlayerSearchPreferences> {
   const { data, error } = await supabase.rpc('fn_get_player_search_preferences');
   if (error || !data || typeof data !== 'object') throw new Error('Could not load search privacy.');
@@ -160,6 +189,7 @@ export async function setPlayerSearchPreferences(
 
 export const PlayerSearchService = {
   search: searchPlayers,
+  getTableWatchAccess,
   getPreferences: getPlayerSearchPreferences,
   setPreferences: setPlayerSearchPreferences,
 };

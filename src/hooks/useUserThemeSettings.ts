@@ -357,6 +357,7 @@ function startThemeRealtime(userId: string, entry: ThemeRealtimeEntry): void {
       if (entry.generation !== generation || themeRealtimeByUser.get(userId) !== entry) return;
       if (status === 'SUBSCRIBED') {
         const recovered = entry.everLive && entry.state !== 'live';
+        const firstAuthoritativeHandoff = !entry.everLive;
         if (recovered) {
           recordCustomizationOperation({
             userId,
@@ -370,7 +371,11 @@ function startThemeRealtime(userId: string, entry: ThemeRealtimeEntry): void {
         entry.state = 'live';
         entry.everLive = true;
         entry.errorStartedAt = null;
-        notifyThemeRealtime(entry, recovered);
+        // Close the initial SELECT -> SUBSCRIBE gap as well as an actual
+        // reconnect gap. Realtime does not replay a row committed between the
+        // first read and its acknowledgement, so every successful handoff gets
+        // one authoritative reconciliation before relying on events.
+        notifyThemeRealtime(entry, recovered || firstAuthoritativeHandoff);
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
         if (entry.state !== 'error') {
           entry.errorStartedAt = Date.now();

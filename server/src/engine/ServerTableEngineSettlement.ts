@@ -38,6 +38,8 @@ import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { queueUnbankedFee } from '../services/FeeReconciler.js';
 import { selectRevealedShowdownResults } from './revealedShowdown.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
+import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
+import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
 
 /**
  * How long a finished hand stays purchasable. A rabbit hunt is an impulse, and
@@ -795,7 +797,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (this.currentHandShowdownResults.length >= 2 && bbjBoard.length < 5) {
         reportError(
           new Error(
-            `[BBJ] Board unavailable at settlement — jackpot detection will fail closed for ` +
+            `[BBJ] Board unavailable at settlement - jackpot detection will fail closed for ` +
               `table ${this.tableId} hand #${this.handCount}. ` +
               `raw=${JSON.stringify(this.currentHandCommunityCards)} parsed=${bbjBoard.length}. ` +
               `A qualifying hand cannot be verified without the board, so no payout is made; ` +
@@ -1232,6 +1234,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               };
         });
 
+        const dailyMissionEvents = buildDailyMissionHandEvents({
+          dealtPlayerIds: this.currentHandHoleCards.keys(),
+          roster: players.map((player) => ({
+            userId: player.user_id,
+            isHorse: player.is_horse,
+          })),
+          winners: this.currentHandWinners,
+          showdownResults: this.currentHandShowdownResults,
+        });
+
         const result = await logHandHistory({
           tableId: this.tableId,
           nitGame: this.tableInfo.nit_game === true,
@@ -1289,6 +1301,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // the hand that proves it; without the second, it cannot compute a
           // positional leak at all.
           showdownResults: revealedShowdownResults,
+          dailyMissionEvents,
           buttonSeat: this.currentHandDealerSeat,
           showdownReveal,
         });
@@ -1761,8 +1774,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         for (const horse of bustHorses) {
           const currentRebuys = this.horseRebuys.get(horse.user_id) || 0;
 
-          // Stop-Loss Bankroll logic: if they have rebought twice already (lost 3 buy-ins total), they leave
-          if (currentRebuys >= 2) {
+          /**
+           * Stop-loss. This was a hard-coded `>= 2` for every horse alike;
+           * it is now the temperament's own figure, and `standard` - six in
+           * ten of the fleet - still stops at exactly the same place, so this
+           * is a spread around today's behaviour rather than a move away from
+           * it. A nit gives up a buy-in earlier, a gambler one later.
+           */
+          if (atRebuyStopLoss(horse.user_id, currentRebuys)) {
             await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
             // Round 57: clear FSM tracking so the horse doesn't leave a ghost
             // entry in disconnect_states.
@@ -1779,13 +1798,30 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             continue;
           }
 
-          const rebuyAmount = this.tableInfo?.big_blind ? this.tableInfo.big_blind * 100 : 200;
-          const success = await autoRebuyHorse(
-            this.tableId,
-            horse.user_id,
-            rebuyAmount,
-            this.tableInfo?.club_id || ''
-          );
+          /**
+           * WHETHER, and HOW MUCH. `bigBlind * 100` ignored the table's own
+           * limits and the horse's roll both; a horse that can no longer
+           * afford this stake now stands up instead of reloading it forever.
+           * Zero is a decision to leave and takes the same branch a failed
+           * funding call already took. The chips still come from the club
+           * treasury - this changes the answer, not the source.
+           */
+          const rebuyAmount = await horseRebuyAmount({
+            clubId: this.tableInfo?.club_id || '',
+            userId: horse.user_id,
+            bigBlind: Number(this.tableInfo?.big_blind) || 0,
+            minBuyIn: this.tableInfo?.min_buy_in as number | null | undefined,
+            maxBuyIn: this.tableInfo?.max_buy_in as number | null | undefined,
+            rebuysTaken: currentRebuys,
+          });
+          const success =
+            rebuyAmount > 0 &&
+            (await autoRebuyHorse(
+              this.tableId,
+              horse.user_id,
+              rebuyAmount,
+              this.tableInfo?.club_id || ''
+            ));
           if (success) {
             horse.stack = rebuyAmount;
             this.horseRebuys.set(horse.user_id, currentRebuys + 1);
@@ -1803,7 +1839,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             this.preActionEngine.removePlayer(this.tableId, horse.user_id);
             this.horseRebuys.delete(horse.user_id);
             console.log(
-              `[ServerTableEngine:${this.tableId}] Horse ${horse.username} left — insufficient funds`
+              `[ServerTableEngine:${this.tableId}] Horse ${horse.username} left - insufficient funds`
             );
           }
         }

@@ -9,6 +9,7 @@ import { supabase, getAuthUser } from '@/lib/supabase';
 import { getWarmMemberships, rememberWarmMemberships } from '../lib/membershipWarmState';
 export { clearMembershipsWarmCache } from '../lib/membershipWarmState';
 import { retryAsync } from '../utils/retryAsync';
+import { retryFetch } from '../utils/retryFetch';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import { escapeIlikePattern } from '../utils/clubSlug';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -154,6 +155,8 @@ export interface CreateClubData {
   city?: string;
   country?: string;
   logoPreview?: string | null;
+  /** Stable published asset URL for a curated placeholder crest. */
+  logoUrl?: string | null;
 }
 
 export async function createClub(clubData: CreateClubData): Promise<Club> {
@@ -180,7 +183,7 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
   const requestId = clubData.request_id || crypto.randomUUID();
 
   // ── Step 1: Upload raw logo to storage ──────────────────────────────
-  let logoUrl: string | null = null;
+  let logoUrl: string | null = clubData.logoUrl || null;
   let uploadedLogoPath: string | null = null;
   if (clubData.logoPreview) {
     try {
@@ -205,14 +208,19 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
           upsert: true,
         });
       if (logoUploadError || !logoUploadData) {
-        throw new Error(logoUploadError?.message || 'Logo upload failed.');
+        if (logoUploadError) reportError(logoUploadError, 'ClubsService.createClub.LogoUpload');
+        throw new Error('Custom Logo Could Not Be Uploaded. Please Try Again.');
       }
       uploadedLogoPath = logoFileName;
       const { data: urlData } = supabase.storage.from('club-assets').getPublicUrl(logoFileName);
       logoUrl = urlData?.publicUrl || null;
     } catch (e) {
       reportError(e, 'ClubsService.createClub.LogoUpload');
-      throw new Error(e instanceof Error ? e.message : 'Failed to upload the club logo.');
+      throw new Error(
+        e instanceof Error && e.message === 'Custom Logo Could Not Be Uploaded. Please Try Again.'
+          ? e.message
+          : 'The Selected Logo Could Not Be Prepared. Please Choose Another Image.'
+      );
     }
   }
 
@@ -245,7 +253,13 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
     if (/already exists|duplicate|unique/i.test(message)) {
       throw new Error('A club with this name already exists. Please choose a different name.');
     }
-    throw new Error(message);
+    if (/only be a member of up to 4 clubs|four-club allowance/i.test(message)) {
+      throw new Error('Your Four-Club Allowance Is Full. Leave A Club Before Creating Another.');
+    }
+    if (/temporarily unavailable/i.test(message)) {
+      throw new Error('Club Creation Is Temporarily Unavailable. Please Try Again Soon.');
+    }
+    throw new Error('Club Could Not Be Created. Your Details Are Still Here. Please Try Again.');
   }
   const data = rpcData as Club & { card_image_url?: string };
 
@@ -278,7 +292,7 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
         }
       }
     } catch (cardErr) {
-      console.warn('[ClubsService] Baked card generation failed (non-blocking):', cardErr);
+      reportError(cardErr, 'ClubsService.createClub.CardGeneration');
     }
   }
 
@@ -291,7 +305,7 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
       action: 'member_joined',
     });
   } catch (eventError) {
-    console.warn('[ClubsService] createClub: bus emit failed (non-critical):', eventError);
+    reportError(eventError, 'ClubsService.createClub.BusEmit');
   }
 
   return data;
@@ -739,22 +753,27 @@ async function _getUserMembershipsUncached(
     userId = user.user.id;
   }
 
-  const { data, error } = await supabase
-    .from('club_members')
-    .select(
-      `
+  const { data, error } = await retryFetch(
+    () =>
+      supabase
+        .from('club_members')
+        .select(
+          `
       club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
       club:clubs(id, club_id, name, slug, description, avatar_url, logo_url, card_image_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, is_union, requires_approval, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next)
     `
-    )
-    .eq('user_id', userId)
-    // Only real memberships. A join request for an approval-required club
-    // creates a status='pending' row (fn_join_club); without this filter the
-    // requester saw a full club card on the lobby carousel and could open a
-    // club they had NOT been admitted to. This also matches the status set
-    // every 4-club-limit check counts, so "clubs shown" and "clubs counted"
-    // can never disagree.
-    .in('status', ['active', 'approved']);
+        )
+        .eq('user_id', userId)
+        // Only real memberships. A join request for an approval-required club
+        // creates a status='pending' row (fn_join_club); without this filter the
+        // requester saw a full club card on the lobby carousel and could open a
+        // club they had NOT been admitted to. This also matches the status set
+        // every 4-club-limit check counts, so "clubs shown" and "clubs counted"
+        // can never disagree.
+        .in('status', ['active', 'approved'])
+        .then((result) => result),
+    { maxRetries: 4, baseDelayMs: 500 }
+  );
 
   if (error) {
     if (!_membershipBreaker.isOpen()) {

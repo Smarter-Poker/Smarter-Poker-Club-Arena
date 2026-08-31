@@ -26,7 +26,8 @@ export interface StatsCoverageContract {
 }
 
 export interface StatsContractMetadata {
-  contract_version: typeof STATS_CONTRACT_VERSION;
+  contract_version: typeof STATS_CONTRACT_VERSION | null;
+  valid: boolean;
   generated_at: string | null;
   scope: StatsScopeContract;
   quality: StatsQualityContract;
@@ -107,8 +108,15 @@ export const STATS_METRIC_DEFINITIONS: Readonly<Record<string, StatsMetricDefini
 };
 
 const finite = (value: unknown, fallback = 0): number => {
+  if (value == null || value === '') return fallback;
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const nullableFinite = (value: unknown): number | null => {
+  if (value == null || value === '') return null;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 };
 
 const isoOrNull = (value: unknown): string | null => {
@@ -123,12 +131,21 @@ export function normalizeStatsContractMetadata(data: unknown): StatsContractMeta
   const coverage = raw.coverage && typeof raw.coverage === 'object' ? raw.coverage : {};
 
   return {
-    contract_version: STATS_CONTRACT_VERSION,
+    contract_version:
+      raw.contract_version === STATS_CONTRACT_VERSION ? STATS_CONTRACT_VERSION : null,
+    valid:
+      raw.contract_version === STATS_CONTRACT_VERSION &&
+      raw.scope != null &&
+      typeof raw.scope === 'object' &&
+      raw.quality != null &&
+      typeof raw.quality === 'object' &&
+      raw.coverage != null &&
+      typeof raw.coverage === 'object',
     generated_at: isoOrNull(raw.generated_at),
     scope: {
       target_user_id: typeof scope.target_user_id === 'string' ? scope.target_user_id : null,
       club_id: typeof scope.club_id === 'string' ? scope.club_id : null,
-      range_days: scope.range_days == null ? null : finite(scope.range_days),
+      range_days: nullableFinite(scope.range_days),
       visibility: scope.visibility === 'shared_club' ? 'shared_club' : 'owner',
     },
     quality: {
@@ -142,7 +159,7 @@ export function normalizeStatsContractMetadata(data: unknown): StatsContractMeta
           ? 'ca_hand_player_stat'
           : 'ca_hand_facts',
       historical_club_breakdown_available: quality.historical_club_breakdown_available === true,
-      live_tail_included: quality.live_tail_included !== false,
+      live_tail_included: quality.live_tail_included === true,
     },
     coverage: {
       analysis_hand_cap: finite(coverage.analysis_hand_cap, 750),

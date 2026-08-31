@@ -254,6 +254,72 @@
   letter-spacing: 0.3px;
 }
 
+.mm-notes__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding-top: 0.15rem;
+}
+
+.mm-notes__status {
+  margin-right: auto;
+  color: var(--ca-text-faint);
+  font-size: 0.65rem;
+  letter-spacing: 0.25px;
+}
+
+.mm-notes__discard,
+.mm-notes__save {
+  min-height: 42px;
+  padding: 0.55rem 0.8rem;
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mm-notes__discard {
+  border: 1px solid var(--ca-border-hi);
+  color: var(--ca-text-dim);
+  background: var(--ca-bg-1);
+}
+
+.mm-notes__save {
+  border: 1px solid rgba(0, 212, 255, 0.48);
+  color: #7deaff;
+  background: #0a171d;
+}
+
+.mm-notes__discard:disabled,
+.mm-notes__save:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.mm-notes__discard:focus-visible,
+.mm-notes__save:focus-visible {
+  outline: 2px solid var(--ca-cyan);
+  outline-offset: 2px;
+}
+
+@media (max-width: 430px) {
+  .mm-notes__actions {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .mm-notes__status {
+    width: 100%;
+  }
+
+  .mm-notes__discard,
+  .mm-notes__save {
+    flex: 1 1 0;
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    INFO LINES
    ───────────────────────────────────────────────────────────────────────────── */
@@ -619,6 +685,46 @@
   margin: 0;
 }
 
+.mm-roles__funding {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+/* Two equal targets at 375px, side by side. Neither carries the selected
+   styling until the user picks one, so the screen never shows a funding
+   arrangement nobody chose. */
+.mm-roles__funding-choice {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.mm-roles__funding-option {
+  flex: 1;
+  min-height: 44px;
+  padding: 0.55rem 0.4rem;
+  border: 1px solid var(--ca-border-hi);
+  border-radius: 8px;
+  background: var(--ca-surface);
+  color: var(--ca-text-dim);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: all 0.2s ease;
+}
+
+.mm-roles__funding-option--on {
+  border-color: var(--ca-cyan);
+  background: rgba(0, 194, 255, 0.14);
+  color: var(--ca-text);
+}
+
+.mm-roles__funding-option:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .mm-roles__rates-note {
   margin: 0;
   font-size: 0.75rem;
@@ -751,6 +857,37 @@
   font-size: 0.85rem;
   color: var(--ca-text-dim);
   line-height: 1.5;
+}
+
+.mm-empty__retry {
+  min-height: 2.75rem;
+  margin-top: 1rem;
+  padding: 0.65rem 1.1rem;
+  border: 1px solid color-mix(in srgb, var(--ca-gold) 72%, transparent);
+  border-radius: 0.7rem;
+  background: linear-gradient(180deg, #ffe29b 0%, var(--ca-gold) 52%, #9b5f06 100%);
+  box-shadow:
+    0 0.35rem 0 #6e4308,
+    0 0.65rem 1.5rem color-mix(in srgb, var(--ca-gold) 18%, transparent);
+  color: #211504;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mm-empty__retry:active {
+  transform: translateY(0.2rem);
+  box-shadow:
+    0 0.15rem 0 #6e4308,
+    0 0.35rem 0.9rem color-mix(in srgb, var(--ca-gold) 14%, transparent);
+}
+
+.mm-empty__retry:focus-visible {
+  outline: 3px solid var(--ca-cyan);
+  outline-offset: 3px;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

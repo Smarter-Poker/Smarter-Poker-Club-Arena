@@ -48,6 +48,7 @@ import {
   sessionVerdict,
   topUpAllowance,
 } from './HorseBankroll.js';
+import { bankrollEvent } from './HorseBankrollTelemetry.js';
 
 const CYCLE_MS = 90_000; // examine the floor every 90s
 const GLOBAL_DEPARTURES_PER_CYCLE = 4;
@@ -102,7 +103,7 @@ export class HorseSessionRotator {
     this.handle = setInterval(() => {
       this.rotate().catch((err) => reportError(err, 'HorseSessionRotator.cycle'));
     }, CYCLE_MS);
-    console.log(`[SessionRotator] Running — humanlike departures every ${CYCLE_MS / 1000}s cycle`);
+    console.log(`[SessionRotator] Running - humanlike departures every ${CYCLE_MS / 1000}s cycle`);
   }
 
   stop(): void {
@@ -329,6 +330,7 @@ export class HorseSessionRotator {
            * not reload at all — it leaves, through the hazard below.
            */
           const roll = rolls.get(`${(seat as { club_id?: string }).club_id ?? ''}:${seat.user_id}`);
+          const desiredTopUp = amount;
           if (roll !== undefined) {
             amount = topUpAllowance({
               bankroll: roll,
@@ -344,6 +346,15 @@ export class HorseSessionRotator {
             engine
               .addChips(seat.user_id, amount)
               .catch((err) => reportError(err, 'HorseSessionRotator.topUp'));
+          } else if (desiredTopUp >= bb) {
+            /**
+             * The reload the old code would have paid, and the policy did
+             * not. Counted rather than merely not-done: this is the one
+             * bankroll decision that shows up as an ABSENCE - a short stack
+             * that stays short - so without a counter it is indistinguishable
+             * from the top-up path being broken.
+             */
+            bankrollEvent('topup_refused');
           }
         }
 
@@ -401,6 +412,7 @@ export class HorseSessionRotator {
             bankrollPolicyFor(seat.user_id)
           );
           if (verdict !== 'play_on') {
+            bankrollEvent(verdict === 'book_win' ? 'session_book_win' : 'session_stop_loss');
             best = { seat, p: Number.POSITIVE_INFINITY };
             break;
           }

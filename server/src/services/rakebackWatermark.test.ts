@@ -243,7 +243,7 @@ function install(s: Scenario) {
   };
 }
 
-describe('RakebackSettlerService — AUDIT M6 resume cursor', () => {
+describe('RakebackSettlerService - AUDIT M6 resume cursor', () => {
   beforeEach(() => {
     recorded.length = 0;
     mockFrom.mockClear();
@@ -493,7 +493,7 @@ describe('RakebackSettlerService — AUDIT M6 resume cursor', () => {
     });
   });
 
-  it('caps the drain and SAYS SO — a truncated drain must not look like a finished one', async () => {
+  it('caps the drain and SAYS SO - a truncated drain must not look like a finished one', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const dataset: RakeRow[] = [];
     for (let i = 1; i <= FETCH_LIMIT * (MAX_DRAIN_BATCHES + 1); i++) dataset.push(row(i, i));

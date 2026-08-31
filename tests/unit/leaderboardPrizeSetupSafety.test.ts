@@ -40,7 +40,7 @@ describe('leaderboard prize setup safety contract', () => {
   });
 
   it('places an owner-only deep link in the hamburger and opens the wizard once', () => {
-    expect(menu).toContain('LeaderboardService.getManageableRewardContexts()');
+    expect(menu).toContain('LeaderboardService.getManageableRewardContexts(true)');
     expect(menu).toContain('Owner Prize Tools');
     expect(menu).toContain('/leaderboard?setup=prizes&club=${rewardContextClubId}');
     expect(page).toContain("params.get('setup') !== 'prizes'");

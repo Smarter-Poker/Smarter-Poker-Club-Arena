@@ -509,7 +509,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
     return (
       <div className="admin-error-state">
         <div className="admin-error-icon">⚠</div>
-        <div className="admin-error-msg">{loadError || 'Failed to load health metrics'}</div>
+        <div className="admin-error-msg">{loadError || 'Failed To Load Health Metrics'}</div>
         <button onClick={load} className="admin-btn admin-btn-primary">
           ↻ Retry
         </button>
@@ -838,7 +838,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
               {(data.pendingCommissions || []).map((c) => (
                 <tr key={c.id}>
                   <td className="admin-mono">{c.user_id?.substring(0, 8)}...</td>
-                  <td style={{ textAlign: 'right' }}>{c.source_type || 'rake'}</td>
+                  <td style={{ textAlign: 'right' }}>{c.source_type || 'Rake'}</td>
                   <td style={{ textAlign: 'center' }}>
                     {((c.commission_rate || 0) * 100).toFixed(1)}%
                   </td>
@@ -1063,7 +1063,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
               }
             }}
             className="admin-btn admin-btn-ghost admin-btn-sm"
-            title="Export audit log as CSV"
+            title="Export Audit Log As CSV"
           >
             Export
           </button>
@@ -1218,7 +1218,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
   const handleDelete = async (id: string) => {
     if (
       !(await confirmDialog({
-        title: 'Delete announcement',
+        title: 'Delete Announcement',
         message: 'Delete this announcement?',
         confirmText: 'Delete',
         variant: 'danger',
@@ -1450,8 +1450,8 @@ function SettingsTab({ clubId }: { clubId: string }) {
   const TOGGLES = [
     { key: 'allow_observer', label: 'Allow Observers' },
     { key: 'show_hand_history', label: 'Show Hand History' },
-    { key: 'auto_cashout', label: 'Auto Cashout on Leave' },
-    { key: 'require_kyc', label: 'Require KYC for Cashouts' },
+    { key: 'auto_cashout', label: 'Auto Cashout On Leave' },
+    { key: 'require_kyc', label: 'Require KYC For Cashouts' },
     { key: 'gps_verification', label: 'GPS Verification' },
     { key: 'ip_restriction', label: 'IP Restriction' },
     { key: 'emulator_detection', label: 'Emulator Detection' },
@@ -1803,7 +1803,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
             <input
               value={theme.bannerUrl || ''}
               onChange={(e) => setTheme((prev) => ({ ...prev, bannerUrl: e.target.value }))}
-              placeholder="Https://example.com/banner.png"
+              placeholder="https://example.com/banner.png"
               className="admin-input"
             />
           </div>
@@ -2178,7 +2178,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                     onClick={async () => {
                       if (
                         !(await confirmDialog({
-                          title: 'Delete template',
+                          title: 'Delete Template',
                           message: `Delete template "${tmpl.name}"?`,
                           confirmText: 'Delete',
                           variant: 'danger',
@@ -2423,7 +2423,7 @@ function MintChipsTab({ clubId }: { clubId: string }) {
               }
             }}
           >
-            {processing ? 'Minting...' : `Mint ${amount ? fmtChips(Number(amount)) : '0'} chips`}
+            {processing ? 'Minting...' : `Mint ${amount ? fmtChips(Number(amount)) : '0'} Chips`}
           </button>
         </div>
       </div>

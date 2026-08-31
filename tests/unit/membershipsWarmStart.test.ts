@@ -105,14 +105,17 @@ describe('membership warm start', () => {
     expect(selectCalls, 'a different user reused the first user cached promise').toBe(2);
   });
 
-  it('does not memoise a failure', async () => {
+  it('does not memoise a failure after the bounded recovery window', async () => {
+    vi.useFakeTimers();
     failNext = true;
-    await expect(getUserMemberships({ id: 'user-1' })).rejects.toBeTruthy();
+    const exhausted = expect(getUserMemberships({ id: 'user-1' })).rejects.toBeTruthy();
+    await vi.advanceTimersByTimeAsync(7_500);
+    await exhausted;
     failNext = false;
     // Without the rejection cleanup this would return the failed promise again
     // for five seconds - a transient blip would look like a broken lobby.
     await expect(getUserMemberships({ id: 'user-1' })).resolves.toEqual([]);
-    expect(selectCalls).toBe(2);
+    expect(selectCalls).toBe(6);
   });
 
   it('is dropped on sign-out', async () => {

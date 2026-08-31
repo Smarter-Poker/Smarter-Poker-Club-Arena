@@ -64,19 +64,50 @@ function pastBoot(v: unknown) {
 }
 
 describe('the canary hole: a fleet that empties must not silence the alarm', () => {
-  it('stays quiet while the process is still booting', async () => {
+  it('stays quiet while booting IF the platform is dealing elsewhere', async () => {
     // Measured on a real production boot: 0 dealable tables at 62s, 59 at 139s.
     // The boots that would NOT clear a 3-minute window are the slow ones, which
     // happen when the database is already degraded -- the worst possible moment
     // to email a critical about a fleet that is simply still starting.
+    //
+    // 2026-08-30: the grace now has to justify itself. THIS process having no
+    // tables yet is not evidence of anything while hands are being dealt, so
+    // the boot stays silent exactly as before.
     const v = new DealRateVerifier(() => tables(0));
-    hands(0);
+    hands(5);
     await v.check();
     await v.check();
     await v.check();
     await v.check();
     expect(raised).toHaveLength(0);
     expect(v.snapshot().belowFloorChecks).toBe(0);
+  });
+
+  it('does NOT stay quiet when the whole platform has been dark across restarts', async () => {
+    /**
+     * THE RULE THIS REPLACES, AND WHY.
+     *
+     * The grace was measured from `startedAt` — THIS PROCESS's clock, reset on
+     * every restart. On 2026-08-30 Supabase went into RESIZING, the engine
+     * could not win its leadership claim, and it restarted roughly every two
+     * minutes for over forty minutes. Every one of those processes died well
+     * inside the five-minute grace, so belowFloorChecks was never incremented
+     * once. The entire platform was dark, the alarm written for exactly that
+     * could not fire, and a person found it by looking at a lobby.
+     *
+     * So a young process no longer buys silence on its own. It buys silence
+     * when the DATABASE — which outlives the restart — still shows hands. Zero
+     * hands anywhere for a full grace window is not a boot, it is an outage,
+     * and it still takes CONSECUTIVE_BELOW_FLOOR checks to be called in.
+     */
+    const v = new DealRateVerifier(() => tables(0));
+    hands(0);
+    await v.check();
+    await v.check();
+    expect(raised).toHaveLength(0); // still damped: two checks is not a verdict
+    await v.check();
+    expect(raised.map((a) => a.alertname)).toContain('ClubArenaFleetFloorLost');
+    expect(raised[0].severity).toBe('critical');
   });
 
   it('raises a CRITICAL when the fleet falls below the floor', async () => {
@@ -149,7 +180,7 @@ describe('the kill storm that nobody was told about', () => {
     expect(raised.map((r) => r.alertname)).not.toContain('ClubArenaEngineKillStorm');
   });
 
-  it('a kill storm never touches liveness — the tables come back', async () => {
+  it('a kill storm never touches liveness - the tables come back', async () => {
     const v = new DealRateVerifier(() => tables(40));
     hands(50);
     kills(500);

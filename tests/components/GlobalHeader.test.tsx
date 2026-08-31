@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import GlobalHeader from '@/components/navigation/GlobalHeader';
 
@@ -63,10 +63,12 @@ describe('GlobalHeader Component', () => {
     expect(screen.getByLabelText('Smarter.Poker Global Header')).toBeInTheDocument();
     expect(screen.queryByText('Club Arena')).not.toBeInTheDocument();
     expect(document.querySelector('img[src*="vault-iris-emblem"]')).not.toBeInTheDocument();
-    const approvedArtwork = document.querySelector('img[src*="global-header-desktop.png"]');
+    const approvedArtwork = document.querySelector(
+      'img[src*="global-header-command-center-v1.png"]'
+    );
     expect(approvedArtwork).toHaveAttribute(
       'src',
-      expect.stringContaining('images/global-header/global-header-desktop.png')
+      expect.stringContaining('images/global-header/global-header-command-center-v1.png')
     );
   });
 
@@ -74,13 +76,13 @@ describe('GlobalHeader Component', () => {
    * UPDATED 2026-08-19: these tests previously asserted that Back was hidden at
    * lobby depth and that Hub did not exist at all. Dan asked for the opposite —
    * "the club arena needs a back button and hub button inside the global
-   * header" — so GlobalHeader now renders the hamburger, Back and Hub
+   * header" — so GlobalHeader now renders the command center, Back and Hub
    * unconditionally and the `pageDepth` prop is gone (both real callers,
    * AppLayout and HomePage, already render <GlobalHeader /> with no props).
    * Depth-conditional assertions would now pin the exact behaviour that was
    * reported as a bug, so they are replaced with unconditional ones.
    */
-  it('always renders the hamburger, Back and Hub in the left slot', () => {
+  it('always renders the command center, Back and Hub in the left slot', () => {
     render(
       <MemoryRouter>
         <GlobalHeader />
@@ -88,12 +90,12 @@ describe('GlobalHeader Component', () => {
     );
 
     expect(screen.getByRole('button', { name: /Open Menu/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Go back/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Go to the Hub/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go Back/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go To The Hub/i })).toBeInTheDocument();
 
-    expect(screen.getByAltText('Menu')).toHaveAttribute(
+    expect(screen.getByAltText('Command Center')).toHaveAttribute(
       'src',
-      expect.stringContaining('images/global-header/menu.png')
+      expect.stringContaining('images/global-header/command-center-v1.png')
     );
     expect(screen.getByAltText('Back')).toHaveAttribute(
       'src',
@@ -161,35 +163,6 @@ describe('GlobalHeader Component', () => {
     );
   });
 
-  it('shows one brief VIP shimmer only after the randomized pause', () => {
-    vi.useFakeTimers();
-    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
-    headerData.isVipActive = true;
-
-    try {
-      render(
-        <MemoryRouter>
-          <GlobalHeader />
-        </MemoryRouter>
-      );
-
-      const vip = screen.getByRole('button', { name: 'VIP Membership Active' });
-      expect(vip.className).not.toContain('vipShimmer');
-
-      act(() => vi.advanceTimersByTime(4_999));
-      expect(vip.className).not.toContain('vipShimmer');
-
-      act(() => vi.advanceTimersByTime(1));
-      expect(vip.className).toContain('vipShimmer');
-
-      act(() => vi.advanceTimersByTime(1_250));
-      expect(vip.className).not.toContain('vipShimmer');
-    } finally {
-      random.mockRestore();
-      vi.useRealTimers();
-    }
-  });
-
   it('renders the same left slot regardless of route depth', () => {
     // The reported bug was that a deeper route changed which escape hatches
     // existed. Rendering at a nested path must produce the identical three.
@@ -200,8 +173,8 @@ describe('GlobalHeader Component', () => {
     );
 
     expect(screen.getByRole('button', { name: /Open Menu/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Go back/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Go to the Hub/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go Back/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go To The Hub/i })).toBeInTheDocument();
   });
 
   it('keeps the notification count inside Notifications and out of Profile', () => {
@@ -214,11 +187,11 @@ describe('GlobalHeader Component', () => {
 
     const notifications = screen.getByRole('link', { name: /^Notifications$/i });
     const profile = screen.getByRole('button', { name: /My Profile/i });
-    const badge = within(notifications).getByLabelText('5 unread notifications');
+    const badge = within(notifications).getByLabelText('5 Unread Notifications');
 
     expect(badge).toHaveTextContent('5');
     expect(profile).not.toContainElement(badge);
-    expect(within(profile).queryByLabelText(/unread notifications/i)).not.toBeInTheDocument();
+    expect(within(profile).queryByLabelText(/Unread Notifications/i)).not.toBeInTheDocument();
   });
 
   it('acknowledges unread messages before leaving for Messenger', async () => {
@@ -235,7 +208,7 @@ describe('GlobalHeader Component', () => {
     });
   });
 
-  it('acknowledges unread notifications before opening Notifications', async () => {
+  it('acknowledges Unread Notifications before opening Notifications', async () => {
     headerData.notificationCount = 5;
     render(
       <MemoryRouter>

@@ -226,7 +226,7 @@ describe('dismissing the sheet', () => {
   it('closes on the X, which says what it does', () => {
     const { getByLabelText, onToggleCollapse } = renderOpenSheet();
 
-    fireEvent.click(getByLabelText('Close chat'));
+    fireEvent.click(getByLabelText('Close Chat'));
 
     expect(onToggleCollapse).toHaveBeenCalledTimes(1);
   });

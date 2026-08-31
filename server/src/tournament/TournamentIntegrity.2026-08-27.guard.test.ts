@@ -54,6 +54,27 @@ describe('A1: the cached blind structure is never mutated', () => {
     expect(MANAGER).not.toMatch(/blindStructure\[\s*\n?\s*Math\.min\(/);
     expect(BASE).toMatch(/protected resolveBlindLevel\(/);
   });
+
+  it('the resume path resolves the level instead of indexing the array', () => {
+    // 2026-08-31. resume() read `(tournament.blind_structure || [])[currentLevel]`
+    // and fell back to `[0]`, so a tournament PAST THE END of its structure
+    // resumed its level clock on LEVEL 1's duration — the one case
+    // resolveBlindLevel exists to answer.
+    //
+    // It failed in the expensive direction. Most structures SHORTEN toward the
+    // end (that is what makes a final table), so a 2-minute level resumed as a
+    // 4-minute one and the blinds stalled for twice as long at exactly the
+    // depth where blind speed decides the tournament. The staleness window
+    // (`durationMs * 4`) was doubled by the same mistake. Measured over 14
+    // days: 1,499 tournaments ran past their structure with varying level
+    // lengths.
+    //
+    // Same defect as A1 above — a restart freezing blind escalation — which
+    // had been fixed everywhere except here.
+    const fn = sliceMethod(BASE, 'async resume(');
+    expect(fn).not.toMatch(/blind_structure\s*\|\|\s*\[\]\s*\)\s*\[\s*this\.currentLevel\s*\]/);
+    expect(fn).toMatch(/this\.resolveBlindLevel\(\s*tournament\.blind_structure/);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

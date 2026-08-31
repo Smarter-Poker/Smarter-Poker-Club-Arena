@@ -17,7 +17,14 @@ import { supabase } from './supabase.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
-import { bankrollBuyIn, bankrollPolicyFor, canSit, referenceBuyIn } from './HorseBankroll.js';
+import {
+  bankrollBuyIn,
+  bankrollPolicyFor,
+  canOpenAnotherTable,
+  canSit,
+  referenceBuyIn,
+} from './HorseBankroll.js';
+import { bankrollEvent, bankrollSummaryLine } from './HorseBankrollTelemetry.js';
 import {
   buyInBBFor,
   gameLaneFor,
@@ -222,7 +229,7 @@ export class HorseFleetManager {
       this.seedAllTables().catch((err) => reportError(err, 'HorseFleet.Seed_cycle_error'));
     }, 30000);
 
-    console.log('[HorseFleet] Running — seeding in background, checking every 30s');
+    console.log('[HorseFleet] Running - seeding in background, checking every 30s');
   }
 
   stop(): void {
@@ -625,6 +632,7 @@ export class HorseFleetManager {
         user_id: string;
         table_id: string;
         seat_number: number;
+        stack: number | null;
       }>(
         (cursor, want) => {
           // KEYSET, not OFFSET. `.range()` paging re-reads the table under a
@@ -635,7 +643,7 @@ export class HorseFleetManager {
           // constantly in a live room. `id > cursor` has no such window.
           let q = supabase
             .from('table_seats')
-            .select('id, user_id, table_id, seat_number')
+            .select('id, user_id, table_id, seat_number, stack')
             .is('left_at', null)
             .order('id', { ascending: true })
             .limit(want);
@@ -651,7 +659,7 @@ export class HorseFleetManager {
       // half-read map costs a storm.
       if (!seatPage.complete) {
         console.warn(
-          '[HorseFleet] Seeding cycle SKIPPED — the seat map came back incomplete, ' +
+          '[HorseFleet] Seeding cycle SKIPPED - the seat map came back incomplete, ' +
             'and seeding from a partial map is what caused the duplicate-seat storm.'
         );
         return;
@@ -659,9 +667,27 @@ export class HorseFleetManager {
       const allActiveSeats = seatPage.rows;
 
       const horseTables = new Map<string, Set<string>>();
+      /**
+       * AGGREGATE EXPOSURE. Chips this player has ON THE FELT right now,
+       * summed across every open seat.
+       *
+       * The per-table share is checked per table, so it answers identically
+       * for the first table and the fourth: four seats at five percent each is
+       * a fifth of the roll in play, and no single-table check can see it.
+       * This map is what lets `canOpenAnotherTable` see it.
+       *
+       * The measure is the live STACK, not the original buy-in, because the
+       * question is "how much of my money is at risk", and a horse that bought
+       * in for 200 and ran it to 600 has 600 at risk.
+       */
+      const horseExposure = new Map<string, number>();
       for (const seat of allActiveSeats) {
         if (!horseTables.has(seat.user_id)) horseTables.set(seat.user_id, new Set());
         horseTables.get(seat.user_id)!.add(seat.table_id);
+        const st = Number(seat.stack);
+        if (Number.isFinite(st) && st > 0) {
+          horseExposure.set(seat.user_id, (horseExposure.get(seat.user_id) ?? 0) + st);
+        }
       }
 
       // Optimization: Fetch all horses once instead of querying per table
@@ -687,7 +713,7 @@ export class HorseFleetManager {
         { label: 'HorseFleet.validHorses', maxRows: 50_000 }
       );
       if (!horsePage.complete) {
-        console.warn('[HorseFleet] Seeding cycle SKIPPED — the horse pool came back incomplete.');
+        console.warn('[HorseFleet] Seeding cycle SKIPPED - the horse pool came back incomplete.');
         return;
       }
       const validHorses = horsePage.rows;
@@ -794,7 +820,7 @@ export class HorseFleetManager {
         } else {
           bankrolls.clear();
           console.warn(
-            '[HorseFleet] bankroll read incomplete — seating this cycle without the bankroll gate.'
+            '[HorseFleet] bankroll read incomplete - seating this cycle without the bankroll gate.'
           );
         }
       } catch (err) {
@@ -821,7 +847,7 @@ export class HorseFleetManager {
       // A horse missing from this set reads as a HUMAN, which triggers the
       // short-handed-human rescue path and reorders the whole seeding queue.
       if (!idPage.complete) {
-        console.warn('[HorseFleet] Seeding cycle SKIPPED — the horse id set came back incomplete.');
+        console.warn('[HorseFleet] Seeding cycle SKIPPED - the horse id set came back incomplete.');
         return;
       }
       const horseIdSet = new Set(idPage.rows.map((h) => h.id));
@@ -844,7 +870,7 @@ export class HorseFleetManager {
       }
       if (surplusTableIds.size > 0) {
         console.log(
-          `[HorseFleet] ${surplusTableIds.size} surplus table(s) draining — not seeding them`
+          `[HorseFleet] ${surplusTableIds.size} surplus table(s) draining - not seeding them`
         );
       }
 
@@ -865,7 +891,7 @@ export class HorseFleetManager {
         validHorses.length > 0 && seatedHorseCount < Math.ceil(validHorses.length / 3);
       if (fleetBoost) {
         console.log(
-          `[HorseFleet] Activity floor: ${seatedHorseCount}/${validHorses.length} horses seated (<1/3) — boosting seat targets this cycle`
+          `[HorseFleet] Activity floor: ${seatedHorseCount}/${validHorses.length} horses seated (<1/3) - boosting seat targets this cycle`
         );
       }
 
@@ -878,6 +904,34 @@ export class HorseFleetManager {
       const orderedTables = [...tables].sort(
         (a, b) => Number(humanShort(b)) - Number(humanShort(a))
       );
+
+      /* ── A HORSE ANSWERS A SEAT CALL ────────────────────────────────────
+         Dan 2026-08-31, binding: "MAKE HORSES ANSWER A SEAT CALL... THEY
+         SHOULD NEVER BE SKIPPED."
+
+         Before this, fn_offer_open_seat selected the head of the queue with
+         `AND NOT COALESCE(p.is_horse,false)`, so a horse could hold a place in
+         line forever and never be offered the seat: 10,004 of 10,055 waitlist
+         rows are horses, 301 of them in the last 24 hours, and not one was
+         ever offered. The rule is the same one the RIT offer already learned
+         (scheduleHorseRITResponses, 2026-08-18: "horses never answered
+         rit_offer, so ANY horse in the all-in set let the offer expire") —
+         the answer is to make the horse respond, never to skip it.
+
+         BEFORE the seeding loop, deliberately. The hold only stops further
+         OFFERS (fn_offer_open_seat counts holds against max_players); it does
+         not stop this manager seeding a different horse into that very seat.
+         Claiming first is what makes the hold mean something. */
+      const claimed = await this.claimOfferedSeats(
+        tables,
+        allActiveSeats,
+        bankrolls,
+        bankrollsLoaded,
+        horseIdSet
+      );
+      if (claimed > 0) {
+        console.log(`[HorseFleet] ${claimed} horse(s) answered a seat call`);
+      }
 
       for (const table of orderedTables) {
         try {
@@ -994,6 +1048,7 @@ export class HorseFleetManager {
               const roll = bankrolls.get(`${table.club_id}:${h.id}`);
               if (roll === undefined) {
                 rollUnknown++;
+                bankrollEvent('seat_fail_open_roll_unknown');
                 return true;
               }
               const ref = referenceBuyIn(
@@ -1001,7 +1056,10 @@ export class HorseFleetManager {
                 Number((table as any).min_buy_in) || undefined,
                 Number((table as any).max_buy_in) || undefined
               );
-              if (!canSit(roll, ref, bankrollPolicyFor(h.id))) return false;
+              if (!canSit(roll, ref, bankrollPolicyFor(h.id))) {
+                bankrollEvent('seat_refused_underrolled');
+                return false;
+              }
             }
             const tablesForHorse = horseTables.get(h.id);
             if (!tablesForHorse) return true;
@@ -1055,44 +1113,39 @@ export class HorseFleetManager {
           for (let i = 0; i < selectedHorses.length; i++) {
             const horse = selectedHorses[i];
             const seatNumber = emptySeats[i];
-            // V8 BUY-IN VARIANCE: per-horse profile (short/standard/deep)
-            // with per-sitting jitter, clamped to the table's real min/max.
-            const minB = Number((table as any).min_buy_in) || table.big_blind * 40;
-            const maxB = Number((table as any).max_buy_in) || table.big_blind * 200;
-            // V9: humans buy in for ROUND numbers ($100, $150, $240 — never
-            // $227.40). Snap the profiled amount to the nearest 5bb step,
-            // then clamp to the table's real limits.
-            const step = table.big_blind * 5;
-            const raw = table.big_blind * buyInBBFor(horse.id);
-            let buyIn =
-              Math.round(Math.max(minB, Math.min(maxB, Math.round(raw / step) * step)) * 100) / 100;
+            // V8 BUY-IN VARIANCE, in ONE place. Shared with claimOfferedSeats,
+            // so a horse answering a seat call brings exactly what it would
+            // have brought to a seat it was seeded into. See computeHorseBuyIn.
+            const buyIn = this.computeHorseBuyIn(table, horse.id, bankrolls, bankrollsLoaded);
+            if (buyIn <= 0) continue;
 
             /**
-             * NEVER BRING TOO MUCH OF THE ROLL TO ONE TABLE. The table's max
-             * buy-in is what the GAME allows, not what this bankroll should
-             * put at risk in a single seat — a 400 max is not an instruction
-             * to a horse with 3,000 to its name. bankrollBuyIn caps the
-             * profiled amount at the policy's share of the roll and re-clamps
-             * to the table's own limits.
+             * THE AGGREGATE CEILING, and the reason it is a separate check.
+             * Everything above reasons about ONE table. `canOpenAnotherTable`
+             * is the only rule that can see the horse's whole position, and
+             * without it the per-table share silently multiplies by the table
+             * count. Three single-table shares is the ceiling: enough to
+             * multi-table normally, short of the point where one bad run
+             * across four seats is the bankroll.
              *
-             * Zero means the share cannot even reach the table minimum, so
-             * this is not a game for this bankroll: skip the seat rather than
-             * buy in short. The candidate gate above should already have
-             * excluded it; this is the belt to that braces.
+             * Fails open with the rest of the layer: an unreadable roll gets
+             * no aggregate opinion either, because a gate that refuses on a
+             * value it could not read is the bug that emptied the cash floor.
              */
             if (bankrollsLoaded) {
-              const roll = bankrolls.get(`${table.club_id}:${horse.id}`) ?? 0;
-              const capped = bankrollBuyIn({
-                bankroll: roll,
-                desired: buyIn,
-                minBuyIn: minB,
-                maxBuyIn: maxB,
-                policy: bankrollPolicyFor(horse.id),
-              });
-              if (capped <= 0) continue;
-              // keep the human-looking 5bb rounding after the cap
-              const snapped = Math.round(capped / step) * step;
-              buyIn = Math.round(Math.max(minB, Math.min(capped, snapped)) * 100) / 100;
+              const roll = bankrolls.get(`${table.club_id}:${horse.id}`);
+              if (
+                roll !== undefined &&
+                !canOpenAnotherTable({
+                  bankroll: roll,
+                  liveExposure: horseExposure.get(horse.id) ?? 0,
+                  nextBuyIn: buyIn,
+                  policy: bankrollPolicyFor(horse.id),
+                })
+              ) {
+                bankrollEvent('seat_refused_aggregate_exposure');
+                continue;
+              }
             }
 
             const success = await this.seatHorse(
@@ -1109,6 +1162,11 @@ export class HorseFleetManager {
               // Update our in-memory map so we don't assign them to another table if they hit 4
               if (!horseTables.has(horse.id)) horseTables.set(horse.id, new Set());
               horseTables.get(horse.id)!.add(table.id);
+              // The seat we just bought is exposure NOW, not next cycle: without
+              // this the aggregate ceiling only ever sees the position the cycle
+              // STARTED with, and a single pass could seat a horse at four
+              // tables while every check reads zero.
+              horseExposure.set(horse.id, (horseExposure.get(horse.id) ?? 0) + buyIn);
             }
           }
 
@@ -1131,10 +1189,52 @@ export class HorseFleetManager {
 
       if (rollUnknown > 0) {
         console.warn(
-          `[HorseFleet] bankroll gate skipped for ${rollUnknown} horse/table pairs — ` +
+          `[HorseFleet] bankroll gate skipped for ${rollUnknown} horse/table pairs - ` +
             `no membership row for that club. Seating proceeded (fail-open).`
         );
       }
+
+      /**
+       * THE LADDER RAN OUT - the number that says whether the fleet has
+       * anywhere left to step DOWN to.
+       *
+       * A horse that cannot afford the cheapest game on the board is not
+       * making a decision, it is stranded, and a stranded fleet looks exactly
+       * like a working one from every other angle: no errors, no refusals
+       * worth reading, tables just quietly stop filling. 175 of 584 horses
+       * are banded into stakes with no open table today, and every micro
+       * table is closed, so this is the number that will say whether the
+       * micro relaunch actually gave them a rung.
+       *
+       * Priced against the cheapest game the fleet could ACTUALLY join:
+       * surplus tables are excluded because they are being wound down.
+       */
+      if (bankrollsLoaded && bankrolls.size > 0) {
+        let cheapestRef = Infinity;
+        for (const t of tables) {
+          if (surplusTableIds.has(t.id)) continue;
+          const r = referenceBuyIn(
+            Number(t.big_blind),
+            Number((t as any).min_buy_in) || undefined,
+            Number((t as any).max_buy_in) || undefined
+          );
+          if (r > 0 && r < cheapestRef) cheapestRef = r;
+        }
+        if (Number.isFinite(cheapestRef)) {
+          let stranded = 0;
+          for (const [key, roll] of bankrolls) {
+            const horseId = key.slice(key.indexOf(':') + 1);
+            if (!canSit(roll, cheapestRef, bankrollPolicyFor(horseId))) stranded++;
+          }
+          // A GAUGE, not a count - see HorseBankrollTelemetry. Written every
+          // cycle including zero, so the line goes quiet the moment the micro
+          // relaunch gives the fleet somewhere to step down to.
+          bankrollEvent('ladder_exhausted', stranded);
+        }
+      }
+
+      const brLine = bankrollSummaryLine();
+      if (brLine) console.log(brLine);
 
       if (totalSeated > 0) {
         console.log(`[HorseFleet] Seated ${totalSeated} horses across tables`);
@@ -1334,6 +1434,157 @@ export class HorseFleetManager {
   // ─────────────────────────────────────────────────────────────────────
   // SEAT A SINGLE HORSE
   // ─────────────────────────────────────────────────────────────────────
+
+  /**
+   * WHAT THIS HORSE BRINGS TO A SEAT — one definition, two callers.
+   *
+   * Extracted 2026-08-31 when horses began answering seat offers. The seeding
+   * loop and claimOfferedSeats must size a buy-in identically; two copies of
+   * this arithmetic is exactly the shape of bug this codebase keeps paying
+   * for (see src/lib/cashBuyIn.ts, written because four layers disagreed
+   * about one number).
+   *
+   * Returns 0 when the bankroll's share cannot reach the table minimum, which
+   * the caller must read as "not this game for this horse" — never as free.
+   */
+  /**
+   * SIT DOWN WHEN THE SEAT IS CALLED.
+   *
+   * A `notified` waitlist row is a seat being HELD for that player for 60
+   * seconds. A human clicks; a horse has no client, so this is its hand on the
+   * chair. The seeding cycle runs every 30 seconds, so a horse always gets at
+   * least one look at an offer inside the hold.
+   *
+   * An expired hold is left alone rather than claimed late: the row belongs to
+   * fn_offer_open_seat's own sweep, which expires it and passes the seat to
+   * the next player in line. Taking it here would let a horse jump a queue it
+   * had already timed out of.
+   *
+   * Best-effort, like everything else in this manager: a seat call that cannot
+   * be answered must never be the reason a seeding cycle fails.
+   */
+  private async claimOfferedSeats(
+    tables: any[],
+    allActiveSeats: Array<{ user_id: string; table_id: string; seat_number: number }>,
+    bankrolls: Map<string, number>,
+    bankrollsLoaded: boolean,
+    horseIdSet: Set<string>
+  ): Promise<number> {
+    let claimed = 0;
+    try {
+      const tableById = new Map<string, any>(tables.map((t: any) => [t.id as string, t]));
+
+      const { data: offers, error } = await supabase
+        .from('table_waitlist')
+        .select('id, table_id, user_id, notified_at, hold_expires_at')
+        .eq('status', 'notified');
+      if (error) throw new Error(error.message);
+
+      const mine = (offers ?? []).filter(
+        (o: any) => horseIdSet.has(o.user_id) && tableById.has(o.table_id)
+      );
+      if (mine.length === 0) return 0;
+
+      // Seats already occupied, so two offers at one table cannot both take
+      // seat 1 in the same cycle.
+      const taken = new Map<string, Set<number>>();
+      for (const s of allActiveSeats) {
+        if (!taken.has(s.table_id)) taken.set(s.table_id, new Set<number>());
+        taken.get(s.table_id)!.add(Number(s.seat_number));
+      }
+
+      for (const offer of mine as any[]) {
+        const table = tableById.get(offer.table_id);
+        if (!table || table.tournament_id) continue;
+
+        const expiresAt = offer.hold_expires_at
+          ? Date.parse(offer.hold_expires_at)
+          : offer.notified_at
+            ? Date.parse(offer.notified_at) + 60_000
+            : NaN;
+        if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) continue;
+
+        const used = taken.get(table.id) ?? new Set<number>();
+        const maxSeats = Number(table.max_players) || 9;
+        let seatNumber = -1;
+        for (let s = 1; s <= maxSeats; s++) {
+          if (!used.has(s)) {
+            seatNumber = s;
+            break;
+          }
+        }
+        if (seatNumber < 0) continue;
+
+        const buyIn = this.computeHorseBuyIn(table, offer.user_id, bankrolls, bankrollsLoaded);
+        if (buyIn <= 0) continue;
+
+        const ok = await this.seatHorse(
+          table.id,
+          offer.user_id,
+          seatNumber,
+          buyIn,
+          table.name,
+          table.club_id
+        );
+        if (!ok) continue;
+
+        used.add(seatNumber);
+        taken.set(table.id, used);
+        claimed++;
+
+        // The seat is taken; the row must say so, or ensureWaitlist counts it
+        // as still holding and pruneHorseWaitlist keeps it out of the queue.
+        const { error: updErr } = await supabase
+          .from('table_waitlist')
+          .update({ status: 'seated' })
+          .eq('id', offer.id);
+        if (updErr) {
+          reportError(new Error(updErr.message), 'HorseFleet.claimOfferedSeats_mark_seated');
+        }
+      }
+    } catch (err) {
+      reportError(err, 'HorseFleet.claimOfferedSeats');
+    }
+    return claimed;
+  }
+
+  private computeHorseBuyIn(
+    table: any,
+    horseId: string,
+    bankrolls: Map<string, number>,
+    bankrollsLoaded: boolean
+  ): number {
+    const minB = Number(table.min_buy_in) || table.big_blind * 40;
+    const maxB = Number(table.max_buy_in) || table.big_blind * 200;
+    // V9: humans buy in for ROUND numbers, never 227.40. Snap to a 5bb step,
+    // then clamp to the table's real limits.
+    const step = table.big_blind * 5;
+    const raw = table.big_blind * buyInBBFor(horseId);
+    let buyIn = Math.round(Math.max(minB, Math.min(maxB, Math.round(raw / step) * step)) * 100) / 100;
+
+    /* NEVER BRING TOO MUCH OF THE ROLL TO ONE TABLE. The table's max buy-in is
+       what the GAME allows, not what this bankroll should put at risk in a
+       single seat - a 400 max is not an instruction to a horse with 3,000 to
+       its name. */
+    if (bankrollsLoaded) {
+      const roll = bankrolls.get(`${table.club_id}:${horseId}`) ?? 0;
+      const capped = bankrollBuyIn({
+        bankroll: roll,
+        desired: buyIn,
+        minBuyIn: minB,
+        maxBuyIn: maxB,
+        policy: bankrollPolicyFor(horseId),
+      });
+      if (capped <= 0) {
+        bankrollEvent('seat_refused_share_below_min');
+        return 0;
+      }
+      if (capped < buyIn) bankrollEvent('buyin_capped');
+      const snapped = Math.round(capped / step) * step;
+      buyIn = Math.round(Math.max(minB, Math.min(capped, snapped)) * 100) / 100;
+    }
+    return buyIn;
+  }
 
   private async seatHorse(
     tableId: string,

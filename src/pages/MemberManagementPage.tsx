@@ -133,6 +133,7 @@ export default function MemberManagementPage() {
   const [detail, setDetail] = useState<MemberDetail | null>(null);
   const [downline, setDownline] = useState<DownlineMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [myRole, setMyRole] = useState<ClubRole>('player');
 
   const [rangeMode, setRangeMode] = useState<RangeMode>('overall');
@@ -147,7 +148,10 @@ export default function MemberManagementPage() {
       if (!clubId || !userId) return;
       const live = () => (getIsMounted ? getIsMounted() : true) && isMountedRef.current;
 
-      if (live()) setLoading(true);
+      if (live()) {
+        setLoading(true);
+        setLoadError(false);
+      }
       try {
         const resolved = await resolveClubUUID(clubId);
         if (!live()) return;
@@ -178,7 +182,10 @@ export default function MemberManagementPage() {
         }
       } catch (error) {
         reportError(error, 'MemberManagementPage.loadDetail');
-        if (live()) toast.error('Failed To Load This Member');
+        if (live()) {
+          setLoadError(true);
+          toast.error('Failed To Load This Member');
+        }
       } finally {
         if (live()) setLoading(false);
       }
@@ -234,6 +241,26 @@ export default function MemberManagementPage() {
       <div className="member-mgmt-page">
         <PageHeader onBack={() => navigate(-1)} />
         <PageSkeleton variant="settings" />
+      </div>
+    );
+  }
+
+  if (loadError && !detail) {
+    return (
+      <div className="member-mgmt-page">
+        <PageHeader onBack={() => navigate(-1)} />
+        <div className="mm-empty" role="alert">
+          <span className="mm-empty__mark" aria-hidden="true">
+            ↻
+          </span>
+          <p className="mm-empty__heading">The Member Ledger Did Not Respond</p>
+          <p className="mm-empty__body">
+            Your Access Has Not Changed. Retry The Live Record Without Leaving This Page.
+          </p>
+          <button type="button" className="mm-empty__retry" onClick={reload}>
+            Retry Member
+          </button>
+        </div>
       </div>
     );
   }
@@ -303,6 +330,7 @@ export default function MemberManagementPage() {
 
       {detail!.capabilities.can_view_notes && (
         <NotesEditor
+          key={identity!.user_id!}
           clubId={resolvedClubId}
           userId={identity!.user_id!}
           initialNickname={identity!.nickname}
@@ -552,25 +580,42 @@ function NotesEditor({
   const [remark, setRemark] = useState(initialRemark ?? '');
   const [nicknameUnsaved, setNicknameUnsaved] = useState(false);
   const [remarkUnsaved, setRemarkUnsaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // The saved values, so a blur that changed nothing does not write anything.
   const savedRef = useRef({
     nickname: initialNickname ?? '',
     remark: initialRemark ?? '',
   });
+  const draftRef = useRef({
+    nickname: initialNickname ?? '',
+    remark: initialRemark ?? '',
+  });
+  const savingRef = useRef(false);
+  const queuedSaveRef = useRef(false);
 
   useEffect(() => {
     setNickname(initialNickname ?? '');
     setRemark(initialRemark ?? '');
     savedRef.current = { nickname: initialNickname ?? '', remark: initialRemark ?? '' };
+    draftRef.current = { nickname: initialNickname ?? '', remark: initialRemark ?? '' };
+    queuedSaveRef.current = false;
     setNicknameUnsaved(false);
     setRemarkUnsaved(false);
   }, [initialNickname, initialRemark, userId]);
 
   const save = useCallback(async () => {
     if (!clubId) return;
-    if (savedRef.current.nickname === nickname && savedRef.current.remark === remark) return;
+    if (savingRef.current) {
+      queuedSaveRef.current = true;
+      return;
+    }
+    const draft = { ...draftRef.current };
+    if (savedRef.current.nickname === draft.nickname && savedRef.current.remark === draft.remark)
+      return;
 
+    savingRef.current = true;
+    setSaving(true);
     try {
       const requestId =
         typeof crypto.randomUUID === 'function'
@@ -579,26 +624,43 @@ function NotesEditor({
       const result = await ClubRosterService.updateMemberNotes(
         clubId,
         userId,
-        nickname,
-        remark,
+        draft.nickname,
+        draft.remark,
         requestId
       );
-      savedRef.current = {
+      const persisted = {
         nickname: result.nickname ?? '',
         remark: result.remark ?? '',
       };
+      savedRef.current = persisted;
       if (!isMountedRef.current) return;
-      setNicknameUnsaved(false);
-      setRemarkUnsaved(false);
+      setNicknameUnsaved(draftRef.current.nickname !== persisted.nickname);
+      setRemarkUnsaved(draftRef.current.remark !== persisted.remark);
       toast.success('Member Notes Saved');
     } catch (e) {
       reportError(e, 'MemberManagementPage.saveNotes');
       if (!isMountedRef.current) return;
-      setNicknameUnsaved(savedRef.current.nickname !== nickname);
-      setRemarkUnsaved(savedRef.current.remark !== remark);
+      setNicknameUnsaved(savedRef.current.nickname !== draftRef.current.nickname);
+      setRemarkUnsaved(savedRef.current.remark !== draftRef.current.remark);
       toast.error(safeErrorMessage(e, 'Could Not Save. Your Text Is Still Here'));
+    } finally {
+      savingRef.current = false;
+      if (isMountedRef.current) setSaving(false);
+      if (isMountedRef.current && queuedSaveRef.current) {
+        queuedSaveRef.current = false;
+        queueMicrotask(() => void save());
+      }
     }
-  }, [clubId, isMountedRef, nickname, remark, toast, userId]);
+  }, [clubId, isMountedRef, toast, userId]);
+
+  const discardDraft = useCallback(() => {
+    const saved = savedRef.current;
+    draftRef.current = { ...saved };
+    setNickname(saved.nickname);
+    setRemark(saved.remark);
+    setNicknameUnsaved(false);
+    setRemarkUnsaved(false);
+  }, []);
 
   if (!editable) {
     return (
@@ -620,6 +682,7 @@ function NotesEditor({
           placeholder={toTitleCase('enter the nickname here...')}
           onChange={(e) => {
             setNickname(e.target.value);
+            draftRef.current.nickname = e.target.value;
             setNicknameUnsaved(savedRef.current.nickname !== e.target.value);
           }}
           onBlur={() => void save()}
@@ -636,12 +699,39 @@ function NotesEditor({
           placeholder={toTitleCase('enter remark here...')}
           onChange={(e) => {
             setRemark(e.target.value);
+            draftRef.current.remark = e.target.value;
             setRemarkUnsaved(savedRef.current.remark !== e.target.value);
           }}
           onBlur={() => void save()}
         />
         {remarkUnsaved && <span className="mm-field__unsaved">Not Saved Yet</span>}
       </label>
+
+      <div className="mm-notes__actions">
+        <span className="mm-notes__status" role="status" aria-live="polite">
+          {saving
+            ? 'Saving Through The Audited Club Ledger...'
+            : nicknameUnsaved || remarkUnsaved
+              ? 'Changes Are Still Local To This Device.'
+              : 'Notes Match The Audited Club Record.'}
+        </span>
+        <button
+          type="button"
+          className="mm-notes__discard"
+          onClick={discardDraft}
+          disabled={saving || (!nicknameUnsaved && !remarkUnsaved)}
+        >
+          Revert
+        </button>
+        <button
+          type="button"
+          className="mm-notes__save"
+          onClick={() => void save()}
+          disabled={saving || (!nicknameUnsaved && !remarkUnsaved)}
+        >
+          {saving ? 'Saving...' : 'Save Notes'}
+        </button>
+      </div>
     </section>
   );
 }
@@ -680,6 +770,12 @@ function RoleSection({
   // pre-filled is a rate nobody chose, which is the bug this pair fixes.
   const [commissionPct, setCommissionPct] = useState('');
   const [rakebackPct, setRakebackPct] = useState('');
+  // Prepaid or a credit line, and how much. Blank for the same reason the rates
+  // are blank: Dan asked for the funding to be ASSIGNED at promotion, and a
+  // default sitting in the box is not a choice anybody made. The server refuses
+  // an agent role that arrives without one (needs_funding).
+  const [funding, setFunding] = useState<'' | 'prepaid' | 'credit'>('');
+  const [creditLimit, setCreditLimit] = useState('');
 
   // CA-18 BUG FIX: the 1.2s "show success then refresh" timer was fire-and-forget.
   // If the user left the screen before 1.2s, the component unmounted and the
@@ -753,7 +849,14 @@ function RoleSection({
     // row did not already exist. fn_club_set_member_role now refuses an agent
     // role that arrives without a rate, so the two fields below are the whole
     // point of the confirm step rather than decoration on it.
-    let rates: { p_commission_rate: number; p_player_rakeback_rate: number } | undefined;
+    let rates:
+      | {
+          p_commission_rate: number;
+          p_player_rakeback_rate: number;
+          p_is_prepaid: boolean;
+          p_credit_limit: number;
+        }
+      | undefined;
     if (isAgentRole(newRole)) {
       const comm = Number(commissionPct);
       const rake = Number(rakebackPct);
@@ -777,8 +880,36 @@ function RoleSection({
         setPromoting(false);
         return;
       }
+      // THE FUNDING IS CHOSEN HERE TOO.
+      //
+      // Dan, 2026-08-31: "THEY ALSO NEED TO BE ASSIGNED 'PRE PAID' OR CREDIT
+      // LINE, (AND IF SO, THEN HOW MUCH)". Every promotion before this one sent
+      // no funding at all, so the server stored the single combination that can
+      // send nothing: not prepaid, and no line to draw on.
+      if (funding === '') {
+        setError('Choose Prepaid Or A Credit Line.');
+        setPromoting(false);
+        return;
+      }
+      const limit = funding === 'prepaid' ? 0 : Number(creditLimit);
+      if (funding === 'credit' && (creditLimit.trim() === '' || !Number.isFinite(limit))) {
+        setError('Enter A Credit Limit.');
+        setPromoting(false);
+        return;
+      }
+      if (funding === 'credit' && limit <= 0) {
+        setError('A Credit Limit Must Be Greater Than 0, Or The Agent Should Be Prepaid.');
+        setPromoting(false);
+        return;
+      }
+
       // The database stores a fraction. The field asks for a percentage.
-      rates = { p_commission_rate: comm / 100, p_player_rakeback_rate: rake / 100 };
+      rates = {
+        p_commission_rate: comm / 100,
+        p_player_rakeback_rate: rake / 100,
+        p_is_prepaid: funding === 'prepaid',
+        p_credit_limit: limit,
+      };
     }
 
     try {
@@ -863,7 +994,7 @@ function RoleSection({
                   max={70}
                   step={1}
                   value={commissionPct}
-                  placeholder="e.g. 40"
+                  placeholder="E.G. 40"
                   onChange={(e) => setCommissionPct(e.target.value)}
                   disabled={promoting}
                 />
@@ -877,14 +1008,68 @@ function RoleSection({
                   max={50}
                   step={1}
                   value={rakebackPct}
-                  placeholder="e.g. 30"
+                  placeholder="E.G. 30"
                   onChange={(e) => setRakebackPct(e.target.value)}
                   disabled={promoting}
                 />
               </label>
+              <div className="mm-roles__funding">
+                <span className="mm-field__label">Funding</span>
+                <div className="mm-roles__funding-choice" role="group" aria-label="Funding">
+                  <button
+                    type="button"
+                    className={`mm-roles__funding-option${
+                      funding === 'prepaid' ? ' mm-roles__funding-option--on' : ''
+                    }`}
+                    aria-pressed={funding === 'prepaid'}
+                    onClick={() => {
+                      setFunding('prepaid');
+                      setCreditLimit('');
+                    }}
+                    disabled={promoting}
+                  >
+                    Prepaid
+                  </button>
+                  <button
+                    type="button"
+                    className={`mm-roles__funding-option${
+                      funding === 'credit' ? ' mm-roles__funding-option--on' : ''
+                    }`}
+                    aria-pressed={funding === 'credit'}
+                    onClick={() => setFunding('credit')}
+                    disabled={promoting}
+                  >
+                    Credit Line
+                  </button>
+                </div>
+              </div>
+
+              {funding === 'prepaid' && (
+                <p className="mm-roles__rates-note">
+                  A Prepaid Agent Sends Only Chips They Already Hold.
+                </p>
+              )}
+
+              {funding === 'credit' && (
+                <label className="mm-field">
+                  <span className="mm-field__label">Credit Limit In Chips</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step={1}
+                    value={creditLimit}
+                    placeholder="E.G. 50000"
+                    onChange={(e) => setCreditLimit(e.target.value)}
+                    disabled={promoting}
+                  />
+                </label>
+              )}
+
               <p className="mm-roles__rates-note">
                 Rakeback Is Paid Out Of The Commission, So It Cannot Be The Larger Of The Two, And
-                Neither May Exceed The Upline They Report To.
+                Neither May Exceed The Upline They Report To. A Credit Line Cannot Exceed The Upline
+                Limit Either, And It Is Owed Back Weekly.
               </p>
             </div>
           )}
@@ -925,6 +1110,8 @@ function RoleSection({
                 setError('');
                 setCommissionPct('');
                 setRakebackPct('');
+                setFunding('');
+                setCreditLimit('');
                 setConfirmRole(role);
               }}
               disabled={role === targetRole || promoting}

@@ -3,7 +3,7 @@ import { orderPlayersForMove, type BalancerPlayer } from './TableBalancer.js';
 
 const mk = (seat: number, stack = 100): BalancerPlayer => ({ userId: `p${seat}`, seat, stack });
 
-describe('orderPlayersForMove (B6 — big blind due next)', () => {
+describe('orderPlayersForMove (B6 - big blind due next)', () => {
   it('moves the big-blind-due-next player first and the current BB last', () => {
     // Seats 1..6 occupied, button on seat 1.
     // SB = seat 2, BB = seat 3. Next BB = seat 4.

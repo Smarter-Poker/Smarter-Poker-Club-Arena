@@ -44,6 +44,7 @@ import { SWR_CACHE_PREFIXES } from './staleCacheReaper';
 import { WALLET_CACHE_PREFIX, clearWalletMemoryCache } from '../lib/walletCache';
 import { CLUB_UUID_MAP_KEY, clearClubUUIDCache } from './clubIdResolver';
 import { STATS_CACHE_PREFIX, clearStatsRangeMemo } from '../lib/statsCache';
+import { CLUB_WORKSPACE_CACHE_KEY } from '../lib/clubWorkspaceCache';
 
 /** Written by ClubHomePage; imported there so writer and purger cannot drift. */
 export const CLUB_HOME_CACHE_PREFIX = 'club_home_cache_';
@@ -100,7 +101,7 @@ const USER_SCOPED_PREFIXES: string[] = [
  * Exact keys that are not in STORAGE_KEYS but are still about the person:
  * the club-code -> UUID map records which clubs this device has visited.
  */
-const EXTRA_USER_SCOPED_KEYS: string[] = [CLUB_UUID_MAP_KEY];
+const EXTRA_USER_SCOPED_KEYS: string[] = [CLUB_UUID_MAP_KEY, CLUB_WORKSPACE_CACHE_KEY];
 
 function purgeLocal(): number {
   let removed = 0;

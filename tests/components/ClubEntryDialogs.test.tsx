@@ -31,9 +31,9 @@ describe('Club Entry dialog runtime surfaces', () => {
     surface(<FindPlayerModal isOpen onClose={onClose} />);
     expect(screen.getByRole('dialog', { name: 'Find A Player' })).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Access Rules' }));
-    expect(screen.getByLabelText('Player search access rules')).toBeVisible();
+    expect(screen.getByLabelText('Player Search Access Rules')).toBeVisible();
     await user.keyboard('{Escape}');
-    expect(screen.queryByLabelText('Player search access rules')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Player Search Access Rules')).not.toBeInTheDocument();
     await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalledTimes(1);
   });

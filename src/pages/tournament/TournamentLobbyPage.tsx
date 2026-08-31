@@ -675,9 +675,9 @@ export default function TournamentLobbyPage() {
       // Already started or completed
       return { label: 'Now', order: 0 };
     } else if (diffMins < 30) {
-      return { label: 'Starting Soon (< 30 min)', order: 1 };
+      return { label: 'Starting Soon (< 30 Min)', order: 1 };
     } else if (diffMins < 120) {
-      return { label: 'Next Hour (30 min - 2 hours)', order: 2 };
+      return { label: 'Next Hour (30 Min - 2 Hours)', order: 2 };
     } else if (diffHours < 6) {
       return { label: 'Later Today', order: 3 };
     } else if (diffHours < 24) {
@@ -713,7 +713,7 @@ export default function TournamentLobbyPage() {
       <CasinoSurfaceHeader
         eyebrow="Play & Review / Tournament Lobby"
         title="Tournament Command"
-        description="Discover scheduled fields, inspect live events, and enter registration through the existing tournament service and server-authoritative buy-in flow."
+        description="Discover Scheduled Fields, Inspect Live Events, And Enter Registration Through The Existing Tournament Service And Server-Authoritative Buy-In Flow."
         artPath="assets/club-buttons/lobby/shark-club-championship-ad-v2.png"
         status="TOURNAMENT NETWORK // LIVE"
         metrics={[

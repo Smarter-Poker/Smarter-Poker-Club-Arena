@@ -426,7 +426,7 @@ export default function SettlementDashboardPage() {
     }
     if (
       !(await confirmDialog({
-        title: 'Settle pending rakeback now',
+        title: 'Settle Pending Rakeback Now',
         message: `Settle ${pending} pending rakeback period(s) across ${rakebackStatus?.pendingClubs ?? 0} club(s), paying out ~${owed.toLocaleString()} chips? This is idempotent - it can't pay the same period twice.`,
         confirmText: 'Settle now',
         variant: 'default',
@@ -870,8 +870,8 @@ export default function SettlementDashboardPage() {
           disabled={runningSettlement}
           title={
             rakebackStatus
-              ? `${rakebackStatus.pendingPeriods} pending period(s), ~${rakebackStatus.estimatedOwed.toLocaleString()} chips owed`
-              : 'Player rakeback settles automatically; click to force it now'
+              ? `${rakebackStatus.pendingPeriods} Pending Period(s), ~${rakebackStatus.estimatedOwed.toLocaleString()} Chips Owed`
+              : 'Player Rakeback Settles Automatically; Click To Force It Now'
           }
           style={{
             padding: '10px 18px',
@@ -932,9 +932,9 @@ export default function SettlementDashboardPage() {
           {rakebackStatus.pendingPeriods > 0 ? (
             <>
               <strong style={{ color: '#8b5cf6' }}>
-                {rakebackStatus.pendingPeriods} Period(S)
+                {rakebackStatus.pendingPeriods} Period(s)
               </strong>{' '}
-              Across {rakebackStatus.pendingClubs} Club(S) Pending (~
+              Across {rakebackStatus.pendingClubs} Club(s) Pending (~
               {rakebackStatus.estimatedOwed.toLocaleString()} Chips) - Use “Settle Rakeback” To
               Clear Now.
             </>
@@ -1035,7 +1035,7 @@ export default function SettlementDashboardPage() {
         <div
           style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '24px' }}
           role="table"
-          aria-label="Agent payouts"
+          aria-label="Agent Payouts"
         >
           {agentPayouts.map((agent, idx) => {
             const statusStyle = getStatusColor(agent.status);
@@ -1138,7 +1138,7 @@ export default function SettlementDashboardPage() {
         <div
           style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}
           role="table"
-          aria-label="Settlement period history"
+          aria-label="Settlement Period History"
         >
           {periodHistory.map((period) => {
             const statusStyle = getStatusColor(period.status);

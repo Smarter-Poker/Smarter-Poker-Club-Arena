@@ -2397,6 +2397,46 @@ export default function TablePage({
     }
   }, [pineappleDeadline]);
 
+  /* ── CRAZY PINEAPPLE PHASE 3 2026-08-31: MAKE THE DISCARD VISIBLE ─────────
+     Until today a discard rendered NOTHING. No card left a seat, no villain's
+     hand got smaller, no cue fired - the engine emitted PLAYER_ACTION with
+     action 'discard' and the client's handler had no arm for it. Horses
+     discard on a deliberate 1.2s-5.2s humanlike delay (ServerTableEngineRunout
+     .handlePineappleDiscard), so the felt simply PAUSED and then jumped: the
+     pause was there and the thing it was hiding was not. CLAUDE.md 10.5 says
+     timing is part of the treatment and the tell is the rhythm.
+
+     Two pieces of state:
+
+       heroDiscardFlight  the card hero threw, so their own seat can fly a
+                          ghost of it after the row has already shrunk.
+       discardedSeats     every seat that has discarded this hand, so a
+                          villain's face-down fan drops from three backs to
+                          two. Nothing else on the client knew a villain's
+                          hand had changed size - holeCardCount is the
+                          variant's number and the variant never changes.
+
+     AUDIT 2026-08-31: both are STAMPED with the hand they belong to and read
+     back only for that hand. HAND_STARTED still clears them and is the normal
+     route, but it is a single WS event, and a dropped one used to mean a seat
+     played the NEXT hand visibly one card short, or hero's ghost flew carrying
+     the previous hand's card. A stamp cannot be dropped. */
+  const [heroDiscardFlight, setHeroDiscardFlight] = useState<{
+    card: Card;
+    hand: number;
+  } | null>(null);
+  const [discardedSeats, setDiscardedSeats] = useState<{
+    hand: number;
+    seats: readonly number[];
+  }>({ hand: 0, seats: [] });
+
+  /** Has this seat already thrown its card in the hand being played right now? */
+  const seatHasDiscarded = useCallback(
+    (seat: number): boolean =>
+      discardedSeats.hand === (tableState.handNumber ?? 0) && discardedSeats.seats.includes(seat),
+    [discardedSeats, tableState.handNumber]
+  );
+
   const handlePineappleDiscard = useCallback(
     async (displayIndex: number): Promise<boolean> => {
       if (!tableId) return false;
@@ -2435,6 +2475,14 @@ export default function TablePage({
       if (engineOrder) {
         heroEngineCardOrderRef.current = engineOrder.filter((_, i) => i !== engineIndex);
       }
+      /* PHASE 3 2026-08-31: the card the hero just threw is gone from the row
+         above, so the seat has nothing left to animate. Hand it the identity
+         here and SeatSlot flies a ghost of it to the muck. Hero only, and it
+         never leaves this client: an opponent's discarded card is not revealed
+         in Crazy Pineapple, and hole cards do not ride the public broadcast at
+         all (table_hole_cards, RLS - migration 20260312_secure_hole_cards_fix).
+         A villain's ghost is a card BACK, from the same event everyone sees. */
+      setHeroDiscardFlight({ card: chosen, hand: tableStateRef.current.handNumber ?? 0 });
       setTableState((prev) => {
         const players = [...prev.players];
         const heroIdx = players.findIndex((pl) => pl && pl.id === userId);
@@ -2446,10 +2494,20 @@ export default function TablePage({
           ...hero,
           holeCards: hero.holeCards.filter((_, i) => i !== at),
         };
-        return { ...prev, players };
+        /* The seat animates off `lastAction`, exactly like a fold. Setting it
+           HERE rather than waiting for the engine's echo is what keeps the
+           hero's toss and the hero's sound in the same beat - the echo is a
+           round trip and the sound below is immediate. The echo re-asserts the
+           same value, and SeatSlot's prevAction guard makes that a no-op. */
+        const nextActions = [...prev.lastActions];
+        if (heroIdx >= 0) nextActions[heroIdx] = 'discard';
+        return { ...prev, players, lastActions: nextActions };
       });
 
-      soundService.playFold();
+      /* Was playFold(). Wrong action's cue - and a two-card brush for a
+         one-card decision, in the one variant where throwing a card is how you
+         STAY IN. CLAUDE.md 10.6: a discard is owed its own cue. */
+      soundService.playDiscard();
       return true;
     },
     [tableId, userId, heroPineappleCards]
@@ -5993,7 +6051,7 @@ export default function TablePage({
               'The Connection Dropped Before The Table Answered. Your Chips May Have Been Added. Check Your Stack Before Trying Again.'
             );
           } else {
-            toast.error(res.error || 'Unable to add chips \u2014 your wallet was not charged.');
+            toast.error(res.error || 'Unable To Add Chips - Your Wallet Was Not Charged.');
           }
         }
         return false;
@@ -12681,6 +12739,33 @@ export default function TablePage({
             soundService.playChips();
           else if (action === 'check') soundService.playCheck();
           else if (action === 'fold') soundService.playFold();
+          /* PHASE 3 2026-08-31: there was no arm here at all, so a discard was
+             SILENT for every opponent - human and horse alike. The hero half
+             of the split fires in handlePineappleDiscard the instant they
+             click; this is the other half, and the isHeroEcho guard above is
+             what keeps the hero from hearing their own discard twice. */ else if (
+            action === 'discard'
+          )
+            soundService.playDiscard();
+        }
+
+        /* PHASE 3 2026-08-31: this seat is now holding one card fewer, and
+           this event is the only place the client is ever told. Recorded for
+           every seat identically - hero, villain, human, horse (CLAUDE.md
+           10.5) - and NOTHING about which card it was, because this is the
+           public broadcast. Cleared on HAND_STARTED below. */
+        if (action === 'discard' && actionSeat > 0) {
+          const actionHand =
+            Number((data as { hand_number?: number }).hand_number) ||
+            tableStateRef.current.handNumber ||
+            0;
+          setDiscardedSeats((prev) =>
+            prev.hand === actionHand
+              ? prev.seats.includes(actionSeat)
+                ? prev
+                : { hand: actionHand, seats: [...prev.seats, actionSeat] }
+              : { hand: actionHand, seats: [actionSeat] }
+          );
         }
         // Bible V8 §5.2: All-in dramatic mode activates on ANY player all-in.
         //
@@ -12728,6 +12813,11 @@ export default function TablePage({
         // (emitted after HAND_STARTED in the engine's dealing path) re-arms it.
         // Items 11 + 16: a fresh hand has not reached showdown yet.
         handShowdownRef.current = { wentToShowdown: false, hands: 2 };
+        /* PHASE 3 2026-08-31: the discard belongs to the hand it was made in.
+           Both of these shrink a card row, so carrying either into the next
+           hand would deal a seat a hand that is visibly one card short. */
+        setDiscardedSeats((prev) => (prev.seats.length === 0 ? prev : { hand: 0, seats: [] }));
+        setHeroDiscardFlight(null);
         setBombPotActive(false);
         setBombPotHoldFlop(false);
         if (bombPotHoldTimerRef.current) {
@@ -18358,7 +18448,7 @@ export default function TablePage({
                 .board-transition { animation: boardSlideIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
             `}</style>
       {tableState.isFinalTable && (
-        <div className="final-table-broadcast-hud" aria-label="Final Table broadcast status">
+        <div className="final-table-broadcast-hud" aria-label="Final Table Broadcast Status">
           <span>SMARTER POKER CHAMPIONSHIP</span>
           <strong>FINAL TABLE</strong>
           <b>{tableState.players.filter(Boolean).length} PLAYERS</b>
@@ -18746,8 +18836,8 @@ export default function TablePage({
                   soundService.playButtonClick();
                   masterBus.emit('OPEN_LOBBY_TAB', { requestedBy: userId });
                 }}
-                title="Open the lobby in a new tab"
-                aria-label="Open the lobby in a new tab"
+                title="Open The Lobby In A New Tab"
+                aria-label="Open The Lobby In A New Tab"
               >
                 <img
                   src={addScreenIcon}
@@ -19527,7 +19617,7 @@ export default function TablePage({
           {/* COMPETITOR-PARITY 2026-08-19: table-level ALL IN banner — fires
               once when the runout locks in (first equity broadcast). */}
           {showAllInBanner && (
-            <div className="allin-banner" role="status" aria-label="All in">
+            <div className="allin-banner" role="status" aria-label="All In">
               <span className="allin-banner__text">ALL IN</span>
             </div>
           )}
@@ -19554,7 +19644,7 @@ export default function TablePage({
               felt when the insurance phase opens — every seat and observer
               sees it, exactly like the ALL IN slam above. */}
           {showInsuranceBanner && (
-            <div className="insurance-banner" role="status" aria-label="Insurance offered">
+            <div className="insurance-banner" role="status" aria-label="Insurance Offered">
               <span className="insurance-banner__shield">{'⛨'}</span>
               <span className="insurance-banner__text">INSURANCE</span>
             </div>
@@ -19601,7 +19691,7 @@ export default function TablePage({
               <div
                 className="insurance-premium-chip"
                 role="status"
-                aria-label={`Insurance fee held: ${insurancePremiumHeld}`}
+                aria-label={`Insurance Fee Held: ${insurancePremiumHeld}`}
               >
                 <span className="insurance-premium-chip__icon">{'⛨'}</span>
                 <span className="insurance-premium-chip__amount">
@@ -20053,7 +20143,24 @@ export default function TablePage({
                      The seat cannot work this out for itself - a hidden hand's
                      holeCards array is empty, so there is nothing there to
                      count. Only the table knows the variant. */
-                  holeCardCount={seatHoleCardCount}
+                  /* PHASE 3 2026-08-31 (Crazy Pineapple): minus the card this
+                     seat has already thrown. seatHoleCardCount is the VARIANT's
+                     hand size, so without this a villain kept three backs on
+                     the felt for the whole hand after discarding one - the
+                     table never showed that anybody's hand had got smaller.
+                     Floored at one by SeatSlot's own sane-band clamp. */
+                  holeCardCount={seatHoleCardCount - (seatHasDiscarded(seatNumber) ? 1 : 0)}
+                  /* Hero's own discarded card, for the ghost that flies to the
+                     muck after the row has already shrunk. Never set for a
+                     villain: their discard is not revealed in this variant, so
+                     their ghost is a card back. */
+                  discardFlightCard={
+                    player?.isHero &&
+                    heroDiscardFlight &&
+                    heroDiscardFlight.hand === (tableState.handNumber ?? 0)
+                      ? heroDiscardFlight.card
+                      : null
+                  }
                   /* Dan 2026-08-28: a Spin waiting on its third seat drew the
                      two seated players holding face-down hands. A villain's
                      fan belongs to a HAND — see SeatSlot's `handInPlay`. The
@@ -21229,7 +21336,7 @@ export default function TablePage({
                 setIsSideMenuOpen(false);
               }}
             >
-              <span className="menu-item-icon">☰</span>
+              <span className="menu-item-icon">§</span>
               <span className="menu-item-label">Table Rules</span>
               <span className="menu-item-arrow">›</span>
             </button>
@@ -21456,8 +21563,8 @@ export default function TablePage({
             isChatBanned
               ? 'Chat Is Off At This Table'
               : canChatAsObserver
-                ? 'Say something...'
-                : 'Observers cannot chat'
+                ? 'Say Something...'
+                : 'Observers Cannot Chat'
           }
           isMuted={isChatMuted}
           isDisabled={isChatBanned || !canChatAsObserver}

@@ -116,6 +116,9 @@ describe('LeaderboardPrizeWizard', () => {
     await user.click(screen.getByRole('button', { name: 'Review Disabled Plan' }));
     expect(screen.getByText('Prizes Disabled')).toBeInTheDocument();
     expect(screen.getAllByText('0 Chips')).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByText('Do You Want To Reward Leaderboard Prizes?')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Review Disabled Plan' }));
     await user.click(screen.getByRole('button', { name: 'Publish Prize Program' }));
 
     await waitFor(() => expect(saveLeaderboardRewardSetup).toHaveBeenCalledTimes(1));
@@ -127,5 +130,33 @@ describe('LeaderboardPrizeWizard', () => {
         monthly_prizes: [],
       })
     );
+  });
+
+  it('makes the custom budget control change the rows that are actually published', async () => {
+    const user = userEvent.setup();
+    saveLeaderboardRewardSetup.mockResolvedValue({
+      ...setup,
+      setup_complete: true,
+      rewards_enabled: true,
+    });
+
+    render(<LeaderboardPrizeWizard isOpen setup={setup} onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: /Yes, Show Prizes/i }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.click(screen.getByRole('button', { name: /Custom/i }));
+    const budgets = screen.getAllByRole('spinbutton', { name: 'Prize Budget' });
+    await user.clear(budgets[0]);
+    await user.type(budgets[0], '250');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.click(screen.getByRole('button', { name: 'Publish Prize Program' }));
+
+    await waitFor(() => expect(saveLeaderboardRewardSetup).toHaveBeenCalledTimes(1));
+    expect(saveLeaderboardRewardSetup.mock.calls[0][1].weekly_prizes).toEqual([
+      { rank: 1, amount: 125 },
+      { rank: 2, amount: 75 },
+      { rank: 3, amount: 50 },
+    ]);
   });
 });

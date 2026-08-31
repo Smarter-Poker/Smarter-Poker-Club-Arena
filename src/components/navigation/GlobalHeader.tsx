@@ -53,43 +53,6 @@ export default function GlobalHeader() {
   } = useHeaderDataStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isNavigatingAway, setIsNavigatingAway] = useState(false);
-  const [vipShimmerVisible, setVipShimmerVisible] = useState(false);
-
-  /*
-   * VIP is intentionally quiet most of the time. Members get one short sheen
-   * after a genuinely random five-to-ten-second pause, then a new random pause
-   * is selected. Non-members never schedule the effect.
-   */
-  useEffect(() => {
-    if (!isVipActive) {
-      setVipShimmerVisible(false);
-      return;
-    }
-
-    let pauseTimer: number | undefined;
-    let shimmerTimer: number | undefined;
-    let cancelled = false;
-
-    const scheduleNextShimmer = () => {
-      const randomDelayMs = 5_000 + Math.floor(Math.random() * 5_001);
-      pauseTimer = window.setTimeout(() => {
-        if (cancelled) return;
-        setVipShimmerVisible(true);
-        shimmerTimer = window.setTimeout(() => {
-          if (cancelled) return;
-          setVipShimmerVisible(false);
-          scheduleNextShimmer();
-        }, 1_250);
-      }, randomDelayMs);
-    };
-
-    scheduleNextShimmer();
-    return () => {
-      cancelled = true;
-      if (pauseTimer !== undefined) window.clearTimeout(pauseTimer);
-      if (shimmerTimer !== undefined) window.clearTimeout(shimmerTimer);
-    };
-  }, [isVipActive]);
 
   /*
    * The off-route table action bar is fixed, so CSS cannot discover the
@@ -297,7 +260,7 @@ export default function GlobalHeader() {
             were applied to the source file. The controls below become precise
             hit regions over the artwork at these breakpoints. */}
         <img
-          src={`${APPROVED_HEADER_ASSET}global-header-desktop.png`}
+          src={`${APPROVED_HEADER_ASSET}global-header-command-center-v1.png`}
           alt=""
           width={1648}
           height={168}
@@ -314,12 +277,12 @@ export default function GlobalHeader() {
               className={`${styles.artButton} ${styles.hamburgerBtn}`}
               aria-label="Open Menu"
             >
-              <img src={`${APPROVED_HEADER_ASSET}menu.png`} alt="Menu" />
+              <img src={`${APPROVED_HEADER_ASSET}command-center-v1.png`} alt="Command Center" />
             </button>
             <button
               onClick={handleBackClick}
               className={`${styles.artButton} ${styles.backBtn}`}
-              aria-label="Go back"
+              aria-label="Go Back"
               title="Back"
             >
               <img src={`${APPROVED_HEADER_ASSET}back.png`} alt="Back" />
@@ -327,7 +290,7 @@ export default function GlobalHeader() {
             <button
               onClick={handleHubClick}
               className={`${styles.artButton} ${styles.hubBtn}`}
-              aria-label="Go to the Hub"
+              aria-label="Go To The Hub"
               title="Hub"
             >
               <img src={`${APPROVED_HEADER_ASSET}hub.png`} alt="Hub" />
@@ -365,7 +328,7 @@ export default function GlobalHeader() {
             </button>
 
             <button
-              className={`${styles.artButton} ${styles.vipBtn} ${isVipActive ? styles.vipActive : ''} ${isVipActive && vipShimmerVisible ? styles.vipShimmer : ''}`}
+              className={`${styles.artButton} ${styles.vipBtn} ${isVipActive ? styles.vipActive : ''}`}
               onClick={() => navigateToHub('/hub/vip-membership')}
               aria-label={isVipActive ? 'VIP Membership Active' : 'VIP Membership'}
               title={isVipActive ? 'VIP Membership Active' : 'VIP Membership'}
@@ -386,7 +349,7 @@ export default function GlobalHeader() {
               {unreadMessages > 0 && (
                 <span
                   className={`${styles.badge} ${styles.messageBadge}`}
-                  aria-label={`${unreadMessages} unread messages`}
+                  aria-label={`${unreadMessages} Unread Messages`}
                   aria-live="polite"
                 >
                   {unreadMessages > 99 ? '99+' : unreadMessages}
@@ -408,7 +371,7 @@ export default function GlobalHeader() {
               {notificationCount > 0 && (
                 <span
                   className={`${styles.badge} ${styles.notificationBadge}`}
-                  aria-label={`${notificationCount} unread notifications`}
+                  aria-label={`${notificationCount} Unread Notifications`}
                   aria-live="polite"
                 >
                   {notificationCount > 99 ? '99+' : notificationCount}

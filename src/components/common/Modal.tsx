@@ -169,7 +169,7 @@ export function Modal({
                 {showCloseButton && (
                   <IconButton
                     icon="✕"
-                    label="Close Dialog"
+                    label="Close dialog"
                     variant="ghost"
                     size="small"
                     onClick={onClose}

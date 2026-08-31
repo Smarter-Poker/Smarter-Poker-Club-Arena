@@ -54,15 +54,15 @@ const base = {
 
 const openPanel = () => {
   const opener =
-    screen.queryByLabelText('Open Bet Panel') ?? screen.getByLabelText('Open Raise Panel');
+    screen.queryByLabelText('Open bet panel') ?? screen.getByLabelText('Open raise panel');
   fireEvent.click(opener);
 };
 
-const slider = () => screen.getByLabelText('Raise Amount') as HTMLInputElement;
+const slider = () => screen.getByLabelText('Raise amount') as HTMLInputElement;
 
 /** The amount the panel is currently sized to, read off the editable field. */
 const shownAmount = (): string =>
-  screen.getByRole('button', { name: /^Edit Bet Amount/ }).textContent ?? '';
+  screen.getByRole('button', { name: /^Edit bet amount/ }).textContent ?? '';
 
 /**
  * The confirm button, whichever of its three labels it is wearing.
@@ -74,7 +74,7 @@ const shownAmount = (): string =>
  */
 const confirmBtn = () =>
   screen.queryByRole('button', { name: /^(Raise|Bet) [\d.,]/ }) ??
-  screen.getByRole('button', { name: /^All In For [\d.,]/ });
+  screen.getByRole('button', { name: /^All in for [\d.,]/ });
 
 describe('betSliderStep - the step is one chip, never one big blind', () => {
   it('is the small blind on a 1/2 table, not the big blind', () => {
@@ -237,8 +237,8 @@ describe('sanitizeAmountDraft - the typed field can only hold a number', () => {
 
 describe('click and type an exact amount', () => {
   const typeAmount = (text: string) => {
-    fireEvent.click(screen.getByRole('button', { name: /^Edit Bet Amount/ }));
-    const input = screen.getByLabelText(/^Type Exact Bet Amount/) as HTMLInputElement;
+    fireEvent.click(screen.getByRole('button', { name: /^Edit bet amount/ }));
+    const input = screen.getByLabelText(/^Type exact bet amount/) as HTMLInputElement;
     fireEvent.change(input, { target: { value: text } });
     fireEvent.keyDown(input, { key: 'Enter' });
   };
@@ -246,8 +246,8 @@ describe('click and type an exact amount', () => {
   it('offers a decimal keypad on a phone', () => {
     render(<ActionPanel {...base} onAction={vi.fn()} />);
     openPanel();
-    fireEvent.click(screen.getByRole('button', { name: /^Edit Bet Amount/ }));
-    expect(screen.getByLabelText(/^Type Exact Bet Amount/).getAttribute('inputmode')).toBe(
+    fireEvent.click(screen.getByRole('button', { name: /^Edit bet amount/ }));
+    expect(screen.getByLabelText(/^Type exact bet amount/).getAttribute('inputmode')).toBe(
       'decimal'
     );
   });
@@ -293,8 +293,8 @@ describe('click and type an exact amount', () => {
     render(<ActionPanel {...base} onAction={vi.fn()} />);
     openPanel();
     fireEvent.change(slider(), { target: { value: '40' } });
-    fireEvent.click(screen.getByRole('button', { name: /^Edit Bet Amount/ }));
-    const input = screen.getByLabelText(/^Type Exact Bet Amount/);
+    fireEvent.click(screen.getByRole('button', { name: /^Edit bet amount/ }));
+    const input = screen.getByLabelText(/^Type exact bet amount/);
     fireEvent.change(input, { target: { value: '99' } });
     fireEvent.keyDown(input, { key: 'Escape' });
     expect(shownAmount()).toBe('40');

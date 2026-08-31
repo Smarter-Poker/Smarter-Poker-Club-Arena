@@ -17,7 +17,7 @@ export default function NotFoundPage() {
       icon="404"
       eyebrow="Route Not Found"
       title="This Arena Door Is Closed"
-      description={`No Current Page Matches ${location.pathname}. The Destination May Have Moved, Or The Link May Be Incomplete.`}
+      description={`No current page matches ${location.pathname}. The destination may have moved, or the link may be incomplete.`}
       action={{ label: 'Return To Club Arena', onClick: () => navigate('/', { replace: true }) }}
       secondaryAction={{ label: 'Go Back', onClick: () => navigate(-1) }}
     />

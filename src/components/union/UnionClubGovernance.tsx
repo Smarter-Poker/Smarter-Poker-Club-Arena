@@ -118,17 +118,17 @@ export default function UnionClubGovernance({ unionId, clubId, clubName, onExpel
             {blockers && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '14px 0' }}>
                 <Blocker
-                  label="Players Seated In Union Games"
+                  label="Players seated in union games"
                   value={blockers.players_seated_in_union_games}
                 />
-                <Blocker label="Live Tournament Entries" value={blockers.live_tournament_entries} />
+                <Blocker label="Live tournament entries" value={blockers.live_tournament_entries} />
                 <Blocker
-                  label="Unsettled Rake This Period"
+                  label="Unsettled rake this period"
                   value={money(blockers.unsettled_rake_this_period)}
                   bad={Number(blockers.unsettled_rake_this_period) > 0}
                 />
                 <Blocker
-                  label="Agent Credit Outstanding"
+                  label="Agent credit outstanding"
                   value={money(blockers.agent_credit_outstanding)}
                   bad={Number(blockers.agent_credit_outstanding) > 0}
                 />
@@ -145,8 +145,8 @@ export default function UnionClubGovernance({ unionId, clubId, clubName, onExpel
                   }}
                 >
                   {blockers.clear_to_exit
-                    ? 'Clear To Exit.'
-                    : 'Open Exposure - Forcing Will Leave It Unsettled.'}
+                    ? 'Clear to exit.'
+                    : 'Open exposure - forcing will leave it unsettled.'}
                 </div>
               </div>
             )}

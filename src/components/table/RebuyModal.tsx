@@ -58,7 +58,7 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
             className="rebuyCloseBtn"
             onClick={onClose}
             disabled={isProcessing}
-            aria-label="Close Rebuy"
+            aria-label="Close rebuy"
           >
             ×
           </button>

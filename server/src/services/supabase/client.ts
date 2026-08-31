@@ -66,13 +66,50 @@ export const supabase: SupabaseClient = createClient(SUPABASE_URL, EFFECTIVE_SER
     persistSession: false,
   },
   global: {
-    fetch: (input: any, init: any = {}) => {
-      const ctl = new AbortController();
-      const t = setTimeout(() => ctl.abort(new Error('supabase_timeout')), DB_TIMEOUT_MS);
-      if (init.signal) {
-        init.signal.addEventListener('abort', () => ctl.abort(init.signal.reason));
+    /**
+     * Two layers here, both load-bearing:
+     * 1. Per-attempt hard deadline (2026-08-15 freeze fix above) — a hung
+     *    socket becomes a rejection the dealing loop can handle.
+     * 2. Pre-execution-503 retry (2026-08-31 PGRST002 outage) — PostgREST
+     *    returns 503 with code PGRST001/PGRST002/PGRST003 BEFORE the statement
+     *    executes (no connection / schema cache loading / pool acquisition
+     *    timed out). Replaying those is safe for any method, including the
+     *    dealing RPCs — the statement never ran. Any other 503, non-JSON 503,
+     *    or network throw is NOT retried here; the loop's existing catch and
+     *    backoff still own those. Retries are short (300ms/1.2s) so worst case
+     *    stays inside one dealing tick budget.
+     */
+    fetch: async (input: any, init: any = {}) => {
+      const attemptOnce = () => {
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(new Error('supabase_timeout')), DB_TIMEOUT_MS);
+        if (init.signal) {
+          init.signal.addEventListener('abort', () => ctl.abort(init.signal.reason));
+        }
+        // A Request object's body stream is consumed by fetch — clone per
+        // attempt so a retry never replays a consumed stream. (supabase-js
+        // passes a URL string + init in practice; this is belt-and-braces.)
+        const attemptInput =
+          typeof Request !== 'undefined' && input instanceof Request ? input.clone() : input;
+        return fetch(attemptInput, { ...init, signal: ctl.signal }).finally(() => clearTimeout(t));
+      };
+
+      const RETRYABLE = new Set(['PGRST001', 'PGRST002', 'PGRST003']);
+      const DELAYS_MS = [300, 1200];
+      let attempt = 0;
+      for (;;) {
+        const resp = await attemptOnce();
+        if (resp.status !== 503 || attempt >= DELAYS_MS.length) return resp;
+        let code: unknown;
+        try {
+          code = ((await resp.clone().json()) as { code?: unknown } | null)?.code;
+        } catch {
+          return resp;
+        }
+        if (typeof code !== 'string' || !RETRYABLE.has(code)) return resp;
+        await new Promise((r) => setTimeout(r, DELAYS_MS[attempt] + Math.random() * 200));
+        attempt++;
       }
-      return fetch(input, { ...init, signal: ctl.signal }).finally(() => clearTimeout(t));
     },
   },
 });

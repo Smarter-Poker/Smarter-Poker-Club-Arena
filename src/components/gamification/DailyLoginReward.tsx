@@ -108,7 +108,7 @@ export default function DailyLoginReward({
 
         {/* Close */}
         {!claimed && (
-          <button className="dlr-close" onClick={onClose} aria-label="Skip Daily Reward">
+          <button className="dlr-close" onClick={onClose} aria-label="Skip daily reward">
             Skip
           </button>
         )}

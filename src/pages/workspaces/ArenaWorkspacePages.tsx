@@ -40,7 +40,7 @@ function WorkspacePage({
         </div>
       </header>
 
-      <section className={styles.grid} aria-label={`${title} Tools`}>
+      <section className={styles.grid} aria-label={`${title} tools`}>
         {links.map((item, index) => (
           <Link to={item.path} className={styles.card} key={item.path}>
             <span className={styles.index}>{String(index + 1).padStart(2, '0')}</span>
@@ -64,28 +64,28 @@ export function RewardsWorkspacePage() {
     <WorkspacePage
       eyebrow="Player Value Circuit"
       title="Rewards Center"
-      description="A Single Route Into Every Live Balance, Benefit, Offer, And Earned Milestone."
+      description="A single route into every live balance, benefit, offer, and earned milestone."
       art="assets/club-buttons/wallets/square/wallet-diamonds-square-v1.webp"
       links={[
-        { label: 'Wallet', description: 'Balances, Transfers, And Ledger', path: '/wallet' },
+        { label: 'Wallet', description: 'Balances, transfers, and ledger', path: '/wallet' },
         {
           label: 'Transactions',
-          description: 'Complete Account Transaction History',
+          description: 'Complete account transaction history',
           path: '/transactions',
         },
-        { label: 'VIP Status', description: 'Tier, Benefits, And Progress', path: '/vip' },
-        { label: 'Rakeback', description: 'Current Rate And Payment History', path: '/rakeback' },
-        { label: 'Promotions', description: 'Live And Upcoming Offers', path: '/promotions' },
-        { label: 'Bonuses', description: 'Available Bonus Inventory', path: '/bonuses' },
+        { label: 'VIP Status', description: 'Tier, benefits, and progress', path: '/vip' },
+        { label: 'Rakeback', description: 'Current rate and payment history', path: '/rakeback' },
+        { label: 'Promotions', description: 'Live and upcoming offers', path: '/promotions' },
+        { label: 'Bonuses', description: 'Available bonus inventory', path: '/bonuses' },
         {
           label: 'Achievements',
-          description: 'Milestones, Badges, And Unlock Progress',
+          description: 'Milestones, badges, and unlock progress',
           path: '/achievements',
         },
-        { label: 'Challenges', description: 'Daily Objectives And Progress', path: '/challenges' },
+        { label: 'Challenges', description: 'Daily objectives and progress', path: '/challenges' },
         {
           label: 'Marketplace',
-          description: 'Diamonds, Membership, Cosmetics, And Owned Items',
+          description: 'Diamonds, membership, cosmetics, and owned items',
           path: '/marketplace',
         },
       ]}
@@ -98,43 +98,43 @@ export function CommunityWorkspacePage() {
     <WorkspacePage
       eyebrow="Community Network"
       title="Community Center"
-      description="Discover Players And Clubs, Manage Trusted Connections, Follow Shared Activity, And Move Into Conversation From One Network Map."
+      description="Discover players and clubs, manage trusted connections, follow shared activity, and move into conversation from one network map."
       art="images/community/community-network-v1.webp"
       links={[
         {
           label: 'Discover',
-          description: 'Search Live Players, Clubs, Tables, And Tournaments',
+          description: 'Search live players, clubs, tables, and tournaments',
           path: '/search',
           signal: 'Live',
         },
         {
           label: 'Friends',
-          description: 'Trusted Connections, Presence, And Direct Actions',
+          description: 'Trusted connections, presence, and direct actions',
           path: '/friends',
         },
         {
           label: 'Requests',
-          description: 'Review Incoming Connection Requests',
+          description: 'Review incoming connection requests',
           path: '/friends?tab=requests',
         },
         {
           label: 'Activity',
-          description: 'Shared Achievements, Hands, And Network Discovery',
+          description: 'Shared achievements, hands, and network discovery',
           path: '/friends?tab=activity',
         },
         {
           label: 'Challenges',
-          description: 'Head-To-Head Social Missions And Progress',
+          description: 'Head-to-head social missions and progress',
           path: '/friends?tab=challenges',
         },
         {
           label: 'Messages',
-          description: 'Continue In Smarter.Poker Messenger',
+          description: 'Continue in Smarter.Poker Messenger',
           path: '/messages',
         },
         {
           label: 'Union Network',
-          description: 'Browse And Operate Connected Club Networks',
+          description: 'Browse and operate connected club networks',
           path: '/unions',
         },
       ]}
@@ -147,38 +147,38 @@ export function PlayWorkspacePage() {
     <WorkspacePage
       eyebrow="Poker Command Circuit"
       title="Play & Review"
-      description="Move From Live Competition Into Results, Hands, Sessions, And Rankings Without Crossing Disconnected History Surfaces."
+      description="Move from live competition into results, hands, sessions, and rankings without crossing disconnected history surfaces."
       art="assets/club-buttons/lobby/shark-club-championship-ad-v2.png"
       links={[
         {
           label: 'Tournaments',
-          description: 'Scheduled, Registering, And Live Events',
+          description: 'Scheduled, registering, and live events',
           path: '/tournaments',
           signal: 'Live',
         },
         {
           label: 'Tournament Results',
-          description: 'Finishes, Prizes, And Completed Fields',
+          description: 'Finishes, prizes, and completed fields',
           path: '/tournament-results',
         },
         {
           label: 'My Spin Results',
-          description: 'Your Spin Finishes And Prizes',
+          description: 'Your Spin finishes and prizes',
           path: '/tournament-results?filter=mine&type=spin',
         },
         {
           label: 'Hand History',
-          description: 'Review, Replay, And Share Completed Hands',
+          description: 'Review, replay, and share completed hands',
           path: '/hand-history',
         },
         {
           label: 'Session History',
-          description: 'Session-Level Results And Performance',
+          description: 'Session-level results and performance',
           path: '/session-history',
         },
         {
           label: 'Leaderboards',
-          description: 'Club And Global Competitive Rankings',
+          description: 'Club and global competitive rankings',
           path: '/leaderboard',
         },
       ]}
@@ -191,30 +191,30 @@ export function LegalWorkspacePage() {
     <WorkspacePage
       eyebrow="Trust & Rules"
       title="Legal Center"
-      description="The Current Platform Rules, Privacy Commitments, Integrity Standards, And Promotion Terms."
+      description="The current platform rules, privacy commitments, integrity standards, and promotion terms."
       art="images/bg-vault.jpg"
       links={[
         {
           label: 'Fair Gaming',
-          description: 'Integrity, Security, And Reporting',
+          description: 'Integrity, security, and reporting',
           path: '/legal/fair-gaming',
         },
         {
           label: 'Terms Of Service',
-          description: 'Platform And Account Terms',
+          description: 'Platform and account terms',
           path: '/legal/tos',
         },
         {
           label: 'Privacy Policy',
-          description: 'Data Use, Retention, And Controls',
+          description: 'Data use, retention, and controls',
           path: '/legal/privacy',
         },
         {
           label: 'Promotion Rules',
-          description: 'Eligibility And Campaign Terms',
+          description: 'Eligibility and campaign terms',
           path: '/legal/promotions',
         },
-        { label: 'Help Center', description: 'Product Help And Support Paths', path: '/help' },
+        { label: 'Help Center', description: 'Product help and support paths', path: '/help' },
       ]}
     />
   );
@@ -228,7 +228,7 @@ export function ClubFinanceWorkspacePage() {
     <WorkspacePage
       eyebrow="Ledger Circuit"
       title="Finance & Risk"
-      description="Live Club Economics, Cashier Operations, Settlement, And Exposure Without Duplicate Dashboards."
+      description="Live club economics, cashier operations, settlement, and exposure without duplicate dashboards."
       art="assets/club-buttons/wallets/desktop/wallet-club-bank-v1.webp"
       links={(finance?.items || [])
         .filter((item) => item.id !== 'finance-overview')
@@ -249,7 +249,7 @@ export function ClubControlWorkspacePage() {
     <WorkspacePage
       eyebrow="House Circuit"
       title="Club Control"
-      description="Policy, Communications, Campaigns, Identity, And Permissions In One Governed Workspace."
+      description="Policy, communications, campaigns, identity, and permissions in one governed workspace."
       art="assets/club-buttons/lobby/lobby-command-chassis-v2.png"
       links={(control?.items || [])
         .filter((item) => item.id !== 'control-overview')

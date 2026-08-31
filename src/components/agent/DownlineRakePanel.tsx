@@ -282,9 +282,9 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
                 gap: 10,
               }}
             >
-              <Stat label="Downline Rake" value={money(summary.rake_generated)} accent />
+              <Stat label="Downline rake" value={money(summary.rake_generated)} accent />
               <Stat
-                label="Your Share"
+                label="Your share"
                 value={money(summary.estimated_commission)}
                 sub={`at ${Math.round(Number(summary.commission_rate) * 100)}%`}
               />
@@ -296,7 +296,7 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
               <Stat label="Hands" value={count(summary.hands)} />
               {summary.top_earner?.username && (
                 <Stat
-                  label="Top Earner"
+                  label="Top earner"
                   value={summary.top_earner.username}
                   sub={money(summary.top_earner.rake)}
                   small
@@ -342,8 +342,8 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
           {rows.length === 0 ? (
             <p style={{ color: '#8aa' }}>
               {debounced
-                ? 'No One In Your Downline Matches That Name.'
-                : 'No Downline Activity In This Window.'}
+                ? 'No one in your downline matches that name.'
+                : 'No downline activity in this window.'}
             </p>
           ) : (
             <div style={{ overflowX: 'auto' }}>

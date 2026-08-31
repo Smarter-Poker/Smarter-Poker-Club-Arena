@@ -289,7 +289,7 @@ const RankRow = React.memo(function RankRow({
         type="button"
         className={className}
         onClick={() => onPick(entry)}
-        aria-label={`Watch ${entry.username}, ${chips(stack)} Chips`}
+        aria-label={`Watch ${entry.username}, ${chips(stack)} chips`}
       >
         {body}
       </button>

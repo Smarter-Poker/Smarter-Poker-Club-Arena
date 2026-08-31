@@ -318,7 +318,7 @@ export function HeroHubPanel({
         className="hero-hub"
         role="dialog"
         aria-modal="true"
-        aria-label="Player Hub"
+        aria-label="Player hub"
         ref={panelRef}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
@@ -342,7 +342,7 @@ export function HeroHubPanel({
         <div
           className="hero-hub__tabs"
           role="tablist"
-          aria-label="Player Hub Sections"
+          aria-label="Player hub sections"
           ref={tablistRef}
           onKeyDown={onTablistKeyDown}
         >

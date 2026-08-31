@@ -98,7 +98,7 @@ export function QuickActionsBar({
   const hasOverflow = !isExpanded && actions.length > 3;
 
   return (
-    <div className="quick-actions-bar" role="toolbar" aria-label="Quick Actions">
+    <div className="quick-actions-bar" role="toolbar" aria-label="Quick actions">
       <div className="qab-pill">
         {visibleActions.map((action) => (
           <button
@@ -120,7 +120,7 @@ export function QuickActionsBar({
               haptic.light();
               setIsExpanded(true);
             }}
-            title="More Actions"
+            title="More actions"
           >
             <span className="qab-btn__icon">•••</span>
           </button>

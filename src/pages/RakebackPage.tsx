@@ -255,7 +255,7 @@ export default function RakebackPage() {
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Rakeback"
         title="Rakeback Engine"
-        description="See The Value Returning From Completed Play, Inspect Every Earning Period, And Claim Eligible Funds Through The Existing Settlement Workflow."
+        description="See the value returning from completed play, inspect every earning period, and claim eligible funds through the existing settlement workflow."
         art="diamonds"
         status="RAKEBACK ENGINE // LIVE"
         metrics={[

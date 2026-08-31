@@ -1224,8 +1224,8 @@ export default function HouseAdsPage() {
                                           style={{ marginLeft: 6, fontSize: 11 }}
                                           title={
                                             conv.conversionRule
-                                              ? `${conv.conversionRule}, Within 24 Hours Of The Click. Correlation, Not Proof Of Cause.`
-                                              : 'No Outcome Is Defined For This Campaign, So This Is Deliberately Not Counted'
+                                              ? `${conv.conversionRule}, within 24 hours of the click. Correlation, not proof of cause.`
+                                              : 'No outcome is defined for this campaign, so this is deliberately not counted'
                                           }
                                         >
                                           {conv.clicksFollowedBy === null
@@ -1237,7 +1237,7 @@ export default function HouseAdsPage() {
                                         <span
                                           className="admin-badge-yellow"
                                           style={{ marginLeft: 6, fontSize: 10 }}
-                                          title="Players Who Have Already Hit This Placement's Daily Cap In The Last 24 Hours, And So Cannot See It Again Today"
+                                          title="Players who have already hit this placement's daily cap in the last 24 hours, and so cannot see it again today"
                                         >
                                           {sup.cappedUsers24h} Of {sup.servedUsers24h} Capped Out
                                         </span>

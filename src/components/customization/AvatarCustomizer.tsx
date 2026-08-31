@@ -218,7 +218,7 @@ export const AvatarCustomizer: React.FC<AvatarCustomizerProps> = ({
   return (
     <div className="avatar-customizer">
       <div className="avatar-preview-large">
-        <img src={previewUrl} alt="Avatar Preview" />
+        <img src={previewUrl} alt="Avatar preview" />
       </div>
 
       <div className="preset-options">

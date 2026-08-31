@@ -87,7 +87,7 @@ export function TournamentLobbyModal({ isOpen, tournamentId, onClose }: Tourname
         className="tlm-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="Tournament Lobby"
+        aria-label="Tournament lobby"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Phone affordance: the sheet is draggable-looking and the quarter of

@@ -339,7 +339,7 @@ export default function AddOnModal({
                 {processing
                   ? 'Processing...'
                   : priceKnown
-                    ? `Accept For ${totalCost.toLocaleString()}`
+                    ? `Accept for ${totalCost.toLocaleString()}`
                     : 'Accept Add-On'}
               </button>
             </div>

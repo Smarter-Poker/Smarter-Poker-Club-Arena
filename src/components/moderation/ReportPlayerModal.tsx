@@ -18,24 +18,24 @@ interface ReportData {
 }
 
 const REPORT_REASONS = [
-  { id: 'collusion', label: 'Collusion', description: 'Playing Together To Cheat Others' },
+  { id: 'collusion', label: 'Collusion', description: 'Playing together to cheat others' },
   {
     id: 'chip_dumping',
     label: 'Chip Dumping',
-    description: 'Intentionally Losing Chips To Another Player',
+    description: 'Intentionally losing chips to another player',
   },
-  { id: 'harassment', label: 'Harassment', description: 'Offensive Or Abusive Behavior In Chat' },
+  { id: 'harassment', label: 'Harassment', description: 'Offensive or abusive behavior in chat' },
   {
     id: 'slow_play',
     label: 'Intentional Slow Play',
-    description: 'Deliberately Stalling To Annoy Others',
+    description: 'Deliberately stalling to annoy others',
   },
   {
     id: 'software',
     label: 'Unauthorized Software',
-    description: 'Using Automated Software To Play',
+    description: 'Using automated software to play',
   },
-  { id: 'other', label: 'Other', description: 'Other Violation Not Listed Above' },
+  { id: 'other', label: 'Other', description: 'Other violation not listed above' },
 ];
 
 export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
@@ -163,7 +163,7 @@ export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
               type="text"
               value={handId}
               onChange={(e) => setHandId(e.target.value)}
-              placeholder="E.G., #12345678"
+              placeholder="E.g., #12345678"
             />
           </label>
         </div>

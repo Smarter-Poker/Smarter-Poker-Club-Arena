@@ -44,7 +44,7 @@ export default function GlobalUXIndicators({ wsConnected = true }: Props) {
       {/* WS connection health dot */}
       <div
         className={`global-ws-dot ${wsConnected ? 'connected' : 'disconnected'}`}
-        title={wsConnected ? 'Live Connection' : 'Reconnecting…'}
+        title={wsConnected ? 'Live connection' : 'Reconnecting…'}
       />
     </>
   );

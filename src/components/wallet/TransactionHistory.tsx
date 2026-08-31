@@ -431,7 +431,7 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
         <h3>Transaction History</h3>
         <select
           value={filter}
-          aria-label="Filter Transactions"
+          aria-label="Filter transactions"
           onChange={(e) => setFilter(e.target.value)}
         >
           {FILTERS.map((f) => (

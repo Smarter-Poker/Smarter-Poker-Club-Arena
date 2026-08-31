@@ -1315,7 +1315,7 @@ export default function WalletCashierModal({
                     placeholder={
                       AGENT_ONLY.includes(destination) ? 'Search Agents' : 'Search Members'
                     }
-                    aria-label="Search Recipients"
+                    aria-label="Search recipients"
                   />
                   <div className="cbc-list">
                     {membersLoading && <div className="cbc-empty">Loading Members...</div>}

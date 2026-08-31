@@ -311,7 +311,7 @@ class CardErrorBoundary extends Component<
         <div className={styles.cardErrorFallback}>
           <span style={{ fontSize: '1.5rem' }}>⚠</span>
           <span style={{ fontSize: '0.8rem' }}>
-            Failed To Load {this.props.label || 'Component'}
+            Failed To Load {this.props.label || 'component'}
           </span>
           <button onClick={() => this.setState({ hasError: false })}>Retry</button>
         </div>
@@ -1264,16 +1264,16 @@ export default function ClubDetailPage() {
           </span>
           <span style={{ color: '#6a7a8a', fontSize: '0.7rem' }}>
             {activeTab === 'overview'
-              ? 'Activity Feed, Stats & Quick Actions'
+              ? 'Activity feed, stats & quick actions'
               : activeTab === 'tables'
-                ? 'Create, Configure & Monitor Tables'
+                ? 'Create, configure & monitor tables'
                 : activeTab === 'members'
-                  ? 'View, Manage & Search Members'
+                  ? 'View, manage & search members'
                   : activeTab === 'agents'
-                    ? 'Agent Tree, Commissions & Transfers'
+                    ? 'Agent tree, commissions & transfers'
                     : activeTab === 'operations'
-                      ? 'Announcements, Reports & Audits'
-                      : 'Club Configuration & Danger Zone'}
+                      ? 'Announcements, reports & audits'
+                      : 'Club configuration & danger zone'}
           </span>
         </div>
       </div>
@@ -1329,8 +1329,8 @@ export default function ClubDetailPage() {
                 <li>
                   Rake: {club.settings.defaultRakePercent}% (Capped At {club.settings.rakeCap} BB)
                 </li>
-                <li>Straddle: {club.settings.allowStraddle ? 'Allowed' : 'Not Allowed'}</li>
-                <li>Run It Twice: {club.settings.allowRunItTwice ? 'Allowed' : 'Not Allowed'}</li>
+                <li>Straddle: {club.settings.allowStraddle ? 'Allowed' : 'Not allowed'}</li>
+                <li>Run It Twice: {club.settings.allowRunItTwice ? 'Allowed' : 'Not allowed'}</li>
               </ul>
             </div>
 
@@ -1479,7 +1479,7 @@ export default function ClubDetailPage() {
                               });
                             }}
                             disabled={deletingTableId === table.id}
-                            title="Delete Table"
+                            title="Delete table"
                           >
                             {deletingTableId === table.id ? '...' : '✕'}
                           </button>
@@ -1647,7 +1647,7 @@ export default function ClubDetailPage() {
                               onClick={() =>
                                 setShowMemberMenu(showMemberMenu === member.id ? null : member.id)
                               }
-                              aria-label={`Actions For ${member.username}`}
+                              aria-label={`Actions for ${member.username}`}
                               disabled={memberActionLoading === member.id}
                             >
                               {memberActionLoading === member.id ? '◷' : '⋮'}
@@ -1657,7 +1657,7 @@ export default function ClubDetailPage() {
                                 {member.role !== 'admin' && member.role !== 'owner' && (
                                   <button
                                     onClick={() => handleMemberAction(member.id, 'promote')}
-                                    aria-label="Promote Member To Admin"
+                                    aria-label="Promote member to admin"
                                   >
                                     {' '}
                                     Promote
@@ -1666,7 +1666,7 @@ export default function ClubDetailPage() {
                                 {member.role === 'admin' && (
                                   <button
                                     onClick={() => handleMemberAction(member.id, 'demote')}
-                                    aria-label="Demote Admin To Member"
+                                    aria-label="Demote admin to member"
                                   >
                                     {' '}
                                     Demote
@@ -1675,7 +1675,7 @@ export default function ClubDetailPage() {
                                 {member.status === 'active' && member.role !== 'owner' && (
                                   <button
                                     onClick={() => handleMemberAction(member.id, 'suspend')}
-                                    aria-label="Suspend Member"
+                                    aria-label="Suspend member"
                                   >
                                     Suspend
                                   </button>
@@ -1683,7 +1683,7 @@ export default function ClubDetailPage() {
                                 {member.role !== 'owner' && (
                                   <button
                                     onClick={() => handleMemberAction(member.id, 'remove')}
-                                    aria-label="Remove Member From Club"
+                                    aria-label="Remove member from club"
                                   >
                                     Remove
                                   </button>
@@ -1925,7 +1925,7 @@ export default function ClubDetailPage() {
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalHeader}>
               <h3>Agent Management</h3>
-              <button onClick={() => setShowAgentManager(false)} aria-label="Close Agent Manager">
+              <button onClick={() => setShowAgentManager(false)} aria-label="Close agent manager">
                 ×
               </button>
             </div>

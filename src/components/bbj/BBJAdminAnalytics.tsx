@@ -97,8 +97,8 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
           <span className="bbj-admin__stat-value">{Number(data.hit_count).toLocaleString()}</span>
           <span className="bbj-admin__stat-sub">
             {data.avg_days_between_hits != null
-              ? `Every ~${Number(data.avg_days_between_hits).toFixed(1)} Days`
-              : 'Not Enough History'}
+              ? `every ~${Number(data.avg_days_between_hits).toFixed(1)} days`
+              : 'not enough history'}
           </span>
         </div>
 
@@ -116,7 +116,7 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
               : '-'}
           </span>
           <span className="bbj-admin__stat-sub">
-            {data.last_hit_at ? new Date(data.last_hit_at).toLocaleDateString() : 'Never Hit'}
+            {data.last_hit_at ? new Date(data.last_hit_at).toLocaleDateString() : 'never hit'}
           </span>
         </div>
 

@@ -152,11 +152,11 @@ export default function HelpPage() {
         </div>
       </header>
 
-      <section className={styles.statusDeck} aria-label="Live Platform Status">
+      <section className={styles.statusDeck} aria-label="Live platform status">
         <SystemStatus />
       </section>
 
-      <nav className={styles.quickLinks} aria-label="Common Help Destinations">
+      <nav className={styles.quickLinks} aria-label="Common help destinations">
         {QUICK_LINKS.map((item) => (
           <Link to={item.path} key={item.path}>
             {item.label}
@@ -223,7 +223,7 @@ export default function HelpPage() {
 
       <footer className={styles.footer}>
         <span>Support@Smarter.Poker</span>
-        <nav aria-label="Support Policies">
+        <nav aria-label="Support policies">
           <Link to="/legal">Legal Center</Link>
           <Link to="/legal/privacy">Privacy</Link>
           <Link to="/legal/tos">Terms</Link>

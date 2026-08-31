@@ -281,7 +281,7 @@ class NotificationServiceClass {
     await this.create({
       userId,
       type: 'waitlist_ready',
-      title: 'Your Seat Is Ready!',
+      title: 'Your seat is ready!',
       message: `A seat is now available at ${tableName}`,
       metadata: { tableId },
     });

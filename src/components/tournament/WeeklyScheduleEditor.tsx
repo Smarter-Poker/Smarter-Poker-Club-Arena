@@ -120,7 +120,7 @@ export default function WeeklyScheduleEditor({
                 <button
                   type="button"
                   className="wse-remove-time"
-                  aria-label="Remove This Start Time"
+                  aria-label="Remove this start time"
                   onClick={() =>
                     onChange({
                       ...value,
@@ -162,7 +162,7 @@ export default function WeeklyScheduleEditor({
 
       <p className="wse-hint">
         Days And Times Are In UTC. Pick At Least One Day
-        {value.mode === 'interval' ? ' - The Interval Runs On The Selected Days.' : '.'}
+        {value.mode === 'interval' ? ' - the interval runs on the selected days.' : '.'}
       </p>
     </div>
   );

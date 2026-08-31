@@ -163,7 +163,7 @@ export default function RegistrationApprovalsPanel({
   if (!authorizedToRegister || !isAdmin) return null;
 
   return (
-    <section className="regApprovals" aria-label="Registration Approvals">
+    <section className="regApprovals" aria-label="Registration approvals">
       <div className="regApprovalsHeader">
         <h3 className="regApprovalsTitle">Authorized To Register</h3>
         <span className="regApprovalsCount">{approvals.length} Approved</span>
@@ -200,13 +200,13 @@ export default function RegistrationApprovalsPanel({
             placeholder="Search Members To Approve"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            aria-label="Search Members"
+            aria-label="Search members"
           />
           {candidates.length === 0 ? (
             <div className="regApprovalsEmpty">
               {members.length === 0
-                ? 'No Club Members Found.'
-                : 'Every Matching Member Is Already Approved.'}
+                ? 'No club members found.'
+                : 'Every matching member is already approved.'}
             </div>
           ) : (
             <ul className="regApprovalsList">

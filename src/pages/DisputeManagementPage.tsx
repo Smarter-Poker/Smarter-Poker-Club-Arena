@@ -277,12 +277,12 @@ export default function DisputeManagementPage() {
       <ClubIntegrityHeader
         clubId={clubId}
         active="disputes"
-        eyebrow={clubId ? 'Case Investigation / Financial Integrity' : 'Personal Casework'}
+        eyebrow={clubId ? 'Case investigation / financial integrity' : 'Personal casework'}
         title={clubId ? 'Dispute Resolution Desk' : 'My Disputes'}
         description={
           clubId
-            ? 'Investigate Club Transaction Disputes, Monitor The 72-Hour Service Window, And Record A Defensible Resolution.'
-            : 'Track The Status, Evidence, And Resolution Of Disputes Filed From Your Account.'
+            ? 'Investigate club transaction disputes, monitor the 72-hour service window, and record a defensible resolution.'
+            : 'Track the status, evidence, and resolution of disputes filed from your account.'
         }
         metrics={[
           {
@@ -302,7 +302,7 @@ export default function DisputeManagementPage() {
         <div className="dispute-header">
           <div>
             <p className="dispute-kicker">Live Case Docket</p>
-            <h2>{clubId ? 'Club Transaction Disputes' : 'Account Disputes'}</h2>
+            <h2>{clubId ? 'Club transaction disputes' : 'Account disputes'}</h2>
           </div>
           {statusCounts.open > 0 && (
             <span className="open-count-badge">{statusCounts.open} Open</span>
@@ -310,7 +310,7 @@ export default function DisputeManagementPage() {
         </div>
 
         {/* Filter Tabs */}
-        <div className="dispute-tabs" role="tablist" aria-label="Filter Disputes By Status">
+        <div className="dispute-tabs" role="tablist" aria-label="Filter disputes by status">
           {FILTER_TABS.map((tab) => (
             <button
               key={tab}
@@ -336,7 +336,7 @@ export default function DisputeManagementPage() {
           <input
             id="dispute-search"
             type="text"
-            placeholder="Player, Reason, Target, Or Amount"
+            placeholder="Player, reason, target, or amount"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -367,8 +367,8 @@ export default function DisputeManagementPage() {
               <strong>Docket Clear</strong>
               <p>
                 {activeTab === 'all'
-                  ? 'No Disputes Have Been Filed.'
-                  : `No ${activeTab.replace('_', ' ')} Disputes Match This View.`}
+                  ? 'No disputes have been filed.'
+                  : `No ${activeTab.replace('_', ' ')} disputes match this view.`}
               </p>
             </div>
           ) : (
@@ -450,7 +450,7 @@ export default function DisputeManagementPage() {
                           <>
                             <div className="resolution-form">
                               <textarea
-                                aria-label="Resolution Notes"
+                                aria-label="Resolution notes"
                                 placeholder="Enter Resolution Notes..."
                                 value={resolutionText}
                                 onChange={(e) => setResolutionText(e.target.value)}
@@ -458,7 +458,7 @@ export default function DisputeManagementPage() {
                               />
                               <div className="adjustment-row">
                                 <select
-                                  aria-label="Balance Adjustment Type"
+                                  aria-label="Balance adjustment type"
                                   value={adjustmentType}
                                   onChange={(e) => setAdjustmentType(e.target.value as any)}
                                 >
@@ -468,7 +468,7 @@ export default function DisputeManagementPage() {
                                 </select>
                                 {adjustmentType !== 'none' && (
                                   <input
-                                    aria-label="Balance Adjustment Amount"
+                                    aria-label="Balance adjustment amount"
                                     type="number"
                                     placeholder="Amount"
                                     value={adjustmentAmount}
@@ -482,7 +482,7 @@ export default function DisputeManagementPage() {
                                   onClick={() => handleResolve(dispute.id)}
                                   disabled={resolving === dispute.id}
                                 >
-                                  {resolving === dispute.id ? 'Resolving...' : 'Resolve Dispute'}
+                                  {resolving === dispute.id ? 'Resolving...' : 'Resolve dispute'}
                                 </button>
                                 <button
                                   className="action-btn escalate"

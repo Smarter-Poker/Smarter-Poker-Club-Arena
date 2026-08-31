@@ -636,7 +636,7 @@ function SeatKnockoutHitView({
       }
       role="status"
       aria-live="polite"
-      aria-label={`${hit.eliminatedName} Knocked Out`}
+      aria-label={`${hit.eliminatedName} knocked out`}
     >
       <KnockoutFlurry uid={uid} />
     </div>

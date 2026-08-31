@@ -133,7 +133,7 @@ class HorseBugReporterService {
         category: 'runtime_error',
         severity: 'high',
         title: `Unhandled Promise Rejection`,
-        description: typeof reason === 'string' ? reason : reason?.message || 'Unknown Rejection',
+        description: typeof reason === 'string' ? reason : reason?.message || 'Unknown rejection',
         context: { reason: String(reason) },
         stackTrace: reason?.stack,
       });
@@ -253,8 +253,8 @@ class HorseBugReporterService {
         handNumber,
         category: 'chip_integrity',
         severity: 'critical',
-        title: `NaN Stack Detected After ${action}`,
-        description: `Stack Went From ${stackBefore} To ${stackAfter} After ${action} Of ${amount}`,
+        title: `NaN stack detected after ${action}`,
+        description: `Stack went from ${stackBefore} to ${stackAfter} after ${action} of ${amount}`,
         context: { stackBefore, stackAfter, action, amount },
       });
     }
@@ -269,8 +269,8 @@ class HorseBugReporterService {
         handNumber,
         category: 'chip_integrity',
         severity: 'critical',
-        title: `Negative Stack: ${stackAfter} After ${action}`,
-        description: `Stack Went From ${stackBefore} To ${stackAfter}. Player Should Never Have Negative Chips.`,
+        title: `Negative stack: ${stackAfter} after ${action}`,
+        description: `Stack went from ${stackBefore} to ${stackAfter}. Player should never have negative chips.`,
         context: { stackBefore, stackAfter, action, amount },
       });
     }
@@ -285,8 +285,8 @@ class HorseBugReporterService {
         handNumber,
         category: 'chip_integrity',
         severity: 'high',
-        title: `Suspicious Win Amount: ${amount} (Stack Was ${stackBefore})`,
-        description: `Won More Than 100x Stack. Possible Pot Calculation Error.`,
+        title: `Suspicious win amount: ${amount} (stack was ${stackBefore})`,
+        description: `Won more than 100x stack. Possible pot calculation error.`,
         context: { stackBefore, stackAfter, action, amount },
       });
     }
@@ -311,8 +311,8 @@ class HorseBugReporterService {
         handNumber,
         category: 'pot_mismatch',
         severity: 'critical',
-        title: 'NaN Pot Detected',
-        description: `Pot Is NaN. Player Bets Total: ${totalBets}`,
+        title: 'NaN pot detected',
+        description: `Pot is NaN. Player bets total: ${totalBets}`,
         context: { potAmount, playerBets },
       });
     }
@@ -326,8 +326,8 @@ class HorseBugReporterService {
         handNumber,
         category: 'pot_mismatch',
         severity: 'medium',
-        title: `Pot Mismatch: Pot=${potAmount} Vs Bets=${totalBets}`,
-        description: `Pot Amount Doesn't Match Sum Of Player Bets. Difference: ${(potAmount - totalBets).toFixed(2)}`,
+        title: `Pot mismatch: pot=${potAmount} vs bets=${totalBets}`,
+        description: `Pot amount doesn't match sum of player bets. Difference: ${(potAmount - totalBets).toFixed(2)}`,
         context: { potAmount, totalBets, playerBets },
       });
     }
@@ -352,7 +352,7 @@ class HorseBugReporterService {
       handNumber,
       category: 'action_failure',
       severity: 'medium',
-      title: `Action Rejected: ${action}${amount ? ` (${amount})` : ''}`,
+      title: `Action rejected: ${action}${amount ? ` (${amount})` : ''}`,
       description: reason,
       context: { action, amount, reason },
     });

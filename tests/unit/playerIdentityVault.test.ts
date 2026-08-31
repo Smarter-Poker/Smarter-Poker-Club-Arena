@@ -42,7 +42,7 @@ describe('Player Identity Vault information architecture', () => {
     expect(SETTINGS).toContain("return 'display';");
     expect(SETTINGS).toContain('data: dangerRef');
     expect(SETTINGS).toContain('activeSettingsSection === item.id');
-    expect(SETTINGS).toContain('aria-label="Settings Sections"');
+    expect(SETTINGS).toContain('aria-label="Settings sections"');
   });
 
   it('routes the global profile control to the local identity workspace', () => {

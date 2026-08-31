@@ -1943,7 +1943,7 @@ export default function CashierPage() {
       <nav
         className={styles.tabNav}
         role="tablist"
-        aria-label="Cashier Actions"
+        aria-label="Cashier actions"
         onKeyDown={handleTabKeyDown}
       >
         {tabs.map((act) => (
@@ -2188,7 +2188,7 @@ export default function CashierPage() {
 
             <button
               className={styles.btnPrimary}
-              aria-label={`Send ${amount || '0'} Chips To Selected Recipient`}
+              aria-label={`Send ${amount || '0'} chips to selected recipient`}
               onClick={() => {
                 const value = parseFloat(amount);
                 if (!isNaN(value) && value >= 10000 && selectedRecipientData) {
@@ -2784,7 +2784,7 @@ export default function CashierPage() {
                   <button
                     className={styles.loadMoreBtn}
                     onClick={() => setTxPage((p) => p + 1)}
-                    aria-label="Load More Transactions"
+                    aria-label="Load more transactions"
                   >
                     Load More ({filteredTransactions.length - txPage * TX_PAGE_SIZE} Remaining)
                   </button>

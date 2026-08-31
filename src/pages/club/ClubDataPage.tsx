@@ -197,10 +197,10 @@ const GAME_SORTS: Array<{ id: GameSort; label: string }> = [
 type PlayerSort = 'winners' | 'losers' | 'rake' | 'hands';
 
 const PLAYER_SORTS: Array<{ id: PlayerSort; label: string }> = [
-  { id: 'winners', label: 'Biggest Winners' },
-  { id: 'losers', label: 'Biggest Losers' },
-  { id: 'rake', label: 'Most Rake' },
-  { id: 'hands', label: 'Most Hands' },
+  { id: 'winners', label: 'Biggest winners' },
+  { id: 'losers', label: 'Biggest losers' },
+  { id: 'rake', label: 'Most rake' },
+  { id: 'hands', label: 'Most hands' },
 ];
 
 const REFRESH_MS = 60_000;
@@ -1386,7 +1386,7 @@ export default function ClubDataPage() {
     return (
       <span
         className={`${styles.delta} ${cls}`}
-        title={prevRange ? `Previous Period ${prevRange.start} To ${prevRange.end}` : undefined}
+        title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}
       >
         {v > 0 ? '+' : ''}
         {/* prevRange, not `preset`: the preset flips the instant the button is
@@ -1404,7 +1404,7 @@ export default function ClubDataPage() {
     return (
       <span
         className={`${styles.delta} ${cls}`}
-        title={prevRange ? `Previous Period ${prevRange.start} To ${prevRange.end}` : undefined}
+        title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}
       >
         {v > 0 ? '+' : ''}
         {money(v)} Vs Prev {prevRange?.days ?? preset}d
@@ -1424,7 +1424,7 @@ export default function ClubDataPage() {
       <div className={styles.page}>
         <PermissionState
           title="Sign In To View Club Data"
-          description="Financial And Player Analytics Are Restricted To Authenticated Club Operators."
+          description="Financial and player analytics are restricted to authenticated club operators."
           onBack={() => navigate('/')}
         />
       </div>
@@ -1441,7 +1441,7 @@ export default function ClubDataPage() {
           eyebrow="Club Context Required"
           tone="permission"
           title="Choose A Club To View Its Data"
-          description="Revenue, Rake, Player Results, And Union Invoices Belong To A Specific Club. Open Club Data From That Club's Operations Menu."
+          description="Revenue, rake, player results, and union invoices belong to a specific club. Open Club Data from that club's Operations menu."
           action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
           secondaryAction={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
         />
@@ -1450,13 +1450,13 @@ export default function ClubDataPage() {
   }
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-page="club-data">
       <header className={styles.header}>
         <button
           type="button"
           className={`${styles.headerBtn} ${styles.backButton}`}
           onClick={() => navigate(-1)}
-          aria-label="Go Back"
+          aria-label="Go back"
         >
           <span aria-hidden="true">&#8592;</span>
           <span>Back</span>
@@ -1468,7 +1468,7 @@ export default function ClubDataPage() {
             className={styles.headerBtn}
             onClick={() => void refreshAll()}
             disabled={manualRefreshing || loading || playersLoading || invoicesLoading}
-            aria-label="Refresh Club Ledger"
+            aria-label="Refresh club ledger"
           >
             {manualRefreshing ? 'Refreshing' : 'Refresh'}
           </button>
@@ -1482,8 +1482,8 @@ export default function ClubDataPage() {
             disabled={
               !exporting && (tab === 'players' ? !sortedPlayers.length : !snapshot?.rows?.length)
             }
-            aria-label={exporting ? 'Cancel CSV Export' : 'Export As CSV'}
-            title={exporting ? 'Cancel CSV Export' : 'Export As CSV'}
+            aria-label={exporting ? 'Cancel CSV export' : 'Export as CSV'}
+            title={exporting ? 'Cancel CSV export' : 'Export as CSV'}
           >
             {exporting ? 'Cancel Export' : 'Export CSV'}
           </button>
@@ -1494,9 +1494,9 @@ export default function ClubDataPage() {
         {refreshNote ||
           exportNote ||
           (exportProgress?.stage === 'preparing'
-            ? 'Preparing Complete Export.'
+            ? 'Preparing complete export.'
             : exportProgress?.total !== null && exportProgress
-              ? `Exporting ${compactInt(exportProgress.loaded)} Of ${compactInt(exportProgress.total)} Rows.`
+              ? `Exporting ${compactInt(exportProgress.loaded)} of ${compactInt(exportProgress.total)} rows.`
               : '')}
       </div>
 
@@ -1550,14 +1550,14 @@ export default function ClubDataPage() {
         </div>
       )}
 
-      <section className={styles.controlDeck} aria-label="Reporting Period">
+      <section className={styles.controlDeck} aria-label="Reporting period">
         <div className={styles.controlLabel}>Reporting Window</div>
         <div className={styles.rangeBar}>
           <button
             type="button"
             className={styles.arrow}
             onClick={() => shiftRange(-1)}
-            aria-label="Previous Period"
+            aria-label="Previous period"
           >
             &#8592;
           </button>
@@ -1572,7 +1572,7 @@ export default function ClubDataPage() {
             className={styles.arrow}
             onClick={() => shiftRange(1)}
             disabled={isToday}
-            aria-label="Next Period"
+            aria-label="Next period"
           >
             &#8594;
           </button>
@@ -1591,7 +1591,7 @@ export default function ClubDataPage() {
               className={`${styles.preset} ${preset === p ? styles.active : ''}`}
               onClick={() => setPreset(p)}
             >
-              {p === 1 ? '1 Day' : `${p} Days`}
+              {p === 1 ? '1 day' : `${p} days`}
             </button>
           ))}
         </div>
@@ -1642,7 +1642,7 @@ export default function ClubDataPage() {
           Fee 0.00" in confident green with the real message buried in the list
           below. On the screen that answers "what do I owe the union", a zero
           has to mean zero. Dashes while there is no snapshot to read. */}
-      <dl className={styles.summary} aria-busy={loading} aria-label="Club Performance Summary">
+      <dl className={styles.summary} aria-busy={loading} aria-label="Club performance summary">
         <div className={styles.tile}>
           <dt className={styles.tileLabel}>Games</dt>
           <dd className={styles.tileValue}>{summary ? compactInt(summary.games) : NO_VALUE}</dd>
@@ -1769,8 +1769,8 @@ export default function ClubDataPage() {
           <div className={styles.invoiceTop}>
             <span className={styles.invoiceLabel}>
               {latestInvoice.direction === 'union owes club'
-                ? 'Union Owes You'
-                : 'Weekly Square-Up'}
+                ? 'Union owes you'
+                : 'Weekly square-up'}
             </span>
             <span className={styles.invoiceAmount}>
               {unionOwesClub ? '+' : Number(latestInvoice.amount) > 0 ? '-' : ''}
@@ -1826,8 +1826,8 @@ export default function ClubDataPage() {
             {!latestInvoice.breakdown
               ? 'No Statement Detail'
               : showInvoiceDetail
-                ? 'Hide Statement'
-                : 'View Statement'}
+                ? 'Hide statement'
+                : 'View statement'}
           </button>
         </div>
       )}
@@ -2258,7 +2258,7 @@ export default function ClubDataPage() {
                   : '';
               })()}
               {players.player_count > sortedPlayers.length
-                ? ` Showing ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)} Players, Ordered By ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label || 'Server Rank'}.`
+                ? ` Showing ${compactInt(sortedPlayers.length)} of ${compactInt(players.player_count)} players, ordered by ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label.toLowerCase() || 'server rank'}.`
                 : ''}
             </div>
           )}
@@ -2274,7 +2274,7 @@ export default function ClubDataPage() {
       {exportProgress && (
         <div className={styles.footNote} role="status" aria-live="polite">
           {exportProgress.stage === 'preparing'
-            ? 'Preparing An Exact Snapshot For Export...'
+            ? 'Preparing an exact snapshot for export...'
             : `Downloading ${compactInt(exportProgress.loaded)} Of ${compactInt(exportProgress.total)} Rows...`}
         </div>
       )}

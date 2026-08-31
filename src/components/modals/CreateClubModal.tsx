@@ -573,7 +573,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
         className={styles.logoGeneratorModalContainer}
         role="dialog"
         aria-modal="true"
-        aria-label="Generate A Club Logo"
+        aria-label="Generate a club logo"
         onClick={(e) => e.stopPropagation()}
         style={{
           backgroundColor: isGenerating || previewUrl ? 'rgba(10, 10, 26, 0.98)' : 'transparent',
@@ -663,7 +663,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
             {/* Textarea positioned over the grid area */}
             <textarea
               className={styles.descriptionTextarea}
-              placeholder="E.G., A Fierce Shark With Glowing Eyes, Cyberpunk Style..."
+              placeholder="E.g., A Fierce Shark With Glowing Eyes, Cyberpunk Style..."
               value={logoDescription}
               onChange={(e) => setLogoDescription(e.target.value)}
               style={{ display: isGenerating || previewUrl ? 'none' : 'block' }}

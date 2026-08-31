@@ -67,7 +67,7 @@ export function SpectatorOverlay({
       <button
         className={`so-badge ${pulseCount ? 'so-badge--pulse' : ''}`}
         onClick={handleToggleExpand}
-        title={`${spectators.length} Watching`}
+        title={`${spectators.length} watching`}
       >
         <span className="so-badge__icon">◉</span>
         <span className="so-badge__count">{spectators.length}</span>

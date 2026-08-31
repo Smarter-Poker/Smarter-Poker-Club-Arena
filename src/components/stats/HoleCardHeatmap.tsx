@@ -190,7 +190,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
       </div>
 
       <div className="heatmap-controls">
-        <div className="heatmap-modes" role="group" aria-label="View Mode">
+        <div className="heatmap-modes" role="group" aria-label="View mode">
           {(
             [
               ['frequency', 'How Often'],
@@ -253,7 +253,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
         <div
           className="heatmap-grid"
           role="grid"
-          aria-label="Starting Hand Grid, 13 By 13"
+          aria-label="Starting hand grid, 13 by 13"
           onMouseLeave={() => setHovered(null)}
         >
           {RANKS.map((rowRank, rowIdx) => (
@@ -303,15 +303,15 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
                     aria-expanded={cell ? selected === key : undefined}
                     aria-label={
                       !cell
-                        ? `${key}, Never Dealt`
+                        ? `${key}, never dealt`
                         : confident
-                          ? `${key}, ${hands} Hands, ${cell.bb100.toFixed(0)} Big Blinds Per 100`
+                          ? `${key}, ${hands} hands, ${cell.bb100.toFixed(0)} big blinds per 100`
                           : // Deliberately does NOT state bb/100 below the
                             // confidence threshold. The whole design refuses to
                             // show that number for a thin cell; announcing it to
                             // a screen reader anyway would be the same false
                             // precision, just less visible.
-                            `${key}, ${hands} Hands, Too Few To Rate`
+                            `${key}, ${hands} hands, too few to rate`
                     }
                   >
                     {key}
@@ -344,7 +344,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
           </>
         ) : (
           <span className="heatmap-readout-hint">
-            {hovered ? `${hovered} - Never Dealt` : 'Hover A Hand For Its Detail'}
+            {hovered ? `${hovered} - never dealt` : 'Hover a hand for its detail'}
           </span>
         )}
       </div>
@@ -354,7 +354,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
           <div className="heatmap-drill-head">
             <strong>{selected}</strong>
             <span>
-              {handsLoading ? 'Loading Hands...' : `${(classHands ?? []).length} Most Recent`}
+              {handsLoading ? 'Loading hands...' : `${(classHands ?? []).length} most recent`}
             </span>
             <button type="button" className="heatmap-drill-close" onClick={() => setSelected(null)}>
               Close
@@ -390,11 +390,11 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
 
       <p className="heatmap-note">
         {mode === 'frequency' &&
-          'How Often You Voluntarily Played Each Hand. This Is The View That Finds Leaks Earliest, Because A Frequency Settles Down Long Before A Win Rate Does.'}
+          'How often you voluntarily played each hand. This is the view that finds leaks earliest, because a frequency settles down long before a win rate does.'}
         {mode === 'profit' &&
-          `Profit In Big Blinds Per 100 Hands. Cells With Fewer Than ${MIN_CONFIDENT_HANDS} Hands Are Left Grey On Purpose: At That Sample The Number Is Noise, And Colouring It Would Invent A Pattern That Is Not There.`}
+          `Profit in big blinds per 100 hands. Cells with fewer than ${MIN_CONFIDENT_HANDS} hands are left grey on purpose: at that sample the number is noise, and colouring it would invent a pattern that is not there.`}
         {mode === 'luck' &&
-          'Actual Result Minus All-In Expected Value. This Is Variance, Not Skill. A Hand Glowing Green Here Means You Ran Well With It, Not That You Play It Well.'}
+          'Actual result minus all-in expected value. This is variance, not skill. A hand glowing green here means you ran well with it, not that you play it well.'}
       </p>
     </div>
   );

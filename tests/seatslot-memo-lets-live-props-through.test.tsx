@@ -120,7 +120,7 @@ describe('an empty seat can still change', () => {
       />
     );
     // 2026-08-26: seat button is now an <img>; the label is conveyed via alt.
-    expect(container.querySelector('.seat__empty-img')?.getAttribute('alt')).toBe('Empty Seat');
+    expect(container.querySelector('.seat__empty-img')?.getAttribute('alt')).toBe('Empty seat');
 
     rerender(
       <SeatSlot
@@ -134,7 +134,7 @@ describe('an empty seat can still change', () => {
       />
     );
     expect(container.querySelector('.seat__empty-img')?.getAttribute('alt')).toBe(
-      'Your Reserved Seat'
+      'Your reserved seat'
     );
   });
 
@@ -151,7 +151,7 @@ describe('an empty seat can still change', () => {
       />
     );
     expect(container.querySelector('[aria-label]')?.getAttribute('aria-label')).toBe(
-      'Seat 5: Your Seat'
+      'Seat 5: your seat'
     );
   });
 });

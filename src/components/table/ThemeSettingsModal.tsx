@@ -1834,7 +1834,7 @@ export function ThemeSettingsModal({
               Make The Table Yours
             </h3>
           </div>
-          <button className="theme-modal__close" onClick={onClose} aria-label="Close Table Studio">
+          <button className="theme-modal__close" onClick={onClose} aria-label="Close table studio">
             ×
           </button>
         </div>
@@ -1894,8 +1894,8 @@ export function ThemeSettingsModal({
         </div>
 
         <div className="theme-modal__workspace">
-          <aside className="theme-modal__visual-rail" aria-label="Live Table Design Preview">
-            <fieldset className="theme-modal__mode" aria-label="Club Arena Appearance Mode">
+          <aside className="theme-modal__visual-rail" aria-label="Live table design preview">
+            <fieldset className="theme-modal__mode" aria-label="Club Arena appearance mode">
               <legend>Interface</legend>
               <div className="theme-modal__mode-options">
                 {(['light', 'dark'] as const).map((mode) => (
@@ -1921,7 +1921,7 @@ export function ThemeSettingsModal({
             </fieldset>
 
             <div className="theme-modal__preview-shell">
-              <div className="theme-modal__preview-switch" aria-label="Preview Table State">
+              <div className="theme-modal__preview-switch" aria-label="Preview table state">
                 <button
                   type="button"
                   className={!previewFinalTable ? 'active' : ''}
@@ -1954,7 +1954,7 @@ export function ThemeSettingsModal({
               </div>
             </div>
 
-            <div className="theme-modal__selection-ledger" aria-label="Current Table Configuration">
+            <div className="theme-modal__selection-ledger" aria-label="Current table configuration">
               {[
                 ['Table', selectedTableName],
                 ['Background', selectedBackgroundName],
@@ -1974,7 +1974,7 @@ export function ThemeSettingsModal({
             <div
               className="theme-modal__tabs"
               role="tablist"
-              aria-label="Table Customization Categories"
+              aria-label="Table customization categories"
             >
               {TABS.map((tab) => (
                 <button
@@ -2013,7 +2013,7 @@ export function ThemeSettingsModal({
               aria-labelledby={`theme-tab-${activeTab}`}
             >
               {activeTab === 'background' && (
-                <div className="theme-modal__background-groups" aria-label="Background Categories">
+                <div className="theme-modal__background-groups" aria-label="Background categories">
                   {(
                     [
                       ['places-rooms', 'Places & Rooms'],
@@ -2054,7 +2054,7 @@ export function ThemeSettingsModal({
                     placeholder={`Search ${TABS.find((tab) => tab.key === activeTab)?.label}`}
                   />
                 </label>
-                <div className="theme-modal__filters" aria-label="Filter Customization Choices">
+                <div className="theme-modal__filters" aria-label="Filter customization choices">
                   {(['all', 'free', 'vip', 'favorites', 'recent'] as const).map((filter) => (
                     <button
                       type="button"
@@ -2196,7 +2196,7 @@ export function ThemeSettingsModal({
                           themeLoadState !== 'ready' || ownershipPending || ownershipUnavailable
                         }
                         aria-pressed={isSelected}
-                        aria-label={`${asset.name}${ownershipPending ? ', Checking Ownership' : ownershipUnavailable ? ', Ownership Unavailable' : isLocked ? ', Purchase Or VIP Required' : ''}`}
+                        aria-label={`${asset.name}${ownershipPending ? ', checking ownership' : ownershipUnavailable ? ', ownership unavailable' : isLocked ? ', purchase or VIP required' : ''}`}
                       >
                         <div className={`theme-asset__preview theme-asset__preview--${activeTab}`}>
                           {/* ── Dan 2026-08-18: show the actual thing, not a colour ──
@@ -2236,7 +2236,7 @@ export function ThemeSettingsModal({
                       <button
                         type="button"
                         className={`theme-asset__favorite ${collections.favorites.includes(`${activeTab}:${asset.id}`) ? 'active' : ''}`}
-                        aria-label={`${collections.favorites.includes(`${activeTab}:${asset.id}`) ? 'Remove' : 'Add'} ${asset.name} ${collections.favorites.includes(`${activeTab}:${asset.id}`) ? 'From' : 'To'} Favorites`}
+                        aria-label={`${collections.favorites.includes(`${activeTab}:${asset.id}`) ? 'Remove' : 'Add'} ${asset.name} ${collections.favorites.includes(`${activeTab}:${asset.id}`) ? 'from' : 'to'} favorites`}
                         aria-pressed={collections.favorites.includes(`${activeTab}:${asset.id}`)}
                         title={
                           collections.favorites.includes(`${activeTab}:${asset.id}`)

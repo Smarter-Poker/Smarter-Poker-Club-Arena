@@ -152,7 +152,7 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
 
       {/* "Playing Now" Chip Overlay */}
       {isPlaying && (
-        <span className="avatar-playing-icon" title="Playing Now">
+        <span className="avatar-playing-icon" title="Playing now">
           <PokerChipIcon />
         </span>
       )}

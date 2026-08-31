@@ -37,14 +37,16 @@ const intentionalExceptions = new Set<string>(INTENTIONAL_EXCEPTIONS);
 
 describe('the complete route manifest inherits one global header', () => {
   it('discovers every current route, including dynamic and legacy redirect paths', () => {
-    expect(allPaths).toHaveLength(126);
+    // 127 since phase 7 added clubs/:clubId/anti-cheat, the club-scoped door
+    // onto AntiCheatPage that the operations rail links.
+    expect(allPaths).toHaveLength(127);
     expect(allPaths).toContain('clubs/:clubId/create-table/:gameType');
     expect(allPaths).toContain('messages/clubs/:conversationId');
     expect(allPaths).toContain('*');
   });
 
   it('puts every shell route under AppLayout', () => {
-    expect(shellPaths).toHaveLength(118);
+    expect(shellPaths).toHaveLength(119);
     expect(APP_LAYOUT).toContain('{showGlobalHeader && <GlobalHeader />}');
   });
 
@@ -58,7 +60,7 @@ describe('the complete route manifest inherits one global header', () => {
       (path) => !applicable.has(path) && !intentionalExceptions.has(path)
     );
 
-    expect(applicable.size).toBe(119);
+    expect(applicable.size).toBe(120);
     expect(unclassified).toEqual([]);
   });
 

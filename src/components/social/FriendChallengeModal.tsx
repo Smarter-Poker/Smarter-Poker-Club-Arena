@@ -25,28 +25,28 @@ const CHALLENGE_TYPES = [
   {
     id: 'streak_battle',
     label: 'Streak Battle',
-    description: 'Who Can Build The Longest Daily Login Streak This Week?',
+    description: 'Who can build the longest daily login streak this week?',
     icon: '▲',
     duration: 7,
   },
   {
     id: 'mission_race',
     label: 'Mission Race',
-    description: 'Complete The Most Missions In The Next 3 Days!',
+    description: 'Complete the most missions in the next 3 days!',
     icon: '◎',
     duration: 3,
   },
   {
     id: 'spin_master',
     label: 'Spin Master',
-    description: 'Spin The Wheel Every Day For 5 Days Straight!',
+    description: 'Spin the wheel every day for 5 days straight!',
     icon: '▦',
     duration: 5,
   },
   {
     id: 'hand_grinder',
     label: 'Hand Grinder',
-    description: 'Play The Most Hands In 7 Days!',
+    description: 'Play the most hands in 7 days!',
     icon: '♠',
     duration: 7,
   },
@@ -147,7 +147,7 @@ export default function FriendChallengeModal({
             className="fcm-close"
             type="button"
             onClick={onClose}
-            aria-label="Close Challenge Dialog"
+            aria-label="Close challenge dialog"
             disabled={sending}
           >
             ✕

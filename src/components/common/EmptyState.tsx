@@ -82,7 +82,7 @@ export function NoClubsEmpty({ onCreate }: { onCreate: () => void }) {
       icon="CLUB"
       eyebrow="Club Network"
       title="No Clubs Yet"
-      description="Create Your First Club Or Join An Existing One To Start Playing."
+      description="Create your first club or join an existing one to start playing."
       action={{ label: 'Create Club', onClick: onCreate }}
     />
   );
@@ -94,7 +94,7 @@ export function NoTablesEmpty({ onCreate }: { onCreate: () => void }) {
       icon="TABLE"
       eyebrow="Live Games"
       title="No Active Tables"
-      description="Create A Table To Start A Game."
+      description="Create a table to start a game."
       action={{ label: 'Create Table', onClick: onCreate }}
     />
   );
@@ -106,7 +106,7 @@ export function NoMembersEmpty({ onInvite }: { onInvite: () => void }) {
       icon="PLAYER"
       eyebrow="Club Roster"
       title="No Members Yet"
-      description="Invite Players To Join Your Club."
+      description="Invite players to join your club."
       action={{ label: 'Invite Players', onClick: onInvite }}
     />
   );
@@ -118,7 +118,7 @@ export function NoHistoryEmpty() {
       icon="HAND"
       eyebrow="Hand Archive"
       title="No Hand History"
-      description="Your Played Hands Will Appear Here."
+      description="Your played hands will appear here."
     />
   );
 }

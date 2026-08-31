@@ -118,9 +118,9 @@ export default function BlacklistManagerPage() {
       <ClubIntegrityHeader
         clubId={clubId}
         active="blacklist"
-        eyebrow="Access Control / Final Case State"
+        eyebrow="Access control / final case state"
         title="Club Exclusion Control"
-        description="Apply Deliberate, Auditable Club-Access Exclusions With A Stated Reason And An Optional Expiry."
+        description="Apply deliberate, auditable club-access exclusions with a stated reason and an optional expiry."
         metrics={[
           { label: 'Active', value: activeCount, tone: activeCount ? 'risk' : 'neutral' },
           { label: 'Permanent', value: permanentCount },
@@ -146,7 +146,7 @@ export default function BlacklistManagerPage() {
           <div className={styles.errorPanel} role="alert">
             <div>
               <strong>
-                {loadFailed ? 'Exclusion Ledger Unavailable' : 'Control Action Incomplete'}
+                {loadFailed ? 'Exclusion ledger unavailable' : 'Control action incomplete'}
               </strong>
               <p>{error}</p>
             </div>
@@ -187,7 +187,7 @@ export default function BlacklistManagerPage() {
                 <label htmlFor="blacklist-reason">Reason</label>
                 <input
                   id="blacklist-reason"
-                  placeholder="Document The Control Decision"
+                  placeholder="Document the control decision"
                   value={newReason}
                   onChange={(event) => setNewReason(event.target.value)}
                   required
@@ -209,7 +209,7 @@ export default function BlacklistManagerPage() {
                 type="submit"
                 disabled={adding || !newUserId.trim() || !newReason.trim()}
               >
-                {adding ? 'Applying Exclusion…' : 'Apply Exclusion'}
+                {adding ? 'Applying exclusion…' : 'Apply exclusion'}
               </button>
               <button className={styles.secondaryButton} type="button" onClick={resetForm}>
                 Cancel
@@ -241,7 +241,7 @@ export default function BlacklistManagerPage() {
               <div
                 className={styles.tableScroll}
                 tabIndex={0}
-                aria-label="Scrollable Exclusion Ledger"
+                aria-label="Scrollable exclusion ledger"
               >
                 <table>
                   <caption className={styles.srOnly}>Club Player Exclusion Records</caption>

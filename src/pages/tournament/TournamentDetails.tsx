@@ -1385,7 +1385,7 @@ export default function TournamentDetails({
             keys the announcement just promised do nothing. So: exactly one tab
             is tabbable, Left/Right move (wrapping), Home/End jump, and each
             tab owns the panel by id. */}
-        <div className="details-tabs" role="tablist" aria-label="Tournament Sections">
+        <div className="details-tabs" role="tablist" aria-label="Tournament sections">
           {TABS.map((tab, i, visibleTabs) => (
             <button
               key={tab.id}
@@ -1437,7 +1437,7 @@ export default function TournamentDetails({
               className="qr-btn"
               type="button"
               onClick={() => void shareTournament()}
-              aria-label="Share This Tournament"
+              aria-label="Share this tournament"
             >
               ⊞
             </button>
@@ -1553,7 +1553,7 @@ export default function TournamentDetails({
                   className="btn btn-watch"
                   type="button"
                   onClick={() => watchTable(featuredTableId)}
-                  title="Watch The Featured Table"
+                  title="Watch the featured table"
                 >
                   WATCH
                 </button>

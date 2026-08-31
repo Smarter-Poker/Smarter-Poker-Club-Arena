@@ -515,15 +515,15 @@ export function GameRulesModal({
                       </span>
                       <span className="rules-modal__value">
                         {bombPotRules.triggerMode === 'once_per_orbit'
-                          ? 'Once Per Orbit'
+                          ? 'Once per orbit'
                           : bombPotRules.triggerMode === 'timed'
                             ? (bombPotRules.intervalSeconds ?? 0) > 0
-                              ? `Every ${Math.round((bombPotRules.intervalSeconds ?? 0) / 60)} Min`
+                              ? `Every ${Math.round((bombPotRules.intervalSeconds ?? 0) / 60)} min`
                               : 'Timed'
                             : bombPotRules.triggerMode === 'bomb_pot_only'
-                              ? 'Every Hand'
+                              ? 'Every hand'
                               : bombPotRules.frequency > 0
-                                ? `${bombPotRules.frequency} Hands`
+                                ? `${bombPotRules.frequency} hands`
                                 : '-'}
                       </span>
                     </div>
@@ -538,7 +538,7 @@ export function GameRulesModal({
                             lobby (which reads the fixed column) said the real
                             one. Same precedence here as in the engine. */}
                         {(bombPotRules.anteFixed ?? 0) > 0
-                          ? `${(bombPotRules.anteFixed ?? 0).toLocaleString()} Chips`
+                          ? `${(bombPotRules.anteFixed ?? 0).toLocaleString()} chips`
                           : bombPotRules.anteBB > 0
                             ? `${bombPotRules.anteBB}x BB`
                             : '-'}
@@ -548,9 +548,9 @@ export function GameRulesModal({
                       <span className="rules-modal__label">Boards</span>
                       <span className="rules-modal__value">
                         {(bombPotRules.boardCount ?? 0) >= 3
-                          ? '3 (Pot Splits Per Board)'
+                          ? '3 (pot splits per board)'
                           : bombPotRules.doubleBoard
-                            ? '2 (Pot Splits Per Board)'
+                            ? '2 (pot splits per board)'
                             : '1'}
                       </span>
                     </div>

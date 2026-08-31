@@ -147,49 +147,49 @@ const METRIC_OPTIONS: {
     value: 'profit',
     label: 'Profit',
     icon: '◆',
-    description: 'Net Chips Won (Winnings Minus Invested)',
+    description: 'Net chips won (winnings minus invested)',
     globalSupported: true,
   },
   {
     value: 'bb100',
-    label: 'BB/100',
+    label: 'bb/100',
     icon: '◈',
-    description: 'Big Blinds Won Per 100 Hands - Comparable Across Stakes',
+    description: 'Big blinds won per 100 hands - comparable across stakes',
     globalSupported: true,
   },
   {
     value: 'hands_played',
     label: 'Hands Played',
     icon: '♠',
-    description: 'Total Hands Dealt In',
+    description: 'Total hands dealt in',
     globalSupported: true,
   },
   {
     value: 'tournaments_won',
     label: 'Tournaments Won',
     icon: '★',
-    description: 'Tournament Victories',
+    description: 'Tournament victories',
     globalSupported: true,
   },
   {
     value: 'vpip',
     label: 'VPIP',
     icon: '▦',
-    description: 'Voluntarily Put Chips In Pot %',
+    description: 'Voluntarily put chips in pot %',
     globalSupported: false,
   },
   {
     value: 'pfr',
     label: 'PFR',
     icon: '▤',
-    description: 'Preflop Raise %',
+    description: 'Preflop raise %',
     globalSupported: false,
   },
   {
     value: 'roi',
     label: 'ROI',
     icon: '▲',
-    description: 'Return On Invested Chips %',
+    description: 'Return on invested chips %',
     globalSupported: true,
   },
 ];
@@ -917,7 +917,7 @@ export default function LeaderboardPage() {
         />
         {entry.isVIP && <span className="vip-badge">VIP</span>}
         {(entry.change || 0) >= 3 && (
-          <span className="hot-streak-badge" title="Hot Streak: Climbing Fast">
+          <span className="hot-streak-badge" title="Hot streak: climbing fast">
             {'↑'}
           </span>
         )}
@@ -1028,13 +1028,13 @@ export default function LeaderboardPage() {
                   : `Updated ${lastUpdated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}
             </span>
             {activeTab === 'rankings' && windowLabel && (
-              <span className="lb-window-label" title="The Snapshot This Period Is Measured From">
+              <span className="lb-window-label" title="The snapshot this period is measured from">
                 {windowLabel}
               </span>
             )}
           </div>
         </div>
-        <div className="lb-hero-telemetry" aria-label="Current Leaderboard Summary">
+        <div className="lb-hero-telemetry" aria-label="Current leaderboard summary">
           <div>
             <span className="lb-telemetry-label">Field</span>
             <strong>{totalRanked != null ? totalRanked.toLocaleString('en-US') : '-'}</strong>
@@ -1055,9 +1055,9 @@ export default function LeaderboardPage() {
         </div>
       </section>
 
-      <section className="lb-control-deck" aria-label="Leaderboard Controls">
+      <section className="lb-control-deck" aria-label="Leaderboard controls">
         <div className="lb-control-header">
-          <div className="leaderboard-tabs" role="tablist" aria-label="Leaderboard Views">
+          <div className="leaderboard-tabs" role="tablist" aria-label="Leaderboard views">
             <button
               id="leaderboard-rankings-tab"
               className={`tab-btn ${activeTab === 'rankings' ? 'active' : ''}`}
@@ -1247,7 +1247,7 @@ export default function LeaderboardPage() {
       </section>
 
       {scope === 'my-clubs' && settings?.setup_complete && (
-        <section className="lb-prize-program" aria-label="Leaderboard Prize Program">
+        <section className="lb-prize-program" aria-label="Leaderboard prize program">
           <div className="lb-prize-program-mark" aria-hidden="true">
             ◆
           </div>
@@ -1487,7 +1487,7 @@ export default function LeaderboardPage() {
                       {entry.username}
                       {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
                       {(entry.change || 0) >= 3 && (
-                        <span className="hot-streak-badge" title="Hot Streak: Climbing Fast">
+                        <span className="hot-streak-badge" title="Hot streak: climbing fast">
                           {'↑'}
                         </span>
                       )}
@@ -1508,11 +1508,11 @@ export default function LeaderboardPage() {
                 className="lb-load-more"
                 onClick={loadMore}
                 disabled={loadingMore}
-                aria-label={`Load More, Showing ${entries.length} Of ${totalRanked}`}
+                aria-label={`Load more, showing ${entries.length} of ${totalRanked}`}
               >
                 {loadingMore
                   ? 'Loading...'
-                  : `Show More (${entries.length.toLocaleString('en-US')} Of ${totalRanked.toLocaleString('en-US')})`}
+                  : `Show more (${entries.length.toLocaleString('en-US')} of ${totalRanked.toLocaleString('en-US')})`}
               </button>
             )}
 
@@ -1529,7 +1529,7 @@ export default function LeaderboardPage() {
                   onKeyDown={user?.id ? rowKeyActivate(user.id) : undefined}
                   role="button"
                   tabIndex={0}
-                  aria-label={`Your Position, ${getRankLabel(userRank.rank)}, ${formatValue(userRank.value, metric)}`}
+                  aria-label={`Your position, ${getRankLabel(userRank.rank)}, ${formatValue(userRank.value, metric)}`}
                   style={{ cursor: 'pointer' }}
                 >
                   <span className="entry-rank">{getRankLabel(userRank.rank)}</span>
@@ -1575,7 +1575,7 @@ export default function LeaderboardPage() {
                   onKeyDown={rowKeyActivate(stat.userId)}
                   role="button"
                   tabIndex={0}
-                  aria-label={`Rank ${index + 1}, ${stat.username}, ${stat.totalPrizes.toLocaleString()} Total Prizes`}
+                  aria-label={`Rank ${index + 1}, ${stat.username}, ${stat.totalPrizes.toLocaleString()} total prizes`}
                   style={{ cursor: 'pointer' }}
                 >
                   <div className="stats-cell player-cell">

@@ -249,7 +249,7 @@ export default function CarouselSection({
              the feeder was left running, so this was pure cost - a reflow per
              pointer move, per card - buying a value no stylesheet consumes. */
           role="button"
-          aria-label={`${club.name || 'Club'} - Click To Enter Lobby`}
+          aria-label={`${club.name || 'Club'} - Click to enter lobby`}
           tabIndex={0}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -316,7 +316,7 @@ export default function CarouselSection({
             }
           }}
           role="button"
-          aria-label="Join A Club"
+          aria-label="Join a Club"
           tabIndex={0}
         >
           <div className={styles.ctaCardIcon}>+</div>
@@ -406,7 +406,7 @@ export default function CarouselSection({
             }
           }}
           role="button"
-          aria-label="Create A Club"
+          aria-label="Create a Club"
           tabIndex={0}
         >
           <div className={styles.ctaCardIcon}>+</div>

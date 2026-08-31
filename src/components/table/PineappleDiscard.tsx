@@ -212,7 +212,7 @@ export function PineappleDiscard({
           {busy
             ? 'Discarding…'
             : selected === null
-              ? 'Select A Card'
+              ? 'Select a card'
               : `Discard ${cards[selected].rank}${cards[selected].suit}`}
         </button>
       </div>

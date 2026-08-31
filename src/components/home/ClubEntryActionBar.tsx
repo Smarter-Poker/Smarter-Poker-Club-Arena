@@ -17,7 +17,7 @@ export default function ClubEntryActionBar({
   onJoin,
 }: ClubEntryActionBarProps) {
   return (
-    <nav className={styles.actionBarRow} aria-label="Club Arena Actions">
+    <nav className={styles.actionBarRow} aria-label="Club Arena actions">
       <div className={styles.actionBarWrapper}>
         <img
           className={styles.actionBarArtwork}
@@ -33,7 +33,7 @@ export default function ClubEntryActionBar({
           className={styles.actionControl}
           onClick={onCreate}
           disabled={!flags.create_club}
-          title={flags.create_club ? 'Create A Club (C)' : 'Club Creation Is Unavailable'}
+          title={flags.create_club ? 'Create a Club (C)' : 'Club creation is unavailable'}
           aria-label="Create A Club"
           aria-keyshortcuts="C"
         >
@@ -44,7 +44,7 @@ export default function ClubEntryActionBar({
           className={styles.actionControl}
           onClick={onFind}
           disabled={!flags.find_player}
-          title={flags.find_player ? 'Find A Player (F)' : 'Player Search Is Unavailable'}
+          title={flags.find_player ? 'Find a Player (F)' : 'Player search is unavailable'}
           aria-label="Find A Player"
           aria-keyshortcuts="F"
         >
@@ -55,7 +55,7 @@ export default function ClubEntryActionBar({
           className={styles.actionControl}
           onClick={onJoin}
           disabled={!flags.join_club}
-          title={flags.join_club ? 'Join A Club (J)' : 'Club Joining Is Unavailable'}
+          title={flags.join_club ? 'Join a Club (J)' : 'Club joining is unavailable'}
           aria-label="Join A Club"
           aria-keyshortcuts="J"
         >

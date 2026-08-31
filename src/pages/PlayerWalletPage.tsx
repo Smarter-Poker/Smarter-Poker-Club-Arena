@@ -133,7 +133,7 @@ const WALLET_CONFIG: Record<
   PLAYER: {
     icon: '♠',
     label: 'Player',
-    description: 'Table Buy-Ins & Gameplay',
+    description: 'Table Buy-ins & Gameplay',
     cssClass: 'player',
   },
   PROMO: {
@@ -447,7 +447,7 @@ export default function PlayerWalletPage() {
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Wallet"
         title="Your Value Vault"
-        description="One Secure Command Surface For Playable Chips, Protected Balances, Club Earnings, Promotional Value, And Diamonds. Every Figure Below Remains Connected To The Live Wallet Ledger."
+        description="One secure command surface for playable chips, protected balances, club earnings, promotional value, and diamonds. Every figure below remains connected to the live wallet ledger."
         art="vault"
         status="WALLET LEDGER // SYNCHRONIZED"
         metrics={[
@@ -487,7 +487,7 @@ export default function PlayerWalletPage() {
           <span className="diamond-glyph" aria-hidden="true">
             ◆
           </span>
-          <span aria-label={`${animatedDiamonds.toLocaleString()} Diamonds`}>
+          <span aria-label={`${animatedDiamonds.toLocaleString()} diamonds`}>
             {animatedDiamonds.toLocaleString()}
           </span>
         </div>
@@ -546,7 +546,7 @@ export default function PlayerWalletPage() {
       <div
         className="wallet-tabs"
         role="tablist"
-        aria-label="Wallet Sections"
+        aria-label="Wallet sections"
         onKeyDown={handleTabKeyDown}
       >
         {WALLET_TABS.map((tab) => (
@@ -619,7 +619,7 @@ export default function PlayerWalletPage() {
                   className="transfer-select"
                   value={transferFrom}
                   onChange={(e) => setTransferFrom(e.target.value as WalletType)}
-                  aria-label="Transfer From Wallet"
+                  aria-label="Transfer from wallet"
                 >
                   {(Object.keys(WALLET_CONFIG) as WalletType[]).map((type) => (
                     <option key={type} value={type}>
@@ -640,7 +640,7 @@ export default function PlayerWalletPage() {
                   className="transfer-select"
                   value={transferTo}
                   onChange={(e) => setTransferTo(e.target.value as WalletType)}
-                  aria-label="Transfer To Wallet"
+                  aria-label="Transfer to wallet"
                 >
                   {(Object.keys(WALLET_CONFIG) as WalletType[]).map((type) => (
                     <option key={type} value={type}>
@@ -657,7 +657,7 @@ export default function PlayerWalletPage() {
                   placeholder="0.00"
                   value={transferAmount}
                   onChange={(e) => setTransferAmount(e.target.value)}
-                  aria-label="Transfer Amount"
+                  aria-label="Transfer amount"
                   inputMode="decimal"
                   min="0"
                 />

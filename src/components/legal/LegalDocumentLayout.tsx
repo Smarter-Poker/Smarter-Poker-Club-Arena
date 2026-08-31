@@ -77,7 +77,7 @@ export default function LegalDocumentLayout({
         <aside className={styles.indexRail}>
           <div className={styles.indexPlate}>
             <span className={styles.indexEyebrow}>Document Index</span>
-            <nav aria-label={`${title} Sections`}>
+            <nav aria-label={`${title} sections`}>
               {sections.map((section, index) => (
                 <a href={`#${section.id}`} key={section.id}>
                   <span>{String(index + 1).padStart(2, '0')}</span>
@@ -106,7 +106,7 @@ export default function LegalDocumentLayout({
         </article>
       </div>
 
-      <nav className={styles.documentSwitchboard} aria-label="Legal Documents">
+      <nav className={styles.documentSwitchboard} aria-label="Legal documents">
         {DOCUMENTS.map((document) => (
           <Link
             to={document.path}

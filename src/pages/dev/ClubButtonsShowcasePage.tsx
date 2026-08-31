@@ -229,7 +229,7 @@ export default function ClubButtonsShowcasePage() {
           </div>
         </section>
 
-        <section className="cb-showcase__two-column" aria-label="Panels And Form Controls">
+        <section className="cb-showcase__two-column" aria-label="Panels and form controls">
           <ArenaPanel title="Tournament Info" action={<ArenaBadge>Live</ArenaBadge>}>
             <dl className="cb-showcase__facts">
               <div>

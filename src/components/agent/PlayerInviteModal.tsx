@@ -271,7 +271,7 @@ export default function PlayerInviteModal({
             <div className={styles.results}>
               {searchResults.length === 0 ? (
                 <div className={styles.noResults}>
-                  {searchQuery ? 'No Players Found' : 'Search For Players To Add'}
+                  {searchQuery ? 'No players found' : 'Search for players to add'}
                 </div>
               ) : (
                 searchResults.map((player) => (

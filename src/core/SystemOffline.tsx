@@ -77,13 +77,13 @@ export default function SystemOffline({ status }: Props) {
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
             <span>ANTIGRAVITY_OK</span>
             <span style={{ color: status.antigravityOk ? '#2ecc71' : '#e74c3c' }}>
-              {status.antigravityOk ? ' True' : ' False'}
+              {status.antigravityOk ? ' true' : ' false'}
             </span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>SUPABASE_OK</span>
             <span style={{ color: status.supabaseOk ? '#2ecc71' : '#e74c3c' }}>
-              {status.supabaseOk ? ' True' : ' False'}
+              {status.supabaseOk ? ' true' : ' false'}
             </span>
           </div>
         </div>

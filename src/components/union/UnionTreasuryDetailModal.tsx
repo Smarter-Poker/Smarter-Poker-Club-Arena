@@ -528,7 +528,7 @@ export default function UnionTreasuryDetailModal({
                     placeholder="Amount"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    aria-label="Amount To Move"
+                    aria-label="Amount to move"
                   />
                   <button
                     className="admin-btn admin-btn-primary"

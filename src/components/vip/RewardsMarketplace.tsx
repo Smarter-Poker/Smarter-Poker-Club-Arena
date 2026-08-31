@@ -54,7 +54,7 @@ const FALLBACK_REWARDS: Reward[] = [
   {
     id: 'avatar-gold-frame',
     name: 'Gold Avatar Frame',
-    description: 'Exclusive Gold Avatar Frame',
+    description: 'Exclusive gold avatar frame',
     category: 'avatar',
     pointsCost: 1500,
     icon: '★',
@@ -63,7 +63,7 @@ const FALLBACK_REWARDS: Reward[] = [
   {
     id: 'theme-neon',
     name: 'Neon Table Theme',
-    description: 'Vibrant Neon-Style Table Theme',
+    description: 'Vibrant neon-style table theme',
     category: 'theme',
     pointsCost: 2000,
     icon: '◆',
@@ -71,7 +71,7 @@ const FALLBACK_REWARDS: Reward[] = [
   {
     id: 'avatar-royal-crown',
     name: 'Hellfire Avatar Frame',
-    description: 'Animated Premium Hellfire Avatar Frame',
+    description: 'Animated premium hellfire avatar frame',
     category: 'avatar',
     pointsCost: 2500,
     icon: '♛',
@@ -79,7 +79,7 @@ const FALLBACK_REWARDS: Reward[] = [
   {
     id: 'theme-midnight',
     name: 'Midnight Casino Theme',
-    description: 'Dark Elegant Casino-Inspired Theme',
+    description: 'Dark elegant casino-inspired theme',
     category: 'theme',
     pointsCost: 1800,
     icon: '◐',
@@ -87,7 +87,7 @@ const FALLBACK_REWARDS: Reward[] = [
   {
     id: 'avatar-diamond-halo',
     name: 'Diamond Avatar Frame',
-    description: 'Premium Faceted Diamond Avatar Frame',
+    description: 'Premium faceted diamond avatar frame',
     category: 'avatar',
     pointsCost: 3000,
     icon: '◆',
@@ -95,7 +95,7 @@ const FALLBACK_REWARDS: Reward[] = [
   {
     id: 'theme-cosmic',
     name: 'Cosmic Space Theme',
-    description: 'Futuristic Space-Themed Table',
+    description: 'Futuristic space-themed table',
     category: 'theme',
     pointsCost: 2200,
     icon: '▲',

@@ -169,7 +169,7 @@ export default function FinancialHealthPage() {
             <div>
               <div className="fh-status-label">Auto-Suspend</div>
               <div className="fh-status-value">
-                {status?.config.autoSuspendEnabled ? 'Enabled' : 'Log-Only'}
+                {status?.config.autoSuspendEnabled ? 'Enabled' : 'Log-only'}
               </div>
             </div>
           </div>

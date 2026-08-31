@@ -480,15 +480,15 @@ export default function AdvancedFilters({
             <h2>{sortOnly ? 'Sort Games' : 'Game Filters'}</h2>
             <p>
               {sortOnly
-                ? 'Choose How The Board Is Ordered'
-                : `${activeTypeLabel} · ${activeCount} Active ${activeCount === 1 ? 'Filter' : 'Filters'}`}
+                ? 'Choose how the board is ordered'
+                : `${activeTypeLabel} · ${activeCount} active ${activeCount === 1 ? 'filter' : 'filters'}`}
             </p>
           </div>
           <button
             type="button"
             className="afx-close"
             onClick={onClose}
-            aria-label={sortOnly ? 'Close Sort' : 'Close Game Filters'}
+            aria-label={sortOnly ? 'Close sort' : 'Close game filters'}
           >
             Close
           </button>
@@ -656,7 +656,7 @@ export default function AdvancedFilters({
                 <summary>
                   <h3>
                     {spec.seats
-                      ? `${spec.seatsLabel} · ${value.seatMin} Min / ${value.seatMax} Max`
+                      ? `${spec.seatsLabel} · ${value.seatMin} min / ${value.seatMax} max`
                       : spec.seatsLabel}
                   </h3>
                 </summary>
@@ -674,7 +674,7 @@ export default function AdvancedFilters({
                     />
                     <input
                       type="range"
-                      aria-label="Minimum Seats"
+                      aria-label="Minimum seats"
                       min={spec.seats.min}
                       max={spec.seats.max}
                       value={value.seatMin}
@@ -689,7 +689,7 @@ export default function AdvancedFilters({
                     />
                     <input
                       type="range"
-                      aria-label="Maximum Seats"
+                      aria-label="Maximum seats"
                       min={spec.seats.min}
                       max={spec.seats.max}
                       value={value.seatMax}

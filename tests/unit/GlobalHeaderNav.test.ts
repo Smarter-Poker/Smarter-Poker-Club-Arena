@@ -113,11 +113,11 @@ describe('the bar stretches across the top', () => {
 
 describe('both ways out are always there', () => {
   it('renders a Back button', () => {
-    expect(TSX).toContain('aria-label="Go Back"');
+    expect(TSX).toContain('aria-label="Go back"');
   });
 
   it('renders a Hub button', () => {
-    expect(TSX).toContain('aria-label="Go To The Hub"');
+    expect(TSX).toContain('aria-label="Go to the Hub"');
   });
 
   it('neither is behind a page-depth condition any more', () => {

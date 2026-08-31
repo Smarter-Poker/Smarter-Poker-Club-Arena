@@ -494,14 +494,14 @@ export function TableMenu({
       <button
         className={`table-menu__trigger ${isOpen ? 'table-menu__trigger--active' : ''}`}
         onClick={onToggle}
-        aria-label="Table Menu"
+        aria-label="Table menu"
         aria-haspopup="menu"
         aria-expanded={isOpen}
       >
         <img src={hamburgerIcon} className="table-menu__trigger-img" alt="" draggable={false} />
         {/* Notification badge */}
         {badgeCount != null && badgeCount > 0 && (
-          <span className="table-menu__badge" aria-label={`${badgeCount} Notifications`}>
+          <span className="table-menu__badge" aria-label={`${badgeCount} notifications`}>
             {badgeCount > 9 ? '9+' : badgeCount}
           </span>
         )}
@@ -516,7 +516,7 @@ export function TableMenu({
               ref={dropdownRef}
               className="table-menu__dropdown"
               role="menu"
-              aria-label={tableName || 'Table Menu'}
+              aria-label={tableName || 'Table menu'}
             >
               {/* Header */}
               {/* Header with table name, connection, and hand info */}

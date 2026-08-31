@@ -23,7 +23,7 @@ const BENCHMARKS: Record<string, { avg: number; good: number; label: string }> =
   threeBet: { avg: 7, good: 10, label: '%' },
   foldTo3Bet: { avg: 55, good: 45, label: '%' },
   cbetFreq: { avg: 65, good: 70, label: '%' },
-  bbPer100: { avg: 2, good: 5, label: 'BB' },
+  bbPer100: { avg: 2, good: 5, label: 'bb' },
 };
 
 // ── SWR cache ──
@@ -189,7 +189,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData
         value: hourlyRate,
         format: (val) => `${val >= 0 ? '+' : ''}${val.toFixed(2)}`,
         unit: '/hr',
-        description: 'Profit Per Hour Played',
+        description: 'Profit per hour played',
         benchmark: BENCHMARKS.hourly,
       },
       {
@@ -197,7 +197,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData
         label: 'Total Hands',
         value: totalHands,
         format: (val) => Math.floor(val).toLocaleString(),
-        description: 'Total Hands Played Across All Sessions',
+        description: 'Total hands played across all sessions',
         benchmark: BENCHMARKS.totalHands,
       },
       {
@@ -205,7 +205,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData
         label: 'Showdown Win %',
         value: showdownWinPct,
         format: (val) => `${val.toFixed(1)}%`,
-        description: 'Win Percentage When Reaching Showdown',
+        description: 'Win percentage when reaching showdown',
         benchmark: BENCHMARKS.showdownWin,
       },
       {
@@ -213,7 +213,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData
         label: 'Aggression Factor',
         value: d.aggression_factor || 0,
         format: (val) => val.toFixed(2),
-        description: 'Ratio Of Aggressive Actions To Passive Actions',
+        description: 'Ratio of aggressive actions to passive actions',
         benchmark: BENCHMARKS.aggression,
       },
       {
@@ -221,15 +221,15 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData
         label: '3-Bet %',
         value: (d.three_bet_percent || 0) * 100,
         format: (val) => `${val.toFixed(1)}%`,
-        description: 'Percentage Of Re-Raises Preflop',
+        description: 'Percentage of re-raises preflop',
         benchmark: BENCHMARKS.threeBet,
       },
       {
         id: 'foldTo3Bet',
-        label: 'Fold To 3-Bet %',
+        label: 'Fold to 3-Bet %',
         value: (d.fold_to_three_bet || 0) * 100,
         format: (val) => `${val.toFixed(1)}%`,
-        description: 'How Often You Fold To 3-Bet Raises',
+        description: 'How often you fold to 3-bet raises',
         benchmark: BENCHMARKS.foldTo3Bet,
       },
       {
@@ -237,7 +237,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData
         label: 'C-Bet Frequency',
         value: (d.cbet_flop || 0) * 100,
         format: (val) => `${val.toFixed(1)}%`,
-        description: 'How Often You Continuation Bet On The Flop',
+        description: 'How often you continuation bet on the flop',
         benchmark: BENCHMARKS.cbetFreq,
       },
       {
@@ -245,7 +245,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData
         label: 'BB/100',
         value: d.bb_per_100 || 0,
         format: (val) => `${val >= 0 ? '+' : ''}${val.toFixed(2)}`,
-        description: 'Big Blinds Won Per 100 Hands - Key Profitability Metric',
+        description: 'Big blinds won per 100 hands - key profitability metric',
         benchmark: BENCHMARKS.bbPer100,
       },
     ];
@@ -340,7 +340,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData
               whiteSpace: 'nowrap',
             }}
           >
-            {showBenchmarks ? 'Hide Avg' : 'Vs Average'}
+            {showBenchmarks ? 'Hide Avg' : 'vs Average'}
           </button>
         </div>
       </div>

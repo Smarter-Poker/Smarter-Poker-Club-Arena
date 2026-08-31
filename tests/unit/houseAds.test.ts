@@ -443,7 +443,7 @@ describe('a click is attention, not a result', () => {
     const sql = CONV.replace(/^\s*--.*$/gm, '');
     expect(sql).not.toMatch(/conversions caused by/i);
     expect(ADMIN).toMatch(/Followed Through/);
-    expect(ADMIN).toMatch(/Correlation, Not Proof Of Cause/);
+    expect(ADMIN).toMatch(/Correlation, not proof of cause/);
   });
 
   it('counts a purchase only when it completed', () => {

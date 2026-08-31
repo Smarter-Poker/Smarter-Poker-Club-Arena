@@ -252,7 +252,7 @@ export function BBJInfoModal({
         <div
           className="bbj-modal__tabs"
           role="tablist"
-          aria-label="Bad Beat Jackpot Sections"
+          aria-label="Bad Beat Jackpot sections"
           onKeyDown={onTabsKeyDown}
         >
           {TABS.map((t) => (

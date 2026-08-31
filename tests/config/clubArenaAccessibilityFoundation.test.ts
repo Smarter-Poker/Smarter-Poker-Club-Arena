@@ -68,6 +68,9 @@ describe('Club Arena accessibility foundation', () => {
     expect(accessSource).toContain('useClubWorkspace');
     expect(workspaceSource).toContain("masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED'");
     expect(workspaceSource).toContain('resolveClubUUIDStrict');
+    expect(workspaceSource).toContain("await import('../utils/retryFetch')");
+    expect(workspaceSource).toMatch(/retryFetch\([\s\S]*?from\('club_members'\)/);
+    expect(workspaceSource).toMatch(/retryFetch\([\s\S]*?from\('profiles'\)/);
     expect(source).toContain("label: 'Settings'");
     expect(source).toContain("label: 'Stats'");
     expect(source).toContain("clubRoot ? `${clubRoot}/data` : '/data'");

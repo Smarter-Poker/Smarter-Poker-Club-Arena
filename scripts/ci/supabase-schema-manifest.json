@@ -1675,6 +1675,7 @@
     "fn_get_social_leaderboard",
     "fn_get_stories",
     "fn_get_streak_multiplier",
+    "fn_get_table_watch_access",
     "fn_get_user_conversations",
     "fn_get_vip_subscription",
     "fn_global_leaderboard_by_dates",

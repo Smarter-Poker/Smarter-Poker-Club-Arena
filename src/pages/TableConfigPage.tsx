@@ -12,7 +12,7 @@
  * - Save & Start buttons
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -30,10 +30,11 @@ import {
 } from '../config/tableSeating';
 
 import { tournamentService } from '../services/TournamentService';
+import { buildTournamentConfig } from '../lib/tournamentFromTableConfig';
 import {
-  buildTournamentConfig,
   canRunAsTournament as gameTypeCanRunAsTournament,
-} from '../lib/tournamentFromTableConfig';
+  canRunAsSpin as gameTypeCanRunAsSpin,
+} from '../config/tournamentVariants';
 import { gameCreationDeniedMessage, type GameCreationAccess } from '../lib/gameCreationAccess';
 import { fetchGameCreationAccess } from '../services/GameAccessService';
 import { tournamentScheduleService } from '../services/TournamentScheduleService';
@@ -871,13 +872,32 @@ export default function TableConfigPage() {
     }
   };
 
+  /**
+   * The Players dropdown, narrowed to what this game can actually be.
+   *
+   * "3 Players (Spins)" is the only entry that changes the PRODUCT rather than
+   * the field size, and Spin & Go sells four games (SPIN_GAME_TYPES). Offering
+   * it on a Short Deck or PLO8 page created a Spin the Spins board has no
+   * filter chip for — it vanished from the lobby the moment a player ticked any
+   * Games chip, with nothing to bring it back. Removing the OPTION is the fix;
+   * `buildTournamentConfig` refuses the same combination independently, for a
+   * draft or template that carries it in past this screen.
+   */
+  const sngPlayerOptions = useMemo(
+    () => SNG_PLAYER_OPTIONS.filter((o) => !o.isSpins || gameTypeCanRunAsSpin(gameType)),
+    [gameType]
+  );
+
   // Handle SNG player count change (auto-set spins mode for 3 players)
   const handleSngPlayerChange = (playerCount: number) => {
     const option = SNG_PLAYER_OPTIONS.find((o) => o.value === playerCount);
     setConfig((prev) => ({
       ...prev,
       sngPlayerCount: playerCount,
-      isSpins: option?.isSpins || false,
+      /* `isSpins` follows the CATALOGUE, not just the row: a stale draft that
+         still says 3 on a game Spins does not sell becomes a three-handed Sit &
+         Go rather than an unfilterable Spin. */
+      isSpins: Boolean(option?.isSpins) && gameTypeCanRunAsSpin(gameType),
     }));
   };
 
@@ -1221,9 +1241,7 @@ export default function TableConfigPage() {
          rendered as the same five words, which is how an unsaveable
          configuration became an unexplainable one. handleStartTournament
          already surfaces error.message; this now matches it. */
-      toast.error(
-        error instanceof Error && error.message ? error.message : 'Failed to save table'
-      );
+      toast.error(error instanceof Error && error.message ? error.message : 'Failed to save table');
     } finally {
       setSaving(false);
     }
@@ -2133,7 +2151,7 @@ export default function TableConfigPage() {
                   value={config.sngPlayerCount}
                   onChange={(e) => handleSngPlayerChange(Number(e.target.value))}
                 >
-                  {SNG_PLAYER_OPTIONS.map((opt) => (
+                  {sngPlayerOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
                     </option>

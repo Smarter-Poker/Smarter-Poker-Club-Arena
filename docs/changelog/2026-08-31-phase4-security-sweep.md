@@ -72,6 +72,34 @@ depth one day; not worth doing blind.
   that matters — `fn_check_ungated_money_rpcs`, money-mutating definer
   functions with no authorization gate — returns **0**.
 
+## The surface grew back within the hour
+
+Minutes after the sweep took the count from 83 to 22, it read **23** again.
+`fn_tournament_metrics` had shipped from another agent:
+
+```
+RETURNS TABLE(running, registering, overdue_start, stuck_completing,
+              seatless_phantoms, unpaid_completed, seat_first_waiting)
+```
+
+No `auth.uid()`. A live readout of the platform's **operational failure
+counts** — how many tournaments are overdue to start, stuck COMPLETING,
+carrying phantom seats, or completed-but-unpaid — readable by anyone with no
+account. Not player data, but exactly what tells an outsider when the floor is
+degraded. Closed to `anon`, kept for `authenticated`.
+
+**This is the finding that outlasts the 61 doors.** It is not a mistake by that
+agent; it is the default doing what the default does. Postgres grants EXECUTE
+to PUBLIC on every new function and Supabase publishes it as an RPC, so **every
+operator watchdog on this platform is born public unless someone says
+otherwise** — and they are being written faster than they are being closed. A
+one-off sweep cannot hold this line. The durable fix is a CI check that fails
+when a new `public` SECURITY DEFINER function is anon-executable without being
+on an explicit allowlist, in the same family as
+`check-definer-authorization.mjs` which already guards money-mutating writers.
+Recommended as the follow-up; deliberately not bolted on at the end of a
+security phase without its own testing.
+
 ## Evidence every revoke rests on
 
 For each function closed: not referenced in any RLS policy, not in any view

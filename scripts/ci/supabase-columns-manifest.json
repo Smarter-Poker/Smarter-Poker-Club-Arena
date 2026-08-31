@@ -4238,7 +4238,8 @@
       "status",
       "due_date",
       "created_at",
-      "paid_at"
+      "paid_at",
+      "void_reason"
     ],
     "credit_payments": [
       "id",

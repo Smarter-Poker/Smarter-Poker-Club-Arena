@@ -208,6 +208,8 @@ button.club-identity__line {
 }
 
 .club-identity__share {
+  position: relative;
+  z-index: 2;
   flex: 0 0 auto;
   width: 7.5cqw;
   height: 7.5cqw;
@@ -222,6 +224,28 @@ button.club-identity__line {
   filter: drop-shadow(0 0 3px rgba(0, 136, 255, 0.72));
   cursor: pointer;
   line-height: 0;
+}
+
+/* The share glyph is deliberately small enough to stay inside the approved
+   identity artwork, but the control still owes a thumb a full target. At the
+   375px paired-card layout its painted box is only 12px tall. Grow the hit
+   area without growing the artwork, and lift it three pixels so the 44px band
+   remains inside the card's clipped canvas at the shortest breakpoint. A
+   pseudo-element hit is dispatched to its button host. */
+@media (pointer: coarse) {
+  .club-identity__share {
+    top: -3px;
+  }
+
+  .club-identity__share::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(44px, 100%);
+    height: max(44px, 100%);
+    transform: translate(-50%, -50%);
+  }
 }
 
 .club-identity__share svg {

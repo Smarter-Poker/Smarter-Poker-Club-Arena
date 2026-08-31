@@ -2552,6 +2552,8 @@
     display: grid;
     grid-template-rows: 0fr;
     opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
     transition:
       grid-template-rows 220ms ease,
       opacity 180ms ease;
@@ -2560,6 +2562,8 @@
   .lobby-wallets-content[data-expanded='true'] {
     grid-template-rows: 1fr;
     opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
   }
 
   .lobby-wallets-content__inner {

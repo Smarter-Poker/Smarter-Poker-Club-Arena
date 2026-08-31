@@ -356,7 +356,7 @@ sw.addEventListener('fetch', (event) => {
     // So a media file replaced at a stable path now reaches everyone within
     // one revalidation window instead of never. That is a repair, not a
     // licence: version the FILENAME when you replace artwork you need people
-    // to see immediately (`satellite-winner-v3.png`, `btn-hamburger-v4.png`),
+    // to see immediately (`satellite-winner-v3.png`, `header-settings-v4.png`),
     // because a new URL is correct on the very first paint and this is only
     // correct on the next one.
     //
@@ -509,4 +509,3 @@ sw.addEventListener('activate', (event) => {
         ])
     );
 });
-

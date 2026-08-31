@@ -130,8 +130,8 @@ function ShellContent() {
               aria-label="Menu"
             >
               <img
-                src={`${MEDIA_BASE}images/btn-hamburger.png`}
-                alt="Menu"
+                src={`${MEDIA_BASE}images/global-header/command-center.png`}
+                alt="Command Center"
                 style={{ height: '100%', width: '100%', objectFit: 'contain' }}
               />
             </button>
@@ -249,8 +249,8 @@ function ShellContent() {
               '✕'
             ) : (
               <img
-                src={`${MEDIA_BASE}images/btn-hamburger.png`}
-                alt="Menu"
+                src={`${MEDIA_BASE}images/global-header/command-center.png`}
+                alt="Command Center"
                 style={{ height: 20, width: 20, objectFit: 'contain' }}
               />
             )}

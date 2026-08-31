@@ -163,7 +163,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   rebuy: '↺',
   addon: '⊞',
   mint: '◆',
-  settlement: '≡',
+  settlement: '◇',
   commission: '◈',
   INSURANCE: '⊕',
   funding: '→',
@@ -2672,7 +2672,7 @@ export default function CashierPage() {
       {action === 'history' && (
         <section className={styles.card} id="cashier-panel-history" role="tabpanel">
           <h2 className={styles.cardTitle}>
-            <span className={styles.cardTitleIcon}>≡</span>Transaction History
+            <span className={styles.cardTitleIcon}>↺</span>Transaction History
           </h2>
           <div className={styles.txContainer}>
             {/* Filters */}

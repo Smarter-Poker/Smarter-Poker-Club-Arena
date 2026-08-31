@@ -277,7 +277,7 @@ export default function GlobalHeader() {
               className={`${styles.artButton} ${styles.hamburgerBtn}`}
               aria-label="Open Menu"
             >
-              <img src={`${APPROVED_HEADER_ASSET}menu.png`} alt="Menu" />
+              <img src={`${APPROVED_HEADER_ASSET}command-center.png`} alt="Command Center" />
             </button>
             <button
               onClick={handleBackClick}

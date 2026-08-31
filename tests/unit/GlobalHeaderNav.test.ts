@@ -151,7 +151,7 @@ describe('no handler is left wired to nothing', () => {
 });
 
 describe('the button artwork exists', () => {
-  const IMAGES = ['menu.png', 'back.png', 'hub.png'] as const;
+  const IMAGES = ['command-center.png', 'back.png', 'hub.png'] as const;
 
   it.each(IMAGES)('%s is referenced by the header', (file) => {
     expect(TSX).toContain(`APPROVED_HEADER_ASSET}${file}`);
@@ -193,7 +193,7 @@ describe('mobile uses the identical desktop header', () => {
   it('uses only artwork derived from the approved source image', () => {
     expect(TSX).toContain('global-header-desktop.png');
     for (const file of [
-      'menu.png',
+      'command-center.png',
       'back.png',
       'hub.png',
       'profile.png',
@@ -215,7 +215,7 @@ describe('mobile uses the identical desktop header', () => {
 
   it('locks the approved desktop bytes and excludes global-header art from resizing', () => {
     expect(createHash('sha256').update(APPROVED_DESKTOP).digest('hex')).toBe(
-      '7c5613a84a395abd6b9527785b46c99fb28b6264e2258bee366a04cac5500c7f'
+      'bb62242b86cef3eb440e152390b09e966f5a4fc28487ddf2ed701a2c4adae3f9'
     );
     expect(OPTIMIZER).toContain("{ prefix: 'images/global-header/', maxDim: 0 }");
   });

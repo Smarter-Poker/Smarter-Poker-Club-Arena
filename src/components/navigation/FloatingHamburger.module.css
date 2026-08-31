@@ -1,6 +1,6 @@
 /**
  * FLOATING HAMBURGER BUTTON — Bottom-left navigation toggle
- * Silver metallic icon - NO BACKGROUND (transparent)
+ * Metallic command-center icon - NO BACKGROUND (transparent)
  * Companion trigger for the GlobalHeader HamburgerMenu
  * z-index: 1001 (above GlobalHeader's 1000, below HamburgerMenu's 1100+)
  */
@@ -36,8 +36,9 @@
 }
 
 .icon {
-  width: 26px;
-  height: 26px;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
   filter: drop-shadow(0 0 4px rgba(200, 210, 220, 0.4));
 }
 
@@ -51,7 +52,7 @@
   }
 
   .icon {
-    width: 22px;
-    height: 22px;
+    width: 36px;
+    height: 36px;
   }
 }

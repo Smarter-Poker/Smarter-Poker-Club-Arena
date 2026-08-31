@@ -12,7 +12,12 @@ import {
   presetsFor,
   blindsIndexFor,
 } from '../../src/config/blindsPresets';
-import { findScheduleMatch, getRakeConfig, UNSCHEDULED_CAP_BB } from '../../src/config/RakeConfig';
+import {
+  findScheduleMatch,
+  getRakeConfig,
+  RAKE_SCHEDULE,
+  UNSCHEDULED_CAP_BB,
+} from '../../src/config/RakeConfig';
 
 describe('a fixed-limit table is only offered blinds its bet ladder can describe', () => {
   /**
@@ -128,12 +133,15 @@ describe('every stake the form offers is on the published schedule', () => {
     expect(getRakeConfig(dflt.bb, 'nlh', dflt.sb).rakeCap).toBe(1.5);
   });
 
-  it.skip('AWAITING DAN: the 5/5 schedule row can never match a legal table', () => {
-    // RAKE_SCHEDULE contains { sb: 5, bb: 5 }. The table-creation guard
-    // refuses "big blind must exceed small blind", so no table can ever match
-    // it. 5/10 already exists; 2.5/5 would fit the ladder. It is a money row
-    // and a separate question from the coverage ruling above — confirm the
-    // intended stakes with Dan before editing it.
+  it('has no 5/5 row - no legal table could ever match it', () => {
+    // RAKE_SCHEDULE used to contain a 5/5 entry. The table-creation guard
+    // refuses "big blind must exceed small blind", so no cash table could ever
+    // match it and no hand was ever priced by it; it also sorted out of order
+    // between 2/5 and 3/6, the tell of a typo placed by big blind. Dan ruled it
+    // a typo on 2026-09-01: deleted, not legalised. bb == sb stays illegal.
     expect(findScheduleMatch(5, 5)).toBeNull();
+    for (const row of RAKE_SCHEDULE) {
+      expect(row.bb, `stake ${row.sb}/${row.bb} has bb <= sb`).toBeGreaterThan(row.sb);
+    }
   });
 });

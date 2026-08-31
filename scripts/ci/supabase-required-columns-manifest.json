@@ -210,6 +210,10 @@
     "bbj_hand_evidence_log": [
       "kind"
     ],
+    "bbj_ledger_deletions": [
+      "source_table",
+      "row_data"
+    ],
     "bbj_payout_recipients": [
       "payout_id",
       "user_id",
@@ -293,6 +297,22 @@
       "opening_balance",
       "ledger_at_baseline",
       "unledgered_gap"
+    ],
+    "ca_club_player_daily": [
+      "club_id",
+      "user_id",
+      "stat_date"
+    ],
+    "ca_club_tournament_daily": [
+      "club_id",
+      "tournament_id",
+      "stat_date"
+    ],
+    "ca_club_tournament_player_daily": [
+      "club_id",
+      "tournament_id",
+      "user_id",
+      "stat_date"
     ],
     "ca_frozen_pool_baseline": [
       "pool",
@@ -1101,6 +1121,10 @@
       "chip_reward",
       "name",
       "description"
+    ],
+    "daily_challenge_claim_batches": [
+      "user_id",
+      "request_id"
     ],
     "daily_challenge_milestones": [
       "days",

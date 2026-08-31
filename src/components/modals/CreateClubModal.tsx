@@ -321,7 +321,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
             Create A Club
           </h2>
           <p className={styles.subtitle}>
-            Name your room, establish its identity, and open the doors.
+            Name Your Room, Establish Its Identity, And Open The Doors.
           </p>
 
           <div className={styles.creationMeta} aria-live="polite">
@@ -336,9 +336,9 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
                 Allowance Check Failed · Retry
               </button>
             ) : (
-              <span>Verifying club allowance…</span>
+              <span>Verifying Club Allowance…</span>
             )}
-            {draftRestored && <span>Draft restored</span>}
+            {draftRestored && <span>Draft Restored</span>}
           </div>
 
           <label className={styles.fieldLabel} htmlFor="new-club-name">
@@ -395,7 +395,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
                 }}
               >
                 <span>{isOptimizingLogo ? 'Optimizing…' : 'Upload Image'}</span>
-                <small>PNG, JPG or WEBP · 5MB max</small>
+                <small>PNG, JPG Or WEBP · 5MB Max</small>
               </button>
               <button
                 className={styles.createLogoBtn}
@@ -405,7 +405,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
                 }}
               >
                 <span>Generate With AI</span>
-                <small>Describe a custom club mark</small>
+                <small>Describe A Custom Club Mark</small>
               </button>
             </div>
           </div>
@@ -427,7 +427,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
                 checked={isPublic}
                 onChange={(event) => setIsPublic(event.target.checked)}
               />{' '}
-              Discoverable in Club Arena
+              Discoverable In Club Arena
             </label>
             <label>
               <input
@@ -435,7 +435,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
                 checked={requiresApproval}
                 onChange={(event) => setRequiresApproval(event.target.checked)}
               />{' '}
-              Review join requests
+              Review Join Requests
             </label>
           </fieldset>
 
@@ -457,7 +457,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
               className={styles.termsCheckbox}
             />
             <span className={styles.checkboxVisual} aria-hidden="true" />
-            <span>I confirm I can manage this club and accept the Club Arena terms.</span>
+            <span>I Confirm I Can Manage This Club And Accept The Club Arena Terms.</span>
           </label>
 
           {/* CREATE button zone */}

@@ -274,7 +274,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
               <h2 id="find-player-title" className={styles.title}>
                 Find A Player
               </h2>
-              <p>Search only the friends, clubs, and unions your role permits.</p>
+              <p>Search Only The Friends, Clubs, And Unions Your Role Permits.</p>
             </div>
             <button
               className={styles.privacyButton}
@@ -308,7 +308,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                     setPrivacy((value) => ({ ...value, discoverable: event.target.checked }))
                   }
                 />{' '}
-                Allow club and union members to find me
+                Allow Club And Union Members To Find Me
               </label>
               <label>
                 <input
@@ -318,7 +318,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                     setPrivacy((value) => ({ ...value, showDisplayName: event.target.checked }))
                   }
                 />{' '}
-                Show my display name
+                Show My Display Name
               </label>
               <label>
                 <input
@@ -328,7 +328,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                     setPrivacy((value) => ({ ...value, showPresence: event.target.checked }))
                   }
                 />{' '}
-                Show online presence
+                Show Online Presence
               </label>
               <label>
                 <input
@@ -339,7 +339,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                     setPrivacy((value) => ({ ...value, showCurrentTable: event.target.checked }))
                   }
                 />{' '}
-                Show my current table
+                Show My Current Table
               </label>
               <button onClick={savePrivacy} disabled={isSavingPrivacy}>
                 {isSavingPrivacy ? 'Saving…' : 'Save Visibility'}
@@ -422,10 +422,10 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                 value={scope}
                 onChange={(event) => setScope(event.target.value as PlayerSearchScope)}
               >
-                <option value="all">Best available</option>
+                <option value="all">Best Available</option>
                 <option value="friends">Friends</option>
-                <option value="clubs">My clubs</option>
-                <option value="union">My unions</option>
+                <option value="clubs">My Clubs</option>
+                <option value="union">My Unions</option>
               </select>
             </label>
             <label>
@@ -434,9 +434,9 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                 value={presence}
                 onChange={(event) => setPresence(event.target.value as PlayerPresenceFilter)}
               >
-                <option value="all">Any status</option>
+                <option value="all">Any Status</option>
                 <option value="online">Online</option>
-                <option value="playing">Playing now</option>
+                <option value="playing">Playing Now</option>
               </select>
             </label>
             <label>
@@ -445,7 +445,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                 value={sort}
                 onChange={(event) => setSort(event.target.value as PlayerSearchSort)}
               >
-                <option value="relevance">Best match</option>
+                <option value="relevance">Best Match</option>
                 <option value="name">Name</option>
               </select>
             </label>
@@ -460,7 +460,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
             {error && <div className={styles.errorMessage}>{error}</div>}
             {!error && !isSearching && lastCompletedQueryRef.current && results.length === 0 && (
               <div className={styles.notFoundMessage}>
-                <p>No matching players in your permitted network.</p>
+                <p>No Matching Players In Your Permitted Network.</p>
               </div>
             )}
             {results.length > 0 && (
@@ -520,7 +520,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
             )}
             {!error && !isSearching && !lastCompletedQueryRef.current && (
               <div className={styles.hintMessage}>
-                <p>Search by alias, display name, or player number.</p>
+                <p>Search By Alias, Display Name, Or Player Number.</p>
               </div>
             )}
           </div>

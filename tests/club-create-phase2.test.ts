@@ -42,15 +42,15 @@ describe('Phase 2 create experience', () => {
     expect(modal).toContain('CREATE_DRAFT_KEY');
     expect(modal).toContain('creationRequestIdRef');
     expect(modal).toContain('request_id: creationRequestIdRef.current');
-    expect(modal).toContain('Draft restored');
+    expect(modal).toContain('Draft Restored');
     expect(modal).toContain('ClubsService.checkNameAvailability');
     expect(modal).toContain('ClubsService.getCreationEligibility');
   });
 
   it('exposes launch settings and a reviewable description', () => {
     expect(modal).toContain('Launch Settings');
-    expect(modal).toContain('Discoverable in Club Arena');
-    expect(modal).toContain('Review join requests');
+    expect(modal).toContain('Discoverable In Club Arena');
+    expect(modal).toContain('Review Join Requests');
     expect(modal).toContain('new-club-description');
   });
 

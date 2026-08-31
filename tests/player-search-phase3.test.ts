@@ -50,9 +50,9 @@ describe('Phase 3 locator experience', () => {
   });
 
   it('lets players control discoverability and live-table exposure', () => {
-    expect(modal).toContain('Allow club and union members to find me');
-    expect(modal).toContain('Show online presence');
-    expect(modal).toContain('Show my current table');
+    expect(modal).toContain('Allow Club And Union Members To Find Me');
+    expect(modal).toContain('Show Online Presence');
+    expect(modal).toContain('Show My Current Table');
     expect(modal).toContain('PlayerSearchService.setPreferences');
   });
 });

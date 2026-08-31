@@ -34,10 +34,10 @@ export default function ClubEntryActionBar({
           onClick={onCreate}
           disabled={!flags.create_club}
           title={flags.create_club ? 'Create a Club (C)' : 'Club creation is unavailable'}
-          aria-label="Create a Club"
+          aria-label="Create A Club"
           aria-keyshortcuts="C"
         >
-          <span className={styles.srOnly}>Create a Club</span>
+          <span className={styles.srOnly}>Create A Club</span>
         </button>
         <button
           type="button"
@@ -45,10 +45,10 @@ export default function ClubEntryActionBar({
           onClick={onFind}
           disabled={!flags.find_player}
           title={flags.find_player ? 'Find a Player (F)' : 'Player search is unavailable'}
-          aria-label="Find a Player"
+          aria-label="Find A Player"
           aria-keyshortcuts="F"
         >
-          <span className={styles.srOnly}>Find a Player</span>
+          <span className={styles.srOnly}>Find A Player</span>
         </button>
         <button
           type="button"
@@ -56,10 +56,10 @@ export default function ClubEntryActionBar({
           onClick={onJoin}
           disabled={!flags.join_club}
           title={flags.join_club ? 'Join a Club (J)' : 'Club joining is unavailable'}
-          aria-label="Join a Club"
+          aria-label="Join A Club"
           aria-keyshortcuts="J"
         >
-          <span className={styles.srOnly}>Join a Club</span>
+          <span className={styles.srOnly}>Join A Club</span>
         </button>
       </div>
     </nav>

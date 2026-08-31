@@ -18,9 +18,9 @@ describe('ClubEntryActionBar interactions', () => {
       />
     );
 
-    await user.click(screen.getByRole('button', { name: 'Create a Club' }));
-    await user.click(screen.getByRole('button', { name: 'Find a Player' }));
-    await user.click(screen.getByRole('button', { name: 'Join a Club' }));
+    await user.click(screen.getByRole('button', { name: 'Create A Club' }));
+    await user.click(screen.getByRole('button', { name: 'Find A Player' }));
+    await user.click(screen.getByRole('button', { name: 'Join A Club' }));
     expect(onCreate).toHaveBeenCalledTimes(1);
     expect(onFind).toHaveBeenCalledTimes(1);
     expect(onJoin).toHaveBeenCalledTimes(1);
@@ -38,7 +38,7 @@ describe('ClubEntryActionBar interactions', () => {
       />
     );
 
-    const create = screen.getByRole('button', { name: 'Create a Club' });
+    const create = screen.getByRole('button', { name: 'Create A Club' });
     expect(create).toBeDisabled();
     await user.click(create);
     expect(onCreate).not.toHaveBeenCalled();

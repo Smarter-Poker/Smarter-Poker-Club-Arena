@@ -16,9 +16,9 @@ const header = read('src/components/navigation/GlobalHeader.tsx');
 describe('Club Arena primary actions', () => {
   it('uses the approved action artwork with semantic controls', () => {
     expect(actionBar).toContain('aria-label="Club Arena actions"');
-    expect(actionBar).toContain('aria-label="Create a Club"');
-    expect(actionBar).toContain('aria-label="Find a Player"');
-    expect(actionBar).toContain('aria-label="Join a Club"');
+    expect(actionBar).toContain('aria-label="Create A Club"');
+    expect(actionBar).toContain('aria-label="Find A Player"');
+    expect(actionBar).toContain('aria-label="Join A Club"');
     expect(actionBar).toContain(
       "mediaUrl('images/club-arena/approved-club-entry-action-pill-v1.webp')"
     );

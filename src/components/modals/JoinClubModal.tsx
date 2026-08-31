@@ -166,7 +166,7 @@ export default function JoinClubModal({
   const consumeInput = (value: string) => {
     const parsed = ClubJoinService.parseInput(value);
     if (!parsed || !ClubJoinService.isValidIdentifier(parsed.identifier)) {
-      setStatusMessage('Paste a 5–6 digit code or a valid Club Arena invite link.');
+      setStatusMessage('Paste A 5-6 Digit Code Or A Valid Club Arena Invite Link.');
       return false;
     }
     previewSequenceRef.current += 1;
@@ -259,8 +259,8 @@ export default function JoinClubModal({
             Join A Club
           </h2>
           <p className={styles.subtitle}>
-            Enter a code, paste an invitation, or upload a QR screenshot. You will confirm the club
-            before anything changes.
+            Enter A Code, Paste An Invitation, Or Upload A QR Screenshot. You Will Confirm The Club
+            Before Anything Changes.
           </p>
 
           <div className={styles.inputWrapper}>
@@ -314,15 +314,15 @@ export default function JoinClubModal({
 
           {isPreviewing && (
             <div className={styles.lookupStatus} aria-live="polite">
-              Verifying club…
+              Verifying Club…
             </div>
           )}
           {preview && (
             <section className={styles.clubPreview} aria-label="Club confirmation">
               <div>
-                <span>{preview.requires_approval ? 'Approval required' : 'Open membership'}</span>
+                <span>{preview.requires_approval ? 'Approval Required' : 'Open Membership'}</span>
                 <strong>{preview.name}</strong>
-                <small>{preview.member_count?.toLocaleString()} members</small>
+                <small>{preview.member_count?.toLocaleString()} Members</small>
               </div>
               {preview.description && <p>{preview.description}</p>}
             </section>

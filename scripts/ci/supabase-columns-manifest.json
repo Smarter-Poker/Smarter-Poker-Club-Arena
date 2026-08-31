@@ -9283,7 +9283,8 @@
       "position",
       "status",
       "notified_at",
-      "created_at"
+      "created_at",
+      "hold_expires_at"
     ],
     "tables": [
       "id",

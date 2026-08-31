@@ -120,6 +120,19 @@ export class DailyMissionsPage {
     if (page.url().includes('/auth')) {
       throw new Error(`Temporary Daily Missions account ${account.id} did not remain signed in.`);
     }
+    const authenticatedUserId = await page.evaluate(() => {
+      try {
+        const session = JSON.parse(localStorage.getItem('smarter-poker-auth') || 'null');
+        return session?.user?.id || session?.currentSession?.user?.id || '';
+      } catch {
+        return '';
+      }
+    });
+    if (authenticatedUserId !== account.id) {
+      throw new Error(
+        `Daily Missions signed in as ${authenticatedUserId || 'no user'} instead of reserved account ${account.id}.`
+      );
+    }
     await ensurePlayableProfile(page);
     await expect(page.getByRole('button', { name: 'Open Menu' }).first()).toBeVisible({
       timeout: 30_000,
@@ -191,8 +204,20 @@ export class DailyMissionsPage {
       .toBe(true);
   }
 
-  rerollButton() {
-    return this.page.getByRole('button', { name: /^Reroll .+ for 10 diamonds$/ }).first();
+  async firstRerollButton(): Promise<Locator> {
+    // The dashboard is live data. A player can finish every mission in the
+    // initially selected Daily tier before another device opens this surface;
+    // the atomic reroll contract applies to any unfinished assigned row, so
+    // select the first tier that truthfully exposes one instead of assuming
+    // Daily must always have an unfinished card.
+    for (const tier of ['Daily', 'Weekly', 'Monthly'] as const) {
+      await this.chooseTier(tier);
+      const candidate = this.page
+        .getByRole('button', { name: /^Reroll .+ For 10 Diamonds$/ })
+        .first();
+      if (await candidate.isVisible().catch(() => false)) return candidate;
+    }
+    throw new Error('The live dashboard exposed no unfinished mission that could be rerolled.');
   }
 
   async chooseTier(name: 'Daily' | 'Weekly' | 'Monthly') {

@@ -145,6 +145,7 @@ test.describe('production Daily Missions certification', () => {
         const dashboardRequests: Request[] = [];
         const dashboardStartedAt = new Map<Request, number>();
         let dashboardRpcMs = Number.POSITIVE_INFINITY;
+        let dashboardRpcStatus = 0;
         const onRequest = (request: Request) => {
           if (request.url().includes('/rest/v1/rpc/get_daily_challenge_dashboard')) {
             dashboardRequests.push(request);
@@ -154,7 +155,10 @@ test.describe('production Daily Missions certification', () => {
         const onResponse = (response: Response) => {
           const request = response.request();
           const startedAt = dashboardStartedAt.get(request);
-          if (startedAt != null) dashboardRpcMs = Date.now() - startedAt;
+          if (startedAt != null) {
+            dashboardRpcMs = Date.now() - startedAt;
+            dashboardRpcStatus = response.status();
+          }
         };
         page.on('request', onRequest);
         page.on('response', onResponse);
@@ -168,11 +172,14 @@ test.describe('production Daily Missions certification', () => {
         page.off('response', onResponse);
         report.coldLoadMs = loadMs;
         report.dashboardRpcMs = dashboardRpcMs;
+        report.dashboardRpcStatus = dashboardRpcStatus;
         report.dashboardRequests = dashboardRequests.length;
         report.consoleErrors = consoleErrors;
         expect(loadMs).toBeLessThan(LOAD_BUDGET_MS);
         expect(dashboardRpcMs).toBeLessThan(DASHBOARD_RPC_BUDGET_MS);
         expect(dashboardRequests).toHaveLength(1);
+        expect(dashboardRpcStatus).toBeGreaterThanOrEqual(200);
+        expect(dashboardRpcStatus).toBeLessThan(300);
         // The app shell owns unrelated header/membership fetches and can log a
         // transient failure while the mission aggregate succeeds. Preserve
         // every entry in the artifact, but fail this page gate on its own
@@ -184,15 +191,15 @@ test.describe('production Daily Missions certification', () => {
         ).toEqual([]);
         expect(pageErrors).toEqual([]);
         await expect(page.locator('main')).toHaveCount(1);
+        await expect(page.locator('[id^="mission-card-"]')).not.toHaveCount(0);
       });
 
       await test.step('reroll confirmation charges ten diamonds exactly once', async () => {
         const balanceBefore = await diamondBalance(environment, account!.id);
-        const reroll = missions.rerollButton();
-        await expect(reroll).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
+        const reroll = await missions.firstRerollButton();
         await missions.placeControlInSafeViewport(reroll);
         await reroll.click();
-        const confirmation = page.getByRole('group', { name: /^Confirm reroll for / });
+        const confirmation = page.getByRole('group', { name: /^Confirm Reroll For / });
         await expect(confirmation).toBeVisible();
         const replace = confirmation.getByRole('button', { name: 'Replace' });
         let settled = false;

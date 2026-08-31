@@ -153,17 +153,13 @@ function assertRecordMatchesHand(engine: any, hc: HandController, events: HandEv
   ).toEqual(dealt);
 
   // INV-2 — the flag and the board agree.
-  expect(
-    state.sawFlop,
-    `sawFlop=${state.sawFlop} with ${dealt.length} board card(s)`
-  ).toBe(dealt.length >= 3);
+  expect(state.sawFlop, `sawFlop=${state.sawFlop} with ${dealt.length} board card(s)`).toBe(
+    dealt.length >= 3
+  );
 
   // INV-3 — no flop, no drop.
   if (complete && !state.sawFlop) {
-    expect(
-      complete.rake ?? 0,
-      `raked ${complete.rake} on a hand that never saw a flop`
-    ).toBe(0);
+    expect(complete.rake ?? 0, `raked ${complete.rake} on a hand that never saw a flop`).toBe(0);
   }
   return { dealt, stored, complete };
 }

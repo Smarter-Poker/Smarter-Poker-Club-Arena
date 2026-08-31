@@ -18,10 +18,10 @@ in it.
 
 The engine keeps **two boards**, and the second is never derived from the first:
 
-| | what it is |
-| --- | --- |
+|                                       | what it is                                                 |
+| ------------------------------------- | ---------------------------------------------------------- |
 | `HandController.state.communityCards` | what was dealt. Drives `sawFlop`, and through it the rake. |
-| `engine.currentHandCommunityCards` | what `hand_history` stores. |
+| `engine.currentHandCommunityCards`    | what `hand_history` stores.                                |
 
 The stored board is assembled from `COMMUNITY_CARDS` events in
 `ServerTableEngineHandEvents` (~588). So a dealing path that does not emit one
@@ -36,7 +36,7 @@ controller.
 `ServerTableEngine` wired to a real `HandController`**, using the same
 fire-and-forget subscription `dealHand` uses (`ServerTableEngineDealing` ~2285).
 Only the outbound edges are stubbed — sockets, hub, database, clock. Everything
-that decides what the hand *was* is the real code.
+that decides what the hand _was_ is the real code.
 
 Three invariants, checked after every hand:
 
@@ -59,7 +59,7 @@ per-street runout paths are **clean** through the real engine, so the live
 trigger needs a condition these scenarios do not create.
 
 What it rules in: `markFlopSeen()` remains the only writer of `sawFlop` that
-deals no cards, it is called at the *top* of `dealAndResolveRIT` before any
+deals no cards, it is called at the _top_ of `dealAndResolveRIT` before any
 card, and a path that reaches it and then does not deal produces exactly the
 production signature — `sawFlop` true, board empty, rake charged, `rit_boards`
 empty because the board loop never ran. All 20 production hands match that

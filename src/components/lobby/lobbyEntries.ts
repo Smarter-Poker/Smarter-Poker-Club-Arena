@@ -905,7 +905,7 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
      *
      * Report what is actually true: how the seats are going.
      */
-    const seatFirst = classifyTournament(t) !== 'mtt';
+    const seatFirst = isSeatFirstTournament(t);
     if (seatFirst) {
       const cap = t.max_players || 0;
       const taken = t.current_players || 0;
@@ -1426,6 +1426,36 @@ export function mttTitleLine(entry: LobbyEntry): string {
   return name.toUpperCase().includes(entry.gameLabel.toUpperCase())
     ? name
     : `${name} (${entry.gameLabel})`;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  SEAT-FIRST MEANS WHAT THE SERVER MEANS BY IT (2026-08-31, Phase 3)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The server has one definition, in TournamentRecurringService:
+ *
+ *     isSeatFirstFormat(variant, maxPlayers) =
+ *       variant === 'spin' || maxPlayers <= 2
+ *
+ * and `fn_take_seat_and_buy_in` honours the same rule. The lobby had a
+ * different one: anything `classifyTournament` called an 'sng', which is every
+ * capped field up to TEN seats. A six- or nine-max SNG therefore rendered a Sit
+ * Down affordance for a seat the server will not sell -- the player clicks and
+ * the buy-in is refused.
+ *
+ * No such row is created today ("WE AREN'T DOING ANY OTHER SIT N GO'S", Dan
+ * 2026-08-21), which is exactly why this is worth pinning rather than leaving:
+ * the day one is, the lobby lies about it and nothing fails first.
+ *
+ * classifyTournament keeps its own job -- it decides the TAB and the label, and
+ * a 6-max SNG genuinely belongs on the sit-n-go tab. What it must not decide,
+ * alone, is whether a seat can be taken.
+ */
+export function isSeatFirstTournament(t: LobbyTournamentRow): boolean {
+  if (classifyTournament(t) === 'spin') return true;
+  const seats = Number((t as { max_players?: unknown }).max_players);
+  return Number.isFinite(seats) && seats > 0 && seats <= 2;
 }
 
 export function classifyTournament(t: LobbyTournamentRow): 'mtt' | 'spin' | 'sng' {

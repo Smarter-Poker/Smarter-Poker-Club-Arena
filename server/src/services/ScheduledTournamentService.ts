@@ -37,6 +37,12 @@ import { reportError } from './errorReporter.js';
 import { buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { TournamentRecurringService } from './TournamentRecurringService.js';
 import { buildLadder, type GeneratedBlindLevel } from '../tournament/blindLadder.js';
+import { SPIN_SEATS, SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
+import {
+  HEADS_UP_BLIND_STRUCTURE,
+  HEADS_UP_PAYOUTS,
+  HEADS_UP_SEATS,
+} from '../config/headsUpSpec.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -814,14 +820,63 @@ export class ScheduledTournamentService {
     // full structure arrays in every config blob.
     const blindPreset = SCHEDULE_BLIND_PRESETS[String(cfg.blindPreset ?? '').toUpperCase()];
     const payoutPreset = SCHEDULE_PAYOUT_PRESETS[String(cfg.payoutPreset ?? '').toUpperCase()];
-    const blinds =
+    let blinds =
       Array.isArray(cfg.blindStructure) && cfg.blindStructure.length > 0
         ? cfg.blindStructure
         : (blindPreset ?? []);
-    const payouts =
+    let payouts =
       Array.isArray(cfg.payoutStructure) && cfg.payoutStructure.length > 0
         ? cfg.payoutStructure
         : (payoutPreset ?? []);
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A ROW TYPED SPIN IS A SPIN (2026-08-31, Phase 3)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * This path let a schedule pick ANY named blind preset for a row it then
+     * stamped `tournament_type = 'SPIN'`. One schedule does exactly that --
+     * "Spin Royale", active, every 30 minutes -- with `blindPreset:
+     * "HYPER_TURBO"`, an MTT ladder that opens at 50/100 with a 15 ante and
+     * doubles from there. A Spin's stack is written at DRAW time from
+     * SPIN_TIERS, so the draw handed those games a 300-chip stack against a
+     * 100 big blind.
+     *
+     * Measured on production, every completed Spin Royale over three days:
+     *
+     *     96 of 96 games opened at big blind 100
+     *     average starting depth  3.7 big blinds   (a spec spin starts at 15)
+     *     average length          12.7 hands       (a spec spin plays 49.8)
+     *
+     * That is not a fast tournament, it is a coin flip wearing a Spin's name,
+     * and it is charged as a Spin, booked against the Spin reserve pool, and
+     * paid out on the Spin multiplier table. TournamentManagerBase rewrites a
+     * Spin's blinds from spinSpec at start, but only on the draw path -- a row
+     * that already carries a multiplier skips it -- so creation writing the
+     * wrong ladder is not something a later stage reliably corrects.
+     *
+     * The format owns its structure. Same ladder, same shape, same 12 rows the
+     * one true creation path (TournamentRecurringService.createSpin) writes,
+     * so the two creators cannot disagree. A heads-up SNG gets the same
+     * treatment from headsUpSpec, for the same reason.
+     */
+    if (isSpin) {
+      const placeholderTier = SPIN_TIERS[0];
+      blinds = Array.from({ length: 12 }, (_, i) => {
+        const b = spinBlindsForLevel(i + 1);
+        return {
+          level: i + 1,
+          smallBlind: b.small,
+          bigBlind: b.big,
+          ante: 0,
+          duration: placeholderTier.levelMinutes * 60,
+        };
+      }) as typeof blinds;
+      payouts = [{ place: 1, percentage: 100 }] as typeof payouts;
+    } else if (isSng && clampInt(cfg.maxPlayers, 2, 10000, 0) <= HEADS_UP_SEATS) {
+      blinds = HEADS_UP_BLIND_STRUCTURE as unknown as typeof blinds;
+      payouts = HEADS_UP_PAYOUTS as typeof payouts;
+    }
+
     if (blinds.length === 0 || payouts.length === 0) {
       reportError(
         new Error(
@@ -837,7 +892,13 @@ export class ScheduledTournamentService {
      * It used to be computed four lines BELOW the split that needs it, which
      * is why the rate could only ever be keyed on the format label.
      */
-    const maxPlayers = clampInt(cfg.maxPlayers, 2, 10000, 0) || (isSpin ? 3 : isSng ? 6 : 100);
+    /* SPIN_SEATS, not a config value: "SPINS ARE ALWAYS 3 HANDED" (Dan
+       2026-08-19) and the multiplier maths, the reserve booking and the payout
+       shape are all built around exactly three. A duel is two by the same
+       argument -- see headsUpSpec. Everything else keeps its configured field. */
+    const maxPlayers = isSpin
+      ? SPIN_SEATS
+      : clampInt(cfg.maxPlayers, 2, 10000, 0) || (isSng ? HEADS_UP_SEATS : 100);
     /**
      * MORE PAID PLACES THAN SEATS (2026-08-31 audit).
      *
@@ -1052,8 +1113,23 @@ export class ScheduledTournamentService {
       bubble_protection: asBool(cfg.bubbleProtection),
       final_table_deal_enabled: asBool(cfg.finalTableDealEnabled),
       restart_every_minutes: restartEvery,
+      /**
+       * A SHORT FORMAT NEVER TAKES THE :55 BREAK (2026-08-31, Phase 3).
+       *
+       * Three places had an opinion and only one was consulted: the seed rows
+       * said `true`, the docs said heads-up takes the break, and the ENGINE
+       * refuses it on format (`breakEligibility.ts` -- a Spin or a duel is
+       * never eligible, whatever the column says). The engine is right; the row
+       * was drift. Written honestly now so a reader of the row and a reader of
+       * the code reach the same conclusion. See headsUpSpec
+       * HEADS_UP_SYNCHRONIZED_BREAKS.
+       */
       synchronized_breaks:
-        cfg.synchronizedBreaks === undefined ? true : asBool(cfg.synchronizedBreaks),
+        isSpin || isSng
+          ? false
+          : cfg.synchronizedBreaks === undefined
+            ? true
+            : asBool(cfg.synchronizedBreaks),
       max_rebuys: Number.isFinite(maxRebuysRaw) ? Math.max(0, Math.round(maxRebuysRaw)) : null,
       max_reentries: Number.isFinite(maxReentriesRaw)
         ? Math.max(0, Math.round(maxReentriesRaw))
@@ -1254,10 +1330,25 @@ export class ScheduledTournamentService {
     // player-paid total is preserved to the cent (a legacy 19.80 stays 19.80
     // — clampRakeToCap is NOT used here because it whole-rounds the total).
     {
+      /**
+       * THE CAP IS THE FORMAT'S OWN RATE (2026-08-31, Phase 3).
+       *
+       * This floored at a flat 0.1 -- the DB constraint's number, which covers
+       * every shape at once. A two-seat game pays 5% (headsUpSpec), so a
+       * legacy heads-up row carrying a 10% split was re-cut to... 10%, and the
+       * clone was written at twice the rake Dan set. The row's own seats decide
+       * the rate here exactly as they do at creation, through the one helper
+       * that knows the rule.
+       */
       const amt = Number(row.buy_in_amount) || 0;
       const fee = Number(row.buy_in_fee) || 0;
       const total = Math.round((amt + fee) * 100) / 100;
-      const cap = Math.floor(total * 0.1 * 100 + 1e-9) / 100;
+      const cloneRate = rakeRateFor({
+        tournamentType: String(row.tournament_type ?? ''),
+        variant: String(row.variant ?? ''),
+        maxPlayers: Number(row.max_players) || 0,
+      });
+      const cap = Math.floor(total * cloneRate * 100 + 1e-9) / 100;
       if (fee > cap) {
         row.buy_in_amount = Math.round((total - cap) * 100) / 100;
         row.buy_in_fee = cap;

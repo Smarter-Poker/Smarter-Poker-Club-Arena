@@ -248,11 +248,15 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
        const w=document.createElement('div');w.className='sw__disc-wrap';
        w.innerHTML='<div class="sw__disc">'+
          '<div class="sw__seg sw__seg--c0 sw__seg--lit"><span class="sw__seg-label">2</span></div>'+
-         '<div class="sw__seg sw__seg--c1 sw__seg--locked"><span class="sw__seg-label">500</span></div>'+
+         '<div class="sw__seg sw__seg--c1 sw__seg--locked"><span class="sw__seg-label">100</span></div>'+
          '<div class="sw__hub"><span class="sw__hub-brand">SPIN-IT</span></div></div>';
        st.appendChild(w);
        const s=document.createElement('div');s.className='sw__status';
-       s.innerHTML='<span class="sw__status-locked">500× unlocks at 5,000</span>';st.appendChild(s);`
+       /* 100x, not 500x (2026-08-31 audit): the 500x tier was RETIRED on
+          2026-08-21 (migration 20260821g_retire_500x_spin_tier) and 100x
+          absorbed its frequency. A fixture that renders a tier the product
+          no longer has is a fixture drifting away from the thing it guards. */
+       s.innerHTML='<span class="sw__status-locked">100× unlocks at 5,000</span>';st.appendChild(s);`
     );
     expect(chase.swDiscIn, 'the disc must land on the felt').toBe(500);
 

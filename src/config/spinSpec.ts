@@ -530,17 +530,23 @@ export function spinEconomics(
   const tier = spinTier(multiplier);
   const splits = tier?.payouts ?? [1];
 
-  // Distribute to the last place first and give first place the remainder, so
-  // rounding can never make the parts sum to more than the pool. A pool that
-  // pays out more than it holds is the one failure mode that costs real money.
+  /* THE SAME RESIDUAL RULE THE LIVE PAYER USES (2026-08-31 audit).
+     This used to hand the rounding remainder to FIRST place while
+     payoutMath.computePlacePrize - the function that actually pays a
+     tournament - gives it to the LAST PAID PLACE. Both guarantee the parts
+     sum to the pool, so no money differed while buy-ins and multipliers are
+     whole numbers and no fractional cent ever arises. But this module
+     presents itself as "the money for one game", and a model that computes
+     the split by a different rule than the payer is a model that will
+     eventually be believed over the payer. Same rule, one source of truth. */
   const payouts: number[] = new Array(splits.length).fill(0);
   let remaining = prizePool;
-  for (let i = splits.length - 1; i >= 1; i--) {
+  for (let i = 0; i < splits.length - 1; i++) {
     const amt = round2(prizePool * splits[i]);
     payouts[i] = amt;
     remaining = round2(remaining - amt);
   }
-  payouts[0] = remaining;
+  payouts[splits.length - 1] = remaining;
 
   return {
     collected,

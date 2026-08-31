@@ -2752,7 +2752,21 @@ export abstract class TournamentManagerBase {
     const earliest = now - spinRevealToDealMs();
     const anchor = Math.min(Math.max(lastPaidAt, earliest), now);
     this.spinRevealAt = anchor + SPIN_REVEAL.LEAD_IN_MS;
-    this.spinHoldUntil = this.spinRevealAt + spinRevealToDealMs();
+    /* THE LEAD-IN IS COUNTED ONCE (2026-08-31 audit).
+       This read `this.spinRevealAt + spinRevealToDealMs()`, and
+       spinRevealToDealMs() ALREADY contains LEAD_IN_MS by way of
+       spinRevealTotalMs - whose own doc calls itself "total wall time from
+       the last buy-in". So the lead-in was added twice and the deal was held
+       one full LEAD_IN_MS (1s) longer than the sequence it is waiting for.
+       Harmless in direction - it never dealt early - but it is a second of
+       dead air on every spin, and the drift meant the spec and the engine
+       disagreed about what the hold means.
+       The whole sequence is measured from the ANCHOR, because the lead-in is
+       its first beat: anchor -> lead-in -> countdown -> spin -> flash -> hold
+       -> post-reveal beats -> deal. The other two sites below are already
+       correct: they set revealAt = now, so `now + spinRevealToDealMs()` is
+       the same measurement taken from their own anchor. */
+    this.spinHoldUntil = anchor + spinRevealToDealMs();
   }
 
   /**

@@ -192,7 +192,7 @@ test.describe('production Daily Missions certification', () => {
         await expect(reroll).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
         await missions.placeControlInSafeViewport(reroll);
         await reroll.click();
-        const confirmation = page.getByRole('group', { name: /^Confirm reroll for / });
+        const confirmation = page.getByRole('group', { name: /^Confirm Reroll For / });
         await expect(confirmation).toBeVisible();
         const replace = confirmation.getByRole('button', { name: 'Replace' });
         let settled = false;

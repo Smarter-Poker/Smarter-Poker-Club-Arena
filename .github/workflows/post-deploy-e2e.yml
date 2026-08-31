@@ -235,6 +235,7 @@ jobs:
         run: >-
           npx playwright test tests/e2e/production-cashier.spec.ts
           --project=chromium --reporter=line,json --workers=1 --retries=0
+          --output=test-results/cashier
 
       # `always()` is the point. Without it, a failed Cashier step skips this one
       # entirely - so a single money-surface red hid the whole production sweep,
@@ -332,7 +333,11 @@ jobs:
               return 0
             fi
             echo "running:$specs"
-            PLAYWRIGHT_JSON_OUTPUT_NAME="e2e-report/$json" npx playwright test $specs $flags
+            # Each Playwright process clears its own output directory at start.
+            # A shared default directory let a later passing suite erase the
+            # screenshots from an earlier failure before artifact upload.
+            PLAYWRIGHT_JSON_OUTPUT_NAME="e2e-report/$json" \
+              npx playwright test $specs $flags --output="test-results/${json%.json}"
           }
 
           # Certify Stats first among the broader route checks. Cashier has its

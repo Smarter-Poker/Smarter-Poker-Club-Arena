@@ -84,6 +84,12 @@ describe('Daily Missions production certification', () => {
     expect(pageObject).toContain("block: 'center'");
     expect(pageObject).toContain("getByRole('navigation', { name: 'Club Arena' })");
     expect(pageObject).toContain('sp_firstrun_notif_v2_${userId}');
+    // Accessible-name locators are case-sensitive. Keep the production page's
+    // enforced title case and the zero-retry certification on one contract.
+    expect(pageObject).toContain('^Reroll .+ For 10 Diamonds$');
+    expect(source('tests/e2e/production-daily-missions.spec.ts')).toContain('^Confirm Reroll For ');
+    expect(page).toContain('Reroll ${c.name} For 10 Diamonds');
+    expect(page).toContain('Confirm Reroll For ${c.name}');
   });
 
   it('keeps every mission control above the fixed Club Arena footer', () => {

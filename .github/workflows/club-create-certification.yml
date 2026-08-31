@@ -4,7 +4,15 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - feature/create-club-crest-vault-20260831
+    paths:
+      - .github/workflows/club-create-certification.yml
+      - public/club-logos/**
+      - scripts/ci/certify-club-create.mjs
+      - src/components/modals/CreateClubModal.tsx
+      - src/services/ClubsService.ts
+      - supabase/migrations/20260831163500_remove_dead_club_join_requests_dependency.sql
 
 permissions:
   contents: read
@@ -20,22 +28,6 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Apply Club Creation Repair
-        env:
-          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: |
-          for attempt in $(seq 1 12); do
-            if PGOPTIONS='-c lock_timeout=8s -c statement_timeout=30s' psql \
-              "host=aws-0-us-west-2.pooler.supabase.com port=6543 dbname=postgres user=postgres.kuklfnapbkmacvwxktbh sslmode=require connect_timeout=8" \
-              -X -v ON_ERROR_STOP=1 \
-              -f supabase/migrations/20260831163500_remove_dead_club_join_requests_dependency.sql; then
-              exit 0
-            fi
-            echo "Repair Lock Attempt ${attempt} Did Not Complete. Retrying."
-            sleep $((attempt * 2))
-          done
-          echo "Club Creation Repair Could Not Acquire Its Schema Lock."
-          exit 1
       - name: Certify Authenticated Club Creation And Cleanup
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

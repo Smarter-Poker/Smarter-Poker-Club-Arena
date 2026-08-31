@@ -18,7 +18,7 @@ const password = `Cert-${crypto.randomUUID()}-9a!`;
 const requestId = crypto.randomUUID();
 const name = `Crest Cert ${stamp}`.slice(0, 30);
 let userId;
-let clubId;
+const clubIds = [];
 let logoPath;
 
 try {
@@ -68,12 +68,12 @@ try {
       `Atomic Create Failed: ${createError?.code || 'NO_CODE'} ${createError?.message || 'No Club Returned'}`
     );
   }
-  clubId = club.id;
+  clubIds.push(club.id);
 
   const { data: membership, error: membershipError } = await admin
     .from('club_members')
     .select('role,status,chip_balance')
-    .eq('club_id', clubId)
+    .eq('club_id', club.id)
     .eq('user_id', userId)
     .single();
   if (membershipError || membership?.role !== 'owner' || membership?.status !== 'active') {
@@ -83,7 +83,7 @@ try {
   const { data: storedClub, error: storedClubError } = await admin
     .from('clubs')
     .select('logo_url,avatar_url')
-    .eq('id', clubId)
+    .eq('id', club.id)
     .single();
   if (
     storedClubError ||
@@ -93,9 +93,39 @@ try {
     throw storedClubError || new Error('The Selected Logo Was Not Stored On Both Identity Fields.');
   }
 
-  console.log(`PASS Club Creation Certified For ${clubId}.`);
+  const presetRequestId = crypto.randomUUID();
+  const { data: presetClub, error: presetError } = await player.rpc('fn_create_club_atomic', {
+    p_request_id: presetRequestId,
+    p_name: `Preset ${name}`.slice(0, 30),
+    p_description: 'Production Placeholder Crest Certification',
+    p_color_theme: 'royal-blue',
+    p_is_public: true,
+    p_requires_approval: false,
+    p_logo_url: assetUrl,
+  });
+  if (presetError || !presetClub?.id) {
+    throw new Error(
+      `Preset Create Failed: ${presetError?.code || 'NO_CODE'} ${presetError?.message || 'No Club Returned'}`
+    );
+  }
+  clubIds.push(presetClub.id);
+
+  const { data: storedPreset, error: storedPresetError } = await admin
+    .from('clubs')
+    .select('logo_url,avatar_url')
+    .eq('id', presetClub.id)
+    .single();
+  if (
+    storedPresetError ||
+    storedPreset?.logo_url !== assetUrl ||
+    storedPreset?.avatar_url !== assetUrl
+  ) {
+    throw storedPresetError || new Error('The Placeholder Crest URL Was Not Stored Directly.');
+  }
+
+  console.log(`PASS Custom And Placeholder Club Creation Certified For ${clubIds.join(', ')}.`);
 } finally {
-  if (clubId) await admin.from('clubs').delete().eq('id', clubId);
+  if (clubIds.length) await admin.from('clubs').delete().in('id', clubIds);
   if (logoPath) await admin.storage.from('club-assets').remove([logoPath]);
   if (userId) await admin.auth.admin.deleteUser(userId);
 }

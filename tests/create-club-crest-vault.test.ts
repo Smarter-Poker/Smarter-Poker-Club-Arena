@@ -31,6 +31,10 @@ describe('Create Club Crest Vault', () => {
     expect(modal).toContain('logoUrl: selectedPresetId ? logoPreview : null');
     expect(service).toContain('let logoUrl: string | null = clubData.logoUrl || null');
     expect(service).toContain("supabase.rpc('fn_create_club_atomic'");
+    expect(service).toContain('Custom Logo Could Not Be Uploaded. Please Try Again.');
+    expect(service).toContain(
+      'Club Could Not Be Created. Your Details Are Still Here. Please Try Again.'
+    );
   });
 
   it('exposes the gallery as one labelled, keyboard-operable radio group', () => {

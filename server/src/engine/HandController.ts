@@ -1359,6 +1359,29 @@ export class HandController {
     }
     this.emit({ type: 'COMMUNITY_CARDS', stage: stage as HandStage, cards, cards2, cards3 });
 
+    /* ═══ A PINEAPPLE SHOWDOWN IS TWO HOLE CARDS ON *EVERY* RUNOUT PATH ═════
+       2026-08-31. There are two ways an all-in hand runs out, and only one of
+       them enforced this. `runOutCommunityCards` resolves outstanding discards
+       the moment the flop lands (AUDIT V2, 2026-07-23, and the comment there
+       names the exact failure: "players still held THREE hole cards at
+       showdown and evaluateHand scored best-5-of-8, an illegal extra-card
+       advantage"). This method - the per-street path taken whenever the table
+       has insurance or run-it-twice on - never got the same line, and all
+       three live pineapple tables have one or both switched on.
+
+       So it was still happening, and paying out. Production hand #3831745,
+       table 0be5fa47, board 2h 3c 5d Qc 4h: a seat held Jh Ah Kh and was
+       awarded a FLUSH worth 22.57 of a 34.00 pot. The board has exactly two
+       hearts. No legal two-card hold on that hand makes a flush - it needed
+       all three of its cards, which is the illegal extra card, and it beat an
+       honest straight (Ad Kc 5h) that should have scooped. Three more hands in
+       the same twelve hours reached showdown with three cards.
+
+       Same call, same place in the street, as the path that had it. */
+    if (this.config.gameVariant === 'pineapple' && this.state.communityCards.length >= 3) {
+      this.resolvePendingPineappleDiscards();
+    }
+
     const complete = this.state.communityCards.length >= 5;
     return { board: [...this.state.communityCards], stage, complete };
   }

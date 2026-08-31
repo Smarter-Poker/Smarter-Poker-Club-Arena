@@ -12,9 +12,11 @@
 >
 > Two things the next agent should not have to rediscover:
 >
-> 1. **The E2E credential question in §19 is already answered.** `SP_EMAIL`,
->    `SP_PASS`, `SP_EMAIL_2`, `SP_PASS_2` were added as repository secrets on
->    2026-08-30. Do not ask Dan again.
+> 1. **The E2E credential question in §19 is already answered.** `SP_EMAIL`
+>    and `SP_PASS` are repository secrets. The former second-player secrets
+>    remain available, but customization realtime now creates two isolated,
+>    hard-deleted identities per run so overlapping deploys cannot overwrite
+>    one another. Do not ask Dan for more credentials.
 > 2. **Production is intermittently returning HTTP 503 to a large share of API
 >    traffic**, with `PGRST002 - Could not query the database for the schema
 cache` behind it. 15,729 503s in one five-minute window (about 28% of

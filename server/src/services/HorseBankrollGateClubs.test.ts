@@ -64,6 +64,13 @@ describe('an unknown roll is unknown, not zero', () => {
    * missing row is not a licence to fail open on a poor one.
    */
   it('still refuses a KNOWN roll that cannot cover the stake', () => {
-    expect(SRC).toContain('if (!canSit(roll, ref, bankrollPolicyFor(h.id))) return false;');
+    /* Shape-tolerant, intent-strict. The refusal grew a telemetry counter in
+       the bankroll-telemetry PR, so the old exact-line assertion broke on a
+       change that strengthened the very thing it guards. What must hold is
+       that a failed canSit REFUSES: the counter may sit between, a `return
+       false` may not go missing. */
+    expect(SRC).toMatch(
+      /if \(!canSit\(roll, ref, bankrollPolicyFor\(h\.id\)\)\) \{[^{}]*return false;\s*\}/
+    );
   });
 });

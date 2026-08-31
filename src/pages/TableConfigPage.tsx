@@ -23,6 +23,11 @@ import { reportError } from '../utils/errorReporter';
 import { formatCurrency } from '../lib/utils';
 import { RAKE_INHERIT } from '../config/RakeConfig';
 import { stakesLabel, isFixedLimitVariant } from '../lib/bettingStructure';
+import {
+  clampSeatsForVariant,
+  maxSeatsForVariant,
+  maxSeatsTheDeckAllows,
+} from '../config/tableSeating';
 
 import { tournamentService } from '../services/TournamentService';
 import {
@@ -623,6 +628,35 @@ export default function TableConfigPage() {
 
   const gameInfo = GAME_TYPE_LABELS[gameType || 'nlh'] || GAME_TYPE_LABELS.nlh;
 
+  /**
+   * SEAT LAW (Dan 2026-08-19, src/config/tableSeating.ts). The Table Size
+   * slider used to offer 2..10 for EVERY variant, and this page is the only
+   * live cash-table creation path. A 10-max PLO5/PLO6/PLO8 table overdraws
+   * the deck and the server engine's PokerEngine.deal() throws
+   * 'Not enough cards in deck' mid-hand. The cap is per variant: plo6 6,
+   * plo5 7, plo4/plo8/flo8 8, everything else 9.
+   */
+  const seatCap = maxSeatsForVariant(gameType || 'nlh');
+
+  // Tournaments are exempt from the cash law (see the tableSeating header)
+  // but NOT from the deck: a 10-seat PLO6 SNG cannot physically be dealt.
+  const sngSeatCap = Math.min(10, maxSeatsTheDeckAllows(gameType || 'nlh'));
+
+  // If the route's variant changes under the mounted form (or a template
+  // loaded an over-cap value), snap the seat counts down to the new caps.
+  // Never up: the caps are ceilings, not targets.
+  useEffect(() => {
+    setConfig((c) =>
+      c.maxPlayers > seatCap || c.tableSize > sngSeatCap
+        ? {
+            ...c,
+            maxPlayers: Math.min(c.maxPlayers, seatCap),
+            tableSize: Math.min(c.tableSize, sngSeatCap),
+          }
+        : c
+    );
+  }, [seatCap, sngSeatCap]);
+
   // Fetch templates for this club on mount
   useEffect(() => {
     let isMounted = true;
@@ -859,7 +893,16 @@ export default function TableConfigPage() {
     // carries BOTH union_id and the member club's club_id.
     union_id: privateOnly ? null : (access?.unionId ?? null),
     name: config.name,
-    game_type: gameType?.toUpperCase() || 'NLH',
+    // FORMAT, not variant (2026-08-30 audit). tables.game_type is the table
+    // FORMAT ('cash' | 'tournament') platform-wide: HorseFleetManager writes
+    // 'cash', and the sit-out / zero-chip eviction sweeps
+    // (20260828220000_sitting_out_and_zero_chip_evictions.sql) gate on
+    // t.game_type = 'cash'. This page wrote the VARIANT ('NLH', 'PLO6', ...)
+    // here, so owner-created tables never booted 5-minute sit-outs or
+    // zero-chip seats, and those zombie seats kept the table in
+    // cash_tables_needing_engine, holding an engine forever. The variant
+    // belongs in game_variant, one line down, where it already was.
+    game_type: 'cash',
     game_variant: gameType || 'nlh',
     game_mode: config.gameMode,
 
@@ -971,7 +1014,10 @@ export default function TableConfigPage() {
     no_rathole: config.noRathole,
 
     // Table parameters
-    max_players: config.maxPlayers,
+    // Clamped to the variant's seat law even if UI state slipped past the
+    // slider (template load, stale state, variant switch mid-edit). An
+    // over-cap row is not a preference, it is a mid-hand engine crash.
+    max_players: clampSeatsForVariant(String(gameType || 'nlh').toLowerCase(), config.maxPlayers),
     action_time_seconds: config.actionTimeSeconds,
     min_buy_in: config.minBuyInBB * config.bigBlind,
     max_buy_in: config.maxBuyInBB * config.bigBlind,
@@ -1799,7 +1845,7 @@ export default function TableConfigPage() {
               value={config.maxPlayers}
               onChange={(v) => updateConfig('maxPlayers', v)}
               min={2}
-              max={10}
+              max={seatCap}
               suffix=" max"
             />
 
@@ -2090,7 +2136,7 @@ export default function TableConfigPage() {
               value={config.tableSize}
               onChange={(v) => updateConfig('tableSize', v)}
               min={2}
-              max={10}
+              max={sngSeatCap}
               suffix=" seats"
             />
             <Slider

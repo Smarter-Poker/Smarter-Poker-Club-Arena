@@ -1781,6 +1781,7 @@
     "fn_kyc_resolve_inquiry",
     "fn_kyc_start_inquiry",
     "fn_launch_table_from_template",
+    "fn_leaderboard_funding_union_id",
     "fn_leaderboard_period_window",
     "fn_leaderboard_prizes_are_valid",
     "fn_leaderboard_reward_contexts",

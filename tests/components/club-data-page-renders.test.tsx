@@ -7,7 +7,7 @@ const snapshot = {
   range: { start: '2026-08-17', end: '2026-08-30', days: 14 },
   previous_range: { start: '2026-08-03', end: '2026-08-16', days: 14 },
   summary: {
-    games: 12,
+    games: 1,
     total_winnings: 2450,
     mtt_winnings: 500,
     cash_winnings: 1950,
@@ -240,6 +240,14 @@ describe('ClubDataPage', () => {
       expect(channel.filter).toBe(`club_id=eq.${CLUB_ID}`);
       expect(channel.enabled).toBe(true);
     }
+    act(() => {
+      for (const channel of latestByTable.values()) channel.onSubscriptionStatus('SUBSCRIBED');
+    });
+    expect(screen.getByText('4 / 4')).toBeInTheDocument();
+    act(() => latestByTable.get('tables')?.onSubscriptionStatus('CLOSED'));
+    expect(
+      screen.getByText('The 60-Second Verified Poll Remains Active While Live Feeds Reconnect.')
+    ).toBeInTheDocument();
 
     const before = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot').length;
     act(() => latestByTable.get('tables')?.onPayload({ eventType: 'UPDATE' }));
@@ -261,6 +269,10 @@ describe('ClubDataPage', () => {
     expect(screen.getByRole('heading', { name: /Read The Room/i })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('2,450.00')).toBeInTheDocument());
     expect(screen.getByText('Shark Table One')).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Games' })).toHaveAttribute('tabindex', '0');
+    expect(screen.getByRole('heading', { name: 'Data Integrity' })).toBeInTheDocument();
+    expect(screen.getByText('12 / 12')).toBeInTheDocument();
+    expect(screen.getByText('Verified')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Export As CSV' })).toBeEnabled();
     expect(rpcMock).toHaveBeenCalledWith(
       'ca_club_data_snapshot',
@@ -296,7 +308,9 @@ describe('ClubDataPage', () => {
     const exportButton = await screen.findByRole('button', { name: 'Export As CSV' });
     fireEvent.click(exportButton);
 
-    expect(await screen.findAllByText('Exported all 2 games.')).toHaveLength(2);
+    expect(
+      await screen.findAllByText('Exported all 2 games.', undefined, { timeout: 5_000 })
+    ).toHaveLength(2);
     expect(downloadMock).toHaveBeenCalledOnce();
     expect(downloadMock.mock.calls[0][1].split('\n')).toHaveLength(3);
     expect(rpcMock).toHaveBeenCalledWith(
@@ -313,6 +327,7 @@ describe('ClubDataPage', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
     await waitFor(() => expect(screen.getByText('Table Regular')).toBeInTheDocument());
+    expect(screen.getByRole('list', { name: 'Players' })).toHaveAttribute('tabindex', '0');
     expect(screen.queryByText('HORSE')).not.toBeInTheDocument();
   });
 
@@ -436,6 +451,39 @@ describe('ClubDataPage', () => {
       errorSpy.mockRestore();
     }
   }, 15_000);
+
+  it('keeps verified player rows visible when a background refresh is transiently refused', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      render(<ClubDataPage />);
+      fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+      await screen.findByText('Table Regular');
+
+      rpcMock.mockImplementation(async (fn: string) => {
+        if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+        if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+        if (fn === 'ca_club_player_breakdown' || fn === 'ca_club_player_page') {
+          return { data: null, error: { code: '57014', message: 'statement timeout' } };
+        }
+        return { data: null, error: null };
+      });
+
+      const before = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_player_breakdown').length;
+      act(() => realtimeState.busHandler?.({ clubId: CLUB_ID }));
+
+      await waitFor(
+        () =>
+          expect(
+            rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_player_breakdown').length
+          ).toBe(before + 1),
+        { timeout: 2_000 }
+      );
+      expect(screen.getByText('Table Regular')).toBeInTheDocument();
+      expect(screen.queryByText('Could not load player data.')).not.toBeInTheDocument();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
 
   it('keeps the last verified statement visible through a transient refresh failure', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);

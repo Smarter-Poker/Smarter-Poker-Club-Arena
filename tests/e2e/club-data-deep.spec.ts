@@ -35,6 +35,8 @@ test.describe('Club Data production experience', () => {
   test('reflows without horizontal loss from desktop through 320px and 200% text', async ({
     page,
   }) => {
+    await expect(page.getByRole('heading', { name: 'Data Integrity' })).toBeVisible();
+    await expect(page.getByText('12 / 12')).toBeVisible();
     for (const viewport of [
       { width: 1280, height: 900 },
       { width: 768, height: 1024 },
@@ -101,6 +103,97 @@ test.describe('Club Data production experience', () => {
     await page.keyboard.press('ArrowLeft');
     await expect(games).toBeFocused();
     await expect(games).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('operates sorting, pagination, players, and a verified manual refresh', async ({ page }) => {
+    test.setTimeout(180_000);
+    const gamesList = page.getByRole('list', { name: 'Games' });
+    await expect(gamesList.getByRole('listitem').first()).toBeVisible();
+
+    const highestFee = page.getByRole('button', { name: 'Highest Fee' });
+    await highestFee.click();
+    await expect(highestFee).toHaveAttribute('aria-pressed', 'true');
+    await expect(gamesList.getByRole('listitem').first()).toBeVisible({ timeout: 60_000 });
+
+    const loadMoreGames = page.getByRole('button', { name: /Load More Games/i });
+    if (await loadMoreGames.isVisible()) {
+      const before = (await loadMoreGames.textContent()) || '';
+      await loadMoreGames.click();
+      await expect
+        .poll(
+          async () =>
+            (await loadMoreGames.count()) === 0 || (await loadMoreGames.textContent()) !== before,
+          { timeout: 60_000 }
+        )
+        .toBe(true);
+    }
+
+    await page.getByRole('tab', { name: 'Players' }).click();
+    const playersList = page.getByRole('list', { name: 'Players' });
+    await expect(playersList.getByRole('listitem').first()).toBeVisible({ timeout: 60_000 });
+    const biggestLosers = page.getByRole('button', { name: 'Biggest losers' });
+    await biggestLosers.click();
+    await expect(biggestLosers).toHaveAttribute('aria-pressed', 'true');
+    await expect(playersList.getByRole('listitem').first()).toBeVisible({ timeout: 60_000 });
+    const loadMorePlayers = page.getByRole('button', { name: /Load More Players/i });
+    let expandedPlayerCount = '';
+    if (await loadMorePlayers.isVisible()) {
+      const before = (await loadMorePlayers.textContent()) || '';
+      await loadMorePlayers.click();
+      await expect
+        .poll(async () => (await loadMorePlayers.textContent()) || '', { timeout: 60_000 })
+        .not.toBe(before);
+      expandedPlayerCount =
+        ((await loadMorePlayers.textContent()) || '').match(/- ([\d,]+) Of/i)?.[1] || '';
+    }
+
+    if (expandedPlayerCount) {
+      const biggestWinners = page.getByRole('button', { name: 'Biggest winners' });
+      await biggestWinners.click();
+      await expect(biggestWinners).toHaveAttribute('aria-pressed', 'true');
+      await expect(loadMorePlayers).toContainText('- 100 Of', { timeout: 60_000 });
+      await biggestLosers.click();
+      await expect(biggestLosers).toHaveAttribute('aria-pressed', 'true');
+      await expect(loadMorePlayers).toContainText('- 100 Of', { timeout: 60_000 });
+      await loadMorePlayers.click();
+      await expect(loadMorePlayers).toContainText(`- ${expandedPlayerCount} Of`, {
+        timeout: 60_000,
+      });
+    }
+
+    const refresh = page.getByRole('button', { name: 'Refresh club ledger' });
+    await refresh.click();
+    await expect(refresh).toBeEnabled({ timeout: 60_000 });
+    await expect(page.getByRole('heading', { name: 'Data Integrity' })).toBeVisible();
+    await expect(playersList.getByRole('listitem').first()).toBeVisible();
+    if (expandedPlayerCount) {
+      await expect(loadMorePlayers).toContainText(`- ${expandedPlayerCount} Of`);
+    }
+  });
+
+  test('keeps verified rows through the 60-second recovery heartbeat', async ({ page }) => {
+    test.setTimeout(180_000);
+    const gamesList = page.getByRole('list', { name: 'Games' });
+    const firstRow = gamesList.getByRole('listitem').first();
+    await expect(firstRow).toBeVisible();
+    const identity = (await firstRow.textContent()) || '';
+    const loadMore = page.getByRole('button', { name: /Load More Games/i });
+    let expandedCount = '';
+    if (await loadMore.isVisible()) {
+      const before = (await loadMore.textContent()) || '';
+      await loadMore.click();
+      await expect
+        .poll(async () => (await loadMore.textContent()) || '', { timeout: 60_000 })
+        .not.toBe(before);
+      expandedCount = ((await loadMore.textContent()) || '').match(/- ([\d,]+) Of/i)?.[1] || '';
+    }
+
+    await page.waitForTimeout(65_000);
+
+    await expect(page.getByText('Could not load club data.')).toHaveCount(0);
+    await expect(gamesList.getByRole('listitem').first()).toContainText(identity.slice(0, 12));
+    await expect(page.getByText(/Showing [\d,]+ Of [\d,]+ Games/i)).toBeVisible();
+    if (expandedCount) await expect(loadMore).toContainText(`- ${expandedCount} Of`);
   });
 
   test('passes axe and remains operable in forced colors with reduced motion', async ({ page }) => {

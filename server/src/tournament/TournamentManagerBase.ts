@@ -58,6 +58,7 @@ import {
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
 import { mayTakeSeat } from './seatClaim.js';
+import { applySpinDrawPatch } from './spinDrawSync.js';
 import type { GameServer } from '../GameServer.js';
 import {
   ELIMINATION_SWEEP_STUCK_MS,
@@ -1828,17 +1829,29 @@ export abstract class TournamentManagerBase {
           this.scheduleSpinRowRepair(spinRowPatch, spinMultiplier);
         }
 
-        tournament.prize_pool = prizePool;
-        tournament.spin_multiplier = spinMultiplier;
-        // The in-memory object drives table creation and the level timer, so
-        // it must agree with what was just written — the DB write alone would
-        // leave this start running on the placeholder structure.
-        tournament.blind_structure = spinBlinds;
-        if (tier?.startingStack) tournament.starting_chips = tier.startingStack;
-        if (this.tournamentCache) {
-          this.tournamentCache.blind_structure = spinBlinds;
-          this.tournamentCache.spin_multiplier = spinMultiplier;
-        }
+        /* THE WHOLE PATCH, ONTO BOTH COPIES (2026-08-31).
+           The in-memory object drives table creation and the level timer, and
+           tournamentCache is what the elimination and bubble paths read for
+           the rest of the game, so both must agree with what was just written
+           — the DB write alone would leave this start running on the
+           placeholder structure.
+
+           This was a hand-written list of field names and it copied FOUR of
+           the patch's five fields. `payout_structure` was the one it dropped,
+           so a started Spin's cache kept the pre-draw winner-take-all
+           placeholder for the life of the game, and
+           `recalculateEliminatedPrizes` (which reads the cache) topped up
+           eliminated players against a different structure than the one that
+           had paid them. On a 10x that is 80/20 versus 100/0.
+
+           applySpinDrawPatch copies EVERY key of the patch, so the patch is
+           now the only list there is: add a sixth field and it is synced by
+           construction. Never re-introduce a per-field copy here. */
+        applySpinDrawPatch(
+          spinRowPatch as unknown as Record<string, unknown>,
+          tournament as unknown as Record<string, unknown>,
+          this.tournamentCache as unknown as Record<string, unknown> | null
+        );
       }
 
       // Migrate registrations (registered -> playing).

@@ -42,6 +42,12 @@
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
 import { cashTableHeldEmpty, isActiveNow, wantsTableChange } from './HorseBehavior.js';
+import {
+  bankrollPolicyFor,
+  referenceBuyIn,
+  sessionVerdict,
+  topUpAllowance,
+} from './HorseBankroll.js';
 
 const CYCLE_MS = 90_000; // examine the floor every 90s
 const GLOBAL_DEPARTURES_PER_CYCLE = 4;
@@ -143,7 +149,7 @@ export class HorseSessionRotator {
       const { data: chunk, error } = await supabase
         .from('table_seats')
         .select(
-          'table_id, user_id, seat_number, stack, joined_at, tables!inner(id, big_blind, tournament_id, status)'
+          'table_id, user_id, seat_number, stack, joined_at, club_id, tables!inner(id, big_blind, tournament_id, status)'
         )
         .is('left_at', null)
         .order('table_id', { ascending: true })
@@ -155,6 +161,72 @@ export class HorseSessionRotator {
       if (error || !chunk) return;
       seats.push(...chunk);
       if (chunk.length < PAGE) break;
+    }
+
+    /**
+     * BANKROLL CONTEXT (Dan 2026-08-31). Two rules below need money facts the
+     * seat row does not carry:
+     *
+     *  - the ROLL, to decide whether a reload is affordable at all;
+     *  - what this seat has ALREADY cost, to know whether the session is a
+     *    winner worth booking or a loser worth leaving.
+     *
+     * The second is read from `chip_ledger` rather than a new column on
+     * `table_seats`, deliberately: the ledger already records every buy-in
+     * and top-up with a table_id and a timestamp, so the exact figure is
+     * available without touching a money path to write it.
+     *
+     * Both are loaded ONCE per cycle. A failure leaves the maps empty, and
+     * every rule below degrades to the pre-bankroll behaviour rather than
+     * guessing — a rotator that mistakes "I could not read the ledger" for
+     * "this horse is stuck" would empty the floor.
+     */
+    const rolls = new Map<string, number>();
+    const investedBySeat = new Map<string, number>();
+    try {
+      const horseSeatIds = [...new Set(seats.map((s) => s.user_id))];
+      if (horseSeatIds.length > 0) {
+        const { data: mem } = await supabase
+          .from('club_members')
+          .select('user_id, club_id, chip_balance')
+          .in('user_id', horseSeatIds);
+        for (const m of mem ?? []) {
+          const v = Number((m as { chip_balance: unknown }).chip_balance);
+          if (Number.isFinite(v)) {
+            rolls.set(
+              `${(m as { club_id: string }).club_id}:${(m as { user_id: string }).user_id}`,
+              v
+            );
+          }
+        }
+        const oldest = seats.reduce(
+          (acc, x) => Math.min(acc, new Date(x.joined_at).getTime()),
+          Date.now()
+        );
+        const { data: led } = await supabase
+          .from('chip_ledger')
+          .select('to_entity_id, from_entity_id, table_id, amount, category, created_at')
+          .gte('created_at', new Date(oldest - 60_000).toISOString())
+          .not('table_id', 'is', null)
+          .limit(20_000);
+        for (const r of led ?? []) {
+          const row = r as {
+            from_entity_id: string | null;
+            table_id: string | null;
+            amount: unknown;
+          };
+          // A buy-in or top-up moves chips FROM the player, so the player is
+          // the `from` side. Anything moving TO them is a cash-out and is not
+          // money they put at risk.
+          if (!row.from_entity_id || !row.table_id) continue;
+          const amt = Number(row.amount);
+          if (!Number.isFinite(amt) || amt <= 0) continue;
+          const k = `${row.table_id}:${row.from_entity_id}`;
+          investedBySeat.set(k, (investedBySeat.get(k) ?? 0) + amt);
+        }
+      }
+    } catch (err) {
+      reportError(err, 'HorseSessionRotator.bankroll_context');
     }
 
     // Group by table; only consider cash tables with 4+ occupied seats so a
@@ -240,7 +312,34 @@ export class HorseSessionRotator {
           // computed. The engine caps at the table max buy-in on its side.
           const step = bb * 10;
           const target = Math.round((buyIn * (0.85 + Math.random() * 0.3)) / step) * step;
-          const amount = Math.round((target - stackNow) * 100) / 100;
+          let amount = Math.round((target - stackNow) * 100) / 100;
+
+          /**
+           * A RELOAD IS A FRESH COMMITMENT TO A TABLE THAT IS ALREADY LOSING
+           * (Dan 2026-08-31). This was the one path with no bankroll opinion
+           * at all: every 90s cycle, any horse under 45% of a buy-in reloaded
+           * to a full one, wallet-funded, forever. That is precisely "risking
+           * more of their stack than they should", and it is how a bankroll
+           * dies one top-up at a time.
+           *
+           * topUpAllowance holds it to a stricter test than the original
+           * seat: the roll must still cover the stake AFTER paying, total
+           * exposure to this table cannot walk past the single-buy-in share
+           * one reload at a time, and a horse already down its stop-loss does
+           * not reload at all — it leaves, through the hazard below.
+           */
+          const roll = rolls.get(`${(seat as { club_id?: string }).club_id ?? ''}:${seat.user_id}`);
+          if (roll !== undefined) {
+            amount = topUpAllowance({
+              bankroll: roll,
+              investedThisTable: investedBySeat.get(`${tableId}:${seat.user_id}`) ?? 0,
+              desired: amount,
+              refBuyIn: buyIn,
+              minBuyIn: bb * 40,
+              maxBuyIn: bb * 200,
+              policy: bankrollPolicyFor(seat.user_id),
+            });
+          }
           if (amount >= bb) {
             engine
               .addChips(seat.user_id, amount)
@@ -279,6 +378,34 @@ export class HorseSessionRotator {
         // expressed per 90s cycle.
         let p = CYCLE_MS / 60000 / MEAN_SESSION_MINUTES;
         const stack = stackNow;
+
+        /**
+         * BOOK THE WIN, STOP THE LOSS (Dan 2026-08-31).
+         *
+         * The swing curve below reads `stack / (bb * 100)` — an ASSUMED
+         * buy-in. A horse that sat down short and doubled its money does not
+         * register as a winner, and one that bought in deep and is stuck
+         * looks perfectly healthy. Session P&L is the honest measure:
+         * everything this seat has cost, against what is in front of it now.
+         *
+         * When the ledger gives us that figure, the policy decides and the
+         * departure is CERTAIN rather than probabilistic — booking a win is
+         * a decision a player makes, not a coin they flip. Without the
+         * figure we fall through to the original swing heuristic unchanged.
+         */
+        const invested = investedBySeat.get(`${tableId}:${seat.user_id}`);
+        if (invested !== undefined && invested > 0) {
+          const verdict = sessionVerdict(
+            stack - invested,
+            referenceBuyIn(bb, bb * 40, bb * 200),
+            bankrollPolicyFor(seat.user_id)
+          );
+          if (verdict !== 'play_on') {
+            best = { seat, p: Number.POSITIVE_INFINITY };
+            break;
+          }
+        }
+
         const swing = stack / buyIn;
         if (swing >= 2)
           p *= 2.2; // doubled up — racking up is human

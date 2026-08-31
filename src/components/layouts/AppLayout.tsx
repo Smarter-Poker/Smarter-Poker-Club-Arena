@@ -68,7 +68,9 @@ function AppLayoutContent() {
    * gutter. Dan, 2026-08-27, on notifications: "IT NEEDS TO BE RAISED UP TO
    * THE TOP TO BE ATTACHED TO THE GLOBAL HEADER."
    */
-  const isFlushPage = location.pathname.replace(/\/+$/, '').endsWith('/notifications');
+  const normalizedPath = location.pathname.replace(/\/+$/, '');
+  const isClubLobbyPage = /^\/clubs\/[^/]+(?:\/lobby)?$/.test(normalizedPath);
+  const isFlushPage = normalizedPath.endsWith('/notifications') || isClubLobbyPage;
 
   // SPA navigation does not move browser focus by itself. Put keyboard and
   // screen-reader users at the start of the new page without changing scroll.

@@ -137,6 +137,7 @@ import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeat
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
 import { isPreActionHonorable, PRE_ACTION_EXEC_GRACE_MS } from '../lib/preActionPanelGate';
 import { seatTapTarget } from '../lib/heroSeatTap';
+import { reconcileHeroSeatFromEngine, MAX_SUPPORTED_SEATS } from '../lib/heroSeatReconcile';
 
 import { gameCode } from '../utils/gameCode';
 import { masterBus } from '../core/MasterBus';
@@ -1976,6 +1977,23 @@ export default function TablePage({
     const applySeats = (seats: any[]) => {
       setTableState((prev) => {
         const p = [...prev.players];
+        /* THE SAME DROP, IN THE PATH THAT PAINTS FIRST (Dan 2026-08-31).
+           This forEach used to skip any seat whose index fell outside the
+           CURRENT array (`idx < p.length`) — and this prefetch exists
+           precisely to render the table in the 3-5 seconds before the
+           websocket is up, which is exactly the window in which `maxPlayers`
+           is still the default 6. So a player in seat 7, 8 or 9 was missing
+           from the first paint of every table, hero included, until an engine
+           snapshot happened to arrive and overwrite this. Same defect as the
+           mapper's dropped seats, one layer earlier and easy to miss because
+           the engine usually papers over it a moment later.
+           Grow to fit what the server actually returned. */
+        let maxSeatSeen = p.length;
+        seats.forEach((seat: any) => {
+          const n = Number(seat?.seat_number);
+          if (Number.isInteger(n) && n > maxSeatSeen && n <= MAX_SUPPORTED_SEATS) maxSeatSeen = n;
+        });
+        while (p.length < maxSeatSeen) p.push(null);
         seats.forEach((seat: any) => {
           const idx = seat.seat_number - 1;
           if (idx >= 0 && idx < p.length) {
@@ -1991,7 +2009,9 @@ export default function TablePage({
             };
           }
         });
-        return { ...prev, players: p };
+        // The ring must be able to draw the seats we just added, or the rows
+        // exist in state and render nowhere — which is the original bug.
+        return { ...prev, players: p, maxPlayers: Math.max(prev.maxPlayers, p.length) };
       });
     };
 
@@ -12040,18 +12060,32 @@ export default function TablePage({
       );
     }
 
-    /* Heal, on the server's word. Growing the array is safe in a way that
-       trimming never is: a null row renders an empty seat, whereas dropping a
-       row erases a player. */
+    /* Heal, on the server's word — through a PURE function that returns null
+       when there is nothing to do (src/lib/heroSeatReconcile.ts).
+
+       That indirection is not ceremony, it is the fix for this block's own
+       first draft. The heal grows the array with NULL rows and cannot place
+       the hero row, so an inline `if (players[seat-1]?.id === userId) return
+       prev` guard NEVER became true: every pass produced a fresh array
+       identity, this effect's dependencies changed, and it ran again — an
+       infinite render loop, armed on precisely the path that fires when a
+       player is stranded. Returning `prev` UNCHANGED is what stops the cycle,
+       and `reconcileHeroSeatFromEngine` guarantees that by construction rather
+       than by a guard somebody has to get right. It also bounds the growth, so
+       a corrupt `seat: 1e9` cannot hang the tab. Pinned by
+       tests/unit/heroSeatReconcile.test.ts. */
     setTableState((prev) => {
-      if (prev.players[mine.seat! - 1]?.id === userId) return prev;
-      const players = [...prev.players];
-      while (players.length < mine.seat!) players.push(null);
+      const patch = reconcileHeroSeatFromEngine(
+        { players: prev.players, maxPlayers: prev.maxPlayers, heroSeat: prev.heroSeat },
+        mine.seat as number,
+        userId
+      );
+      if (!patch) return prev; // already agrees — no new identity, no loop
       return {
         ...prev,
-        players,
-        maxPlayers: Math.max(prev.maxPlayers, mine.seat!),
-        heroSeat: prev.heroSeat > 0 ? prev.heroSeat : mine.seat!,
+        ...(patch.players ? { players: patch.players as (SeatPlayer | null)[] } : {}),
+        ...(patch.maxPlayers !== undefined ? { maxPlayers: patch.maxPlayers } : {}),
+        ...(patch.heroSeat !== undefined ? { heroSeat: patch.heroSeat } : {}),
       };
     });
   }, [

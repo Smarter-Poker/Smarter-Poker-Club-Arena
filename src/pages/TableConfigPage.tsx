@@ -342,8 +342,17 @@ const DEFAULT_CONFIG: TableConfig = {
   voluntaryStraddle: false,
   insuranceEnabled: false,
 
-  // Run It Multi-Times
-  runItMode: 'none',
+  /* Run It Multi-Times.
+     DEFAULT IS player_choice, NOT none (2026-08-31 audit). While the radio
+     was inert (see buildTableData) 'none' was a label with no effect: every
+     table created here offered run-it-twice, and the engine treats 'none'
+     and 'player_choice' identically anyway - RunItTwiceEngine.mandatoryRuns
+     returns 0 for both, meaning "the players decide". Now that the control
+     genuinely writes the booleans, leaving the default at 'none' would have
+     silently switched run-it-twice OFF for every newly created table across
+     the platform. player_choice is what these tables have always actually
+     done, so this keeps live behaviour identical and makes "None" mean it. */
+  runItMode: 'player_choice',
 
   // Rake Settings (default 10% with 3BB cap)
   // -1 = inherit: use the club default, then the published rake schedule.
@@ -939,7 +948,11 @@ export default function TableConfigPage() {
         ? Math.max(60, Math.round(config.bombPotIntervalMinutes * 60))
         : null,
     bomb_pot_board_count: config.bombPotEnabled ? config.bombPotBoards : 1,
-    bomb_pot_min_players: config.bombPotEnabled ? config.bombPotMinPlayers : 3,
+    // Clamped for the same reason as auto_start_players: a template blob can
+    // carry a value the slider would not allow (2026-08-31 audit).
+    bomb_pot_min_players: config.bombPotEnabled
+      ? Math.max(2, Math.min(config.bombPotMinPlayers, config.maxPlayers))
+      : 3,
     // FIXED ante mode (spec §3): a positive amount overrides the multiplier.
     bomb_pot_ante_fixed:
       config.bombPotEnabled && config.bombPotAnteFixed > 0 ? config.bombPotAnteFixed : null,
@@ -1042,7 +1055,18 @@ export default function TableConfigPage() {
     career_percent_min: config.careerPercentMin,
     maintain_percent_min: config.maintainPercentMin,
     maintain_hands: config.maintainHands,
-    auto_start_players: config.autoStartPlayers,
+    /* CLAMPED (2026-08-31 audit). The slider is bounded to the seat count,
+       but a saved template is raw JSONB spread straight into state, so a
+       stale autoStartPlayers can arrive above it. auto_start_players over
+       the seat count is a table that can never deal and is not even flagged
+       as stuck (ServerTableEngineBase.minPlayersToDeal / dealThreshold). */
+    auto_start_players: Math.max(
+      2,
+      Math.min(
+        config.autoStartPlayers,
+        clampSeatsForVariant(String(gameType || 'nlh').toLowerCase(), config.maxPlayers)
+      )
+    ),
     // game_length_hours and calltime_enabled are no longer written
     // (2026-08-27): zero readers each — see the TableConfig comment.
 
@@ -1058,6 +1082,20 @@ export default function TableConfigPage() {
     // voluntary_straddle / run_it_mode. Without these mirrors, straddle and
     // run-it-twice configured on this page never took effect.
     straddle_enabled: config.autoUtgStraddle || config.voluntaryStraddle,
+    /* "NONE" DID NOT TURN RUN IT TWICE OFF (2026-08-31 audit).
+       The engine's gate is
+         ((run_it_twice ?? true) && (allow_run_it_twice ?? true)) || run_it_twice_enabled
+       and this page wrote ONLY the third column. The other two carry a
+       DEFAULT of true, so the first term was satisfied on every row this
+       page has ever created and the radio could not switch the feature off.
+       Measured on production the day it was found: 924 live cash tables,
+       921 of them running RIT while the host's setting read 'none'. RIT
+       splits real pots, so a host who declined it still had their players'
+       money run twice. fn_tables_sync_rit cannot rescue it either - it
+       mirrors only when one side is NULL, and this page writes a non-null
+       false. All three columns are now written from the one control. */
+    run_it_twice: config.runItMode !== 'none',
+    allow_run_it_twice: config.runItMode !== 'none',
     run_it_twice_enabled: config.runItMode !== 'none',
 
     // Run it multi-times
@@ -1176,7 +1214,16 @@ export default function TableConfigPage() {
       navigate(`/clubs/${clubId}`);
     } catch (error) {
       reportError(error, 'TableConfigPage.Failed_to_save_table');
-      toast.error('Failed to save table');
+      /* SAY WHAT WENT WRONG (2026-08-31 audit). fn_tables_creation_guard
+         raises host-actionable messages ("big blind must exceed small
+         blind", "seat law: plo6 allows at most 6 seats", the action-time
+         range) and an RLS refusal returns a permission error. All of them
+         rendered as the same five words, which is how an unsaveable
+         configuration became an unexplainable one. handleStartTournament
+         already surfaces error.message; this now matches it. */
+      toast.error(
+        error instanceof Error && error.message ? error.message : 'Failed to save table'
+      );
     } finally {
       setSaving(false);
     }
@@ -1358,7 +1405,10 @@ export default function TableConfigPage() {
       navigate(`/table/${data.id}`);
     } catch (error) {
       reportError(error, 'TableConfigPage.Failed_to_start_table');
-      toast.error('Failed to start table');
+      // Same reasoning as handleSave: the server's reason is the useful part.
+      toast.error(
+        error instanceof Error && error.message ? error.message : 'Failed to start table'
+      );
     } finally {
       setStarting(false);
     }
@@ -1682,7 +1732,10 @@ export default function TableConfigPage() {
                   value={config.bombPotMinPlayers}
                   onChange={(v) => updateConfig('bombPotMinPlayers', v)}
                   min={2}
-                  max={6}
+                  /* NEVER ABOVE THE SEAT COUNT (2026-08-31 audit). A fixed 6
+                     here meant a heads-up table could require 4 players for a
+                     bomb pot: the switch reads ON and no bomb ever fires. */
+                  max={Math.min(6, config.maxPlayers)}
                   step={1}
                   suffix=" players"
                 />
@@ -1968,7 +2021,15 @@ export default function TableConfigPage() {
               value={config.autoStartPlayers}
               onChange={(v) => updateConfig('autoStartPlayers', v)}
               min={2}
-              max={10}
+              /* NEVER ABOVE THE SEAT COUNT (2026-08-31 audit). This was a
+                 fixed 10 while Table Size is capped at seatCap (6 for PLO6,
+                 7 for PLO5, 8 for PLO4/PLO8/FLO8). The engine honours
+                 auto_start_players with only a lower bound
+                 (ServerTableEngineBase.minPlayersToDeal), and dealThreshold
+                 exports the same number to the zombie reaper - so a 6-seat
+                 table asking for 10 players would sit forever, never deal,
+                 and never even be reported as stuck. */
+              max={Math.min(seatCap, config.maxPlayers)}
               suffix=" players"
             />
 

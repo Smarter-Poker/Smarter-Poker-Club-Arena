@@ -115,9 +115,11 @@ describe('44 of 50 Spins and Heads-Ups could never be joined', () => {
     expect(repair).toBeLessThan(budget);
   });
 
-  it('will not count a game with no table as covering its price point', () => {
-    // One dead REGISTERING row wedged one price point permanently.
-    expect(recurring).toMatch(/withTable\.has\(r\.id\)/);
+  it('will not count a game without a joinable table as covering its price point', () => {
+    // One dead REGISTERING row — table-less or backed by a closed table —
+    // wedged one price point permanently.
+    expect(recurring).toMatch(/withJoinableTable\.has\(r\.id\)/);
+    expect(recurring).toContain('isJoinableTableRow');
   });
 
   it('keeps a floor of horses for the cash room', () => {

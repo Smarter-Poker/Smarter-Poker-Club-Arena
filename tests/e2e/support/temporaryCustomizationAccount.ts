@@ -252,6 +252,24 @@ async function deleteRows(
   });
 }
 
+async function authUserExists(
+  environment: CustomizationCertificationEnvironment,
+  userId: string
+): Promise<boolean> {
+  const response = await fetch(
+    `${environment.supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(userId)}`,
+    { headers: serverHeaders(environment.serviceRoleKey) }
+  );
+  if (response.status === 404) return false;
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `Supabase Auth verification failed (${response.status}): ${text.slice(0, 400)}`
+    );
+  }
+  return true;
+}
+
 /**
  * Remove only a fixture created by createTemporaryCustomizationAccount.
  * The prefix check is deliberately local and server-backed: a typo can never
@@ -288,8 +306,13 @@ export async function cleanupTemporaryCustomizationAccount(
   let firstAuthDeleteError: Error | null = null;
   await serviceRequest<void>(
     environment,
-    `/auth/v1/admin/users/${encodeURIComponent(account.id)}?should_soft_delete=false`,
-    { method: 'DELETE' }
+    `/auth/v1/admin/users/${encodeURIComponent(account.id)}`,
+    {
+      method: 'DELETE',
+      // GoTrue reads should_soft_delete from the JSON body. A query-string
+      // value receives 2xx but does not guarantee the requested hard delete.
+      body: JSON.stringify({ should_soft_delete: false }),
+    }
   ).catch((error) => {
     firstAuthDeleteError = error as Error;
   });
@@ -303,13 +326,31 @@ export async function cleanupTemporaryCustomizationAccount(
   }
 
   // A historical trigger/FK can make Auth deletion fail until public rows are
-  // gone. Retry exactly this reserved fixture once after that cleanup.
-  if (firstAuthDeleteError) {
+  // gone. A malformed/ignored request can also answer 2xx without removing the
+  // identity, so verify server state and retry exactly this reserved fixture.
+  let userStillExists = true;
+  try {
+    userStillExists = await authUserExists(environment, account.id);
+  } catch (error) {
+    failures.push(`auth.users verification: ${(error as Error).message}`);
+  }
+  if (firstAuthDeleteError || userStillExists) {
     await serviceRequest<void>(
       environment,
-      `/auth/v1/admin/users/${encodeURIComponent(account.id)}?should_soft_delete=false`,
-      { method: 'DELETE' }
+      `/auth/v1/admin/users/${encodeURIComponent(account.id)}`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify({ should_soft_delete: false }),
+      }
     ).catch((error) => failures.push(`auth.users: ${(error as Error).message}`));
+  }
+
+  try {
+    if (await authUserExists(environment, account.id)) {
+      failures.push('auth.users: reserved fixture still exists after hard delete');
+    }
+  } catch (error) {
+    failures.push(`auth.users final verification: ${(error as Error).message}`);
   }
 
   if (failures.length) {

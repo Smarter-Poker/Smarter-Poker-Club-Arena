@@ -20,16 +20,19 @@
 
 /** RFC 4180: quote anything containing a quote, comma or newline. */
 export function csvEscape(value: unknown): string {
-  const s = value === null || value === undefined ? '' : String(value);
+  let s = value === null || value === undefined ? '' : String(value);
+  // Excel and other spreadsheet apps may execute string cells beginning with
+  // one of these characters as formulas. Numeric values remain numeric; only
+  // user-controlled strings are prefixed with an apostrophe.
+  if (typeof value === 'string' && /^[\t ]*[=+\-@]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 /** Build a CSV document from a header row and a matrix of cells. */
 export function toCsv(header: string[], rows: unknown[][]): string {
-  return [
-    header.map(csvEscape).join(','),
-    ...rows.map((r) => r.map(csvEscape).join(',')),
-  ].join('\n');
+  return [header.map(csvEscape).join(','), ...rows.map((r) => r.map(csvEscape).join(','))].join(
+    '\n'
+  );
 }
 
 export function downloadCsv(filename: string, csv: string): boolean {

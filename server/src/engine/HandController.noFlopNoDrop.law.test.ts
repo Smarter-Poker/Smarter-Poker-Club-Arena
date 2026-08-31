@@ -96,14 +96,10 @@ describe('no flop, no drop is settled by the board', () => {
     hc.performAction(2, 'fold', 0);
 
     expect(raiseFinancialAlert).toHaveBeenCalled();
-    const [severity, source, , context] = raiseFinancialAlert.mock.calls[0] as [
-      string,
-      string,
-      string,
-      Record<string, unknown>,
-    ];
-    expect(severity).toBe('critical');
-    expect(source).toBe('HandController.saw_flop_without_board');
+    const call = raiseFinancialAlert.mock.calls[0] as unknown as unknown[];
+    const context = call[3] as Record<string, unknown>;
+    expect(call[0]).toBe('critical');
+    expect(call[1]).toBe('HandController.saw_flop_without_board');
     expect(context.handNumber).toBe(4242);
     expect(context.boardLength).toBe(0);
     // The stage each action was taken at is the thread to pull on the live

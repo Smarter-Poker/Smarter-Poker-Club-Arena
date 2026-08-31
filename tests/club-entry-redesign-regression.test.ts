@@ -74,16 +74,18 @@ describe('Club entry dialogs', () => {
   });
 
   it.each([
-    ['Create Club', createCss, '.contentPanel'],
-    ['Find Player', findCss, '.modalContent'],
-    ['Join Club', joinCss, '.contentPanel'],
+    ['Create Club', createClub, createCss],
+    ['Find Player', findPlayer, findCss],
+    ['Join Club', joinClub, joinCss],
   ])(
-    '%s keeps its full outer frame in short viewports and scrolls content inside it',
-    (_name, css, scrollSelector) => {
-      expect(sliceCssRule(css, '.overlay')).toMatch(/overflow-y:\s*auto/);
-      expect(sliceCssRule(css, scrollSelector)).toMatch(/overflow-y:\s*auto/);
-      expect(css).toMatch(/@media \(max-height:\s*560px\)/);
-      expect(css).toMatch(/max-height:\s*calc\(100dvh - 24px\)/);
+    '%s is a full page with an independently scrolling body and locked footer',
+    (_name, source, css) => {
+      expect(source).toContain('className={styles.scrollBody}');
+      expect(source).toContain('className={styles.pageFooter}');
+      expect(css).toMatch(/height:\s*100dvh/);
+      expect(sliceCssRule(css, '.scrollBody')).toMatch(/overflow-y:\s*auto/);
+      expect(sliceCssRule(css, '.pageFooter')).toMatch(/flex:\s*0 0 auto/);
+      expect(sliceCssRule(css, '.pageFooter')).toMatch(/safe-area-inset-bottom/);
     }
   );
 

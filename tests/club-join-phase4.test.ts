@@ -35,7 +35,7 @@ describe('Phase 4 atomic Club Arena entry', () => {
 describe('Phase 4 join experience', () => {
   it('shows a verified preview before confirmation', () => {
     expect(modal).toContain('ClubJoinService.preview');
-    expect(modal).toContain('Club confirmation');
+    expect(modal).toContain('Club Confirmation');
     expect(modal).toContain('Confirm Join');
   });
 

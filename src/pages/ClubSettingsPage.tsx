@@ -52,6 +52,7 @@ function roleLabelForHandover(role: string): string {
   }
 }
 import { reportError } from '../utils/errorReporter';
+import { SHARK_CLUB_ID } from '../lib/constants';
 import {
   MAX_RAKE_CAP_BB,
   MAX_RAKE_PERCENT,
@@ -74,10 +75,12 @@ import {
 } from '../utils/clubSettingsRules';
 
 const DESCRIPTION_MAX = 500;
+const TAGLINE_MAX = 72;
 
 interface ClubSettings {
   name: string;
   description: string;
+  tagline: string;
   is_public: boolean;
   requires_approval: boolean;
   default_rake_percent: number;
@@ -102,6 +105,7 @@ export default function ClubSettingsPage() {
   const [settings, setSettings] = useState<ClubSettings>({
     name: '',
     description: '',
+    tagline: '',
     is_public: true,
     requires_approval: false,
     default_rake_percent: RAKE_INHERIT,
@@ -152,6 +156,7 @@ export default function ClubSettingsPage() {
     const orig = originalSettings.current;
     if (settings.name !== orig.name) changes.push('Name');
     if (settings.description !== orig.description) changes.push('Description');
+    if (settings.tagline !== orig.tagline) changes.push('Tag Line');
     if (settings.is_public !== orig.is_public) changes.push('Public');
     if (settings.requires_approval !== orig.requires_approval) changes.push('Approval');
     if (settings.default_rake_percent !== orig.default_rake_percent) changes.push('Rake %');
@@ -180,7 +185,12 @@ export default function ClubSettingsPage() {
   // name validation at all — a blank name saved happily, leaving a nameless
   // club whose delete confirmation was armed by an empty box.
   const nameError = validateClubName(settings.name, sanitizeInput(settings.name));
-  const formError = nameError || buyinError;
+  const taglineError =
+    /all fish of all shapes and sizes are welcome/i.test(settings.tagline) &&
+    clubNumericId !== SHARK_CLUB_ID
+      ? 'That Tag Line Belongs To Shark Club'
+      : '';
+  const formError = nameError || taglineError || buyinError;
 
   // The loaders below run from timers, realtime callbacks and bus events. They
   // close over whatever `hasUnsavedChanges` was when the effect was created, so
@@ -271,6 +281,8 @@ export default function ClubSettingsPage() {
   // React Router reuses the component when only the clubId param changes.
   useEffect(() => {
     setSaving(false);
+    setClubNumericId(null);
+    setClubCode(null);
     setIsOwner(false);
     setUserRole('player');
     setShowDeleteModal(false);
@@ -674,7 +686,7 @@ export default function ClubSettingsPage() {
           supabase
             .from('clubs')
             .select(
-              'id, owner_id, club_id, logo_url, name, description, is_public, requires_approval, default_rake_percent, rake_cap, bbj_rake_enabled, spins_enabled, spins_preseed_amount, spins_wallet_funding, union_id'
+              'id, owner_id, club_id, logo_url, name, description, tagline, is_public, requires_approval, default_rake_percent, rake_cap, bbj_rake_enabled, spins_enabled, spins_preseed_amount, spins_wallet_funding, union_id'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -695,6 +707,7 @@ export default function ClubSettingsPage() {
         const fromServer: ClubSettings = {
           name: data.name || '',
           description: data.description || '',
+          tagline: data.tagline || '',
           is_public: data.is_public ?? true,
           requires_approval: data.requires_approval ?? false,
           default_rake_percent: data.default_rake_percent ?? RAKE_INHERIT,
@@ -711,6 +724,7 @@ export default function ClubSettingsPage() {
         // and every one of them used to call setSettings() unconditionally.
         // The page even renders an "N unsaved changes" banner while doing it.
         setClubCode(typeof data.club_id === 'number' ? data.club_id : null);
+        setClubNumericId(typeof data.club_id === 'number' ? data.club_id : null);
         setCurrentLogoUrl(data.logo_url || null);
         const wouldDiscardEdits = !opts?.force && hasUnsavedChangesRef.current;
         if (wouldDiscardEdits) {
@@ -791,6 +805,7 @@ export default function ClubSettingsPage() {
       ...settings,
       name: sanitizeInput(settings.name),
       description: sanitizeInput(settings.description),
+      tagline: sanitizeInput(settings.tagline).slice(0, TAGLINE_MAX),
     };
     setSaving(true);
     try {
@@ -837,6 +852,7 @@ export default function ClubSettingsPage() {
               ...(newLogoUrl ? { logo_url: newLogoUrl } : {}),
               name: toSave.name,
               description: toSave.description,
+              tagline: toSave.tagline || null,
               is_public: toSave.is_public,
               requires_approval: toSave.requires_approval,
               default_rake_percent: toSave.default_rake_percent,
@@ -1344,6 +1360,23 @@ export default function ClubSettingsPage() {
               style={nameError ? { color: '#ff6b6b' } : undefined}
             >
               {nameError || `${settings.name.length}/${CLUB_NAME_MAX}`}
+            </small>
+          </div>
+          <div className="form-group">
+            <label htmlFor="club-tagline">Club Tag Line</label>
+            <input
+              id="club-tagline"
+              type="text"
+              value={settings.tagline}
+              onChange={(e) => updateSetting('tagline', e.target.value)}
+              disabled={!isOwner}
+              maxLength={TAGLINE_MAX}
+              aria-invalid={Boolean(taglineError)}
+              aria-describedby="club-tagline-hint"
+            />
+            <small id="club-tagline-hint" className="form-hint">
+              {taglineError ||
+                `${settings.tagline.length}/${TAGLINE_MAX} · Write An Original Line For This Club`}
             </small>
           </div>
           <div className="form-group">

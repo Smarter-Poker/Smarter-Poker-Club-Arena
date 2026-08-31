@@ -147,6 +147,21 @@ export interface ReplayInput {
    * declare itself rather than be mis-read as raise-to levels.
    */
   amountsAreIncremental?: boolean;
+  /**
+   * PHASE 4 2026-09-01 - the discarded card, keyed by the user it belongs to.
+   *
+   * In Crazy Pineapple the thrown card is never revealed to opponents, not on
+   * the discard and not at showdown, so this map holds exactly ONE entry in
+   * practice: the viewer's own. That is not a convention this builder enforces
+   * by trimming - it is what the DATABASE returns. `hand_discards` is read
+   * through `hand_discards_read_own` (auth.uid() = user_id), so a client that
+   * asked for every seat's discard would still be handed only its own. The
+   * caller cannot leak somebody else's card here even by mistake.
+   *
+   * Absent for every hand played before this shipped, and for every variant
+   * that has no discard. A row with no entry renders exactly as it does today.
+   */
+  discardedCards?: Record<string, StoredCard> | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -193,6 +208,13 @@ export interface ReplayRow {
   showsMuck: boolean;
   /** Face-up cards drawn beside a `show`. */
   shownCards: DeckCard[] | null;
+  /**
+   * The card this seat threw, on a `discard` row, when the viewer is entitled
+   * to see it - which is only ever their own (see ReplayInput.discardedCards).
+   * Null on every other verb, and on a discard whose card is not the viewer's
+   * or was never recorded.
+   */
+  discardedCard: DeckCard | null;
 }
 
 export interface ReplayStreet {

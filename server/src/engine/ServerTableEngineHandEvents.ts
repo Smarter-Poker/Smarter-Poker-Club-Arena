@@ -336,6 +336,31 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // Do NOT broadcast state here — cards are delivered securely via table_hole_cards
         break;
 
+      /**
+       * PHASE 4 2026-09-01 - the discarded card, to its own player only.
+       *
+       * Deliberately shaped exactly like CARDS_DEALT above, because it is the
+       * same problem: a card that ONE person may see, on a platform whose
+       * broadcast everybody hears. The public `player_action` event for this
+       * discard has already gone out carrying a seat and a word; this carries
+       * the card and goes to Postgres instead, behind
+       * `hand_discards_read_own` (auth.uid() = user_id).
+       *
+       * There is no `this.hub?.emitEvent` in this case and there must never
+       * be one. In Crazy Pineapple the discard is not revealed on the discard
+       * and not revealed at showdown - it is the one card in the deck nobody
+       * else is ever entitled to see.
+       */
+      case 'PINEAPPLE_DISCARDED': {
+        if (event.seat === undefined || !event.card || !this.handController) break;
+        const seated = this.handController
+          .getState()
+          .players.find((p) => p.seat === event.seat);
+        if (!seated?.user_id) break;
+        await this.persistDiscardedCard(seated.user_id, event.seat, event.card);
+        break;
+      }
+
       case 'TURN_CHANGE': {
         // ═══════════════════════════════════════════════════════════════════
         // Dan 2026-08-20: "every player's action MUST GO IN TURN. Their action

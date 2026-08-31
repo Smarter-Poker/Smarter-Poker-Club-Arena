@@ -989,6 +989,16 @@ export class HandController {
     const discarded = player.cards.splice(cardIndex, 1);
     this.pineappleDiscardsRemaining.delete(seat);
 
+    /* PHASE 4 2026-09-01: the card itself, to the seat that threw it and to
+       nobody else. This event is consumed by the engine and written to the
+       RLS-protected hand_discards table; it is never forwarded to the hub.
+       `discarded` was already computed here and thrown away - the splice
+       result has been unused since the variant shipped, which is why the
+       replay could say "Discard" but never which card. */
+    if (discarded[0]) {
+      this.emit({ type: 'PINEAPPLE_DISCARDED', seat, card: discarded[0] });
+    }
+
     /* PHASE 3 FOLLOW-UP 2026-08-31 - the discard has to be IN the hand's own
        action history, not only on the wire.
        
@@ -1824,8 +1834,15 @@ export class HandController {
         flop,
         this.config.gameVariant ?? 'pineapple'
       );
-      player.cards.splice(bestIdx, 1);
+      const forced = player.cards.splice(bestIdx, 1);
       this.pineappleDiscardsRemaining.delete(player.seat);
+
+      /* PHASE 4 2026-09-01: an all-in seat never chose, but the card still
+         left their hand and it is still theirs to review. Same private event,
+         same RLS-protected destination. */
+      if (forced[0]) {
+        this.emit({ type: 'PINEAPPLE_DISCARDED', seat: player.seat, card: forced[0] });
+      }
 
       /* PHASE 3 AUDIT 2026-08-31 - this discard was SILENT, on every layer.
          

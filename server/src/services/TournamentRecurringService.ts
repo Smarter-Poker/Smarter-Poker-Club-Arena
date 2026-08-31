@@ -14,6 +14,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
 import { DEFAULT_RAKE_RATE, buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
@@ -712,8 +713,12 @@ function openingHorsesForSeatFirst(seats: number): number {
  * nothing on the platform reported it because every refusal on this path
  * returns 0 silently.
  *
- * So the hold is now bucketed in time, exactly like its sibling
- * cashTableHeldEmpty, which was written correctly and rotates every 2h. A
+ * So the hold is now bucketed in time, like its sibling cashTableHeldEmpty.
+ * (An earlier version of this comment claimed that sibling "was written
+ * correctly and rotates every 2h" — it was not. It folded the bucket into the
+ * same weak hash this block warns about, so its holds WALKED rather than
+ * re-rolled and a table could stay held ~30 hours. Fixed 2026-08-30 with the
+ * same mix32 avalanche used below; the avalanche now lives in HorseBehavior.) A
  * board held empty in one bucket is fillable in the next, so a price point
  * cannot ossify, while at any given INSTANT the requested share of the board
  * is still genuinely empty and waiting for a human. That is what Dan asked
@@ -765,6 +770,30 @@ export function seatFirstHeldEmpty(
   // before the finalizer mixes it into the id's hash.
   const seed = (horseHash(`${tournamentId}:hold-empty`) ^ Math.imul(bucket, 0x9e3779b1)) >>> 0;
   return mix32(seed) % 100 < frac * 100;
+}
+
+/**
+ * The pure half of pickFreeHorses: given the FULL fleet id list, drop the
+ * busy horses (the 4-game cap, computed by the caller from horseLoadMap) and
+ * apply the lane / activity-window filters. Exported so the unit tests can
+ * prove two properties without a database: a busy horse is never selected,
+ * and selection can reach the whole fleet rather than a stable first page.
+ */
+export function selectHorseCandidates(
+  fleetIds: string[],
+  busy: ReadonlySet<string>,
+  allLanes: boolean,
+  hourUTC: number
+): string[] {
+  return fleetIds.filter((id) => {
+    if (!id || busy.has(id)) return false;
+    // Freeroll override: every horse that is currently PLAYING is eligible,
+    // cash lane included. See topUpWithHorses opts.allLanes.
+    if (allLanes) return isActiveNow(id, hourUTC);
+    // Game lanes (Dan 2026-08-26): cash-only horses never enter events —
+    // tournaments, spins and heads-up draw from the events/both lanes.
+    return gameLaneFor(id) !== 'cash';
+  });
 }
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -3141,38 +3170,47 @@ export class TournamentRecurringService {
        *    turns a near-certain collision into an unlikely one, which is the
        *    difference between systematic and occasional.
        */
-      // V22 (2026-08-27): the old `count + busy.size + 50` sizing ignored the
-      // LANE filter below, which excludes a third of any page (and the
-      // freeroll activity window up to 60%) — a stable arbitrary page that
-      // filtered to zero was re-examined forever. 4x headroom for the
-      // post-filters, still sized from the busy set per the
-      // pickFreeHorsesLimits convention.
-      const { data: horses, error: horsesErr } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('is_horse', true)
-        .limit(count * 4 + busy.size + 50);
-      if (horsesErr) {
+      // V23 (2026-08-30): THE WHOLE FLEET, PAGED — no limit at all. The V22
+      // `count*4 + busy.size + 50` sizing carried headroom for the lane
+      // filter, but the query had no ORDER BY and no busy exclusion, so
+      // Postgres served the SAME stable first page to every caller all day.
+      // Once that page's free horses were drained (busy against a 584-horse
+      // fleet), the filtered candidates shrank to zero and every seat-first
+      // fill starved — the SNG board sat dead for hours while two-thirds of
+      // the fleet idled beyond the page. The fleet is ~600 rows of ids; just
+      // read all of it keyset-paged (fetchAllRows, the same pattern
+      // HorseFleetManager.seedAllTables uses) and filter/shuffle in memory.
+      const fleetPage = await fetchAllRows<{ id: string }>(
+        (cursor, want) => {
+          let q = supabase
+            .from('profiles')
+            .select('id')
+            .eq('is_horse', true)
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
+        { label: 'TournamentRecurring.pickFreeHorses', maxRows: 50_000 }
+      );
+      if (!fleetPage.complete) {
         // The fleet read failing used to read as "the fleet is empty", which
         // is indistinguishable in the logs from a genuinely exhausted pool.
         reportError(
-          new Error(`[TournamentRecurring] horse fleet read failed: ${horsesErr.message}`),
+          new Error('[TournamentRecurring] horse fleet read came back incomplete'),
           'TournamentRecurring.horse_fleet_read_failed'
         );
         return [];
       }
 
-      const candidates = (horses ?? [])
-        .map((h) => (h as { id: string }).id)
-        // Game lanes (Dan 2026-08-26): cash-only horses never enter events —
-        // tournaments, spins and heads-up draw from the events/both lanes.
-        .filter((id) => {
-          if (!id || busy.has(id)) return false;
-          // Freeroll override: every horse that is currently PLAYING is
-          // eligible, cash lane included. See topUpWithHorses opts.allLanes.
-          if (allLanes) return isActiveNow(id, new Date().getUTCHours());
-          return gameLaneFor(id) !== 'cash';
-        });
+      // Busy (4-game cap) exclusion and the lane/activity filters, unchanged
+      // in meaning — now applied to the FULL fleet. See selectHorseCandidates.
+      const candidates = selectHorseCandidates(
+        fleetPage.rows.map((h) => h.id),
+        busy,
+        allLanes,
+        new Date().getUTCHours()
+      );
 
       /**
        * ═══════════════════════════════════════════════════════════════════
@@ -3202,6 +3240,18 @@ export class TournamentRecurringService {
        * "never let it go empty while a board of spins fills": two horses is a
        * table that is visibly alive and can take a human as a third.
        */
+      // nodeCrypto, not Math.random: CryptoRandom.test.ts forbids Math.random
+      // anywhere in the engine services, and it is right to - a weak source
+      // that starts life shuffling a horse list is one refactor away from
+      // deciding a payout.
+      //
+      // V23: shuffle BEFORE the cash-room reserve trim. The trim used to cut
+      // the tail of the (stable, id-ordered) unshuffled list, so the same
+      // physical horses were held back for the cash room every single call.
+      for (let i = candidates.length - 1; i > 0; i--) {
+        const j = nodeCrypto.randomInt(i + 1);
+        [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+      }
       const reserved = await this.cashRoomReserve();
       const claimable = Math.max(0, candidates.length - reserved);
       if (claimable < count) {
@@ -3210,14 +3260,6 @@ export class TournamentRecurringService {
         );
       }
       candidates.length = Math.min(candidates.length, claimable);
-      // nodeCrypto, not Math.random: CryptoRandom.test.ts forbids Math.random
-      // anywhere in the engine services, and it is right to - a weak source
-      // that starts life shuffling a horse list is one refactor away from
-      // deciding a payout.
-      for (let i = candidates.length - 1; i > 0; i--) {
-        const j = nodeCrypto.randomInt(i + 1);
-        [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
-      }
       return candidates.slice(0, count);
     } catch {
       return [];
@@ -3922,14 +3964,40 @@ export class TournamentRecurringService {
        * filters the old sizing ignored: the lane hash alone excludes a third
        * of any page, the freeroll activity window up to 60%. Then rotate the
        * pick window by hour so the same horses are not always first in line.
+       *
+       * V23 (2026-08-30) — the headroom was still a PAGE, and a page with no
+       * ORDER BY is a stable arbitrary page: the same physical rows all day,
+       * drained by every caller, exactly the starvation pickFreeHorses had.
+       * The fleet is ~600 rows; read ALL of it keyset-paged (fetchAllRows,
+       * the HorseFleetManager.seedAllTables pattern) and filter in memory.
+       * The hourly rotation below still spreads who is first in line.
        */
-      const { data: horsePool } = await supabase
-        .from('profiles')
-        .select('id, display_name, username, use_real_name')
-        .eq('is_horse', true)
-        .eq('horse_status', 'available')
-        .limit(count * 4 + busyIds.size + 50);
-      const poolAll = horsePool ?? [];
+      const poolPage = await fetchAllRows<{
+        id: string;
+        display_name: string | null;
+        username: string | null;
+        use_real_name: boolean | null;
+      }>(
+        (cursor, want) => {
+          let q = supabase
+            .from('profiles')
+            .select('id, display_name, username, use_real_name')
+            .eq('is_horse', true)
+            .eq('horse_status', 'available')
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
+        { label: 'TournamentRecurring.registerHorses', maxRows: 50_000 }
+      );
+      // Fail closed: an incomplete fleet read is not an empty fleet, and
+      // registering from half a pool is how the same page gets drained.
+      if (!poolPage.complete) {
+        console.warn('[TournamentRecurring] registerHorses skipped: fleet read incomplete');
+        return 0;
+      }
+      const poolAll = poolPage.rows;
       let busyDropped = 0;
       let laneDropped = 0;
       const eligible = poolAll.filter((h) => {

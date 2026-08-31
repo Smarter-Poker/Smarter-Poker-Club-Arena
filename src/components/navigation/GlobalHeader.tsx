@@ -53,33 +53,27 @@ export default function GlobalHeader() {
   } = useHeaderDataStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isNavigatingAway, setIsNavigatingAway] = useState(false);
-  const [vipShimmerVisible, setVipShimmerVisible] = useState(false);
+  const [iconShimmerVisible, setIconShimmerVisible] = useState(false);
 
   /*
-   * VIP is intentionally quiet most of the time. Members get one short sheen
-   * after a genuinely random five-to-ten-second pause, then a new random pause
-   * is selected. Non-members never schedule the effect.
+   * The complete right-side icon bank gets one short sheen after a genuinely
+   * random fifteen-to-twenty-second pause, then a new pause is selected.
    */
   useEffect(() => {
-    if (!isVipActive) {
-      setVipShimmerVisible(false);
-      return;
-    }
-
     let pauseTimer: number | undefined;
     let shimmerTimer: number | undefined;
     let cancelled = false;
 
     const scheduleNextShimmer = () => {
-      const randomDelayMs = 5_000 + Math.floor(Math.random() * 5_001);
+      const randomDelayMs = 15_000 + Math.floor(Math.random() * 5_001);
       pauseTimer = window.setTimeout(() => {
         if (cancelled) return;
-        setVipShimmerVisible(true);
+        setIconShimmerVisible(true);
         shimmerTimer = window.setTimeout(() => {
           if (cancelled) return;
-          setVipShimmerVisible(false);
+          setIconShimmerVisible(false);
           scheduleNextShimmer();
-        }, 1_250);
+        }, 1_500);
       }, randomDelayMs);
     };
 
@@ -89,7 +83,7 @@ export default function GlobalHeader() {
       if (pauseTimer !== undefined) window.clearTimeout(pauseTimer);
       if (shimmerTimer !== undefined) window.clearTimeout(shimmerTimer);
     };
-  }, [isVipActive]);
+  }, []);
 
   /*
    * The off-route table action bar is fixed, so CSS cannot discover the
@@ -307,7 +301,10 @@ export default function GlobalHeader() {
           decoding="sync"
         />
 
-        <div className={styles.headerControls}>
+        <div
+          className={`${styles.headerControls} ${iconShimmerVisible ? styles.headerControlsShimmer : ''}`}
+          data-header-icons-shimmer={iconShimmerVisible ? 'active' : 'idle'}
+        >
           <div className={styles.headerLeft}>
             <button
               onClick={handleMenuToggle}
@@ -365,7 +362,7 @@ export default function GlobalHeader() {
             </button>
 
             <button
-              className={`${styles.artButton} ${styles.vipBtn} ${isVipActive ? styles.vipActive : ''} ${isVipActive && vipShimmerVisible ? styles.vipShimmer : ''}`}
+              className={`${styles.artButton} ${styles.vipBtn} ${isVipActive ? styles.vipActive : ''}`}
               onClick={() => navigateToHub('/hub/vip-membership')}
               aria-label={isVipActive ? 'VIP Membership Active' : 'VIP Membership'}
               title={isVipActive ? 'VIP Membership Active' : 'VIP Membership'}

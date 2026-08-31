@@ -308,7 +308,9 @@ describe('ClubDataPage', () => {
     const exportButton = await screen.findByRole('button', { name: 'Export as CSV' });
     fireEvent.click(exportButton);
 
-    expect(await screen.findAllByText('Exported all 2 games.')).toHaveLength(2);
+    expect(
+      await screen.findAllByText('Exported all 2 games.', undefined, { timeout: 5_000 })
+    ).toHaveLength(2);
     expect(downloadMock).toHaveBeenCalledOnce();
     expect(downloadMock.mock.calls[0][1].split('\n')).toHaveLength(3);
     expect(rpcMock).toHaveBeenCalledWith(

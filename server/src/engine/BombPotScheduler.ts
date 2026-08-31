@@ -37,6 +37,8 @@
  * exhaustively without an engine (BombPotScheduler.test.ts).
  */
 
+import { bettingStructureFor } from './BettingStructure.js';
+
 export type BombPotTriggerMode = 'every_n_hands' | 'once_per_orbit' | 'timed' | 'bomb_pot_only';
 
 export interface BombPotSchedulerSettings {
@@ -116,6 +118,28 @@ export function resolveBombPotVariant(
 ): string {
   const o = String(override ?? '').toLowerCase();
   if (!o || !BOMB_VARIANT_WHITELIST.has(o)) return tableVariant;
+  /* ── AN OVERRIDE NEVER CROSSES THE FIXED-LIMIT LINE ─────────────────────
+     2026-08-31 audit. ServerTableEngineDealing says it plainly where it applies
+     this result: "Everything downstream - evaluator, hole-card count, BETTING
+     STRUCTURE, horse equity, hand history - reads the HAND's variant". The
+     whitelist checked the variant NAME and nothing else.
+
+     Between NO-LIMIT and POT-LIMIT that is fine and deliberate: an NLH table
+     whose bombs are PLO4 double boards is the classic bomb pot and the sizing
+     rules stay recognisably the same. FIXED LIMIT is a different kind of game.
+     Its felt has no raise slider, every wager is a mandatory size, and a street
+     is capped at four wagers - so a `plo4` bomb on a Fixed Limit Hold'em table
+     handed every seated player one hand of pot-limit poker at a table they had
+     sat down at for limit. Nothing warned them and nothing in the hand history
+     explained it afterwards.
+
+     The line is crossed in both directions, so it is tested in both: a limit
+     table keeps its structure, and a no-limit table cannot be given a limit
+     bomb either. An override that would cross it is ignored exactly like an
+     unknown one - the bomb plays the table's own game. */
+  const tableIsLimit = bettingStructureFor(tableVariant) === 'fixed_limit';
+  const overrideIsLimit = bettingStructureFor(o) === 'fixed_limit';
+  if (tableIsLimit !== overrideIsLimit) return tableVariant;
   return o;
 }
 

@@ -79,7 +79,7 @@ Phase 1 certification:
 - Regressions for every case above are pinned in the roster resilience and
   membership warm-start suites.
 
-Final merged-tree verification: 23 focused tests, 9,883 complete client tests
+Final merged-tree verification: 23 focused tests, 9,888 complete client tests
 across 689 files, 3,002 complete server tests across 265 files, client and
 server TypeScript builds, changed-file lint, and the production bundle all
 passed. The production build generated a 21.14 kB Player Command route chunk

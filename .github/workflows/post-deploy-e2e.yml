@@ -276,38 +276,67 @@ jobs:
           # Do NOT let the first invocation abort the second. Under `set -e` a
           # red Stats run stopped the sweep before a single route spec loaded,
           # which is the same "one failure hides the rest" fault that `always()`
-          # above fixes at the step level. Record both verdicts, report both,
-          # and fail at the end if either failed.
+          # above fixes at the step level. Record every verdict, report them all,
+          # and fail at the end if any of them failed.
           set +e
           rc=0
 
+          # run_suite <json-name> <spec path...>
+          #
+          # Two jobs, both of which used to be done inline and wrongly.
+          #
+          # 1. A spec added AFTER the deployed commit is absent once the step
+          #    above takes the specs from $LIVE_SHA. Playwright errors on a named
+          #    path that does not exist, before running anything - turning a
+          #    normal deploy lag back into the false red this job just stopped
+          #    producing. So run what is present and warn about what is not.
+          #
+          # 2. If nothing is present, WRITE DOWN WHY. A missing report is read by
+          #    the honesty check below as "it did not run", which is exactly
+          #    right for a silent hole and exactly wrong for a stated absence.
+          #
+          # Each spec path is passed as an argument and therefore appears in this
+          # file exactly once - tests/stats-experience-contract.test.ts requires
+          # that of stats-deep.spec.ts, and it is a good rule: a path repeated
+          # across a guard and its invocation is a path that can be updated in
+          # one place and not the other.
+          run_suite () {
+            json="$1"; shift
+            specs=""
+            flags=""
+            for a in "$@"; do
+              case "$a" in
+                -*) flags="$flags $a" ;;
+                *)
+                  if [ -e "$a" ]; then
+                    specs="$specs $a"
+                  else
+                    echo "::warning::$a is not present at the deployed commit - not run"
+                  fi
+                  ;;
+              esac
+            done
+            mkdir -p e2e-report
+            if [ -z "$specs" ]; then
+              printf '{"notRunReason":"no spec in this group exists at the deployed commit %s"}\n' \
+                "$LIVE_SHA" > "e2e-report/$json"
+              return 0
+            fi
+            echo "running:$specs"
+            PLAYWRIGHT_JSON_OUTPUT_NAME="e2e-report/$json" npx playwright test $specs $flags
+          }
+
           # Certify Stats first among the broader route checks. Cashier has its
           # own preceding release gate so this suite cannot hide its verdict.
-          stats_rc=0
-          if [ -e tests/e2e/stats-deep.spec.ts ]; then
-            PLAYWRIGHT_JSON_OUTPUT_NAME=e2e-report/stats.json \
-            npx playwright test \
-              tests/e2e/stats-deep.spec.ts \
-              --project=chromium --reporter=line,json --retries=1
-            stats_rc=$?; [ $stats_rc -ne 0 ] && rc=$stats_rc
-          else
-            # Record WHY there is no report, rather than leaving a hole the
-            # honesty check would read either as "it did not run" (a false red)
-            # or, worse, as nothing at all.
-            echo "::warning::tests/e2e/stats-deep.spec.ts is not present at the deployed commit"
-            mkdir -p e2e-report
-            printf '{"notRunReason":"tests/e2e/stats-deep.spec.ts does not exist at the deployed commit %s"}\n' "$LIVE_SHA" > e2e-report/stats.json
-          fi
+          run_suite stats.json tests/e2e/stats-deep.spec.ts --project=chromium --reporter=line,json --retries=1
+          stats_rc=$?; [ $stats_rc -ne 0 ] && rc=$stats_rc
 
-          # A spec added after the deployed commit is absent once the step
-          # above takes the specs from $LIVE. Playwright errors on a named path
-          # that does not exist, before running anything - turning a normal
-          # deploy lag back into the false red this job just stopped producing.
-          # Keep only what is present; the honesty check below still reports
-          # every file that ran and every file that verified nothing.
-          SWEEP=""
-          ABSENT=""
-          for f in \
+          # tests/e2e/routes/ (nine files) is named as a DIRECTORY on purpose.
+          # The first sweep that wired the orphans missed it entirely by globbing
+          # only tests/e2e/*.spec.ts, so nine route suites stayed invisible one
+          # level down - the same class of miss as the specs this job exists for.
+          # A directory cannot go stale when a tenth file is added beside them.
+          run_suite sweep.json \
             tests/e2e/smoke.spec.ts \
             tests/e2e/mobile-fit-audit.spec.ts \
             tests/e2e/mobile-tap-targets.spec.ts \
@@ -321,21 +350,8 @@ jobs:
             tests/e2e/production-customization-commerce.spec.ts \
             tests/e2e/footer-route.spec.ts \
             tests/e2e/routes \
-          ; do
-            if [ -e "$f" ]; then SWEEP="$SWEEP $f"; else ABSENT="$ABSENT $f"; echo "::warning::$f is not present at the deployed commit - skipping it"; fi
-          done
-          echo "sweeping:$SWEEP"
-          [ -n "$ABSENT" ] && echo "absent at deployed commit:$ABSENT" >> $GITHUB_STEP_SUMMARY
-
-          sweep_rc=0
-          if [ -n "$SWEEP" ]; then
-            PLAYWRIGHT_JSON_OUTPUT_NAME=e2e-report/sweep.json \
-            npx playwright test $SWEEP --reporter=line,json --retries=1
-            sweep_rc=$?; [ $sweep_rc -ne 0 ] && rc=$sweep_rc
-          else
-            mkdir -p e2e-report
-            printf '{"notRunReason":"none of the swept spec files exist at the deployed commit"}\n' > e2e-report/sweep.json
-          fi
+            --reporter=line,json --retries=1
+          sweep_rc=$?; [ $sweep_rc -ne 0 ] && rc=$sweep_rc
 
           echo "stats exit=$stats_rc  sweep exit=$sweep_rc"
           exit $rc

@@ -64,10 +64,33 @@ describe('the five recovered call sites guard on null', () => {
     expect(src).toMatch(/if \(r\.balance !== null\)[\s\S]{0,120}updateTotalChips/);
   });
 
+  /**
+   * MOVED, NOT DROPPED (phase 3 of 7, 2026-08-31).
+   *
+   * This pin used to require ChipTransferModal to call
+   * WalletService.readPlayerBalance and null-guard the result. The modal no
+   * longer calls it, because reading the GLOBAL player wallet was itself the
+   * larger bug: that is not the account either of its sends debits. It now
+   * reads clubs.chip_treasury for a bank role and agents.agent_wallet_balance
+   * for an agent, which is the account that actually moves.
+   *
+   * The RULE this pin exists for is unchanged and still enforced here: an
+   * unreadable balance must stay UNKNOWN and must never harden into a zero
+   * that refuses a send the server would have allowed. The mechanism is now a
+   * `number | null` that only the error-free branch writes, and a guard that
+   * refuses only on a number it actually has.
+   */
   it('an agent is never told they have nothing to send', () => {
     const src = code(read('src/components/agent/ChipTransferModal.tsx'));
-    expect(src).toMatch(/readPlayerBalance\(/);
-    expect(src).toMatch(/if \(r\.balance !== null\) setSenderBalance\(r\.balance\)/);
+    // Unknown is representable, and is where it starts.
+    expect(src).toMatch(/useState<number \| null>\(null\)/);
+    // Only a read that did NOT error may write a number.
+    expect(src).toMatch(/if \(!bankErr\) setSenderBalance\(/);
+    expect(src).toMatch(/if \(!floatErr\) setSenderBalance\(/);
+    // And the send guard refuses only on a number it has.
+    expect(src).toMatch(/senderBalance !== null && transferAmount > senderBalance/);
+    // The global wallet is not consulted for a club-scoped send any more.
+    expect(src).not.toMatch(/readPlayerBalance\(/);
   });
 
   it('the table balance is not zeroed by a failed buy-in or resync read', () => {

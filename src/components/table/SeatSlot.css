@@ -2961,14 +2961,14 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   CRAZY PINEAPPLE DISCARD — ONE CARD TO THE MUCK (PHASE 3, 2026-08-31)
+   CRAZY PINEAPPLE DISCARD - ONE CARD TO THE MUCK (PHASE 3, 2026-08-31)
    ═══════════════════════════════════════════════════════════════════════════════
    Until today a discard drew NOTHING. The engine emitted the action, the
    client had no arm for it, and a horse's deliberate 1.2s-5.2s humanlike
    delay (the delay that exists so a horse cannot be told from a human) played
    as a dead pause followed by a jump.
 
-   Built on the fold's shape on purpose — same easing, same --fold-to-x/y
+   Built on the fold's shape on purpose - same easing, same --fold-to-x/y
    heading (the table centre, set per seat by TablePage), same
    `calc(... * var(--animation-speed, 1))` scaling that CLAUDE.md §10.6 makes
    the ONLY sanctioned control over an animation. What separates it from a
@@ -2976,7 +2976,7 @@
 
      - ONE card, not the hand. `cardFoldOut` is applied to `.seat__card`, i.e.
        every card in the row; this is applied ONLY to the single element
-       SeatSlot marks `.seat__card--discarding`, and that element is a ghost —
+       SeatSlot marks `.seat__card--discarding`, and that element is a ghost -
        the hand it left has already dropped it.
      - It is DISCARDED, not mucked. The card is flicked out on a flatter arc
        and keeps more of its brightness on the way, because the hand it came
@@ -2992,7 +2992,7 @@
    card left the hand is carried by the final frame and by a row that is one
    card shorter, and reducedMotion.css collapses to 1ms rather than
    `animation: none` precisely so a `forwards` animation still lands on it.
-   Motion collapses; the meaning survives. And there is no toggle — §10.6
+   Motion collapses; the meaning survives. And there is no toggle - §10.6
    allows exactly one control over this and it is --animation-speed.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
@@ -3010,7 +3010,7 @@
     transform: translate(0, 0) rotate(var(--card-rotation, 0deg)) scale(1);
     filter: brightness(1) blur(0);
   }
-  /* The pick-up. Shorter and higher than the fold's — this is a flick from
+  /* The pick-up. Shorter and higher than the fold's - this is a flick from
      the hand, not a hand being pushed away. */
   18% {
     opacity: 1;

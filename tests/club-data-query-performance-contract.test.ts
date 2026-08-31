@@ -155,10 +155,10 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
     expect(page).toMatch(/retryFetch\([\s\S]*maxRetries,[\s\S]*baseDelayMs/);
     expect(page).toMatch(/coldRead\([\s\S]*'Club data request timed out'/);
     expect(page).toMatch(/coldRead\([\s\S]*'Player data request timed out'/);
-    expect(page).toContain("p_limit: gameSort === 'recent' ? GAME_PAGE_SIZE * 2 : 1");
+    expect(page).toContain("p_limit: gameSort === 'recent' ? GAME_PAGE_SIZE : 1");
     expect(page).toContain('p_limit: GAME_PAGE_SIZE * 2');
     expect(page).toContain('prefetchedGamePageRef.current');
-    expect(page).toMatch(/gameSort === 'recent'[\s\S]{0,80}\? recentCursor\(sourceRows\)/);
+    expect(page).toMatch(/gameSort === 'recent'[\s\S]{0,80}\? recentCursor\(rows\)/);
     expect(page).toMatch(/setPlayersLoading\(true\);\s*setPlayersError\(null\);/);
   });
 

@@ -309,7 +309,7 @@ export default function ClubSettingsPage() {
       // Leaving the origin is already covered by the beforeunload handler.
       if (dest.origin !== window.location.origin) return;
       if (dest.pathname === window.location.pathname) return; // same page
-      if (!window.confirm('You have unsaved settings changes. Leave this page and discard them?')) {
+      if (!window.confirm('You Have Unsaved Settings Changes. Leave This Page And Discard Them?')) {
         e.preventDefault();
         e.stopPropagation();
       }

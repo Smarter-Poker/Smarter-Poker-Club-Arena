@@ -72,6 +72,8 @@ describe('daily challenge dashboard contract', () => {
 
   it('wires the page to one dashboard receipt and the persistent vault', () => {
     expect(service).toContain("supabase.rpc('get_daily_challenge_dashboard'");
+    expect(service).toContain('retryFetch(');
+    expect(service).toContain('{ maxRetries: 2, baseDelayMs: 250 }');
     expect(page).toContain('dailyChallengeService.getDashboard(uid)');
     expect(page).not.toContain('dailyChallengeService.getAllChallenges(uid)');
     expect(page).not.toContain('dailyChallengeService.getStats(uid)');

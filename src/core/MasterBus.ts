@@ -64,6 +64,7 @@ export type BusEventType =
   | 'NOTIFICATION_READ'
   | 'WAITLIST_POSITION_CHANGED'
   | 'WAITLIST_CHANGED'
+  | 'WAITLIST_SEAT_OFFERED'
   | 'SESSION_SUMMARY_DISMISSED'
   | 'ACHIEVEMENT_UNLOCKED'
   | 'MISSION_PROGRESS'
@@ -433,6 +434,14 @@ export interface BusPayloadMap {
   HORSE_BUG_REPORT: Record<string, unknown>;
   NOTIFICATION_READ: { notifId: string | null; allRead: boolean };
   WAITLIST_POSITION_CHANGED: { tableId: string; position: number; tableName: string };
+  /**
+   * An EXCLUSIVE seat hold has just been granted to this player (Dan
+   * 2026-08-30: sixty seconds to get to the seat). `holdExpiresAt` is an ISO
+   * instant, not a duration, so a component that mounts late - or a tab that
+   * was in the background - shows the true remaining time rather than
+   * restarting the clock at sixty.
+   */
+  WAITLIST_SEAT_OFFERED: { tableId: string; tableName: string; holdExpiresAt: string | null };
   WAITLIST_CHANGED: void;
   SESSION_SUMMARY_DISMISSED: { tableId: string };
   ACHIEVEMENT_UNLOCKED: {

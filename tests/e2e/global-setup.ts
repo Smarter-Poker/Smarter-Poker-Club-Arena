@@ -85,6 +85,24 @@ function assertWelcomeKeyStillCurrent() {
  * a success that verified nothing.
  */
 function signedOut(reason: string) {
+  /**
+   * A CREDENTIAL THAT WAS SUPPLIED AND DID NOT WORK IS NOT THE SAME AS NO
+   * CREDENTIAL, AND UNTIL NOW BOTH LOOKED IDENTICAL.
+   *
+   * ci.yml's scheduled `Live Production E2E` deliberately tolerates missing
+   * secrets so a repo that never set them does not go red. Correct. But it
+   * treated a BROKEN login the same way: 47 route specs would quietly skip and
+   * the job would report success, which is the Phase 6 failure wearing a
+   * different hat. That job does not want a hard failure, so it gets the next
+   * best thing - an annotation on the run itself, where somebody sees it,
+   * rather than one line buried in a log nobody opens.
+   */
+  if (process.env.SP_EMAIL && process.env.SP_PASS) {
+    console.log(
+      `::error title=E2E ran signed out despite having credentials::${reason}. ` +
+        'The auth-gated specs skipped, so this run verified far less than it appears to.'
+    );
+  }
   if (process.env.E2E_REQUIRE_AUTH === '1') {
     throw new Error(
       `[global-setup] ${reason} — and E2E_REQUIRE_AUTH=1, so this run cannot ` +

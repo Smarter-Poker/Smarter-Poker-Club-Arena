@@ -149,7 +149,9 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
       // player has rows in more than one club (the original cause of the empty
       // stats page) — and it selected none of the advanced columns this panel
       // exists to show, so the standalone render was six zeroed cards.
-      const { data, error } = await supabase.rpc('ca_player_stats_full', { p_user: uid });
+      const { data, error } = await supabase.rpc('ca_player_stats_overview_v2', {
+        p_user: uid,
+      });
 
       if (!mountedRef.current) return;
 

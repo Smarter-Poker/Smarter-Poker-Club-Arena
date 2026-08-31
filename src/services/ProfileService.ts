@@ -7,7 +7,6 @@
 
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
-import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -264,11 +263,13 @@ class ProfileServiceClass {
     // populate. So every player's profile showed 0 hands / 0% win rate /
     // 0 biggest win, regardless of how much they had actually played.
     //
-    // ca_player_stats_full is the canonical server-side stats RPC (the same one
+    // ca_player_stats_overview_v2 is the owner-only server-side stats RPC (the same one
     // the rebuilt player-stats page uses). It derives real hands_won,
     // total_profit and biggest_pot_won from hand history, so every figure below
     // is measured rather than inferred from an empty table.
-    const { data, error } = await supabase.rpc('ca_player_stats_full', { p_user: userId });
+    const { data, error } = await supabase.rpc('ca_player_stats_overview_v2', {
+      p_user: userId,
+    });
 
     if (error) {
       reportError(error, 'ProfileService.getStats');

@@ -1,21 +1,6 @@
 {
   "_comment": "Live public schema COLUMN snapshot {table: [columns]}. Source of truth for the phantom-column CI gate. Do NOT hand-edit.",
   "columns": {
-    "_audit_horse_avatar_restore_20260815": [
-      "id",
-      "username",
-      "clobbered_avatar_url",
-      "restored_avatar_url",
-      "captured_at"
-    ],
-    "_audit_phase40_results": [
-      "id",
-      "vector",
-      "outcome",
-      "sqlstate",
-      "message",
-      "created_at"
-    ],
     "_pps_backfill_state": [
       "id",
       "last_created",
@@ -487,12 +472,6 @@
       "enabled",
       "notes",
       "updated_at"
-    ],
-    "avatar_photo_migration_backup": [
-      "user_id",
-      "old_avatar_url",
-      "new_avatar_url",
-      "migrated_at"
     ],
     "avatar_shop_aliases": [
       "alias",
@@ -1118,6 +1097,19 @@
       "opponent_ids",
       "four_bet"
     ],
+    "ca_hand_financial_facts": [
+      "hand_id",
+      "table_id",
+      "tournament_id",
+      "hand_number",
+      "big_blind",
+      "pot_size",
+      "rake_amount",
+      "bbj_amount",
+      "winners",
+      "hand_created_at",
+      "captured_at"
+    ],
     "ca_hand_player_idx": [
       "user_id",
       "created_at",
@@ -1203,6 +1195,15 @@
       "backing",
       "must_be_zero",
       "notes"
+    ],
+    "ca_ledger_day_manifests": [
+      "day",
+      "row_count",
+      "first_seq",
+      "last_seq",
+      "net_amount",
+      "sha256",
+      "created_at"
     ],
     "ca_ledger_mutation_log": [
       "id",
@@ -1862,14 +1863,6 @@
       "updated_at",
       "hands_attributed"
     ],
-    "club_member_daily_stats_profit_backup_20260826": [
-      "club_id",
-      "table_id",
-      "user_id",
-      "stat_date",
-      "profit",
-      "backed_up_at"
-    ],
     "club_member_table_state": [
       "table_id",
       "user_id",
@@ -2281,12 +2274,6 @@
       "error_message",
       "created_at"
     ],
-    "commander_blind_structure_backup_20260822": [
-      "tournament_id",
-      "tournament_name",
-      "blind_structure",
-      "backed_up_at"
-    ],
     "commander_buyin_transactions": [
       "id",
       "session_id",
@@ -2573,17 +2560,6 @@
       "completed_at",
       "expires_at",
       "created_at"
-    ],
-    "commander_finish_position_backup_20260820": [
-      "id",
-      "tournament_id",
-      "player_name",
-      "finish_position",
-      "payout_amount",
-      "payout_position",
-      "status",
-      "eliminated_at",
-      "backed_up_at"
     ],
     "commander_floor_calls": [
       "id",
@@ -5536,12 +5512,6 @@
       "metric_value",
       "details",
       "recorded_at"
-    ],
-    "horse_avatar_swap_backup": [
-      "user_id",
-      "old_avatar_url",
-      "new_avatar_url",
-      "swapped_at"
     ],
     "horse_brain_telemetry": [
       "day",
@@ -9237,11 +9207,6 @@
       "metadata_location",
       "topics"
     ],
-    "social_posts_thumbnail_backup_20260815": [
-      "post_id",
-      "old_thumbnail_url",
-      "backed_up_at"
-    ],
     "social_reels": [
       "id",
       "author_id",
@@ -10271,7 +10236,8 @@
       "field_size",
       "prize_pool",
       "payout_structure",
-      "recorded_by"
+      "recorded_by",
+      "metadata"
     ],
     "tournament_place_collisions": [
       "id",
@@ -12900,13 +12866,6 @@
       "color",
       "created_at"
     ],
-    "vip_backfill_20260812_backup": [
-      "user_id",
-      "prev_is_vip",
-      "prev_vip_tier",
-      "prev_vip_expires_at",
-      "backed_up_at"
-    ],
     "vip_diamond_purchase_requests": [
       "reference_id",
       "user_id",
@@ -13075,13 +13034,6 @@
       "created_at",
       "balance_after"
     ],
-    "wallet_transactions_phantom_archive": [
-      "id",
-      "archived_at",
-      "reason",
-      "kept_row_id",
-      "row"
-    ],
     "wallets": [
       "id",
       "user_id",
@@ -13109,27 +13061,6 @@
       "first_seen_at",
       "last_seen_at",
       "resolved"
-    ],
-    "zz_reopen2_20260830_backup": [
-      "table_id",
-      "tournament_id",
-      "old_status",
-      "open_seats",
-      "captured_at"
-    ],
-    "zz_reopen3_20260830_backup": [
-      "table_id",
-      "tournament_id",
-      "old_status",
-      "open_seats",
-      "captured_at"
-    ],
-    "zz_reopen_20260830_backup": [
-      "table_id",
-      "tournament_id",
-      "old_status",
-      "open_seats",
-      "captured_at"
     ]
   }
 }

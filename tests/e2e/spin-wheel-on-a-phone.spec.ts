@@ -128,6 +128,37 @@ async function mountWheelResult(page: Page, multiplier = 25, prize = 250): Promi
   );
 }
 
+/**
+ * Let every entrance animation finish before measuring.
+ *
+ * WITHOUT THIS THE SUITE IS FLAKY, and it was: the first CI run failed on
+ * `.sw__hub-mult` being invisible and passed on retry. The wheel's parts
+ * animate IN from opacity 0, so sampling opacity at an arbitrary instant
+ * measures how far the animation happens to have travelled on that runner,
+ * not whether the element is ever painted. The reduced-motion variant passed
+ * on the same run precisely because `animation:none` settles it immediately —
+ * which is what identified the cause.
+ *
+ * Waiting on the real Animation objects (rather than sleeping a guessed
+ * number of ms, which is the same magic-number trap the repo bans for source
+ * windows) asserts the END STATE deterministically: if the multiplier is
+ * still transparent once its own animation has finished, it is genuinely
+ * invisible and that is a real bug worth failing on.
+ */
+async function settle(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const anims = document.getAnimations();
+    await Promise.all(
+      anims.map((a) =>
+        // A paused or infinite animation would hang the wait; finished is a
+        // promise that only such an animation never resolves, so race it.
+        Promise.race([a.finished.catch(() => undefined), new Promise((r) => setTimeout(r, 4000))])
+      )
+    );
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+  });
+}
+
 /** Is this element painted, and wholly inside the viewport? */
 async function paintedInside(page: Page, selector: string) {
   return page.evaluate((sel) => {
@@ -154,6 +185,7 @@ test.describe('LIVE E2E — the spin wheel on a 375px phone', () => {
     const page = await ctx.newPage();
     await loadLiveCss(page);
     await mountWheelResult(page);
+    await settle(page);
 
     // The disc itself. A wheel that renders at zero size, or half off the
     // side of a phone, is the "animation never plays" complaint in its most
@@ -190,6 +222,7 @@ test.describe('LIVE E2E — the spin wheel on a 375px phone', () => {
     const page = await ctx.newPage();
     await loadLiveCss(page);
     await mountWheelResult(page);
+    await settle(page);
 
     const dim = await page.evaluate(() => {
       const el = document.querySelector('.sw__dim');
@@ -295,6 +328,7 @@ test.describe('LIVE E2E — the wheel under reduced motion', () => {
     const page = await ctx.newPage();
     await loadLiveCss(page);
     await mountWheelResult(page, 25, 250);
+    await settle(page);
 
     const prize = await paintedInside(page, '.sw__prize');
     expect(prize.found, 'the prize must still be rendered under reduced motion').toBe(true);

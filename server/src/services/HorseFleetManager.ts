@@ -905,6 +905,34 @@ export class HorseFleetManager {
         (a, b) => Number(humanShort(b)) - Number(humanShort(a))
       );
 
+      /* ── A HORSE ANSWERS A SEAT CALL ────────────────────────────────────
+         Dan 2026-08-31, binding: "MAKE HORSES ANSWER A SEAT CALL... THEY
+         SHOULD NEVER BE SKIPPED."
+
+         Before this, fn_offer_open_seat selected the head of the queue with
+         `AND NOT COALESCE(p.is_horse,false)`, so a horse could hold a place in
+         line forever and never be offered the seat: 10,004 of 10,055 waitlist
+         rows are horses, 301 of them in the last 24 hours, and not one was
+         ever offered. The rule is the same one the RIT offer already learned
+         (scheduleHorseRITResponses, 2026-08-18: "horses never answered
+         rit_offer, so ANY horse in the all-in set let the offer expire") —
+         the answer is to make the horse respond, never to skip it.
+
+         BEFORE the seeding loop, deliberately. The hold only stops further
+         OFFERS (fn_offer_open_seat counts holds against max_players); it does
+         not stop this manager seeding a different horse into that very seat.
+         Claiming first is what makes the hold mean something. */
+      const claimed = await this.claimOfferedSeats(
+        tables,
+        allActiveSeats,
+        bankrolls,
+        bankrollsLoaded,
+        horseIdSet
+      );
+      if (claimed > 0) {
+        console.log(`[HorseFleet] ${claimed} horse(s) answered a seat call`);
+      }
+
       for (const table of orderedTables) {
         try {
           // A draining table gets no new horses. Without this the surplus can
@@ -1085,49 +1113,11 @@ export class HorseFleetManager {
           for (let i = 0; i < selectedHorses.length; i++) {
             const horse = selectedHorses[i];
             const seatNumber = emptySeats[i];
-            // V8 BUY-IN VARIANCE: per-horse profile (short/standard/deep)
-            // with per-sitting jitter, clamped to the table's real min/max.
-            const minB = Number((table as any).min_buy_in) || table.big_blind * 40;
-            const maxB = Number((table as any).max_buy_in) || table.big_blind * 200;
-            // V9: humans buy in for ROUND numbers ($100, $150, $240 — never
-            // $227.40). Snap the profiled amount to the nearest 5bb step,
-            // then clamp to the table's real limits.
-            const step = table.big_blind * 5;
-            const raw = table.big_blind * buyInBBFor(horse.id);
-            let buyIn =
-              Math.round(Math.max(minB, Math.min(maxB, Math.round(raw / step) * step)) * 100) / 100;
-
-            /**
-             * NEVER BRING TOO MUCH OF THE ROLL TO ONE TABLE. The table's max
-             * buy-in is what the GAME allows, not what this bankroll should
-             * put at risk in a single seat — a 400 max is not an instruction
-             * to a horse with 3,000 to its name. bankrollBuyIn caps the
-             * profiled amount at the policy's share of the roll and re-clamps
-             * to the table's own limits.
-             *
-             * Zero means the share cannot even reach the table minimum, so
-             * this is not a game for this bankroll: skip the seat rather than
-             * buy in short. The candidate gate above should already have
-             * excluded it; this is the belt to that braces.
-             */
-            if (bankrollsLoaded) {
-              const roll = bankrolls.get(`${table.club_id}:${horse.id}`) ?? 0;
-              const capped = bankrollBuyIn({
-                bankroll: roll,
-                desired: buyIn,
-                minBuyIn: minB,
-                maxBuyIn: maxB,
-                policy: bankrollPolicyFor(horse.id),
-              });
-              if (capped <= 0) {
-                bankrollEvent('seat_refused_share_below_min');
-                continue;
-              }
-              if (capped < buyIn) bankrollEvent('buyin_capped');
-              // keep the human-looking 5bb rounding after the cap
-              const snapped = Math.round(capped / step) * step;
-              buyIn = Math.round(Math.max(minB, Math.min(capped, snapped)) * 100) / 100;
-            }
+            // V8 BUY-IN VARIANCE, in ONE place. Shared with claimOfferedSeats,
+            // so a horse answering a seat call brings exactly what it would
+            // have brought to a seat it was seeded into. See computeHorseBuyIn.
+            const buyIn = this.computeHorseBuyIn(table, horse.id, bankrolls, bankrollsLoaded);
+            if (buyIn <= 0) continue;
 
             /**
              * THE AGGREGATE CEILING, and the reason it is a separate check.
@@ -1444,6 +1434,157 @@ export class HorseFleetManager {
   // ─────────────────────────────────────────────────────────────────────
   // SEAT A SINGLE HORSE
   // ─────────────────────────────────────────────────────────────────────
+
+  /**
+   * WHAT THIS HORSE BRINGS TO A SEAT — one definition, two callers.
+   *
+   * Extracted 2026-08-31 when horses began answering seat offers. The seeding
+   * loop and claimOfferedSeats must size a buy-in identically; two copies of
+   * this arithmetic is exactly the shape of bug this codebase keeps paying
+   * for (see src/lib/cashBuyIn.ts, written because four layers disagreed
+   * about one number).
+   *
+   * Returns 0 when the bankroll's share cannot reach the table minimum, which
+   * the caller must read as "not this game for this horse" — never as free.
+   */
+  /**
+   * SIT DOWN WHEN THE SEAT IS CALLED.
+   *
+   * A `notified` waitlist row is a seat being HELD for that player for 60
+   * seconds. A human clicks; a horse has no client, so this is its hand on the
+   * chair. The seeding cycle runs every 30 seconds, so a horse always gets at
+   * least one look at an offer inside the hold.
+   *
+   * An expired hold is left alone rather than claimed late: the row belongs to
+   * fn_offer_open_seat's own sweep, which expires it and passes the seat to
+   * the next player in line. Taking it here would let a horse jump a queue it
+   * had already timed out of.
+   *
+   * Best-effort, like everything else in this manager: a seat call that cannot
+   * be answered must never be the reason a seeding cycle fails.
+   */
+  private async claimOfferedSeats(
+    tables: any[],
+    allActiveSeats: Array<{ user_id: string; table_id: string; seat_number: number }>,
+    bankrolls: Map<string, number>,
+    bankrollsLoaded: boolean,
+    horseIdSet: Set<string>
+  ): Promise<number> {
+    let claimed = 0;
+    try {
+      const tableById = new Map<string, any>(tables.map((t: any) => [t.id as string, t]));
+
+      const { data: offers, error } = await supabase
+        .from('table_waitlist')
+        .select('id, table_id, user_id, notified_at, hold_expires_at')
+        .eq('status', 'notified');
+      if (error) throw new Error(error.message);
+
+      const mine = (offers ?? []).filter(
+        (o: any) => horseIdSet.has(o.user_id) && tableById.has(o.table_id)
+      );
+      if (mine.length === 0) return 0;
+
+      // Seats already occupied, so two offers at one table cannot both take
+      // seat 1 in the same cycle.
+      const taken = new Map<string, Set<number>>();
+      for (const s of allActiveSeats) {
+        if (!taken.has(s.table_id)) taken.set(s.table_id, new Set<number>());
+        taken.get(s.table_id)!.add(Number(s.seat_number));
+      }
+
+      for (const offer of mine as any[]) {
+        const table = tableById.get(offer.table_id);
+        if (!table || table.tournament_id) continue;
+
+        const expiresAt = offer.hold_expires_at
+          ? Date.parse(offer.hold_expires_at)
+          : offer.notified_at
+            ? Date.parse(offer.notified_at) + 60_000
+            : NaN;
+        if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) continue;
+
+        const used = taken.get(table.id) ?? new Set<number>();
+        const maxSeats = Number(table.max_players) || 9;
+        let seatNumber = -1;
+        for (let s = 1; s <= maxSeats; s++) {
+          if (!used.has(s)) {
+            seatNumber = s;
+            break;
+          }
+        }
+        if (seatNumber < 0) continue;
+
+        const buyIn = this.computeHorseBuyIn(table, offer.user_id, bankrolls, bankrollsLoaded);
+        if (buyIn <= 0) continue;
+
+        const ok = await this.seatHorse(
+          table.id,
+          offer.user_id,
+          seatNumber,
+          buyIn,
+          table.name,
+          table.club_id
+        );
+        if (!ok) continue;
+
+        used.add(seatNumber);
+        taken.set(table.id, used);
+        claimed++;
+
+        // The seat is taken; the row must say so, or ensureWaitlist counts it
+        // as still holding and pruneHorseWaitlist keeps it out of the queue.
+        const { error: updErr } = await supabase
+          .from('table_waitlist')
+          .update({ status: 'seated' })
+          .eq('id', offer.id);
+        if (updErr) {
+          reportError(new Error(updErr.message), 'HorseFleet.claimOfferedSeats_mark_seated');
+        }
+      }
+    } catch (err) {
+      reportError(err, 'HorseFleet.claimOfferedSeats');
+    }
+    return claimed;
+  }
+
+  private computeHorseBuyIn(
+    table: any,
+    horseId: string,
+    bankrolls: Map<string, number>,
+    bankrollsLoaded: boolean
+  ): number {
+    const minB = Number(table.min_buy_in) || table.big_blind * 40;
+    const maxB = Number(table.max_buy_in) || table.big_blind * 200;
+    // V9: humans buy in for ROUND numbers, never 227.40. Snap to a 5bb step,
+    // then clamp to the table's real limits.
+    const step = table.big_blind * 5;
+    const raw = table.big_blind * buyInBBFor(horseId);
+    let buyIn = Math.round(Math.max(minB, Math.min(maxB, Math.round(raw / step) * step)) * 100) / 100;
+
+    /* NEVER BRING TOO MUCH OF THE ROLL TO ONE TABLE. The table's max buy-in is
+       what the GAME allows, not what this bankroll should put at risk in a
+       single seat - a 400 max is not an instruction to a horse with 3,000 to
+       its name. */
+    if (bankrollsLoaded) {
+      const roll = bankrolls.get(`${table.club_id}:${horseId}`) ?? 0;
+      const capped = bankrollBuyIn({
+        bankroll: roll,
+        desired: buyIn,
+        minBuyIn: minB,
+        maxBuyIn: maxB,
+        policy: bankrollPolicyFor(horseId),
+      });
+      if (capped <= 0) {
+        bankrollEvent('seat_refused_share_below_min');
+        return 0;
+      }
+      if (capped < buyIn) bankrollEvent('buyin_capped');
+      const snapped = Math.round(capped / step) * step;
+      buyIn = Math.round(Math.max(minB, Math.min(capped, snapped)) * 100) / 100;
+    }
+    return buyIn;
+  }
 
   private async seatHorse(
     tableId: string,

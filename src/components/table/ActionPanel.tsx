@@ -1119,7 +1119,7 @@ export default function ActionPanel({
         value={raiseAmount}
         onChange={handleSliderChange}
         style={{ '--slider-progress': `${sliderProgress}%` } as React.CSSProperties}
-        aria-label={`${wagerVerb} amount`}
+        aria-label={`${wagerVerb} Amount`}
         aria-valuemin={minRaise}
         aria-valuemax={maxRaise}
         aria-valuenow={raiseAmount}
@@ -1167,17 +1167,17 @@ export default function ActionPanel({
                       cancelAmountEdit();
                     }
                   }}
-                  aria-label={`Type exact bet amount, between ${formatChips(
+                  aria-label={`Type Exact Bet Amount, Between ${formatChips(
                     minRaise
-                  )} and ${formatChips(maxRaise)}`}
+                  )} And ${formatChips(maxRaise)}`}
                 />
               ) : (
                 <button
                   type="button"
                   className="raise-value__amount"
                   onClick={beginEditAmount}
-                  aria-label={`Edit bet amount ${formatChips(raiseAmount)} - opens numeric keyboard`}
-                  title="Tap to type exact amount"
+                  aria-label={`Edit Bet Amount ${formatChips(raiseAmount)} - Opens Numeric Keyboard`}
+                  title="Tap To Type Exact Amount"
                 >
                   {formatChips(raiseAmount)}
                 </button>
@@ -1219,7 +1219,7 @@ export default function ActionPanel({
                        into. Over-stack now snaps to all-in, per spec 5.2. */
                   disabled={minRaise > maxRaise}
                   title={`${wagerVerb} ${formatChips(p.value)}`}
-                  aria-label={`${p.label} - ${wagerVerb.toLowerCase()} ${formatChips(p.value)}`}
+                  aria-label={`${p.label} - ${wagerVerb} ${formatChips(p.value)}`}
                 >
                   {p.label}
                 </button>
@@ -1231,8 +1231,8 @@ export default function ActionPanel({
                 // server would reject it, but a button that produces an
                 // error toast is a broken button.
                 disabled={!canAllIn}
-                title={`All in for ${formatChips(allInThreshold)}`}
-                aria-label={`Bet all in for ${formatChips(allInThreshold)}`}
+                title={`All In For ${formatChips(allInThreshold)}`}
+                aria-label={`Bet All In For ${formatChips(allInThreshold)}`}
               >
                 ALL IN
               </button>
@@ -1260,7 +1260,7 @@ export default function ActionPanel({
               onClick={handleConfirmRaise}
               aria-label={
                 raiseAmount >= allInThreshold
-                  ? `All in for ${formatChips(raiseAmount)}`
+                  ? `All In For ${formatChips(raiseAmount)}`
                   : `${wagerVerb} ${formatChips(raiseAmount)}`
               }
             >
@@ -1375,7 +1375,7 @@ export default function ActionPanel({
             onAction('fold');
           }}
           disabled={!canFold}
-          title={isDesktop ? 'Fold (F or Q)' : undefined}
+          title={isDesktop ? 'Fold (F Or Q)' : undefined}
           aria-label="Fold"
         >
           <span className="action-btn__label">Fold</span>
@@ -1390,7 +1390,7 @@ export default function ActionPanel({
               haptic.light(); // FIX 183: Bible V8 §5.4 — check = light haptic (was medium)
               onAction('check');
             }}
-            title={isDesktop ? 'Check/Call (C or W)' : undefined}
+            title={isDesktop ? 'Check/Call (C Or W)' : undefined}
             aria-label="Check"
           >
             <span className="action-btn__label">Check</span>
@@ -1403,7 +1403,7 @@ export default function ActionPanel({
               haptic.light(); // FIX 183: Bible V8 §5.4 — call = light haptic (was medium)
               onAction('call');
             }}
-            title={isDesktop ? 'Check/Call (C or W)' : undefined}
+            title={isDesktop ? 'Check/Call (C Or W)' : undefined}
             aria-label={`Call ${formatChips(callAmount)}`}
           >
             <span className="action-btn__label">Call</span>
@@ -1429,8 +1429,8 @@ export default function ActionPanel({
           <button
             className="action-btn action-btn--allin"
             onClick={handleAllIn}
-            title={isDesktop ? 'Raise/Bet (R or E)' : undefined}
-            aria-label="All in"
+            title={isDesktop ? 'Raise/Bet (R Or E)' : undefined}
+            aria-label="All In"
           >
             <span className="action-btn__label">All In</span>
             {/* 2026-08-20: this printed `maxRaise`. In POT-LIMIT maxRaise is
@@ -1447,12 +1447,12 @@ export default function ActionPanel({
             className={`action-btn action-btn--raise${isRaiseMode ? ' action-btn--on' : ''}`}
             onClick={handleRaiseClick}
             disabled={!canRaise}
-            title={isDesktop ? 'Raise/Bet (R or E)' : undefined}
+            title={isDesktop ? 'Raise/Bet (R Or E)' : undefined}
             /* The button survives the overlay opening now (Dan 2026-08-25,
                item 5), so it is a disclosure control rather than a one-way
                door: say which way the next tap goes. */
             aria-expanded={isRaiseMode}
-            aria-label={`${isRaiseMode ? 'Close' : 'Open'} ${wagerVerb.toLowerCase()} panel`}
+            aria-label={`${isRaiseMode ? 'Close' : 'Open'} ${wagerVerb} Panel`}
           >
             {/* Per PokerBros spec §5.1: the Raise button itself shows ONLY
                 the word "Raise" (or "Bet" when no current bet). The actual

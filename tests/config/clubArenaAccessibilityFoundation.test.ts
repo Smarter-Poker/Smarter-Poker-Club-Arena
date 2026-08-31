@@ -85,7 +85,7 @@ describe('Club Arena accessibility foundation', () => {
     const source = read('src/pages/UnionsPage.tsx');
 
     expect(source).not.toContain('onClick={() => navigate(`/unions/${union.id}`)}');
-    expect(source).toContain('aria-label={`Open ${union.name} union`}');
+    expect(source).toContain('aria-label={`Open ${union.name} Union`}');
     expect(source).toContain('role="progressbar"');
     expect(source).toContain('<LoadingState message="Opening Union Networks" />');
     expect(source).toContain('<ErrorState message={loadError} onRetry={loadUnions} />');
@@ -95,7 +95,7 @@ describe('Club Arena accessibility foundation', () => {
     const source = read('src/components/navigation/ArenaSectionRail.tsx');
     const layoutSource = read('src/components/layouts/AppLayout.tsx');
 
-    expect(source).toContain('aria-label={`${section.label} sections`}');
+    expect(source).toContain('aria-label={`${section.label} Sections`}');
     expect(source).toContain("aria-current={isActive ? 'page' : undefined}");
     expect(source).toContain('<ul className={styles.items}>');
     expect(layoutSource).toContain('{showGlobalHeader && <ArenaSectionRail />}');
@@ -109,7 +109,7 @@ describe('Club Arena accessibility foundation', () => {
     expect(pageSource).toContain('aria-labelledby={`ops-${group.id}`}');
     expect(pageSource).toContain('<ul className={styles.toolGrid}>');
     expect(pageSource).toContain('aria-describedby={descriptionId}');
-    expect(railSource).toContain('aria-label="Club Operations sections"');
+    expect(railSource).toContain('aria-label="Club Operations Sections"');
     expect(railSource).toContain("aria-current={isActive ? 'page' : undefined}");
     expect(layoutSource).toContain('{showGlobalHeader && <ClubOperationsRail />}');
   });
@@ -120,7 +120,7 @@ describe('Club Arena accessibility foundation', () => {
     const disputeSource = read('src/pages/DisputeManagementPage.tsx');
     const blacklistSource = read('src/pages/BlacklistManagerPage.tsx');
 
-    expect(headerSource).toContain('aria-label="Integrity and casework"');
+    expect(headerSource).toContain('aria-label="Integrity And Casework"');
     expect(headerSource).toContain("aria-current={item.id === active ? 'page' : undefined}");
     expect(headerSource).toContain('getClubIntegrityNavigation');
     expect(reportSource).toContain('role="dialog"');

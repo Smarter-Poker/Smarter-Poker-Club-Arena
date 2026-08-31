@@ -281,7 +281,7 @@ const TableRow = React.memo(function TableRow({
         type="button"
         className={className}
         onClick={() => onOpen(table)}
-        aria-label={`Watch ${table.name || `Table ${displayNumber}`}, ${seatText} players seated`}
+        aria-label={`Watch ${table.name || `Table ${displayNumber}`}, ${seatText} Players Seated`}
       >
         {body}
       </button>

@@ -283,7 +283,7 @@ export default function FirstRunPushPrompt() {
       className="ca-push-prompt"
       role="dialog"
       aria-modal="true"
-      aria-label="Enable notifications"
+      aria-label="Enable Notifications"
       onClick={handleDismiss}
     >
       <div className="ca-push-prompt__sheet" onClick={(e) => e.stopPropagation()}>
@@ -313,7 +313,7 @@ export default function FirstRunPushPrompt() {
             <h3 className="ca-push-prompt__title">Notifications Are Blocked</h3>
             <p className="ca-push-prompt__body">
               {isIos() && !isIosStandalonePwa()
-                ? 'On iPhone And iPad, Add Smarter Poker To Your Home Screen First. Tap Share, Then Add To Home Screen, Then Open It From There.'
+                ? 'On IPhone And IPad, Add Smarter Poker To Your Home Screen First. Tap Share, Then Add To Home Screen, Then Open It From There.'
                 : 'Open Your Browser Site Settings For Smarter Poker, Switch Notifications To Allow, Then Reload This Page.'}
             </p>
             <div className="ca-push-prompt__actions">

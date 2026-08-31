@@ -92,7 +92,7 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
     <div className={styles.analyticsBlock}>
       <div className={styles.analyticsHeader}>
         <h3 className={styles.createTitle}>Sales</h3>
-        <div className={styles.rangeTabs} role="group" aria-label="Analytics date range">
+        <div className={styles.rangeTabs} role="group" aria-label="Analytics Date Range">
           {RANGES.map((d) => (
             <button
               key={d}
@@ -157,14 +157,14 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
               <div
                 className={styles.chart}
                 role="img"
-                aria-label={`Daily diamond revenue over ${data.days} days`}
+                aria-label={`Daily Diamond Revenue Over ${data.days} Days`}
               >
                 {data.series.map((d) => (
                   <div
                     key={d.date}
                     className={styles.chartBar}
                     style={{ height: `${Math.round((d.revenue / peak) * 100)}%` }}
-                    title={`${d.date}: ${d.sales} Sale(s), ${d.revenue} Diamonds`}
+                    title={`${d.date}: ${d.sales} Sale(S), ${d.revenue} Diamonds`}
                   />
                 ))}
               </div>

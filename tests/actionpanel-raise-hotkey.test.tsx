@@ -71,7 +71,7 @@ describe('raise hotkey opens the raise panel', () => {
         raiseIntent={{ nonce: 1, open: true, amount: 15 }}
       />
     );
-    expect(screen.getByLabelText(/^Edit bet amount 20\b/)).toBeTruthy();
+    expect(screen.getByLabelText(/^Edit Bet Amount 20\b/)).toBeTruthy();
   });
 
   it('clamps a preset above the maximum down to maxRaise', () => {
@@ -85,7 +85,7 @@ describe('raise hotkey opens the raise panel', () => {
         raiseIntent={{ nonce: 1, open: true, amount: 9999 }}
       />
     );
-    expect(screen.getByLabelText(/^Edit bet amount 200\b/)).toBeTruthy();
+    expect(screen.getByLabelText(/^Edit Bet Amount 200\b/)).toBeTruthy();
   });
 
   it('closes raise mode when the parent asks (fold / check / call / Escape)', () => {

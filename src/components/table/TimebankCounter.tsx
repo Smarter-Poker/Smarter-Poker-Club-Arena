@@ -67,13 +67,13 @@ export const TimebankCounter: React.FC<TimebankCounterProps> = ({
       onClick={onClick}
       aria-label={
         count === null
-          ? 'Time banks remaining: loading'
-          : `Time banks remaining: ${count}, ${bankSeconds} seconds each`
+          ? 'Time Banks Remaining: Loading'
+          : `Time Banks Remaining: ${count}, ${bankSeconds} Seconds Each`
       }
       title={
         count === null
           ? 'Loading Your Time Banks'
-          : `${count} time bank${count === 1 ? '' : 's'} remaining (${bankSeconds}s each)`
+          : `${count} Time Bank${count === 1 ? '' : 's'} Remaining (${bankSeconds}s Each)`
       }
     >
       {/* Resolved 2026-08-26: main replaced the outline glyph with the

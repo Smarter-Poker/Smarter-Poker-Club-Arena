@@ -143,7 +143,7 @@ describe('VIPService', () => {
     it('should return pricing for rabbit_hunt', () => {
       const pricing = vipService.getFeaturePricing('rabbit_hunt');
       expect(pricing.cost).toBe(5);
-      expect(pricing.description).toContain('cards');
+      expect(pricing.description).toContain('Cards');
     });
   });
 

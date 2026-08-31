@@ -285,7 +285,7 @@ export default function RealTimeResultPanel({
     return [
       { label: 'Game Name', value: gameName || '-' },
       { label: 'Game ID', value: tableId ? gameIdFor(tableId) : '-' },
-      { label: 'Table creation', value: created ? stamp(created) : '-' },
+      { label: 'Table Creation', value: created ? stamp(created) : '-' },
       { label: 'Running Time', value: created ? hhmmss(now - created) : '-' },
       { label: 'Extension Time', value: extension },
       { label: 'Table', value: meta?.variant || '-' },
@@ -307,7 +307,7 @@ export default function RealTimeResultPanel({
   const clock = new Date(now).toLocaleTimeString('en-GB', { hour12: false });
 
   return (
-    <div className="rtr" role="dialog" aria-modal="true" aria-label="Real time result">
+    <div className="rtr" role="dialog" aria-modal="true" aria-label="Real Time Result">
       <div className="rtr__backdrop" onClick={onClose} />
 
       <div className="rtr__panel">

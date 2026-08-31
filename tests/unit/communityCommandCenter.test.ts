@@ -66,7 +66,7 @@ describe('Community Command Center interaction contracts', () => {
   });
 
   it('uses explicit relationship actions and a destructive confirmation', () => {
-    expect(FRIENDS).toContain('Actions for ${friend.username}');
+    expect(FRIENDS).toContain('Actions For ${friend.username}');
     expect(FRIENDS).toMatch(/>\s*Message\s*<\/button>/);
     expect(FRIENDS).toMatch(/>\s*Challenge\s*<\/button>/);
     expect(FRIENDS).toMatch(/>\s*Remove\s*<\/button>/);

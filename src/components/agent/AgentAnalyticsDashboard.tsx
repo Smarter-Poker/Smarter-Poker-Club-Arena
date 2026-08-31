@@ -236,7 +236,7 @@ export default function AgentAnalyticsDashboard({ userId, clubId }: AgentAnalyti
                 <div
                   className="aad-bar"
                   style={{ height: `${Math.max((w.amount / maxWeekly) * 100, 2)}%` }}
-                  title={`${w.amount.toLocaleString()} chips (${w.count} txns)`}
+                  title={`${w.amount.toLocaleString()} Chips (${w.count} Txns)`}
                 />
               </div>
               <span className="aad-bar-label">{w.label}</span>

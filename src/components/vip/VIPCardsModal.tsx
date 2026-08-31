@@ -26,7 +26,7 @@ interface VIPInfoModalProps {
 
 const FEATURES = [
   { key: 'rabbit_hunt', label: 'Rabbit Hunting', vipFree: true },
-  { key: 'show_stack_bb', label: 'Show Stack in BBs', vipFree: true },
+  { key: 'show_stack_bb', label: 'Show Stack In BBs', vipFree: true },
   { key: 'offline_protection', label: 'Offline Protection', vipFree: true },
   { key: 'auto_time_bank', label: 'Auto Time Bank', vipFree: true },
   {

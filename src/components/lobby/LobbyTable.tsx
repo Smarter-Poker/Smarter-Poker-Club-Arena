@@ -292,7 +292,7 @@ function FavCell({ entry, ctx }: { entry: LobbyEntry; ctx: LobbyRowContext }) {
     <button
       type="button"
       className={`lt-fav${isFav ? ' is-on' : ''}`}
-      aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
+      aria-label={isFav ? 'Remove From Favorites' : 'Add To Favorites'}
       aria-pressed={isFav}
       title={isFav ? 'Remove From Favorites' : 'Add To Favorites'}
       onClick={(e) => {
@@ -378,14 +378,14 @@ function LobbyFlagChips({ entry }: { entry: LobbyEntry }) {
           and only when that club has not switched `hide_club_name` on. On a
           single-club board this is null and nothing renders. */}
       {entry.clubLabel && (
-        <span className="lt-flag lt-flag--club" title={`Hosted by ${entry.clubLabel}`}>
+        <span className="lt-flag lt-flag--club" title={`Hosted By ${entry.clubLabel}`}>
           {entry.clubLabel}
         </span>
       )}
       {entry.featured && (
         <span
           className="lt-flag lt-flag--featured"
-          title="Pinned to the top of the board by the host"
+          title="Pinned To The Top Of The Board By The Host"
         >
           FEATURED
         </span>
@@ -393,13 +393,13 @@ function LobbyFlagChips({ entry }: { entry: LobbyEntry }) {
       {entry.vipOnly && (
         <span
           className="lt-flag lt-flag--vip"
-          title="VIP members only. A seat here needs VIP membership"
+          title="VIP Members Only. A Seat Here Needs VIP Membership"
         >
           VIP
         </span>
       )}
       {entry.isNew && (
-        <span className="lt-flag lt-flag--new" title="Recently opened">
+        <span className="lt-flag lt-flag--new" title="Recently Opened">
           NEW
         </span>
       )}
@@ -1368,7 +1368,7 @@ export default function LobbyTable({
 
   return (
     <>
-      <div className="arena-lobby-card-list" aria-label={`Game cards, ${sorted.length} games`}>
+      <div className="arena-lobby-card-list" aria-label={`Game Cards, ${sorted.length} Games`}>
         {sorted.map((entry) => (
           <ArenaLobbyGameCard
             key={entry.id}
@@ -1388,7 +1388,7 @@ export default function LobbyTable({
          actually takes focus and handles the keys, which is this one; the
          table below keeps its own grid semantics for the rows. */
         role="grid"
-        aria-label={`Game list, ${sorted.length} game${sorted.length === 1 ? '' : 's'}`}
+        aria-label={`Game List, ${sorted.length} Game${sorted.length === 1 ? '' : 's'}`}
         tabIndex={0}
         onKeyDown={handleKeyDown}
         /* Without this the arrow keys moved a selection no screen reader was
@@ -1405,10 +1405,10 @@ export default function LobbyTable({
           header and nothing was announced. */}
         <span className="sr-only" role="status" aria-live="polite">
           {sort
-            ? `Sorted by ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${
-                sort.dir === 'asc' ? 'ascending' : 'descending'
+            ? `Sorted By ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${
+                sort.dir === 'asc' ? 'Ascending' : 'Descending'
               }`
-            : 'Default order'}
+            : 'Default Order'}
         </span>
         {/* The category is on the table so the stylesheet can shed columns per
           BOARD rather than per page width. The wide breakpoints were written

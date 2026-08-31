@@ -162,7 +162,7 @@ describe('CashierModal amount input keeps cents', () => {
     render(
       <CashierModal {...base} onClose={vi.fn()} onAddChips={vi.fn()} onWithdrawChips={vi.fn()} />
     );
-    const input = screen.getByLabelText('Amount to add') as HTMLInputElement;
+    const input = screen.getByLabelText('Amount To Add') as HTMLInputElement;
     fireEvent.change(input, { target: { value: '12.34' } });
     // parseInt('12.34') === 12 — the old code silently dropped the cents that
     // the 25/50/75/MAX buttons themselves produce.
@@ -173,7 +173,7 @@ describe('CashierModal amount input keeps cents', () => {
     render(
       <CashierModal {...base} onClose={vi.fn()} onAddChips={vi.fn()} onWithdrawChips={vi.fn()} />
     );
-    const input = screen.getByLabelText('Amount to add') as HTMLInputElement;
+    const input = screen.getByLabelText('Amount To Add') as HTMLInputElement;
     // canAddAmount = min(maxStack - currentStack, accountBalance, maxBuyIn)
     //             = min(300, 1000, 200) = 200
     fireEvent.change(input, { target: { value: '999999' } });

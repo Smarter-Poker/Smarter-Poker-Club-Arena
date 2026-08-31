@@ -552,7 +552,7 @@ export default function AntiCheatPage() {
   const kickPlayer = async (playerId: string, tableId?: string) => {
     if (
       !(await confirmDialog({
-        title: 'Remove player',
+        title: 'Remove Player',
         message: 'Remove this player from the table for anti-cheat violation?',
         confirmText: 'Remove',
         variant: 'danger',

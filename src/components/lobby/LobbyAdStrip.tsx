@@ -308,7 +308,7 @@ export default function LobbyAdStrip({
           type="button"
           className="lobby-ads__dismiss"
           onClick={handleDismiss}
-          aria-label="Dismiss announcement"
+          aria-label="Dismiss Announcement"
         >
           ✕
         </button>
@@ -325,7 +325,7 @@ export default function LobbyAdStrip({
         // Not aria-live: this rotates on a timer, and announcing every 7s
         // interrupts a screen-reader user mid-task. The strip is reachable and
         // readable on demand instead.
-        aria-label={`${ad.source} announcement: ${text}`}
+        aria-label={`${ad.source} Announcement: ${text}`}
       >
         <span className="lobby-ads__icon" aria-hidden="true">
           <IconMegaphone />
@@ -339,7 +339,7 @@ export default function LobbyAdStrip({
         type="button"
         className="lobby-ads__dismiss"
         onClick={handleDismiss}
-        aria-label="Dismiss announcement"
+        aria-label="Dismiss Announcement"
       >
         ✕
       </button>

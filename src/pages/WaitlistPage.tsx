@@ -252,7 +252,7 @@ export default function WaitlistPage() {
             icon="QUEUE"
             eyebrow="Table Queue"
             title="No Active Waitlists"
-            description="Join a full table's waitlist and its live position will appear here."
+            description="Join A Full Table's Waitlist And Its Live Position Will Appear Here."
             action={{ label: 'Browse Tables', onClick: () => navigate('/') }}
           />
         ) : (
@@ -275,7 +275,7 @@ export default function WaitlistPage() {
                     #{positionCounts[entry.id] || entry.position}
                   </span>
                   <span className="position-label">
-                    {entry.position === 1 ? 'next up!' : 'in line'}
+                    {entry.position === 1 ? 'Next Up!' : 'In Line'}
                   </span>
                 </div>
                 <div className="waitlist-actions">

@@ -121,7 +121,7 @@ function PlacementTrophy({ place }: { place: number }) {
       className="trc2__trophy"
       viewBox="0 0 48 48"
       role="img"
-      aria-label={`${ordinal(place)} place trophy`}
+      aria-label={`${ordinal(place)} Place Trophy`}
     >
       {/* Handles */}
       <path
@@ -319,7 +319,7 @@ export default function TournamentRankingCard({
   };
 
   return createPortal(
-    <div className="trc2" role="dialog" aria-modal="true" aria-label="Tournament ranking">
+    <div className="trc2" role="dialog" aria-modal="true" aria-label="Tournament Ranking">
       {/* Dan 2026-08-30: "USER MUST CLICK THE 'X' TO CLOSE IT." The backdrop
           used to be a third dismiss control; a stray tap while reading the
           result threw the card away. It is scenery now - the X (and Escape,

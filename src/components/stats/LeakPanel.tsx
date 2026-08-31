@@ -43,8 +43,8 @@ export default function LeakPanel({ overall, positions, still = false }: Props) 
         <h3 className="leak-title">What To Work On</h3>
         <p className="leak-empty-text">
           {handsShort >= LEAK_MIN_HANDS
-            ? 'Play some hands and this will tell you what to work on first.'
-            : `About ${handsShort.toLocaleString()} more hands and there will be enough here to point at something real. Naming a leak off a smaller sample would mostly be describing variance.`}
+            ? 'Play Some Hands And This Will Tell You What To Work On First.'
+            : `About ${handsShort.toLocaleString()} More Hands And There Will Be Enough Here To Point At Something Real. Naming A Leak Off A Smaller Sample Would Mostly Be Describing Variance.`}
         </p>
       </div>
     );

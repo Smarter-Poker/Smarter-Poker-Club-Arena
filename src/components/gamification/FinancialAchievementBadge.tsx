@@ -23,25 +23,25 @@ const BADGES: Record<
   first_cashout: {
     icon: '→',
     title: 'First Cashout',
-    description: 'Completed your first successful cashout',
+    description: 'Completed Your First Successful Cashout',
     color: '#00c853',
   },
   thousand_club: {
     icon: '◆',
     title: '1,000 Club',
-    description: 'Lifetime earnings exceeded 1,000 chips',
+    description: 'Lifetime Earnings Exceeded 1,000 Chips',
     color: '#ffd700',
   },
   perfect_settlement: {
     icon: '★',
     title: 'Perfect Settlement',
-    description: 'Zero-debt weekly settlement cycle',
+    description: 'Zero-Debt Weekly Settlement Cycle',
     color: '#448aff',
   },
   diamond_whale: {
     icon: '◆',
     title: 'Diamond Whale',
-    description: 'Accumulated 10,000+ diamonds',
+    description: 'Accumulated 10,000+ Diamonds',
     color: '#c084fc',
   },
 };

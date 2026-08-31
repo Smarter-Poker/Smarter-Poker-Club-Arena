@@ -364,7 +364,7 @@ export default function UnionGamesPage() {
       <CasinoSurfaceHeader
         eyebrow="Union Network / Games"
         title={`${unionName || 'Union'} Games`}
-        description="Enter active union tables, register for network tournaments, and inspect the shared bad-beat pool through the existing game services."
+        description="Enter Active Union Tables, Register For Network Tournaments, And Inspect The Shared Bad-Beat Pool Through The Existing Game Services."
         artPath="assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp"
         status="UNION GAMES // LIVE"
         metrics={[

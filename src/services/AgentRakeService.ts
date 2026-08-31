@@ -62,8 +62,8 @@ export interface DownlineRakeSummary {
 export const RAKE_WINDOWS = [
   { key: 'today', label: 'Today', hours: null as number | null, today: true },
   { key: '24h', label: '24h', hours: 24 },
-  { key: 'week', label: 'This week', hours: null },
-  { key: '30d', label: '30 days', hours: 24 * 30 },
+  { key: 'week', label: 'This Week', hours: null },
+  { key: '30d', label: '30 Days', hours: 24 * 30 },
 ] as const;
 
 export type RakeWindowKey = (typeof RAKE_WINDOWS)[number]['key'];

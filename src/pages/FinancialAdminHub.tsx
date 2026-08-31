@@ -31,7 +31,7 @@ const NAV_ITEMS = [
   {
     icon: '◆',
     label: 'Financial Alerts',
-    description: 'Critical warnings and system notifications',
+    description: 'Critical Warnings And System Notifications',
     path: '/financial-alerts',
     color: '#ef4444',
     bg: 'rgba(239,68,68,0.1)',
@@ -40,7 +40,7 @@ const NAV_ITEMS = [
   {
     icon: '◇',
     label: 'System Health',
-    description: 'Ledger reconciliation & cron status',
+    description: 'Ledger Reconciliation & Cron Status',
     path: '/financial-health',
     color: '#10b981',
     bg: 'rgba(16,185,129,0.1)',
@@ -49,7 +49,7 @@ const NAV_ITEMS = [
   {
     icon: '⚠',
     label: 'Disputes',
-    description: 'Open disputes needing resolution',
+    description: 'Open Disputes Needing Resolution',
     path: '/disputes',
     color: '#f59e0b',
     bg: 'rgba(245,158,11,0.1)',
@@ -58,7 +58,7 @@ const NAV_ITEMS = [
   {
     icon: '▦',
     label: 'Rate Audit Trail',
-    description: 'Commission & rake rate change history',
+    description: 'Commission & Rake Rate Change History',
     path: '/rate-audit',
     color: '#8b5cf6',
     bg: 'rgba(139,92,246,0.1)',
@@ -67,7 +67,7 @@ const NAV_ITEMS = [
   {
     icon: '▦',
     label: 'Agent Portal',
-    description: 'Triple wallet, credit lines, commissions',
+    description: 'Triple Wallet, Credit Lines, Commissions',
     path: '/agent-portal',
     color: '#0ea5e9',
     bg: 'rgba(14,165,233,0.1)',
@@ -76,7 +76,7 @@ const NAV_ITEMS = [
   {
     icon: '▦',
     label: 'Rakeback Dashboard',
-    description: 'Player rakeback tiers & pending payouts',
+    description: 'Player Rakeback Tiers & Pending Payouts',
     path: '/rakeback',
     color: '#d946ef',
     bg: 'rgba(217,70,239,0.1)',
@@ -85,7 +85,7 @@ const NAV_ITEMS = [
   {
     icon: '▣',
     label: 'Credit Admin',
-    description: 'Set & adjust agent credit limits',
+    description: 'Set & Adjust Agent Credit Limits',
     path: '/credit-admin',
     color: '#f97316',
     bg: 'rgba(249,115,22,0.1)',
@@ -94,7 +94,7 @@ const NAV_ITEMS = [
   {
     icon: '▤',
     label: 'Settlement History',
-    description: 'Weekly settlement cycles & revenue trends',
+    description: 'Weekly Settlement Cycles & Revenue Trends',
     path: '/settlement-history',
     color: '#14b8a6',
     bg: 'rgba(20,184,166,0.1)',
@@ -103,7 +103,7 @@ const NAV_ITEMS = [
   {
     icon: '⚖',
     label: 'Settlement Center',
-    description: 'Canary checks, payout execution & monitoring',
+    description: 'Canary Checks, Payout Execution & Monitoring',
     path: '/settlement-dashboard',
     color: '#6366f1',
     bg: 'rgba(99,102,241,0.1)',
@@ -112,7 +112,7 @@ const NAV_ITEMS = [
   {
     icon: '▦',
     label: 'Settlements',
-    description: 'Club & agent settlement management',
+    description: 'Club & Agent Settlement Management',
     path: '/wallet',
     color: '#3b82f6',
     bg: 'rgba(59,130,246,0.1)',
@@ -121,7 +121,7 @@ const NAV_ITEMS = [
   {
     icon: '↓',
     label: 'CSV Exports',
-    description: 'Financial reports & data exports',
+    description: 'Financial Reports & Data Exports',
     path: '/wallet',
     color: '#06b6d4',
     bg: 'rgba(6,182,212,0.1)',

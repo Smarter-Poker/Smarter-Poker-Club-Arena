@@ -365,10 +365,10 @@ test.describe('production Daily Missions certification', () => {
       });
 
       await test.step('an injected dashboard outage fails visibly and retry restores the live board', async () => {
-        let aborted = false;
+        let abortedAttempts = 0;
         await page.route('**/rest/v1/rpc/get_daily_challenge_dashboard', async (route) => {
-          if (!aborted) {
-            aborted = true;
+          if (abortedAttempts < 3) {
+            abortedAttempts += 1;
             await route.abort('failed');
             return;
           }
@@ -381,6 +381,7 @@ test.describe('production Daily Missions certification', () => {
         await expect(page.getByRole('alert')).toContainText('Mission Network Unavailable', {
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });
+        expect(abortedAttempts).toBe(3);
         await page.unroute('**/rest/v1/rpc/get_daily_challenge_dashboard');
         const recovered = page.waitForResponse(
           (response) => response.url().includes('/rest/v1/rpc/get_daily_challenge_dashboard'),

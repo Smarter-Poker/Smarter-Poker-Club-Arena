@@ -22,6 +22,7 @@ const read = (p: string) => readFileSync(join(process.cwd(), 'src', p), 'utf8');
 const FLEET = read('services/HorseFleetManager.ts');
 const ROTATOR = read('services/HorseSessionRotator.ts');
 const TOURNEY = read('services/TournamentRecurringService.ts');
+const REBUY = read('services/HorseRebuyPolicy.ts');
 const TELEMETRY = read('services/HorseBankrollTelemetry.ts');
 
 describe('telemetry says WHY, and stays quiet when there is nothing to say', () => {
@@ -145,11 +146,11 @@ describe('WIRING - the module exists and something calls it', () => {
    */
   it('declares no event that nothing emits', () => {
     const declared = [...TELEMETRY.matchAll(/^\s*\| '([a-z_]+)';?$/gm)].map((m) => m[1]);
-    expect(declared.length).toBeGreaterThanOrEqual(10);
+    expect(declared.length).toBeGreaterThanOrEqual(12);
     /* Every file that may emit. A name whose only emitter is a file missing
        from this list reads as dead vocabulary and fails the pin, which is how
        the tournament gate's two events were caught when they landed. */
-    const emitters = FLEET + ROTATOR + TOURNEY;
+    const emitters = FLEET + ROTATOR + TOURNEY + REBUY;
     for (const event of declared) {
       expect(emitters, `no emitter for ${event}`).toContain(`'${event}'`);
     }

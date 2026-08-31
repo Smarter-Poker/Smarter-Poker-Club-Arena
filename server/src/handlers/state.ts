@@ -68,6 +68,14 @@ export async function handleGetState(
     if (access.reason === 'check_failed') {
       return sendJSON(res, 503, { success: false, error: 'Unable to verify table access' });
     }
+    if (access.reason === 'observers_restricted') {
+      return sendJSON(res, 403, {
+        success: false,
+        code: 'OBSERVERS_RESTRICTED',
+        error: 'This table is open to seated players only',
+        club_id: access.clubId,
+      });
+    }
     return sendJSON(res, 403, {
       success: false,
       code: 'CLUB_MEMBERSHIP_REQUIRED',

@@ -9,6 +9,7 @@ import {
 
 import { DAILY_MISSIONS_RESPONSE_TIMEOUT, DailyMissionsPage } from './support/DailyMissionsPage';
 import {
+  callServiceRpc,
   cleanupTemporaryCustomizationAccount,
   createTemporaryCustomizationAccount,
   readServiceRows,
@@ -63,41 +64,33 @@ async function dashboardRevision(
   return Number(rows[0].revision);
 }
 
-function currentPeriodKeys(now = new Date()) {
-  const daily = now.toISOString().split('T')[0];
-  const monday = new Date(now);
-  const day = monday.getUTCDay();
-  monday.setUTCDate(monday.getUTCDate() - (day === 0 ? 6 : day - 1));
-  return {
-    daily,
-    weekly: `W${monday.toISOString().split('T')[0]}`,
-    monthly: `M${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`,
-  };
-}
-
-async function completeEveryAssignedMission(account: TemporaryCustomizationAccount) {
-  const keys = currentPeriodKeys();
-  const { data, error } = await account.client.rpc('bump_challenge_progress', {
-    p_user_id: account.id,
-    p_amounts: {
-      hands_played: 1_000_000,
-      hands_won: 1_000_000,
-      showdowns: 1_000_000,
-      showdowns_won: 1_000_000,
-      hands_won_no_showdown: 1_000_000,
-      big_pots: 1_000_000,
-      strong_hands: 1_000_000,
-      chips_won: 1_000_000_000,
-      tournaments_played: 1_000_000,
-      friends_added: 1_000_000,
+async function completeEveryAssignedMission(
+  environment: CustomizationCertificationEnvironment,
+  account: TemporaryCustomizationAccount
+) {
+  const advanced = await callServiceRpc<Array<JsonObject>>(
+    environment,
+    'record_daily_challenge_event',
+    {
+      p_user_id: account.id,
+      p_event_key: `certification:${account.id}:${Date.now()}`,
+      p_amounts: {
+        hands_played: 2_500,
+        hands_won: 2_500,
+        showdowns: 2_500,
+        showdowns_won: 2_500,
+        hands_won_no_showdown: 2_500,
+        big_pots: 2_500,
+        strong_hands: 2_500,
+        chips_won: 1_000_000_000,
+        tournaments_played: 2_500,
+        friends_added: 2_500,
+      },
+      p_magnitudes: { big_pots: 1_000_000_000, strong_hands: 10 },
+      p_occurred_at: new Date().toISOString(),
     },
-    p_magnitudes: { big_pots: 1_000_000_000, strong_hands: 10 },
-    p_daily_key: keys.daily,
-    p_weekly_key: keys.weekly,
-    p_monthly_key: keys.monthly,
-  });
-  if (error) throw error;
-  const advanced = Array.isArray(data) ? data : [];
+    true
+  );
   expect(advanced.length).toBeGreaterThanOrEqual(10);
 }
 
@@ -293,7 +286,7 @@ test.describe('production Daily Missions certification', () => {
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });
         const revisionBefore = await dashboardRevision(environment, account!.id);
-        await completeEveryAssignedMission(account!);
+        await completeEveryAssignedMission(environment, account!);
         await expect
           .poll(() => dashboardRevision(environment, account!.id), {
             timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,

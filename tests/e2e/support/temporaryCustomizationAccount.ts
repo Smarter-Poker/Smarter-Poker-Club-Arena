@@ -81,10 +81,12 @@ export function requireCustomizationCertificationEnvironment(): CustomizationCer
 async function serviceRequest<T>(
   environment: CustomizationCertificationEnvironment,
   path: string,
-  init: RequestInit = {}
+  init: RequestInit = {},
+  retrySafe = false
 ): Promise<T> {
   const method = (init.method || 'GET').toUpperCase();
-  const methodIsIdempotent = ['GET', 'HEAD', 'PUT', 'PATCH', 'DELETE'].includes(method);
+  const methodIsIdempotent =
+    retrySafe || ['GET', 'HEAD', 'PUT', 'PATCH', 'DELETE'].includes(method);
 
   for (let attempt = 0; attempt < SERVICE_REQUEST_MAX_ATTEMPTS; attempt += 1) {
     try {
@@ -159,15 +161,21 @@ export async function readServiceRows<T>(
   return serviceRequest<T[]>(environment, `/rest/v1/${table}?${query.toString()}`);
 }
 
-export async function callServiceRpc<T extends JsonObject>(
+export async function callServiceRpc<T>(
   environment: CustomizationCertificationEnvironment,
   rpc: string,
-  body: JsonObject
+  body: JsonObject,
+  retrySafe = false
 ): Promise<T> {
-  return serviceRequest<T>(environment, `/rest/v1/rpc/${rpc}`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
+  return serviceRequest<T>(
+    environment,
+    `/rest/v1/rpc/${rpc}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+    retrySafe
+  );
 }
 
 export async function listTableStudioStorefrontSkus(

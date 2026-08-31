@@ -25,7 +25,7 @@ describe('Daily Missions production certification', () => {
       'get_daily_challenge_dashboard',
       'challenge_reroll:',
       'buy_streak_freeze',
-      'bump_challenge_progress',
+      'record_daily_challenge_event',
       'daily_challenge_dashboard_revisions',
       "getByText('Live Now')",
       'claim_daily_challenges',
@@ -91,6 +91,15 @@ describe('Daily Missions production certification', () => {
     expect(pageObject).toContain("for (const tier of ['Daily', 'Weekly', 'Monthly'] as const)");
     expect(pageObject).toContain('/^Reroll .+ For 10 Diamonds$/');
     expect(spec).toContain('/^Confirm Reroll For /');
+  });
+
+  it('targets the enforced title-case reroll accessibility contract', () => {
+    const page = source('src/pages/DailyChallengesPage.tsx');
+    const pageObject = source('tests/e2e/support/DailyMissionsPage.ts');
+    const certification = source('tests/e2e/production-daily-missions.spec.ts');
+    expect(page).toContain('aria-label={`Reroll ${c.name} For 10 Diamonds`}');
+    expect(pageObject).toContain('name: /^Reroll .+ For 10 Diamonds$/');
+    expect(certification).toContain('name: /^Confirm Reroll For /');
   });
 
   it('keeps every mission control above the fixed Club Arena footer', () => {

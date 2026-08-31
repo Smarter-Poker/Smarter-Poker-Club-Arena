@@ -10236,7 +10236,8 @@
       "field_size",
       "prize_pool",
       "payout_structure",
-      "recorded_by"
+      "recorded_by",
+      "metadata"
     ],
     "tournament_place_collisions": [
       "id",

@@ -13,6 +13,10 @@ const CARD_CSS = readFileSync(
   'utf8'
 );
 const WALLET = readFileSync(resolve(ROOT, 'src/components/wallet/DynamicWallet.tsx'), 'utf8');
+const IDENTITY_CSS = readFileSync(
+  resolve(ROOT, 'src/components/club-buttons/ClubIdentityCard.css'),
+  'utf8'
+);
 const APP_LAYOUT = readFileSync(resolve(ROOT, 'src/components/layouts/AppLayout.tsx'), 'utf8');
 
 describe('responsive premium Club Arena', () => {
@@ -85,6 +89,19 @@ describe('responsive premium Club Arena', () => {
     );
     expect(mobile).toMatch(
       /\.lobby-wallets-content\[data-expanded='true'\]\s*\{[^}]*grid-template-rows:\s*1fr[^}]*visibility:\s*visible[^}]*pointer-events:\s*auto/s
+    );
+  });
+
+  it('keeps collapsed wallet controls inert and gives Share a full mobile hit area', () => {
+    const mobile = PAGE_CSS.slice(PAGE_CSS.lastIndexOf('@media (max-width: 900px)'));
+    expect(mobile).toMatch(
+      /\.lobby-wallets-content\s*\{[^}]*visibility:\s*hidden[^}]*pointer-events:\s*none/s
+    );
+    expect(mobile).toMatch(
+      /\.lobby-wallets-content\[data-expanded='true'\]\s*\{[^}]*visibility:\s*visible[^}]*pointer-events:\s*auto/s
+    );
+    expect(IDENTITY_CSS).toMatch(
+      /@media \(pointer: coarse\)[\s\S]*?\.club-identity__share\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/s
     );
   });
 

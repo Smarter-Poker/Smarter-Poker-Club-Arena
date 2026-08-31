@@ -98,15 +98,18 @@ export function TournamentStartingTicker() {
      shared store both settings surfaces write (localStorage +
      SETTINGS_CHANGED bus), so flipping the toggle anywhere kills or revives
      this bar live, no reload. Hook called unconditionally, above every
-     early return — hook order must stay stable (same rule as insideClub
+     early return — hook order must stay stable (same rule as atLiveTable
      below). */
   const { settings: tickerSettings } = useTableSettings();
-  /* Dan 2026-08-21: "THE BANNER ONLY PLAYS WHILE YOUR INSIDE THE CLUB."
-     A table is inside a club, so both count; the home page, the global
-     tournament list and everything else do not. Computed here rather than at
-     the return so hook order stays stable. */
-  const insideClub =
-    location.pathname.startsWith('/clubs/') || location.pathname.startsWith('/table');
+  /* Dan 2026-08-30, superseding 2026-08-21's "only inside the club": the
+     ticker "SHOULD EVER ONLY APPEAR WHILE LIVE AT A TABLE, NOT ANYWHERE
+     ELSE" — and it must never appear over the hamburger menu. So the route
+     gate is /table/* alone now: club lobbies, the home page and every other
+     surface get nothing. (The drawer is additionally stacked ABOVE this
+     strip in HamburgerMenu.module.css, so even at a table an open menu
+     covers it.) Computed here rather than at the return so hook order stays
+     stable. */
+  const atLiveTable = location.pathname.startsWith('/table');
   const [upcoming, setUpcoming] = useState<UpcomingTournament[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [dismissed, setDismissed] = useState<Set<string>>(readDismissed);
@@ -504,14 +507,14 @@ export function TournamentStartingTicker() {
      to a hook — a hook cannot live after a conditional return.
 
        - nothing to announce;
-       - outside a club: /clubs and /table only, there is nothing to say
-         anywhere else (Dan 2026-08-21: "THE BANNER ONLY PLAYS WHILE YOUR
-         INSIDE THE CLUB");
+       - not live at a table: /table/* only (Dan 2026-08-30: the ticker
+         "should ever only appear while live at a table, not anywhere
+         else");
        - the player turned the ticker off in table or Club Arena settings
          (Dan 2026-08-28, one shared store). */
   const barVisible =
     (live.length > 0 || liveOverlays.length > 0) &&
-    insideClub &&
+    atLiveTable &&
     tickerSettings.showTicker !== false;
 
   /* ── PUBLISH THE HEIGHT SO THE ACTION TAB CAN START BELOW IT ───────────────

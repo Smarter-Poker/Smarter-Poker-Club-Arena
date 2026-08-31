@@ -1,7 +1,10 @@
 .backdrop {
   position: fixed;
   inset: 0;
-  z-index: 1100;
+  /* Dan 2026-08-30: the MTT ticker (z-index 9400) must NEVER appear over the
+     open hamburger menu. The backdrop and drawer sit above the ticker and
+     below the dialog layer (9600+). */
+  z-index: 9450;
   background:
     radial-gradient(circle at 18% 40%, rgba(28, 126, 224, 0.16), transparent 34%),
     rgba(0, 2, 5, 0.86);
@@ -15,7 +18,7 @@
   --menu-muted: #8b9aaa;
   position: fixed;
   inset: 0 auto 0 0;
-  z-index: 1200;
+  z-index: 9500;
   width: min(400px, 100vw);
   display: flex;
   flex-direction: column;

@@ -1912,7 +1912,7 @@ abbr.lt-variant[title] {
   .arena-lobby-card-list {
     width: 100%;
     display: grid;
-    justify-items: stretch;
+    justify-items: center;
     gap: 14px;
     padding: 8px 2px 28px;
   }
@@ -1920,7 +1920,7 @@ abbr.lt-variant[title] {
   .arena-lobby-card-list > div {
     width: 100%;
     display: grid;
-    justify-items: stretch;
+    justify-items: center;
   }
 
   .arena-lobby-card-list + .lobby-table-wrap {

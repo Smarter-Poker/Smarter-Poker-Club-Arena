@@ -26,7 +26,10 @@
  *   is a file that verified nothing, and it must be named.
  *
  * A file is exempt only if it is listed in e2e-may-skip-entirely.json WITH a
- * reason. That list is a ratchet, not an escape hatch: adding a line is a
+ * reason. NOTE the spelling: Playwright's JSON reports `file` RELATIVE TO
+ * testDir (`smoke.spec.ts`, `routes/clubs.spec.ts`), not from the repo root.
+ * An entry written as `tests/e2e/smoke.spec.ts` matches nothing and exempts
+ * nothing - verified against a real report, not assumed. That list is a ratchet, not an escape hatch: adding a line is a
  * visible, reviewable admission that one more spec cannot verify production.
  *
  * WHY PER-FILE AND NOT A RATIO. A ratio hides the shape. "88% executed" is the

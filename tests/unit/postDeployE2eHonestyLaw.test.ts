@@ -152,6 +152,17 @@ describe('the allowlist is a ratchet, not an escape hatch', () => {
     }
   });
 
+  it('spells paths the way the JSON report does, or the exemption is a no-op', () => {
+    // Playwright reports `file` relative to testDir. An entry written from the
+    // repo root matches nothing, exempts nothing, and looks exactly like an
+    // exemption that works - the quietest possible way for this ratchet to
+    // stop holding. Verified against a real report, not assumed.
+    for (const entry of allowlist.allowed) {
+      expect(entry.file, `${entry.file} must be relative to tests/e2e`).not.toMatch(/^tests\//);
+      expect(entry.file).toMatch(/\.spec\.ts$/);
+    }
+  });
+
   it('holds the number of specs allowed to verify nothing at or below its ceiling', () => {
     // Lower this when a spec is made to run. Never raise it to make a run green.
     expect(allowlist.allowed.length).toBeLessThanOrEqual(6);

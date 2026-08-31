@@ -164,6 +164,10 @@ test.describe('production Daily Missions certification', () => {
         interceptedRealtimeSockets += 1;
         const server = socket.connectToServer();
         server.onMessage((message) => {
+          // Protocol payload shapes vary across Realtime client versions. Once
+          // armed, drop the wire itself rather than guessing which JSON field
+          // names the revision event. This reproduces a silently missed frame
+          // while keeping the already-SUBSCRIBED channel open.
           if (dropRealtimeServerFrames) {
             blockedRealtimeServerFrames += 1;
             return;
@@ -382,6 +386,11 @@ test.describe('production Daily Missions certification', () => {
               timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
             })
             .toBeGreaterThan(revisionBefore);
+          await expect
+            .poll(() => blockedRealtimeServerFrames, {
+              timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+            })
+            .toBeGreaterThan(0);
           const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
           await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
         } finally {

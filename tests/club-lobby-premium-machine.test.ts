@@ -71,6 +71,25 @@ describe('responsive premium Club Arena', () => {
     expect(APP_LAYOUT).toContain("normalizedPath.endsWith('/notifications') || isClubLobbyPage");
   });
 
+  it('keeps the approved desktop control order on the populated ALL lobby', () => {
+    const controls = PAGE.indexOf('className="lobby-controls"');
+    const gameTypes = PAGE.indexOf('className="game-bar"', controls);
+    const allStatuses = PAGE.indexOf('ALL_STATUS_FILTERS.map', gameTypes);
+    const campaign = PAGE.indexOf('campaign={', allStatuses);
+    const launch = PAGE.indexOf('<ClubLaunchProgress', campaign);
+    const games = PAGE.indexOf('className="club-home__games club-home__games--v2"', launch);
+
+    expect(PAGE).toContain('type AllStatusFilter =');
+    expect(PAGE).toContain("{ key: 'OPEN_REGISTRATION', label: 'Open Registration' }");
+    expect(PAGE).toContain("{ key: 'STARTING_SOON', label: 'Starting Soon' }");
+    expect(gameTypes).toBeGreaterThan(controls);
+    expect(allStatuses).toBeGreaterThan(gameTypes);
+    expect(campaign).toBeGreaterThan(allStatuses);
+    expect(launch).toBeGreaterThan(campaign);
+    expect(games).toBeGreaterThan(launch);
+    expect(PAGE).toContain('noticeEditable && totalGameCount === 0');
+  });
+
   it('builds the approved mobile welcome, owner message, identity/jackpot pair, and wallet accordion', () => {
     expect(PAGE).toContain('className="club-mobile-welcome"');
     expect(PAGE).toContain('className={`club-mobile-owner-message');

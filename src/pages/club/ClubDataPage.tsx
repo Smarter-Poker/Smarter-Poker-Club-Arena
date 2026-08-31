@@ -495,6 +495,7 @@ export default function ClubDataPage() {
   const eventRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingEventRefreshRef = useRef({ ledger: false, invoices: false });
   const cancelledRef = useRef(false);
+  const manualRefreshingRef = useRef(false);
   const gamesTabRef = useRef<HTMLButtonElement>(null);
   const playersTabRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -584,6 +585,8 @@ export default function ClubDataPage() {
     setPlayersError(null);
     setExportNote(null);
     setRefreshNote(null);
+    manualRefreshingRef.current = false;
+    setManualRefreshing(false);
     setLedgerSource('cold');
     setLastVerifiedAt(null);
     setLastRequestMs(null);
@@ -924,7 +927,10 @@ export default function ClubDataPage() {
       if (preserveOnError && playersMoreRef.current) return true;
       const myVersion = ++playersVersion.current;
       const stale = () => cancelledRef.current || playersVersion.current !== myVersion;
-      setPlayersLoading(true);
+      // Silent recovery must not make the operator's manual recovery control
+      // unavailable. When verified rows already exist, keep them interactive
+      // while the newest background request owns the reconciliation.
+      setPlayersLoading(!preserveOnError || !playersRef.current);
       setPlayersError(null);
       setPlayersPageError(null);
       try {
@@ -1292,12 +1298,13 @@ export default function ClubDataPage() {
       setEndDate((cur) => (cur >= today ? today : cur));
     };
     const id = setInterval(() => {
+      if (manualRefreshingRef.current) return;
       pinToToday();
       void load(false, true);
       if (tabRef.current === 'players') void loadPlayers(true);
     }, REFRESH_MS);
     const onVisible = () => {
-      if (document.visibilityState !== 'visible') return;
+      if (document.visibilityState !== 'visible' || manualRefreshingRef.current) return;
       pinToToday();
       void load(false, true);
       // The Players tab was never refreshed by either trigger, so the tiles
@@ -1387,6 +1394,11 @@ export default function ClubDataPage() {
       if (eventRefreshTimerRef.current) clearTimeout(eventRefreshTimerRef.current);
       eventRefreshTimerRef.current = setTimeout(() => {
         eventRefreshTimerRef.current = null;
+        // refreshAll already requests every authoritative source. Leave these
+        // flags queued and drain them once that bounded foreground cycle ends,
+        // instead of superseding it and extending the disabled state by a
+        // second full retry budget.
+        if (manualRefreshingRef.current) return;
         const pending = pendingEventRefreshRef.current;
         pendingEventRefreshRef.current = { ledger: false, invoices: false };
         if (pending.ledger) {
@@ -1503,7 +1515,8 @@ export default function ClubDataPage() {
   );
 
   const refreshAll = useCallback(async () => {
-    if (manualRefreshing || !clubUuid || isHydrating || !user) return;
+    if (manualRefreshingRef.current || !clubUuid || isHydrating || !user) return;
+    manualRefreshingRef.current = true;
     setManualRefreshing(true);
     setRefreshNote('Refreshing Club Ledger.');
     try {
@@ -1518,9 +1531,19 @@ export default function ClubDataPage() {
         );
       }
     } finally {
-      if (!cancelledRef.current) setManualRefreshing(false);
+      manualRefreshingRef.current = false;
+      if (!cancelledRef.current) {
+        setManualRefreshing(false);
+        const pending = pendingEventRefreshRef.current;
+        pendingEventRefreshRef.current = { ledger: false, invoices: false };
+        if (pending.ledger) {
+          void load(false, true);
+          if (tabRef.current === 'players') void loadPlayers(true);
+        }
+        if (pending.invoices) void loadInvoices();
+      }
     }
-  }, [manualRefreshing, clubUuid, isHydrating, user, load, loadInvoices, loadPlayers, tab]);
+  }, [clubUuid, isHydrating, user, load, loadInvoices, loadPlayers, tab]);
 
   const exportCsv = useCallback(async () => {
     if (!clubUuid || exporting) return;
@@ -1738,7 +1761,7 @@ export default function ClubDataPage() {
             type="button"
             className={styles.headerBtn}
             onClick={() => void refreshAll()}
-            disabled={manualRefreshing || loading || playersLoading || invoicesLoading}
+            disabled={manualRefreshing || !clubUuid || isHydrating}
             aria-label="Refresh Club Ledger"
           >
             {manualRefreshing ? 'Refreshing' : 'Refresh'}

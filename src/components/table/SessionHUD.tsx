@@ -167,7 +167,7 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
             <button
               className="sh-toggle"
               onClick={() => setShowAdvanced(!showAdvanced)}
-              title={showAdvanced ? 'Hide details' : 'Show details'}
+              title={showAdvanced ? 'Hide Details' : 'Show Details'}
             >
               {showAdvanced ? '▾' : '▸'}
             </button>

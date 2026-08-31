@@ -110,7 +110,7 @@ export function TablePerfMonitor({ enabled = false }: TablePerfMonitorProps) {
   const fpsColor = metrics.fps >= 55 ? '#3fb950' : metrics.fps >= 30 ? '#f0c000' : '#f85149';
 
   return (
-    <div className="perf-monitor" aria-label="Performance monitor">
+    <div className="perf-monitor" aria-label="Performance Monitor">
       <div className="pm-row">
         <span className="pm-label">FPS</span>
         <span className="pm-value" style={{ color: fpsColor }}>

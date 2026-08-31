@@ -41,15 +41,15 @@ const bigBlindOption = { ...base, currentBet: 2, callAmount: 0, canCheck: true, 
 
 const openPanel = () => {
   const opener =
-    screen.queryByLabelText('Open bet panel') ?? screen.getByLabelText('Open raise panel');
+    screen.queryByLabelText('Open Bet Panel') ?? screen.getByLabelText('Open Raise Panel');
   fireEvent.click(opener);
 };
 
 describe('an unfaced wager is a bet, never a raise', () => {
   it('calls it Bet on the main bar when nobody has bet the street', () => {
     render(<ActionPanel {...unopened} onAction={vi.fn()} />);
-    expect(screen.getByLabelText('Open bet panel').textContent).toContain('Bet');
-    expect(screen.queryByLabelText('Open raise panel')).toBeNull();
+    expect(screen.getByLabelText('Open Bet Panel').textContent).toContain('Bet');
+    expect(screen.queryByLabelText('Open Raise Panel')).toBeNull();
   });
 
   it('calls it Bet on the confirm button inside the sizing panel', () => {
@@ -70,7 +70,7 @@ describe('an unfaced wager is a bet, never a raise', () => {
   it('calls the big blind option a Raise, even with nothing to call', () => {
     // callAmount is 0 here. Anything that keys off callAmount gets this wrong.
     render(<ActionPanel {...bigBlindOption} onAction={vi.fn()} />);
-    expect(screen.getByLabelText('Open raise panel')).toBeTruthy();
+    expect(screen.getByLabelText('Open Raise Panel')).toBeTruthy();
     openPanel();
     expect(screen.getByRole('button', { name: /^Raise \d/i })).toBeTruthy();
   });

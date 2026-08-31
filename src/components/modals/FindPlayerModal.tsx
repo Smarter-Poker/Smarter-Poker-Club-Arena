@@ -268,7 +268,7 @@ export default function FindPlayerModal({
           </header>
 
           {showAccessRules && (
-            <section className={styles.privacyPanel} aria-label="Player search access rules">
+            <section className={styles.privacyPanel} aria-label="Player Search Access Rules">
               <p>
                 Player Identity And Playing Now Status Are Searchable Across Club Arena. Watching
                 Requires An Active Membership In The Game&apos;S Club.
@@ -285,7 +285,7 @@ export default function FindPlayerModal({
               <input
                 type="search"
                 className={styles.searchInput}
-                placeholder="Name, alias, or player number…"
+                placeholder="Name, Alias, Or Player Number…"
                 value={searchQuery}
                 onChange={(event) => handleInputChange(event.target.value)}
                 onKeyDown={(event) => {
@@ -304,7 +304,7 @@ export default function FindPlayerModal({
                   } else if (event.key === 'Escape') setShowSuggestions(false);
                 }}
                 onFocus={() => suggestions.length && setShowSuggestions(true)}
-                aria-label="Player name, poker alias, or number"
+                aria-label="Player Name, Poker Alias, Or Number"
                 aria-autocomplete="list"
                 aria-expanded={showSuggestions}
                 autoFocus
@@ -334,7 +334,7 @@ export default function FindPlayerModal({
                 </div>
               )}
               {isSuggesting && (
-                <span className={styles.suggestLoading} aria-label="Loading suggestions">
+                <span className={styles.suggestLoading} aria-label="Loading Suggestions">
                   <span className={styles.suggestSpinner} aria-hidden="true" />
                 </span>
               )}
@@ -348,7 +348,7 @@ export default function FindPlayerModal({
             </button>
           </div>
 
-          <div className={styles.filterControls} aria-label="Player search filters">
+          <div className={styles.filterControls} aria-label="Player Search Filters">
             <label>
               Network
               <select
@@ -385,8 +385,8 @@ export default function FindPlayerModal({
             </label>
             <span className={styles.scopeLabel}>
               {total
-                ? `${total} eligible match${total === 1 ? '' : 'es'}`
-                : 'Global player directory'}
+                ? `${total} Eligible match${total === 1 ? '' : 'es'}`
+                : 'Global Player Directory'}
             </span>
           </div>
 

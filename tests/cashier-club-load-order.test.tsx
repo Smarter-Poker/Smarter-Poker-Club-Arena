@@ -245,6 +245,6 @@ describe('CashierTradePage club load ordering', () => {
     expect(screen.getByText('Cashier offline; money actions are locked')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reconcile Now' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Claim Back' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Open the Club Bank Cashier' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Open The Club Bank Cashier' })).toBeDisabled();
   });
 });

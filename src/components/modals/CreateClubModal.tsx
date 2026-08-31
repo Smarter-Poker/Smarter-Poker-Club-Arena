@@ -326,7 +326,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
 
           <div className={styles.creationMeta} aria-live="polite">
             {allowance ? (
-              <span>{`${allowance.remaining ?? 'Unlimited'} club slots remaining`}</span>
+              <span>{`${allowance.remaining ?? 'Unlimited'} Club Slots Remaining`}</span>
             ) : allowanceError ? (
               <button
                 type="button"
@@ -348,7 +348,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
             id="new-club-name"
             type="text"
             className={styles.clubNameInput}
-            placeholder="e.g. River Room"
+            placeholder="E.G. River Room"
             value={clubName}
             onChange={(e) => setClubName(e.target.value)}
             maxLength={30}
@@ -359,10 +359,10 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
             }}
           />
           <div className={`${styles.nameStatus} ${styles[nameStatus]}`} aria-live="polite">
-            {nameStatus === 'checking' && 'Checking availability…'}
-            {nameStatus === 'available' && 'Name available'}
-            {nameStatus === 'taken' && 'Name already in use'}
-            {nameStatus === 'error' && 'Availability check unavailable'}
+            {nameStatus === 'checking' && 'Checking Availability…'}
+            {nameStatus === 'available' && 'Name Available'}
+            {nameStatus === 'taken' && 'Name Already In Use'}
+            {nameStatus === 'error' && 'Availability Check Unavailable'}
           </div>
 
           <label className={styles.fieldLabel} htmlFor="new-club-description">
@@ -374,14 +374,14 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             maxLength={180}
-            placeholder="What kind of room are you building?"
+            placeholder="What Kind Of Room Are You Building?"
           />
 
           <span className={styles.fieldLabel}>Club Identity</span>
           <div className={styles.logoWorkspace}>
             <div className={styles.logoPreview}>
               {logoPreview ? (
-                <img src={logoPreview} alt="Selected club logo" className={styles.logoThumb} />
+                <img src={logoPreview} alt="Selected Club Logo" className={styles.logoThumb} />
               ) : (
                 <span aria-hidden="true">♣</span>
               )}
@@ -568,7 +568,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
         className={styles.logoGeneratorModalContainer}
         role="dialog"
         aria-modal="true"
-        aria-label="Generate a club logo"
+        aria-label="Generate A Club Logo"
         onClick={(e) => e.stopPropagation()}
         style={{
           backgroundColor: isGenerating || previewUrl ? 'rgba(10, 10, 26, 0.98)' : 'transparent',
@@ -658,7 +658,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
             {/* Textarea positioned over the grid area */}
             <textarea
               className={styles.descriptionTextarea}
-              placeholder="E.g., A Fierce Shark With Glowing Eyes, Cyberpunk Style..."
+              placeholder="E.G., A Fierce Shark With Glowing Eyes, Cyberpunk Style..."
               value={logoDescription}
               onChange={(e) => setLogoDescription(e.target.value)}
               style={{ display: isGenerating || previewUrl ? 'none' : 'block' }}

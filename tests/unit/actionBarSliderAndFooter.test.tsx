@@ -103,13 +103,13 @@ function atWidth(w: number) {
 
 const openPanel = () => {
   const opener =
-    screen.queryByLabelText('Open bet panel') ?? screen.getByLabelText('Open raise panel');
+    screen.queryByLabelText('Open Bet Panel') ?? screen.getByLabelText('Open Raise Panel');
   fireEvent.click(opener);
 };
 
-const slider = () => screen.getByLabelText('Raise amount') as HTMLInputElement;
+const slider = () => screen.getByLabelText('Raise Amount') as HTMLInputElement;
 const shownAmount = (): string =>
-  screen.getByRole('button', { name: /^Edit bet amount/ }).textContent ?? '';
+  screen.getByRole('button', { name: /^Edit Bet Amount/ }).textContent ?? '';
 
 afterEach(() => {
   cleanup();
@@ -300,7 +300,7 @@ describe('one notch of the rail is the smallest change the table can make', () =
     openPanel();
     // 187.50 is not 12 + n*1, so the top the browser can emit is 187.
     fireEvent.change(slider(), { target: { value: '187' } });
-    fireEvent.click(screen.getByRole('button', { name: /^All in for [\d.,]/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^All In For [\d.,]/ }));
     expect(onAction).toHaveBeenCalledWith('allin', 187.5);
   });
 });
@@ -352,7 +352,7 @@ describe('the sizing panel is attached to the footer', () => {
     openPanel();
     expect(screen.getByLabelText('Fold')).toBeTruthy();
     expect(screen.getByLabelText(/^Call /)).toBeTruthy();
-    expect(screen.getByLabelText('Close raise panel').getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByLabelText('Close Raise Panel').getAttribute('aria-expanded')).toBe('true');
   });
 
   it('gives the player Back as the way out of the overlay', () => {
@@ -363,8 +363,8 @@ describe('the sizing panel is attached to the footer', () => {
     render(<ActionPanel {...base} onAction={vi.fn()} />);
     openPanel();
     fireEvent.click(screen.getByLabelText('Back'));
-    expect(screen.queryByLabelText('Raise amount')).toBeNull();
-    expect(screen.getByLabelText('Open raise panel').getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByLabelText('Raise Amount')).toBeNull();
+    expect(screen.getByLabelText('Open Raise Panel').getAttribute('aria-expanded')).toBe('false');
   });
 });
 

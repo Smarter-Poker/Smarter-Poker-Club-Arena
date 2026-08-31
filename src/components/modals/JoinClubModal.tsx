@@ -325,7 +325,7 @@ export default function JoinClubModal({
             </div>
           )}
           {preview && (
-            <section className={styles.clubPreview} aria-label="Club confirmation">
+            <section className={styles.clubPreview} aria-label="Club Confirmation">
               <div>
                 <span>{preview.requires_approval ? 'Approval Required' : 'Open Membership'}</span>
                 <strong>{preview.name}</strong>

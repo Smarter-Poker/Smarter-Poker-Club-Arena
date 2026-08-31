@@ -397,17 +397,17 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
               <span className="et-marks">
                 {isSatellite && <SatelliteSeatBadge />}
                 {isReentry && (
-                  <span className="tl-badge tl-badge--action" title="Re-entry">
+                  <span className="tl-badge tl-badge--action" title="Re-Entry">
                     RE
                   </span>
                 )}
                 {showRebuys && rebuys > 0 && (
-                  <span className="tl-badge" title={`${rebuys.toLocaleString()} rebuys`}>
+                  <span className="tl-badge" title={`${rebuys.toLocaleString()} Rebuys`}>
                     {`RB ${rebuys.toLocaleString()}`}
                   </span>
                 )}
                 {showAddOns && addOn && (
-                  <span className="tl-badge tl-badge--good" title="Add-on taken">
+                  <span className="tl-badge tl-badge--good" title="Add-On Taken">
                     AO
                   </span>
                 )}
@@ -429,7 +429,7 @@ export default function EntriesTab({ tournament, entries, onWatchPlayer }: Tourn
                 type="button"
                 className="tl-row tl-row--interactive et-row et-row--watch"
                 onClick={() => onWatchPlayer?.(entry.table_id as string)}
-                aria-label={`Watch ${entry.username} at their table`}
+                aria-label={`Watch ${entry.username} At Their Table`}
               >
                 {body}
               </button>

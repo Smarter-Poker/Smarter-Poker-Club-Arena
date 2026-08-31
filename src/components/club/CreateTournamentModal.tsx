@@ -921,7 +921,7 @@ export default function CreateTournamentModal({
               value={name}
               maxLength={44}
               onChange={(e) => setName(e.target.value.slice(0, 44))}
-              placeholder="E.g. Saturday Night Turbo"
+              placeholder="E.G. Saturday Night Turbo"
               required
               style={!name.trim() ? { borderColor: '#ef4444' } : undefined}
             />
@@ -1138,8 +1138,8 @@ export default function CreateTournamentModal({
                 />
                 <span className={styles.helperText}>
                   {split.total > 0
-                    ? `${money(split.total)} entry = ${money(split.prize)} to the prize pool + ${money(split.fee)} fee`
-                    : 'Taken out of the buy-in, not added on top'}
+                    ? `${money(split.total)} Entry = ${money(split.prize)} To The Prize Pool + ${money(split.fee)} Fee`
+                    : 'Taken Out Of The Buy-In, Not Added On Top'}
                 </span>
               </div>
             </div>
@@ -1196,8 +1196,8 @@ export default function CreateTournamentModal({
                   </select>
                   <span className={styles.helperText}>
                     {satelliteTargets.length === 0
-                      ? 'No upcoming tournaments to feed into - create one first.'
-                      : 'Winners earn a seat into this tournament.'}
+                      ? 'No Upcoming Tournaments To Feed Into - Create One First.'
+                      : 'Winners Earn A Seat Into This Tournament.'}
                   </span>
                 </div>
               </div>
@@ -1285,8 +1285,8 @@ export default function CreateTournamentModal({
                     </select>
                     <span className={styles.helperText}>
                       {parseInt(lateRegLevels) > 0
-                        ? `Late reg, rebuys, and re-entries close after Level ${lateRegLevels}`
-                        : 'No late registration - registration closes when tournament starts'}
+                        ? `Late Reg, Rebuys, And Re-Entries Close After Level ${lateRegLevels}`
+                        : 'No Late Registration - Registration Closes When Tournament Starts'}
                     </span>
                   </div>
                 </div>
@@ -1311,8 +1311,8 @@ export default function CreateTournamentModal({
                   <div className={styles.formGroup}>
                     <label>
                       {format === 'mystery_bounty'
-                        ? 'Base Bounty (chips)'
-                        : 'Bounty Per KO (chips)'}{' '}
+                        ? 'Base Bounty (Chips)'
+                        : 'Bounty Per KO (Chips)'}{' '}
                       <span style={{ color: '#ef4444' }}>*</span>
                     </label>
                     <input
@@ -1514,10 +1514,10 @@ export default function CreateTournamentModal({
               {!bountyValid && (
                 <p style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: 6 }}>
                   {!isWholeBuyIn(bountyAmount)
-                    ? 'Bounty amount is required and must be a whole number greater than 0'
+                    ? 'Bounty Amount Is Required And Must Be A Whole Number Greater Than 0'
                     : bountySplit && bountySplit.prize < 0
-                      ? `Bounty ${money(bountySplit.bounty)} + ${money(bountySplit.rake)} rake exceeds the ${money(bountySplit.buyIn)} buy-in - nothing left for the prize pool`
-                      : 'Mystery max multiplier must be greater than min multiplier'}
+                      ? `Bounty ${money(bountySplit.bounty)} + ${money(bountySplit.rake)} Rake Exceeds The ${money(bountySplit.buyIn)} Buy-In - Nothing Left For The Prize Pool`
+                      : 'Mystery Max Multiplier Must Be Greater Than Min Multiplier'}
                 </p>
               )}
             </div>
@@ -1616,10 +1616,10 @@ export default function CreateTournamentModal({
                   </div>
                   <span className={styles.helperText} style={{ display: 'block', marginTop: 4 }}>
                     {isRebuy && isReentry
-                      ? `Rebuy (same seat) and Re-Entry (new seat) both close after Level ${lateRegLevels || 0}`
+                      ? `Rebuy (Same Seat) And Re-Entry (New Seat) Both Close After Level ${lateRegLevels || 0}`
                       : isRebuy
-                        ? `Rebuy period closes after Level ${lateRegLevels || 0} (same as late registration)`
-                        : `Re-Entry period closes after Level ${lateRegLevels || 0} (same as late registration)`}
+                        ? `Rebuy Period Closes After Level ${lateRegLevels || 0} (Same As Late Registration)`
+                        : `Re-Entry Period Closes After Level ${lateRegLevels || 0} (Same As Late Registration)`}
                   </span>
                 </>
               )}
@@ -2043,12 +2043,12 @@ export default function CreateTournamentModal({
                   <span key={i} className={styles.payoutItem}>
                     {p.place}
                     {p.place === 1
-                      ? 'st'
+                      ? 'St'
                       : p.place === 2
-                        ? 'nd'
+                        ? 'Nd'
                         : p.place === 3
-                          ? 'rd'
-                          : 'th'}: {p.percentage}%
+                          ? 'Rd'
+                          : 'Th'}: {p.percentage}%
                   </span>
                 ))}
               </div>

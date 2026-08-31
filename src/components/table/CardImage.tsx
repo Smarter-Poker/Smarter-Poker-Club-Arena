@@ -264,7 +264,7 @@ export function CardImage({
       <div
         className={classes}
         role="img"
-        aria-label="Card could not be read"
+        aria-label="Card Could Not Be Read"
         title="This Card Could Not Be Read. Do Not Act On It, Reload The Table."
       >
         <div className="card-image__unreadable">
@@ -280,7 +280,7 @@ export function CardImage({
         loading={loading}
         decoding="async"
         src={effectivePath}
-        alt={`${card.rank} of ${SUIT_MAP[card.suit] || card.suit}`}
+        alt={`${card.rank} Of ${SUIT_MAP[card.suit] || card.suit}`}
         className="card-image__img"
         draggable={false}
         style={imgError ? { display: 'none' } : undefined}

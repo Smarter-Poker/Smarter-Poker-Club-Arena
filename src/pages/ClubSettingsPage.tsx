@@ -1228,7 +1228,7 @@ export default function ClubSettingsPage() {
                   className="btn btn-secondary"
                   style={{ padding: '4px 12px', fontSize: '0.75rem' }}
                   onClick={copyClubCode}
-                  aria-label="Copy club code"
+                  aria-label="Copy Club Code"
                 >
                   Copy
                 </button>
@@ -1244,7 +1244,7 @@ export default function ClubSettingsPage() {
               {pendingLogo?.preview || currentLogoUrl ? (
                 <img
                   src={pendingLogo?.preview || currentLogoUrl || undefined}
-                  alt="Club logo"
+                  alt="Club Logo"
                   style={{
                     width: 56,
                     height: 56,
@@ -1398,7 +1398,7 @@ export default function ClubSettingsPage() {
               <input
                 id="club-rake-percent"
                 type="number"
-                placeholder="Use house schedule"
+                placeholder="Use House Schedule"
                 /* DECIMALS HAVE TO BE TYPEABLE (Dan 2026-08-25).
                  This clamped on every keystroke against a CONTROLLED value, so
                  typing "0.5" went "0" -> 0, then "0." -> parseFloat -> 0 -> the
@@ -1429,8 +1429,8 @@ export default function ClubSettingsPage() {
               <small className="form-hint">
                 Leave Blank To Use The House Schedule (10%). A Club Can Take Less, Never More.{' '}
                 {settings.default_rake_percent < 0
-                  ? 'Currently: house schedule.'
-                  : `Currently: ${settings.default_rake_percent}% (house caps still apply).`}
+                  ? 'Currently: House Schedule.'
+                  : `Currently: ${settings.default_rake_percent}% (House Caps Still Apply).`}
               </small>
             </div>
             <div className="form-group">
@@ -1438,7 +1438,7 @@ export default function ClubSettingsPage() {
               <input
                 id="club-rake-cap"
                 type="number"
-                placeholder="Use house schedule"
+                placeholder="Use House Schedule"
                 /* Same shape as the rake field above: raw while typing, clamp on
                  blur, so "1.5" cannot be read as 15. */
                 value={rakeCapText}
@@ -1463,7 +1463,7 @@ export default function ClubSettingsPage() {
               <small className="form-hint">
                 Most That Can Be Raked From One Pot, In Big Blinds. Blank Uses The House Cap For
                 Each Stake ($3-$20 Depending On Blinds).{' '}
-                {settings.rake_cap < 0 ? 'Currently: house cap.' : capPreview}
+                {settings.rake_cap < 0 ? 'Currently: House Cap.' : capPreview}
               </small>
             </div>
             {/* 2026-08-18: the "Time Bank (seconds)" field was removed. It
@@ -1557,7 +1557,7 @@ export default function ClubSettingsPage() {
                while the tooltip stayed empty, because there ARE changes - so
                the owner got no explanation at all. The unsaved bar already
                does it in this order. */
-            title={formError || (hasUnsavedChanges ? undefined : 'No changes to save')}
+            title={formError || (hasUnsavedChanges ? undefined : 'No Changes To Save')}
           >
             {saving ? (
               <>
@@ -1600,8 +1600,8 @@ export default function ClubSettingsPage() {
                 <li>
                   Every Table In This Club
                   {deleteImpact.runningTables > 0
-                    ? `, including ${deleteImpact.runningTables} currently running`
-                    : ' (none are running)'}
+                    ? `, Including ${deleteImpact.runningTables} Currently Running`
+                    : ' (None Are Running)'}
                 </li>
                 <li>Club Wallets Holding {deleteImpact.walletChips.toLocaleString()} Chips</li>
               </ul>

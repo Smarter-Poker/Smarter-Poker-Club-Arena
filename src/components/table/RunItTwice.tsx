@@ -143,7 +143,7 @@ export function RunItTwicePrompt({
           transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
         }}
         role="dialog"
-        aria-label="Run it multiple times"
+        aria-label="Run It Multiple Times"
       >
         <h3 className="rit-panel__title">Run It Multiple Times</h3>
 
@@ -196,7 +196,7 @@ export function RunItTwicePrompt({
                 )}
                 <span
                   className={`rit-panel__check ${p.accepted ? 'rit-panel__check--on' : ''}`}
-                  aria-label={p.accepted ? `${p.name} accepted` : `${p.name} deciding`}
+                  aria-label={p.accepted ? `${p.name} Accepted` : `${p.name} Deciding`}
                 >
                   {p.accepted ? '✓' : ''}
                 </span>
@@ -338,7 +338,7 @@ export function RunItTwiceResult({
     .sort((x, y) => y[1] - x[1]);
 
   return (
-    <div className="rit-result__overlay" onClick={onClose} role="dialog" aria-label="Run it result">
+    <div className="rit-result__overlay" onClick={onClose} role="dialog" aria-label="Run It Result">
       <div className="rit-result" onClick={(e) => e.stopPropagation()}>
         <div className="rit-board__header">
           <span className="rit-board__badge">
@@ -380,13 +380,13 @@ export function RunItTwiceResult({
                 className="rit-result__board-equity"
                 title={
                   winners.length > 1
-                    ? `This run was worth ${sharePct}% of the pot, split ${winners.length} ways`
-                    : `This run was worth ${sharePct}% of the pot`
+                    ? `This Run Was Worth ${sharePct}% Of The Pot, Split ${winners.length} Ways`
+                    : `This Run Was Worth ${sharePct}% Of The Pot`
                 }
               >
                 {currency}
                 {perWinner.toLocaleString()}
-                {winners.length > 1 ? ` each` : ''}
+                {winners.length > 1 ? ` Each` : ''}
                 <span className="rit-result__board-pct">{sharePct}%</span>
               </span>
               <div className="rit-board__cards">

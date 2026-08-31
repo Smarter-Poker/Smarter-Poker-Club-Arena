@@ -111,7 +111,7 @@ export const RebuyModal: React.FC<RebuyModalProps> = ({
               <span className="rm-detail-value">
                 {levelsRemaining > 0
                   ? `In ${levelsRemaining} level${levelsRemaining > 1 ? 's' : ''}`
-                  : 'Last chance!'}
+                  : 'Last Chance!'}
               </span>
             </div>
           </div>

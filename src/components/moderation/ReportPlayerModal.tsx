@@ -163,7 +163,7 @@ export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
               type="text"
               value={handId}
               onChange={(e) => setHandId(e.target.value)}
-              placeholder="E.g., #12345678"
+              placeholder="E.G., #12345678"
             />
           </label>
         </div>

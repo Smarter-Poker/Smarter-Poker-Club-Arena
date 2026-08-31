@@ -179,7 +179,7 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
             className="close-btn"
             onClick={onClose}
             disabled={saving}
-            aria-label="Close profile editor"
+            aria-label="Close Profile Editor"
           >
             ×
           </button>
@@ -202,7 +202,7 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
                 className="edit-avatar-btn"
                 onClick={() => setShowAvatarPicker(!showAvatarPicker)}
                 aria-expanded={showAvatarPicker}
-                aria-label="Choose profile avatar"
+                aria-label="Choose Profile Avatar"
               >
                 Edit
               </button>
@@ -214,7 +214,7 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
                     type="button"
                     key={url}
                     className={`avatar-choice ${formData.avatarUrl === url ? 'selected' : ''}`}
-                    aria-label="Select this avatar"
+                    aria-label="Select This Avatar"
                     aria-pressed={formData.avatarUrl === url}
                     onClick={() => {
                       setFormData({ ...formData, avatarUrl: url });

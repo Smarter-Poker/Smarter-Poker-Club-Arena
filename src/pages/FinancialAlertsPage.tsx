@@ -320,7 +320,7 @@ export default function FinancialAlertsPage() {
       {filteredAlerts.length === 0 ? (
         <div className="empty-state">
           <span className="empty-icon">◉</span>
-          <p>{filter === 'all' ? 'No unresolved alerts' : `No ${filter} alerts`}</p>
+          <p>{filter === 'all' ? 'No Unresolved Alerts' : `No ${filter} Alerts`}</p>
         </div>
       ) : (
         <div className="alert-list">

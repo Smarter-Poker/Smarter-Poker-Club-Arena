@@ -25,7 +25,7 @@ export default function ClubOperationsPage() {
     return (
       <PermissionState
         title="Club Operations Is Restricted"
-        description="This workspace is available to club owners, administrators, and authorized agent staff."
+        description="This Workspace Is Available To Club Owners, Administrators, And Authorized Agent Staff."
         onBack={() => navigate(`/clubs/${clubId}`)}
       />
     );

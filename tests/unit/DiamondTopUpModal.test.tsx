@@ -48,7 +48,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     expect(screen.getByRole('dialog', { name: 'Add Diamonds' })).toBeVisible();
     expect(document.body.style.overflow).toBe('hidden');
     const purchase = await screen.findByRole('button', {
-      name: 'Buy First Stack, 550 diamonds for $3.99',
+      name: 'Buy First Stack, 550 Diamonds For $3.99',
     });
     expect(purchase).toBeEnabled();
     expect(screen.getByText('Server-Priced')).toBeVisible();
@@ -61,7 +61,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     render(<DiamondTopUpModal isOpen onClose={mocks.close} />);
     fireEvent.click(
       await screen.findByRole('button', {
-        name: 'Buy First Stack, 550 diamonds for $3.99',
+        name: 'Buy First Stack, 550 Diamonds For $3.99',
       })
     );
 
@@ -78,7 +78,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
     render(<DiamondTopUpModal isOpen onClose={mocks.close} returnParams="from=table-studio" />);
     fireEvent.click(
       await screen.findByRole('button', {
-        name: 'Buy First Stack, 550 diamonds for $3.99',
+        name: 'Buy First Stack, 550 Diamonds For $3.99',
       })
     );
 
@@ -94,7 +94,7 @@ describe('DiamondTopUpModal secure checkout contract', () => {
   it('closes on Escape without leaving page scroll locked', async () => {
     const { unmount } = render(<DiamondTopUpModal isOpen onClose={mocks.close} />);
     await screen.findByRole('button', {
-      name: 'Buy First Stack, 550 diamonds for $3.99',
+      name: 'Buy First Stack, 550 Diamonds For $3.99',
     });
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(mocks.close).toHaveBeenCalledTimes(1);

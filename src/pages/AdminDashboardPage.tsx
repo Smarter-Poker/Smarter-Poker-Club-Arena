@@ -509,7 +509,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
     return (
       <div className="admin-error-state">
         <div className="admin-error-icon">⚠</div>
-        <div className="admin-error-msg">{loadError || 'Failed to load health metrics'}</div>
+        <div className="admin-error-msg">{loadError || 'Failed To Load Health Metrics'}</div>
         <button onClick={load} className="admin-btn admin-btn-primary">
           ↻ Retry
         </button>
@@ -838,7 +838,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
               {(data.pendingCommissions || []).map((c) => (
                 <tr key={c.id}>
                   <td className="admin-mono">{c.user_id?.substring(0, 8)}...</td>
-                  <td style={{ textAlign: 'right' }}>{c.source_type || 'rake'}</td>
+                  <td style={{ textAlign: 'right' }}>{c.source_type || 'Rake'}</td>
                   <td style={{ textAlign: 'center' }}>
                     {((c.commission_rate || 0) * 100).toFixed(1)}%
                   </td>
@@ -1063,7 +1063,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
               }
             }}
             className="admin-btn admin-btn-ghost admin-btn-sm"
-            title="Export audit log as CSV"
+            title="Export Audit Log As CSV"
           >
             Export
           </button>
@@ -1803,7 +1803,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
             <input
               value={theme.bannerUrl || ''}
               onChange={(e) => setTheme((prev) => ({ ...prev, bannerUrl: e.target.value }))}
-              placeholder="Https://example.com/banner.png"
+              placeholder="https://example.com/banner.png"
               className="admin-input"
             />
           </div>
@@ -2423,7 +2423,7 @@ function MintChipsTab({ clubId }: { clubId: string }) {
               }
             }}
           >
-            {processing ? 'Minting...' : `Mint ${amount ? fmtChips(Number(amount)) : '0'} chips`}
+            {processing ? 'Minting...' : `Mint ${amount ? fmtChips(Number(amount)) : '0'} Chips`}
           </button>
         </div>
       </div>

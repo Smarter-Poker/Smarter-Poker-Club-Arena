@@ -167,7 +167,7 @@ describe('ClubDataPage', () => {
     expect(screen.getByRole('heading', { name: /Read The Room/i })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('2,450.00')).toBeInTheDocument());
     expect(screen.getByText('Shark Table One')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Export as CSV' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Export As CSV' })).toBeEnabled();
     expect(rpcMock).toHaveBeenCalledWith(
       'ca_club_data_snapshot',
       expect.objectContaining({ p_limit: 100 })
@@ -199,7 +199,7 @@ describe('ClubDataPage', () => {
     });
 
     render(<ClubDataPage />);
-    const exportButton = await screen.findByRole('button', { name: 'Export as CSV' });
+    const exportButton = await screen.findByRole('button', { name: 'Export As CSV' });
     fireEvent.click(exportButton);
 
     expect(await screen.findAllByText('Exported all 2 games.')).toHaveLength(2);
@@ -293,7 +293,7 @@ describe('ClubDataPage', () => {
 
   it('refreshes the game ledger and union statement together', async () => {
     render(<ClubDataPage />);
-    const refresh = screen.getByRole('button', { name: 'Refresh club ledger' });
+    const refresh = screen.getByRole('button', { name: 'Refresh Club Ledger' });
 
     await waitFor(() => expect(refresh).toBeEnabled());
     expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot')).toHaveLength(1);
@@ -328,7 +328,7 @@ describe('ClubDataPage', () => {
     try {
       render(<ClubDataPage />);
       await screen.findByText(/350\.00/);
-      const refresh = screen.getByRole('button', { name: 'Refresh club ledger' });
+      const refresh = screen.getByRole('button', { name: 'Refresh Club Ledger' });
       await waitFor(() => expect(refresh).toBeEnabled());
 
       fireEvent.click(refresh);

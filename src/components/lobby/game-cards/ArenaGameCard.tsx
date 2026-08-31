@@ -98,7 +98,7 @@ function Rules({
     <div
       className={`agc-rules${className ? ` ${className}` : ''}`}
       data-zone="rules"
-      aria-label="Game rules"
+      aria-label="Game Rules"
     >
       {rules.slice(0, limit).map((rule) => (
         <ArenaGameRuleBadge key={rule.key} rule={rule} />

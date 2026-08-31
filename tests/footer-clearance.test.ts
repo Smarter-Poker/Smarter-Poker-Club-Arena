@@ -45,7 +45,7 @@ describe('global Club Arena footer mounting and clearance', () => {
       'src/styles/design-system.css',
     ]) {
       const css = readFileSync(join(ROOT, sheet), 'utf8');
-      expect(css).toContain('--bottom-nav-height: clamp(44px, 13.72vw, 263px)');
+      expect(css).toContain('--bottom-nav-height: clamp(44px, 13.72vw, 132px)');
       expect(css).toContain(
         '--bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px))'
       );

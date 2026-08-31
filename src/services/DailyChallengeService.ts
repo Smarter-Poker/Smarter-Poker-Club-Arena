@@ -242,6 +242,7 @@ export interface DailyChallengeDashboard {
   streak: ChallengeStreak;
   diamondBalance: number;
   vault: DailyChallengeRewardVault;
+  revision: number;
   syncedAt: string;
 }
 
@@ -938,7 +939,7 @@ class DailyChallengeServiceClass {
 
     const { data, error } = await retryFetch(
       () =>
-        supabase.rpc('get_daily_challenge_dashboard', {
+        supabase.rpc('get_daily_challenge_dashboard_v2', {
           p_daily_key: dailyKey,
           p_daily_ids: this.selectDailyChallenges(5).map((c) => c.id),
           p_weekly_key: weeklyKey,
@@ -1002,8 +1003,32 @@ class DailyChallengeServiceClass {
         pageSize: Math.max(1, Number(vault.pageSize) || 100),
         hasMore: vault.hasMore === true,
       },
+      revision: Math.max(1, Number(payload.revision) || 1),
       syncedAt: typeof payload.syncedAt === 'string' ? payload.syncedAt : new Date().toISOString(),
     };
+  }
+
+  /**
+   * Read only the durable cursor used to repair a missed Realtime event.
+   * This is deliberately much smaller than the atomic dashboard RPC.
+   */
+  async getDashboardRevision(userId: string): Promise<number> {
+    const { data, error } = await retryFetch(
+      () =>
+        supabase
+          .from('daily_challenge_dashboard_revisions')
+          .select('revision')
+          .eq('user_id', userId)
+          .maybeSingle(),
+      { maxRetries: 1, baseDelayMs: 250 }
+    );
+
+    if (error) {
+      reportError(error, 'DailyChallengeService.getDashboardRevision_failed');
+      throw new Error(error.message || 'Could not reconcile Daily Missions');
+    }
+
+    return Math.max(0, Number(data?.revision) || 0);
   }
 
   /**

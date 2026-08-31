@@ -2689,11 +2689,67 @@ export abstract class TournamentManagerBase {
       );
       return 0;
     }
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A CREDIT MAY FUND AN EMPTY SEAT. IT MAY NOT RESCUE A LOSING ONE.
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * `stack < target` is the right question BEFORE a hand is dealt and the
+     * wrong one after it. Every seat that is losing is below the starting
+     * stack by definition, so once play is under way this raised the loser
+     * back to a full stack and MINTED the difference onto the felt.
+     *
+     * Measured on production 2026-08-31, spins completed in 24 hours:
+     *
+     *     2,168 games at a 300 stack   418 drifted, worst +470
+     *       305 games at a 1,000 stack  84 drifted, worst +1,603
+     *
+     * and NOT ONE of the 502 exceeded twice the starting stack - exactly the
+     * ceiling of topping up the two players who can be behind. That is the
+     * signature of this line and nothing else.
+     *
+     * A Spin's prize is buy_in x multiplier, so no money is created directly.
+     * What is created is a different WINNER: the engine decides the game on
+     * chips, and a player who was busting got their stack back. On an MTT,
+     * where finishing position is the payout, it moves real money.
+     *
+     * All four callers are pre-deal by intent - start(), the post-reveal beat,
+     * its safety net, and resume(), whose own note scopes it to "a process
+     * restart INSIDE THAT WINDOW". None of them checked, and resume() runs on
+     * every restart forever, which is why this fired on one game in five.
+     *
+     * So the question is now asked against the state of the game:
+     *   - no hand dealt yet  -> fund anything short of the target, unchanged;
+     *   - play under way     -> fund ONLY a seat still sitting on zero, which
+     *                           is the stranded reservation the resume path
+     *                           exists for. A losing stack is left alone.
+     *
+     * If the hand read itself fails, take the conservative branch and say so.
+     * The stranded-at-zero case is still rescued either way; the only thing
+     * given up is raising a placeholder tier, which the next call redoes.
+     */
+    const { data: dealtRows, error: dealtErr } = await supabase
+      .from('hand_history')
+      .select('id')
+      .eq('tournament_id', this.tournamentId)
+      .limit(1);
+
+    if (dealtErr) {
+      reportError(
+        new Error(`seat stack credit could not tell whether play had started: ${dealtErr.message}`),
+        'Tournament.' + this.tournamentId.slice(0, 8) + '.seat_stack_dealt_probe_failed'
+      );
+    }
+
+    const playUnderWay = dealtErr ? true : (dealtRows?.length ?? 0) > 0;
+
     // Strictly RAISE, never lower: the legitimate case is a reservation seat
     // holding 0 (or a smaller placeholder tier) waiting on the drawn stack.
     // An early-bird seat (starting chips + bonus, 2026-08-22) sits ABOVE the
     // plain starting stack, and flattening it here would destroy the bonus.
-    const stale = (seatRows ?? []).filter((r: any) => Number(r.stack) < target);
+    const stale = (seatRows ?? []).filter((r: any) =>
+      playUnderWay ? Number(r.stack) <= 0 : Number(r.stack) < target
+    );
     if (stale.length === 0) return 0;
     const { error } = await supabase
       .from('table_seats')

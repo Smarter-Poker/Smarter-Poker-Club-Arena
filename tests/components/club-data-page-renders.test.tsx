@@ -7,7 +7,7 @@ const snapshot = {
   range: { start: '2026-08-17', end: '2026-08-30', days: 14 },
   previous_range: { start: '2026-08-03', end: '2026-08-16', days: 14 },
   summary: {
-    games: 12,
+    games: 1,
     total_winnings: 2450,
     mtt_winnings: 500,
     cash_winnings: 1950,
@@ -240,6 +240,14 @@ describe('ClubDataPage', () => {
       expect(channel.filter).toBe(`club_id=eq.${CLUB_ID}`);
       expect(channel.enabled).toBe(true);
     }
+    act(() => {
+      for (const channel of latestByTable.values()) channel.onSubscriptionStatus('SUBSCRIBED');
+    });
+    expect(screen.getByText('4 / 4')).toBeInTheDocument();
+    act(() => latestByTable.get('tables')?.onSubscriptionStatus('CLOSED'));
+    expect(
+      screen.getByText('The 60-Second Verified Poll Remains Active While Live Feeds Reconnect.')
+    ).toBeInTheDocument();
 
     const before = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot').length;
     act(() => latestByTable.get('tables')?.onPayload({ eventType: 'UPDATE' }));
@@ -261,6 +269,10 @@ describe('ClubDataPage', () => {
     expect(screen.getByRole('heading', { name: /Read The Room/i })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('2,450.00')).toBeInTheDocument());
     expect(screen.getByText('Shark Table One')).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Games' })).toHaveAttribute('tabindex', '0');
+    expect(screen.getByRole('heading', { name: 'Data Integrity' })).toBeInTheDocument();
+    expect(screen.getByText('12 / 12')).toBeInTheDocument();
+    expect(screen.getByText('Verified')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Export as CSV' })).toBeEnabled();
     expect(rpcMock).toHaveBeenCalledWith(
       'ca_club_data_snapshot',
@@ -313,6 +325,7 @@ describe('ClubDataPage', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
     await waitFor(() => expect(screen.getByText('Table Regular')).toBeInTheDocument());
+    expect(screen.getByRole('list', { name: 'Players' })).toHaveAttribute('tabindex', '0');
     expect(screen.queryByText('HORSE')).not.toBeInTheDocument();
   });
 

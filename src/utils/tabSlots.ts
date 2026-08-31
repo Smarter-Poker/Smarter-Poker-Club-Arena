@@ -15,6 +15,27 @@
  * in one place is what stops them drifting apart again — they had.
  */
 
+/**
+ * IS THIS ROW A TOURNAMENT? — one derivation, used by every tab factory.
+ *
+ * Dan 2026-08-30, second pass. The rebuild computed this inline, passed it to
+ * `gameCode(...)`, and then dropped it instead of putting it on the tab. Four
+ * readers depend on the tab carrying it, and `undefined` reads as "cash" at
+ * every one: the sit-out toast (promises a 5-minute seat hold to a player who
+ * is actually being blinded off), Sit Out All's cash-seat count, the profit
+ * chip (which Dan requires to ignore tournaments entirely), and the tile raise
+ * slider's step unit.
+ *
+ * A row is a tournament if it says so OR if it belongs to one. `tournament_id`
+ * alone is enough: a table can carry it without `game_type` being set.
+ */
+export interface TableRowLike {
+  game_type?: string | null;
+  tournament_id?: string | null;
+}
+export const isTournamentRow = (row: TableRowLike | null | undefined): boolean =>
+  row?.game_type === 'tournament' || !!row?.tournament_id;
+
 /** The subset of a tab these decisions read. Structural, so the container's
  *  richer `TableInstance` satisfies it without an import cycle. */
 export interface SlotTab {

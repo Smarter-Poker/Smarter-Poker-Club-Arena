@@ -77,6 +77,18 @@ describe('the seat rebuild prunes, not just adds', () => {
     expect(CODE).toMatch(/kind: 'table' as const,\s*\n\s*seated: true,/);
   });
 
+  it('and carries isTournament, which four readers treat as cash when absent', () => {
+    /* Same defect class, found in the same factory on the follow-up audit: the
+       flag was derived for `gameCode(...)` and then dropped. Absent, it reads
+       as "cash" at the sit-out toast, the Sit Out All cash count, the profit
+       chip (a cash-only feature by Dan's rule) and the tile raise slider.
+       `isTournamentRow` itself is pinned behaviourally in tabSlots.test.ts. */
+    expect(CODE).toMatch(/const rowIsTournament = isTournamentRow\(row\)/);
+    expect(CODE).toMatch(/isTournament: rowIsTournament,/);
+    // The balancer-move branch is tournament-only by construction.
+    expect(CODE).toMatch(/isTournament: true,\s*\n\s*isMyTurn: false,/);
+  });
+
   it('still returns the same array reference when nothing changed', () => {
     // The P1-2 render-loop fix depends on this identity bail-out.
     expect(CODE).toMatch(/if \(prunedRef\.current === 0 && additions\.length === 0\) return prev;/);

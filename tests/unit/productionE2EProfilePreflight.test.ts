@@ -144,6 +144,8 @@ describe('authenticated production account preflight', () => {
     expect(mobile).toContain("const CLUB_ARENA_PATH = '/hub/club-arena'");
     expect(mobile).toContain('evaluateAcrossDocumentReplacement');
     expect(mobile).toContain('execution context was destroyed');
+    expect(mobile).toContain('stableBottomSamples >= 2');
+    expect(mobile).toContain('document height did not settle at its reachable bottom');
     expect(mobile).toContain('routes outside Club Arena');
     expect(mobile).toContain('el.closest(\'[aria-hidden="true"]\')');
     expect(mobile).toContain("el.getAttribute('alt')");

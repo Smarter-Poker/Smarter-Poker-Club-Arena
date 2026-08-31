@@ -62,6 +62,7 @@ describe('Daily Missions production certification', () => {
       'wallet_credit_idempotency',
       'wallets',
       'chip_transactions',
+      'audit_trail',
     ]) {
       expect(helper).toContain(`'${table}'`);
     }
@@ -129,6 +130,16 @@ describe('Daily Missions production certification', () => {
     );
     expect(orderFix.indexOf('DELETE FROM public.daily_challenge_dashboard_revisions')).toBeLessThan(
       orderFix.indexOf('DELETE FROM auth.users')
+    );
+    const auditFix = source(
+      'supabase/migrations/20260901020200_reserved_certification_cleanup_audit_trail.sql'
+    );
+    expect(auditFix).toContain("v_email NOT LIKE 'ca-customization-cert-%@example.invalid'");
+    expect(auditFix.indexOf('DELETE FROM public.audit_trail')).toBeLessThan(
+      auditFix.indexOf('DELETE FROM auth.users')
+    );
+    expect(auditFix).toContain(
+      'REVOKE ALL ON FUNCTION public.cleanup_reserved_certification_account(uuid) FROM authenticated'
     );
   });
 });

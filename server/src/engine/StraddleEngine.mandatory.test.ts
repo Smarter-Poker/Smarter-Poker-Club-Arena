@@ -14,7 +14,7 @@ const stacks = new Map([
 ]);
 const BB = 2;
 
-describe('StraddleEngine — mandatory (auto) UTG straddle', () => {
+describe('StraddleEngine - mandatory (auto) UTG straddle', () => {
   it('auto-posts the UTG straddle every hand with NO opt-in when mandatoryUtg is true', () => {
     const eng = new StraddleEngine();
     eng.configure('t', {

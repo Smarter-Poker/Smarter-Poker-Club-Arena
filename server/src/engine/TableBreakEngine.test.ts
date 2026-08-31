@@ -53,7 +53,7 @@ function broken(...specs: Array<[string, number, number]>): TableSnapshot {
   };
 }
 
-describe('TableBreakEngine.planRedistribution — A6 chip/seat conservation', () => {
+describe('TableBreakEngine.planRedistribution - A6 chip/seat conservation', () => {
   it('seats every player when capacity exists', () => {
     const b = broken(['p1', 1, 1000], ['p2', 3, 2000], ['p3', 5, 3000]);
     const plan = engine().planRedistribution(b, [
@@ -113,7 +113,10 @@ describe('TableBreakEngine.planRedistribution — A6 chip/seat conservation', ()
     expect(plan.unplaced).toHaveLength(3);
     expect(moved + stranded).toBe(total);
     // and every player is accounted for exactly once
-    const seen = [...plan.movements.map((m) => m.playerId), ...plan.unplaced.map((u) => u.playerId)];
+    const seen = [
+      ...plan.movements.map((m) => m.playerId),
+      ...plan.unplaced.map((u) => u.playerId),
+    ];
     expect(new Set(seen).size).toBe(5);
   });
 
@@ -169,7 +172,7 @@ describe('TableBreakEngine.planRedistribution — A6 chip/seat conservation', ()
   });
 });
 
-describe('TableBreakEngine.calculateRedistribution — backwards-compatible wrapper', () => {
+describe('TableBreakEngine.calculateRedistribution - backwards-compatible wrapper', () => {
   it('still returns a plain movement list', () => {
     const b = broken(['p1', 1, 10]);
     const moves = engine().calculateRedistribution(b, [table('t1', 9, [1])]);
@@ -195,9 +198,12 @@ describe('TableBreakEngine.shouldBreak / checkRebalance', () => {
 
   it('does not propose a rebalance move onto a table with no free seat', () => {
     const e = engine();
-    const big = table('big', 9, [1, 2, 3, 4, 5, 6, 7, 8, 9], [
-      { playerId: 'a', seat: 9, stack: 100 },
-    ]);
+    const big = table(
+      'big',
+      9,
+      [1, 2, 3, 4, 5, 6, 7, 8, 9],
+      [{ playerId: 'a', seat: 9, stack: 100 }]
+    );
     // smallest has a low playerCount but every seat number is taken
     const small = table('small', 2, [1, 2], [{ playerId: 'b', seat: 1, stack: 50 }]);
     small.playerCount = 2;

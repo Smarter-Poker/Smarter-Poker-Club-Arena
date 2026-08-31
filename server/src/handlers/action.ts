@@ -76,7 +76,7 @@ export async function handleAction(
     if (!checkRateLimit(userId, tableId)) {
       return sendJSON(res, 429, {
         success: false,
-        error: 'Rate limited — wait before submitting another action',
+        error: 'Rate limited - wait before submitting another action',
       });
     }
 

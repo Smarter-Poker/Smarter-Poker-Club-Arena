@@ -102,7 +102,7 @@ describe('V25 the pot-limit commitment zone', () => {
 });
 
 describe('V25 price-driven all-in calls', () => {
-  it('a great price widens the call-off — PLO equities compress', () => {
+  it('a great price widens the call-off - PLO equities compress', () => {
     // Facing an all-in, getting better than 3:1. In PLO the worst four cards
     // still hold ~30% against the best, so folding a decent hand at this
     // price is a bigger error than in holdem.
@@ -168,7 +168,7 @@ describe('V25 the Omaha reshove', () => {
     expect(decidePreflopV7({ ...mid, ploTourney: false } as never).a).not.toBe('raiseTo');
   });
 
-  it('it demands real equity — PLO 3-bets get called', () => {
+  it('it demands real equity - PLO 3-bets get called', () => {
     // Fold equity is thin in PLO, so the reshove needs a hand, not a hope.
     expect(decidePreflopV7(reshove({ strength: 0.6 }) as never).a).not.toBe('raiseTo');
   });
@@ -188,7 +188,7 @@ describe('V25 never raise-fold a committed stack', () => {
       ...extra,
     });
 
-  it('a committed PLO stack does NOT surrender — it gets the rest in', () => {
+  it('a committed PLO stack does NOT surrender - it gets the rest in', () => {
     // The property that matters is "never raise-fold", not a particular
     // verb. The layer answers with the whole remaining stack rather than a
     // flat call, and that is the better line: calling 500 of 900 leaves a
@@ -198,11 +198,11 @@ describe('V25 never raise-fold a committed stack', () => {
     if (r.a === 'raiseTo') expect(r.to).toBeGreaterThanOrEqual(900);
   });
 
-  it('WITHOUT the layer the same spot can be folded — the raise-fold leak', () => {
+  it('WITHOUT the layer the same spot can be folded - the raise-fold leak', () => {
     expect(decidePreflopV7(reRaised({ ploTourney: false }) as never).a).toBe('fold');
   });
 
-  it('genuine garbage still folds — this is not a call button', () => {
+  it('genuine garbage still folds - this is not a call button', () => {
     expect(decidePreflopV7(reRaised({ strength: 0.2 }) as never).a).toBe('fold');
   });
 });
@@ -215,7 +215,7 @@ describe('V25 blast radius', () => {
     );
   });
 
-  it('PLO CASH is untouched — this layer is tournament-only', () => {
+  it('PLO CASH is untouched - this layer is tournament-only', () => {
     const cash = ploT({ mode: 'cash' as const, anteInPlay: false });
     expect(decidePreflopV7(cash as never).a).toBe(
       decidePreflopV7({ ...cash, ploTourney: false } as never).a

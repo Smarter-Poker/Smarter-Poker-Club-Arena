@@ -56,7 +56,7 @@ function mkEngine() {
   return e;
 }
 
-describe('leader handoff — a decline by one player never blocks the other', () => {
+describe('leader handoff - a decline by one player never blocks the other', () => {
   it('hero declines on the flop; villain (new turn leader) still gets an offer', () => {
     const e = mkEngine();
 
@@ -97,7 +97,7 @@ describe('leader handoff — a decline by one player never blocks the other', ()
   });
 });
 
-describe('insurancePauseStillLive — the per-street pause survives a leader decline', () => {
+describe('insurancePauseStillLive - the per-street pause survives a leader decline', () => {
   function mkTableEngine() {
     const engine = new ServerTableEngine(TABLE) as unknown as {
       insuranceEngine: InsuranceEngine;
@@ -117,7 +117,7 @@ describe('insurancePauseStillLive — the per-street pause survives a leader dec
     expect(engine.insurancePauseStillLive(bothPlayers)).toBe(true);
   });
 
-  it('leader declined, villain never offered: pause LIVES — the 2026-08-26 fix', () => {
+  it('leader declined, villain never offered: pause LIVES - the 2026-08-26 fix', () => {
     const engine = mkTableEngine();
     engine.insuranceEngine.createOffers(TABLE, 't:1', HERO, allIn, flop, 200, 'nlh');
     engine.insuranceEngine.decline(TABLE, HERO, true);

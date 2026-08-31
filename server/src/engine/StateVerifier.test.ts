@@ -68,7 +68,7 @@ function boardOf(n: number) {
   return ranks.slice(0, n).map((rank) => ({ rank, suit: 'hearts' as const }));
 }
 
-describe('StateVerifier — COMMUNITY_CARD_COUNT direction', () => {
+describe('StateVerifier - COMMUNITY_CARD_COUNT direction', () => {
   const cardCountViolations = (stage: string, n: number) =>
     new StateVerifier()
       .verify(ctx({ stage, communityCards: boardOf(n) }))
@@ -81,7 +81,7 @@ describe('StateVerifier — COMMUNITY_CARD_COUNT direction', () => {
     expect(cardCountViolations('flop', 4)).toHaveLength(0);
   });
 
-  it('DOES flag a board behind its stage — cards are missing', () => {
+  it('DOES flag a board behind its stage - cards are missing', () => {
     const v = cardCountViolations('river', 4);
     expect(v).toHaveLength(1);
     expect(v[0].details).toMatchObject({ reason: 'board_behind_stage', expected: 5, actual: 4 });
@@ -102,7 +102,7 @@ describe('StateVerifier — COMMUNITY_CARD_COUNT direction', () => {
   });
 });
 
-describe('StateVerifier — A7 in-hand chip conservation', () => {
+describe('StateVerifier - A7 in-hand chip conservation', () => {
   it('passes on an honest mid-hand state', () => {
     const v = new StateVerifier();
     const players = midHand(150, 150);
@@ -197,7 +197,7 @@ describe('StateVerifier — A7 in-hand chip conservation', () => {
   });
 });
 
-describe('StateVerifier — A7 pot accounting (pot === Σ contributions)', () => {
+describe('StateVerifier - A7 pot accounting (pot === Σ contributions)', () => {
   it('flags a pot larger than the chips players actually put in', () => {
     const v = new StateVerifier();
     const players = midHand(150, 150);
@@ -231,7 +231,7 @@ describe('StateVerifier — A7 pot accounting (pot === Σ contributions)', () =>
   });
 });
 
-describe('StateVerifier — hand_complete behaviour is unchanged (FIX 204)', () => {
+describe('StateVerifier - hand_complete behaviour is unchanged (FIX 204)', () => {
   it('defaults to hand_complete and sums stacks only, ignoring stale bets', () => {
     const v = new StateVerifier();
     v.recordInitialChipTotal('t1', [
@@ -264,7 +264,7 @@ describe('StateVerifier — hand_complete behaviour is unchanged (FIX 204)', () 
   });
 });
 
-describe('StateVerifier — reported numbers reconcile with the verdict', () => {
+describe('StateVerifier - reported numbers reconcile with the verdict', () => {
   it('chipTotal is the exact quantity the conservation check compared', () => {
     const v = new StateVerifier();
     v.recordInitialChipTotal('t1', [
@@ -294,7 +294,7 @@ describe('StateVerifier — reported numbers reconcile with the verdict', () => 
   });
 });
 
-describe('StateVerifier — negative-value guards', () => {
+describe('StateVerifier - negative-value guards', () => {
   it('flags a negative bet and a negative contribution', () => {
     const v = new StateVerifier();
     const res = v.verify(

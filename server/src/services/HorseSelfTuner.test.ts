@@ -61,7 +61,7 @@ const wwsfWinHand = (): HandRow => ({
   button_seat: 6,
 });
 
-describe('HorseSelfTuner V12 — measurement', () => {
+describe('HorseSelfTuner V12 - measurement', () => {
   it('computes VPIP, PFR, fold-to-3-bet, WWSF and postflop AF from real action shapes', () => {
     const tracked = new Set(['hero']);
     const stats = new Map<string, PlayStats>();
@@ -189,7 +189,7 @@ describe('HorseSelfTuner V12 — measurement', () => {
   });
 });
 
-describe('HorseSelfTuner V12 — diagnosis and bounded nudges', () => {
+describe('HorseSelfTuner V12 - diagnosis and bounded nudges', () => {
   const base = (over: Partial<PlayStats> = {}): PlayStats => ({
     hands: 1000,
     vpip: 250, // 25% — in band

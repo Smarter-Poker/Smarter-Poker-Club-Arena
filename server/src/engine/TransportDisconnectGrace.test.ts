@@ -70,7 +70,7 @@ describe('markTransportGone', () => {
     expect(pending()).toBe(0);
   });
 
-  it('still concludes when NEITHER transport says anything — the tab is closed', () => {
+  it('still concludes when NEITHER transport says anything - the tab is closed', () => {
     engine.markTransportGone(TABLE, PLAYER);
     expect(engine.isConnected(TABLE, PLAYER)).toBe(true); // not yet
 

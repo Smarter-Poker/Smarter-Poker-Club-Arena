@@ -42,7 +42,7 @@ const STANDARD_40 = () =>
   });
 
 describe('blind ladders are deep enough for the tournament actually played', () => {
-  it('every speed reaches at least 25 levels — events reach level 14 on average, 124 at worst', () => {
+  it('every speed reaches at least 25 levels - events reach level 14 on average, 124 at worst', () => {
     for (const speed of Object.keys(LADDER_CYCLES) as Array<keyof typeof LADDER_CYCLES>) {
       const ladder = buildLadder({
         startBigBlind: 50,
@@ -148,7 +148,7 @@ describe('overflow past a structure follows the ladder, not a doubling', () => {
     expect(escalationFactor(10, 10, Number.NaN)).toBeCloseTo(1.4, 5);
   });
 
-  it('is still anchored to the PERSISTED length — the same answer after a restart', () => {
+  it('is still anchored to the PERSISTED length - the same answer after a restart', () => {
     // The 2026-08-26 defect: a mutating anchor compounded the factor.
     expect(escalationFactor(13, 10, 1.4)).toBeCloseTo(Math.pow(1.4, 4), 5);
     expect(escalationFactor(14, 10, 1.4)).toBeCloseTo(Math.pow(1.4, 5), 5);
@@ -204,7 +204,7 @@ describe('a big blind may never exceed the chips that exist', () => {
     expect(capped.ante / capped.bigBlind).toBeCloseTo(0.125, 1);
   });
 
-  it('an unknown chip total caps NOTHING — never guess a supply', () => {
+  it('an unknown chip total caps NOTHING - never guess a supply', () => {
     for (const bad of [null, undefined, 0, -1, Number.NaN]) {
       const capped = capLevelToChipsInPlay(
         { smallBlind: 5e6, bigBlind: 1e7, ante: 0 },
@@ -250,7 +250,7 @@ describe('payout depth scales with the field', () => {
     }
   });
 
-  it('is monotonically decreasing — a later place never out-earns an earlier one', () => {
+  it('is monotonically decreasing - a later place never out-earns an earlier one', () => {
     const s = payoutStructureForField(334);
     for (let i = 1; i < s.length; i++) {
       expect(s[i].percentage, `place ${i + 1} <= place ${i}`).toBeLessThanOrEqual(
@@ -264,7 +264,7 @@ describe('payout depth scales with the field', () => {
     expect(s.map((p) => p.place)).toEqual(s.map((_, i) => i + 1));
   });
 
-  it('every place pays something — a 0% paid place is not a paid place', () => {
+  it('every place pays something - a 0% paid place is not a paid place', () => {
     for (const field of [20, 100, 500, 1000]) {
       for (const p of payoutStructureForField(field)) {
         expect(p.percentage, `field ${field} place ${p.place}`).toBeGreaterThan(0);

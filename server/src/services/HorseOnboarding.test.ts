@@ -16,7 +16,7 @@ import { identityFor, brainFor } from './HorseOnboarding.js';
 const ids = Array.from({ length: 400 }, (_, i) => `id-${i}-${(i * 7919) % 104729}`);
 
 describe('identity', () => {
-  it('is stable for a horse — the same person every time it runs', () => {
+  it('is stable for a horse - the same person every time it runs', () => {
     for (const id of ids.slice(0, 40)) {
       expect(identityFor(id)).toEqual(identityFor(id));
     }

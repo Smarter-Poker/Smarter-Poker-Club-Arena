@@ -80,7 +80,7 @@ describe('2 per street, never more', () => {
     expect(consumeOne(tbe)).toBe(false); // still refused
   });
 
-  it('a new street restores the allowance — this is the per-STREET part', () => {
+  it('a new street restores the allowance - this is the per-STREET part', () => {
     const { tbe } = deepPool();
     expect(consumeOne(tbe)).toBe(true);
     expect(consumeOne(tbe)).toBe(true);

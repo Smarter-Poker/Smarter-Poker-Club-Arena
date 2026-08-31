@@ -172,7 +172,7 @@ function restartIntoLeaderBoot(reason: string): void {
   restartScheduled = true;
   console.error(
     `[leadership] ${INSTANCE_ID} promoted (${reason}) but booted as a standby, so it has ` +
-      'no discovery loop or fleet — exiting so the supervisor restarts it as a real leader.'
+      'no discovery loop or fleet - exiting so the supervisor restarts it as a real leader.'
   );
   /**
    * HAND THE LEASE BACK BEFORE DYING (2026-08-24). The grant that got us here
@@ -227,7 +227,7 @@ export async function renewLeadership(): Promise<EngineRole> {
     if (error) {
       errors++;
       if (errors <= 3) {
-        console.warn(`[leadership] claim failed (${error.message}) — holding role '${role}'`);
+        console.warn(`[leadership] claim failed (${error.message}) - holding role '${role}'`);
       }
       // Retain, never assume. A standby that promotes itself because it cannot
       // reach the database is how two engines end up on one table.
@@ -242,7 +242,7 @@ export async function renewLeadership(): Promise<EngineRole> {
       unknownStreak++;
       if (role === 'standby' && unknownStreak >= PROMOTE_AFTER_UNKNOWN && holder === null) {
         console.warn(
-          `[leadership] ${unknownStreak} claims unanswerable and no holder known — promoting ${INSTANCE_ID}`
+          `[leadership] ${unknownStreak} claims unanswerable and no holder known - promoting ${INSTANCE_ID}`
         );
         becameLeaderAt = Date.now();
         role = 'leader';
@@ -270,7 +270,7 @@ export async function renewLeadership(): Promise<EngineRole> {
       unknownStreak++;
       if (role === 'standby' && unknownStreak >= PROMOTE_AFTER_UNKNOWN) {
         console.warn(
-          `[leadership] ${unknownStreak} claims resolved to nobody — promoting ${INSTANCE_ID}`
+          `[leadership] ${unknownStreak} claims resolved to nobody - promoting ${INSTANCE_ID}`
         );
         becameLeaderAt = Date.now();
         role = 'leader';
@@ -285,7 +285,7 @@ export async function renewLeadership(): Promise<EngineRole> {
     if (row.granted) {
       const wasStandby = role !== 'leader';
       if (wasStandby) {
-        console.log(`[leadership] ${INSTANCE_ID} is now the LEADER — taking the fleet`);
+        console.log(`[leadership] ${INSTANCE_ID} is now the LEADER - taking the fleet`);
         becameLeaderAt = Date.now();
       } else if (becameLeaderAt === null) {
         becameLeaderAt = Date.now();
@@ -312,10 +312,10 @@ export async function renewLeadership(): Promise<EngineRole> {
        * supervisor bring us back as a standby.
        */
       reportError(
-        new Error(`Lost engine leadership to ${row.holder} — standing down`),
+        new Error(`Lost engine leadership to ${row.holder} - standing down`),
         'Leadership.lost'
       );
-      console.error('[leadership] LOST LEADERSHIP — exiting so we restart as a standby');
+      console.error('[leadership] LOST LEADERSHIP - exiting so we restart as a standby');
       role = 'standby';
       setTimeout(() => process.exit(0), 250).unref?.();
       return role;
@@ -326,13 +326,13 @@ export async function renewLeadership(): Promise<EngineRole> {
     errors++;
     if (errors <= 3) {
       console.warn(
-        `[leadership] claim threw (${(err as Error)?.message}) — holding role '${role}'`
+        `[leadership] claim threw (${(err as Error)?.message}) - holding role '${role}'`
       );
     }
     unknownStreak++;
     if (role === 'standby' && unknownStreak >= PROMOTE_AFTER_UNKNOWN && holder === null) {
       console.warn(
-        `[leadership] ${unknownStreak} claims threw and no holder known — promoting ${INSTANCE_ID}`
+        `[leadership] ${unknownStreak} claims threw and no holder known - promoting ${INSTANCE_ID}`
       );
       becameLeaderAt = Date.now();
       role = 'leader';

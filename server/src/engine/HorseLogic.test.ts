@@ -144,7 +144,7 @@ const STYLES: HorseStyle[] = ['tag', 'lag', 'balanced', 'tricky', 'grinder'];
 // 1. LEGALITY FUZZ
 // ───────────────────────────────────────────────────────────────────────────────────
 
-describe('HorseLogic V2 — legality fuzz (all variants, all streets)', () => {
+describe('HorseLogic V2 - legality fuzz (all variants, all streets)', () => {
   /**
    * EXPLICIT TIMEOUT (2026-08-29). This fuzz costs ~6.0s on an idle machine
    * against the 10s global in vitest.config.ts — four seconds of headroom for
@@ -312,7 +312,7 @@ describe('HorseLogic V2 — legality fuzz (all variants, all streets)', () => {
         const check = validateAction(decision.action, decision.amount, hero.stack, bettingState);
         if (!check.valid) {
           throw new Error(
-            `ILLEGAL ${variant}/${stage}: ${decision.action} ${decision.amount} — ${check.error} ` +
+            `ILLEGAL ${variant}/${stage}: ${decision.action} ${decision.amount} - ${check.error} ` +
               `(toCall=${bettingState.toCall}, minRaise=${bettingState.minRaise}, ` +
               `maxRaise=${bettingState.maxRaise}, stack=${hero.stack}, bet=${hero.bet}, ` +
               `currentBet=${gs.currentBet}, pot=${gs.pot})`
@@ -427,7 +427,7 @@ describe('HorseLogic V2 — legality fuzz (all variants, all streets)', () => {
         const check = validateAction(decision.action, decision.amount, hero.stack, bs);
         expect(
           check.valid,
-          `${variant}/${style}: ${decision.action} ${decision.amount} — ${check.error}`
+          `${variant}/${style}: ${decision.action} ${decision.amount} - ${check.error}`
         ).toBe(true);
       }
     }
@@ -464,7 +464,7 @@ function frequency(
   return hits / n;
 }
 
-describe('HorseLogic V2 — poker sanity', () => {
+describe('HorseLogic V2 - poker sanity', () => {
   const baseGs = (over: Record<string, unknown> = {}) => ({
     players: [mkPlayer(1), mkPlayer(2), mkPlayer(3), mkPlayer(4), mkPlayer(5), mkPlayer(6)],
     communityCards: [] as Card[],
@@ -609,7 +609,7 @@ describe('HorseLogic V2 — poker sanity', () => {
 // 3. DISCARD INTELLIGENCE (Crazy Pineapple)
 // ───────────────────────────────────────────────────────────────────────────────────
 
-describe('HorseLogic V2 — pineapple discard', () => {
+describe('HorseLogic V2 - pineapple discard', () => {
   it('keeps the flopped set, discards the offsuit rag', () => {
     // Hand: 8h 8d 3c on board 8s Kd 2h -> discard MUST be the 3c (index 2)
     const idx = HorseLogic.decideDiscard(
@@ -671,7 +671,7 @@ describe('resolveHorseStyle', () => {
 // 5. FAST EVALUATOR CROSS-VALIDATION vs the authoritative PokerEngine
 // ───────────────────────────────────────────────────────────────────────────────────
 
-describe('HorseLogic V2 — fast evaluator agrees with PokerEngine', () => {
+describe('HorseLogic V2 - fast evaluator agrees with PokerEngine', () => {
   const { scoreHoldem, scoreOmahaHi, scoreOmahaLow } = (HorseLogic as any).__testables;
   const sign = (x: number) => (x > 0 ? 1 : x < 0 ? -1 : 0);
 
@@ -739,7 +739,7 @@ describe('HorseLogic V2 — fast evaluator agrees with PokerEngine', () => {
 // 6. PERFORMANCE
 // ───────────────────────────────────────────────────────────────────────────────────
 
-describe('HorseLogic V2 — performance budget', () => {
+describe('HorseLogic V2 - performance budget', () => {
   it('averages well under the synchronous turn-handler budget', () => {
     const cases: Array<() => void> = [];
     for (const { variant, hole, short } of VARIANTS) {
@@ -783,7 +783,7 @@ import { simulateEquity, omahaDrawQuality, variantInfo, type HiLoSplit } from '.
 import { buyInBBFor, isActiveNow } from '../services/HorseBehavior.js';
 import type { ActionRecord } from '../types.js';
 
-describe('HorseMind V3 — opponent intelligence', () => {
+describe('HorseMind V3 - opponent intelligence', () => {
   it('reads a 3-bettor into a tight band and a limper into a wide one', () => {
     const hist: ActionRecord[] = [
       { seat: 1, userId: 'op', action: 'raise', amount: 6, timestamp: 1, stage: 'preflop' },
@@ -937,7 +937,7 @@ describe('HorseMind V3 — opponent intelligence', () => {
 // 8. V4 — STREET IQ: initiative, position, made class, scare cards (2026-07-23)
 // ───────────────────────────────────────────────────────────────────────────────────
 
-describe('HorseLogic V4 — street IQ', () => {
+describe('HorseLogic V4 - street IQ', () => {
   const { readInitiative, actsLastPostflop, madeCategory, scareShift, scoreOmahaHiPartial } = (
     HorseLogic as any
   ).__testables;
@@ -1115,7 +1115,7 @@ describe('HorseLogic V4 — street IQ', () => {
       const bs = calculateBettingState(gs.pot, gs.currentBet, hero.bet, 2, 2, false);
       const check = validateAction(d.action, d.amount, hero.stack, bs);
       if (!check.valid) {
-        throw new Error(`V4 ILLEGAL ${stage}: ${d.action} ${d.amount} — ${check.error}`);
+        throw new Error(`V4 ILLEGAL ${stage}: ${d.action} ${d.amount} - ${check.error}`);
       }
     }
   });
@@ -1125,7 +1125,7 @@ describe('HorseLogic V4 — street IQ', () => {
 // 9. V5 — DYNAMIC HAND READING: street narrowing, probes, river discipline
 // ───────────────────────────────────────────────────────────────────────────────────
 
-describe('HorseMind V5 — dynamic hand reading', () => {
+describe('HorseMind V5 - dynamic hand reading', () => {
   it('narrows a barreller street by street', () => {
     const openOnly: ActionRecord[] = [
       { seat: 1, userId: 'v', action: 'raise', amount: 6, timestamp: 1, stage: 'preflop' },
@@ -1337,7 +1337,7 @@ describe('HorseMind V5 — dynamic hand reading', () => {
       const bs = calculateBettingState(gs.pot, gs.currentBet, hero.bet, 2, 2, false);
       const check = validateAction(d.action, d.amount, hero.stack, bs);
       if (!check.valid) {
-        throw new Error(`V5 ILLEGAL ${stage}: ${d.action} ${d.amount} — ${check.error}`);
+        throw new Error(`V5 ILLEGAL ${stage}: ${d.action} ${d.amount} - ${check.error}`);
       }
     }
   });
@@ -1347,7 +1347,7 @@ describe('HorseMind V5 — dynamic hand reading', () => {
 // 10. V7 — PREFLOP MASTERY + SIZE READS + BARRELS + COUNTER-ADAPT + ICM
 // ───────────────────────────────────────────────────────────────────────────────────
 
-describe('HorseLogic V7 — preflop mastery', () => {
+describe('HorseLogic V7 - preflop mastery', () => {
   const sixMax = (heroSeat: number, hero: SeatPlayer, over: Record<string, unknown> = {}): any => {
     const players = [1, 2, 3, 4, 5, 6].map((s) => (s === heroSeat ? hero : mkPlayer(s)));
     return {
@@ -1463,7 +1463,7 @@ describe('HorseLogic V7 — preflop mastery', () => {
   });
 });
 
-describe('HorseMind V7 — size-aware reads + counter-adaptation + plans', () => {
+describe('HorseMind V7 - size-aware reads + counter-adaptation + plans', () => {
   it('a pot-sized barrel narrows the read more than a min-bet', () => {
     const base: ActionRecord[] = [
       { seat: 1, userId: 'v', action: 'raise', amount: 6, timestamp: 1, stage: 'preflop' },
@@ -1640,7 +1640,7 @@ describe('HorseMind V7 — size-aware reads + counter-adaptation + plans', () =>
       const check = validateAction(d.action, d.amount, hero.stack, bs);
       if (!check.valid) {
         throw new Error(
-          `V7 ILLEGAL ${stage} bb=${bigBlind}: ${d.action} ${d.amount} — ${check.error}`
+          `V7 ILLEGAL ${stage} bb=${bigBlind}: ${d.action} ${d.amount} - ${check.error}`
         );
       }
     }
@@ -1651,7 +1651,7 @@ describe('HorseMind V7 — size-aware reads + counter-adaptation + plans', () =>
 // 11. V8 — O8 SCOOP/QUARTER + OMAHA DRAW QUALITY + NLH RAISES + BEHAVIOR
 // ───────────────────────────────────────────────────────────────────────────────────
 
-describe('HorseEval V8 — hi-lo decomposition + Omaha draw quality', () => {
+describe('HorseEval V8 - hi-lo decomposition + Omaha draw quality', () => {
   const vi8 = variantInfo('plo8');
 
   it('decomposes a scoop monster vs a bare nut low correctly', () => {
@@ -1708,7 +1708,7 @@ describe('HorseEval V8 — hi-lo decomposition + Omaha draw quality', () => {
   });
 });
 
-describe('HorseLogic V8 — O8 quarter brake + NLH raise bluffs', () => {
+describe('HorseLogic V8 - O8 quarter brake + NLH raise bluffs', () => {
   it('a bare nut low stops betting into a multiway pot (quarter awareness)', () => {
     const mkGs = (): any => ({
       players: [
@@ -1839,7 +1839,7 @@ describe('HorseLogic V8 — O8 quarter brake + NLH raise bluffs', () => {
         const check = validateAction(d.action, d.amount, hero.stack, bs);
         if (!check.valid) {
           throw new Error(
-            `V8 ILLEGAL ${variant}/${stage}: ${d.action} ${d.amount} — ${check.error}`
+            `V8 ILLEGAL ${variant}/${stage}: ${d.action} ${d.amount} - ${check.error}`
           );
         }
       }
@@ -1847,7 +1847,7 @@ describe('HorseLogic V8 — O8 quarter brake + NLH raise bluffs', () => {
   });
 });
 
-describe('HorseBehavior V8 — join/leave personality helpers', () => {
+describe('HorseBehavior V8 - join/leave personality helpers', () => {
   it('buy-in profiles stay inside 40-200bb with real spread', () => {
     const bbs = Array.from({ length: 400 }, (_, i) => buyInBBFor(`h-${i}-uuid`));
     expect(Math.min(...bbs)).toBeGreaterThanOrEqual(40);
@@ -1879,7 +1879,7 @@ describe('HorseBehavior V8 — join/leave personality helpers', () => {
 // 12. V9 — HUMANIZATION: size families, difficulty tanks, hourly mood
 // ───────────────────────────────────────────────────────────────────────────────────
 
-describe('HorseLogic V9 — humanization polish', () => {
+describe('HorseLogic V9 - humanization polish', () => {
   const { snapFraction, moodOf } = (HorseLogic as any).__testables;
 
   it('snaps bet fractions to human size families with jitter', () => {
@@ -1983,7 +1983,7 @@ describe('HorseLogic V9 — humanization polish', () => {
 //     odds, river blocker catching, capped thin value, limp isolation
 // ───────────────────────────────────────────────────────────────────────────────────
 
-describe('HorseLogic V10 — strategy layer', () => {
+describe('HorseLogic V10 - strategy layer', () => {
   const { rakeDrag } = (HorseLogic as any).__testables;
   const NOMOOD = { v9Mood: false }; // isolate V10 effects from hourly mood noise
 
@@ -2258,7 +2258,7 @@ describe('HorseLogic V10 — strategy layer', () => {
         const check = validateAction(d.action, d.amount, hero.stack, bs);
         if (!check.valid) {
           throw new Error(
-            `V10 ILLEGAL ${variant}/${stage}: ${d.action} ${d.amount} — ${check.error}`
+            `V10 ILLEGAL ${variant}/${stage}: ${d.action} ${d.amount} - ${check.error}`
           );
         }
       }
@@ -2273,7 +2273,7 @@ describe('HorseLogic V10 — strategy layer', () => {
 // into the aggressor, and cash/tournament/heads-up playing identically.
 // ───────────────────────────────────────────────────────────────────────────────────
 
-describe('HorseLogic V11 — game modes + leak fixes', () => {
+describe('HorseLogic V11 - game modes + leak fixes', () => {
   const v7ctx = (over: Record<string, unknown> = {}): any => ({
     strength: 0.5,
     position: 'bb',

@@ -48,21 +48,16 @@ function harness(config: HandConfig, players: SeatPlayer[], dealerSeat: number) 
   const events: HandEvent[] = [];
   const hc = new HandController(config, players, dealerSeat);
   hc.onEvent((e) => events.push(e));
-  const state = () =>
-    (hc as unknown as { state: { pot: number; players: SeatPlayer[] } }).state;
+  const state = () => (hc as unknown as { state: { pot: number; players: SeatPlayer[] } }).state;
   const seat = (n: number) => state().players.find((p) => p.seat === n)!;
   return { hc, events, state, seat };
 }
 
-describe('HandController — Big Blind Ante is dead money, never refunded', () => {
+describe('HandController - Big Blind Ante is dead money, never refunded', () => {
   it('does not refund the BBA to the BB in a limped, checked-down pot', () => {
     // HU, 1000 each, 5/10, BBA of 2/player => BB fronts 2*2 = 4.
     const players = mkPlayers([1000, 1000]);
-    const { hc, events, seat } = harness(
-      mkConfig({ ante: 2, bigBlindAnte: true }),
-      players,
-      1
-    );
+    const { hc, events, seat } = harness(mkConfig({ ante: 2, bigBlindAnte: true }), players, 1);
     hc.start(); // seat1 = button/SB (posts 5), seat2 = BB (posts 10 + 4 dead ante)
 
     // BB posted the dead ante and only the dead ante.

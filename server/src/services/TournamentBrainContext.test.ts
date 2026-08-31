@@ -35,7 +35,7 @@ const row = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-describe('TournamentBrainContext V12 — derivation', () => {
+describe('TournamentBrainContext V12 - derivation', () => {
   it('derives formats: spin, hu_sng, mtt', () => {
     expect(deriveContext(row({ tournament_type: 'SPIN' }) as never, 3, 3, 3000).format).toBe(
       'spin'
@@ -109,7 +109,7 @@ describe('TournamentBrainContext V12 — derivation', () => {
   });
 });
 
-describe('HorseLogic V12 — icmRisk v2', () => {
+describe('HorseLogic V12 - icmRisk v2', () => {
   const gs = (
     tournament: Record<string, unknown> | undefined,
     over: Record<string, unknown> = {}
@@ -156,7 +156,7 @@ describe('HorseLogic V12 — icmRisk v2', () => {
   });
 });
 
-describe('HorsePreflop V12 — spin format widening', () => {
+describe('HorsePreflop V12 - spin format widening', () => {
   it('a spin opens hands an MTT folds at the same stack depth', () => {
     const ctx = (format: 'mtt' | 'spin'): Parameters<typeof decidePreflopV7>[0] =>
       ({

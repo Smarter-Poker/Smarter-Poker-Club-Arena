@@ -30,8 +30,8 @@ function sum(m: Map<string, number>): number {
   return s / 100;
 }
 
-describe('weighted contributed allocation — spec reference vectors', () => {
-  it('§35: six dealt, two with zero contribution — credits follow money, zeros get nothing', () => {
+describe('weighted contributed allocation - spec reference vectors', () => {
+  it('§35: six dealt, two with zero contribution - credits follow money, zeros get nothing', () => {
     const shares = allocateWeightedShareCents(5, {
       [A]: 50,
       [B]: 25,
@@ -51,7 +51,7 @@ describe('weighted contributed allocation — spec reference vectors', () => {
     for (const v of shares.values()) expect(Math.abs(v - 0.83)).toBeGreaterThan(0.005);
   });
 
-  it('§36: blinds count — SB $1, BB $20, BTN $20, rake $2 reconciles exactly', () => {
+  it('§36: blinds count - SB $1, BB $20, BTN $20, rake $2 reconciles exactly', () => {
     const shares = allocateWeightedShareCents(2, { [A]: 1, [B]: 20, [C]: 20 });
     expect(sum(shares)).toBe(2);
     // SB's exact share is 1/41*2 = 0.0487..; largest-remainder gives the odd cent
@@ -61,7 +61,7 @@ describe('weighted contributed allocation — spec reference vectors', () => {
     expect(shares.get(C)).toBe(0.97);
   });
 
-  it('§37: uncalled bet excluded upstream — A eligible 40, B all-in 40, rake $4 → $2 each', () => {
+  it('§37: uncalled bet excluded upstream - A eligible 40, B all-in 40, rake $4 → $2 each', () => {
     // The engine excludes the returned $60 BEFORE contributions are captured
     // (returnUncalledBet decrements totalInvested), so the allocator sees 40/40.
     const shares = allocateWeightedShareCents(4, { [A]: 40, [B]: 40 });
@@ -69,7 +69,7 @@ describe('weighted contributed allocation — spec reference vectors', () => {
     expect(shares.get(B)).toBe(2);
   });
 
-  it('§38: short all-in — A $25, B $100, C $100, rake $4 → 0.44 / 1.78 / 1.78', () => {
+  it('§38: short all-in - A $25, B $100, C $100, rake $4 → 0.44 / 1.78 / 1.78', () => {
     const shares = allocateWeightedShareCents(4, { [A]: 25, [B]: 100, [C]: 100 });
     expect(shares.get(A)).toBe(0.44);
     expect(shares.get(B)).toBe(1.78);
@@ -213,7 +213,7 @@ function shares2obj(m: Map<string, number>): Record<string, number> {
   return o;
 }
 
-describe('POLISH 4 — ledger-first shares (sharesForRakeRecordWithLedger)', () => {
+describe('POLISH 4 - ledger-first shares (sharesForRakeRecordWithLedger)', () => {
   const HAND = '11111111-2222-3333-4444-555555555555';
 
   it('prefers the stored ledger over recomputation', () => {

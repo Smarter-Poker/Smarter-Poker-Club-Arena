@@ -19,7 +19,7 @@ const A = 'bbbbbbbb-0000-0000-0000-000000000002';
 const B = 'cccccccc-0000-0000-0000-000000000003';
 const C = 'dddddddd-0000-0000-0000-000000000004';
 
-describe('section 78/19 — one elimination is attributed to exactly one knockout', () => {
+describe('section 78/19 - one elimination is attributed to exactly one knockout', () => {
   it('credits the sole winner of the only pot', () => {
     const out = attributeKnockout(
       {
@@ -51,7 +51,7 @@ describe('section 78/19 — one elimination is attributed to exactly one knockou
   });
 });
 
-describe('section 78/21 — a shared knockout is ONE bounty, split', () => {
+describe('section 78/21 - a shared knockout is ONE bounty, split', () => {
   it('splits a tied pot equally between every winner of it', () => {
     const out = attributeKnockout(
       {
@@ -105,7 +105,7 @@ describe('section 78/21 — a shared knockout is ONE bounty, split', () => {
   });
 });
 
-describe('section 78/22 — a side pot assigns the knockout to the correct winner', () => {
+describe('section 78/22 - a side pot assigns the knockout to the correct winner', () => {
   it('THE BUG THIS EXISTS FOR: the side-pot winner took forty times more money and gets nothing', () => {
     // Short stack all in for 300 into a 900 main pot. Two deep stacks then
     // build a 12,000 side pot the short stack is not in.

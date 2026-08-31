@@ -180,7 +180,7 @@ describe('the kill storm that nobody was told about', () => {
     expect(raised.map((r) => r.alertname)).not.toContain('ClubArenaEngineKillStorm');
   });
 
-  it('a kill storm never touches liveness — the tables come back', async () => {
+  it('a kill storm never touches liveness - the tables come back', async () => {
     const v = new DealRateVerifier(() => tables(40));
     hands(50);
     kills(500);

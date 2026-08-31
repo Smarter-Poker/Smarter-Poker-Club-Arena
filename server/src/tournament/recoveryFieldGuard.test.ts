@@ -72,7 +72,7 @@ describe('the guard is actually wired into the rescue', () => {
     expect(RECOVERY).toMatch(/const paidPlaces = payouts\.length/);
   });
 
-  it('refuses by CONTINUING — it must not fall through and pay', () => {
+  it('refuses by CONTINUING - it must not fall through and pay', () => {
     // The whole failure was paying. A guard that reports and then proceeds is
     // the same bug with better logging.
     const window = sliceEnclosingBlock(RECOVERY, 'fieldIsStillLive({ livePlayers, paidPlaces })');

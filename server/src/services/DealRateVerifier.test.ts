@@ -42,7 +42,7 @@ beforeEach(() => {
   builder.gt.mockReset();
 });
 
-describe('DealRateVerifier — when it must stay quiet', () => {
+describe('DealRateVerifier - when it must stay quiet', () => {
   it('a database it cannot reach is NOT evidence of silence', async () => {
     const v = new DealRateVerifier(() => tables(40));
     answers({ count: 0, error: { message: 'fetch failed' } });
@@ -106,7 +106,7 @@ describe('DealRateVerifier — when it must stay quiet', () => {
   });
 });
 
-describe('DealRateVerifier — when it must speak', () => {
+describe('DealRateVerifier - when it must speak', () => {
   it('declares dead once the database confirms sustained silence', async () => {
     const v = new DealRateVerifier(() => tables(40));
     answers({ count: 0, error: null });

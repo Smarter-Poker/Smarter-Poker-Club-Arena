@@ -43,7 +43,7 @@ function cards(text: string): Card[] {
 
 beforeEach(() => _clearGtoPostflopV31());
 
-describe('boardFlushSuit — the exact mirror of fn_gto_board_flush_suit', () => {
+describe('boardFlushSuit - the exact mirror of fn_gto_board_flush_suit', () => {
   // Every pair here was classified by the PRODUCTION function on
   // 2026-08-30. c,d,h,s = 0,1,2,3; -1 means no suit appears twice.
   const PRODUCTION_EXAMPLES: [string, number][] = [
@@ -90,7 +90,7 @@ describe('v31HandKey', () => {
     expect(v31HandKey('AKo', cards('AhKd'), board)).toBe('AKo:0');
   });
 
-  it('a board with no flush suit puts every holding in bucket 0 — the plain 169-class cell', () => {
+  it('a board with no flush suit puts every holding in bucket 0 - the plain 169-class cell', () => {
     const rainbow = cards('2c4hQd');
     expect(v31HandKey('AKs', cards('AsKs'), rainbow)).toBe('AKs:0');
     expect(v31HandKey('AKo', cards('AhKd'), rainbow)).toBe('AKo:0');
@@ -137,7 +137,7 @@ function lookup(hand: string, hole: string) {
   });
 }
 
-describe('gtoStreetAdviceV31 — the lookup', () => {
+describe('gtoStreetAdviceV31 - the lookup', () => {
   it('an empty store misses rather than throwing, so the consult falls back', () => {
     const r = gtoStreetAdviceV31({
       street: 'turn',
@@ -213,7 +213,7 @@ describe('gtoStreetAdviceV31 — the lookup', () => {
     if (!r.hit) expect(r.miss).toBe('hand_not_in_cell');
   });
 
-  it('an uncharted texture reports no_cell — texture is NEVER substituted', () => {
+  it('an uncharted texture reports no_cell - texture is NEVER substituted', () => {
     setGtoPostflopV31([CELL]);
     const r = gtoStreetAdviceV31({
       street: 'turn',
@@ -243,7 +243,7 @@ describe('gtoStreetAdviceV31 — the lookup', () => {
     if (!r.hit) expect(r.miss).toBe('no_texture');
   });
 
-  it('an ICM spot falls back to chip-EV — v2 carries no tourney_icm rows at all', () => {
+  it('an ICM spot falls back to chip-EV - v2 carries no tourney_icm rows at all', () => {
     setGtoPostflopV31([{ ...CELL, game_family: 'tourney_ev' }]);
     const r = gtoStreetAdviceV31({
       street: 'turn',

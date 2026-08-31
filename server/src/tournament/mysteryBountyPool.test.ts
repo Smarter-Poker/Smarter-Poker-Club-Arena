@@ -63,7 +63,7 @@ describe('largestRemainder', () => {
     expect(largestRemainder(1, [50, 30, 20]).reduce((a, b) => a + b, 0)).toBe(1);
   });
 
-  it('is deterministic — ties go to the earlier index', () => {
+  it('is deterministic - ties go to the earlier index', () => {
     expect(largestRemainder(1, [1, 1, 1])).toEqual([1, 0, 0]);
     expect(largestRemainder(2, [1, 1, 1])).toEqual([1, 1, 0]);
   });

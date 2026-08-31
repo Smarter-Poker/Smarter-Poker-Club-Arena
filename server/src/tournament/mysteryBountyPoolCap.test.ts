@@ -21,7 +21,7 @@
 import { describe, it, expect } from 'vitest';
 import { mysteryPoolCents } from './mysteryBountyActivation.js';
 
-describe('mysteryPoolCents — the cap the database applies', () => {
+describe('mysteryPoolCents - the cap the database applies', () => {
   it('with nothing paid it is the plain half (the old behaviour)', () => {
     expect(mysteryPoolCents(10_000, 50, 50)).toBe(5_000);
     expect(mysteryPoolCents(10_000, 50, 50, 0)).toBe(5_000);

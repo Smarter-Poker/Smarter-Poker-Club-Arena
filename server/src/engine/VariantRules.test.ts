@@ -38,7 +38,7 @@ describe('holeCardCount', () => {
     expect(holeCardCount('plo6')).toBe(6);
   });
 
-  it("deals two to both Hold'ems — limit changes the betting, not the deal", () => {
+  it("deals two to both Hold'ems - limit changes the betting, not the deal", () => {
     expect(holeCardCount('nlh')).toBe(2);
     expect(holeCardCount('flh')).toBe(2);
     expect(holeCardCount('short_deck')).toBe(2);
@@ -48,7 +48,7 @@ describe('holeCardCount', () => {
     expect(holeCardCount('pineapple')).toBe(3);
   });
 
-  it('is case-insensitive — the client holds "PLO4", the column holds "plo4"', () => {
+  it('is case-insensitive - the client holds "PLO4", the column holds "plo4"', () => {
     expect(holeCardCount('PLO6')).toBe(6);
     expect(holeCardCount('FLO8')).toBe(4);
   });
@@ -62,7 +62,7 @@ describe('holeCardCount', () => {
 });
 
 describe('isOmahaVariant', () => {
-  it('includes flo8 — the exactly-two rule is about the HAND, not the betting', () => {
+  it('includes flo8 - the exactly-two rule is about the HAND, not the betting', () => {
     expect(isOmahaVariant('flo8')).toBe(true);
   });
 

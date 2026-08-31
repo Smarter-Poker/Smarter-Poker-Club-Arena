@@ -175,7 +175,7 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
     if (await feeIsAccountedFor(kind, fee)) {
       console.warn(
         `[A5] Queue insert for ${kind} on hand ${fee.handId ?? fee.handNumber} reported ` +
-          `"${lastError}", but the fee is already queued or banked — no chips at risk, ` +
+          `"${lastError}", but the fee is already queued or banked - no chips at risk, ` +
           `not alarming.`
       );
       return;
@@ -506,7 +506,7 @@ export async function repairUnbankedBBJFees(
       reportError(
         new Error(
           `[BBJ self-heal] Recovered ${rows.length} unbanked BBJ contribution(s) totalling ` +
-            `${chips.toFixed(2)} chips — these fees were withheld from pots but never reached a ` +
+            `${chips.toFixed(2)} chips - these fees were withheld from pots but never reached a ` +
             `pool (no pending_fee_distributions row, i.e. the engine did not survive to enqueue). ` +
             `Hands: ${rows.map((r) => r.hand_id).join(', ')}`
         ),
@@ -777,7 +777,7 @@ export async function requeueUnbankedCashRake(
     const chips = rows.reduce((s, r) => s + (Number(r.rake) || 0), 0);
     console.log(
       `[FeeReconciler] re-queued ${rows.length} unbanked cash hand(s), ${chips.toFixed(2)} chips ` +
-        `— no rake_records row and nothing queued (restart-orphaned fees)`
+        `- no rake_records row and nothing queued (restart-orphaned fees)`
     );
     return { requeued: rows.length, chips };
   } catch (err) {

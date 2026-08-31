@@ -221,7 +221,7 @@ describe('a busted cash seat is released', () => {
     expect(humanAt - horseAt).toBeLessThan(2000);
   });
 
-  it('never stands up a tournament player — elimination owes them a place', () => {
+  it('never stands up a tournament player - elimination owes them a place', () => {
     const body = sliceMethod(dealing, 'protected async standUpBustedCashPlayers');
     expect(body).toMatch(/if\s*\(this\.isTournamentTable\(\)\)\s*return;/);
   });

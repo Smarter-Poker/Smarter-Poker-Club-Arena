@@ -10,9 +10,22 @@
  * agent that writes a label. This makes it mechanical.
  *
  * WHAT IT CHECKS
- *   JSX text nodes            <span>Held in trust — 400</span>
- *   UI-ish string literals    label: 'Hands — played'
- *   CSS `content:` values     content: '—';
+ *   JSX text nodes            <span>Held in trust - 400</span>
+ *   UI-ish string literals    label: 'Hands - played'
+ *   CSS `content:` values     content: '-';
+ *
+ * WHERE IT LOOKS
+ *   src/         the client
+ *   server/src/  ADDED 2026-08-31. The engine writes text a player reads: the
+ *                bad-beat near-miss line, every fixed-limit and pot-limit
+ *                betting refusal, "Rate limited", "Add-on exceeded table max
+ *                buy-in", "Bad Beat Jackpot - you got paid!", and the wallet
+ *                transaction descriptions that appear in the cashier. Scanning
+ *                only src/ meant this gate reported OK on 2026-08-31 while 38
+ *                em dashes sat in server strings, nine of them in copy a
+ *                player can read. A gate that checks one half of the estate
+ *                and reports on all of it is the shape of bug this repo keeps
+ *                finding in its own safeguards.
  *
  * WHAT IT DELIBERATELY IGNORES
  *   Source comments (// and block), which never reach a player and which this
@@ -28,6 +41,7 @@ import { join, extname } from 'node:path';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
 const SRC = join(ROOT, 'src');
+const SERVER_SRC = join(ROOT, 'server/src');
 const EXTS = new Set(['.ts', '.tsx', '.css']);
 const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 'test-results']);
 /**
@@ -66,7 +80,7 @@ function walk(dir, acc = []) {
 const offenders = [];
 let fixedCount = 0;
 
-for (const file of walk(SRC)) {
+for (const file of [...walk(SRC), ...walk(SERVER_SRC)]) {
   const rel = file.replace(ROOT, '');
   if (SKIP_FILES.has(rel)) continue;
   const original = readFileSync(file, 'utf8');

@@ -36,7 +36,7 @@ const t = (id: string, n: number, maxSeats = 9, buttonSeat?: number): BalancerTa
 // B1 — consolidation trigger
 // ═══════════════════════════════════════════════════════════════════════════════
 
-describe('B1 shouldBreakTable — the field collapses instead of stalling', () => {
+describe('B1 shouldBreakTable - the field collapses instead of stalling', () => {
   it('breaks a table when the field fits on the others (the live 14-across-3 case)', () => {
     // $100 Freeroll seen live: 14 players over three tables of 4/5/5. Fits on
     // two with four seats spare, but the old rule only fired at <= 3 players so
@@ -126,7 +126,7 @@ describe('B1 shouldBreakTable — the field collapses instead of stalling', () =
   });
 });
 
-describe('B1 breakTable — every player lands, nobody overfills a table', () => {
+describe('B1 breakTable - every player lands, nobody overfills a table', () => {
   it('moves every player and never exceeds max_players', () => {
     const b = new TableBalancer();
     const broken = table('aaaa', [1, 2, 3, 4], 9, 1);
@@ -198,7 +198,7 @@ describe('B2 blind geometry', () => {
   });
 });
 
-describe('B2 findOpenSeat via calculateMoves — seated by the button, not by seat number', () => {
+describe('B2 findOpenSeat via calculateMoves - seated by the button, not by seat number', () => {
   const source = () => table('aaaa', [1, 2, 3, 4, 5, 6], 9, 1); // BB = 3, next BB = 4
 
   it('seats the big-blind-due player where the big blind arrives soonest', () => {

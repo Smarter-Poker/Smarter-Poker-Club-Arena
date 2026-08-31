@@ -149,7 +149,7 @@ function straightIntoFlushWar(): { hero: SeatPlayer; gs: GS } {
   return { hero, gs };
 }
 
-describe('V21 river endgame — the -500bb wars', () => {
+describe('V21 river endgame - the -500bb wars', () => {
   it('a straight on a three-flush board never re-raises the river raise', () => {
     const { hero, gs } = straightIntoFlushWar();
     const d = HorseLogic.decide(hero, gs, 'balanced', {}, { mind: false });
@@ -280,7 +280,7 @@ function deepCtx(overrides: Record<string, unknown>) {
 }
 
 describe('V21 deep-stack preflop discipline', () => {
-  it('a 0.955 hand no longer jams a 5-bet pot at 250bb — it calls', () => {
+  it('a 0.955 hand no longer jams a 5-bet pot at 250bb - it calls', () => {
     const r = decidePreflopV7(deepCtx({}) as never);
     expect(r.a).toBe('call');
   });

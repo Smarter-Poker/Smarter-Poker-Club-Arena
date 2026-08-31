@@ -61,7 +61,7 @@ describe('GtoAggregationDriver', () => {
     expect(streets[1]).toBe('river');
   });
 
-  it('a timeout ends the tick quietly — it is a rolled-back no-op, not an incident', async () => {
+  it('a timeout ends the tick quietly - it is a rolled-back no-op, not an incident', async () => {
     rpc.mockResolvedValueOnce(ok(100)).mockResolvedValueOnce(timeout).mockResolvedValue(ok(100));
     const rows = await gtoAggregationTick();
     expect(rows).toBe(100); // stopped at the timeout, did not hammer on

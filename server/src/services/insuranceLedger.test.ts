@@ -275,7 +275,7 @@ describe('logInsuranceSettlement', () => {
     expect(mockReportError).toHaveBeenCalledTimes(1);
   });
 
-  it('is total — it never rejects, so the settlement loop cannot be aborted by it', async () => {
+  it('is total - it never rejects, so the settlement loop cannot be aborted by it', async () => {
     mockRpc.mockImplementation(() => {
       throw new Error('synchronous explosion');
     });

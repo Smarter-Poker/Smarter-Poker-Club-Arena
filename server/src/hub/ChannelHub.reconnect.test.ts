@@ -36,7 +36,7 @@ function socketsOf(hub: ChannelHub, userId: string): Set<unknown> | undefined {
   return (hub as unknown as { connections: Map<string, Set<unknown>> }).connections.get(userId);
 }
 
-describe('ChannelHub — multiple tabs coexist (2026-08-24)', () => {
+describe('ChannelHub - multiple tabs coexist (2026-08-24)', () => {
   it('a second connection does NOT evict the first', () => {
     const hub = new ChannelHub();
     hub.close(); // stop the lobby interval; irrelevant here

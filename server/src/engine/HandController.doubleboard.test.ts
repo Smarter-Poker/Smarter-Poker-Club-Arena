@@ -63,7 +63,7 @@ function checkDown(h: ReturnType<typeof harness>) {
   }
 }
 
-describe('DOUBLE-BOARD BOMB POT — dealing', () => {
+describe('DOUBLE-BOARD BOMB POT - dealing', () => {
   it('deals two full boards in lockstep and reports doubleBoard in the trigger', () => {
     const h = harness(mkConfig(), mkPlayers([200, 200, 200, 200]));
     h.hc.start();
@@ -137,7 +137,7 @@ describe('DOUBLE-BOARD BOMB POT — dealing', () => {
   });
 });
 
-describe('DOUBLE-BOARD BOMB POT — deck feasibility downgrade', () => {
+describe('DOUBLE-BOARD BOMB POT - deck feasibility downgrade', () => {
   it('9-handed PLO5 (45 hole cards) downgrades to a single board', () => {
     const h = harness(
       mkConfig({ gameVariant: 'plo5' }),
@@ -184,7 +184,7 @@ describe('DOUBLE-BOARD BOMB POT — deck feasibility downgrade', () => {
  * These pins exist so nobody has to establish that twice. A fold win carries
  * its award, on however many boards were complete when the folding stopped.
  */
-describe('BOMB POT — a fold win carries its award units', () => {
+describe('BOMB POT - a fold win carries its award units', () => {
   /** Fold every live seat but one, then check the last one down. */
   function foldDownFrom(h: ReturnType<typeof harness>, foldFromStage: string) {
     let guard = 80;

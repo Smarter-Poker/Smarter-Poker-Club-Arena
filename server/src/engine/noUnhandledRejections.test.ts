@@ -88,7 +88,7 @@ describe('no fire-and-forget promise may be left without a .catch()', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('the detector actually detects — it is not vacuously green', () => {
+  it('the detector actually detects - it is not vacuously green', () => {
     const bad = `
       void supabase
         .from('t')

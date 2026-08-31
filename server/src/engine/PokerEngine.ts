@@ -822,7 +822,7 @@ export function validateAction(
         if (allInTo > currentBet + CENT_EPS) {
           return {
             valid: false,
-            error: 'Betting is capped for this round — you may only call',
+            error: 'Betting is capped for this round - you may only call',
           };
         }
       }
@@ -834,8 +834,8 @@ export function validateAction(
           return {
             valid: false,
             error: isFixedLimit
-              ? `Fixed-limit max is ${currentBet + bettingState.maxRaise} — you cannot go all in for more than the bet`
-              : `Pot-limit max is ${currentBet + bettingState.maxRaise} — you cannot go all in for more than the pot`,
+              ? `Fixed-limit max is ${currentBet + bettingState.maxRaise} - you cannot go all in for more than the bet`
+              : `Pot-limit max is ${currentBet + bettingState.maxRaise} - you cannot go all in for more than the pot`,
           };
         }
       }

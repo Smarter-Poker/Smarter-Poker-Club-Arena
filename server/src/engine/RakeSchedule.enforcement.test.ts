@@ -56,7 +56,7 @@ function productionRakeConfig(sb: number, bb: number, variant = 'nlh'): RakeConf
 /** A pot far larger than any cap, so the cap branch must execute. */
 const HUGE_POT = 100_000;
 
-describe('rake schedule — the cap actually binds at every stake', () => {
+describe('rake schedule - the cap actually binds at every stake', () => {
   it.each(RAKE_SCHEDULE.map((r) => [r.sb, r.bb, r.rakeCap] as const))(
     '%s/%s: a %s-capped pot is capped, not raked at 10%%',
     (sb, bb, expectedCap) => {
@@ -70,7 +70,7 @@ describe('rake schedule — the cap actually binds at every stake', () => {
   );
 });
 
-describe('rake schedule — 10% applies below the cap', () => {
+describe('rake schedule - 10% applies below the cap', () => {
   it('1/2: a $20 pot is raked $2.00, well under the $5 cap', () => {
     const cfg = productionRakeConfig(1, 2);
     expect(cfg.percent).toBe(10);
@@ -95,7 +95,7 @@ describe('rake schedule — 10% applies below the cap', () => {
   });
 });
 
-describe('rake schedule — no flop, no drop', () => {
+describe('rake schedule - no flop, no drop', () => {
   it.each(RAKE_SCHEDULE.map((r) => [r.sb, r.bb] as const))(
     '%s/%s: a pot that never saw a flop is raked zero',
     (sb, bb) => {
@@ -105,7 +105,7 @@ describe('rake schedule — no flop, no drop', () => {
   );
 });
 
-describe('rake schedule — player-count cap reduction (Bible V8 §2.9)', () => {
+describe('rake schedule - player-count cap reduction (Bible V8 §2.9)', () => {
   it('heads-up pays half the cap', () => {
     const cfg = productionRakeConfig(1, 2); // cap 5
     expect(calculateRake(HUGE_POT, true, cfg, 2)).toBe(2.5);
@@ -135,7 +135,7 @@ describe('rake schedule — player-count cap reduction (Bible V8 §2.9)', () => 
   });
 });
 
-describe('rake schedule — the engine never invents a rate', () => {
+describe('rake schedule - the engine never invents a rate', () => {
   it('charges 10%, not the 5% every other server test hardcodes', () => {
     for (const row of RAKE_SCHEDULE) {
       expect(productionRakeConfig(row.sb, row.bb).percent, `${row.sb}/${row.bb}`).toBe(10);

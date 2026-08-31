@@ -34,7 +34,7 @@ describe('escalation is anchored to the PERSISTED length', () => {
    * contract this file exists to protect is unchanged and is still asserted
    * below — only the ratio moved. See tournament/blindLadder.ts.
    */
-  it('steps once per level past the end, at the ladder ratio — never doubling', () => {
+  it('steps once per level past the end, at the ladder ratio - never doubling', () => {
     expect(escalationFactor(10, LEN)).toBeCloseTo(1.4, 10);
     expect(escalationFactor(11, LEN)).toBeCloseTo(Math.pow(1.4, 2), 10);
     expect(escalationFactor(12, LEN)).toBeCloseTo(Math.pow(1.4, 3), 10);

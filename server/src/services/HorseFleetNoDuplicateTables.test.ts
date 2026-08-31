@@ -131,7 +131,7 @@ describe('ensureAllTablesExist duplicate amplification', () => {
     expect(inserted).toHaveLength(0);
   });
 
-  it('reuses — does NOT add another — when duplicates already exist', async () => {
+  it('reuses - does NOT add another - when duplicates already exist', async () => {
     const rows = Array.from({ length: 81 }, (_, i) => ({ id: `t${i}`, status: 'waiting' }));
     const { client, inserted } = makeClient({ rows });
     expect(await lookupThenMaybeInsert(client, onError)).toBe('reused');

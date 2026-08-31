@@ -416,7 +416,7 @@ function mkDeadline(tableId: string, eventId: string, deadlineMs: number, onFire
   return { tableId, eventId, deadlineMs, callback: onFire ?? (() => {}) };
 }
 
-describe('DeadlineHeap — C18 index integrity', () => {
+describe('DeadlineHeap - C18 index integrity', () => {
   it('stays consistent through pushes, removes and pops', () => {
     const h = new DeadlineHeap();
     for (let i = 0; i < 50; i++) h.push(mkDeadline(`t${i % 7}`, `e${i}`, 1000 + ((i * 37) % 100)));
@@ -474,7 +474,8 @@ describe('DeadlineHeap — C18 index integrity', () => {
 
   it('removeTable drops exactly one table and leaves the rest intact', () => {
     const h = new DeadlineHeap();
-    for (let i = 0; i < 30; i++) h.push(mkDeadline(i % 3 === 0 ? 'doomed' : `t${i}`, `e${i}`, 1000 + i));
+    for (let i = 0; i < 30; i++)
+      h.push(mkDeadline(i % 3 === 0 ? 'doomed' : `t${i}`, `e${i}`, 1000 + i));
     const doomed = h.listTable('doomed').length;
     expect(doomed).toBe(10);
 
@@ -521,7 +522,7 @@ describe('DeadlineHeap — C18 index integrity', () => {
   });
 });
 
-describe('DeadlineScheduler — C18 tick budget', () => {
+describe('DeadlineScheduler - C18 tick budget', () => {
   it('fires a large burst without the old 128-per-tick ceiling', () => {
     const harness = makeHarness();
     const s = new DeadlineScheduler({

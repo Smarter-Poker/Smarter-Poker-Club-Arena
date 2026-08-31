@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { effectivePrizePool } from './startRules.js';
 
-describe('effectivePrizePool — guarantees are honored (2026-08-23)', () => {
+describe('effectivePrizePool - guarantees are honored (2026-08-23)', () => {
   it('overlay: guarantee wins when entries fall short', () => {
     // Bounty Builder Turbo completed with pool 12.5 against a 500 GTD —
     // the guarantee was never applied anywhere in the engine.

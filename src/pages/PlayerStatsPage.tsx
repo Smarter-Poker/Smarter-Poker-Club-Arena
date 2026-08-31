@@ -1447,7 +1447,7 @@ export default function PlayerStatsPage() {
         [
           { key: 'date', label: 'Started' },
           { key: 'ended', label: 'Ended' },
-          { key: 'duration_minutes', label: 'Duration (min)' },
+          { key: 'duration_minutes', label: 'Duration (Min)' },
           { key: 'hands', label: 'Hands' },
           { key: 'buy_in', label: 'Buy In' },
           { key: 'cash_out', label: 'Cash Out' },

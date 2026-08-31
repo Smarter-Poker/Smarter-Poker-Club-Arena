@@ -137,7 +137,7 @@ export async function atomicCashout(
       // is still on the seat and the next pass retries it. This is the property
       // the old code needed `safeToClearSeat` to approximate.
       console.warn(
-        `[atomicCashout] Locked cash-out failed for ${userId} at ${tableId} — seat preserved for retry:`,
+        `[atomicCashout] Locked cash-out failed for ${userId} at ${tableId} - seat preserved for retry:`,
         error.message
       );
       return 0;
@@ -151,7 +151,7 @@ export async function atomicCashout(
     return Number.isFinite(stack) ? stack : 0;
   } catch (err: any) {
     console.warn(
-      `[atomicCashout] Transport failure for ${userId} at ${tableId} — seat preserved for retry:`,
+      `[atomicCashout] Transport failure for ${userId} at ${tableId} - seat preserved for retry:`,
       err?.message
     );
     return 0;
@@ -225,7 +225,7 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
     }
 
     console.log(
-      `[Waitlist] Notified ${String(result.user_id ?? '').slice(0, 8)} — seat open at ${tableId.slice(0, 8)}`
+      `[Waitlist] Notified ${String(result.user_id ?? '').slice(0, 8)} - seat open at ${tableId.slice(0, 8)}`
     );
   } catch (e) {
     console.warn(`[Waitlist] notify failed for table ${tableId}:`, e);

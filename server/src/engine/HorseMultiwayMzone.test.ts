@@ -108,7 +108,7 @@ function dansHand(): { hero: SeatPlayer; gs: GS } {
   return { hero, gs };
 }
 
-describe('V20 multiway discipline — the T8o call-off', () => {
+describe('V20 multiway discipline - the T8o call-off', () => {
   it('FOLDS weak two pair into a check-raise jam plus a second all-in', () => {
     const { hero, gs } = dansHand();
     const d = HorseLogic.decide(hero, gs, 'balanced', {}, { mind: false });
@@ -143,7 +143,7 @@ describe('V20 multiway discipline — the T8o call-off', () => {
     expect(d.action).not.toBe('fold');
   });
 
-  it('a SET is exempt from the pressure cap — bottom set still stacks off', () => {
+  it('a SET is exempt from the pressure cap - bottom set still stacks off', () => {
     const hero = mkPlayer(1, { cards: [c('2c'), c('2d')], stack: 800, bet: 0 });
     const players = [
       hero,

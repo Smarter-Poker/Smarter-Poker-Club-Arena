@@ -74,7 +74,7 @@ describe('the ceiling backstops anything neither convention covers', () => {
   });
 });
 
-describe('anteOrbitCostBB — what Harrington M actually divides by', () => {
+describe('anteOrbitCostBB - what Harrington M actually divides by', () => {
   /**
    * A big blind ante costs the table ONE ante per orbit. A traditional ante
    * costs each seat one ante per hand, so seats-many per orbit. They come to

@@ -65,7 +65,7 @@ function checkDown(h: ReturnType<typeof harness>) {
   }
 }
 
-describe('TRIPLE-BOARD BOMB POT — dealing', () => {
+describe('TRIPLE-BOARD BOMB POT - dealing', () => {
   it('deals three full boards in lockstep and reports boardCount in the trigger', () => {
     const h = harness(mkConfig(), mkPlayers([200, 200, 200, 200]));
     h.hc.start();
@@ -214,7 +214,7 @@ describe('TRIPLE-BOARD BOMB POT — dealing', () => {
   });
 });
 
-describe('TRIPLE-BOARD BOMB POT — deck feasibility downgrade (3 → 2 → 1)', () => {
+describe('TRIPLE-BOARD BOMB POT - deck feasibility downgrade (3 → 2 → 1)', () => {
   it('7-handed PLO6 (42 hole cards) downgrades three boards to two', () => {
     // 42 + 15 = 57 > 52, but 42 + 10 = 52 ≤ 52: exactly two boards fit.
     const h = harness(

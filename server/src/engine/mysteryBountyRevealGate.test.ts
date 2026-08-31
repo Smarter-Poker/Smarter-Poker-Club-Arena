@@ -26,7 +26,7 @@ afterEach(() => vi.useRealTimers());
 
 const engine = () => new ServerTableEngine(TABLE);
 
-describe('section 79/26 — the dealer button cannot move while a bounty is active', () => {
+describe('section 79/26 - the dealer button cannot move while a bounty is active', () => {
   it('starts open and closes the moment an award is reserved', () => {
     const e = engine();
     expect(e.hasOpenBountyReveal()).toBe(false);
@@ -50,7 +50,7 @@ describe('section 79/26 — the dealer button cannot move while a bounty is acti
   });
 });
 
-describe('section 79/27 — the next hand cannot start with a non-empty queue', () => {
+describe('section 79/27 - the next hand cannot start with a non-empty queue', () => {
   it('stays closed until EVERY queued award has been released', () => {
     const e = engine();
     e.beginBountyReveal(AWARD_1, Date.now() + 20_000);
@@ -74,7 +74,7 @@ describe('section 79/27 — the next hand cannot start with a non-empty queue', 
 });
 
 describe('a re-swept elimination must not shorten or duplicate the hold', () => {
-  it('is monotonic — a second reserve of the same award extends, never shrinks', () => {
+  it('is monotonic - a second reserve of the same award extends, never shrinks', () => {
     vi.useFakeTimers();
     const t0 = Date.now();
     const e = engine();
@@ -126,7 +126,7 @@ describe('a table can never wedge (section 54)', () => {
   });
 });
 
-describe('section 22 / 61 — only the affected table pauses', () => {
+describe('section 22 / 61 - only the affected table pauses', () => {
   it('the gate is per-engine, so another table is unaffected', () => {
     const busted = engine();
     const other = new ServerTableEngine('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');

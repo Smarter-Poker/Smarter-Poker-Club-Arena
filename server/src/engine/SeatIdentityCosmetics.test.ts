@@ -40,7 +40,7 @@ const SEAT = {
   equipped_aura: 'aura-glitch',
 };
 
-describe('seatIdentity — cosmetics are identity', () => {
+describe('seatIdentity - cosmetics are identity', () => {
   it('passes everything through at a normal table', () => {
     expect(identityFor(false, SEAT)).toEqual({
       username: 'DanTheMan',

@@ -42,7 +42,7 @@ function mkConfig(overrides: Partial<HandConfig> = {}): HandConfig {
 }
 
 describe('performAction is the authoritative action gate', () => {
-  it('REJECTS rather than throws on an illegal action — the contract five call sites got wrong', () => {
+  it('REJECTS rather than throws on an illegal action - the contract five call sites got wrong', () => {
     const hc = new HandController(mkConfig(), [mkPlayer(1), mkPlayer(2), mkPlayer(3)], 1);
     hc.start();
     const seat = hc.getState().currentPlayerSeat;
@@ -75,7 +75,7 @@ describe('performAction is the authoritative action gate', () => {
     expect(hc.performAction(seat, 'check' as never)).toBe(false);
   });
 
-  it('refuses to act for an ALL-IN seat — the watchdog used to force check/folds from them', () => {
+  it('refuses to act for an ALL-IN seat - the watchdog used to force check/folds from them', () => {
     const hc = new HandController(mkConfig(), [mkPlayer(1), mkPlayer(2), mkPlayer(3)], 1);
     hc.start();
     const seat = hc.getState().currentPlayerSeat;

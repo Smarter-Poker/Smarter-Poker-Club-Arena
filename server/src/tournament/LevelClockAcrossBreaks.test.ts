@@ -67,7 +67,7 @@ describe('the blind clock survives a synchronized break', () => {
   const resume = methodBody(BASE, 'async resumeFromBreak()');
   const pause = methodBody(BASE, 'async pauseForBreak(');
 
-  it('DEFECT 1 — resumeFromBreak always re-arms a level timer, even with nothing saved', () => {
+  it('DEFECT 1 - resumeFromBreak always re-arms a level timer, even with nothing saved', () => {
     // The old code was `if (this.savedBlindTimerRemaining > 0) { ...arm... }`
     // with no else, so a zero left the tournament with no clock at all.
     expect(resume).not.toMatch(
@@ -76,7 +76,7 @@ describe('the blind clock survives a synchronized break', () => {
     expect(resume).toMatch(/this\.startBlindTimer\(/);
   });
 
-  it('DEFECT 2 — resumeFromBreak goes through startBlindTimer, not a hand-rolled setTimeout', () => {
+  it('DEFECT 2 - resumeFromBreak goes through startBlindTimer, not a hand-rolled setTimeout', () => {
     // startBlindTimer back-dates blindTimerStartedAt against the override so
     // the NEXT pauseForBreak measures the true remaining time.
     expect(resume).not.toMatch(/setTimeout\(/);
@@ -86,11 +86,11 @@ describe('the blind clock survives a synchronized break', () => {
     expect(resume).toMatch(/this\.startBlindTimer\([^)]+,[^)]+\)/);
   });
 
-  it('DEFECT 3 — resumeFromBreak clears the saved remaining so it cannot be re-used', () => {
+  it('DEFECT 3 - resumeFromBreak clears the saved remaining so it cannot be re-used', () => {
     expect(resume).toMatch(/this\.savedBlindTimerRemaining\s*=\s*0/);
   });
 
-  it('DEFECT 1 (cause) — every entry into a break suspends the clock the same way', () => {
+  it('DEFECT 1 (cause) - every entry into a break suspends the clock the same way', () => {
     // The measurement now lives in suspendLevelClock, shared by BOTH ways a
     // tournament enters a break: pauseForBreak (the :55 path) and resume()
     // restarting into a live break. They used to disagree — resume() left the
@@ -106,7 +106,7 @@ describe('the blind clock survives a synchronized break', () => {
     expect(suspend).toMatch(/savedBlindTimerRemaining/);
   });
 
-  it('DEFECT 6 — a restart INTO a live break suspends the level clock too', () => {
+  it('DEFECT 6 - a restart INTO a live break suspends the level clock too', () => {
     // resume() arms the level timer, then discovers the tournament is on a
     // break. Without suspending, that timer ran for the whole break and
     // resumeFromBreak then granted a fresh full level on top.
@@ -137,7 +137,7 @@ describe('the blind clock survives a synchronized break', () => {
 describe('levels advance past structure break rows without stalling', () => {
   const advance = methodBody(BASE, 'protected async advanceBlindLevel(');
 
-  it('DEFECT 4 — an isBreak row no longer early-returns before the level bookkeeping', () => {
+  it('DEFECT 4 - an isBreak row no longer early-returns before the level bookkeeping', () => {
     // Every default structure carries isBreak rows (hyperTurbo indices 7, 13,
     // 19, 25). The old branch was:
     //     if (level.isBreak) { this.startBlindTimer(blindStructure); return; }
@@ -152,7 +152,7 @@ describe('levels advance past structure break rows without stalling', () => {
     expect(advance).toMatch(/while\s*\([\s\S]{0,160}isBreak/);
   });
 
-  it('DEFECT 5 — the add-on window opens on reaching the cutoff, not on crossing it', () => {
+  it('DEFECT 5 - the add-on window opens on reaching the cutoff, not on crossing it', () => {
     // `prevLevel < cap && currentLevel >= cap` is an edge, and an edge is lost
     // by a restart (resume() restores currentLevel from the database already
     // past the cap) or by any transition that skipped the check. The add-on

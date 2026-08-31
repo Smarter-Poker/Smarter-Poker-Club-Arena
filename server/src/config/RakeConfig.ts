@@ -318,7 +318,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   plo8: {
     label: 'PLO8 (Hi-Lo 8 or Better)',
     minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE — evaluated on HIGH hand only',
+    description: 'Four of a Kind (Kings) or better must LOSE - evaluated on HIGH hand only',
     rules: [
       'Must use exactly 2 cards from hand',
       'Both players must use two cards from their hole cards',
@@ -334,7 +334,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   flo8: {
     label: 'FLO8 (Hi-Lo 8 or Better)',
     minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE — evaluated on HIGH hand only',
+    description: 'Four of a Kind (Kings) or better must LOSE - evaluated on HIGH hand only',
     rules: [
       'Must use exactly 2 cards from hand',
       'Both players must use two cards from their hole cards',
@@ -982,7 +982,7 @@ export function detectBBJNearMiss(
     return {
       ...base,
       reason: 'winner_not_quads',
-      message: `So close! ${best.handName} lost — but the jackpot needs the winning hand to be Quads or better.`,
+      message: `So close! ${best.handName} lost - but the jackpot needs the winning hand to be Quads or better.`,
     };
   }
 
@@ -1005,7 +1005,7 @@ export function detectBBJNearMiss(
       return {
         ...base,
         reason: 'both_cards_must_play',
-        message: `So close! ${best.handName} lost to Quads — but the jackpot needs BOTH hole cards to play.`,
+        message: `So close! ${best.handName} lost to Quads - but the jackpot needs BOTH hole cards to play.`,
       };
     }
   }

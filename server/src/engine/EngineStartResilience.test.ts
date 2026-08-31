@@ -108,7 +108,7 @@ function startable() {
   return { engine, killed };
 }
 
-describe('isTransientDbError — one definition, because two disagreed', () => {
+describe('isTransientDbError - one definition, because two disagreed', () => {
   const is = (e: unknown) => (ServerTableEngineBase as any).isTransientDbError(e);
 
   it('recognises the wordings production actually produces', () => {
@@ -125,7 +125,7 @@ describe('isTransientDbError — one definition, because two disagreed', () => {
     }
   });
 
-  it('treats a blown deal-step budget as transient — the loop already did', () => {
+  it('treats a blown deal-step budget as transient - the loop already did', () => {
     expect(is(new Error('deal_step_timeout: load_seats exceeded 20s'))).toBe(true);
   });
 
@@ -169,7 +169,7 @@ describe(
       expect(killed).toEqual(['start_failed:start_load_table']);
     });
 
-    it('does not retry a real bug — that would just delay the rebuild', async () => {
+    it('does not retry a real bug - that would just delay the rebuild', async () => {
       const { engine, killed } = startable();
       loadTable.mockRejectedValue(new TypeError('loadTable is not a function'));
       loadSeatedPlayers.mockResolvedValue([seat(1), seat(2)]);

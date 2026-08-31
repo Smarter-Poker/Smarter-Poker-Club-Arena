@@ -569,17 +569,17 @@ export class DisconnectEngine {
     state: PlayerConnectionState
   ): { suspected: boolean; reason: string } {
     if (!state.isConnected) {
-      return { suspected: false, reason: 'disconnected — ordinary timeout ladder' };
+      return { suspected: false, reason: 'disconnected - ordinary timeout ladder' };
     }
     if (state.everActed) {
-      return { suspected: false, reason: 'has acted here before — ordinary AFK' };
+      return { suspected: false, reason: 'has acted here before - ordinary AFK' };
     }
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
     if ((state.turnsOffered ?? 0) < config.maxConsecutiveTimeouts) {
       return { suspected: false, reason: 'not enough turns offered to judge' };
     }
     if (state.lastTurnRenderedAt) {
-      return { suspected: false, reason: 'client confirmed it rendered the turn — AFK' };
+      return { suspected: false, reason: 'client confirmed it rendered the turn - AFK' };
     }
 
     const detail =

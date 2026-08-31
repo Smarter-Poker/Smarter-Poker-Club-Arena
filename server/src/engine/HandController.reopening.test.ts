@@ -59,7 +59,7 @@ function harness(config: HandConfig, players: SeatPlayer[], dealerSeat: number) 
   return { hc, events, st, cur, actSeat, menu };
 }
 
-describe('REOPENING RULE — sub-full-raise all-in does not reopen betting', () => {
+describe('REOPENING RULE - sub-full-raise all-in does not reopen betting', () => {
   // Seats: 1=Dealer, 2=SB, 3=BB, 4=UTG. Preflop order: 4, 1, 2, 3.
   // Seat 2 has a short stack so its all-in is a partial (non-reopening) raise.
   function setup() {
@@ -108,7 +108,7 @@ describe('REOPENING RULE — sub-full-raise all-in does not reopen betting', () 
   });
 });
 
-describe('REOPENING RULE — a FULL raise still reopens betting normally', () => {
+describe('REOPENING RULE - a FULL raise still reopens betting normally', () => {
   it('a player facing a full re-raise may re-raise again', () => {
     const h = harness(mkConfig(), mkPlayers([200, 200, 200, 200]), 1);
     h.hc.start();

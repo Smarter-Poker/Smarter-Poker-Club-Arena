@@ -141,7 +141,7 @@ describe('a rebuilt Spin structure pays out exactly the pool', () => {
   });
 });
 
-describe('remainingPoolAfterAwards — the universal cap', () => {
+describe('remainingPoolAfterAwards - the universal cap', () => {
   it('is the pool minus what has already gone out', () => {
     expect(remainingPoolAfterAwards(100, 20)).toBe(80);
     expect(remainingPoolAfterAwards(33.33, 6.67)).toBe(26.66);

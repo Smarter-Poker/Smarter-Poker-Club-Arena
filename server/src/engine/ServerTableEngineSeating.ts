@@ -136,7 +136,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       // transaction as the debit). Make sure the next sweep looks for it.
       this.pendingAddOnSweepNeeded = true;
       console.log(
-        `[ServerTableEngine:${this.tableId}] Add-on debited + queued for ${userId}: +${applied} (pending ${livePending + applied}) — hand in progress`
+        `[ServerTableEngine:${this.tableId}] Add-on debited + queued for ${userId}: +${applied} (pending ${livePending + applied}) - hand in progress`
       );
       this.broadcastCurrentState();
       return { success: true, queued: true, applied };
@@ -284,7 +284,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       console.log(
         `[ServerTableEngine:${this.tableId}] Pending add-on ${row.id} for ${row.user_id}: ` +
           `debited ${row.amount}, applied ${applied}, refunded ${refunded}` +
-          (wasResolvedByUs ? '' : ' (already resolved elsewhere — no-op)')
+          (wasResolvedByUs ? '' : ' (already resolved elsewhere - no-op)')
       );
     }
 
@@ -341,7 +341,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         p_user_id: userId,
         p_amount: amount,
         p_category: 'addon_refund',
-        p_description: 'Add-on exceeded table max buy-in — refunded',
+        p_description: 'Add-on exceeded table max buy-in - refunded',
         p_table_id: this.tableId,
         p_hand_id: null,
         p_related_entity_id: null,
@@ -474,7 +474,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     const liveSelf = liveHand?.players.find((p) => p.user_id === userId);
     if (liveSelf?.is_all_in && !liveSelf.is_folded) {
       console.log(
-        `[ServerTableEngine:${this.tableId}] refusing leave for ${userId} — all-in in a live hand`
+        `[ServerTableEngine:${this.tableId}] refusing leave for ${userId} - all-in in a live hand`
       );
       return {
         success: false,
@@ -496,7 +496,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       // success + immediate so the client proceeds with atomic DB cashout,
       // exactly like the engine-not-running branch of the /leave handler.
       console.log(
-        `[ServerTableEngine:${this.tableId}] leave for ${userId}: not in hand roster (reserved/waiting) — acking, client handles DB cleanup`
+        `[ServerTableEngine:${this.tableId}] leave for ${userId}: not in hand roster (reserved/waiting) - acking, client handles DB cleanup`
       );
       return { success: true, immediate: true };
     }
@@ -606,7 +606,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         if (!folded) {
           this.preActionEngine.setPreAction(this.tableId, userId, 'auto_fold');
           console.log(
-            `[ServerTableEngine:${this.tableId}] Player ${userId} left out of turn — auto_fold queued`
+            `[ServerTableEngine:${this.tableId}] Player ${userId} left out of turn - auto_fold queued`
           );
         }
       }
@@ -706,7 +706,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     if (this.tableFSM.state === 'paused') {
       this.tableFSM.transition('running');
     }
-    console.log(`[ServerTableEngine:${this.tableId}] Admin resume — dealing will continue`);
+    console.log(`[ServerTableEngine:${this.tableId}] Admin resume - dealing will continue`);
     // Phase X5 (2026-04-29) — Bible V8 §1.16 table_resumed discrete event.
     this.hub?.emitEvent(this.tableId, {
       type: 'table_resumed',
@@ -797,7 +797,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     ) {
       this.mustPostBB.add(userId);
       console.log(
-        `[ServerTableEngine:${this.tableId}] tournament arrival ${userId} took the seat the big blind just passed — owes one big blind`
+        `[ServerTableEngine:${this.tableId}] tournament arrival ${userId} took the seat the big blind just passed - owes one big blind`
       );
     }
   }

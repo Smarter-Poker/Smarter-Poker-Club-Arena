@@ -121,7 +121,7 @@ describe('the entry hold is written down', () => {
     expect(body).not.toMatch(/await /);
   });
 
-  it('the columns are actually read back — a write nobody reads is decorative', () => {
+  it('the columns are actually read back - a write nobody reads is decorative', () => {
     // The exact failure mode this whole file exists for, and the third time
     // this same query has had it (is_sitting_out 2026-08-25, sit_out_at
     // 2026-08-28).

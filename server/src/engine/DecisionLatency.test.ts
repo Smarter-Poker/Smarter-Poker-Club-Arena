@@ -71,7 +71,7 @@ describe('the instrument', () => {
     expect(drainDecisionLatency()).toHaveLength(0);
   });
 
-  it('costs nothing when telemetry is off — the measurement must not become the cost', async () => {
+  it('costs nothing when telemetry is off - the measurement must not become the cost', async () => {
     // A module whose enableBrainTelemetry() was never called. resetModules
     // gives a genuinely fresh copy rather than the one the other cases armed.
     const { resetModules } = await import('vitest').then((m) => ({
@@ -83,7 +83,7 @@ describe('the instrument', () => {
     expect(fresh.drainDecisionLatency()).toHaveLength(0);
   });
 
-  it('peek does not drain — /health must not eat the minute the flush is about to send', () => {
+  it('peek does not drain - /health must not eat the minute the flush is about to send', () => {
     noteDecisionMs('nlh', 4);
     expect(peekDecisionLatency()[0].samples).toBe(1);
     expect(peekDecisionLatency()[0].samples).toBe(1);
@@ -92,7 +92,7 @@ describe('the instrument', () => {
 });
 
 describe('percentiles read off the histogram', () => {
-  it('returns null with no samples — a fabricated zero would read as "very fast"', () => {
+  it('returns null with no samples - a fabricated zero would read as "very fast"', () => {
     expect(percentileMs({ scope: 'x', samples: 0, totalMs: 0, maxMs: 0, buckets: [] }, 0.5)).toBe(
       null
     );
@@ -120,7 +120,7 @@ describe('percentiles read off the histogram', () => {
   });
 });
 
-describe('the shipped wiring — an instrument nobody calls measures nothing', () => {
+describe('the shipped wiring - an instrument nobody calls measures nothing', () => {
   it('the ONE live call site times the decision', async () => {
     const { readFileSync } = await import('node:fs');
     const src = readFileSync(

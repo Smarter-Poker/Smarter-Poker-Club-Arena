@@ -43,8 +43,8 @@ function chart(
 
 beforeEach(() => _clearGtoCharts());
 
-describe('handClass — hole cards to the 169-class label the charts key on', () => {
-  it('pairs, suited, offsuit — higher rank always first', () => {
+describe('handClass - hole cards to the 169-class label the charts key on', () => {
+  it('pairs, suited, offsuit - higher rank always first', () => {
     expect(handClass(c('A', 'hearts'), c('A', 'clubs'))).toBe('AA');
     expect(handClass(c('K', 'hearts'), c('A', 'hearts'))).toBe('AKs');
     expect(handClass(c('A', 'hearts'), c('K', 'clubs'))).toBe('AKo');
@@ -58,7 +58,7 @@ describe('handClass — hole cards to the 169-class label the charts key on', ()
   });
 });
 
-describe('snapDepth — stacks land on charts that exist', () => {
+describe('snapDepth - stacks land on charts that exist', () => {
   it('snaps to the real ladder, including the 20->25 gap', () => {
     expect(snapDepth(11.6)).toBe(12);
     expect(snapDepth(2.2)).toBe(2);
@@ -68,7 +68,7 @@ describe('snapDepth — stacks land on charts that exist', () => {
   });
 });
 
-describe('gtoOpenJam — folded to hero, the chart decides', () => {
+describe('gtoOpenJam - folded to hero, the chart decides', () => {
   beforeEach(() => {
     setGtoCharts([
       chart('Cash', 'BTN', 10, 'fold_to_hero', {
@@ -84,7 +84,7 @@ describe('gtoOpenJam — folded to hero, the chart decides', () => {
     expect(advice).toEqual({ action: 'push', freq: 0.964, chart: 'Cash|fold_to_hero|BTN|10' });
   });
 
-  it('AN ABSENT HAND IS A FOLD — 72o is not in any chart because 72o folds', () => {
+  it('AN ABSENT HAND IS A FOLD - 72o is not in any chart because 72o folds', () => {
     const advice = gtoOpenJam({ isTournament: false, position: 'BTN', stackBB: 10, hand: '72o' });
     expect(advice).toEqual({ action: 'fold', freq: 1, chart: 'Cash|fold_to_hero|BTN|10' });
   });
@@ -95,7 +95,7 @@ describe('gtoOpenJam — folded to hero, the chart decides', () => {
     expect(advice?.freq).toBeCloseTo(0.916);
   });
 
-  it('out of the push/fold zone the chart stays silent — a 25bb open is not jam-or-fold', () => {
+  it('out of the push/fold zone the chart stays silent - a 25bb open is not jam-or-fold', () => {
     expect(
       gtoOpenJam({
         isTournament: false,
@@ -110,7 +110,7 @@ describe('gtoOpenJam — folded to hero, the chart decides', () => {
     expect(gtoOpenJam({ isTournament: true, position: 'BTN', stackBB: 10, hand: 'AA' })).toBe(null);
   });
 
-  it('an empty store answers null — the heuristics decide, the brain is never lobotomized', () => {
+  it('an empty store answers null - the heuristics decide, the brain is never lobotomized', () => {
     _clearGtoCharts();
     expect(gtoChartCount()).toBe(0);
     expect(gtoOpenJam({ isTournament: false, position: 'BTN', stackBB: 10, hand: 'AA' })).toBe(
@@ -119,7 +119,7 @@ describe('gtoOpenJam — folded to hero, the chart decides', () => {
   });
 });
 
-describe('gtoBbVsSbJam — the BB call-off is charted to 25bb', () => {
+describe('gtoBbVsSbJam - the BB call-off is charted to 25bb', () => {
   beforeEach(() => {
     setGtoCharts([
       chart('Tournament', 'BB', 10, 'sb_push', {
@@ -142,7 +142,7 @@ describe('gtoBbVsSbJam — the BB call-off is charted to 25bb', () => {
   });
 });
 
-describe('the wiring — the brain actually plays the chart', () => {
+describe('the wiring - the brain actually plays the chart', () => {
   const mkPlayer = (over: Partial<SeatPlayer> = {}): SeatPlayer =>
     ({
       seat: 3,
@@ -182,7 +182,7 @@ describe('the wiring — the brain actually plays the chart', () => {
     }
   });
 
-  it('a 10bb BTN with 72o folds from the chart — absent hand, pure fold', () => {
+  it('a 10bb BTN with 72o folds from the chart - absent hand, pure fold', () => {
     setGtoCharts([chart('Cash', 'BTN', 10, 'fold_to_hero', { AA: { push: 1, fold: 0 } })]);
     for (let i = 0; i < 20; i++) {
       const d = HorseLogic.decide(
@@ -230,7 +230,7 @@ describe('the wiring — the brain actually plays the chart', () => {
     }
   });
 
-  it('deep stacks never consult the chart — 100bb aces do not become an open jam', () => {
+  it('deep stacks never consult the chart - 100bb aces do not become an open jam', () => {
     setGtoCharts([
       chart('Cash', 'BTN', 10, 'fold_to_hero', { AA: { push: 1, fold: 0 } }),
       chart('Cash', 'BTN', 25, 'fold_to_hero', { AA: { push: 1, fold: 0 } }),

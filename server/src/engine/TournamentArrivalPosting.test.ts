@@ -52,7 +52,7 @@ function tournamentEngine(opts: { tournament: boolean; seats?: number[] }) {
   return engine;
 }
 
-describe('B2 noteTournamentArrival — who owes a big blind', () => {
+describe('B2 noteTournamentArrival - who owes a big blind', () => {
   it('charges an arrival that took the seat the big blind just passed', () => {
     const engine = tournamentEngine({ tournament: true });
     // Seat 2 is the button for the coming hand: the big blind passed it two
@@ -98,7 +98,7 @@ describe('B2 the charge itself', () => {
     return strip(readFileSync(resolve(__dirname, 'ServerTableEngineDealing.ts'), 'utf8'));
   };
 
-  it('routes tournament arrivals through bbOnlyPosts — one LIVE big blind, no dead small blind', async () => {
+  it('routes tournament arrivals through bbOnlyPosts - one LIVE big blind, no dead small blind', async () => {
     const src = await read();
     // The live-BB-only path. A dead blind would take a small blind on top and
     // is a cash concept: a tournament player is blinded off, not penalised.

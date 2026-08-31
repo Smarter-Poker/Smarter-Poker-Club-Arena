@@ -38,7 +38,7 @@ const arm = (eventId: string) =>
   });
 
 describe('reconcileTeardown', () => {
-  it('says nothing about a running engine — it is supposed to hold deadlines', () => {
+  it('says nothing about a running engine - it is supposed to hold deadlines', () => {
     const e = new ServerTableEngine(TABLE) as any;
     e.running = true;
     arm('heartbeat_check');

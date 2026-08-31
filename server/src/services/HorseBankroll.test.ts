@@ -64,7 +64,7 @@ describe('the reference buy-in is a normal stack, not the table minimum', () => 
   });
 });
 
-describe('RULE 1+2+3 — sitting, moving up, moving down', () => {
+describe('RULE 1+2+3 - sitting, moving up, moving down', () => {
   const std = bankrollPolicyFor(
     ['x1', 'x2', 'x3', 'x4', 'x5'].find((i) => bankrollTemperamentFor(i) === 'standard')!
   );
@@ -79,14 +79,14 @@ describe('RULE 1+2+3 — sitting, moving up, moving down', () => {
     expect(canMoveUp(START, referenceBuyIn(5, 200, 1000), std)).toBe(false);
   });
 
-  it('moving up needs a strictly bigger roll than staying — no promotion on one heater', () => {
+  it('moving up needs a strictly bigger roll than staying - no promotion on one heater', () => {
     const ref = referenceBuyIn(5, 200, 1000);
     const justEnoughToSit = ref * std.buyInsToSit;
     expect(canSit(justEnoughToSit, ref, std)).toBe(true);
     expect(canMoveUp(justEnoughToSit, ref, std)).toBe(false);
   });
 
-  it('it drops down BEFORE it is broke — that is the point of moving down', () => {
+  it('it drops down BEFORE it is broke - that is the point of moving down', () => {
     const ref = referenceBuyIn(2, 80, 400);
     const thin = ref * (std.moveDownAt - 1);
     expect(shouldMoveDown(thin, ref, std)).toBe(true);
@@ -94,7 +94,7 @@ describe('RULE 1+2+3 — sitting, moving up, moving down', () => {
   });
 });
 
-describe('RULE 4 — never bring too much of the roll to one table', () => {
+describe('RULE 4 - never bring too much of the roll to one table', () => {
   const std = bankrollPolicyFor(
     ['x1', 'x2', 'x3', 'x4', 'x5'].find((i) => bankrollTemperamentFor(i) === 'standard')!
   );
@@ -121,7 +121,7 @@ describe('RULE 4 — never bring too much of the roll to one table', () => {
   });
 });
 
-describe('RULE 5+6 — book the win, stop the loss', () => {
+describe('RULE 5+6 - book the win, stop the loss', () => {
   const std = bankrollPolicyFor(
     ['x1', 'x2', 'x3', 'x4', 'x5'].find((i) => bankrollTemperamentFor(i) === 'standard')!
   );
@@ -149,13 +149,13 @@ describe('RULE 5+6 — book the win, stop the loss', () => {
   });
 });
 
-describe('RULE 7 — broke means freerolls', () => {
+describe('RULE 7 - broke means freerolls', () => {
   it('under one buy-in of the cheapest game there is no cash play', () => {
     expect(isBroke(50, 80)).toBe(true);
     expect(isBroke(80, 80)).toBe(false);
   });
 
-  it('bestAffordableGame returns null when nothing is covered — the freeroll path', () => {
+  it('bestAffordableGame returns null when nothing is covered - the freeroll path', () => {
     const std = bankrollPolicyFor(
       ['x1', 'x2', 'x3', 'x4', 'x5'].find((i) => bankrollTemperamentFor(i) === 'standard')!
     );
@@ -193,7 +193,7 @@ describe('the ladder as a whole', () => {
   });
 });
 
-describe('TOP-UP DISCIPLINE — the reload was the leak', () => {
+describe('TOP-UP DISCIPLINE - the reload was the leak', () => {
   const std = bankrollPolicyFor(
     ['x1', 'x2', 'x3', 'x4', 'x5'].find((i) => bankrollTemperamentFor(i) === 'standard')!
   );
@@ -204,7 +204,7 @@ describe('TOP-UP DISCIPLINE — the reload was the leak', () => {
     expect(got).toBe(120);
   });
 
-  it('a horse already down its stop-loss does NOT reload — it leaves', () => {
+  it('a horse already down its stop-loss does NOT reload - it leaves', () => {
     const got = topUpAllowance({
       bankroll: 20_000,
       investedThisTable: 200 * std.stopLossBuyIns,
@@ -232,7 +232,7 @@ describe('TOP-UP DISCIPLINE — the reload was the leak', () => {
   });
 });
 
-describe('AGGREGATE EXPOSURE — four tables is not four independent decisions', () => {
+describe('AGGREGATE EXPOSURE - four tables is not four independent decisions', () => {
   const std = bankrollPolicyFor(
     ['x1', 'x2', 'x3', 'x4', 'x5'].find((i) => bankrollTemperamentFor(i) === 'standard')!
   );
@@ -250,7 +250,7 @@ describe('AGGREGATE EXPOSURE — four tables is not four independent decisions',
     ).toBe(false);
   });
 
-  it('the ceiling scales with the roll — a big bankroll multi-tables freely', () => {
+  it('the ceiling scales with the roll - a big bankroll multi-tables freely', () => {
     expect(
       canOpenAnotherTable({ bankroll: 100_000, liveExposure: 1400, nextBuyIn: 200, policy: std })
     ).toBe(true);

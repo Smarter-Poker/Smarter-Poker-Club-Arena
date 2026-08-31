@@ -59,7 +59,7 @@ describe('away-blind cap', () => {
     expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([PLAYER]);
   });
 
-  it('one timeout alone is NOT away — present players tank and misclick', () => {
+  it('one timeout alone is NOT away - present players tank and misclick', () => {
     eng.recordConnectedTimeout(TABLE, PLAYER);
     expect(eng.isAway(TABLE, PLAYER)).toBe(false);
     eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'sb');
@@ -67,7 +67,7 @@ describe('away-blind cap', () => {
     expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([]);
   });
 
-  it('evicts an AFK player — connected but timing out twice — after one SB and one BB', () => {
+  it('evicts an AFK player - connected but timing out twice - after one SB and one BB', () => {
     eng.recordConnectedTimeout(TABLE, PLAYER);
     eng.recordConnectedTimeout(TABLE, PLAYER); // nobody home
     expect(eng.isAway(TABLE, PLAYER)).toBe(true);
@@ -84,7 +84,7 @@ describe('away-blind cap', () => {
     expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([PLAYER]);
   });
 
-  it('markPageLeft concludes immediately — no transport grace window', () => {
+  it('markPageLeft concludes immediately - no transport grace window', () => {
     // markTransportGone only opens an 8s window. An explicit "I am leaving"
     // must not wait, or the first blind after the tab closes goes uncounted.
     eng.markPageLeft(TABLE, PLAYER);
@@ -148,7 +148,7 @@ describe('away-blind cap', () => {
 
   // ── Sit-out is a separate regime with its own rule ───────────────────────
 
-  it('a sitting-out player is not "away" — sit-out has its own eviction rule', () => {
+  it('a sitting-out player is not "away" - sit-out has its own eviction rule', () => {
     // A sat-out cash player is not dealt in at all, so they pay nothing and
     // the blind cap has no job here. Their removal is the 2-hand / 5-minute
     // timer in tickSitOutsAndCollectEvictions.
@@ -161,7 +161,7 @@ describe('away-blind cap', () => {
 
   // ── Multi-tabling isolation ──────────────────────────────────────────────
 
-  it('is scoped per table — being away here does not evict a seat elsewhere', () => {
+  it('is scoped per table - being away here does not evict a seat elsewhere', () => {
     const OTHER = 'table-2';
     eng.registerPlayer(OTHER, PLAYER);
     eng.markDisconnected(TABLE, PLAYER);

@@ -202,7 +202,7 @@ export class HorseLifecycleManager {
       // is harmless and self-correcting — but say so rather than treating a
       // partial read as "nothing is stuck".
       if (!stuckPage.complete) {
-        console.warn('[HorseLifecycle] stuck-horse sweep read incompletely — retrying next pass');
+        console.warn('[HorseLifecycle] stuck-horse sweep read incompletely - retrying next pass');
         return;
       }
       const stuckHorses = stuckPage.rows;
@@ -413,7 +413,7 @@ export class HorseLifecycleManager {
       await this.persistLifecycleLog('system', 'stale_sng_observed', {
         count: staleSNGs.length,
         sngIds: staleSNGs.slice(0, 20).map((s: { id: string }) => s.id),
-        note: 'left REGISTERING for the fill-and-start path — never cancelled',
+        note: 'left REGISTERING for the fill-and-start path - never cancelled',
       });
       console.log(
         `[Lifecycle] ${staleSNGs.length} slow-filling SNG(s) left open for the fill-and-start path (never cancelled)`
@@ -462,7 +462,7 @@ export class HorseLifecycleManager {
       // reap a seat it never saw (safe), but it also cannot be trusted to have
       // finished — and it runs every 4 hours, so skipping one pass is free.
       if (!stalePage.complete) {
-        console.warn('[HorseLifecycle] stale-seat sweep read incompletely — retrying next pass');
+        console.warn('[HorseLifecycle] stale-seat sweep read incompletely - retrying next pass');
         return;
       }
       const staleSeats = stalePage.rows;
@@ -558,5 +558,4 @@ export class HorseLifecycleManager {
    * `tourney:{id}:prize:{user}:{place}`. If a horse-specific prize path is
    * ever genuinely needed, start from those.
    */
-
 }

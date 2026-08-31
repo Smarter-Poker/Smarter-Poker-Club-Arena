@@ -872,7 +872,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           // The deck gave us nothing; stop rather than sleep and retry.
           reportError(
             new Error(
-              '[PacedRunout] board stopped growing at ' + String(before) + ' cards — short deck'
+              '[PacedRunout] board stopped growing at ' + String(before) + ' cards - short deck'
             ),
             'ServerTableEngine.' + this.tableId + '.paced_runout_short_deck'
           );
@@ -987,7 +987,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       clearTimeout(safetyTimeout);
       if (!this.handController || this.handController !== controllerAtOffer) {
         reportError(
-          new Error('RIT wait resolved into a different hand (#' + handAtOffer + ') — dropped'),
+          new Error('RIT wait resolved into a different hand (#' + handAtOffer + ') - dropped'),
           'ServerTableEngine.' + this.tableId + '.rit_wait_stale'
         );
         return;
@@ -1923,7 +1923,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     const continueAfterResponses = () => {
       if (!this.insurancePauseStillLive(offerPlayers)) {
         console.log(
-          `[ServerTableEngine:${this.tableId}] All players declined insurance for hand — switching to paced runout`
+          `[ServerTableEngine:${this.tableId}] All players declined insurance for hand - switching to paced runout`
         );
         if (this.handController) {
           void this.pacedAllInRunout(allInPlayers, pot);
@@ -2100,7 +2100,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         }
       } else {
         console.log(
-          `[ServerTableEngine:${this.tableId}] Insurance: Tied hands — no insurance offered`
+          `[ServerTableEngine:${this.tableId}] Insurance: Tied hands - no insurance offered`
         );
       }
     } else {
@@ -2148,7 +2148,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         }
       } else {
         console.log(
-          `[ServerTableEngine:${this.tableId}] Insurance: Tied hands on new street — no insurance offered`
+          `[ServerTableEngine:${this.tableId}] Insurance: Tied hands on new street - no insurance offered`
         );
       }
     }
@@ -2406,7 +2406,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       if (!this.handController || this.handController !== controllerAtOffer) {
         reportError(
           new Error(
-            'Insurance wait resolved into a different hand (#' + handAtOffer + ') — dropped'
+            'Insurance wait resolved into a different hand (#' + handAtOffer + ') - dropped'
           ),
           'ServerTableEngine.' + this.tableId + '.insurance_wait_stale'
         );
@@ -2430,7 +2430,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     const safetyTimeout = setTimeout(() => {
       if (!this.insuranceEngine.allResponded(this.tableId)) {
         console.warn(
-          `[ServerTableEngine:${this.tableId}] Insurance safety timeout — forcing continue`
+          `[ServerTableEngine:${this.tableId}] Insurance safety timeout - forcing continue`
         );
         // Decline any remaining offers
         for (const offer of this.insuranceEngine.getOffers(this.tableId)) {

@@ -117,7 +117,7 @@ describe('GameServer wiring for the stall watchdog', () => {
   });
 });
 
-describe('GameServer discovery reads — unreadable is UNKNOWN, never empty', () => {
+describe('GameServer discovery reads - unreadable is UNKNOWN, never empty', () => {
   it('does not read a failed REGISTERING query as an empty board', () => {
     // Discarding it stopped every start, ramp and top-up on the platform for
     // as long as the failure lasted, silently.

@@ -65,7 +65,7 @@ function makeDealer(seed: number) {
   };
 }
 
-describe('omahaPreflopPercentile — the CDF the thresholds always assumed', () => {
+describe('omahaPreflopPercentile - the CDF the thresholds always assumed', () => {
   it('the RAW score is compressed: the median PLO hand is nowhere near 0.5', () => {
     const deal = makeDealer(4242);
     const raw: number[] = [];
@@ -109,7 +109,7 @@ describe('omahaPreflopPercentile — the CDF the thresholds always assumed', () 
   });
 });
 
-describe('a PLO horse actually plays back — the live symptom, pinned', () => {
+describe('a PLO horse actually plays back - the live symptom, pinned', () => {
   /**
    * Both variants run through the SAME spot so the assertions calibrate
    * themselves against hold'em rather than freezing a magic frequency.
@@ -224,7 +224,7 @@ describe('a PLO horse actually plays back — the live symptom, pinned', () => {
     expect(ploRaise).toBeGreaterThan(nlhRaise * 0.5);
   });
 
-  it('the very best hand always plays back — it never limps its way in', () => {
+  it('the very best hand always plays back - it never limps its way in', () => {
     const aakkds = [C('A', 'hearts'), C('A', 'spades'), C('K', 'hearts'), C('K', 'spades')];
     let raises = 0;
     for (let i = 0; i < 60; i++) {

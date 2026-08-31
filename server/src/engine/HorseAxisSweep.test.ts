@@ -40,7 +40,7 @@ function cards(text: string): Card[] {
   return out;
 }
 
-describe('AXIS 1: plo8 — the quartering trap stays shut', () => {
+describe('AXIS 1: plo8 - the quartering trap stays shut', () => {
   const board = cards('2c4d7h8s'); // made-low turn, no flush possible
   function st(hole: string) {
     return {
@@ -94,7 +94,7 @@ describe('AXIS 1: plo8 — the quartering trap stays shut', () => {
     expect(bigBets).toBe(0);
   });
 
-  it('a scoopy hand still bets — the trap-guard did not neuter value', () => {
+  it('a scoopy hand still bets - the trap-guard did not neuter value', () => {
     let bets = 0;
     for (let i = 0; i < 60; i++) {
       const s = st('Ah2h8h7d'); // nut low draw side + top two high
@@ -171,7 +171,7 @@ describe('AXIS 3: the chart owns the push/fold zone; the heuristic is only the n
     expect(jams).toBe(20);
   });
 
-  it('with the chart store EMPTY the same hand folds — the net is tighter, never wider', () => {
+  it('with the chart store EMPTY the same hand folds - the net is tighter, never wider', () => {
     let jams = 0;
     for (let i = 0; i < 20; i++) {
       const s = sbState('7h2c', 250);

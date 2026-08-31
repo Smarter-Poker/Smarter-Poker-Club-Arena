@@ -152,10 +152,10 @@ describe('InsuranceEngine.createOffers', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 import { insuranceEquity } from './InsuranceEquity.js';
 
-describe('InsuranceEngine pricing — chop-aware (PRICING FIX 2026-08-18)', () => {
+describe('InsuranceEngine pricing - chop-aware (PRICING FIX 2026-08-18)', () => {
   const c = (r: string, s2: string) => ({ rank: r, suit: s2 }) as never;
 
-  it('a guaranteed chop is uninsurable — no offer at all', () => {
+  it('a guaranteed chop is uninsurable - no offer at all', () => {
     const e = new InsuranceEngine();
     e.configure('t1', { enabled: true, houseMargin: 1.2, offerTimeoutSeconds: 15 });
     // Identical rank hole cards on a board neither can beat: every runout chops.
@@ -174,7 +174,7 @@ describe('InsuranceEngine pricing — chop-aware (PRICING FIX 2026-08-18)', () =
     expect(offers).toHaveLength(0);
   });
 
-  it('a coinflip-given-live spot is UNINSURABLE — fee would reach the payout (2026-08-28)', () => {
+  it('a coinflip-given-live spot is UNINSURABLE - fee would reach the payout (2026-08-28)', () => {
     // AsKs vs AdKd, board 2d 7s 9c: each side has exactly ONE live suit
     // (one board card of it) - runner-runner flush either way, ~91% chop.
     // The contract refunds the premium on every chop, so the price is
@@ -250,7 +250,7 @@ describe('InsuranceEngine pricing — chop-aware (PRICING FIX 2026-08-18)', () =
 // DAN'S RULES (2026-08-18): "insurance is only allowed for running it once;
 // if the pot is chopped, insurance is voided." Every chop shape pinned.
 // ═══════════════════════════════════════════════════════════════════════════
-describe('settlement — chop shapes (Dan: chopped pot voids insurance)', () => {
+describe('settlement - chop shapes (Dan: chopped pot voids insurance)', () => {
   let e: InsuranceEngine;
   beforeEach(() => {
     e = mkEngine();

@@ -85,7 +85,7 @@ describe('a deep stack never open-jams, however burnt the M looks', () => {
     }
   });
 
-  it('a genuinely short stack still jams — the fix did not disarm push/fold', () => {
+  it('a genuinely short stack still jams - the fix did not disarm push/fold', () => {
     const r = decidePreflopV7(ctx({ stackBB: 9, stack: 9000, strength: 0.8 }) as never);
     expect(r.a).toBe('jam');
   });

@@ -21,7 +21,7 @@ function forgedToken(payload: Record<string, unknown>): string {
   return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64(payload)}.not-a-real-signature`;
 }
 
-describe('authenticateRequest — signature verification', () => {
+describe('authenticateRequest - signature verification', () => {
   beforeEach(() => {
     getUser.mockReset();
   });

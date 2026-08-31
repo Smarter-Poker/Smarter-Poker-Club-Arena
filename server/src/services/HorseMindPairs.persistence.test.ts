@@ -26,7 +26,7 @@ const huntedHand = (ts: number): ActionRecord[] => [
   act('hero', 'fold', 0, ts + 2),
 ];
 
-describe('HorseMind V12.1 — pair persistence contract', () => {
+describe('HorseMind V12.1 - pair persistence contract', () => {
   beforeEach(() => HorseMind.reset());
 
   it('marks mutated pairs dirty and exportDirtyPairs drains the set', () => {

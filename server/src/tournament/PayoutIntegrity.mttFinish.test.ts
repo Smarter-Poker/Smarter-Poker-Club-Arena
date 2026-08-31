@@ -208,7 +208,7 @@ describe('every payout site shares the one rounding rule', () => {
   });
 });
 
-describe('a failed query must never read as "nobody is left" — the money paths', () => {
+describe('a failed query must never read as "nobody is left" - the money paths', () => {
   it('a cancelled tournament with an unreadable registration list refunds nobody AND closes nobody', () => {
     // Defect: `openRows ?? []` made an unreadable list an empty one. The
     // refund loop found nothing, then the code below closed every
@@ -283,7 +283,7 @@ describe('a tournament that cannot be paid is left where the watchdog can find i
   });
 });
 
-describe('finishing places must be distinct — in the rescue path too', () => {
+describe('finishing places must be distinct - in the rescue path too', () => {
   it('the rescue refuses to hand a survivor a place an eliminated player already holds', () => {
     // Defect: survivors were given 1..N with no regard for the places already
     // recorded. The wallet key `tourney:{id}:prize:{user}:{place}` dedupes a

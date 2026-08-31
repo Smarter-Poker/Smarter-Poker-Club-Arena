@@ -109,7 +109,7 @@ describe('deriveBlindClock', () => {
     expect(deriveBlindClock(structure, 1, started, now).nextBlindInMin).toBeNull();
   });
 
-  it('degrades to unknown on missing inputs — never guesses', () => {
+  it('degrades to unknown on missing inputs - never guesses', () => {
     expect(deriveBlindClock(null, 1, 'x', Date.now()).nextBlindInMin).toBeNull();
     expect(deriveBlindClock(structure, null, 'x', Date.now()).nextBlindInMin).toBeNull();
     expect(
@@ -250,7 +250,7 @@ describe('V23 raise-response plans', () => {
     return { hero: { ...hero, bet: 600 } as SeatPlayer, gsBet, gsRaised };
   }
 
-  it('a river stab that gets raised folds — the plan the bet made', () => {
+  it('a river stab that gets raised folds - the plan the bet made', () => {
     const { hero, gsBet, gsRaised } = stabThenRaise();
     // Drive decisions until the horse actually bets (its river stab is
     // frequency-mixed); the recorded plan for air must be foldToRaise.

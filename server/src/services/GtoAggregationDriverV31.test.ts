@@ -79,7 +79,7 @@ describe('GtoAggregationDriverV31', () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it('fails CLOSED — an unreadable progress table means "do not start"', async () => {
+  it('fails CLOSED - an unreadable progress table means "do not start"', async () => {
     progressSelect.mockResolvedValue({ data: null, error: { message: 'boom' } });
     expect(await v30IsComplete()).toBe(false);
     await gtoV31AggregationTick();
@@ -111,7 +111,7 @@ describe('GtoAggregationDriverV31', () => {
     }
   });
 
-  it('a timeout ends the tick quietly — rolled back, cursor unmoved, not an incident', async () => {
+  it('a timeout ends the tick quietly - rolled back, cursor unmoved, not an incident', async () => {
     rpc.mockResolvedValueOnce(ok(10)).mockResolvedValueOnce(timeout).mockResolvedValue(ok(10));
     const rows = await gtoV31AggregationTick();
     expect(rows).toBe(10); // stopped at the timeout, did not hammer on

@@ -52,7 +52,7 @@ export async function handleLeave(
       // nobody can be all-in in one — the seat is stale state, not a live pot.
       // Said out loud because it IS a bypass, and if all-in ever needs to
       // survive an engine restart it has to become a table_seats column first.
-      console.warn(`[HTTP /leave] No engine for table ${tableId} — direct DB cleanup`);
+      console.warn(`[HTTP /leave] No engine for table ${tableId} - direct DB cleanup`);
       return sendJSON(res, 200, {
         success: true,
         immediate: true,

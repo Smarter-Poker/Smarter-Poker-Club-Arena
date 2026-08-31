@@ -37,7 +37,7 @@ describe('sit-out requires a played hand', () => {
     expect(sitOutBody).toMatch(/One Hand Before You Can Sit Out/);
   });
 
-  it('gates only the OUTBOUND direction — sitting back in is always allowed', () => {
+  it('gates only the OUTBOUND direction - sitting back in is always allowed', () => {
     /* A player must never be trapped in a sit-out they cannot leave. The guard
        is conditioned on `sitOut` being true. */
     expect(sitOutBody).toMatch(

@@ -426,7 +426,7 @@ export default function VIPPage() {
                 id: 'rabbit',
                 icon: '◆',
                 title: 'Rabbit Hunt',
-                description: 'See undealt cards',
+                description: 'See Undealt Cards',
                 // Dan 2026-08-25: 100 a month, then diamonds. This said
                 // "Unlimited" while the server charged from the 101st, which is
                 // a billing promise the product could not keep. Derived from
@@ -447,21 +447,21 @@ export default function VIPPage() {
                 id: 'throwable',
                 icon: '◆',
                 title: 'Throwables',
-                description: '500 free throws per month',
+                description: '500 Free Throws Per Month',
                 value: '500/mo',
               },
               {
                 id: 'offline',
                 icon: '◈',
                 title: 'Offline Protection',
-                description: 'Unlimited timeout protection',
+                description: 'Unlimited Timeout Protection',
                 value: 'Unlimited',
               },
               {
                 id: 'autobank',
                 icon: '◷',
                 title: 'Auto Time Bank',
-                description: 'Automatic time bank usage',
+                description: 'Automatic Time Bank Usage',
                 value: 'Free',
               },
               {
@@ -482,7 +482,7 @@ export default function VIPPage() {
                 id: 'emojis',
                 icon: '◆',
                 title: 'Emojis',
-                description: 'Access to all emoji packs',
+                description: 'Access To All Emoji Packs',
                 value: 'All Packs',
               },
             ]}

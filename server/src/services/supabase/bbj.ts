@@ -83,7 +83,7 @@ export async function logBBJCollection(
         .maybeSingle();
 
       if (!club) {
-        console.warn(`[logBBJCollection] Club ${clubId} not found — skipping BBJ logging`);
+        console.warn(`[logBBJCollection] Club ${clubId} not found - skipping BBJ logging`);
         return false;
       }
 
@@ -141,7 +141,7 @@ export async function logBBJCollection(
       if (createErr || !newPool) {
         reportError(
           new Error(
-            `[logBBJCollection] BBJ pool auto-create FAILED for club ${clubId} — fee of ${bbjAmount} collected but not banked: ${createErr?.message}`
+            `[logBBJCollection] BBJ pool auto-create FAILED for club ${clubId} - fee of ${bbjAmount} collected but not banked: ${createErr?.message}`
           ),
           'logBBJCollection.pool_autocreate_failed'
         );
@@ -236,7 +236,7 @@ export async function logBBJCollection(
       if (attempt < BBJ_RPC_MAX_ATTEMPTS) {
         console.warn(
           `[logBBJCollection] bbj_record_contribution attempt ${attempt}/${BBJ_RPC_MAX_ATTEMPTS} ` +
-            `failed for hand #${handNumber} — retrying:`,
+            `failed for hand #${handNumber} - retrying:`,
           rpcError.message
         );
         // Short linear backoff (100ms, 200ms) — this runs on the settlement path,
@@ -251,7 +251,7 @@ export async function logBBJCollection(
       reportError(
         new Error(
           `[logBBJCollection] BBJ contribution FAILED after ${BBJ_RPC_MAX_ATTEMPTS} attempts ` +
-            `for hand #${handNumber} (table ${tableId}, club ${clubId}) — ${bbjAmount} chips ` +
+            `for hand #${handNumber} (table ${tableId}, club ${clubId}) - ${bbjAmount} chips ` +
             `were deducted from the pot and banked NOWHERE: ${rpcError.message}`
         ),
         'logBBJCollection.contribution_failed'
@@ -366,7 +366,7 @@ export async function processBBJPayout(params: {
       // used to mean permanent loss under the old non-recoverable payout.
       if (rpc?.already_paid) {
         console.warn(
-          `[processBBJPayout] Already paid — hand ${params.tableId}#${params.handNumber} on pool ${pool.id}` +
+          `[processBBJPayout] Already paid - hand ${params.tableId}#${params.handNumber} on pool ${pool.id}` +
             (rpc?.recovered ? ' (re-drove a missing recipient credit)' : '')
         );
       }
@@ -418,7 +418,7 @@ export async function processBBJPayout(params: {
           .map((r) => ({
             user_id: r.id,
             type: 'bonus',
-            title: 'Bad Beat Jackpot — you got paid!',
+            title: 'Bad Beat Jackpot - you got paid!',
             message:
               `A Bad Beat Jackpot hit on a hand you were dealt into after you left the table. ` +
               `Your share of $${r.share.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ` +

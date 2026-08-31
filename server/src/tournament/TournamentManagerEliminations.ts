@@ -208,7 +208,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             new Error(
               `[Tournament:${this.tournamentId.slice(0, 8)}] elimination sweep has held its lock for ${Math.round(
                 heldForMs / 1000
-              )}s — taking it back. The stalled sweep (generation ${this.eliminationSweepGeneration}) is superseded and will stand down at its next write. Eliminations were stopped for this tournament until now.`
+              )}s - taking it back. The stalled sweep (generation ${this.eliminationSweepGeneration}) is superseded and will stand down at its next write. Eliminations were stopped for this tournament until now.`
             ),
             'Tournament.elimination_sweep_lock_forced'
           );
@@ -228,7 +228,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               new Error(
                 `[Tournament:${this.tournamentId.slice(0, 8)}] elimination sweep still running after ${Math.round(
                   heldForMs / 1000
-                )}s — no player can be eliminated and the tournament cannot finish while it is held`
+                )}s - no player can be eliminated and the tournament cannot finish while it is held`
               ),
               'Tournament.elimination_sweep_overrunning'
             );
@@ -327,7 +327,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           if (page > 10_000) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] seat paging did not terminate — skipping this sweep`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] seat paging did not terminate - skipping this sweep`
               ),
               'Tournament.seat_paging_runaway'
             );
@@ -344,7 +344,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           if (seatsErr || !chunk) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] seat read failed (${seatsErr?.message ?? 'null chunk'}) — skipping the whole sweep rather than busting on a partial chip picture`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] seat read failed (${seatsErr?.message ?? 'null chunk'}) - skipping the whole sweep rather than busting on a partial chip picture`
               ),
               'Tournament.seat_read_failed'
             );
@@ -397,7 +397,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (ambiguousSeatUsers.length > 0) {
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] ${ambiguousSeatUsers.length} player(s) hold multiple open seats with no usable joined_at — chip sync skipped for them this sweep: ${ambiguousSeatUsers.map((u) => u.slice(0, 8)).join(', ')}`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] ${ambiguousSeatUsers.length} player(s) hold multiple open seats with no usable joined_at - chip sync skipped for them this sweep: ${ambiguousSeatUsers.map((u) => u.slice(0, 8)).join(', ')}`
             ),
             'Tournament.ambiguous_live_seat'
           );
@@ -450,7 +450,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 chipUpdates.push({ user_id: p.user_id, chips: 0 });
                 reportError(
                   new Error(
-                    `[Tournament:${this.tournamentId.slice(0, 8)}] ${p.user_id.slice(0, 8)} has been 'playing' with ${p.chips} stale chips and NO open seat for ${strikes} sweeps — treating as a vacated bust and zeroing chips so the elimination path can finish the event`
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] ${p.user_id.slice(0, 8)} has been 'playing' with ${p.chips} stale chips and NO open seat for ${strikes} sweeps - treating as a vacated bust and zeroing chips so the elimination path can finish the event`
                   ),
                   'Tournament.seatless_phantom_zeroed'
                 );
@@ -491,7 +491,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (bustedErr) {
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] bust list unreadable (${bustedErr.message}) — skipping this sweep entirely`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] bust list unreadable (${bustedErr.message}) - skipping this sweep entirely`
             ),
             'Tournament.busted_list_unavailable'
           );
@@ -528,7 +528,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
          */
         if (busted && busted.length > 0 && Date.now() < this.bustingArmedAt) {
           console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Bust sweep held — stacks not credited yet (${Math.ceil(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Bust sweep held - stacks not credited yet (${Math.ceil(
               (this.bustingArmedAt - Date.now()) / 1000
             )}s)`
           );
@@ -549,7 +549,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           ) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] all ${liveCount} live player(s) read 0 chips — uncredited stacks, not a bust. Eliminating nobody this sweep.`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] all ${liveCount} live player(s) read 0 chips - uncredited stacks, not a bust. Eliminating nobody this sweep.`
               ),
               'Tournament.zero_chip_field_refused'
             );
@@ -572,7 +572,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           if (playingErr || playingCount === null || playingCount === undefined) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] playing count unavailable (${playingErr?.message ?? 'null count'}) — deferring ${busted.length} elimination(s)`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] playing count unavailable (${playingErr?.message ?? 'null count'}) - deferring ${busted.length} elimination(s)`
               ),
               'Tournament.playing_count_unavailable'
             );
@@ -793,7 +793,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           if (takenErr || !takenRows) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] taken-places list unreadable (${takenErr?.message ?? 'null rows'}) — deferring ${bustedOrdered.length} elimination(s) rather than assigning a place that may already be paid`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] taken-places list unreadable (${takenErr?.message ?? 'null rows'}) - deferring ${bustedOrdered.length} elimination(s) rather than assigning a place that may already be paid`
               ),
               'Tournament.taken_places_unavailable'
             );
@@ -817,7 +817,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           if (unplacedErr || unplacedCount === null || unplacedCount === undefined) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] unplaced-player count unavailable (${unplacedErr?.message ?? 'null count'}) — deferring ${bustedOrdered.length} elimination(s)`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] unplaced-player count unavailable (${unplacedErr?.message ?? 'null count'}) - deferring ${bustedOrdered.length} elimination(s)`
               ),
               'Tournament.unplaced_count_unavailable'
             );
@@ -842,7 +842,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             if (sweepGeneration !== this.eliminationSweepGeneration) {
               reportError(
                 new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] elimination sweep generation ${sweepGeneration} was superseded mid-run — standing down with ${
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] elimination sweep generation ${sweepGeneration} was superseded mid-run - standing down with ${
                     bustedOrdered.length - i
                   } elimination(s) unassigned rather than writing places from a stale ladder`
                 ),
@@ -865,7 +865,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               if (up > ceiling) {
                 reportError(
                   new Error(
-                    `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: no finishing place free in [2, ${ceiling}] for ${bustedOrdered[i].user_id.slice(0, 8)} — cannot eliminate, tournament will not finish without intervention`
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: no finishing place free in [2, ${ceiling}] for ${bustedOrdered[i].user_id.slice(0, 8)} - cannot eliminate, tournament will not finish without intervention`
                   ),
                   'TournamentManager.no_free_finishing_place'
                 );
@@ -874,7 +874,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               place = up;
               reportError(
                 new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] finishing ladder exhausted downward at seed ${nextPosition} — ${bustedOrdered[i].user_id.slice(0, 8)} placed at ${place} instead. Places already handed out are one or more too high; the event will still finish but the standings need renumbering.`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] finishing ladder exhausted downward at seed ${nextPosition} - ${bustedOrdered[i].user_id.slice(0, 8)} placed at ${place} instead. Places already handed out are one or more too high; the event will still finish but the standings need renumbering.`
                 ),
                 'TournamentManager.finishing_ladder_exhausted'
               );
@@ -910,7 +910,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (remainingErr || remainingCount === null || remainingCount === undefined) {
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] remaining-player count unavailable (${remainingErr?.message ?? 'null count'}) — skipping finish check this cycle`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] remaining-player count unavailable (${remainingErr?.message ?? 'null count'}) - skipping finish check this cycle`
             ),
             'Tournament.remaining_count_unavailable'
           );
@@ -958,7 +958,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
               if (lastEliminated) {
                 console.log(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] All busted simultaneously — last eliminated wins`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] All busted simultaneously - last eliminated wins`
                 );
                 await this.finishTournament(lastEliminated.user_id);
               }
@@ -1039,7 +1039,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             if (playingNowErr || playingNow === null || playingNow === undefined) {
               reportError(
                 new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] hand-for-hand: playing count unavailable (${playingNowErr?.message ?? 'null count'}) — bubble state left unchanged this cycle`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] hand-for-hand: playing count unavailable (${playingNowErr?.message ?? 'null count'}) - bubble state left unchanged this cycle`
                 ),
                 'Tournament.hand_for_hand_count_unavailable'
               );
@@ -1088,7 +1088,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               if (!this.handForHandAnnounced) {
                 this.handForHandAnnounced = true;
                 console.log(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] HAND-FOR-HAND — ${playingNow} players, ${payoutCount} paid`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] HAND-FOR-HAND - ${playingNow} players, ${payoutCount} paid`
                 );
                 await this.broadcast('hand_for_hand', {
                   active: true,
@@ -1107,7 +1107,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               this.handForHandActive = false;
               this.stopHandForHandSync();
               console.log(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] BUBBLE BURST — ${playingNow} players ITM`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] BUBBLE BURST - ${playingNow} players ITM`
               );
               await this.broadcast('bubble_burst', { playersRemaining: playingNow });
               // Resume all engines permanently
@@ -1205,7 +1205,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
       if (declined.size > 0) {
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] rebuys declined — ` +
+          `[Tournament:${this.tournamentId.slice(0, 8)}] rebuys declined - ` +
             [...declined.entries()].map(([m, n]) => `${m} x${n}`).join(', ')
         );
       }
@@ -1303,7 +1303,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
       if (tablesErr) {
         console.error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] seat release: could not list tables — ${tablesErr.message}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] seat release: could not list tables - ${tablesErr.message}`
         );
         return;
       }
@@ -1311,7 +1311,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       const tournamentTableIds = (tournamentTables ?? []).map((t: { id: string }) => t.id);
       if (tournamentTableIds.length === 0) {
         console.warn(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] seat release: no tables carry this tournament_id — ${userId.slice(0, 8)} may still be seated`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] seat release: no tables carry this tournament_id - ${userId.slice(0, 8)} may still be seated`
         );
         return;
       }
@@ -1325,7 +1325,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
       if (seatErr) {
         console.error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] seat release FAILED for ${userId.slice(0, 8)} — ${seatErr.message}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] seat release FAILED for ${userId.slice(0, 8)} - ${seatErr.message}`
         );
       }
 
@@ -1415,7 +1415,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (tournamentErr || !tournament) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] cannot price place ${position} for ${userId.slice(0, 8)} — tournament row unreadable (${tournamentErr?.message ?? 'no row'}). Eliminating nobody; the next sweep retries.`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] cannot price place ${position} for ${userId.slice(0, 8)} - tournament row unreadable (${tournamentErr?.message ?? 'no row'}). Eliminating nobody; the next sweep retries.`
         ),
         'Tournament.elimination_tournament_unreadable'
       );
@@ -1493,7 +1493,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // the player still 'playing' with 0 chips and retries.
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] elimination write FAILED for ${userId.slice(0, 8)} at place ${position} (http ${updateStatus}): ${updateErr.message} — place unassigned, prize ${prize} unpaid`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] elimination write FAILED for ${userId.slice(0, 8)} at place ${position} (http ${updateStatus}): ${updateErr.message} - place unassigned, prize ${prize} unpaid`
         ),
         'Tournament.elimination_write_failed'
       );
@@ -1581,7 +1581,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       if (!creditSuccess) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Prize credit FAILED after 3 retries for ${userId.slice(0, 8)} — ${prize} chips lost`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Prize credit FAILED after 3 retries for ${userId.slice(0, 8)} - ${prize} chips lost`
           ),
           'TournamentthistournamentIdslic.CRITICAL'
         );
@@ -1601,7 +1601,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         await raiseFinancialAlert(
           'critical',
           'Tournament.prize_credit_failed',
-          `Prize credit failed after 3 retries — ${prize} chips owed to ${userId} for place ${position} were never paid`,
+          `Prize credit failed after 3 retries - ${prize} chips owed to ${userId} for place ${position} were never paid`,
           {
             tournament_id: this.tournamentId,
             user_id: userId,
@@ -1772,7 +1772,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           );
         } else {
           console.warn(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Could not determine knocker for ${userId.slice(0, 8)} — bounty skipped`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Could not determine knocker for ${userId.slice(0, 8)} - bounty skipped`
           );
         }
       } catch (bountyErr) {
@@ -1905,7 +1905,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             .map((c) => `${c.userId.slice(0, 8)}:${c.weight}`)
             .join(
               ', '
-            )}), but the bounty pays a single collector — ${knockerUserId.slice(0, 8)} takes the whole head. Needs a ruling on how a split head is shared.`
+            )}), but the bounty pays a single collector - ${knockerUserId.slice(0, 8)} takes the whole head. Needs a ruling on how a split head is shared.`
         ),
         'Tournament.split_pot_bounty_paid_to_one'
       );
@@ -2581,7 +2581,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       if (res.ok && res.balanced === false) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty DOES NOT RECONCILE — pool ${res.pool_cents}c, settled ${res.settled_cents}c, variance ${res.variance_cents}c`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty DOES NOT RECONCILE - pool ${res.pool_cents}c, settled ${res.settled_cents}c, variance ${res.variance_cents}c`
           ),
           'Tournament.mystery_bounty_unbalanced'
         );
@@ -2745,7 +2745,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (eliminatedErr) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] prize recalc ABORTED — could not read ITM finishers (${eliminatedErr.message}); early busts keep their pre-late-reg prizes`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] prize recalc ABORTED - could not read ITM finishers (${eliminatedErr.message}); early busts keep their pre-late-reg prizes`
         ),
         'Tournament.prize_recalc_read_failed'
       );
@@ -2795,7 +2795,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
       if (difference > 0) {
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Prize recalc: ${player.user_id.slice(0, 8)} pos ${player.position} — old: ${player.prize}, new: ${correctPrize}, diff: +${difference}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Prize recalc: ${player.user_id.slice(0, 8)} pos ${player.position} - old: ${player.prize}, new: ${correctPrize}, diff: +${difference}`
         );
 
         // Credit the difference
@@ -2924,7 +2924,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // but a failing settle path is a signal someone should see.
     reportError(
       new Error(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settlement FAILED after 3 attempts (${lastErr}) — fn_sweep_unsettled_tournament_rake will re-drive it`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settlement FAILED after 3 attempts (${lastErr}) - fn_sweep_unsettled_tournament_rake will re-drive it`
       ),
       'Tournament.rake_settlement_failed'
     );
@@ -3179,7 +3179,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (dealCompletedErr) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: deal settled but COMPLETING -> COMPLETED failed: ${dealCompletedErr.message} — the structure-based recovery watchdog can now reach a dealt event`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: deal settled but COMPLETING -> COMPLETED failed: ${dealCompletedErr.message} - the structure-based recovery watchdog can now reach a dealt event`
         ),
         'Tournament.final_table_deal_completed_transition_failed'
       );
@@ -3201,7 +3201,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
 
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] FINAL TABLE DEAL settled — ${payoutRows.length} player(s) paid, chip leader ${winnerId.slice(0, 8)} takes 1st`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] FINAL TABLE DEAL settled - ${payoutRows.length} player(s) paid, chip leader ${winnerId.slice(0, 8)} takes 1st`
     );
 
     await this.cleanupBroadcastChannel();
@@ -3230,7 +3230,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (claimErr) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: could not claim RUNNING -> COMPLETING: ${claimErr.message} — tournament left RUNNING, winner ${winnerId.slice(0, 8)} unpaid`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: could not claim RUNNING -> COMPLETING: ${claimErr.message} - tournament left RUNNING, winner ${winnerId.slice(0, 8)} unpaid`
         ),
         'Tournament.finish_claim_failed'
       );
@@ -3239,7 +3239,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
     if (!claimResult) {
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Could not claim finish — already finishing/completed`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Could not claim finish - already finishing/completed`
       );
       return;
     }
@@ -3283,7 +3283,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
        */
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Could not load tournament for finish: ${tourneyLoadErr?.message ?? 'no row'} — left in COMPLETING for recoverStuckCompletingTournaments to pay and close`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Could not load tournament for finish: ${tourneyLoadErr?.message ?? 'no row'} - left in COMPLETING for recoverStuckCompletingTournaments to pay and close`
         ),
         'TournamentthistournamentIdslic.CRITICAL'
       );
@@ -3357,9 +3357,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             `[Tournament:${this.tournamentId.slice(0, 8)}] ${awardedErr ? 'CRITICAL: ' : ''}` +
               `No usable payout_structure` +
               `${isSpinTournament(tournament as any) ? ' and no spin_multiplier to rebuild it from' : ''}` +
-              ` — paying the winner the UNSPENT pool (${winnerPrize} of ${pool}; ` +
+              ` - paying the winner the UNSPENT pool (${winnerPrize} of ${pool}; ` +
               `${alreadyAwarded} already paid to ${(awarded ?? []).length} finisher(s))` +
-              `${awardedErr ? ` — award read FAILED after 3 attempts (${awardedErr.message}), so "already paid" may be understated and this may be an OVERPAY` : ''}`
+              `${awardedErr ? ` - award read FAILED after 3 attempts (${awardedErr.message}), so "already paid" may be understated and this may be an OVERPAY` : ''}`
           ),
           'TournamentthistournamentIdslic.No_usable_payout_structure'
         );
@@ -3401,7 +3401,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       if (!creditSuccess) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Winner prize credit FAILED after 3 retries for ${winnerId.slice(0, 8)} — ${winnerPrize} chips lost`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Winner prize credit FAILED after 3 retries for ${winnerId.slice(0, 8)} - ${winnerPrize} chips lost`
           ),
           'TournamentthistournamentIdslic.CRITICAL'
         );
@@ -3410,7 +3410,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         await raiseFinancialAlert(
           'critical',
           'Tournament.winner_prize_credit_failed',
-          `WINNER prize credit failed after 3 retries — ${winnerPrize} chips owed to ${winnerId} were never paid`,
+          `WINNER prize credit failed after 3 retries - ${winnerPrize} chips owed to ${winnerId} were never paid`,
           {
             tournament_id: this.tournamentId,
             user_id: winnerId,
@@ -3454,7 +3454,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       );
     } else if (stillPlaying && stillPlaying.length > 0) {
       console.warn(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] finishing with ${stillPlaying.length} unresolved player(s) — assigning places 2..${stillPlaying.length + 1}`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] finishing with ${stillPlaying.length} unresolved player(s) - assigning places 2..${stillPlaying.length + 1}`
       );
       const ordered = [...stillPlaying].sort((a, b) => (a.chips ?? 0) - (b.chips ?? 0));
       // PAYOUT-INTEGRITY 2026-08-27: `ordered.length + 1 - i` assumed no place
@@ -3640,7 +3640,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (completedErr) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETING -> COMPLETED failed: ${completedErr.message} — left for recoverStuckCompletingTournaments`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETING -> COMPLETED failed: ${completedErr.message} - left for recoverStuckCompletingTournaments`
         ),
         'Tournament.completed_transition_failed'
       );

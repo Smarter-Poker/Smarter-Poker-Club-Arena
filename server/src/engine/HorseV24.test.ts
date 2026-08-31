@@ -221,11 +221,11 @@ describe('V24 PLO price defense', () => {
     expect(decidePreflopV7(bbSpot() as never).a).toBe('call');
   });
 
-  it('WITHOUT the layer the same blind folds — the leak Dan watched', () => {
+  it('WITHOUT the layer the same blind folds - the leak Dan watched', () => {
     expect(decidePreflopV7(bbSpot({ ploPriceDefense: false }) as never).a).toBe('fold');
   });
 
-  it('a COLD CALLER at 1.43:1 stays tight — pot-raise pots are not cheap', () => {
+  it('a COLD CALLER at 1.43:1 stays tight - pot-raise pots are not cheap', () => {
     // 0.41 odds earns only ~0.09 of relief, so a middling hand still folds.
     // Widening here would be a different leak, not a fix.
     expect(decidePreflopV7(ploCtx({ strength: 0.45 }) as never).a).toBe('fold');

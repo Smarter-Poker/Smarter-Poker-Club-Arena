@@ -173,7 +173,7 @@ export class TournamentMetrics {
       this.reportedBlind = true;
       reportError(
         new Error(
-          `[TournamentMetrics] ${this.consecutiveFailures} consecutive refresh failures (${reason}) — tournament gauges are STALE. poker_tournament_metrics_stale_seconds is climbing and every tournament alert is now blind.`
+          `[TournamentMetrics] ${this.consecutiveFailures} consecutive refresh failures (${reason}) - tournament gauges are STALE. poker_tournament_metrics_stale_seconds is climbing and every tournament alert is now blind.`
         ),
         'TournamentMetrics.refresh_failed'
       );
@@ -202,7 +202,7 @@ export class TournamentMetrics {
       `# HELP poker_tournaments_overdue_start MTTs whose start time passed over ${OVERDUE_START_MINUTES}m ago and which nobody started. MTT only: a seat-first SNG/Spin waiting for seats is not overdue.`,
       '# TYPE poker_tournaments_overdue_start gauge',
       `poker_tournaments_overdue_start ${s.overdueStart}`,
-      `# HELP poker_tournaments_stuck_completing Tournaments in COMPLETING for over ${STUCK_COMPLETING_MINUTES}m — the recovery watchdog should have settled them`,
+      `# HELP poker_tournaments_stuck_completing Tournaments in COMPLETING for over ${STUCK_COMPLETING_MINUTES}m - the recovery watchdog should have settled them`,
       '# TYPE poker_tournaments_stuck_completing gauge',
       `poker_tournaments_stuck_completing ${s.stuckCompleting}`,
       '# HELP poker_tournament_seatless_phantoms Entrants in a RUNNING event holding chips with no open seat anywhere in it',
@@ -211,7 +211,7 @@ export class TournamentMetrics {
       `# HELP poker_tournaments_unpaid_completed Tournaments COMPLETED in the last ${UNPAID_LOOKBACK_HOURS}h with a prize pool and not one prize payment`,
       '# TYPE poker_tournaments_unpaid_completed gauge',
       `poker_tournaments_unpaid_completed ${s.unpaidCompleted}`,
-      '# HELP poker_tournaments_seat_first_waiting SNG/Spin open past a nominal start time. Their ordinary resting state — informational, do NOT alert on it.',
+      '# HELP poker_tournaments_seat_first_waiting SNG/Spin open past a nominal start time. Their ordinary resting state - informational, do NOT alert on it.',
       '# TYPE poker_tournaments_seat_first_waiting gauge',
       `poker_tournaments_seat_first_waiting ${s.seatFirstWaiting}`,
       '# HELP poker_tournament_metrics_stale_seconds Age of the tournament snapshot. A failed read keeps the last good values, so THIS is what proves the gauges above are current.',

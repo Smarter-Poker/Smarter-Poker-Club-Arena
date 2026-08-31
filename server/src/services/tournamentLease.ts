@@ -82,7 +82,7 @@ export async function claimTournament(tournamentId: string): Promise<boolean> {
     if (error) {
       claimErrors++;
       if (claimErrors <= 3) {
-        console.warn(`[tournament-lease] claim failed (${error.message}) — starting anyway`);
+        console.warn(`[tournament-lease] claim failed (${error.message}) - starting anyway`);
       }
       return true;
     }
@@ -107,7 +107,7 @@ export async function claimTournament(tournamentId: string): Promise<boolean> {
   } catch (err) {
     claimErrors++;
     if (claimErrors <= 3) {
-      console.warn(`[tournament-lease] claim threw (${(err as Error)?.message}) — starting anyway`);
+      console.warn(`[tournament-lease] claim threw (${(err as Error)?.message}) - starting anyway`);
     }
     return true;
   }
@@ -131,7 +131,7 @@ export async function heartbeatTournaments(tournamentIds: string[]): Promise<str
     if (error) {
       heartbeatErrors++;
       if (heartbeatErrors <= 3) {
-        console.warn(`[tournament-lease] heartbeat failed (${error.message}) — keeping every one`);
+        console.warn(`[tournament-lease] heartbeat failed (${error.message}) - keeping every one`);
       }
       return [];
     }
@@ -159,7 +159,7 @@ export async function heartbeatTournaments(tournamentIds: string[]): Promise<str
     if (reclaimable > 0) {
       reclaimableHeartbeats += reclaimable;
       console.warn(
-        `[tournament-lease] ${reclaimable} of ${tournamentIds.length} leases were missing or stale, not taken — re-claiming, still running`
+        `[tournament-lease] ${reclaimable} of ${tournamentIds.length} leases were missing or stale, not taken - re-claiming, still running`
       );
     }
 
@@ -168,7 +168,7 @@ export async function heartbeatTournaments(tournamentIds: string[]): Promise<str
     heartbeatErrors++;
     if (heartbeatErrors <= 3) {
       console.warn(
-        `[tournament-lease] heartbeat threw (${(err as Error)?.message}) — keeping every one`
+        `[tournament-lease] heartbeat threw (${(err as Error)?.message}) - keeping every one`
       );
     }
     return [];

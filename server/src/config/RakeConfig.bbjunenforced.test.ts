@@ -78,7 +78,7 @@ const call = (
 ) => detectBBJHit(results, winner, 'plo4', 1000, 2, 4, ['a', 'b', 'c', 'd'], BOARD, context);
 
 describe('excludeDoubleBoard is now a rule and not just a sentence', () => {
-  it('is still declared true — the constant is what the rules panel prints', () => {
+  it('is still declared true - the constant is what the rules panel prints', () => {
     expect(BBJ_RULES.excludeDoubleBoard).toBe(true);
   });
 

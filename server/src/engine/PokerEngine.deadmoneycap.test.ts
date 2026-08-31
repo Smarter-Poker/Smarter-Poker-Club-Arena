@@ -113,7 +113,7 @@ describe('a dead-money-only all-in can win the dead money and no more', () => {
     expect(sum(pots)).toBe(218);
   });
 
-  it('the ordinary case — everyone has live money — still produces one pot', () => {
+  it('the ordinary case - everyone has live money - still produces one pot', () => {
     // No dead-money-only player, so the dead pot and the main pot have the same
     // eligible set and the merge step folds them back together. This is the
     // no-regression guard for the 99% path.

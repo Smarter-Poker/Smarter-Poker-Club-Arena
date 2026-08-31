@@ -80,7 +80,7 @@ describe('engine liveness', () => {
     ).toBe(false);
   });
 
-  it('table progress cannot veto forever — 15 minutes without a discovery attempt is dead', () => {
+  it('table progress cannot veto forever - 15 minutes without a discovery attempt is dead', () => {
     // A discovery loop wedged on a hung await must still be restarted even
     // while horses keep tables busy, or new tables never adopt again.
     expect(
@@ -140,7 +140,7 @@ describe('booting is not dead', () => {
     ).toBe(true);
   });
 
-  it('a stalled TABLE still counts during boot — that is real, not startup', () => {
+  it('a stalled TABLE still counts during boot - that is real, not startup', () => {
     expect(
       isDead({
         deadStalledCount: 1,

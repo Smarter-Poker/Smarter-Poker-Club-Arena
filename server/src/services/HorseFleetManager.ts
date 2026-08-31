@@ -229,7 +229,7 @@ export class HorseFleetManager {
       this.seedAllTables().catch((err) => reportError(err, 'HorseFleet.Seed_cycle_error'));
     }, 30000);
 
-    console.log('[HorseFleet] Running — seeding in background, checking every 30s');
+    console.log('[HorseFleet] Running - seeding in background, checking every 30s');
   }
 
   stop(): void {
@@ -659,7 +659,7 @@ export class HorseFleetManager {
       // half-read map costs a storm.
       if (!seatPage.complete) {
         console.warn(
-          '[HorseFleet] Seeding cycle SKIPPED — the seat map came back incomplete, ' +
+          '[HorseFleet] Seeding cycle SKIPPED - the seat map came back incomplete, ' +
             'and seeding from a partial map is what caused the duplicate-seat storm.'
         );
         return;
@@ -713,7 +713,7 @@ export class HorseFleetManager {
         { label: 'HorseFleet.validHorses', maxRows: 50_000 }
       );
       if (!horsePage.complete) {
-        console.warn('[HorseFleet] Seeding cycle SKIPPED — the horse pool came back incomplete.');
+        console.warn('[HorseFleet] Seeding cycle SKIPPED - the horse pool came back incomplete.');
         return;
       }
       const validHorses = horsePage.rows;
@@ -820,7 +820,7 @@ export class HorseFleetManager {
         } else {
           bankrolls.clear();
           console.warn(
-            '[HorseFleet] bankroll read incomplete — seating this cycle without the bankroll gate.'
+            '[HorseFleet] bankroll read incomplete - seating this cycle without the bankroll gate.'
           );
         }
       } catch (err) {
@@ -847,7 +847,7 @@ export class HorseFleetManager {
       // A horse missing from this set reads as a HUMAN, which triggers the
       // short-handed-human rescue path and reorders the whole seeding queue.
       if (!idPage.complete) {
-        console.warn('[HorseFleet] Seeding cycle SKIPPED — the horse id set came back incomplete.');
+        console.warn('[HorseFleet] Seeding cycle SKIPPED - the horse id set came back incomplete.');
         return;
       }
       const horseIdSet = new Set(idPage.rows.map((h) => h.id));
@@ -870,7 +870,7 @@ export class HorseFleetManager {
       }
       if (surplusTableIds.size > 0) {
         console.log(
-          `[HorseFleet] ${surplusTableIds.size} surplus table(s) draining — not seeding them`
+          `[HorseFleet] ${surplusTableIds.size} surplus table(s) draining - not seeding them`
         );
       }
 
@@ -891,7 +891,7 @@ export class HorseFleetManager {
         validHorses.length > 0 && seatedHorseCount < Math.ceil(validHorses.length / 3);
       if (fleetBoost) {
         console.log(
-          `[HorseFleet] Activity floor: ${seatedHorseCount}/${validHorses.length} horses seated (<1/3) — boosting seat targets this cycle`
+          `[HorseFleet] Activity floor: ${seatedHorseCount}/${validHorses.length} horses seated (<1/3) - boosting seat targets this cycle`
         );
       }
 
@@ -1199,7 +1199,7 @@ export class HorseFleetManager {
 
       if (rollUnknown > 0) {
         console.warn(
-          `[HorseFleet] bankroll gate skipped for ${rollUnknown} horse/table pairs — ` +
+          `[HorseFleet] bankroll gate skipped for ${rollUnknown} horse/table pairs - ` +
             `no membership row for that club. Seating proceeded (fail-open).`
         );
       }

@@ -386,8 +386,8 @@ export default function SearchPage() {
         title="Find Your Next Game"
         description="Scan live players, clubs, open tables, and active tournaments from one precise community index."
         metrics={[
-          { label: 'Live indexes', value: 4, tone: 'live' },
-          { label: 'Current scope', value: category === 'all' ? 'Network' : category },
+          { label: 'Live Indexes', value: 4, tone: 'live' },
+          { label: 'Current Scope', value: category === 'all' ? 'Network' : category },
           { label: 'Results', value: loading ? 'Scanning' : results.length },
         ]}
       />

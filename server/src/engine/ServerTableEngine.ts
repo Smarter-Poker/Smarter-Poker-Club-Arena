@@ -634,7 +634,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       this.hub.publish(this.tableId, payload);
     } else {
       console.warn(
-        `[ServerTableEngine:${this.tableId}] No hub attached — state not delivered to clients`
+        `[ServerTableEngine:${this.tableId}] No hub attached - state not delivered to clients`
       );
     }
     return Promise.resolve();

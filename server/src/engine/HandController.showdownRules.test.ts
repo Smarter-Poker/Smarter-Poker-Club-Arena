@@ -130,7 +130,7 @@ const DRY_BOARD: Card[] = [
 
 // ─────────────────────────────────────────────────────────────────────────
 describe('HEADS-UP showdown ordering + muck (spec sections 3, 4, 7)', () => {
-  it('HU 1: river bet + call — aggressor shows first, beaten caller mucks', () => {
+  it('HU 1: river bet + call - aggressor shows first, beaten caller mucks', () => {
     const h = harness(mkConfig(), mkPlayers([200, 200]), 1);
     huToRiver(h);
     h.actSeat(2, 'check');
@@ -150,7 +150,7 @@ describe('HEADS-UP showdown ordering + muck (spec sections 3, 4, 7)', () => {
     expect(h.winners().map((w) => w.userId)).toEqual(['u1']);
   });
 
-  it('HU 2: river bet + call — caller has the better hand, both show, caller wins', () => {
+  it('HU 2: river bet + call - caller has the better hand, both show, caller wins', () => {
     const h = harness(mkConfig(), mkPlayers([200, 200]), 1);
     huToRiver(h);
     h.actSeat(2, 'check');
@@ -168,7 +168,7 @@ describe('HEADS-UP showdown ordering + muck (spec sections 3, 4, 7)', () => {
     expect(h.winners().map((w) => w.userId)).toEqual(['u2']);
   });
 
-  it('HU 3: checked-through river — the Big Blind (first postflop actor) shows first', () => {
+  it('HU 3: checked-through river - the Big Blind (first postflop actor) shows first', () => {
     const h = harness(mkConfig(), mkPlayers([200, 200]), 1);
     huToRiver(h);
     h.actSeat(2, 'check');
@@ -186,7 +186,7 @@ describe('HEADS-UP showdown ordering + muck (spec sections 3, 4, 7)', () => {
     expect(h.winners().map((w) => w.userId)).toEqual(['u1']);
   });
 
-  it('HU 4: preflop all-in + call — every live hand is exposed, no muck option', () => {
+  it('HU 4: preflop all-in + call - every live hand is exposed, no muck option', () => {
     const h = harness(mkConfig(), mkPlayers([200, 200]), 1);
     h.hc.start();
     h.actSeat(1, 'all_in');
@@ -200,7 +200,7 @@ describe('HEADS-UP showdown ordering + muck (spec sections 3, 4, 7)', () => {
     expect(h.winners().length).toBeGreaterThan(0);
   });
 
-  it('AUDIT: river all-in bet + call — an all-in showdown, both hands exposed', () => {
+  it('AUDIT: river all-in bet + call - an all-in showdown, both hands exposed', () => {
     // Spec section 8 lists "River all-ins": the runout park never fires (no
     // cards to come), but at most one live player could still bet, so this
     // is an all-in showdown all the same — the beaten caller may NOT muck.
@@ -247,7 +247,7 @@ describe('HEADS-UP showdown ordering + muck (spec sections 3, 4, 7)', () => {
     expect(h.winners().map((w) => w.userId)).toEqual(['u1']);
   });
 
-  it('HU 5: river bet, opponent folds — no showdown event at all', () => {
+  it('HU 5: river bet, opponent folds - no showdown event at all', () => {
     const h = harness(mkConfig(), mkPlayers([200, 200]), 1);
     huToRiver(h);
     h.actSeat(2, 'check');
@@ -281,7 +281,7 @@ describe('HEADS-UP showdown ordering + muck (spec sections 3, 4, 7)', () => {
 
 // ─────────────────────────────────────────────────────────────────────────
 describe('MULTIWAY ordering, muck, side pots (spec sections 3, 5, 10, 11)', () => {
-  it('Multiway 1+2: A checks, B bets, C calls, A calls — B shows first; losers muck', () => {
+  it('Multiway 1+2: A checks, B bets, C calls, A calls - B shows first; losers muck', () => {
     // dealer=1 → SB=2 (A), BB=3 (B), BTN=1 (C). Postflop order: 2, 3, 1.
     const h = harness(mkConfig(), mkPlayers([200, 200, 200]), 1);
     h.hc.start();
@@ -531,7 +531,7 @@ describe('PER-POT AWARD BREAKDOWN (spec 16/19/33)', () => {
   });
 });
 
-describe('HAND DESCRIPTIONS (spec section 14) — engine-generated, never hard-coded', () => {
+describe('HAND DESCRIPTIONS (spec section 14) - engine-generated, never hard-coded', () => {
   const evalCards = (hole: Card[], board: Card[]) => evaluateHand(hole, board);
 
   it('Full House -> "Kings Full Of Nines"', () => {

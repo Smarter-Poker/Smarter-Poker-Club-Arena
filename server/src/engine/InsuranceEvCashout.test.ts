@@ -53,7 +53,7 @@ function offerLeader(e: InsuranceEngine, pot = 300) {
   );
 }
 
-describe('EV cashout — offer pricing', () => {
+describe('EV cashout - offer pricing', () => {
   it('the offer quotes insurable pot x equity x (1 - 1% fee), to the cent', () => {
     const offers = offerLeader(mkEngine(), 300);
     expect(offers).toHaveLength(1);
@@ -73,7 +73,7 @@ describe('EV cashout — offer pricing', () => {
   });
 });
 
-describe('EV cashout — accept + settle', () => {
+describe('EV cashout - accept + settle', () => {
   it('locks the quote, resolves the offer, and settles at the locked amount when the leader WINS', () => {
     const e = mkEngine();
     const offers = offerLeader(e);

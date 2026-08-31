@@ -13,7 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import { fastRandom, seedFastRandom, saveFastRandom, restoreFastRandom } from './HorseEval.js';
 
-describe('fastRandom — [0, 1) contract', () => {
+describe('fastRandom - [0, 1) contract', () => {
   it('never returns 1.0, including from the state that used to produce it', () => {
     // Seed so the very next draw comes from the all-ones state.
     seedFastRandom(0xffffffff);

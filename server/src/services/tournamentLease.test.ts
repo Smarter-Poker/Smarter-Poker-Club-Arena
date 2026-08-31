@@ -29,7 +29,7 @@ beforeEach(() => {
 
 const load = async () => await import('./tournamentLease.js');
 
-describe('claimTournament — fail open, always', () => {
+describe('claimTournament - fail open, always', () => {
   it('runs the tournament when the RPC errors', async () => {
     rpc.mockResolvedValue({ data: null, error: { message: 'fetch failed' } });
     const { claimTournament } = await load();
@@ -53,7 +53,7 @@ describe('claimTournament — fail open, always', () => {
   });
 });
 
-describe('claimTournament — with enforcement OFF (today)', () => {
+describe('claimTournament - with enforcement OFF (today)', () => {
   it('records the conflict but still runs it', async () => {
     rpc.mockResolvedValue({
       data: [{ granted: false, holder: 'other-instance', holder_age_seconds: 4 }],
@@ -69,7 +69,7 @@ describe('claimTournament — with enforcement OFF (today)', () => {
   });
 });
 
-describe('claimTournament — with enforcement ON', () => {
+describe('claimTournament - with enforcement ON', () => {
   it('stands down when another instance holds it', async () => {
     process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE = 'on';
     rpc.mockResolvedValue({
@@ -89,7 +89,7 @@ describe('claimTournament — with enforcement ON', () => {
   });
 });
 
-describe('heartbeatTournaments — "could not ask" is not "lost everything"', () => {
+describe('heartbeatTournaments - "could not ask" is not "lost everything"', () => {
   it('reports nothing lost when the RPC errors', async () => {
     process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE = 'on';
     rpc.mockResolvedValue({ data: null, error: { message: 'fetch failed' } });

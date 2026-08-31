@@ -126,16 +126,14 @@ describe('a booking counts, and is claimed atomically', () => {
   it('scopes the trigger to status, so the 5s chip sync never pays for it', () => {
     // `BEFORE INSERT OR UPDATE` unqualified would fire on every chips write
     // for every live entrant every five seconds.
-    expect(bookingRule()).not.toMatch(
-      /BEFORE INSERT OR UPDATE ON public\.tournament_players/
-    );
+    expect(bookingRule()).not.toMatch(/BEFORE INSERT OR UPDATE ON public\.tournament_players/);
   });
 
   it('refuses at four, not at five', () => {
     expect(bookingRule()).toMatch(/v_load\s*>=\s*4/);
   });
 
-  it('never refuses an entrant who is already in — including registered -> playing', () => {
+  it('never refuses an entrant who is already in - including registered -> playing', () => {
     // Late registration promotes registered -> playing. Refusing that strands
     // a paid entrant off the felt over a rule about ENTERING.
     expect(bookingRule()).toMatch(
@@ -152,7 +150,8 @@ describe('a booking counts, and is claimed atomically', () => {
     // This is the whole fix. Two callers reading 3 and both writing is what
     // produced the 24 rows; one shared key per account makes check-and-claim
     // indivisible across the seat path, the booking path and atomic_table_buyin.
-    const key = /pg_advisory_xact_lock\(hashtextextended\('table_cap:' \|\| NEW\.user_id::text, 0\)\)/;
+    const key =
+      /pg_advisory_xact_lock\(hashtextextended\('table_cap:' \|\| NEW\.user_id::text, 0\)\)/;
     expect(seatRule()).toMatch(key);
     expect(bookingRule()).toMatch(key);
   });
@@ -172,7 +171,7 @@ describe('a booking counts, and is claimed atomically', () => {
     expect(loadFn()).toMatch(/t2\.tournament_id = tp\.tournament_id/);
   });
 
-  it('has no is_horse in any of the three bodies — CLAUDE.md 10.5', () => {
+  it('has no is_horse in any of the three bodies - CLAUDE.md 10.5', () => {
     // Identical rule for everyone. Checked against the code, not the prose:
     // the write-up quotes the rule and would match itself.
     expect(code(seatRule())).not.toMatch(/is_horse/);

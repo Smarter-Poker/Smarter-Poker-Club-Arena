@@ -84,7 +84,7 @@ describe('raiseFinancialAlert', () => {
     expect(mockReportError.mock.calls[0][1]).toContain('financialAlerts.threw');
   });
 
-  it('does NOT escalate a failed WARNING — that would move noise, not reduce it', async () => {
+  it('does NOT escalate a failed WARNING - that would move noise, not reduce it', async () => {
     mockRpc.mockResolvedValue({ data: null, error: { message: 'nope' } });
 
     const result = await raiseFinancialAlert('warning', 'Src.minor', 'meh');

@@ -104,7 +104,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           if (flagErr) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] could not persist final_table_triggered (${flagErr.message}) — the announcement still went out, but a reconnecting client will not see the final-table theme`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] could not persist final_table_triggered (${flagErr.message}) - the announcement still went out, but a reconnecting client will not see the final-table theme`
               ),
               'Tournament.final_table_flag_write_failed'
             );
@@ -112,7 +112,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           await this.broadcast('final_table', { playerCount: remainingPlayers || 0 });
         } else if (liveTables !== null && liveTables > 1) {
           console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] ${remainingPlayers} players left but still spread over ${liveTables} tables — NOT the final table until the balancer consolidates`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] ${remainingPlayers} players left but still spread over ${liveTables} tables - NOT the final table until the balancer consolidates`
           );
         }
       }
@@ -158,7 +158,7 @@ export class TournamentManager extends TournamentManagerEliminations {
 
         if (breakMoves.length > 0 && breakMoves.length === bt.playerCount) {
           console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Breaking table ${bt.tableId.slice(0, 8)} — moving ${breakMoves.length} players`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Breaking table ${bt.tableId.slice(0, 8)} - moving ${breakMoves.length} players`
           );
 
           // AUDIT FIX 2026-07-19: wait for the source table's current hand to
@@ -172,7 +172,7 @@ export class TournamentManager extends TournamentManagerEliminations {
             if (!safe) {
               // TOURNEY-AUDIT 2026-07-24 (sweep 4): never move players mid-hand.
               console.warn(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Table ${bt.tableId.slice(0, 8)} still in-hand after 60s — deferring break to next balance cycle`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Table ${bt.tableId.slice(0, 8)} still in-hand after 60s - deferring break to next balance cycle`
               );
               continue;
             }
@@ -190,7 +190,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           // keep the table alive and let the next cycle retry the remainder.
           if (movedCount < breakMoves.length) {
             console.warn(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Table break of ${bt.tableId.slice(0, 8)} incomplete — ${movedCount}/${breakMoves.length} moved. Deferring close to next balance cycle.`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Table break of ${bt.tableId.slice(0, 8)} incomplete - ${movedCount}/${breakMoves.length} moved. Deferring close to next balance cycle.`
             );
             this.breakOccurredThisCycle = true;
             break;
@@ -273,7 +273,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           const safeMoves = moves.filter((m) => !unsafeTables.has(m.fromTableId));
           if (unsafeTables.size > 0) {
             console.warn(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Deferring ${moves.length - safeMoves.length} rebalance move(s) — source table(s) still in-hand`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Deferring ${moves.length - safeMoves.length} rebalance move(s) - source table(s) still in-hand`
             );
           }
           if (safeMoves.length > 0) {
@@ -315,7 +315,7 @@ export class TournamentManager extends TournamentManagerEliminations {
         if (readErr || oldSeat == null || oldSeat.stack == null) {
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Aborting move for ${move.playerId.slice(0, 8)} — could not read source stack (readErr=${readErr?.message ?? 'none'}, seat=${oldSeat ? 'found' : 'null'}). Leaving player at source table to avoid 0-stack elimination; will retry next rebalance.`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Aborting move for ${move.playerId.slice(0, 8)} - could not read source stack (readErr=${readErr?.message ?? 'none'}, seat=${oldSeat ? 'found' : 'null'}). Leaving player at source table to avoid 0-stack elimination; will retry next rebalance.`
             ),
             'Tournament.Move_aborted_no_source_stack'
           );
@@ -345,7 +345,7 @@ export class TournamentManager extends TournamentManagerEliminations {
         if (!moveClaim.allowed) {
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Aborting move for ${move.playerId.slice(0, 8)} — ${moveClaim.reason}. The player stays at table ${move.fromTableId.slice(0, 8)}; moving them would leave a third live seat.`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Aborting move for ${move.playerId.slice(0, 8)} - ${moveClaim.reason}. The player stays at table ${move.fromTableId.slice(0, 8)}; moving them would leave a third live seat.`
             ),
             moveClaim.unknown
               ? 'Tournament.Move_aborted_seat_claim_unreadable'
@@ -595,7 +595,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       if (targetErr) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] satellite target ${targetId.slice(0, 8)} unreadable (${targetErr.message}) — awarding nothing this pass rather than paying the pool out as cash`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] satellite target ${targetId.slice(0, 8)} unreadable (${targetErr.message}) - awarding nothing this pass rather than paying the pool out as cash`
           ),
           'Tournament.satellite_target_unreadable'
         );
@@ -645,7 +645,7 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (finishersErr) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] satellite finishers unreadable (${finishersErr.message}) — awarding nothing this pass rather than treating it as an empty field`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] satellite finishers unreadable (${finishersErr.message}) - awarding nothing this pass rather than treating it as an empty field`
         ),
         'Tournament.satellite_finishers_unreadable'
       );
@@ -811,7 +811,7 @@ export class TournamentManager extends TournamentManagerEliminations {
             `tourney:${this.tournamentId}:prize:place:${w.position}`
           );
           console.log(
-            `[Satellite:${this.tournamentId.slice(0, 8)}] Seat already held elsewhere — ticket cashed: ${w.user_id.slice(0, 8)}`
+            `[Satellite:${this.tournamentId.slice(0, 8)}] Seat already held elsewhere - ticket cashed: ${w.user_id.slice(0, 8)}`
           );
         } else {
           console.log(
@@ -880,7 +880,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       if (countErr || typeof targetCount !== 'number') {
         reportError(
           new Error(
-            `[Satellite:${this.tournamentId.slice(0, 8)}] target recount failed: ${countErr?.message ?? 'no count'} — leaving current_players untouched`
+            `[Satellite:${this.tournamentId.slice(0, 8)}] target recount failed: ${countErr?.message ?? 'no count'} - leaving current_players untouched`
           ),
           'Tournament.satellite_target_recount_failed'
         );
@@ -1005,7 +1005,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           if (claim.unknown) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Not seating ${player.user_id.slice(0, 8)} — ${claim.reason}. The sweep retries in 5s.`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Not seating ${player.user_id.slice(0, 8)} - ${claim.reason}. The sweep retries in 5s.`
               ),
               'Tournament.late_reg_seat_claim_unreadable'
             );
@@ -1207,7 +1207,7 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (tablesToCreate <= 0) return;
 
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] DYNAMIC TABLE EXPANSION: ${totalPlaying} players across ${currentTableCount} tables (capacity ${totalCapacity}) — creating ${tablesToCreate} new table(s)`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] DYNAMIC TABLE EXPANSION: ${totalPlaying} players across ${currentTableCount} tables (capacity ${totalCapacity}) - creating ${tablesToCreate} new table(s)`
     );
 
     const blindStructure = this.tournamentCache?.blind_structure || [];
@@ -1325,7 +1325,7 @@ export class TournamentManager extends TournamentManagerEliminations {
         const safeMoves = moves.filter((m) => !unsafeTables.has(m.fromTableId));
         if (unsafeTables.size > 0) {
           console.warn(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Deferring ${moves.length - safeMoves.length} post-expansion move(s) — source table(s) still in-hand`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Deferring ${moves.length - safeMoves.length} post-expansion move(s) - source table(s) still in-hand`
           );
         }
         if (safeMoves.length > 0) {

@@ -110,7 +110,7 @@ describe('the alert rules are wired and reference only real gauges', () => {
     );
   });
 
-  it('declares real rule groups — a file that alerts on nothing is worse than none', () => {
+  it('declares real rule groups - a file that alerts on nothing is worse than none', () => {
     const src = rules();
     expect(src).toContain('groups:');
     expect(src.match(/- alert: /g)?.length ?? 0).toBeGreaterThanOrEqual(5);

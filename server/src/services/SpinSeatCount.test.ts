@@ -57,7 +57,7 @@ describe('createSpin cannot build a Spin with any other seat count', () => {
     expect(spinInsert).toMatch(/max_players:\s*SPIN_SEATS/);
   });
 
-  it('does NOT force the seat count on SNG or MTT — they own theirs', () => {
+  it('does NOT force the seat count on SNG or MTT - they own theirs', () => {
     // Near-miss guard: a first attempt at this patched the SNG insert by
     // mistake, which would have created every future SNG 3-handed instead of
     // its configured 6. Spins are the only format whose seat count is fixed.

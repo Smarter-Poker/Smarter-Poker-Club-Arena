@@ -214,7 +214,7 @@ describe('EACH ACTION WORKS (Bible 4.9-4.14)', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-describe('STREET PROGRESSION (Bible 4.16) — never skips a street', () => {
+describe('STREET PROGRESSION (Bible 4.16) - never skips a street', () => {
   it('preflop → flop(3) → turn(4) → river(5), bets reset each street', () => {
     const h = harness(mkConfig(), mkPlayers([200, 200, 200]), 1);
     h.hc.start();
@@ -244,7 +244,7 @@ describe('STREET PROGRESSION (Bible 4.16) — never skips a street', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-describe('FULL HAND TO SHOWDOWN (Bible 1.9, 4.21) — deal→bet→showdown→payout', () => {
+describe('FULL HAND TO SHOWDOWN (Bible 1.9, 4.21) - deal→bet→showdown→payout', () => {
   it('3-handed limped pot plays to showdown, winner paid, chips conserved', () => {
     const h = harness(mkConfig(), mkPlayers([200, 200, 200]), 1);
     const start = h.stacksPlusPot();

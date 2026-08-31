@@ -28,7 +28,7 @@ import {
 } from './RakeConfig.js';
 import { calculateRake } from '../engine/PokerEngine.js';
 
-describe('no override — the published schedule is untouched', () => {
+describe('no override - the published schedule is untouched', () => {
   it('every scheduled stake returns exactly its scheduled rate and cap', () => {
     for (const row of RAKE_SCHEDULE) {
       const cfg = getFullRakeConfig(row.sb, row.bb);
@@ -110,15 +110,14 @@ describe('an owner can take less, never more', () => {
     expect(getFullRakeConfig(1, 2, 'nlh', { rakeCapBB: 999 }).rakeCap).toBe(5);
   });
 
-  describe('the published cap is a ceiling — each game has a max rake', () => {
+  describe('the published cap is a ceiling - each game has a max rake', () => {
     it('never exceeds the scheduled cap at ANY stake, whatever is asked for', () => {
       for (const row of RAKE_SCHEDULE) {
         for (const capBB of [1, 3, 5, 10, 999]) {
           const cfg = getFullRakeConfig(row.sb, row.bb, 'nlh', { rakeCapBB: capBB });
-          expect(
-            cfg.rakeCap,
-            `${row.sb}/${row.bb} asked for ${capBB} BB`
-          ).toBeLessThanOrEqual(row.rakeCap);
+          expect(cfg.rakeCap, `${row.sb}/${row.bb} asked for ${capBB} BB`).toBeLessThanOrEqual(
+            row.rakeCap
+          );
         }
         for (const pct of [11, 50, 100]) {
           const cfg = getFullRakeConfig(row.sb, row.bb, 'nlh', { rakePercent: pct });
@@ -162,7 +161,7 @@ describe('an owner can take less, never more', () => {
     }
   });
 
-  it('ZERO is a real setting — a rake-free table, not an unset one', () => {
+  it('ZERO is a real setting - a rake-free table, not an unset one', () => {
     const cfg = getFullRakeConfig(1, 2, 'nlh', { rakePercent: 0, rakeCapBB: 0 });
     expect(cfg.rakePercent).toBe(0);
     expect(cfg.rakeCap).toBe(0);

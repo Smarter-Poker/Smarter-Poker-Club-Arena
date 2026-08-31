@@ -70,7 +70,7 @@ describe('fn_finalize_bounty_pool', () => {
     // counter. This is the exact line that minted 140.60.
     expect(
       latest,
-      'the residual is being computed from bounty_pool_paid again — that is the overpayment'
+      'the residual is being computed from bounty_pool_paid again - that is the overpayment'
     ).not.toMatch(
       /v_residual\s*:=\s*round\(\s*COALESCE\(v_t\.bounty_pool,\s*0\)\s*-\s*COALESCE\(v_t\.bounty_pool_paid/
     );

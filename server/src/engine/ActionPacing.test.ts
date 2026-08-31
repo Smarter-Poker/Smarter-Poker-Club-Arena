@@ -69,7 +69,7 @@ describe('a queued pre-action is still a visible turn', () => {
   });
 });
 
-describe('horse tempo — random, per-horse, from a snap to a time bank', () => {
+describe('horse tempo - random, per-horse, from a snap to a time bank', () => {
   const turns = read('ServerTableEngineTurns.ts');
   const logic = read('HorseLogic.ts');
 
@@ -91,7 +91,7 @@ describe('horse tempo — random, per-horse, from a snap to a time bank', () => 
     expect(turns).not.toContain('HORSE_MIN_THINK_MS');
   });
 
-  it('the settle beat — not a think-time floor — is what protects animations', () => {
+  it('the settle beat - not a think-time floor - is what protects animations', () => {
     const events = read('ServerTableEngineHandEvents.ts');
     expect(events).toContain('this.actionSettleMs');
   });
@@ -131,7 +131,7 @@ describe('horse tempo — random, per-horse, from a snap to a time bank', () => 
   });
 });
 
-describe('the SAME bug class, everywhere it occurs — nothing is superseded in its own tick', () => {
+describe('the SAME bug class, everywhere it occurs - nothing is superseded in its own tick', () => {
   const events = read('ServerTableEngineHandEvents.ts');
   const runout = read('ServerTableEngineRunout.ts');
   const num = (src: string, name: string) => {

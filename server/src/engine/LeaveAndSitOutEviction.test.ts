@@ -143,7 +143,7 @@ describe('the eviction runs where the table actually is', () => {
     expect(BASE).toMatch(/protected async evictExpiredSitOuts\(/);
   });
 
-  it('runs from the START-UP WAIT LOOP — the case that could hold a seat forever', () => {
+  it('runs from the START-UP WAIT LOOP - the case that could hold a seat forever', () => {
     // start() parks in a wait-for-players loop until the table has enough seats
     // to deal, and only then launches dealingLoop. A table below the minimum
     // never reached the sweep at all, which is exactly when the last player

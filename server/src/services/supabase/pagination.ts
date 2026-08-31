@@ -118,7 +118,7 @@ export async function fetchAllRows<T extends Record<string, unknown>>(
     if (last === undefined || last === null) {
       reportError(
         new Error(
-          `[${opts.label}] row is missing the keyset column "${idKey}" — the select must ` +
+          `[${opts.label}] row is missing the keyset column "${idKey}" - the select must ` +
             `include it or paging cannot advance. Returning a partial result.`
         ),
         `${opts.label}.missing_cursor_key`

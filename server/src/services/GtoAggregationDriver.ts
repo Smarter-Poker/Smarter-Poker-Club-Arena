@@ -151,7 +151,7 @@ export async function gtoAggregationTick(): Promise<number> {
             if (stalledTicks >= BACKOFF_AFTER_STALLED_TICKS) {
               skipTicks = 5; // ~100s of quiet before trying again
               stalledTicks = 0;
-              console.warn('[GtoAggregationDriver] repeated timeouts — backing off for ~100s');
+              console.warn('[GtoAggregationDriver] repeated timeouts - backing off for ~100s');
             }
           }
         } else {
@@ -169,7 +169,7 @@ export async function gtoAggregationTick(): Promise<number> {
     }
     if (streetIdx >= STREETS.length) {
       finished = true;
-      console.log('[GtoAggregationDriver] all streets aggregated — going silent');
+      console.log('[GtoAggregationDriver] all streets aggregated - going silent');
       stopGtoAggregationDriver();
     }
     return rows;

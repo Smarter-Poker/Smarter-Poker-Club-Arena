@@ -74,7 +74,12 @@ describe('a floor is lopsided, not uniform', () => {
   it('never asks for more seats than the table has, or fewer than a game (unless held empty)', () => {
     for (const max of [2, 6, 8, 9]) {
       for (const id of tables.slice(0, 80)) {
-        const { seatTarget, waitTarget, vibe } = occupancyTargetFor(id, max, false, 1_700_000_000_000);
+        const { seatTarget, waitTarget, vibe } = occupancyTargetFor(
+          id,
+          max,
+          false,
+          1_700_000_000_000
+        );
         expect(seatTarget).toBeLessThanOrEqual(max);
         // Dan 2026-08-26: a held-empty table wants exactly zero. Anything
         // that is actually running still wants at least a playable game.
@@ -112,7 +117,7 @@ describe('held-empty cash tables (Dan 2026-08-26: leave 15% of cash tables empty
     expect(later.has(false)).toBe(true);
   });
 
-  it('a HUMAN sitting down releases the hold — their game populates normally', () => {
+  it('a HUMAN sitting down releases the hold - their game populates normally', () => {
     const t0 = 1_700_000_000_000;
     const id = tables.find((x) => cashTableHeldEmpty(x, t0))!;
     const { seatTarget } = occupancyTargetFor(id, 6, true, t0);

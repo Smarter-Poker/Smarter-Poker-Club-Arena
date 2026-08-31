@@ -45,7 +45,7 @@ export function initSentry(): void {
 
   const dsn = process.env.SENTRY_DSN || process.env.VITE_SENTRY_DSN;
   if (!dsn) {
-    console.warn('[Sentry:Server] No SENTRY_DSN configured — errors will be console-only');
+    console.warn('[Sentry:Server] No SENTRY_DSN configured - errors will be console-only');
     return;
   }
 

@@ -52,7 +52,7 @@ function harness(config: HandConfig, players: SeatPlayer[], dealerSeat: number) 
   return { hc, events, currentSeat, seat };
 }
 
-describe('HandController — uncalled bet returned before rake (AUDIT FIX)', () => {
+describe('HandController - uncalled bet returned before rake (AUDIT FIX)', () => {
   it('refunds the uncalled portion and rakes only the contested pot', () => {
     // HU, 1000 each, 5/10. Flop is seen so no-flop-no-drop does not apply.
     const players = mkPlayers([1000, 1000]);
@@ -90,7 +90,7 @@ describe('HandController — uncalled bet returned before rake (AUDIT FIX)', () 
   });
 });
 
-describe('HandController — all-in blind edge cases (AUDIT FIX)', () => {
+describe('HandController - all-in blind edge cases (AUDIT FIX)', () => {
   it('does not hand the turn to a short all-in SB (would be auto-folded)', () => {
     // HU: seat1 (button/SB) has only 3 -> posts 3 all-in. seat2 (BB) has 1000.
     const players = mkPlayers([3, 1000]);
@@ -127,7 +127,7 @@ describe('HandController — all-in blind edge cases (AUDIT FIX)', () => {
   });
 });
 
-describe('HandController — straddle min-raise (AUDIT FIX)', () => {
+describe('HandController - straddle min-raise (AUDIT FIX)', () => {
   it('min raise over a 2xBB straddle is to 4xBB (increment = straddle amount)', () => {
     // 4 players, 1/2. UTG (seat 4) straddles to 4. Min raise-to must be 8 (4xBB),
     // i.e. increment (state.minRaise) === the straddle amount, not the BB.
@@ -141,7 +141,7 @@ describe('HandController — straddle min-raise (AUDIT FIX)', () => {
   });
 });
 
-describe('HandController — RIT settlement helpers (AUDIT FIX)', () => {
+describe('HandController - RIT settlement helpers (AUDIT FIX)', () => {
   it('computeLivePots returns real pots at the all-in runout point (getPots was empty)', () => {
     // HU both all-in preflop (equal stacks) → ALL_IN_RUNOUT pause. This is the
     // exact point ServerTableEngine.dealAndResolveRIT runs. getPots() is [] here

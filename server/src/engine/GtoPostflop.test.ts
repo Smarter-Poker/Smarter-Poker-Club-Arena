@@ -29,7 +29,7 @@ const CL = (r: string) => c(r, 'clubs');
 
 beforeEach(() => _clearGtoPostflop());
 
-describe('textureClass — the exact mirror of fn_gto_texture_class (3 cards)', () => {
+describe('textureClass - the exact mirror of fn_gto_texture_class (3 cards)', () => {
   /**
    * These examples were classified BY THE DATABASE FUNCTION against
    * production and the answers recorded here. If this test disagrees with
@@ -63,7 +63,7 @@ describe('textureClass — the exact mirror of fn_gto_texture_class (3 cards)', 
   });
 });
 
-describe('textureClass — the exact mirror of fn_gto_texture_class_any (4/5 cards)', () => {
+describe('textureClass - the exact mirror of fn_gto_texture_class_any (4/5 cards)', () => {
   /**
    * V30 contract pins: every expected value below is the answer
    * fn_gto_texture_class_any gave IN PRODUCTION on 2026-08-29. The turn and
@@ -122,7 +122,7 @@ describe('depth buckets match the aggregation', () => {
   });
 });
 
-describe('setGtoPostflop — the store only accepts what is trustworthy', () => {
+describe('setGtoPostflop - the store only accepts what is trustworthy', () => {
   const row = (over: Record<string, unknown> = {}) => ({
     street: 'flop',
     game_family: 'cash',
@@ -159,7 +159,7 @@ describe('setGtoPostflop — the store only accepts what is trustworthy', () => 
   });
 });
 
-describe('gtoStreetAdvice — lookup semantics', () => {
+describe('gtoStreetAdvice - lookup semantics', () => {
   const cell = (over: Record<string, unknown> = {}) => ({
     street: 'flop',
     game_family: 'cash',
@@ -187,7 +187,7 @@ describe('gtoStreetAdvice — lookup semantics', () => {
     expect(a?.mix).toEqual({ check: 0.1, bet_small: 0.3, bet_big: 0.6 });
   });
 
-  it('streets are separate cells — a flop cell never answers a turn lookup', () => {
+  it('streets are separate cells - a flop cell never answers a turn lookup', () => {
     setGtoPostflop([cell()] as never);
     expect(
       gtoStreetAdvice({
@@ -260,7 +260,7 @@ describe('gtoStreetAdvice — lookup semantics', () => {
     ).toBe(null);
   });
 
-  it('texture is NEVER substituted — a rainbow cell does not answer a monotone board', () => {
+  it('texture is NEVER substituted - a rainbow cell does not answer a monotone board', () => {
     setGtoPostflop([cell({ texture_class: 'Bruc' })] as never);
     expect(
       gtoStreetAdvice({
@@ -275,7 +275,7 @@ describe('gtoStreetAdvice — lookup semantics', () => {
   });
 });
 
-describe('rollMix — solver frequencies are honored, not rounded', () => {
+describe('rollMix - solver frequencies are honored, not rounded', () => {
   it('splits ~30/70 over many rolls', () => {
     const mix = { check: 0.3, bet_big: 0.7 };
     let checks = 0;
@@ -291,7 +291,7 @@ describe('rollMix — solver frequencies are honored, not rounded', () => {
   });
 });
 
-describe('the wiring — HorseLogic consults the open-node cells on every street', () => {
+describe('the wiring - HorseLogic consults the open-node cells on every street', () => {
   const mkPlayer = (over: Partial<SeatPlayer> = {}): SeatPlayer =>
     ({
       seat: 3,
@@ -460,7 +460,7 @@ describe('the wiring — HorseLogic consults the open-node cells on every street
   });
 
   /** ABLATION EQUALITY: empty store === layer off, decision for decision. */
-  it('an empty store changes nothing — flop and turn', () => {
+  it('an empty store changes nothing - flop and turn', () => {
     _clearGtoPostflop();
     expect(gtoPostflopCount()).toBe(0);
     for (const cards of [

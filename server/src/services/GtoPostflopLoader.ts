@@ -67,7 +67,7 @@ export async function loadGtoPostflop(): Promise<number> {
   } catch (err) {
     reportError(err, 'GtoPostflopLoader.load');
     console.warn(
-      `[GtoPostflopLoader] solver cell load FAILED — the brain falls back to heuristics (${gtoPostflopCount()} cached)`
+      `[GtoPostflopLoader] solver cell load FAILED - the brain falls back to heuristics (${gtoPostflopCount()} cached)`
     );
     return 0;
   }

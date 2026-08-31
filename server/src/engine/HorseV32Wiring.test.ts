@@ -115,7 +115,7 @@ describe('the consult is WIRED', () => {
    * the solver proves nothing about who made it. The counter does: it fires
    * only inside the consult. Assert on the counter, not the verdict.
    */
-  it("the decision is attributably the SOLVER'S — the counter fires", () => {
+  it("the decision is attributably the SOLVER'S - the counter fires", () => {
     stock();
     enableBrainTelemetry();
     drainFires();
@@ -143,7 +143,7 @@ describe('the consult is WIRED', () => {
     expect(fires['v32_defend_pass_strong'] ?? 0).toBe(10);
   });
 
-  it('an empty store leaves the heuristics in charge — no synthetic fold', () => {
+  it('an empty store leaves the heuristics in charge - no synthetic fold', () => {
     // No stock(). A strong hand facing a small bet must not auto-fold.
     let folds = 0;
     for (let i = 0; i < 30; i++) if (decide('KhKc').action === 'fold') folds++;
@@ -160,7 +160,7 @@ describe('the consult is WIRED', () => {
   });
 });
 
-describe("a raise of hero's own bet is refused — no open-node cell models it", () => {
+describe("a raise of hero's own bet is refused - no open-node cell models it", () => {
   it('hero bet, villain raised: the counters stay silent', () => {
     stock();
     enableBrainTelemetry();

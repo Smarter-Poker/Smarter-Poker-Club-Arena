@@ -1787,7 +1787,7 @@ export class HandController {
     try {
       this.completeHandInner();
     } catch (err) {
-      console.error('[HandController] completeHand threw — force-ending hand:', err);
+      console.error('[HandController] completeHand threw - force-ending hand:', err);
       try {
         this.emit({ type: 'WINNERS', winners: [] } as never);
       } catch {
@@ -2094,7 +2094,7 @@ export class HandController {
     if (winners.length === 0 || totalWinnerAmount === 0) {
       reportError(
         new Error(
-          `[HandController] CRITICAL: No winners and no active players — pot of ${this.state.pot} cannot be distributed`
+          `[HandController] CRITICAL: No winners and no active players - pot of ${this.state.pot} cannot be distributed`
         ),
         'HandController.CRITICAL'
       );
@@ -2571,7 +2571,7 @@ export class HandController {
       // did not. If there is no actionable seat, the street is over — run it
       // out rather than hang.
       console.warn(
-        '[HandController] No actionable seat at stage ' + this.state.stage + ' — advancing stage'
+        '[HandController] No actionable seat at stage ' + this.state.stage + ' - advancing stage'
       );
       this.advanceStage();
       return;

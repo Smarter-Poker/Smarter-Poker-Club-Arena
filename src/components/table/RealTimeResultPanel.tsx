@@ -307,7 +307,7 @@ export default function RealTimeResultPanel({
   const clock = new Date(now).toLocaleTimeString('en-GB', { hour12: false });
 
   return (
-    <div className="rtr" role="dialog" aria-modal="true" aria-label="Real time result">
+    <div className="rtr" role="dialog" aria-modal="true" aria-label="Real Time Result">
       <div className="rtr__backdrop" onClick={onClose} />
 
       <div className="rtr__panel">

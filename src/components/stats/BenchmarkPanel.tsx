@@ -155,7 +155,7 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
               <span className="bench-label">{r.def.label}</span>
               <span className="bench-value">
                 {r.value.toFixed(1)}
-                {r.def.unit === 'bb/100' ? ' bb/100' : r.def.unit}
+                {r.def.unit === 'bb/100' ? ' BB/100' : r.def.unit}
               </span>
               {r.percentile !== null ? (
                 <span className={`bench-pill tone-${r.tone}`}>
@@ -193,7 +193,7 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
             .filter((r) => r.barPosition === null)
             .map((r) => r.def.label)
             .join(', ')}{' '}
-          {results.filter((r) => r.barPosition === null).length === 1 ? 'is' : 'are'} Judged Against
+          {results.filter((r) => r.barPosition === null).length === 1 ? 'Is' : 'Are'} Judged Against
           The Range Winning Players Hold Rather Than Against The Field. For These, Both Extremes Are
           Leaks, So Where The Club Happens To Sit Says Nothing About Where You Should Be.
         </p>

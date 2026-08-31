@@ -175,7 +175,7 @@ export default function VIPPage() {
             id: entry.id,
             date: new Date(entry.created_at),
             action: delta > 0 ? 'earned' : 'spent',
-            description: entry.type || (delta > 0 ? 'Diamonds earned' : 'Diamonds spent'),
+            description: entry.type || (delta > 0 ? 'Diamonds Earned' : 'Diamonds Spent'),
             points: Math.abs(delta),
             balanceAfter: Number(entry.balance_after ?? 0),
             // Unicode triangles (allowed per CLAUDE.md §8) instead of the previous emojis
@@ -253,7 +253,7 @@ export default function VIPPage() {
         <RewardsSurfaceHeader
           eyebrow="Rewards Circuit / VIP"
           title="VIP Command Deck"
-          description="Track live tier progress, review earned privileges, and redeem VIP rewards through the existing protected reward services."
+          description="Track Live Tier Progress, Review Earned Privileges, And Redeem VIP Rewards Through The Existing Protected Reward Services."
           art="vip"
           status="VIP TELEMETRY // SYNCING"
           metrics={[
@@ -274,7 +274,7 @@ export default function VIPPage() {
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / VIP"
         title="VIP Command Deck"
-        description="Track live tier progress, review earned privileges, and redeem VIP rewards through the existing protected reward services."
+        description="Track Live Tier Progress, Review Earned Privileges, And Redeem VIP Rewards Through The Existing Protected Reward Services."
         art="vip"
         status="VIP TELEMETRY // LIVE"
         metrics={[
@@ -440,7 +440,7 @@ export default function VIPPage() {
                 id: 'timebank',
                 icon: '◷',
                 title: 'Time Bank',
-                description: `${VIP_GOLD_LIMITS.timeBankSeconds}s free per month`,
+                description: `${VIP_GOLD_LIMITS.timeBankSeconds}s Free Per Month`,
                 value: `${VIP_GOLD_LIMITS.timeBankSeconds}s`,
               },
               {
@@ -468,14 +468,14 @@ export default function VIPPage() {
                 id: 'themes',
                 icon: '◇',
                 title: 'Themes',
-                description: `${VIP_GOLD_LIMITS.themes} premium themes`,
+                description: `${VIP_GOLD_LIMITS.themes} Premium Themes`,
                 value: `${VIP_GOLD_LIMITS.themes}`,
               },
               {
                 id: 'boost',
                 icon: '▦',
                 title: 'Leaderboard Boost',
-                description: `${(VIP_GOLD_LIMITS.leaderboardBoost * 100).toFixed(0)}% score boost`,
+                description: `${(VIP_GOLD_LIMITS.leaderboardBoost * 100).toFixed(0)}% Score Boost`,
                 value: `+${(VIP_GOLD_LIMITS.leaderboardBoost * 100).toFixed(0)}%`,
               },
               {

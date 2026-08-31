@@ -111,7 +111,7 @@ export function findLeaks(
       leaks.push({
         id: 'position_inverted',
         severity: 'high',
-        title: 'You are playing position backwards',
+        title: 'You Are Playing Position Backwards',
         evidence: `You enter ${f1(utgVpip)}% of hands from under the gun but only ${f1(
           btnVpip
         )}% on the button, over ${utg.hands_played.toLocaleString()} and ${btn.hands_played.toLocaleString()} hands.`,
@@ -124,7 +124,7 @@ export function findLeaks(
       leaks.push({
         id: 'position_flat',
         severity: 'medium',
-        title: 'Your range barely changes with position',
+        title: 'Your Range Barely Changes With Position',
         evidence: `Button ${f1(btnVpip)}% versus under the gun ${f1(
           utgVpip
         )}% is only ${f1(btnVpip - utgVpip)} points of difference.`,
@@ -142,7 +142,7 @@ export function findLeaks(
     leaks.push({
       id: 'passive_preflop',
       severity: 'high',
-      title: 'You call far more often than you raise',
+      title: 'You Call Far More Often Than You Raise',
       evidence: `You play ${f1(vpip)}% of hands but raise only ${f1(
         pfr
       )}% of them, a gap of ${f1(gap)} points.`,
@@ -156,7 +156,7 @@ export function findLeaks(
     leaks.push({
       id: 'too_loose',
       severity: 'high',
-      title: 'You are playing too many hands',
+      title: 'You Are Playing Too Many Hands',
       evidence: `${f1(vpip)}% VPIP against the 18-28% most winning players hold.`,
       action:
         'Cut the weakest third of what you enter with, especially from early position and the small blind. This is the most common and most expensive leak in low-stakes poker.',
@@ -165,7 +165,7 @@ export function findLeaks(
     leaks.push({
       id: 'too_tight',
       severity: 'medium',
-      title: 'You are folding too much',
+      title: 'You Are Folding Too Much',
       evidence: `${f1(vpip)}% VPIP is below the 18-28% range.`,
       action:
         'Open more from late position. Playing this tight means the blinds cost you more than the hands you win make back.',
@@ -179,7 +179,7 @@ export function findLeaks(
       leaks.push({
         id: 'folds_to_3bet',
         severity: 'high',
-        title: 'You give up too easily when re-raised',
+        title: 'You Give Up Too Easily When Re-Raised',
         evidence: `You fold to ${f1(f3b)}% of 3-bets.`,
         action:
           'Defend more of your strong opens by calling or 4-betting. At this rate an opponent can re-raise you with any two cards and show an immediate profit.',
@@ -188,7 +188,7 @@ export function findLeaks(
       leaks.push({
         id: 'calls_3bets_too_wide',
         severity: 'medium',
-        title: 'You defend too wide against re-raises',
+        title: 'You Defend Too Wide Against Re-Raises',
         evidence: `You fold to only ${f1(f3b)}% of 3-bets.`,
         action:
           'Fold the bottom of your opening range when re-raised. Continuing this often means playing big pots out of position with hands that are behind.',
@@ -205,7 +205,7 @@ export function findLeaks(
     leaks.push({
       id: 'passive_postflop',
       severity: 'high',
-      title: 'You check and call far more than you bet',
+      title: 'You Check And Call Far More Than You Bet',
       evidence: `Aggression factor ${overall.aggression_factor.toFixed(
         2
       )} - you take a passive action more often than an aggressive one.`,
@@ -220,7 +220,7 @@ export function findLeaks(
       leaks.push({
         id: 'cbet_too_high',
         severity: 'medium',
-        title: 'You continuation bet almost every flop',
+        title: 'You Continuation Bet Almost Every Flop',
         evidence: `${f1(cbet)}% c-bet on the flop.`,
         action:
           'Check back the flops that miss your range. Betting every time makes you easy to raise off the hand and turns your bet into no information at all.',
@@ -229,7 +229,7 @@ export function findLeaks(
       leaks.push({
         id: 'cbet_too_low',
         severity: 'low',
-        title: 'You give up on the flop too often',
+        title: 'You Give Up On The Flop Too Often',
         evidence: `${f1(cbet)}% c-bet on the flop.`,
         action:
           'Bet more flops after raising preflop, especially heads-up and on boards that favour your range. You are passing up pots nobody wanted.',
@@ -256,7 +256,7 @@ export function findLeaks(
       leaks.push({
         id: 'wtsd_high',
         severity: 'medium',
-        title: 'You pay off too often',
+        title: 'You Pay Off Too Often',
         evidence: `You reach showdown on ${f1(
           showdownRate
         )}% of the hands you choose to play, across ${overall.showdowns_total.toLocaleString()} showdowns.`,
@@ -270,7 +270,7 @@ export function findLeaks(
       leaks.push({
         id: 'losing_showdowns',
         severity: 'medium',
-        title: 'You are arriving at showdown behind',
+        title: 'You Are Arriving At Showdown Behind',
         evidence: `You win ${f1(
           wsd
         )}% of the showdowns you reach, across ${overall.showdowns_total.toLocaleString()} of them.`,
@@ -290,7 +290,7 @@ export function findLeaks(
     leaks.push({
       id: `position_losing_${bleeding.position}`,
       severity: 'medium',
-      title: `You are losing heavily from ${bleeding.position}`,
+      title: `You Are Losing Heavily From ${bleeding.position}`,
       evidence: `${bleeding.bb100.toFixed(
         0
       )} bb/100 over ${bleeding.hands_played.toLocaleString()} hands from ${bleeding.position}.`,

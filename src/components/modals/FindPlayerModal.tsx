@@ -14,6 +14,7 @@ import { reportError } from '../../utils/errorReporter';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { useDialogEscape } from '../../hooks/useDialogEscape';
 import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
+import { titleCase } from '../../utils/titleCase';
 import styles from './FindPlayerModal.module.css';
 
 interface FindPlayerModalProps {
@@ -244,287 +245,294 @@ export default function FindPlayerModal({
         onClick={(event) => event.stopPropagation()}
       >
         <div className={styles.modalContent}>
-          <header className={styles.machineHeader}>
-            <img
-              src="/hub/club-arena/images/club-arena/vault-iris-emblem-v1-320.webp"
-              alt=""
-              width="320"
-              height="296"
-            />
-            <div>
-              <span className={styles.eyebrow}>Network Locator / Live Presence</span>
-              <h2 id="find-player-title" className={styles.title}>
-                Find A Player
-              </h2>
-              <p>Find Any Player, See Who Is Playing, And Open Their Live Game.</p>
-            </div>
-            <button
-              className={styles.privacyButton}
-              onClick={() => setShowAccessRules((value) => !value)}
-              aria-expanded={showAccessRules}
-            >
-              Access Rules
-            </button>
-          </header>
-
-          {showAccessRules && (
-            <section className={styles.privacyPanel} aria-label="Player search access rules">
-              <p>
-                Player Identity And Playing Now Status Are Searchable Across Club Arena. Watching
-                Requires An Active Membership In The Game&apos;S Club.
-              </p>
-              <p>
-                Wallets, Balances, Statistics, Notes, And Hierarchy Data Are Returned Only For
-                Accounts Your Club, Union, Administrator, Or Agent Role Authorizes You To Manage.
-              </p>
-            </section>
-          )}
-
-          <div className={styles.searchSection}>
-            <div className={styles.searchInputWrapper}>
-              <input
-                type="search"
-                className={styles.searchInput}
-                placeholder="Name, alias, or player number…"
-                value={searchQuery}
-                onChange={(event) => handleInputChange(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'ArrowDown' && suggestions.length) {
-                    event.preventDefault();
-                    setHighlightedIndex((value) => (value + 1) % suggestions.length);
-                  } else if (event.key === 'ArrowUp' && suggestions.length) {
-                    event.preventDefault();
-                    setHighlightedIndex(
-                      (value) => (value - 1 + suggestions.length) % suggestions.length
-                    );
-                  } else if (event.key === 'Enter') {
-                    if (showSuggestions && highlightedIndex >= 0)
-                      chooseSuggestion(suggestions[highlightedIndex]);
-                    else runSearch(searchQuery);
-                  } else if (event.key === 'Escape') setShowSuggestions(false);
-                }}
-                onFocus={() => suggestions.length && setShowSuggestions(true)}
-                aria-label="Player name, poker alias, or number"
-                aria-autocomplete="list"
-                aria-expanded={showSuggestions}
-                autoFocus
+          <div className={styles.scrollBody}>
+            <header className={styles.machineHeader}>
+              <img
+                src="/hub/club-arena/images/club-arena/vault-iris-emblem-v1-320.webp"
+                alt=""
+                width="320"
+                height="296"
               />
-              {showSuggestions && (
-                <div className={styles.suggestDropdown} role="listbox">
-                  {suggestions.map((player, index) => (
-                    <button
-                      key={player.id}
-                      role="option"
-                      aria-selected={index === highlightedIndex}
-                      className={styles.suggestItem}
-                      onPointerMove={() => setHighlightedIndex(index)}
-                      onClick={() => chooseSuggestion(player)}
-                    >
-                      <PlayerAvatar player={player} className={styles.suggestAvatar} />
-                      <span className={styles.suggestInfo}>
-                        <span className={styles.suggestName}>
-                          {player.display_name || player.username}
-                        </span>
-                        {player.display_name && (
-                          <span className={styles.suggestAlias}>@{player.username}</span>
-                        )}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {isSuggesting && (
-                <span className={styles.suggestLoading} aria-label="Loading suggestions">
-                  <span className={styles.suggestSpinner} aria-hidden="true" />
-                </span>
-              )}
-            </div>
-            <button
-              className={styles.searchButton}
-              onClick={() => runSearch(searchQuery)}
-              disabled={isSearching || searchQuery.trim().length < 2}
-            >
-              {isSearching ? 'Scanning…' : 'Search'}
-            </button>
-          </div>
-
-          <div className={styles.filterControls} aria-label="Player search filters">
-            <label>
-              Network
-              <select
-                value={scope}
-                onChange={(event) => setScope(event.target.value as PlayerSearchScope)}
-              >
-                <option value="all">All Players</option>
-                <option value="friends">Friends</option>
-                <option value="clubs">My Clubs</option>
-                <option value="union">My Unions</option>
-                <option value="managed">My Managed Accounts</option>
-              </select>
-            </label>
-            <label>
-              Status
-              <select
-                value={presence}
-                onChange={(event) => setPresence(event.target.value as PlayerPresenceFilter)}
-              >
-                <option value="all">Any Status</option>
-                <option value="online">Online</option>
-                <option value="playing">Playing Now</option>
-              </select>
-            </label>
-            <label>
-              Sort
-              <select
-                value={sort}
-                onChange={(event) => setSort(event.target.value as PlayerSearchSort)}
-              >
-                <option value="relevance">Best Match</option>
-                <option value="name">Name</option>
-              </select>
-            </label>
-            <span className={styles.scopeLabel}>
-              {total
-                ? `${total} eligible match${total === 1 ? '' : 'es'}`
-                : 'Global player directory'}
-            </span>
-          </div>
-
-          <div className={styles.resultsArea} aria-live="polite" aria-busy={isSearching}>
-            {error && <div className={styles.errorMessage}>{error}</div>}
-            {!error && !isSearching && lastCompletedQueryRef.current && results.length === 0 && (
-              <div className={styles.notFoundMessage}>
-                <p>No Matching Players Were Found.</p>
+              <div>
+                <span className={styles.eyebrow}>Network Locator / Live Presence</span>
+                <h2 id="find-player-title" className={styles.title}>
+                  Find A Player
+                </h2>
+                <p>Find Any Player, See Who Is Playing, And Open Their Live Game.</p>
               </div>
+              <button
+                className={styles.privacyButton}
+                onClick={() => setShowAccessRules((value) => !value)}
+                aria-expanded={showAccessRules}
+              >
+                Access Rules
+              </button>
+            </header>
+
+            {showAccessRules && (
+              <section className={styles.privacyPanel} aria-label="Player Search Access Rules">
+                <p>
+                  Player Identity And Playing Now Status Are Searchable Across Club Arena. Watching
+                  Requires An Active Membership In The Game&apos;S Club.
+                </p>
+                <p>
+                  Wallets, Balances, Statistics, Notes, And Hierarchy Data Are Returned Only For
+                  Accounts Your Club, Union, Administrator, Or Agent Role Authorizes You To Manage.
+                </p>
+              </section>
             )}
-            {results.length > 0 && (
-              <div className={styles.resultsList}>
-                {results.map((player) => (
-                  <article key={player.id} className={styles.playerResult}>
-                    <button
-                      className={styles.playerHeader}
-                      onClick={() => handleProfileClick(player.id)}
-                    >
-                      <PlayerAvatar player={player} className={styles.playerAvatar} />
-                      <span className={styles.playerInfo}>
-                        <span className={styles.playerName}>
-                          {player.display_name || player.username}
+
+            <div className={styles.searchSection}>
+              <div className={styles.searchInputWrapper}>
+                <input
+                  type="search"
+                  className={styles.searchInput}
+                  placeholder="Name, Alias, Or Player Number…"
+                  value={searchQuery}
+                  onChange={(event) => handleInputChange(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'ArrowDown' && suggestions.length) {
+                      event.preventDefault();
+                      setHighlightedIndex((value) => (value + 1) % suggestions.length);
+                    } else if (event.key === 'ArrowUp' && suggestions.length) {
+                      event.preventDefault();
+                      setHighlightedIndex(
+                        (value) => (value - 1 + suggestions.length) % suggestions.length
+                      );
+                    } else if (event.key === 'Enter') {
+                      if (showSuggestions && highlightedIndex >= 0)
+                        chooseSuggestion(suggestions[highlightedIndex]);
+                      else runSearch(searchQuery);
+                    } else if (event.key === 'Escape') setShowSuggestions(false);
+                  }}
+                  onFocus={() => suggestions.length && setShowSuggestions(true)}
+                  aria-label="Player Name, Poker Alias, Or Number"
+                  aria-autocomplete="list"
+                  aria-expanded={showSuggestions}
+                  autoFocus
+                />
+                {showSuggestions && (
+                  <div className={styles.suggestDropdown} role="listbox">
+                    {suggestions.map((player, index) => (
+                      <button
+                        key={player.id}
+                        role="option"
+                        aria-selected={index === highlightedIndex}
+                        className={styles.suggestItem}
+                        onPointerMove={() => setHighlightedIndex(index)}
+                        onClick={() => chooseSuggestion(player)}
+                      >
+                        <PlayerAvatar player={player} className={styles.suggestAvatar} />
+                        <span className={styles.suggestInfo}>
+                          <span className={styles.suggestName}>
+                            {player.display_name || player.username}
+                          </span>
+                          {player.display_name && (
+                            <span className={styles.suggestAlias}>@{player.username}</span>
+                          )}
                         </span>
-                        {player.display_name && (
-                          <span className={styles.playerAlias}>@{player.username}</span>
-                        )}
-                        <span className={styles.playerStatus} data-status={player.presence_status}>
-                          {presenceCopy(player)}
-                        </span>
-                      </span>
-                      <span className={styles.relationshipBadge}>{player.relationship}</span>
-                    </button>
-                    {player.sensitive_accounts.length > 0 && (
-                      <section className={styles.accountAccess}>
-                        <button
-                          className={styles.accountAccessToggle}
-                          aria-expanded={expandedAccounts.has(player.id)}
-                          onClick={() =>
-                            setExpandedAccounts((current) => {
-                              const next = new Set(current);
-                              if (next.has(player.id)) next.delete(player.id);
-                              else next.add(player.id);
-                              return next;
-                            })
-                          }
-                        >
-                          Authorized Account Data ({player.sensitive_accounts.length})
-                        </button>
-                        {expandedAccounts.has(player.id) && (
-                          <div className={styles.accountGrid}>
-                            {player.sensitive_accounts.map((account) => (
-                              <article key={account.club_uuid} className={styles.accountCard}>
-                                <header>
-                                  <strong>{account.club_name}</strong>
-                                  <span>
-                                    {account.access} / {account.role}
-                                  </span>
-                                </header>
-                                <dl>
-                                  <div>
-                                    <dt>Player</dt>
-                                    <dd>{chips(account.wallets.player_wallet)}</dd>
-                                  </div>
-                                  <div>
-                                    <dt>Agent</dt>
-                                    <dd>{chips(account.wallets.agent_wallet)}</dd>
-                                  </div>
-                                  <div>
-                                    <dt>Promo</dt>
-                                    <dd>{chips(account.wallets.promo_wallet)}</dd>
-                                  </div>
-                                  <div>
-                                    <dt>Club Chips</dt>
-                                    <dd>{chips(account.wallets.chip_balance)}</dd>
-                                  </div>
-                                  <div>
-                                    <dt>Direct</dt>
-                                    <dd>{account.downline?.downline_direct ?? 0}</dd>
-                                  </div>
-                                  <div>
-                                    <dt>Downline</dt>
-                                    <dd>{account.downline?.downline_total ?? 0}</dd>
-                                  </div>
-                                </dl>
-                              </article>
-                            ))}
-                          </div>
-                        )}
-                      </section>
-                    )}
-                    {player.tables.length > 0 && (
-                      <div className={styles.tablesList}>
-                        {player.tables.map((table) => (
-                          <button
-                            key={table.id}
-                            className={styles.tableCard}
-                            onClick={() => void handleTableClick(table)}
-                            disabled={verifyingTableId !== null}
-                          >
-                            <span className={styles.tableInfo}>
-                              <span className={styles.tableName}>{table.name}</span>
-                              <span className={styles.tableDetails}>
-                                {table.game_variant} • {table.stakes}
-                                {table.club_name && ` • ${table.club_name}`}
-                              </span>
-                            </span>
-                            <span className={styles.watchButton}>
-                              {verifyingTableId === table.table_id
-                                ? 'Verifying Access…'
-                                : watchLabel(table)}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </article>
-                ))}
-                {hasMore && (
-                  <button
-                    className={styles.loadMoreButton}
-                    disabled={isLoadingMore}
-                    onClick={() => runSearch(lastCompletedQueryRef.current, results.length, true)}
-                  >
-                    {isLoadingMore ? 'Loading…' : 'Load More Players'}
-                  </button>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {isSuggesting && (
+                  <span className={styles.suggestLoading} aria-label="Loading Suggestions">
+                    <span className={styles.suggestSpinner} aria-hidden="true" />
+                  </span>
                 )}
               </div>
-            )}
-            {!error && !isSearching && !lastCompletedQueryRef.current && (
-              <div className={styles.hintMessage}>
-                <p>Search By Alias, Display Name, Or Player Number.</p>
-              </div>
-            )}
+              <button
+                className={styles.searchButton}
+                onClick={() => runSearch(searchQuery)}
+                disabled={isSearching || searchQuery.trim().length < 2}
+              >
+                {isSearching ? 'Scanning…' : 'Search'}
+              </button>
+            </div>
+
+            <div className={styles.filterControls} aria-label="Player Search Filters">
+              <label>
+                Network
+                <select
+                  value={scope}
+                  onChange={(event) => setScope(event.target.value as PlayerSearchScope)}
+                >
+                  <option value="all">All Players</option>
+                  <option value="friends">Friends</option>
+                  <option value="clubs">My Clubs</option>
+                  <option value="union">My Unions</option>
+                  <option value="managed">My Managed Accounts</option>
+                </select>
+              </label>
+              <label>
+                Status
+                <select
+                  value={presence}
+                  onChange={(event) => setPresence(event.target.value as PlayerPresenceFilter)}
+                >
+                  <option value="all">Any Status</option>
+                  <option value="online">Online</option>
+                  <option value="playing">Playing Now</option>
+                </select>
+              </label>
+              <label>
+                Sort
+                <select
+                  value={sort}
+                  onChange={(event) => setSort(event.target.value as PlayerSearchSort)}
+                >
+                  <option value="relevance">Best Match</option>
+                  <option value="name">Name</option>
+                </select>
+              </label>
+              <span className={styles.scopeLabel}>
+                {total
+                  ? `${total} Eligible Match${total === 1 ? '' : 'Es'}`
+                  : 'Global Player Directory'}
+              </span>
+            </div>
+
+            <div className={styles.resultsArea} aria-live="polite" aria-busy={isSearching}>
+              {error && <div className={styles.errorMessage}>{titleCase(error)}</div>}
+              {!error && !isSearching && lastCompletedQueryRef.current && results.length === 0 && (
+                <div className={styles.notFoundMessage}>
+                  <p>No Matching Players Were Found.</p>
+                </div>
+              )}
+              {results.length > 0 && (
+                <div className={styles.resultsList}>
+                  {results.map((player) => (
+                    <article key={player.id} className={styles.playerResult}>
+                      <button
+                        className={styles.playerHeader}
+                        onClick={() => handleProfileClick(player.id)}
+                      >
+                        <PlayerAvatar player={player} className={styles.playerAvatar} />
+                        <span className={styles.playerInfo}>
+                          <span className={styles.playerName}>
+                            {player.display_name || player.username}
+                          </span>
+                          {player.display_name && (
+                            <span className={styles.playerAlias}>@{player.username}</span>
+                          )}
+                          <span
+                            className={styles.playerStatus}
+                            data-status={player.presence_status}
+                          >
+                            {presenceCopy(player)}
+                          </span>
+                        </span>
+                        <span className={styles.relationshipBadge}>{player.relationship}</span>
+                      </button>
+                      {player.sensitive_accounts.length > 0 && (
+                        <section className={styles.accountAccess}>
+                          <button
+                            className={styles.accountAccessToggle}
+                            aria-expanded={expandedAccounts.has(player.id)}
+                            onClick={() =>
+                              setExpandedAccounts((current) => {
+                                const next = new Set(current);
+                                if (next.has(player.id)) next.delete(player.id);
+                                else next.add(player.id);
+                                return next;
+                              })
+                            }
+                          >
+                            Authorized Account Data ({player.sensitive_accounts.length})
+                          </button>
+                          {expandedAccounts.has(player.id) && (
+                            <div className={styles.accountGrid}>
+                              {player.sensitive_accounts.map((account) => (
+                                <article key={account.club_uuid} className={styles.accountCard}>
+                                  <header>
+                                    <strong>{account.club_name}</strong>
+                                    <span>
+                                      {account.access} / {account.role}
+                                    </span>
+                                  </header>
+                                  <dl>
+                                    <div>
+                                      <dt>Player</dt>
+                                      <dd>{chips(account.wallets.player_wallet)}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Agent</dt>
+                                      <dd>{chips(account.wallets.agent_wallet)}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Promo</dt>
+                                      <dd>{chips(account.wallets.promo_wallet)}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Club Chips</dt>
+                                      <dd>{chips(account.wallets.chip_balance)}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Direct</dt>
+                                      <dd>{account.downline?.downline_direct ?? 0}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Downline</dt>
+                                      <dd>{account.downline?.downline_total ?? 0}</dd>
+                                    </div>
+                                  </dl>
+                                </article>
+                              ))}
+                            </div>
+                          )}
+                        </section>
+                      )}
+                      {player.tables.length > 0 && (
+                        <div className={styles.tablesList}>
+                          {player.tables.map((table) => (
+                            <button
+                              key={table.id}
+                              className={styles.tableCard}
+                              onClick={() => void handleTableClick(table)}
+                              disabled={verifyingTableId !== null}
+                            >
+                              <span className={styles.tableInfo}>
+                                <span className={styles.tableName}>{table.name}</span>
+                                <span className={styles.tableDetails}>
+                                  {table.game_variant} • {table.stakes}
+                                  {table.club_name && ` • ${table.club_name}`}
+                                </span>
+                              </span>
+                              <span className={styles.watchButton}>
+                                {verifyingTableId === table.table_id
+                                  ? 'Verifying Access…'
+                                  : watchLabel(table)}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                  {hasMore && (
+                    <button
+                      className={styles.loadMoreButton}
+                      disabled={isLoadingMore}
+                      onClick={() => runSearch(lastCompletedQueryRef.current, results.length, true)}
+                    >
+                      {isLoadingMore ? 'Loading…' : 'Load More Players'}
+                    </button>
+                  )}
+                </div>
+              )}
+              {!error && !isSearching && !lastCompletedQueryRef.current && (
+                <div className={styles.hintMessage}>
+                  <p>Search By Alias, Display Name, Or Player Number.</p>
+                </div>
+              )}
+            </div>
           </div>
 
-          <button className={styles.closeButton} onClick={handleClose}>
-            Close Locator
-          </button>
+          <footer className={styles.pageFooter}>
+            <button className={styles.closeButton} onClick={handleClose}>
+              Close Locator
+            </button>
+          </footer>
         </div>
       </div>
     </div>
@@ -533,8 +541,8 @@ export default function FindPlayerModal({
 
 function presenceCopy(player: PlayerSearchResult): string {
   if (player.tables.length)
-    return `Playing at ${player.tables.length} table${player.tables.length === 1 ? '' : 's'}`;
-  if (player.presence_status === 'playing') return 'Playing now';
+    return `Playing At ${player.tables.length} Table${player.tables.length === 1 ? '' : 's'}`;
+  if (player.presence_status === 'playing') return 'Playing Now';
   if (player.presence_status === 'online') return 'Online';
   return 'Offline';
 }

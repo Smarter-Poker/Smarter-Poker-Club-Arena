@@ -121,7 +121,7 @@ async function activateCategory(studio: Locator, name: string) {
 async function openPurchase(studio: Locator, category: string, assetName: string) {
   await activateCategory(studio, category);
   const asset = studio.getByRole('button', {
-    name: `${assetName}, purchase or VIP required`,
+    name: `${assetName}, Purchase Or VIP Required`,
     exact: true,
   });
   await expect(asset).toBeEnabled({ timeout: 30_000 });
@@ -163,7 +163,7 @@ async function expectNoLockedAssets(studio: Locator) {
       .poll(
         () =>
           studio
-            .locator('.theme-modal__grid .theme-asset[aria-label*="purchase or VIP required"]')
+            .locator('.theme-modal__grid .theme-asset[aria-label*="Purchase Or VIP Required"]')
             .count(),
         {
           timeout: RESPONSE_TIMEOUT,
@@ -180,7 +180,7 @@ async function expectNoLockedAssets(studio: Locator) {
       .poll(
         () =>
           studio
-            .locator('.theme-modal__grid .theme-asset[aria-label*="purchase or VIP required"]')
+            .locator('.theme-modal__grid .theme-asset[aria-label*="Purchase Or VIP Required"]')
             .count(),
         { timeout: RESPONSE_TIMEOUT, message: `${group} still contained a locked purchased item.` }
       )

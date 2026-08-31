@@ -27,6 +27,10 @@ vi.mock('../../src/lib/supabase', () => {
   };
 });
 
+vi.mock('../../src/lib/authUtils', () => ({
+  readLocalSession: vi.fn(() => ({ userId: 'user-1' })),
+}));
+
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: { emit: vi.fn(), subscribe: vi.fn(() => vi.fn()) },
 }));
@@ -40,9 +44,14 @@ vi.mock('../../src/utils/retryAsync', () => ({
 }));
 
 import { friendSuggestionService } from '../../src/services/FriendSuggestionService';
+import { supabase } from '../../src/lib/supabase';
+import { readLocalSession } from '../../src/lib/authUtils';
 
 describe('FriendSuggestionService', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(readLocalSession).mockReturnValue({ userId: 'user-1' } as any);
+  });
 
   describe('getSuggestions', () => {
     it('should return empty array when no suggestions', async () => {
@@ -69,6 +78,31 @@ describe('FriendSuggestionService', () => {
   describe('export shape', () => {
     it('should export singleton with getSuggestions', () => {
       expect(typeof friendSuggestionService.getSuggestions).toBe('function');
+    });
+  });
+
+  describe('getMutualFriends', () => {
+    it('refuses a caller that does not match the local session', async () => {
+      vi.mocked(readLocalSession).mockReturnValue({ userId: 'another-user' } as any);
+
+      await expect(friendSuggestionService.getMutualFriends('user-1', 'user-2')).resolves.toEqual(
+        []
+      );
+      expect(supabase.rpc).not.toHaveBeenCalled();
+    });
+
+    it('uses the recipient-scoped RPC for the authenticated caller', async () => {
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({
+        data: [{ id: 'mutual-1', username: 'Table Friend', avatar_url: 'avatar.png' }],
+        error: null,
+      } as any);
+
+      await expect(friendSuggestionService.getMutualFriends('user-1', 'user-2')).resolves.toEqual([
+        { id: 'mutual-1', username: 'Table Friend', avatarUrl: 'avatar.png' },
+      ]);
+      expect(supabase.rpc).toHaveBeenCalledWith('get_mutual_friends', {
+        p_other_user_id: 'user-2',
+      });
     });
   });
 });

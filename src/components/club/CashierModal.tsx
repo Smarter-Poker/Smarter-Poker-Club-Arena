@@ -199,7 +199,7 @@ export function CashierModal({
         <div
           className="cashier-tabs"
           role="tablist"
-          aria-label="Cashier actions"
+          aria-label="Cashier Actions"
           onKeyDown={handleTabKeyDown}
         >
           <button
@@ -283,8 +283,8 @@ export function CashierModal({
 
               <p className="cashier-note">
                 {activeTab === 'deposit'
-                  ? 'Chips are instantly credited to your account.'
-                  : 'Withdrawals are processed by club admins within 24h.'}
+                  ? 'Chips Are Instantly Credited To Your Account.'
+                  : 'Withdrawals Are Processed By Club Admins Within 24h.'}
               </p>
             </div>
           )}

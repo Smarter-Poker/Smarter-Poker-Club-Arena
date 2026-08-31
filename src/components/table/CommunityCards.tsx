@@ -465,7 +465,7 @@ function CommunityCardsComponent({
     <div
       className={`community-cards ${showdownMode ? 'community-cards--showdown' : ''}`}
       role="region"
-      aria-label={`Community cards: ${cards.length > 0 ? cards.map((c) => `${c.rank} of ${c.suit}`).join(', ') : 'none dealt'}${rabbitCount > 0 ? `; rabbit hunt: ${rabbitCards.map((c) => `${c.rank} of ${c.suit}`).join(', ')}` : ''}${winningHandName ? ` - ${winningHandName}` : ''}`}
+      aria-label={`Community Cards: ${cards.length > 0 ? cards.map((c) => `${c.rank} of ${c.suit}`).join(', ') : 'None Dealt'}${rabbitCount > 0 ? `; Rabbit Hunt: ${rabbitCards.map((c) => `${c.rank} of ${c.suit}`).join(', ')}` : ''}${winningHandName ? ` - ${winningHandName}` : ''}`}
     >
       {/* Bible V8 §5.1: Stage label (FLOP/TURN/RIVER) — fades in briefly when cards are dealt */}
       {stageLabel && (

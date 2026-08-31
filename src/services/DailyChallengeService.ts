@@ -10,7 +10,9 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
+import { retryFetch } from '../utils/retryFetch';
 import { reportError } from '../utils/errorReporter';
+import { titleCase } from '../utils/titleCase';
 import { uuid } from '../utils/uuid';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -851,8 +853,11 @@ class DailyChallengeServiceClass {
       tier,
       challenge: {
         id: row.challenge_id,
-        name: row.name,
-        description: row.description,
+        // Catalog text is data, so static copy gates cannot inspect it. Keep
+        // the page rule true even while an older immutable assignment snapshot
+        // is still being served from production.
+        name: titleCase(row.name),
+        description: titleCase(row.description),
         type: row.challenge_type as ChallengeType,
         requirement: Number(row.requirement) || 0,
         chipReward: Number(row.chip_reward) || 0,
@@ -931,14 +936,20 @@ class DailyChallengeServiceClass {
     const weeklyKey = this.getWeekKey();
     const monthlyKey = this.getMonthKey();
 
-    const { data, error } = await supabase.rpc('get_daily_challenge_dashboard', {
-      p_daily_key: dailyKey,
-      p_daily_ids: this.selectDailyChallenges(5).map((c) => c.id),
-      p_weekly_key: weeklyKey,
-      p_weekly_ids: this.selectChallenges(WEEKLY_CHALLENGE_POOL, 3, weeklyKey).map((c) => c.id),
-      p_monthly_key: monthlyKey,
-      p_monthly_ids: this.selectChallenges(MONTHLY_CHALLENGE_POOL, 2, monthlyKey).map((c) => c.id),
-    });
+    const { data, error } = await retryFetch(
+      () =>
+        supabase.rpc('get_daily_challenge_dashboard', {
+          p_daily_key: dailyKey,
+          p_daily_ids: this.selectDailyChallenges(5).map((c) => c.id),
+          p_weekly_key: weeklyKey,
+          p_weekly_ids: this.selectChallenges(WEEKLY_CHALLENGE_POOL, 3, weeklyKey).map((c) => c.id),
+          p_monthly_key: monthlyKey,
+          p_monthly_ids: this.selectChallenges(MONTHLY_CHALLENGE_POOL, 2, monthlyKey).map(
+            (c) => c.id
+          ),
+        }),
+      { maxRetries: 2, baseDelayMs: 250 }
+    );
 
     if (error) {
       reportError(error, 'DailyChallengeService.getDashboard_failed');

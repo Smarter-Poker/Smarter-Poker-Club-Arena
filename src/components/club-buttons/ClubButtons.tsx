@@ -9,7 +9,13 @@ import './club-buttons.css';
 
 export type ClubButtonsMode = 'arena' | 'hub' | 'commander';
 export type ClubButtonsDataState =
-  'loading' | 'loaded' | 'updating' | 'empty' | 'error' | 'stale' | 'offline';
+  | 'loading'
+  | 'loaded'
+  | 'updating'
+  | 'empty'
+  | 'error'
+  | 'stale'
+  | 'offline';
 
 export type ClubIconName =
   | 'spade'

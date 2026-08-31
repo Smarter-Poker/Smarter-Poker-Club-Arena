@@ -99,7 +99,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '♠',
     category: 'poker',
     rarity: 'common',
-    requirement: 'Play 100 hands',
+    requirement: 'Play 100 Hands',
   },
   {
     id: 'hands_1000',
@@ -108,7 +108,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '◆',
     category: 'poker',
     rarity: 'rare',
-    requirement: 'Play 1,000 hands',
+    requirement: 'Play 1,000 Hands',
   },
   {
     id: 'hands_10000',
@@ -117,7 +117,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '▲',
     category: 'poker',
     rarity: 'epic',
-    requirement: 'Play 10,000 hands',
+    requirement: 'Play 10,000 Hands',
   },
   {
     id: 'hands_100000',
@@ -126,7 +126,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '◆',
     category: 'poker',
     rarity: 'legendary',
-    requirement: 'Play 100,000 hands',
+    requirement: 'Play 100,000 Hands',
   },
 
   // ── Wins ──
@@ -137,7 +137,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '☆',
     category: 'poker',
     rarity: 'common',
-    requirement: 'Win 10 hands',
+    requirement: 'Win 10 Hands',
   },
   {
     id: 'wins_100',
@@ -146,7 +146,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '★',
     category: 'poker',
     rarity: 'rare',
-    requirement: 'Win 100 hands',
+    requirement: 'Win 100 Hands',
   },
   {
     id: 'wins_1000',
@@ -155,7 +155,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '▲',
     category: 'poker',
     rarity: 'epic',
-    requirement: 'Win 1,000 hands',
+    requirement: 'Win 1,000 Hands',
   },
 
   // ── Special Hands ──
@@ -179,7 +179,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
   },
   {
     id: 'quads',
-    name: 'Four of a Kind',
+    name: 'Four Of A Kind',
     description: 'Hit Quads',
     icon: '◎',
     category: 'poker',
@@ -195,7 +195,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '◆',
     category: 'social',
     rarity: 'common',
-    requirement: 'Add 5 friends',
+    requirement: 'Add 5 Friends',
   },
   {
     id: 'friends_25',
@@ -204,7 +204,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '★',
     category: 'social',
     rarity: 'rare',
-    requirement: 'Add 25 friends',
+    requirement: 'Add 25 Friends',
   },
   {
     id: 'clubs_3',
@@ -213,18 +213,18 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '⌂',
     category: 'social',
     rarity: 'common',
-    requirement: 'Join 3 clubs',
+    requirement: 'Join 3 Clubs',
   },
 
   // ── Financial ──
   {
     id: 'profit_1000',
-    name: 'In the Green',
+    name: 'In The Green',
     description: 'Profit 1,000 Chips',
     icon: '▲',
     category: 'financial',
     rarity: 'rare',
-    requirement: 'Profit 1K chips',
+    requirement: 'Profit 1K Chips',
   },
   {
     id: 'profit_10000',
@@ -233,7 +233,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '◆',
     category: 'financial',
     rarity: 'epic',
-    requirement: 'Profit 10K chips',
+    requirement: 'Profit 10K Chips',
   },
   {
     id: 'biggest_pot_500',
@@ -242,7 +242,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '★',
     category: 'financial',
     rarity: 'rare',
-    requirement: 'Win 500+ pot',
+    requirement: 'Win 500+ Pot',
   },
 
   // ── Tournament ──
@@ -253,7 +253,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '★',
     category: 'tournament',
     rarity: 'epic',
-    requirement: 'Win tournament',
+    requirement: 'Win Tournament',
   },
   {
     id: 'tourney_top3_10',
@@ -262,7 +262,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '◆',
     category: 'tournament',
     rarity: 'rare',
-    requirement: 'Top 3 x10',
+    requirement: 'Top 3 X10',
   },
   {
     id: 'tourney_played_50',
@@ -271,7 +271,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '◆',
     category: 'tournament',
     rarity: 'rare',
-    requirement: 'Play 50 tournaments',
+    requirement: 'Play 50 Tournaments',
   },
 
   // ── Streaks ──
@@ -282,7 +282,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '▲',
     category: 'social',
     rarity: 'common',
-    requirement: '7-day streak',
+    requirement: '7-Day Streak',
   },
   {
     id: 'streak_30',
@@ -291,7 +291,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '▤',
     category: 'social',
     rarity: 'rare',
-    requirement: '30-day streak',
+    requirement: '30-Day Streak',
   },
   {
     id: 'streak_100',
@@ -300,7 +300,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     icon: '◆',
     category: 'social',
     rarity: 'legendary',
-    requirement: '100-day streak',
+    requirement: '100-Day Streak',
   },
 ];
 
@@ -590,7 +590,7 @@ export default function AchievementsPage() {
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Achievements"
         title="Achievement Archive"
-        description="A live record of milestones earned across play, competition, community, loyalty, and special events, with every badge still driven by the existing achievement services."
+        description="A Live Record Of Milestones Earned Across Play, Competition, Community, Loyalty, And Special Events, With Every Badge Still Driven By The Existing Achievement Services."
         art="diamonds"
         status="MILESTONE INDEX // LIVE"
         metrics={[
@@ -856,8 +856,8 @@ export default function AchievementsPage() {
             </p>
             <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
               {category === 'all'
-                ? 'Start playing to unlock your first badge!'
-                : `Play more to unlock ${category} achievements.`}
+                ? 'Start Playing To Unlock Your First Badge!'
+                : `Play More To Unlock ${category} Achievements.`}
             </p>
           </div>
         ) : (

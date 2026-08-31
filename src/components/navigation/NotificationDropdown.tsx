@@ -290,7 +290,7 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
                           e.stopPropagation();
                           markAsRead(n.id);
                         }}
-                        title="Mark as read"
+                        title="Mark As Read"
                       >
                         ●
                       </button>

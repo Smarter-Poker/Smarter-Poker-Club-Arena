@@ -116,7 +116,7 @@ class HomePageErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
           <div className={styles.errorBoundaryIcon}>!</div>
           <h2 className={styles.errorBoundaryTitle}>Something Went Wrong</h2>
           <p className={styles.errorBoundaryMessage}>
-            {this.state.errorMessage || 'An unexpected error occurred. Please try again.'}
+            {this.state.errorMessage || 'An Unexpected Error Occurred. Please Try Again.'}
           </p>
           <button
             className={styles.errorBoundaryRetry}
@@ -1305,7 +1305,7 @@ function HomePageInner() {
         {/* ═══════════════════════════════════════════════════════════════════════
                     BOTTOM ROW — from lobbyTiles.config.ts (#18)
                 ═══════════════════════════════════════════════════════════════════════ */}
-        <div className={styles.bottomRow} role="navigation" aria-label="Quick actions">
+        <div className={styles.bottomRow} role="navigation" aria-label="Quick Actions">
           {LOBBY_TILES.map((tile) =>
             tile.alt === 'Cashier' || tile.alt === 'Marketplace' ? (
               /* Club-aware quick links — club name on the tile, quick-switch
@@ -1339,7 +1339,7 @@ function HomePageInner() {
                 onMouseEnter={() => tile.route && preloadRoute(tile.route)}
                 onTouchStart={() => tile.route && preloadRoute(tile.route)}
                 onFocus={() => tile.route && preloadRoute(tile.route)}
-                aria-label={`${tile.alt} (press ${tile.shortcutKey})`}
+                aria-label={`${tile.alt} (Press ${tile.shortcutKey})`}
               >
                 <div className={styles.tilePedestal}></div>
                 <div className={styles.tileImageWrapper}>
@@ -1390,7 +1390,7 @@ function HomePageInner() {
             </h2>
             <p className={styles.modalSubtitle}>
               Are You Sure You Want To Leave{' '}
-              <strong>{leaveConfirm.club?.name || 'this club'}</strong>? This Action Cannot Be
+              <strong>{leaveConfirm.club?.name || 'This Club'}</strong>? This Action Cannot Be
               Undone.
             </p>
             <div className={styles.modalButtons}>

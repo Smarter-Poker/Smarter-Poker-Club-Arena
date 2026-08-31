@@ -38,7 +38,7 @@ export default function ClubCapabilityGuard({ children }: { children: ReactNode 
   return (
     <PermissionState
       title="This Tool Is Restricted"
-      description={`Your current club role does not include ${required} access. The club has not been changed.`}
+      description={`Your Current Club Role Does Not Include ${required} Access. The Club Has Not Been Changed.`}
       onBack={() => navigate(destination, { replace: true })}
     />
   );

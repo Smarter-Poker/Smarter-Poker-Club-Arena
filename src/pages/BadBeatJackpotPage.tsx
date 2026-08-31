@@ -102,7 +102,7 @@ export default function BadBeatJackpotPage() {
     }
     if (
       !(await confirmDialog({
-        title: 'Distribute promo pool',
+        title: 'Distribute Promo Pool',
         message: `Rain ${amount.toLocaleString()} chips from the promo pool, split evenly among all currently-active players? This can't be undone.`,
         confirmText: 'Rain it',
         variant: 'default',
@@ -561,7 +561,7 @@ export default function BadBeatJackpotPage() {
               value={promoAmount}
               onChange={(e) => setPromoAmount(e.target.value)}
               placeholder="Amount"
-              aria-label="Promo rain amount"
+              aria-label="Promo Rain Amount"
               style={{
                 flex: '1 1 120px',
                 minWidth: 0,
@@ -607,7 +607,7 @@ export default function BadBeatJackpotPage() {
                 opacity: distributingPromo ? 0.6 : 1,
               }}
             >
-              {distributingPromo ? 'Raining…' : 'Rain to Active Players'}
+              {distributingPromo ? 'Raining…' : 'Rain To Active Players'}
             </button>
           </div>
         </div>
@@ -660,7 +660,7 @@ export default function BadBeatJackpotPage() {
             lineHeight: 1.5,
           }}
         >
-          Applied To The Stakes-Tiered Share Of The Pool Shown Above &mdash; Not The Whole Pool.
+          Applied To The Stakes-Tiered Share Of The Pool Shown Above - Not The Whole Pool.
         </p>
         <div className="payout-bars">
           <div className="payout-bar">

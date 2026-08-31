@@ -14,6 +14,10 @@ const service = readFileSync(
   'utf8'
 );
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
+const titleCaseMigration = readFileSync(
+  resolve(__dirname, '../supabase/migrations/20260901030700_daily_mission_catalog_title_case.sql'),
+  'utf8'
+);
 
 describe('daily challenge dashboard contract', () => {
   it('snapshots the full assigned mission contract and makes it immutable', () => {
@@ -72,6 +76,8 @@ describe('daily challenge dashboard contract', () => {
 
   it('wires the page to one dashboard receipt and the persistent vault', () => {
     expect(service).toContain("supabase.rpc('get_daily_challenge_dashboard'");
+    expect(service).toContain('retryFetch(');
+    expect(service).toContain('{ maxRetries: 2, baseDelayMs: 250 }');
     expect(page).toContain('dailyChallengeService.getDashboard(uid)');
     expect(page).not.toContain('dailyChallengeService.getAllChallenges(uid)');
     expect(page).not.toContain('dailyChallengeService.getStats(uid)');
@@ -79,5 +85,17 @@ describe('daily challenge dashboard contract', () => {
     expect(page).not.toContain('dailyChallengeService.getDiamondBalance(uid)');
     expect(page).toContain('const ready = rewardVault.items;');
     expect(page).toContain('width: `${stats?.milestoneProgressPercent ?? 0}%`');
+  });
+
+  it('Title Cases database copy at rest and again at the page boundary', () => {
+    expect(service).toContain('name: titleCase(row.name)');
+    expect(service).toContain('description: titleCase(row.description)');
+    expect(titleCaseMigration).toContain("WHEN 'hands_10' THEN 'Play 10 Hands Today'");
+    expect(titleCaseMigration).toContain("WHEN 'hands_25' THEN 'Play 25 Hands Today'");
+    expect(titleCaseMigration).toContain("WHEN 'showdown_3' THEN 'Reach 3 Showdowns Today'");
+    expect(titleCaseMigration).toContain("WHEN 'weekly_hands_250' THEN 'Play 250 Hands This Week'");
+    expect(titleCaseMigration).toContain(
+      'Daily Mission catalog or assigned display copy is not Title Cased'
+    );
   });
 });

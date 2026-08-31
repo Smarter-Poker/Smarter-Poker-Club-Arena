@@ -28,11 +28,15 @@
   player, including horses, without weakening atomicity, locking, or request idempotency.
 - Replaced decorative Unicode loading/check glyphs with CSS loading indicators and text.
 - Routed non-blocking club-card and event-bus failures through the production error reporter.
-- Made all three dialog shells height-safe: their complete outer frames stay inside short desktop
-  and landscape-phone viewports while their content scrolls internally, with the close and action
-  controls remaining reachable.
+- Replaced the half-page dialog treatment with full-viewport Create Club, Find Player, and Join
+  Club surfaces. Each page owns a separately scrolling body and a bottom-locked, safe-area-aware
+  footer so its primary control remains visible without cropping the page frame.
 - Added the same short-viewport containment to shared Club Arena empty and permission panels so a
   page edge cannot cut through the panel's lower corners.
+- Removed the conventional lowercase exception for joining words from the shared runtime Title
+  Case formatter. Player-facing dynamic copy now follows the literal rule as well: every word,
+  including A, And, Of, The, and To, starts with a capital letter while poker acronyms remain
+  uppercase.
 - Repaired two newly exposed main-branch test-contract defects that blocked the release gate: the
   satellite source pin now uses the structural source-window helper, and the cash-table test now
   recognizes `min_buy_in_bb` and `max_buy_in_bb` as generated, non-writable columns.

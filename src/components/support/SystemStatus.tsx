@@ -16,7 +16,7 @@ export function SystemStatus() {
   return (
     <section
       className={`${styles.status} ${!isChecking && !isOperational ? styles.degraded : ''}`}
-      aria-label="Club Arena system status"
+      aria-label="Club Arena System Status"
       aria-live="polite"
     >
       <div className={styles.signal} aria-hidden="true">

@@ -12,6 +12,7 @@ import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { useDialogEscape } from '../../hooks/useDialogEscape';
 import { reportError } from '../../utils/errorReporter';
 import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
+import { titleCase } from '../../utils/titleCase';
 import styles from './JoinClubModal.module.css';
 
 interface JoinClubModalProps {
@@ -261,104 +262,108 @@ export default function JoinClubModal({
         </div>
         <div className={styles.contentPanel}>
           <button className={styles.closeButton} onClick={onClose} aria-label="Close" />
-          <span className={styles.eyebrow}>Club Access / Verified Entry</span>
-          <h2 id="join-club-title" className={styles.title}>
-            Join A Club
-          </h2>
-          <p className={styles.subtitle}>
-            Enter A Code, Paste An Invitation, Or Upload A QR Screenshot. You Will Confirm The Club
-            Before Anything Changes.
-          </p>
+          <div className={styles.scrollBody}>
+            <span className={styles.eyebrow}>Club Access / Verified Entry</span>
+            <h2 id="join-club-title" className={styles.title}>
+              Join A Club
+            </h2>
+            <p className={styles.subtitle}>
+              Enter A Code, Paste An Invitation, Or Upload A QR Screenshot. You Will Confirm The
+              Club Before Anything Changes.
+            </p>
 
-          <div className={styles.inputWrapper}>
-            <label htmlFor="join-club-code" className={styles.inputLabel}>
-              Club Code
-            </label>
-            <input
-              id="join-club-code"
-              ref={inputRef}
-              type="tel"
-              inputMode="numeric"
-              pattern="[0-9]{5,6}"
-              maxLength={6}
-              placeholder="48291"
-              className={styles.codeInput}
-              value={clubCode}
-              onPaste={(event) => {
-                const pasted = event.clipboardData.getData('text');
-                if (ClubJoinService.parseInput(pasted)) {
-                  event.preventDefault();
-                  consumeInput(pasted);
+            <div className={styles.inputWrapper}>
+              <label htmlFor="join-club-code" className={styles.inputLabel}>
+                Club Code
+              </label>
+              <input
+                id="join-club-code"
+                ref={inputRef}
+                type="tel"
+                inputMode="numeric"
+                pattern="[0-9]{5,6}"
+                maxLength={6}
+                placeholder="48291"
+                className={styles.codeInput}
+                value={clubCode}
+                onPaste={(event) => {
+                  const pasted = event.clipboardData.getData('text');
+                  if (ClubJoinService.parseInput(pasted)) {
+                    event.preventDefault();
+                    consumeInput(pasted);
+                  }
+                }}
+                onChange={(event) => {
+                  previewSequenceRef.current += 1;
+                  verifiedIdentifierRef.current = null;
+                  setPreview(null);
+                  setClubCode(event.target.value.replace(/\D/g, ''));
+                  setReferralCode(null);
+                  setStatusMessage(null);
+                }}
+                onKeyDown={(event) =>
+                  event.key === 'Enter' && (preview ? handleJoin() : loadPreview(clubCode))
                 }
-              }}
-              onChange={(event) => {
-                previewSequenceRef.current += 1;
-                verifiedIdentifierRef.current = null;
-                setPreview(null);
-                setClubCode(event.target.value.replace(/\D/g, ''));
-                setReferralCode(null);
-                setStatusMessage(null);
-              }}
-              onKeyDown={(event) =>
-                event.key === 'Enter' && (preview ? handleJoin() : loadPreview(clubCode))
-              }
-            />
-          </div>
-
-          <div className={styles.importActions}>
-            <button onClick={pasteFromClipboard}>Paste Invitation</button>
-            <button onClick={() => qrInputRef.current?.click()} disabled={isScanning}>
-              {isScanning ? 'Scanning…' : 'Scan QR Image'}
-            </button>
-            <input
-              ref={qrInputRef}
-              type="file"
-              accept="image/*"
-              className={styles.hiddenInput}
-              onChange={(event) => event.target.files?.[0] && scanQrImage(event.target.files[0])}
-            />
-          </div>
-
-          {isPreviewing && (
-            <div className={styles.lookupStatus} aria-live="polite">
-              Verifying Club…
+              />
             </div>
-          )}
-          {preview && (
-            <section className={styles.clubPreview} aria-label="Club confirmation">
-              <div>
-                <span>{preview.requires_approval ? 'Approval Required' : 'Open Membership'}</span>
-                <strong>{preview.name}</strong>
-                <small>{preview.member_count?.toLocaleString()} Members</small>
+
+            <div className={styles.importActions}>
+              <button onClick={pasteFromClipboard}>Paste Invitation</button>
+              <button onClick={() => qrInputRef.current?.click()} disabled={isScanning}>
+                {isScanning ? 'Scanning…' : 'Scan QR Image'}
+              </button>
+              <input
+                ref={qrInputRef}
+                type="file"
+                accept="image/*"
+                className={styles.hiddenInput}
+                onChange={(event) => event.target.files?.[0] && scanQrImage(event.target.files[0])}
+              />
+            </div>
+
+            {isPreviewing && (
+              <div className={styles.lookupStatus} aria-live="polite">
+                Verifying Club…
               </div>
-              {preview.description && <p>{preview.description}</p>}
-            </section>
-          )}
-          {statusMessage && (
-            <div className={styles.statusMessage} aria-live="polite">
-              {statusMessage}
-            </div>
-          )}
+            )}
+            {preview && (
+              <section className={styles.clubPreview} aria-label="Club Confirmation">
+                <div>
+                  <span>{preview.requires_approval ? 'Approval Required' : 'Open Membership'}</span>
+                  <strong>{preview.name}</strong>
+                  <small>{preview.member_count?.toLocaleString()} Members</small>
+                </div>
+                {preview.description && <p>{preview.description}</p>}
+              </section>
+            )}
+            {statusMessage && (
+              <div className={styles.statusMessage} aria-live="polite">
+                {titleCase(statusMessage)}
+              </div>
+            )}
+          </div>
 
-          {preview?.membership_status === 'pending' ? (
-            <button className={styles.cancelRequestButton} onClick={cancelPending}>
-              Cancel Pending Request
-            </button>
-          ) : (
-            <button
-              className={styles.joinButton}
-              onClick={handleJoin}
-              disabled={isJoining || !preview?.id}
-            >
-              {isJoining
-                ? 'Securing Access…'
-                : preview?.membership_status
-                  ? 'Enter Club'
-                  : preview
-                    ? `Confirm Join ${preview.name}`
-                    : 'Verify A Club Code'}
-            </button>
-          )}
+          <footer className={styles.pageFooter}>
+            {preview?.membership_status === 'pending' ? (
+              <button className={styles.cancelRequestButton} onClick={cancelPending}>
+                Cancel Pending Request
+              </button>
+            ) : (
+              <button
+                className={styles.joinButton}
+                onClick={handleJoin}
+                disabled={isJoining || !preview?.id}
+              >
+                {isJoining
+                  ? 'Securing Access…'
+                  : preview?.membership_status
+                    ? 'Enter Club'
+                    : preview
+                      ? `Confirm Join ${preview.name}`
+                      : 'Verify A Club Code'}
+              </button>
+            )}
+          </footer>
         </div>
       </div>
     </div>

@@ -340,7 +340,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData
               whiteSpace: 'nowrap',
             }}
           >
-            {showBenchmarks ? 'Hide Avg' : 'vs Average'}
+            {showBenchmarks ? 'Hide Avg' : 'Vs Average'}
           </button>
         </div>
       </div>

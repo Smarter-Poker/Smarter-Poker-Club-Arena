@@ -47,8 +47,9 @@ describe('customization commerce certification', () => {
     expect(helper).toContain("const ACCOUNT_PREFIX = 'ca-customization-cert-'");
     expect(helper).toContain("email.endsWith('@example.invalid')");
     expect(helper).toContain("key.startsWith('sb_secret_')");
-    expect(helper).toContain('body: JSON.stringify({ should_soft_delete: false })');
-    expect(helper).not.toContain('?should_soft_delete=false');
+    expect(helper).toContain("'cleanup_reserved_certification_account'");
+    expect(helper).toContain('p_user_id: account.id');
+    expect(helper).not.toContain('/auth/v1/admin/users/${encodeURIComponent(account.id)}');
     expect(helper).toContain('reserved fixture still exists after hard delete');
     expect(helper).toContain('withCleanupRetries');
     expect(helper).toContain('PGRST00[0123]');

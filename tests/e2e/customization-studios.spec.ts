@@ -215,7 +215,7 @@ test.describe('real Table Studio browser flows', () => {
     const studio = await openStudio(page);
     await tapReadyControl(studio.getByRole('tab', { name: 'Tables' }));
     await tapReadyControl(
-      studio.getByRole('button', { name: /Neon City, purchase or VIP required/ })
+      studio.getByRole('button', { name: /Neon City, Purchase Or VIP Required/ })
     );
 
     const purchase = page.getByRole('dialog', { name: 'Unlock Neon City' });

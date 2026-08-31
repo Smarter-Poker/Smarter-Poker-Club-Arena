@@ -81,10 +81,12 @@ export function requireCustomizationCertificationEnvironment(): CustomizationCer
 async function serviceRequest<T>(
   environment: CustomizationCertificationEnvironment,
   path: string,
-  init: RequestInit = {}
+  init: RequestInit = {},
+  retrySafe = false
 ): Promise<T> {
   const method = (init.method || 'GET').toUpperCase();
-  const methodIsIdempotent = ['GET', 'HEAD', 'PUT', 'PATCH', 'DELETE'].includes(method);
+  const methodIsIdempotent =
+    retrySafe || ['GET', 'HEAD', 'PUT', 'PATCH', 'DELETE'].includes(method);
 
   for (let attempt = 0; attempt < SERVICE_REQUEST_MAX_ATTEMPTS; attempt += 1) {
     try {
@@ -159,15 +161,21 @@ export async function readServiceRows<T>(
   return serviceRequest<T[]>(environment, `/rest/v1/${table}?${query.toString()}`);
 }
 
-export async function callServiceRpc<T extends JsonObject>(
+export async function callServiceRpc<T>(
   environment: CustomizationCertificationEnvironment,
   rpc: string,
-  body: JsonObject
+  body: JsonObject,
+  retrySafe = false
 ): Promise<T> {
-  return serviceRequest<T>(environment, `/rest/v1/rpc/${rpc}`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
+  return serviceRequest<T>(
+    environment,
+    `/rest/v1/rpc/${rpc}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+    retrySafe
+  );
 }
 
 export async function listTableStudioStorefrontSkus(
@@ -213,6 +221,10 @@ async function normalizeTemporaryProfile(
       is_vip: false,
       vip_tier: null,
       vip_expires_at: null,
+      // Keep commerce/mission certification focused on the target surface.
+      // This is a real free library asset and satisfies the same durable gate
+      // that the public Avatar Gallery writes during first-run onboarding.
+      arena_avatar_url: '/avatars/table/free_samurai@2x.webp',
     }),
   });
 
@@ -220,11 +232,12 @@ async function normalizeTemporaryProfile(
     diamonds: number;
     diamond_balance: number;
     is_vip: boolean;
+    arena_avatar_url: string | null;
   }>(
     environment,
     'profiles',
     new URLSearchParams({
-      select: 'diamonds,diamond_balance,is_vip',
+      select: 'diamonds,diamond_balance,is_vip,arena_avatar_url',
       id: `eq.${userId}`,
     })
   );
@@ -232,7 +245,8 @@ async function normalizeTemporaryProfile(
     rows.length !== 1 ||
     Number(rows[0].diamonds) !== 0 ||
     Number(rows[0].diamond_balance) !== 0 ||
-    rows[0].is_vip !== false
+    rows[0].is_vip !== false ||
+    rows[0].arena_avatar_url !== '/avatars/table/free_samurai@2x.webp'
   ) {
     throw new Error(`Temporary customization account ${userId} was not normalized.`);
   }
@@ -303,30 +317,38 @@ export async function createTemporaryCustomizationAccount(
     return { id: userId, email, password, client };
   } catch (error) {
     if (userId) {
-      await cleanupTemporaryCustomizationAccount(environment, {
-        id: userId,
-        email,
-        password,
-        client: createClient(environment.supabaseUrl, environment.publishableKey),
-      }).catch(() => undefined);
+      try {
+        await cleanupTemporaryCustomizationAccount(environment, {
+          id: userId,
+          email,
+          password,
+          client: createClient(environment.supabaseUrl, environment.publishableKey),
+        });
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          `Temporary account setup failed and cleanup was incomplete for ${userId}.`
+        );
+      }
     }
     throw error;
   }
 }
 
-async function deleteRows(
+async function assertRowsRemoved(
   environment: CustomizationCertificationEnvironment,
   table: string,
-  column: 'user_id' | 'id',
+  column: 'user_id' | 'recipient_user_id' | 'from_user_id' | 'to_user_id' | 'actor_id',
   userId: string
 ): Promise<void> {
-  const query = new URLSearchParams({ [column]: `eq.${userId}` });
-  await withCleanupRetries(() =>
-    serviceRequest<void>(environment, `/rest/v1/${table}?${query.toString()}`, {
-      method: 'DELETE',
-      headers: { Prefer: 'return=minimal' },
-    })
+  const rows = await readServiceRows<{ id?: string }>(
+    environment,
+    table,
+    new URLSearchParams({ select: column, [column]: `eq.${userId}`, limit: '1' })
   );
+  if (rows.length > 0) {
+    throw new Error(`${table}.${column}: reserved fixture residue remains after cleanup`);
+  }
 }
 
 async function authUserExists(
@@ -354,7 +376,7 @@ async function authUserExists(
  * The prefix check is deliberately local and server-backed: a typo can never
  * turn this helper into a general account deletion primitive.
  */
-export async function cleanupTemporaryCustomizationAccount(
+async function cleanupTemporaryCustomizationAccountOnce(
   environment: CustomizationCertificationEnvironment,
   account: TemporaryCustomizationAccount
 ): Promise<void> {
@@ -365,6 +387,24 @@ export async function cleanupTemporaryCustomizationAccount(
   await account.client.auth.signOut().catch(() => undefined);
   const failures: string[] = [];
   const userTables = [
+    // Daily Missions certification state. Child/outbox rows are removed before
+    // their parent notification or account rows so cleanup remains explicit
+    // even if a production FK temporarily loses ON DELETE CASCADE.
+    'daily_mission_operations',
+    'daily_challenge_progress_events',
+    'daily_challenge_event_outbox',
+    'daily_challenge_milestone_claims',
+    'daily_challenge_claim_batches',
+    'user_daily_challenges',
+    'challenge_streak_state',
+    'user_notification_preferences',
+    'notifications',
+    // Deleting mission state intentionally bumps the dashboard revision. This
+    // row therefore belongs after every trigger-producing mission table.
+    'daily_challenge_dashboard_revisions',
+    'wallet_credit_idempotency',
+    'wallet_transactions',
+    'wallets',
     'customization_operations',
     'user_theme_settings',
     'user_table_studio_preferences',
@@ -376,48 +416,29 @@ export async function cleanupTemporaryCustomizationAccount(
     'signup_errors',
   ];
 
-  for (const table of userTables) {
-    await deleteRows(environment, table, 'user_id', account.id).catch((error) => {
-      failures.push(`${table}: ${(error as Error).message}`);
+  const relatedTables = [
+    { table: 'push_outbox', column: 'recipient_user_id' as const },
+    { table: 'chip_transactions', column: 'from_user_id' as const },
+    { table: 'chip_transactions', column: 'to_user_id' as const },
+    { table: 'audit_trail', column: 'actor_id' as const },
+  ];
+
+  await callServiceRpc<JsonObject>(
+    environment,
+    'cleanup_reserved_certification_account',
+    {
+      p_user_id: account.id,
+    },
+    true
+  ).catch((error) => failures.push(`reserved identity: ${(error as Error).message}`));
+
+  for (const { table, column } of [
+    ...relatedTables,
+    ...userTables.map((table) => ({ table, column: 'user_id' as const })),
+  ]) {
+    await assertRowsRemoved(environment, table, column, account.id).catch((error) => {
+      failures.push((error as Error).message);
     });
-  }
-
-  let firstAuthDeleteError: Error | null = null;
-  await withCleanupRetries(() =>
-    serviceRequest<void>(environment, `/auth/v1/admin/users/${encodeURIComponent(account.id)}`, {
-      method: 'DELETE',
-      // GoTrue reads should_soft_delete from the JSON body. A query-string
-      // value receives 2xx but does not guarantee the requested hard delete.
-      body: JSON.stringify({ should_soft_delete: false }),
-    })
-  ).catch((error) => {
-    firstAuthDeleteError = error as Error;
-  });
-
-  // The normal auth delete cascades these rows. The explicit cleanup also
-  // handles an interrupted historical trigger without touching any other id.
-  for (const table of ['profiles', 'users']) {
-    await deleteRows(environment, table, 'id', account.id).catch((error) => {
-      failures.push(`${table}: ${(error as Error).message}`);
-    });
-  }
-
-  // A historical trigger/FK can make Auth deletion fail until public rows are
-  // gone. A malformed/ignored request can also answer 2xx without removing the
-  // identity, so verify server state and retry exactly this reserved fixture.
-  let userStillExists = true;
-  try {
-    userStillExists = await authUserExists(environment, account.id);
-  } catch (error) {
-    failures.push(`auth.users verification: ${(error as Error).message}`);
-  }
-  if (firstAuthDeleteError || userStillExists) {
-    await withCleanupRetries(() =>
-      serviceRequest<void>(environment, `/auth/v1/admin/users/${encodeURIComponent(account.id)}`, {
-        method: 'DELETE',
-        body: JSON.stringify({ should_soft_delete: false }),
-      })
-    ).catch((error) => failures.push(`auth.users: ${(error as Error).message}`));
   }
 
   try {
@@ -431,6 +452,13 @@ export async function cleanupTemporaryCustomizationAccount(
   if (failures.length) {
     throw new Error(`Temporary customization cleanup was incomplete: ${failures.join(' | ')}`);
   }
+}
+
+export async function cleanupTemporaryCustomizationAccount(
+  environment: CustomizationCertificationEnvironment,
+  account: TemporaryCustomizationAccount
+): Promise<void> {
+  return withCleanupRetries(() => cleanupTemporaryCustomizationAccountOnce(environment, account));
 }
 
 export function expectedUnlockForFeature(feature: string): string | null {

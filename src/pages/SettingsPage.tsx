@@ -134,7 +134,7 @@ const Slider = ({
       onChange={(e) => onChange(Number(e.target.value))}
       disabled={disabled}
       aria-label={label}
-      aria-valuetext={`${value} percent`}
+      aria-valuetext={`${value} Percent`}
     />
     <span className={styles.sliderValue}>{value}%</span>
   </div>
@@ -878,7 +878,7 @@ export default function SettingsPage() {
       <AccountSurfaceHeader
         eyebrow="Account Control // Player Vault"
         title="Control Room"
-        description="One authoritative surface for table behavior, alerts, device access, identity security, and account data. Changes remain wired to the live table and player record."
+        description="One Authoritative Surface For Table Behavior, Alerts, Device Access, Identity Security, And Account Data. Changes Remain Wired To The Live Table And Player Record."
         status={hasChanges ? 'Changes Pending' : 'Systems Synced'}
       >
         <span className={styles.heroMetric}>
@@ -895,7 +895,7 @@ export default function SettingsPage() {
         </span>
       </AccountSurfaceHeader>
 
-      <nav className={styles.controlIndex} aria-label="Settings sections">
+      <nav className={styles.controlIndex} aria-label="Settings Sections">
         {[
           { id: 'audio' as const, label: 'Audio', ref: audioRef },
           { id: 'display' as const, label: 'Table & Display', ref: appearanceRef },
@@ -916,7 +916,7 @@ export default function SettingsPage() {
 
       <div className={styles.headerActions} aria-live="polite">
         <span className={styles.changeState}>
-          {hasChanges ? 'Unsaved controls are staged locally.' : 'All visible controls are saved.'}
+          {hasChanges ? 'Unsaved Controls Are Staged Locally.' : 'All Visible Controls Are Saved.'}
         </span>
         <div>
           {hasChanges && (
@@ -1142,14 +1142,14 @@ export default function SettingsPage() {
               <span className={styles.settingLabel}>Push Notifications</span>
               <span className={styles.settingDesc}>
                 {pushEnabled
-                  ? 'On for this device'
+                  ? 'On For This Device'
                   : !isWebPushSupported() && isIos() && !isIosStandalonePwa()
-                    ? 'Add to your Home Screen first, then open it from there'
+                    ? 'Add To Your Home Screen First, Then Open It From There'
                     : !isWebPushSupported()
-                      ? 'Not supported by this browser'
+                      ? 'Not Supported By This Browser'
                       : notificationPermission() === 'denied'
-                        ? 'Blocked. Allow notifications in your browser settings'
-                        : 'Get alerted the moment your seat opens'}
+                        ? 'Blocked. Allow Notifications In Your Browser Settings'
+                        : 'Get Alerted The Moment Your Seat Opens'}
               </span>
             </div>
             {pushEnabled ? (
@@ -1226,8 +1226,8 @@ export default function SettingsPage() {
               <span className={styles.settingLabel}>Two-Factor Authentication</span>
               <span className={styles.settingDesc}>
                 {twoFactorEnabled
-                  ? 'Enabled - Your account is protected'
-                  : 'Add extra security to your account'}
+                  ? 'Enabled - Your Account Is Protected'
+                  : 'Add Extra Security To Your Account'}
               </span>
             </div>
             {twoFactorEnabled ? (
@@ -1244,7 +1244,7 @@ export default function SettingsPage() {
                 onClick={handleEnable2FA}
                 disabled={actionLoading}
               >
-                {actionLoading ? 'Setting up...' : 'Enable'}
+                {actionLoading ? 'Setting Up...' : 'Enable'}
               </button>
             )}
           </div>
@@ -1427,9 +1427,9 @@ export default function SettingsPage() {
             </p>
 
             <input
-              aria-label="Six-digit authenticator code"
+              aria-label="Six-Digit Authenticator Code"
               type="text"
-              placeholder="Enter 6-digit Code"
+              placeholder="Enter 6-Digit Code"
               value={verificationCode}
               onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
               className={styles.input}

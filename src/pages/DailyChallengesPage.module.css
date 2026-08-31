@@ -10,7 +10,13 @@
 
 .container {
   width: 100%;
-  padding: 24px 18px 78px;
+  /* StandardContentLayout already reserves the fixed Club Arena footer, but
+     this page's spacing shorthand used to replace that reservation with a
+     fixed 78px. The artwork-driven footer is responsive (about 176px at a
+     1280px viewport), so mission controls near the end of the page could be
+     visible beneath its semantic navigation hit targets. Keep one content
+     rhythm beyond the authoritative live clearance token at every width. */
+  padding: 24px 18px calc(var(--bottom-nav-clearance, 74px) + 24px);
   color: var(--mission-white);
   background:
     linear-gradient(rgba(2, 4, 5, 0.94), rgba(2, 4, 5, 0.97)),
@@ -918,6 +924,7 @@
   background: var(--card-tier-color);
   box-shadow: 0 0 12px color-mix(in srgb, var(--card-tier-color) 65%, transparent);
   content: '';
+  pointer-events: none;
 }
 
 .challengeCard::after {
@@ -929,6 +936,7 @@
   border: 1px solid rgba(180, 194, 204, 0.08);
   border-radius: 50%;
   content: '';
+  pointer-events: none;
 }
 
 .cardCompleted {
@@ -1425,7 +1433,7 @@
 
 @media (max-width: 680px) {
   .container {
-    padding: 0 0 max(84px, calc(70px + env(safe-area-inset-bottom)));
+    padding: 0 0 max(84px, calc(var(--bottom-nav-clearance, 74px) + 12px));
     background-attachment: scroll;
   }
 

@@ -1000,6 +1000,18 @@
       "stat_date",
       "updated_at"
     ],
+    "ca_ddl_events": [
+      "id",
+      "occurred_at",
+      "command_tag",
+      "object_type",
+      "object_identity",
+      "schema_name",
+      "triggers_pgrst_reload",
+      "role_name",
+      "application_name",
+      "query_snippet"
+    ],
     "ca_drift_incidents": [
       "id",
       "detected_at",
@@ -1055,6 +1067,14 @@
       "frozen_total",
       "frozen_at",
       "note"
+    ],
+    "ca_guard_inventory": [
+      "id",
+      "kind",
+      "object_a",
+      "object_b",
+      "note",
+      "active"
     ],
     "ca_hand_facts": [
       "hand_id",
@@ -1204,6 +1224,12 @@
       "sqlstate",
       "message"
     ],
+    "ca_money_rpc_registry": [
+      "proname",
+      "status",
+      "notes",
+      "added_at"
+    ],
     "ca_rake_schedule": [
       "sb",
       "bb",
@@ -1279,7 +1305,8 @@
       "mint_since_prev",
       "burn_since_prev",
       "delta_vs_prev",
-      "unexplained"
+      "unexplained",
+      "tournament_liability"
     ],
     "ca_treasury_baseline": [
       "club_id",
@@ -4531,10 +4558,37 @@
       "revision",
       "updated_at"
     ],
+    "daily_challenge_event_outbox": [
+      "user_id",
+      "event_key",
+      "amounts",
+      "magnitudes",
+      "occurred_at",
+      "attempts",
+      "last_error",
+      "next_attempt_at",
+      "dead_lettered_at",
+      "created_at"
+    ],
+    "daily_challenge_milestone_claims": [
+      "user_id",
+      "streak_started_on",
+      "milestone_days",
+      "reward_chips",
+      "claimed_at"
+    ],
     "daily_challenge_milestones": [
       "days",
       "reward_chips",
       "label",
+      "created_at"
+    ],
+    "daily_challenge_progress_events": [
+      "user_id",
+      "event_key",
+      "amounts",
+      "magnitudes",
+      "occurred_at",
       "created_at"
     ],
     "daily_challenges": [
@@ -5346,7 +5400,8 @@
       "showdown",
       "rit_boards",
       "community_cards3",
-      "bomb_pot"
+      "bomb_pot",
+      "daily_mission_events"
     ],
     "hand_history_compaction_policy": [
       "id",
@@ -7084,6 +7139,13 @@
       "is_active",
       "created_at",
       "updated_at"
+    ],
+    "pgrst_reload_watchdog_log": [
+      "id",
+      "ran_at",
+      "breach_count",
+      "warn_count",
+      "result"
     ],
     "phase22_remediation_playbook": [
       "priority",
@@ -10509,7 +10571,8 @@
       "mystery_bounty_activated_at",
       "mystery_bounty_activated_players",
       "mystery_bounty_pool_cents",
-      "allow_rabbit_hunt"
+      "allow_rabbit_hunt",
+      "spin_reveal_lag_ms"
     ],
     "tours_due_for_refresh": [
       "tour_code",
@@ -11668,7 +11731,8 @@
       "tier_snapshot",
       "requirement_snapshot",
       "chip_reward_snapshot",
-      "diamond_reward_snapshot"
+      "diamond_reward_snapshot",
+      "threshold_snapshot"
     ],
     "user_daily_rewards": [
       "id",
@@ -12151,6 +12215,12 @@
       "realtime_recoveries",
       "conflicts_suppressed"
     ],
+    "v_daily_challenge_event_outbox_health": [
+      "pending_count",
+      "oldest_pending_at",
+      "high_attempt_count",
+      "dead_letter_count"
+    ],
     "v_daily_mission_health_daily": [
       "day",
       "tier",
@@ -12272,6 +12342,16 @@
       "unbooked_24h",
       "null_multiplier_24h",
       "fee_violations_24h"
+    ],
+    "v_spin_reveal_latency": [
+      "hour",
+      "spins",
+      "p50_ms",
+      "p90_ms",
+      "p99_ms",
+      "worst_ms",
+      "past_the_lead_in",
+      "breach"
     ],
     "v_spin_tier_availability": [
       "club_id",

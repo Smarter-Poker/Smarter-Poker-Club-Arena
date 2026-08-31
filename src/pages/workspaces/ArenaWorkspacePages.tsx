@@ -40,7 +40,7 @@ function WorkspacePage({
         </div>
       </header>
 
-      <section className={styles.grid} aria-label={`${title} tools`}>
+      <section className={styles.grid} aria-label={`${title} Tools`}>
         {links.map((item, index) => (
           <Link to={item.path} className={styles.card} key={item.path}>
             <span className={styles.index}>{String(index + 1).padStart(2, '0')}</span>
@@ -64,7 +64,7 @@ export function RewardsWorkspacePage() {
     <WorkspacePage
       eyebrow="Player Value Circuit"
       title="Rewards Center"
-      description="A single route into every live balance, benefit, offer, and earned milestone."
+      description="A Single Route Into Every Live Balance, Benefit, Offer, And Earned Milestone."
       art="assets/club-buttons/wallets/square/wallet-diamonds-square-v1.webp"
       links={[
         { label: 'Wallet', description: 'Balances, Transfers, And Ledger', path: '/wallet' },
@@ -98,7 +98,7 @@ export function CommunityWorkspacePage() {
     <WorkspacePage
       eyebrow="Community Network"
       title="Community Center"
-      description="Discover players and clubs, manage trusted connections, follow shared activity, and move into conversation from one network map."
+      description="Discover Players And Clubs, Manage Trusted Connections, Follow Shared Activity, And Move Into Conversation From One Network Map."
       art="images/community/community-network-v1.webp"
       links={[
         {
@@ -147,7 +147,7 @@ export function PlayWorkspacePage() {
     <WorkspacePage
       eyebrow="Poker Command Circuit"
       title="Play & Review"
-      description="Move from live competition into results, hands, sessions, and rankings without crossing disconnected history surfaces."
+      description="Move From Live Competition Into Results, Hands, Sessions, And Rankings Without Crossing Disconnected History Surfaces."
       art="assets/club-buttons/lobby/shark-club-championship-ad-v2.png"
       links={[
         {
@@ -191,7 +191,7 @@ export function LegalWorkspacePage() {
     <WorkspacePage
       eyebrow="Trust & Rules"
       title="Legal Center"
-      description="The current platform rules, privacy commitments, integrity standards, and promotion terms."
+      description="The Current Platform Rules, Privacy Commitments, Integrity Standards, And Promotion Terms."
       art="images/bg-vault.jpg"
       links={[
         {
@@ -228,7 +228,7 @@ export function ClubFinanceWorkspacePage() {
     <WorkspacePage
       eyebrow="Ledger Circuit"
       title="Finance & Risk"
-      description="Live club economics, cashier operations, settlement, and exposure without duplicate dashboards."
+      description="Live Club Economics, Cashier Operations, Settlement, And Exposure Without Duplicate Dashboards."
       art="assets/club-buttons/wallets/desktop/wallet-club-bank-v1.webp"
       links={(finance?.items || [])
         .filter((item) => item.id !== 'finance-overview')
@@ -249,7 +249,7 @@ export function ClubControlWorkspacePage() {
     <WorkspacePage
       eyebrow="House Circuit"
       title="Club Control"
-      description="Policy, communications, campaigns, identity, and permissions in one governed workspace."
+      description="Policy, Communications, Campaigns, Identity, And Permissions In One Governed Workspace."
       art="assets/club-buttons/lobby/lobby-command-chassis-v2.png"
       links={(control?.items || [])
         .filter((item) => item.id !== 'control-overview')

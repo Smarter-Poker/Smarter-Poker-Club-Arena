@@ -281,12 +281,12 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
           }}
         >
           <Stat
-            label="Player coverage"
+            label="Player Coverage"
             value={`${coverage.player_coverage_pct}%`}
             sub={`${coverage.players_with_agent}/${coverage.players_total} have an agent`}
             bad={coverage.players_without_agent > 0}
           />
-          <Stat label="Super agents" value={coverage.super_agents} />
+          <Stat label="Super Agents" value={coverage.super_agents} />
           <Stat
             label="Agents"
             value={coverage.agents}
@@ -294,20 +294,20 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
             bad={coverage.agents_orphaned > 0}
           />
           <Stat
-            label="Sub agents"
+            label="Sub Agents"
             value={coverage.sub_agents}
             sub={`${coverage.sub_agents_under_an_agent} under an agent`}
             bad={coverage.sub_agents_orphaned > 0}
           />
-          <Stat label="Agents with sub agents" value={coverage.agents_that_have_sub_agents} />
+          <Stat label="Agents With Sub Agents" value={coverage.agents_that_have_sub_agents} />
           <Stat
-            label="Rakeback deals"
+            label="Rakeback Deals"
             value={coverage.player_rakeback_deals}
             sub={`${coverage.player_rakeback_gap_breaches} gap breaches`}
             bad={coverage.player_rakeback_gap_breaches > 0}
           />
           <Stat
-            label="Rates out of policy"
+            label="Rates Out Of Policy"
             value={coverage.commission_rates_out_of_policy}
             sub={`band ${Math.round(coverage.policy_band.min * 100)}-${Math.round(coverage.policy_band.max * 100)}%`}
             bad={coverage.commission_rates_out_of_policy > 0}
@@ -329,8 +329,8 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
             >
               <strong style={{ color: dist.healthy ? '#37e7c7' : '#ff7676' }}>
                 {dist.healthy
-                  ? 'Distribution healthy'
-                  : `Over-distributed by ${money(dist.over_distributed_by)}`}
+                  ? 'Distribution Healthy'
+                  : `Over-Distributed By ${money(dist.over_distributed_by)}`}
               </strong>
               <div style={{ color: '#8fa3ad', fontSize: '0.82rem', marginTop: 6 }}>
                 Rake Collected {money(dist.rake_collected)} · Commissions{' '}
@@ -355,7 +355,7 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
                 cursor: busy ? 'wait' : 'pointer',
               }}
             >
-              {busy ? 'Checking…' : 'Review & run settlement'}
+              {busy ? 'Checking…' : 'Review & Run Settlement'}
             </button>
           )}
           <p style={{ color: '#66787f', fontSize: '0.78rem', margin: 0 }}>
@@ -430,7 +430,7 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
               }}
             >
               <strong style={{ color: law.healthy ? '#37e7c7' : '#ff7676' }}>
-                Union Law {law.healthy ? 'healthy' : `- ${law.breaches.length} breach(es)`}
+                Union Law {law.healthy ? 'Healthy' : `- ${law.breaches.length} Breach(es)`}
               </strong>
               {law.breaches.length > 0 && (
                 <ul style={{ color: '#ff9c9c', fontSize: '0.82rem', margin: '8px 0 0 18px' }}>
@@ -462,7 +462,7 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
                 cursor: busy ? 'wait' : 'pointer',
               }}
             >
-              {busy ? 'Sweeping…' : 'Run integrity sweep (24h)'}
+              {busy ? 'Sweeping…' : 'Run Integrity Sweep (24h)'}
             </button>
           )}
           <p style={{ color: '#66787f', fontSize: '0.78rem', margin: 0 }}>
@@ -529,7 +529,7 @@ function SettlementConfirm({
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '14px 0' }}>
           <Row
-            label="Round 1 · union → clubs"
+            label="Round 1 · Union → Clubs"
             value={
               preview.round1.already_executed
                 ? 'already settled'
@@ -537,11 +537,11 @@ function SettlementConfirm({
             }
           />
           <Row
-            label={`Round 2 · clubs → agents (${preview.round2.payees})`}
+            label={`Round 2 · Clubs → Agents (${preview.round2.payees})`}
             value={money(preview.round2.amount)}
           />
           <Row
-            label={`Round 3 · agents → players (${preview.round3.payees})`}
+            label={`Round 3 · Agents → Players (${preview.round3.payees})`}
             value={money(preview.round3.amount)}
           />
           <div
@@ -569,7 +569,7 @@ function SettlementConfirm({
             }}
           >
             <strong style={{ color: '#ffb347' }}>
-              {preview.round2.clubs_short + preview.round3.agents_short} Payer(S) Cannot Cover Their
+              {preview.round2.clubs_short + preview.round3.agents_short} Payer(s) Cannot Cover Their
               Obligation
             </strong>
             <p style={{ color: '#c8a15e', fontSize: '0.78rem', margin: '6px 0 8px' }}>
@@ -578,13 +578,13 @@ function SettlementConfirm({
             <ul style={{ margin: 0, paddingLeft: 18, color: '#d8b784', fontSize: '0.8rem' }}>
               {preview.round2.detail.slice(0, 6).map((d, i) => (
                 <li key={`c${i}`}>
-                  {d.club ?? 'club'} Owes {money(d.owed)}, Treasury {money(d.treasury)} - Short{' '}
+                  {d.club ?? 'Club'} Owes {money(d.owed)}, Treasury {money(d.treasury)} - Short{' '}
                   {money(d.short_by)}
                 </li>
               ))}
               {preview.round3.detail.slice(0, 6).map((d, i) => (
                 <li key={`a${i}`}>
-                  {d.agent ?? 'agent'} Owes {money(d.owed)}, Balance {money(d.agent_balance)} -
+                  {d.agent ?? 'Agent'} Owes {money(d.owed)}, Balance {money(d.agent_balance)} -
                   Short {money(d.short_by)}
                 </li>
               ))}

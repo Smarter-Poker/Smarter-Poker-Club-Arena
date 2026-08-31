@@ -29,6 +29,7 @@ import { clampSeatsForVariant } from '../config/tableSeating.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
+import { spinRevealWouldSkipABeat, spinRevealLag } from './spinRevealWindow.js';
 import { isShortFormat, mayTakeSynchronizedBreak } from './breakEligibility.js';
 import {
   capLevelToChipsInPlay,
@@ -1733,6 +1734,16 @@ export abstract class TournamentManagerBase {
             place: i + 1,
             percentage: Math.round(pct * 10000) / 100,
           })),
+          /* THE ONE NUMBER DAN ASKS ABOUT, WRITTEN DOWN (2026-08-31 audit).
+             How far behind the third payment the wheel actually went out.
+             It was computed on every spin, logged to the console and sent to
+             the client — and persisted nowhere, so the only way to answer
+             "is the wheel still opening on time?" was for an agent to
+             hand-measure it, which is how a 3.0s p50 drifted to 13.7s over a
+             day without anything noticing. It rides the write that already
+             carries the draw, so it costs no extra round trip, and
+             v_spin_reveal_latency reads it back. */
+          spin_reveal_lag_ms: Math.round(this.spinRevealLagMs),
           ...(redrawnLockedTiers ? { spin_locked_tiers: redrawnLockedTiers } : {}),
         };
         let spinRowWritten = false;
@@ -2845,7 +2856,7 @@ export abstract class TournamentManagerBase {
       this.spinRevealLagMs = 0;
       return { revealAt: this.spinRevealAt, holdUntil: this.spinHoldUntil };
     }
-    this.spinRevealLagMs = Math.max(0, now - this.spinRevealAt);
+    this.spinRevealLagMs = spinRevealLag({ now, revealAt: this.spinRevealAt });
     /* ONCE IT IS PUBLIC, IT DOES NOT MOVE (round 18). The early emit puts
        these exact numbers on three screens; re-anchoring afterwards would
        leave the second broadcast disagreeing with the wheels already turning,
@@ -2853,9 +2864,18 @@ export abstract class TournamentManagerBase {
     if (this.spinRevealEmitted) {
       return { revealAt: this.spinRevealAt, holdUntil: this.spinHoldUntil };
     }
-    /* The full sequence must still fit between now and the deal. Anything
-       less and some beat is being cut, so the wheel starts here instead. */
-    if (this.spinHoldUntil - now < spinRevealToDealMs()) {
+    /* HAS THE WHEEL'S OWN START ALREADY PASSED? That is the only question,
+       because the client skips exactly the beats behind `Date.now() -
+       revealAt` and nothing else. Asked through spinRevealWindow rather than
+       inline: this used to be `this.spinHoldUntil - now < spinRevealToDealMs()`,
+       which meant the same thing only while the hold was stamped from
+       `spinRevealAt`. When the double-counted lead-in was removed on
+       2026-08-31 the hold became `anchor + toDeal` and the comparison
+       collapsed to `anchor < now` — true for every spin ever run, so the
+       anchor was discarded every time and the overrun was reported ~1,500
+       times a day. See spinRevealWindow.ts for the full account. */
+    const wouldSkipABeat = spinRevealWouldSkipABeat({ now, revealAt: this.spinRevealAt });
+    if (wouldSkipABeat) {
       reportError(
         new Error(
           `[Tournament:${this.tournamentId.slice(0, 8)}] Spin start overran its own reveal window by ${this.spinRevealLagMs}ms - the wheel is being re-anchored to now so it plays in full, and the three players see it start late`

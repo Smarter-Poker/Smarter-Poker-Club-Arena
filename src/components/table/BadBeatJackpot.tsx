@@ -109,7 +109,7 @@ export function BadBeatJackpot({
         className="bbj-widget"
         role="button"
         tabIndex={0}
-        aria-label="Bad Beat Jackpot - view recent jackpots"
+        aria-label="Bad Beat Jackpot - View Recent Jackpots"
         title={hoverSummary}
         onClick={() => onOpenDetails?.()}
         onKeyDown={(e) => {

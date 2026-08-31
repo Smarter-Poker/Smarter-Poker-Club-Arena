@@ -149,7 +149,7 @@ export default function FriendSuggestions() {
               {suggestion.displayName || suggestion.username}
             </Link>
             <span className={styles.reason}>
-              {suggestion.reasons[0]?.label || 'Suggested for you'}
+              {suggestion.reasons[0]?.label || 'Suggested For You'}
             </span>
             {suggestion.isOnline && <span className={styles.onlineDot} />}
             <button

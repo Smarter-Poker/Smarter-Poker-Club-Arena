@@ -516,7 +516,32 @@ export class ScheduledTournamentService {
     // Optional per-schedule look-ahead (minutes, 30 min .. 7 days), else the
     // buy-in decides: 48 hours, or 6 days above 200. See spawnAheadMsFor.
     const due = timedSpawnsDue(schedule, new Date(), spawnAheadMsFor(cfg));
+    if (due.length === 0) return;
+
+    // 2026-08-31: pre-filter instances whose spawn key is already claimed.
+    // The INSERT + UNIQUE(spawn_key) in claimSpawn remains the atomic claim —
+    // this read is purely a courtesy check. Without it, every poll (60s)
+    // re-INSERTed every already-claimed instance inside the multi-day
+    // look-ahead and ate a 23505 for each: a permanent ~2/sec duplicate-key
+    // error storm in the Postgres logs that buried real unique violations and
+    // wasted a doomed write per schedule instance per minute. A claim that
+    // lands between this read and the INSERT still gets its 23505 and stands
+    // down exactly as before; if the read itself fails, fall back to
+    // attempting everything (the old behaviour), never to skipping spawns.
+    let claimedSet: Set<string> | null = null;
+    const { data: claimedRows, error: claimedErr } = await supabase
+      .from('tournament_schedule_spawns')
+      .select('spawn_key')
+      .in(
+        'spawn_key',
+        due.map((d) => d.spawnKey)
+      );
+    if (!claimedErr && Array.isArray(claimedRows)) {
+      claimedSet = new Set(claimedRows.map((r: { spawn_key: string }) => r.spawn_key));
+    }
+
     for (const spawn of due) {
+      if (claimedSet?.has(spawn.spawnKey)) continue; // already spawned
       await this.spawnInstance(schedule, cfg, spawn.spawnKey, spawn.startTime);
     }
   }

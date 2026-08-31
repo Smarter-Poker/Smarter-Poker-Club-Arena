@@ -76,7 +76,7 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
       <Link
         to={`/unions/${union.id}`}
         className="union-card"
-        aria-label={`Open ${union.name} union`}
+        aria-label={`Open ${union.name} Union`}
       >
         <div className="union-header">
           <span className="union-icon" aria-hidden="true">
@@ -92,9 +92,9 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
           </div>
         </div>
         <p className="union-description">
-          {union.description || 'A connected club network with shared games and events.'}
+          {union.description || 'A Connected Club Network With Shared Games And Events.'}
         </p>
-        <div className="union-stats" aria-label={`${union.name} network statistics`}>
+        <div className="union-stats" aria-label={`${union.name} Network Statistics`}>
           <div className="union-stat">
             <span className="stat-value">{union.clubCount.toLocaleString()}</span>
             <span className="stat-label">Clubs</span>
@@ -119,7 +119,7 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
         <div
           className="union-progress"
           role="progressbar"
-          aria-label={`${union.name} level progress`}
+          aria-label={`${union.name} Level Progress`}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={uLevel.progressPercent}
@@ -217,7 +217,7 @@ export default function UnionsPage() {
               icon="UNION"
               eyebrow="No Networks Yet"
               title="Build The First Union"
-              description="Connect clubs under one network to coordinate games, liquidity and events."
+              description="Connect Clubs Under One Network To Coordinate Games, Liquidity And Events."
               action={{ label: 'Create Union', onClick: () => setIsCreating(true) }}
             />
           </div>

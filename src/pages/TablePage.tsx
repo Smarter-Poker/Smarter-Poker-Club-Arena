@@ -6035,7 +6035,7 @@ export default function TablePage({
               'The Connection Dropped Before The Table Answered. Your Chips May Have Been Added. Check Your Stack Before Trying Again.'
             );
           } else {
-            toast.error(res.error || 'Unable to add chips \u2014 your wallet was not charged.');
+            toast.error(res.error || 'Unable To Add Chips - Your Wallet Was Not Charged.');
           }
         }
         return false;
@@ -18422,7 +18422,7 @@ export default function TablePage({
                 .board-transition { animation: boardSlideIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
             `}</style>
       {tableState.isFinalTable && (
-        <div className="final-table-broadcast-hud" aria-label="Final Table broadcast status">
+        <div className="final-table-broadcast-hud" aria-label="Final Table Broadcast Status">
           <span>SMARTER POKER CHAMPIONSHIP</span>
           <strong>FINAL TABLE</strong>
           <b>{tableState.players.filter(Boolean).length} PLAYERS</b>
@@ -18810,8 +18810,8 @@ export default function TablePage({
                   soundService.playButtonClick();
                   masterBus.emit('OPEN_LOBBY_TAB', { requestedBy: userId });
                 }}
-                title="Open the lobby in a new tab"
-                aria-label="Open the lobby in a new tab"
+                title="Open The Lobby In A New Tab"
+                aria-label="Open The Lobby In A New Tab"
               >
                 <img
                   src={addScreenIcon}
@@ -19591,7 +19591,7 @@ export default function TablePage({
           {/* COMPETITOR-PARITY 2026-08-19: table-level ALL IN banner — fires
               once when the runout locks in (first equity broadcast). */}
           {showAllInBanner && (
-            <div className="allin-banner" role="status" aria-label="All in">
+            <div className="allin-banner" role="status" aria-label="All In">
               <span className="allin-banner__text">ALL IN</span>
             </div>
           )}
@@ -19618,7 +19618,7 @@ export default function TablePage({
               felt when the insurance phase opens — every seat and observer
               sees it, exactly like the ALL IN slam above. */}
           {showInsuranceBanner && (
-            <div className="insurance-banner" role="status" aria-label="Insurance offered">
+            <div className="insurance-banner" role="status" aria-label="Insurance Offered">
               <span className="insurance-banner__shield">{'⛨'}</span>
               <span className="insurance-banner__text">INSURANCE</span>
             </div>
@@ -19665,7 +19665,7 @@ export default function TablePage({
               <div
                 className="insurance-premium-chip"
                 role="status"
-                aria-label={`Insurance fee held: ${insurancePremiumHeld}`}
+                aria-label={`Insurance Fee Held: ${insurancePremiumHeld}`}
               >
                 <span className="insurance-premium-chip__icon">{'⛨'}</span>
                 <span className="insurance-premium-chip__amount">
@@ -21533,8 +21533,8 @@ export default function TablePage({
             isChatBanned
               ? 'Chat Is Off At This Table'
               : canChatAsObserver
-                ? 'Say something...'
-                : 'Observers cannot chat'
+                ? 'Say Something...'
+                : 'Observers Cannot Chat'
           }
           isMuted={isChatMuted}
           isDisabled={isChatBanned || !canChatAsObserver}

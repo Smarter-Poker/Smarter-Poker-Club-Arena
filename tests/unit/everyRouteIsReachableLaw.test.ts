@@ -88,31 +88,59 @@ const ALLOWED_ORPHANS: Record<string, string> = {
   engine: 'diagnostic endpoint, probed by monitoring not by people',
   'stats/:userId': 'intentional owner-privacy boundary retained for old bookmarks',
 
-  // ── ORPHANED PRODUCT PAGES — real features with no door (phase 7) ────────
-  'tournament-lobby': 'ORPHANED PRODUCT PAGE',
-  'agent-management': 'ORPHANED PRODUCT PAGE - renders RateAuditPage, which also owns /rate-audit',
-  history: 'ORPHANED PRODUCT PAGE',
-  'messages/new': 'ORPHANED PRODUCT PAGE - compose flow',
-  'messages/clubs': 'ORPHANED PRODUCT PAGE - club conversation list',
-  'messages/clubs/:conversationId': 'ORPHANED PRODUCT PAGE - child of the club conversation list',
-  players: 'ORPHANED PRODUCT PAGE',
-  data: 'ORPHANED PRODUCT PAGE',
-  'player-sessions': 'ORPHANED PRODUCT PAGE - PlayerSessionsPage, 1,482 lines',
-  'agent-dashboard': 'ORPHANED PRODUCT PAGE - AgentDashboardPage, 1,544 lines',
-  hands: 'ORPHANED PRODUCT PAGE - redirect target with no inbound link',
-  'clubs/:clubId/agent-dashboard': 'ORPHANED PRODUCT PAGE - club-scoped agent dashboard',
-  'clubs/:clubId/dashboard': 'ORPHANED PRODUCT PAGE - superseded by dashboard-full, still routed',
-  'clubs/:clubId/messages': 'ORPHANED PRODUCT PAGE - club message centre',
-  invite: 'ORPHANED PRODUCT PAGE - bare invite page; /invite/:clubId is the linked one',
-  'report/:playerId': 'ORPHANED PRODUCT PAGE - player report form, no inbound link found',
-  'rakeback-dashboard': 'ORPHANED PRODUCT PAGE - RakebackDashboard, 535 lines',
-  'flash-pool': 'ORPHANED PRODUCT PAGE - FlashPoolPage, 450 lines',
-  waitlist: 'ORPHANED PRODUCT PAGE',
-  'notification-center': 'ORPHANED PRODUCT PAGE',
-  'anti-cheat': 'ORPHANED PRODUCT PAGE - AntiCheatPage, 1,175 lines',
-  xmtt: 'ORPHANED PRODUCT PAGE - XMTTPage, 551 lines',
-  'union-dashboard': 'ORPHANED PRODUCT PAGE - UnionDashboardPage, 3,105 lines',
-  'union-games': 'ORPHANED PRODUCT PAGE - UnionGamesPage, 643 lines',
+  // ── LEGACY REDIRECTS — no page here, only a door that forwards ───────────
+  //
+  // These were all filed as ORPHANED PRODUCT PAGE until Phase 7 read what they
+  // actually render. Not one of them is a page. They are compatibility
+  // entrances: an old URL arrives, something resolves where it should go now,
+  // and the visitor is forwarded. Being unreachable from navigation is the
+  // POINT - nothing should link to a legacy URL. The old reasons were not just
+  // vague, one was false: `agent-management` was recorded as "renders
+  // RateAuditPage", which it has not done for some time.
+  'tournament-lobby': 'legacy redirect to /tournaments',
+  history: 'legacy redirect to /hand-history',
+  hands: 'legacy redirect to /hand-history',
+  'notification-center':
+    'retired 2026-08-25 (Dan: "we need ONE DISPLAY") - redirects to /notifications',
+  'messages/new': 'legacy redirect to the World Hub messenger, carrying the compose target',
+  'messages/clubs': 'legacy redirect to the World Hub messenger',
+  'messages/clubs/:conversationId':
+    'legacy redirect to the World Hub messenger, carrying the conversation',
+  'clubs/:clubId/messages': 'legacy redirect to the World Hub messenger, carrying the club',
+  'agent-management': 'LegacyClubToolRedirect - resolves a club and forwards to its agents page',
+  players: 'LegacyClubToolRedirect - resolves a club and forwards to its members page',
+  data: 'LegacyClubToolRedirect - resolves a club and forwards to its data page',
+  invite: 'LegacyClubToolRedirect - resolves a club and forwards to /invite/:clubId',
+  'anti-cheat':
+    'LegacyClubToolRedirect - the club-scoped clubs/:clubId/anti-cheat is the linked one (phase 7)',
+
+  // ── RETIRED IN PHASE 7 — a second door onto something already reachable ──
+  //
+  // Each of these rendered a real page, and every one of those pages is still
+  // served somewhere a player can actually get to. What was orphaned was the
+  // duplicate URL, not the product. They are redirects now rather than
+  // deletions so that bookmarks and old push payloads still land.
+  'rakeback-dashboard': 'retired phase 7 - second rakeback display, redirects to /rakeback',
+  'player-sessions':
+    'retired phase 7 - global twin of clubs/:clubId/members, forwards through LegacyClubToolRedirect',
+  waitlist: 'retired phase 7 - the queue is joined from the lobby and table, redirects to /',
+  'union-dashboard':
+    'retired phase 7 - UnionDashboardPage serves at unions/:unionId/operations, redirects to /unions',
+  'union-games':
+    'retired phase 7 - UnionGamesPage serves at unions/:unionId/games, redirects to /unions',
+  'clubs/:clubId/dashboard':
+    'retired phase 7 - rendered the same ClubDataPage as clubs/:clubId/data, redirects there',
+
+  // ── ORPHANED PRODUCT PAGES — real features with no door ──────────────────
+  //
+  // What is left after Phase 7 read the other twenty-two. Both are built,
+  // player-facing game modes whose launch is a product decision rather than a
+  // wiring one, and Dan has them parked (2026-08-31) rather than connected or
+  // retired. Deleting an entry - by connecting or retiring the page - is still
+  // the goal.
+  xmtt: 'ORPHANED PRODUCT PAGE - XMTTPage, 551 lines, cross-club tournaments, parked by Dan',
+  'flash-pool':
+    'ORPHANED PRODUCT PAGE - FlashPoolPage, 450 lines, fast-fold lobby, 4 pools exist, parked by Dan',
 };
 
 function walk(dir: string, acc: string[] = []): string[] {
@@ -237,6 +265,10 @@ describe('the orphaned product pages are counted, not quietly tolerated', () => 
     );
     // A ceiling, not a target. It may fall; it must never rise, because a NEW
     // orphan is caught by the test above before it could be added here.
-    expect(queued.length).toBeLessThanOrEqual(24);
+    // Phase 7 took this from 24 to 2. Twelve of the original entries were
+    // legacy redirects that had been miscounted as pages, three were duplicate
+    // doors onto components already reachable, three were retired as
+    // duplicates, and four were connected to a navigation surface.
+    expect(queued.length).toBeLessThanOrEqual(2);
   });
 });

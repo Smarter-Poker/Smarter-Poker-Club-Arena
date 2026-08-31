@@ -30,6 +30,15 @@ test.describe('Club Data production experience', () => {
       timeout: 60_000,
     });
     await expect(page.locator('[data-page="club-data"]')).toBeVisible();
+    // The hero is intentionally available while an authenticated cold ledger
+    // read is still synchronizing. Settle on a real row before each experience
+    // assertion so Playwright's five-second default cannot misclassify that
+    // honest loading state as a missing ledger.
+    await expect(
+      page.getByRole('list', { name: 'Games' }).getByRole('listitem').first()
+    ).toBeVisible({
+      timeout: 60_000,
+    });
   });
 
   test('reflows without horizontal loss from desktop through 320px and 200% text', async ({

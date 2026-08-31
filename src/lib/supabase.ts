@@ -54,6 +54,28 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
 
     lock: (async (_name: any, _acquireTimeout: any, fn: any) => fn()) as any,
   },
+  global: {
+    // 2026-08-31: retry 503s PostgREST emits BEFORE executing the request
+    // (PGRST001/002/003 — connection/schema-cache/pool). During a schema-cache
+    // reload these otherwise fail live seating and dealing. Safe for POSTs:
+    // the statement was never run. The retry loop lives in
+    // src/lib/pgrstRetryFetch.ts and is dynamically imported on the FIRST
+    // retryable 503, so the entry bundle only pays for this shim (Track
+    // Bundle Size sits within ~1kB of its 320kB budget).
+    fetch: async (input, init) => {
+      const resp = await globalThis.fetch(input, init);
+      if (resp.status !== 503) return resp;
+      let code: unknown;
+      try {
+        code = (await resp.clone().json())?.code;
+      } catch {
+        return resp; // non-JSON 503 (gateway/maintenance) — not ours to retry
+      }
+      if (code !== 'PGRST001' && code !== 'PGRST002' && code !== 'PGRST003') return resp;
+      const { retryPgrst503 } = await import('./pgrstRetryFetch');
+      return retryPgrst503(input, init, resp);
+    },
+  },
   realtime: {
     params: {
       // 2026-08-22: was 0 ("Realtime is no longer used") — but that was never

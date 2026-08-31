@@ -118,6 +118,7 @@ describe('three-horizontal-line artwork can never return', () => {
       '/hub/club-arena/images/btn-hamburger.png',
       '/hub/club-arena/images/btn-hamburger.webp',
       '/hub/club-arena/images/global-header/menu.png',
+      '/hub/club-arena/images/global-header/global-header-approved-source.png',
       '/hub/club-arena/images/global-header/global-header-desktop.png',
     ]) {
       expect(worker).toContain(path);

@@ -175,6 +175,12 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     expect(step(WORKFLOW, 'Did the suite actually verify production?')).toContain('if: always()');
   });
 
+  it('preserves the production report when GitHub cancels at the job timeout', () => {
+    const upload = step(WORKFLOW, 'Upload the report when something is wrong on production');
+    expect(upload).toContain('if: always()');
+    expect(upload).toContain('failure() || cancelled()');
+  });
+
   it('emits the JSON the honesty check reads, from every playwright invocation', () => {
     for (const report of ['cashier.json', 'stats.json', 'sweep.json']) {
       expect(WORKFLOW, `no PLAYWRIGHT_JSON_OUTPUT_NAME for ${report}`).toContain(

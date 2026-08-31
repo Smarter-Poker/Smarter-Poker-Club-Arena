@@ -320,7 +320,11 @@ export default function TournamentRankingCard({
 
   return createPortal(
     <div className="trc2" role="dialog" aria-modal="true" aria-label="Tournament ranking">
-      <div className="trc2__backdrop" onClick={onDismiss} />
+      {/* Dan 2026-08-30: "USER MUST CLICK THE 'X' TO CLOSE IT." The backdrop
+          used to be a third dismiss control; a stray tap while reading the
+          result threw the card away. It is scenery now - the X (and Escape,
+          for keyboards) are the only ways out. */}
+      <div className="trc2__backdrop" />
 
       <div className="trc2__card">
         {/* ── Title bar ── */}

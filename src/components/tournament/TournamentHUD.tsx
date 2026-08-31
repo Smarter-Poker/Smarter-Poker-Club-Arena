@@ -32,6 +32,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { useAuthUser } from '../../hooks/useAuthUser';
 import { tournamentService } from '../../services/TournamentService';
 import type { Tournament } from '../../types/database.types';
 import { masterBus } from '../../core/MasterBus';
@@ -76,10 +77,16 @@ export function TournamentHUD({
   hidden = false,
   onOpen,
 }: TournamentHUDProps) {
+  const { user } = useAuthUser();
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [tick, setTick] = useState(0); // forces a 1s re-render for the countdown
   const [derivedRemaining, setDerivedRemaining] = useState<number | null>(null);
   const [derivedAvgStack, setDerivedAvgStack] = useState<number | null>(null);
+  /** Dan 2026-08-30: "IT SHOULD ALSO SAY YOUR CURRENT RANK AFTER THE COUNTDOWN
+      CLOCK AND BEFORE HOW MANY ARE LEFT." Derived from the same live player
+      rows the Left/Avg segments already read. Null while the hero holds no
+      live stack in this event (observer, eliminated). */
+  const [derivedRank, setDerivedRank] = useState<number | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const resyncRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -241,14 +248,27 @@ export function TournamentHUD({
       try {
         const { data, error } = await supabase
           .from('tournament_players')
-          .select('chips, status')
+          .select('user_id, chips, status')
           .eq('tournament_id', tournamentId)
           .in('status', ['playing', 'registered']);
         if (!error && mounted && Array.isArray(data)) {
-          const active = data as Array<{ chips?: number | null; status?: string }>;
+          const active = data as Array<{
+            user_id?: string;
+            chips?: number | null;
+            status?: string;
+          }>;
           setDerivedRemaining(active.length);
           const totalChips = active.reduce((s, r) => s + (r.chips || 0), 0);
           setDerivedAvgStack(active.length ? Math.trunc(totalChips / active.length) : 0);
+          /* Rank = 1 + players with strictly more chips. Ties share the better
+             rank, which is how every tournament lobby already counts it. */
+          const heroRow = user?.id ? active.find((r) => r.user_id === user.id) : undefined;
+          if (heroRow) {
+            const heroChips = heroRow.chips || 0;
+            setDerivedRank(1 + active.filter((r) => (r.chips || 0) > heroChips).length);
+          } else {
+            setDerivedRank(null);
+          }
         }
       } catch {
         /* optional enrichment — HUD renders fine without it */
@@ -258,7 +278,7 @@ export function TournamentHUD({
       mounted = false;
     };
     // Recompute occasionally as the level ticks over (cheap, and keeps it fresh).
-  }, [tournamentId, playersRemaining, averageStack, tournament?.current_level]);
+  }, [tournamentId, playersRemaining, averageStack, tournament?.current_level, user?.id]);
 
   if (hidden || !tournament) return null;
 
@@ -278,6 +298,32 @@ export function TournamentHUD({
   // Urgency color for the countdown (last 60s of a level).
   const timerColor = remaining <= 60 ? '#ff5252' : remaining <= 120 ? '#ffb74d' : '#4fc3f7';
 
+  /* ── REBUY / ADD-ON WINDOW BANNER (Dan 2026-08-30) ─────────────────────────
+     "WHEN ITS THE LAST LEVEL FOR REBUYS, OR THE ADD ON PERIOD IT SHOULD BE
+     SHOWN AND DISPLAYED IN THE LEVEL BAR."
+     Same arithmetic the engine runs (TournamentManagerBase): rebuys close
+     when the level index reaches late_reg_levels ?? rebuy_levels, so the LAST
+     level with rebuys is display level == that cap; the add-on window is the
+     addon_levels levels after it. Only shown on events that actually sell the
+     thing (a freezeout never wears either). */
+  const tRow = tournament as unknown as Record<string, unknown>;
+  const displayLevel = levelState.levelIndex + 1;
+  const rebuyCap = Number(tRow.late_reg_levels ?? tRow.rebuy_levels ?? 0);
+  const sellsRebuys =
+    Number(tRow.rebuy_cost ?? 0) > 0 ||
+    Number(tRow.rebuy_chips ?? 0) > 0 ||
+    tRow.is_reentry === true;
+  const sellsAddon = Number(tRow.addon_cost ?? 0) > 0 || Number(tRow.addon_chips ?? 0) > 0;
+  const addonWindow = Number(tRow.addon_levels ?? 1);
+  const windowBanner =
+    tournament.status === 'RUNNING' && rebuyCap > 0
+      ? sellsRebuys && displayLevel === rebuyCap
+        ? 'Last Rebuy Level'
+        : sellsAddon && displayLevel > rebuyCap && displayLevel <= rebuyCap + addonWindow
+          ? 'Add-On Period'
+          : null
+      : null;
+
   return (
     <div
       /* Named so the HUD layer can scale THIS BAR on small screens without
@@ -288,6 +334,7 @@ export function TournamentHUD({
       className="tournament-hud-bar"
       style={{
         display: 'inline-flex',
+        flexWrap: 'wrap',
         alignItems: 'stretch',
         gap: 0,
         borderRadius: 10,
@@ -323,6 +370,26 @@ export function TournamentHUD({
           : undefined
       }
     >
+      {/* Rebuy / add-on window strip - full width, above the segments */}
+      {windowBanner && (
+        <div
+          style={{
+            flexBasis: '100%',
+            textAlign: 'center',
+            padding: '3px 8px',
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: 0.8,
+            textTransform: 'uppercase',
+            color: '#ffd54f',
+            background: 'rgba(255,183,77,0.14)',
+            borderBottom: '1px solid rgba(255,183,77,0.25)',
+          }}
+        >
+          {windowBanner}
+        </div>
+      )}
+
       {/* Level / break badge */}
       <div
         style={{
@@ -399,6 +466,27 @@ export function TournamentHUD({
         )}
         {next?.isBreak && <span style={{ fontSize: 9, opacity: 0.6 }}>Break Next</span>}
       </div>
+
+      {/* Hero's live rank (Dan 2026-08-30: after the countdown, before Left) */}
+      {derivedRank !== null && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: '6px 12px',
+            borderLeft: '1px solid rgba(255,255,255,0.07)',
+          }}
+        >
+          <span
+            style={{ fontSize: 9, letterSpacing: 0.6, opacity: 0.7, textTransform: 'uppercase' }}
+          >
+            Rank
+          </span>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>{derivedRank}</span>
+        </div>
+      )}
 
       {/* Players remaining */}
       {shownPlayers !== undefined && (

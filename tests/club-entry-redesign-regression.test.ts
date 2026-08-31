@@ -63,11 +63,12 @@ describe('Club entry dialogs', () => {
   });
 });
 
-describe('Club Arena identity', () => {
-  it('uses the replaceable live Club Arena brand and generated emblem', () => {
-    expect(header).toContain('Club Arena by Smarter.Poker');
-    expect(header).toContain('vault-iris-emblem-v1-320.webp');
-    expect(header).toContain('className={styles.brandName}>Club Arena');
+describe('global Smarter.Poker identity', () => {
+  it('never covers the approved global wordmark with a Club Arena plate', () => {
+    expect(header).toContain('Smarter.Poker Global Header');
+    expect(header).not.toContain('Club Arena by Smarter.Poker');
+    expect(header).not.toContain('vault-iris-emblem-v1-320.webp');
+    expect(header).not.toContain('className={styles.brandName}>Club Arena');
     expect(existsSync(resolve(root, 'public/images/club-arena/vault-iris-emblem-v1.png'))).toBe(
       true
     );

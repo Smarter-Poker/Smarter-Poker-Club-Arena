@@ -260,7 +260,7 @@ export default function GlobalHeader() {
             were applied to the source file. The controls below become precise
             hit regions over the artwork at these breakpoints. */}
         <img
-          src={`${APPROVED_HEADER_ASSET}global-header-desktop.png`}
+          src={`${APPROVED_HEADER_ASSET}global-header-command-center-v1.png`}
           alt=""
           width={1648}
           height={168}
@@ -277,7 +277,7 @@ export default function GlobalHeader() {
               className={`${styles.artButton} ${styles.hamburgerBtn}`}
               aria-label="Open Menu"
             >
-              <img src={`${APPROVED_HEADER_ASSET}menu.png`} alt="Menu" />
+              <img src={`${APPROVED_HEADER_ASSET}command-center-v1.png`} alt="Command Center" />
             </button>
             <button
               onClick={handleBackClick}

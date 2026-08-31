@@ -27,6 +27,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   profileRow: { username: 'danimal5022', arena_avatar_url: '/avatars/table/free_samurai@2x.webp' },
   profileError: null as any,
+  profileFailuresRemaining: 0,
+  profileReadCount: 0,
   user: {
     id: 'user-1',
     username: 'danimal5022',
@@ -45,7 +47,17 @@ vi.mock('../../src/lib/supabase', () => {
     ilike: () => builder,
     neq: () => builder,
     update: () => builder,
-    maybeSingle: () => Promise.resolve({ data: mocks.profileRow, error: mocks.profileError }),
+    maybeSingle: () => {
+      mocks.profileReadCount += 1;
+      if (mocks.profileFailuresRemaining > 0) {
+        mocks.profileFailuresRemaining -= 1;
+        return Promise.resolve({
+          data: null,
+          error: { code: '08006', message: 'connection failure' },
+        });
+      }
+      return Promise.resolve({ data: mocks.profileRow, error: mocks.profileError });
+    },
   };
   return { supabase: { from: () => builder } };
 });
@@ -76,7 +88,10 @@ import CompleteProfileModal, {
 } from '../../src/components/modals/CompleteProfileModal';
 
 beforeEach(() => {
+  vi.useRealTimers();
   mocks.profileError = null;
+  mocks.profileFailuresRemaining = 0;
+  mocks.profileReadCount = 0;
   mocks.profileRow = {
     username: 'danimal5022',
     arena_avatar_url: '/avatars/table/free_samurai@2x.webp',
@@ -163,12 +178,37 @@ describe('The gate reads the profile row, not the session stub', () => {
     expect(result.current.showProfileModal).toBe(true);
   });
 
-  it('never gates on a query that did not answer', async () => {
+  it('recovers the same signed-in account after a transient profile read failure', async () => {
+    vi.useFakeTimers();
+    mocks.profileFailuresRemaining = 1;
+
+    const { result } = renderHook(() => useCompleteProfile({ id: 'user-4' }));
+
+    await act(async () => {
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(result.current.isReady).toBe(true);
+    expect(result.current.showProfileModal).toBe(false);
+    expect(result.current.profileStatus).toBe('complete');
+    expect(mocks.profileReadCount).toBe(2);
+  });
+
+  it('never gates on a query that remains unavailable after bounded retries', async () => {
+    vi.useFakeTimers();
     mocks.profileError = { code: '08006', message: 'connection failure' };
 
     const { result } = renderHook(() => useCompleteProfile({ id: 'user-4' }));
 
-    await waitFor(() => expect(result.current.isReady).toBe(true));
+    await act(async () => await Promise.resolve());
+    for (const delay of [1_000, 2_000, 4_000]) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(delay);
+        await Promise.resolve();
+      });
+    }
+    expect(mocks.profileReadCount).toBe(4);
+    expect(result.current.isReady).toBe(true);
     expect(result.current.showProfileModal).toBe(false);
     expect(result.current.profileStatus).toBe('unavailable');
   });

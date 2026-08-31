@@ -59,11 +59,24 @@ const HTML_FILES = [
 const SERVER_SRC = join(ROOT, 'server/src');
 const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 'test-results']);
 /**
- * The one file that is ALLOWED to contain these characters is the one whose job
- * is to remove them. On the first --fix run this script rewrote titleCase.ts's
- * own character class into `[--]` (a valid, meaningless range) and silently
- * disabled the stripper. titleCase.ts now writes them as \u escapes so there is
- * nothing here to match, and this exemption is the belt to that pair of braces.
+ * The files ALLOWED to contain these characters are the ones whose job is to
+ * REMOVE them. On the first --fix run this script rewrote titleCase.ts's own
+ * character class into `[--]` (a valid, meaningless range) and silently
+ * disabled the stripper.
+ *
+ * CORRECTED 2026-08-31. This note used to say titleCase.ts stored the
+ * characters as escapes and that the exemption was therefore only a belt to
+ * that pair of braces. That was false, and had been for some time:
+ * titleCase.ts lines 87-88 hold them as LITERAL characters
+ * in `EM_DASH_RUN` and `OTHER_DASHES`. The exemption is therefore still
+ * load-bearing, not belt-and-braces - remove it and the next --fix run breaks
+ * the stripper exactly as it did the first time. The same is true of
+ * popupStyle.ts, lobbyEntries.ts and BBJBasicPanel.tsx, each of which holds a
+ * dash class inside a normalising regex.
+ *
+ * Every one of these was re-read on 2026-08-31: none contains a dash in any
+ * position a player can see. If that ever changes, the file has stopped being
+ * a stripper and must come off this list.
  */
 const SKIP_FILES = new Set([
   'src/utils/titleCase.ts',
@@ -72,10 +85,29 @@ const SKIP_FILES = new Set([
   'src/components/lobby/lobbyEntries.ts',
   'scripts/ci/check-ui-text.mjs',
 ]);
-const EM_DASHES =
-  /[—–―‒]|\\u201[2-5]|\\u\{201[2-5]\}|&(?:m|n)dash;|&horbar;|&#(?:8210|8211|8212|8213);|&#x201[2-5];/i;
-const EM_DASHES_GLOBAL =
-  /[—–―‒]|\\u201[2-5]|\\u\{201[2-5]\}|&(?:m|n)dash;|&horbar;|&#(?:8210|8211|8212|8213);|&#x201[2-5];/gi;
+/**
+ * THE CSS ESCAPE FORM WAS THE ONE THAT GOT THROUGH.
+ *
+ * This gate's header says it reads CSS `content:` values, and it did - but it
+ * only ever looked for the CHARACTER and for JavaScript's `\\u2014`. CSS does
+ * not write it either way. CSS writes `content: '\\2014'`, backslash then bare
+ * hex, and that is exactly what sat in HandDetailView.css rendering an em dash
+ * on every run-2+ showdown row in production while this gate reported OK.
+ *
+ * Found 2026-08-31 by scanning the DEPLOYED BUNDLE rather than the source: one
+ * reachable stylesheet carried `content:"—"` after the build resolved it.
+ *
+ * The CSS escape is 1-6 hex digits, so `\\2014`, `\\02014` and `\\002014` are all
+ * the same character. The trailing guard stops `\\20145` - a different
+ * codepoint entirely - from matching.
+ */
+const CSS_ESCAPE = String.raw`\\0{0,3}201[2-5](?![0-9a-fA-F])`;
+const PATTERN =
+  String.raw`[—–―‒]|\\u201[2-5]|\\u\{201[2-5]\}|` +
+  CSS_ESCAPE +
+  String.raw`|&(?:m|n)dash;|&horbar;|&#(?:8210|8211|8212|8213);|&#x201[2-5];`;
+const EM_DASHES = new RegExp(PATTERN, 'i');
+const EM_DASHES_GLOBAL = new RegExp(PATTERN, 'gi');
 
 const fix = process.argv.includes('--fix');
 

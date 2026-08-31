@@ -441,7 +441,14 @@
 }
 
 .hdv__sd-net.is-blank::after {
-  content: '\2014';
+  /* A HYPHEN, NOT AN EM DASH (Dan: em bars are banned).
+     This declaration used to carry an em dash written as a CSS unicode escape,
+     and it rendered on every run-2+ showdown row in production. It survived
+     because check-ui-text advertises that it reads CSS `content:` values and
+     only ever looked for the character itself and for the JavaScript escape
+     form - never for the CSS escape form, which is the one CSS actually uses.
+     The gate reads both now. */
+  content: '-';
   color: rgba(255, 255, 255, 0.25);
 }
 

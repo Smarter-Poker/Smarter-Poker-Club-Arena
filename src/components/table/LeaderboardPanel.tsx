@@ -214,7 +214,7 @@ export function LeaderboardPanel({
             </div>
           ) : players.length === 0 ? (
             <div className="leaderboard-panel__empty">
-              <span className="leaderboard-panel__empty-icon">≡</span>
+              <span className="leaderboard-panel__empty-icon">☆</span>
               <span className="leaderboard-panel__empty-text">No Rankings Yet</span>
               <span className="leaderboard-panel__empty-hint">
                 Play Some Hands To Appear On The Leaderboard

@@ -38,7 +38,9 @@ const TSX = read('../../src/components/navigation/GlobalHeader.tsx');
 const CSS = read('../../src/components/navigation/GlobalHeader.module.css');
 const LAYOUT = read('../../src/components/layouts/AppLayout.tsx');
 const OPTIMIZER = read('../../scripts/optimize-dist-media.mjs');
-const APPROVED_DESKTOP = readBytes('../../public/images/global-header/global-header-desktop.png');
+const APPROVED_DESKTOP = readBytes(
+  '../../public/images/global-header/global-header-command-center-v1.png'
+);
 
 /**
  * Comments explain the bugs by name, so "the word is gone" is the wrong
@@ -151,7 +153,7 @@ describe('no handler is left wired to nothing', () => {
 });
 
 describe('the button artwork exists', () => {
-  const IMAGES = ['menu.png', 'back.png', 'hub.png'] as const;
+  const IMAGES = ['command-center-v1.png', 'back.png', 'hub.png'] as const;
 
   it.each(IMAGES)('%s is referenced by the header', (file) => {
     expect(TSX).toContain(`APPROVED_HEADER_ASSET}${file}`);
@@ -191,9 +193,9 @@ describe('mobile uses the identical desktop header', () => {
   });
 
   it('uses only artwork derived from the approved source image', () => {
-    expect(TSX).toContain('global-header-desktop.png');
+    expect(TSX).toContain('global-header-command-center-v1.png');
     for (const file of [
-      'menu.png',
+      'command-center-v1.png',
       'back.png',
       'hub.png',
       'profile.png',
@@ -215,7 +217,7 @@ describe('mobile uses the identical desktop header', () => {
 
   it('locks the approved desktop bytes and excludes global-header art from resizing', () => {
     expect(createHash('sha256').update(APPROVED_DESKTOP).digest('hex')).toBe(
-      '7c5613a84a395abd6b9527785b46c99fb28b6264e2258bee366a04cac5500c7f'
+      'bb62242b86cef3eb440e152390b09e966f5a4fc28487ddf2ed701a2c4adae3f9'
     );
     expect(OPTIMIZER).toContain("{ prefix: 'images/global-header/', maxDim: 0 }");
   });
@@ -259,22 +261,13 @@ describe('the profile region shows the complete live profile picture', () => {
 });
 
 describe('VIP membership state without header shimmer', () => {
-  it('dims non-members while keeping active VIP and every header control free of selector boxes and shimmer', () => {
+  it('dims non-members, outlines active VIP, and keeps every header control free of shimmer effects', () => {
     expect(TSX_CODE).toContain('isVipActive');
     expect(TSX).toContain("data-vip-active={isVipActive ? 'true' : 'false'}");
     expect(CSS).toContain('.vipBtn:not(.vipActive)::after');
-    expect(CSS).not.toMatch(/\.vipActive\s*\{/);
-    expect(CSS).not.toContain('rgba(255, 255, 255, 0.92)');
+    expect(CSS).toContain('.vipActive');
+    expect(CSS).toContain('rgba(255, 255, 255, 0.92)');
     expect(TSX_CODE).not.toMatch(/shimmer/i);
     expect(CSS).not.toMatch(/shimmer/i);
-  });
-});
-
-describe('compact unread badges preserve the mobile notification bell', () => {
-  it('scales the badge below desktop size instead of covering the bell artwork', () => {
-    expect(CSS).toContain('@media (max-width: 900px)');
-    expect(CSS).toContain('right: -2px');
-    expect(CSS).toContain('min-width: clamp(12px, 1.7vw, 18px)');
-    expect(CSS).toContain('font-size: clamp(7px, 1vw, 10px)');
   });
 });

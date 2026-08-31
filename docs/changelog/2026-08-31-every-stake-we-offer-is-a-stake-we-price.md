@@ -171,3 +171,70 @@ percentage and no cash figure of its own, and
 the panel calls the resolver, passes the sliders in, contains no literal rate,
 and that a greedy override (10 BB, worth $20 at 1/2) is still displayed as the
 $5 the schedule allows.
+
+## CORRECTION: 0.05/0.10 is a live stake, and this is a real price change
+
+Written after another agent caught it, and it corrects the impact figures
+above. **Both the direction and the reasoning stand; the size does not.**
+
+This changelog said "of 972 cash tables, exactly TWO sit on a stake whose price
+moves ... Both are closed", and concluded the change was near-dormant. That was
+measured against the `tables` table — two rows at 0.05/0.10, both `closed` — and
+`tables` is the wrong place to look for whether a stake is being played.
+
+Measured against `hand_history` instead:
+
+    0.05/0.10   1,185 raked hands in the last 48 hours
+                top rake 3.00, exactly the nano tier cap
+                60 of those hands took MORE than the new 1.50 cap allows
+
+So 0.05/0.10 is an active stake, not a dormant one, and lowering its cap from
+$3.00 to $1.50 reduces what the house takes on roughly sixty hands every two
+days. Every movement is still downward and no player pays more than before —
+but this is a live revenue change and it was reported as a rounding error.
+
+**The lesson is the same one this audit keeps re-learning.** A count of
+configuration rows is not a measure of activity. `tables` says what exists;
+`hand_history` says what is being played. I checked the first and reported it
+as though it were the second.
+
+## Why the database mirror deliberately does NOT carry these rows yet
+
+The two migrations that pushed the six rows and the proportional fallback into
+`ca_rake_schedule` were applied ahead of the code that justifies them, and that
+was a mistake — `20260831145500_the_alarm_measures_the_engine_not_our_opinion_of_it.sql`
+reverses their effect on cap resolution and is right to.
+
+`ca_rake_schedule` exists to mirror what the ENGINE charges, so the rake-law
+alarm can tell whether a hand was raked above its cap. The engine's schedule is
+`RAKE_SCHEDULE` in the deployed bundle. Until this branch merges and publishes,
+that bundle still has fourteen rows and no proportional fallback — so a mirror
+carrying twenty rows and a 15 BB bound would have answered 1.50 for a stake the
+engine caps at 3.00, and filed **60 correct hands as `over_cap` criticals**. An
+alarm that cries wolf on correct behaviour teaches whoever is on shift to
+scroll past it.
+
+The six rows therefore stay in the table flagged `source = 'proposed'`,
+excluded from cap resolution and surfaced by `fn_rake_schedule_drift()` as a
+question rather than an answer. The tier-cascade fix from the same batch was a
+genuine bug fix and was kept.
+
+### THE DEPLOY COUPLING THIS CREATES — do not lose this
+
+When this branch merges and the new bundle is serving, the engine WILL cap
+0.05/0.10 at 1.50 and the mirror will still say 3.00. The alarm then errs the
+other way: too lenient, missing real over-cap hands rather than inventing fake
+ones. So the flip is required, not optional:
+
+1. Confirm production serves a bundle containing the twenty-row
+   `RAKE_SCHEDULE` (check `/api/health`, then the club-arena sync commit).
+2. `UPDATE public.ca_rake_schedule SET source = 'engine_mirror' WHERE source = 'proposed';`
+3. Restore the proportional fallback in `fn_effective_rake_cap`
+   (`LEAST(t.rake_cap, round(p_bb * public.fn_unscheduled_cap_bb(), 2))`),
+   keeping the max_bb cascade.
+4. Re-run `fn_rake_schedule_drift()` and confirm it reports no drift.
+
+A schedule that lives in a deployed bundle AND in a database table cannot be
+changed atomically. That is an argument for the database being the single
+authority and the engine reading it, which is written up as the standing
+recommendation.

@@ -15,7 +15,9 @@ import {
   canMoveUp,
   shouldMoveDown,
   bankrollBuyIn,
+  isBroke,
   sessionVerdict,
+  bestAffordableGame,
   topUpAllowance,
   canOpenAnotherTable,
 } from './HorseBankroll.js';
@@ -83,6 +85,13 @@ describe('RULE 1+2+3 — sitting, moving up, moving down', () => {
     expect(canSit(justEnoughToSit, ref, std)).toBe(true);
     expect(canMoveUp(justEnoughToSit, ref, std)).toBe(false);
   });
+
+  it('it drops down BEFORE it is broke — that is the point of moving down', () => {
+    const ref = referenceBuyIn(2, 80, 400);
+    const thin = ref * (std.moveDownAt - 1);
+    expect(shouldMoveDown(thin, ref, std)).toBe(true);
+    expect(isBroke(thin, 80)).toBe(false); // still has chips; it moves down anyway
+  });
 });
 
 describe('RULE 4 — never bring too much of the roll to one table', () => {
@@ -137,6 +146,50 @@ describe('RULE 5+6 — book the win, stop the loss', () => {
     // sat with 400, now has 300: stack is big, session is -100
     expect(sessionVerdict(-100, ref, std)).toBe('play_on');
     expect(sessionVerdict(-ref * 4, ref, std)).toBe('stop_loss');
+  });
+});
+
+describe('RULE 7 — broke means freerolls', () => {
+  it('under one buy-in of the cheapest game there is no cash play', () => {
+    expect(isBroke(50, 80)).toBe(true);
+    expect(isBroke(80, 80)).toBe(false);
+  });
+
+  it('bestAffordableGame returns null when nothing is covered — the freeroll path', () => {
+    const std = bankrollPolicyFor(
+      ['x1', 'x2', 'x3', 'x4', 'x5'].find((i) => bankrollTemperamentFor(i) === 'standard')!
+    );
+    expect(bestAffordableGame(120, LADDER, std)).toBeNull();
+  });
+});
+
+describe('the ladder as a whole', () => {
+  const std = bankrollPolicyFor(
+    ['x1', 'x2', 'x3', 'x4', 'x5'].find((i) => bankrollTemperamentFor(i) === 'standard')!
+  );
+
+  it('the 10,000 reset roll picks 1/2, not the 2/5 it cannot sustain', () => {
+    const g = bestAffordableGame(START, LADDER, std);
+    expect(g?.bigBlind).toBe(2);
+  });
+
+  it('a big roll takes the biggest game it genuinely covers', () => {
+    const g = bestAffordableGame(50_000, LADDER, std);
+    expect(g?.bigBlind).toBe(5);
+  });
+
+  it('MOVING UP is held to the stricter bar than already being there', () => {
+    const ref5 = referenceBuyIn(5, 200, 1000); // 500
+    const roll = ref5 * std.buyInsToSit + 1; // enough to SIT at 2/5, not to move up
+    expect(bestAffordableGame(roll, LADDER, std, 5)?.bigBlind).toBe(5); // already there: stays
+    expect(bestAffordableGame(roll, LADDER, std, 2)?.bigBlind).toBe(2); // coming from 1/2: does not jump
+  });
+
+  it('as the roll shrinks the horse walks back DOWN the ladder', () => {
+    const seq = [50_000, 10_000, 3_000, 120].map(
+      (b) => bestAffordableGame(b, LADDER, std)?.bigBlind ?? null
+    );
+    expect(seq).toEqual([5, 2, null, null]);
   });
 });
 

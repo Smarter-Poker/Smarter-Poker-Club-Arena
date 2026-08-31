@@ -258,21 +258,6 @@ describe('WIRING — the module exists and something calls it', () => {
     expect(TOURNEY).toMatch(/bankrollEvent\('freeroll_entered_broke', Math\.min\(/);
   });
 
-  it('a seated horse that can no longer afford the game STANDS UP', () => {
-    /* The seating gate only ever ran BEFORE a horse sat. After buy-ins and
-       reloads a wallet can fall under the level that justifies the stake,
-       and nothing stood it up for that — so the ladder could demote a horse
-       in principle while it went on playing a game it could not afford. */
-    const ROT = read('services/HorseSessionRotator.ts');
-    expect(ROT).toContain('shouldMoveDown(');
-    expect(ROT).toContain("bankrollEvent('left_underrolled')");
-    /* At the LOOSER bar: a horse that merely dips under the ENTRY bar mid
-       session finishes what it is doing. Using canSit here would stand a
-       horse up the moment it dropped below 25 buy-ins and re-seat it at 25,
-       which is the flap the three thresholds exist to prevent. */
-    expect(ROT).toMatch(/shouldMoveDown\(\s*rollNow,/);
-  });
-
   it('BOTH rebuy sites ask the same question', () => {
     for (const [name, src] of [
       ['settlement', SETTLE],

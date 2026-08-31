@@ -144,20 +144,11 @@ describe('the shipped wiring — the rule is worthless if the seater does not co
     // The call must be in the candidate filter, which is the only place that
     // runs before the weighted pick. Sizing a buy-in from the blinds - which
     // the file already did - never influenced WHICH horse was chosen.
-    /* PIN MOVED 2026-08-31 to `resolveStakeBand`, which replaced the exact
-       `stakeBandAllows` match so a horse can move DOWN a stake when its roll
-       shrinks instead of falling off the floor. What this test guards is
-       unchanged and still true: the band decision happens in the candidate
-       filter, before the weighted pick, so it influences WHICH horse is
-       chosen rather than only how much it brings. */
-    expect(src).toContain('resolveStakeBand({');
-    const filterAt = src.indexOf('const tableBand = stakeBandForBigBlind(table.big_blind);');
+    expect(src).toContain('stakeBandAllows(h.id, table.big_blind)');
+    const filterAt = src.indexOf('stakeBandAllows(h.id, table.big_blind)');
     const pickAt = src.indexOf('const weighted = pool');
     expect(filterAt).toBeGreaterThan(0);
     expect(filterAt).toBeLessThan(pickAt);
-    // AND THE CEILING HOLDS: the seater compares against the resolved band,
-    // which resolveStakeBand can never raise above the one the horse earned.
-    expect(src).toContain('if (tableBand !== allowedBand) return false;');
   });
 
   it('the human-rescue fallback widens the HOUR, never the band', async () => {

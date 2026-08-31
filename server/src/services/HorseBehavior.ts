@@ -317,15 +317,6 @@ export function stakeBandFor(horseId: string): HorseStakeBand {
  * time to seat a 10/25 name in a 0.50/1 game. A quiet high-stakes table is
  * ordinary; a nosebleed regular in a micro game is the tell.
  */
-/**
- * SUPERSEDED FOR SEATING, 2026-08-31, and kept because the rule it states is
- * still true — a horse never plays ABOVE its band. What changed is that an
- * exact match also forbade playing BELOW it, so a horse whose roll could no
- * longer carry its own band stopped playing instead of moving down (175 of 584
- * were banded into a stake with no open table at all). The seeding path now
- * asks `resolveStakeBand` in HorseStakeDescent, which treats this band as a
- * CEILING and lets the bankroll pick beneath it. Use that for any new caller.
- */
 export function stakeBandAllows(horseId: string, bigBlind: number): boolean {
   return stakeBandFor(horseId) === stakeBandForBigBlind(bigBlind);
 }

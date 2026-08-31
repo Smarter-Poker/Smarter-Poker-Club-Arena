@@ -43,13 +43,7 @@ export type BankrollEvent =
   /** Entered a freeroll while unable to afford any paid game. */
   | 'freeroll_entered_broke'
   /** Could not afford ANY open cash game — the move-down ladder ran out. */
-  | 'ladder_exhausted'
-  /** Dropped a stake band because the roll no longer carried the old one. */
-  | 'moved_down_a_stake'
-  /** Climbed back toward the earned band after clearing the stricter bar. */
-  | 'moved_up_a_stake'
-  /** Stood up mid-session: the roll no longer justifies this stake. */
-  | 'left_underrolled';
+  | 'ladder_exhausted';
 
 /**
  * COUNTERS ACCUMULATE; GAUGES DO NOT.

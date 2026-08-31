@@ -38,7 +38,6 @@ import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { queueUnbankedFee } from '../services/FeeReconciler.js';
 import { selectRevealedShowdownResults } from './revealedShowdown.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
-import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 
 /**
  * How long a finished hand stays purchasable. A rabbit hunt is an impulse, and
@@ -1762,14 +1761,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         for (const horse of bustHorses) {
           const currentRebuys = this.horseRebuys.get(horse.user_id) || 0;
 
-          /**
-           * Stop-loss. This was a hard-coded `>= 2` for every horse alike;
-           * it is now the temperament's own figure, and `standard` — six in
-           * ten of the fleet — still stops at exactly the same place, so this
-           * is a spread around today's behaviour rather than a move away from
-           * it. A nit gives up a buy-in earlier, a gambler one later.
-           */
-          if (atRebuyStopLoss(horse.user_id, currentRebuys)) {
+          // Stop-Loss Bankroll logic: if they have rebought twice already (lost 3 buy-ins total), they leave
+          if (currentRebuys >= 2) {
             await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
             // Round 57: clear FSM tracking so the horse doesn't leave a ghost
             // entry in disconnect_states.
@@ -1786,30 +1779,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             continue;
           }
 
-          /**
-           * WHETHER, and HOW MUCH. `bigBlind * 100` ignored the table's own
-           * limits and the horse's roll both; a horse that can no longer
-           * afford this stake now stands up instead of reloading it forever.
-           * Zero is a decision to leave and takes the same branch a failed
-           * funding call already took. The chips still come from the club
-           * treasury — this changes the answer, not the source.
-           */
-          const rebuyAmount = await horseRebuyAmount({
-            clubId: this.tableInfo?.club_id || '',
-            userId: horse.user_id,
-            bigBlind: Number(this.tableInfo?.big_blind) || 0,
-            minBuyIn: this.tableInfo?.min_buy_in as number | null | undefined,
-            maxBuyIn: this.tableInfo?.max_buy_in as number | null | undefined,
-            rebuysTaken: currentRebuys,
-          });
-          const success =
-            rebuyAmount > 0 &&
-            (await autoRebuyHorse(
-              this.tableId,
-              horse.user_id,
-              rebuyAmount,
-              this.tableInfo?.club_id || ''
-            ));
+          const rebuyAmount = this.tableInfo?.big_blind ? this.tableInfo.big_blind * 100 : 200;
+          const success = await autoRebuyHorse(
+            this.tableId,
+            horse.user_id,
+            rebuyAmount,
+            this.tableInfo?.club_id || ''
+          );
           if (success) {
             horse.stack = rebuyAmount;
             this.horseRebuys.set(horse.user_id, currentRebuys + 1);

@@ -59,10 +59,7 @@ describe('both decision points consult it', () => {
       SRC.indexOf('const success = await this.seatHorse')
     );
     expect(sizing).toContain('bankrollBuyIn(');
-    /* The refusal now records WHY before it skips (HorseBankrollTelemetry),
-       so this pins the two things that matter — a zero cap is tested, and it
-       skips the seat — rather than the exact one-line shape it used to have. */
-    expect(sizing).toMatch(/if \(capped <= 0\) \{[\s\S]{0,200}?continue;/);
+    expect(sizing).toMatch(/if \(capped <= 0\) continue;/);
   });
 
   it('the bankroll gate sits alongside the stake band, not instead of it', () => {

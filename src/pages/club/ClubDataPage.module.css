@@ -25,6 +25,8 @@
   min-height: 100dvh;
   margin: 0 auto;
   padding: 0 1.25rem max(var(--bottom-nav-clearance, 86px), env(safe-area-inset-bottom));
+  padding-left: max(1.25rem, env(safe-area-inset-left));
+  padding-right: max(1.25rem, env(safe-area-inset-right));
   overflow-x: hidden;
   overflow-x: clip;
   color: var(--silver);
@@ -102,6 +104,7 @@
 .retryButton,
 .filterUtility button,
 .linkBtn {
+  min-width: 44px;
   min-height: 44px;
   border: 1px solid rgba(174, 189, 203, 0.34);
   border-radius: 3px;
@@ -116,6 +119,7 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
+  touch-action: manipulation;
   transition:
     border-color 150ms ease,
     color 150ms ease,
@@ -347,6 +351,7 @@
   background: #0c131a;
   font-size: 1rem;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .arrow:disabled {
@@ -406,6 +411,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .preset.active {
@@ -486,6 +492,7 @@
   letter-spacing: 0.14em;
   text-transform: uppercase;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .tab.active {
@@ -541,7 +548,7 @@
   line-height: 1;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .tileLabel {
@@ -757,6 +764,7 @@
   letter-spacing: 0.05em;
   white-space: nowrap;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .chip.active {
@@ -846,6 +854,7 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .loadMore:disabled {
@@ -1132,13 +1141,16 @@
 
 @media (max-width: 680px) {
   .page {
-    padding-inline: 0.7rem;
+    padding-left: max(0.7rem, env(safe-area-inset-left));
+    padding-right: max(0.7rem, env(safe-area-inset-right));
   }
 
   .header {
     grid-template-columns: auto 1fr;
-    margin-inline: -0.7rem;
-    padding-inline: 0.7rem;
+    margin-left: calc(0px - max(0.7rem, env(safe-area-inset-left)));
+    margin-right: calc(0px - max(0.7rem, env(safe-area-inset-right)));
+    padding-left: max(0.7rem, env(safe-area-inset-left));
+    padding-right: max(0.7rem, env(safe-area-inset-right));
   }
 
   .headerIdentity {
@@ -1259,9 +1271,21 @@
   }
 
   .rangeChip {
-    gap: 0.35rem;
+    display: grid;
+    gap: 0.2rem;
     padding-inline: 0.5rem;
     font-size: 0.66rem;
+    text-align: center;
+  }
+
+  .rangeDivider {
+    display: none;
+  }
+
+  .rangeTz {
+    padding-top: 0.25rem;
+    border-top: 1px solid rgba(174, 189, 203, 0.18);
+    border-left: 0;
   }
 
   .summary {
@@ -1293,6 +1317,33 @@
     align-items: flex-start;
     flex-direction: column;
     gap: 0.35rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .summary,
+  .playerTotals {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tile {
+    min-height: 104px;
+  }
+
+  .playerTotals {
+    gap: 0.55rem;
+  }
+}
+
+@media (forced-colors: active) {
+  .preset.active,
+  .tab.active,
+  .chip.active,
+  .invoiceOwed,
+  .invoicePaid,
+  .invoiceCredit {
+    outline: 2px solid CanvasText;
+    outline-offset: -2px;
   }
 }
 

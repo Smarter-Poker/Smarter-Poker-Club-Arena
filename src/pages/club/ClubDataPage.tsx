@@ -1450,7 +1450,7 @@ export default function ClubDataPage() {
   }
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-page="club-data">
       <header className={styles.header}>
         <button
           type="button"

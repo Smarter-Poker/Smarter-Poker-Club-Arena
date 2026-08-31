@@ -17,6 +17,7 @@ import {
   AUTH_STORAGE_KEY,
 } from './authUtils';
 import { reportError } from '../utils/errorReporter';
+import { withPgrstRetry } from './pgrstRetryFetch';
 
 // Environment validation - follows VITE_ prefix law
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -53,6 +54,13 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
     // @supabase/supabase-js minor versions (generic vs. concrete overloads).
 
     lock: (async (_name: any, _acquireTimeout: any, fn: any) => fn()) as any,
+  },
+  global: {
+    // 2026-08-31: retry 503s PostgREST emits BEFORE executing the request
+    // (PGRST001/002/003 — connection/schema-cache/pool). During a schema-cache
+    // reload these otherwise fail live seating and dealing. Safe for POSTs:
+    // the statement was never run. See src/lib/pgrstRetryFetch.ts.
+    fetch: withPgrstRetry(),
   },
   realtime: {
     params: {

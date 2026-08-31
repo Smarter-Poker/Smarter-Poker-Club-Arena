@@ -216,6 +216,39 @@ Never say "should be live in a few minutes" or "deploy triggered."
 - RLS: Protects hole cards (users can only read own cards)
 - Schema changes MUST be SQL migration files in `supabase/migrations/`
 
+### Production DDL policy (added 2026-08-31 after the PGRST002 503 outage — BINDING)
+
+Every DDL statement (CREATE/ALTER of tables, views, functions, types, triggers,
+COMMENT) fires Supabase's `pgrst_ddl_watch` event trigger, which makes PostgREST
+reload its entire schema cache. On this database (~970 relations, ~2,700
+functions) one reload takes **~28 seconds**. On 2026-08-31 the `authenticator`
+role's default 8s statement_timeout killed that reload query every time, and the
+resulting PGRST002 retry loop 503'd up to 28% of live traffic (seating and
+dealing included). Fixed by the `fix_pgrst002_schema_cache_timeout` migration:
+`authenticator` statement_timeout is now 5min (service_role pinned to its
+previous effective 8s). Do not revert either setting in any "hardening" pass.
+
+Rules for every agent working this project:
+
+1. Wrap ALL DDL for one change in a SINGLE transaction (one migration = one
+   BEGIN/COMMIT). Postgres coalesces the reload NOTIFYs inside one transaction;
+   ten separate statements outside a transaction = up to ten 28-second reloads.
+2. Do not apply migrations in a retry loop. If a migration fails, read the
+   error; re-running the whole batch every minute multiplies reloads.
+3. No DDL probes against production (CREATE TEMP TABLE is fine — pg_temp is
+   filtered — but CREATE/DROP INDEX cycles, scratch tables, or CREATE OR
+   REPLACE FUNCTION as a "test" are not).
+4. Batch related migrations. During US daytime peak, prefer one consolidated
+   apply over many small ones.
+5. GRANT/REVOKE do NOT trigger reloads (not in pgrst_ddl_watch's list) — runtime
+   grant churn is a non-issue for this outage class.
+6. Client resilience for the residual window lives in
+   `src/lib/pgrstRetryFetch.ts` (web) and the `global.fetch` wrapper in
+   `server/src/services/supabase/client.ts` (engine): both retry only
+   pre-execution 503s (PGRST001/002/003). Do not remove them, and do not
+   "extend" them to retry other 5xx — replaying an executed write is a
+   money-integrity hazard.
+
 ---
 
 ## 3. ACTIVE MIGRATION

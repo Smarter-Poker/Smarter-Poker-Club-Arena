@@ -41,6 +41,31 @@ Only **1,040** rows in that table match the prefix at all. The scan throws away
 Now the correction rows are collected ONCE in a `MATERIALIZED` cte and
 anti-joined on a parsed exit id.
 
+## CORRECTION (added the same day, on audit): which caller was actually broken
+
+The text above says the alarm "had stopped finishing" without saying for whom,
+and that reads as though the scheduled reconciliation was failing nightly. It
+was not, and the distinction matters to anyone deciding how urgent this was.
+
+Checked afterwards, against the live database:
+
+```
+reconcile_ledger_nightly   calls fn_unaccounted_seat_exits('1 day'::interval)
+fn_chip_integrity_report   calls fn_unaccounted_seat_exits()        <- the default
+```
+
+So the **6-hourly reconciliation job was never affected** - its 1-day window
+always completed, and it has been filing `seat_stack_exit` rows correctly the
+whole time. The caller that hit the timeout is `fn_chip_integrity_report()`,
+which takes the 7-day default, and the World Hub admin ledger surface
+(`pages/api/horses/club-arena-admin.js`) which calls the RPC with both arguments
+defaulted. Those are the surfaces a human looks at when they want to know
+whether chips have gone missing, and they were the ones timing out.
+
+Still worth fixing, for exactly that reason. But "the nightly alarm was down"
+would have been wrong, so it is corrected here rather than left to mislead the
+next reader.
+
 ## A latent wrong answer went with it
 
 `ILIKE 'Correction: seat exit ' || e.id || '%'` is a **prefix match on a

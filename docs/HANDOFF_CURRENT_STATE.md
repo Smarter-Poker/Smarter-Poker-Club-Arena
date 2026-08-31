@@ -3,6 +3,26 @@
 **Written:** 2026-08-31 ~12:30 UTC · **Author:** outgoing agent (Cowork session)
 **Status at handoff:** Phases 1-5 of 8 COMPLETE and merged. Phase 6 NOT STARTED.
 
+> **SUPERSEDED 2026-08-31 ~14:00 UTC — PHASE 6 IS NOW COMPLETE (PRs #2184,
+> #2201).** Everything below about Phase 6 being unstarted is stale; the rest of
+> the document still holds. Read
+> `docs/audit/2026-08-31-e2e-that-can-report-a-verdict.md` and
+> `docs/changelog/2026-08-31-e2e-honesty.md`, then **resume at Phase 7 (the 24
+> orphaned pages — needs Dan's per-page call)**.
+>
+> Two things the next agent should not have to rediscover:
+>
+> 1. **The E2E credential question in §19 is already answered.** `SP_EMAIL`,
+>    `SP_PASS`, `SP_EMAIL_2`, `SP_PASS_2` were added as repository secrets on
+>    2026-08-30. Do not ask Dan again.
+> 2. **Production is intermittently returning HTTP 503 to a large share of API
+>    traffic**, with `PGRST002 - Could not query the database for the schema
+cache` behind it. 15,729 503s in one five-minute window (about 28% of
+>    requests in that window), then zero, then thousands again. It hits
+>    `table_seats` and `insert_hole_cards`, so live seating and dealing are
+>    affected. **This has no owner yet and is not a Club Arena spec defect.** The
+>    post-deploy suite is red because of it, and those specs should STAY red.
+
 > **Read `AGENT-PLAYBOOK.md` and `CLAUDE.md` before touching anything.** This
 > document is the session record; those are the binding law.
 
@@ -744,7 +764,8 @@ line from `ALLOWED_ORPHANS`** and the ratchet keeps the number from rising.
       npx tsc --noEmit
 6.  DO NOT MODIFY: the 9 dirty files in the shared clone (§10);
     supabase/migrations history; other agents' .agent/handoffs/*.
-7.  RESUME AT: Phase 6 of 8 — E2E honesty (§21).
+7.  RESUME AT: Phase 7 of 8 — the 24 orphaned pages (§21). Phase 6 completed
+    2026-08-31 in PRs #2184 and #2201; see the note at the top of this file.
 ```
 
 ---
@@ -820,3 +841,37 @@ the statistics environment and why `idx_scan` lies, the column-level grants on
 `profiles`, and each gate's real coverage versus its documented promise. Run the
 §22 checklist, read the three audits in `docs/audit/`, and begin at Phase 6. The
 five law tests are your regression net: if they pass, phases 1-5 are intact.
+
+---
+
+## 26. Phase 6 Addendum (2026-08-31, incoming agent)
+
+**Phase 6 of 8 — E2E honesty — is COMPLETE.** PRs #2184 and #2201, both merged,
+both verified against production.
+
+The post-deploy run could report success four ways without verifying anything:
+skips were never counted (Playwright exits 0 when everything skips); the
+signed-out fallback in `global-setup.ts` was silent; a failed Cashier step
+**skipped** the entire broader sweep despite its own comment promising the
+opposite; and inside that sweep `set -e` let a red Stats invocation abort the
+route invocation behind it.
+
+The "one genuine failure" named in §16 was **not a defect**. The workflow
+correctly stopped pinning to a sha, but the CHECKOUT never followed, so it tested
+the bundle players had using assertions from a newer commit. That is now
+reconciled: assertions come from the deployed commit when it is an ancestor, and
+the drift is reported loudly when it is not. The harness (`global-setup.ts`,
+`support/`) deliberately stays at HEAD — swapping it wholesale would have
+restored the signed-out fallback on exactly the runs the fix was written for.
+
+**New guardrail:** `tests/unit/postDeployE2eHonestyLaw.test.ts` (17 tests) joins
+the five law tests in §3 as the regression net. `scripts/ci/e2e-may-skip-entirely.json`
+is a ratchet and ships **empty** — the first measured run had all 23 spec files
+executing something.
+
+**First real verdict** (run `33398218482`): 148 executed, 4 skipped, 3 failed,
+1 flaky, 23 spec files. `routes/hamburger-menu.spec.ts` executed 33 tests against
+production — Phases 1 and 2 verified on the live site for the first time.
+
+**Still open, and now measured:** the PGRST002/503 storms above. Someone needs to
+own that. It is the single loudest thing in production right now.

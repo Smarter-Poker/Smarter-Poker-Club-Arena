@@ -16,6 +16,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { sliceStatement } from '../helpers/sourceWindow';
 import { join } from 'node:path';
 import { sanitizeStore } from '../../src/components/lobby/AdvancedFilters';
 import { FILTER_SPECS, emptyFilterValue } from '../../src/components/lobby/advancedFilterSpec';
@@ -97,7 +98,13 @@ describe('a late remote value can never land on top of a live edit', () => {
       join(__dirname, '..', '..', 'src/components/lobby/AdvancedFilters.tsx'),
       'utf8'
     );
-    const effect = src.slice(src.indexOf('fetchRemoteFilters(clubId).then'));
-    expect(effect.slice(0, 400)).toMatch(/touchedRef\.current/);
+    /* Bounded by the STATEMENT, never by a byte count. A window measured in
+       characters drifts off the end of the thing it guards the moment a
+       comment is added above it - and the silent direction is worse, because
+       it can drift while staying green. That exact mistake cost this estate a
+       39-minute publish outage on 2026-08-28, and the repo has a meta-test
+       forbidding it, which is what caught this on the first CI run. */
+    const effect = sliceStatement(src, 'void fetchRemoteFilters(clubId)');
+    expect(effect).toMatch(/touchedRef\.current/);
   });
 });

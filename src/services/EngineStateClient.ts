@@ -427,12 +427,13 @@ export class EngineStateClient {
       // 2026-08-22: 4404 used to be TERMINAL — but the engine returns it for
       // ~2 minutes after every restart while tables rehydrate, and for a
       // first player at an empty table. Giving up permanently turned every
-      // engine deploy into a page of dead tables (and the host's 'failed'
-      // auto-reload turned a truly closed table into a reload loop). Announce
-      // 'failed' so the UI can say so, but keep retrying on the slow ladder —
-      // if the table comes back, so do we.
+      // engine deploy into a page of dead tables. Dan previously added a slow
+      // retry ladder here, but announcing 'failed' triggered TablePage's
+      // auto-reload, turning a missing table into a 5-second reload loop.
+      // Announce 'idle' instead so the UI stays usable (e.g. for empty tables
+      // or during engine restarts) while we keep retrying on the slow ladder.
       if (e.code === CLOSE_TABLE_NOT_FOUND) {
-        this.setStatus('failed');
+        this.setStatus('idle');
         this.opts.onError({ code: e.code, reason: e.reason });
         this.retryCount = Math.max(this.retryCount, 5); // start at ~16s+ delays
         this.scheduleReconnect();

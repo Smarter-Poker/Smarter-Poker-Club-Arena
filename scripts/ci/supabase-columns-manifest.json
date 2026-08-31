@@ -1279,7 +1279,8 @@
       "mint_since_prev",
       "burn_since_prev",
       "delta_vs_prev",
-      "unexplained"
+      "unexplained",
+      "tournament_liability"
     ],
     "ca_treasury_baseline": [
       "club_id",
@@ -10509,7 +10510,8 @@
       "mystery_bounty_activated_at",
       "mystery_bounty_activated_players",
       "mystery_bounty_pool_cents",
-      "allow_rabbit_hunt"
+      "allow_rabbit_hunt",
+      "spin_reveal_lag_ms"
     ],
     "tours_due_for_refresh": [
       "tour_code",
@@ -12272,6 +12274,16 @@
       "unbooked_24h",
       "null_multiplier_24h",
       "fee_violations_24h"
+    ],
+    "v_spin_reveal_latency": [
+      "hour",
+      "spins",
+      "p50_ms",
+      "p90_ms",
+      "p99_ms",
+      "worst_ms",
+      "past_the_lead_in",
+      "breach"
     ],
     "v_spin_tier_availability": [
       "club_id",

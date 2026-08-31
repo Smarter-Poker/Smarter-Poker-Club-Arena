@@ -14,19 +14,19 @@ const DEFINITIONS: Array<Omit<ClubIntegrityNavItem, 'path'>> = [
   {
     id: 'reports',
     label: 'Reports',
-    description: 'Player conduct and moderation intake',
+    description: 'Player Conduct And Moderation Intake',
     access: 'staff',
   },
   {
     id: 'disputes',
     label: 'Disputes',
-    description: 'Financial investigations and resolutions',
+    description: 'Financial Investigations And Resolutions',
     access: 'staff',
   },
   {
     id: 'blacklist',
     label: 'Blacklist',
-    description: 'Club access exclusions and expiry controls',
+    description: 'Club Access Exclusions And Expiry Controls',
     access: 'control',
   },
 ];

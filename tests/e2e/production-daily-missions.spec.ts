@@ -183,7 +183,9 @@ test.describe('production Daily Missions certification', () => {
         storageState: { cookies: [], origins: [] },
       });
       contexts.push(desktopContext);
+      let observedRevisionFrames = 0;
       let blockedRevisionFrames = 0;
+      let blockRevisionFrames = false;
       const observedRealtimeFrames = new Set<string>();
       await desktopContext.routeWebSocket(/\/realtime\/v1\/websocket/, (socket) => {
         const server = socket.connectToServer();
@@ -192,8 +194,11 @@ test.describe('production Daily Missions certification', () => {
             observedRealtimeFrames.add(realtimeFrameDescriptor(message));
           }
           if (isDailyMissionRevisionFrame(message)) {
-            blockedRevisionFrames += 1;
-            return;
+            observedRevisionFrames += 1;
+            if (blockRevisionFrames) {
+              blockedRevisionFrames += 1;
+              return;
+            }
           }
           socket.send(message);
         });
@@ -388,7 +393,20 @@ test.describe('production Daily Missions certification', () => {
           }
         );
         expect(incrementForbidden, 'authenticated row progress must be denied').toBeTruthy();
+        try {
+          await expect
+            .poll(() => observedRevisionFrames, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT })
+            .toBeGreaterThan(0);
+        } catch (error) {
+          throw new Error(
+            `No Daily Mission revision frame was observed before the missed-frame test. Observed: ${
+              [...observedRealtimeFrames].join(', ') || 'none'
+            }`,
+            { cause: error }
+          );
+        }
         blockedRevisionFrames = 0;
+        blockRevisionFrames = true;
         await completeEveryAssignedMission(environment, account!);
         const completed = await serviceRows<{ id: string; completed: boolean }>(
           environment,
@@ -417,6 +435,7 @@ test.describe('production Daily Missions certification', () => {
         }
         const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
         await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
+        blockRevisionFrames = false;
         expect(navigations).toBe(0);
         report.blockedRevisionFrames = blockedRevisionFrames;
       });

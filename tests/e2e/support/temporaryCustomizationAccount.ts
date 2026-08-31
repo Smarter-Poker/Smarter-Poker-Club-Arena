@@ -27,6 +27,8 @@ type JsonObject = Record<string, unknown>;
 const CLEANUP_RETRY_DELAYS_MS = [250, 750, 1_500] as const;
 const SERVICE_REQUEST_MAX_ATTEMPTS = 5;
 const SERVICE_REQUEST_BASE_DELAY_MS = 500;
+const STALE_FIXTURE_MINIMUM_AGE_MS = 5 * 60_000;
+const STALE_FIXTURE_CLEANUP_LIMIT = 100;
 
 function isTransientCleanupError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
@@ -371,6 +373,62 @@ async function authUserExists(
   });
 }
 
+function isReservedCertificationEmail(email: string): boolean {
+  return email.startsWith(ACCOUNT_PREFIX) && email.endsWith('@example.invalid');
+}
+
+/**
+ * Recover fixtures whose runner was cancelled before its `finally` block.
+ * The age floor protects a concurrent certification, the local marker check
+ * protects real accounts, and the database RPC repeats that marker check while
+ * holding the Auth row lock before deleting anything.
+ */
+export async function cleanupStaleTemporaryCustomizationAccounts(
+  environment: CustomizationCertificationEnvironment,
+  minimumAgeMs = STALE_FIXTURE_MINIMUM_AGE_MS
+): Promise<number> {
+  // Never permit a caller to turn this recovery sweep into current-run cleanup.
+  const safeMinimumAgeMs = Math.max(minimumAgeMs, 60_000);
+  const cutoff = new Date(Date.now() - safeMinimumAgeMs).toISOString();
+  const candidates = await readServiceRows<{ id: string; email: string; created_at: string }>(
+    environment,
+    'profiles',
+    new URLSearchParams({
+      select: 'id,email,created_at',
+      email: `like.${ACCOUNT_PREFIX}*@example.invalid`,
+      created_at: `lte.${cutoff}`,
+      order: 'created_at.asc',
+      limit: String(STALE_FIXTURE_CLEANUP_LIMIT + 1),
+    })
+  );
+  if (candidates.length > STALE_FIXTURE_CLEANUP_LIMIT) {
+    throw new Error(
+      `Refusing to clean more than ${STALE_FIXTURE_CLEANUP_LIMIT} stale certification accounts in one run.`
+    );
+  }
+  for (const candidate of candidates) {
+    if (
+      !candidate.id ||
+      !isReservedCertificationEmail(candidate.email || '') ||
+      Date.parse(candidate.created_at) > Date.parse(cutoff)
+    ) {
+      throw new Error(
+        `Refusing invalid stale certification candidate ${candidate.id || 'unknown'}.`
+      );
+    }
+    await callServiceRpc<JsonObject>(
+      environment,
+      'cleanup_reserved_certification_account',
+      { p_user_id: candidate.id },
+      true
+    );
+    if (await authUserExists(environment, candidate.id)) {
+      throw new Error(`Stale certification account ${candidate.id} still exists after cleanup.`);
+    }
+  }
+  return candidates.length;
+}
+
 /**
  * Remove only a fixture created by createTemporaryCustomizationAccount.
  * The prefix check is deliberately local and server-backed: a typo can never
@@ -380,7 +438,7 @@ async function cleanupTemporaryCustomizationAccountOnce(
   environment: CustomizationCertificationEnvironment,
   account: TemporaryCustomizationAccount
 ): Promise<void> {
-  if (!account.email.startsWith(ACCOUNT_PREFIX) || !account.email.endsWith('@example.invalid')) {
+  if (!isReservedCertificationEmail(account.email)) {
     throw new Error(`Refusing to clean non-certification account ${account.email}.`);
   }
 

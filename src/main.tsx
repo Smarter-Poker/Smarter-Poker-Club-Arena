@@ -52,11 +52,9 @@ import { initMasterBus } from './core/MasterBus';
 import { initIdentityDNA } from './core/IdentityDNA';
 import { initSentry } from './core/SentryInit';
 import { initWebVitals } from './core/WebVitals';
-import { startFunnelTracker } from './lib/funnelTracker';
 import SystemOffline from './core/SystemOffline';
 import { ErrorBoundary } from './components/common';
 import { reportError } from './utils/errorReporter';
-import { warmUserMemberships } from './services/ClubsService';
 import { hasLocalSession } from './lib/authUtils';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -111,21 +109,19 @@ if (bootStatus.antigravityOk) {
   // Only with a local session: a signed-out visitor has nothing to fetch.
   // Fire-and-forget, and it swallows its own errors - whoever asks next sees
   // the real failure through the normal path.
-  try {
-    if (hasLocalSession()) warmUserMemberships();
-  } catch (err) {
-    reportError(err, 'main.Membership_warm_start_non_blocking');
+  if (hasLocalSession()) {
+    void import('./services/ClubsService')
+      .then(({ warmUserMemberships }) => warmUserMemberships())
+      .catch((err) => reportError(err, 'main.Membership_warm_start_non_blocking'));
   }
 
   // PHASE 4: Activation-funnel tracker (Phase 5.1.2b). Fire-and-forget;
   // subscribes to MasterBus + IdentityDNA for first_table_seat,
   // first_hand_played, first_session_of_30min. No-ops if VITE_POSTHOG_KEY
   // is unset. Never throws out — all handlers swallow their own errors.
-  try {
-    startFunnelTracker();
-  } catch (err) {
-    reportError(err, 'main.FunnelTracker_init_error_non_blocking');
-  }
+  void import('./lib/funnelTracker')
+    .then(({ startFunnelTracker }) => startFunnelTracker())
+    .catch((err) => reportError(err, 'main.FunnelTracker_init_error_non_blocking'));
 
   // RENDER IMMEDIATELY — don't wait for IdentityDNA's async getSession().
   // The app has AuthGuard, ErrorBoundary, Connection Watchdog, and Offline

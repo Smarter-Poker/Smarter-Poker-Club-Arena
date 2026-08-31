@@ -54,6 +54,7 @@ import {
   warmUserMemberships,
   clearMembershipsWarmCache,
 } from '@/services/ClubsService';
+import { clearUserCaches } from '@/utils/clearUserCaches';
 
 describe('membership warm start', () => {
   beforeEach(() => {
@@ -93,7 +94,7 @@ describe('membership warm start', () => {
 
   it('is dropped on sign-out', async () => {
     await getUserMemberships({ id: 'user-1' });
-    clearMembershipsWarmCache(); // what clearUserCaches() calls
+    clearUserCaches();
     await getUserMemberships({ id: 'user-1' });
     expect(selectCalls, 'the warm window survived sign-out').toBe(2);
   });

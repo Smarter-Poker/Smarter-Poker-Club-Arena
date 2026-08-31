@@ -68,3 +68,46 @@ describe('both decision points consult it', () => {
     expect(SRC).toContain('canSit(roll, ref, bankrollPolicyFor(h.id))');
   });
 });
+
+const ROT = readFileSync(join(process.cwd(), 'src/services/HorseSessionRotator.ts'), 'utf8');
+
+describe('the rotator enforces the roll on reloads and on leaving', () => {
+  it('the TOP-UP is capped by topUpAllowance, not just by the table max', () => {
+    expect(ROT).toContain('topUpAllowance(');
+    expect(ROT).toContain('investedThisTable');
+  });
+
+  /**
+   * THE SILENT-MISS GUARD. The roll is keyed `${club_id}:${user_id}`, so a
+   * seat query that does not SELECT club_id would look every horse up under
+   * `":<uuid>"`, miss every time, and disable the cap without failing — the
+   * exact shape of bug this repo keeps finding. Pin the column.
+   */
+  it('the seat query selects club_id, so the roll lookup can actually resolve', () => {
+    const sel = ROT.slice(ROT.indexOf("from('table_seats')"), ROT.indexOf("is('left_at', null)"));
+    expect(sel).toContain('club_id');
+  });
+
+  it('session exit reads REAL P&L from the ledger, not an assumed buy-in', () => {
+    expect(ROT).toContain('sessionVerdict(');
+    expect(ROT).toContain("from('chip_ledger')");
+    expect(ROT).toMatch(/stack - invested/);
+  });
+
+  it('booking a win is CERTAIN, not a coin flip', () => {
+    const block = ROT.slice(
+      ROT.indexOf('const verdict = sessionVerdict'),
+      ROT.indexOf('const swing = stack / buyIn')
+    );
+    expect(block).toContain('Number.POSITIVE_INFINITY');
+  });
+
+  /**
+   * Failing open again: a rotator that mistakes "the ledger did not load"
+   * for "this horse is stuck" would empty the floor on one bad read.
+   */
+  it('no ledger figure means the original heuristic, never a forced exit', () => {
+    expect(ROT).toMatch(/if \(invested !== undefined && invested > 0\)/);
+    expect(ROT).toContain('const swing = stack / buyIn');
+  });
+});

@@ -468,8 +468,9 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
  * So the decision is made from the one place that actually knows, and:
  *
  *   - A query that DID NOT ANSWER is not a missing profile. An error or a
- *     dropped connection leaves the gate DOWN and retries, rather than locking a
- *     paid-up member out of the tables because the network hiccuped.
+ *     dropped connection leaves the gate DOWN and retries the same account on
+ *     a bounded backoff, rather than locking a paid-up member out because the
+ *     network hiccuped.
  *   - The check runs ONCE per account id, not once per store write. A token
  *     refresh must never re-litigate a gate the player already walked through.
  *   - `isReady` stays false until the answer is in, and AppLayout does not mount
@@ -484,22 +485,55 @@ export function useCompleteProfile(user: any) {
   }>({ userId: null, status: 'pending' });
   /** Account id this hook has already decided for. Null means undecided. */
   const decidedForRef = useRef<string | null>(null);
+  const retryAccountRef = useRef<string | null>(null);
+  const retryAttemptRef = useRef(0);
+  const [retryRevision, setRetryRevision] = useState(0);
 
   const userId: string | undefined = user?.id;
 
   useEffect(() => {
     if (!userId) {
       decidedForRef.current = null;
+      retryAccountRef.current = null;
+      retryAttemptRef.current = 0;
       setShowProfileModal(false);
       setDecision({ userId: null, status: 'complete' });
       setIsReady(true);
       return;
     }
 
+    if (retryAccountRef.current !== userId) {
+      retryAccountRef.current = userId;
+      retryAttemptRef.current = 0;
+    }
+
     if (decidedForRef.current === userId) return;
     decidedForRef.current = userId;
 
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const retryOrSetUnavailable = (error?: unknown) => {
+      if (error) reportError(error, 'useCompleteProfile.ProfileReadFailed');
+      decidedForRef.current = null;
+      setShowProfileModal(false);
+
+      const delays = [1_000, 2_000, 4_000] as const;
+      const attempt = retryAttemptRef.current;
+      if (attempt < delays.length) {
+        retryAttemptRef.current = attempt + 1;
+        setDecision({ userId, status: 'pending' });
+        setIsReady(false);
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          if (!cancelled) setRetryRevision((revision) => revision + 1);
+        }, delays[attempt]);
+        return;
+      }
+
+      setDecision({ userId, status: 'unavailable' });
+      setIsReady(true);
+    };
 
     (async () => {
       try {
@@ -512,13 +546,12 @@ export function useCompleteProfile(user: any) {
         if (cancelled) return;
 
         if (error || !data) {
-          /* Unanswered, not empty. Leave the gate down and allow a retry on the
-             next identity change rather than blocking play on a failed read. */
-          if (error) reportError(error, 'useCompleteProfile.ProfileReadFailed');
-          decidedForRef.current = null;
-          setShowProfileModal(false);
-          setDecision({ userId, status: 'unavailable' });
-          setIsReady(true);
+          /* Unanswered, not empty. Keep the gate down and retry this same
+             account on a short bounded backoff. Waiting for an identity change
+             did not actually retry for a stable signed-in user, so one failed
+             profile read could leave every protected route indeterminate until
+             a remount. */
+          retryOrSetUnavailable(error || new Error('profile row was unavailable'));
           return;
         }
 
@@ -527,23 +560,21 @@ export function useCompleteProfile(user: any) {
         const needsAvatar = !String(data.arena_avatar_url || '').trim();
 
         const incomplete = needsAlias || needsAvatar;
+        retryAttemptRef.current = 0;
         setShowProfileModal(incomplete);
         setDecision({ userId, status: incomplete ? 'incomplete' : 'complete' });
         setIsReady(true);
       } catch (err) {
         if (cancelled) return;
-        reportError(err, 'useCompleteProfile.ProfileReadThrew');
-        decidedForRef.current = null;
-        setShowProfileModal(false);
-        setDecision({ userId, status: 'unavailable' });
-        setIsReady(true);
+        retryOrSetUnavailable(err);
       }
     })();
 
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [userId]);
+  }, [retryRevision, userId]);
 
   const finishProfile = useCallback(() => {
     setShowProfileModal(false);

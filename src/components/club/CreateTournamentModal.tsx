@@ -21,6 +21,7 @@ import { BlindStructureBuilder } from '../tournament/BlindStructureBuilder';
 import PayoutStructureEditor from '../tournament/PayoutStructureEditor';
 import type { BlindLevel } from '../../config/blindStructures';
 import type { PayoutEntry, PayoutTemplate } from '../../services/PayoutEngine';
+import { canRunAsSpin, type TournamentGameVariant } from '../../config/tournamentVariants';
 
 interface Props {
   clubId: string;
@@ -30,6 +31,40 @@ interface Props {
   onClose: () => void;
   onSuccess: () => void;
 }
+
+/**
+ * Every game a tournament can be created as, in board order.
+ *
+ * 2026-08-31. This list used to be five hard-coded <option> elements and it had
+ * drifted from what the platform actually runs in two directions at once:
+ *
+ *   • PLO6 was MISSING while 6,028 PLO6 tournaments were live — every one of
+ *     them made by the recurring service or the create-table form, which this
+ *     modal could not match.
+ *   • PLO8 and SHORT_DECK were offered for the SPIN format, which the spin
+ *     catalogue (SPIN_GAME_TYPES) does not sell and the Spins board has no
+ *     filter chip for — a Spin created that way vanished from the lobby the
+ *     moment a player ticked any Games chip.
+ *
+ * Both are now impossible: the values come from the same map that decides what
+ * `canRunAsTournament` allows, and the spin catalogue filters the list when the
+ * format is a Spin.
+ *
+ * FLH and FLO8 are here because limit tournaments became creatable on the same
+ * day (Dan: "LIMIT POKER NEEDS TO BE ADDED TO THE GAME VARIATIONS FILTER") —
+ * see the header of tournamentFromTableConfig for why the old exclusion was
+ * wrong about this engine.
+ */
+const VARIANT_OPTIONS: { value: TournamentGameVariant; label: string }[] = [
+  { value: 'NLH', label: "No-Limit Hold'em" },
+  { value: 'PLO4', label: 'Pot-Limit Omaha (4-Card)' },
+  { value: 'PLO5', label: 'Pot-Limit Omaha (5-Card)' },
+  { value: 'PLO6', label: 'Pot-Limit Omaha (6-Card)' },
+  { value: 'PLO8', label: 'PLO Hi-Lo (8 Or Better)' },
+  { value: 'SHORT_DECK', label: "Short Deck Hold'em" },
+  { value: 'FLH', label: "Fixed-Limit Hold'em" },
+  { value: 'FLO8', label: 'Fixed-Limit Omaha Hi-Lo' },
+];
 
 type TournamentFormat =
   | 'mtt_freezeout'
@@ -66,8 +101,13 @@ export default function CreateTournamentModal({
   // ── Core Config ──
   const [name, setName] = useState('');
   const [format, setFormat] = useState<TournamentFormat>(initialFormat || 'mtt_freezeout');
-  const [gameVariant, setGameVariant] = useState<'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'SHORT_DECK'>(
-    'NLH'
+  const [gameVariant, setGameVariant] = useState<TournamentGameVariant>('NLH');
+  /* Spins sell four games; every other format sells all eight. See
+     VARIANT_OPTIONS above for why this is a filter and not a second list. */
+  const variantOptions = useMemo(
+    () =>
+      format === 'spin' ? VARIANT_OPTIONS.filter((v) => canRunAsSpin(v.value)) : VARIANT_OPTIONS,
+    [format]
   );
   // WHOLE-DOLLAR BUY-INS (Dan 2026-08-20): `buyIn` is the TOTAL the player
   // pays, always a positive whole number. The 10% house fee is a cut OUT of
@@ -319,6 +359,12 @@ export default function CreateTournamentModal({
         setStartTimeMode('now');
         setIsMultiDay(false);
         setAddOnAvailable(false);
+        /* The catalogue narrows on the way IN as well as in the list. Picking
+           Short Deck and then switching the format to Spin would otherwise
+           leave a value the shortened <select> no longer contains, which a
+           controlled select renders as a blank row while still submitting the
+           stale value. */
+        setGameVariant((v) => (canRunAsSpin(v) ? v : 'NLH'));
         break;
       case 'mtt_rebuy':
       case 'mtt_reentry':
@@ -830,15 +876,13 @@ export default function CreateTournamentModal({
             <select
               className={styles.select}
               value={gameVariant}
-              onChange={(e) =>
-                setGameVariant(e.target.value as 'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'SHORT_DECK')
-              }
+              onChange={(e) => setGameVariant(e.target.value as TournamentGameVariant)}
             >
-              <option value="NLH">No-Limit Hold'em</option>
-              <option value="PLO4">Pot-Limit Omaha (4-Card)</option>
-              <option value="PLO5">Pot-Limit Omaha (5-Card)</option>
-              <option value="PLO8">PLO Hi-Lo (8 Or Better)</option>
-              <option value="SHORT_DECK">Short Deck Hold'em</option>
+              {variantOptions.map((v) => (
+                <option key={v.value} value={v.value}>
+                  {v.label}
+                </option>
+              ))}
             </select>
           </div>
 

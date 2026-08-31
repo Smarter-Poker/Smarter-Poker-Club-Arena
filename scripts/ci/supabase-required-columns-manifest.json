@@ -387,6 +387,12 @@
       "metric",
       "sample_size"
     ],
+    "ca_treasury_baseline": [
+      "club_id",
+      "opening_balance",
+      "ledger_at_baseline",
+      "unledgered_gap"
+    ],
     "cashier_operations": [
       "user_id",
       "club_id",
@@ -3681,6 +3687,9 @@
       "to_tier"
     ],
     "vip_points": [
+      "user_id"
+    ],
+    "vip_points_carry": [
       "user_id"
     ],
     "vip_points_ledger": [

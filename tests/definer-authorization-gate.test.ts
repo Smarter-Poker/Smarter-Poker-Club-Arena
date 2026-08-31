@@ -24,6 +24,7 @@ import { pathToFileURL } from 'url';
 
 type Verdict = (sql: string, allowlist?: Set<string>) => string[];
 let unauthorisedWriters: Verdict;
+let anonReadableDefiners: Verdict;
 
 beforeAll(async () => {
   // Computed specifier: the checker is a plain ESM script with no type
@@ -35,6 +36,7 @@ beforeAll(async () => {
   ).href;
   const mod = await import(/* @vite-ignore */ href);
   unauthorisedWriters = mod.unauthorisedWriters;
+  anonReadableDefiners = mod.anonReadableDefiners;
 });
 
 /** The shape that shipped nineteen times: no GRANT written at all, which
@@ -155,6 +157,97 @@ describe('the allowlist stays small and reasoned', () => {
 
   it('gives every entry a reason long enough to be a reason', () => {
     for (const [name, why] of Object.entries(allow.reviewedExceptions)) {
+      expect(typeof why, name).toBe('string');
+      expect((why as string).length, name).toBeGreaterThan(120);
+    }
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  RULE 2: READ-ONLY IS NOT THE SAME AS HARMLESS (2026-08-31)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * The writer rule above only ever looks at functions that WRITE. In one
+ * afternoon THREE new SECURITY DEFINER functions arrived anon-executable and it
+ * cleared every one of them, because none wrote a row:
+ *
+ *   fn_tournament_metrics    operator dashboard numbers
+ *   fn_truly_unused_indexes  table names, index names, sizes, scan counts
+ *   fn_nit_evictions         who was evicted from which table, and when
+ *
+ * The middle one returns the schema's table and index names to a caller with no
+ * account, and index names on this project encode their columns. That is a
+ * partial column map, free, to anybody who asks.
+ *
+ * These feed the checker the exact shapes — including the revoke trap, which is
+ * MORE dangerous for this rule than for the writer one, because `anon` inherits
+ * whatever PUBLIC holds: `REVOKE ... FROM anon` alone changes nothing at all.
+ */
+describe('a new definer that answers a caller with no account', () => {
+  const fn = (name: string, extra = '', body = 'SELECT 1;', ret = 'TABLE(x int)') =>
+    `CREATE OR REPLACE FUNCTION public.${name}(p int) RETURNS ${ret}\n` +
+    `LANGUAGE sql SECURITY DEFINER AS $$ ${body} $$;\n${extra}`;
+
+  it('fails when the migration writes no GRANT at all — the shape all three shipped as', () => {
+    expect(anonReadableDefiners(fn('fn_truly_unused_indexes'))).toEqual([
+      'fn_truly_unused_indexes',
+    ]);
+  });
+
+  it('fails a revoke from anon alone, because anon inherits PUBLIC', () => {
+    const sql = fn('fn_leaky', 'REVOKE ALL ON FUNCTION public.fn_leaky(int) FROM anon;');
+    expect(anonReadableDefiners(sql)).toEqual(['fn_leaky']);
+  });
+
+  it('passes once PUBLIC, anon and authenticated are all named', () => {
+    const sql = fn(
+      'fn_closed',
+      'REVOKE ALL ON FUNCTION public.fn_closed(int) FROM PUBLIC, anon, authenticated;\n' +
+        'GRANT EXECUTE ON FUNCTION public.fn_closed(int) TO service_role;'
+    );
+    expect(anonReadableDefiners(sql)).toEqual([]);
+  });
+
+  it('passes a read kept for logged-in players: this rule guards the pre-login roles only', () => {
+    const sql = fn(
+      'fn_player_read',
+      'REVOKE ALL ON FUNCTION public.fn_player_read(int) FROM PUBLIC, anon;\n' +
+        'GRANT EXECUTE ON FUNCTION public.fn_player_read(int) TO authenticated;'
+    );
+    expect(anonReadableDefiners(sql)).toEqual([]);
+  });
+
+  it('passes a function that asks who is calling', () => {
+    expect(anonReadableDefiners(fn('fn_asks', '', 'SELECT auth.uid();'))).toEqual([]);
+  });
+
+  it('passes a trigger function, which cannot be reached as an RPC', () => {
+    expect(anonReadableDefiners(fn('fn_trg', '', 'BEGIN RETURN NEW; END;', 'trigger'))).toEqual([]);
+  });
+
+  it('passes deliberate public surface once somebody writes down why', () => {
+    const sql = fn('fn_global_leaderboard_period');
+    expect(anonReadableDefiners(sql)).toEqual(['fn_global_leaderboard_period']);
+    expect(anonReadableDefiners(sql, new Set(['fn_global_leaderboard_period']))).toEqual([]);
+  });
+
+  it('does not fire on a migration that only revokes — the fix must not fail its own gate', () => {
+    const sql =
+      'REVOKE ALL ON FUNCTION public.fn_truly_unused_indexes(integer) FROM PUBLIC, anon, authenticated;';
+    expect(anonReadableDefiners(sql)).toEqual([]);
+  });
+
+  it('starts with an empty anonPublicSurface, so the first entry costs a decision', () => {
+    const allow = JSON.parse(
+      readFileSync(
+        resolve(__dirname, '..', 'scripts/ci/definer-authorization.allowlist.json'),
+        'utf8'
+      )
+    );
+    // Not "must stay empty" — it must stay REASONED. Every entry needs a
+    // paragraph saying what an unauthenticated caller may learn from it.
+    for (const [name, why] of Object.entries(allow.anonPublicSurface ?? {})) {
       expect(typeof why, name).toBe('string');
       expect((why as string).length, name).toBeGreaterThan(120);
     }

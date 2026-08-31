@@ -12530,6 +12530,11 @@
       "upload_date",
       "created_at"
     ],
+    "waitlist_policy": [
+      "id",
+      "max_concurrent_holds",
+      "updated_at"
+    ],
     "wallet_audit_backfill_log": [
       "id",
       "wallet_transaction_id",

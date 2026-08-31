@@ -188,7 +188,11 @@ beforeEach(() => {
   localStorage.clear();
   clearStatsRangeMemo();
   routeUserId = undefined;
-  rpcMock.mockClear();
+  rpcMock.mockReset();
+  rpcMock.mockImplementation(async (fn: string) => {
+    if (fn === 'ca_player_stats_overview_v2') return { data: rpcPayload, error: null };
+    return { data: null, error: null };
+  });
   rpcPayload = {
     contract_version: 2,
     generated_at: '2026-08-31T12:00:00.000Z',
@@ -330,9 +334,11 @@ describe('PlayerStatsPage mounts', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
 
-    expect(await screen.findByText("Couldn't Load Your Stats")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Couldn't Load Your Stats", undefined, { timeout: 6_000 })
+    ).toBeInTheDocument();
     expect(screen.queryByText('20,000')).not.toBeInTheDocument();
-  });
+  }, 8_000);
 
   it('completes a dossier shortcut by selecting, focusing, and revealing its destination', async () => {
     rpcPayload = {

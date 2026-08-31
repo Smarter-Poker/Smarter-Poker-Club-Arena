@@ -295,7 +295,6 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
 // Bible V8 §11: 4-Corner Table HUD Components
 import { TableHUD } from '../components/table/TableHUD';
-import { MiniStatsCard } from '../components/table/MiniStatsCard';
 import { TournamentLobbyModal } from '../components/table/TournamentLobbyModal';
 import TournamentInfoPanel from '../components/tournament/TournamentInfoPanel';
 import HeroHubPanel from '../components/table/HeroHubPanel';
@@ -855,32 +854,129 @@ interface TablePageProps {
   muted?: boolean;
 }
 
+/* MastheadLevelClock removed 2026-08-30: the round-end countdown left the
+   masthead with it - MastheadNextInfo below carries the felt's clock now. */
+
 /**
- * The ticking half of masthead line 2 (Dan 2026-08-20: "Level #, Blinds, and
- * the clock"). Its own component so the 1-second tick re-renders ~40 bytes of
- * DOM instead of the whole table page. Shows mm:ss remaining in the level;
- * clamps at 0:00 while waiting for the engine's level_up broadcast rather than
- * counting negative.
+ * Dan 2026-08-30: "REMOVE THE ROUND END TIMER ON THE TABLE, AND REPLACE THAT
+ * WITH 'NEXT BLINDS' AND A 'BREAK STARTS IN' CLOCK INSTEAD."
+ *
+ * Two lines under the tournament masthead:
+ *   - NEXT BLINDS <sb>/<bb>   (the next playing level, breaks skipped)
+ *   - BREAK STARTS IN m:ss    (only when the structure has a break ahead -
+ *     the remainder of this level plus every full level until the break)
+ * The per-second tick stays inside this component, exactly like the
+ * MastheadLevelClock it replaces, so the page never re-renders for a clock.
  */
-function MastheadLevelClock({
+function MastheadNextInfo({
   startedAtMs,
   durationSec,
+  struct,
+  levelIdx,
+  onBreak = false,
+  breakEndsAtMs = null,
 }: {
   startedAtMs: number;
   durationSec: number;
+  /** Dan 2026-08-30: while the tournament is ON BREAK the clock flips from
+      "Break Starts In" to "Break Over In", counting to the break's real end. */
+  onBreak?: boolean;
+  breakEndsAtMs?: number | null;
+  struct: Array<{
+    level?: number;
+    smallBlind?: number;
+    small_blind?: number;
+    bigBlind?: number;
+    big_blind?: number;
+    isBreak?: boolean;
+    is_break?: boolean;
+    duration?: number;
+    duration_minutes?: number;
+    durationMinutes?: number;
+  }>;
+  levelIdx: number;
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
+
+  type Entry = (typeof struct)[number];
+  const sb = (l: Entry) => Number(l.smallBlind ?? l.small_blind ?? 0);
+  const bbOf = (l: Entry) => Number(l.bigBlind ?? l.big_blind ?? 0);
+  const isBreakLevel = (l: Entry) => !!(l.isBreak ?? l.is_break) || (sb(l) === 0 && bbOf(l) === 0);
+  const durOf = (l: Entry) =>
+    Number(l.duration) || (Number(l.duration_minutes ?? l.durationMinutes) || 0) * 60;
+
   const remaining = Math.max(0, durationSec - Math.floor((now - startedAtMs) / 1000));
-  const mm = Math.floor(remaining / 60);
-  const ss = String(remaining % 60).padStart(2, '0');
+
+  // The next PLAYING level's blinds, breaks skipped.
+  let nextBlinds: string | null = null;
+  for (let i = levelIdx + 1; i < struct.length; i++) {
+    if (!isBreakLevel(struct[i])) {
+      nextBlinds = formatBlindPair(sb(struct[i]), bbOf(struct[i]));
+      break;
+    }
+  }
+
+  // Seconds until the next BREAK entry, when one exists ahead of us.
+  let breakInSec: number | null = null;
+  if (levelIdx >= 0 && levelIdx < struct.length && !isBreakLevel(struct[levelIdx])) {
+    let acc = remaining;
+    for (let i = levelIdx + 1; i < struct.length; i++) {
+      if (isBreakLevel(struct[i])) {
+        breakInSec = acc;
+        break;
+      }
+      acc += durOf(struct[i]);
+    }
+  }
+
+  const fmtSecs = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const ss2 = String(secs % 60).padStart(2, '0');
+    return `${m}:${ss2}`;
+  };
+
+  /* ON BREAK: the story is when play resumes, not when the next break is. */
+  if (onBreak) {
+    const overIn =
+      breakEndsAtMs && breakEndsAtMs > now ? Math.round((breakEndsAtMs - now) / 1000) : null;
+    return (
+      <>
+        {nextBlinds !== null && (
+          <span className="table-brand__line table-brand__line--round">
+            Next Blinds <span className="table-brand__clock">{nextBlinds}</span>
+          </span>
+        )}
+        <span className="table-brand__line table-brand__line--round">
+          {overIn !== null ? (
+            <>
+              Break Over In <span className="table-brand__clock">{fmtSecs(overIn)}</span>
+            </>
+          ) : (
+            'On Break - Last Hand Finishing'
+          )}
+        </span>
+      </>
+    );
+  }
+
+  if (nextBlinds === null && breakInSec === null) return null;
   return (
-    <span className="table-brand__clock">
-      {mm}:{ss}
-    </span>
+    <>
+      {nextBlinds !== null && (
+        <span className="table-brand__line table-brand__line--round">
+          Next Blinds <span className="table-brand__clock">{nextBlinds}</span>
+        </span>
+      )}
+      {breakInSec !== null && (
+        <span className="table-brand__line table-brand__line--round">
+          Break Starts In <span className="table-brand__clock">{fmtSecs(breakInSec)}</span>
+        </span>
+      )}
+    </>
   );
 }
 
@@ -3531,11 +3627,22 @@ export default function TablePage({
       if (!bootNoticeShownRef.current) {
         const say = heartbeatToastRef.current?.info;
         if (typeof say === 'function') {
-          bootNoticeShownRef.current = true;
-          say(
-            (reason && BOOT_EXPLANATIONS[reason]) ||
-              'You Were Removed From The Table. Your Chips Are Back In Your Wallet.'
-          );
+          const mapped = reason ? BOOT_EXPLANATIONS[reason] : undefined;
+          /* Dan 2026-08-30: "THATS A CASH GAME PROMPT, NOT A TOURNAMENT
+             PROMPT." A tournament seat closing with no mapped reason is
+             almost always the balancer moving the player - the wallet line is
+             flatly untrue there (tournament chips never touch the wallet).
+             MultiTablePage's hero-seat-move subscription announces the real
+             story ("You Were Moved To <table>") and swaps the tab in place,
+             so this page says nothing rather than something wrong. Mapped
+             reasons (bust, sit-out timeout, VPIP eviction) still speak. */
+          if (mapped) {
+            bootNoticeShownRef.current = true;
+            say(mapped);
+          } else if (!tableStateRef.current.isTournament) {
+            bootNoticeShownRef.current = true;
+            say('You Were Removed From The Table. Your Chips Are Back In Your Wallet.');
+          }
         }
       }
     },
@@ -6210,6 +6317,9 @@ export default function TablePage({
   const [allInEquities, setAllInEquities] = useState<
     Array<{ userId: string; username: string; equity: number; seat: number }>
   >([]);
+  /* True from the first all_in_equity broadcast of a hand until the next hand
+     starts. Read by the tournament Show Hand suppression (Dan 2026-08-30). */
+  const handHadAllInRef = useRef(false);
 
   // POKERBROS PARITY 2026-08-26: consent-panel rows — one per all-in player,
   // requester first, with hole cards (face up during the runout pause),
@@ -8657,6 +8767,13 @@ export default function TablePage({
         }>;
         if (equities && equities.length > 0) {
           setAllInEquities(equities);
+          /* Dan 2026-08-30: "ANYTIME THERE IS AN ALL IN, ALL CARDS ARE ALWAYS
+             SHOW[N]" in a tournament — so the voluntary Show Hand button must
+             never render on an all-in showdown there. The equities themselves
+             clear half a second after HAND_COMPLETE; this flag survives until
+             the NEXT hand starts so the button cannot pop in late during the
+             post-hand hold. */
+          handHadAllInRef.current = true;
         }
         return; // Don't process as regular state
       }
@@ -12339,6 +12456,7 @@ export default function TablePage({
         setWinnerParticle((prev) => ({ ...prev, active: false }));
         setIsAllInMode(false);
         setAllInEquities([]);
+        handHadAllInRef.current = false;
         // Hold the action panel from this instant — the button beat below is
         // part of the deal, and a player must not act into it.
         beginDealHold();
@@ -13060,6 +13178,14 @@ export default function TablePage({
         );
         // CA-22: track so unmount can cancel — prevents setTableState on dead page
         if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
+        /* Dan 2026-08-30: "ONCE THE HAND IS COMPLETED, THE 0% 100% SHOULD
+           DISAPPEAR AFTER HALF A SECOND." The equity overlay used to live
+           through the whole post-hand hold; now it gets exactly the half
+           second. Clearing an already-empty array is a no-op, and a NEW
+           hand's equities cannot arrive before its own all-in. */
+        window.setTimeout(() => {
+          setAllInEquities([]);
+        }, 500);
         handCompleteResetAtRef.current = Date.now() + holdMs;
         /* Captured so POT_WIN can re-arm exactly this work at a later time
            without duplicating any of it. */
@@ -18086,39 +18212,20 @@ export default function TablePage({
              it had no corner to be in and nothing anchored it on screen. Both
              now live here, stacked, in the corner Dan is pointing at. */
           <div className="hud-ur-column">
+            {/* Dan 2026-08-30: "REMOVE THE STATS BUTTON AND MAKE IT THAT IF
+                YOU CLICK THE LEVEL TAB BUTTON IT WILL OPEN TO THE TOURNAMENT
+                LOBBY INSTANTLY." The bar itself is the button now - one
+                control, no separate stats icon - on every MTT, Spin and
+                heads-up match alike (isTournament covers all three). */}
             {tableState.isTournament && tableState.tournamentId && (
-              <TournamentHUD tournamentId={tableState.tournamentId} />
-            )}
-            {/* Dan 2026-08-28: "REMOVE THE STATS BUTTON FROM THE UPPER LEFT
-                HAND CORNER, AND MOVE IT TO THE HERO AVATAR." The cash stats
-                icon is gone — session stats live in the hero hub's Stats tab
-                (tap your own avatar) and remain in the hamburger menu.
-
-                Dan, same day, on what is LEFT in this corner: "ALL TOURNAMENTS
-                NEED THE STATS ICON IN THE UPPER RIGHT HAND CORNER. IT SHOULDN'T
-                SHOW THE STATS, BUT OPEN TO THE TOURNAMENT LOBBY PAGE AS A IN
-                GAME 3/4 POP UP", and "STATS SHOULD LIVE INSIDE THE HERO AVATAR
-                ... USE THE EXACT BUTTON AS IT IS."
-
-                So on a tournament this is ONE button, the existing artwork
-                untouched, and it opens the real tournament lobby
-                (TournamentDetails) as a 3/4 overlay. It no longer opens
-                TournamentInfoPanel — that four-tab summary is a subset of the
-                lobby and is still reachable from the hero hub's Stats tab. The
-                four-figure Stack/Hands/VPIP/Won bar this corner carried since
-                2026-08-25 is gone with it: those are stats, and stats now live
-                behind the hero's own avatar. */}
-            {tableState.isTournament && (
-              <MiniStatsCard
-                currentStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
-                totalBuyIn={totalBuyInRef.current}
-                isSeated={tableState.heroSeat > 0}
-                isTournament={tableState.isTournament}
-                onTap={() =>
-                  tableState.tournamentId ? setShowTournamentLobby(true) : setShowSessionStats(true)
-                }
+              <TournamentHUD
+                tournamentId={tableState.tournamentId}
+                onOpen={() => setShowTournamentLobby(true)}
               />
             )}
+            {/* The MiniStatsCard stats icon that used to sit under the bar is
+                REMOVED (Dan 2026-08-30): the level bar itself opens the
+                tournament lobby, so a second button here was a duplicate. */}
           </div>
         }
         bottomLeft={
@@ -18400,34 +18507,25 @@ export default function TablePage({
                                 </span>
                               )}
                             </span>
-                            {/* \u2500\u2500 LINE 3: TIME LEFT IN THE ROUND \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-                                Dan 2026-08-28: "ON MTT'S SPINS AND HEADS UP
-                                TABLES UNDER THE 2ND LINE, A 3RD LINE SHOULD
-                                APPEAR WITH THE AMOUNT OF TIME LEFT IN THE
-                                ROUND (COUNT DOWN CLOCK)."
-
-                                It used to be a dot-separated tail on line 2,
-                                behind the level and the blinds \u2014 the first
-                                thing to ellipsize on a 375px screen, which is
-                                the width this table is designed for, so the
-                                number a player most wants between hands was
-                                the one most likely to be cut. On its own line
-                                it always fits and always reads.
-
-                                Rendered only when a level clock exists: a
-                                seat-first game before it starts has no round
-                                running, and inventing a countdown there is the
-                                phantom "LEVEL 1 - 3:00" that restarted on
-                                every reload (fixed the same day). The clock
-                                starts when the round does. */}
-                            {levelClock && (
-                              <span className="table-brand__line table-brand__line--round">
-                                Round Ends In{' '}
-                                <MastheadLevelClock
-                                  startedAtMs={levelClock.startedAtMs}
-                                  durationSec={levelClock.durationSec}
-                                />
-                              </span>
+                            {/* Dan 2026-08-30: the round-end countdown is GONE from the
+                                felt. In its place: the NEXT BLINDS, and a
+                                BREAK STARTS IN clock computed from the blind
+                                structure - the two numbers a player actually
+                                plans around between hands. Renders only while
+                                a level clock exists, same guard as before (no
+                                phantom clocks pre-start or post-finish). */}
+                            {(levelClock || tournamentBreak?.active) && (
+                              <MastheadNextInfo
+                                startedAtMs={levelClock?.startedAtMs ?? 0}
+                                durationSec={levelClock?.durationSec ?? 0}
+                                struct={blindStructRef.current}
+                                levelIdx={(tableState.currentLevel || 1) - 1}
+                                onBreak={!!tournamentBreak?.active}
+                                breakEndsAtMs={
+                                  (tournamentBreak as { breakEndsAtMs?: number | null })
+                                    ?.breakEndsAtMs ?? null
+                                }
+                              />
                             )}
                           </>
                         );
@@ -20250,6 +20348,11 @@ export default function TablePage({
             {tableState.boardStage === 'showdown' &&
               tableState.heroSeat > 0 &&
               tableId &&
+              /* Dan 2026-08-30, verbatim: "A PLAYER NEVER NEEDS TO 'SHOW HIS
+                 CARDS' IN A TOURNAMENT, ANYTIME THERE IS AN ALL IN, ALL CARDS
+                 ARE ALWAYS SHOW[N]" — an all-in tournament showdown is already
+                 public, so the voluntary-show button has nothing to offer. */
+              !(tableState.isTournament && handHadAllInRef.current) &&
               getPlayerAtSeat(tableState.heroSeat)?.status !== 'folded' && (
                 <div className="footer-action-bar">
                   <button

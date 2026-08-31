@@ -14,6 +14,7 @@
  * SEAT, ITS ALLOWED."
  */
 import { describe, expect, it } from 'vitest';
+import { sliceBetween } from '../testHelpers/sourceWindow.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,9 +30,11 @@ describe('the elimination CAS re-checks the chips, not just the status', () => {
   it('eliminatePlayer refuses a row whose chips came back above zero', () => {
     // A rebuy leaves status 'playing', so the status CAS alone cannot catch
     // the race; the chips guard is what makes the landed rebuy win.
-    const at = ELIM.indexOf('A LANDED REBUY OUTRANKS A STALE BUST SNAPSHOT');
-    expect(at).toBeGreaterThan(-1);
-    const window = ELIM.slice(at, at + 1600);
+    const window = sliceBetween(
+      ELIM,
+      'A LANDED REBUY OUTRANKS A STALE BUST SNAPSHOT',
+      'if (updateErr)'
+    );
     expect(window).toMatch(/\.lte\('chips', 0\)/);
   });
 });
@@ -41,9 +44,7 @@ describe('a busted player holds an open decision window, and the felt rolls on',
     expect(ELIM).toMatch(/REBUY_DECISION_GRACE_MS/);
     expect(ELIM).toMatch(/rebuyDecisionGraceUntil/);
     // The window closes with the rebuy period: no window, no deferral.
-    const at = ELIM.indexOf('THE REBUY DECISION WINDOW');
-    expect(at).toBeGreaterThan(-1);
-    const block = ELIM.slice(at, at + 4000);
+    const block = sliceBetween(ELIM, 'THE REBUY DECISION WINDOW', 'bustedOrdered');
     expect(block).toMatch(/windowOpen/);
     expect(block).toMatch(/prize_pool_finalized/);
   });
@@ -55,9 +56,11 @@ describe('a busted player holds an open decision window, and the felt rolls on',
   });
 
   it('tournament tables never pause the felt for a rebuy', () => {
-    const at = DEALING.indexOf('REBUYS IN A TOURNAMENT SHOULD');
-    expect(at, "Dan's ruling must be quoted at the site it governs").toBeGreaterThan(-1);
-    const block = DEALING.slice(at, at + 1400);
+    expect(
+      DEALING.indexOf('REBUYS IN A TOURNAMENT SHOULD'),
+      "Dan's ruling must be quoted at the site it governs"
+    ).toBeGreaterThan(-1);
+    const block = sliceBetween(DEALING, 'REBUYS IN A TOURNAMENT SHOULD', 'catch (err)');
     expect(block).not.toMatch(/needsRebuyPause = true/);
     // The CASH pause survives untouched — section 10.5 still applies there.
     expect(DEALING).toMatch(/setLoopPhase\('rebuy_pause'\)/);

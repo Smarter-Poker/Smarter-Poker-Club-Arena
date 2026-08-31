@@ -189,6 +189,9 @@ export interface TableTabBarProps {
   /** Batch 3: one-tap sit out / return across every seated table. */
   onSitOutAll?: () => void;
   onBackAll?: () => void;
+  /** Dan 2026-08-30: hamburger switch "Multi Table Profit Tracking". */
+  profitTrackingEnabled?: boolean;
+  onToggleProfitTracking?: () => void;
   /**
    * Supabase realtime link is down or reconnecting. Multi-tabling players
    * cannot otherwise tell that their tables have stopped receiving updates —
@@ -213,6 +216,8 @@ export function TableTabBar({
   onQuickAction,
   onSitOutAll,
   onBackAll,
+  profitTrackingEnabled,
+  onToggleProfitTracking,
 }: TableTabBarProps) {
   const emptySlots = maxTables - tabs.length;
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
@@ -546,6 +551,7 @@ export function TableTabBar({
                   tableId: activeTabId,
                   action: 'LEAVE_TABLE',
                 }),
+              onToggleProfitTracking,
               /* `onChangeAvatar` / `onToggleAlias` used to be passed here and were
              never placed on a menu item by createDefaultMenuSections — see the
              note on TableMenuProps.onOpenIdentity. The alias handler now goes
@@ -563,9 +569,14 @@ export function TableTabBar({
               vibrationsBadge: tabs.find((t) => t.id === activeTabId)?.vibrationsEnabled
                 ? 'ON'
                 : 'OFF',
+              profitTrackingBadge: onToggleProfitTracking
+                ? profitTrackingEnabled
+                  ? 'ON'
+                  : 'OFF'
+                : undefined,
             }
           ),
-    [activeTabId, tabs, activeIsLobby]
+    [activeTabId, tabs, activeIsLobby, profitTrackingEnabled, onToggleProfitTracking]
   );
 
   /**

@@ -38,7 +38,7 @@
  * no override — which is why this is a clone and not a fresh sheet.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import TournamentDetails from '../../pages/tournament/TournamentDetails';
 import './TournamentLobbyModal.css';
 
@@ -59,10 +59,30 @@ export function TournamentLobbyModal({ isOpen, tournamentId, onClose }: Tourname
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
 
-  if (!isOpen || !tournamentId) return null;
+  /* Dan 2026-08-30: "OPEN TO THE TOURNAMENT LOBBY INSTANTLY (NO LOAD TIME)."
+     The panel used to unmount on close, so every open paid the lobby's full
+     fetch again. It now stays MOUNTED (display:none) once it has been opened
+     once: re-opens are instant because the page, its data and its realtime
+     subscriptions are already there. The first open still mounts fresh - a
+     table where the lobby is never opened pays nothing, same as before.
+     A resize is dispatched on each show because TournamentDetails measures
+     its own height against the viewport and must re-measure after display
+     flips from none. */
+  const everOpenedRef = useRef(false);
+  if (isOpen) everOpenedRef.current = true;
+  useEffect(() => {
+    if (isOpen) window.dispatchEvent(new Event('resize'));
+  }, [isOpen]);
+
+  if ((!isOpen && !everOpenedRef.current) || !tournamentId) return null;
 
   return (
-    <div className="tlm-overlay" onClick={onClose} role="presentation">
+    <div
+      className="tlm-overlay"
+      onClick={onClose}
+      role="presentation"
+      style={isOpen ? undefined : { display: 'none' }}
+    >
       <div
         className="tlm-panel"
         role="dialog"

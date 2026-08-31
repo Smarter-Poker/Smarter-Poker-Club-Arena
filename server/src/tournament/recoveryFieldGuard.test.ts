@@ -11,7 +11,6 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { sliceEnclosingBlock } from '../../../tests/helpers/sourceWindow.js';
 import { fieldIsStillLive } from './recoveryFieldGuard.js';
 import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 

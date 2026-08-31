@@ -30,15 +30,31 @@ fn_spin_sweep_unbooked() run post-change: ok, settled 0, failed 0.
    now refuses loudly; spins are created only by TournamentRecurringService.
 6. **World Hub create-table.js**: emoji removed from notification title.
 
+## Create Table — dead route removed, validation ported to the DB (2026-08-31)
+The World Hub route pages/api/club-arena/create-table.js had ZERO callers, so
+none of its validation ever ran on a real table. Route deleted (World Hub PR
+#1051, merged) along with its RateLimiter entry, and the validation that
+actually prevents broken tables now lives in the DB where every writer hits it:
+migration 20260831_table_creation_guard_replaces_dead_create_table_api.sql adds
+BEFORE INSERT trigger fn_tables_creation_guard enforcing the cash SEAT LAW
+(plo6 6 / plo5 7 / plo4,plo8,flo8 8 / else 9 — over-seating makes the engine
+throw 'Not enough cards in deck' and the table can never deal), positive and
+ordered blinds, min_buy_in <= max_buy_in, action_time 10-120, and name
+hygiene (trim, 60 chars, angle brackets stripped). Tournaments are exempt from
+the seat law per tableSeating.ts. Client slider floor raised 5s -> 10s to match.
+
+Verified live: guard refuses a 10-max PLO6 and inverted blinds, accepts a legal
+6-max PLO6, leaves no probe rows behind, and cash_tables_needing_engine() still
+returns the live fleet (26).
+
+Still open for Dan (NOT invented into a guard): the official stakes-schedule
+match, rake/BBJ tier auto-fill, and the settings JSONB payload the dead route
+carried. Live tables already sit outside those, so they need a ruling first.
+
 ## Noted, not changed (need Dan / follow-up)
-- World Hub /api/club-arena/create-table.js is DEAD code — the live create
-  path is a direct client insert in TableConfigPage, so the API's rate
-  limiting, role checks, stakes-schedule validation and rake/BBJ tier
-  auto-fill never run. Decide: wire the client through the API, or port the
-  validation into RLS/triggers and delete the route.
 - Repo migration 20260827 still contains the banded fn_spin_rake_rate +
   assertions; superseded by the 20260830 migration on replay order.
-- trg_tables_union_ownership is cited in comments but exists in no migration.
+- trg_tables_union_ownership DOES exist in production (verified 2026-08-31) but is in no repo migration — repo/DB drift to reconcile.
 - is_premium_spin column is write-only.
 - Sign-in page artwork shows "You Are Already Signed In" panel even when no
   session exists (background image, not state), and Continue To Hub then does

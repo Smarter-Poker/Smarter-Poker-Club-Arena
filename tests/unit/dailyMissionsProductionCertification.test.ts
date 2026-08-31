@@ -86,6 +86,15 @@ describe('Daily Missions production certification', () => {
     expect(pageObject).toContain('sp_firstrun_notif_v2_${userId}');
   });
 
+  it('targets the enforced title-case reroll accessibility contract', () => {
+    const page = source('src/pages/DailyChallengesPage.tsx');
+    const pageObject = source('tests/e2e/support/DailyMissionsPage.ts');
+    const certification = source('tests/e2e/production-daily-missions.spec.ts');
+    expect(page).toContain('aria-label={`Reroll ${c.name} For 10 Diamonds`}');
+    expect(pageObject).toContain('name: /^Reroll .+ For 10 Diamonds$/');
+    expect(certification).toContain('name: /^Confirm Reroll For /');
+  });
+
   it('keeps every mission control above the fixed Club Arena footer', () => {
     const css = source('src/pages/DailyChallengesPage.module.css');
     expect(css).toContain('padding: 24px 18px calc(var(--bottom-nav-clearance, 74px) + 24px)');

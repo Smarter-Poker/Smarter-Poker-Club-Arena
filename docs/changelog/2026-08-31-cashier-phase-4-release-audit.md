@@ -55,6 +55,17 @@ after the Phase 4 squash merge, not against the older feature branch.
   44px coarse-pointer hit area, collapsed wallet content is removed from hit,
   focus, and accessibility visibility, and a self-contained Chromium geometry
   beat blocks both regressions before merge.
+- The first complete post-deploy rerun found that Daily Missions certification
+  still selected the pre-release lowercase reroll accessibility names. The page
+  object and confirmation assertion now target the enforced title-case contract,
+  with a source-level pin joining the application and both selectors.
+- That rerun also exposed three independent false-red paths in the mobile chrome
+  audit: a route could replace its document during measurement, smooth scrolling
+  could leave the probe mid-animation, and virtualized rows clipped by an inner
+  scrollport were counted as painted content. The audit now retries only transient
+  document replacement, proves the real scroll boundary synchronously, intersects
+  leaf geometry with every clipping ancestor, and still fails closed when an
+  Arena document never stabilizes or a visible pixel crosses fixed chrome.
 
 ## Evidence Contract
 

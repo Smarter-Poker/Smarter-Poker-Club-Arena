@@ -192,7 +192,7 @@ export class DailyMissionsPage {
   }
 
   rerollButton() {
-    return this.page.getByRole('button', { name: /^Reroll .+ for 10 diamonds$/ }).first();
+    return this.page.getByRole('button', { name: /^Reroll .+ For 10 Diamonds$/ }).first();
   }
 
   async chooseTier(name: 'Daily' | 'Weekly' | 'Monthly') {

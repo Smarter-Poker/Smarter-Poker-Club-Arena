@@ -61,6 +61,17 @@ interface Occlusion {
   text: string;
 }
 
+type OcclusionHit = Omit<Occlusion, 'route'>;
+
+interface OcclusionMeasurement {
+  hits: OcclusionHit[];
+  hadTop: boolean;
+  hadBottom: boolean;
+}
+
+const TRANSIENT_DOCUMENT_ERROR =
+  /Execution context was destroyed|Cannot find context with specified id|Frame was detached/i;
+
 /* ─────────────────────────────────────────────────────────────────────────────
    THE WELCOME MODAL MUST NOT BE IN FRONT OF WHAT THIS MEASURES (2026-08-29)
 
@@ -103,7 +114,7 @@ test('no chrome covers reachable content at 375px', async ({ page }) => {
   const skipped: string[] = [];
   const noChrome: string[] = [];
 
-  for (const route of ROUTES) {
+  routeLoop: for (const route of ROUTES) {
     try {
       await page.goto(route, { waitUntil: 'domcontentloaded' });
     } catch (err) {
@@ -127,126 +138,203 @@ test('no chrome covers reachable content at 375px', async ({ page }) => {
       continue;
     }
 
-    const found = await page.evaluate(
-      async ({ SLACK }) => {
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
+    const measureCurrentDocument = () =>
+      page.evaluate(
+        async ({ SLACK }) => {
+          const vw = window.innerWidth;
+          const vh = window.innerHeight;
 
-        const bars = Array.from(document.querySelectorAll('nav,header,div,footer'));
-        const isWide = (b: DOMRect) => b.width > vw * 0.8 && b.height > 24;
-        const topBar = bars.find((el) => {
-          const s = getComputedStyle(el);
-          if (s.position !== 'fixed' && s.position !== 'sticky') return false;
-          const b = el.getBoundingClientRect();
-          return b.top <= 2 && b.bottom > 8 && b.bottom < vh * 0.3 && isWide(b);
-        });
-        const bottomBar = bars.find((el) => {
-          const s = getComputedStyle(el);
-          if (s.position !== 'fixed') return false;
-          const b = el.getBoundingClientRect();
-          return b.bottom >= vh - 3 && b.height > 40 && b.height < 160 && isWide(b);
-        });
+          const bars = Array.from(document.querySelectorAll('nav,header,div,footer'));
+          const isWide = (b: DOMRect) => b.width > vw * 0.8 && b.height > 24;
+          const topBar = bars.find((el) => {
+            const s = getComputedStyle(el);
+            if (s.position !== 'fixed' && s.position !== 'sticky') return false;
+            const b = el.getBoundingClientRect();
+            return b.top <= 2 && b.bottom > 8 && b.bottom < vh * 0.3 && isWide(b);
+          });
+          const bottomBar = bars.find((el) => {
+            const s = getComputedStyle(el);
+            if (s.position !== 'fixed') return false;
+            const b = el.getBoundingClientRect();
+            return b.bottom >= vh - 3 && b.height > 40 && b.height < 160 && isWide(b);
+          });
 
-        const root = document.querySelector('#main-content') || document.body;
+          const root = document.querySelector('#main-content') || document.body;
 
-        /* Content, for this purpose, is a LEAF that a person can read or
+          /* Content, for this purpose, is a LEAF that a person can read or
            press. Anything living inside a fixed layer (the bars themselves,
            a parked drawer, a modal) is chrome, not page content. */
-        const leaves = () => {
-          const out: Array<{ el: Element; b: DOMRect }> = [];
-          for (const el of root.querySelectorAll('*')) {
-            if (el.children.length > 0) continue;
-            if (el.closest('[aria-hidden="true"]')) continue;
-            const s = getComputedStyle(el);
-            if (s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) continue;
-            let b = el.getBoundingClientRect();
-            if (b.width === 0 || b.height === 0) continue;
-            if (b.right <= 0 || b.left >= vw) continue;
-            const txt = (el.textContent || '').trim();
-            const pressable = Boolean(
-              el.closest(
-                'button,a[href],input,select,textarea,[role="button"],[role="link"],[role="checkbox"],[role="switch"],[tabindex]:not([tabindex="-1"])'
-              )
-            );
-            const meaningfulImage =
-              el.tagName === 'IMG' && Boolean((el.getAttribute('alt') || '').trim());
-            if (!txt && !pressable && !meaningfulImage) continue;
+          const leaves = () => {
+            const out: Array<{ el: Element; b: DOMRect }> = [];
+            for (const el of root.querySelectorAll('*')) {
+              if (el.children.length > 0) continue;
+              if (el.closest('[aria-hidden="true"]')) continue;
+              const s = getComputedStyle(el);
+              if (s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) continue;
+              let b = el.getBoundingClientRect();
+              if (b.width === 0 || b.height === 0) continue;
+              if (b.right <= 0 || b.left >= vw) continue;
+              const txt = (el.textContent || '').trim();
+              const pressable = Boolean(
+                el.closest(
+                  'button,a[href],input,select,textarea,[role="button"],[role="link"],[role="checkbox"],[role="switch"],[tabindex]:not([tabindex="-1"])'
+                )
+              );
+              const meaningfulImage =
+                el.tagName === 'IMG' && Boolean((el.getAttribute('alt') || '').trim());
+              if (!txt && !pressable && !meaningfulImage) continue;
 
-            /* MEASURE THE GLYPHS, NOT THE BOX. A text leaf inside a flex row
+              /* MEASURE THE GLYPHS, NOT THE BOX. A text leaf inside a flex row
                stretches to the row's height by default, so its BOX can run
                hundreds of pixels past text that actually sits at the top —
                the jackpot page's empty-state <p> reported 704px "covered"
                while every word of it was plainly visible. A Range over the
                text node gives the rectangle the reader can actually see. */
-            if (txt && el.firstChild && el.firstChild.nodeType === 3) {
-              const range = document.createRange();
-              range.selectNodeContents(el);
-              const rb = range.getBoundingClientRect();
-              if (rb.width > 0 && rb.height > 0) b = rb;
-            }
-            let p: Element | null = el;
-            let inFixed = false;
-            while (p && p !== root) {
-              const ps = getComputedStyle(p);
-              if (ps.position === 'fixed') {
-                inFixed = true;
-                break;
+              if (txt && el.firstChild && el.firstChild.nodeType === 3) {
+                const range = document.createRange();
+                range.selectNodeContents(el);
+                const rb = range.getBoundingClientRect();
+                if (rb.width > 0 && rb.height > 0) b = rb;
               }
-              p = p.parentElement;
+              let clippedTop = b.top;
+              let clippedRight = b.right;
+              let clippedBottom = b.bottom;
+              let clippedLeft = b.left;
+              let p: Element | null = el;
+              let inFixed = false;
+              while (p && p !== root) {
+                const ps = getComputedStyle(p);
+                if (ps.position === 'fixed') {
+                  inFixed = true;
+                  break;
+                }
+                const clipsX = /(auto|scroll|hidden|clip)/.test(ps.overflowX);
+                const clipsY = /(auto|scroll|hidden|clip)/.test(ps.overflowY);
+                if (clipsX || clipsY) {
+                  const pb = p.getBoundingClientRect();
+                  if (clipsX) {
+                    clippedLeft = Math.max(clippedLeft, pb.left);
+                    clippedRight = Math.min(clippedRight, pb.right);
+                  }
+                  if (clipsY) {
+                    clippedTop = Math.max(clippedTop, pb.top);
+                    clippedBottom = Math.min(clippedBottom, pb.bottom);
+                  }
+                }
+                p = p.parentElement;
+              }
+              if (inFixed) continue;
+              if (clippedRight <= clippedLeft || clippedBottom <= clippedTop) continue;
+              b = DOMRect.fromRect({
+                x: clippedLeft,
+                y: clippedTop,
+                width: clippedRight - clippedLeft,
+                height: clippedBottom - clippedTop,
+              });
+              out.push({ el, b });
             }
-            if (inFixed) continue;
-            out.push({ el, b });
-          }
-          return out;
-        };
+            return out;
+          };
 
-        const describe = (el: Element, b: DOMRect, covered: number) => ({
-          coveredPx: Math.round(covered),
-          sel:
-            el.tagName.toLowerCase() +
-            (el.className ? '.' + String(el.className).split(' ')[0].slice(0, 26) : ''),
-          text: (el.textContent || '').trim().slice(0, 34).replace(/\s+/g, ' '),
-        });
+          const describe = (el: Element, b: DOMRect, covered: number) => ({
+            coveredPx: Math.round(covered),
+            sel:
+              el.tagName.toLowerCase() +
+              (el.className ? '.' + String(el.className).split(' ')[0].slice(0, 26) : ''),
+            text: (el.textContent || '').trim().slice(0, 34).replace(/\s+/g, ' '),
+          });
 
-        const hits: Array<{ edge: 'top' | 'bottom' } & ReturnType<typeof describe>> = [];
+          const hits: Array<{ edge: 'top' | 'bottom' } & ReturnType<typeof describe>> = [];
 
-        // ── TOP: at rest, nothing should already be under the header.
-        window.scrollTo(0, 0);
-        await new Promise((r) => setTimeout(r, 350));
-        if (topBar) {
-          const headerBottom = topBar.getBoundingClientRect().bottom;
-          let worst: ReturnType<typeof describe> | null = null;
-          for (const { el, b } of leaves()) {
-            const covered = headerBottom - b.top;
-            if (covered > SLACK && b.bottom > 0) {
-              const d = describe(el, b, covered);
-              if (!worst || d.coveredPx > worst.coveredPx) worst = d;
+          /* The app deliberately enables smooth scrolling. `window.scrollTo`
+               therefore returned while long pages were still moving, and the
+               old fixed 350/450ms sleeps measured ordinary mid-page content as
+               if it were the unreachable final row. Move the real scrolling
+               element synchronously and verify the boundary instead of timing
+               an animation whose duration grows with the page. */
+          const scrollingElement = document.scrollingElement ?? document.documentElement;
+          const scrollingStyle = (scrollingElement as HTMLElement).style;
+          const scrollInstantlyTo = async (top: number) => {
+            const previousScrollBehavior = scrollingStyle.scrollBehavior;
+            scrollingStyle.scrollBehavior = 'auto';
+            scrollingElement.scrollTop = top;
+            await new Promise<void>((resolve) =>
+              requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+            );
+            scrollingStyle.scrollBehavior = previousScrollBehavior;
+          };
+
+          // ── TOP: at rest, nothing should already be under the header.
+          await scrollInstantlyTo(0);
+          if (topBar) {
+            const headerBottom = topBar.getBoundingClientRect().bottom;
+            let worst: ReturnType<typeof describe> | null = null;
+            for (const { el, b } of leaves()) {
+              const covered = headerBottom - b.top;
+              if (covered > SLACK && b.bottom > 0) {
+                const d = describe(el, b, covered);
+                if (!worst || d.coveredPx > worst.coveredPx) worst = d;
+              }
             }
+            if (worst) hits.push({ edge: 'top', ...worst });
           }
-          if (worst) hits.push({ edge: 'top', ...worst });
+
+          // ── BOTTOM: only provable once the page cannot scroll further.
+          if (bottomBar) {
+            await scrollInstantlyTo(scrollingElement.scrollHeight);
+            const maxScrollTop = scrollingElement.scrollHeight - scrollingElement.clientHeight;
+            if (Math.abs(scrollingElement.scrollTop - maxScrollTop) > SLACK) {
+              throw new Error(
+                `Mobile chrome audit did not reach its scroll boundary: ${scrollingElement.scrollTop}/${maxScrollTop}`
+              );
+            }
+            const navTop = bottomBar.getBoundingClientRect().top;
+            let worst: ReturnType<typeof describe> | null = null;
+            for (const { el, b } of leaves()) {
+              if (b.top >= vh) continue; // below the fold entirely, not on screen
+              const covered = b.bottom - navTop;
+              if (covered > SLACK) {
+                const d = describe(el, b, covered);
+                if (!worst || d.coveredPx > worst.coveredPx) worst = d;
+              }
+            }
+            if (worst) hits.push({ edge: 'bottom', ...worst });
+          }
+
+          return { hits, hadTop: !!topBar, hadBottom: !!bottomBar };
+        },
+        { SLACK }
+      );
+
+    let found: OcclusionMeasurement | null = null;
+    let lastNavigationError: unknown;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        found = await measureCurrentDocument();
+        break;
+      } catch (error) {
+        if (!TRANSIENT_DOCUMENT_ERROR.test(String(error))) throw error;
+        lastNavigationError = error;
+        await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => undefined);
+        await page.waitForTimeout(750);
+
+        if (page.url().includes('/auth')) {
+          skipped.push(`${route}: navigated to auth while measuring`);
+          continue routeLoop;
         }
-
-        // ── BOTTOM: only provable once the page cannot scroll further.
-        if (bottomBar) {
-          window.scrollTo(0, document.documentElement.scrollHeight);
-          await new Promise((r) => setTimeout(r, 450));
-          const navTop = bottomBar.getBoundingClientRect().top;
-          let worst: ReturnType<typeof describe> | null = null;
-          for (const { el, b } of leaves()) {
-            if (b.top >= vh) continue; // below the fold entirely, not on screen
-            const covered = b.bottom - navTop;
-            if (covered > SLACK) {
-              const d = describe(el, b, covered);
-              if (!worst || d.coveredPx > worst.coveredPx) worst = d;
-            }
-          }
-          if (worst) hits.push({ edge: 'bottom', ...worst });
+        const retryPathname = new URL(page.url()).pathname.replace(/\/$/, '');
+        if (retryPathname !== CLUB_ARENA_PATH && !retryPathname.startsWith(`${CLUB_ARENA_PATH}/`)) {
+          skipped.push(`${route}: routes outside Club Arena to ${retryPathname}`);
+          continue routeLoop;
         }
+      }
+    }
 
-        return { hits, hadTop: !!topBar, hadBottom: !!bottomBar };
-      },
-      { SLACK }
-    );
+    if (!found) {
+      throw new Error(
+        `${route}: Club Arena document did not stabilize after navigation: ${String(lastNavigationError)}`
+      );
+    }
 
     if (!found.hadTop && !found.hadBottom) noChrome.push(route);
     for (const h of found.hits) {

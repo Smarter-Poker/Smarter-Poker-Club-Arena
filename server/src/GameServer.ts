@@ -1381,7 +1381,14 @@ export class GameServer {
           // chips in 24h, clustered at restarts. This files them back into
           // the durable queue; banking still goes through the hand-gated,
           // idempotent atomic_distribute_rake below.
-          await requeueUnbankedCashRake(48, 10, 200);
+          // 6 hours, not 48: MEASURED 2026-08-31, the 48h scan takes 12.9s and
+          // PostgREST cancels at ~8s, so the very first production run of this
+          // sweep died with 57014 and it had never healed anything. The SQL now
+          // carries its own 120s ceiling AND this window matches the cadence —
+          // at a 5-minute cycle a 6-hour window gives an orphaned hand ~72
+          // chances to be caught, for an eighth of the rows (3.3s measured).
+          // Pass 48 explicitly for a catch-up after an outage.
+          await requeueUnbankedCashRake(6, 10, 200);
         } catch (err) {
           reportError(err, 'GameServer.bbj_drift_audit_failed');
         }

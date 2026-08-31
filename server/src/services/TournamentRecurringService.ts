@@ -816,6 +816,27 @@ export function selectHorseCandidates(
  * Larger SNG fields (6-max, 9-max) and MTTs keep the scheduled-registration
  * model: they are events, not tables you walk up to.
  */
+/** The columns joinability is decided from. Kept minimal so the read stays cheap. */
+export interface TournamentTableJoinability {
+  status?: string | null;
+  is_deleted?: boolean | null;
+}
+
+/**
+ * Can a player actually sit at this table row?
+ *
+ * A deleted row is gone and a closed row cannot be seated into -
+ * fn_take_seat_and_buy_in and the engine's own discovery both read
+ * status IN ('waiting','running'). Anything else is joinable; an unknown
+ * status is treated as joinable on purpose, because the failure direction
+ * that matters is calling a live table dead and opening a duplicate board.
+ */
+export function isJoinableTableRow(row: TournamentTableJoinability | null | undefined): boolean {
+  if (!row) return false;
+  if (row.is_deleted === true) return false;
+  return String(row.status ?? '').toLowerCase() !== 'closed';
+}
+
 export function isSeatFirstFormat(variant: string, maxPlayers: number): boolean {
   return String(variant).toLowerCase() === 'spin' || maxPlayers <= 2;
 }
@@ -2123,17 +2144,31 @@ export class TournamentRecurringService {
        * exclude - but a board that wedges itself when one repair fails is
        * exactly the shape that produced the outage, so the rule is stated
        * here too.
+       *
+       * OWNING A TABLE IS NOT THE SAME AS BEING JOINABLE (2026-08-31). The
+       * test used to be "does a table row exist", and that is how the entire
+       * Sit-and-Go board died for ten hours: thirty-two heads-up SNGs sat
+       * REGISTERING, each owning exactly ONE table whose status was 'closed'.
+       * A closed table cannot be sat in, so the past-start top-up could never
+       * fill them, they could never start, and every one of the thirty-two
+       * configs read as covered. missing.length was 0 on every tick and not a
+       * single new SNG was opened. The tables had been closed by the retired
+       * World Hub legacy engine (GameController._cleanupStaleTables, disarmed
+       * the same evening) - but the board must not be able to absorb husks
+       * whatever creates them, so the test is now joinability, not existence.
        */
       const rows = (openRows ?? []) as { id: string; name: string; max_players: number }[];
       const seatFirstIds = rows
         .filter((r) => isSeatFirstFormat(variant, Number(r.max_players) || 0))
         .map((r) => r.id);
 
-      let withTable = new Set<string>();
+      let withJoinableTable = new Set<string>();
       if (seatFirstIds.length > 0) {
         const { data: tableRows, error: tableErr } = await supabase
           .from('tables')
-          .select('tournament_id')
+          // status and is_deleted as well as the id: OWNING a table is not the
+          // same as being joinable. See isJoinableTableRow.
+          .select('tournament_id, status, is_deleted')
           .in('tournament_id', seatFirstIds);
         if (tableErr) {
           // Fail CLOSED, as the read above does: assume the board is fine
@@ -2146,15 +2181,19 @@ export class TournamentRecurringService {
           );
           return;
         }
-        withTable = new Set(
-          (tableRows ?? []).map((r) => String((r as { tournament_id: string }).tournament_id))
+        withJoinableTable = new Set(
+          (tableRows ?? [])
+            .filter((r) => isJoinableTableRow(r as TournamentTableJoinability))
+            .map((r) => String((r as { tournament_id: string }).tournament_id))
         );
       }
 
       const open = new Set(
         rows
           .filter(
-            (r) => !isSeatFirstFormat(variant, Number(r.max_players) || 0) || withTable.has(r.id)
+            (r) =>
+              !isSeatFirstFormat(variant, Number(r.max_players) || 0) ||
+              withJoinableTable.has(r.id)
           )
           .map((r) => String(r.name))
       );

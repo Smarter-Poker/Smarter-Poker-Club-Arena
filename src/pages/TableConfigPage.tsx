@@ -1324,13 +1324,11 @@ export default function TableConfigPage() {
      * (scripts/ci/supabase-required-columns-manifest.json), so omitting them
      * cannot refuse the insert.
      *
-     * THREE THAT LOOK DEAD AND ARE NOT — verified, do not "finish the job":
+     * TWO THAT LOOK DEAD AND ARE NOT — verified, do not "finish the job":
      *   game_mode    five live club-data RPCs read it
      *                (COALESCE(t.game_mode,'') ILIKE '%mixed%').
-     *   min_buy_in_bb / max_buy_in_bb
-     *                20260828_cash_buyins_are_40bb_to_200bb.sql resyncs them
-     *                deliberately "so the two column families cannot
-     *                disagree".
+     *   ante_bb      live readers use the authored BB value while the engine
+     *                posts the derived chip value in `ante`.
      * The rest that remain below have real readers on `tables` rows.
      */
     // SNG/MTT specific

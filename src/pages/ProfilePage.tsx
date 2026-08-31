@@ -108,6 +108,34 @@ const DEFAULT_STATS: PokerStats = {
   roi: 0,
 };
 
+const finiteStat = (value: unknown): number => {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+function profileStatsFromV2(payload: any): PokerStats | null {
+  if (payload?.contract_version !== 2 || !payload?.overall) return null;
+  const overall = payload.overall;
+  const tournaments = payload.tournaments ?? {};
+  const totalHands = finiteStat(overall.total_hands);
+  const handsWon = finiteStat(overall.hands_won);
+  return {
+    totalHands,
+    vpip: finiteStat(overall.vpip) * 100,
+    pfr: finiteStat(overall.pfr) * 100,
+    threeBet: finiteStat(overall.three_bet_percent) * 100,
+    aggression: finiteStat(overall.aggression_factor),
+    bbPer100: finiteStat(overall.bb_per_100),
+    biggestPot: finiteStat(overall.biggest_pot_won),
+    totalProfit: finiteStat(overall.total_profit),
+    winRate: totalHands > 0 ? (handsWon / totalHands) * 100 : 0,
+    tournamentsPlayed: finiteStat(tournaments.entries),
+    tournamentsWon: finiteStat(tournaments.wins),
+    bountyKOs: finiteStat(tournaments.total_bounties),
+    roi: finiteStat(tournaments.roi) * 100,
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // HELPER FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -283,6 +311,7 @@ export default function ProfilePage() {
   // Real data from database
   const [user, setUser] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<PokerStats>(DEFAULT_STATS);
+  const [statsAvailable, setStatsAvailable] = useState(false);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [diamonds, setDiamonds] = useState(0);
   const [isVIP, setIsVIP] = useState(false);
@@ -351,7 +380,10 @@ export default function ProfilePage() {
           if (cached) {
             const cp = JSON.parse(cached);
             if (cp.user) setUser(cp.user);
-            if (cp.stats) setStats(cp.stats);
+            if (cp.stats) {
+              setStats(cp.stats);
+              setStatsAvailable(true);
+            }
             if (cp.diamonds != null) setDiamonds(cp.diamonds);
             if (cp.isVIP != null) setIsVIP(cp.isVIP);
             if (cp.dailyStreak != null) setDailyStreak(cp.dailyStreak);
@@ -412,6 +444,16 @@ export default function ProfilePage() {
                 .eq('user_id', authUser.id)
                 .order('created_at', { ascending: false })
                 .limit(200)
+                .then((r) => r),
+            { maxRetries: 2, isMountedRef: isMountedRef }
+          ),
+          // Owner-only v2 Stats snapshot. This used to be promised as loaded
+          // separately but was never called, leaving a dashboard of fabricated
+          // zeroes on every profile.
+          retryFetch(
+            () =>
+              supabase
+                .rpc('ca_player_stats_overview_v2', { p_user: authUser.id, p_days: null })
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: isMountedRef }
           ),
@@ -484,7 +526,7 @@ export default function ProfilePage() {
         // Challenges are NOT loaded here any more: this page links to
         // /challenges instead of rendering them, so fetching all three tiers on
         // every profile visit was pure waste (9 round trips on a fresh day).
-        const [achievementsResult, transactionsResult] = await secondaryDataPromise;
+        const [achievementsResult, transactionsResult, statsResult] = await secondaryDataPromise;
 
         if (!isMounted) return;
 
@@ -512,6 +554,18 @@ export default function ProfilePage() {
           setTransactions([...transactionsResult.value.data].reverse());
         } else {
           setTransactions([]);
+        }
+
+        const profileStats =
+          statsResult.status === 'fulfilled' && !statsResult.value.error
+            ? profileStatsFromV2(statsResult.value.data)
+            : null;
+        if (profileStats) {
+          setStats(profileStats);
+          setStatsAvailable(true);
+        } else {
+          setStats(DEFAULT_STATS);
+          setStatsAvailable(false);
         }
 
         // Notify Master Bus that profile is loaded
@@ -600,19 +654,13 @@ export default function ProfilePage() {
           .getUser()
           .then(({ data: { user: authUser } }) => {
             if (authUser && isMounted) {
-              // Stats column doesn't exist in profiles table — stats come from poker_session_stats
-              // For now, use total_hands_played from profiles as the only available stat
               supabase
-                .from('profiles')
-                .select('total_hands_played')
-                .eq('id', authUser.id)
-                .maybeSingle()
-                .then(({ data: profile }) => {
-                  if (profile && isMounted) {
-                    setStats((prev) => ({
-                      ...prev,
-                      totalHands: profile.total_hands_played || 0,
-                    }));
+                .rpc('ca_player_stats_overview_v2', { p_user: authUser.id, p_days: null })
+                .then(({ data, error }) => {
+                  const freshStats = !error ? profileStatsFromV2(data) : null;
+                  if (isMounted && freshStats) {
+                    setStats(freshStats);
+                    setStatsAvailable(true);
                   }
                 });
             }
@@ -1029,114 +1077,126 @@ export default function ProfilePage() {
       >
         {activeTab === 'stats' && (
           <div className={styles.statsContainer}>
-            <div className={styles.statsGroup}>
-              <h3>Core Stats</h3>
-              <div className={styles.circularStatsGrid}>
-                <div
-                  className={`${styles.circularGaugeWrapper} ${visibleStats.has(0) ? styles.visible : styles.hidden}`}
-                >
-                  <CircularGauge
-                    value={stats.vpip}
-                    label="VPIP"
-                    sublabel="Volun. Put In Pot"
-                    accent="#00d4ff"
-                    size={gaugeSize}
-                  />
+            {statsAvailable ? (
+              <>
+                <div className={styles.statsGroup}>
+                  <h3>Core Stats</h3>
+                  <div className={styles.circularStatsGrid}>
+                    <div
+                      className={`${styles.circularGaugeWrapper} ${visibleStats.has(0) ? styles.visible : styles.hidden}`}
+                    >
+                      <CircularGauge
+                        value={stats.vpip}
+                        label="VPIP"
+                        sublabel="Volun. Put In Pot"
+                        accent="#00d4ff"
+                        size={gaugeSize}
+                      />
+                    </div>
+                    <div
+                      className={`${styles.circularGaugeWrapper} ${visibleStats.has(1) ? styles.visible : styles.hidden}`}
+                    >
+                      <CircularGauge
+                        value={stats.pfr}
+                        label="PFR"
+                        sublabel="Pre-Flop Raise"
+                        accent="#fbbf24"
+                        size={gaugeSize}
+                      />
+                    </div>
+                    <div
+                      className={`${styles.circularGaugeWrapper} ${visibleStats.has(2) ? styles.visible : styles.hidden}`}
+                    >
+                      <CircularGauge
+                        value={stats.winRate}
+                        label="Win Rate"
+                        sublabel="Hands Won"
+                        accent="#10b981"
+                        size={gaugeSize}
+                      />
+                    </div>
+                  </div>
+                  <div className={styles.statsGrid}>
+                    <StatCard
+                      value={stats.totalHands.toLocaleString()}
+                      label="Hands Played"
+                      isVisible={visibleStats.has(3)}
+                    />
+                    <StatCard
+                      value={`${stats.threeBet}%`}
+                      label="3-Bet"
+                      isVisible={visibleStats.has(4)}
+                    />
+                    <StatCard
+                      value={stats.aggression.toFixed(1)}
+                      label="Aggression"
+                      isVisible={visibleStats.has(5)}
+                    />
+                  </div>
                 </div>
-                <div
-                  className={`${styles.circularGaugeWrapper} ${visibleStats.has(1) ? styles.visible : styles.hidden}`}
-                >
-                  <CircularGauge
-                    value={stats.pfr}
-                    label="PFR"
-                    sublabel="Pre-Flop Raise"
-                    accent="#fbbf24"
-                    size={gaugeSize}
-                  />
-                </div>
-                <div
-                  className={`${styles.circularGaugeWrapper} ${visibleStats.has(2) ? styles.visible : styles.hidden}`}
-                >
-                  <CircularGauge
-                    value={stats.winRate}
-                    label="Win Rate"
-                    sublabel="Hands Won"
-                    accent="#10b981"
-                    size={gaugeSize}
-                  />
-                </div>
-              </div>
-              <div className={styles.statsGrid}>
-                <StatCard
-                  value={stats.totalHands.toLocaleString()}
-                  label="Hands Played"
-                  isVisible={visibleStats.has(3)}
-                />
-                <StatCard
-                  value={`${stats.threeBet}%`}
-                  label="3-Bet"
-                  isVisible={visibleStats.has(4)}
-                />
-                <StatCard
-                  value={stats.aggression.toFixed(1)}
-                  label="Aggression"
-                  isVisible={visibleStats.has(5)}
-                />
-              </div>
-            </div>
 
-            <div className={styles.statsGroup}>
-              <h3>Financial</h3>
-              <div className={styles.statsGrid}>
-                <StatCard
-                  value={`${stats.bbPer100 > 0 ? '+' : ''}${stats.bbPer100}`}
-                  label="BB/100"
-                  positive={stats.bbPer100 > 0 ? true : stats.bbPer100 < 0 ? false : null}
-                  isVisible={visibleStats.has(6)}
-                />
-                <StatCard
-                  value={stats.biggestPot.toLocaleString()}
-                  label="Biggest Pot"
-                  isVisible={visibleStats.has(7)}
-                />
-                <StatCard
-                  value={`${stats.totalProfit > 0 ? '+' : ''}${stats.totalProfit.toLocaleString()}`}
-                  label="Total Profit"
-                  positive={stats.totalProfit > 0}
-                  isVisible={visibleStats.has(8)}
-                />
-              </div>
-            </div>
+                <div className={styles.statsGroup}>
+                  <h3>Financial</h3>
+                  <div className={styles.statsGrid}>
+                    <StatCard
+                      value={`${stats.bbPer100 > 0 ? '+' : ''}${stats.bbPer100}`}
+                      label="BB/100"
+                      positive={stats.bbPer100 > 0 ? true : stats.bbPer100 < 0 ? false : null}
+                      isVisible={visibleStats.has(6)}
+                    />
+                    <StatCard
+                      value={stats.biggestPot.toLocaleString()}
+                      label="Biggest Pot"
+                      isVisible={visibleStats.has(7)}
+                    />
+                    <StatCard
+                      value={`${stats.totalProfit > 0 ? '+' : ''}${stats.totalProfit.toLocaleString()}`}
+                      label="Total Profit"
+                      positive={stats.totalProfit > 0}
+                      isVisible={visibleStats.has(8)}
+                    />
+                  </div>
+                </div>
 
-            <div className={styles.statsGroup}>
-              <h3>Tournaments</h3>
-              <div className={styles.statsGrid}>
-                <StatCard
-                  value={stats.tournamentsPlayed}
-                  label="Played"
-                  isVisible={visibleStats.has(9)}
-                />
-                <StatCard
-                  value={stats.tournamentsWon}
-                  label="Won"
-                  isVisible={visibleStats.has(10)}
-                />
-                <StatCard
-                  value={stats.bountyKOs}
-                  label="Bounty KOs"
-                  isVisible={visibleStats.has(11)}
-                />
-                <StatCard
-                  value={
-                    stats.tournamentsPlayed > 0
-                      ? `${((stats.tournamentsWon / stats.tournamentsPlayed) * 100).toFixed(1)}%`
-                      : '0%'
-                  }
-                  label="Win Rate"
-                  isVisible={visibleStats.has(12)}
-                />
+                <div className={styles.statsGroup}>
+                  <h3>Tournaments</h3>
+                  <div className={styles.statsGrid}>
+                    <StatCard
+                      value={stats.tournamentsPlayed}
+                      label="Played"
+                      isVisible={visibleStats.has(9)}
+                    />
+                    <StatCard
+                      value={stats.tournamentsWon}
+                      label="Won"
+                      isVisible={visibleStats.has(10)}
+                    />
+                    <StatCard
+                      value={stats.bountyKOs}
+                      label="Bounty KOs"
+                      isVisible={visibleStats.has(11)}
+                    />
+                    <StatCard
+                      value={
+                        stats.tournamentsPlayed > 0
+                          ? `${((stats.tournamentsWon / stats.tournamentsPlayed) * 100).toFixed(1)}%`
+                          : '0%'
+                      }
+                      label="Win Rate"
+                      isVisible={visibleStats.has(12)}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className={styles.statsGroup} role="status">
+                <h3>Stats Snapshot Unavailable</h3>
+                <p>
+                  No Verified Player Analytics Payload Is Available Yet. Open The Full Workspace To
+                  Retry Or Review The Current Coverage Status.
+                </p>
               </div>
-            </div>
+            )}
             <button
               type="button"
               className={styles.workspaceCta}

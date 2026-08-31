@@ -32,6 +32,71 @@ const BOUNDED_V2 = readFileSync(
   resolve(DIR, '20260831235998_stats_v2_reads_bounded_rollup.sql'),
   'utf8'
 );
+const LOCKED_ROLLUPS = readFileSync(
+  resolve(DIR, '20260901000005_stats_rollups_bounded_locked.sql'),
+  'utf8'
+);
+const RECOVERY_BATCH = readFileSync(
+  resolve(DIR, '20260901000006_stats_rollup_recovery_batch.sql'),
+  'utf8'
+);
+const MAINTENANCE_PROBES = readFileSync(
+  resolve(DIR, '20260901000007_stats_maintenance_probes_bounded.sql'),
+  'utf8'
+);
+
+describe('recoverable Stats rollup operations', () => {
+  it('serializes, bounds, and monotonically checkpoints the stat rollup', () => {
+    expect(LOCKED_ROLLUPS).toContain(
+      "pg_try_advisory_xact_lock(hashtext('ca_roll_hand_stats_forward'))"
+    );
+    expect(LOCKED_ROLLUPS).toContain('v_max_hands constant int := 15000');
+    expect(LOCKED_ROLLUPS).toContain('LIMIT v_max_hands');
+    expect(LOCKED_ROLLUPS).toContain('rolled_ceil = greatest');
+    expect(LOCKED_ROLLUPS).toMatch(/ca_hand_player_stat_state[\s\S]{0,100}FOR UPDATE/);
+  });
+
+  it('bounds both directions of the player-hand index refresh and validates UUIDs', () => {
+    expect(LOCKED_ROLLUPS.match(/LIMIT v_limit/g) ?? []).toHaveLength(2);
+    expect(LOCKED_ROLLUPS).toContain('idx_ceil = greatest');
+    expect(LOCKED_ROLLUPS).toContain('idx_floor = least');
+    expect(LOCKED_ROLLUPS).not.toContain('[0-9a-fA-F-]{36}');
+  });
+
+  it('removes the raw-history tail from notable-hand reads', () => {
+    expect(LOCKED_ROLLUPS).toContain("position('h.created_at > v_ceil' IN v_source)");
+    expect(LOCKED_ROLLUPS).toContain(
+      'Stats notable-hand path can still scan unbounded live history'
+    );
+  });
+
+  it('keeps outage recovery inside the proven checkpointing batch', () => {
+    expect(RECOVERY_BATCH).toContain('v_max_hands constant int := 3000');
+    expect(RECOVERY_BATCH).toContain('coalesce(p_max_hands, 3000), 1), 3000');
+  });
+});
+
+describe('scheduled Stats maintenance probes stay bounded', () => {
+  it('indexes and reads the live daily ledger instead of 103k table records', () => {
+    expect(MAINTENANCE_PROBES).toContain('idx_cmds_stat_date_table_club');
+    expect(MAINTENANCE_PROBES).toMatch(
+      /ca_clubs_with_rebuild_backlog[\s\S]*?FROM public\.club_member_daily_stats/
+    );
+    expect(MAINTENANCE_PROBES).toMatch(
+      /ca_clubs_missing_hand_daily[\s\S]*?FROM public\.club_member_daily_stats/
+    );
+  });
+
+  it('checks the daily shard directly and preserves service-only execution', () => {
+    expect(MAINTENANCE_PROBES).toContain('FROM public.club_hand_daily_shard');
+    expect(MAINTENANCE_PROBES).toMatch(
+      /REVOKE ALL ON FUNCTION public\.ca_clubs_with_rebuild_backlog[\s\S]*?authenticated/
+    );
+    expect(MAINTENANCE_PROBES).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.ca_clubs_missing_hand_daily\(date\)[\s\S]*?service_role/
+    );
+  });
+});
 
 describe('the read path does not touch hand_history for its window', () => {
   it('reads the analysis window from ca_hand_player_stat', () => {

@@ -9,7 +9,7 @@ job — so nothing was ever written and nothing needed repairing.
 
 1. **It wrote to a generated column.** The INSERT listed `drift`, and
    `ledger_reconcile_log.drift` is `GENERATED ALWAYS AS (stored_balance -
-   ledger_balance)`. Every call raised `428C9`. The value was right —
+ledger_balance)`. Every call raised `428C9`. The value was right —
    `ledger_balance` carries the rake owed and `stored_balance` the rake taken,
    so the generated drift is already `rake - allowed` — the column just has to
    be left for Postgres to fill.
@@ -36,10 +36,10 @@ does not double-log.
 
 What it found, live:
 
-| kind | severity | hands | chips over | window |
-| --- | --- | --- | --- | --- |
-| `no_flop_no_drop` | critical | 20 | 9.15 | 2026-08-30 16:45 → 2026-08-31 13:34, ongoing |
-| `board_not_recorded` | warn | 15 | 0.00 | 2026-08-30 16:19 → 2026-08-31 04:46 |
+| kind                 | severity | hands | chips over | window                                       |
+| -------------------- | -------- | ----- | ---------- | -------------------------------------------- |
+| `no_flop_no_drop`    | critical | 20    | 9.15       | 2026-08-30 16:45 → 2026-08-31 13:34, ongoing |
+| `board_not_recorded` | warn     | 15    | 0.00       | 2026-08-30 16:19 → 2026-08-31 04:46          |
 
 `board_not_recorded` carries no chip overage because the rake on those hands is
 correct — it is the hand history that is missing its board. Note that it stops

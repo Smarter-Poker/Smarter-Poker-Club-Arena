@@ -15,6 +15,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { isClubStaff } from '../../types/clubRoles';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -267,7 +268,11 @@ export default function ChipTransferModal({
           ? `Sub-Agent ${recipientData.username}`
           : recipientData.username;
 
-    if (senderRole === 'owner') {
+    // Club staff spend from the club bank; an agent spends from their own
+    // wallet. This compared the sender role against the single word owner, so
+    // a co-owner and an admin were described - and, below, ROUTED - as if the
+    // chips were their own.
+    if (isClubStaff(senderRole)) {
       return `${clubName} → ${recipientLabel}: chip allocation`;
     }
     return `Agent → ${recipientLabel}: player funding (${clubName})`;
@@ -301,7 +306,7 @@ export default function ChipTransferModal({
 
       // Use ChipFlowService for proper atomic wallet transfer
       if (
-        senderRole === 'owner' &&
+        isClubStaff(senderRole) &&
         (recipientData?.role === 'agent' || recipientData?.role === 'super_agent')
       ) {
         await ChipFlowService.clubToAgent(
@@ -312,7 +317,7 @@ export default function ChipTransferModal({
           recipientData?.username || 'Agent',
           clubName
         );
-      } else if (senderRole === 'owner') {
+      } else if (isClubStaff(senderRole)) {
         await ChipFlowService.clubToPlayer(
           user.id,
           selectedRecipient,

@@ -602,6 +602,30 @@
   line-height: 1.5;
 }
 
+/* The commission and rakeback the promotion is being granted with. Mobile
+   first at 375px: one column, full-width fields, thumb-sized targets. */
+.mm-roles__rates {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0 0 0.75rem;
+  padding: 0.7rem;
+  border: 1px solid var(--ca-border, rgba(255, 255, 255, 0.12));
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.mm-roles__rates .mm-field {
+  margin: 0;
+}
+
+.mm-roles__rates-note {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--ca-text-dim);
+}
+
 .mm-roles__confirm-actions {
   display: flex;
   gap: 0.5rem;

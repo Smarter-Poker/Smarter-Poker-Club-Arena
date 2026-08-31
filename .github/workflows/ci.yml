@@ -605,6 +605,11 @@ jobs:
             exit 1
           fi
 
+      # BLOCKING: Supabase identifies migrations by the filename version. A
+      # duplicate version makes two different files compete for one ledger row.
+      - name: Supabase Invariants — New Migration Versions Are Unique
+        run: node scripts/ci/check-new-migration-version-collisions.mjs
+
       # BLOCKING: a SECURITY DEFINER function that writes, and that a browser
       # role can execute, must consult auth.uid()/auth.role()/auth.jwt(). On
       # 2026-08-27 nineteen did not. One of them let an ordinary member rewrite

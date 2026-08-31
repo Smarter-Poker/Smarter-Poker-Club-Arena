@@ -83,12 +83,22 @@ function collect(suite, out) {
     for (const t of spec.tests ?? []) {
       const results = t.results ?? [];
       const ran = results.some((r) => r.status && r.status !== 'skipped');
-      const bucket = out.get(file) ?? { executed: 0, skipped: 0, failed: 0, reasons: new Set() };
+      const bucket = out.get(file) ?? {
+        executed: 0,
+        skipped: 0,
+        failed: 0,
+        flaky: 0,
+        reasons: new Set(),
+      };
       if (ran) {
         bucket.executed += 1;
-        if (results.some((r) => r.status === 'failed' || r.status === 'timedOut')) {
-          bucket.failed += 1;
-        }
+        // Judge the LAST result, not any result. A test that failed once and
+        // passed on retry is flaky, and calling it "failed" in a report whose
+        // whole subject is honesty would be its own small lie.
+        const last = results[results.length - 1];
+        if (last && (last.status === 'failed' || last.status === 'timedOut')) bucket.failed += 1;
+        else if (results.some((r) => r.status === 'failed' || r.status === 'timedOut'))
+          bucket.flaky += 1;
       } else {
         bucket.skipped += 1;
         for (const r of results) {
@@ -140,16 +150,19 @@ const totals = rows.reduce(
     executed: acc.executed + s.executed,
     skipped: acc.skipped + s.skipped,
     failed: acc.failed + s.failed,
+    flaky: acc.flaky + s.flaky,
   }),
-  { executed: 0, skipped: 0, failed: 0 }
+  { executed: 0, skipped: 0, failed: 0, flaky: 0 }
 );
 
 const lines = [];
 lines.push('### Did the post-deploy suite actually verify production?');
 lines.push('');
-lines.push(`| Executed | Skipped | Failed | Spec files |`);
-lines.push(`| --- | --- | --- | --- |`);
-lines.push(`| ${totals.executed} | ${totals.skipped} | ${totals.failed} | ${rows.length} |`);
+lines.push(`| Executed | Skipped | Failed | Flaky | Spec files |`);
+lines.push(`| --- | --- | --- | --- | --- |`);
+lines.push(
+  `| ${totals.executed} | ${totals.skipped} | ${totals.failed} | ${totals.flaky} | ${rows.length} |`
+);
 lines.push('');
 
 if (rows.length) {

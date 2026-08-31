@@ -930,13 +930,14 @@ export const LeaderboardService = {
     }
   },
 
-  async getManageableRewardContexts(): Promise<LeaderboardRewardContext[]> {
+  async getManageableRewardContexts(strict: boolean = false): Promise<LeaderboardRewardContext[]> {
     try {
       const { data, error } = await supabase.rpc('fn_leaderboard_reward_contexts');
       if (error) throw error;
       return (data as LeaderboardRewardContext[]) || [];
     } catch (err) {
       reportError(err, 'LeaderboardService.getManageableRewardContexts');
+      if (strict) throw err;
       return [];
     }
   },

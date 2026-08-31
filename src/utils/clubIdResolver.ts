@@ -123,7 +123,7 @@ export function clearClubUUIDCache(): void {
   persistedLoaded = false;
 }
 
-export async function resolveClubUUID(clubIdParam: string): Promise<string> {
+export async function resolveClubUUID(clubIdParam: string, signal?: AbortSignal): Promise<string> {
   // Already a UUID — return as-is
   if (isUUID(clubIdParam)) return clubIdParam;
 
@@ -134,11 +134,8 @@ export async function resolveClubUUID(clubIdParam: string): Promise<string> {
   const filter = resolveClubIdFilter(clubIdParam);
 
   // Query clubs table to get the UUID
-  const { data, error } = await supabase
-    .from('clubs')
-    .select('id')
-    .eq(filter.column, filter.value)
-    .maybeSingle();
+  const query = supabase.from('clubs').select('id').eq(filter.column, filter.value);
+  const { data, error } = await (signal ? query.abortSignal(signal) : query).maybeSingle();
 
   /* A FAILED READ IS NOT "NO SUCH CLUB". The error used to be dropped, so an
      RLS refusal, a PostgREST 400 or a dropped connection was indistinguishable
@@ -170,8 +167,11 @@ export async function resolveClubUUID(clubIdParam: string): Promise<string> {
  * variant keeps the compatibility surface while giving trust boundaries an
  * explicit, fail-closed result.
  */
-export async function resolveClubUUIDStrict(clubIdParam: string): Promise<string> {
-  const resolvedId = await resolveClubUUID(clubIdParam);
+export async function resolveClubUUIDStrict(
+  clubIdParam: string,
+  signal?: AbortSignal
+): Promise<string> {
+  const resolvedId = await resolveClubUUID(clubIdParam, signal);
   if (!isUUID(resolvedId)) {
     throw new Error(`Club identity could not be resolved for "${clubIdParam}".`);
   }

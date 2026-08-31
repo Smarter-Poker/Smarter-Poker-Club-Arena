@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type {
   LobbyEntry,
@@ -16,6 +18,13 @@ import {
   validateArenaGameCardRegistry,
 } from '../src/components/lobby/game-cards/arenaGameCardRegistry';
 import type { LobbyRowContext } from '../src/components/lobby/lobbyCardContext';
+
+const ROOT = resolve(__dirname, '..');
+const CARD_CSS = readFileSync(
+  resolve(ROOT, 'src/components/lobby/game-cards/ArenaGameCard.css'),
+  'utf8'
+);
+const TABLE_CSS = readFileSync(resolve(ROOT, 'src/components/lobby/LobbyTable.css'), 'utf8');
 
 const rule = (key: string, label = key): RuleMedallion => ({ key, label, tip: label });
 
@@ -176,6 +185,28 @@ describe('Arena game-card creation', () => {
       expect(resolved.skin.mobile.asset).toMatch(/shell-mobile-v2\.webp$/);
       expect(Object.keys(resolved.template.zones).length).toBeGreaterThanOrEqual(5);
     }
+  });
+
+  it('centers every family on one visible-hardware rail and keeps live fills inside the chrome', () => {
+    expect(TABLE_CSS).toMatch(/\.arena-lobby-card-list\s*\{[^}]*justify-items:\s*center/s);
+    expect(TABLE_CSS).toMatch(/\.arena-lobby-card-list > div\s*\{[^}]*justify-items:\s*center/s);
+
+    for (const family of ['mtt', 'nlh', 'plo', 'spins', 'heads-up']) {
+      expect(CARD_CSS).toContain(`.arena-game-card--${family}[data-skin`);
+      expect(CARD_CSS).toMatch(
+        new RegExp(
+          `\\.arena-game-card--${family}\\[data-skin[^}]+--agc-mobile-canvas-width:\\s*[0-9.]+%`,
+          's'
+        )
+      );
+    }
+
+    expect(CARD_CSS).toMatch(
+      /\[data-skin\$='-v2'\] \.agc-action\s*\{[^}]*background:\s*transparent[^}]*box-shadow:\s*none/s
+    );
+    expect(CARD_CSS).toMatch(
+      /\[data-skin\$='-v2'\] \.agc-action::before\s*\{[^}]*inset:\s*var\(--agc-action-fill-inset,/s
+    );
   });
 
   it('maps live MTT player state to blue, red, gold, and disabled actions', () => {

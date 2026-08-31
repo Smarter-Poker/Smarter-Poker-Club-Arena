@@ -2308,24 +2308,10 @@
     padding: 18px 36px;
     overflow: hidden;
     background:
-      url('/hub/club-arena/assets/club-buttons/lobby/lobby-header-frame-v3.png') center / 100% 100%
-        no-repeat,
+      url('/hub/club-arena/assets/club-buttons/lobby/lobby-header-frame-universal-v4.png') center /
+        100% 100% no-repeat,
       #020507;
     text-align: center;
-  }
-
-  /* The approved source slice carries a Shark Club proof inside its chrome.
-     Every club uses this same frame, so cover only that proof well and render
-     the live club name above it. This preserves the exact metal without ever
-     publishing "Shark Club" inside another owner's arena. */
-  .club-mobile-welcome::before {
-    content: '';
-    position: absolute;
-    z-index: 0;
-    inset: 9px 20px 12px;
-    background: #05080a;
-    box-shadow: inset 0 0 16px #000;
-    pointer-events: none;
   }
 
   .club-mobile-welcome span,
@@ -2441,6 +2427,7 @@
   }
 
   .lobby-top__main {
+    --lobby-paired-card-ratio: 2.4 / 1;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     align-items: stretch;
@@ -2450,8 +2437,8 @@
   .lobby-top__identity,
   .lobby-bbj {
     width: 100%;
-    height: clamp(158px, 39vw, 190px);
-    aspect-ratio: auto;
+    height: auto;
+    aspect-ratio: var(--lobby-paired-card-ratio);
   }
 
   .club-identity__shell img,
@@ -2597,7 +2584,7 @@
 
   .lobby-top__identity,
   .lobby-bbj {
-    height: 150px;
+    height: auto;
   }
 
   .lobby-wallets-trigger {

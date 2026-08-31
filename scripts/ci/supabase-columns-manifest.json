@@ -1231,6 +1231,25 @@
       "notes",
       "added_at"
     ],
+    "ca_pending_promo_accruals": [
+      "id",
+      "club_id",
+      "user_id",
+      "wagered",
+      "hand_id",
+      "source",
+      "created_at",
+      "attempts",
+      "last_attempt_at",
+      "last_error",
+      "resolved_at"
+    ],
+    "ca_pgrst_reload_log": [
+      "id",
+      "sent_at",
+      "ddl_events",
+      "reason"
+    ],
     "ca_rake_schedule": [
       "sb",
       "bb",
@@ -10236,7 +10255,8 @@
       "field_size",
       "prize_pool",
       "payout_structure",
-      "recorded_by"
+      "recorded_by",
+      "metadata"
     ],
     "tournament_place_collisions": [
       "id",
@@ -12289,6 +12309,20 @@
       "actual_pct",
       "spec_pct",
       "window_draws"
+    ],
+    "v_spin_draw_fairness": [
+      "window_label",
+      "window_hours",
+      "draws",
+      "spec_e",
+      "realised_e",
+      "spec_sd",
+      "sem",
+      "z",
+      "spec_edge_pct",
+      "realised_edge_pct",
+      "constrained_draws",
+      "drift"
     ],
     "v_spin_reserve_health": [
       "club_id",

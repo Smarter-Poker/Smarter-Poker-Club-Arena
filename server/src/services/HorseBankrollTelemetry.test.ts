@@ -146,7 +146,7 @@ describe('WIRING - the module exists and something calls it', () => {
    */
   it('declares no event that nothing emits', () => {
     const declared = [...TELEMETRY.matchAll(/^\s*\| '([a-z_]+)';?$/gm)].map((m) => m[1]);
-    expect(declared.length).toBeGreaterThanOrEqual(12);
+    expect(declared.length).toBeGreaterThanOrEqual(13);
     /* Every file that may emit. A name whose only emitter is a file missing
        from this list reads as dead vocabulary and fails the pin, which is how
        the tournament gate's two events were caught when they landed. */

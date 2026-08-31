@@ -380,7 +380,7 @@ describe('ThemeSettingsModal hardening', () => {
   it('keeps premium card backs unavailable when ownership cannot be verified', async () => {
     mocks.purchaseResult = Promise.resolve({
       data: [],
-      error: { message: 'ownership query failed' },
+      error: { code: '42501', message: 'ownership query failed' },
     });
     renderStudio();
 
@@ -398,7 +398,7 @@ describe('ThemeSettingsModal hardening', () => {
   it('shows a retryable catalog failure instead of leaving paid prices silently unavailable', async () => {
     mocks.pricingResult = Promise.resolve({
       data: [],
-      error: { message: 'pricing query failed' },
+      error: { code: '42501', message: 'pricing query failed' },
     });
     renderStudio();
 

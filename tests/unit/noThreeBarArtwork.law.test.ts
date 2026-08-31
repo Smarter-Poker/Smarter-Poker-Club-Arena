@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 
 const ROOT = process.cwd();
 const TEXT_EXTENSIONS = new Set(['.css', '.html', '.js', '.jsx', '.ts', '.tsx']);
+const THREE_BAR_SVG_PATH = /M4\s*6h16M4\s*12h16M4\s*18h16/;
 
 function productionTextFiles(directory: string): string[] {
   const files: string[] = [];
@@ -40,6 +41,22 @@ describe('three-horizontal-line artwork can never return', () => {
       .map((file) => relative(ROOT, file));
 
     expect(offenders).toEqual([]);
+  });
+
+  it('contains no three-horizontal-stroke SVG geometry in source or built JavaScript', () => {
+    const sourceOffenders = sourceFiles
+      .filter((file) => THREE_BAR_SVG_PATH.test(readFileSync(file, 'utf8')))
+      .map((file) => relative(ROOT, file));
+    expect(sourceOffenders).toEqual([]);
+
+    const distDirectory = join(ROOT, 'dist');
+    const builtOffenders = existsSync(distDirectory)
+      ? productionTextFiles(distDirectory)
+          .filter((file) => extname(file) === '.js')
+          .filter((file) => THREE_BAR_SVG_PATH.test(readFileSync(file, 'utf8')))
+          .map((file) => relative(ROOT, file))
+      : [];
+    expect(builtOffenders).toEqual([]);
   });
 
   it('contains no legacy three-bar asset or runtime asset reference', () => {

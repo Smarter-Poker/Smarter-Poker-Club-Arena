@@ -1876,6 +1876,7 @@
     "fn_mystery_bounty_settle",
     "fn_mystery_bounty_table_state",
     "fn_new_seat_clear_sitout",
+    "fn_new_view_respects_the_caller",
     "fn_next_hand_number",
     "fn_next_player_number",
     "fn_nit_check",

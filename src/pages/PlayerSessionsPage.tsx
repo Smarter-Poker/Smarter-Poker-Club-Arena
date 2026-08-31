@@ -1040,8 +1040,8 @@ export default function PlayerSessionsPage() {
                 <span className="admin-empty-icon">◉</span>
                 <span>
                   {searchQuery || statusFilter !== 'all'
-                    ? 'No players match your filters'
-                    : 'No members found'}
+                    ? 'No Players Match Your Filters'
+                    : 'No Members Found'}
                 </span>
               </div>
             ) : (

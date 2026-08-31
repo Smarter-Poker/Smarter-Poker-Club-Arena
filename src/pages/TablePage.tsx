@@ -20276,7 +20276,7 @@ export default function TablePage({
                        to the open side. Runs only while equities are on
                        screen, so the scan costs nothing in normal play. */
                     const isTopCap = pos.y < 20;
-                    let eqSide = ' equity-overlay--above';
+                    let eqSide = ' Equity-Overlay--Above';
                     if (isTopCap) {
                       const sideBusy = (side: 'left' | 'right') =>
                         seatPositions.some((p2, i2) => {
@@ -20298,8 +20298,8 @@ export default function TablePage({
                           : inboard;
                       eqSide =
                         chosen === 'right'
-                          ? ' equity-overlay--inboard-right'
-                          : ' equity-overlay--inboard-left';
+                          ? ' Equity-Overlay--Inboard-Right'
+                          : ' Equity-Overlay--Inboard-Left';
                     }
                     /* ANIMATION AUDIT 2026-08-19: styling moved to
                        TablePage.css (.equity-overlay) — the inline block had

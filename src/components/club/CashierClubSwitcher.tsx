@@ -208,7 +208,7 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
           title={displayName || undefined}
         >
           {logo(currentClub, displayName)}
-          <span className={styles.name}>{displayName || 'Select club'}</span>
+          <span className={styles.name}>{displayName || 'Select Club'}</span>
           <span className={styles.chevron} aria-hidden="true">
             {'▾'}
           </span>

@@ -97,7 +97,10 @@ describe('Item 1 - a running tournament can be watched', () => {
 
     const page = code(read('src/pages/TournamentPage.tsx'));
     expect(page).not.toMatch(/disabled=\{!isRegistered\}[\s\S]{0,160}handleJoinTable/);
-    expect(page).toMatch(/isRegistered \? 'Go to Table' : 'Watch'/);
+    // Title Cased 2026-08-31 with every other painted string, per Dan's rule
+    // that the first letter of every word on a page is capitalised. The label
+    // is the same control; only its casing moved.
+    expect(page).toMatch(/isRegistered \? 'Go To Table' : 'Watch'/);
     expect(page).toMatch(/openTableAsObserver\(navigate, \{ tableId: live\[0\]\.id \}\)/);
   });
 

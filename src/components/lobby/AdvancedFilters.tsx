@@ -480,7 +480,7 @@ export default function AdvancedFilters({
             <h2>{sortOnly ? 'Sort Games' : 'Game Filters'}</h2>
             <p>
               {sortOnly
-                ? 'Choose how the board is ordered'
+                ? 'Choose How The Board Is Ordered'
                 : `${activeTypeLabel} · ${activeCount} active ${activeCount === 1 ? 'filter' : 'filters'}`}
             </p>
           </div>

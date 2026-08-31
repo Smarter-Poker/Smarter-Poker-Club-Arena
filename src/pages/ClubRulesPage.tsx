@@ -314,8 +314,8 @@ export default function ClubRulesPage() {
                 <h3>No Rules Set</h3>
                 <p>
                   {isAdmin
-                    ? 'Add rules and guidelines for your club members.'
-                    : "The club owner hasn't set any rules yet."}
+                    ? 'Add Rules And Guidelines For Your Club Members.'
+                    : "The Club Owner Hasn't Set Any Rules Yet."}
                 </p>
               </div>
             )}

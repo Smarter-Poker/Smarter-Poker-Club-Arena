@@ -2479,10 +2479,10 @@ export default function CashierTradePage() {
             {!loading && !isHydrating && !loadError && !clubResolveFailed && list.length === 0 && (
               <div className={styles.empty}>
                 {mineOnly
-                  ? 'No players are assigned to you in this club.'
+                  ? 'No Players Are Assigned To You In This Club.'
                   : search.trim()
-                    ? 'No members match that search.'
-                    : 'No members in your downline yet.'}
+                    ? 'No Members Match That Search.'
+                    : 'No Members In Your Downline Yet.'}
               </div>
             )}
             {/*

@@ -146,7 +146,7 @@ export default function BlacklistManagerPage() {
           <div className={styles.errorPanel} role="alert">
             <div>
               <strong>
-                {loadFailed ? 'Exclusion ledger unavailable' : 'Control action incomplete'}
+                {loadFailed ? 'Exclusion Ledger Unavailable' : 'Control Action Incomplete'}
               </strong>
               <p>{error}</p>
             </div>
@@ -209,7 +209,7 @@ export default function BlacklistManagerPage() {
                 type="submit"
                 disabled={adding || !newUserId.trim() || !newReason.trim()}
               >
-                {adding ? 'Applying exclusion…' : 'Apply exclusion'}
+                {adding ? 'Applying Exclusion…' : 'Apply Exclusion'}
               </button>
               <button className={styles.secondaryButton} type="button" onClick={resetForm}>
                 Cancel

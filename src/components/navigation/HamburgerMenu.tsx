@@ -1276,12 +1276,12 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             {
               label: 'App Settings',
               path: '/settings',
-              description: 'Audio, gameplay, privacy, and account',
+              description: 'Audio, Gameplay, Privacy, And Account',
             },
             {
               label: 'Notifications',
               path: '/notifications',
-              description: 'Alerts and notification preferences',
+              description: 'Alerts And Notification Preferences',
             },
           ].map((item) => {
             const active = isActivePath(item.path);

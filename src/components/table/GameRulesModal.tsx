@@ -515,13 +515,13 @@ export function GameRulesModal({
                       </span>
                       <span className="rules-modal__value">
                         {bombPotRules.triggerMode === 'once_per_orbit'
-                          ? 'Once per orbit'
+                          ? 'Once Per Orbit'
                           : bombPotRules.triggerMode === 'timed'
                             ? (bombPotRules.intervalSeconds ?? 0) > 0
                               ? `Every ${Math.round((bombPotRules.intervalSeconds ?? 0) / 60)} min`
                               : 'Timed'
                             : bombPotRules.triggerMode === 'bomb_pot_only'
-                              ? 'Every hand'
+                              ? 'Every Hand'
                               : bombPotRules.frequency > 0
                                 ? `${bombPotRules.frequency} hands`
                                 : '-'}

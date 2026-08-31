@@ -383,7 +383,7 @@ export default function AuthPage() {
                   }}
                 />
               )}
-              {isLoading ? 'Logging in...' : 'Login'}
+              {isLoading ? 'Logging In...' : 'Login'}
             </button>
 
             <button

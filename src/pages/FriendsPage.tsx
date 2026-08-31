@@ -636,11 +636,11 @@ export default function FriendsPage() {
             ) : filteredFriends.length === 0 ? (
               <div className="friends-empty">
                 <span aria-hidden="true">◇</span>
-                <h3>{searchQuery ? 'No friends match that name' : 'Build your poker circle'}</h3>
+                <h3>{searchQuery ? 'No Friends Match That Name' : 'Build Your Poker Circle'}</h3>
                 <p>
                   {searchQuery
-                    ? 'Clear the filter or search the wider community.'
-                    : 'Find players you trust, then message, challenge, and follow their activity here.'}
+                    ? 'Clear The Filter Or Search The Wider Community.'
+                    : 'Find Players You Trust, Then Message, Challenge, And Follow Their Activity Here.'}
                 </p>
                 <button type="button" onClick={() => navigate('/search?type=players')}>
                   Find Players
@@ -855,9 +855,9 @@ function FriendGroup({
                 <strong>{friend.username}</strong>
                 <small>
                   {!friend.profile_available
-                    ? 'Connection record only'
+                    ? 'Connection Record Only'
                     : friend.is_online
-                      ? 'Online now'
+                      ? 'Online Now'
                       : formatSocialLastSeen(friend.last_seen)}
                 </small>
               </span>

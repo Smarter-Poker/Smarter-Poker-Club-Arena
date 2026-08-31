@@ -3746,8 +3746,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         <h2>{loadStalled ? 'Still Loading' : 'Club Not Found'}</h2>
         <p style={{ color: '#888', fontSize: '0.9rem', margin: '0 0 1rem' }}>
           {loadStalled
-            ? 'This is taking longer than usual - the connection may be slow right now. Your chips and seats are safe.'
-            : 'The club may have been moved or deleted.'}
+            ? 'This Is Taking Longer Than Usual - The Connection May Be Slow Right Now. Your Chips And Seats Are Safe.'
+            : 'The Club May Have Been Moved Or Deleted.'}
         </p>
         {/* The cause, verbatim. A player can read it out and it names the bug
             immediately; without it every failure mode looks the same. */}

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  check-visible-attribute-case — Title Case in the text JSX paints from ATTRIBUTES
+ *  check-painted-text-case — Title Case in the painted text the JsxText gate cannot see
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Dan 2026-08-21: "First letter of every word is capitalized, that's a hard rule
@@ -42,7 +42,7 @@
  *   Words already shouting (VIP, BBJ, NLH), words starting with a digit
  *   (6max, 3rd), and anything that is not a letter to begin with.
  *
- * Run:  node scripts/ci/check-visible-attribute-case.mjs [--fix]
+ * Run:  node scripts/ci/check-painted-text-case.mjs [--fix]
  */
 
 import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
@@ -69,6 +69,21 @@ const VISIBLE_ATTRS = new Set([
   'cancelLabel',
   'submitLabel',
 ]);
+
+/**
+ * Is this string prose a player reads, rather than a CSS value, a key, a class
+ * name or a URL? Only prose is cased; everything else is left exactly alone,
+ * because "renaming" a transition or a font stack breaks the page.
+ */
+function isProse(value) {
+  if (!/\s/.test(value)) return false; // one token: a key or a class name
+  if (value.length < 6) return false;
+  if (/[#(){};:]|\d+(px|ms|s|deg|%|em|rem)\b|rgba?\(|linear-gradient|cubic-bezier|monospace|sans-serif|https?:|\/\//.test(value)) {
+    return false;
+  }
+  return /[a-z]{3}/.test(value);
+}
+const PROSE = { test: isProse };
 
 function sourceFiles(dir) {
   let out = [];
@@ -108,6 +123,50 @@ for (const file of sourceFiles(SRC)) {
   const edits = [];
 
   const walk = (node) => {
+    /**
+     * A string literal inside a JSX EXPRESSION that is a child of an element.
+     * Deliberately does NOT descend into a nested JSX element, because that
+     * element's own style={{...}} and attributes are not this expression's
+     * rendered text - without that guard the scan returns ten times as many
+     * CSS values as it does sentences.
+     */
+    if (
+      ts.isJsxExpression(node) &&
+      node.expression &&
+      node.parent &&
+      (ts.isJsxElement(node.parent) || ts.isJsxFragment(node.parent))
+    ) {
+      const literals = [];
+      const collect = (x) => {
+        if (
+          ts.isJsxElement(x) ||
+          ts.isJsxSelfClosingElement(x) ||
+          ts.isJsxFragment(x) ||
+          ts.isJsxAttributes(x)
+        ) {
+          return;
+        }
+        if (ts.isStringLiteral(x)) literals.push(x);
+        ts.forEachChild(x, collect);
+      };
+      collect(node.expression);
+      for (const lit of literals) {
+        const value = lit.text;
+        if (!PROSE.test(value)) continue;
+        const cased = titleCase(value);
+        if (cased === value) continue;
+        const { line } = sf.getLineAndCharacterOfPosition(lit.getStart(sf));
+        offenders.push({
+          file: file.replace(ROOT, ''),
+          line: line + 1,
+          attr: 'rendered text',
+          from: value,
+          to: cased,
+        });
+        edits.push({ start: lit.getStart(sf) + 1, end: lit.getEnd() - 1, cased });
+      }
+    }
+
     if (
       ts.isJsxAttribute(node) &&
       node.initializer &&
@@ -146,16 +205,16 @@ for (const file of sourceFiles(SRC)) {
 }
 
 if (offenders.length === 0) {
-  console.log('check-visible-attribute-case: OK - every painted attribute is Title Cased.');
+  console.log('check-painted-text-case: OK - every painted string is Title Cased.');
   process.exit(0);
 }
 
 if (FIX) {
-  console.log(`check-visible-attribute-case: fixed ${offenders.length} attribute value(s).`);
+  console.log(`check-painted-text-case: fixed ${offenders.length} painted string(s).`);
   process.exit(0);
 }
 
-console.error('\nLOWER-CASE TEXT IN A PAINTED ATTRIBUTE\n');
+console.error('\nLOWER-CASE TEXT A BROWSER PAINTS\n');
 console.error('These strings are painted by the browser and are not JsxText, so');
 console.error('check-title-case cannot see them. Run with --fix.\n');
 for (const o of offenders.slice(0, 40)) {

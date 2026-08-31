@@ -275,7 +275,7 @@ export default function WaitlistPage() {
                     #{positionCounts[entry.id] || entry.position}
                   </span>
                   <span className="position-label">
-                    {entry.position === 1 ? 'next up!' : 'in line'}
+                    {entry.position === 1 ? 'Next Up!' : 'In Line'}
                   </span>
                 </div>
                 <div className="waitlist-actions">

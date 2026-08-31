@@ -684,7 +684,7 @@ export function HandDetailModal({
                             <span className="hdm-pos">{positionOf.get(a.playerId) || ''}</span>
                             <span className="hdm-name">{a.playerName}</span>
                             <span className={`hdm-action hdm-action--${a.action}`}>
-                              {a.action === 'allin' ? 'all in' : a.action}
+                              {a.action === 'allin' ? 'All In' : a.action}
                             </span>
                             <span className="hdm-amount">
                               {a.amount && a.amount > 0 ? fmt(a.amount) : ''}

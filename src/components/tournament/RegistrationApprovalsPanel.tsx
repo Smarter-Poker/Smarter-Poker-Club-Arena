@@ -205,8 +205,8 @@ export default function RegistrationApprovalsPanel({
           {candidates.length === 0 ? (
             <div className="regApprovalsEmpty">
               {members.length === 0
-                ? 'No club members found.'
-                : 'Every matching member is already approved.'}
+                ? 'No Club Members Found.'
+                : 'Every Matching Member Is Already Approved.'}
             </div>
           ) : (
             <ul className="regApprovalsList">

@@ -192,7 +192,7 @@ export default function ClubContextMenu({
             <line x1="12" y1="17" x2="12" y2="22" />
             <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.89A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.89A2 2 0 0 0 5 15.24z" />
           </svg>
-          {isPinned ? 'Unpin from Top' : 'Pin to Top'}
+          {isPinned ? 'Unpin From Top' : 'Pin to Top'}
         </button>
         <div className={styles.contextMenuDivider} />
         {!club.is_owner && (

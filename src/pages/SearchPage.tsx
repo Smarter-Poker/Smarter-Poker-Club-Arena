@@ -519,15 +519,15 @@ export default function SearchPage() {
               <h3>No Matches For “{query}”</h3>
               <p>
                 {category === 'all'
-                  ? 'Check the spelling or try a broader term.'
-                  : 'Switch to All or try a broader term.'}
+                  ? 'Check The Spelling Or Try A Broader Term.'
+                  : 'Switch To All Or Try A Broader Term.'}
               </p>
             </div>
           ) : (
             <div className="search-results" aria-live="polite">
               <div className="search-results-heading">
                 <span>{results.length} Matches</span>
-                <span>{category === 'all' ? 'Across the network' : `Filtered to ${category}`}</span>
+                <span>{category === 'all' ? 'Across The Network' : `Filtered to ${category}`}</span>
               </div>
               {results.map((result) => (
                 <article className="search-result" key={`${result.type}-${result.id}`}>
@@ -547,7 +547,7 @@ export default function SearchPage() {
                     <span className="search-result-copy">
                       <strong>{result.name}</strong>
                       <span>
-                        {result.subtitle || (result.id === user?.id ? 'Your profile' : result.type)}
+                        {result.subtitle || (result.id === user?.id ? 'Your Profile' : result.type)}
                       </span>
                     </span>
                     <span className="search-result-type">{result.type}</span>

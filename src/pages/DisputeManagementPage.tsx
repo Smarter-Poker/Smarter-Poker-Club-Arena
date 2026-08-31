@@ -302,7 +302,7 @@ export default function DisputeManagementPage() {
         <div className="dispute-header">
           <div>
             <p className="dispute-kicker">Live Case Docket</p>
-            <h2>{clubId ? 'Club transaction disputes' : 'Account disputes'}</h2>
+            <h2>{clubId ? 'Club Transaction Disputes' : 'Account Disputes'}</h2>
           </div>
           {statusCounts.open > 0 && (
             <span className="open-count-badge">{statusCounts.open} Open</span>
@@ -367,7 +367,7 @@ export default function DisputeManagementPage() {
               <strong>Docket Clear</strong>
               <p>
                 {activeTab === 'all'
-                  ? 'No disputes have been filed.'
+                  ? 'No Disputes Have Been Filed.'
                   : `No ${activeTab.replace('_', ' ')} disputes match this view.`}
               </p>
             </div>
@@ -482,7 +482,7 @@ export default function DisputeManagementPage() {
                                   onClick={() => handleResolve(dispute.id)}
                                   disabled={resolving === dispute.id}
                                 >
-                                  {resolving === dispute.id ? 'Resolving...' : 'Resolve dispute'}
+                                  {resolving === dispute.id ? 'Resolving...' : 'Resolve Dispute'}
                                 </button>
                                 <button
                                   className="action-btn escalate"

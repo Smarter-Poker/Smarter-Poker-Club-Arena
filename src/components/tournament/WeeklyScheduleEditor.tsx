@@ -162,7 +162,7 @@ export default function WeeklyScheduleEditor({
 
       <p className="wse-hint">
         Days And Times Are In UTC. Pick At Least One Day
-        {value.mode === 'interval' ? ' - the interval runs on the selected days.' : '.'}
+        {value.mode === 'interval' ? ' - The Interval Runs On The Selected Days.' : '.'}
       </p>
     </div>
   );

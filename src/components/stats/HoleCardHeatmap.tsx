@@ -344,7 +344,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
           </>
         ) : (
           <span className="heatmap-readout-hint">
-            {hovered ? `${hovered} - never dealt` : 'Hover a hand for its detail'}
+            {hovered ? `${hovered} - never dealt` : 'Hover A Hand For Its Detail'}
           </span>
         )}
       </div>
@@ -354,7 +354,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
           <div className="heatmap-drill-head">
             <strong>{selected}</strong>
             <span>
-              {handsLoading ? 'Loading hands...' : `${(classHands ?? []).length} most recent`}
+              {handsLoading ? 'Loading Hands...' : `${(classHands ?? []).length} most recent`}
             </span>
             <button type="button" className="heatmap-drill-close" onClick={() => setSelected(null)}>
               Close
@@ -390,11 +390,11 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
 
       <p className="heatmap-note">
         {mode === 'frequency' &&
-          'How often you voluntarily played each hand. This is the view that finds leaks earliest, because a frequency settles down long before a win rate does.'}
+          'How Often You Voluntarily Played Each Hand. This Is The View That Finds Leaks Earliest, Because A Frequency Settles Down Long Before A Win Rate Does.'}
         {mode === 'profit' &&
           `Profit in big blinds per 100 hands. Cells with fewer than ${MIN_CONFIDENT_HANDS} hands are left grey on purpose: at that sample the number is noise, and colouring it would invent a pattern that is not there.`}
         {mode === 'luck' &&
-          'Actual result minus all-in expected value. This is variance, not skill. A hand glowing green here means you ran well with it, not that you play it well.'}
+          'Actual Result Minus All-In Expected Value. This Is Variance, Not Skill. A Hand Glowing Green Here Means You Ran Well With It, Not That You Play It Well.'}
       </p>
     </div>
   );

@@ -3023,7 +3023,7 @@ export default function TableConfigPage() {
       {/* Footer Buttons */}
       <footer className="config-footer">
         <button className="btn-template" onClick={handleSaveAsTemplate} disabled={savingTemplate}>
-          {savingTemplate ? 'Saving...' : 'Save as Template'}
+          {savingTemplate ? 'Saving...' : 'Save As Template'}
         </button>
         <button className="btn-save" onClick={handleSave} disabled={saving}>
           {saving ? 'Saving...' : 'Save'}

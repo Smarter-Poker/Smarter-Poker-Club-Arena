@@ -259,7 +259,7 @@ export default function ReportReviewPage() {
             <div className="report-state">
               <span className="state-signal" aria-hidden="true" />
               <strong>Queue Clear</strong>
-              <p>No {filter === 'pending' ? 'pending ' : ''}reports Match This View.</p>
+              <p>No {filter === 'pending' ? 'Pending ' : ''}reports Match This View.</p>
             </div>
           ) : (
             <div className="reports-list">
@@ -278,11 +278,11 @@ export default function ReportReviewPage() {
                   <span className="report-players">
                     <span>
                       <strong>Filed By</strong>
-                      {report.reporter_username || 'Unknown player'}
+                      {report.reporter_username || 'Unknown Player'}
                     </span>
                     <span>
                       <strong>Against</strong>
-                      {report.reported_username || 'Unknown player'}
+                      {report.reported_username || 'Unknown Player'}
                     </span>
                   </span>
                   <span className="report-date">
@@ -327,11 +327,11 @@ export default function ReportReviewPage() {
               <dl className="case-details">
                 <div>
                   <dt>Reported Player</dt>
-                  <dd>{selectedReport.reported_username || 'Unknown player'}</dd>
+                  <dd>{selectedReport.reported_username || 'Unknown Player'}</dd>
                 </div>
                 <div>
                   <dt>Reported By</dt>
-                  <dd>{selectedReport.reporter_username || 'Unknown player'}</dd>
+                  <dd>{selectedReport.reporter_username || 'Unknown Player'}</dd>
                 </div>
                 <div>
                   <dt>Reason</dt>
@@ -339,7 +339,7 @@ export default function ReportReviewPage() {
                 </div>
                 <div className="full-detail">
                   <dt>Description</dt>
-                  <dd>{selectedReport.details || 'No additional details supplied.'}</dd>
+                  <dd>{selectedReport.details || 'No Additional Details Supplied.'}</dd>
                 </div>
               </dl>
               {selectedReport.status === 'pending' && (

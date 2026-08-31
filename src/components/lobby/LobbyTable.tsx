@@ -1408,7 +1408,7 @@ export default function LobbyTable({
             ? `Sorted by ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${
                 sort.dir === 'asc' ? 'ascending' : 'descending'
               }`
-            : 'Default order'}
+            : 'Default Order'}
         </span>
         {/* The category is on the table so the stylesheet can shed columns per
           BOARD rather than per page width. The wide breakpoints were written

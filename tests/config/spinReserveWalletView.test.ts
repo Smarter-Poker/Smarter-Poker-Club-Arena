@@ -95,7 +95,10 @@ describe('the reserve offers no way to move money out', () => {
     // The send button must sit AFTER the first guard - i.e. inside a guarded
     // region - and never before one.
     const firstGuard = modal.indexOf('{!readOnly && (');
-    const sendButton = modal.indexOf('Pick a member');
+    // Title Cased 2026-08-31 with every other painted string, per Dan's rule
+    // that the first letter of every word on a page is capitalised. Same
+    // control, same position in the file; only its casing moved.
+    const sendButton = modal.indexOf('Pick A Member');
     expect(firstGuard).toBeGreaterThan(-1);
     expect(sendButton).toBeGreaterThan(firstGuard);
   });

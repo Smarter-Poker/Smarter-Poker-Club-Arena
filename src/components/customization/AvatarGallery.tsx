@@ -644,7 +644,7 @@ export function AvatarGallery({
           </div>
           <div className="ag-preview__status" aria-live="polite">
             <span className={saving || savingCosmetic ? 'is-saving' : ''} />
-            {saving || savingCosmetic ? 'Saving live change' : 'Changes apply instantly'}
+            {saving || savingCosmetic ? 'Saving Live Change' : 'Changes Apply Instantly'}
           </div>
         </div>
 
@@ -887,8 +887,8 @@ export function AvatarGallery({
             <div className="ag-empty ag-empty--error" role="alert">
               <p className="ag-empty__msg">
                 {activeTab === 'custom'
-                  ? 'Your avatars could not be loaded.'
-                  : 'The avatar library could not be loaded.'}
+                  ? 'Your Avatars Could Not Be Loaded.'
+                  : 'The Avatar Library Could Not Be Loaded.'}
               </p>
               <button
                 className="ag-retry"
@@ -903,10 +903,10 @@ export function AvatarGallery({
           ) : filteredAvatars.length === 0 ? (
             <div className="ag-empty">
               {activeTab === 'custom'
-                ? 'You have not created any avatars yet. Use Quick Avatar above.'
+                ? 'You Have Not Created Any Avatars Yet. Use Quick Avatar Above.'
                 : activeTab === 'vip'
-                  ? 'No VIP avatars available.'
-                  : 'No preset avatars available.'}
+                  ? 'No VIP Avatars Available.'
+                  : 'No Preset Avatars Available.'}
             </div>
           ) : (
             <div className="ag-grid">

@@ -607,7 +607,7 @@ export default function BadBeatJackpotPage() {
                 opacity: distributingPromo ? 0.6 : 1,
               }}
             >
-              {distributingPromo ? 'Raining…' : 'Rain to Active Players'}
+              {distributingPromo ? 'Raining…' : 'Rain To Active Players'}
             </button>
           </div>
         </div>

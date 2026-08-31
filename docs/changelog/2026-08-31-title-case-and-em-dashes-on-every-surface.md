@@ -25,8 +25,29 @@ Between them they miss every string a browser paints from an ATTRIBUTE:
 **125 of those were lower case**, across 52 files, including page copy on the
 create-table form, the cashier, the hand history panel and the table HUD.
 
-`scripts/ci/check-visible-attribute-case.mjs` closes it, with `--fix`, and is
-wired into CI and the pre-push hook beside its two siblings.
+## The same hole again: text painted from an EXPRESSION
+
+`check-title-case` excludes string literals inside a child expression for the
+same stated reason. A browser paints those too:
+
+```
+<td>{eligible ? info.shortLabel : 'Jackpot not available'}</td>
+<p>{rows.length ? null : 'No admin actions recorded yet'}</p>
+```
+
+**215 more**, all of them empty states, helper text, validation messages and
+fallback labels. Found while checking whether the BBJ rules config was
+rendered; `'Jackpot not available'` on the BBJ rules panel was the first one.
+
+The scan has to be careful here or it is useless. A naive walk returns 2,361
+hits, ten to one of them CSS: gradients, font stacks, transition timings. Two
+rules cut it to the real 215 — do not descend into a nested JSX element (its
+`style={{...}}` is not this expression's text), and skip anything that is not
+prose (contains `#(){};:`, a CSS unit, a URL, a font keyword, or has no
+three-letter run).
+
+`scripts/ci/check-painted-text-case.mjs` covers both surfaces, with `--fix`,
+and is wired into CI and the pre-push hook beside its two siblings.
 
 ### What it deliberately leaves alone
 
@@ -83,15 +104,23 @@ produce exactly the sentence-mangling the `--fix` path avoids elsewhere. The
 gate was then verified by reintroducing an entity and confirming it fails, and
 removing it and confirming it passes — a guard that cannot fail is not a guard.
 
-## One test followed a button
+## Three tests followed the copy
 
-`handHistoryMoneyAgreement` clicks `getByTitle('Export all hands')`. The title
-is Title Cased now, so the query is too, in the same commit. The behaviour
-under test is unchanged.
+Each queries or pins a string this change re-cased. All three updated in the
+same commit, per CLAUDE.md rule 8; no behaviour under test moved.
+
+- `handHistoryMoneyAgreement` clicks `getByTitle('Export all hands')`
+- `tourneyUxSweep20260825` pins `isRegistered ? 'Go to Table' : 'Watch'`
+- `spinReserveWalletView` locates the send button by `indexOf('Pick a member')`
+
+That third one is worth noting: it finds a control by searching the source for
+its label and compares positions. A copy change moves it to -1 and the
+assertion fails with "expected -1 to be greater than 10604", which reads like a
+logic bug and is not one.
 
 ## Verification
 
-`tsc` clean. Client unit **495 files**, all passing. `check-title-case`,
+`tsc` clean. Client unit **495 files** and non-unit **257 files**, all passing. `check-title-case`,
 `check-nav-title-case`, `check-visible-attribute-case`, `check-ui-text` and
 `check-no-emoji` all green. Two non-unit suites failed once under parallel load
 and pass in isolation; the machine was running several suites at once.

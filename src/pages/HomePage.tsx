@@ -116,7 +116,7 @@ class HomePageErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
           <div className={styles.errorBoundaryIcon}>!</div>
           <h2 className={styles.errorBoundaryTitle}>Something Went Wrong</h2>
           <p className={styles.errorBoundaryMessage}>
-            {this.state.errorMessage || 'An unexpected error occurred. Please try again.'}
+            {this.state.errorMessage || 'An Unexpected Error Occurred. Please Try Again.'}
           </p>
           <button
             className={styles.errorBoundaryRetry}
@@ -1165,9 +1165,9 @@ function HomePageInner() {
             <div className={styles.shortcutGrid}>
               {[
                 ['1-5', 'Navigate Bottom Tiles'],
-                ['J', 'Join a Club'],
-                ['C', 'Create a Club'],
-                ['F', 'Find a Player'],
+                ['J', 'Join A Club'],
+                ['C', 'Create A Club'],
+                ['F', 'Find A Player'],
 
                 ['?', 'Toggle This Help'],
                 ['Esc', 'Close Modals'],
@@ -1390,7 +1390,7 @@ function HomePageInner() {
             </h2>
             <p className={styles.modalSubtitle}>
               Are You Sure You Want To Leave{' '}
-              <strong>{leaveConfirm.club?.name || 'this club'}</strong>? This Action Cannot Be
+              <strong>{leaveConfirm.club?.name || 'This Club'}</strong>? This Action Cannot Be
               Undone.
             </p>
             <div className={styles.modalButtons}>

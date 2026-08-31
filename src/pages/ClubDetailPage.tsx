@@ -1264,16 +1264,16 @@ export default function ClubDetailPage() {
           </span>
           <span style={{ color: '#6a7a8a', fontSize: '0.7rem' }}>
             {activeTab === 'overview'
-              ? 'Activity feed, stats & quick actions'
+              ? 'Activity Feed, Stats & Quick Actions'
               : activeTab === 'tables'
-                ? 'Create, configure & monitor tables'
+                ? 'Create, Configure & Monitor Tables'
                 : activeTab === 'members'
-                  ? 'View, manage & search members'
+                  ? 'View, Manage & Search Members'
                   : activeTab === 'agents'
-                    ? 'Agent tree, commissions & transfers'
+                    ? 'Agent Tree, Commissions & Transfers'
                     : activeTab === 'operations'
-                      ? 'Announcements, reports & audits'
-                      : 'Club configuration & danger zone'}
+                      ? 'Announcements, Reports & Audits'
+                      : 'Club Configuration & Danger Zone'}
           </span>
         </div>
       </div>
@@ -1329,8 +1329,8 @@ export default function ClubDetailPage() {
                 <li>
                   Rake: {club.settings.defaultRakePercent}% (Capped At {club.settings.rakeCap} BB)
                 </li>
-                <li>Straddle: {club.settings.allowStraddle ? 'Allowed' : 'Not allowed'}</li>
-                <li>Run It Twice: {club.settings.allowRunItTwice ? 'Allowed' : 'Not allowed'}</li>
+                <li>Straddle: {club.settings.allowStraddle ? 'Allowed' : 'Not Allowed'}</li>
+                <li>Run It Twice: {club.settings.allowRunItTwice ? 'Allowed' : 'Not Allowed'}</li>
               </ul>
             </div>
 

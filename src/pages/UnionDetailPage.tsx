@@ -738,7 +738,7 @@ export default function UnionDetailPage() {
         </div>
         <div className={styles.headerActions}>
           <button className={styles.applyButton} onClick={handleApplyClick} disabled={applying}>
-            {applying ? 'Applying...' : 'Apply to Join'}
+            {applying ? 'Applying...' : 'Apply To Join'}
           </button>
         </div>
       </div>

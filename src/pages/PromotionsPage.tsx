@@ -380,10 +380,10 @@ export default function PromotionsPage() {
             </p>
             <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
               {filter === 'active'
-                ? 'There are no promotions running right now. Check back soon!'
+                ? 'There Are No Promotions Running Right Now. Check Back Soon!'
                 : filter === 'upcoming'
-                  ? 'No promotions are scheduled yet. Stay tuned!'
-                  : 'No promotions have been created for this club yet.'}
+                  ? 'No Promotions Are Scheduled Yet. Stay Tuned!'
+                  : 'No Promotions Have Been Created For This Club Yet.'}
             </p>
           </div>
         ) : (

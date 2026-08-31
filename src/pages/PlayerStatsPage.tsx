@@ -1711,7 +1711,7 @@ export default function PlayerStatsPage() {
         {hasData && overall.hands_capped && (
           <div className="stats-notice">
             Based On Your Most Recent {overall.hand_cap.toLocaleString()} Hands
-            {rangeKey !== 'all' ? ' in this range' : ''}.
+            {rangeKey !== 'all' ? ' In This Range' : ''}.
           </div>
         )}
         {hasData && !overall.hands_capped && rangeKey !== 'all' && (

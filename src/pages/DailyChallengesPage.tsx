@@ -1511,7 +1511,7 @@ export default function DailyChallengesPage() {
                 <h3>{loadError ? 'Mission Link Offline' : 'No Missions Assigned'}</h3>
                 <p>
                   {loadError
-                    ? 'Reconnect to retrieve your active contracts. Your recorded progress is safe.'
+                    ? 'Reconnect To Retrieve Your Active Contracts. Your Recorded Progress Is Safe.'
                     : `Your Next ${TIER_LABELS[activeTier]} Mission Set Is Being Prepared.`}
                 </p>
                 <button

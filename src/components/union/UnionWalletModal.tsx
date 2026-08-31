@@ -317,7 +317,7 @@ export function UnionWalletModal({
                 <>
                   Send Chips, Diamonds Or Promo Funds To Any Member Of The Union.
                   {walletKey === 'bbj' &&
-                    ' BBJ funds are reserved for jackpots, so chips sent here draw on the main bank.'}
+                    ' BBJ Funds Are Reserved For Jackpots, So Chips Sent Here Draw On The Main Bank.'}
                 </>
               )}
             </p>
@@ -547,7 +547,7 @@ export function UnionWalletModal({
                     ? mode === 'send'
                       ? `Send to ${target.type === 'club' ? target.data.name : target.data.display_name || target.data.username}`
                       : `Pull from ${target.type === 'club' ? target.data.name : 'Target'}`
-                    : 'Pick a member or club'}
+                    : 'Pick A Member Or Club'}
               </button>
             </div>
           </>
@@ -654,7 +654,7 @@ export function UnionWalletModal({
                   }}
                 >
                   {r.notes ||
-                    (r.transaction_type === 'union_promo_send' ? 'Promo send' : 'Chip send')}
+                    (r.transaction_type === 'union_promo_send' ? 'Promo Send' : 'Chip Send')}
                 </span>
                 <span style={{ color: '#e74c3c', fontWeight: 700, flexShrink: 0 }}>
                   -{fmt(r.amount)}

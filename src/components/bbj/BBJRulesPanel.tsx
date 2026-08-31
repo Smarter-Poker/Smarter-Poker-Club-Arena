@@ -140,7 +140,7 @@ export function BBJRulesPanel({ poolAmount = 0 }: BBJRulesPanelProps) {
                 return (
                   <tr key={row.key} className={eligible ? '' : 'is-ineligible'}>
                     <td>{row.games}</td>
-                    <td>{eligible ? info.shortLabel : 'Jackpot not available'}</td>
+                    <td>{eligible ? info.shortLabel : 'Jackpot Not Available'}</td>
                   </tr>
                 );
               })}

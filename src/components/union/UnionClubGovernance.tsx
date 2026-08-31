@@ -145,8 +145,8 @@ export default function UnionClubGovernance({ unionId, clubId, clubName, onExpel
                   }}
                 >
                   {blockers.clear_to_exit
-                    ? 'Clear to exit.'
-                    : 'Open exposure - forcing will leave it unsettled.'}
+                    ? 'Clear To Exit.'
+                    : 'Open Exposure - Forcing Will Leave It Unsettled.'}
                 </div>
               </div>
             )}

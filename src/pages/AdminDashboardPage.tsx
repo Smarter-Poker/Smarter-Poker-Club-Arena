@@ -509,7 +509,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
     return (
       <div className="admin-error-state">
         <div className="admin-error-icon">⚠</div>
-        <div className="admin-error-msg">{loadError || 'Failed to load health metrics'}</div>
+        <div className="admin-error-msg">{loadError || 'Failed To Load Health Metrics'}</div>
         <button onClick={load} className="admin-btn admin-btn-primary">
           ↻ Retry
         </button>

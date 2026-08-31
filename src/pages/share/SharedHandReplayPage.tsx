@@ -121,7 +121,7 @@ export default function SharedHandReplayPage() {
       }}
     >
       <header style={{ borderBottom: '1px solid rgba(255,255,255,0.14)', paddingBottom: 12 }}>
-        <h1 style={{ margin: 0, fontSize: '1.25rem' }}>{hand.tableName || 'Shared hand'}</h1>
+        <h1 style={{ margin: 0, fontSize: '1.25rem' }}>{hand.tableName || 'Shared Hand'}</h1>
         <div style={{ opacity: 0.7, fontSize: '0.85rem' }}>
           {hand.variant} · {hand.stakes} ·{' '}
           {hand.timestamp ? new Date(hand.timestamp).toLocaleString() : ''}

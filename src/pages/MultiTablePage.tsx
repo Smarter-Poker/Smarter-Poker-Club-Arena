@@ -2670,7 +2670,7 @@ export default function MultiTablePage() {
       >
         <div className="multi-table-page__take-seat-info">
           <span className="multi-table-page__take-seat-label">
-            {isUrgent ? 'Your turn' : liveCount > 1 ? `${liveCount} games running` : 'Game running'}
+            {isUrgent ? 'Your Turn' : liveCount > 1 ? `${liveCount} games running` : 'Game Running'}
           </span>
           <span className="multi-table-page__take-seat-name">{target.name}</span>
         </div>

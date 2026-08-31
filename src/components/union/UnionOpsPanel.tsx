@@ -329,7 +329,7 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
             >
               <strong style={{ color: dist.healthy ? '#37e7c7' : '#ff7676' }}>
                 {dist.healthy
-                  ? 'Distribution healthy'
+                  ? 'Distribution Healthy'
                   : `Over-distributed by ${money(dist.over_distributed_by)}`}
               </strong>
               <div style={{ color: '#8fa3ad', fontSize: '0.82rem', marginTop: 6 }}>
@@ -355,7 +355,7 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
                 cursor: busy ? 'wait' : 'pointer',
               }}
             >
-              {busy ? 'Checking…' : 'Review & run settlement'}
+              {busy ? 'Checking…' : 'Review & Run Settlement'}
             </button>
           )}
           <p style={{ color: '#66787f', fontSize: '0.78rem', margin: 0 }}>

@@ -308,7 +308,7 @@ export default function TrophyRoom({ overall, tournaments }: Props) {
               <p className="trophy-style-note">
                 {overall.total_hands < STYLE_MIN_HANDS
                   ? `${(STYLE_MIN_HANDS - overall.total_hands).toLocaleString()} more hands and there will be enough to read your style honestly. Guessing from ${overall.total_hands.toLocaleString()} would mostly be describing variance.`
-                  : 'Your numbers do not yet sit clearly in one style. That is common, and not a bad thing.'}
+                  : 'Your Numbers Do Not Yet Sit Clearly In One Style. That Is Common, And Not A Bad Thing.'}
               </p>
             </div>
           </div>

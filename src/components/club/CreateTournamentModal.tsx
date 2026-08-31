@@ -1139,7 +1139,7 @@ export default function CreateTournamentModal({
                 <span className={styles.helperText}>
                   {split.total > 0
                     ? `${money(split.total)} entry = ${money(split.prize)} to the prize pool + ${money(split.fee)} fee`
-                    : 'Taken out of the buy-in, not added on top'}
+                    : 'Taken Out Of The Buy-In, Not Added On Top'}
                 </span>
               </div>
             </div>
@@ -1196,8 +1196,8 @@ export default function CreateTournamentModal({
                   </select>
                   <span className={styles.helperText}>
                     {satelliteTargets.length === 0
-                      ? 'No upcoming tournaments to feed into - create one first.'
-                      : 'Winners earn a seat into this tournament.'}
+                      ? 'No Upcoming Tournaments To Feed Into - Create One First.'
+                      : 'Winners Earn A Seat Into This Tournament.'}
                   </span>
                 </div>
               </div>
@@ -1286,7 +1286,7 @@ export default function CreateTournamentModal({
                     <span className={styles.helperText}>
                       {parseInt(lateRegLevels) > 0
                         ? `Late reg, rebuys, and re-entries close after Level ${lateRegLevels}`
-                        : 'No late registration - registration closes when tournament starts'}
+                        : 'No Late Registration - Registration Closes When Tournament Starts'}
                     </span>
                   </div>
                 </div>
@@ -1514,10 +1514,10 @@ export default function CreateTournamentModal({
               {!bountyValid && (
                 <p style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: 6 }}>
                   {!isWholeBuyIn(bountyAmount)
-                    ? 'Bounty amount is required and must be a whole number greater than 0'
+                    ? 'Bounty Amount Is Required And Must Be A Whole Number Greater Than 0'
                     : bountySplit && bountySplit.prize < 0
                       ? `Bounty ${money(bountySplit.bounty)} + ${money(bountySplit.rake)} rake exceeds the ${money(bountySplit.buyIn)} buy-in - nothing left for the prize pool`
-                      : 'Mystery max multiplier must be greater than min multiplier'}
+                      : 'Mystery Max Multiplier Must Be Greater Than Min Multiplier'}
                 </p>
               )}
             </div>
@@ -1816,7 +1816,7 @@ export default function CreateTournamentModal({
                     [
                       ['VIP Only', isVipOnly, setIsVipOnly],
                       ['Ban Chat', banChat, setBanChat],
-                      ['All-in Or Fold', allInOrFold, setAllInOrFold],
+                      ['All-In Or Fold', allInOrFold, setAllInOrFold],
                       ['Label As NEW', labelAsNew, setLabelAsNew],
                       ['Hide Club Name', hideClubName, setHideClubName],
                       ['Featured (Pinned)', isFeatured, setIsFeatured],

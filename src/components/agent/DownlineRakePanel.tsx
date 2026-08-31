@@ -342,8 +342,8 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
           {rows.length === 0 ? (
             <p style={{ color: '#8aa' }}>
               {debounced
-                ? 'No one in your downline matches that name.'
-                : 'No downline activity in this window.'}
+                ? 'No One In Your Downline Matches That Name.'
+                : 'No Downline Activity In This Window.'}
             </p>
           ) : (
             <div style={{ overflowX: 'auto' }}>

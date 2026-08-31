@@ -495,10 +495,10 @@ export default function TransactionHistoryPage() {
               {searchQuery
                 ? `No results matching "${searchQuery}".`
                 : dateFrom || dateTo
-                  ? 'No transactions found in the selected date range.'
+                  ? 'No Transactions Found In The Selected Date Range.'
                   : filter !== 'all'
                     ? `No ${filter} have been recorded yet.`
-                    : 'No transaction history yet. Your activity will appear here.'}
+                    : 'No Transaction History Yet. Your Activity Will Appear Here.'}
             </p>
           </div>
         ) : (

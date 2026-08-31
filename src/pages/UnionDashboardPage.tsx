@@ -1514,7 +1514,7 @@ export default function UnionDashboardPage() {
               {filteredClubs.length === 0 && (
                 <div className="admin-empty-state">
                   <span className="admin-empty-icon">◆</span>
-                  <span>{clubSearch ? 'No clubs match' : 'No clubs yet'}</span>
+                  <span>{clubSearch ? 'No Clubs Match' : 'No Clubs Yet'}</span>
                 </div>
               )}
             </div>
@@ -1602,7 +1602,7 @@ export default function UnionDashboardPage() {
               {filteredAgents.length === 0 && (
                 <div className="admin-empty-state">
                   <span className="admin-empty-icon">◉</span>
-                  <span>{agentSearch ? 'No agents match' : 'No agents found'}</span>
+                  <span>{agentSearch ? 'No Agents Match' : 'No Agents Found'}</span>
                 </div>
               )}
             </div>
@@ -1631,7 +1631,7 @@ export default function UnionDashboardPage() {
               ) : filteredRoster.length === 0 ? (
                 <div className="admin-empty">
                   <span className="admin-empty-icon">◉</span>
-                  <span>{rosterSearch ? 'No players match' : 'No players found'}</span>
+                  <span>{rosterSearch ? 'No Players Match' : 'No Players Found'}</span>
                 </div>
               ) : (
                 <div className="admin-table-wrap">
@@ -1671,7 +1671,7 @@ export default function UnionDashboardPage() {
                             </span>
                           </td>
                           <td>{r.member_status || ''}</td>
-                          <td>{r.currently_seated ? '● at table' : ''}</td>
+                          <td>{r.currently_seated ? '● At Table' : ''}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1951,7 +1951,7 @@ export default function UnionDashboardPage() {
                     Main/Backup/Promo Per Your Union BBJ Settings.
                     {bbjPool
                       ? ` Current pool: ${fmt(bbjPool.main_balance)} main / ${fmt(bbjPool.backup_balance)} backup / ${fmt(bbjPool.promo_balance)} promo.`
-                      : ' No active pool found.'}
+                      : ' No Active Pool Found.'}
                   </p>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <input

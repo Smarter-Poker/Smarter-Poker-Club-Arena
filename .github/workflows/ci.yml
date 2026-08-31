@@ -262,9 +262,9 @@ jobs:
       # Neither can see text a browser paints from a string ATTRIBUTE --
       # placeholder, title, alt, and component label props -- and 125 of those
       # were lower case when this was added.
-      # Autofix locally with: node scripts/ci/check-visible-attribute-case.mjs --fix
+      # Autofix locally with: node scripts/ci/check-painted-text-case.mjs --fix
       - name: UI copy — painted attributes are Title Cased
-        run: node scripts/ci/check-visible-attribute-case.mjs
+        run: node scripts/ci/check-painted-text-case.mjs
 
       # The other half of the same rule (Dan 2026-08-30: "AS WELL AS EVERY
       # CLICKABLE PAGE AND SUBPAGE"). The gate above inspects JsxText only and

@@ -949,8 +949,8 @@ export default function AgentDashboardPage() {
                 <span className="admin-empty-icon">◉</span>
                 <span>
                   {playerSearch
-                    ? 'No players match your search'
-                    : 'No players in your downline yet'}
+                    ? 'No Players Match Your Search'
+                    : 'No Players In Your Downline Yet'}
                 </span>
               </div>
             ) : (

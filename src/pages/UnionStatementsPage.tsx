@@ -545,7 +545,7 @@ export default function UnionStatementsPage() {
               }}
               disabled={issuing}
             >
-              {issuing ? 'Issuing...' : 'Yes, issue and deliver'}
+              {issuing ? 'Issuing...' : 'Yes, Issue And Deliver'}
             </button>
             <button
               type="button"
@@ -610,11 +610,11 @@ export default function UnionStatementsPage() {
                     <div className={styles.clubName}>{c.club_name}</div>
                     <div className={styles.clubMeta}>
                       <span className={`${styles.pill} ${pillClass}`}>
-                        {c.status === 'missing' ? 'no statement' : c.overdue ? 'overdue' : c.status}
+                        {c.status === 'missing' ? 'No Statement' : c.overdue ? 'overdue' : c.status}
                       </span>
                       {c.status !== 'missing' && (
                         <span className={c.message_sent ? styles.deliveredYes : styles.deliveredNo}>
-                          {c.message_sent ? 'delivered' : 'not delivered'}
+                          {c.message_sent ? 'delivered' : 'Not Delivered'}
                         </span>
                       )}
                       {c.due_at && <span>Due {String(c.due_at).slice(0, 10)}</span>}
@@ -628,10 +628,10 @@ export default function UnionStatementsPage() {
                     </div>
                     <div className={styles.amountLabel}>
                       {c.status === 'missing'
-                        ? 'not billed'
-                        : c.direction === 'union owes club'
-                          ? 'union owes'
-                          : 'club owes'}
+                        ? 'Not Billed'
+                        : c.direction === 'Union Owes Club'
+                          ? 'Union Owes'
+                          : 'Club Owes'}
                     </div>
                   </div>
                 </button>
@@ -644,12 +644,12 @@ export default function UnionStatementsPage() {
                       </div>
                     ) : (
                       [
-                        ['Rake generated', c.rake_generated],
+                        ['Rake Generated', c.rake_generated],
                         ['Club rakeback (90%)', c.rakeback_due],
                         ['Union fee kept (10%)', c.union_fee_kept],
-                        ['Player win/loss', c.players_won],
-                        ['ECO adjustment', c.eco_amount],
-                        ['Payments received', c.presettled],
+                        ['Player Win/Loss', c.players_won],
+                        ['ECO Adjustment', c.eco_amount],
+                        ['Payments Received', c.presettled],
                       ].map(([label, value]) => (
                         <div className={styles.breakdownLine} key={String(label)}>
                           <span>{String(label)}</span>
@@ -722,7 +722,7 @@ export default function UnionStatementsPage() {
                             ? 'Saving...'
                             : c.status === 'paid'
                               ? 'Reopen'
-                              : 'Mark paid'}
+                              : 'Mark Paid'}
                         </button>
                       )}
                     </div>
@@ -740,7 +740,7 @@ export default function UnionStatementsPage() {
             ? ` Read ${new Date(board.generated_at).toLocaleTimeString()}.`
             : ''}
           {totals && totals.missing > 0
-            ? ' A club shown as "no statement" was never billed for this period.'
+            ? ' A Club Shown As "No Statement" Was Never Billed For This Period.'
             : ''}
         </div>
       )}

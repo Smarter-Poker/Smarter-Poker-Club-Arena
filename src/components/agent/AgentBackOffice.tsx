@@ -142,8 +142,8 @@ export default function AgentBackOffice({ agentUserId, title }: Props) {
           </div>
           <div style={{ color: '#66787f', fontSize: '0.78rem' }}>
             {Number(statement.net_settlement_position) >= 0
-              ? 'due to you from the club'
-              : 'due from you to the club'}
+              ? 'Due To You From The Club'
+              : 'Due From You To The Club'}
           </div>
 
           <div

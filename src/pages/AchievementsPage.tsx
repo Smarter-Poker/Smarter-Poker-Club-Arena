@@ -856,7 +856,7 @@ export default function AchievementsPage() {
             </p>
             <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
               {category === 'all'
-                ? 'Start playing to unlock your first badge!'
+                ? 'Start Playing To Unlock Your First Badge!'
                 : `Play more to unlock ${category} achievements.`}
             </p>
           </div>

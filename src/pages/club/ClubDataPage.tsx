@@ -1265,7 +1265,7 @@ export default function ClubDataPage() {
         {refreshNote ||
           exportNote ||
           (exportProgress?.stage === 'preparing'
-            ? 'Preparing complete export.'
+            ? 'Preparing Complete Export.'
             : exportProgress?.total !== null && exportProgress
               ? `Exporting ${compactInt(exportProgress.loaded)} of ${compactInt(exportProgress.total)} rows.`
               : '')}
@@ -1493,7 +1493,7 @@ export default function ClubDataPage() {
                     {String(inv.period_end || '').slice(0, 10)}
                   </span>
                   <span>
-                    {inv.direction === 'union owes club' ? '+' : '-'}
+                    {inv.direction === 'Union Owes Club' ? '+' : '-'}
                     {Number.isFinite(Number(inv.amount))
                       ? money(Math.abs(Number(inv.amount)))
                       : NO_VALUE}
@@ -1525,9 +1525,9 @@ export default function ClubDataPage() {
         >
           <div className={styles.invoiceTop}>
             <span className={styles.invoiceLabel}>
-              {latestInvoice.direction === 'union owes club'
-                ? 'Union owes you'
-                : 'Weekly square-up'}
+              {latestInvoice.direction === 'Union Owes Club'
+                ? 'Union Owes You'
+                : 'Weekly Square-Up'}
             </span>
             <span className={styles.invoiceAmount}>
               {unionOwesClub ? '+' : Number(latestInvoice.amount) > 0 ? '-' : ''}
@@ -1547,7 +1547,7 @@ export default function ClubDataPage() {
                 // The figures come from the invoice; the percentages used to be
                 // literals, so any club on a non-standard deal got a label that
                 // contradicted its own numbers. Derive them or omit them.
-                ['Rake generated', latestInvoice.breakdown.rake_generated],
+                ['Rake Generated', latestInvoice.breakdown.rake_generated],
                 [
                   `Your rakeback${splitPct(latestInvoice.breakdown.rakeback_due, latestInvoice.breakdown.rake_generated)}`,
                   latestInvoice.breakdown.rakeback_due,
@@ -1556,10 +1556,10 @@ export default function ClubDataPage() {
                   `Union fee kept${splitPct(latestInvoice.breakdown.union_fee_kept, latestInvoice.breakdown.rake_generated)}`,
                   latestInvoice.breakdown.union_fee_kept,
                 ],
-                ['Player win/loss', latestInvoice.breakdown.players_won],
-                ['Settled in chips', latestInvoice.breakdown.settled_in_chips],
-                ['ECO adjustment', latestInvoice.breakdown.eco_amount],
-                ['Payments received', latestInvoice.breakdown.presettled],
+                ['Player Win/Loss', latestInvoice.breakdown.players_won],
+                ['Settled In Chips', latestInvoice.breakdown.settled_in_chips],
+                ['ECO Adjustment', latestInvoice.breakdown.eco_amount],
+                ['Payments Received', latestInvoice.breakdown.presettled],
               ].map(([label, value]) => (
                 <div className={styles.invoiceLine} key={String(label)}>
                   <span>{String(label)}</span>
@@ -1583,8 +1583,8 @@ export default function ClubDataPage() {
             {!latestInvoice.breakdown
               ? 'No Statement Detail'
               : showInvoiceDetail
-                ? 'Hide statement'
-                : 'View statement'}
+                ? 'Hide Statement'
+                : 'View Statement'}
           </button>
         </div>
       )}
@@ -2015,7 +2015,7 @@ export default function ClubDataPage() {
                   : '';
               })()}
               {players.player_count > sortedPlayers.length
-                ? ` Showing ${compactInt(sortedPlayers.length)} of ${compactInt(players.player_count)} players, ordered by ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label.toLowerCase() || 'server rank'}.`
+                ? ` Showing ${compactInt(sortedPlayers.length)} of ${compactInt(players.player_count)} players, ordered by ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label.toLowerCase() || 'Server Rank'}.`
                 : ''}
             </div>
           )}
@@ -2031,7 +2031,7 @@ export default function ClubDataPage() {
       {exportProgress && (
         <div className={styles.footNote} role="status" aria-live="polite">
           {exportProgress.stage === 'preparing'
-            ? 'Preparing an exact snapshot for export...'
+            ? 'Preparing An Exact Snapshot For Export...'
             : `Downloading ${compactInt(exportProgress.loaded)} Of ${compactInt(exportProgress.total)} Rows...`}
         </div>
       )}

@@ -92,7 +92,7 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
           </div>
         </div>
         <p className="union-description">
-          {union.description || 'A connected club network with shared games and events.'}
+          {union.description || 'A Connected Club Network With Shared Games And Events.'}
         </p>
         <div className="union-stats" aria-label={`${union.name} network statistics`}>
           <div className="union-stat">

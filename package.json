@@ -31,8 +31,8 @@
     "db:push": "node scripts/orb-sql-deploy.cjs",
     "prepare": "git config core.hooksPath .husky || true",
     "check:title-case": "node scripts/ci/check-title-case.mjs",
-    "check:attr-case": "node scripts/ci/check-visible-attribute-case.mjs",
-    "fix:attr-case": "node scripts/ci/check-visible-attribute-case.mjs --fix",
+    "check:attr-case": "node scripts/ci/check-painted-text-case.mjs",
+    "fix:attr-case": "node scripts/ci/check-painted-text-case.mjs --fix",
     "fix:title-case": "node scripts/ci/check-title-case.mjs --fix",
     "check:club-entry-budgets": "node scripts/check-club-entry-budgets.mjs"
   },

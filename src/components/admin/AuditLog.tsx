@@ -328,8 +328,8 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
             <span>▤</span>
             <p>
               {entries.length === 0
-                ? 'No admin actions recorded yet'
-                : 'No log entries match this filter'}
+                ? 'No Admin Actions Recorded Yet'
+                : 'No Log Entries Match This Filter'}
             </p>
           </div>
         ) : (

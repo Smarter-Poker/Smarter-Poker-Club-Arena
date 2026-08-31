@@ -384,9 +384,9 @@ fi
 # ATTRIBUTE (placeholder, title, alt, label props). Neither check-title-case
 # (JsxText) nor check-nav-title-case (the nav registry) can see those, and 125
 # were lower case when this was added. Autofix:
-#   node scripts/ci/check-visible-attribute-case.mjs --fix
-if [ -f scripts/ci/check-visible-attribute-case.mjs ]; then
-  if ! node scripts/ci/check-visible-attribute-case.mjs; then
+#   node scripts/ci/check-painted-text-case.mjs --fix
+if [ -f scripts/ci/check-painted-text-case.mjs ]; then
+  if ! node scripts/ci/check-painted-text-case.mjs; then
     FAIL=1
   fi
 fi

@@ -10,6 +10,7 @@
 
 import nodeCrypto from 'node:crypto';
 import { supabase } from '../services/supabase.js';
+import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { reportError } from '../services/errorReporter.js';
 import {
   mysteryChestHoldMs,
@@ -1583,6 +1584,31 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Prize credit FAILED after 3 retries for ${userId.slice(0, 8)} — ${prize} chips lost`
           ),
           'TournamentthistournamentIdslic.CRITICAL'
+        );
+        /**
+         * AND ESCALATE IT AS MONEY (2026-08-31).
+         *
+         * This was a Sentry report and nothing else. `raiseFinancialAlert`
+         * exists precisely for "chips were owed and did not move", and every
+         * one of its callers was a CASH settlement path — no tournament payout
+         * path raised one, so a failed prize sat in an error tracker with the
+         * stack traces rather than in the financial alerts queue with the
+         * other money incidents.
+         *
+         * Awaited: the alert must be on disk before this process can be
+         * recycled, which is the whole point of it for a payout.
+         */
+        await raiseFinancialAlert(
+          'critical',
+          'Tournament.prize_credit_failed',
+          `Prize credit failed after 3 retries — ${prize} chips owed to ${userId} for place ${position} were never paid`,
+          {
+            tournament_id: this.tournamentId,
+            user_id: userId,
+            place: position,
+            prize,
+            idempotency_key: `tourney:${this.tournamentId}:prize:place:${position}`,
+          }
         );
       }
     }
@@ -3378,6 +3404,20 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Winner prize credit FAILED after 3 retries for ${winnerId.slice(0, 8)} — ${winnerPrize} chips lost`
           ),
           'TournamentthistournamentIdslic.CRITICAL'
+        );
+        // The champion's prize. See the note on the same escalation above:
+        // until 2026-08-31 no tournament payout path raised a financial alert.
+        await raiseFinancialAlert(
+          'critical',
+          'Tournament.winner_prize_credit_failed',
+          `WINNER prize credit failed after 3 retries — ${winnerPrize} chips owed to ${winnerId} were never paid`,
+          {
+            tournament_id: this.tournamentId,
+            user_id: winnerId,
+            place: 1,
+            prize: winnerPrize,
+            idempotency_key: `tourney:${this.tournamentId}:prize:place:1`,
+          }
         );
       }
     }

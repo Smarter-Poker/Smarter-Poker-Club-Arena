@@ -24,9 +24,42 @@ describe('a running target is open while late registration is', () => {
     expect(isSatelliteTargetOpen(RUNNING_IN_LATE_REG)).toBe(true);
   });
 
-  it('is open on the last late-reg level, and closed one level after', () => {
-    expect(isSatelliteTargetOpen({ ...RUNNING_IN_LATE_REG, current_level: 12 })).toBe(true);
+  /**
+   * THE CAP IS AN EXCLUSIVE BOUND ON A ZERO-BASED INDEX (corrected 2026-08-31).
+   *
+   * This test used to assert index 12 open and index 13 closed against a cap of
+   * 12 — one level too generous, because `current_level` indexes
+   * `blind_structure` directly, so a cap of 12 covers indices 0..11 and index
+   * 12 is the first level of the closed event. Every other reader in the
+   * codebase closes on `>=`: fn_register_for_tournament,
+   * process_tournament_rebuy, TournamentManagerBase.isLateRegClosed,
+   * TournamentInfoPanel.tsx:216 and TournamentDetails.tsx. This gate and
+   * fn_award_satellite_seat were the only two that did not, and a satellite
+   * winner could be seated into an event that had been refusing direct
+   * buy-ins for a whole level.
+   */
+  it('is open on the last late-reg level index, and closed at the cap itself', () => {
+    expect(isSatelliteTargetOpen({ ...RUNNING_IN_LATE_REG, current_level: 11 })).toBe(true);
+    expect(isSatelliteTargetOpen({ ...RUNNING_IN_LATE_REG, current_level: 12 })).toBe(false);
     expect(isSatelliteTargetOpen({ ...RUNNING_IN_LATE_REG, current_level: 13 })).toBe(false);
+  });
+
+  it('closes on a finalized prize pool whatever the level says', () => {
+    // The payout ladder has been sized against the pool as it stands; a seat
+    // sold now adds a buy-in the ladder was not built from.
+    expect(isSatelliteTargetOpen({ ...RUNNING_IN_LATE_REG, prize_pool_finalized: true })).toBe(
+      false
+    );
+    expect(isSatelliteTargetOpen({ status: 'REGISTERING', prize_pool_finalized: true })).toBe(
+      false
+    );
+    // ...and an unset / false flag changes nothing.
+    expect(isSatelliteTargetOpen({ ...RUNNING_IN_LATE_REG, prize_pool_finalized: false })).toBe(
+      true
+    );
+    expect(isSatelliteTargetOpen({ ...RUNNING_IN_LATE_REG, prize_pool_finalized: null })).toBe(
+      true
+    );
   });
 
   it('falls back to rebuy_levels when late_reg_levels is unset, as the rest of the code does', () => {

@@ -28,6 +28,14 @@
   player, including horses, without weakening atomicity, locking, or request idempotency.
 - Replaced decorative Unicode loading/check glyphs with CSS loading indicators and text.
 - Routed non-blocking club-card and event-bus failures through the production error reporter.
+- Made all three dialog shells height-safe: their complete outer frames stay inside short desktop
+  and landscape-phone viewports while their content scrolls internally, with the close and action
+  controls remaining reachable.
+- Added the same short-viewport containment to shared Club Arena empty and permission panels so a
+  page edge cannot cut through the panel's lower corners.
+- Repaired two newly exposed main-branch test-contract defects that blocked the release gate: the
+  satellite source pin now uses the structural source-window helper, and the cash-table test now
+  recognizes `min_buy_in_bb` and `max_buy_in_bb` as generated, non-writable columns.
 
 ## Verification
 
@@ -35,6 +43,8 @@
   no `is_horse` branch, retain authenticated execution, and expose the universal four-club rule.
 - New runtime coverage exercises immediate join-to-watch, membership-race recovery, stale search
   access, seated exceptions, and restricted-observer denial.
+- Layout regression coverage pins complete action artwork (`object-fit: contain`), scroll-safe
+  modal bodies, dynamic-viewport caps, and full shared-state frames on short viewports.
 - Client suite: all 10,301 cases passed across the complete run and isolated rerun of two
   machine-contention timeouts.
 - Engine suite: all 3,105 cases passed across the complete run and isolated rerun of three

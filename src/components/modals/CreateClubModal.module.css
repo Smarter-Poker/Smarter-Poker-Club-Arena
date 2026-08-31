@@ -23,6 +23,8 @@
   justify-content: center;
   z-index: 9999;
   padding: 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -391,7 +393,7 @@
   width: min(860px, 100%);
   max-width: none;
   aspect-ratio: auto;
-  min-height: 680px;
+  min-height: min(680px, calc(100dvh - 40px));
   max-height: min(900px, calc(100dvh - 40px));
   display: grid;
   grid-template-columns: 0.78fr 1.22fr;
@@ -453,6 +455,7 @@
 
 .contentPanel {
   position: relative;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
@@ -791,6 +794,20 @@
   }
   .title {
     font-size: 34px;
+  }
+}
+@media (max-height: 560px) {
+  .modalContainer {
+    height: calc(100dvh - 24px);
+    min-height: 0;
+    max-height: calc(100dvh - 24px);
+  }
+  .overlay {
+    padding: 12px;
+  }
+  .contentPanel {
+    padding-top: 38px;
+    padding-bottom: 22px;
   }
 }
 @media (max-width: 430px) {

@@ -38,14 +38,16 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceMethod } from '../../../tests/helpers/sourceWindow';
 
 const SRC = readFileSync(resolve(__dirname, 'TournamentManager.ts'), 'utf8');
 
 /** The satellite award branch, isolated from every other payCash call. */
 const AWARD = (() => {
-  const at = SRC.indexOf("supabase.rpc('fn_award_satellite_seat'");
+  const method = sliceMethod(SRC, 'protected async processSatelliteAwards');
+  const at = method.indexOf("supabase.rpc('fn_award_satellite_seat'");
   expect(at).toBeGreaterThan(-1);
-  return SRC.slice(at, at + 2600);
+  return method.slice(at);
 })();
 
 describe('a satellite winner who already holds a seat', () => {

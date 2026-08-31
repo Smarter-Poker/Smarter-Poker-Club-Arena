@@ -410,7 +410,7 @@ export default function ProfilePage() {
                 .from('wallet_transactions')
                 .select('id, type, amount, created_at, description')
                 .eq('user_id', authUser.id)
-                .order('created_at', { ascending: true })
+                .order('created_at', { ascending: false })
                 .limit(200)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: isMountedRef }
@@ -507,7 +507,9 @@ export default function ProfilePage() {
 
         // Process transactions
         if (transactionsResult.status === 'fulfilled' && transactionsResult.value.data) {
-          setTransactions(transactionsResult.value.data);
+          // DB returned them descending (newest first). Reverse them so the array is ascending
+          // (oldest first) which the chart requires to draw chronologically left-to-right.
+          setTransactions([...transactionsResult.value.data].reverse());
         } else {
           setTransactions([]);
         }

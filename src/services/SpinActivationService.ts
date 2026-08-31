@@ -23,6 +23,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { requiredSeed } from '../config/spinSpec';
 
 /** The Spin board's price points. Mirrors SPIN_BOARD_BUYINS in the engine. */
 export const SPIN_BOARD_STAKES = [1, 2, 3, 5, 10, 20, 50, 100] as const;
@@ -114,7 +115,11 @@ async function call<T>(body: Record<string, unknown>): Promise<T> {
  * number and charged another.
  */
 export function requiredSeedForStake(maxStake: number): number {
-  return Math.round(Math.max(maxStake, 0) * 100 * 2 * 100) / 100;
+  /* 2026-08-30 audit: this used to hardcode the top multiplier as a literal
+     100 - the exact drift shape the 500x retirement already burned us on.
+     spinSpec.requiredSeed derives it from SPIN_TIERS, so a tier change now
+     changes all three quotes together. */
+  return requiredSeed(Math.max(maxStake, 0));
 }
 
 export const spinActivationApi = {

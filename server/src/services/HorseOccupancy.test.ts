@@ -100,7 +100,11 @@ describe('held-empty cash tables (Dan 2026-08-26: leave 15% of cash tables empty
   });
 
   it('an empty table stays empty for its whole bucket, then the set rotates', () => {
-    const t0 = 1_700_000_000_000;
+    // Aligned to the bucket start: the old test added EMPTY_BUCKET_MS - 1000
+    // to an UNALIGNED timestamp, which lands in the NEXT bucket — it only
+    // passed because the pre-2026-08-30 hash correlated adjacent buckets,
+    // which was itself the ~30-hour-hold bug.
+    const t0 = Math.floor(1_700_000_000_000 / EMPTY_BUCKET_MS) * EMPTY_BUCKET_MS;
     const id = tables.find((x) => cashTableHeldEmpty(x, t0))!;
     expect(cashTableHeldEmpty(id, t0 + EMPTY_BUCKET_MS - 1000)).toBe(true);
     const later = new Set<boolean>();

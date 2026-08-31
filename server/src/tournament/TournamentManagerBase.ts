@@ -1385,6 +1385,44 @@ export abstract class TournamentManagerBase {
         }> | null = null;
 
         if (!spinMultiplier || spinMultiplier <= 0) {
+          /* A CRASH BETWEEN SETTLE AND THE ROW WRITE MUST NOT REDRAW
+             (2026-08-30 audit). The settle books the drawn multiplier into
+             spin_reserve_ledger BEFORE the tournament row is patched with it.
+             A process death in that window restarts start() with
+             spin_multiplier NULL, and drawing again here would broadcast and
+             PAY a different prize than the ledger booked - silently, because
+             fn_spin_settle_game answers already_settled. The ledger is the
+             booked truth, so it is consulted first; unreadable evidence is a
+             stand-down (the house rule), never a licence to redraw. */
+          const { data: bookedRows, error: bookedErr } = await supabase
+            .from('spin_reserve_ledger')
+            .select('multiplier')
+            .eq('tournament_id', this.tournamentId)
+            .eq('kind', 'jackpot_draw')
+            .limit(1);
+          if (bookedErr) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Booked-draw ledger unreadable (${bookedErr.message}) - standing down rather than risking a redraw of a settled spin`
+              ),
+              'Tournament.spin_booked_draw_unreadable'
+            );
+            this.running = false;
+            return;
+          }
+          const bookedMult = Number(bookedRows?.[0]?.multiplier);
+          if (Number.isFinite(bookedMult) && bookedMult > 0) {
+            spinMultiplier = bookedMult;
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Adopting ALREADY-BOOKED ${bookedMult}x from spin_reserve_ledger - a previous process settled this spin but died before writing the row`
+              ),
+              'Tournament.spin_adopted_booked_multiplier'
+            );
+          }
+        }
+
+        if (!spinMultiplier || spinMultiplier <= 0) {
           // THE DRAW. Through fn_spin_draw_multiplier, so a high multiplier
           // is only ever SELECTED when the Reserve Pool can pay it — an
           // unfundable tier is excluded from the draw rather than drawn and
@@ -1497,7 +1535,7 @@ export abstract class TournamentManagerBase {
         // Same reasoning as p_seats on the draw above: three seats, always.
         const seats = SPEC_SPIN_SEATS;
         const tier = spinTier(spinMultiplier);
-        const prizePool = Math.round(buyIn * spinMultiplier * 100) / 100;
+        let prizePool = Math.round(buyIn * spinMultiplier * 100) / 100;
 
         /**
          * ═══════════════════════════════════════════════════════════════════
@@ -1587,6 +1625,26 @@ export abstract class TournamentManagerBase {
               throw new Error(settleErr?.message || settle?.reason || 'settle_failed');
             }
             settled = true;
+            /* THE LEDGER OUTRANKS A FRESH DRAW (2026-08-30). already_settled
+               now carries the multiplier the original settlement booked. If it
+               disagrees with the one this process holds, the booked one is the
+               money truth - adopt it before the row write and the payouts
+               below, and say so loudly. The pre-draw ledger check makes this
+               near-unreachable; this is the backstop for a race between two
+               processes settling the same spin. */
+            if (settle.reason === 'already_settled') {
+              const booked = Number(settle.multiplier);
+              if (Number.isFinite(booked) && booked > 0 && booked !== spinMultiplier) {
+                reportError(
+                  new Error(
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] Settle was ALREADY BOOKED at ${booked}x but this process drew ${spinMultiplier}x - adopting the booked ${booked}x`
+                  ),
+                  'Tournament.spin_settle_multiplier_mismatch'
+                );
+                spinMultiplier = booked;
+                prizePool = Math.round(buyIn * spinMultiplier * 100) / 100;
+              }
+            }
             if (Number(settle.operator_shortfall) > 0) {
               // The pool was too thin to cover the prize. Players are paid in
               // full regardless; this says the club needs seeding.
@@ -3512,6 +3570,31 @@ export abstract class TournamentManagerBase {
     if (!Array.isArray(blindStructure) || blindStructure.length === 0) return null;
     const i = Number.isFinite(index) && index > 0 ? Math.floor(index) : 0;
     if (i < blindStructure.length) return blindStructure[i] ?? blindStructure[0];
+
+    /* SPIN OVERFLOW STAYS ON THE SPIN LADDER (2026-08-30 audit). A spin's
+       persisted structure is 12 rows of spinBlindsForLevel's ~1.4x cadence;
+       the generic escalation below DOUBLES per level, so a deep 100x that
+       outran the 12 rows used to jump from the gentle ladder to 2x every
+       level. spinBlindsForLevel is deterministic and continues the same
+       cadence indefinitely, so overflow levels are read from it instead -
+       identical across restarts for the same reason the generic path is. */
+    {
+      const t = this.tournamentCache;
+      const isSpin =
+        String(t?.variant ?? '').toLowerCase() === 'spin' ||
+        String(t?.tournament_type ?? '').toUpperCase() === 'SPIN';
+      if (isSpin) {
+        const b = spinBlindsForLevel(i + 1);
+        const lastRow = blindStructure[blindStructure.length - 1] ?? {};
+        return {
+          ...lastRow,
+          level: i + 1,
+          smallBlind: b.small,
+          bigBlind: b.big,
+          ante: 0,
+        };
+      }
+    }
 
     const lastLevel = blindStructure[lastPlayableIndex(blindStructure)];
     return escalatedBlindLevel(

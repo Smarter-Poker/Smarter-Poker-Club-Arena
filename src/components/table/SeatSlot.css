@@ -267,8 +267,8 @@
      The 44px floor is a TOUCH target, not a legibility one: this is the "+ SIT"
      button and it is the only thing rendered at six of nine positions on an
      idle table, so it must stay tappable on the smallest felt. */
-  width: max(44px, calc(var(--seat-avatar-size, 84px) * 0.76));
-  height: max(44px, calc(var(--seat-avatar-size, 84px) * 0.76));
+  width: max(44px, calc(var(--seat-avatar-full, 84px) * 0.76));
+  height: max(44px, calc(var(--seat-avatar-full, 84px) * 0.76));
   display: flex;
   align-items: center;
   justify-content: center;

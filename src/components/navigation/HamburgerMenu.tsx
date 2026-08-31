@@ -45,7 +45,16 @@ import {
   readTableStudioCheckoutIntent,
   tableStudioCheckoutResult,
 } from '../../lib/tableStudioCheckoutResume';
+import { formatPopupText } from '../../utils/popupStyle';
 import styles from './HamburgerMenu.module.css';
+
+/* Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU
+   MUST BE CAPITALIZED. AS WELL AS EVERY CLICKABLE PAGE AND SUBPAGE."
+   Enforced in the render path — the same reasoning as the Toast layer's house
+   rule: hundreds of label/description strings are written by many agents, and
+   a style that lives in a convention drifts by the next commit. Every label
+   and description this drawer renders passes through here. */
+const tc = formatPopupText;
 
 interface HamburgerMenuProps {
   isOpen: boolean;
@@ -862,12 +871,12 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             />
             <span>
               {workspace.isOffline
-                ? 'Offline - queued actions remain protected'
+                ? 'Offline - Queued Actions Remain Protected'
                 : workspace.isStale
-                  ? 'Live circuit - refreshing context'
-                  : 'Live circuit connected'}
+                  ? 'Live Circuit - Refreshing Context'
+                  : 'Live Circuit Connected'}
             </span>
-            {clubRole && <strong>{clubRole.replace(/_/g, ' ')}</strong>}
+            {clubRole && <strong>{tc(clubRole.replace(/_/g, ' '))}</strong>}
           </div>
           {clubId && clubChoices.length > 1 && (
             <label className={styles.contextSwitcher}>
@@ -897,7 +906,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search destinations or the arena"
+              placeholder="Search Destinations Or The Arena"
               aria-label="Search destinations or the arena"
             />
             <button type="submit" aria-label="Search all players and clubs">
@@ -1030,7 +1039,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 <div className={styles.memoryLinks}>
                   {pinnedItems.map((item) => (
                     <button key={item.path} type="button" onClick={() => handleNavigate(item.path)}>
-                      {item.label}
+                      {tc(item.label)}
                     </button>
                   ))}
                 </div>
@@ -1042,7 +1051,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 <div className={styles.memoryLinks}>
                   {recentItems.map((item) => (
                     <button key={item.path} type="button" onClick={() => handleNavigate(item.path)}>
-                      {item.label}
+                      {tc(item.label)}
                     </button>
                   ))}
                 </div>
@@ -1053,7 +1062,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
         {filteredNavigationGroups.map((group) => (
           <section className={styles.navGroup} key={group.label} aria-label={group.label}>
-            <h2 className={styles.sectionHeader}>{group.label}</h2>
+            <h2 className={styles.sectionHeader}>{tc(group.label)}</h2>
             {group.items.map((item) => {
               const active = isActivePath(item.path);
               return (
@@ -1066,8 +1075,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                     aria-current={active ? 'page' : undefined}
                   >
                     <span>
-                      <span className={styles.navLabel}>{item.label}</span>
-                      <span className={styles.navDescription}>{item.description}</span>
+                      <span className={styles.navLabel}>{tc(item.label)}</span>
+                      <span className={styles.navDescription}>{tc(item.description)}</span>
                     </span>
                     {attentionCount > 0 && item.path.endsWith('/disputes') && (
                       <span className={styles.attentionBadge}>{attentionCount}</span>
@@ -1277,8 +1286,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 aria-current={active ? 'page' : undefined}
               >
                 <span>
-                  <span className={styles.navLabel}>{item.label}</span>
-                  <span className={styles.navDescription}>{item.description}</span>
+                  <span className={styles.navLabel}>{tc(item.label)}</span>
+                  <span className={styles.navDescription}>{tc(item.description)}</span>
                 </span>
                 <span className={styles.navArrow}>›</span>
               </button>
@@ -1302,8 +1311,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 aria-current={active ? 'page' : undefined}
               >
                 <span>
-                  <span className={styles.navLabel}>{item.label}</span>
-                  <span className={styles.navDescription}>{item.description}</span>
+                  <span className={styles.navLabel}>{tc(item.label)}</span>
+                  <span className={styles.navDescription}>{tc(item.description)}</span>
                 </span>
                 <span className={styles.navArrow}>›</span>
               </button>

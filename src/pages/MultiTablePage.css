@@ -325,6 +325,19 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   cursor: pointer;
   transform: scale(1);
   transition: box-shadow 0.2s ease;
+  /* Variant A (Dan 2026-08-30): column layout so the action band RESERVES
+     space below the felt instead of overlaying the hero's cards. */
+  display: flex;
+  flex-direction: column;
+}
+
+/* The table's own flex row. When the band is up this shrinks and the scaled
+   TablePage re-fits into it, so nothing ever covers the hero seat. */
+.multi-table-grid__stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
 }
 
 .multi-table-grid__cell--active {
@@ -860,25 +873,24 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
    ROADMAP BATCH 4 — playable tile view action strip
    ───────────────────────────────────────────────────────────────────────────── */
 
-.multi-table-grid__cell {
-  position: relative;
+/* Variant A (Dan 2026-08-30): the band is an IN-FLOW reserved strip at the
+   bottom of the cell — never an overlay, so the felt (and the hero's cards at
+   their normal size) is never covered by action chrome. */
+.multi-table-grid__band {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px 8px;
+  background: #101319;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  z-index: 20;
 }
 
 .multi-table-grid__actions {
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 8px;
-  z-index: 20;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px;
-  border-radius: 12px;
-  background: rgba(10, 12, 18, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 
 .multi-table-grid__action {
@@ -1018,13 +1030,44 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
    ───────────────────────────────────────────────────────────────────────────── */
 
 .multi-table-grid__raises {
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 60px;
-  z-index: 20;
   display: flex;
   gap: 6px;
+}
+
+/* Variant A raise slider row — same functionality as the full panel's sizing
+   step, compact enough for a 2x2 tile. */
+.multi-table-grid__slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.multi-table-grid__slider {
+  flex: 1;
+  min-width: 0;
+  accent-color: #f59e0b;
+  touch-action: none;
+}
+
+.multi-table-grid__slider-amount {
+  flex-shrink: 0;
+  min-width: 44px;
+  text-align: right;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #facc15;
+  font-variant-numeric: tabular-nums;
+}
+
+.multi-table-grid__raise--confirm {
+  flex: 0 0 auto;
+  background: linear-gradient(180deg, #b45309 0%, #92400e 100%);
+  border-color: rgba(251, 191, 36, 0.5);
+}
+
+.multi-table-grid__raise--open {
+  border-color: rgba(251, 191, 36, 0.7);
+  background: rgba(146, 64, 14, 0.35);
 }
 
 .multi-table-grid__raise {

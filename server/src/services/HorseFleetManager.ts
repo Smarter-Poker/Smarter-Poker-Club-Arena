@@ -18,6 +18,7 @@ import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
 import { bankrollBuyIn, bankrollPolicyFor, canSit, referenceBuyIn } from './HorseBankroll.js';
+import { bankrollEvent, bankrollSummaryLine } from './HorseBankrollTelemetry.js';
 import {
   buyInBBFor,
   gameLaneFor,
@@ -994,6 +995,7 @@ export class HorseFleetManager {
               const roll = bankrolls.get(`${table.club_id}:${h.id}`);
               if (roll === undefined) {
                 rollUnknown++;
+                bankrollEvent('seat_fail_open_roll_unknown');
                 return true;
               }
               const ref = referenceBuyIn(
@@ -1001,7 +1003,10 @@ export class HorseFleetManager {
                 Number((table as any).min_buy_in) || undefined,
                 Number((table as any).max_buy_in) || undefined
               );
-              if (!canSit(roll, ref, bankrollPolicyFor(h.id))) return false;
+              if (!canSit(roll, ref, bankrollPolicyFor(h.id))) {
+                bankrollEvent('seat_refused_underrolled');
+                return false;
+              }
             }
             const tablesForHorse = horseTables.get(h.id);
             if (!tablesForHorse) return true;
@@ -1089,7 +1094,11 @@ export class HorseFleetManager {
                 maxBuyIn: maxB,
                 policy: bankrollPolicyFor(horse.id),
               });
-              if (capped <= 0) continue;
+              if (capped <= 0) {
+                bankrollEvent('seat_refused_share_below_min');
+                continue;
+              }
+              if (capped < buyIn) bankrollEvent('buyin_capped');
               // keep the human-looking 5bb rounding after the cap
               const snapped = Math.round(capped / step) * step;
               buyIn = Math.round(Math.max(minB, Math.min(capped, snapped)) * 100) / 100;
@@ -1135,6 +1144,48 @@ export class HorseFleetManager {
             `no membership row for that club. Seating proceeded (fail-open).`
         );
       }
+
+      /**
+       * THE LADDER RAN OUT - the number that says whether the fleet has
+       * anywhere left to step DOWN to.
+       *
+       * A horse that cannot afford the cheapest game on the board is not
+       * making a decision, it is stranded, and a stranded fleet looks exactly
+       * like a working one from every other angle: no errors, no refusals
+       * worth reading, tables just quietly stop filling. 175 of 584 horses
+       * are banded into stakes with no open table today, and every micro
+       * table is closed, so this is the number that will say whether the
+       * micro relaunch actually gave them a rung.
+       *
+       * Priced against the cheapest game the fleet could ACTUALLY join:
+       * surplus tables are excluded because they are being wound down.
+       */
+      if (bankrollsLoaded && bankrolls.size > 0) {
+        let cheapestRef = Infinity;
+        for (const t of tables) {
+          if (surplusTableIds.has(t.id)) continue;
+          const r = referenceBuyIn(
+            Number(t.big_blind),
+            Number((t as any).min_buy_in) || undefined,
+            Number((t as any).max_buy_in) || undefined
+          );
+          if (r > 0 && r < cheapestRef) cheapestRef = r;
+        }
+        if (Number.isFinite(cheapestRef)) {
+          let stranded = 0;
+          for (const [key, roll] of bankrolls) {
+            const horseId = key.slice(key.indexOf(':') + 1);
+            if (!canSit(roll, cheapestRef, bankrollPolicyFor(horseId))) stranded++;
+          }
+          // A GAUGE, not a count - see HorseBankrollTelemetry. Written every
+          // cycle including zero, so the line goes quiet the moment the micro
+          // relaunch gives the fleet somewhere to step down to.
+          bankrollEvent('ladder_exhausted', stranded);
+        }
+      }
+
+      const brLine = bankrollSummaryLine();
+      if (brLine) console.log(brLine);
 
       if (totalSeated > 0) {
         console.log(`[HorseFleet] Seated ${totalSeated} horses across tables`);

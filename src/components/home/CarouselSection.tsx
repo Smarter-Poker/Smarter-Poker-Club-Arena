@@ -10,7 +10,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 import haptic from '../../services/HapticService';
-import PremiumSFX from '../../services/PremiumSFX';
+import { playPremiumSfx } from '../../utils/playPremiumSfx';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { SHARK_CLUB_ID } from '../../lib/constants';
 import styles from '../../pages/HomePage.module.css';
@@ -165,7 +165,7 @@ export default function CarouselSection({
 
   const handleIndexChange = useCallback(() => {
     haptic.light();
-    PremiumSFX.scrollSnap();
+    playPremiumSfx('scrollSnap');
     /* Warm the club lobby while the player is still deciding. It is the
        heaviest screen in the app and it is where every tap on this carousel
        goes, so fetching it at the moment a card settles turns the tap from
@@ -204,7 +204,7 @@ export default function CarouselSection({
   const handleClubCardClick = useCallback(
     (club: UserClub) => {
       haptic.success();
-      PremiumSFX.navigate();
+      playPremiumSfx('navigate');
       try {
         localStorage.setItem(STORAGE_KEYS.LAST_VISITED, club.id);
         localStorage.setItem(STORAGE_KEYS.LAST_CLUB, club.id);
@@ -304,14 +304,14 @@ export default function CarouselSection({
           className={styles.ctaCard}
           onClick={() => {
             haptic.light();
-            PremiumSFX.ctaClick();
+            playPremiumSfx('ctaClick');
             onOpenJoinModal();
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               haptic.light();
-              PremiumSFX.ctaClick();
+              playPremiumSfx('ctaClick');
               onOpenJoinModal();
             }
           }}
@@ -394,14 +394,14 @@ export default function CarouselSection({
           className={styles.ctaCard}
           onClick={() => {
             haptic.light();
-            PremiumSFX.ctaClick();
+            playPremiumSfx('ctaClick');
             onOpenCreateModal();
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               haptic.light();
-              PremiumSFX.ctaClick();
+              playPremiumSfx('ctaClick');
               onOpenCreateModal();
             }
           }}

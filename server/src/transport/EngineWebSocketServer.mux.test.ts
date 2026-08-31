@@ -62,6 +62,7 @@ function makeServer(overrides: Partial<Record<string, unknown>> = {}) {
     hub: hub as never,
     tableExists: (id: string) => id === T1 || id === T2,
     verifyToken: async () => ({ userId: 'user-1' }),
+    authorizeViewer: async () => ({ allowed: true, reason: 'club_member', clubId: 'club-1' }),
     ...overrides,
   } as never);
   // Per-table async gates: default to "not banned / no conflict" so tests
@@ -111,6 +112,33 @@ describe('EngineWebSocketServer /ws/multi', () => {
     expect(hub.subscribe).not.toHaveBeenCalled();
     const errs = ws.sent.map((s) => JSON.parse(s));
     expect(errs.some((m) => m.type === 'ERROR' && m.code === 'TABLE_NOT_FOUND')).toBe(true);
+  });
+
+  it('rejects a non-member before any table state subscription', async () => {
+    const { server: deniedServer, hub: deniedHub } = makeServer({
+      authorizeViewer: async () => ({
+        allowed: false,
+        reason: 'membership_required',
+        clubId: 'club-1',
+      }),
+    });
+    const deniedWs = makeFakeWs();
+    (deniedServer as unknown as { onUpgradedMux: Handler }).onUpgradedMux(
+      deniedWs,
+      'outsider',
+      null
+    );
+
+    deniedWs.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+
+    expect(deniedHub.subscribe).not.toHaveBeenCalled();
+    const errors = deniedWs.sent.map((message) => JSON.parse(message));
+    expect(
+      errors.some(
+        (message) => message.type === 'ERROR' && message.code === 'CLUB_MEMBERSHIP_REQUIRED'
+      )
+    ).toBe(true);
   });
 
   it('rejects a banned user with BANNED and no hub call', async () => {

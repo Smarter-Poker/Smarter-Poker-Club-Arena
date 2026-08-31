@@ -34,6 +34,7 @@ import type { IncomingMessage } from 'http';
 import type { Server as HttpServer } from 'http';
 import { randomUUID } from 'crypto';
 import { supabase } from '../services/supabase.js';
+import { authorizeTableViewer, type TableViewerAccess } from '../services/TableViewerAccess.js';
 import type { TableStateHub, HubSubscriber } from './TableStateHub.js';
 // Round 70: blacklist gate + Round 67/190: connection audit log both use
 // the supabase client imported above. No additional import needed.
@@ -115,6 +116,8 @@ export interface EngineWebSocketServerOptions {
   tableExists: TableExistsCheck;
   /** Optional override for auth, used by tests to inject fake tokens. */
   verifyToken?: (token: string) => Promise<{ userId: string } | null>;
+  /** Optional override for the authoritative club-membership gate in tests. */
+  authorizeViewer?: (tableId: string, userId: string) => Promise<TableViewerAccess>;
   /**
    * FIX 2 (2026-07-24): invoked on (re)connect and on RESYNC so the engine can
    * re-deliver the requesting player's hole cards for the current hand. Public
@@ -217,6 +220,7 @@ export class EngineWebSocketServer {
   private readonly hub: TableStateHub;
   private readonly tableExists: TableExistsCheck;
   private readonly verifyToken: (token: string) => Promise<{ userId: string } | null>;
+  private readonly authorizeViewer: (tableId: string, userId: string) => Promise<TableViewerAccess>;
   private readonly onResync?: (tableId: string, userId: string) => void;
   private readonly onConnect?: (tableId: string, userId: string) => void;
   private readonly onDisconnect?: (tableId: string, userId: string) => void;
@@ -234,6 +238,7 @@ export class EngineWebSocketServer {
     this.hub = opts.hub;
     this.tableExists = opts.tableExists;
     this.verifyToken = opts.verifyToken ?? defaultVerifyToken;
+    this.authorizeViewer = opts.authorizeViewer ?? authorizeTableViewer;
     this.onResync = opts.onResync;
     this.onConnect = opts.onConnect;
     this.onDisconnect = opts.onDisconnect;
@@ -326,6 +331,15 @@ export class EngineWebSocketServer {
             socket.write(
               'HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
             );
+            socket.destroy();
+            return;
+          }
+
+          const viewerAccess = await this.authorizeViewer(tableId, auth.userId);
+          if (!viewerAccess.allowed) {
+            const status =
+              viewerAccess.reason === 'check_failed' ? '503 Service Unavailable' : '403 Forbidden';
+            socket.write(`HTTP/1.1 ${status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`);
             socket.destroy();
             return;
           }
@@ -818,6 +832,21 @@ export class EngineWebSocketServer {
       if (!this.tableExists(tableId)) {
         conn.subs.delete(tableId);
         this.sendMuxError(conn, tableId, 'TABLE_NOT_FOUND', 'Table not found in engine');
+        return;
+      }
+      const viewerAccess = await this.authorizeViewer(tableId, conn.userId);
+      if (!viewerAccess.allowed) {
+        conn.subs.delete(tableId);
+        this.sendMuxError(
+          conn,
+          tableId,
+          viewerAccess.reason === 'check_failed'
+            ? 'ACCESS_CHECK_FAILED'
+            : 'CLUB_MEMBERSHIP_REQUIRED',
+          viewerAccess.reason === 'check_failed'
+            ? 'Unable to verify table access'
+            : 'Join this club before watching its live games'
+        );
         return;
       }
       try {

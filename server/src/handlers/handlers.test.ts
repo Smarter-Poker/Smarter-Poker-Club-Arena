@@ -21,6 +21,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../http/auth.js', () => ({ authenticateRequest: vi.fn() }));
 vi.mock('../http/body.js', () => ({ readBody: vi.fn() }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
+vi.mock('../services/TableViewerAccess.js', () => ({ authorizeTableViewer: vi.fn() }));
 
 // Audit S1: admin/pause|resume now resolve the caller's club-admin role via
 // supabase (tables.club_id -> club_members.role). Mock it with mutable results.
@@ -69,6 +70,7 @@ import { handleGetActions, handleGetState } from './state.js';
 
 import { authenticateRequest } from '../http/auth.js';
 import { readBody } from '../http/body.js';
+import { authorizeTableViewer } from '../services/TableViewerAccess.js';
 import { mockReq, mockRes, parseJson, mockEngine, mockGameServer } from './_testHelpers.js';
 
 // Every POST handler has the same signature: (req, res, deps).
@@ -393,7 +395,14 @@ describe('handleGetActions', () => {
 });
 
 describe('handleGetState', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(authorizeTableViewer).mockResolvedValue({
+      allowed: true,
+      reason: 'club_member',
+      clubId: 'club-1',
+    });
+  });
 
   it('401 when unauthenticated', async () => {
     vi.mocked(authenticateRequest).mockResolvedValue(null);
@@ -419,6 +428,26 @@ describe('handleGetState', () => {
     expect(captured.statusCode).toBe(200);
 
     expect((engine as any).getTableState).toHaveBeenCalledWith('u1');
+  });
+
+  it('403 prevents a non-member from reading live table state', async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'outsider' });
+    vi.mocked(authorizeTableViewer).mockResolvedValue({
+      allowed: false,
+      reason: 'membership_required',
+      clubId: 'club-1',
+    });
+    const engine = mockEngine();
+    const { res, captured } = mockRes();
+
+    await handleGetState(mockReq(), res, 't1', { gameServer: mockGameServer(engine, 't1') });
+
+    expect(captured.statusCode).toBe(403);
+    expect(parseJson(captured)).toMatchObject({
+      code: 'CLUB_MEMBERSHIP_REQUIRED',
+      club_id: 'club-1',
+    });
+    expect((engine as any).getTableState).not.toHaveBeenCalled();
   });
 });
 

@@ -79,6 +79,25 @@ describe('the canary fires for a broken client', () => {
   });
 });
 
+describe('BOTH doors are watched', () => {
+  /* A player can be force-sat-out from TWO places: `recordConnectedTimeout`
+     (the connected AFK ladder) and `executeAutoAction` (the disconnect
+     countdown). The first cut of this feature wired the canary into one of
+     them and stopped, which is how a diagnostic ends up quietly covering half
+     of what it claims to. Found in the phase 2 audit; pinned here so nobody
+     adds a third sentencing path without a canary in front of it. */
+  it('every forced sit-out consults the canary first', async () => {
+    const { readFileSync } = await import('fs');
+    const src = readFileSync(new URL('./DisconnectEngine.ts', import.meta.url), 'utf8');
+    const parts = src.split("this.sitOut(tableId, playerId, 'forced')");
+    expect(parts.length).toBeGreaterThanOrEqual(3); // 2 call sites -> 3 fragments
+    for (let i = 0; i < parts.length - 1; i++) {
+      const justBefore = parts[i].slice(-400);
+      expect(justBefore).toMatch(/reportSuspectedSilentClient\(tableId, playerId, state\)/);
+    }
+  });
+});
+
 describe('the canary stays quiet for everything else', () => {
   beforeEach(() => vi.restoreAllMocks());
 

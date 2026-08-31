@@ -240,7 +240,10 @@ export default function SuperAgentDashboard() {
 
     setIsTransferring(true);
     try {
-      await AgentService.transferToPlayer(agent.id, transferPlayerId, clubId!, amount);
+      // The sender is no longer a parameter: fn_agent_wallet_send derives it
+      // from auth.uid(). This used to pass agent.id - the agents-table ROW id -
+      // where a user id was expected, so the transfer could never have landed.
+      await AgentService.transferToPlayer(transferPlayerId, clubId!, amount);
       if (!isMounted.current) return;
       setTransferPlayerId('');
       if (isMounted.current)

@@ -55,7 +55,51 @@ type GameMode = 'regular' | 'sng' | 'mtt';
  * The engine rule is right; offering the switch on a table that can never
  * honour it is what was wrong.
  */
-const SEVEN_DEUCE_VARIANTS = new Set(['nlh', 'nlhe', 'flh', 'limit_holdem', 'pineapple']);
+/**
+ * The variants the 7-2 bounty can actually pay out on.
+ *
+ * EXACTLY WHAT THE ENGINE PAYS, AND NOTHING ELSE (2026-08-31 audit). The gate
+ * in ServerTableEngineSettlement is a string equality:
+ *
+ *     const sevenDeuceIsNlh = (this.tableInfo?.game_variant || 'nlh') === 'nlh';
+ *
+ * so `nlhe`, `flh`, `limit_holdem` and `pineapple` all failed it. The toggle
+ * rendered on a Fixed Limit Hold'em and a Pineapple table, wrote
+ * `seven_deuce_enabled: true`, and the bounty was never paid — the owner
+ * advertised a prize the table could not award. This is the same shape as the
+ * PLO and short-deck removal recorded two comments down; those were taken out
+ * of the set and these four were left in.
+ *
+ * FLH is a legitimate candidate — it is Hold'em and it has deuces — but making
+ * it pay is an ENGINE change to a settlement path, with its own tests, not a
+ * set entry. Until then the honest UI is the one that only offers what pays.
+ */
+const SEVEN_DEUCE_VARIANTS = new Set(['nlh']);
+
+/**
+ * Fixed-limit tables (FLH, FLO8) cannot honour three of this form's controls,
+ * and the engine is the reason for each (2026-08-31 audit):
+ *
+ *  • STRADDLE. `HandController` posts a straddle by assigning
+ *    `state.currentBet = straddleAmount` with no structure branch, while a
+ *    legal fixed-limit wager for the same street is exactly
+ *    `fixedLimitBetSize(bigBlind, stage)`. A straddle is also none of
+ *    bet/raise/full-raise all-in, so `fixedLimitWagerCount` does not count it
+ *    against the four-wager cap — the street silently gains a betting round.
+ *  • CAP. `ServerTableEngineTurns` assigns the mandatory fixed size and THEN
+ *    clamps it with `Math.min(amount, capRemaining)`, so a capped limit table
+ *    can emit a bet that is not the legal size, which the validator refuses.
+ *  • BOMB-POT VARIANT OVERRIDE. The bomb hand's variant is what
+ *    `bettingStructureFor` reads, so a `plo4` bomb on an FLH table plays a
+ *    POT-LIMIT hand at a table the player sat down at for fixed limit.
+ *    (`resolveBombPotVariant` refuses this server-side as well, for the writers
+ *    that are not this form.)
+ *
+ * Hidden rather than disabled, and forced false on the write, so a template
+ * saved on a no-limit table cannot carry a stale `true` onto a limit one.
+ */
+const isFixedLimitGame = (gameType: string | undefined): boolean =>
+  isFixedLimitVariant(String(gameType || 'nlh').toLowerCase());
 
 type RunItMode = 'none' | 'player_choice' | 'mandatory_twice' | 'mandatory_three';
 type BlindStructure = 'slow' | 'standard' | 'turbo' | 'hyper_turbo';
@@ -914,6 +958,10 @@ export default function TableConfigPage() {
   // FIX: Accept resolved UUID — raw clubId from URL params may not be a UUID
   const canRunAsTournament = gameTypeCanRunAsTournament(gameType);
 
+  /* Three controls the engine cannot honour under fixed-limit betting; see
+     isFixedLimitGame for what each one does wrong. */
+  const limitGame = isFixedLimitGame(gameType);
+
   const buildTableData = (resolvedClubId?: string) => ({
     club_id: resolvedClubId || clubId,
     // Stamp the owning union when there is one, so a game the union built for a
@@ -978,7 +1026,11 @@ export default function TableConfigPage() {
       config.bombPotEnabled && config.bombPotAnteFixed > 0 ? config.bombPotAnteFixed : null,
     // VARIANT OVERRIDE (spec §10.1): NULL = bomb hands play the table's own
     // game. The engine whitelists; the DB CHECK mirrors it.
-    bomb_pot_variant: config.bombPotEnabled && config.bombPotVariant ? config.bombPotVariant : null,
+    /* A bomb hand's variant IS the hand's betting structure, so an override
+       on a fixed-limit table would deal one pot-limit or no-limit hand at a
+       table the player sat down at for fixed limit. */
+    bomb_pot_variant:
+      !limitGame && config.bombPotEnabled && config.bombPotVariant ? config.bombPotVariant : null,
     // ANNOUNCE WINDOW (spec §3): 0 = always show the timed clock.
     bomb_pot_announce_seconds:
       config.bombPotEnabled &&
@@ -1042,8 +1094,11 @@ export default function TableConfigPage() {
      * toggle is off, so a stale amount cannot cap a table whose owner turned
      * the switch off.
      */
-    cap_enabled: config.capEnabled && config.capBB > 0,
-    cap_bb: config.capEnabled ? config.capBB : 0,
+    /* Forced off on a fixed-limit table: the cap clamp runs AFTER the
+       mandatory fixed size is assigned, so a capped limit table can emit a
+       wager the validator refuses. See isFixedLimitGame. */
+    cap_enabled: !limitGame && config.capEnabled && config.capBB > 0,
+    cap_bb: !limitGame && config.capEnabled ? config.capBB : 0,
     no_rathole: config.noRathole,
 
     // Table parameters
@@ -1094,14 +1149,16 @@ export default function TableConfigPage() {
     auto_extension: config.autoExtension,
     auto_restart: config.autoRestart,
     auto_create_table: config.autoCreateTable,
-    auto_utg_straddle: config.autoUtgStraddle,
-    voluntary_straddle: config.voluntaryStraddle,
+    /* Forced off on a fixed-limit table: a straddle sets currentBet with no
+       structure branch and is not counted against the four-wager cap. */
+    auto_utg_straddle: !limitGame && config.autoUtgStraddle,
+    voluntary_straddle: !limitGame && config.voluntaryStraddle,
     insurance_enabled: config.insuranceEnabled,
     // FIX-D2 2026-07-19: the engine reads the canonical top-level columns
     // straddle_enabled / run_it_twice_enabled, NOT auto_utg_straddle /
     // voluntary_straddle / run_it_mode. Without these mirrors, straddle and
     // run-it-twice configured on this page never took effect.
-    straddle_enabled: config.autoUtgStraddle || config.voluntaryStraddle,
+    straddle_enabled: !limitGame && (config.autoUtgStraddle || config.voluntaryStraddle),
     /* "NONE" DID NOT TURN RUN IT TWICE OFF (2026-08-31 audit).
        The engine's gate is
          ((run_it_twice ?? true) && (allow_run_it_twice ?? true)) || run_it_twice_enabled
@@ -1762,7 +1819,15 @@ export default function TableConfigPage() {
                     table whose bombs are PLO4 double boards. The engine
                     whitelists the value and skips the override if the deck
                     cannot cover the seats (9-handed PLO6). */}
-                <div className="config-radio-group">
+                {/* Hidden on a fixed-limit table: the bomb hand's variant IS
+                    the hand's betting structure, so an override would deal one
+                    pot-limit or no-limit hand at a table the player sat down at
+                    for fixed limit. resolveBombPotVariant refuses it
+                    server-side too, for the writers that are not this form. */}
+                <div
+                  className="config-radio-group"
+                  style={limitGame ? { display: 'none' } : undefined}
+                >
                   <span className="radio-group-label">Bomb Pot Game</span>
                   <div className="radio-options">
                     {(
@@ -1868,13 +1933,18 @@ export default function TableConfigPage() {
               value={config.isAnonymous}
               onChange={(v) => updateConfig('isAnonymous', v)}
             />
-            <Toggle
-              label="Cap"
-              value={config.capEnabled}
-              onChange={(v) => updateConfig('capEnabled', v)}
-              tooltip="Limit the total chips a player can commit in one hand"
-            />
-            {config.capEnabled && (
+            {/* Hidden on a fixed-limit table: the cap clamp runs after the
+                mandatory fixed size is assigned, so a capped limit table can
+                emit a wager the validator refuses. See isFixedLimitGame. */}
+            {!limitGame && (
+              <Toggle
+                label="Cap"
+                value={config.capEnabled}
+                onChange={(v) => updateConfig('capEnabled', v)}
+                tooltip="Limit the total chips a player can commit in one hand"
+              />
+            )}
+            {!limitGame && config.capEnabled && (
               <Slider
                 label="Cap Amount"
                 value={config.capBB}
@@ -2070,18 +2140,25 @@ export default function TableConfigPage() {
               onChange={(v) => updateConfig('autoCreateTable', v)}
               tooltip="Create new table when full"
             />
-            <Toggle
-              label="Auto UTG Straddle"
-              value={config.autoUtgStraddle}
-              onChange={(v) => updateConfig('autoUtgStraddle', v)}
-              tooltip="Automatic UTG straddle"
-            />
-            <Toggle
-              label="Voluntary Straddle"
-              value={config.voluntaryStraddle}
-              onChange={(v) => updateConfig('voluntaryStraddle', v)}
-              tooltip="Allow voluntary straddle"
-            />
+            {/* Hidden on a fixed-limit table: HandController posts a straddle
+                by assigning currentBet with no structure branch, and the
+                straddle is not counted against the four-wager cap. */}
+            {!limitGame && (
+              <>
+                <Toggle
+                  label="Auto UTG Straddle"
+                  value={config.autoUtgStraddle}
+                  onChange={(v) => updateConfig('autoUtgStraddle', v)}
+                  tooltip="Automatic UTG straddle"
+                />
+                <Toggle
+                  label="Voluntary Straddle"
+                  value={config.voluntaryStraddle}
+                  onChange={(v) => updateConfig('voluntaryStraddle', v)}
+                  tooltip="Allow voluntary straddle"
+                />
+              </>
+            )}
             <Toggle
               label="Insurance"
               value={config.insuranceEnabled}

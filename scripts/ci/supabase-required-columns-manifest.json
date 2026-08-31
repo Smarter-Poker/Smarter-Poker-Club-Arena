@@ -1814,6 +1814,9 @@
       "amount",
       "weight"
     ],
+    "member_fee_lifetime": [
+      "user_id"
+    ],
     "member_fee_rollup": [
       "user_id",
       "day"

@@ -36,6 +36,14 @@ test.describe('Production Cashier Certification', () => {
       await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'false');
     }
 
+    const reconciliation = page.locator('[data-cashier-recovery="true"]');
+    await expect(reconciliation).toBeVisible();
+    await expect(
+      reconciliation.getByRole('heading', { name: 'Reconciliation Console', exact: true })
+    ).toBeVisible();
+    await expect(reconciliation.getByText('Online', { exact: true })).toBeVisible();
+    await expect(reconciliation.getByRole('button', { name: 'Reconcile Now' })).toBeEnabled();
+
     await expect(page.locator('text=Something went wrong')).toHaveCount(0);
     const cashierCritical = consoleErrors.filter(
       (message) =>

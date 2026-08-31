@@ -236,16 +236,16 @@ function withTimeout<T>(
 
 /**
  * A newly scaled-to-zero database connection can cancel the first reporting
- * statement while its identical retry completes in under five seconds. These
- * RPCs are read-only, so retrying one transient PostgREST/transport failure is
- * safe. Each attempt owns its AbortSignal. First-paint reads use one retry;
- * continuation reads may opt into a second while already-rendered rows remain
- * usable.
+ * statement while a later attempt succeeds. Production contention can outlive
+ * two attempts (the health probe and even a one-row club-name read have timed
+ * out together), so first paint gets four bounded attempts. These RPCs are
+ * read-only and each attempt owns its AbortSignal. Continuation reads may use
+ * fewer attempts because already-rendered rows remain usable.
  */
 function coldRead<T>(
   request: () => AbortableRequest<T>,
   message: string,
-  maxRetries = 1
+  maxRetries = 3
 ): Promise<T> {
   return retryFetch(() => withTimeout(request(), message, COLD_READ_ATTEMPT_TIMEOUT_MS), {
     maxRetries,

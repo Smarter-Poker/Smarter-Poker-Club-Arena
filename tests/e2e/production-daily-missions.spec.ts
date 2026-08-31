@@ -49,6 +49,20 @@ async function diamondBalance(
   return Number(rows[0].diamonds);
 }
 
+async function dashboardRevision(
+  environment: CustomizationCertificationEnvironment,
+  userId: string
+): Promise<number> {
+  const rows = await serviceRows<{ revision: number }>(
+    environment,
+    'daily_challenge_dashboard_revisions',
+    userId,
+    'revision'
+  );
+  expect(rows).toHaveLength(1);
+  return Number(rows[0].revision);
+}
+
 function currentPeriodKeys(now = new Date()) {
   const daily = now.toISOString().split('T')[0];
   const monday = new Date(now);
@@ -264,7 +278,20 @@ test.describe('production Daily Missions certification', () => {
         page.on('framenavigated', (frame) => {
           if (frame === page.mainFrame()) navigations += 1;
         });
+        // Realtime has no backlog. Prove the filtered channel has joined before
+        // advancing contracts, then separately prove the server emitted its
+        // revision cursor. This distinguishes a trigger regression from a
+        // client subscription regression without adding UX polling.
+        await expect(page.getByText('Live Now')).toBeVisible({
+          timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+        });
+        const revisionBefore = await dashboardRevision(environment, account!.id);
         await completeEveryAssignedMission(account!);
+        await expect
+          .poll(() => dashboardRevision(environment, account!.id), {
+            timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+          })
+          .toBeGreaterThan(revisionBefore);
         const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
         await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
         expect(navigations).toBe(0);

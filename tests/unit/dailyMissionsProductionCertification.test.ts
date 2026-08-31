@@ -26,6 +26,8 @@ describe('Daily Missions production certification', () => {
       'challenge_reroll:',
       'buy_streak_freeze',
       'bump_challenge_progress',
+      'daily_challenge_dashboard_revisions',
+      "getByText('Live Now')",
       'claim_daily_challenges',
       'Preference On, Device Disconnected',
       'Mission Network Unavailable',

@@ -11,6 +11,7 @@
 - Moved the reward-settlement dialog into a document-body portal and removed pointer events from decorative card chrome so fixed global navigation cannot intercept confirmation or Continue controls.
 - Reserved the live responsive Club Arena footer clearance at desktop and mobile widths so mission controls cannot sit underneath its navigation hit targets.
 - Made the production journey center and geometry-check every page-level mission control above the fixed footer before activation, matching the scroll a player performs while preventing false navigation clicks.
+- Split realtime certification into explicit channel-ready, server-revision, and client-vault assertions so a lost event cannot be misdiagnosed as a progress-trigger failure.
 - Wired the suite into the post-deploy production workflow so a spec that needs a real deployed page cannot silently become orphaned.
 
 ## Release Gate

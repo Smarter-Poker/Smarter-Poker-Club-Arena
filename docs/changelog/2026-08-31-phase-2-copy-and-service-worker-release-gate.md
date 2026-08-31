@@ -30,6 +30,10 @@ back to the narrower worker scope.
   the enforced rule.
 - Local Vite serving now mirrors production's slashless Club Arena service
   worker scope header.
+- The post-build optimizer no longer forces the lobby route into every initial
+  page load. Deep links such as Leaderboards keep HomePage lazy, removing about
+  16 kB gzipped from their initial download and restoring cross-platform bundle
+  budget headroom.
 
 ## Verification
 

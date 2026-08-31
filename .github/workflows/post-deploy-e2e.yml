@@ -399,7 +399,11 @@ jobs:
           e2e-report/sweep.json
 
       - name: Upload the report when something is wrong on production
-        if: failure()
+        # `failure()` is false when GitHub cancels a job at its time limit. The
+        # old condition therefore discarded the only report from exactly the
+        # run that exposed the obsolete timeout. Preserve evidence for both
+        # kinds of non-verdict, while still skipping uploads on a clean run.
+        if: always() && (failure() || cancelled())
         uses: actions/upload-artifact@v4
         with:
           name: post-deploy-playwright-report

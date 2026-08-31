@@ -24,7 +24,7 @@
  * rather than silently filtering on something that no longer exists.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { createPortal } from 'react-dom';
 import {
@@ -189,6 +189,21 @@ export default function AdvancedFilters({
     initialType === 'ALL' ? 'HOLDEM' : initialType
   );
   const [store, setStore] = useState<FilterStore>(() => loadFilters(clubId));
+
+  /* SAVE ON CLICK (Dan 2026-08-30): every filter interaction persists the
+     moment it happens, not only when Apply is tapped. Before this, tapping
+     chips and closing the sheet silently discarded the choices. Apply still
+     pushes the store to the lobby; this effect only guarantees the store
+     itself survives. Skips the very first render so simply opening the sheet
+     never rewrites storage. */
+  const hasHydrated = useRef(false);
+  useEffect(() => {
+    if (!hasHydrated.current) {
+      hasHydrated.current = true;
+      return;
+    }
+    saveFilters(clubId, store);
+  }, [clubId, store]);
 
   /* Same hole the game drawer had (fixed 2026-08-23): the sheet declares
      role=dialog aria-modal=true and trapped nothing, so focus stayed on the

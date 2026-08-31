@@ -84,6 +84,12 @@
   background: #050b10;
   color: #8799a4;
 }
+.privacyPanel p {
+  margin: 0;
+  color: #8799a4;
+  font-size: 10px;
+  line-height: 1.55;
+}
 .privacyPanel label {
   display: flex;
   align-items: center;
@@ -425,6 +431,73 @@
   color: #697c88;
   font-size: 10px;
 }
+.accountAccess {
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(95, 196, 241, 0.16);
+}
+.accountAccessToggle {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(70, 166, 211, 0.34);
+  border-radius: 2px;
+  background: #07131a;
+  color: #72c7ef;
+  cursor: pointer;
+  font: 600 9px/1 var(--font-mono, monospace);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.accountGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 7px;
+}
+.accountCard {
+  padding: 10px;
+  border: 1px solid rgba(171, 137, 72, 0.32);
+  border-radius: 2px;
+  background: linear-gradient(135deg, rgba(151, 111, 34, 0.08), transparent), #070a0d;
+}
+.accountCard header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+.accountCard header strong {
+  color: #e6d5ad;
+  font-size: 11px;
+}
+.accountCard header span {
+  color: #987f55;
+  font: 600 7px/1.2 var(--font-mono, monospace);
+  text-align: right;
+  text-transform: uppercase;
+}
+.accountCard dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+}
+.accountCard dl div {
+  min-width: 0;
+}
+.accountCard dt {
+  color: #697984;
+  font: 600 7px/1 var(--font-mono, monospace);
+  text-transform: uppercase;
+}
+.accountCard dd {
+  overflow: hidden;
+  margin: 4px 0 0;
+  color: #d9e5eb;
+  font: 600 10px/1 var(--font-mono, monospace);
+  text-overflow: ellipsis;
+}
 .tablesList {
   display: grid;
   gap: 6px;
@@ -508,6 +581,7 @@
 .sortBtn:focus-visible,
 .privacyButton:focus-visible,
 .playerHeader:focus-visible,
+.accountAccessToggle:focus-visible,
 .loadMoreButton:focus-visible,
 .tableCard:focus-visible,
 .closeButton:focus-visible {
@@ -579,6 +653,9 @@
   }
   .resultsArea {
     max-height: 43vh;
+  }
+  .accountGrid {
+    grid-template-columns: 1fr;
   }
 }
 @media (prefers-reduced-motion: reduce) {

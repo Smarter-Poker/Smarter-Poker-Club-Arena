@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
 import haptic from '../../services/HapticService';
 import {
   PlayerSearchService,
   type PlayerPresenceFilter,
-  type PlayerSearchPreferences,
   type PlayerSearchResult,
   type PlayerSearchScope,
   type PlayerSearchSort,
@@ -21,17 +19,16 @@ import styles from './FindPlayerModal.module.css';
 interface FindPlayerModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onMembershipRequired: (intent: { code: string; watchTableId: string }) => void;
 }
 
 const PAGE_SIZE = 20;
-const DEFAULT_PRIVACY: PlayerSearchPreferences = {
-  discoverable: true,
-  showDisplayName: true,
-  showPresence: true,
-  showCurrentTable: true,
-};
 
-export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProps) {
+export default function FindPlayerModal({
+  isOpen,
+  onClose,
+  onMembershipRequired,
+}: FindPlayerModalProps) {
   const navigate = useNavigate();
   const trapRef = useFocusTrap(isOpen);
   const [searchQuery, setSearchQuery] = useState('');
@@ -48,27 +45,12 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
   const [scope, setScope] = useState<PlayerSearchScope>('all');
   const [presence, setPresence] = useState<PlayerPresenceFilter>('all');
   const [sort, setSort] = useState<PlayerSearchSort>('relevance');
-  const [showPrivacy, setShowPrivacy] = useState(false);
-  const [privacy, setPrivacy] = useState<PlayerSearchPreferences>(DEFAULT_PRIVACY);
-  const [privacyLoadState, setPrivacyLoadState] = useState<'loading' | 'ready' | 'error'>(
-    'loading'
-  );
-  const [isSavingPrivacy, setIsSavingPrivacy] = useState(false);
+  const [showAccessRules, setShowAccessRules] = useState(false);
+  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
   const searchAbortRef = useRef<AbortController | null>(null);
   const suggestionAbortRef = useRef<AbortController | null>(null);
   const suggestionTimerRef = useRef<number | null>(null);
   const lastCompletedQueryRef = useRef('');
-
-  const loadPrivacy = useCallback(async () => {
-    setPrivacyLoadState('loading');
-    try {
-      setPrivacy(await PlayerSearchService.getPreferences());
-      setPrivacyLoadState('ready');
-    } catch (preferenceError) {
-      reportError(preferenceError, 'FindPlayerModal.LoadPreferences');
-      setPrivacyLoadState('error');
-    }
-  }, []);
 
   const runSearch = useCallback(
     async (query: string, offset = 0, append = false) => {
@@ -119,36 +101,12 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
   useEffect(() => {
     if (!isOpen) return;
     ClubEntryTrustService.track('find', 'opened', { outcome: 'viewed' });
-    void loadPrivacy();
-
-    const channel = supabase
-      .channel('club-arena-player-locator')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'user_presence' },
-        (payload: { new?: Record<string, unknown> }) => {
-          const update = payload.new;
-          if (!update?.user_id || !update.status) return;
-          setResults((current) =>
-            current.map((player) =>
-              player.id === update.user_id && player.presence_status !== 'hidden'
-                ? {
-                    ...player,
-                    presence_status: String(update.status) as PlayerSearchResult['presence_status'],
-                  }
-                : player
-            )
-          );
-        }
-      )
-      .subscribe();
     return () => {
       searchAbortRef.current?.abort();
       suggestionAbortRef.current?.abort();
       if (suggestionTimerRef.current) window.clearTimeout(suggestionTimerRef.current);
-      supabase.removeChannel(channel);
     };
-  }, [isOpen, loadPrivacy]);
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen || !lastCompletedQueryRef.current) return;
@@ -206,30 +164,40 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
   };
 
   const handleTableClick = (table: PlayerSearchTable) => {
-    haptic.success();
-    onClose();
-    navigate(table.is_tournament ? `/tournaments/${table.id}` : `/table/${table.id}`);
+    if (table.can_watch) {
+      haptic.success();
+      ClubEntryTrustService.track('find', 'watch_opened', {
+        outcome: 'succeeded',
+        metadata: { table_id: table.table_id, tournament_id: table.tournament_id || null },
+      });
+      onClose();
+      navigate(`/table/${table.table_id}?observer=1`);
+      return;
+    }
+
+    if (['join', 'request_join', 'pending'].includes(table.access_action)) {
+      const identifier = table.club_slug || String(table.club_id || '') || table.club_uuid;
+      haptic.selection();
+      ClubEntryTrustService.track('find', 'watch_membership_required', {
+        outcome: 'viewed',
+        metadata: { club_id: table.club_uuid, action: table.access_action },
+      });
+      onClose();
+      onMembershipRequired({ code: identifier, watchTableId: table.table_id });
+      return;
+    }
+
+    setError(
+      table.access_action === 'observers_restricted'
+        ? 'This table does not allow observers.'
+        : 'This game is not available to watch.'
+    );
   };
 
   const handleProfileClick = (playerId: string) => {
     haptic.success();
     onClose();
     navigate(`/profile/${playerId}`);
-  };
-
-  const savePrivacy = async () => {
-    if (privacyLoadState !== 'ready') return;
-    setIsSavingPrivacy(true);
-    setError(null);
-    try {
-      setPrivacy(await PlayerSearchService.setPreferences(privacy));
-      setShowPrivacy(false);
-    } catch (privacyError) {
-      reportError(privacyError, 'FindPlayerModal.SavePreferences');
-      setError('Could not save your search privacy.');
-    } finally {
-      setIsSavingPrivacy(false);
-    }
   };
 
   const handleClose = () => {
@@ -242,12 +210,13 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
     setError(null);
     setTotal(0);
     setHasMore(false);
+    setExpandedAccounts(new Set());
     lastCompletedQueryRef.current = '';
     ClubEntryTrustService.track('find', 'closed', { outcome: 'cancelled' });
     onClose();
   };
 
-  useDialogEscape(isOpen, () => (showPrivacy ? setShowPrivacy(false) : handleClose()));
+  useDialogEscape(isOpen, () => (showAccessRules ? setShowAccessRules(false) : handleClose()));
 
   if (!isOpen) return null;
 
@@ -274,76 +243,27 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
               <h2 id="find-player-title" className={styles.title}>
                 Find A Player
               </h2>
-              <p>Search Only The Friends, Clubs, And Unions Your Role Permits.</p>
+              <p>Find Any Player, See Who Is Playing, And Open Their Live Game.</p>
             </div>
             <button
               className={styles.privacyButton}
-              onClick={() => {
-                if (privacyLoadState === 'error') void loadPrivacy();
-                else setShowPrivacy((value) => !value);
-              }}
-              disabled={privacyLoadState === 'loading'}
-              title={
-                privacyLoadState === 'error'
-                  ? 'Visibility settings failed to load. Select to retry.'
-                  : undefined
-              }
-              aria-expanded={showPrivacy}
+              onClick={() => setShowAccessRules((value) => !value)}
+              aria-expanded={showAccessRules}
             >
-              {privacyLoadState === 'loading'
-                ? 'Loading Visibility'
-                : privacyLoadState === 'error'
-                  ? 'Retry Visibility'
-                  : 'My Visibility'}
+              Access Rules
             </button>
           </header>
 
-          {showPrivacy && (
-            <section className={styles.privacyPanel} aria-label="Player search privacy">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={privacy.discoverable}
-                  onChange={(event) =>
-                    setPrivacy((value) => ({ ...value, discoverable: event.target.checked }))
-                  }
-                />{' '}
-                Allow Club And Union Members To Find Me
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={privacy.showDisplayName}
-                  onChange={(event) =>
-                    setPrivacy((value) => ({ ...value, showDisplayName: event.target.checked }))
-                  }
-                />{' '}
-                Show My Display Name
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={privacy.showPresence}
-                  onChange={(event) =>
-                    setPrivacy((value) => ({ ...value, showPresence: event.target.checked }))
-                  }
-                />{' '}
-                Show Online Presence
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={privacy.showCurrentTable}
-                  disabled={!privacy.showPresence}
-                  onChange={(event) =>
-                    setPrivacy((value) => ({ ...value, showCurrentTable: event.target.checked }))
-                  }
-                />{' '}
-                Show My Current Table
-              </label>
-              <button onClick={savePrivacy} disabled={isSavingPrivacy}>
-                {isSavingPrivacy ? 'Saving…' : 'Save Visibility'}
-              </button>
+          {showAccessRules && (
+            <section className={styles.privacyPanel} aria-label="Player search access rules">
+              <p>
+                Player Identity And Playing Now Status Are Searchable Across Club Arena. Watching
+                Requires An Active Membership In The Game&apos;S Club.
+              </p>
+              <p>
+                Wallets, Balances, Statistics, Notes, And Hierarchy Data Are Returned Only For
+                Accounts Your Club, Union, Administrator, Or Agent Role Authorizes You To Manage.
+              </p>
             </section>
           )}
 
@@ -422,10 +342,11 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                 value={scope}
                 onChange={(event) => setScope(event.target.value as PlayerSearchScope)}
               >
-                <option value="all">Best Available</option>
+                <option value="all">All Players</option>
                 <option value="friends">Friends</option>
                 <option value="clubs">My Clubs</option>
                 <option value="union">My Unions</option>
+                <option value="managed">My Managed Accounts</option>
               </select>
             </label>
             <label>
@@ -452,7 +373,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
             <span className={styles.scopeLabel}>
               {total
                 ? `${total} eligible match${total === 1 ? '' : 'es'}`
-                : 'Privacy-scoped results'}
+                : 'Global player directory'}
             </span>
           </div>
 
@@ -460,7 +381,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
             {error && <div className={styles.errorMessage}>{error}</div>}
             {!error && !isSearching && lastCompletedQueryRef.current && results.length === 0 && (
               <div className={styles.notFoundMessage}>
-                <p>No Matching Players In Your Permitted Network.</p>
+                <p>No Matching Players Were Found.</p>
               </div>
             )}
             {results.length > 0 && (
@@ -485,6 +406,64 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                       </span>
                       <span className={styles.relationshipBadge}>{player.relationship}</span>
                     </button>
+                    {player.sensitive_accounts.length > 0 && (
+                      <section className={styles.accountAccess}>
+                        <button
+                          className={styles.accountAccessToggle}
+                          aria-expanded={expandedAccounts.has(player.id)}
+                          onClick={() =>
+                            setExpandedAccounts((current) => {
+                              const next = new Set(current);
+                              if (next.has(player.id)) next.delete(player.id);
+                              else next.add(player.id);
+                              return next;
+                            })
+                          }
+                        >
+                          Authorized Account Data ({player.sensitive_accounts.length})
+                        </button>
+                        {expandedAccounts.has(player.id) && (
+                          <div className={styles.accountGrid}>
+                            {player.sensitive_accounts.map((account) => (
+                              <article key={account.club_uuid} className={styles.accountCard}>
+                                <header>
+                                  <strong>{account.club_name}</strong>
+                                  <span>
+                                    {account.access} / {account.role}
+                                  </span>
+                                </header>
+                                <dl>
+                                  <div>
+                                    <dt>Player</dt>
+                                    <dd>{chips(account.wallets.player_wallet)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Agent</dt>
+                                    <dd>{chips(account.wallets.agent_wallet)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Promo</dt>
+                                    <dd>{chips(account.wallets.promo_wallet)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Club Chips</dt>
+                                    <dd>{chips(account.wallets.chip_balance)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Direct</dt>
+                                    <dd>{account.downline?.downline_direct ?? 0}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Downline</dt>
+                                    <dd>{account.downline?.downline_total ?? 0}</dd>
+                                  </div>
+                                </dl>
+                              </article>
+                            ))}
+                          </div>
+                        )}
+                      </section>
+                    )}
                     {player.tables.length > 0 && (
                       <div className={styles.tablesList}>
                         {player.tables.map((table) => (
@@ -500,7 +479,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                                 {table.club_name && ` • ${table.club_name}`}
                               </span>
                             </span>
-                            <span className={styles.watchButton}>Watch</span>
+                            <span className={styles.watchButton}>{watchLabel(table)}</span>
                           </button>
                         ))}
                       </div>
@@ -535,13 +514,24 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
 }
 
 function presenceCopy(player: PlayerSearchResult): string {
-  if (player.presence_status === 'hidden') return 'Presence private';
   if (player.tables.length)
     return `Playing at ${player.tables.length} table${player.tables.length === 1 ? '' : 's'}`;
   if (player.presence_status === 'playing') return 'Playing now';
   if (player.presence_status === 'online') return 'Online';
-  if (player.presence_status === 'away') return 'Away';
   return 'Offline';
+}
+
+function watchLabel(table: PlayerSearchTable): string {
+  if (table.can_watch) return table.access_action === 'play' ? 'Return' : 'Watch';
+  if (table.access_action === 'request_join') return 'Request To Join';
+  if (table.access_action === 'join') return 'Join To Watch';
+  if (table.access_action === 'pending') return 'Request Pending';
+  if (table.access_action === 'observers_restricted') return 'Observers Off';
+  return 'Unavailable';
+}
+
+function chips(value: number): string {
+  return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 function PlayerAvatar({ player, className }: { player: PlayerSearchResult; className: string }) {

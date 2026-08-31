@@ -1966,7 +1966,7 @@ export default function ClubDataPage() {
           <div className={styles.invoiceMeta}>
             {String(latestInvoice.period_start || '').slice(0, 10)} To{' '}
             {String(latestInvoice.period_end || '').slice(0, 10)}
-            {latestInvoice.due_at ? ` - Due ${String(latestInvoice.due_at).slice(0, 10)}` : ''}
+            {latestInvoice.due_at ? ` - due ${String(latestInvoice.due_at).slice(0, 10)}` : ''}
             {latestInvoice.status ? ` - ${invoiceStatusLabel(latestInvoice.status)}` : ''}
           </div>
 
@@ -2446,7 +2446,7 @@ export default function ClubDataPage() {
                   : '';
               })()}
               {players.player_count > sortedPlayers.length
-                ? ` Showing ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)} Players, Ordered By ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label.toLowerCase() || 'Server Rank'}.`
+                ? ` Showing ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)} Players, Ordered By ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label || 'Server Rank'}.`
                 : ''}
             </div>
           )}
@@ -2472,7 +2472,7 @@ export default function ClubDataPage() {
           {clubName ? `${clubName} - ` : ''}
           Showing {compactInt(snapshot.rows.length)} Of {compactInt(snapshot.row_count)} Games
           {snapshot.data_updated_at
-            ? ` - Cash Data Updated ${utcTime(snapshot.data_updated_at)}`
+            ? ` - cash data updated ${utcTime(snapshot.data_updated_at)}`
             : ''}
         </div>
       )}

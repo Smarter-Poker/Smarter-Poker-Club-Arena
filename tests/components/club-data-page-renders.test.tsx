@@ -73,6 +73,22 @@ const playerBreakdown = {
   generated_at: '2026-08-30T12:05:02Z',
 };
 
+const gamePage = {
+  rows: snapshot.rows,
+  next_cursor: null,
+  has_more: false,
+  filtered_count: snapshot.row_count,
+  generated_at: snapshot.generated_at,
+};
+
+const playerPage = {
+  rows: playerBreakdown.players,
+  next_cursor: null,
+  has_more: false,
+  filtered_count: playerBreakdown.player_count,
+  generated_at: playerBreakdown.generated_at,
+};
+
 const latestInvoice = {
   invoice_id: 'invoice-1',
   status: 'awaiting_payment',
@@ -121,7 +137,9 @@ beforeEach(() => {
   rpcMock.mockReset();
   rpcMock.mockImplementation(async (fn: string) => {
     if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+    if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
     if (fn === 'ca_club_player_breakdown') return { data: playerBreakdown, error: null };
+    if (fn === 'ca_club_player_page') return { data: playerPage, error: null };
     if (fn === 'ca_club_union_invoices') return { data: [], error: null };
     return { data: null, error: null };
   });
@@ -178,9 +196,11 @@ describe('ClubDataPage', () => {
         });
       }
       if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
+      if (fn === 'ca_club_game_page') return Promise.resolve({ data: gamePage, error: null });
       if (fn === 'ca_club_player_breakdown') {
         return Promise.resolve({ data: playerBreakdown, error: null });
       }
+      if (fn === 'ca_club_player_page') return Promise.resolve({ data: playerPage, error: null });
       if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
       return Promise.resolve({ data: null, error: null });
     });
@@ -240,7 +260,9 @@ describe('ClubDataPage', () => {
     let invoiceRequest = 0;
     rpcMock.mockImplementation(async (fn: string) => {
       if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
       if (fn === 'ca_club_player_breakdown') return { data: playerBreakdown, error: null };
+      if (fn === 'ca_club_player_page') return { data: playerPage, error: null };
       if (fn === 'ca_club_union_invoices') {
         invoiceRequest += 1;
         return invoiceRequest === 1
@@ -281,6 +303,7 @@ describe('ClubDataPage', () => {
     };
     rpcMock.mockImplementation((fn: string) => {
       if (fn === 'ca_club_data_snapshot') return abortableSnapshot;
+      if (fn === 'ca_club_game_page') return Promise.resolve({ data: gamePage, error: null });
       if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
       return Promise.resolve({ data: null, error: null });
     });
@@ -299,5 +322,70 @@ describe('ClubDataPage', () => {
       errorSpy.mockRestore();
       vi.useRealTimers();
     }
+  });
+
+  it('asks the server for the selected player order before slicing the page', async () => {
+    render(<ClubDataPage />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+    await screen.findByText('Table Regular');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Biggest losers' }));
+
+    await waitFor(() =>
+      expect(rpcMock).toHaveBeenCalledWith(
+        'ca_club_player_page',
+        expect.objectContaining({ p_sort: 'losers', p_cursor: null })
+      )
+    );
+  });
+
+  it('continues the Games ledger from the opaque server cursor without duplicates', async () => {
+    const secondRow = {
+      ...snapshot.rows[0],
+      id: 'game-2',
+      name: 'Shark Table Two',
+      started_at: '2026-08-30T11:00:00Z',
+    };
+    const cursor = { value: 1788091200, time: 1788091200, kind: 'CASH', id: 'game-1' };
+    let pageRequest = 0;
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_game_page') {
+        pageRequest += 1;
+        return pageRequest === 1
+          ? {
+              data: {
+                ...gamePage,
+                next_cursor: cursor,
+                has_more: true,
+                filtered_count: 2,
+              },
+              error: null,
+            }
+          : {
+              data: {
+                ...gamePage,
+                rows: [snapshot.rows[0], secondRow],
+                next_cursor: null,
+                has_more: false,
+                filtered_count: 2,
+              },
+              error: null,
+            };
+      }
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      if (fn === 'ca_club_player_breakdown') return { data: playerBreakdown, error: null };
+      if (fn === 'ca_club_player_page') return { data: playerPage, error: null };
+      return { data: null, error: null };
+    });
+
+    render(<ClubDataPage />);
+
+    await screen.findByText('Shark Table Two');
+    expect(screen.getAllByText('Shark Table One')).toHaveLength(1);
+    expect(rpcMock).toHaveBeenCalledWith(
+      'ca_club_game_page',
+      expect.objectContaining({ p_cursor: cursor })
+    );
   });
 });

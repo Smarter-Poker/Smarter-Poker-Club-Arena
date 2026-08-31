@@ -70,6 +70,10 @@ const boundedSnapshot = readFileSync(
   ),
   'utf8'
 );
+const cursorPages = readFileSync(
+  resolve(__dirname, '../supabase/migrations/20260831020000_club_data_cursor_pages.sql'),
+  'utf8'
+);
 
 describe('Club Data reporting stays inside the authenticated query budget', () => {
   it('covers both high-volume tournament fact reads with partial indexes', () => {
@@ -207,5 +211,32 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
     expect(boundedSnapshot).toContain(
       'v_rows:=public.fn_ca_club_game_rows(p_club_id,v_start,v_end,v_game,v_stakes,v_q,v_lim)'
     );
+  });
+
+  it('pages both ledgers with authorized deterministic keyset cursors', () => {
+    expect(cursorPages).toContain('public.ca_club_game_page');
+    expect(cursorPages).toContain('public.ca_club_player_page');
+    expect(cursorPages.match(/ca_can_view_club_finances\(p_club_id\)/g)).toHaveLength(2);
+    expect(cursorPages).toContain('ROW(s.sort_value,s.sort_time,s.kind,s.id) < ROW(');
+    expect(cursorPages).toContain('ROW(s.sort_value,s.user_id::text) <');
+    expect(cursorPages).toContain("v_sort NOT IN ('recent','fee','winnings','hands')");
+    expect(cursorPages).toContain("v_sort NOT IN ('winners','losers','rake','hands')");
+    expect(cursorPages).toMatch(
+      /REVOKE ALL ON FUNCTION public\.ca_club_game_page[\s\S]*FROM PUBLIC,anon;/
+    );
+    expect(cursorPages).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.ca_club_player_page[\s\S]*TO authenticated,service_role;/
+    );
+  });
+
+  it('keeps complete browsing server-sorted and DOM-windowed', () => {
+    expect(page).toContain("supabase.rpc('ca_club_game_page'");
+    expect(page).toContain("supabase.rpc('ca_club_player_page'");
+    expect(page).toContain('p_cursor: gameCursor');
+    expect(page).toContain('p_cursor: playerCursor');
+    expect(page).toContain('useVirtualScroll(gameRows');
+    expect(page).toContain('useVirtualScroll(sortedPlayers');
+    expect(page).toContain('aria-setsize={snapshot?.row_count}');
+    expect(page).toContain('aria-setsize={players?.player_count}');
   });
 });

@@ -5,6 +5,8 @@
   display: grid;
   place-items: center;
   padding: 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: rgba(0, 2, 5, 0.91);
   backdrop-filter: blur(14px) saturate(0.8);
   animation: joinFade 180ms ease-out;
@@ -12,7 +14,7 @@
 .modalContainer {
   position: relative;
   width: min(760px, 100%);
-  min-height: 610px;
+  min-height: min(610px, calc(100dvh - 40px));
   max-height: min(880px, calc(100dvh - 40px));
   display: grid;
   grid-template-columns: 0.86fr 1.14fr;
@@ -74,6 +76,7 @@
 }
 .contentPanel {
   position: relative;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
@@ -339,6 +342,20 @@
   }
   .title {
     font-size: 34px;
+  }
+}
+@media (max-height: 560px) {
+  .overlay {
+    padding: 12px;
+  }
+  .modalContainer {
+    height: calc(100dvh - 24px);
+    min-height: 0;
+    max-height: calc(100dvh - 24px);
+  }
+  .contentPanel {
+    padding-top: 38px;
+    padding-bottom: 22px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

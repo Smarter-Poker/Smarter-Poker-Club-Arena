@@ -8,6 +8,7 @@
  * setting would come back, so it is the part worth pinning.
  */
 import { BLIND_STRUCTURES, SPIN_BLIND_STRUCTURE } from '../config/blindStructures';
+import { SPIN_TIERS } from '../config/spinSpec';
 // Type-only: erased at compile time, so this module never boots the Supabase
 // client that TournamentService constructs at import.
 import type { TournamentConfig } from '../services/TournamentService';
@@ -154,13 +155,32 @@ export function buildTournamentConfig(
     lvl.isBreak ? lvl : { ...lvl, durationMinutes: levelMinutes }
   );
 
-  // Payouts. A spin is winner-take-all by definition; otherwise the owner's
-  // Payout Structure choice is HONOURED (2026-08-22 — payout1/2/3 used to
-  // fall through to autoSelectPayouts, so all four choices were identical).
-  // payoutsForChoice normalizes to exactly 100%, which the service and the
-  // engine both require, and pays fewer places than the field.
+  /* Payouts. The owner's Payout Structure choice is HONOURED (2026-08-22 —
+     payout1/2/3 used to fall through to autoSelectPayouts, so all four choices
+     were identical). payoutsForChoice normalizes to exactly 100%, which the
+     service and the engine both require.
+
+     A SPIN IS NOT "WINNER-TAKE-ALL BY DEFINITION" (2026-08-31). That comment
+     stood here and it was false: three of the seven tiers in `SPIN_TIERS` pay
+     more than one place, and 25x / 50x / 100x pay 80 / 12 / 8 across all three
+     seats. The literal was a workaround for `fn_create_tournament`, which
+     refused `paid_places >= max_players` until
+     `20260831200000_a_spin_pays_three_places_at_three_seats`.
+
+     What a Spin gets at CREATION is the ladder of the placeholder tier, read
+     from the spec rather than typed out — the same value, from the same
+     source, that `TournamentRecurringService.createSpin` writes. It is a
+     placeholder on purpose and not out of caution: the tier is drawn at START
+     (TournamentManagerBase), which rewrites stack, blinds, pool and
+     `payout_structure` from the real tier before a card is dealt. Writing the
+     true ladder here would leak the draw, because only the 25x-and-up tiers
+     pay three places — a lobby showing 80 / 12 / 8 has told the player the
+     multiplier is at least 25x before the wheel exists. */
   const payoutStructure = isSpins
-    ? [{ place: 1, percentage: 100 }]
+    ? SPIN_TIERS[0].payouts.map((pct, i) => ({
+        place: i + 1,
+        percentage: Math.round(pct * 10000) / 100,
+      }))
     : payoutEngine.payoutsForChoice(config.payoutStructure, maxPlayers);
 
   // WHOLE-DOLLAR BUY-IN (Dan 2026-08-20): "Sit and Go and any tournament

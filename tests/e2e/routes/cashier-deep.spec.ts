@@ -36,13 +36,14 @@ test.describe('Cashier Page — Deep UX Tests', () => {
   });
 
   test('should render tabs with correct ARIA attributes', async ({ page }) => {
-    const tablist = page.locator('[role="tablist"]');
+    const tablist = page.getByRole('tablist', { name: 'Cashier Actions' });
     const tablistCount = await tablist.count();
 
     if (tablistCount > 0) {
       await expect(tablist).toHaveAttribute('aria-label', 'Cashier Actions');
+      await expect(tablist).toHaveAttribute('aria-busy', 'false');
 
-      const tabs = page.locator('[role="tab"]');
+      const tabs = tablist.getByRole('tab');
       const count = await tabs.count();
       expect(count).toBeGreaterThanOrEqual(2); // At minimum: buyin, cashout
 
@@ -53,27 +54,32 @@ test.describe('Cashier Page — Deep UX Tests', () => {
   });
 
   test('should support keyboard navigation between tabs', async ({ page }) => {
-    const firstTab = page.locator('[role="tab"]').first();
-    const tabCount = await page.locator('[role="tab"]').count();
+    const tablist = page.getByRole('tablist', { name: 'Cashier Actions' });
+    if ((await tablist.count()) === 0) return;
+    await expect(tablist).toHaveAttribute('aria-busy', 'false');
+    const tabs = tablist.getByRole('tab');
+    const tabCount = await tabs.count();
 
     if (tabCount > 1) {
-      await firstTab.focus();
+      const originalTab = tablist.locator('[role="tab"][aria-selected="true"]');
+      const originalTabId = await originalTab.getAttribute('id');
+      expect(originalTabId).toBeTruthy();
+      await originalTab.focus();
 
       // Press ArrowRight to move to next tab
-      await page.keyboard.press('ArrowRight');
-      await page.waitForTimeout(200);
+      await originalTab.press('ArrowRight');
 
-      // The second tab should now be focused and selected
-      const secondTab = page.locator('[role="tab"]').nth(1);
-      const secondTabSelected = await secondTab.getAttribute('aria-selected');
-      expect(secondTabSelected).toBe('true');
+      // The next visible role-scoped tab should now be focused and selected.
+      const nextTab = tablist.locator('[role="tab"][aria-selected="true"]');
+      await expect(nextTab).toBeFocused();
+      expect(await nextTab.getAttribute('id')).not.toBe(originalTabId);
 
       // Press ArrowLeft to go back
-      await page.keyboard.press('ArrowLeft');
-      await page.waitForTimeout(200);
+      await nextTab.press('ArrowLeft');
 
-      const firstTabSelected = await firstTab.getAttribute('aria-selected');
-      expect(firstTabSelected).toBe('true');
+      const restoredTab = tablist.locator(`[role="tab"][id="${originalTabId}"]`);
+      await expect(restoredTab).toHaveAttribute('aria-selected', 'true');
+      await expect(restoredTab).toBeFocused();
     }
   });
 
@@ -94,8 +100,11 @@ test.describe('Cashier Page — Deep UX Tests', () => {
   });
 
   test('should have accessible tab buttons with roving tabIndex', async ({ page }) => {
-    const activeTab = page.locator('[role="tab"][aria-selected="true"]');
-    const inactiveTab = page.locator('[role="tab"][aria-selected="false"]').first();
+    const tablist = page.getByRole('tablist', { name: 'Cashier Actions' });
+    if ((await tablist.count()) === 0) return;
+    await expect(tablist).toHaveAttribute('aria-busy', 'false');
+    const activeTab = tablist.locator('[role="tab"][aria-selected="true"]');
+    const inactiveTab = tablist.locator('[role="tab"][aria-selected="false"]').first();
 
     if ((await activeTab.count()) > 0 && (await inactiveTab.count()) > 0) {
       await expect(activeTab).toHaveAttribute('tabindex', '0');

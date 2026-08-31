@@ -23,6 +23,7 @@ import {
   canRunAsTournament,
   type TournamentFormInput,
 } from '../../src/lib/tournamentFromTableConfig';
+import { SPIN_TIERS } from '../../src/config/spinSpec';
 
 const base: TournamentFormInput = {
   name: 'Friday Major',
@@ -111,14 +112,28 @@ describe('blind structure', () => {
     for (const lvl of c.blindStructure) expect(lvl.durationMinutes).toBeGreaterThan(0);
   });
 
-  it('a spin uses the spin ramp and is winner-take-all', () => {
+  it('a spin uses the spin ramp and the placeholder tier ladder', () => {
+    /* Was "and is winner-take-all", pinning a hard-coded [{1, 100}]. A Spin is
+       NOT winner-take-all by definition — 25x and above pay 80 / 12 / 8 across
+       all three seats. The creation-time ladder is the PLACEHOLDER tier's,
+       read from SPIN_TIERS, because the real tier is drawn at start and
+       writing it here would leak the multiplier to the lobby. Same value as
+       before; it is now derived from the spec instead of asserted about it. */
     const c = buildTournamentConfig(
       { ...base, gameMode: 'sng', isSpins: true, sngPlayerCount: 3 },
       'nlh'
     );
     expect(c.type).toBe('spin');
     expect(c.maxPlayers).toBe(3);
-    expect(c.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
+    expect(c.payoutStructure).toEqual(
+      SPIN_TIERS[0].payouts.map((pct, i) => ({
+        place: i + 1,
+        percentage: Math.round(pct * 10000) / 100,
+      }))
+    );
+    // And it must never exceed the seats — the rule both the RPC and
+    // tournaments_creation_guard now enforce as `>`.
+    expect(c.payoutStructure.length).toBeLessThanOrEqual(c.maxPlayers);
   });
 });
 

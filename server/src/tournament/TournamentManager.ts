@@ -17,7 +17,11 @@ import { type BalancerTable, type MoveInstruction } from '../engine/TableBalance
 import { reportError } from '../services/errorReporter.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { TournamentManagerEliminations } from './TournamentManagerEliminations.js';
-import { clampSeatsForVariant } from '../config/tableSeating.js';
+// The DECK is the tournament ceiling, never the cash seat law — see the note on
+// the same import in TournamentManagerBase.ts. Reused from the engine's own
+// VariantRules rather than copied, so the seating path and the deal path read
+// the same number.
+import { maxSeatsFor as maxSeatsTheDeckAllows } from '../engine/VariantRules.js';
 import { mayTakeSeat } from './seatClaim.js';
 
 export class TournamentManager extends TournamentManagerEliminations {
@@ -562,13 +566,14 @@ export class TournamentManager extends TournamentManagerEliminations {
       current_level: number | null;
       late_reg_levels: number | null;
       rebuy_levels: number | null;
+      prize_pool_finalized: boolean | null;
     }
     let target: SatelliteTarget | null = null;
     if (targetId) {
       const { data, error: targetErr } = await supabase
         .from('tournaments')
         .select(
-          'id, name, buy_in_amount, buy_in_fee, status, max_players, current_players, current_level, late_reg_levels, rebuy_levels'
+          'id, name, buy_in_amount, buy_in_fee, status, max_players, current_players, current_level, late_reg_levels, rebuy_levels, prize_pool_finalized'
         )
         .eq('id', targetId)
         .maybeSingle();
@@ -1217,10 +1222,13 @@ export class TournamentManager extends TournamentManagerEliminations {
     }
     // Deck capacity wins over table_size - see the note in
     // TournamentManagerBase.createTablesAndSeatPlayers. An expansion table has
-    // to be dealable for the same reason the original ones do.
-    maxPerTable = clampSeatsForVariant(
-      (this.tournamentCache?.game_type || '').toLowerCase(),
-      maxPerTable
+    // to be dealable for the same reason the original ones do. The ceiling is
+    // the deck, floor((deck - 5) / holeCards), NOT the cash seat law: that law
+    // is tuned to leave Run It Twice three boards, and Run It Twice is disabled
+    // on tournament tables.
+    maxPerTable = Math.min(
+      maxPerTable,
+      maxSeatsTheDeckAllows((this.tournamentCache?.game_type || '').toLowerCase())
     );
 
     // Round 51 RE-RUN fix: ground currentTableCount in the DB, not the

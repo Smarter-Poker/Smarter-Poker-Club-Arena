@@ -54,8 +54,30 @@ import { initSentry } from './core/SentryInit';
 import { initWebVitals } from './core/WebVitals';
 import SystemOffline from './core/SystemOffline';
 import { ErrorBoundary } from './components/common';
-import { reportError } from './utils/errorReporter';
+import { reportError, reportWarning } from './utils/errorReporter';
 import { hasLocalSession } from './lib/authUtils';
+import {
+  importWithRetry,
+  installVitePreloadErrorRecovery,
+  isChunkLoadError,
+} from './utils/lazyWithRetry';
+
+// Install before any fire-and-forget import. Vite's preload event covers the
+// critical route graph, while importWithRetry below keeps optional boot work
+// non-disruptive during an atomic publish.
+installVitePreloadErrorRecovery();
+
+function reportDeferredImportFailure(error: unknown, context: string): void {
+  if (isChunkLoadError(error)) {
+    reportWarning(
+      'A deferred startup asset remained unavailable after bounded retry; the active route continues normally.',
+      context,
+      { error: error instanceof Error ? error.message : String(error) }
+    );
+    return;
+  }
+  reportError(error, context);
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GLOBAL SAFETY NET — Catch unhandled promise rejections from service throws
@@ -110,18 +132,18 @@ if (bootStatus.antigravityOk) {
   // Fire-and-forget, and it swallows its own errors - whoever asks next sees
   // the real failure through the normal path.
   if (hasLocalSession()) {
-    void import('./services/ClubsService')
+    void importWithRetry(() => import('./services/ClubsService'))
       .then(({ warmUserMemberships }) => warmUserMemberships())
-      .catch((err) => reportError(err, 'main.Membership_warm_start_non_blocking'));
+      .catch((err) => reportDeferredImportFailure(err, 'main.Membership_warm_start_non_blocking'));
   }
 
   // PHASE 4: Activation-funnel tracker (Phase 5.1.2b). Fire-and-forget;
   // subscribes to MasterBus + IdentityDNA for first_table_seat,
   // first_hand_played, first_session_of_30min. No-ops if VITE_POSTHOG_KEY
   // is unset. Never throws out — all handlers swallow their own errors.
-  void import('./lib/funnelTracker')
+  void importWithRetry(() => import('./lib/funnelTracker'))
     .then(({ startFunnelTracker }) => startFunnelTracker())
-    .catch((err) => reportError(err, 'main.FunnelTracker_init_error_non_blocking'));
+    .catch((err) => reportDeferredImportFailure(err, 'main.FunnelTracker_init_error_non_blocking'));
 
   // RENDER IMMEDIATELY — don't wait for IdentityDNA's async getSession().
   // The app has AuthGuard, ErrorBoundary, Connection Watchdog, and Offline

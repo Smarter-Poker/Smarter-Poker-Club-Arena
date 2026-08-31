@@ -22,8 +22,9 @@
  *   1. a plain small control, nothing over it    -> fine (the sweep measures
  *                                                  occlusion, not smallness)
  *   2. under fixed chrome, page scrolls         -> excused (scroll reveals it)
- *   3. under fixed chrome, page does NOT scroll -> REPORTED (nowhere to go)
- *   4. overlapped by an ordinary sibling        -> REPORTED (a real defect)
+ *   3. partly under fixed chrome, centre clear  -> excused (scroll reveals it)
+ *   4. under fixed chrome, page does NOT scroll -> REPORTED (nowhere to go)
+ *   5. overlapped by an ordinary sibling        -> REPORTED (a real defect)
  *
  * The rule under test is copied from the sweep rather than imported, because
  * the sweep's copy lives inside a `page.evaluate` callback and cannot be
@@ -69,17 +70,6 @@ const DECIDE = ({ reachNeeded }: { reachNeeded: number }) => {
   const cx = b.left + b.width / 2;
   const cy = b.top + b.height / 2;
 
-  let reach = 0;
-  for (let d = 0; d <= reachNeeded; d += 4) {
-    const up = document.elementFromPoint(cx, Math.max(1, cy - d));
-    const down = document.elementFromPoint(cx, Math.min(window.innerHeight - 1, cy + d));
-    const owns = (t: Element | null) => !!t && (t === el || el.contains(t) || t.contains(el));
-    if (!owns(up) || !owns(down)) break;
-    reach = d;
-  }
-  const reachablePx = reach * 2;
-
-  const topAtCentre = document.elementFromPoint(cx, cy);
   const inFixedLayer = (node: Element | null) => {
     let q: Element | null = node;
     while (q) {
@@ -88,16 +78,28 @@ const DECIDE = ({ reachNeeded }: { reachNeeded: number }) => {
     }
     return false;
   };
+
+  let reach = 0;
+  let firstBlockersAreFixedChrome = false;
+  for (let d = 0; d <= reachNeeded; d += 4) {
+    const up = document.elementFromPoint(cx, Math.max(1, cy - d));
+    const down = document.elementFromPoint(cx, Math.min(window.innerHeight - 1, cy + d));
+    const owns = (t: Element | null) => !!t && (t === el || el.contains(t) || t.contains(el));
+    if (!owns(up) || !owns(down)) {
+      const blockers = [up, down].filter((candidate) => !owns(candidate));
+      firstBlockersAreFixedChrome =
+        blockers.length > 0 && blockers.every((candidate) => inFixedLayer(candidate));
+      break;
+    }
+    reach = d;
+  }
+  const reachablePx = reach * 2;
+
   const pageScrolls =
     document.documentElement.scrollHeight > window.innerHeight + 1 ||
     document.body.scrollHeight > window.innerHeight + 1;
 
-  const excused =
-    reachablePx < reachNeeded * 2 &&
-    pageScrolls &&
-    !!topAtCentre &&
-    !el.contains(topAtCentre) &&
-    inFixedLayer(topAtCentre);
+  const excused = reachablePx < reachNeeded * 2 && pageScrolls && firstBlockersAreFixedChrome;
 
   return { reachablePx, excused, reported: reachablePx < reachNeeded * 2 && !excused };
 };
@@ -135,7 +137,24 @@ test.describe('the tap sweep excuses only what it genuinely cannot see', () => {
     expect(r.reported).toBe(false);
   });
 
-  test('3. under fixed chrome on a page that CANNOT scroll is REPORTED', async ({ page: p }) => {
+  test('3. partly under fixed chrome with its centre clear is EXCUSED', async ({ page: p }) => {
+    await p.setContent(page({ scrolls: true, fixedChrome: true, sibling: false }));
+    await p.evaluate(() => {
+      const el = document.querySelector('.target') as HTMLElement;
+      // Footer begins 120px above the bottom. The centre is still clear, but
+      // the lower half of the required 44px thumb band crosses into it. Model
+      // the 106px lobby campaign control that exposed this exact case.
+      el.style.height = '106px';
+      el.style.top = `${window.innerHeight - 185}px`;
+    });
+    const r = await p.evaluate(DECIDE, { reachNeeded: REACH });
+    expect(r.reachablePx).toBeGreaterThan(0);
+    expect(r.reachablePx).toBeLessThan(REACH * 2);
+    expect(r.excused).toBe(true);
+    expect(r.reported).toBe(false);
+  });
+
+  test('4. under fixed chrome on a page that CANNOT scroll is REPORTED', async ({ page: p }) => {
     await p.setContent(page({ scrolls: false, fixedChrome: true, sibling: false }));
     await p.evaluate(() => {
       const el = document.querySelector('.target') as HTMLElement;
@@ -147,7 +166,7 @@ test.describe('the tap sweep excuses only what it genuinely cannot see', () => {
     expect(r.reported, 'a control pinned under chrome with no way out is a real defect').toBe(true);
   });
 
-  test('4. overlapped by an ORDINARY sibling is REPORTED, not excused', async ({ page: p }) => {
+  test('5. overlapped by an ORDINARY sibling is REPORTED, not excused', async ({ page: p }) => {
     /* This is the club-identity case: the paragraph above the button was
        winning the hit test. A sibling is not chrome and scrolling does not
        help, so the exclusion must not reach it. */
@@ -168,7 +187,7 @@ test.describe('the tap sweep excuses only what it genuinely cannot see', () => {
     );
     expect(src, 'the sweep no longer computes whether the page scrolls').toContain('pageScrolls');
     expect(src, 'the sweep no longer asks whether the blocker is fixed chrome').toContain(
-      'inFixedLayer'
+      'firstBlockersAreFixedChrome'
     );
     expect(src, 'the fixed-chrome exclusion no longer records an unmeasured control').toContain(
       'under fixed chrome'

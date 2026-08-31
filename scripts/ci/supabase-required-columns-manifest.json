@@ -669,6 +669,25 @@
       "club_id",
       "user_id"
     ],
+    "club_opening_setup_funding": [
+      "club_id",
+      "operation_id",
+      "destination",
+      "amount",
+      "balance_after",
+      "created_by"
+    ],
+    "club_opening_setups": [
+      "club_id",
+      "owner_id",
+      "rake_mode",
+      "rake_percent",
+      "rake_cap_bb",
+      "bbj_enabled",
+      "spins_enabled",
+      "promo_enabled",
+      "last_operation_id"
+    ],
     "club_profit_reconcile_log": [
       "stat_date",
       "club_id",
@@ -1774,6 +1793,28 @@
       "user_id",
       "event_type",
       "source"
+    ],
+    "leaderboard_payout_batches": [
+      "club_id",
+      "period",
+      "period_start",
+      "period_end",
+      "metric",
+      "program_id",
+      "program_version",
+      "program_hash",
+      "funding_owner_type",
+      "total_paid",
+      "seed_funded",
+      "promo_funded",
+      "overlay_funded",
+      "winner_count"
+    ],
+    "leaderboard_payout_failures": [
+      "club_id",
+      "period",
+      "period_start",
+      "error_message"
     ],
     "leaderboard_payouts": [
       "club_id",

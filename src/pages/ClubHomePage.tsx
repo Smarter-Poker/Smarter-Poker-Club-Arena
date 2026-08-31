@@ -30,6 +30,8 @@ import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import haptic from '../services/HapticService';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import ClubLaunchProgress, { type ClubLaunchTask } from '../components/club/ClubLaunchProgress';
+import ClubOpeningWizard from '../components/club/ClubOpeningWizard';
+import { clubOpeningSetupService } from '../services/ClubOpeningSetupService';
 /* LOBBY V2 (Dan 2026-08-22): the large card grid (DynamicGameCard) is replaced
    by the dense line-based LobbyTable + the CasinoPlaque game lobby panel.
    Selecting a row NEVER joins or spends; every commit action goes through the
@@ -224,6 +226,7 @@ interface ClubData {
   name: string;
   slug?: string;
   description: string;
+  tagline?: string | null;
   avatar_url: string;
   logo_url?: string;
   banner_url?: string | null;
@@ -239,6 +242,7 @@ interface ClubData {
   created_at: string;
   is_union: boolean;
   chip_treasury?: number | null;
+  spins_enabled?: boolean | null;
 }
 
 interface TableData {
@@ -303,6 +307,15 @@ interface TournamentData {
 type GameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
 type SortKey = 'recommended' | 'stakes_high' | 'stakes_low' | 'players' | 'starting_soon';
 type TournVariant = 'ALL' | 'MTT' | 'Spin-It' | 'SN';
+type AllStatusFilter = 'ALL' | 'RUNNING' | 'OPEN_REGISTRATION' | 'LATE_REG' | 'STARTING_SOON';
+
+const ALL_STATUS_FILTERS: ReadonlyArray<{ key: AllStatusFilter; label: string }> = [
+  { key: 'ALL', label: 'All' },
+  { key: 'RUNNING', label: 'Running' },
+  { key: 'OPEN_REGISTRATION', label: 'Open Registration' },
+  { key: 'LATE_REG', label: 'Late Reg' },
+  { key: 'STARTING_SOON', label: 'Starting Soon' },
+];
 /* The CashSubFilter / TournamentSubFilter types went with the state they
    described (see the note further down). Status is one mechanism now:
    GameFilterValue.statuses, defined per game type in advancedFilterSpec. */
@@ -654,6 +667,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      single visit. All Games is the landing view of a dense lobby. */
   const [gameType, setGameType] = useState<GameType>('ALL');
   const [sortKey, setSortKey] = useState<SortKey>('starting_soon');
+  const [allStatusFilter, setAllStatusFilter] = useState<AllStatusFilter>('ALL');
   /* `sortOpen` used to live here. It was assigned false in three places,
      never assigned true, and read nowhere - the exact dead wiring the comment
      below says had already been removed once. */
@@ -716,6 +730,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   /** Owning-club names for a union board. Empty for a club that is in no union. */
   const [clubNames, setClubNames] = useState<Record<string, string>>({});
   const [showCreateTournament, setShowCreateTournament] = useState(false);
+  const [showOpeningWizard, setShowOpeningWizard] = useState(false);
+  const [openingSetupComplete, setOpeningSetupComplete] = useState(false);
+  const [configuredAgentUserId, setConfiguredAgentUserId] = useState<string | null>(null);
+  const [agentSetupRevision, setAgentSetupRevision] = useState(0);
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
   /* The last COMMITTED club level. The level-up celebration compares against
      this rather than against the `prev` handed to a state updater, because an
@@ -736,6 +754,64 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     () => useUserStore.getState().user?.id ?? null
   );
   const toast = useToast();
+  useEffect(() => {
+    if (!club?.id || !currentUserId || club.owner_id !== currentUserId) {
+      setOpeningSetupComplete(false);
+      return;
+    }
+    let cancelled = false;
+    void clubOpeningSetupService
+      .getState(club.id)
+      .then((setup) => {
+        if (!cancelled) setOpeningSetupComplete(Boolean(setup?.completed_at));
+      })
+      .catch((error) => {
+        if (!cancelled) setOpeningSetupComplete(false);
+        reportError(error, 'ClubHomePage.Opening_setup_state');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [club?.id, club?.owner_id, currentUserId]);
+  useEffect(() => {
+    if (!club?.id || !currentUserId || club.owner_id !== currentUserId) {
+      setConfiguredAgentUserId(null);
+      return;
+    }
+
+    let cancelled = false;
+    void supabase
+      .from('agents')
+      .select('user_id, is_prepaid, credit_limit, player_rakeback_rate')
+      .eq('club_id', club.id)
+      .eq('status', 'active')
+      .in('role', ['super_agent', 'agent', 'sub_agent'])
+      .order('created_at', { ascending: true })
+      .limit(25)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          setConfiguredAgentUserId(null);
+          reportError(error, 'ClubHomePage.Agent_setup_state');
+          return;
+        }
+
+        // Promotion is the authoritative write: it refuses to create an agent
+        // until Prepaid Or Credit, the Credit Limit, and Rakeback have all been
+        // explicitly supplied. A credit LIMIT is permission to borrow; it does
+        // not transfer chips. Funding remains a separate, audited club-bank send.
+        const configured = data?.find((agent) => {
+          const prepaid = agent.is_prepaid === true && Number(agent.credit_limit || 0) === 0;
+          const credit = agent.is_prepaid === false && Number(agent.credit_limit || 0) > 0;
+          return (prepaid || credit) && agent.player_rakeback_rate != null;
+        });
+        setConfiguredAgentUserId(configured?.user_id ?? null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [club?.id, club?.owner_id, currentUserId, agentSetupRevision]);
   // Seeded from the boot cache: if the first painted frame already shows a club
   // (see bootCache above), then data IS on screen, and the stall watchdog and
   // the per-club reset guard must both agree with that. Leaving it false while
@@ -792,6 +868,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     setIsInUnion(false);
     setUnionName(null);
     setDeletingTableId(null);
+    setShowOpeningWizard(false);
+    setOpeningSetupComplete(false);
     setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
     setClubLevel(null);
     setJackpotAmount(0);
@@ -1474,6 +1552,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   );
 
   const handleMemberUpdate = useCallback(() => {
+    setAgentSetupRevision((revision) => revision + 1);
     loadClubDataRef.current();
   }, []);
 
@@ -1484,6 +1563,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     event: '*',
     onPayload: handleMemberUpdate,
     enabled: !!resolvedClubId,
+  });
+
+  useMasterBusChannel({
+    channelName: clubId ? `club-agents-${clubId}` : null,
+    table: 'agents',
+    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
+    event: '*',
+    onPayload: () => setAgentSetupRevision((revision) => revision + 1),
+    enabled: !!resolvedClubId && isOwner,
   });
 
   // ── Bus Listeners: cross-page event reactivity (subscribeDebounced) ──
@@ -1582,7 +1670,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, created_at, is_union, union_id'
+              'id, club_id, name, slug, description, tagline, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -2549,6 +2637,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     const rows = tables.filter((table) => {
       if (gameType !== 'ALL' && cashKind(table) !== gameType) return false;
 
+      if (gameType === 'ALL' && allStatusFilter !== 'ALL') {
+        const status = String(table.status).toUpperCase();
+        if (allStatusFilter !== 'RUNNING' || !['RUNNING', 'IN_PROGRESS'].includes(status)) {
+          return false;
+        }
+      }
+
       if (advSpec && advValue) {
         /* ONE decision function for both halves of the lobby - see
            rowPassesFilter. Applying the fields inline here is what let games,
@@ -2626,7 +2721,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           (a, b) => cmpVariant(a, b) || cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b)
         );
     }
-  }, [tables, gameType, showsCash, sortKey, advFilters]);
+  }, [tables, gameType, showsCash, sortKey, advFilters, allStatusFilter]);
 
   /**
    * Is the lobby showing less than everything, and why.
@@ -2639,14 +2734,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const narrowing = useMemo(() => {
     const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
     const fVal = advFilters[gameType as FilterGameType];
-    const filtered = Boolean(fSpec && fVal && isFilterActive(fSpec, fVal));
+    const allStatusFiltered = gameType === 'ALL' && allStatusFilter !== 'ALL';
+    const filtered = allStatusFiltered || Boolean(fSpec && fVal && isFilterActive(fSpec, fVal));
     return {
       fSpec,
       filtered,
       tabbed: gameType !== 'ALL',
       any: filtered || gameType !== 'ALL' || favoritesOnly,
     };
-  }, [gameType, advFilters, favoritesOnly]);
+  }, [gameType, advFilters, favoritesOnly, allStatusFilter]);
 
   /**
    * Clear EVERY narrowing at once.
@@ -2664,6 +2760,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
        visit, which reads as the button not having worked. */
     selectFavoritesOnly(false);
     selectGameType('ALL');
+    setAllStatusFilter('ALL');
     if (narrowing.fSpec) {
       const next: FilterStore = {
         ...advFilters,
@@ -2771,6 +2868,16 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (!isWithinLobbyWindow(t, windowNow)) return false;
       if (!matchesVariant(t, variant)) return false;
 
+      if (gameType === 'ALL' && allStatusFilter !== 'ALL') {
+        const status = String(t.status).toUpperCase();
+        const matchesAllStatus =
+          (allStatusFilter === 'RUNNING' && ['RUNNING', 'IN_PROGRESS'].includes(status)) ||
+          (allStatusFilter === 'OPEN_REGISTRATION' && status === 'REGISTERING') ||
+          (allStatusFilter === 'LATE_REG' && ['LATE_REG', 'LATE_REGISTRATION'].includes(status)) ||
+          (allStatusFilter === 'STARTING_SOON' && status === 'STARTING_SOON');
+        if (!matchesAllStatus) return false;
+      }
+
       if (advSpec && advValue) {
         // The tournament price is the TOTAL a player pays, not the prize half.
         const total = (Number(t.buy_in_amount) || 0) + (Number(t.buy_in_fee) || 0);
@@ -2837,7 +2944,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             cmpNameTourn(a, b)
         );
     }
-  }, [tournaments, gameType, showsTournaments, sortKey, advFilters]);
+  }, [tournaments, gameType, showsTournaments, sortKey, advFilters, allStatusFilter]);
 
   /**
    * Tables this player already holds an active place in the queue for.
@@ -3878,6 +3985,16 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   );
   const launchTasks: ClubLaunchTask[] = [
     {
+      id: 'opening-setup',
+      label: 'Complete The Opening Setup Wizard',
+      detail: 'Configure Rake, BBJ, Spins, Promotions, And Leaderboards',
+      complete: openingSetupComplete,
+      actionLabel: 'Start Setup',
+      onAction: () => setShowOpeningWizard(true),
+      disabled: !isOwner,
+      disabledLabel: 'Owner Required',
+    },
+    {
       id: 'identity',
       label: 'Choose A Club Profile Picture',
       detail: 'Add A Recognizable Club Mark',
@@ -3889,12 +4006,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       id: 'tagline',
       label: 'Write A Club Tag Line',
       detail: 'Tell Players What Makes This Club Special',
-      complete: Boolean(club.description?.trim()),
+      complete: Boolean(club.tagline?.trim()),
       actionLabel: 'Add Tag Line',
-      onAction: () => {
-        setNoticeDraft(club.description || '');
-        setIsEditingNotice(true);
-      },
+      onAction: () =>
+        openingSetupComplete ? navigate(`/clubs/${clubId}/settings`) : setShowOpeningWizard(true),
+      disabled: !isOwner && !openingSetupComplete,
+      disabledLabel: 'Owner Required',
     },
     {
       id: 'nlh',
@@ -3928,14 +4045,18 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       actionLabel: 'Create MTT',
       onAction: () => openCreationFor('MTT'),
     },
-    {
-      id: 'spin',
-      label: 'Launch Your First Spin',
-      detail: 'Create A Three-Player Spin Event',
-      complete: tournamentKinds.includes('spin'),
-      actionLabel: 'Create Spin',
-      onAction: () => openCreationFor('SPIN'),
-    },
+    ...(openingSetupComplete && club.spins_enabled
+      ? [
+          {
+            id: 'spin',
+            label: 'Launch Your First Spin',
+            detail: 'Create A Three-Player Spin Event',
+            complete: tournamentKinds.includes('spin'),
+            actionLabel: 'Create Spin',
+            onAction: () => openCreationFor('SPIN'),
+          },
+        ]
+      : []),
     {
       id: 'heads-up',
       label: 'Launch Your First Heads Up Game',
@@ -3951,6 +4072,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       complete: Number(club.member_count || 0) > 1,
       actionLabel: 'Invite Player',
       onAction: () => bounceToInvite(true),
+    },
+    {
+      id: 'first-agent',
+      label: 'Configure Your First Agent',
+      detail: 'Promote A Player, Choose Prepaid Or Credit, And Assign Rakeback',
+      complete: Boolean(configuredAgentUserId),
+      actionLabel: Number(club.member_count || 0) > 1 ? 'Choose Player' : 'Invite Player First',
+      onAction: () =>
+        configuredAgentUserId
+          ? navigate(`/clubs/${clubId}/members/${configuredAgentUserId}`)
+          : Number(club.member_count || 0) > 1
+            ? navigate(`/clubs/${clubId}/members`)
+            : bounceToInvite(true),
+      disabled: !isOwner,
+      disabledLabel: 'Owner Required',
     },
   ];
 
@@ -4242,7 +4378,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     }
                   />
                   <p className="lobby-top__house-welcome">
-                    Welcome To The {club.name}, All Fish Of All Shapes And Sizes Are Welcome!
+                    {club.tagline?.trim() || `Welcome To ${club.name}`}
                   </p>
                 </div>
               </div>
@@ -4350,7 +4486,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       {/* ═══════════════════════════════════════════════════════════════════
           GAME ACTION BAR — every game type, flat, plus explicit sorting
       ═══════════════════════════════════════════════════════════════════ */}
-      <section className="club-lobby-machine" aria-label={`${club.name} Game Lobby`}>
+      <section
+        className="club-lobby-machine"
+        data-opening-checklist={noticeEditable || undefined}
+        aria-label={`${club.name} Game Lobby`}
+      >
         <ClubLobbyCommandTop
           welcome={
             <div
@@ -4487,7 +4627,26 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           two can never disagree, and the icon on the right opens that sheet
           for everything the row has no space for.
       ═══════════════════════════════════════════════════════════════════ */}
-              {gameType !== 'ALL' &&
+              {gameType === 'ALL' ? (
+                <div className="quickprefs">
+                  <div className="quickprefs__row quickprefs__row--status" aria-label="Game Status">
+                    {ALL_STATUS_FILTERS.map((status) => (
+                      <button
+                        key={status.key}
+                        type="button"
+                        className={`quickprefs__chip ${allStatusFilter === status.key ? 'is-on' : ''}`}
+                        aria-pressed={allStatusFilter === status.key}
+                        onClick={() => {
+                          haptic.selection();
+                          setAllStatusFilter(status.key);
+                        }}
+                      >
+                        {status.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
                 (() => {
                   const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
                   if (!qSpec) return null;
@@ -4567,7 +4726,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       </div>
                     </div>
                   );
-                })()}
+                })()
+              )}
             </section>
           }
           campaign={
@@ -4592,7 +4752,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           }
         />
 
-        {noticeEditable && (
+        {noticeEditable && totalGameCount === 0 && (
           <ClubLaunchProgress
             clubName={club.name}
             openingBank={Number(club.chip_treasury) || 0}
@@ -4931,6 +5091,29 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         }}
         onCancel={() => setDeleteTableConfirm({ show: false, tableId: null, tableName: null })}
       />
+
+      {showOpeningWizard && isOwner && club && (
+        <ClubOpeningWizard
+          clubId={club.id}
+          clubName={club.name}
+          clubBank={Number(club.chip_treasury) || 0}
+          onClose={() => setShowOpeningWizard(false)}
+          onComplete={({ clubBankAfter, spinsEnabled, tagline }) => {
+            setClub((previous) =>
+              previous
+                ? {
+                    ...previous,
+                    chip_treasury: clubBankAfter,
+                    spins_enabled: spinsEnabled,
+                    tagline,
+                  }
+                : previous
+            );
+            setOpeningSetupComplete(true);
+            setShowOpeningWizard(false);
+          }}
+        />
+      )}
 
       {showCreateTournament && (resolvedClubId || club?.id) && (
         <CreateTournamentModal

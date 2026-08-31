@@ -10,6 +10,7 @@ import {
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import {
   cleanupTemporaryCustomizationAccount,
+  cleanupStaleTemporaryCustomizationAccounts,
   createTemporaryCustomizationAccount,
   expectedUnlockForFeature,
   listTableStudioStorefrontSkus,
@@ -217,6 +218,10 @@ test.describe('production Table Studio commerce certification', () => {
     if (!baseURL) throw new Error('A deployed BASE_URL is required.');
 
     const environment = requireCustomizationCertificationEnvironment();
+    const staleAccountsRemoved = await cleanupStaleTemporaryCustomizationAccounts(environment);
+    console.log(
+      `[customization-certification] removed ${staleAccountsRemoved} stale reserved account(s)`
+    );
     const skus = await listTableStudioStorefrontSkus(environment);
     expect(skus.length).toBeGreaterThanOrEqual(60);
     const totalCost = skus.reduce((sum, sku) => sum + sku.diamond_cost, 0);

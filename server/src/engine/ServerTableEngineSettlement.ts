@@ -265,10 +265,42 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
    * against the old monolith); the trailing
    * `break;` became the caller’s own `break;`.
    */
+  /**
+   * ═══ THE SETTLEMENT BARRIER COVERS THE WHOLE SETTLEMENT (2026-08-31) ═════
+   *
+   * The dealing loop waits on `postHandTasksPromise` before dealing the next
+   * hand, because dealHand RESETS every per-hand capture field
+   * (currentHandRake, currentHandCommunityCards, currentHandActions, ...) and
+   * reallocates handCount. Two holes let the next hand start while THIS
+   * hand's settlement was still reading those fields:
+   *
+   *   1. The promise was assigned mid-body (only around postHandTasks), so
+   *      any await BEFORE that line - the insurance-shortfall critical
+   *      alerts are awaits - yielded to a dealing loop that found the barrier
+   *      NULL, skipped it, and dealt.
+   *   2. The loop capped its wait at 45s and then proceeded anyway, with the
+   *      settlement still running in the background against fields the next
+   *      deal was about to blank. That is how a settled hand's history row
+   *      can record an empty board and the next hand's number - the exact
+   *      corpse the rake-law audit filed as `board_not_recorded`.
+   *
+   * The barrier is now assigned FIRST, synchronously, and covers this entire
+   * method INCLUDING the postHandTasks chain it fires (see the Promise.all
+   * where that chain starts). The loop-side hole is closed in dealingLoop:
+   * it waits with liveness instead of walking away at 45s.
+   */
   protected async handleHandCompleteEvent(
     event: HandEvent,
     players: SeatedPlayer[]
   ): Promise<void> {
+    const wholeSettlement = this.settleCompletedHand(event, players);
+    // Barrier only - failures are reported inside; the barrier must resolve
+    // either way or the table stops dealing forever.
+    this.postHandTasksPromise = wholeSettlement.catch(() => undefined);
+    return wholeSettlement;
+  }
+
+  private async settleCompletedHand(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
     // ═══════════════════════════════════════════════════════════════════
     // Bible V8 §1.9: SETTLEMENT PIPELINE — 15-step mandatory order
     //
@@ -948,9 +980,18 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
 
     // FIX 211: Bible V8 §1.9 — Track postHandTasks promise so dealingLoop can await
     // it before starting the next hand, preventing stale DB stacks from race conditions.
-    this.postHandTasksPromise = this.postHandTasks(players).catch((err) =>
+    // 2026-08-31: the wrapper stored the whole-settlement promise in
+    // postHandTasksPromise. The async task chain fired here must ALSO hold
+    // the barrier, so chain it - the loop may deal only when BOTH the rest of
+    // this method and every post-hand task are done reading this hand's
+    // capture fields.
+    const priorBarrier = this.postHandTasksPromise;
+    const postTasks = this.postHandTasks(players).catch((err) =>
       reportError(err, 'ServerTableEnginethistableId.Posthand_error')
     );
+    this.postHandTasksPromise = priorBarrier
+      ? Promise.all([priorBarrier, postTasks]).then(() => undefined)
+      : postTasks;
     this.currentHandWinnerIds = [];
 
     // Rabbit Hunt: Broadcast captured remaining deck ONLY when the hand
@@ -1055,6 +1096,43 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
   // ═════════════════════════════════════════════════════════════════════════════
 
   protected async postHandTasks(players: SeatedPlayer[]): Promise<void> {
+    /* ═══ THIS HAND'S RECORD IS CAPTURED BEFORE THE FIRST AWAIT (2026-08-31)
+       Everything below used to read the live `this.currentHand*` fields and
+       `this.handCount` between awaited database calls. Those fields belong to
+       whatever hand the table is on NOW - dealHand blanks them and reallocates
+       the hand number - so any path that let the dealing loop advance during
+       settlement (see handleHandCompleteEvent's barrier note) wrote hand N's
+       row from hand N+1's empty capture. Snapshot synchronously, before the
+       first await can yield, and read ONLY the snapshot from here down. The
+       Maps/arrays are copied shallowly: settlement only reads them, and
+       nothing else mutates their elements after HAND_COMPLETE. */
+    const snap = {
+      handNumber: this.handCount,
+      variant: this.currentHandVariant,
+      potSize: this.currentHandPotSize,
+      rake: this.currentHandRake,
+      bbjFee: this.currentHandBBJFee,
+      communityCards: [...this.currentHandCommunityCards],
+      communityCards2: [...this.currentHandCommunityCards2],
+      communityCards3: [...this.currentHandCommunityCards3],
+      bombPot: this.currentHandBombPot,
+      ritExtraBoards: this.currentHandRitExtraBoards,
+      ritBoards: this.currentHandRitBoards,
+      startedAt: this.currentHandStartedAt,
+      winners: [...this.currentHandWinners],
+      pots: this.currentHandPots,
+      actions: [...this.currentHandActions],
+      contributions: new Map(this.currentHandContributions),
+      holeCards: new Map(this.currentHandHoleCards),
+      dealerSeat: this.currentHandDealerSeat,
+      perPotAwards: [...this.currentHandPerPotAwards],
+      showdownResults: [...this.currentHandShowdownResults],
+      insuranceSettlements: [...this.currentHandInsuranceSettlements],
+      cashoutRedirects: new Map(this.currentHandCashoutRedirects),
+      returnedUncalled: new Map(this.currentHandReturnedUncalled),
+      bbjHit: this.currentHandBBJHit,
+      bbjPayoutConfig: this.currentHandBBJPayoutConfig,
+    };
     // ═══════════════════════════════════════════════════════════════════════
     // Bible V8 §1.9: SETTLEMENT PIPELINE (continued) — Steps 8-15
     // Steps 1-7 completed in HAND_COMPLETE handler above
@@ -1079,16 +1157,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       } catch (err) {
         reportError(err, `postHandTasks.step_failed.${stepName}`, {
           tableId: this.tableId,
-          handNumber: this.handCount,
+          handNumber: snap.handNumber,
         });
         if (moneyCritical) {
           await raiseFinancialAlert(
             'critical',
             `postHandTasks.${stepName}_failed`,
-            `Post-hand step ${stepName} threw for hand #${this.handCount}; later steps continued`,
+            `Post-hand step ${stepName} threw for hand #${snap.handNumber}; later steps continued`,
             {
               table_id: this.tableId,
-              hand_number: this.handCount,
+              hand_number: snap.handNumber,
               error: err instanceof Error ? err.message : String(err),
             }
           );
@@ -1170,7 +1248,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // players, so the leak this gate was added for on 2026-08-17 (3,953
         // losing holdings in one hour) stays closed - those players never
         // enter the array to begin with.
-        const winnerIds = new Set(this.currentHandWinners.map((w) => w.userId));
+        const winnerIds = new Set(snap.winners.map((w) => w.userId));
         // SHOWDOWN SYSTEM 2026-08-25: the module's rule is "a holding may be
         // exposed only if the table already showed it" — and a hand the engine
         // ruled muckable was never shown. Filter mucked hands here (voluntary
@@ -1179,7 +1257,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // record for audit/integrity still rides the separate holeCardsAll
         // capture, exactly as before.
         const revealedShowdownResults = selectRevealedShowdownResults(
-          this.currentHandShowdownResults.filter((r) => !this.isMuckedAtShowdown(r.userId)),
+          snap.showdownResults.filter((r) => !this.isMuckedAtShowdown(r.userId)),
           winnerIds,
           this.showHandPlayers,
           false
@@ -1192,20 +1270,19 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // money/privacy consistency break worth a page, not a log line. It
         // runs per hand, in the settlement path, so it can't be missed by a
         // sampling job. RIT hands pass trivially (all hands force-revealed).
-        if (this.currentHandShowdownResults.length >= 2) {
+        if (snap.showdownResults.length >= 2) {
           const revealedIds = new Set(revealedShowdownResults.map((r) => r.userId));
           const paidButHidden = [...winnerIds].filter(
-            (id) =>
-              !revealedIds.has(id) && this.currentHandShowdownResults.some((r) => r.userId === id)
+            (id) => !revealedIds.has(id) && snap.showdownResults.some((r) => r.userId === id)
           );
           if (paidButHidden.length > 0) {
             await raiseFinancialAlert(
               'critical',
               'ServerTableEngine.mucked_winner_invariant',
-              `Hand ${this.handCount} on table ${this.tableId}: winner(s) ${paidButHidden.join(
+              `Hand ${snap.handNumber} on table ${this.tableId}: winner(s) ${paidButHidden.join(
                 ','
               )} were withheld from the reveal set - the muck ruling and the payout disagree`,
-              { tableId: this.tableId, handNumber: this.handCount, userIds: paidButHidden }
+              { tableId: this.tableId, handNumber: snap.handNumber, userIds: paidButHidden }
             );
           }
         }
@@ -1215,7 +1292,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // and hand identity for revealed hands only. A mucked entry carries
         // no hand name, description, or cards: participants can read this
         // row back, and a mucked range stays private (2026-08-17 leak rule).
-        const showdownReveal = this.currentHandShowdownResults.map((r) => {
+        const showdownReveal = snap.showdownResults.map((r) => {
           const mucked = this.isMuckedAtShowdown(r.userId);
           return mucked
             ? {
@@ -1235,48 +1312,48 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         });
 
         const dailyMissionEvents = buildDailyMissionHandEvents({
-          dealtPlayerIds: this.currentHandHoleCards.keys(),
+          dealtPlayerIds: snap.holeCards.keys(),
           roster: players.map((player) => ({
             userId: player.user_id,
             isHorse: player.is_horse,
           })),
-          winners: this.currentHandWinners,
-          showdownResults: this.currentHandShowdownResults,
+          winners: snap.winners,
+          showdownResults: snap.showdownResults,
         });
 
         const result = await logHandHistory({
           tableId: this.tableId,
           nitGame: this.tableInfo.nit_game === true,
           tournamentId: this.tableInfo.tournament_id || undefined,
-          handNumber: this.handCount,
+          handNumber: snap.handNumber,
           // VARIANT OVERRIDE 2026-08-28 (spec §10.1/§20): the variant this
           // hand was DEALT as — plo4 on a PLO4 bomb hand at an NLH table.
           // Falling back to the table label only when the capture is absent.
-          gameVariant: this.currentHandVariant || this.tableInfo.game_variant || 'nlh',
+          gameVariant: snap.variant || this.tableInfo.game_variant || 'nlh',
           smallBlind: this.tableInfo.small_blind,
           bigBlind: this.tableInfo.big_blind,
-          potSize: this.currentHandPotSize,
-          rakeAmount: this.currentHandRake,
-          bbjAmount: this.currentHandBBJFee,
-          communityCards: this.currentHandCommunityCards,
-          communityCards2: this.currentHandCommunityCards2,
+          potSize: snap.potSize,
+          rakeAmount: snap.rake,
+          bbjAmount: snap.bbjFee,
+          communityCards: snap.communityCards,
+          communityCards2: snap.communityCards2,
           // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 + the frozen bomb facts
           // (trigger reason, ante, board count — spec §20).
-          communityCards3: this.currentHandCommunityCards3,
-          bombPot: this.currentHandBombPot,
+          communityCards3: snap.communityCards3,
+          bombPot: snap.bombPot,
           // COMPLETENESS PASS 2026-08-26: RIT boards 2..N, first-class. The
           // rit_board_N pseudo-actions in `actions` stay for old readers.
-          ritBoards: this.currentHandRitExtraBoards,
-          startedAt: this.currentHandStartedAt || Date.now(),
+          ritBoards: snap.ritExtraBoards,
+          startedAt: snap.startedAt || Date.now(),
           endedAt: Date.now(),
-          winners: this.currentHandWinners,
+          winners: snap.winners,
           // POT-LEVEL SETTLEMENT (Dan section 29). Captured at WINNERS, when
           // the breakdown still exists. `winners` already carry `potIndex`;
           // this is the other half of that pair, and without it the number is
           // an index into an array nobody stored. Together they let the
           // elimination sweep credit a knockout to the winner(s) of the pot
           // that held the busted player's last chips.
-          pots: this.currentHandPots,
+          pots: snap.pots,
           players: players.map((p) => ({
             userId: p.user_id,
             username: p.username,
@@ -1284,12 +1361,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             stack: p.stack,
             cards: [],
           })),
-          actions: this.currentHandActions,
+          actions: snap.actions,
           // STATS FACT LAYER 2026-08-21: engine-memory values the write used to
           // discard. Rationale in services/supabase/handFacts.ts.
           clubId: this.tableInfo.club_id,
-          contributions: this.currentHandContributions,
-          holeCardsAll: this.currentHandHoleCards,
+          contributions: snap.contributions,
+          holeCardsAll: snap.holeCards,
           roster: players.map((p) => ({ userId: p.user_id, isHorse: p.is_horse })),
           // ASSISTANT FIX 2026-08-16: both of these were already computed on
           // the engine for this hand and then thrown away at the write.
@@ -1302,7 +1379,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // positional leak at all.
           showdownResults: revealedShowdownResults,
           dailyMissionEvents,
-          buttonSeat: this.currentHandDealerSeat,
+          buttonSeat: snap.dealerSeat,
           showdownReveal,
         });
         v_handHistoryId = result.handId;
@@ -1334,24 +1411,24 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // sweep will chase forever.
         if (
           v_handHistoryId &&
-          this.currentHandBombPot &&
-          this.currentHandPerPotAwards.length === 0 &&
-          (this.currentHandWinners?.length ?? 0) > 0
+          snap.bombPot &&
+          snap.perPotAwards.length === 0 &&
+          (snap.winners?.length ?? 0) > 0
         ) {
           reportError(
             new Error(
-              `[BombPot] hand ${this.handCount} settled with ` +
-                `${this.currentHandWinners?.length ?? 0} winner(s) but an EMPTY per-pot award ` +
+              `[BombPot] hand ${snap.handNumber} settled with ` +
+                `${snap.winners?.length ?? 0} winner(s) but an EMPTY per-pot award ` +
                 'array - no award units can be written and none can be reconstructed'
             ),
             'ServerTableEngine.bomb_award_units_empty'
           );
         }
-        if (v_handHistoryId && this.currentHandBombPot && this.currentHandPerPotAwards.length > 0) {
-          const ledgerRows = this.currentHandPerPotAwards.map((a) => ({
+        if (v_handHistoryId && snap.bombPot && snap.perPotAwards.length > 0) {
+          const ledgerRows = snap.perPotAwards.map((a) => ({
             hand_history_id: v_handHistoryId,
             table_id: this.tableId,
-            hand_number: this.handCount,
+            hand_number: snap.handNumber,
             pot_index: a.potIndex,
             board: a.board ?? 1,
             side: a.low ? 'low' : 'high',
@@ -1363,7 +1440,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // fire-and-forget — nothing here is awaited and nothing here can fail
           // the hand — but a lost row now costs three attempts to lose, and the
           // third failure is reported rather than logged to a host nobody reads.
-          const handNumberForLedger = this.handCount;
+          const handNumberForLedger = snap.handNumber;
           const writeAwardUnits = async (): Promise<void> => {
             let lastMessage = 'unknown error';
             for (let attempt = 1; attempt <= BOMB_LEDGER_WRITE_ATTEMPTS; attempt++) {
@@ -1416,7 +1493,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           this.hub?.emitEvent(this.tableId, {
             type: 'hand_history_saved',
             table_id: this.tableId,
-            hand_number: this.handCount,
+            hand_number: snap.handNumber,
             hand_id: v_handHistoryId,
             timestamp: Date.now(),
           });
@@ -1428,22 +1505,22 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             const feedRow: HandHistoryRow = {
               id: v_handHistoryId,
               table_id: this.tableId,
-              hand_number: this.handCount,
+              hand_number: snap.handNumber,
               game_variant: this.tableInfo.game_variant || 'nlh',
               small_blind: this.tableInfo.small_blind,
               big_blind: this.tableInfo.big_blind,
-              pot_size: this.currentHandPotSize,
-              rake_amount: this.currentHandRake,
-              community_cards: this.currentHandCommunityCards,
-              started_at: this.currentHandStartedAt || Date.now(),
+              pot_size: snap.potSize,
+              rake_amount: snap.rake,
+              community_cards: snap.communityCards,
+              started_at: snap.startedAt || Date.now(),
               ended_at: Date.now(),
-              winners: this.currentHandWinners.map((w) => ({ userId: w.userId, amount: w.amount })),
+              winners: snap.winners.map((w) => ({ userId: w.userId, amount: w.amount })),
               players: players.map((pp) => ({
                 userId: pp.user_id,
                 seat: pp.seat_number,
                 stack: pp.stack,
               })),
-              actions: this.currentHandActions,
+              actions: snap.actions,
             };
             integrityFeed.ingestRow(feedRow);
           } catch {
@@ -1465,9 +1542,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // UNION MODEL UNCHANGED: the union still holds 100% of cash rake; the weekly
     // settlement still returns 90% to clubs (nets 10%).
     await runStep('rake_distribution', true, async () => {
-      if (!this.isTournamentTable() && this.currentHandRake > 0 && this.tableInfo?.club_id) {
+      if (!this.isTournamentTable() && snap.rake > 0 && this.tableInfo?.club_id) {
         const contribsObj: Record<string, number> = {};
-        for (const [uid, amt] of this.currentHandContributions.entries()) {
+        for (const [uid, amt] of snap.contributions.entries()) {
           contribsObj[uid] = amt;
         }
         // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): pass the returned-
@@ -1475,7 +1552,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // ELIGIBLE contribution (net of returned uncalled bets), so the RPC's
         // weighted per-player attribution needs no further adjustment.
         const returnedObj: Record<string, number> = {};
-        for (const [uid, amt] of this.currentHandReturnedUncalled.entries()) {
+        for (const [uid, amt] of snap.returnedUncalled.entries()) {
           returnedObj[uid] = amt;
         }
         let rakeDistributed = false;
@@ -1484,11 +1561,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             p_table_id: this.tableId,
             p_club_id: this.tableInfo.club_id,
             p_hand_id: v_handHistoryId,
-            p_hand_number: this.handCount,
-            p_rake: this.currentHandRake,
-            p_bbj: this.currentHandBBJFee,
-            p_pot: this.currentHandPotSize,
-            p_num_players: this.currentHandContributions.size,
+            p_hand_number: snap.handNumber,
+            p_rake: snap.rake,
+            p_bbj: snap.bbjFee,
+            p_pot: snap.potSize,
+            p_num_players: snap.contributions.size,
             p_contributions: contribsObj,
             p_tournament_id: this.tableInfo.tournament_id || null,
             p_returned_uncalled: returnedObj,
@@ -1512,11 +1589,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               tableId: this.tableId,
               clubId: this.tableInfo?.club_id,
               handId: v_handHistoryId,
-              handNumber: this.handCount,
-              rake: this.currentHandRake,
-              bbj: this.currentHandBBJFee,
-              pot: this.currentHandPotSize,
-              numPlayers: this.currentHandContributions.size,
+              handNumber: snap.handNumber,
+              rake: snap.rake,
+              bbj: snap.bbjFee,
+              pot: snap.potSize,
+              numPlayers: snap.contributions.size,
               contributions: contribsObj,
               returnedUncalled: returnedObj,
               rakeMethod: 'WEIGHTED_CONTRIBUTED',
@@ -1535,7 +1612,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // Round 44: pass v_handHistoryId so bbj_contributions.hand_id links to
     // hand_history (consistent with rake_records and club_wallet_transactions).
     await runStep('bbj_contribution', true, async () => {
-      if (!this.isTournamentTable() && this.currentHandBBJFee > 0 && this.tableInfo?.club_id) {
+      if (!this.isTournamentTable() && snap.bbjFee > 0 && this.tableInfo?.club_id) {
         // A5 FIX (2026-08-08): this return value used to be discarded, and
         // logBBJCollection swallowed every failure while logging 1 hand in 100.
         // That was not cosmetic. atomic_distribute_rake computes
@@ -1550,8 +1627,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         const bbjBanked = await logBBJCollection(
           this.tableId,
           this.tableInfo.club_id,
-          this.handCount,
-          this.currentHandBBJFee,
+          snap.handNumber,
+          snap.bbjFee,
           this.tableInfo.big_blind,
           v_handHistoryId
         );
@@ -1560,11 +1637,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             tableId: this.tableId,
             clubId: this.tableInfo.club_id,
             handId: v_handHistoryId,
-            handNumber: this.handCount,
-            rake: this.currentHandRake,
-            bbj: this.currentHandBBJFee,
-            pot: this.currentHandPotSize,
-            numPlayers: this.currentHandContributions.size,
+            handNumber: snap.handNumber,
+            rake: snap.rake,
+            bbj: snap.bbjFee,
+            pot: snap.potSize,
+            numPlayers: snap.contributions.size,
             contributions: {},
             tournamentId: this.tableInfo?.tournament_id || null,
             bigBlind: this.tableInfo?.big_blind ?? null,
@@ -1593,7 +1670,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     await runStep('promo_playthrough', false, async () => {
       if (!this.isTournamentTable() && this.tableInfo?.club_id) {
         const promoClubId = this.tableInfo.club_id;
-        for (const [uid, amt] of this.currentHandContributions.entries()) {
+        for (const [uid, amt] of snap.contributions.entries()) {
           if (!uid || amt <= 0) continue;
           Promise.resolve(
             supabase.rpc('promo_apply_playthrough', {
@@ -1621,21 +1698,21 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (
         !this.isTournamentTable() &&
         this.tableInfo?.club_id &&
-        this.currentHandInsuranceSettlements.length > 0
+        snap.insuranceSettlements.length > 0
       ) {
-        for (const settlement of this.currentHandInsuranceSettlements) {
+        for (const settlement of snap.insuranceSettlements) {
           // EV CASHOUT 2026-08-28: the bank's IN side for a cashout is the
           // redirected pot winnings (what the bank actually collected after
           // clamps), logged in the premium column; the OUT side is the locked
           // cashout in payout. bank_delta = premium − payout keeps working.
           const bankIn =
             settlement.kind === 'ev_cashout'
-              ? (this.currentHandCashoutRedirects.get(settlement.playerId) ?? 0)
+              ? (snap.cashoutRedirects.get(settlement.playerId) ?? 0)
               : settlement.premium;
           await logInsuranceSettlement({
             tableId: this.tableId,
             clubId: this.tableInfo.club_id,
-            handNumber: this.handCount,
+            handNumber: snap.handNumber,
             playerId: settlement.playerId,
             equityPercent: settlement.equity, // FIX-A12: real equity the premium was priced on
             premium: bankIn,
@@ -1654,15 +1731,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (
         !this.isTournamentTable() &&
         this.tableInfo?.club_id &&
-        this.currentHandBBJHit?.hit &&
-        this.currentHandBBJPayoutConfig
+        snap.bbjHit?.hit &&
+        snap.bbjPayoutConfig
       ) {
-        const bbjHit = this.currentHandBBJHit;
-        const payoutConfig = this.currentHandBBJPayoutConfig;
+        const bbjHit = snap.bbjHit;
+        const payoutConfig = snap.bbjPayoutConfig;
         const result = await processBBJPayout({
           tableId: this.tableId,
           clubId: this.tableInfo.club_id,
-          handNumber: this.handCount,
+          handNumber: snap.handNumber,
           loserUserId: bbjHit.loserUserId!,
           winnerUserId: bbjHit.winnerUserId!,
           loserHandName: bbjHit.loserHand?.name || 'Unknown',
@@ -1728,7 +1805,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           this.hub?.emitEvent(this.tableId, {
             type: 'bbj_payout_complete',
             table_id: this.tableId,
-            hand_number: this.handCount,
+            hand_number: snap.handNumber,
             /* The celebration's own trigger, so it carries the same stamp as
                bbj_hit above - see the note there for why a retained replay is
                otherwise indistinguishable from a live hit. */
@@ -1973,7 +2050,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       this.hub?.emitEvent(this.tableId, {
         type: 'table_unlocked',
         table_id: this.tableId,
-        hand_number: this.handCount,
+        hand_number: snap.handNumber,
         seated_count: unlockedCount,
         next_state: unlockedCount >= 2 ? 'running' : 'waiting',
         timestamp: Date.now(),

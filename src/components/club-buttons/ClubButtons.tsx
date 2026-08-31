@@ -88,7 +88,7 @@ export function ClubIcon({ name, className }: { name: ClubIconName; className?: 
       <path d="M8 9 6 2c3 0 5 3 6 6 1-3 3-6 6-6l-2 7m2 3a6 6 0 1 1-12 0c0-3 2.7-5 6-5s6 2 6 5Zm-8 1h.01m4 0h.01M10 16h4" />
     ),
     previous: <path d="M5 5v14m14-13-9 6 9 6V6Z" />,
-    menu: <path d="M4 6h16M4 12h16M4 18h16" />,
+    menu: <path d="M4 4h6v6H4V4Zm10 0h6v6h-6V4ZM4 14h6v6H4v-6Zm10 0h6v6h-6v-6Z" />,
     add: <path d="M12 4v16M4 12h16" />,
     settings: (
       <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0-5v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4m0-12.8L17 7M7 17l-1.4 1.4" />

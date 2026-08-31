@@ -46,6 +46,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
+import ChipTransferModal from '../components/agent/ChipTransferModal';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
@@ -777,6 +778,21 @@ function RoleSection({
   const [funding, setFunding] = useState<'' | 'prepaid' | 'credit'>('');
   const [creditLimit, setCreditLimit] = useState('');
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // FUND THEM NOW?
+  // ───────────────────────────────────────────────────────────────────────────
+  // A promotion assigns the TERMS - commission, rakeback, prepaid or a credit
+  // line. It does not put a single chip in the agent wallet. A credit LIMIT is
+  // authorization, never an automatic transfer. The owner must deliberately
+  // send chips through the audited club-bank cashier when they want to fund the
+  // wallet; this prompt merely offers that separate action.
+  //
+  // Asked rather than done. Funding somebody is a transfer of chips and it is
+  // not implied by choosing their commission rate, so this offers the step and
+  // takes "Not Now" for an answer.
+  const [fundPrompt, setFundPrompt] = useState<{ role: ClubRole } | null>(null);
+  const [showFundModal, setShowFundModal] = useState(false);
+
   // CA-18 BUG FIX: the 1.2s "show success then refresh" timer was fire-and-forget.
   // If the user left the screen before 1.2s, the component unmounted and the
   // callback fired on a dead component tree.
@@ -946,6 +962,38 @@ function RoleSection({
         previousRole: targetRole,
       });
 
+      // An agent who has just been given terms and no chips is the state this
+      // phase exists to stop shipping quietly. Offer the funding step - but only
+      // when the wallet really is empty, so re-grading an agent who is already
+      // carrying float does not ask a question with an obvious answer.
+      if (isAgentRole(newRole)) {
+        let float_ = 0;
+        try {
+          const { data: agentRow, error: balanceError } = await supabase
+            .from('agents')
+            .select('agent_wallet_balance')
+            .eq('club_id', resolvedClubId)
+            .eq('user_id', targetUserId)
+            .maybeSingle();
+          // Bound and acted on rather than discarded. supabase-js returns the
+          // failure, it does not throw one, so an unbound `error` here would
+          // read a missing row and a denied read as the same thing: zero. That
+          // is the wrong direction to be silent in - "their wallet is empty" is
+          // exactly the claim this prompt makes to the person's face.
+          if (balanceError) throw balanceError;
+          float_ = Number(agentRow?.agent_wallet_balance ?? 0) || 0;
+        } catch (e) {
+          // A balance we cannot read is not a reason to withhold the offer, and
+          // not a reason to fail a promotion that already succeeded. Ask anyway:
+          // the transfer screen reads the real number itself.
+          reportError(e, 'MemberManagementPage.fundPromptBalance');
+        }
+        if (float_ <= 0) {
+          setFundPrompt({ role: newRole });
+          return; // The prompt owns what happens next, including the refresh.
+        }
+      }
+
       if (roleChangeTimerRef.current) clearTimeout(roleChangeTimerRef.current);
       roleChangeTimerRef.current = setTimeout(() => {
         roleChangeTimerRef.current = null;
@@ -969,7 +1017,38 @@ function RoleSection({
         </span>
       </div>
 
-      {rolesLoading ? (
+      {/* The offer. It takes the place of the role controls while it is up,
+          because the promotion is already done and the only question left is
+          whether to fund it now. */}
+      {fundPrompt ? (
+        <div className="mm-roles__fund">
+          <p className="mm-roles__fund-title">
+            {targetName} Is Now {roleLabel(fundPrompt.role)}
+          </p>
+          <p className="mm-roles__fund-note">
+            Their Agent Wallet Is Empty, So They Cannot Send Chips To Anybody Yet. Fund Them Now?
+          </p>
+          <div className="mm-roles__confirm-actions">
+            <button
+              type="button"
+              className="mm-roles__confirm-yes"
+              onClick={() => setShowFundModal(true)}
+            >
+              Send Chips
+            </button>
+            <button
+              type="button"
+              className="mm-roles__confirm-no"
+              onClick={() => {
+                setFundPrompt(null);
+                onRoleChanged();
+              }}
+            >
+              Not Now
+            </button>
+          </div>
+        </div>
+      ) : rolesLoading ? (
         <p className="mm-roles__note">Checking What You May Grant...</p>
       ) : !canManage ? (
         <p className="mm-roles__note">{noRolesReason}</p>
@@ -1130,6 +1209,26 @@ function RoleSection({
 
       {error && <p className="mm-roles__error">{error}</p>}
       {success && <p className="mm-roles__success">{success}</p>}
+
+      {/* The transfer screen itself, aimed at the person just promoted. It
+          reads the real balances and routes the send by role, so nothing about
+          the money is re-decided here. */}
+      {showFundModal && (
+        <ChipTransferModal
+          isOpen={showFundModal}
+          clubId={resolvedClubId}
+          recipientId={targetUserId}
+          onClose={() => {
+            setShowFundModal(false);
+            setFundPrompt(null);
+            onRoleChanged();
+          }}
+          onTransferComplete={() => {
+            toast.success(`${targetName} Has Been Funded.`);
+            masterBus.emit('AGENT_UPDATED', { clubId, agentId: targetUserId });
+          }}
+        />
+      )}
     </section>
   );
 }

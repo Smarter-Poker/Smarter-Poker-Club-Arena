@@ -128,4 +128,18 @@ describe('authenticated production account preflight', () => {
     expect(helper).toContain("locator('.club-home')");
     expect(helper).toContain("locator('.invite-pending')");
   });
+
+  it('keeps production lobby and mobile audits aligned with the shipped surfaces', () => {
+    const lobby = source('tests/e2e/club-lobby.spec.ts');
+    expect(lobby).toContain("if (kind === 'cash')");
+    expect(lobby).toContain("locator('.arena-game-card')");
+    expect(lobby).toContain('.lt-row[data-kind="cash"]');
+    expect(lobby).toContain("locator('.agc-action--primary')");
+
+    const mobile = source('tests/e2e/mobile-chrome-occlusion.spec.ts');
+    expect(mobile).toContain("const CLUB_ARENA_PATH = '/hub/club-arena'");
+    expect(mobile).toContain('routes outside Club Arena');
+    expect(mobile).toContain('el.closest(\'[aria-hidden="true"]\')');
+    expect(mobile).toContain("el.getAttribute('alt')");
+  });
 });

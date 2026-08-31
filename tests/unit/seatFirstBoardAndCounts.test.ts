@@ -80,9 +80,11 @@ describe('a listing only counts if a player could sit at it', () => {
     expect(repair).toBeLessThan(budget);
   });
 
-  it('will not treat a table-less seat-first game as covering its price point', () => {
+  it('will not treat a seat-first game without a joinable table as covering its price point', () => {
     expect(service).toMatch(/joinability read failed/);
-    expect(service).toMatch(/withTable\.has\(r\.id\)/);
+    expect(service).toMatch(/withJoinableTable\.has\(r\.id\)/);
+    expect(service).toContain(".select('tournament_id, status, is_deleted')");
+    expect(service).toContain('isJoinableTableRow');
   });
 });
 

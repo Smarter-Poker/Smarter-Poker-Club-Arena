@@ -31,6 +31,7 @@
 import { test, expect } from '@playwright/test';
 
 const CLUB = process.env.AUDIT_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+const CLUB_ARENA_PATH = '/hub/club-arena';
 
 /* The routes that carry the fixed bottom nav, plus a few plain ones so the
    top check has non-club coverage too. */
@@ -116,6 +117,15 @@ test('no chrome covers reachable content at 375px', async ({ page }) => {
       skipped.push(route);
       continue;
     }
+    const pathname = new URL(page.url()).pathname.replace(/\/$/, '');
+    if (pathname !== CLUB_ARENA_PATH && !pathname.startsWith(`${CLUB_ARENA_PATH}/`)) {
+      /* Some Club Arena links intentionally hand off to another World Hub
+         application (club Messages opens Messenger). That destination owns
+         its own chrome and has its own audits; measuring it against Club
+         Arena's fixed bottom-nav contract produces a cross-app false alarm. */
+      skipped.push(`${route}: routes outside Club Arena to ${pathname}`);
+      continue;
+    }
 
     const found = await page.evaluate(
       async ({ SLACK }) => {
@@ -146,14 +156,21 @@ test('no chrome covers reachable content at 375px', async ({ page }) => {
           const out: Array<{ el: Element; b: DOMRect }> = [];
           for (const el of root.querySelectorAll('*')) {
             if (el.children.length > 0) continue;
+            if (el.closest('[aria-hidden="true"]')) continue;
             const s = getComputedStyle(el);
             if (s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) continue;
             let b = el.getBoundingClientRect();
             if (b.width === 0 || b.height === 0) continue;
             if (b.right <= 0 || b.left >= vw) continue;
             const txt = (el.textContent || '').trim();
-            const pressable = ['IMG', 'INPUT', 'BUTTON', 'SVG', 'PATH'].includes(el.tagName);
-            if (!txt && !pressable) continue;
+            const pressable = Boolean(
+              el.closest(
+                'button,a[href],input,select,textarea,[role="button"],[role="link"],[role="checkbox"],[role="switch"],[tabindex]:not([tabindex="-1"])'
+              )
+            );
+            const meaningfulImage =
+              el.tagName === 'IMG' && Boolean((el.getAttribute('alt') || '').trim());
+            if (!txt && !pressable && !meaningfulImage) continue;
 
             /* MEASURE THE GLYPHS, NOT THE BOX. A text leaf inside a flex row
                stretches to the row's height by default, so its BOX can run

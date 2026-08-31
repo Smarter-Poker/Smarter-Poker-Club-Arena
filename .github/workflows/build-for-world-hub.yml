@@ -210,6 +210,22 @@ jobs:
           JSON
           cat dist/build-info.json
 
+      # Keep a machine-readable list of THIS build's immutable assets. The
+      # sync job uses the previous deployment's copy to retain exactly one
+      # prior generation: enough for cached HTML to finish loading during a
+      # rollout, without accumulating every historical 80MB bundle forever.
+      - name: Stamp current asset manifest
+        run: |
+          find dist/assets -type f -print \
+            | sed 's#^dist/##' \
+            | LC_ALL=C sort \
+            > dist/asset-manifest.txt
+          if [ ! -s dist/asset-manifest.txt ]; then
+            echo "::error::dist/assets is empty — refusing to publish an incomplete bundle."
+            exit 1
+          fi
+          echo "$(wc -l < dist/asset-manifest.txt) immutable assets recorded"
+
       # THE COURIER IS AN ARTIFACT, NOT A BRANCH (2026-08-23).
       #
       # This step used to force-push dist/ to an orphan branch
@@ -331,9 +347,42 @@ jobs:
 
       - name: Sync dist/ to World Hub public/hub/club-arena/
         run: |
+          target=world-hub/public/hub/club-arena
+          previous=$(mktemp -d)
+
+          # Snapshot only the files named by the deployed build's manifest.
+          # Any older compatibility generation already sitting beside them is
+          # intentionally not copied and therefore expires on this rollout.
+          if [ -f "$target/asset-manifest.txt" ]; then
+            while IFS= read -r asset; do
+              case "$asset" in
+                assets/*)
+                  case "/$asset/" in
+                    */../*|*/./*)
+                      echo "::error::Unsafe traversal in deployed asset-manifest.txt: $asset"
+                      exit 1
+                      ;;
+                  esac
+                  if [ -f "$target/$asset" ]; then
+                    mkdir -p "$previous/$(dirname "$asset")"
+                    cp -p "$target/$asset" "$previous/$asset"
+                  fi
+                  ;;
+                *)
+                  echo "::error::Unsafe path in deployed asset-manifest.txt: $asset"
+                  exit 1
+                  ;;
+              esac
+            done < "$target/asset-manifest.txt"
+          fi
+
           rsync -av --delete \
             club-arena-build/dist/ \
-            world-hub/public/hub/club-arena/
+            "$target/"
+
+          # New build wins on a hash collision; the prior generation only
+          # fills files no longer emitted by the current manifest.
+          rsync -av --ignore-existing "$previous/" "$target/"
 
       - name: Commit and push to World Hub
         # 2026-08-21: this step used to `git pull --rebase` on a rejected push

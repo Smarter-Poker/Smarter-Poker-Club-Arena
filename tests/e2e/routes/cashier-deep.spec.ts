@@ -60,20 +60,18 @@ test.describe('Cashier Page — Deep UX Tests', () => {
       await firstTab.focus();
 
       // Press ArrowRight to move to next tab
-      await page.keyboard.press('ArrowRight');
-      await page.waitForTimeout(200);
+      await firstTab.press('ArrowRight');
 
       // The second tab should now be focused and selected
       const secondTab = page.locator('[role="tab"]').nth(1);
-      const secondTabSelected = await secondTab.getAttribute('aria-selected');
-      expect(secondTabSelected).toBe('true');
+      await expect(secondTab).toHaveAttribute('aria-selected', 'true');
+      await expect(secondTab).toBeFocused();
 
       // Press ArrowLeft to go back
-      await page.keyboard.press('ArrowLeft');
-      await page.waitForTimeout(200);
+      await secondTab.press('ArrowLeft');
 
-      const firstTabSelected = await firstTab.getAttribute('aria-selected');
-      expect(firstTabSelected).toBe('true');
+      await expect(firstTab).toHaveAttribute('aria-selected', 'true');
+      await expect(firstTab).toBeFocused();
     }
   });
 

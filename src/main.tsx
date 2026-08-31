@@ -56,6 +56,22 @@ import SystemOffline from './core/SystemOffline';
 import { ErrorBoundary } from './components/common';
 import { reportError } from './utils/errorReporter';
 import { hasLocalSession } from './lib/authUtils';
+import {
+  clearChunkRecoveryState,
+  installVitePreloadErrorRecovery,
+  recoverFromStaleChunk,
+} from './utils/lazyWithRetry';
+
+// Install before any fire-and-forget dynamic import below. React routes have
+// lazyWithRetry; these boot services did not, so a cached index.html could ask
+// for a just-retired hash and leave a working page reporting a critical error.
+installVitePreloadErrorRecovery();
+
+function handleBootImportError(error: unknown, context: string): void {
+  void recoverFromStaleChunk(error).then((recovering) => {
+    if (!recovering) reportError(error, context);
+  });
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GLOBAL SAFETY NET — Catch unhandled promise rejections from service throws
@@ -111,8 +127,11 @@ if (bootStatus.antigravityOk) {
   // the real failure through the normal path.
   if (hasLocalSession()) {
     void import('./services/ClubsService')
-      .then(({ warmUserMemberships }) => warmUserMemberships())
-      .catch((err) => reportError(err, 'main.Membership_warm_start_non_blocking'));
+      .then(({ warmUserMemberships }) => {
+        clearChunkRecoveryState();
+        return warmUserMemberships();
+      })
+      .catch((err) => handleBootImportError(err, 'main.Membership_warm_start_non_blocking'));
   }
 
   // PHASE 4: Activation-funnel tracker (Phase 5.1.2b). Fire-and-forget;
@@ -120,8 +139,11 @@ if (bootStatus.antigravityOk) {
   // first_hand_played, first_session_of_30min. No-ops if VITE_POSTHOG_KEY
   // is unset. Never throws out — all handlers swallow their own errors.
   void import('./lib/funnelTracker')
-    .then(({ startFunnelTracker }) => startFunnelTracker())
-    .catch((err) => reportError(err, 'main.FunnelTracker_init_error_non_blocking'));
+    .then(({ startFunnelTracker }) => {
+      clearChunkRecoveryState();
+      return startFunnelTracker();
+    })
+    .catch((err) => handleBootImportError(err, 'main.FunnelTracker_init_error_non_blocking'));
 
   // RENDER IMMEDIATELY — don't wait for IdentityDNA's async getSession().
   // The app has AuthGuard, ErrorBoundary, Connection Watchdog, and Offline

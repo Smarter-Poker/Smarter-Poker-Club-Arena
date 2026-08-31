@@ -23,6 +23,7 @@ import { STORAGE_KEYS } from '../lib/storage';
 
 const RELOAD_KEY = STORAGE_KEYS.CHUNK_RELOAD;
 const MAX_RELOADS = 2; // Max full-page reloads before giving up
+let recoveryStarted = false;
 
 function getReloadCount(): number {
   try {
@@ -40,12 +41,33 @@ function incrementReloadCount(): void {
   }
 }
 
-function clearReloadCount(): void {
+export function clearChunkRecoveryState(): void {
   try {
     sessionStorage.removeItem(RELOAD_KEY);
   } catch {
     // sessionStorage unavailable
   }
+}
+
+/**
+ * Vite, Chromium and WebKit use different errors for the same stale-deploy
+ * condition. Keep one matcher for lazy routes, boot-time imports and Vite's
+ * `vite:preloadError` event so one path cannot silently regress behind the
+ * others.
+ */
+export function isChunkLoadError(error: unknown): boolean {
+  const candidate = error as { name?: string; message?: string } | null;
+  return (
+    candidate?.name === 'ChunkLoadError' ||
+    candidate?.message?.includes('Importing a module script failed') ||
+    candidate?.message?.includes('error loading dynamically imported module') ||
+    candidate?.message?.includes('Unable to preload CSS') ||
+    candidate?.message?.includes('dynamically imported module') ||
+    candidate?.message?.includes('Failed to fetch') ||
+    candidate?.message?.includes('Loading chunk') ||
+    candidate?.message?.includes('Loading CSS chunk') ||
+    false
+  );
 }
 
 /**
@@ -86,6 +108,39 @@ async function hardReload(): Promise<void> {
   }
 }
 
+/**
+ * Recover every dynamic import, including boot-time service imports that are
+ * not rendered through React.lazy(). The boolean tells a caller whether the
+ * error was recognized and recovery owns it; recognized errors are not sent
+ * to the console as product failures while the document is being replaced.
+ */
+export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {
+  if (!isChunkLoadError(error)) return false;
+  if (recoveryStarted) return true;
+  if (getReloadCount() >= MAX_RELOADS) return false;
+
+  recoveryStarted = true;
+  incrementReloadCount();
+  await hardReload();
+  return true;
+}
+
+/**
+ * Vite emits this before a failed preload rejects. Installing the listener at
+ * boot prevents its default uncaught-error path and gives the cache-busting
+ * recovery above ownership of the stale document.
+ */
+export function installVitePreloadErrorRecovery(): () => void {
+  const onPreloadError = (event: Event) => {
+    const payload = (event as Event & { payload?: unknown }).payload;
+    if (!isChunkLoadError(payload)) return;
+    event.preventDefault();
+    void recoverFromStaleChunk(payload);
+  };
+  window.addEventListener('vite:preloadError', onPreloadError);
+  return () => window.removeEventListener('vite:preloadError', onPreloadError);
+}
+
 export function lazyWithRetry<T extends ComponentType<any>>(
   importFn: () => Promise<{ default: T }>,
   retries = 3
@@ -95,7 +150,7 @@ export function lazyWithRetry<T extends ComponentType<any>>(
       try {
         const module = await importFn();
         // Success — clear any reload counter
-        clearReloadCount();
+        clearChunkRecoveryState();
         return module;
       } catch (error: any) {
         /* SAFARI PHRASES IT DIFFERENTLY, AND THAT IS THE WHOLE BUG (Dan,
@@ -105,15 +160,7 @@ export function lazyWithRetry<T extends ComponentType<any>>(
            the hard reload, and the app just showed its error card — which is
            why Register, Details and Join all died on the same screen while
            the desktop recovered silently. */
-        const isChunkError =
-          error?.name === 'ChunkLoadError' ||
-          error?.message?.includes('Importing a module script failed') ||
-          error?.message?.includes('error loading dynamically imported module') ||
-          error?.message?.includes('Unable to preload CSS') ||
-          error?.message?.includes('dynamically imported module') ||
-          error?.message?.includes('Failed to fetch') ||
-          error?.message?.includes('Loading chunk') ||
-          error?.message?.includes('Loading CSS chunk');
+        const isChunkError = isChunkLoadError(error);
 
         if (!isChunkError || attempt === retries - 1) {
           // Not a chunk error or final retry — try a full reload
@@ -121,8 +168,7 @@ export function lazyWithRetry<T extends ComponentType<any>>(
             console.warn(
               `[lazyWithRetry] Chunk load failed after ${retries} retries. Reloading page (attempt ${getReloadCount() + 1}/${MAX_RELOADS})...`
             );
-            incrementReloadCount();
-            void hardReload();
+            void recoverFromStaleChunk(error);
             // Return a never-resolving promise to prevent rendering during reload
             return new Promise<never>(() => {});
           }

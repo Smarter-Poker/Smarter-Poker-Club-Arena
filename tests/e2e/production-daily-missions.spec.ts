@@ -36,6 +36,20 @@ function isDailyMissionRevisionFrame(message: string | Buffer): boolean {
   }
 }
 
+function realtimeFrameDescriptor(message: string | Buffer): string {
+  try {
+    const frame = JSON.parse(typeof message === 'string' ? message : message.toString('utf8'));
+    const event = Array.isArray(frame) ? frame[3] : frame?.event;
+    const payload = Array.isArray(frame) ? frame[4] : frame?.payload;
+    const change = payload?.data ?? payload;
+    return [event || 'unknown', change?.schema, change?.table, change?.type]
+      .filter(Boolean)
+      .join(':');
+  } catch {
+    return 'non-json';
+  }
+}
+
 function exactQuery(select: string, column: string, value: string): URLSearchParams {
   return new URLSearchParams({ select, [column]: `eq.${value}` });
 }
@@ -170,9 +184,13 @@ test.describe('production Daily Missions certification', () => {
       });
       contexts.push(desktopContext);
       let blockedRevisionFrames = 0;
+      const observedRealtimeFrames = new Set<string>();
       await desktopContext.routeWebSocket(/\/realtime\/v1\/websocket/, (socket) => {
         const server = socket.connectToServer();
         server.onMessage((message) => {
+          if (observedRealtimeFrames.size < 30) {
+            observedRealtimeFrames.add(realtimeFrameDescriptor(message));
+          }
           if (isDailyMissionRevisionFrame(message)) {
             blockedRevisionFrames += 1;
             return;
@@ -385,7 +403,18 @@ test.describe('production Daily Missions certification', () => {
             timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
           })
           .toBeGreaterThan(revisionBefore);
-        await expect.poll(() => blockedRevisionFrames).toBeGreaterThan(0);
+        try {
+          await expect
+            .poll(() => blockedRevisionFrames, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT })
+            .toBeGreaterThan(0);
+        } catch (error) {
+          throw new Error(
+            `No Daily Mission revision frame crossed the routed socket. Observed: ${
+              [...observedRealtimeFrames].join(', ') || 'none'
+            }`,
+            { cause: error }
+          );
+        }
         const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
         await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
         expect(navigations).toBe(0);

@@ -177,10 +177,19 @@ jobs:
             git fetch --no-tags origin "$LIVE" --depth=1 2>/dev/null || true
           fi
           if git merge-base --is-ancestor "$LIVE" "$HERE" 2>/dev/null; then
-            git checkout "$LIVE" -- tests/e2e playwright.config.ts
+            # ASSERTIONS from the deployed commit; HARNESS from this one.
+            #
+            # Swapping tests/e2e wholesale would also drag global-setup.ts and
+            # its support/ helpers back to $LIVE - and $LIVE predates the
+            # E2E_REQUIRE_AUTH throw added in this very commit. The run would
+            # then silently regain the signed-out fallback it just lost, on
+            # exactly the runs where production is behind. A fix that disables
+            # itself under the condition it was written for is worse than none.
+            git checkout "$LIVE" -- tests/e2e
+            git checkout "$HERE" -- tests/e2e/global-setup.ts tests/e2e/support
             echo "specs=$LIVE" >> $GITHUB_OUTPUT
             echo "Production is serving \`$LIVE\`, an ancestor of this run's \`$HERE\`." >> $GITHUB_STEP_SUMMARY
-            echo "Specs and playwright.config.ts taken from \`$LIVE\` so the assertions match the bundle." >> $GITHUB_STEP_SUMMARY
+            echo "Specs taken from \`$LIVE\` so the assertions match the bundle; global-setup and support/ kept at \`$HERE\`." >> $GITHUB_STEP_SUMMARY
           else
             echo "specs=$HERE" >> $GITHUB_OUTPUT
             echo "::warning::deployed sha $LIVE is NOT an ancestor of $HERE - specs left at $HERE and may not match the bundle."
@@ -252,6 +261,7 @@ jobs:
           # run in. Without it the spec logs a report and passes regardless.
           MOBILE_FIT_STRICT: '1'
           E2E_REQUIRE_AUTH: '1'
+          LIVE_SHA: ${{ steps.live.outputs.sha }}
         # Every spec the css-beats gate cannot take, named explicitly for the
         # same reason that gate names its own: a spec not named in a job runs
         # in no job. If you add a spec that needs a login or a live URL, add it
@@ -273,14 +283,31 @@ jobs:
 
           # Certify Stats first among the broader route checks. Cashier has its
           # own preceding release gate so this suite cannot hide its verdict.
-          PLAYWRIGHT_JSON_OUTPUT_NAME=e2e-report/stats.json \
-          npx playwright test \
-            tests/e2e/stats-deep.spec.ts \
-            --project=chromium --reporter=line,json --retries=1
-          stats_rc=$?; [ $stats_rc -ne 0 ] && rc=$stats_rc
+          stats_rc=0
+          if [ -e tests/e2e/stats-deep.spec.ts ]; then
+            PLAYWRIGHT_JSON_OUTPUT_NAME=e2e-report/stats.json \
+            npx playwright test \
+              tests/e2e/stats-deep.spec.ts \
+              --project=chromium --reporter=line,json --retries=1
+            stats_rc=$?; [ $stats_rc -ne 0 ] && rc=$stats_rc
+          else
+            # Record WHY there is no report, rather than leaving a hole the
+            # honesty check would read either as "it did not run" (a false red)
+            # or, worse, as nothing at all.
+            echo "::warning::tests/e2e/stats-deep.spec.ts is not present at the deployed commit"
+            mkdir -p e2e-report
+            printf '{"notRunReason":"tests/e2e/stats-deep.spec.ts does not exist at the deployed commit %s"}\n' "$LIVE_SHA" > e2e-report/stats.json
+          fi
 
-          PLAYWRIGHT_JSON_OUTPUT_NAME=e2e-report/sweep.json \
-          npx playwright test \
+          # A spec added after the deployed commit is absent once the step
+          # above takes the specs from $LIVE. Playwright errors on a named path
+          # that does not exist, before running anything - turning a normal
+          # deploy lag back into the false red this job just stopped producing.
+          # Keep only what is present; the honesty check below still reports
+          # every file that ran and every file that verified nothing.
+          SWEEP=""
+          ABSENT=""
+          for f in \
             tests/e2e/smoke.spec.ts \
             tests/e2e/mobile-fit-audit.spec.ts \
             tests/e2e/mobile-tap-targets.spec.ts \
@@ -294,8 +321,21 @@ jobs:
             tests/e2e/production-customization-commerce.spec.ts \
             tests/e2e/footer-route.spec.ts \
             tests/e2e/routes \
-            --reporter=line,json --retries=1
-          sweep_rc=$?; [ $sweep_rc -ne 0 ] && rc=$sweep_rc
+          ; do
+            if [ -e "$f" ]; then SWEEP="$SWEEP $f"; else ABSENT="$ABSENT $f"; echo "::warning::$f is not present at the deployed commit - skipping it"; fi
+          done
+          echo "sweeping:$SWEEP"
+          [ -n "$ABSENT" ] && echo "absent at deployed commit:$ABSENT" >> $GITHUB_STEP_SUMMARY
+
+          sweep_rc=0
+          if [ -n "$SWEEP" ]; then
+            PLAYWRIGHT_JSON_OUTPUT_NAME=e2e-report/sweep.json \
+            npx playwright test $SWEEP --reporter=line,json --retries=1
+            sweep_rc=$?; [ $sweep_rc -ne 0 ] && rc=$sweep_rc
+          else
+            mkdir -p e2e-report
+            printf '{"notRunReason":"none of the swept spec files exist at the deployed commit"}\n' > e2e-report/sweep.json
+          fi
 
           echo "stats exit=$stats_rc  sweep exit=$sweep_rc"
           exit $rc

@@ -100,6 +100,22 @@ describe('the checker refuses a run that verified nothing', () => {
   it('counts a failed test as executed - a red run is honest, just red', () => {
     expect(check([spec('tests/e2e/a.spec.ts', ['failed'])])).toBe(0);
   });
+
+  it('accepts a stated notRunReason alongside a real report', () => {
+    // The workflow writes this when it decides not to invoke Playwright for a
+    // path at all, because the file does not exist at the deployed commit.
+    expect(
+      check([
+        { notRunReason: 'absent at the deployed commit' },
+        spec('tests/e2e/a.spec.ts', ['passed']),
+      ])
+    ).toBe(0);
+  });
+
+  it('refuses a run in which EVERY invocation was declined', () => {
+    // Reasons are not a verdict. If nothing was invoked, nothing was verified.
+    expect(check([{ notRunReason: 'absent' }, { notRunReason: 'absent' }])).toBe(1);
+  });
 });
 
 describe('the allowlist is a ratchet, not an escape hatch', () => {
@@ -152,6 +168,14 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
       ),
       'signedOut() must THROW under E2E_REQUIRE_AUTH, not merely log'
     ).toMatch(/E2E_REQUIRE_AUTH === '1'[\s\S]{0,200}throw new Error/);
+  });
+
+  it('does not let the spec swap silently restore the signed-out fallback', () => {
+    // Taking tests/e2e wholesale from the deployed commit would also take
+    // global-setup.ts back to before E2E_REQUIRE_AUTH existed - disabling the
+    // fix on precisely the runs it was written for.
+    const align = WORKFLOW.slice(WORKFLOW.indexOf('Take the specs from the commit'));
+    expect(align).toContain('git checkout "$HERE" -- tests/e2e/global-setup.ts tests/e2e/support');
   });
 
   it('never lets one red step hide the rest of the production sweep', () => {

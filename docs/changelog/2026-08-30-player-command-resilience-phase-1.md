@@ -33,15 +33,21 @@ club.
 
 - Focused roster, privacy, resolver, class-ownership, and resilience suites:
   72 tests passed.
-- Complete client regression suite: 9,696 tests passed across 667 files.
+- Complete client regression suite: 9,783 tests passed across 678 files.
+- Complete server regression suite: 2,892 tests passed across 254 files.
 - The complete-suite run exposed a newly landed fixed-byte source-window pin;
   its satellite payout guard now uses the shared structural source-window
   helper. The targeted server guard passes all 6 tests.
 - Client TypeScript check: passed.
 - Changed-file ESLint: passed.
-- Production build: passed with 2,530 modules transformed, 439 media assets
-  optimized, zero media failures, and build provenance stamped from a branch
-  reporting zero commits behind `origin/main`.
+- Production build: passed with 439 media assets optimized, zero media failures,
+  and build provenance stamped from a branch reporting zero commits behind
+  `origin/main`.
+- Bundle gate: passed at 320 kB gzipped initial load against the 320 kB limit;
+  roster resilience and strict route-resolution code load only with roster work.
+- Fire-and-forget activation telemetry now loads outside the render-critical
+  entry graph, protected by boot-source tests for dynamic loading and error
+  reporting.
 
 No database migration, money mutation, generated image, or game-engine behavior
 is part of this phase.

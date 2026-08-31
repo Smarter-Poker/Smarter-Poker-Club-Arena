@@ -702,7 +702,7 @@ export default function UnionDashboardPage() {
 
     if (
       !(await confirmDialog({
-        title: 'Distribute weekly rakeback',
+        title: 'Distribute Weekly Rakeback',
         message: `Pay each club its share of last week's rake (${label}) from the union wallet? This is idempotent - it can't pay the same week twice.`,
         confirmText: 'Distribute',
         variant: 'default',
@@ -1238,7 +1238,7 @@ export default function UnionDashboardPage() {
                       },
                       {
                         key: 'bbj',
-                        label: `BBJ Pool${bbjPool ? ` (${bbjPool.hit_count} hits)` : ''}`,
+                        label: `BBJ Pool${bbjPool ? ` (${bbjPool.hit_count} Hits)` : ''}`,
                         color: '#F7C52A',
                         value: bbjPool?.main_balance ?? 0,
                         detail: 'bbj',
@@ -2959,7 +2959,7 @@ export default function UnionDashboardPage() {
                                   onClick={async () => {
                                     if (
                                       !(await confirmDialog({
-                                        title: 'Remove admin',
+                                        title: 'Remove Admin',
                                         message: 'Remove this admin?',
                                         confirmText: 'Remove',
                                         variant: 'danger',

@@ -1447,7 +1447,7 @@ export default function PlayerStatsPage() {
         [
           { key: 'date', label: 'Started' },
           { key: 'ended', label: 'Ended' },
-          { key: 'duration_minutes', label: 'Duration (min)' },
+          { key: 'duration_minutes', label: 'Duration (Min)' },
           { key: 'hands', label: 'Hands' },
           { key: 'buy_in', label: 'Buy In' },
           { key: 'cash_out', label: 'Cash Out' },
@@ -1717,7 +1717,7 @@ export default function PlayerStatsPage() {
         {hasData && !overall.hands_capped && rangeKey !== 'all' && (
           <div className="stats-notice">
             {overall.total_hands.toLocaleString()} Hands In The Last{' '}
-            {RANGES.find((r) => r.key === rangeKey)?.label.toLowerCase()}.
+            {RANGES.find((r) => r.key === rangeKey)?.label}.
           </div>
         )}
         {/* Small samples: bb/100 swings wildly over a few hundred hands, and a

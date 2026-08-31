@@ -50,8 +50,8 @@ describe('ActionPanel - main panel ALL IN', () => {
     render(<ActionPanel {...baseProps} canRaise={false} confirmAllIn onAction={onAction} />);
     fireEvent.click(screen.getByLabelText('All In'));
     expect(screen.queryByText(/CONFIRM ALL-IN/i)).toBeNull();
-    expect(screen.queryByLabelText(/Confirm all in/i)).toBeNull();
-    expect(screen.queryByLabelText(/Cancel all in/i)).toBeNull();
+    expect(screen.queryByLabelText(/Confirm All In/i)).toBeNull();
+    expect(screen.queryByLabelText(/Cancel All In/i)).toBeNull();
   });
 
   it('sends the real all-in amount, not the pot cap', () => {
@@ -77,7 +77,7 @@ describe('ActionPanel - bet-sizing panel ALL IN', () => {
     const onAction = vi.fn();
     render(<ActionPanel {...baseProps} canRaise confirmAllIn onAction={onAction} />);
     fireEvent.click(screen.getByLabelText('Open Raise Panel'));
-    // 2026-08-20: the label now carries the amount ("Bet All In for 500"),
+    // 2026-08-20: the label now carries the amount ("Bet All In For 500"),
     // because in pot-limit the shove and the pot cap are different numbers and
     // a screen reader was told neither. Match on the prefix.
     fireEvent.click(screen.getByLabelText(/^Bet All In/));

@@ -109,7 +109,7 @@ const CASH_FEATURES: FeatureOption[] = [
      suffix, so the chip never matched the table it names. */
   { key: 'seven_deuce', label: 'Seven-Deuce', match: ['seven_deuce_enabled'] },
   { key: 'time_bank', label: 'Time Bank', match: ['time_bank_enabled'] },
-  { key: 'all_in_or_fold', label: 'All-in or Fold', match: ['all_in_or_fold'] },
+  { key: 'all_in_or_fold', label: 'All-In Or Fold', match: ['all_in_or_fold'] },
 ];
 
 /**

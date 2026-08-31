@@ -188,6 +188,7 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
       );
     }
     expect(WORKFLOW).toContain('--reporter=line,json');
+    expect(WORKFLOW).toContain('--output="test-results/$output_dir"');
     expect(WORKFLOW, 'a line-only reporter leaves the honesty check nothing to read').not.toMatch(
       /--reporter=line\s+--retries/
     );

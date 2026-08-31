@@ -285,7 +285,7 @@ export default function RealTimeResultPanel({
     return [
       { label: 'Game Name', value: gameName || '-' },
       { label: 'Game ID', value: tableId ? gameIdFor(tableId) : '-' },
-      { label: 'Table creation', value: created ? stamp(created) : '-' },
+      { label: 'Table Creation', value: created ? stamp(created) : '-' },
       { label: 'Running Time', value: created ? hhmmss(now - created) : '-' },
       { label: 'Extension Time', value: extension },
       { label: 'Table', value: meta?.variant || '-' },

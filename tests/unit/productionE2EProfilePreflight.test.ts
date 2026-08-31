@@ -142,6 +142,8 @@ describe('authenticated production account preflight', () => {
 
     const mobile = source('tests/e2e/mobile-chrome-occlusion.spec.ts');
     expect(mobile).toContain("const CLUB_ARENA_PATH = '/hub/club-arena'");
+    expect(mobile).toContain('evaluateAcrossDocumentReplacement');
+    expect(mobile).toContain('execution context was destroyed');
     expect(mobile).toContain('routes outside Club Arena');
     expect(mobile).toContain('el.closest(\'[aria-hidden="true"]\')');
     expect(mobile).toContain("el.getAttribute('alt')");

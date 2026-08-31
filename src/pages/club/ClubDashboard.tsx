@@ -1612,12 +1612,12 @@ export default function ClubDashboard() {
                   }}
                 >
                   {[
-                    { label: 'Rake collected', value: formatChips(revenue.totals.rake) },
-                    { label: 'Bad beat drop', value: formatChips(revenue.totals.bbj) },
-                    { label: 'Hands dealt', value: formatInt(revenue.totals.hands) },
-                    { label: 'Rake per hand', value: formatChips(revenue.totals.rake_per_hand) },
-                    { label: 'Average pot', value: formatChips(revenue.totals.avg_pot) },
-                    { label: 'Total pots', value: formatChips(revenue.totals.pot_total) },
+                    { label: 'Rake Collected', value: formatChips(revenue.totals.rake) },
+                    { label: 'Bad Beat Drop', value: formatChips(revenue.totals.bbj) },
+                    { label: 'Hands Dealt', value: formatInt(revenue.totals.hands) },
+                    { label: 'Rake Per Hand', value: formatChips(revenue.totals.rake_per_hand) },
+                    { label: 'Average Pot', value: formatChips(revenue.totals.avg_pot) },
+                    { label: 'Total Pots', value: formatChips(revenue.totals.pot_total) },
                     // INSURANCE P&L 2026-08-27 (Dan): net = premiums - payouts
                     // over the window. The bank suffix says whose profit it is
                     // - a union-affiliated club's insurance settles to the
@@ -1627,12 +1627,12 @@ export default function ClubDashboard() {
                           {
                             label:
                               revenue.insurance.bank === 'union'
-                                ? 'Insurance net (to union)'
-                                : 'Insurance net (club bank)',
+                                ? 'Insurance Net (To Union)'
+                                : 'Insurance Net (Club Bank)',
                             value: formatChips(revenue.insurance.net),
                           },
                           {
-                            label: 'Insurance premiums / payouts',
+                            label: 'Insurance Premiums / Payouts',
                             value: `${formatChips(revenue.insurance.premiums)} / ${formatChips(revenue.insurance.payouts)}`,
                           },
                         ]

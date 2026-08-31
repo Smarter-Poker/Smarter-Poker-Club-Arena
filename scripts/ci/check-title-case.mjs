@@ -1,115 +1,32 @@
 #!/usr/bin/env node
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  check-title-case — the first letter of every word, on every forward-facing page
- * ═══════════════════════════════════════════════════════════════════════════════
+ * check-title-case - every static player-facing word starts with a capital
  *
- * Dan 2026-08-21: "First letter of every word is capitalized, that's a hard rule
- * for all forward facing pages."
+ * Dan 2026-08-21: "First letter of every word is capitalized, that's a hard
+ * rule for all forward facing pages."
+ * Dan 2026-08-31: the rule covers every page and subpage, including accessible
+ * names, placeholders, tooltips and conditional copy.
  *
- * The rule already existed for popups (src/utils/popupStyle.ts applies it to
- * every toast at render). Pages were left to remember it by hand, and 1,282
- * pieces of copy across 300 files did not. A rule a person has to remember is a
- * rule that decays, so this makes it mechanical.
+ * The TypeScript parser keeps this safe. It identifies actual render nodes and
+ * known copy-bearing fields instead of treating every quoted value as prose.
+ * Routes, URLs, emails, translation keys, comments, style/script bodies and
+ * dynamic server-fed values are deliberately left alone.
  *
- * WHY THE TYPESCRIPT PARSER AND NOT A REGEX
- *
- * The obvious implementation - find text between `>` and `<` - also matches
- * TypeScript generics (`Array<string>`), comparisons (`a > b`) and fragments of
- * ternaries (`) : loading ? (`). "Fixing" one of those renames an identifier and
- * breaks the build, or worse, compiles and changes behaviour. Asking the
- * compiler for JSX nodes is exact: it lets the gate distinguish rendered copy
- * from identifiers, routes, CSS values, and other non-visual strings.
- *
- * WHAT IT ALSO CHECKS
- *   - literal copy rendered from JSX expressions, including ternary branches
- *   - visible and accessible JSX attributes such as labels, placeholders,
- *     titles, descriptions, alt text, and aria-labels
- *
- * WHAT IT DOES NOT TOUCH
- *   - runtime values inside expressions; those must use titleCase at their
- *     source (or formatPopupText for toasts)
- *   - words already shouting (VIP, BBJ, LIVE), which are acronyms or emphasis
- *   - tokens that start with a digit (6max, 3rd, 2x): the letters are a suffix
- *   - HTML entities (&nbsp; &rsquo;)
- *   - comments, which never reach a player
- *
- * Run:  node scripts/ci/check-title-case.mjs [--fix]
+ * Run: node scripts/ci/check-title-case.mjs [--fix]
  */
 
-import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { extname, join, resolve } from 'node:path';
+import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import ts from 'typescript';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
-const SRC = join(ROOT, 'src');
+const SRC = process.env.TITLE_CASE_SOURCE_DIR
+  ? resolve(process.env.TITLE_CASE_SOURCE_DIR)
+  : join(ROOT, 'src');
 const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 'test-results']);
+const COPY_REGISTRY_FILES = new Set(['src/i18n/index.ts']);
 
-/** Initialisms that are shouted, not Title Cased. Mirrors src/utils/titleCase.ts. */
-const ACRONYMS = new Set([
-  'nlh',
-  'nlhe',
-  'plo',
-  'plo4',
-  'plo5',
-  'plo6',
-  'plo8',
-  'flh',
-  'flo',
-  'ofc',
-  'nl',
-  'pl',
-  'fl',
-  'sng',
-  'mtt',
-  'xmtt',
-  'pko',
-  'ko',
-  'gtd',
-  'hu',
-  'wsop',
-  'bbj',
-  'vip',
-  'id',
-  'utg',
-  'sb',
-  'bb',
-  'btn',
-  'co',
-  'mp',
-  'hj',
-  'lj',
-  'rit',
-  'gto',
-  'ev',
-  'roi',
-  'itm',
-  'usd',
-  'kyc',
-  'tos',
-  'faq',
-  'api',
-  'url',
-  'pc',
-  'ios',
-  'os',
-  'ui',
-  'ux',
-  'qr',
-  'sms',
-  'otp',
-  '2fa',
-]);
-
-const fix = process.argv.includes('--fix');
-
-/**
- * Native display/accessibility attributes plus the explicit presentation props
- * used by Club Arena components. Keeping this list semantic avoids touching
- * route, query, class, and data-key props while still covering copy that a
- * component paints on behalf of its caller.
- */
-const UI_ATTRIBUTES = new Set([
+const UI_ATTRIBUTE_NAMES = new Set([
   'alt',
   'aria-description',
   'aria-label',
@@ -118,15 +35,52 @@ const UI_ATTRIBUTES = new Set([
   'emptyLabel',
   'emptyMessage',
   'errorMessage',
+  'eyebrow',
   'helperText',
   'hint',
   'label',
   'loadingLabel',
   'placeholder',
+  'statusText',
+  'subtitle',
   'successMessage',
   'title',
   'tooltip',
 ]);
+
+const UI_PROPERTY_NAMES = new Set([
+  'caption',
+  'description',
+  'emptyLabel',
+  'emptyMessage',
+  'errorMessage',
+  'eyebrow',
+  'helperText',
+  'hint',
+  'label',
+  'loadingLabel',
+  'placeholder',
+  'statusText',
+  'subtitle',
+  'successMessage',
+  'title',
+  'tooltip',
+]);
+
+/** Initialisms that are shouted, not Title Cased. Mirrors src/utils/titleCase.ts. */
+const ACRONYMS = new Set([
+  'nlh', 'nlhe', 'plo', 'plo4', 'plo5', 'plo6', 'plo8', 'flh', 'flo', 'ofc',
+  'nl', 'pl', 'fl', 'sng', 'mtt', 'xmtt', 'pko', 'ko', 'gtd', 'hu', 'wsop',
+  'bbj', 'vip', 'id', 'utg', 'sb', 'bb', 'btn', 'co', 'mp', 'hj', 'lj',
+  'rit', 'gto', 'ev', 'roi', 'itm', 'usd', 'kyc', 'tos', 'faq', 'api', 'url',
+  'pc', 'ios', 'os', 'ui', 'ux', 'qr', 'sms', 'otp', '2fa',
+]);
+
+const PLURAL_OR_UNIT_FRAGMENTS = new Set([
+  's', 'es', 'ies', 'y', 'st', 'nd', 'rd', 'th', 'x', 'm', 'h',
+]);
+
+const fix = process.argv.includes('--fix');
 
 function walk(dir, acc = []) {
   for (const entry of readdirSync(dir)) {
@@ -134,34 +88,22 @@ function walk(dir, acc = []) {
     const full = join(dir, entry);
     const st = statSync(full);
     if (st.isDirectory()) walk(full, acc);
-    else if (extname(entry) === '.tsx') acc.push(full);
+    else if (extname(entry) === '.tsx' || extname(entry) === '.ts') acc.push(full);
   }
   return acc;
 }
 
-/**
- * Capitalise the first letter of every word.
- *
- * Interior capitals are preserved so camel-case product names and proper nouns
- * survive. Hyphen and slash compounds are cased on both sides, because "add-on"
- * and "win/loss" read as two words.
- */
+/** Capitalize every word while preserving acronyms and numeric suffix tokens. */
 export function titleCaseText(text) {
-  const trimmed = text.trim();
-  // Machine-readable examples are not prose. Re-casing them can make a URL,
-  // route, email address, or stable key misleading (and sometimes invalid).
-  if (
-    /^\S+:\/\/\S+$/.test(trimmed) ||
-    /^\S+@\S+\.\S+$/.test(trimmed) ||
-    /^\/\S+$/.test(trimmed) ||
-    /^[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+$/.test(trimmed)
-  ) {
-    return text;
-  }
-  return text.replace(/[A-Za-z][A-Za-z0-9'’]*/g, (word, offset, whole) => {
-    // Inside an HTML entity (&nbsp;) - leave it alone.
+  return text.replace(/[A-Za-z0-9][A-Za-z0-9'’]*/g, (word, offset, whole) => {
     const before = whole.slice(Math.max(0, offset - 1), offset);
-    if (before === '&' || before === '\\' || /[0-9]/.test(before)) return word;
+    if (before === '&') return word;
+    if (
+      whole.slice(Math.max(0, offset - 2), offset) === '{{' &&
+      whole.slice(offset + word.length, offset + word.length + 2) === '}}'
+    ) {
+      return word;
+    }
     if (/^[0-9]/.test(word)) return word;
     const lower = word.toLowerCase();
     if (before === '(' && (lower === 's' || lower === 'es')) return lower;
@@ -171,187 +113,207 @@ export function titleCaseText(text) {
   });
 }
 
-/**
- * Every statically identifiable rendered text range in a TSX file, as
- * {start, end, text, suffix, prefix}. This includes JSX text, native visual and
- * accessibility attributes, direct expression literals, and template-literal
- * fragments. Word-boundary flags protect unit/plural fragments such as
- * `{seconds}s` and `match${count === 1 ? '' : 'es'}`.
- */
-function jsxTextNodes(file, source) {
-  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const out = [];
+function propertyName(node) {
+  if (ts.isIdentifier(node) || ts.isStringLiteral(node)) return node.text;
+  return '';
+}
 
-  const addTextRange = (start, end, suffix = false, prefix = false) => {
-    const text = source.slice(start, end);
-    // Empty strings and one-character word suffixes are not standalone copy.
-    if (!/[A-Za-z]/.test(text) || /^[A-Za-z]$/.test(text)) return;
-    out.push({ start, end, text, suffix, prefix });
+function isMachineString(text) {
+  const value = text.trim();
+  if (!/[A-Za-z]/.test(value)) return true;
+  if (/^(?:\\u[0-9a-f]{4}|\\x[0-9a-f]{2})+$/i.test(value)) return true;
+  if (/^(?:https?:\/\/|\/|\.\/|\.\.\/)/i.test(value)) return true;
+  if (/\S+@\S+\.\S+/.test(value)) return true;
+  if (/^[a-z0-9]+(?:_[a-z0-9]+)+$/.test(value)) return true;
+  // Translation keys, event names and dotted identifiers are not prose.
+  if (/^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*)+$/.test(value)) return true;
+  return false;
+}
+
+function isInsideStyleOrScript(node, sf) {
+  let current = node.parent;
+  while (current) {
+    if (ts.isJsxElement(current)) {
+      const tag = current.openingElement.tagName.getText(sf).toLowerCase();
+      return tag === 'style' || tag === 'script';
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
+function staticStringLeaves(node, out = []) {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+    out.push(node);
+    return out;
+  }
+  if (ts.isParenthesizedExpression(node)) {
+    return staticStringLeaves(node.expression, out);
+  }
+  if (ts.isConditionalExpression(node)) {
+    staticStringLeaves(node.whenTrue, out);
+    staticStringLeaves(node.whenFalse, out);
+    return out;
+  }
+  if (
+    ts.isBinaryExpression(node) &&
+    [
+      ts.SyntaxKind.AmpersandAmpersandToken,
+      ts.SyntaxKind.BarBarToken,
+      ts.SyntaxKind.QuestionQuestionToken,
+    ].includes(node.operatorToken.kind)
+  ) {
+    staticStringLeaves(node.left, out);
+    staticStringLeaves(node.right, out);
+  }
+  return out;
+}
+
+function isPluralOrUnitExpression(node) {
+  const leaves = staticStringLeaves(node);
+  return (
+    leaves.length > 0 &&
+    leaves.every((leaf) => {
+      const value = leaf.text.trim().toLowerCase();
+      return value === '' || PLURAL_OR_UNIT_FRAGMENTS.has(value);
+    })
+  );
+}
+
+function stringChange(node, source, sf, context) {
+  const text = node.text;
+  if (isMachineString(text)) return null;
+  const cased = titleCaseText(text);
+  if (cased === text) return null;
+
+  const nodeStart = node.getStart(sf);
+  const nodeEnd = node.getEnd();
+  const raw = source.slice(nodeStart, nodeEnd);
+  const quote = raw[0];
+  if (!['"', "'", '`'].includes(quote) || raw.at(-1) !== quote) {
+    return { start: nodeStart, end: nodeEnd, text, cased, context, replaceable: false };
+  }
+
+  return {
+    start: nodeStart + 1,
+    end: nodeEnd - 1,
+    text,
+    cased,
+    context,
+    // Do not destroy escape sequences during an automatic rewrite.
+    replaceable: raw.slice(1, -1) === text,
   };
+}
 
-  const addLiteral = (node, suffix = false, prefix = false) => {
-    if (!ts.isStringLiteral(node) && !ts.isNoSubstitutionTemplateLiteral(node)) return;
-    addTextRange(node.getStart(sf) + 1, node.getEnd() - 1, suffix, prefix);
+function templateSegmentChange(node, source, sf, context, index, total) {
+  const text = node.text;
+  if (isMachineString(text)) return null;
+
+  let cased = titleCaseText(text);
+  // A segment touching an interpolation may be a unit/plural fragment:
+  // `${seconds}s`, `${count} players`, or `Lvl${level}`.
+  if (index > 0 && /^[A-Za-z]/.test(text)) {
+    const match = text.match(/^[A-Za-z][A-Za-z0-9'’]*/);
+    if (match) cased = match[0] + titleCaseText(text.slice(match[0].length));
+  }
+  if (index < total - 1 && /[A-Za-z]$/.test(text) && !/\s/.test(text)) {
+    const match = text.match(/[A-Za-z][A-Za-z0-9'’]*$/);
+    if (match) cased = cased.slice(0, cased.length - match[0].length) + match[0];
+  }
+  if (cased === text) return null;
+
+  const nodeStart = node.getStart(sf);
+  const nodeEnd = node.getEnd();
+  const raw = source.slice(nodeStart, nodeEnd);
+  const isHead = ts.isTemplateHead(node);
+  const isTail = ts.isTemplateTail(node);
+  const start = nodeStart + 1;
+  const end = nodeEnd - (isTail ? 1 : 2);
+  const rawText = raw.slice(1, isTail ? -1 : -2);
+  return {
+    start,
+    end,
+    text,
+    cased,
+    context,
+    replaceable: (isHead || ts.isTemplateMiddle(node) || isTail) && rawText === text,
   };
+}
 
-  const addTemplate = (node, suffix = false, prefix = false) => {
-    const headStart = node.head.getStart(sf) + 1;
-    const headEnd = node.head.getEnd() - 2;
-    const headText = source.slice(headStart, headEnd);
-    addTextRange(headStart, headEnd, suffix, /[A-Za-z]$/.test(headText));
-
-    node.templateSpans.forEach((span, index) => {
-      const literal = span.literal;
-      const isTail = ts.isTemplateTail(literal);
-      const start = literal.getStart(sf) + 1;
-      const end = literal.getEnd() - (isTail ? 1 : 2);
-      const text = source.slice(start, end);
-      const previousLiteral = index === 0 ? node.head : node.templateSpans[index - 1].literal;
-      const previousStart = previousLiteral.getStart(sf) + 1;
-      const previousEnd = previousLiteral.getEnd() - 2;
-      const previousText = source.slice(previousStart, previousEnd);
-      // A template interpolation may itself return copy, for example
-      // `${hasMenu ? ', hold to choose a wallet' : ''}`. Preserve true suffix
-      // fragments such as `match${count === 1 ? '' : 'es'}`.
-      collectRenderedLiterals(
-        span.expression,
-        /[A-Za-z]$/.test(previousText),
-        /^[A-Za-z]/.test(text)
-      );
-      addTextRange(start, end, /^[A-Za-z]/.test(text), isTail ? prefix : /[A-Za-z]$/.test(text));
+function copyValueChanges(node, source, sf, context, out = []) {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+    const change = stringChange(node, source, sf, context);
+    if (change) out.push(change);
+    return out;
+  }
+  if (ts.isTemplateExpression(node)) {
+    const segments = [node.head, ...node.templateSpans.map((span) => span.literal)];
+    segments.forEach((segment, index) => {
+      const change = templateSegmentChange(segment, source, sf, context, index, segments.length);
+      if (change) out.push(change);
     });
-  };
-
-  /**
-   * Collect only literals that an expression can return directly into JSX.
-   * Do not descend into calls or arbitrary object data: those may be routes,
-   * CSS classes, IDs, or query values rather than copy.
-   */
-  const collectRenderedLiterals = (node, suffix = false, prefix = false) => {
-    if (!node) return;
-    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-      addLiteral(node, suffix, prefix);
-      return;
-    }
-    if (ts.isTemplateExpression(node)) {
-      addTemplate(node, suffix, prefix);
-      return;
-    }
-    if (ts.isParenthesizedExpression(node)) {
-      collectRenderedLiterals(node.expression, suffix, prefix);
-      return;
-    }
-    if (ts.isConditionalExpression(node)) {
-      collectRenderedLiterals(node.whenTrue, suffix, prefix);
-      collectRenderedLiterals(node.whenFalse, suffix, prefix);
-      return;
-    }
-    if (ts.isBinaryExpression(node)) {
-      const operator = node.operatorToken.kind;
-      if (operator === ts.SyntaxKind.AmpersandAmpersandToken) {
-        // The left side is a condition; only the right side can paint.
-        collectRenderedLiterals(node.right, suffix, prefix);
-      } else if (
-        operator === ts.SyntaxKind.BarBarToken ||
-        operator === ts.SyntaxKind.QuestionQuestionToken ||
-        operator === ts.SyntaxKind.PlusToken
-      ) {
-        collectRenderedLiterals(node.left, suffix, prefix);
-        collectRenderedLiterals(node.right, suffix, prefix);
+    for (const span of node.templateSpans) {
+      if (!isPluralOrUnitExpression(span.expression)) {
+        copyValueChanges(span.expression, source, sf, context, out);
       }
     }
-  };
+    return out;
+  }
+  if (ts.isParenthesizedExpression(node)) {
+    return copyValueChanges(node.expression, source, sf, context, out);
+  }
+  if (ts.isConditionalExpression(node)) {
+    copyValueChanges(node.whenTrue, source, sf, context, out);
+    copyValueChanges(node.whenFalse, source, sf, context, out);
+    return out;
+  }
+  if (
+    ts.isBinaryExpression(node) &&
+    [
+      ts.SyntaxKind.AmpersandAmpersandToken,
+      ts.SyntaxKind.BarBarToken,
+      ts.SyntaxKind.QuestionQuestionToken,
+    ].includes(node.operatorToken.kind)
+  ) {
+    copyValueChanges(node.left, source, sf, context, out);
+    copyValueChanges(node.right, source, sf, context, out);
+  }
+  return out;
+}
 
-  const expressionWordEdges = (node) => {
-    const parent = node.parent;
-    if (!parent?.children) return { suffix: false, prefix: false };
-    const index = parent.children.indexOf(node);
-    const previous = index > 0 ? parent.children[index - 1] : undefined;
-    const next =
-      index >= 0 && index < parent.children.length - 1 ? parent.children[index + 1] : undefined;
-    const previousText =
-      previous && ts.isJsxText(previous) ? source.slice(previous.pos, previous.end) : '';
-    const nextText = next && ts.isJsxText(next) ? source.slice(next.pos, next.end) : '';
-    return {
-      suffix:
-        (!!previous && ts.isJsxExpression(previous)) ||
-        /[A-Za-z]$/.test(previousText) ||
-        (/\n[\t ]*$/.test(previousText) && /[A-Za-z]$/.test(previousText.trimEnd())),
-      prefix:
-        (!!next && ts.isJsxExpression(next)) ||
-        /^[A-Za-z]/.test(nextText) ||
-        (/^[\t ]*\n/.test(nextText) && /^[A-Za-z]/.test(nextText.trimStart())),
-    };
-  };
-  /**
-   * True when this text node CONTINUES a word that an expression started, i.e.
-   * `{seconds}s`, `{multiplier}x`, `{minutes}m`. The letter is a unit suffix,
-   * not a word: capitalising it renders "30S", "2X", "Games" as "GameS". The
-   * tell is that the text begins with a letter, with no space, and the node
-   * immediately before it is an expression container.
-   */
+/** Every literal JSX text node, with word-prefix/suffix guards. */
+function jsxTextNodes(source, sf) {
+  const out = [];
+
   const continuesAWord = (node) => {
     const parent = node.parent;
     if (!parent || !parent.children) return false;
-    const i = parent.children.indexOf(node);
-    if (i <= 0) return false;
-    const prev = parent.children[i - 1];
-    return !!prev && ts.isJsxExpression(prev);
+    const index = parent.children.indexOf(node);
+    return index > 0 && ts.isJsxExpression(parent.children[index - 1]);
   };
 
-  /**
-   * The mirror of continuesAWord: this text node STARTS a word that an
-   * expression finishes, i.e. `x{count}` in a truncated chip stack. The letter
-   * is a multiplier or unit PREFIX, not a word, and "X1,234" is not a chip
-   * count anybody writes.
-   *
-   * Same tell, reversed: the text ends with a letter, with no space after it,
-   * and the node immediately following is an expression container. Found by
-   * this gate on 2026-08-23 blocking three files (ChipPhysics, ChipStack,
-   * PotDisplay) that all render the identical `x{count.toLocaleString()}`.
-   */
   const precedesAnExpression = (node) => {
     const parent = node.parent;
     if (!parent || !parent.children) return false;
-    const i = parent.children.indexOf(node);
-    if (i < 0 || i >= parent.children.length - 1) return false;
-    const next = parent.children[i + 1];
-    return !!next && ts.isJsxExpression(next);
+    const index = parent.children.indexOf(node);
+    return index >= 0 && index < parent.children.length - 1 &&
+      ts.isJsxExpression(parent.children[index + 1]);
   };
 
   const visit = (node) => {
-    if (node.kind === ts.SyntaxKind.JsxText) {
-      // node.pos, NOT getStart(). getStart() skips leading trivia, and for
-      // JsxText the leading WHITESPACE is trivia - so "{amount} chips" arrived
-      // here as "chips" with the space invisible, the suffix guard below fired,
-      // and a perfectly ordinary word was left lowercase. pos keeps the space,
-      // which is the only thing that distinguishes "{n} chips" from "{n}s".
+    if (ts.isJsxText(node) && !isInsideStyleOrScript(node, sf)) {
       const start = node.pos;
       const end = node.end;
       const text = source.slice(start, end);
-      if (/[A-Za-z]/.test(text)) {
-        const suffix = /^[A-Za-z]/.test(text) && continuesAWord(node);
-        const prefix = /[A-Za-z]$/.test(text) && precedesAnExpression(node);
-        out.push({ start, end, text, suffix, prefix });
-      }
-    } else if (ts.isJsxAttribute(node)) {
-      const name = node.name.getText(sf);
-      if (UI_ATTRIBUTES.has(name) && node.initializer) {
-        if (ts.isStringLiteral(node.initializer)) addLiteral(node.initializer);
-        else if (ts.isJsxExpression(node.initializer)) {
-          collectRenderedLiterals(node.initializer.expression);
-        }
-      }
-    } else if (
-      ts.isJsxExpression(node) &&
-      (ts.isJsxElement(node.parent) || ts.isJsxFragment(node.parent))
-    ) {
-      const parentTag = ts.isJsxElement(node.parent)
-        ? node.parent.openingElement.tagName.getText(sf).toLowerCase()
-        : '';
-      if (parentTag !== 'style' && parentTag !== 'script') {
-        const { suffix, prefix } = expressionWordEdges(node);
-        collectRenderedLiterals(node.expression, suffix, prefix);
+      if (/[A-Za-z]/.test(text) && !isMachineString(text)) {
+        out.push({
+          start,
+          end,
+          text,
+          suffix: /^[A-Za-z]/.test(text) && continuesAWord(node),
+          prefix: /[A-Za-z]$/.test(text) && precedesAnExpression(node),
+          context: 'JSX text',
+        });
       }
     }
     node.forEachChild(visit);
@@ -360,20 +322,90 @@ function jsxTextNodes(file, source) {
   return out;
 }
 
+function staticCopyChanges(source, sf, file) {
+  const changes = [];
+  const seen = new Set();
+
+  const add = (change) => {
+    if (!change) return;
+    const key = `${change.start}:${change.end}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    changes.push(change);
+  };
+
+  const visit = (node) => {
+    if (
+      COPY_REGISTRY_FILES.has(file.replace(ROOT, '')) &&
+      (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
+      ts.isPropertyAssignment(node.parent) &&
+      node.parent.initializer === node
+    ) {
+      add(stringChange(node, source, sf, 'copy registry'));
+    }
+
+    if (ts.isJsxAttribute(node)) {
+      const name = node.name.getText(sf);
+      if (UI_ATTRIBUTE_NAMES.has(name) && node.initializer) {
+        if (ts.isStringLiteral(node.initializer)) {
+          add(stringChange(node.initializer, source, sf, `attribute ${name}`));
+        } else if (ts.isJsxExpression(node.initializer) && node.initializer.expression) {
+          for (const change of copyValueChanges(
+            node.initializer.expression,
+            source,
+            sf,
+            `attribute ${name}`
+          )) {
+            add(change);
+          }
+        }
+      }
+    }
+
+    if (
+      ts.isJsxExpression(node) &&
+      node.expression &&
+      (ts.isJsxElement(node.parent) || ts.isJsxFragment(node.parent)) &&
+      !isInsideStyleOrScript(node, sf) &&
+      !isPluralOrUnitExpression(node.expression)
+    ) {
+      for (const change of copyValueChanges(node.expression, source, sf, 'render expression')) {
+        add(change);
+      }
+    }
+
+    if (ts.isPropertyAssignment(node) && UI_PROPERTY_NAMES.has(propertyName(node.name))) {
+      for (const change of copyValueChanges(
+        node.initializer,
+        source,
+        sf,
+        `property ${propertyName(node.name)}`
+      )) {
+        add(change);
+      }
+    }
+
+    node.forEachChild(visit);
+  };
+
+  visit(sf);
+  return changes;
+}
+
 /** Static copy that ships before React: metadata and the fatal boot fallback. */
 function indexHtmlTextNodes(source) {
-  const scannable = source.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
+  const scannable = source.replace(/<!--[\s\S]*?-->/g, (match) => match.replace(/[^\n]/g, ' '));
   const out = [];
   const addGroup = (match, group) => {
-    if (!group || !/[A-Za-z]/.test(group)) return;
+    if (!group || !/[A-Za-z]/.test(group) || isMachineString(group)) return;
     const withinMatch = match[0].indexOf(group);
     if (withinMatch < 0) return;
     out.push({
       start: match.index + withinMatch,
       end: match.index + withinMatch + group.length,
       text: group,
-      suffix: false,
-      prefix: false,
+      cased: titleCaseText(group),
+      context: 'index metadata',
     });
   };
 
@@ -383,8 +415,7 @@ function indexHtmlTextNodes(source) {
 
   const staticElementCopy = /<(title|h1|p|button)\b[^>]*>([^<]*)<\/\1>/gi;
   for (const match of scannable.matchAll(staticElementCopy)) addGroup(match, match[2]);
-
-  return out;
+  return out.filter((change) => change.cased !== change.text);
 }
 
 const offenders = [];
@@ -393,65 +424,76 @@ let fixedFiles = 0;
 
 for (const file of walk(SRC)) {
   const original = readFileSync(file, 'utf8');
-  if (!original.includes('<')) continue;
-
-  let nodes;
+  let sf;
   try {
-    nodes = jsxTextNodes(file, original);
+    sf = ts.createSourceFile(
+      file,
+      original,
+      ts.ScriptTarget.Latest,
+      true,
+      file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+    );
   } catch {
-    continue; // a file the parser cannot read is not this gate's problem
+    continue;
   }
 
   const changes = [];
-  for (const n of nodes) {
-    let cased;
-    if (n.suffix) {
-      // Leave the suffix word alone, case the rest of the node.
-      const m = n.text.match(/^[A-Za-z][A-Za-z0-9'’]*/);
-      const head = m ? m[0] : '';
-      cased = head + titleCaseText(n.text.slice(head.length));
-    } else {
-      cased = titleCaseText(n.text);
+  if (file.endsWith('.tsx')) {
+    for (const node of jsxTextNodes(original, sf)) {
+      let cased;
+      if (node.suffix) {
+        const match = node.text.match(/^[A-Za-z][A-Za-z0-9'’]*/);
+        const head = match ? match[0] : '';
+        cased = head + titleCaseText(node.text.slice(head.length));
+      } else {
+        cased = titleCaseText(node.text);
+      }
+      if (node.prefix) {
+        const match = node.text.match(/[A-Za-z][A-Za-z0-9'’]*$/);
+        if (match) cased = cased.slice(0, cased.length - match[0].length) + match[0];
+      }
+      if (cased !== node.text) changes.push({ ...node, cased });
     }
-    if (n.prefix) {
-      // Leave the trailing prefix-word alone, keep the casing of the rest.
-      // `x{count}` stays `x`; "Buy In x{n}" keeps "Buy In" cased and its x.
-      const m = n.text.match(/[A-Za-z][A-Za-z0-9'’]*$/);
-      if (m) cased = cased.slice(0, cased.length - m[0].length) + m[0];
-    }
-    if (cased !== n.text) changes.push({ ...n, cased });
   }
-  if (changes.length === 0) continue;
+  changes.push(...staticCopyChanges(original, sf, file));
+
+  const uniqueChanges = [
+    ...new Map(changes.map((change) => [`${change.start}:${change.end}`, change])).values(),
+  ].sort((a, b) => a.start - b.start);
+  if (uniqueChanges.length === 0) continue;
 
   if (fix) {
     let out = original;
-    // Back to front, so earlier offsets stay valid.
-    for (let i = changes.length - 1; i >= 0; i--) {
-      const c = changes[i];
-      out = out.slice(0, c.start) + c.cased + out.slice(c.end);
+    let applied = 0;
+    for (let index = uniqueChanges.length - 1; index >= 0; index--) {
+      const change = uniqueChanges[index];
+      if (change.replaceable === false) continue;
+      out = out.slice(0, change.start) + change.cased + out.slice(change.end);
+      applied++;
     }
-    writeFileSync(file, out, 'utf8');
-    fixedNodes += changes.length;
-    fixedFiles++;
+    if (out !== original) {
+      writeFileSync(file, out, 'utf8');
+      fixedNodes += applied;
+      fixedFiles++;
+    }
   } else {
-    for (const c of changes) {
-      const line = original.slice(0, c.start).split('\n').length;
-      offenders.push(`${file.replace(ROOT, '')}:${line}: ${c.text.trim().slice(0, 90)}`);
+    for (const change of uniqueChanges) {
+      const line = original.slice(0, change.start).split('\n').length;
+      offenders.push(
+        `${file.replace(ROOT, '')}:${line}: [${change.context}] ${change.text.trim().slice(0, 90)}`
+      );
     }
   }
 }
 
 const indexFile = join(ROOT, 'index.html');
 const indexOriginal = readFileSync(indexFile, 'utf8');
-const indexChanges = indexHtmlTextNodes(indexOriginal)
-  .map((node) => ({ ...node, cased: titleCaseText(node.text) }))
-  .filter((node) => node.cased !== node.text);
-
+const indexChanges = indexHtmlTextNodes(indexOriginal);
 if (indexChanges.length > 0) {
   if (fix) {
     let out = indexOriginal;
-    for (let i = indexChanges.length - 1; i >= 0; i--) {
-      const change = indexChanges[i];
+    for (let index = indexChanges.length - 1; index >= 0; index--) {
+      const change = indexChanges[index];
       out = out.slice(0, change.start) + change.cased + out.slice(change.end);
     }
     writeFileSync(indexFile, out, 'utf8');
@@ -460,24 +502,24 @@ if (indexChanges.length > 0) {
   } else {
     for (const change of indexChanges) {
       const line = indexOriginal.slice(0, change.start).split('\n').length;
-      offenders.push(`index.html:${line}: ${change.text.trim().slice(0, 90)}`);
+      offenders.push(`index.html:${line}: [${change.context}] ${change.text.trim().slice(0, 90)}`);
     }
   }
 }
 
 if (fix) {
-  console.log(`check-title-case: fixed ${fixedNodes} text node(s) across ${fixedFiles} file(s).`);
+  console.log(`check-title-case: fixed ${fixedNodes} copy node(s) across ${fixedFiles} file(s).`);
   process.exit(0);
 }
 
 if (offenders.length > 0) {
   console.error('\ncheck-title-case FAILED: page copy is not Title Cased.\n');
-  console.error('Dan 2026-08-21: the first letter of every word is capitalized on every');
-  console.error('forward-facing page. Run: node scripts/ci/check-title-case.mjs --fix\n');
-  offenders.slice(0, 60).forEach((o) => console.error('  ' + o));
+  console.error('The first letter of every word must be capitalized on every forward-facing page.');
+  console.error('Run: node scripts/ci/check-title-case.mjs --fix\n');
+  offenders.slice(0, 60).forEach((offender) => console.error('  ' + offender));
   if (offenders.length > 60) console.error(`  ... and ${offenders.length - 60} more`);
   console.error('');
   process.exit(1);
 }
 
-console.log('check-title-case: OK - every word on every page starts with a capital.');
+console.log('check-title-case: OK - every static word on every page starts with a capital.');

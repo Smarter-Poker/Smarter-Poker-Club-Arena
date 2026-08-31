@@ -621,7 +621,7 @@ describe('ClubDataPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
     await screen.findByText('Table Regular');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Biggest losers' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Biggest Losers' }));
 
     await waitFor(() =>
       expect(rpcMock).toHaveBeenCalledWith(

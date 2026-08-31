@@ -31,6 +31,7 @@ describe('Daily Missions production certification', () => {
       'claim_daily_challenges',
       'Preference On, Device Disconnected',
       'Mission Network Unavailable',
+      'firstRerollButton',
       'document.documentElement.scrollWidth',
       "dailyTab.press('ArrowRight')",
     ]) {
@@ -81,10 +82,15 @@ describe('Daily Missions production certification', () => {
     expect(page).toContain("import { createPortal } from 'react-dom'");
     expect(page).toContain('document.body');
     const pageObject = source('tests/e2e/support/DailyMissionsPage.ts');
+    const spec = source('tests/e2e/production-daily-missions.spec.ts');
     expect(pageObject).toContain('placeControlInSafeViewport');
     expect(pageObject).toContain("block: 'center'");
     expect(pageObject).toContain("getByRole('navigation', { name: 'Club Arena' })");
     expect(pageObject).toContain('sp_firstrun_notif_v2_${userId}');
+    expect(pageObject).toContain('authenticatedUserId !== account.id');
+    expect(pageObject).toContain("for (const tier of ['Daily', 'Weekly', 'Monthly'] as const)");
+    expect(pageObject).toContain('/^Reroll .+ For 10 Diamonds$/');
+    expect(spec).toContain('/^Confirm Reroll For /');
   });
 
   it('keeps every mission control above the fixed Club Arena footer', () => {

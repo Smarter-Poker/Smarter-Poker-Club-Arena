@@ -261,13 +261,22 @@ describe('the profile region shows the complete live profile picture', () => {
 });
 
 describe('VIP membership state without header shimmer', () => {
-  it('dims non-members, outlines active VIP, and keeps every header control free of shimmer effects', () => {
+  it('dims non-members while keeping active VIP and every header control free of selector boxes and shimmer', () => {
     expect(TSX_CODE).toContain('isVipActive');
     expect(TSX).toContain("data-vip-active={isVipActive ? 'true' : 'false'}");
     expect(CSS).toContain('.vipBtn:not(.vipActive)::after');
-    expect(CSS).toContain('.vipActive');
-    expect(CSS).toContain('rgba(255, 255, 255, 0.92)');
+    expect(CSS).not.toMatch(/\.vipActive\s*\{/);
+    expect(CSS).not.toContain('rgba(255, 255, 255, 0.92)');
     expect(TSX_CODE).not.toMatch(/shimmer/i);
     expect(CSS).not.toMatch(/shimmer/i);
+  });
+});
+
+describe('compact unread badges preserve the mobile notification bell', () => {
+  it('moves the readable count beyond the bell artwork right edge', () => {
+    expect(CSS).toContain('@media (max-width: 900px)');
+    expect(CSS).toContain('right: -2px');
+    expect(CSS).toContain('min-width: clamp(12px, 1.7vw, 18px)');
+    expect(CSS).toContain('font-size: clamp(7px, 1vw, 10px)');
   });
 });

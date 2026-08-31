@@ -307,6 +307,15 @@ interface TournamentData {
 type GameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
 type SortKey = 'recommended' | 'stakes_high' | 'stakes_low' | 'players' | 'starting_soon';
 type TournVariant = 'ALL' | 'MTT' | 'Spin-It' | 'SN';
+type AllStatusFilter = 'ALL' | 'RUNNING' | 'OPEN_REGISTRATION' | 'LATE_REG' | 'STARTING_SOON';
+
+const ALL_STATUS_FILTERS: ReadonlyArray<{ key: AllStatusFilter; label: string }> = [
+  { key: 'ALL', label: 'All' },
+  { key: 'RUNNING', label: 'Running' },
+  { key: 'OPEN_REGISTRATION', label: 'Open Registration' },
+  { key: 'LATE_REG', label: 'Late Reg' },
+  { key: 'STARTING_SOON', label: 'Starting Soon' },
+];
 /* The CashSubFilter / TournamentSubFilter types went with the state they
    described (see the note further down). Status is one mechanism now:
    GameFilterValue.statuses, defined per game type in advancedFilterSpec. */
@@ -658,6 +667,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      single visit. All Games is the landing view of a dense lobby. */
   const [gameType, setGameType] = useState<GameType>('ALL');
   const [sortKey, setSortKey] = useState<SortKey>('starting_soon');
+  const [allStatusFilter, setAllStatusFilter] = useState<AllStatusFilter>('ALL');
   /* `sortOpen` used to live here. It was assigned false in three places,
      never assigned true, and read nowhere - the exact dead wiring the comment
      below says had already been removed once. */
@@ -2627,6 +2637,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     const rows = tables.filter((table) => {
       if (gameType !== 'ALL' && cashKind(table) !== gameType) return false;
 
+      if (gameType === 'ALL' && allStatusFilter !== 'ALL') {
+        const status = String(table.status).toUpperCase();
+        if (allStatusFilter !== 'RUNNING' || !['RUNNING', 'IN_PROGRESS'].includes(status)) {
+          return false;
+        }
+      }
+
       if (advSpec && advValue) {
         /* ONE decision function for both halves of the lobby - see
            rowPassesFilter. Applying the fields inline here is what let games,
@@ -2704,7 +2721,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           (a, b) => cmpVariant(a, b) || cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b)
         );
     }
-  }, [tables, gameType, showsCash, sortKey, advFilters]);
+  }, [tables, gameType, showsCash, sortKey, advFilters, allStatusFilter]);
 
   /**
    * Is the lobby showing less than everything, and why.
@@ -2717,14 +2734,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const narrowing = useMemo(() => {
     const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
     const fVal = advFilters[gameType as FilterGameType];
-    const filtered = Boolean(fSpec && fVal && isFilterActive(fSpec, fVal));
+    const allStatusFiltered = gameType === 'ALL' && allStatusFilter !== 'ALL';
+    const filtered = allStatusFiltered || Boolean(fSpec && fVal && isFilterActive(fSpec, fVal));
     return {
       fSpec,
       filtered,
       tabbed: gameType !== 'ALL',
       any: filtered || gameType !== 'ALL' || favoritesOnly,
     };
-  }, [gameType, advFilters, favoritesOnly]);
+  }, [gameType, advFilters, favoritesOnly, allStatusFilter]);
 
   /**
    * Clear EVERY narrowing at once.
@@ -2742,6 +2760,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
        visit, which reads as the button not having worked. */
     selectFavoritesOnly(false);
     selectGameType('ALL');
+    setAllStatusFilter('ALL');
     if (narrowing.fSpec) {
       const next: FilterStore = {
         ...advFilters,
@@ -2849,6 +2868,16 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (!isWithinLobbyWindow(t, windowNow)) return false;
       if (!matchesVariant(t, variant)) return false;
 
+      if (gameType === 'ALL' && allStatusFilter !== 'ALL') {
+        const status = String(t.status).toUpperCase();
+        const matchesAllStatus =
+          (allStatusFilter === 'RUNNING' && ['RUNNING', 'IN_PROGRESS'].includes(status)) ||
+          (allStatusFilter === 'OPEN_REGISTRATION' && status === 'REGISTERING') ||
+          (allStatusFilter === 'LATE_REG' && ['LATE_REG', 'LATE_REGISTRATION'].includes(status)) ||
+          (allStatusFilter === 'STARTING_SOON' && status === 'STARTING_SOON');
+        if (!matchesAllStatus) return false;
+      }
+
       if (advSpec && advValue) {
         // The tournament price is the TOTAL a player pays, not the prize half.
         const total = (Number(t.buy_in_amount) || 0) + (Number(t.buy_in_fee) || 0);
@@ -2915,7 +2944,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             cmpNameTourn(a, b)
         );
     }
-  }, [tournaments, gameType, showsTournaments, sortKey, advFilters]);
+  }, [tournaments, gameType, showsTournaments, sortKey, advFilters, allStatusFilter]);
 
   /**
    * Tables this player already holds an active place in the queue for.
@@ -4594,7 +4623,26 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           two can never disagree, and the icon on the right opens that sheet
           for everything the row has no space for.
       ═══════════════════════════════════════════════════════════════════ */}
-              {gameType !== 'ALL' &&
+              {gameType === 'ALL' ? (
+                <div className="quickprefs">
+                  <div className="quickprefs__row quickprefs__row--status" aria-label="Game Status">
+                    {ALL_STATUS_FILTERS.map((status) => (
+                      <button
+                        key={status.key}
+                        type="button"
+                        className={`quickprefs__chip ${allStatusFilter === status.key ? 'is-on' : ''}`}
+                        aria-pressed={allStatusFilter === status.key}
+                        onClick={() => {
+                          haptic.selection();
+                          setAllStatusFilter(status.key);
+                        }}
+                      >
+                        {status.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
                 (() => {
                   const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
                   if (!qSpec) return null;
@@ -4674,7 +4722,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       </div>
                     </div>
                   );
-                })()}
+                })()
+              )}
             </section>
           }
           campaign={
@@ -4699,7 +4748,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           }
         />
 
-        {noticeEditable && (
+        {noticeEditable && totalGameCount === 0 && (
           <ClubLaunchProgress
             clubName={club.name}
             openingBank={Number(club.chip_treasury) || 0}

@@ -30,6 +30,12 @@ import {
   DEFAULT_MAX_SEATS,
 } from '../../src/config/tableSeating';
 import { canRunAsTournament, buildTournamentConfig } from '../../src/lib/tournamentFromTableConfig';
+// The server's own copy of the deck arithmetic. The two modules cannot share a
+// file (server/tsconfig.json sets rootDir './src'), but the root vitest config
+// can import both — it already aliases @sentry/node so client suites can reach
+// server services — so the two copies can at least be pinned against each
+// other here instead of being trusted to agree.
+import { maxSeatsFor as serverMaxSeatsTheDeckAllows } from '../../server/src/engine/VariantRules';
 
 describe('1. hole cards are looked up, not guessed from the spelling', () => {
   it('gives flo8 four cards like every other Omaha', () => {
@@ -178,6 +184,50 @@ describe('2b. a tournament is bound by the DECK, never by the cash seat cap', ()
     for (const v of ['nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'short_deck']) {
       const cfg = buildTournamentConfig(form(), v);
       expect(remainderAfterDeal(v, cfg.tableSize as number)).toBeGreaterThanOrEqual(5);
+    }
+  });
+});
+
+describe('2c. the client and the server agree on what the deck allows', () => {
+  /**
+   * 2026-08-31. `maxSeatsTheDeckAllows` (client) and `maxSeatsFor` (server) are
+   * the same formula, floor((deck - 5) / holeCards), written twice because the
+   * browser bundle cannot import from server/. Until today the SERVER path did
+   * not use its copy at all: both tournament managers reached for
+   * `clampSeatsForVariant`, the CASH seat law, whose own header says it may
+   * never be applied to a table with a tournament_id. That is exactly the shape
+   * of bug a parity test catches, and there was no parity test.
+   *
+   * `scripts/ci/check-seat-law-parity.mjs` pins the CASH law across the two
+   * config modules. This pins the DECK ceiling across the two engines.
+   */
+  it('returns the same seat ceiling for every variant either side knows', () => {
+    for (const v of [
+      'nlh',
+      'flh',
+      'short_deck',
+      'pineapple',
+      'plo4',
+      'plo5',
+      'plo6',
+      'plo8',
+      'flo8',
+    ]) {
+      expect(serverMaxSeatsTheDeckAllows(v), v).toBe(maxSeatsTheDeckAllows(v));
+    }
+  });
+
+  it('agrees on the numbers a tournament is actually sized by', () => {
+    expect(maxSeatsTheDeckAllows('plo6')).toBe(7);
+    expect(maxSeatsTheDeckAllows('plo5')).toBe(9);
+    expect(maxSeatsTheDeckAllows('plo4')).toBe(11);
+    expect(maxSeatsTheDeckAllows('nlh')).toBe(23);
+    expect(maxSeatsTheDeckAllows('short_deck')).toBe(15);
+  });
+
+  it('is looser than the cash cap everywhere, which is why tournaments use it', () => {
+    for (const v of ['nlh', 'flh', 'plo4', 'plo5', 'plo6', 'plo8', 'flo8', 'short_deck']) {
+      expect(maxSeatsTheDeckAllows(v), v).toBeGreaterThanOrEqual(maxSeatsForVariant(v));
     }
   });
 });

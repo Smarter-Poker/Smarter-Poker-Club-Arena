@@ -290,6 +290,8 @@ export class GameServer {
   private lastRakeAttributionRepairAt = 0;
   /** Last fn_backpay_spin_unpaid_winners pass (2026-08-28 spin deep dive). */
   private lastSpinBackpayAt = 0;
+  /** Last fn_spin_expire_unfilled pass (2026-08-31 phase 2 review). */
+  private lastSpinExpireAt = 0;
   /** Last fn_requeue_unbanked_fees pass (2026-08-28 rake re-drive). */
   private lastFeeRequeueAt = 0;
   /** Last fn_pay_backed_payout_shortfalls pass (2026-08-28 backed payouts). */
@@ -3361,6 +3363,47 @@ export class GameServer {
             }
           } catch (sbpEx) {
             reportError(sbpEx, 'GameServer.spin_backpay_threw');
+          }
+        }
+
+        /* ── UNFILLED-SPIN REFUND, ON THE ENGINE'S OWN CLOCK (2026-08-31) ──
+         * A Spin is seat-first: you pay when you sit. Nothing bounded the
+         * wait for the third seat, so a game that never filled held every
+         * seated player's chips indefinitely - worst observed 76,648s, 21
+         * hours. fn_spin_expire_unfilled cancels those through
+         * atomic_cancel_tournament, which refunds; it never touches a
+         * full-but-unstarted game, and the timeout is a config row
+         * (spin_fill_policy, 0 disables).
+         *
+         * IT ALSO RUNS FROM THE WORLD HUB SWEEP, AND THAT IS DELIBERATE
+         * DUPLICATION. The RPC is idempotent - it only ever acts on games
+         * that are still open, unstarted and past the policy - so two callers
+         * cost nothing and either one alone is sufficient. Verified on the
+         * day this shipped: /api/cron/spin-sweep had not fired for 37 minutes
+         * on a fifteen-minute schedule while the engine's own timers kept perfect time.
+         * Money owed back to a player must not wait on the least reliable
+         * clock available; this is the same reasoning as the back-pay above,
+         * whose comment says a repair gated on another job's clock runs at
+         * boot and then effectively never. */
+        if (Date.now() - this.lastSpinExpireAt > 10 * 60 * 1000) {
+          this.lastSpinExpireAt = Date.now();
+          try {
+            const { data: exp, error: expErr } = await supabase.rpc('fn_spin_expire_unfilled', {
+              p_limit: 50,
+            });
+            if (expErr) {
+              reportError(
+                new Error(`[GameServer] unfilled-spin expiry failed: ${expErr.message}`),
+                'GameServer.spin_expire_unfilled_failed'
+              );
+            } else if (Number(exp?.expired) > 0) {
+              console.log(
+                `[GameServer] Unfilled-spin expiry: ${exp.expired} game(s) cancelled and refunded, ` +
+                  `~${exp.chips_refunded_estimate} chips returned (timeout ${exp.timeout_minutes}m)`
+              );
+            }
+          } catch (expEx) {
+            reportError(expEx, 'GameServer.spin_expire_unfilled_threw');
           }
         }
 

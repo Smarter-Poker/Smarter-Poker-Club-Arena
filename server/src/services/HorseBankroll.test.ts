@@ -18,6 +18,8 @@ import {
   isBroke,
   sessionVerdict,
   bestAffordableGame,
+  topUpAllowance,
+  canOpenAnotherTable,
 } from './HorseBankroll.js';
 
 const G_1_2 = { bigBlind: 2, minBuyIn: 80, maxBuyIn: 400 };
@@ -188,5 +190,69 @@ describe('the ladder as a whole', () => {
       (b) => bestAffordableGame(b, LADDER, std)?.bigBlind ?? null
     );
     expect(seq).toEqual([5, 2, null, null]);
+  });
+});
+
+describe('TOP-UP DISCIPLINE — the reload was the leak', () => {
+  const std = bankrollPolicyFor(
+    ['x1', 'x2', 'x3', 'x4', 'x5'].find((i) => bankrollTemperamentFor(i) === 'standard')!
+  );
+  const base = { refBuyIn: 200, minBuyIn: 80, maxBuyIn: 400, policy: std };
+
+  it('a healthy roll reloads normally', () => {
+    const got = topUpAllowance({ bankroll: 20_000, investedThisTable: 200, desired: 120, ...base });
+    expect(got).toBe(120);
+  });
+
+  it('a horse already down its stop-loss does NOT reload — it leaves', () => {
+    const got = topUpAllowance({
+      bankroll: 20_000,
+      investedThisTable: 200 * std.stopLossBuyIns,
+      desired: 120,
+      ...base,
+    });
+    expect(got).toBe(0);
+  });
+
+  it('reloads cannot walk past the single-buy-in share one step at a time', () => {
+    // 5% of 10,000 = 500 exposure cap; 450 already sunk leaves 50 of headroom
+    const got = topUpAllowance({ bankroll: 10_000, investedThisTable: 450, desired: 200, ...base });
+    expect(got).toBeLessThanOrEqual(50);
+  });
+
+  it('a reload that would drop the horse under its own sit bar is refused', () => {
+    // 5,100 covers 1/2 at 25 buy-ins (5,000) with 100 to spare. A 200 reload
+    // would leave 4,900 — under the bar — so it must not happen.
+    const got = topUpAllowance({ bankroll: 5100, investedThisTable: 100, desired: 200, ...base });
+    expect(got).toBe(0);
+  });
+
+  it('never reloads on an empty roll', () => {
+    expect(topUpAllowance({ bankroll: 0, investedThisTable: 0, desired: 100, ...base })).toBe(0);
+  });
+});
+
+describe('AGGREGATE EXPOSURE — four tables is not four independent decisions', () => {
+  const std = bankrollPolicyFor(
+    ['x1', 'x2', 'x3', 'x4', 'x5'].find((i) => bankrollTemperamentFor(i) === 'standard')!
+  );
+
+  it('the first table opens', () => {
+    expect(
+      canOpenAnotherTable({ bankroll: 10_000, liveExposure: 0, nextBuyIn: 200, policy: std })
+    ).toBe(true);
+  });
+
+  it('a fourth table is refused once the ceiling is reached', () => {
+    // ceiling = 10,000 * 5% * 3 = 1,500
+    expect(
+      canOpenAnotherTable({ bankroll: 10_000, liveExposure: 1400, nextBuyIn: 200, policy: std })
+    ).toBe(false);
+  });
+
+  it('the ceiling scales with the roll — a big bankroll multi-tables freely', () => {
+    expect(
+      canOpenAnotherTable({ bankroll: 100_000, liveExposure: 1400, nextBuyIn: 200, policy: std })
+    ).toBe(true);
   });
 });

@@ -133,11 +133,32 @@ Two documents disagree with the API and are wrong. Believe the API.
   server-side any more". That was true when it was written and is not true
   now.
 
-THE ONE REAL GAP, and it is a live one: `ci.yml` gates `unit`, `server` and
-`build` behind the `changes` job, and A RULESET COUNTS A SKIPPED REQUIRED CHECK
-AS SATISFIED. Those jobs already fail closed when `changes` cannot determine
-the diff - read the comments on them before touching that logic. `typecheck`
-and `stub_gate` are deliberately ungated for the same reason.
+THE SKIPPED-CHECK GAP: CLOSED, and this paragraph is the correction (verified
+against ci.yml and the live API 2026-08-31). `ci.yml` gates `unit`, `server`
+and `build` behind the `changes` job, and A RULESET COUNTS A SKIPPED REQUIRED
+CHECK AS SATISFIED - so the shape of the danger is real and worth knowing. But
+all three jobs now carry
+
+    always() && github.event_name == 'pull_request' &&
+    (needs.changes.result != 'success' || ...)
+
+so an undetermined diff RUNS them rather than skipping them, and `changes`
+itself fails open: three retries, then "run everything" if the file list is
+still unavailable, and any change to package.json / vite / vitest / tsconfig /
+.npmrc / .nvmrc / ci.yml is treated as touching everything. `typecheck` and
+`stub_gate` are ungated entirely.
+
+This text used to say the gap was live. It was describing the 2026-08-23
+incident, which the `always()` guards above were added to fix - the words
+outlived the bug and told every agent since that CI could not be trusted. The
+remaining skips are the correct kind: `changes` succeeded and said, truthfully,
+that server/\*\* was not touched.
+
+One latent hole in that machinery WAS still open and is now closed too: the
+changed-file call asked for `per_page=300`, and the GitHub API caps per_page at
+100 silently, so a pull request over 100 files would have been classified on a
+truncated list. It uses `--paginate` now. No pull request here has exceeded 19
+files, so nothing was ever misclassified in practice.
 
 WHY, because the old path caused three separate incidents in one day:
 

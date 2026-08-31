@@ -90,9 +90,23 @@ jobs:
           # branch on an infrastructure hiccup. A path filter is an
           # OPTIMISATION - when it cannot tell what changed, the safe answer is
           # to run everything, never to fail the build.
+          # PAGINATION (Dan 2026-08-31). This asked for per_page=300, and the
+          # GitHub REST API caps per_page at 100 - silently. It does not error,
+          # it returns the first 100 filenames. A pull request touching more
+          # than 100 files would therefore be classified on a truncated list,
+          # and a change to server/** sitting at position 101 would report
+          # server=false. The Server Engine job would then be SKIPPED, and a
+          # ruleset counts a skipped required check as SATISFIED - the exact
+          # silent-green failure the fail-open logic above exists to prevent,
+          # arriving through the door next to it.
+          #
+          # No pull request in this repo has come close to 100 files yet (the
+          # largest of the last 60 is 19), so this is a latent hole rather than
+          # a live one. --paginate walks every page, so it is closed whether or
+          # not that day arrives.
           FILES=""
           for attempt in 1 2 3; do
-            if FILES=$(gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename'); then
+            if FILES=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename'); then
               break
             fi
             echo "::warning::could not list changed files (attempt $attempt) - retrying"
@@ -312,6 +326,19 @@ jobs:
       # (loaded / mounted / routed somewhere real), not rule contents.
       - name: Monitoring Invariant — every alert rule is loaded, mounted, and routed
         run: node scripts/ci/check-monitoring-drift.mjs
+
+      # Dan 2026-08-31. A test that reads source as TEXT and matches a regex
+      # cannot tell that the line is reached or that the objects arriving there
+      # satisfy it. The stale-seat prune sat broken for days under exactly such
+      # a pin, which matched the predicate and passed while it did nothing.
+      #
+      # RATCHET, not a cliff: five files already pin a src/utils module by text
+      # and this fails only when a SIXTH appears. Those five are somebody
+      # else's work to migrate; blocking the repo on them would be the cure
+      # being worse. The inventory line prints on every run so the number stays
+      # visible.
+      - name: Test Quality — no NEW text-only pin on a pure src/utils module
+        run: node scripts/ci/report-source-grep-tests.mjs --ratchet
 
       - name: Report Typecheck Time
         if: always()

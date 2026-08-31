@@ -249,3 +249,81 @@ export function bestAffordableGame(
   }
   return null;
 }
+
+/**
+ * TOP-UP DISCIPLINE (2026-08-31).
+ *
+ * Reloading a short stack is the single easiest way to lose a bankroll, and
+ * it was the one path that ignored the roll entirely: the session rotator
+ * topped a horse back to a full buy-in every cycle it fell under 45%, funded
+ * from the wallet, with no reference to what the wallet could stand.
+ *
+ * A top-up is a fresh commitment of chips to a table where the horse is
+ * ALREADY losing, so it is held to a stricter test than the original seat:
+ *
+ *  - the roll must still cover the stake (`canSit`) AFTER the top-up leaves
+ *    the wallet — a reload that drops the horse under its own sit bar is the
+ *    reload that turns a bad session into a bust;
+ *  - what is already sunk in THIS table plus the top-up may not exceed the
+ *    policy's share of the roll, so a table cannot quietly accumulate three
+ *    buy-ins of exposure one reload at a time;
+ *  - and the session stop-loss still applies: a horse that is down its
+ *    stop-loss does not reload, it leaves.
+ *
+ * Returns the permitted amount, or 0 for "do not reload".
+ */
+export function topUpAllowance(args: {
+  bankroll: number;
+  investedThisTable: number;
+  desired: number;
+  refBuyIn: number;
+  minBuyIn: number;
+  maxBuyIn: number;
+  policy: BankrollPolicy;
+}): number {
+  const { bankroll, investedThisTable, desired, refBuyIn, minBuyIn, maxBuyIn, policy } = args;
+  if (!(desired > 0) || !(bankroll > 0)) return 0;
+
+  // The stop-loss owns this decision before the arithmetic does.
+  if (investedThisTable >= refBuyIn * policy.stopLossBuyIns) return 0;
+
+  // Total exposure to ONE table is capped at the same share a single buy-in
+  // is, so reloads cannot walk past the ceiling one step at a time.
+  const exposureCap = bankroll * policy.maxBankrollFraction;
+  const headroom = exposureCap - investedThisTable;
+  if (headroom <= 0) return 0;
+
+  const allowed = Math.min(desired, headroom, maxBuyIn);
+  if (allowed <= 0) return 0;
+
+  // After paying for it, can the horse still afford to be in this game?
+  if (!canSit(bankroll - allowed, refBuyIn, policy)) return 0;
+
+  // A reload under one big-blind-ish sliver is not a reload.
+  if (allowed < Math.max(1, minBuyIn * 0.1)) return 0;
+  return Math.floor(allowed * 100) / 100;
+}
+
+/**
+ * AGGREGATE EXPOSURE (2026-08-31). The per-table cap says how much may go on
+ * ONE table; this says how much may be on the felt at once. Four tables at
+ * five percent each is a fifth of the bankroll in play, and `canSit` applied
+ * per table cannot see that — it answers the same way for the first table and
+ * the fourth.
+ *
+ * The ceiling is three single-table shares: enough to multi-table normally,
+ * short of the point where one bad session across four tables is the roll.
+ */
+export const AGGREGATE_EXPOSURE_MULTIPLE = 3;
+
+export function canOpenAnotherTable(args: {
+  bankroll: number;
+  liveExposure: number;
+  nextBuyIn: number;
+  policy: BankrollPolicy;
+}): boolean {
+  const { bankroll, liveExposure, nextBuyIn, policy } = args;
+  if (!(bankroll > 0) || !(nextBuyIn > 0)) return false;
+  const ceiling = bankroll * policy.maxBankrollFraction * AGGREGATE_EXPOSURE_MULTIPLE;
+  return liveExposure + nextBuyIn <= ceiling;
+}

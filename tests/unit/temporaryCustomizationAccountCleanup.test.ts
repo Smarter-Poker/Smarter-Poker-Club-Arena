@@ -49,8 +49,9 @@ describe('temporary customization account cleanup', () => {
 
     await cleanupTemporaryCustomizationAccount(environment, account());
 
-    const customizationDeletes = fetchMock.mock.calls.filter(([input]) =>
-      String(input).includes('/rest/v1/customization_operations')
+    const customizationDeletes = fetchMock.mock.calls.filter(
+      ([input, init]) =>
+        String(input).includes('/rest/v1/customization_operations') && init?.method === 'DELETE'
     );
     expect(customizationDeletes).toHaveLength(2);
     expect(

@@ -722,6 +722,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [showCreateTournament, setShowCreateTournament] = useState(false);
   const [showOpeningWizard, setShowOpeningWizard] = useState(false);
   const [openingSetupComplete, setOpeningSetupComplete] = useState(false);
+  const [configuredAgentUserId, setConfiguredAgentUserId] = useState<string | null>(null);
+  const [agentSetupRevision, setAgentSetupRevision] = useState(0);
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
   /* The last COMMITTED club level. The level-up celebration compares against
      this rather than against the `prev` handed to a state updater, because an
@@ -761,6 +763,45 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       cancelled = true;
     };
   }, [club?.id, club?.owner_id, currentUserId]);
+  useEffect(() => {
+    if (!club?.id || !currentUserId || club.owner_id !== currentUserId) {
+      setConfiguredAgentUserId(null);
+      return;
+    }
+
+    let cancelled = false;
+    void supabase
+      .from('agents')
+      .select('user_id, is_prepaid, credit_limit, player_rakeback_rate')
+      .eq('club_id', club.id)
+      .eq('status', 'active')
+      .in('role', ['super_agent', 'agent', 'sub_agent'])
+      .order('created_at', { ascending: true })
+      .limit(25)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          setConfiguredAgentUserId(null);
+          reportError(error, 'ClubHomePage.Agent_setup_state');
+          return;
+        }
+
+        // Promotion is the authoritative write: it refuses to create an agent
+        // until Prepaid Or Credit, the Credit Limit, and Rakeback have all been
+        // explicitly supplied. A credit LIMIT is permission to borrow; it does
+        // not transfer chips. Funding remains a separate, audited club-bank send.
+        const configured = data?.find((agent) => {
+          const prepaid = agent.is_prepaid === true && Number(agent.credit_limit || 0) === 0;
+          const credit = agent.is_prepaid === false && Number(agent.credit_limit || 0) > 0;
+          return (prepaid || credit) && agent.player_rakeback_rate != null;
+        });
+        setConfiguredAgentUserId(configured?.user_id ?? null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [club?.id, club?.owner_id, currentUserId, agentSetupRevision]);
   // Seeded from the boot cache: if the first painted frame already shows a club
   // (see bootCache above), then data IS on screen, and the stall watchdog and
   // the per-club reset guard must both agree with that. Leaving it false while
@@ -1501,6 +1542,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   );
 
   const handleMemberUpdate = useCallback(() => {
+    setAgentSetupRevision((revision) => revision + 1);
     loadClubDataRef.current();
   }, []);
 
@@ -1511,6 +1553,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     event: '*',
     onPayload: handleMemberUpdate,
     enabled: !!resolvedClubId,
+  });
+
+  useMasterBusChannel({
+    channelName: clubId ? `club-agents-${clubId}` : null,
+    table: 'agents',
+    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
+    event: '*',
+    onPayload: () => setAgentSetupRevision((revision) => revision + 1),
+    enabled: !!resolvedClubId && isOwner,
   });
 
   // ── Bus Listeners: cross-page event reactivity (subscribeDebounced) ──
@@ -3992,6 +4043,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       complete: Number(club.member_count || 0) > 1,
       actionLabel: 'Invite Player',
       onAction: () => bounceToInvite(true),
+    },
+    {
+      id: 'first-agent',
+      label: 'Configure Your First Agent',
+      detail: 'Promote A Player, Choose Prepaid Or Credit, And Assign Rakeback',
+      complete: Boolean(configuredAgentUserId),
+      actionLabel: Number(club.member_count || 0) > 1 ? 'Choose Player' : 'Invite Player First',
+      onAction: () =>
+        configuredAgentUserId
+          ? navigate(`/clubs/${clubId}/members/${configuredAgentUserId}`)
+          : Number(club.member_count || 0) > 1
+            ? navigate(`/clubs/${clubId}/members`)
+            : bounceToInvite(true),
+      disabled: !isOwner,
+      disabledLabel: 'Owner Required',
     },
   ];
 

@@ -330,7 +330,8 @@ BEGIN
 
   -- Leaderboards always receive an explicit setup row. Display-only is the
   -- safe launch default; a paid program publishes a balanced weekly top-three
-  -- plan and its declared budget has already been placed in the promo wallet.
+  -- plan and holds its declared first-round seed outside the general Promo
+  -- Wallet until that first round settles.
   v_leaderboard_result := public.fn_publish_leaderboard_reward_program(
     p_club_id,
     p_leaderboard_rewards_enabled,

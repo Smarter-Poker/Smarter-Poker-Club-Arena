@@ -8,6 +8,7 @@ const wizard = read('src/components/club/ClubOpeningWizard.tsx');
 const wizardCss = read('src/components/club/ClubOpeningWizard.css');
 const home = read('src/pages/ClubHomePage.tsx');
 const settings = read('src/pages/ClubSettingsPage.tsx');
+const memberManagement = read('src/pages/MemberManagementPage.tsx');
 const openingSql = read('supabase/migrations/20260901073000_club_opening_setup_wizard.sql');
 const taglineSql = read('supabase/migrations/20260901072500_club_tagline_is_its_own_field.sql');
 const payoutSql = read(
@@ -60,6 +61,24 @@ describe('new club opening wizard', () => {
     expect(openingSql).toContain("'leaderboard_prizes'");
     expect(openingSql).toContain('leaderboard_seed_remaining');
     expect(openingSql).toContain('REVOKE ALL ON FUNCTION public.fn_complete_club_opening_setup');
+  });
+
+  it('ends the launch checklist with a fully configured first agent', () => {
+    expect(home).toContain("id: 'first-agent'");
+    expect(home).toContain("label: 'Configure Your First Agent'");
+    expect(home).toContain('Promote A Player, Choose Prepaid Or Credit, And Assign Rakeback');
+    expect(home).toContain('agent.is_prepaid === true && Number(agent.credit_limit || 0) === 0');
+    expect(home).toContain('agent.is_prepaid === false && Number(agent.credit_limit || 0) > 0');
+    expect(home).toContain('agent.player_rakeback_rate != null');
+    expect(home).toContain('navigate(`/clubs/${clubId}/members`)');
+  });
+
+  it('keeps agent terms separate from the owner’s manual chip transfer', () => {
+    expect(memberManagement).toContain('A credit LIMIT is');
+    expect(memberManagement).toContain('never an automatic transfer');
+    expect(memberManagement).toContain('Fund Them Now?');
+    expect(memberManagement).toContain('Send Chips');
+    expect(memberManagement).toContain('Not Now');
   });
 });
 

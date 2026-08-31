@@ -67,6 +67,14 @@ still be made to finish.
 Migration `20260831142004 the_alarm_that_proves_no_chips_vanished_must_finish`,
 applied via the Supabase MCP.
 
+**Both files are named for the version they were actually applied under.** The
+first draft named this one `20260831_...`, which collided with 28 other
+`20260831_` files and was caught by
+`scripts/ci/check-new-migration-version-collisions.mjs` - correctly. Naming a
+migration file for its applied version is not cosmetic here: the repo copies are
+history rather than truth (see `check-migrations-applied.mjs`), so the version
+stamp is the only thing tying a file to the statement that actually ran.
+
 Its post-apply block asserts BOTH halves and would have rolled the whole thing
 back on either: that the 7-day default returns inside 30s, that the 7-day window
 never reports FEWER unaccounted exits than the 24-hour one, that
@@ -104,7 +112,7 @@ harmless.
 
 Nothing in either repo calls it from a browser; its one real caller is
 `reconcile_ledger_nightly`, running as postgres/service_role. Closed in
-`20260831142600_the_seat_exit_alarm_is_not_a_browser_api.sql`, verified live:
+`20260831142652_the_seat_exit_alarm_is_not_a_browser_api.sql`, verified live:
 
 ```
 anon_can  false      auth_can  false      svc_can  true

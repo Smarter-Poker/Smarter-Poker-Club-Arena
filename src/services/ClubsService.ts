@@ -6,6 +6,8 @@
  */
 
 import { supabase, getAuthUser } from '@/lib/supabase';
+import { getWarmMemberships, rememberWarmMemberships } from '../lib/membershipWarmState';
+export { clearMembershipsWarmCache } from '../lib/membershipWarmState';
 import { retryAsync } from '../utils/retryAsync';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import { buildClubSlug, escapeIlikePattern } from '../utils/clubSlug';
@@ -141,7 +143,7 @@ export async function getClub(identifier: string): Promise<Club | null> {
 /**
  * Create a new club with automatic slug generation
  */
-export async function createClub(clubData: {
+export interface CreateClubData {
   name: string;
   description?: string;
   color_theme?: string;
@@ -151,7 +153,9 @@ export async function createClub(clubData: {
   city?: string;
   country?: string;
   logoPreview?: string | null;
-}): Promise<Club> {
+}
+
+export async function createClub(clubData: CreateClubData): Promise<Club> {
   const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
 
@@ -733,18 +737,6 @@ export async function leaveClub(clubId: string): Promise<void> {
  * Keyed by user so a sign-out and sign-in cannot serve the previous account's
  * clubs, and cleared on rejection so a failure is never memoised.
  */
-const MEMBERSHIPS_WARM_TTL_MS = 5000;
-let _membershipsInflight: {
-  key: string;
-  at: number;
-  promise: Promise<(ClubMember & { club: Club })[]>;
-} | null = null;
-
-/** Test seam: drop the warm-start window. */
-export function clearMembershipsWarmCache(): void {
-  _membershipsInflight = null;
-}
-
 /**
  * Start the lobby's first query before anything renders. Fire-and-forget:
  * failures are swallowed here and surfaced normally to whoever asks next.
@@ -771,17 +763,10 @@ export async function getUserMemberships(
     if (!warmKey) return [];
   }
 
-  const warm = _membershipsInflight;
-  if (warm && warm.key === warmKey && Date.now() - warm.at < MEMBERSHIPS_WARM_TTL_MS) {
-    return warm.promise;
-  }
+  const warm = getWarmMemberships<(ClubMember & { club: Club })[]>(warmKey);
+  if (warm) return warm;
   const promise = _getUserMembershipsUncached({ id: warmKey });
-  _membershipsInflight = { key: warmKey, at: Date.now(), promise };
-  // A failed request must not be remembered for five seconds.
-  promise.catch(() => {
-    if (_membershipsInflight?.promise === promise) _membershipsInflight = null;
-  });
-  return promise;
+  return rememberWarmMemberships(warmKey, promise);
 }
 
 async function _getUserMembershipsUncached(

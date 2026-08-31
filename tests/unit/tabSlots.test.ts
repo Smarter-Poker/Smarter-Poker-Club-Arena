@@ -23,6 +23,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isFreeSlot,
   isLobbyLike,
+  isTournamentRow,
   pickObserveSlot,
   pruneStaleSeatedTabs,
   type SlotTab,
@@ -55,6 +56,36 @@ describe('isLobbyLike / isFreeSlot', () => {
     expect(isFreeSlot({ id: 'T1', kind: 'table', seated: false })).toBe(true);
     expect(isFreeSlot(seatedTab('T1'))).toBe(false);
     expect(isFreeSlot(rebuiltTab('T1'))).toBe(false);
+  });
+});
+
+describe('isTournamentRow — the flag every tab factory must carry', () => {
+  /**
+   * The rebuild derived this, handed it to `gameCode(...)`, and threw it away.
+   * `undefined` then reads as "cash" at four readers, one of which is a rule
+   * Dan set in writing: the profit chip is a cash-game-only feature.
+   */
+  it('is true when the row says tournament', () => {
+    expect(isTournamentRow({ game_type: 'tournament', tournament_id: null })).toBe(true);
+  });
+
+  it('is true on tournament_id alone, with no game_type', () => {
+    // Satellite / re-seated tables carry the id without always carrying the
+    // type. Reading only `game_type` would misfile every one of them as cash.
+    expect(isTournamentRow({ tournament_id: 'evt-1' })).toBe(true);
+    expect(isTournamentRow({ game_type: null, tournament_id: 'evt-1' })).toBe(true);
+  });
+
+  it('is false for a cash row', () => {
+    expect(isTournamentRow({ game_type: 'cash', tournament_id: null })).toBe(false);
+    expect(isTournamentRow({})).toBe(false);
+  });
+
+  it('never throws on a row the query did not return', () => {
+    // `rows?.find(...)` yields undefined whenever the read raced or the row was
+    // deleted; a factory must still produce a tab rather than crash the rebuild.
+    expect(isTournamentRow(undefined)).toBe(false);
+    expect(isTournamentRow(null)).toBe(false);
   });
 });
 

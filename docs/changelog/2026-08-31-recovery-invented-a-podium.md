@@ -7,10 +7,10 @@ Found by the post-ship verification sweep of the MTT audit (PR #2004, #2019).
 `Sunday $200 Deep Stack` (dfae9288) disbursed **62,841.60 against a 44,640.00
 prize pool — 141%**. Two payout runs paid the same places to different people:
 
-| when (UTC) | path | places | pool implied |
-| --- | --- | --- | --- |
-| 2026-08-30 19:47 | `Tournament prize (recovery)` | 1..9 | 20,880 |
-| 2026-08-31 02:32 | `Tournament payout reconciliation` | 1..5, 7..9 | 44,640 |
+| when (UTC)       | path                               | places     | pool implied |
+| ---------------- | ---------------------------------- | ---------- | ------------ |
+| 2026-08-30 19:47 | `Tournament prize (recovery)`      | 1..9       | 20,880       |
+| 2026-08-31 02:32 | `Tournament payout reconciliation` | 1..5, 7..9 | 44,640       |
 
 The first run happened **73 minutes before the tournament started**
 (`started_at` 21:00:16). `be61d864` was paid 6,264.00 as "position 1" and
@@ -22,7 +22,7 @@ finished **87th**.
 1. **`recoverStuckCompleting` ranked a podium out of players who never sat.**
    Its `alive` set is `status IN ('playing','registered')` — deliberately, so a
    genuine late registrant still waiting on `ensureLateRegSeated` is paid. But
-   when *every* alive row is `registered`, nobody has been dealt a card: they
+   when _every_ alive row is `registered`, nobody has been dealt a card: they
    all hold the same starting stack, so the `chips` sort that assigns places
    1..N is arbitrary order, and the full payout structure is paid against it.
 
@@ -35,7 +35,7 @@ finished **87th**.
 The two payout paths also do not dedupe against each other: the recovery keys
 `tourney:{id}:prize:place:{N}`, while `fn_tournament_payout_reconcile` keys
 `tourney:{id}:prize:{user}:{place}:reconcile`. The reconciler measures what a
-place-holder has been paid *by user*, so when the holder of a place changes
+place-holder has been paid _by user_, so when the holder of a place changes
 between runs it correctly sees "unpaid" and pays again. Blocking the invented
 first payout is what closes this; the reconciler's own behaviour is right.
 
@@ -49,7 +49,7 @@ first payout is what closes this; the reconciler's own behaviour is right.
 - `GameServer.ts`: `stillPlaying === 0` reports
   `played_registering_zero_playing` and does not settle.
 - Pinned by `NoPodiumFromPlayersWhoNeverSat.guard.test.ts`, which also asserts
-  the guard sits *before* the crediting loop and that the alive filter was not
+  the guard sits _before_ the crediting loop and that the alive filter was not
   narrowed.
 
 ## Blast radius, and the money

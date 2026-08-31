@@ -1311,6 +1311,29 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // three side pots is exactly as hard to rebuild from the merged
         // winners list. `board` is 1 for those, which the UNIQUE key already
         // accommodates.
+        // DEFENSIVE 2026-08-31: a bomb hand that produced WINNERS but no
+        // per-pot awards writes nothing here and looks, to
+        // `fn_bomb_pot_ledger_gaps` and to the hourly repair sweep, exactly
+        // like a transport loss — except no retry and no backfill can ever
+        // close it, because the units were never computed in the first place.
+        // The condition below is silent about that case by construction (it
+        // just does not run), so say it out loud instead of leaving a gap the
+        // sweep will chase forever.
+        if (
+          v_handHistoryId &&
+          this.currentHandBombPot &&
+          this.currentHandPerPotAwards.length === 0 &&
+          (this.currentHandWinners?.length ?? 0) > 0
+        ) {
+          reportError(
+            new Error(
+              `[BombPot] hand ${this.handCount} settled with ` +
+                `${this.currentHandWinners?.length ?? 0} winner(s) but an EMPTY per-pot award ` +
+                'array - no award units can be written and none can be reconstructed'
+            ),
+            'ServerTableEngine.bomb_award_units_empty'
+          );
+        }
         if (v_handHistoryId && this.currentHandBombPot && this.currentHandPerPotAwards.length > 0) {
           const ledgerRows = this.currentHandPerPotAwards.map((a) => ({
             hand_history_id: v_handHistoryId,

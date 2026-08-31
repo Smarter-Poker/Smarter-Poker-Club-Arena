@@ -80,3 +80,67 @@ describe('LAW — snapshot never drops a seat (Dan 2026-08-30)', () => {
     expect(out.lastBetAmounts.length).toBe(9);
   });
 });
+
+/* ═══ PHASE 1 (2026-08-31): THE ENGINE PUBLISHES THE SEAT COUNT ═══════════════
+   Inferring capacity from occupied seats rescued a seated hero but could not
+   fix the other half: a 9-max table with nobody past seat 4 still drew six
+   seats, so the empty high seats were unclickable and the table looked like a
+   different game than it is. `max_seats` on the snapshot ends the guessing. */
+describe('LAW — the engine says how many seats there are (2026-08-31)', () => {
+  it('published max_seats wins over the caller, even with only low seats filled', () => {
+    const snap = makeSnapshot({
+      players: [{ seat: 1, user_id: 'a', stack: 100 } as never],
+      max_seats: 9,
+    } as never);
+    const out = mapEngineSnapshot(snap, 'x', 6);
+    expect(out.maxSeats).toBe(9);
+    expect(out.players.length).toBe(9);
+    // The seats nobody occupies are present and empty, not absent.
+    expect(out.players[8]).toBeNull();
+  });
+
+  it('published max_seats can shrink a client that over-guessed', () => {
+    const snap = makeSnapshot({
+      players: [{ seat: 1, user_id: 'a', stack: 100 } as never],
+      max_seats: 6,
+    } as never);
+    const out = mapEngineSnapshot(snap, 'x', 9);
+    expect(out.maxSeats).toBe(6);
+    expect(out.players.length).toBe(6);
+  });
+
+  it('but max_seats may NEVER drop a seat that holds a player', () => {
+    // A contradictory payload (capacity 6, somebody sitting in 8) resolves in
+    // favour of the human. A ghost seat is cosmetic; an erased hero is not.
+    const snap = makeSnapshot({
+      players: [
+        { seat: 1, user_id: 'a', stack: 100 } as never,
+        { seat: 8, user_id: 'hero', stack: 500 } as never,
+      ],
+      max_seats: 6,
+    } as never);
+    const out = mapEngineSnapshot(snap, 'hero', 6);
+    expect(out.maxSeats).toBe(8);
+    expect(out.players[7]?.isHero).toBe(true);
+  });
+
+  it('an engine with no max_seats field falls back to the occupied-seat floor', () => {
+    const snap = makeSnapshot({
+      players: [{ seat: 7, user_id: 'hero', stack: 500 } as never],
+    });
+    const out = mapEngineSnapshot(snap, 'hero', 6);
+    expect(out.maxSeats).toBe(7);
+    expect(out.players[6]?.isHero).toBe(true);
+  });
+
+  it('maxSeats always equals the length of every per-seat array', () => {
+    const snap = makeSnapshot({
+      players: [{ seat: 2, user_id: 'a', stack: 100 } as never],
+      max_seats: 8,
+    } as never);
+    const out = mapEngineSnapshot(snap, 'x', 6);
+    for (const arr of [out.players, out.positions, out.lastActions, out.lastBetAmounts]) {
+      expect(arr.length).toBe(out.maxSeats);
+    }
+  });
+});

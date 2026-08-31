@@ -1,4 +1,4 @@
-import type { RosterMember, RosterSummary } from '../services/ClubRosterService';
+import { mapRosterRow, type RosterMember, type RosterSummary } from '../services/ClubRosterService';
 
 export const ROSTER_CACHE_PREFIX = 'roster_cache_v5_';
 export const ROSTER_SEARCH_PREFIX = 'roster_search_v1_';
@@ -79,7 +79,7 @@ export function writeRosterCache(
 export function readRosterCache(
   userId: string,
   clubId: string
-): { rows: RosterMember[]; summary: RosterSummary } | null {
+): { rows: RosterMember[]; summary: RosterSummary; cachedAt: number } | null {
   const cacheKey = key(userId, clubId);
   try {
     const raw = sessionStorage.getItem(cacheKey);
@@ -95,7 +95,10 @@ export function readRosterCache(
       sessionStorage.removeItem(cacheKey);
       return null;
     }
-    return { rows: parsed.rows as RosterMember[], summary: parsed.summary };
+    const rows = parsed.rows
+      .filter((row): row is Record<string, unknown> => !!row && typeof row === 'object')
+      .map(mapRosterRow);
+    return { rows, summary: parsed.summary, cachedAt: parsed.at };
   } catch {
     try {
       sessionStorage.removeItem(cacheKey);

@@ -31,7 +31,9 @@ describe('customization commerce certification', () => {
     expect(helper).toContain("const ACCOUNT_PREFIX = 'ca-customization-cert-'");
     expect(helper).toContain("email.endsWith('@example.invalid')");
     expect(helper).toContain("key.startsWith('sb_secret_')");
-    expect(helper).toContain('Retry exactly this reserved fixture once');
+    expect(helper).toContain('body: JSON.stringify({ should_soft_delete: false })');
+    expect(helper).not.toContain('?should_soft_delete=false');
+    expect(helper).toContain('reserved fixture still exists after hard delete');
   });
 
   it('certifies all live SKUs, double-buy serialization, realtime delivery and RLS', () => {

@@ -21,7 +21,7 @@ vi.mock('../../src/lib/supabase', () => {
   };
   return {
     supabase: {
-      from: () => buildChain(),
+      from: vi.fn(() => buildChain()),
       rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
     },
   };
@@ -77,6 +77,19 @@ describe('LeaderboardService', () => {
       await expect(
         LeaderboardService.getClubLeaderboard('club-1', 'profit', 'weekly', 10, 0, 0, true)
       ).rejects.toThrow('Club leaderboard returned no data');
+    });
+
+    it('does not relabel all-time fallback rows as a period when the strict RPC fails', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+      const from = supabase.from as unknown as ReturnType<typeof vi.fn>;
+      rpc.mockResolvedValueOnce({ data: null, error: { message: 'period rpc unavailable' } });
+
+      await expect(
+        LeaderboardService.getClubLeaderboard('club-1', 'profit', 'weekly', 10, 0, 0, true)
+      ).rejects.toMatchObject({ message: 'period rpc unavailable' });
+
+      expect(from.mock.calls.filter(([table]) => table === 'player_stats')).toHaveLength(0);
     });
   });
 
@@ -302,5 +315,19 @@ describe('getClubTournamentStats', () => {
     // RPC's null: a missing function must degrade, never blank the page.
     const rows = await LeaderboardService.getClubTournamentStats('club-1');
     expect(Array.isArray(rows)).toBe(true);
+  });
+
+  it('does not publish a known-truncated fallback when strict server aggregation fails', async () => {
+    const { supabase } = await import('../../src/lib/supabase');
+    const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+    const from = supabase.from as unknown as ReturnType<typeof vi.fn>;
+    from.mockClear();
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'aggregate rpc unavailable' } });
+
+    await expect(
+      LeaderboardService.getClubTournamentStats('club-1', 50, 0, true)
+    ).rejects.toMatchObject({ message: 'aggregate rpc unavailable' });
+
+    expect(from.mock.calls.filter(([table]) => table === 'tournament_players')).toHaveLength(0);
   });
 });

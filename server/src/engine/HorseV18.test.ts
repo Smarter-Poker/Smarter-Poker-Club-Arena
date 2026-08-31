@@ -99,9 +99,18 @@ describe('V18 squeeze response', () => {
   });
 
   it('the squeezed opener defends hands a cold 3-bet folds', () => {
-    // Strength just under the non-squeeze call threshold (late ip 0.74).
+    /**
+     * The property is "a squeeze is defended WIDER than a cold 3-bet", and
+     * that is what this asserts. The window is SCANNED rather than hardcoded
+     * (2026-08-31): it used to probe 0.72-0.74, the band just under the
+     * then-current `t(0.74)` bar, and the raise-fold price fix moved every
+     * facing-a-3-bet bar down by the price relief — so the differential
+     * simply relocated to 0.580-0.595 and a hardcoded window reported the
+     * property as LOST when it was only somewhere else. Scanning pins the
+     * behaviour instead of the coordinates.
+     */
     let defendsMore = 0;
-    for (let st = 0.72; st < 0.74; st += 0.005) {
+    for (let st = 0.3; st < 0.85; st += 0.005) {
       const sq = decidePreflopV7(ctx(true, st) as never);
       const cold = decidePreflopV7(ctx(false, st) as never);
       if (sq.a !== 'fold' && cold.a === 'fold') defendsMore++;

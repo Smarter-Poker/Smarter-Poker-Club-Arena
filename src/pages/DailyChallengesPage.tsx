@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getAuthUser, supabase } from '../lib/supabase';
+import { getAuthUser } from '../lib/supabase';
 import { StreakFire } from '../components/gamification/StreakFire';
 import { useToast } from '../components/common/Toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -28,6 +28,8 @@ import {
   type DailyChallengeRewardVault,
 } from '../services/DailyChallengeService';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
+import { useChallengeClockNow } from '../hooks/useChallengeClock';
 import { reportError } from '../utils/errorReporter';
 import { ConfettiEffect } from '../components/effects/ConfettiEffect';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
@@ -285,6 +287,52 @@ function MissionLoadingState() {
   );
 }
 
+/** Countdown leaf: its 1 Hz clock never enters DailyChallengesPage state. */
+function MissionCycleCountdown({ tier }: { tier: Tier }) {
+  const now = useChallengeClockNow();
+  return <>{formatChallengeCountdown(msUntilChallengeReset(tier, now))}</>;
+}
+
+/** The only reset panel subtree that re-renders as the wall clock advances. */
+function MissionResetReadout({
+  tier,
+  isRefreshing,
+  activeUnclaimed,
+}: {
+  tier: Tier;
+  isRefreshing: boolean;
+  activeUnclaimed: number;
+}) {
+  const now = useChallengeClockNow();
+  const resetMs = msUntilChallengeReset(tier, now);
+  const urgent = resetMs <= 60 * 60 * 1000;
+  const resetLabel = useMemo(
+    () =>
+      new Intl.DateTimeFormat(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short',
+      }).format(getChallengeResetAt(tier, now)),
+    [tier, now]
+  );
+
+  return (
+    <div className={`${styles.resetReadout} ${urgent ? styles.resetUrgent : ''}`}>
+      <span>{isRefreshing ? 'Syncing Mission Network' : `${TIER_LABELS[tier]} Reset`}</span>
+      <strong>{formatChallengeCountdown(resetMs)}</strong>
+      <small>{resetLabel}</small>
+      {urgent && activeUnclaimed > 0 && (
+        <em>
+          Claim {activeUnclaimed} Ready Reward{activeUnclaimed === 1 ? '' : 's'} Before Reset
+        </em>
+      )}
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -299,6 +347,9 @@ export default function DailyChallengesPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+  const [realtimeState, setRealtimeState] = useState<'connecting' | 'live' | 'degraded'>(
+    'connecting'
+  );
   const [activeTier, setActiveTier] = useState<Tier>('daily');
 
   const [challenges, setChallenges] = useState<TieredChallenge[]>([]);
@@ -332,19 +383,20 @@ export default function DailyChallengesPage() {
     diamondBalance: number;
   } | null>(null);
 
-  const [now, setNow] = useState(Date.now());
   const dateKeyRef = useRef<string>('');
   const loadRequestRef = useRef(0);
   const lastSyncedAtRef = useRef(0);
   const lastResumeRefreshRef = useRef(0);
+  const realtimeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const realtimeStatusRef = useRef<'connecting' | 'live' | 'degraded'>('connecting');
 
   // ── Loaders ──
   const loadChallenges = useCallback(
-    async (uid: string, withSpinner: boolean) => {
+    async (uid: string, mode: 'initial' | 'refresh' | 'silent') => {
       const requestId = ++loadRequestRef.current;
-      if (withSpinner) {
+      if (mode === 'initial') {
         setIsLoading(true);
-      } else {
+      } else if (mode === 'refresh') {
         setIsRefreshing(true);
       }
 
@@ -394,7 +446,7 @@ export default function DailyChallengesPage() {
           return;
         }
         setUserId(authUser.id);
-        await loadChallenges(authUser.id, true);
+        await loadChallenges(authUser.id, 'initial');
       } catch (err) {
         reportError(err, 'DailyChallengesPage.auth_load_failed');
         if (!cancelled) {
@@ -429,26 +481,20 @@ export default function DailyChallengesPage() {
     };
   }, [reward, isMountedRef]);
 
-  // ── Live countdown + automatic daily rollover ──
+  // Schedule the one stateful event the clock owns: UTC rollover. Countdown
+  // text itself lives in isolated leaves above and cannot re-render this page.
   useEffect(() => {
+    if (!userId) return undefined;
     let timer: ReturnType<typeof setTimeout>;
-    const tick = () => {
-      const tickAt = Date.now();
-      setNow(tickAt);
-      // When the UTC date flips while the page is open, fetch the new day's set
-      const key = getUtcDateKey(tickAt);
-      if (key !== dateKeyRef.current) {
-        dateKeyRef.current = key;
-        if (userId) loadChallenges(userId, false);
-      }
-      // Seconds matter during the last hour. Before that, a 30-second cadence
-      // avoids re-rendering every mission card 3,600 times per hour.
-      timer = setTimeout(
-        tick,
-        msUntilChallengeReset('daily', tickAt) <= 60 * 60 * 1000 ? 1000 : 30_000
-      );
+    const scheduleRollover = () => {
+      const delay = Math.max(250, msUntilChallengeReset('daily') + 250);
+      timer = setTimeout(() => {
+        dateKeyRef.current = getUtcDateKey();
+        loadChallenges(userId, 'silent');
+        scheduleRollover();
+      }, delay);
     };
-    timer = setTimeout(tick, 1000);
+    scheduleRollover();
     return () => clearTimeout(timer);
   }, [userId, loadChallenges]);
 
@@ -460,7 +506,6 @@ export default function DailyChallengesPage() {
     const refreshAfterResume = () => {
       if (document.visibilityState !== 'visible') return;
       const resumedAt = Date.now();
-      setNow(resumedAt);
       if (resumedAt - lastResumeRefreshRef.current < 1000) return;
 
       const dateChanged = getUtcDateKey(resumedAt) !== dateKeyRef.current;
@@ -468,7 +513,7 @@ export default function DailyChallengesPage() {
       if (dateChanged || stale) {
         lastResumeRefreshRef.current = resumedAt;
         dateKeyRef.current = getUtcDateKey(resumedAt);
-        loadChallenges(userId, false);
+        loadChallenges(userId, 'silent');
       }
     };
 
@@ -480,58 +525,56 @@ export default function DailyChallengesPage() {
     };
   }, [userId, loadChallenges]);
 
-  // ── Refresh when in-game progress updates ──
+  const scheduleRealtimeRefresh = useCallback(() => {
+    if (!userId) return;
+    if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
+    realtimeRefreshTimerRef.current = setTimeout(() => {
+      realtimeRefreshTimerRef.current = null;
+      loadChallenges(userId, 'silent');
+    }, 250);
+  }, [userId, loadChallenges]);
+
+  useEffect(
+    () => () => {
+      if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
+    },
+    []
+  );
+
+  // Same-tab completion events and the database revision stream share one
+  // trailing-edge window. A transaction that advances several missions still
+  // produces exactly one dashboard read and no visible loading flicker.
   useEffect(() => {
     const unsub = masterBus.subscribeDebounced(
       'CHALLENGE_PROGRESS_UPDATED',
-      () => {
-        if (userId) loadChallenges(userId, false);
-      },
-      1000
+      scheduleRealtimeRefresh,
+      250
     );
     return unsub;
-  }, [userId, loadChallenges]);
+  }, [scheduleRealtimeRefresh]);
 
-  // ── Supabase Postgres Changes Subscription ──
-  useEffect(() => {
-    if (!userId) return;
-    let pending: ReturnType<typeof setTimeout> | null = null;
-
-    const channel = supabase
-      .channel(`daily-challenges:${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'user_daily_challenges',
-          // Server-side filter. Without it every player's progress would be
-          // delivered to every open challenges page and thrown away here.
-          filter: `user_id=eq.${userId}`,
-        },
-        () => {
-          if (pending) clearTimeout(pending);
-          pending = setTimeout(() => {
-            pending = null;
-            // `false` = refresh in place. A spinner every time a hand ends
-            // would make the page flicker for the whole session.
-            // The MasterBus subscription above only carries events raised inside THIS
-            // tab, and this app is explicitly built for multi-tabling: the normal way to
-            // watch a challenge fill is to have it open beside a table, which is a
-            // different tab and therefore a different bus. Postgres change events close
-            // that gap, so progress earned anywhere -- another tab, a phone, the same
-            // account on a second screen -- lands here without a manual refresh.
-            if (isMountedRef.current) loadChallenges(userId, false);
-          }, 1200);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-      if (pending) clearTimeout(pending);
-    };
-  }, [userId, loadChallenges, isMountedRef]);
+  useMasterBusChannel({
+    channelName: userId ? `daily-mission-revision:${userId}` : null,
+    table: 'daily_challenge_dashboard_revisions',
+    filter: userId ? `user_id=eq.${userId}` : null,
+    event: '*',
+    enabled: !!userId,
+    onPayload: scheduleRealtimeRefresh,
+    onSubscriptionError: () => {
+      realtimeStatusRef.current = 'degraded';
+      setRealtimeState('degraded');
+      // One event-driven reconciliation while the channel factory reconnects;
+      // there is deliberately no UX polling fallback.
+      scheduleRealtimeRefresh();
+    },
+    onSubscriptionStatus: (status) => {
+      if (status !== 'SUBSCRIBED') return;
+      const recovered = realtimeStatusRef.current === 'degraded';
+      realtimeStatusRef.current = 'live';
+      setRealtimeState('live');
+      if (recovered) scheduleRealtimeRefresh();
+    },
+  });
 
   // ── Claim handler ──
   const handleClaim = useCallback(
@@ -590,7 +633,7 @@ export default function DailyChallengesPage() {
       } catch (err: any) {
         reportError(err, 'DailyChallengesPage.claim_failed');
         if (isMountedRef.current) toast.error(err?.message || 'Failed to claim reward');
-        loadChallenges(userId, false);
+        loadChallenges(userId, 'silent');
       } finally {
         claimGuardRef.current.delete(challenge.id);
         if (isMountedRef.current) {
@@ -642,11 +685,11 @@ export default function DailyChallengesPage() {
       } else {
         toast.error(res.error || 'Failed to buy freeze');
         // Revert UI on fail
-        loadChallenges(userId, false);
+        loadChallenges(userId, 'silent');
       }
     } catch {
       toast.error('Failed to buy freeze');
-      loadChallenges(userId, false);
+      loadChallenges(userId, 'silent');
     } finally {
       buyFreezeGuardRef.current = false;
       if (isMountedRef.current) setBuyingFreeze(false);
@@ -677,7 +720,7 @@ export default function DailyChallengesPage() {
         if (result.diamondBalance != null) setDiamondBalance(result.diamondBalance);
         if (!result.challenge) {
           toast.error('The replacement mission receipt was incomplete. Refreshing...');
-          loadChallenges(userId, false);
+          loadChallenges(userId, 'silent');
           return;
         }
         setChallenges((prev) =>
@@ -755,7 +798,7 @@ export default function DailyChallengesPage() {
     } catch (err) {
       reportError(err, 'DailyChallengesPage.claimAll_failed');
       toast.error('Rewards could not be claimed. Nothing was deducted. Refreshing...');
-      loadChallenges(userId, false);
+      loadChallenges(userId, 'silent');
     } finally {
       readyIds.forEach((id) => claimGuardRef.current.delete(id));
       if (isMountedRef.current) {
@@ -786,17 +829,6 @@ export default function DailyChallengesPage() {
 
   const unclaimed = rewardVault;
 
-  const tierResetMs: Record<Tier, number> = {
-    daily: msUntilChallengeReset('daily', now),
-    weekly: msUntilChallengeReset('weekly', now),
-    monthly: msUntilChallengeReset('monthly', now),
-  };
-  const tierCountdown: Record<Tier, string> = {
-    daily: formatChallengeCountdown(tierResetMs.daily),
-    weekly: formatChallengeCountdown(tierResetMs.weekly),
-    monthly: formatChallengeCountdown(tierResetMs.monthly),
-  };
-
   const visible = useMemo(() => {
     const stateRank = (c: TieredChallenge) => (c.claimed ? 2 : c.completed ? 0 : 1);
     return challenges
@@ -804,27 +836,19 @@ export default function DailyChallengesPage() {
       .sort((a, b) => stateRank(a) - stateRank(b));
   }, [challenges, activeTier]);
 
-  const activeResetLabel = useMemo(
-    () =>
-      new Intl.DateTimeFormat(undefined, {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        timeZoneName: 'short',
-      }).format(getChallengeResetAt(activeTier, now)),
-    [activeTier, now]
-  );
-  const activeResetUrgent = tierResetMs[activeTier] <= 60 * 60 * 1000;
   const activeUnclaimed = visible.filter(
     (challenge) => challenge.completed && !challenge.claimed
   ).length;
-  const syncLabel = isRefreshing
-    ? 'Synchronizing'
-    : lastSyncedAt && now - lastSyncedAt < 60_000
-      ? 'Live Now'
-      : 'Live Sync';
+  const syncLabel =
+    realtimeState === 'degraded'
+      ? 'Reconnecting'
+      : isRefreshing
+        ? 'Synchronizing'
+        : realtimeState === 'live'
+          ? 'Live Now'
+          : lastSyncedAt
+            ? 'Connecting'
+            : 'Live Sync';
 
   const handleTierKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLButtonElement>, tier: Tier) => {
@@ -895,7 +919,9 @@ export default function DailyChallengesPage() {
             <div className={styles.heroMeters}>
               <div>
                 <span>Mission Cycle</span>
-                <strong>{tierCountdown.daily}</strong>
+                <strong>
+                  <MissionCycleCountdown tier="daily" />
+                </strong>
                 <small>Until Daily Reset</small>
               </div>
               <div>
@@ -926,7 +952,7 @@ export default function DailyChallengesPage() {
             <button
               type="button"
               className={styles.retryButton}
-              onClick={() => userId && loadChallenges(userId, false)}
+              onClick={() => userId && loadChallenges(userId, 'refresh')}
               disabled={isRefreshing}
             >
               {isRefreshing ? 'Reconnecting...' : 'Retry Sync'}
@@ -1063,22 +1089,11 @@ export default function DailyChallengesPage() {
               <span className={styles.eyebrow}>Active Contracts</span>
               <h2 id="mission-board-title">Choose Your Mission Cycle</h2>
             </div>
-            <div
-              className={`${styles.resetReadout} ${activeResetUrgent ? styles.resetUrgent : ''}`}
-              aria-live="polite"
-            >
-              <span>
-                {isRefreshing ? 'Syncing Mission Network' : `${TIER_LABELS[activeTier]} Reset`}
-              </span>
-              <strong>{tierCountdown[activeTier]}</strong>
-              <small>{activeResetLabel}</small>
-              {activeResetUrgent && activeUnclaimed > 0 && (
-                <em>
-                  Claim {activeUnclaimed} Ready Reward{activeUnclaimed === 1 ? '' : 's'} Before
-                  Reset
-                </em>
-              )}
-            </div>
+            <MissionResetReadout
+              tier={activeTier}
+              isRefreshing={isRefreshing}
+              activeUnclaimed={activeUnclaimed}
+            />
           </header>
 
           <nav className={styles.tabs} role="tablist" aria-label="Challenge period">
@@ -1125,7 +1140,7 @@ export default function DailyChallengesPage() {
                 <button
                   type="button"
                   className={styles.retryButton}
-                  onClick={() => loadChallenges(userId, false)}
+                  onClick={() => loadChallenges(userId, 'refresh')}
                   disabled={isRefreshing}
                 >
                   {isRefreshing ? 'Reconnecting...' : 'Retry Mission Link'}

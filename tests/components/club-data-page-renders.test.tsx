@@ -276,7 +276,7 @@ describe('ClubDataPage', () => {
     expect(screen.getByRole('button', { name: 'Export As CSV' })).toBeEnabled();
     expect(rpcMock).toHaveBeenCalledWith(
       'ca_club_data_snapshot',
-      expect.objectContaining({ p_limit: 100 })
+      expect.objectContaining({ p_limit: 200 })
     );
     expect(rpcMock.mock.calls.some(([fn]) => fn === 'ca_club_game_page')).toBe(false);
   });
@@ -670,6 +670,45 @@ describe('ClubDataPage', () => {
         p_cursor: expect.objectContaining({ kind: 'CASH', id: 'game-1' }),
       })
     );
+  });
+
+  it('serves the first recent continuation from the initial verified snapshot', async () => {
+    const recentRows = Array.from({ length: 200 }, (_, index) => ({
+      ...snapshot.rows[0],
+      id: `recent-game-${index + 1}`,
+      name: `Recent Game ${index + 1}`,
+      started_at: new Date(Date.UTC(2026, 7, 30, 12, 0, 0) - index * 1_000).toISOString(),
+    }));
+    rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'ca_club_data_snapshot') {
+        expect(args?.p_limit).toBe(200);
+        return {
+          data: { ...snapshot, rows: recentRows, row_count: 250 },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_game_page') {
+        throw new Error('Recent continuation should not make a page request');
+      }
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+
+    render(<ClubDataPage />);
+
+    const loadMore = await screen.findByRole('button', {
+      name: 'Load More Games - 100 Of 250',
+    });
+    const snapshotCallsBeforeClick = rpcMock.mock.calls.filter(
+      ([fn]) => fn === 'ca_club_data_snapshot'
+    ).length;
+    fireEvent.click(loadMore);
+
+    await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+    expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot')).toHaveLength(
+      snapshotCallsBeforeClick
+    );
+    expect(rpcMock.mock.calls.some(([fn]) => fn === 'ca_club_game_page')).toBe(false);
   });
 
   it('serves the first metric-sorted continuation from the initial ranked query', async () => {

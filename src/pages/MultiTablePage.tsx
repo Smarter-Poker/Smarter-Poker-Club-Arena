@@ -44,6 +44,12 @@ import { supabase } from '../lib/supabase';
 import { gameCode, gameCodeFromName } from '../utils/gameCode';
 import { stakesLabel } from '../lib/bettingStructure';
 import { swipeTargetIndex } from '../utils/swipeTarget';
+import {
+  LOBBY_TAB_PREFIX,
+  isLobbyLike,
+  pickObserveSlot,
+  pruneStaleSeatedTabs,
+} from '../utils/tabSlots';
 import { soundService, haptic } from '../services/SoundService';
 import { setSitOut, submitAction } from '../services/GameServerAPI';
 import { sessionStatsService } from '../services/SessionStatsService';
@@ -308,9 +314,16 @@ const readDrillIn = (): InTabTournamentTarget[] | null => {
   }
 };
 
-/** Lobby tabs carry a synthetic id so they can share the tabs array. */
-const LOBBY_TAB_PREFIX = 'lobby:';
-const isLobbyTab = (t: TableInstance) => t.kind === 'lobby' || t.id.startsWith(LOBBY_TAB_PREFIX);
+/**
+ * Lobby tabs carry a synthetic id so they can share the tabs array.
+ *
+ * The predicate itself now lives in src/utils/tabSlots.ts alongside the two
+ * decisions that turn on it (which slot a new table takes, which tabs a rebuild
+ * may close). They had drifted apart once — see `pruneStaleSeatedTabs` — and
+ * one definition is what stops that happening again. Aliased to the local name
+ * so every existing call site reads unchanged.
+ */
+const isLobbyTab = isLobbyLike;
 
 /**
  * Dan 2026-08-21: "4-table cap ... Desktop could reasonably run 6-8."
@@ -726,6 +739,11 @@ export default function MultiTablePage() {
             }),
             isMyTurn: false,
             pot: 0,
+            // Dan 2026-08-30: `kind` was omitted here, and the prune below
+            // asked for it. Every other tab factory in this file sets it; this
+            // one now does too, so the tabs a reload restores are
+            // indistinguishable from the ones a live seat makes.
+            kind: 'table' as const,
             // These ids came from table_seats WHERE left_at IS NULL, which is
             // the definition of an active seat. Nothing else in this file has
             // stronger evidence than that.
@@ -741,11 +759,21 @@ export default function MultiTablePage() {
          * Only `seated` tabs. An observer tab has no seat by definition, and a
          * lobby tab is not a table — pruning either would delete something the
          * player deliberately opened.
+         *
+         * DAN 2026-08-30 — THIS PRUNE WAS INERT WHERE IT MATTERED MOST.
+         * It used to ask `t.kind === 'table' && t.seated === true`, and the
+         * `additions` built a few lines above carried NO `kind` field at all.
+         * So every tab this rebuild created was exempt from the rebuild's own
+         * prune — and after a page reload, rebuild-created tabs are the only
+         * tabs a player has. The 2026-08-28 fix therefore did nothing in the
+         * exact case it was written for: reload, reconnect, get moved, keep
+         * staring at a dead felt captioned "Connection Lost, Trying To Get You
+         * Back". `pruneStaleSeatedTabs` asks `!isLobbyLike` instead, which
+         * needs no field to be remembered by the next tab factory, and both
+         * halves are pinned behaviourally in tests/unit/tabSlots.test.ts.
          */
         const liveSeatIds = new Set(ids);
-        const survivors = prev.filter(
-          (t) => !(t.kind === 'table' && t.seated === true && !liveSeatIds.has(t.id))
-        );
+        const survivors = pruneStaleSeatedTabs(prev, liveSeatIds);
         prunedRef.current = prev.length - survivors.length;
 
         if (prunedRef.current === 0 && additions.length === 0) return prev;
@@ -1123,18 +1151,13 @@ export default function MultiTablePage() {
    * live engine socket) — those keep dealing behind it. A free screen (lobby
    * tab, unseated observer) is a different story: see case 2.
    *
-   * Four cases, in this order:
-   *   1. Already open  -> focus it. Watching a table twice is not a thing,
-   *                       and stacking duplicates burns the cap.
-   *   2. The ACTIVE tab is a lobby tab or an unseated observer -> take THAT
-   *                       slot, in place (Dan 2026-08-30 — changing tables
-   *                       from the lobby must change the screen you are on,
-   *                       not park a new one in another slot).
-   *   3. A lobby tab is parked -> take THAT slot. A lobby tab holds no chips
-   *                       and no engine socket, so reusing it is free.
-   *   4. Otherwise     -> append if under the cap, else say so out loud.
-   *                       Silently doing nothing is how "the button is
-   *                       broken" bugs are born (see the route effect below).
+   * The ORDER of cases, and the reasoning for each, is documented on
+   * `pickObserveSlot` in src/utils/tabSlots.ts, which decides it. In short:
+   * focus a table already open, else take the ACTIVE tab's slot when that tab
+   * is free (Dan 2026-08-30 — changing tables from the lobby must change the
+   * screen you are ON), else any parked lobby tab, else append, else refuse
+   * out loud. Silently doing nothing is how "the button is broken" bugs are
+   * born (see the route effect below).
    */
   useMasterBusSubscription(
     'OPEN_OBSERVE_TABLE',
@@ -1142,9 +1165,24 @@ export default function MultiTablePage() {
       if (!payload?.tableId) return;
       const prev = tablesRef.current;
 
-      const existingIdx = prev.findIndex((t) => t.id === payload.tableId);
-      if (existingIdx !== -1) {
-        setActiveIndex(existingIdx);
+      /* Dan 2026-08-30: "WHEN I WENT INTO THE LOBBY TO CHANGE A TABLE, IT
+         DIDN'T CHANGE THE TABLE FOR THE PAGE I WAS IN, IT CREATED A NEW
+         ACTION BAR AND ADDED IT IN THE FIRST SLOT."
+
+         The choice of slot is `pickObserveSlot` (src/utils/tabSlots.ts): pure,
+         and pinned by tests/unit/tabSlots.test.ts. It lived inline here until
+         the missing 'active' case shipped as a bug that could only be caught
+         by opening four tables by hand — the same reason swipeTargetIndex was
+         lifted out of the touch handler. */
+      const slot = pickObserveSlot(prev, activeIndexRef.current, payload.tableId, MAX_TABLES);
+
+      if (slot.action === 'focus') {
+        setActiveIndex(slot.index);
+        return;
+      }
+
+      if (slot.action === 'full') {
+        notifyCapReached('add');
         return;
       }
 
@@ -1159,43 +1197,15 @@ export default function MultiTablePage() {
         // observer. TABLE_SEATED flips it if the player later takes a seat.
       };
 
-      /* Dan 2026-08-30: "WHEN I WENT INTO THE LOBBY TO CHANGE A TABLE, IT
-         DIDN'T CHANGE THE TABLE FOR THE PAGE I WAS IN, IT CREATED A NEW
-         ACTION BAR AND ADDED IT IN THE FIRST SLOT."
-
-         "Watch must never cost a screen you are already USING" was written to
-         protect SEATED screens: chips and a live engine socket. The screen
-         the player initiated this from is, by definition, the one they want
-         to change. If it is a lobby tab or an unseated OBSERVER tab, it holds
-         no chips and no seat, so the new table takes ITS slot, in place, same
-         index. Seated tabs are still never replaced. This is a user gesture,
-         so keeping focus on the replaced slot does not violate the
-         no-auto-switch law (10.6.2). */
-      const activeIdx = activeIndexRef.current;
-      const active = prev[activeIdx];
-      if (active && (isLobbyTab(active) || (active.kind === 'table' && !active.seated))) {
-        const next = [...prev];
-        next[activeIdx] = observerTab;
-        setTables(next);
-        setActiveIndex(activeIdx);
-        return;
-      }
-
-      const lobbyIdx = prev.findIndex(isLobbyTab);
-      if (lobbyIdx !== -1) {
-        const next = [...prev];
-        next[lobbyIdx] = observerTab;
-        setTables(next);
-        setActiveIndex(lobbyIdx);
-        return;
-      }
-
-      if (prev.length >= MAX_TABLES) {
-        notifyCapReached('add');
-        return;
-      }
-      setTables([...prev, observerTab]);
-      setActiveIndex(prev.length);
+      /* 'active' and 'lobby' both REPLACE a free slot; 'append' grows the
+         strip. Writing by index covers all three without a branch, because
+         'append' returns exactly `prev.length`. Focusing that slot is the
+         response to a user gesture, so it does not violate the no-auto-switch
+         law (10.6.2) — nothing here moves on its own. */
+      const next = [...prev];
+      next[slot.index] = observerTab;
+      setTables(next);
+      setActiveIndex(slot.index);
     }
   );
 

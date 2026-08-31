@@ -51,6 +51,7 @@ import {
   repairUnbankedBBJFees,
   auditRakeAttributionDrift,
   auditSatelliteConservation,
+  auditPrizeDisbursement,
 } from './services/FeeReconciler.js';
 import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
 import { fetchAllRows } from './services/supabase/pagination.js';
@@ -1338,6 +1339,13 @@ export class GameServer {
           // neither) and disbursed no more than max(pool, awardable seats).
           // Files a critical financial_alert per violating event.
           await auditSatelliteConservation(24);
+          // Prize disbursement (2026-08-31): a completed event must not have
+          // paid out more than its pool plus any acknowledged overlay. This
+          // reads wallet_transactions, NOT tournament_players.prize — the
+          // Sunday $200 double payment (18,201.60) was invisible to every
+          // other check precisely because the outage reset overwrote that
+          // snapshot while the wallet ledger kept the truth.
+          await auditPrizeDisbursement(24);
         } catch (err) {
           reportError(err, 'GameServer.bbj_drift_audit_failed');
         }
@@ -3327,6 +3335,31 @@ export class GameServer {
               .update({ status: 'RUNNING', started_at: new Date().toISOString() })
               .eq('id', t.id)
               .in('status', ['REGISTERING', 'ANNOUNCED']);
+            continue;
+          }
+
+          /**
+           * ZERO PLAYING IS "NEVER DEALT", NOT "DECIDED" (2026-08-31).
+           *
+           * `stillPlaying > 1` sends a live contest back to RUNNING, and
+           * everything else fell through to COMPLETING — including ZERO. In a
+           * tournament that has not started nobody is 'playing': every entrant
+           * is 'registered'. So this settled events that had dealt nothing,
+           * and recoverStuckCompleting then paid the whole payout structure to
+           * registered entrants in arbitrary chip order. See the dfae9288 note
+           * in tournamentRecovery.ts — 20,880 chips to players who went on to
+           * finish 107th and 87th.
+           *
+           * A decided game has exactly one player left standing. Zero means
+           * the label is wrong for some other reason, and settling is a guess.
+           */
+          if (stillPlaying === 0) {
+            reportError(
+              new Error(
+                `[GameServer] ${t.name} (${t.id.slice(0, 8)}) is ${t.status} with ${playedCount} finished and NOBODY playing — that is not a decided game, it is a mislabelled one. Not settling; left ${t.status} for review.`
+              ),
+              'GameServer.played_registering_zero_playing'
+            );
             continue;
           }
 

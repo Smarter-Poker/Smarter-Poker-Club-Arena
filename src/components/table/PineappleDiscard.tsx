@@ -95,7 +95,7 @@ export function PineappleDiscard({
   const urgent = secondsLeft !== null && secondsLeft <= 5;
 
   return (
-    <div className="pineapple-discard" role="dialog" aria-modal="true" aria-labelledby="pd-title">
+    <div className="pineapple-discard" role="dialog" aria-labelledby="pd-title">
       <div className="pineapple-discard__panel">
         <div className="pineapple-discard__header">
           <h2 id="pd-title" className="pineapple-discard__title">
@@ -112,8 +112,7 @@ export function PineappleDiscard({
         </div>
 
         <p className="pineapple-discard__hint">
-          Pick The Card To Throw Away. If The Timer Runs Out The Table Discards Your Last Card For
-          You.
+          Pick The Card To Throw Away. Miss The Timer And Your Hand Is Folded.
         </p>
 
         <div className="pineapple-discard__cards">
@@ -133,7 +132,7 @@ export function PineappleDiscard({
                   setError(null);
                 }}
               >
-                <CardImage card={card} size="lg" deckStyle={deckStyle} />
+                <CardImage card={card} size="md" deckStyle={deckStyle} />
                 <span className="pineapple-discard__card-tag">
                   {isSelected ? 'DISCARD' : 'KEEP'}
                 </span>

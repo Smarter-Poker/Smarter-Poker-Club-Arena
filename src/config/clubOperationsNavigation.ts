@@ -26,22 +26,22 @@ const GROUPS: Array<Omit<ClubOperationGroup, 'items'>> = [
   {
     id: 'people',
     label: 'People & Safety',
-    eyebrow: 'Roster circuit',
-    description: 'Run the team, review player activity, and protect the integrity of the club.',
+    eyebrow: 'Roster Circuit',
+    description: 'Run The Team, Review Player Activity, And Protect The Integrity Of The Club.',
     art: '/hub/club-arena/assets/club-buttons/club/club-identity-template-bbj-finish-v1.png',
   },
   {
     id: 'finance',
     label: 'Finance & Risk',
-    eyebrow: 'Ledger circuit',
-    description: 'Read live club economics, settle balances, and inspect insurance exposure.',
+    eyebrow: 'Ledger Circuit',
+    description: 'Read Live Club Economics, Settle Balances, And Inspect Insurance Exposure.',
     art: '/hub/club-arena/assets/club-buttons/wallets/desktop/wallet-club-bank-v1.webp',
   },
   {
     id: 'control',
     label: 'Club Control',
-    eyebrow: 'House circuit',
-    description: 'Publish club policy, manage communications, and control the operating profile.',
+    eyebrow: 'House Circuit',
+    description: 'Publish Club Policy, Manage Communications, And Control The Operating Profile.',
     art: '/hub/club-arena/assets/club-buttons/lobby/lobby-command-chassis-v2.png',
   },
 ];
@@ -60,7 +60,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'overview',
     label: 'Overview',
-    description: 'Permission-aware command center',
+    description: 'Permission-Aware Command Center',
     suffix: 'operations',
     group: 'overview',
     access: 'staff',
@@ -69,7 +69,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'dashboard',
     label: 'Dashboard',
-    description: 'Club performance, tables, tournaments, and activity',
+    description: 'Club Performance, Tables, Tournaments, And Activity',
     suffix: 'dashboard-full',
     group: 'people',
     access: 'staff',
@@ -78,7 +78,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'players',
     label: 'Players',
-    description: 'Roster, roles, balances, and member records',
+    description: 'Roster, Roles, Balances, And Member Records',
     suffix: 'members',
     group: 'people',
     access: 'staff',
@@ -87,7 +87,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'agents',
     label: 'Agent Team',
-    description: 'Hierarchy, downlines, and agent management',
+    description: 'Hierarchy, Downlines, And Agent Management',
     suffix: 'agents',
     group: 'people',
     access: 'staff',
@@ -95,7 +95,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'reports',
     label: 'Reports',
-    description: 'Review player reports and moderation decisions',
+    description: 'Review Player Reports And Moderation Decisions',
     suffix: 'reports',
     group: 'people',
     access: 'staff',
@@ -104,7 +104,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'disputes',
     label: 'Disputes',
-    description: 'Investigate and resolve club transaction disputes',
+    description: 'Investigate And Resolve Club Transaction Disputes',
     suffix: 'disputes',
     group: 'people',
     access: 'staff',
@@ -112,7 +112,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'blacklist',
     label: 'Blacklist',
-    description: 'Control excluded players, reasons, and expiry dates',
+    description: 'Control Excluded Players, Reasons, And Expiry Dates',
     suffix: 'blacklist',
     group: 'people',
     access: 'control',
@@ -120,7 +120,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'finance-overview',
     label: 'Finance Overview',
-    description: 'One live entry point for ledgers, cashier, settlement, and risk',
+    description: 'One Live Entry Point For Ledgers, Cashier, Settlement, And Risk',
     suffix: 'finance',
     group: 'finance',
     access: 'finance',
@@ -129,7 +129,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'data',
     label: 'Club Data',
-    description: 'Game production, player results, and union invoices',
+    description: 'Game Production, Player Results, And Union Invoices',
     suffix: 'data',
     group: 'finance',
     access: 'finance',
@@ -138,7 +138,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'financials',
     label: 'Financials',
-    description: 'Rake, commissions, fees, wallets, and ledger activity',
+    description: 'Rake, Commissions, Fees, Wallets, And Ledger Activity',
     suffix: 'financials',
     group: 'finance',
     access: 'finance',
@@ -146,7 +146,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'cashier',
     label: 'Cashier',
-    description: 'Club chips, transfers, and trade records',
+    description: 'Club Chips, Transfers, And Trade Records',
     suffix: 'cashier',
     group: 'finance',
     access: 'finance',
@@ -154,7 +154,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'settlement',
     label: 'Settlement',
-    description: 'Square up club balances and settlement records',
+    description: 'Square Up Club Balances And Settlement Records',
     suffix: 'settlement',
     group: 'finance',
     access: 'finance',
@@ -162,7 +162,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'insurance',
     label: 'Insurance Report',
-    description: 'Offer funnel, contracts, and insurance bank performance',
+    description: 'Offer Funnel, Contracts, And Insurance Bank Performance',
     suffix: 'insurance-report',
     group: 'finance',
     access: 'finance',
@@ -170,7 +170,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'control-overview',
     label: 'Control Overview',
-    description: 'One live entry point for policy, promotions, identity, and access',
+    description: 'One Live Entry Point For Policy, Promotions, Identity, And Access',
     suffix: 'control',
     group: 'control',
     access: 'control',
@@ -179,7 +179,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'announcements',
     label: 'Announcements',
-    description: 'Publish and review club-wide notices',
+    description: 'Publish And Review Club-Wide Notices',
     suffix: 'announcements',
     group: 'control',
     access: 'staff',
@@ -187,7 +187,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'promotions',
     label: 'Promotions',
-    description: 'Create and manage club promotion campaigns',
+    description: 'Create And Manage Club Promotion Campaigns',
     suffix: 'promotions',
     group: 'control',
     access: 'control',
@@ -195,7 +195,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'rules',
     label: 'Club Rules',
-    description: 'Publish the rules players see before they join',
+    description: 'Publish The Rules Players See Before They Join',
     suffix: 'rules',
     group: 'control',
     access: 'control',
@@ -203,7 +203,7 @@ const DEFINITIONS: OperationDefinition[] = [
   {
     id: 'settings',
     label: 'Settings',
-    description: 'Identity, limits, permissions, and club lifecycle',
+    description: 'Identity, Limits, Permissions, And Club Lifecycle',
     suffix: 'settings',
     group: 'control',
     access: 'control',

@@ -23,6 +23,13 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  sliceCall,
+  sliceStatement,
+  sliceCssRule,
+  sliceEnclosingBlock,
+} from './helpers/sourceWindow';
+import { mapEngineSnapshot } from '../src/utils/mapEngineSnapshot';
 
 const read = (p: string) => readFileSync(join(__dirname, '..', p), 'utf-8');
 
@@ -76,10 +83,8 @@ describe('TablePage wiring', () => {
   });
 
   it('subscribes to hole-card UPDATEs, not just INSERTs', () => {
-    const block = src.slice(
-      src.indexOf("table: 'table_hole_cards'") - 400,
-      src.indexOf("table: 'table_hole_cards'") + 400
-    );
+    const block = sliceCall(src, 'useMasterBusChannel({');
+    expect(block).toContain("table: 'table_hole_cards'");
     expect(block).toContain("event: '*'");
     expect(block).not.toContain("event: 'INSERT'");
   });
@@ -93,19 +98,16 @@ describe('a background table never puts a picker on your screen', () => {
   const src = read('src/pages/TablePage.tsx');
 
   it('gates the picker on isActive', () => {
-    const i = src.indexOf('<PineappleDiscard');
-    expect(i).toBeGreaterThan(-1);
-    expect(src.slice(i, i + 700)).toContain('isOpen={isActive && !!heroPineappleCards}');
+    expect(sliceStatement(src, '<PineappleDiscard')).toContain(
+      'isOpen={isActive && !!heroPineappleCards}'
+    );
   });
 
   it('still arms the tab-strip alarm on a background table', () => {
     // The deadline must NOT be gated on isActive, or the notice that replaces
     // the picker is silenced along with it. Dan 2026-08-28: a background table
     // asks for attention, it never takes it.
-    const memo = src.slice(
-      src.indexOf('const heroPineappleCards = useMemo('),
-      src.indexOf('const actionTimeSecondsRef')
-    );
+    const memo = sliceCall(src, 'const heroPineappleCards = useMemo(');
     expect(memo).not.toContain('if (!isActive) return null;');
     expect(src).toContain("setDecisionDeadline({ kind: 'discard', at: pineappleDeadline })");
   });
@@ -127,14 +129,14 @@ describe('the picker does not cover the flop', () => {
   const css = read('src/components/table/PineappleDiscard.css');
 
   it('is docked, not a full-viewport overlay', () => {
-    const shell = css.slice(css.indexOf('\n.pineapple-discard {'), css.indexOf('__panel'));
+    const shell = sliceCssRule(css, '.pineapple-discard');
     expect(shell).not.toContain('inset: 0');
     expect(shell).toContain('bottom:');
     expect(shell).toContain('pointer-events: none');
   });
 
   it('paints no scrim or blur over the board', () => {
-    const shell = css.slice(css.indexOf('\n.pineapple-discard {'), css.indexOf('__panel'));
+    const shell = sliceCssRule(css, '.pineapple-discard');
     expect(shell).not.toContain('backdrop-filter');
     expect(shell).not.toMatch(/background:\s*rgba\(0, 0, 0/);
   });
@@ -144,25 +146,77 @@ describe('the picker does not cover the flop', () => {
  * PHASE 1 — the discard clock the player watches is the one that folds them.
  */
 describe('the discard countdown is server-authored', () => {
-  const map = read('src/utils/mapEngineSnapshot.ts');
   const src = read('src/pages/TablePage.tsx');
   const panel = read('src/components/table/PineappleDiscard.tsx');
 
+  /* mapEngineSnapshot is pure and importable, so this RUNS it rather than
+     reading its source. A regex passes on a line that is present and wrong;
+     this cannot. */
+  const HERO = 'hero-user-id';
+  const snap = (over: Record<string, unknown> = {}) =>
+    ({
+      table_id: 't',
+      hand_number: 1,
+      pot: 0,
+      community_cards: [],
+      stage: 'pineapple_discard',
+      players: [{ seat: 1, user_id: HERO, username: 'Hero', stack: 100, cards: [] }],
+      ...over,
+    }) as never;
+
   it("prefers the hero's OWN deadline over the round default", () => {
     // A time bank extends one seat without touching the rest, so the per-user
-    // entry has to win.
-    const i = map.indexOf('const ownDiscard = s.discard_deadlines?.[heroUserId]');
-    const j = map.indexOf('} else if (typeof s.discard_deadline_ms');
-    expect(i).toBeGreaterThan(-1);
-    expect(j).toBeGreaterThan(i);
+    // entry has to win over the round's unextended deadline.
+    const m = mapEngineSnapshot(
+      snap({ discard_deadline_ms: 1_000, discard_deadlines: { [HERO]: 9_000 } }),
+      HERO,
+      6
+    );
+    expect(m.discardDeadline).toBe(9_000);
+  });
+
+  it('falls back to the round deadline when this seat has no entry of its own', () => {
+    const m = mapEngineSnapshot(
+      snap({ discard_deadline_ms: 1_000, discard_deadlines: { someoneElse: 9_000 } }),
+      HERO,
+      6
+    );
+    expect(m.discardDeadline).toBe(1_000);
+  });
+
+  it('is NULL outside the round, so no dead countdown can linger', () => {
+    // The engine nulls these off-round; the mapper must not invent one.
+    const m = mapEngineSnapshot(
+      snap({ stage: 'flop', discard_deadline_ms: null, discard_deadlines: {} }),
+      HERO,
+      6
+    );
+    expect(m.discardDeadline).toBeNull();
+  });
+
+  it('ignores a zero or negative deadline rather than counting down to the past', () => {
+    const m = mapEngineSnapshot(
+      snap({ discard_deadline_ms: 0, discard_deadlines: { [HERO]: 0 } }),
+      HERO,
+      6
+    );
+    expect(m.discardDeadline).toBeNull();
+  });
+
+  it('carries the round duration through for the ring geometry', () => {
+    const m = mapEngineSnapshot(snap({ discard_duration_ms: 15_000 }), HERO, 6);
+    expect(m.discardDurationMs).toBe(15_000);
   });
 
   it('TablePage takes the engine deadline, not its own guess', () => {
-    const block = src.slice(
-      src.indexOf('const actionTimeSecondsRef'),
-      src.indexOf('// Mirror the discard clock into the shared decision channel')
+    /* The whole effect, bounded by its own body - `levels: 2` climbs out of the
+       `if (typeof authoritative ...)` arm to the effect that encloses it, so
+       the window grows with the code instead of being outrun by it. */
+    const block = sliceEnclosingBlock(
+      src,
+      'setPineappleDeadline((prev) => prev ?? Date.now() + actionTimeSecondsRef.current * 1000)'
     );
-    expect(block).toContain('const authoritative = tableState.discardDeadline;');
+    expect(block).toContain('tableState.discardDeadline');
     // The old guess survives only as a fallback for an engine that does not
     // publish the field yet — it must not be the first thing tried.
     const guess = block.indexOf('actionTimeSecondsRef.current * 1000');
@@ -178,7 +232,41 @@ describe('the discard countdown is server-authored', () => {
   it('offers a time bank on the round that folds you for running out', () => {
     expect(panel).toContain('pineapple-discard__timebank');
     expect(panel).toContain('timeBanksRemaining > 0');
-    const i = src.indexOf('<PineappleDiscard');
-    expect(src.slice(i, i + 900)).toContain('onTimeBank={handleActivateTimeBank}');
+    expect(sliceStatement(src, '<PineappleDiscard')).toContain(
+      'onTimeBank={handleActivateTimeBank}'
+    );
+  });
+});
+
+describe('a discard time bank does not borrow the TURN presentation', () => {
+  const src = read('src/pages/TablePage.tsx');
+
+  it('returns before touching timeBankActive when the hero is in the discard round', () => {
+    // `timeBankActive` drives the hero seat ring and the multi-table tab's
+    // "1:<deadline>" string, and the effect that owns it cancels the instant
+    // currentPlayerSeat !== heroSeat. The discard round has no current player,
+    // so setting it would paint a ring for one frame, publish a bogus deadline
+    // to the tab strip, then cancel itself.
+    const body = sliceCall(src, 'const handleActivateTimeBank = useCallback(');
+    const guard = body.indexOf('if (heroPineappleCards) {');
+    const turnState = body.indexOf('setTimeBankActive(true)');
+    expect(guard).toBeGreaterThan(-1);
+    expect(turnState).toBeGreaterThan(guard);
+    // and it must actually leave, not fall through
+    expect(body.slice(guard, turnState)).toContain('return {');
+  });
+
+  it('says "armed" in the panel, never through a popup', () => {
+    /* Dan 2026-08-24 on the turn path: "it gives you this generic pop up,
+       instead of resetting the countdown clock on the hero's box." The same
+       rule here - and tests/unit/timeBankSeatFeedbackAndCards.test.ts pins the
+       no-toast half from the other side. */
+    const body = sliceCall(src, 'const handleActivateTimeBank = useCallback(');
+    const guard = body.indexOf('if (heroPineappleCards) {');
+    expect(body.slice(guard, body.indexOf('setTimeBankArmed(true)'))).not.toMatch(
+      /toast\?\.\w+\?\.\(/
+    );
+    const panel = read('src/components/table/PineappleDiscard.tsx');
+    expect(panel).toContain('Time Bank Armed. It Starts When Your Clock Runs Out');
   });
 });

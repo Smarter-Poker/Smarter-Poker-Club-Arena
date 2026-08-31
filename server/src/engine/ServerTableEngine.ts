@@ -197,6 +197,10 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     ) {
       return { discard_deadline_ms: null, discard_deadlines: {}, discard_duration_ms: 0 };
     }
+    /* Never announce a deadline for a seat that has already settled its round.
+       A horse discards through performDiscard and an all-in seat through
+       resolvePendingPineappleDiscards, so the map is reconciled here too. */
+    this.pruneSettledPineappleDeadlines();
     const byUser: Record<string, number> = {};
     for (const [seat, at] of this.pineappleDiscardDeadlines) {
       const p = this.seatedPlayers.find((sp) => sp.seat_number === seat);

@@ -31,10 +31,14 @@ afterEach(() => vi.restoreAllMocks());
 function harness(stage = 'pineapple_discard') {
   const engine = new ServerTableEngine(TABLE) as any;
   engine.tableInfo = { action_time_seconds: 15 } as any;
+  /** Seats that still owe a discard - the HandController's authority, stubbed. */
+  const owes = new Set<number>([1, 2]);
   engine.handController = {
     getState: () => ({ stage, players: [], currentPlayerSeat: 0, currentBet: 0 }),
+    owesPineappleDiscard: (seat: number) => owes.has(seat),
     foldForMissedDiscard: vi.fn(() => true),
   };
+  engine.__owes = owes;
   engine.seatedPlayers = [
     { seat_number: 1, user_id: 'u1' },
     { seat_number: 2, user_id: 'u2' },
@@ -85,6 +89,20 @@ describe('the discard deadline is published, not guessed', () => {
 
     const f = engine.pineappleDiscardSnapshotFields() as any;
     expect(Object.keys(f.discard_deadlines)).toEqual(['u1']);
+  });
+
+  it('never announces a deadline for a seat that already settled its round', () => {
+    // A HORSE discards through performDiscard, and an all-in seat through
+    // resolvePendingPineappleDiscards - neither passes through submitDiscard,
+    // which was the only place the map used to be pruned. Reconciled against
+    // the HandController on every publish.
+    const engine = harness();
+    openRound(engine);
+    engine.__owes.delete(2); // seat 2 discarded, by a path that skips submitDiscard
+
+    const f = engine.pineappleDiscardSnapshotFields() as any;
+    expect(Object.keys(f.discard_deadlines)).toEqual(['u1']);
+    expect(engine.pineappleDiscardDeadlines.has(2)).toBe(false);
   });
 });
 
@@ -142,6 +160,23 @@ describe('a time bank works on a discard', () => {
 });
 
 describe('the sweep folds only the seats that are genuinely out of time', () => {
+  it('does not even ask about a seat that settled by another path', () => {
+    vi.useFakeTimers();
+    const engine = harness();
+    const now = Date.now();
+    engine.pineappleDiscardBaseDeadlineMs = now;
+    engine.pineappleDiscardDeadlines.set(1, now);
+    engine.pineappleDiscardDeadlines.set(2, now);
+    engine.__owes.delete(2); // a horse discarded here
+    engine.armPineappleDiscardSweep(engine.handController);
+
+    vi.advanceTimersByTime(50);
+    expect(engine.handController.foldForMissedDiscard).toHaveBeenCalledWith(1);
+    expect(engine.handController.foldForMissedDiscard).not.toHaveBeenCalledWith(2);
+    vi.useRealTimers();
+    engine.preciseTimer.dispose();
+  });
+
   it('folds an expired seat and leaves an extended one alone', () => {
     vi.useFakeTimers();
     const engine = harness();

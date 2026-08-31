@@ -538,6 +538,7 @@ export abstract class ServerTableEngineBase {
       clearTimeout(this.pineappleDiscardTimer);
       this.pineappleDiscardTimer = null;
     }
+    this.pruneSettledPineappleDeadlines();
     if (this.pineappleDiscardDeadlines.size === 0) return;
 
     const next = Math.min(...this.pineappleDiscardDeadlines.values());
@@ -546,6 +547,14 @@ export abstract class ServerTableEngineBase {
     this.pineappleDiscardTimer = setTimeout(() => {
       this.pineappleDiscardTimer = null;
       if (!this.handController || this.handController !== controllerRef) return;
+
+      /* Reconcile before folding anybody. A horse discards through
+         performDiscard and an all-in seat through
+         resolvePendingPineappleDiscards, neither of which passes through
+         submitDiscard - so without this the sweep would reach a seat that
+         settled its round minutes ago. foldForMissedDiscard would refuse it,
+         but "the guard downstream happens to say no" is not a reason to ask. */
+      this.pruneSettledPineappleDeadlines();
 
       const now = Date.now();
       for (const [seat, at] of [...this.pineappleDiscardDeadlines]) {
@@ -640,6 +649,25 @@ export abstract class ServerTableEngineBase {
     this.armPineappleDiscardSweep(this.handController);
     this.broadcastCurrentState();
     return { success: true, deadlineMs: extended };
+  }
+
+  /**
+   * Drop deadline entries for seats that no longer owe a discard, and drop the
+   * whole map once the round is over. The HandController's own set is the
+   * authority; this map is a cache of it that exists only to carry the extra
+   * time a time bank bought for one seat.
+   */
+  protected pruneSettledPineappleDeadlines(): void {
+    const hc = this.handController;
+    if (!hc || hc.getState().stage !== 'pineapple_discard') {
+      this.pineappleDiscardDeadlines.clear();
+      this.pineappleDiscardBaseDeadlineMs = null;
+      this.pineappleDiscardDurationMs = 0;
+      return;
+    }
+    for (const seat of [...this.pineappleDiscardDeadlines.keys()]) {
+      if (!hc.owesPineappleDiscard(seat)) this.pineappleDiscardDeadlines.delete(seat);
+    }
   }
 
   protected clearLooseHandTimers(): void {

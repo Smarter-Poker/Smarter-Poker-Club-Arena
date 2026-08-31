@@ -47,8 +47,13 @@ export interface PineappleDiscardProps {
   deckStyle?: DeckStyle;
   /** Time bank uses the player has left. 0 hides the button entirely. */
   timeBanksRemaining?: number;
-  /** Spend one. The engine extends THIS seat's deadline and nobody else's. */
-  onTimeBank?: () => void | Promise<void>;
+  /**
+   * Spend one. The engine extends THIS seat's deadline and nobody else's.
+   * Resolves `{ armed: true }` when the ordinary clock was not yet exhausted:
+   * nothing has been spent, the bank redeems itself at expiry, and the panel
+   * says so in place rather than through a toast (Dan 2026-08-24).
+   */
+  onTimeBank?: () => void | Promise<{ armed?: boolean } | void>;
 }
 
 export function PineappleDiscard({
@@ -64,6 +69,9 @@ export function PineappleDiscard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  /* Armed = pressed with clock still to run. Nothing spent, nothing to count
+     down yet, so the button becomes the notice instead of firing a popup. */
+  const [bankArmed, setBankArmed] = useState(false);
 
   // Reset whenever a new discard phase opens.
   useEffect(() => {
@@ -71,6 +79,7 @@ export function PineappleDiscard({
       setSelected(null);
       setBusy(false);
       setError(null);
+      setBankArmed(false);
     }
   }, [isOpen]);
 
@@ -168,13 +177,17 @@ export function PineappleDiscard({
           <button
             type="button"
             className="pineapple-discard__timebank"
-            disabled={busy}
+            disabled={busy || bankArmed}
             onClick={() => {
               haptic.light();
-              void onTimeBank();
+              void Promise.resolve(onTimeBank()).then((r) => {
+                if (r && r.armed) setBankArmed(true);
+              });
             }}
           >
-            Use Time Bank ({timeBanksRemaining})
+            {bankArmed
+              ? 'Time Bank Armed. It Starts When Your Clock Runs Out'
+              : `Use Time Bank (${timeBanksRemaining})`}
           </button>
         )}
 

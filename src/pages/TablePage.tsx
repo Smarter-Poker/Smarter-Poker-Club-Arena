@@ -17018,6 +17018,27 @@ export default function TablePage({
       toast?.error?.(result?.error || 'Could Not Start Your Time Bank');
       return;
     }
+
+    /* A DISCARD BANK IS NOT A TURN BANK (2026-08-31).
+
+       Everything below this point is the TURN presentation. `timeBankActive`
+       drives the hero seat's ring and the multi-table tab's "1:<deadline>"
+       string, and the effect that owns it cancels the moment
+       `currentPlayerSeat !== heroSeat`. The Crazy Pineapple discard round has
+       no current player at all, so setting it here would paint a ring for one
+       frame, publish a bogus deadline to the tab strip, and then cancel itself.
+
+       Nothing needs painting: the engine has already moved THIS seat's discard
+       deadline and re-broadcast it, so the picker's own countdown is the
+       feedback. And no toast on the armed case either - Dan 2026-08-24 on the
+       turn path, "it gives you this generic pop up, instead of resetting the
+       countdown clock on the hero's box". The same reasoning holds here, so the
+       armed state is returned and the picker renders it in place.
+       Pinned by tests/unit/timeBankSeatFeedbackAndCards.test.ts. */
+    if (heroPineappleCards) {
+      soundService.playTimeBankActivated();
+      return { armed: !!(result as { armed?: boolean }).armed };
+    }
     /* Dan 2026-08-23: "it should not take a time bank or add more time until you
        have truly used your entire 15 seconds." The engine now ARMS a bank
        pressed while ordinary clock remains and redeems it at expiry, so a press
@@ -17044,7 +17065,7 @@ export default function TablePage({
     // ANIMATION/SOUND AUDIT 2026-08-19: was playChips (a wager sound) — the
     // dedicated time-bank cue existed and was only wired to the REMOTE event.
     soundService.playTimeBankActivated();
-  }, [tableId, userId, timeBanksRemaining, toast]);
+  }, [tableId, userId, timeBanksRemaining, toast, heroPineappleCards]);
 
   /* An arm belongs to ONE turn. Hero acts, folds, times out or the hand moves
      on, and a leftover `true` would keep the pending indicator lit on a seat

@@ -13,6 +13,7 @@ vi.mock('@/stores/useWalletStore', () => ({
 
 const headerData = vi.hoisted(() => ({
   avatarUrl: '/avatars/test-user.png',
+  isVipActive: false,
   notificationCount: 0,
   unreadMessages: 0,
   loadOnce: vi.fn(),
@@ -48,21 +49,23 @@ describe('GlobalHeader Component', () => {
   beforeEach(() => {
     headerData.notificationCount = 0;
     headerData.unreadMessages = 0;
+    headerData.isVipActive = false;
     headerData.clearUnreadNotifications.mockClear();
     headerData.clearUnreadMessages.mockClear();
   });
 
-  it('renders the brand text image', () => {
+  it('renders the live Club Arena identity', () => {
     render(
       <MemoryRouter>
         <GlobalHeader />
       </MemoryRouter>
     );
-    const brandImage = screen.getByAltText('Smarter.Poker');
-    expect(brandImage).toBeInTheDocument();
+    expect(screen.getByLabelText('Club Arena by Smarter.Poker')).toBeInTheDocument();
+    expect(screen.getByText('Club Arena')).toBeInTheDocument();
+    const brandImage = document.querySelector('img[src*="vault-iris-emblem-v1-320.webp"]');
     expect(brandImage).toHaveAttribute(
       'src',
-      expect.stringContaining('images/global-header/brand.png')
+      expect.stringContaining('images/club-arena/vault-iris-emblem-v1-320.webp')
     );
   });
 
@@ -131,6 +134,29 @@ describe('GlobalHeader Component', () => {
     expect(screen.getByAltText('Notifications')).toHaveAttribute(
       'src',
       expect.stringContaining('images/global-header/notifications.png')
+    );
+  });
+
+  it('leaves non-member VIP artwork unchanged and marks active memberships', () => {
+    const { rerender } = render(
+      <MemoryRouter>
+        <GlobalHeader />
+      </MemoryRouter>
+    );
+    expect(screen.getByRole('button', { name: 'VIP Membership' })).toHaveAttribute(
+      'data-vip-active',
+      'false'
+    );
+
+    headerData.isVipActive = true;
+    rerender(
+      <MemoryRouter>
+        <GlobalHeader />
+      </MemoryRouter>
+    );
+    expect(screen.getByRole('button', { name: 'VIP Membership Active' })).toHaveAttribute(
+      'data-vip-active',
+      'true'
     );
   });
 

@@ -60,7 +60,6 @@ interface AdvancedStat {
 }
 
 interface AdvancedStatsSummaryProps {
-  userId?: string;
   initialData?: any; // Pre-fetched player_stats from parent (dedup)
 }
 
@@ -92,7 +91,7 @@ const AnimatedNumber: React.FC<{
   return <>{format(display)}</>;
 };
 
-const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, initialData }) => {
+const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData }) => {
   const [stats, setStats] = useState<AdvancedStat[]>([]);
   const [visibleStats, setVisibleStats] = useState<Set<number>>(new Set());
   const [selectedStat, setSelectedStat] = useState<string | null>(null);
@@ -112,7 +111,6 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
   }, []);
 
   const resolveUserId = useCallback(async (): Promise<string | null> => {
-    if (userId) return userId;
     try {
       const { data: userResp } = await getAuthUser();
       return userResp.user?.id || null;
@@ -120,7 +118,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
       reportError(e, 'AdvancedStatsSummary.useCallback');
       return null;
     }
-  }, [userId]);
+  }, []);
 
   // If parent passes initialData, use it directly (dedup)
   useEffect(() => {

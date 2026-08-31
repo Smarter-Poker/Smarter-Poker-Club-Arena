@@ -1738,6 +1738,28 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     const equityVariant = this.activeHandVariant() || this.tableInfo?.game_variant || 'nlh';
     const isShortDeck = equityVariant === 'short_deck';
     const isOmaha = isOmahaVariant(equityVariant);
+
+    /* ── NEVER PRICE A HAND NOBODY IS ALLOWED TO HOLD (2026-08-31) ─────────
+       In Crazy Pineapple a player holds THREE cards until the flop lands, and
+       the equity solver has no rule for that: with `omaha: false` it scores
+       best-5-of-8, the same illegal advantage that was paying impossible
+       flushes at showdown until #2072, and with `omaha: true` evaluateOmahaHand
+       falls through its `length < 4` guard and silently prices the FIRST TWO
+       cards. Both numbers are confident and wrong, and they go straight onto
+       the felt as percentages players trust.
+
+       There is no honest third number either: the true preflop equity depends
+       on a discard that has not happened yet and cannot be simulated inside
+       the worker. So this hand's equity waits - which is where Dan's own rule
+       already points ("equity only AFTER the street lands"), and in this
+       variant the flop IS the first moment the numbers mean anything. The
+       discard resolves the instant the flop lands (HandController.
+       resolvePendingPineappleDiscards, both runout paths), and the per-street
+       refresh below then broadcasts a correct number for every street. */
+    if (allInPlayers.some((p) => (p.cards || []).length > 2) && !isOmaha) {
+      return;
+    }
+
     const valid = allInPlayers.filter((p) => (p.cards || []).length >= 2);
     const equities: Array<{ userId: string; username: string; equity: number; seat: number }> = [];
     // MULTI-BOARD EQUITY 2026-08-28: all live boards, board 1 first.

@@ -25,6 +25,7 @@ import {
   SEAT_FIRST_START_STALL_MS,
 } from './services/TournamentRecurringService.js';
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
+import { TournamentMetrics } from './services/TournamentMetrics.js';
 import {
   planTableReopens,
   freshHumanWindowMs,
@@ -290,6 +291,8 @@ export class GameServer {
   private lastRakeAttributionRepairAt = 0;
   /** Last fn_backpay_spin_unpaid_winners pass (2026-08-28 spin deep dive). */
   private lastSpinBackpayAt = 0;
+  /** Last fn_spin_expire_unfilled pass (2026-08-31 phase 2 review). */
+  private lastSpinExpireAt = 0;
   /** Last fn_requeue_unbanked_fees pass (2026-08-28 rake re-drive). */
   private lastFeeRequeueAt = 0;
   /** Last fn_pay_backed_payout_shortfalls pass (2026-08-28 backed payouts). */
@@ -303,6 +306,13 @@ export class GameServer {
   // Data-driven recurring schedules (tournament_schedules) — runs alongside the
   // hardcoded recurring blocks, acting only on rows written into the database.
   private scheduledTournaments = new ScheduledTournamentService();
+  /**
+   * TOURNAMENT OBSERVABILITY (2026-08-31). Until this existed, /metrics carried
+   * 895 poker_* series and not one mentioned a tournament, so no tournament
+   * alert rule could be written — which is why every tournament defect in the
+   * 2026-08-30/31 audit was found by a human running SQL by hand.
+   */
+  private tournamentMetrics = new TournamentMetrics();
   private lifecycle = new HorseLifecycleManager();
 
   /**
@@ -539,6 +549,13 @@ export class GameServer {
 
       // Step 3b: Start the data-driven scheduler (tournament_schedules rows)
       this.scheduledTournaments.start();
+
+      // Step 3c: Start the tournament metrics collector so /metrics can carry
+      // tournament gauges. Refreshes once immediately, then every 60s, and a
+      // failed read keeps the last good snapshot while
+      // poker_tournament_metrics_stale_seconds climbs — a blind collector must
+      // never read as a healthy platform.
+      this.tournamentMetrics.start();
 
       // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
       this.lifecycle.start();
@@ -1153,6 +1170,13 @@ export class GameServer {
       '# HELP poker_lease_conflicts Tables this instance was refused because another engine holds them',
       '# TYPE poker_lease_conflicts gauge',
       `poker_lease_conflicts ${leaseDiagnostics().conflictCount}`,
+      // ── TOURNAMENT OBSERVABILITY (2026-08-31) ────────────────────────
+      // Every gauge above this line is about TABLES. A tournament that never
+      // started owns no table, so nothing above can see it — and that is the
+      // single most player-visible tournament failure there is. These come
+      // from the database because the database is the only thing that knows
+      // what SHOULD exist. See services/TournamentMetrics.ts.
+      ...this.tournamentMetrics.toPrometheus(),
     ];
 
     if (allLines.length === 0) {
@@ -3361,6 +3385,47 @@ export class GameServer {
             }
           } catch (sbpEx) {
             reportError(sbpEx, 'GameServer.spin_backpay_threw');
+          }
+        }
+
+        /* ── UNFILLED-SPIN REFUND, ON THE ENGINE'S OWN CLOCK (2026-08-31) ──
+         * A Spin is seat-first: you pay when you sit. Nothing bounded the
+         * wait for the third seat, so a game that never filled held every
+         * seated player's chips indefinitely - worst observed 76,648s, 21
+         * hours. fn_spin_expire_unfilled cancels those through
+         * atomic_cancel_tournament, which refunds; it never touches a
+         * full-but-unstarted game, and the timeout is a config row
+         * (spin_fill_policy, 0 disables).
+         *
+         * IT ALSO RUNS FROM THE WORLD HUB SWEEP, AND THAT IS DELIBERATE
+         * DUPLICATION. The RPC is idempotent - it only ever acts on games
+         * that are still open, unstarted and past the policy - so two callers
+         * cost nothing and either one alone is sufficient. Verified on the
+         * day this shipped: /api/cron/spin-sweep had not fired for 37 minutes
+         * on a fifteen-minute schedule while the engine's own timers kept perfect time.
+         * Money owed back to a player must not wait on the least reliable
+         * clock available; this is the same reasoning as the back-pay above,
+         * whose comment says a repair gated on another job's clock runs at
+         * boot and then effectively never. */
+        if (Date.now() - this.lastSpinExpireAt > 10 * 60 * 1000) {
+          this.lastSpinExpireAt = Date.now();
+          try {
+            const { data: exp, error: expErr } = await supabase.rpc('fn_spin_expire_unfilled', {
+              p_limit: 50,
+            });
+            if (expErr) {
+              reportError(
+                new Error(`[GameServer] unfilled-spin expiry failed: ${expErr.message}`),
+                'GameServer.spin_expire_unfilled_failed'
+              );
+            } else if (Number(exp?.expired) > 0) {
+              console.log(
+                `[GameServer] Unfilled-spin expiry: ${exp.expired} game(s) cancelled and refunded, ` +
+                  `~${exp.chips_refunded_estimate} chips returned (timeout ${exp.timeout_minutes}m)`
+              );
+            }
+          } catch (expEx) {
+            reportError(expEx, 'GameServer.spin_expire_unfilled_threw');
           }
         }
 

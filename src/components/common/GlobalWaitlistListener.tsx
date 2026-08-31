@@ -278,11 +278,31 @@ export default function GlobalWaitlistListener() {
                 (newRow.notified_at
                   ? new Date(new Date(newRow.notified_at).getTime() + 60_000).toISOString()
                   : null);
+              /* Name the table. The banner card is otherwise anonymous - "Seat
+                 Held 0:47" with no indication of WHERE - and a player queued
+                 on more than one table cannot tell which seat is being held.
+                 One small read, only when an offer actually arrives, and the
+                 card still renders immediately if it fails: the emit happens
+                 first with no name, and the name follows if it resolves. */
               masterBus.emit('WAITLIST_SEAT_OFFERED', {
                 tableId: offeredTableId,
                 tableName: '',
                 holdExpiresAt,
               });
+              void supabase
+                .from('tables')
+                .select('name')
+                .eq('id', offeredTableId)
+                .maybeSingle()
+                .then(({ data }) => {
+                  if (data?.name) {
+                    masterBus.emit('WAITLIST_SEAT_OFFERED', {
+                      tableId: offeredTableId,
+                      tableName: String(data.name),
+                      holdExpiresAt,
+                    });
+                  }
+                });
               /* 60 SECONDS, NOT 15 (Dan 2026-08-30): the seat is now HELD for
                  this player for 60s (fn_offer_open_seat + atomic_table_buyin
                  SEAT_RESERVED guard), so the popup lives exactly as long as

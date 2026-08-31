@@ -80,6 +80,10 @@ describe('Club Arena never touches the social media photo column', () => {
             'src/pages/ProfilePage.tsx',
             'src/services/ProfileService.ts',
             'src/services/FriendSuggestionService.ts',
+            // The global header is a World Hub surface embedded in Arena. It
+            // intentionally reads both sources and obeys the user's existing
+            // use_avatar_as_profile_pic preference; it never writes either.
+            'src/stores/useHeaderDataStore.ts',
           ].includes(relPath)
         ) {
           continue;

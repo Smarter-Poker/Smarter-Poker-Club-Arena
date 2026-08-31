@@ -381,7 +381,26 @@ export async function getServerStatus(): Promise<ServerStatus | null> {
  * Bible V8 §6.3: Send heartbeat to reset disconnect timer.
  * Must be called every 5 seconds while player is at the table.
  */
-export async function sendHeartbeat(tableId: string): Promise<ActionResult> {
+export async function sendHeartbeat(
+  tableId: string,
+  /**
+   * PHASE 2 (2026-08-31) — THE DIFFERENCE BETWEEN ONLINE AND WORKING.
+   *
+   * A heartbeat only proves the app is running and the network is up. It says
+   * nothing about whether the player can SEE anything, and on 2026-08-31 that
+   * gap cost somebody their seat: his client had erased his own seat from the
+   * table, so the engine offered him turns nobody could see, timed each one
+   * out, force-sat him out and evicted him — while his heartbeat landed
+   * perfectly every five seconds throughout.
+   *
+   * `turnRendered` closes that gap. When the client has actually DRAWN the
+   * action controls for this player, it says so, and the engine can tell an
+   * absent player from a broken one. Optional by design: it can only ever
+   * make the engine quieter about a player, never harsher, so a client that
+   * never sends it is treated exactly as every client is treated today.
+   */
+  opts?: { turnRendered?: boolean }
+): Promise<ActionResult> {
   // Circuit breaker: skip if game server is known-unreachable
   if (circuitBreaker.isOpen()) {
     return { success: false, error: 'Circuit breaker open - server unreachable' };
@@ -391,7 +410,7 @@ export async function sendHeartbeat(tableId: string): Promise<ActionResult> {
     const response = await fetch(`${GAME_SERVER_URL}/heartbeat`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ tableId }),
+      body: JSON.stringify(opts?.turnRendered ? { tableId, turnRendered: true } : { tableId }),
     });
     if (!response.ok) {
       circuitBreaker.recordFailure(new Error(`HTTP ${response.status}`), 'GameServerAPI.heartbeat');

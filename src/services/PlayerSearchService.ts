@@ -1,0 +1,117 @@
+import { supabase } from '../lib/supabase';
+import { ClubEntryTrustService } from './ClubEntryTrustService';
+
+export type PlayerSearchScope = 'all' | 'friends' | 'clubs' | 'union';
+export type PlayerPresenceFilter = 'all' | 'online' | 'playing';
+export type PlayerSearchSort = 'relevance' | 'name';
+
+export interface PlayerSearchTable {
+  id: string;
+  name: string;
+  game_variant: string;
+  stakes: string;
+  club_name?: string;
+  is_tournament?: boolean;
+}
+
+export interface PlayerSearchResult {
+  id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  relationship: 'self' | 'friend' | 'club' | 'union';
+  presence_status: 'online' | 'away' | 'playing' | 'offline' | 'hidden';
+  tables: PlayerSearchTable[];
+}
+
+export interface PlayerSearchPage {
+  items: PlayerSearchResult[];
+  total: number;
+  hasMore: boolean;
+  offset: number;
+  limit: number;
+}
+
+export interface PlayerSearchPreferences {
+  discoverable: boolean;
+  showDisplayName: boolean;
+  showPresence: boolean;
+  showCurrentTable: boolean;
+}
+
+export async function searchPlayers(options: {
+  query: string;
+  limit?: number;
+  offset?: number;
+  scope?: PlayerSearchScope;
+  presence?: PlayerPresenceFilter;
+  sort?: PlayerSearchSort;
+  signal?: AbortSignal;
+}): Promise<PlayerSearchPage> {
+  const startedAt = performance.now();
+  let request = supabase.rpc('fn_search_players', {
+    p_query: options.query.trim(),
+    p_limit: options.limit ?? 20,
+    p_offset: options.offset ?? 0,
+    p_scope: options.scope ?? 'all',
+    p_presence: options.presence ?? 'all',
+    p_sort: options.sort ?? 'relevance',
+  });
+  if (options.signal) request = request.abortSignal(options.signal);
+  const { data, error } = await request;
+  if (error) {
+    if (options.signal?.aborted) throw new DOMException('Search cancelled', 'AbortError');
+    ClubEntryTrustService.track('find', 'searched', {
+      outcome: 'failed',
+      durationMs: Math.round(performance.now() - startedAt),
+      metadata: { error_code: error.code || 'unknown' },
+    });
+    throw new Error(error.message || 'Player search failed.');
+  }
+  const page = (data || {}) as Record<string, unknown>;
+  const result = {
+    items: Array.isArray(page.items) ? (page.items as PlayerSearchResult[]) : [],
+    total: Number(page.total) || 0,
+    hasMore: page.has_more === true,
+    offset: Number(page.offset) || 0,
+    limit: Number(page.limit) || options.limit || 20,
+  };
+  ClubEntryTrustService.track('find', options.offset ? 'loaded_more' : 'searched', {
+    outcome: 'succeeded',
+    durationMs: Math.round(performance.now() - startedAt),
+    metadata: { result_count: result.items.length },
+  });
+  return result;
+}
+
+export async function getPlayerSearchPreferences(): Promise<PlayerSearchPreferences> {
+  const { data, error } = await supabase.rpc('fn_get_player_search_preferences');
+  if (error || !data || typeof data !== 'object') throw new Error('Could not load search privacy.');
+  const value = data as Record<string, unknown>;
+  return {
+    discoverable: value.discoverable !== false,
+    showDisplayName: value.show_display_name !== false,
+    showPresence: value.show_presence !== false,
+    showCurrentTable: value.show_current_table !== false,
+  };
+}
+
+export async function setPlayerSearchPreferences(
+  preferences: PlayerSearchPreferences
+): Promise<PlayerSearchPreferences> {
+  const { data, error } = await supabase.rpc('fn_set_player_search_preferences', {
+    p_discoverable: preferences.discoverable,
+    p_show_display_name: preferences.showDisplayName,
+    p_show_presence: preferences.showPresence,
+    p_show_current_table: preferences.showCurrentTable,
+  });
+  if (error || !data) throw new Error(error?.message || 'Could not save search privacy.');
+  ClubEntryTrustService.track('find', 'privacy_saved', { outcome: 'succeeded' });
+  return getPlayerSearchPreferences();
+}
+
+export const PlayerSearchService = {
+  search: searchPlayers,
+  getPreferences: getPlayerSearchPreferences,
+  setPreferences: setPlayerSearchPreferences,
+};

@@ -270,3 +270,29 @@ describe('a discard time bank does not borrow the TURN presentation', () => {
     expect(panel).toContain('Time Bank Armed. It Starts When Your Clock Runs Out');
   });
 });
+
+describe('the published round duration is actually used', () => {
+  const panel = read('src/components/table/PineappleDiscard.tsx');
+  const src = read('src/pages/TablePage.tsx');
+
+  it('is wired from the engine through to the panel, not left dangling', () => {
+    // Publishing a field nothing reads is dead weight on the wire and a lie in
+    // the contract. It drives when the countdown turns urgent.
+    expect(src).toContain('discardDurationMs: mapped.discardDurationMs ?? 0');
+    expect(sliceStatement(src, '<PineappleDiscard')).toContain(
+      'durationMs={tableState.discardDurationMs}'
+    );
+    expect(panel).toContain('const urgentAt =');
+  });
+
+  it('scales urgency to the table, and never to zero', () => {
+    // action_time_seconds is per-table, so the old hard-coded 5s was most of a
+    // 6-second round and a blink of a 30-second one.
+    const urgentAt = (durationMs: number) =>
+      durationMs > 0 ? Math.min(8, Math.max(3, Math.round(durationMs / 3000))) : 5;
+    expect(urgentAt(0)).toBe(5); // engine did not say - previous behaviour
+    expect(urgentAt(6_000)).toBe(3); // short round still warns
+    expect(urgentAt(15_000)).toBe(5); // the common table, unchanged
+    expect(urgentAt(60_000)).toBe(8); // long round does not shout for 20s
+  });
+});

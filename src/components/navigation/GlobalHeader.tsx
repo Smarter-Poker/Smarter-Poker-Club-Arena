@@ -44,6 +44,7 @@ export default function GlobalHeader() {
 
   const {
     avatarUrl,
+    isVipActive,
     notificationCount,
     unreadMessages,
     loadOnce,
@@ -336,10 +337,11 @@ export default function GlobalHeader() {
             </button>
 
             <button
-              className={`${styles.artButton} ${styles.vipBtn}`}
+              className={`${styles.artButton} ${styles.vipBtn} ${isVipActive ? styles.vipActive : ''}`}
               onClick={() => navigateToHub('/hub/vip-membership')}
-              aria-label="VIP Member"
-              title="VIP Member"
+              aria-label={isVipActive ? 'VIP Membership Active' : 'VIP Membership'}
+              title={isVipActive ? 'VIP Membership Active' : 'VIP Membership'}
+              data-vip-active={isVipActive ? 'true' : 'false'}
             >
               <img src={`${APPROVED_HEADER_ASSET}vip.png`} alt="VIP Member" />
             </button>
@@ -387,16 +389,24 @@ export default function GlobalHeader() {
             </Link>
           </div>
 
-          {/* Accessible fallback for the brand embedded in the complete
-              approved raster. It is never laid out as a separate mobile row. */}
-          <div className={styles.headerCenter}>
+          {/* The old Smarter.Poker wordmark is baked into the approved header
+              raster. This live brand plate masks that center panel and makes
+              the Club Arena identity replaceable, responsive and accessible. */}
+          <div className={styles.headerCenter} aria-label="Club Arena by Smarter.Poker">
             <img
-              src={`${APPROVED_HEADER_ASSET}brand.png`}
-              alt="Smarter.Poker"
-              width={430}
-              height={88}
+              src={`${BASE}images/club-arena/vault-iris-emblem-v1-320.webp`}
+              srcSet={`${BASE}images/club-arena/vault-iris-emblem-v1-320.webp 320w, ${BASE}images/club-arena/vault-iris-emblem-v1-640.webp 640w`}
+              sizes="64px"
+              alt=""
+              width={320}
+              height={296}
               className={styles.brandArtwork}
+              aria-hidden="true"
             />
+            <span className={styles.brandType}>
+              <span className={styles.brandName}>Club Arena</span>
+              <span className={styles.brandByline}>Smarter.Poker</span>
+            </span>
           </div>
         </div>
       </header>

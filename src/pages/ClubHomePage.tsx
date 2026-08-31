@@ -4516,7 +4516,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           filter or a search is actively hiding games — that one is not a
           statistic, it is the explanation for why the list looks short, and
           it carries the one-tap clear. */}
-        {(isOwner || userRole === 'admin') && club?.is_union === true && (
+        {(isOwner || isClubStaff(userRole)) && club?.is_union === true && (
           <div className="lobby-resultsbar lobby-resultsbar--create-only">
             <button
               type="button"

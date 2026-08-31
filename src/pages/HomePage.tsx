@@ -9,7 +9,6 @@
  * - Accessibility: ARIA, focus traps, keyboard nav, offline indicator
  */
 
-import { MEDIA_BASE } from '../utils/mediaBase';
 import {
   useState,
   useEffect,
@@ -28,6 +27,8 @@ import { useAppNavigate } from '../context/InTabLobbyContext';
 import { SHARK_CLUB_ID } from '../lib/constants';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { ClubsService } from '../services/ClubsService';
+import { ClubJoinService } from '../services/ClubJoinService';
+import { ClubEntryTrustService, type ClubEntryFlags } from '../services/ClubEntryTrustService';
 import { backfillClubCards } from '../services/ClubCardBackfill';
 import { useToast } from '../components/common/Toast';
 import GlobalHeader from '../components/navigation/GlobalHeader';
@@ -51,8 +52,8 @@ import {
   primeUnionFlags,
 } from '../utils/clubQuickLink';
 import CarouselSection from '../components/home/CarouselSection';
+import ClubEntryActionBar from '../components/home/ClubEntryActionBar';
 import { getClubLevelFromMembers } from '../utils/clubLevels';
-import { sanitizeInput } from '../utils/sanitizeInput';
 import type { UserClub, ClubStats } from '../components/home/CarouselSection';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 
@@ -67,9 +68,6 @@ const JoinClubModal = lazyWithRetry(() => import('../components/modals/JoinClubM
 const FindPlayerModal = lazyWithRetry(() => import('../components/modals/FindPlayerModal'));
 
 const SWR_CACHE_TTL = 60 * 60 * 1000; // 1 hour — skip stale cache from old sessions
-
-// Action button images
-const ACTION_BAR_HORIZONTAL = `${MEDIA_BASE}images/icons/action-bar-horizontal.webp`;
 
 // #12: Seasonal theme detection
 function getSeasonalTheme(): string {
@@ -259,6 +257,14 @@ function HomePageInner() {
   // JOIN A CLUB modal state
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showCreateClubModal, setShowCreateClubModal] = useState(false);
+  const [entryFlags, setEntryFlags] = useState<ClubEntryFlags>({
+    create_club: true,
+    find_player: true,
+    join_club: true,
+  });
+  useEffect(() => {
+    ClubEntryTrustService.getFlags().then(setEntryFlags);
+  }, []);
 
   // Deep link: /?create=club (the /clubs/create redirect in App.tsx, used by
   // the hamburger menu and CreateUnionPage since CreateClubPage was deleted)
@@ -438,6 +444,33 @@ function HomePageInner() {
     [toast]
   );
 
+  // A join started before an auth redirect or network loss keeps its request
+  // UUID in localStorage. Resume it from the lobby even if the player never
+  // reopens the modal; the database RPC makes replay safe.
+  useEffect(() => {
+    let active = true;
+    const resumeJoin = async () => {
+      try {
+        const result = await ClubJoinService.resumePending();
+        if (!active || !result?.success || !result.club) return;
+        if (result.status === 'pending') {
+          toast.info(`Your request to join ${result.club.name} is pending approval.`);
+        } else {
+          toast.success(`Joined ${result.club.name}.`);
+          navigate(`/clubs/${result.club.slug || result.club.id}`);
+        }
+      } catch (error) {
+        reportError(error, 'HomePage.ResumePendingClubJoin');
+      }
+    };
+    resumeJoin();
+    window.addEventListener('online', resumeJoin);
+    return () => {
+      active = false;
+      window.removeEventListener('online', resumeJoin);
+    };
+  }, [navigate, toast]);
+
   // Real-time updates handled by Supabase subscriptions + bus listeners below
   // No visibility refresh needed — data stays live via real-time channels
 
@@ -583,13 +616,14 @@ function HomePageInner() {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger when typing in inputs or when modals are open
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (showJoinModal || showCreateClubModal || showFindPlayerModal || leaveConfirm?.visible) {
-        // Only allow Escape when a modal is open
+      if (showJoinModal || showCreateClubModal || showFindPlayerModal) {
+        // Each dialog owns Escape so Create can protect a draft and nested
+        // logo/privacy dialogs can close in the right order.
+        return;
+      }
+      if (leaveConfirm?.visible) {
         if (e.key === 'Escape') {
           setContextMenu(null);
-          setShowJoinModal(false);
-          setShowCreateClubModal(false);
-          setShowFindPlayerModal(false);
           setLeaveConfirm(null);
           setShowShortcutHint(false);
         }
@@ -631,13 +665,16 @@ function HomePageInner() {
           break;
         }
         case 'j':
-          setShowJoinModal(true);
+          if (entryFlags.join_club) setShowJoinModal(true);
+          else toast.info('Club joining is temporarily unavailable.');
           break;
         case 'c':
-          setShowCreateClubModal(true);
+          if (entryFlags.create_club) setShowCreateClubModal(true);
+          else toast.info('Club creation is temporarily unavailable.');
           break;
         case 'f':
-          setShowFindPlayerModal(true);
+          if (entryFlags.find_player) setShowFindPlayerModal(true);
+          else toast.info('Player search is temporarily unavailable.');
           break;
 
         case '?':
@@ -662,6 +699,8 @@ function HomePageInner() {
     showJoinModal,
     showCreateClubModal,
     showFindPlayerModal,
+    entryFlags,
+    toast,
     leaveConfirm?.visible,
     toast,
   ]);
@@ -1149,43 +1188,33 @@ function HomePageInner() {
         {/* ═══════════════════════════════════════════════════════════════════════
                     HORIZONTAL ACTION BAR
                 ═══════════════════════════════════════════════════════════════════════ */}
-        <div className={styles.actionBarRow}>
-          <div className={styles.actionBarWrapper}>
-            <img
-              src={ACTION_BAR_HORIZONTAL}
-              alt="Action Bar"
-              className={styles.actionBarImage}
-              loading="eager"
-              width={1024}
-              height={682}
-            />
-            {/* Clickable zones positioned over the image */}
-            <button
-              className={styles.actionZoneLeft}
-              onClick={() => {
-                haptic.light();
-                setShowCreateClubModal(true);
-              }}
-              aria-label="Create a Club"
-            />
-            <button
-              className={styles.actionZoneCenter}
-              onClick={() => {
-                haptic.medium();
-                setShowFindPlayerModal(true);
-              }}
-              aria-label="Find a Player"
-            />
-            <button
-              className={styles.actionZoneRight}
-              onClick={() => {
-                haptic.light();
-                setShowJoinModal(true);
-              }}
-              aria-label="Join a Club"
-            />
-          </div>
-        </div>
+        <ClubEntryActionBar
+          flags={entryFlags}
+          onCreate={() => {
+            haptic.light();
+            ClubEntryTrustService.track('action_bar', 'opened', {
+              outcome: 'viewed',
+              metadata: { source: 'create' },
+            });
+            setShowCreateClubModal(true);
+          }}
+          onFind={() => {
+            haptic.medium();
+            ClubEntryTrustService.track('action_bar', 'opened', {
+              outcome: 'viewed',
+              metadata: { source: 'find' },
+            });
+            setShowFindPlayerModal(true);
+          }}
+          onJoin={() => {
+            haptic.light();
+            ClubEntryTrustService.track('action_bar', 'opened', {
+              outcome: 'viewed',
+              metadata: { source: 'join' },
+            });
+            setShowJoinModal(true);
+          }}
+        />
 
         {/* ═══════════════════════════════════════════════════════════════════════
                     CLUB CAROUSEL — Swipeable: [User Clubs ← SHARK CLUB (center) → User Clubs]

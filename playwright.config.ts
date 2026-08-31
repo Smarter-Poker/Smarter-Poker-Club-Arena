@@ -15,7 +15,7 @@ const isCI = !!process.env.CI;
  * goto('cashier') to /hub/cashier. Normalise it here rather than relying on
  * every caller to remember.
  */
-const rawBaseURL = process.env.BASE_URL || 'http://localhost:5173';
+const rawBaseURL = process.env.BASE_URL || 'http://localhost:5173/hub/club-arena/';
 const baseURL = rawBaseURL.endsWith('/') ? rawBaseURL : `${rawBaseURL}/`;
 
 export default defineConfig({

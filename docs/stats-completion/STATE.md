@@ -2,11 +2,10 @@
 
 - Program: Active
 - Current Phase: 1 Of 10
-- Current Phase Status: Verified Locally; Awaiting Protected Publication
-- Branch: `agent/codex-stats-program/feat/stats-foundation-phase-1`
-- Base: Latest `origin/main` when phase worktree was claimed
-- Publication Status: Not Yet Published
-- Next Gate: Commit, run the protected push/PR/merge pipeline and verify the published production commit.
+- Current Phase Status: Complete And Published
+- Publication Status: Published By PR #2094 At `ef3bab1dd01c1d1f24dae63c736875f7f4e381c9`
+- Production Build: `fe53e6233a2061baa6840009d1069a452fd91300`
+- Next Gate: Phase 2 may begin only after this production-certification follow-up is merged and its build is verified live.
 
 ## Phase 1 Acceptance Checklist
 
@@ -20,4 +19,4 @@
 - [x] Fabricated Assistant route, calls and success claims are absent.
 - [x] Client/server typechecks, targeted tests and production build pass.
 - [x] Migration is applied and verified on production.
-- [ ] Protected PR is merged and production serves the merged commit.
+- [x] Protected PR is merged and production serves the merged commit.

@@ -808,14 +808,19 @@ export function ThemeSettingsModal({
         setOwnershipState('error');
         return;
       }
-      setOwnedCardBacks(
-        (cardBacks.data || []).map((r: { feature: string }) => r.feature.replace('card_back_', ''))
+      // Merge the authoritative snapshot into any INSERT events that arrived
+      // while this read was in flight. Replacing either array here opens a
+      // second race: an entitlement can be delivered after the SELECT snapshot
+      // was taken but before React applies its result, and the stale snapshot
+      // would put the lock back on that just-purchased design.
+      const purchasedCardBacks = (cardBacks.data || []).map((r: { feature: string }) =>
+        r.feature.replace('card_back_', '')
       );
-      setOwnedThemeAssets(
-        (assets.data || []).map(
-          (row: { category: string; asset_id: string }) => `${row.category}:${row.asset_id}`
-        )
+      const unlockedAssets = (assets.data || []).map(
+        (row: { category: string; asset_id: string }) => `${row.category}:${row.asset_id}`
       );
+      setOwnedCardBacks((current) => [...new Set([...current, ...purchasedCardBacks])]);
+      setOwnedThemeAssets((current) => [...new Set([...current, ...unlockedAssets])]);
       setOwnershipState('ready');
     });
     return () => {
@@ -939,6 +944,12 @@ export function ThemeSettingsModal({
       )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
+          // Close the SELECT -> SUBSCRIBE gap before declaring the Studio live.
+          // Purchases may commit after the initial ownership read but before
+          // the websocket acknowledgement. A fresh snapshot, merged with any
+          // events received meanwhile, makes that handoff lossless.
+          setOwnershipState('loading');
+          setOwnershipRevision((revision) => revision + 1);
           setEntitlementRealtimeState('live');
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           setEntitlementRealtimeState('error');
@@ -1601,12 +1612,15 @@ export function ThemeSettingsModal({
   const studioNeedsAttention =
     collectionNeedsAttention ||
     entitlementRealtimeState === 'error' ||
+    ownershipState === 'error' ||
     pricingState === 'error' ||
     themeLoadState === 'error' ||
     appearanceRealtime.state === 'error';
   const studioSyncing =
     collectionSyncing ||
-    entitlementRealtimeState === 'connecting' ||
+    ownershipState === 'idle' ||
+    ownershipState === 'loading' ||
+    (Boolean(userId) && entitlementRealtimeState !== 'live') ||
     pricingState === 'loading' ||
     checkoutBalanceSyncing ||
     themeLoadState === 'loading' ||
@@ -1951,7 +1965,12 @@ export function ThemeSettingsModal({
               {/* Asset Grid */}
               <div
                 className={`theme-modal__grid${themeLoadState !== 'ready' ? ' theme-modal__grid--loading' : ''}`}
-                aria-busy={themeLoadState === 'loading'}
+                aria-busy={
+                  themeLoadState === 'loading' ||
+                  ownershipState === 'idle' ||
+                  ownershipState === 'loading' ||
+                  pricingState === 'loading'
+                }
               >
                 {currentAssets.length === 0 && (
                   <div className="theme-modal__empty">

@@ -60,6 +60,7 @@ import type {
 import { SUITS, RANKS, RANK_VALUES, validateAction, calculateBettingState } from './PokerEngine.js';
 // V3 (2026-07-23): real-time opponent intelligence — live stats, range reading,
 // exploit adjustments, board texture, blockers. See HorseMind.ts.
+import { bestPineappleDiscard } from './pineappleDiscardChoice.js';
 import { HorseMind } from './HorseMind.js';
 // V7 (2026-07-24): position-pair preflop mastery — 3-bet/4-bet bluffs, blind
 // vs blind, squeezes, stack depth, reshoves, ICM. See HorsePreflop.ts.
@@ -3696,22 +3697,12 @@ export class HorseLogic {
    * so the extra precision is effectively free and tightens marginal keeps.
    */
   static decideDiscard(cards: Card[], communityCards: Card[], gameVariant: string): number {
-    if (!cards || cards.length !== 3) return 2;
-    const vi = variantInfo('nlh'); // after the discard the hand plays like holdem
-    let bestIdx = 2;
-    let bestEq = -1;
-    for (let discard = 0; discard < 3; discard++) {
-      const keep = cards.filter((_, i) => i !== discard);
-      const eq =
-        communityCards.length >= 3
-          ? simulateEquity(keep, communityCards, 1, vi, 400)
-          : holdemPreflopScore(keep[0], keep[1], gameVariant === 'short_deck');
-      if (eq > bestEq) {
-        bestEq = eq;
-        bestIdx = discard;
-      }
-    }
-    return bestIdx;
+    /* One chooser, shared with the engine's own auto-resolve. It used to live
+       here alone, and HandController answered the same question with a worse
+       rule - see pineappleDiscardChoice.ts. CLAUDE.md 10.5: a horse and a human
+       are treated identically, which cannot be true of a decision made by two
+       different pieces of code. */
+    return bestPineappleDiscard(cards, communityCards, gameVariant);
   }
 
   // ─────────────────────────────────────────────────────────────────────

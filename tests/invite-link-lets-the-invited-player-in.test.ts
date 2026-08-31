@@ -195,8 +195,8 @@ describe('the wiring that carries that result to the screen', () => {
 
   it('InvitePage redeems for a player who arrives already pending', () => {
     // Otherwise the page is a dead end for exactly the people it is for.
-    expect(INVITE_PAGE).toMatch(/ClubsService\.redeemStoredInviteCode\(/);
-    expect(INVITE_PAGE).toMatch(/ClubsService\.rememberInviteCode\(/);
+    expect(INVITE_PAGE).toMatch(/ClubJoinService\.join\(/);
+    expect(INVITE_PAGE).toMatch(/referralCode: refCode/);
   });
 
   it('InvitePage carries the slug it queried into state, so share links stay readable', () => {

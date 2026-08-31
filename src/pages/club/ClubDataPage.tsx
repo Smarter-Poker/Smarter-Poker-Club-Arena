@@ -2032,7 +2032,7 @@ export default function ClubDataPage() {
                 // The figures come from the invoice; the percentages used to be
                 // literals, so any club on a non-standard deal got a label that
                 // contradicted its own numbers. Derive them or omit them.
-                ['Rake generated', latestInvoice.breakdown.rake_generated],
+                ['Rake Generated', latestInvoice.breakdown.rake_generated],
                 [
                   `Your rakeback${splitPct(latestInvoice.breakdown.rakeback_due, latestInvoice.breakdown.rake_generated)}`,
                   latestInvoice.breakdown.rakeback_due,
@@ -2041,10 +2041,10 @@ export default function ClubDataPage() {
                   `Union fee kept${splitPct(latestInvoice.breakdown.union_fee_kept, latestInvoice.breakdown.rake_generated)}`,
                   latestInvoice.breakdown.union_fee_kept,
                 ],
-                ['Player win/loss', latestInvoice.breakdown.players_won],
-                ['Settled in chips', latestInvoice.breakdown.settled_in_chips],
-                ['ECO adjustment', latestInvoice.breakdown.eco_amount],
-                ['Payments received', latestInvoice.breakdown.presettled],
+                ['Player Win/Loss', latestInvoice.breakdown.players_won],
+                ['Settled In Chips', latestInvoice.breakdown.settled_in_chips],
+                ['ECO Adjustment', latestInvoice.breakdown.eco_amount],
+                ['Payments Received', latestInvoice.breakdown.presettled],
               ].map(([label, value]) => (
                 <div className={styles.invoiceLine} key={String(label)}>
                   <span>{String(label)}</span>

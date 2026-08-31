@@ -321,7 +321,7 @@ export default function CreateTournamentModal({
           : payoutStructure,
         fieldCap
       ),
-     
+
     [customPayoutsOn, customPayouts, payoutStructure, fieldCap]
   );
 

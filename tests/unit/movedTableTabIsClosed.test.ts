@@ -38,19 +38,43 @@ const code = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\
 const CODE = code(SRC);
 
 describe('the seat rebuild prunes, not just adds', () => {
+  /**
+   * PIN MOVED 2026-08-30, and the move is the point.
+   *
+   * These two used to assert the TEXT of an inline `prev.filter(...)`. They
+   * passed while the prune did nothing, because the predicate they matched
+   * asked for a `kind` field that the rebuild's OWN tabs were built without —
+   * and after a reload those are the only tabs there are. A regex over source
+   * cannot see that; it only sees that the line exists.
+   *
+   * The predicate now lives in src/utils/tabSlots.ts and is pinned BY
+   * BEHAVIOUR in tests/unit/tabSlots.test.ts, which runs it against every tab
+   * shape this file constructs. What is left here is the wiring: that the
+   * rebuild still calls it, and still calls it with the live seat set.
+   */
   it('closes a seated tab whose seat the server has closed', () => {
     // The merge used to be purely additive: `[...prev, ...additions]`. Right
     // for an observer tab, wrong for one asserting `seated: true` about a seat
     // that no longer exists.
     expect(CODE).toMatch(/const liveSeatIds = new Set\(ids\)/);
-    expect(CODE).toMatch(/survivors\s*=\s*prev\.filter\(/);
-    expect(CODE).toMatch(/t\.seated === true && !liveSeatIds\.has\(t\.id\)/);
+    expect(CODE).toMatch(/survivors\s*=\s*pruneStaleSeatedTabs\(prev, liveSeatIds\)/);
   });
 
   it('never prunes an observer tab or a lobby tab', () => {
     // An observer holds no seat by definition and a lobby tab is not a table;
     // pruning either would delete something the player deliberately opened.
-    expect(CODE).toMatch(/t\.kind === 'table' && t\.seated === true/);
+    // The rule itself is asserted behaviourally in tabSlots.test.ts; this pins
+    // that the container has not gone back to rolling its own predicate.
+    expect(CODE).toMatch(
+      /import \{[\s\S]*?pruneStaleSeatedTabs[\s\S]*?\} from '\.\.\/utils\/tabSlots'/
+    );
+    expect(CODE).not.toMatch(/prev\.filter\(\s*\(t\) =>\s*!\(t\.kind === 'table'/);
+  });
+
+  it('gives its own rebuilt tabs the kind field every other factory sets', () => {
+    // The root cause of the hole above: `additions` omitted `kind`, so a tab
+    // restored by a reload did not answer to `kind === 'table'`.
+    expect(CODE).toMatch(/kind: 'table' as const,\s*\n\s*seated: true,/);
   });
 
   it('still returns the same array reference when nothing changed', () => {

@@ -35,6 +35,8 @@ import {
   type GameFilterValue,
 } from './advancedFilterSpec';
 import { reportError } from '../../utils/errorReporter';
+import { supabase } from '../../lib/supabase';
+import { readLocalSession } from '../../lib/authUtils';
 import './AdvancedFilters.css';
 
 const TABS: { key: FilterGameType; label: string }[] = [
@@ -51,81 +53,96 @@ export type FilterStore = Partial<Record<FilterGameType, GameFilterValue>>;
 
 const storageKey = (clubId: string) => `ca_advanced_filters_${clubId}`;
 
-/** Read saved filters, discarding anything the current spec cannot honour. */
+/**
+ * Validate a filter store against the CURRENT spec, discarding anything it
+ * cannot honour.
+ *
+ * Extracted 2026-08-31 so the local read and the cross-device read share one
+ * door. A row written by an older build can carry a game type or feature key
+ * this build no longer defines; letting an unvalidated blob through would
+ * filter on something that cannot match, which is an empty lobby with no
+ * explanation - the exact failure this validation was hardened against in the
+ * first place. It would have been easy to trust the database because "we
+ * wrote it", and that is precisely the assumption that breaks on the next
+ * spec change.
+ */
+export function sanitizeStore(parsed: FilterStore | null | undefined): FilterStore {
+  if (!parsed || typeof parsed !== 'object') return {};
+  const clean: FilterStore = {};
+  for (const [type, value] of Object.entries(parsed)) {
+    /* PER TAB. This loop used to sit inside the outer try alone, so one
+       malformed tab - a `games` saved as a string, say, which throws on
+       `.filter` - discarded the user's OTHER, perfectly valid tabs. */
+    try {
+      const spec = FILTER_SPECS[type as Exclude<FilterGameType, 'ALL'>];
+      if (!spec || !value || typeof value !== 'object') continue;
+      const known = new Set(spec.features.map((f) => f.key));
+      const gameKeys = new Set((spec.games ?? []).map((g) => g.key));
+      const statusKeys = new Set(spec.statuses.map((s) => s.key));
+      const presetKeys = new Set(spec.range.presets.map((pr) => pr.key));
+      const list = (x: unknown) => (Array.isArray(x) ? (x as string[]) : []);
+      const empty = emptyFilterValue(spec);
+      /* NUMBERS ARE UNTRUSTED TOO. `...value` used to overwrite the
+         defaults with whatever was on disk, and nothing checked it.
+         JSON.stringify writes NaN as `null`, so an older build could leave
+         `rangeMin: null` - and the very next thing to touch it is
+         `fmt(value.rangeMin)`, which calls `.toFixed(2)` on it and throws
+         inside render, unmounting the whole lobby. Clamping also repairs a
+         value saved against an older, narrower spec, which otherwise
+         persisted verbatim and silently hid rows. */
+      const clampTo = (x: unknown, lo: number, hi: number, fallback: number) => {
+        const n = Number(x);
+        return Number.isFinite(n) ? Math.min(Math.max(n, lo), hi) : fallback;
+      };
+      clean[type as FilterGameType] = {
+        ...empty,
+        ...value,
+        // Drop keys a previous build wrote that this one no longer defines.
+        games: list(value.games).filter((g) => gameKeys.has(g)),
+        statuses: list(value.statuses).filter((st) => statusKeys.has(st)),
+        mustHave: list(value.mustHave).filter((k) => known.has(k)),
+        hide: list(value.hide).filter((k) => known.has(k)),
+        /* Left unvalidated, one preset key this build no longer defines
+           made matchesPreset false for EVERY row: an empty lobby, no
+           explanation, and no way back except Reset. */
+        selectedRanges: list(value.selectedRanges).filter((k) => presetKeys.has(k)),
+        rangeMin: clampTo(value.rangeMin, spec.range.min, spec.range.max, empty.rangeMin),
+        rangeMax: clampTo(value.rangeMax, spec.range.min, spec.range.max, empty.rangeMax),
+        seatMin: spec.seats
+          ? clampTo(value.seatMin, spec.seats.min, spec.seats.max, empty.seatMin)
+          : empty.seatMin,
+        seatMax: spec.seats
+          ? clampTo(value.seatMax, spec.seats.min, spec.seats.max, empty.seatMax)
+          : empty.seatMax,
+      };
+      /* CLAMPING EACH BOUND SEPARATELY CANNOT UNDO AN INVERSION. A stored
+         pair with min above max survives both clamps unchanged, and the
+         one-step gap on the thumbs then keeps re-applying the out-of-range
+         partner every drag - the range freezes, the tab empties, and Reset
+         is the only way back. An inverted pair is not repairable, so it is
+         discarded for the spec's own full range. */
+      const repaired = clean[type as FilterGameType]!;
+      if (repaired.rangeMin > repaired.rangeMax) {
+        repaired.rangeMin = empty.rangeMin;
+        repaired.rangeMax = empty.rangeMax;
+      }
+      if (repaired.seatMin > repaired.seatMax) {
+        repaired.seatMin = empty.seatMin;
+        repaired.seatMax = empty.seatMax;
+      }
+    } catch (perTab) {
+      reportError(perTab, 'AdvancedFilters.loadFilters.tab', { type });
+    }
+  }
+  return clean;
+}
+
+/** Read saved filters from this device's cache, validated. */
 export function loadFilters(clubId: string): FilterStore {
   try {
     const raw = localStorage.getItem(storageKey(clubId));
     if (!raw) return {};
-    const parsed = JSON.parse(raw) as FilterStore;
-    if (!parsed || typeof parsed !== 'object') return {};
-
-    const clean: FilterStore = {};
-    for (const [type, value] of Object.entries(parsed)) {
-      /* PER TAB. This loop used to sit inside the outer try alone, so one
-         malformed tab - a `games` saved as a string, say, which throws on
-         `.filter` - discarded the user's OTHER, perfectly valid tabs. */
-      try {
-        const spec = FILTER_SPECS[type as Exclude<FilterGameType, 'ALL'>];
-        if (!spec || !value || typeof value !== 'object') continue;
-        const known = new Set(spec.features.map((f) => f.key));
-        const gameKeys = new Set((spec.games ?? []).map((g) => g.key));
-        const statusKeys = new Set(spec.statuses.map((s) => s.key));
-        const presetKeys = new Set(spec.range.presets.map((pr) => pr.key));
-        const list = (x: unknown) => (Array.isArray(x) ? (x as string[]) : []);
-        const empty = emptyFilterValue(spec);
-        /* NUMBERS ARE UNTRUSTED TOO. `...value` used to overwrite the
-           defaults with whatever was on disk, and nothing checked it.
-           JSON.stringify writes NaN as `null`, so an older build could leave
-           `rangeMin: null` - and the very next thing to touch it is
-           `fmt(value.rangeMin)`, which calls `.toFixed(2)` on it and throws
-           inside render, unmounting the whole lobby. Clamping also repairs a
-           value saved against an older, narrower spec, which otherwise
-           persisted verbatim and silently hid rows. */
-        const clampTo = (x: unknown, lo: number, hi: number, fallback: number) => {
-          const n = Number(x);
-          return Number.isFinite(n) ? Math.min(Math.max(n, lo), hi) : fallback;
-        };
-        clean[type as FilterGameType] = {
-          ...empty,
-          ...value,
-          // Drop keys a previous build wrote that this one no longer defines.
-          games: list(value.games).filter((g) => gameKeys.has(g)),
-          statuses: list(value.statuses).filter((st) => statusKeys.has(st)),
-          mustHave: list(value.mustHave).filter((k) => known.has(k)),
-          hide: list(value.hide).filter((k) => known.has(k)),
-          /* Left unvalidated, one preset key this build no longer defines
-             made matchesPreset false for EVERY row: an empty lobby, no
-             explanation, and no way back except Reset. */
-          selectedRanges: list(value.selectedRanges).filter((k) => presetKeys.has(k)),
-          rangeMin: clampTo(value.rangeMin, spec.range.min, spec.range.max, empty.rangeMin),
-          rangeMax: clampTo(value.rangeMax, spec.range.min, spec.range.max, empty.rangeMax),
-          seatMin: spec.seats
-            ? clampTo(value.seatMin, spec.seats.min, spec.seats.max, empty.seatMin)
-            : empty.seatMin,
-          seatMax: spec.seats
-            ? clampTo(value.seatMax, spec.seats.min, spec.seats.max, empty.seatMax)
-            : empty.seatMax,
-        };
-        /* CLAMPING EACH BOUND SEPARATELY CANNOT UNDO AN INVERSION. A stored
-           pair with min above max survives both clamps unchanged, and the
-           one-step gap on the thumbs then keeps re-applying the out-of-range
-           partner every drag - the range freezes, the tab empties, and Reset
-           is the only way back. An inverted pair is not repairable, so it is
-           discarded for the spec's own full range. */
-        const repaired = clean[type as FilterGameType]!;
-        if (repaired.rangeMin > repaired.rangeMax) {
-          repaired.rangeMin = empty.rangeMin;
-          repaired.rangeMax = empty.rangeMax;
-        }
-        if (repaired.seatMin > repaired.seatMax) {
-          repaired.seatMin = empty.seatMin;
-          repaired.seatMax = empty.seatMax;
-        }
-      } catch (perTab) {
-        reportError(perTab, 'AdvancedFilters.loadFilters.tab', { type });
-      }
-    }
-    return clean;
+    return sanitizeStore(JSON.parse(raw) as FilterStore);
   } catch (e) {
     reportError(e, 'AdvancedFilters.loadFilters');
     return {};
@@ -147,6 +164,75 @@ export function saveFilters(clubId: string, store: FilterStore) {
     // the memory of them is lost, which is not worth an error in the player's face.
     reportError(e, 'AdvancedFilters.saveFilters');
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CROSS-DEVICE (Dan 2026-08-31)
+   ═══════════════════════════════════════════════════════════════════════════
+   localStorage made "until changed by the user" true on ONE browser. Set your
+   filters on a laptop, open the lobby on your phone, and the board came back
+   unfiltered.
+
+   So the DATABASE is the truth (user_lobby_filters, RLS-locked to the owner)
+   and localStorage stays as the synchronous first-paint cache - exactly the
+   split useUserThemeSettings already uses for the table theme. The sheet still
+   opens instantly from cache; the row arrives a moment later and corrects it
+   if another device moved on.
+
+   Every write is FIRE AND FORGET. A filter is a preference, not a
+   transaction: if the network is down the player must still see their choice
+   apply on this device, and a failed sync is worth a report, never a blocked
+   interaction or an error in their face. */
+
+function currentUserId(): string | null {
+  try {
+    return readLocalSession()?.userId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Read the saved filters for this club from the database, or null. */
+export async function fetchRemoteFilters(clubId: string): Promise<FilterStore | null> {
+  const userId = currentUserId();
+  if (!userId || !clubId) return null;
+  try {
+    const { data, error } = await supabase
+      .from('user_lobby_filters')
+      .select('filters')
+      .eq('user_id', userId)
+      .eq('club_id', clubId)
+      .maybeSingle();
+    if (error) {
+      reportError(error, 'AdvancedFilters.fetchRemoteFilters', { clubId });
+      return null;
+    }
+    if (!data?.filters || typeof data.filters !== 'object') return null;
+    /* Validate through the SAME door as the local read. A row written by an
+       older build can carry a game type or feature key this build no longer
+       defines, and an unvalidated remote blob would then filter on something
+       that cannot match - an empty lobby with no explanation, which is the
+       exact failure loadFilters was hardened against. */
+    return sanitizeStore(data.filters as FilterStore);
+  } catch (e) {
+    reportError(e, 'AdvancedFilters.fetchRemoteFilters', { clubId });
+    return null;
+  }
+}
+
+/** Mirror the store to the database. Never throws, never blocks the UI. */
+export function pushRemoteFilters(clubId: string, store: FilterStore): void {
+  const userId = currentUserId();
+  if (!userId || !clubId) return;
+  void supabase
+    .from('user_lobby_filters')
+    .upsert(
+      { user_id: userId, club_id: clubId, filters: store, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,club_id' }
+    )
+    .then(({ error }) => {
+      if (error) reportError(error, 'AdvancedFilters.pushRemoteFilters', { clubId });
+    });
 }
 
 /** Format a range endpoint: blinds keep decimals, buy-ins do not. */
@@ -203,7 +289,29 @@ export default function AdvancedFilters({
       return;
     }
     saveFilters(clubId, store);
+    // ... and to the database, so the choice follows the player to their
+    // other devices. Fire and forget: a filter is a preference, not a
+    // transaction, and a sync failure must never block the tap that made it.
+    pushRemoteFilters(clubId, store);
   }, [clubId, store]);
+
+  /* CROSS-DEVICE HYDRATION. The sheet opens instantly from this device's
+     cache; the saved row arrives a moment later and corrects it if another
+     device has moved on since. Applied only when it actually DIFFERS, so a
+     player who is mid-tap does not see the sheet redraw underneath them for
+     no reason, and only while nothing has been touched here yet - their
+     current interaction always outranks a late-arriving remote value. */
+  const touchedRef = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchRemoteFilters(clubId).then((remote) => {
+      if (cancelled || !remote || touchedRef.current) return;
+      setStore((prev) => (JSON.stringify(prev) === JSON.stringify(remote) ? prev : remote));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [clubId]);
 
   /* Same hole the game drawer had (fixed 2026-08-23): the sheet declares
      role=dialog aria-modal=true and trapped nothing, so focus stayed on the
@@ -259,6 +367,8 @@ export default function AdvancedFilters({
 
   const patch = useCallback(
     (next: Partial<GameFilterValue>) => {
+      // Any edit here outranks a remote value still in flight.
+      touchedRef.current = true;
       setStore((prev) => ({ ...prev, [activeType]: { ...value, ...next } }));
     },
     [activeType, value]
@@ -622,6 +732,10 @@ export default function AdvancedFilters({
                  a player clearing their Hold'em filters does not expect their
                  MTT preferences to go with them. */
                 if (!spec) return;
+                // Reset does not go through patch(), so it marks the sheet
+                // touched itself - otherwise a remote value still in flight
+                // could land on top of a deliberate clear.
+                touchedRef.current = true;
                 setStore((prev) => ({ ...prev, [activeType]: emptyFilterValue(spec) }));
               }}
             >

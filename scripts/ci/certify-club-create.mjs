@@ -32,6 +32,19 @@ try {
     throw createUserError || new Error('No Test User Returned.');
   userId = created.user.id;
 
+  // The certification owns its fixture explicitly. Production signup normally
+  // creates this row, but admin-created users can race or bypass that hook.
+  const fixtureName = `crest_cert_${stamp.replace(/[^a-z0-9]/g, '').slice(-12)}`;
+  const { error: profileError } = await admin.from('profiles').upsert(
+    {
+      id: userId,
+      username: fixtureName,
+      display_name: 'Club Create Certification',
+    },
+    { onConflict: 'id' }
+  );
+  if (profileError) throw new Error(`Profile Fixture Failed: ${profileError.message}`);
+
   const player = createClient(url, publishableKey, { auth: { persistSession: false } });
   const { error: signInError } = await player.auth.signInWithPassword({ email, password });
   if (signInError) throw signInError;

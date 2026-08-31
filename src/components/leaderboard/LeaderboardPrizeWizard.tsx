@@ -153,6 +153,7 @@ export function LeaderboardPrizeWizard({
         weekly_prizes: normalizeCustomPrizes(weeklyPrizes),
         monthly_prizes: normalizeCustomPrizes(monthlyPrizes),
         suggestion_key: planKey,
+        program_version: setup.program_version,
       });
       onSaved(saved);
     } catch (saveError) {
@@ -408,11 +409,17 @@ export function LeaderboardPrizeWizard({
                 </div>
               </dl>
               <div className="lb-prize-safety-note" role="note">
-                <strong>Planning And Display Only.</strong>
+                <strong>Starts Next Period</strong>
                 <span>
-                  This Setup Does Not Debit The Promo Wallet. Automated Payouts Remain Protected
-                  Until The Platform Has A Canonical Batch Transfer With Full Idempotency And Ledger
-                  Coverage.
+                  Current Standings Keep Their Published Rules. This Becomes Program Version{' '}
+                  {setup.program_version + 1} At The Next Weekly And Monthly UTC Boundaries.
+                </span>
+              </div>
+              <div className="lb-prize-safety-note" role="note">
+                <strong>Publication Does Not Move Chips.</strong>
+                <span>
+                  The Funding Owner And Prize Rules Become Auditable And Immutable. Automated
+                  Settlement Remains Protected Until Its Separate Conservation Gate Is Complete.
                 </span>
               </div>
               {error && (
@@ -448,7 +455,7 @@ export function LeaderboardPrizeWizard({
               onClick={save}
               disabled={saving || (enabled && !hasPrizes)}
             >
-              {saving ? 'Saving Prize Setup' : 'Save Prize Setup'}
+              {saving ? 'Publishing Prize Program' : 'Publish Prize Program'}
             </button>
           )}
         </footer>

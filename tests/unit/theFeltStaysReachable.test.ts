@@ -92,7 +92,9 @@ describe('money actions do not use OS dialogs', () => {
     expect(src).not.toContain('<ConfirmModal');
     expect(src).not.toContain('payoutLeaderboardPeriod');
     expect(src).toContain('<LeaderboardPrizeWizard');
-    expect(src).toContain('Prize Planning Does Not Move Promo Chips.');
+    expect(src).toContain(
+      'Published Rules Activate At The Dates Shown. Publication Does Not Move Chips.'
+    );
   });
 });
 

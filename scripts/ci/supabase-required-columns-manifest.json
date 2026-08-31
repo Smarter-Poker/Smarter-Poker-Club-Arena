@@ -1657,6 +1657,18 @@
       "payout_amount",
       "payout_currency"
     ],
+    "leaderboard_reward_program_versions": [
+      "club_id",
+      "version",
+      "operation_id",
+      "rewards_enabled",
+      "payout_metric",
+      "suggestion_key",
+      "funding_owner_type",
+      "weekly_effective_from",
+      "monthly_effective_from",
+      "program_hash"
+    ],
     "leak_drill_answers": [
       "batch_id",
       "user_id",

@@ -36,6 +36,15 @@ const setup: LeaderboardSettings = {
   weekly_prizes: [],
   monthly_prizes: [],
   suggestion_key: 'balanced',
+  program_version: 0,
+  program_hash: null,
+  program_status: 'not_published',
+  weekly_effective_from: null,
+  monthly_effective_from: null,
+  published_at: null,
+  program_funding_owner_type: null,
+  program_funding_union_id: null,
+  program_funding_label: null,
   setup_completed_at: null,
   updated_at: null,
 };
@@ -64,7 +73,8 @@ describe('LeaderboardPrizeWizard', () => {
       'true'
     );
     await user.click(screen.getByRole('button', { name: 'Continue' }));
-    await user.click(screen.getByRole('button', { name: 'Save Prize Setup' }));
+    expect(screen.getByText('Starts Next Period')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Publish Prize Program' }));
 
     await waitFor(() => expect(saveLeaderboardRewardSetup).toHaveBeenCalledTimes(1));
     expect(saveLeaderboardRewardSetup).toHaveBeenCalledWith(
@@ -96,7 +106,7 @@ describe('LeaderboardPrizeWizard', () => {
     await user.click(screen.getByRole('button', { name: 'Review Disabled Plan' }));
     expect(screen.getByText('Prizes Disabled')).toBeInTheDocument();
     expect(screen.getAllByText('0 Chips')).toHaveLength(2);
-    await user.click(screen.getByRole('button', { name: 'Save Prize Setup' }));
+    await user.click(screen.getByRole('button', { name: 'Publish Prize Program' }));
 
     await waitFor(() => expect(saveLeaderboardRewardSetup).toHaveBeenCalledTimes(1));
     expect(saveLeaderboardRewardSetup).toHaveBeenCalledWith(

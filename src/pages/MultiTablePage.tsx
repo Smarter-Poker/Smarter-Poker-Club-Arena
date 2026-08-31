@@ -47,6 +47,7 @@ import { swipeTargetIndex } from '../utils/swipeTarget';
 import {
   LOBBY_TAB_PREFIX,
   isLobbyLike,
+  isTournamentRow,
   pickObserveSlot,
   pruneStaleSeatedTabs,
 } from '../utils/tabSlots';
@@ -728,15 +729,37 @@ export default function MultiTablePage() {
             row && row.small_blind != null && row.big_blind != null
               ? `${row.small_blind}/${row.big_blind}`
               : '';
+          /* Dan 2026-08-30, second pass: this row already KNOWS whether it is a
+             tournament — it computed the flag for `gameCode` on the next line
+             and then threw it away. Four readers depend on the tab carrying it,
+             and `undefined` reads as "cash" at every one of them:
+
+               - the sit-out toast promises a tournament player "Your Seat Is
+                 Held For Up To 5 Minutes", which is not true of a seat that is
+                 blinded off;
+               - Sit Out All counts the tournament as a cash seat on an
+                 eviction clock;
+               - the profit chip aggregates it, against Dan 2026-08-30: "THE
+                 PROFIT COUNTER ... SHOULD NEVER WORK OR ENGAGE OR TRACK
+                 ANYTHING FOR TOURNAMENTS, THIS IS A 'CASHGAME ONLY FEATURE'";
+               - the tile raise slider steps in cash increments.
+
+             TablePage reports the flag up once its engine state loads, so each
+             of those self-corrects — but only AFTER a window that starts on
+             every reload, and the profit aggregation's first `compute()` runs
+             inside it (then every 5s). Carrying the flag the row already has
+             closes the window instead of racing it. */
+          const rowIsTournament = isTournamentRow(row);
           return {
             id,
             name: formatGameTitle(row?.name as string) || `Table ${prev.length + i + 1}`,
             stakes,
             gameCode: gameCode({
               variant: row?.game_variant as string | undefined,
-              isTournament: row?.game_type === 'tournament' || !!row?.tournament_id,
+              isTournament: rowIsTournament,
               maxPlayers: row?.max_players as number | undefined,
             }),
+            isTournament: rowIsTournament,
             isMyTurn: false,
             pot: 0,
             // Dan 2026-08-30: `kind` was omitted here, and the prune below
@@ -958,6 +981,14 @@ export default function MultiTablePage() {
                           isTournament: true,
                           maxPlayers: newRow.max_players as number | undefined,
                         }),
+                        /* This branch only runs for a balancer move, which is
+                           tournament-only by definition (`tourId` is required
+                           above) — the same reason `gameCode` hardcodes it.
+                           Carried on the tab too, so the table a player is
+                           MOVED to does not spend its first seconds being
+                           treated as a cash game by the sit-out toast, the
+                           profit chip and the raise slider. */
+                        isTournament: true,
                         isMyTurn: false,
                         pot: 0,
                         kind: 'table' as const,

@@ -3,6 +3,7 @@
    Mobile uses separately sliced artwork from the same approved source. */
 
 .club-lobby-machine {
+  --machine-approved-chassis: url('/hub/club-arena/assets/club-buttons/lobby/lobby-approved-desktop-reference-v3.png');
   --machine-blue: #179dff;
   --machine-blue-bright: #60c5ff;
   --machine-glass: #05080b;
@@ -25,6 +26,37 @@
   background: #000;
   color: #eef2f5;
   font-family: Inter, Arial, sans-serif;
+}
+
+.club-lobby-machine__chassis {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  clip-path: inset(0 2px);
+  filter: none;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* The medallion is baked into the chassis, but the live ledger scrolls above
+   that base image. Repaint only the circular approved chip at the top of the
+   stacking order so a moving tournament row can never cross its face. */
+.club-lobby-machine::after {
+  content: '';
+  position: absolute;
+  z-index: 7;
+  left: 50%;
+  bottom: 0;
+  width: 78px;
+  height: 76px;
+  background: var(--machine-approved-chassis) -328px -901px / 734px 977px no-repeat;
+  clip-path: ellipse(36px 38px at 50% 50%);
+  pointer-events: none;
+  transform: translateX(-50%);
 }
 
 .club-lobby-command-top {
@@ -878,6 +910,10 @@
     background: #000;
   }
 
+  .club-lobby-machine__chassis {
+    display: none;
+  }
+
   .club-lobby-command-top {
     position: relative;
     inset: auto;
@@ -1149,6 +1185,10 @@
 }
 
 @media (max-width: 900px) {
+  .club-lobby-machine::after {
+    display: none;
+  }
+
   /* Chromium exposes the first source pixel of the stretched border-image as
      a solid white seam. Keep the metal edge, but cover that one invalid pixel
      with the same black as the page and machine background. */
@@ -1192,202 +1232,5 @@
   .club-lobby-machine *::after {
     animation: none !important;
     transition: none !important;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   LOCKED CLUB ARENA DESKTOP / MOBILE SHELL
-   ---------------------------------------------------------------------------
-   The old 734x977 all-in-one cabinet was an approval proof, not the final
-   responsive composition. These rules keep every live child while arranging
-   the real command column and game workspace from the supplied desktop and
-   mobile references. No full-page screenshot is used as the interface.
-═══════════════════════════════════════════════════════════════════════════ */
-@media (min-width: 901px) {
-  .club-lobby-machine {
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-    aspect-ratio: auto;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    border: 1px solid rgb(139 159 176 / 28%);
-    background:
-      linear-gradient(180deg, rgb(255 255 255 / 3%), transparent 16%),
-      repeating-linear-gradient(115deg, rgb(255 255 255 / 1%) 0 1px, transparent 1px 4px), #020507;
-    box-shadow:
-      inset 0 0 0 2px #010203,
-      inset 0 0 24px #000,
-      0 8px 24px rgb(0 0 0 / 72%);
-  }
-
-  .club-lobby-command-top {
-    position: relative;
-    inset: auto;
-    width: 100%;
-    height: auto;
-    flex: 0 0 auto;
-    display: grid;
-    grid-template-rows: auto clamp(92px, 11.2vh, 108px);
-    gap: 5px;
-    padding: 8px 8px 0;
-  }
-
-  .club-lobby-command-top__welcome {
-    display: none;
-  }
-
-  .club-lobby-command-top__controls,
-  .club-lobby-command-top__campaign {
-    position: relative;
-    inset: auto;
-    width: 100%;
-    min-width: 0;
-  }
-
-  .club-lobby-command-top__controls {
-    height: auto;
-    min-height: 122px;
-    padding: 12px 14px 10px;
-    overflow: visible;
-    border: 14px solid transparent;
-    border-image-source: var(--machine-controls-frame);
-    border-image-slice: 20 38 20 38;
-    border-image-width: 14px;
-    background: #03070a;
-  }
-
-  .club-lobby-command-top__campaign {
-    height: auto;
-    min-height: 92px;
-    padding: 4px 6px;
-    border: 12px solid transparent;
-    border-image-source: var(--machine-campaign-frame);
-    border-image-slice: 18 38 18 38;
-    border-image-width: 12px;
-    background: #000;
-  }
-
-  .club-lobby-command-top .lobby-controls {
-    gap: 8px;
-    padding: 0;
-  }
-
-  .club-lobby-command-top .lobby-controls__title {
-    font-size: clamp(24px, 1.7vw, 32px);
-  }
-
-  .club-lobby-command-top .lobby-controls__eyebrow {
-    font-size: clamp(11px, 0.75vw, 14px);
-  }
-
-  .club-lobby-command-top .lobby-controls__total,
-  .club-lobby-command-top .lobby-controls__total strong {
-    font-size: clamp(12px, 0.9vw, 18px);
-  }
-
-  .club-lobby-command-top .lobby-controls .game-bar,
-  .club-lobby-command-top .lobby-controls .quickprefs__row--status {
-    gap: clamp(6px, 0.65vw, 12px);
-  }
-
-  .club-lobby-command-top .lobby-controls .game-bar__type,
-  .club-lobby-command-top .lobby-controls .game-bar__filter-btn,
-  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip {
-    height: 36px;
-    min-height: 36px;
-    font-size: clamp(10px, 0.7vw, 13px);
-  }
-
-  .club-lobby-machine > .club-home__games--v2 {
-    position: relative;
-    inset: auto;
-    z-index: 2;
-    flex: 1 1 auto;
-    min-height: 0;
-    margin: 6px 8px 8px;
-    padding: 0;
-    overflow: hidden;
-    border: 1px solid rgb(112 139 162 / 26%);
-    background: #020507;
-    box-shadow: inset 0 0 16px #000;
-  }
-
-  .club-lobby-machine > .lobby-resultsbar--create-only {
-    position: absolute;
-    z-index: 5;
-    top: 8px;
-    right: 10px;
-  }
-
-  .club-lobby-machine .lobby-table-wrap {
-    padding: 0;
-  }
-
-  .club-lobby-machine .lobby-table {
-    font-size: clamp(14px, 0.95vw, 18px);
-    border-spacing: 0 1px;
-  }
-
-  .club-lobby-machine .lobby-table thead th {
-    height: 30px;
-    padding: 4px 8px;
-    font-size: clamp(9px, 0.62vw, 12px);
-  }
-
-  .club-lobby-machine .lobby-table tbody tr,
-  .club-lobby-machine .lobby-table tbody td {
-    height: clamp(38px, 4.1vh, 43px);
-  }
-
-  .club-lobby-machine .lobby-table tbody td {
-    padding: 3px 8px;
-  }
-
-  .club-lobby-machine .lobby-table .lt-name__line1 {
-    font-size: clamp(14px, 1vw, 19px);
-  }
-
-  .club-lobby-machine .lobby-table .lt-name__meta,
-  .club-lobby-machine .lobby-table .lt-name__table {
-    font-size: clamp(10px, 0.7vw, 13px);
-  }
-
-  .club-lobby-machine .lobby-table .lt-status {
-    min-width: 92px;
-    font-size: clamp(9px, 0.68vw, 13px);
-  }
-}
-
-@media (max-width: 900px) {
-  .club-lobby-machine {
-    width: calc(100% - 32px);
-    max-width: 820px;
-    margin: 0 auto 22px;
-  }
-
-  .club-lobby-command-top {
-    grid-template-rows: auto auto;
-  }
-
-  .club-lobby-command-top__welcome {
-    display: none;
-  }
-
-  .club-lobby-command-top__controls {
-    margin-top: 0;
-  }
-
-  .club-lobby-machine > .club-home__games--v2 {
-    padding-top: 10px;
-  }
-}
-
-@media (max-width: 430px) {
-  .club-lobby-machine {
-    width: calc(100% - 32px);
-    margin-left: 16px;
   }
 }

@@ -418,6 +418,25 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // 2026-04-29. Players who joined mid-hand are flagged here until the
       // BB rotates to them OR they call POST /post-bb. Frontend reads this
       // to render the "Post BB to enter" button on the hero seat.
+      /* HOW MANY SEATS THIS TABLE HAS — FROM THE ONLY PARTY THAT KNOWS
+         (Dan 2026-08-31, phase 1 of the seat-truth contract).
+
+         The client used to GUESS. `tableState.maxPlayers` is seeded to 6 and
+         corrected only when its own `tables` row query lands, so for the first
+         seconds of every mount — and indefinitely if that query failed or was
+         RLS denied — a 9-max table was drawn as a 6-max one. On 2026-08-31
+         that erased a player seated in seat 7 from his own screen for ten
+         minutes while the engine dealt him in, took his big blind, timed out
+         his turns and finally evicted him (table 08746c1a). The mapper now
+         infers a floor from the highest OCCUPIED seat, which rescues a seated
+         hero but still under-draws a table whose high seats happen to be empty.
+
+         The engine holds `tableInfo.max_players` and always has. One field
+         ends the guessing: published on the live payload and on the idle one,
+         so every snapshot a client can receive carries the true capacity.
+         Clients older than this field fall back to the inference and are no
+         worse off than they are today. */
+      max_seats: Number(this.tableInfo?.max_players) || 0,
       waiting_for_bb_user_ids: Array.from(this.waitingForBB),
       // Dan 2026-08-29: the subset of the above who have ALREADY agreed to
       // post and are held out only by the seat they are in. Published so the
@@ -594,6 +613,25 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       turn_deadline_ms: 0,
       time_bank_active: false,
       disconnect_states: this.disconnectEngine.getFsmStatesForTable(this.tableId),
+      /* HOW MANY SEATS THIS TABLE HAS — FROM THE ONLY PARTY THAT KNOWS
+         (Dan 2026-08-31, phase 1 of the seat-truth contract).
+
+         The client used to GUESS. `tableState.maxPlayers` is seeded to 6 and
+         corrected only when its own `tables` row query lands, so for the first
+         seconds of every mount — and indefinitely if that query failed or was
+         RLS denied — a 9-max table was drawn as a 6-max one. On 2026-08-31
+         that erased a player seated in seat 7 from his own screen for ten
+         minutes while the engine dealt him in, took his big blind, timed out
+         his turns and finally evicted him (table 08746c1a). The mapper now
+         infers a floor from the highest OCCUPIED seat, which rescues a seated
+         hero but still under-draws a table whose high seats happen to be empty.
+
+         The engine holds `tableInfo.max_players` and always has. One field
+         ends the guessing: published on the live payload and on the idle one,
+         so every snapshot a client can receive carries the true capacity.
+         Clients older than this field fall back to the inference and are no
+         worse off than they are today. */
+      max_seats: Number(this.tableInfo?.max_players) || 0,
       waiting_for_bb_user_ids: Array.from(this.waitingForBB),
       post_bb_deferred_user_ids: Array.from(this.postBBWhenClear),
       pots: [],

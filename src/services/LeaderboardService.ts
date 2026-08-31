@@ -385,6 +385,10 @@ export const LeaderboardService = {
         }
         if (error) {
           reportError(error, 'LeaderboardService.getClubLeaderboard_v2');
+          // The page opts into strict mode because a period-specific failure
+          // must never fall through to the direct all-time query and render
+          // those rows under a Daily/Weekly/Monthly label.
+          if (strict) throw error;
         } else {
           statsData = data as PlayerStatsRow[];
         }
@@ -764,6 +768,10 @@ export const LeaderboardService = {
 
       if (rpcError) {
         reportError(rpcError, 'LeaderboardService.getClubTournamentStats_rpc');
+        // The browser fallback is deliberately retained for non-strict legacy
+        // callers, but it is capped and therefore cannot truthfully replace the
+        // server aggregate on the production leaderboard page.
+        if (strict) throw rpcError;
       } else if (Array.isArray(rpcRows)) {
         return (rpcRows as TournamentStatsRow[]).map((row) => ({
           userId: row.userId,
@@ -777,6 +785,8 @@ export const LeaderboardService = {
           roi: Number(row.roi || 0),
           biggestWin: Number(row.biggestWin || 0),
         }));
+      } else if (strict) {
+        throw new Error('Tournament leaderboard RPC returned invalid data');
       }
 
       const { data: playerResults, error: resultsError } = await supabase

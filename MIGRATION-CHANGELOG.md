@@ -16359,3 +16359,39 @@ both sides, ui-text gate green.
 **Verified:** Transactional production dry run compiled and executed all three ranking functions and asserted UTC rollover, Sunday weeks, and leap-year months. Targeted service and migration contracts pass; full regression/build results are recorded by the phase release.
 **Money movement:** NONE — this phase exposes date boundaries and reads cumulative stats only.
 **TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #154 — Cashier Rows Are Visible Only To Their Authorized Scope
+
+**File:** `supabase/migrations/20260831235990_cashier_authorization_and_audit_contracts.sql`
+**What existed:** Clean migration replay recreated legacy policies that exposed all club member and agent rows to every member. The live ticket table also retained a duplicate policy that let any cashier-role member read every ticket, including unrelated agents' downlines.
+**What changed:** Legacy aliases are dropped unconditionally. Member and agent reads are rebuilt as self, owner/admin, owned-union overseer, or server-authorized downline scope. Ticket reads are issuer, holder, or full club-cashier scope only. Anonymous agent and ticket table reads are revoked.
+**Why:** Direct REST reads must enforce the same role and downline boundaries as the cashier RPCs, and disaster recovery must reproduce production authorization.
+**Verified:** YES — migration compiled in a rolled-back production transaction; authenticated player probes could not read other roster rows, unrelated agent rows, or an unrelated ticket.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #155 — Every Cashier Money Intent Must Carry A Retry Key
+
+**File:** `supabase/migrations/20260831235990_cashier_authorization_and_audit_contracts.sql`
+**What existed:** Agent send, claim back, and ticket issue generated a fresh key when direct or older callers omitted one. A committed request whose response was lost could be retried as a second movement.
+**What changed:** Proven money bodies are retained behind non-callable cores. Public RPC wrappers preserve their PostgREST signatures but refuse a missing caller-owned operation/idempotency key before any balance row is touched.
+**Why:** Idempotency is an RPC contract, not an optional UI convention.
+**Verified:** YES — all three null-key calls returned their exact refusal in a rolled-back authenticated production probe; authenticated cannot execute any core directly.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #156 — Ticket Escrow Closing Legs Have Distinct Linked Receipts
+
+**File:** `supabase/migrations/20260831235990_cashier_authorization_and_audit_contracts.sql`, `scripts/verification-harness/cashier-phase2-authorization-audit.sql`
+**What existed:** Cancellation and redemption both wrote generic `peer_transfer` rows with no ticket id. A ledger consumer could not join the escrow release to its ticket or distinguish refund from redemption.
+**What changed:** Cancellation writes `tournament_ticket_cancel`; redemption writes `tournament_ticket_redeem`; both store ticket, issuer, holder, escrow action, and the credited balance in metadata. Partial unique indexes permit one closing receipt per ticket, and retries replay that receipt instead of crediting again.
+**Why:** Every escrow debit and closing credit needs an immutable, joinable audit contract.
+**Verified:** YES — cancel/redeem and their retries passed; each produced exactly one ticket-linked receipt and credited exactly one cent in a rolled-back production transaction.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #157 — Closed Leaderboard Periods Stay Closed And Reproducible
+
+**File:** `supabase/migrations/20260831002500_leaderboard_historical_period_contract.sql`, `src/services/LeaderboardService.ts`, `tests/unit/LeaderboardService.test.ts`, `tests/unit/leaderboardHistoricalPeriodContract.test.ts`
+**What existed:** Production had corrected historical club/global ranking and JSON personal-rank function bodies that were absent from migration history, so a clean replay restored an older personal-rank function that selected a nonexistent `score` column and broke tied ranks. The live date-range functions also used mutable totals when an exclusive period end equalled today, anonymous callers inherited execution on four `SECURITY DEFINER` readers, and strict page loads could silently replace failed period/server aggregates with all-time or known-truncated fallback rows.
+**What changed:** Recorded the complete historical ranking contract in a new forward-only migration, made every close-date decision explicitly UTC and end-exclusive, preserved tied ranks/active totals/pagination/movement/qualification, converged personal rank onto the JSON shape consumed by PostgREST, revoked anonymous execution, and made strict leaderboard and tournament reads fail closed rather than relabel fallback data.
+**Why:** A Sunday/month/day boundary cannot include play after its 00:00 UTC close, disaster recovery must rebuild the same functions production runs, and an error state is safer than a convincing board calculated from the wrong population or period.
+**Verified:** Targeted migration/service contracts cover UTC close semantics, function reproduction, personal-rank shape, tied ranks, privilege closure, and strict no-fallback behavior. Production dry run, full gates, deployment and live route re-verification are recorded by the Phase 1 release audit.
+**Money movement:** NONE — definitions, read privileges and client error handling only.

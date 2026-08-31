@@ -89,6 +89,13 @@ export interface OpponentStats {
    *  self-image (aggression / actions the table SAW, not aggr / (aggr+calls),
    *  which inverted the read for both the nit and the station). */
   checks: number;
+  /** POSTFLOP-ONLY aggression counters (2026-08-31). The classic Aggression
+   *  Factor is a postflop statistic: preflop calling is structurally normal
+   *  (blinds, position, price), so folding it into the same ratio drags a
+   *  loose-preflop / hyper-aggressive-postflop player below the "passive"
+   *  bar — and then the horses give that player's POT BETS more respect. */
+  postAggr: number;
+  postPassive: number;
   rChecks: number;
 }
 
@@ -116,6 +123,8 @@ const freshStats = (): OpponentStats => ({
   rPassive: 0,
   checks: 0,
   rChecks: 0,
+  postAggr: 0,
+  postPassive: 0,
 });
 
 /** Exploit multipliers derived from a specific opponent's tendencies. */
@@ -363,6 +372,7 @@ export class HorseMind {
         if (isAggr) {
           s.aggr++;
           s.rAggr++;
+          if (!preflop) s.postAggr++;
           if (facingAggr) {
             s.facedAggr++;
             s.rFacedAggr++;
@@ -370,6 +380,7 @@ export class HorseMind {
         } else if (a.action === 'call') {
           s.passive++;
           s.rPassive++;
+          if (!preflop) s.postPassive++;
           if (facingAggr) {
             s.facedAggr++;
             s.rFacedAggr++;
@@ -571,6 +582,8 @@ export class HorseMind {
         rAggr: keep(existing?.rAggr, num(r.rAggr)),
         rPassive: keep(existing?.rPassive, num(r.rPassive)),
         checks: keep(existing?.checks, num(r.checks)),
+        postAggr: keep(existing?.postAggr, num((r as { postAggr?: number }).postAggr)),
+        postPassive: keep(existing?.postPassive, num((r as { postPassive?: number }).postPassive)),
         rChecks: keep(existing?.rChecks, num(r.rChecks)),
       });
       applied++;
@@ -1030,7 +1043,18 @@ export class HorseMind {
 
     // Aggression factor: maniacs get called down lighter; passives get respect.
     // Same change-point gate as the fold-rate blend.
-    const afLifetime = s.aggr / Math.max(1, s.passive);
+    // POSTFLOP-ONLY AF when there is enough of it (2026-08-31). Measured on
+    // 58 live players with real samples: the all-streets ratio misclassified
+    // TEN of them across a decision threshold — 2 genuine maniacs read as
+    // normal, 8 more mis-bucketed — and the population average moved 1.87 ->
+    // 1.37 when preflop calls came out. This ratio decides how much respect
+    // an opponent's BETS get, so it must be measured where the bets are.
+    // Falls back to the all-streets ratio until the postflop sample exists,
+    // so a fresh opponent is never read from three hands of noise.
+    const afLifetime =
+      s.postPassive + s.postAggr >= 10
+        ? s.postAggr / Math.max(1, s.postPassive)
+        : s.aggr / Math.max(1, s.passive);
     let af = afLifetime;
     const rN = s.rAggr + s.rPassive;
     if (recencyBlend && rN >= 8) {

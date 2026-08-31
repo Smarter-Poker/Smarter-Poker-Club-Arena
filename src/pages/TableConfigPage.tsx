@@ -1856,7 +1856,11 @@ export default function TableConfigPage() {
               label="Action Time"
               value={config.actionTimeSeconds}
               onChange={(v) => updateConfig('actionTimeSeconds', v)}
-              min={5}
+              /* 10 IS THE FLOOR (2026-08-31 audit). The slider offered 5s while
+                 the engine's own floor is 10 and the DB creation guard
+                 (fn_tables_creation_guard) now refuses anything under it — so a
+                 5s table was an unsaveable table. */
+              min={10}
               max={60}
               suffix=" sec"
             />
@@ -2143,7 +2147,11 @@ export default function TableConfigPage() {
               label="Action Time"
               value={config.actionTimeSeconds}
               onChange={(v) => updateConfig('actionTimeSeconds', v)}
-              min={5}
+              /* 10 IS THE FLOOR (2026-08-31 audit). The slider offered 5s while
+                 the engine's own floor is 10 and the DB creation guard
+                 (fn_tables_creation_guard) now refuses anything under it — so a
+                 5s table was an unsaveable table. */
+              min={10}
               max={60}
               suffix=" sec"
             />

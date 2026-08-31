@@ -59,6 +59,8 @@ type DbRow = {
   f3b_folds?: number;
   bigbet_sd?: number;
   bigbet_sd_strong?: number;
+  post_aggr?: number;
+  post_passive?: number;
   r_hands: number;
   r_folds: number;
   r_faced_aggr: number;
@@ -83,6 +85,8 @@ const toDb = (r: { user_id: string } & OpponentStats): DbRow => ({
   f3b_folds: r.f3bFolds,
   bigbet_sd: r.bigBetSD,
   bigbet_sd_strong: r.bigBetSDStrong,
+  post_aggr: r.postAggr,
+  post_passive: r.postPassive,
   r_hands: r.rHands,
   r_folds: r.rFolds,
   r_faced_aggr: r.rFacedAggr,
@@ -106,6 +110,8 @@ const fromDb = (r: DbRow): { user_id: string } & OpponentStats => ({
   f3bFolds: r.f3b_folds ?? 0,
   bigBetSD: r.bigbet_sd ?? 0,
   bigBetSDStrong: r.bigbet_sd_strong ?? 0,
+  postAggr: r.post_aggr ?? 0,
+  postPassive: r.post_passive ?? 0,
   // V23 river reads are memory-only (deliberately unpersisted) - hydrate zero.
   // importStats keeps the larger of live and incoming for these (V28), so a
   // hydrate can no longer wipe a live sample.
@@ -304,7 +310,7 @@ export async function hydrateHorseMindFromDb(): Promise<string | null> {
     const { data, error } = await supabase
       .from('horse_mind_stats')
       .select(
-        'user_id,hands,vpip,pfr,three_bet,aggr,passive,folds,faced_aggr,cbet_opps,cbet_folds,f3b_opps,f3b_folds,bigbet_sd,bigbet_sd_strong,r_hands,r_folds,r_faced_aggr,r_aggr,r_passive,updated_at'
+        'user_id,hands,vpip,pfr,three_bet,aggr,passive,folds,faced_aggr,cbet_opps,cbet_folds,f3b_opps,f3b_folds,bigbet_sd,bigbet_sd_strong,post_aggr,post_passive,r_hands,r_folds,r_faced_aggr,r_aggr,r_passive,updated_at'
       )
       .order('hands', { ascending: false })
       .limit(HYDRATE_LIMIT);

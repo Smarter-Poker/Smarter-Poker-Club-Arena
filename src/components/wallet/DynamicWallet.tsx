@@ -145,16 +145,6 @@ interface DynamicWalletProps {
    * summary. Every other ledger remains available through the Cashier.
    */
   compactLobby?: boolean;
-  /**
-   * The Club Arena mobile wallet accordion is a ledger, not the old three-tile
-   * summary. Keep the compact artwork and actions, but include every row the
-   * viewer is authorized to see. Desktop decides which three rows remain in
-   * its fixed command column with responsive CSS; the DOM/data source stays
-   * singular so we do not create a second set of balance subscriptions.
-   */
-  showAllLobbyWallets?: boolean;
-  /** Reports the number of real, authorized balance rows rendered. */
-  onVisibleWalletCountChange?: (count: number) => void;
   onBuyDiamonds?: () => void;
   /** Opens the Club Bank Cashier. Only ever wired on the four bank roles. */
   onOpenClubBank?: () => void;
@@ -426,8 +416,6 @@ export default function DynamicWallet({
   roleReady = true,
   showBBJ = true,
   compactLobby = false,
-  showAllLobbyWallets = false,
-  onVisibleWalletCountChange,
   onBuyDiamonds,
   onOpenClubBank,
   onOpenPromoWallet,
@@ -1402,32 +1390,15 @@ export default function DynamicWallet({
   const rows: WalletRow[] =
     effectiveVariant === 'union'
       ? compactLobby
-        ? showAllLobbyWallets
-          ? UNION_ROWS
-          : UNION_ROWS.filter((row) => row.key === 'union_bank' || row.key === 'union_rake')
+        ? UNION_ROWS.filter((row) => row.key === 'union_bank' || row.key === 'union_rake')
         : UNION_ROWS
       : (compactLobby
-          ? showAllLobbyWallets
-            ? clubWalletRows(rowRole, {
-                standalone: !isClubInUnion,
-                spinsActive: spins.active,
-              })
-            : clubLobbyWalletRows(rowRole)
+          ? clubLobbyWalletRows(rowRole)
           : clubWalletRows(rowRole, {
               standalone: !isClubInUnion,
               spinsActive: spins.active,
             })
         ).map((k) => CLUB_ROW_BY_KEY[k]);
-
-  const hasStandaloneClubBackup =
-    effectiveVariant === 'club' && !isClubInUnion && data.backupBBJ > 0;
-  const rendersSeparateBackup =
-    hasStandaloneClubBackup && !rows.some((row) => row.key === 'backup_bbj');
-  const visibleWalletCount = rows.length + 1 + (rendersSeparateBackup ? 1 : 0);
-
-  useEffect(() => {
-    onVisibleWalletCountChange?.(visibleWalletCount);
-  }, [onVisibleWalletCountChange, visibleWalletCount]);
 
   const compactLabel = (row: WalletRow) =>
     compactLobby && row.key === 'club_bank' ? 'Club Balance' : row.label;
@@ -1560,7 +1531,6 @@ export default function DynamicWallet({
       <div className={`dw__rows dw__rows--count-${rows.length + 1}`}>
         {/* Diamond Balance */}
         <div
-          data-wallet-key="diamonds"
           className={`dw__row dw__row--diamond dw__row--wallet-art${compactLobby && onBuyDiamonds ? ' dw__row--actionable' : ''}`}
           onClick={compactLobby ? onBuyDiamonds : undefined}
           onKeyDown={
@@ -1605,7 +1575,6 @@ export default function DynamicWallet({
         {rows.map((row, idx) => (
           <div
             key={row.key}
-            data-wallet-key={row.key}
             className={
               `dw__row dw__row--wallet dw__row--wallet-art` +
               (idx === 0 ? ' dw__row--primary' : '') +
@@ -1662,11 +1631,8 @@ export default function DynamicWallet({
             figure, twice. Two live copies of one number on a money surface is
             the duplication the BBJ banner's own showBBJ opt-out exists to
             prevent. The union panel keeps its row; this one is the club's. */}
-        {rendersSeparateBackup && (
-          <div
-            className="dw__row dw__row--backup-bbj dw__row--wallet-art"
-            data-wallet-key="backup_bbj"
-          >
+        {effectiveVariant === 'club' && !isClubInUnion && data.backupBBJ > 0 && (
+          <div className="dw__row dw__row--backup-bbj dw__row--wallet-art">
             <ClubWalletShell kind="backup_bbj" />
             <span className="dw__row-icon" aria-hidden="true">
               <WalletIcon name="reserve" />

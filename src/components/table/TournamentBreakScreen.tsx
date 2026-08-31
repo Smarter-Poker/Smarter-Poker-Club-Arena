@@ -208,10 +208,9 @@ export function TournamentBreakScreen({
   }
 
   return (
-    <div className="break-screen" role="dialog" aria-modal="true" aria-labelledby="break-title">
-      <div className="break-screen__overlay" aria-hidden="true" />
+    <div className="break-screen">
+      <div className="break-screen__overlay"></div>
       <div className="break-screen__content">
-        <span className="break-screen__medallion" aria-hidden="true" />
         {/* Header */}
         {/* Dan 2026-08-30: an X, not a "Minimize" button. Closing collapses
             to the floating badge so the countdown stays reachable. */}
@@ -224,9 +223,7 @@ export function TournamentBreakScreen({
         </button>
         <div className="break-screen__header">
           <span className="break-screen__badge">Tournament On Break</span>
-          <h1 id="break-title" className="break-screen__title">
-            {tournamentName}
-          </h1>
+          <h1 className="break-screen__title">{tournamentName}</h1>
         </div>
 
         {/* Timer */}
@@ -324,30 +321,16 @@ export function TournamentBreakScreen({
         <div className="break-screen__leaders">
           <span className="break-screen__section-title">Chip Leaders</span>
           <div className="break-screen__leader-list">
-            {topPlayers.length > 0 ? (
-              topPlayers.slice(0, 5).map((player) => (
-                <div
-                  key={player.playerId}
-                  className={`break-screen__leader ${player.isCurrentUser ? 'break-screen__leader--me' : ''}`}
-                >
-                  <span className="break-screen__leader-rank">#{player.rank}</span>
-                  {player.avatar ? (
-                    <img
-                      className="break-screen__leader-avatar"
-                      src={player.avatar}
-                      alt=""
-                      loading="lazy"
-                    />
-                  ) : (
-                    <span className="break-screen__leader-avatar" aria-hidden="true" />
-                  )}
-                  <span className="break-screen__leader-name">{player.playerName}</span>
-                  <span className="break-screen__leader-stack">{formatStack(player.stack)}</span>
-                </div>
-              ))
-            ) : (
-              <p className="break-screen__leaders-empty">Standings Update During The Break</p>
-            )}
+            {topPlayers.slice(0, 5).map((player) => (
+              <div
+                key={player.playerId}
+                className={`break-screen__leader ${player.isCurrentUser ? 'break-screen__leader--me' : ''}`}
+              >
+                <span className="break-screen__leader-rank">#{player.rank}</span>
+                <span className="break-screen__leader-name">{player.playerName}</span>
+                <span className="break-screen__leader-stack">{formatStack(player.stack)}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>

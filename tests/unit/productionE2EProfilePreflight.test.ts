@@ -120,4 +120,12 @@ describe('authenticated production account preflight', () => {
       'data-profile-gate-status={profileStatus}'
     );
   });
+
+  it('preflights the dedicated account through the real public club join flow', () => {
+    expect(source('tests/e2e/global-setup.ts')).toContain('ensureClubMembership(');
+    const helper = source('tests/e2e/support/ensureClubMembership.ts');
+    expect(helper).toContain("getByRole('button', { name: 'Join Club', exact: true })");
+    expect(helper).toContain("locator('.club-home')");
+    expect(helper).toContain("locator('.invite-pending')");
+  });
 });

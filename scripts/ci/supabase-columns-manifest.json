@@ -1,13 +1,5 @@
 {
   "_comment": "Live public schema COLUMN snapshot {table: [columns]}. Source of truth for the phantom-column CI gate. Do NOT hand-edit.",
-  "bbj_ledger_deletions": [
-    "application_name",
-    "deleted_at",
-    "deleted_by_role",
-    "id",
-    "row_data",
-    "source_table"
-  ],
   "columns": {
     "_audit_horse_avatar_restore_20260815": [
       "id",
@@ -789,6 +781,14 @@
       "application",
       "detail"
     ],
+    "bbj_ledger_deletions": [
+      "id",
+      "source_table",
+      "row_data",
+      "deleted_by_role",
+      "application_name",
+      "deleted_at"
+    ],
     "bbj_payout_recipients": [
       "id",
       "payout_id",
@@ -960,6 +960,29 @@
       "ledger_at_baseline",
       "unledgered_gap",
       "taken_at"
+    ],
+    "ca_club_player_daily": [
+      "club_id",
+      "user_id",
+      "stat_date",
+      "cash_net",
+      "tournament_net",
+      "updated_at"
+    ],
+    "ca_club_tournament_daily": [
+      "club_id",
+      "tournament_id",
+      "stat_date",
+      "fee",
+      "winnings",
+      "updated_at"
+    ],
+    "ca_club_tournament_player_daily": [
+      "club_id",
+      "tournament_id",
+      "user_id",
+      "stat_date",
+      "updated_at"
     ],
     "ca_frozen_pool_baseline": [
       "pool",
@@ -4263,6 +4286,12 @@
       "description",
       "threshold"
     ],
+    "daily_challenge_claim_batches": [
+      "user_id",
+      "request_id",
+      "result",
+      "created_at"
+    ],
     "daily_challenge_milestones": [
       "days",
       "reward_chips",
@@ -5358,27 +5387,29 @@
       "updated_at"
     ],
     "horse_mind_stats": [
-      "user_id",
-      "hands",
-      "vpip",
-      "pfr",
-      "three_bet",
       "aggr",
-      "passive",
-      "folds",
-      "faced_aggr",
-      "r_hands",
-      "r_folds",
-      "r_faced_aggr",
-      "r_aggr",
-      "r_passive",
-      "updated_at",
-      "cbet_opps",
-      "cbet_folds",
-      "f3b_opps",
-      "f3b_folds",
       "bigbet_sd",
-      "bigbet_sd_strong"
+      "bigbet_sd_strong",
+      "cbet_folds",
+      "cbet_opps",
+      "f3b_folds",
+      "f3b_opps",
+      "faced_aggr",
+      "folds",
+      "hands",
+      "passive",
+      "pfr",
+      "post_aggr",
+      "post_passive",
+      "r_aggr",
+      "r_faced_aggr",
+      "r_folds",
+      "r_hands",
+      "r_passive",
+      "three_bet",
+      "updated_at",
+      "user_id",
+      "vpip"
     ],
     "horse_opponent_journals": [
       "horse_id",

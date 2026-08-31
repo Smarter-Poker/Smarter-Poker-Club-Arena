@@ -235,11 +235,36 @@ describe('payout depth scales with the field', () => {
   });
 
   it('never pays fewer than the minimum, nor every player in the field', () => {
+    /*
+     * THE SECOND ASSERTION USED TO BE `<= field`, WHICH PERMITS EXACTLY WHAT
+     * THE TITLE FORBIDS (2026-08-31). Paying every player is a refund, so the
+     * pin is `< field` - written as `<= max(1, field - 1)` because a field of
+     * one has nobody to leave on the bubble and the winner must still be paid.
+     * The bug the loose pin let through was live: paidPlacesForField(3) was 3.
+     *
+     * The floor is the one the caps actually allow, not MIN_PAID_PLACES flat.
+     * Below eight players the half-field cap is the binding rule and it is
+     * stricter than the minimum - that is the point of it - so pinning
+     * `>= MIN_PAID_PLACES` there would be pinning the bug from the other side.
+     */
     for (const field of [1, 2, 3, 4, 5, 6, 9, 10, 11, 50, 333, 1000]) {
       const places = paidPlacesForField(field);
-      expect(places, `field ${field} min`).toBeGreaterThanOrEqual(Math.min(MIN_PAID_PLACES, field));
-      expect(places, `field ${field} never every player`).toBeLessThanOrEqual(field);
+      const floor = Math.max(1, Math.min(MIN_PAID_PLACES, Math.floor(field / 2)));
+      expect(places, `field ${field} min`).toBeGreaterThanOrEqual(floor);
+      expect(places, `field ${field} never every player`).toBeLessThanOrEqual(
+        Math.max(1, field - 1)
+      );
     }
+  });
+
+  it('a small field is capped by the half-field rule, not lifted past it', () => {
+    // Concrete before/after of the inverted clamp. Left column is what shipped.
+    expect(paidPlacesForField(2), 'was 2 - both players paid').toBe(1);
+    expect(paidPlacesForField(3), 'was 3 - every player paid').toBe(1);
+    expect(paidPlacesForField(4), 'was 3 - over a stated cap of 2').toBe(2);
+    expect(paidPlacesForField(5), 'was 3 - over a stated cap of 2').toBe(2);
+    expect(paidPlacesForField(6), 'unchanged').toBe(3);
+    expect(paidPlacesForField(1), 'nobody to bubble').toBe(1);
   });
 
   it('percentages always sum to exactly 100, at every depth', () => {

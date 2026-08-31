@@ -61,6 +61,22 @@ const PAYOUT_TEMPLATES: Record<PayoutTemplate, PayoutEntry[] | null> = {
     { place: 2, percentage: 30 },
     { place: 3, percentage: 20 },
   ],
+  /*
+   * sng3 IS A SEAT COUNT, NOT A PLACE COUNT - the name parallels sng6 and sng9,
+   * which are 6-max and 9-max, so this is the three-handed SNG preset and it
+   * pays two of its three seats. That is a legitimate ladder, and it is left
+   * alone deliberately: it is reachable from `autoSelectPayouts(n <= 3)` and
+   * from the operator's template picker, so changing the numbers changes money
+   * on shipped events. Whether a three-handed SNG should pay 65 / 35 or a
+   * three-place ladder is a product call for Dan, not an agent's to make on the
+   * way past.
+   *
+   * What WAS wrong here was the label: `getTemplateOptions` described this as a
+   * "65/35 Two-Player SNG" while calling it "SNG (3-Way)", so the picker told
+   * the operator two contradictory things about the same preset. Corrected
+   * below. Its byte-identity with sng6 is a consequence of both paying 65 / 35,
+   * not of one being a copy of the other.
+   */
   sng3: [
     { place: 1, percentage: 65 },
     { place: 2, percentage: 35 },
@@ -196,8 +212,30 @@ class PayoutEngineClass {
    *   payout3         ~20% of the field paid (flattest)
    *   winner_take_all 100% to first
    *
-   * Paid places are clamped to (field - 1) so a bubble always exists — the
-   * service refuses a structure that pays as many places as there are seats.
+   * PAID PLACES ARE CLAMPED TO THE FIELD, NOT TO THE FIELD MINUS ONE
+   * (2026-08-31). The `n - 1` that stood here was justified by a comment
+   * saying "the service refuses a structure that pays as many places as there
+   * are seats". Nothing refuses that. `fn_create_tournament` refused
+   * `paid_places >= max_players`, which is a different rule, is itself an
+   * off-by-one against its own error text, and is corrected to `>` by
+   * `20260831200000_a_spin_pays_three_places_at_three_seats` (PR #2334).
+   *
+   * The `- 1` did not create a bubble, it silently contradicted the choice the
+   * operator made:
+   *
+   *   payoutsForChoice('payout3', 3)  ->  2 places, though payout3 declares
+   *                                       minPlaces 3
+   *   payoutsForChoice('payout2', 2)  ->  winner-take-all, so a heads-up SNG
+   *                                       could not express 65 / 35 at all
+   *
+   * A structure may pay every seat: a Spin & Go is three-handed and pays three.
+   * What it may not do is pay a place nobody can reach, and `Math.min(n, ...)`
+   * is exactly that rule. `minPlaces` is the only thing that decides depth on a
+   * short field now, which is what it was written to be.
+   *
+   * ORDERING: this needs the RPC fix in PR #2334 to be live. Until that lands,
+   * a three-seat event asking for three places is refused at creation with
+   * `more_paid_places_than_players`.
    */
   payoutsForChoice(choice: string, playerCount: number): PayoutEntry[] {
     if (choice === 'winner_take_all') return [{ place: 1, percentage: 100 }];
@@ -208,7 +246,7 @@ class PayoutEngineClass {
       payout3: { pct: 0.2, minPlaces: 3, alpha: 1.0 },
     };
     const s = spec[choice] ?? spec.payout1;
-    const paidPlaces = Math.max(1, Math.min(n - 1, Math.max(s.minPlaces, Math.floor(n * s.pct))));
+    const paidPlaces = Math.max(1, Math.min(n, Math.max(s.minPlaces, Math.floor(n * s.pct))));
     // 1-3 places: the standard canned shapes (100 / 65-35 / 50-30-20).
     if (paidPlaces <= 3) return this.normalizePayouts(this.generateSmoothPayouts(paidPlaces));
     // 4+ places: power-law weights 1/place^alpha. A higher alpha concentrates
@@ -336,15 +374,28 @@ class PayoutEngineClass {
     playerCount: number,
     buyInAmount: number
   ): OverlayStatus {
+    /*
+     * THE GUARD WAS ON THE WRONG DENOMINATOR (2026-08-31). It tested
+     * `entriesPrize > 0` and then divided by `guaranteedPrize`, so an event
+     * with no guarantee and any entries at all returned `overlayPercentage:
+     * NaN` - 0 / 0 - and a NaN rendered into a currency or percentage field
+     * reads as a broken page. It also returned a flat 100 whenever entries
+     * were zero, including for a tournament with no guarantee, which claims a
+     * 100% overlay on a guarantee that does not exist.
+     *
+     * The percentage is "how much of the guarantee the house is covering", so
+     * the denominator is the guarantee and the guard belongs on it. No
+     * guarantee means no overlay and nothing to express as a share of it.
+     */
     const entriesPrize = playerCount * buyInAmount;
-    const overlayAmount = Math.max(0, guaranteedPrize - entriesPrize);
+    const guarantee = Number.isFinite(guaranteedPrize) && guaranteedPrize > 0 ? guaranteedPrize : 0;
+    const overlayAmount = Math.max(0, guarantee - entriesPrize);
     return {
       hasOverlay: overlayAmount > 0,
       guaranteedPrize,
       entriesPrize,
       overlayAmount,
-      overlayPercentage:
-        entriesPrize > 0 ? Math.round((overlayAmount / guaranteedPrize) * 10000) / 100 : 100,
+      overlayPercentage: guarantee > 0 ? Math.round((overlayAmount / guarantee) * 10000) / 100 : 0,
     };
   }
 
@@ -412,7 +463,7 @@ class PayoutEngineClass {
         description: 'All Chips Go To 1st Place',
       },
       { value: '50_30_20', label: '50/30/20', description: 'Classic 3-Way Split' },
-      { value: 'sng3', label: 'SNG (3-Way)', description: '65/35 Two-Player SNG' },
+      { value: 'sng3', label: 'SNG (3-Max)', description: 'Three-Handed SNG - Pays 65/35' },
       { value: 'sng6', label: 'SNG (6-Max)', description: 'Standard 6-Max Payout' },
       { value: 'sng9', label: 'SNG (9-Max)', description: 'Standard 9-Max Payout' },
       { value: 'custom', label: 'Custom', description: 'Define Your Own Payout Structure' },

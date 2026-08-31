@@ -204,13 +204,50 @@ export const MIN_PAID_PLACES = 3;
 export const MAX_PAID_PLACES = 100;
 
 export function paidPlacesForField(fieldSize: number): number {
-  const field = Number(fieldSize);
+  const field = Math.floor(Number(fieldSize));
   if (!Number.isFinite(field) || field < 1) return MIN_PAID_PLACES;
-  // Never pay more places than there are players, and never pay every player:
-  // a structure that pays 100% of the field is a refund, not a tournament.
-  const byFraction = Math.round(field * PAID_FRACTION_OF_FIELD);
+  /*
+   * Never pay more places than there are players, and never pay every player:
+   * a structure that pays 100% of the field is a refund, not a tournament.
+   *
+   * THE FLOOR IS APPLIED FIRST AND THE CAPS LAST (2026-08-31). It used to be
+   * the other way round -
+   *
+   *     Math.max(MIN_PAID_PLACES, Math.min(byFraction, field / 2, MAX))
+   *
+   * - which raised the answer back OVER the cap it had just applied, so the
+   * two caps in that Math.min were inert for every field the minimum could
+   * reach. The stated half-field cap did nothing below eight players, and the
+   * final clamp was to `field` rather than `field - 1`, so the sentence
+   * directly above the code was false wherever it mattered most:
+   *
+   *     field 2 -> 2 places   every player paid, both get their buy-in back
+   *     field 3 -> 3 places   every player paid
+   *     field 4 -> 3 places   against a stated cap of 2
+   *     field 5 -> 3 places   against a stated cap of 2
+   *
+   * Now: the minimum lifts the fractional answer, and then the caps bind.
+   *
+   *     field 1 -> 1   there is nobody to bubble; the winner takes it
+   *     field 2 -> 1   a heads-up final is legitimately winner-take-all, and
+   *                    paying both seats is a refund with extra steps
+   *     field 3 -> 1   the half-field cap, which is the stricter of the two
+   *     field 4 -> 2      "
+   *     field 5 -> 2      "
+   *     field 6 -> 3   the minimum binds from here up
+   *     field 20 -> 3, 40 -> 6, 100 -> 15, 500 -> 75  unchanged
+   *
+   * Only fields of 2 to 5 move. Everything from six players up is byte-for-byte
+   * what it was, which is why the measured-bucket pins above still hold.
+   *
+   * THE LAST CLAMP IS `field - 1`, NOT `field`, because the caller WRITES this
+   * over what the operator configured: an off-by-one here does not propose a
+   * refund, it stores one. `Math.max(1, ...)` keeps a one-player field at one
+   * place rather than zero.
+   */
+  const byFraction = Math.max(MIN_PAID_PLACES, Math.round(field * PAID_FRACTION_OF_FIELD));
   const capped = Math.min(byFraction, Math.floor(field / 2), MAX_PAID_PLACES);
-  return Math.max(1, Math.min(Math.max(MIN_PAID_PLACES, capped), Math.floor(field)));
+  return Math.max(1, Math.min(capped, field - 1));
 }
 
 /** Places in the steep top tier. Beyond this the tail flattens. */
@@ -265,9 +302,7 @@ export function payoutStructureForField(fieldSize: number): PayoutPlace[] {
     const isLast = i === places - 1;
     // Two decimals: the column and every downstream reader are money-shaped.
     // The residual lands on the LAST place, never the first.
-    const pct = isLast
-      ? Math.round((100 - running) * 100) / 100
-      : Math.round(raw[i] * 100) / 100;
+    const pct = isLast ? Math.round((100 - running) * 100) / 100 : Math.round(raw[i] * 100) / 100;
     running = Math.round((running + pct) * 100) / 100;
     out.push({ place: i + 1, percentage: pct });
   }

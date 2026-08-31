@@ -233,6 +233,20 @@ describe('PayoutEngine', () => {
       expect(result.hasOverlay).toBe(true);
       expect(result.overlayPercentage).toBe(100);
     });
+
+    it('reports no overlay, and never NaN, when there is no guarantee', () => {
+      // The percentage used to divide by guaranteedPrize behind an
+      // `entriesPrize > 0` guard, so this returned NaN; with zero entries it
+      // claimed a 100% overlay on a guarantee that does not exist.
+      const withEntries = payoutEngine.getOverlayStatus(0, 8, 1000);
+      expect(withEntries.hasOverlay).toBe(false);
+      expect(Number.isNaN(withEntries.overlayPercentage)).toBe(false);
+      expect(withEntries.overlayPercentage).toBe(0);
+
+      const noEntries = payoutEngine.getOverlayStatus(0, 0, 1000);
+      expect(noEntries.hasOverlay).toBe(false);
+      expect(noEntries.overlayPercentage).toBe(0);
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -317,16 +331,31 @@ describe('PayoutEngine', () => {
       ]);
     });
 
-    it('always totals 100 and never pays as many places as the field', () => {
+    it('always totals 100 and never pays a place nobody can reach', () => {
+      /*
+       * WAS `toBeLessThan(n)` (2026-08-31). It pinned `Math.min(n - 1, ...)`,
+       * and that clamp was not a rule - it was a workaround for
+       * `fn_create_tournament` refusing `paid_places >= max_players`, itself an
+       * off-by-one corrected in PR #2334. The real rule is that a ladder cannot
+       * pay a seat that does not exist, which is `<= n`.
+       */
       for (const choice of ['payout1', 'payout2', 'payout3']) {
         for (const n of [2, 3, 4, 9, 27, 500]) {
           const payouts = payoutEngine.payoutsForChoice(choice, n);
           const total = payouts.reduce((s, p) => s + p.percentage, 0);
           expect(Math.abs(total - 100)).toBeLessThanOrEqual(0.01);
           expect(payouts.length).toBeGreaterThanOrEqual(1);
-          expect(payouts.length).toBeLessThan(n);
+          expect(payouts.length).toBeLessThanOrEqual(n);
         }
       }
+    });
+
+    it('honours minPlaces on a field too short for the old clamp', () => {
+      // payout3 declares minPlaces 3 and used to return 2 at a 3-seat field;
+      // payout2 declares minPlaces 2 and used to collapse to winner-take-all
+      // heads-up, so a 65/35 heads-up SNG could not be expressed at all.
+      expect(payoutEngine.payoutsForChoice('payout3', 3).length).toBe(3);
+      expect(payoutEngine.payoutsForChoice('payout2', 2).length).toBe(2);
     });
 
     it('payout1 is more top-heavy than payout3 on the same field', () => {

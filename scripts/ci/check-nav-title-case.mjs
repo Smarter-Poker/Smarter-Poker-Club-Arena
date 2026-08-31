@@ -23,8 +23,14 @@
  * from a config registry through an expression (`{item.label}`), so all of it
  * fell in the gap between the two halves of the rule:
  *
- *   ArenaSectionRail, ClubOperationsRail, QuickActionsBar, Breadcrumbs,
- *   ClubBottomNav, HamburgerMenu - six surfaces, one blind spot.
+ *   ArenaSectionRail, ClubOperationsRail, QuickActionsBar,
+ *   ClubBottomNav, HamburgerMenu - five surfaces, one blind spot.
+ *
+ * (There were six. Breadcrumbs took its labels from callers, so no source
+ * registry could cover it - and on 2026-08-31 it turned out to have had NO
+ * callers in its entire history, along with SideNav, NavItem and the barrel
+ * exporting all three. That cluster was deleted rather than cased, which is
+ * why this list is now five.)
  *
  * Measured when this was written: 55 label/description/eyebrow literals across
  * the three navigation registries were not Title Cased, and had never been,

@@ -84,9 +84,11 @@ describe('responsive premium Club Arena', () => {
       /\.lobby-top__identity,[\s\S]*?\.lobby-bbj\s*\{[^}]*height:\s*auto[^}]*aspect-ratio:\s*var\(--lobby-paired-card-ratio\)/s
     );
     expect(mobile).toContain('--lobby-paired-card-ratio: 2.4 / 1');
-    expect(mobile).toMatch(/\.lobby-wallets-content\s*\{[^}]*grid-template-rows:\s*0fr/s);
     expect(mobile).toMatch(
-      /\.lobby-wallets-content\[data-expanded='true'\]\s*\{[^}]*grid-template-rows:\s*1fr/s
+      /\.lobby-wallets-content\s*\{[^}]*grid-template-rows:\s*0fr[^}]*visibility:\s*hidden[^}]*pointer-events:\s*none/s
+    );
+    expect(mobile).toMatch(
+      /\.lobby-wallets-content\[data-expanded='true'\]\s*\{[^}]*grid-template-rows:\s*1fr[^}]*visibility:\s*visible[^}]*pointer-events:\s*auto/s
     );
   });
 
@@ -99,7 +101,7 @@ describe('responsive premium Club Arena', () => {
       /\.lobby-wallets-content\[data-expanded='true'\]\s*\{[^}]*visibility:\s*visible[^}]*pointer-events:\s*auto/s
     );
     expect(IDENTITY_CSS).toMatch(
-      /@media \(pointer: coarse\)[\s\S]*?\.club-identity__share::after\s*\{[^}]*width:\s*max\(44px, 100%\)[^}]*height:\s*max\(44px, 100%\)/s
+      /@media \(pointer: coarse\)[\s\S]*?\.club-identity__share\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/s
     );
   });
 

@@ -79,7 +79,7 @@ export default function GlobalHeader() {
           if (cancelled) return;
           setVipShimmerVisible(false);
           scheduleNextShimmer();
-        }, 1_000);
+        }, 1_250);
       }, randomDelayMs);
     };
 

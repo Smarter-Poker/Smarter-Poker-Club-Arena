@@ -2193,9 +2193,7 @@
     padding: 0;
     overflow: hidden;
     border: 1px solid rgb(119 145 166 / 24%);
-    background:
-      linear-gradient(180deg, rgb(255 255 255 / 3%), transparent 18%),
-      repeating-linear-gradient(115deg, rgb(255 255 255 / 1.2%) 0 1px, transparent 1px 4px), #020507;
+    background: #020507;
     box-shadow:
       inset 0 0 0 2px #020305,
       inset 0 0 24px #000,
@@ -2325,9 +2323,7 @@
     position: absolute;
     z-index: 0;
     inset: 9px 20px 12px;
-    background:
-      radial-gradient(ellipse at 50% 0%, rgb(50 58 65 / 16%), transparent 62%),
-      repeating-linear-gradient(115deg, rgb(255 255 255 / 1.2%) 0 1px, transparent 1px 4px), #05080a;
+    background: #05080a;
     box-shadow: inset 0 0 16px #000;
     pointer-events: none;
   }
@@ -2352,16 +2348,6 @@
     max-width: 100%;
     margin: 0;
     overflow: hidden;
-    background: linear-gradient(
-      180deg,
-      #fff 0%,
-      #c7ccd1 38%,
-      #676e74 55%,
-      #f4f5f6 72%,
-      #868d94 100%
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
     color: #e7eaed;
     font-family: Cinzel, Georgia, serif;
     font-size: clamp(31px, 9vw, 47px);
@@ -2374,7 +2360,6 @@
       0 2px 0 #5d646a,
       0 4px 8px #000;
     text-transform: uppercase;
-    -webkit-text-fill-color: transparent;
     white-space: nowrap;
   }
 
@@ -2493,8 +2478,7 @@
     border: 16px solid transparent;
     border-image: url('/hub/club-arena/assets/club-buttons/lobby/lobby-header-frame-v3.png') 25 42 /
       16px stretch;
-    background:
-      repeating-linear-gradient(115deg, rgb(255 255 255 / 1%) 0 1px, transparent 1px 4px), #04080b;
+    background: #04080b;
     color: #edf2f6;
     box-shadow: inset 0 0 18px #000;
   }

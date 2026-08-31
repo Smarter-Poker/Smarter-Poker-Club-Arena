@@ -1419,11 +1419,10 @@ export default function DynamicWallet({
             })
         ).map((k) => CLUB_ROW_BY_KEY[k]);
 
+  const hasStandaloneClubBackup =
+    effectiveVariant === 'club' && !isClubInUnion && data.backupBBJ > 0;
   const rendersSeparateBackup =
-    effectiveVariant === 'club' &&
-    !isClubInUnion &&
-    data.backupBBJ > 0 &&
-    !rows.some((row) => row.key === 'backup_bbj');
+    hasStandaloneClubBackup && !rows.some((row) => row.key === 'backup_bbj');
   const visibleWalletCount = rows.length + 1 + (rendersSeparateBackup ? 1 : 0);
 
   useEffect(() => {

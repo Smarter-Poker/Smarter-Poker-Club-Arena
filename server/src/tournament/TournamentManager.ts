@@ -1296,6 +1296,16 @@ export class TournamentManager extends TournamentManagerEliminations {
           action_time_seconds: this.tournamentCache?.action_time_seconds || 15,
           big_blind_ante_enabled: this.tournamentCache?.big_blind_ante === true,
           all_in_or_fold: this.tournamentCache?.all_in_or_fold === true,
+          // 2026-08-31: the field-by-field diff against
+          // TournamentManagerBase.createTablesAndSeatPlayers found exactly one
+          // column missing here — allow_rabbit_hunt, added there on 2026-08-25
+          // for the reason that a tournament host's own rabbit-hunt setting
+          // must reach the tables it plays on. An expansion table (late reg,
+          // rebuy growth) took the COLUMN DEFAULT instead, so the same
+          // tournament could seat one player at a table honouring the setting
+          // and another at a table ignoring it. Identical expression to the
+          // start-of-tournament payload, defaulting ON.
+          allow_rabbit_hunt: this.tournamentCache?.allow_rabbit_hunt !== false,
         })
         .select()
         .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single

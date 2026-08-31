@@ -30,6 +30,30 @@ export interface GameRulesModalProps {
   isStraddleEnabled?: boolean;
   isRunItTwiceEnabled?: boolean;
   isInsuranceEnabled?: boolean;
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE CASH-ONLY FEATURES DO NOT EXIST HERE (2026-08-31)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Dan, quoted in ServerTableEngineBase.applyRunItTwiceConfig: "run it twice
+   * or 3 times is a cash game only area. it should never be in MTT, SPINS OR
+   * HEADS UP." Straddle, insurance and the rake are cash-only for the same
+   * reason, each enforced by its own gate in the engine.
+   *
+   * This modal is the one screen that TELLS a player what their table does,
+   * and on a tournament table it was telling them the opposite: a live RUN IT
+   * TWICE chip on every MTT, Spin and Heads Up seat, and a rake line reading
+   * "10% (Cap ...)" on pots the engine rakes at zero. Neither offer can ever
+   * fire and neither chip is ever taken.
+   *
+   * So the modal takes ONE fact — is this a tournament — and derives the
+   * cash-only rows from it, rather than trusting per-feature flags that come
+   * from columns nobody maintains for tournament rows (measured 2026-08-31:
+   * run_it_twice is true on all 105,078 tournament tables and the legacy
+   * run_it_twice_enabled on 28,651 of them; the column cannot be read as
+   * intent).
+   */
+  isTournament?: boolean;
   ante?: number;
   currency?: string;
   customRules?: TableRule[];
@@ -318,6 +342,7 @@ export function GameRulesModal({
   isStraddleEnabled = false,
   isRunItTwiceEnabled = false,
   isInsuranceEnabled = false,
+  isTournament = false,
   ante = 0,
   currency = '',
   customRules = [],
@@ -336,6 +361,13 @@ export function GameRulesModal({
   const isPineapple = vUpper.includes('PINEAPPLE');
   const isShortDeck = vUpper.includes('SHORT DECK') || vUpper.includes('6+');
   const isPotLimit = vUpper.includes('PLO') || vUpper.includes('POT LIMIT');
+
+  /* See the isTournament prop. A tournament table takes no rake and offers
+     none of the cash-only features, whatever its columns happen to say. */
+  const straddleActive = isStraddleEnabled && !isTournament;
+  const runItTwiceActive = isRunItTwiceEnabled && !isTournament;
+  const insuranceActive = isInsuranceEnabled && !isTournament;
+  const bombPotActive = bombPotRules?.enabled === true && !isTournament;
 
   useEffect(() => {
     if (isOpen) {
@@ -441,26 +473,45 @@ export function GameRulesModal({
                       </span>
                     </div>
                   )}
-                  <div className="rules-modal__item">
-                    <span className="rules-modal__label">Min Buy-In</span>
-                    <span className="rules-modal__value">
-                      {currency}
-                      {minBuyIn.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="rules-modal__item">
-                    <span className="rules-modal__label">Max Buy-In</span>
-                    <span className="rules-modal__value">
-                      {currency}
-                      {maxBuyIn.toLocaleString()}
-                    </span>
-                  </div>
+                  {/* A TOURNAMENT SEAT IS NOT BOUGHT AT THE TABLE (2026-08-31).
+                      Tournament table rows are created with min_buy_in 0 and
+                      max_buy_in 0 — see TournamentManagerBase — so these two
+                      rows printed a flat "0 / 0" on every MTT, Spin and Heads
+                      Up table. The entry price is the tournament's buy-in,
+                      shown where a player pays it. */}
+                  {!isTournament && (
+                    <>
+                      <div className="rules-modal__item">
+                        <span className="rules-modal__label">Min Buy-In</span>
+                        <span className="rules-modal__value">
+                          {currency}
+                          {minBuyIn.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="rules-modal__item">
+                        <span className="rules-modal__label">Max Buy-In</span>
+                        <span className="rules-modal__value">
+                          {currency}
+                          {maxBuyIn.toLocaleString()}
+                        </span>
+                      </div>
+                    </>
+                  )}
                   <div className="rules-modal__item">
                     <span className="rules-modal__label">Rake</span>
                     <span className="rules-modal__value">
-                      {rakePercentage === undefined || rakeCap === undefined
-                        ? '-'
-                        : `${rakePercentage}% (Cap ${currency}${rakeCap})`}
+                      {/* THE NUMBER THE ENGINE REALLY USES (useEffectiveRake's
+                          stated requirement). ServerTableEngineDealing passes
+                          `{ percent: 0, cap: 0 }` for every tournament table —
+                          the house take for a tournament is the entry fee at
+                          registration — while the schedule lookup that feeds
+                          this row is keyed on stakes and fell through to the
+                          top cash tier on a tournament's level blinds. */}
+                      {isTournament
+                        ? 'None'
+                        : rakePercentage === undefined || rakeCap === undefined
+                          ? '-'
+                          : `${rakePercentage}% (Cap ${currency}${rakeCap})`}
                     </span>
                   </div>
                 </div>
@@ -471,22 +522,22 @@ export function GameRulesModal({
                 <h3 className="rules-modal__section-title">Table Features</h3>
                 <div className="rules-modal__features">
                   <div
-                    className={`rules-modal__feature ${isStraddleEnabled ? 'rules-modal__feature--active' : ''}`}
+                    className={`rules-modal__feature ${straddleActive ? 'rules-modal__feature--active' : ''}`}
                   >
                     <span className="rules-modal__feature-text">Straddle</span>
                   </div>
                   <div
-                    className={`rules-modal__feature ${isRunItTwiceEnabled ? 'rules-modal__feature--active' : ''}`}
+                    className={`rules-modal__feature ${runItTwiceActive ? 'rules-modal__feature--active' : ''}`}
                   >
                     <span className="rules-modal__feature-text">Run It Twice</span>
                   </div>
                   <div
-                    className={`rules-modal__feature ${isInsuranceEnabled ? 'rules-modal__feature--active' : ''}`}
+                    className={`rules-modal__feature ${insuranceActive ? 'rules-modal__feature--active' : ''}`}
                   >
                     <span className="rules-modal__feature-text">Insurance</span>
                   </div>
                   <div
-                    className={`rules-modal__feature ${bombPotRules?.enabled ? 'rules-modal__feature--active' : ''}`}
+                    className={`rules-modal__feature ${bombPotActive ? 'rules-modal__feature--active' : ''}`}
                   >
                     <span className="rules-modal__feature-text">
                       {(bombPotRules?.boardCount ?? 0) >= 3
@@ -499,7 +550,9 @@ export function GameRulesModal({
                 </div>
               </div>
 
-              {bombPotRules?.enabled && (
+              {/* `bombPotActive` in spirit — written out so TypeScript still
+                  narrows bombPotRules inside the block. */}
+              {bombPotRules?.enabled && !isTournament && (
                 <div className="rules-modal__section">
                   <h3 className="rules-modal__section-title">Bomb Pot</h3>
                   <div className="rules-modal__grid">

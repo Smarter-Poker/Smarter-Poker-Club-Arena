@@ -74,6 +74,9 @@ export function bombPotSettingsFromTable(t: {
   bomb_pot_trigger_mode?: string | null;
   bomb_pot_interval_seconds?: number | null;
   bomb_pot_min_players?: number;
+  /* Read only to refuse — see the CASH ONLY note on `enabled` below. */
+  game_type?: string | null;
+  tournament_id?: string | null;
 }): BombPotSchedulerSettings {
   const mode = t.bomb_pot_trigger_mode;
   const triggerMode: BombPotTriggerMode =
@@ -89,8 +92,28 @@ export function bombPotSettingsFromTable(t: {
     triggerMode === 'once_per_orbit' ||
     (triggerMode === 'timed' && intervalSeconds > 0) ||
     (triggerMode === 'every_n_hands' && frequency > 0);
+  /**
+   * ── CASH ONLY (2026-08-31) ──────────────────────────────────────────────
+   *
+   * A bomb pot takes a forced ante from every seated player and skips preflop
+   * betting. In a cash game that is a host's table rule. In a tournament the
+   * forced bets are the STRUCTURE — the blind level and its ante, set by the
+   * tournament and stepped on the tournament's clock — and a bomb ante is a
+   * second, unscheduled forced bet that no level owes, taken from chips the
+   * payout ladder is computed over, on a table that is one of many in the same
+   * event. Two tables of the same tournament would charge different antes on
+   * the same level. Dan's ruling on run it twice ("a cash game only area. it
+   * should never be in MTT, SPINS OR HEADS UP") is the same reasoning.
+   *
+   * Gated HERE, in the single normalizer, so both readers refuse together: the
+   * deal-time decision in ServerTableEngineDealing and the snapshot pill in
+   * ServerTableEngineBase.bombPotSnapshotFields. Latent — bomb_pot_enabled is
+   * true on 0 of 105,078 tournament table rows measured 2026-08-31 — but the
+   * column is a plain boolean any host tool or script can set.
+   */
+  const isTournament = !!t.tournament_id || t.game_type === 'tournament';
   return {
-    enabled: (t.bomb_pot_enabled ?? false) && modeViable,
+    enabled: (t.bomb_pot_enabled ?? false) && modeViable && !isTournament,
     triggerMode,
     frequency,
     intervalSeconds,

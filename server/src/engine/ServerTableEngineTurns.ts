@@ -2035,7 +2035,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // a straddled pot's preflop currentBet (2xBB) with an empty history
       // read as an OPEN RAISE and the fleet folded to dead money. Tell the
       // brain straddles are possible here.
-      straddleActive: this.tableInfo?.straddle_enabled === true,
+      // CASH ONLY (2026-08-31): the horse brain must not be told a straddle is
+      // possible at a table where the engine will never post one.
+      straddleActive: this.tableInfo?.straddle_enabled === true && !this.isTournamentTable(),
       // V12: REAL tournament state for the ICM layer — players left, spots
       // paid, average stack, PKO bounty share — plus the table format
       // (mtt/spin/hu_sng). Cached with a 20s TTL; null before the first

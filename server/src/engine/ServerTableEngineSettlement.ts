@@ -667,7 +667,18 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // no chips are ever minted. Both the seated + engine stack copies are
     // mutated here so syncStacks() in postHandTasks persists the result.
     // ═══════════════════════════════════════════════════════════════════════
-    const sevenDeuceEnabled = (this.tableInfo as any)?.seven_deuce_enabled === true;
+    //
+    // ── CASH ONLY (2026-08-31) ────────────────────────────────────────────
+    // The bounty is a player-to-player transfer of TABLE chips. In a cash game
+    // those are money and the transfer is exactly what it looks like. In a
+    // tournament they are tournament chips, and moving them between stacks
+    // outside the elimination/payout model rewrites the chip counts the ICM,
+    // the bubble and the payout ladder are computed from — a side pot the
+    // structure knows nothing about. Latent only because no tournament table
+    // sets the column today (0 of 105,078 measured 2026-08-31); same shape as
+    // the RIT and straddle gates.
+    const sevenDeuceEnabled =
+      (this.tableInfo as any)?.seven_deuce_enabled === true && !this.isTournamentTable();
     const sevenDeuceSawFlop = this.currentHandCommunityCards.length >= 3;
     const sevenDeuceIsNlh = (this.tableInfo?.game_variant || 'nlh') === 'nlh';
     if (

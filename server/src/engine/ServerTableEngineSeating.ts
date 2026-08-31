@@ -911,7 +911,10 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * POST /straddle — Bible V8 §4.4: Toggle auto-straddle enrollment
    */
   public toggleStraddle(userId: string, enabled: boolean): { success: boolean; error?: string } {
-    if (!this.tableInfo?.straddle_enabled) {
+    // CASH ONLY (2026-08-31): a tournament table never straddles, so the
+    // enrollment endpoint must refuse rather than record an opt-in that the
+    // deal-time gate will silently ignore.
+    if (!this.tableInfo?.straddle_enabled || this.isTournamentTable()) {
       return { success: false, error: 'Straddles are not enabled at this table' };
     }
     this.straddleEngine.toggleAutoStraddle(this.tableId, userId, enabled);

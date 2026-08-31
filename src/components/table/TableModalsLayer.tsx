@@ -100,6 +100,8 @@ export interface TableModalsLayerProps {
   heroStack: number;
   rakePercent: number | undefined;
   rakeCap: number | undefined;
+  /** What the ENGINE would do at this table, computed by TablePage with the
+   *  same predicate as ServerTableEngineBase.applyRunItTwiceConfig. */
   runItTwice: boolean | undefined;
   isHandInProgress: boolean;
   /**
@@ -153,7 +155,12 @@ export interface TableModalsLayerProps {
 
   // Game Rules Modal
   showGameRules: boolean;
+  /** Whether the TABLE permits straddling — not whether the hero has opted
+   *  in to auto-straddle. See the note where TablePage passes it. */
   isStraddleEnabled: boolean;
+  /** Whether the TABLE offers all-in insurance. Nothing passed this before
+   *  2026-08-31, so the modal's Insurance chip was dark everywhere. */
+  isInsuranceEnabled: boolean;
   /** Round 2 (double board): the table's bomb pot rules for the rules modal. */
   /** 2026-08-29: staff-only link to the live-table bomb settings editor. */
   canEditBombSettings?: boolean;
@@ -500,6 +507,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     // Game Rules
     showGameRules,
     isStraddleEnabled,
+    isInsuranceEnabled,
     bombPotRules,
     canEditBombSettings,
     onEditBombSettings,
@@ -775,8 +783,20 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         maxBuyIn={maxBuyIn}
         rakePercentage={effectiveRake.rakePercent ?? rakePercent}
         rakeCap={effectiveRake.rakeCap ?? rakeCap}
-        isStraddleEnabled={!isTournament && isStraddleEnabled}
-        isRunItTwiceEnabled={runItTwice ?? true}
+        /* ── THE MODAL DECIDES, FROM ONE FACT (2026-08-31) ────────────────
+           This line used to be the ONLY tournament gate in the block: the
+           rake above and the run-it-twice below were ungated, and the
+           run-it-twice line was worse than ungated: it coalesced a missing
+           value to TRUE, and the value was a TableState field that was
+           DECLARED AND NEVER ASSIGNED, so the fallback won every time and
+           the RUN IT TWICE chip was lit on every
+           table in the product, tournament or cash, regardless of any column.
+           TablePage now computes it with the engine's own predicate and the
+           modal applies the cash-only gate to every row at once. */
+        isTournament={isTournament}
+        isStraddleEnabled={isStraddleEnabled}
+        isInsuranceEnabled={isInsuranceEnabled}
+        isRunItTwiceEnabled={runItTwice === true}
         bombPotRules={bombPotRules}
         canEditBombSettings={canEditBombSettings}
         onEditBombSettings={onEditBombSettings}

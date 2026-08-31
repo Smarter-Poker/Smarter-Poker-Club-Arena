@@ -1760,8 +1760,11 @@ export abstract class ServerTableEngineBase {
         enabled: insuranceEnabled,
       });
 
-      // Bible V8 §4.4 / FIX 114: Configure Straddle engine — UTG only
-      if (this.tableInfo.straddle_enabled) {
+      // Bible V8 §4.4 / FIX 114: Configure Straddle engine — UTG only.
+      // CASH ONLY (2026-08-31): see the gate in startHand. Never configure a
+      // straddle engine for a tournament table, so a stray column cannot arm
+      // the feature even if a later caller forgets the deal-time gate.
+      if (this.tableInfo.straddle_enabled && !this.isTournamentTable()) {
         this.straddleEngine.configure(this.tableId, {
           enabled: true,
           maxStraddles: 1, // FIX 114: UTG straddle only — always 1
@@ -1816,7 +1819,8 @@ export abstract class ServerTableEngineBase {
       // host clicking during the wait-for-players phase is not missed. Only
       // bomb-enabled tables pay for a subscription; the throttled refresh
       // opens it later if the owner enables bomb pots mid-session.
-      if (this.tableInfo?.bomb_pot_enabled === true) this.subscribeManualBomb();
+      if (this.tableInfo?.bomb_pot_enabled === true && !this.isTournamentTable())
+        this.subscribeManualBomb();
 
       // Wait for the host's AutoStart figure (2 unless they raised it)
       this.setLoopPhase('start_wait_for_players');
@@ -3230,7 +3234,8 @@ export abstract class ServerTableEngineBase {
         // An owner who turns bomb pots ON mid-session gets the listener here,
         // rather than having to wait for an engine restart to be able to fire
         // a manual bomb at all.
-        if (this.tableInfo.bomb_pot_enabled === true) this.subscribeManualBomb();
+        if (this.tableInfo.bomb_pot_enabled === true && !this.isTournamentTable())
+          this.subscribeManualBomb();
       }
       const clubId = this.tableInfo?.club_id;
       if (clubId) {

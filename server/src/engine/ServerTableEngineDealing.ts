@@ -1548,8 +1548,20 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const bbSeat = this.getNextSeat(sbSeat, players);
 
     // Bible V8 §4.4: Process straddles before hand starts
+    //
+    // ── CASH ONLY (2026-08-31) ────────────────────────────────────────────
+    // StraddleEngine's own header says it manages straddles "for cash game
+    // tables", and both client readers gate the control on !isTournament —
+    // but THIS is the line that actually takes the chips, and it read the
+    // column alone. A straddle is a voluntary blind: in a tournament it posts
+    // a live 2xBB out of a stack the payout model treats as tournament chips,
+    // ahead of a blind level the structure sets, in a game whose whole point
+    // is that everybody pays the same forced bets. Latent only because no
+    // tournament table sets the column today (0 of 105,078 measured
+    // 2026-08-31) — one UPDATE, or one future host-facing toggle, makes it
+    // live. Same shape as the RIT gate in applyRunItTwiceConfig.
     let straddleResults: { seat: number; amount: number }[] = [];
-    if (this.tableInfo.straddle_enabled) {
+    if (this.tableInfo.straddle_enabled && !this.isTournamentTable()) {
       // Build seat order starting from UTG (left of BB)
       const utgSeat = this.getNextSeat(bbSeat, players);
 
@@ -1655,6 +1667,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       if (
         !decision.isBombPot &&
         this.tableInfo.bomb_pot_enabled === true &&
+        // CASH ONLY (2026-08-31): the scheduled path is refused inside
+        // bombPotSettingsFromTable, but the MANUAL claim reads the column
+        // directly (a host may keep bombs manual-only with no viable
+        // schedule), so it needs the tournament gate of its own.
+        !this.isTournamentTable() &&
         // PUSHED, NOT POLLED (2026-08-29). This block used to run on EVERY
         // non-bomb hand of every bomb table — one round trip on the hand-start
         // critical path to learn a flag that is false essentially always.

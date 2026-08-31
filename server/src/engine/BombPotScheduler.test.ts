@@ -54,6 +54,39 @@ describe('bombPotSettingsFromTable', () => {
     ).toBe(true);
   });
 
+  /* CASH ONLY (2026-08-31). A bomb pot's forced ante is a second, unscheduled
+     forced bet on a felt whose forced bets ARE the tournament structure — and
+     it would differ table to table inside the same event. Dan on run it twice:
+     "a cash game only area. it should never be in MTT, SPINS OR HEADS UP."
+     Gated in the normalizer so the deal-time decision and the snapshot pill
+     refuse together. */
+  it('a tournament table is never bomb-enabled, whatever the column says', () => {
+    const row = {
+      bomb_pot_enabled: true,
+      bomb_pot_frequency: 5,
+    };
+    expect(bombPotSettingsFromTable(row).enabled).toBe(true);
+    expect(bombPotSettingsFromTable({ ...row, game_type: 'tournament' }).enabled).toBe(false);
+    expect(bombPotSettingsFromTable({ ...row, tournament_id: 'abc' }).enabled).toBe(false);
+    // Every trigger mode, not just the default one.
+    for (const [mode, extra] of [
+      ['once_per_orbit', {}],
+      ['bomb_pot_only', {}],
+      ['timed', { bomb_pot_interval_seconds: 1800 }],
+    ] as const) {
+      expect(
+        bombPotSettingsFromTable({
+          ...row,
+          ...extra,
+          bomb_pot_trigger_mode: mode,
+          game_type: 'tournament',
+        }).enabled
+      ).toBe(false);
+    }
+    // The rest of the settings still normalize — only `enabled` is refused.
+    expect(bombPotSettingsFromTable({ ...row, game_type: 'tournament' }).frequency).toBe(5);
+  });
+
   it('clamps the minimum-players floor at 2', () => {
     const s = bombPotSettingsFromTable({
       bomb_pot_enabled: true,

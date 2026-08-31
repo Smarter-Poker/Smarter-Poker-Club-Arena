@@ -606,7 +606,11 @@ interface TableState {
   // Table settings (from create/Supabase)
   rakePercent?: number;
   rakeCap?: number;
-  runItTwice?: boolean;
+  /* `runItTwice?: boolean` lived here and was DECLARED AND NEVER ASSIGNED.
+     TableModalsLayer read it as `runItTwice ?? true`, so the Game Rules
+     modal's RUN IT TWICE chip was lit on every table in the product. Removed
+     2026-08-31 so nobody reads it again; the real value is the
+     `tableRunItTwice` state below, computed with the engine's own predicate. */
   // Bible V8 §2.4: Server-authoritative hand state fields
   minRaise?: number;
   lastRaise?: number;
@@ -5903,6 +5907,22 @@ export default function TablePage({
   // Straddle state
   const [isStraddleEnabled, setIsStraddleEnabled] = useState(false);
   const [tableStraddleEnabled, setTableStraddleEnabled] = useState(false);
+  /**
+   * WHAT THE ENGINE WOULD DO ABOUT RUN IT TWICE AT THIS TABLE (2026-08-31).
+   *
+   * Mirrors ServerTableEngineBase.applyRunItTwiceConfig exactly, including its
+   * tournament gate (Dan: "run it twice or 3 times is a cash game only area.
+   * it should never be in MTT, SPINS OR HEADS UP"). Owner intent is OFF when
+   * either user-written column is false; the legacy engine column is honoured
+   * as an additional ON override. The tournament columns cannot be read as
+   * intent at all — measured 2026-08-31, run_it_twice and allow_run_it_twice
+   * are true on all 105,078 tournament tables and run_it_twice_enabled on
+   * 28,651 — which is why the gate comes first here as it does there.
+   */
+  const [tableRunItTwice, setTableRunItTwice] = useState(false);
+  /** The TABLE's all-in insurance rule, for the Game Rules modal. See where it
+   *  is set — nothing fed this chip before 2026-08-31. */
+  const [tableInsuranceEnabled, setTableInsuranceEnabled] = useState(false);
   const [straddleBusy, setStraddleBusy] = useState(false);
 
   // A straddle is 2x the big blind. This was hardcoded to `4`, which is only
@@ -9414,6 +9434,12 @@ export default function TablePage({
            engine plays by; fetch them and prefer them, with the settings
            spellings kept as fallback for old rows. */
         straddle_enabled: boolean | null;
+        /* The three columns applyRunItTwiceConfig reads. */
+        run_it_twice: boolean | null;
+        allow_run_it_twice: boolean | null;
+        run_it_twice_enabled: boolean | null;
+        /* And the column it reads for insurance. */
+        insurance_enabled: boolean | null;
         bomb_pot_enabled: boolean | null;
         bomb_pot_frequency: number | null;
         bomb_pot_ante_multiplier: number | null;
@@ -9452,7 +9478,7 @@ export default function TablePage({
         const res = await supabase
           .from('tables')
           .select(
-            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_announce_seconds, bomb_pot_ante_fixed, bomb_pot_min_players, bomb_pot_button_policy'
+            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_announce_seconds, bomb_pot_ante_fixed, bomb_pot_min_players, bomb_pot_button_policy, run_it_twice, allow_run_it_twice, run_it_twice_enabled, insurance_enabled'
           )
           .eq('id', tableId)
           .maybeSingle();
@@ -9565,6 +9591,32 @@ export default function TablePage({
            actually plays by; the settings spellings survive for old rows. */
         setTableStraddleEnabled(
           table.straddle_enabled === true || settings.straddle_enabled === true
+        );
+        /* Identical predicate to ServerTableEngineBase.applyRunItTwiceConfig —
+           tournament gate first, then (run_it_twice AND allow_run_it_twice),
+           with the legacy run_it_twice_enabled column as an ON override. If
+           that function ever changes, this changes with it: the Game Rules
+           modal must show the offer the engine will really make. */
+        {
+          const ritIsTournament = table.game_type === 'tournament' || !!table.tournament_id;
+          setTableRunItTwice(
+            !ritIsTournament &&
+              (((table.run_it_twice ?? true) && (table.allow_run_it_twice ?? true)) ||
+                (table.run_it_twice_enabled ?? false))
+          );
+        }
+        /* THE INSURANCE CHIP WAS DARK ON EVERY TABLE IN THE PRODUCT
+           (2026-08-31). GameRulesModal takes `isInsuranceEnabled`, defaulting
+           to false, and NOTHING ever passed it — so a cash table that really
+           does offer all-in insurance (the lobby card says so, off this same
+           column) described itself at the felt as a table that does not. The
+           exact mirror of the run-it-twice chip, which defaulted the other way
+           and was lit everywhere. Same predicate as
+           ServerTableEngineBase.applyRunItTwiceConfig's insurance line:
+           `(insurance_enabled ?? false) && !isTournament`, the tournament half
+           applied by the modal. */
+        setTableInsuranceEnabled(
+          table.insurance_enabled === true || settings.insurance_enabled === true
         );
         const bombOn = table.bomb_pot_enabled === true || settings.bomb_pot_enabled === true;
         const bombBoards =
@@ -21665,7 +21717,7 @@ export default function TablePage({
         heroStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
         rakePercent={displayRakeConfig.rakePercent}
         rakeCap={displayRakeConfig.rakeCap}
-        runItTwice={tableState.runItTwice}
+        runItTwice={tableRunItTwice}
         isHandInProgress={tableState.isHandInProgress}
         boardStage={tableState.boardStage}
         handNumber={tableState.handNumber}
@@ -21702,7 +21754,15 @@ export default function TablePage({
         onCloseHandReplay={() => setShowHandReplay(false)}
         // Game Rules
         showGameRules={showGameRules}
-        isStraddleEnabled={isStraddleEnabled}
+        /* THE TABLE'S RULE, NOT THE HERO'S ENROLLMENT (2026-08-31). This
+           passed `isStraddleEnabled` — the hero's own auto-straddle opt-in
+           switch — into the Game Rules modal's "Table Features / Straddle"
+           chip. So a cash table that genuinely allows straddling showed the
+           feature as unavailable until the player happened to enrol, and the
+           chip described the reader rather than the table.
+           `tableStraddleEnabled` is the column the engine plays by. */
+        isStraddleEnabled={tableStraddleEnabled}
+        isInsuranceEnabled={tableInsuranceEnabled}
         bombPotRules={bombPotRules}
         canManualBombPot={isClubStaff && bombPotRules?.enabled === true}
         onManualBombPot={handleManualBombPot}

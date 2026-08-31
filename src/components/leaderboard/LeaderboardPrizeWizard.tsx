@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   LeaderboardPrize,
   LeaderboardPrizePlanKey,
@@ -169,7 +170,7 @@ export function LeaderboardPrizeWizard({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       className="lb-prize-wizard-backdrop"
       onMouseDown={(event) => {
@@ -460,7 +461,8 @@ export function LeaderboardPrizeWizard({
           )}
         </footer>
       </section>
-    </div>
+    </div>,
+    document.body
   );
 }
 

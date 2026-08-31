@@ -54,6 +54,16 @@ describe('LeaderboardPrizeWizard', () => {
     saveLeaderboardRewardSetup.mockReset();
   });
 
+  it('portals the modal above persistent shell navigation instead of trapping it in the page layer', () => {
+    const { container } = render(
+      <LeaderboardPrizeWizard isOpen setup={setup} onClose={vi.fn()} onSaved={vi.fn()} />
+    );
+
+    const dialog = screen.getByRole('dialog', { name: 'Leaderboard Prize Setup' });
+    expect(dialog.parentElement?.parentElement).toBe(document.body);
+    expect(container).not.toContainElement(dialog);
+  });
+
   it('walks an owner through a suggested union promo-wallet plan and saves it', async () => {
     const user = userEvent.setup();
     const onSaved = vi.fn();

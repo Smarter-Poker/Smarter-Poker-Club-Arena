@@ -524,6 +524,124 @@ export abstract class ServerTableEngineBase {
    * guards, so this is a leak/noise issue rather than a corruption one — but
    * teardown should still be complete).
    */
+  /**
+   * Fold the seats whose OWN discard deadline has passed, then re-arm for the
+   * next one still outstanding.
+   *
+   * One re-arming sweep rather than one timer per seat: a time bank moves a
+   * single seat's deadline, and a fixed table-wide timeout could not express
+   * that. Deadlines are absolute, so a sweep that runs late is still correct —
+   * it folds exactly the seats that are genuinely out of time.
+   */
+  protected armPineappleDiscardSweep(controllerRef: unknown): void {
+    if (this.pineappleDiscardTimer) {
+      clearTimeout(this.pineappleDiscardTimer);
+      this.pineappleDiscardTimer = null;
+    }
+    if (this.pineappleDiscardDeadlines.size === 0) return;
+
+    const next = Math.min(...this.pineappleDiscardDeadlines.values());
+    const wait = Math.max(0, next - Date.now());
+
+    this.pineappleDiscardTimer = setTimeout(() => {
+      this.pineappleDiscardTimer = null;
+      if (!this.handController || this.handController !== controllerRef) return;
+
+      const now = Date.now();
+      for (const [seat, at] of [...this.pineappleDiscardDeadlines]) {
+        if (at > now) continue; // this seat bought itself more time
+        this.pineappleDiscardDeadlines.delete(seat);
+        try {
+          // Dan 2026-08-21: a missed discard FOLDS the hand. It used to
+          // auto-discard the last card - a random discard the player never
+          // chose, which then kept playing for them.
+          this.handController.foldForMissedDiscard(seat);
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.pineapple_discard_fold_threw', {
+            seat,
+          });
+          // Keep going — one bad seat must not strand the whole table.
+        }
+      }
+      this.markProgress();
+      // Seats with an extended deadline are still owed their round.
+      this.armPineappleDiscardSweep(controllerRef);
+    }, wait);
+  }
+
+  /**
+   * Spend a time bank on a DISCARD (2026-08-31).
+   *
+   * Every other decision on this table can buy time; the discard could not,
+   * because the whole time-bank path is written against `currentPlayerSeat`
+   * and the discard round has no turn — every seat decides at once. So the one
+   * action where a player is most likely to hesitate was the one action with no
+   * way to think, and missing it folds the hand outright.
+   *
+   * Same rules as a turn, deliberately: the ordinary clock must be genuinely
+   * exhausted first (TimeBankEngine enforces it from the remaining seconds we
+   * pass in), the pool and the per-street cap are the engine's, and the grant
+   * lands on THIS seat's deadline only.
+   */
+  public extendPineappleDiscard(userId: string): {
+    success: boolean;
+    error?: string;
+    armed?: boolean;
+    message?: string;
+    deadlineMs?: number;
+  } {
+    if (!this.handController) return { success: false, error: 'No Active Hand At This Table' };
+    if (this.handController.getState().stage !== 'pineapple_discard') {
+      return { success: false, error: 'Not In The Discard Round' };
+    }
+    const player = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (!player) return { success: false, error: 'You Are Not Seated At This Table' };
+
+    const seat = player.seat_number;
+    const at = this.pineappleDiscardDeadlines.get(seat);
+    if (at === undefined) return { success: false, error: 'You Have Already Discarded' };
+
+    const remaining = Math.max(0, (at - Date.now()) / 1000);
+    if (remaining > TimeBankEngine.CLOCK_EXHAUSTED_EPSILON_SECONDS) {
+      if (!this.timeBankEngine.arm(this.tableId, userId)) {
+        return { success: false, error: 'No Time Bank Uses Remaining' };
+      }
+      return {
+        success: true,
+        armed: true,
+        message: 'Time Bank Armed. It Starts When Your Clock Runs Out',
+      };
+    }
+
+    const before = this.timeBankEngine.getRemainingSeconds(this.tableId, userId);
+    const result = this.timeBankEngine.tryActivate(this.tableId, userId, () => {}, remaining);
+    if (result !== 'activated') {
+      return {
+        success: false,
+        error:
+          result === 'depleted' || result === 'not_initialized'
+            ? 'No Time Bank Uses Remaining'
+            : result === 'street_limit'
+              ? 'No Time Bank Uses Left On This Street'
+              : 'Your Time Bank Is Already Running',
+      };
+    }
+
+    /* The grant is what the bank actually released, not a hard-coded 20 — a
+       player down to 6 seconds of pool gets 6, and the deadline we publish is
+       the deadline we enforce. */
+    const granted = Math.max(
+      0,
+      before - this.timeBankEngine.getRemainingSeconds(this.tableId, userId)
+    );
+    const seconds = granted > 0 ? granted : before;
+    const extended = Date.now() + seconds * 1000;
+    this.pineappleDiscardDeadlines.set(seat, extended);
+    this.armPineappleDiscardSweep(this.handController);
+    this.broadcastCurrentState();
+    return { success: true, deadlineMs: extended };
+  }
+
   protected clearLooseHandTimers(): void {
     if (this.horseActionTimer) {
       clearTimeout(this.horseActionTimer);
@@ -533,6 +651,9 @@ export abstract class ServerTableEngineBase {
       clearTimeout(this.pineappleDiscardTimer);
       this.pineappleDiscardTimer = null;
     }
+    this.pineappleDiscardDeadlines.clear();
+    this.pineappleDiscardBaseDeadlineMs = null;
+    this.pineappleDiscardDurationMs = 0;
   }
 
   // FIX 2 (2026-07-24): per-hand hole cards kept in memory so we can (a) retry
@@ -2565,6 +2686,27 @@ export abstract class ServerTableEngineBase {
       : (this.tableInfo?.big_blind || 2) * 200;
   }
   protected pineappleDiscardTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * PINEAPPLE DISCARD DEADLINES, PER SEAT, ABSOLUTE (2026-08-31).
+   *
+   * The discard round used to be one flat `setTimeout` for the whole table and
+   * nothing published about it, so the client counted down from its OWN copy of
+   * action_time_seconds anchored to the moment it first saw the stage. Three
+   * ways that lied: a table configured with a different action time showed the
+   * wrong number; a reconnect restarted the countdown from full while the
+   * server clock was half spent; and switching to the table from another tab
+   * re-anchored it again. Dan was folded on a clock that read twelve seconds.
+   *
+   * Absolute epoch ms, per seat, published in the snapshot and enforced from
+   * the same map, so what the player sees and what folds them are one number.
+   * Per SEAT rather than per table because a time bank extends one player's
+   * deadline without touching anybody else's.
+   */
+  protected pineappleDiscardDeadlines: Map<number, number> = new Map();
+  /** The unextended deadline every seat started the round with. */
+  protected pineappleDiscardBaseDeadlineMs: number | null = null;
+  /** Round duration in ms, for the client's ring geometry. */
+  protected pineappleDiscardDurationMs: number = 0;
   /**
    * Pending horse think-time timer. Tracked so it can be cancelled — a stray
    * horse action scheduled for a hand that has since ended is a real hazard

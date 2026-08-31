@@ -434,25 +434,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // aborted the loop: the remaining seats never discarded,
     // pineappleDiscardsRemaining never emptied, and the hand was parked at
     // pineapple_discard forever. Three pineapple tables run in production.
-    const discardControllerRef = this.handController;
-    this.pineappleDiscardTimer = setTimeout(() => {
-      if (!this.handController || this.handController !== discardControllerRef) return;
-      for (const seat of seats) {
-        try {
-          // Dan 2026-08-21: a missed discard FOLDS the hand. It used to
-          // auto-discard the last card - a random discard the player never
-          // chose, which then kept playing for them.
-          this.handController.foldForMissedDiscard(seat);
-        } catch (err) {
-          reportError(err, 'ServerTableEngine.' + this.tableId + '.pineapple_discard_fold_threw', {
-            seat,
-          });
-          // Keep going — one bad seat must not strand the whole table.
-        }
-      }
-      this.markProgress();
-      // checkPineappleDiscardsComplete() inside autoDiscard will advance the game
-    }, timeoutMs);
+    const deadline = Date.now() + timeoutMs;
+    this.pineappleDiscardBaseDeadlineMs = deadline;
+    this.pineappleDiscardDurationMs = timeoutMs;
+    this.pineappleDiscardDeadlines.clear();
+    for (const seat of seats) this.pineappleDiscardDeadlines.set(seat, deadline);
+    this.armPineappleDiscardSweep(this.handController);
   }
 
   /**
@@ -489,12 +476,20 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // at the top of this method and unable to change, so the branch was dead
     // and the timer was NEVER cleared. It always ran to full duration and fired
     // autoDiscard into whatever hand happened to be live by then.
+    /* This seat is done, so it can no longer be folded for missing the round.
+       Before per-seat deadlines this was implicit in the single table-wide
+       timer; now it has to be said. */
+    this.pineappleDiscardDeadlines.delete(player.seat_number);
     if (this.handController.getState().stage !== 'pineapple_discard') {
       // Stage already advanced — all discards are in
       if (this.pineappleDiscardTimer) {
         clearTimeout(this.pineappleDiscardTimer);
         this.pineappleDiscardTimer = null;
       }
+      this.pineappleDiscardDeadlines.clear();
+      this.pineappleDiscardBaseDeadlineMs = null;
+    } else {
+      this.armPineappleDiscardSweep(this.handController);
     }
 
     this.broadcastCurrentState();

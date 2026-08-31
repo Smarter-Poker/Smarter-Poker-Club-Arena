@@ -167,3 +167,24 @@
     transition: none;
   }
 }
+
+/* Time bank, for a round that folds you when the clock runs out (2026-08-31).
+   Below the cards and above Discard, so the destructive button stays the one
+   under the thumb and the extra-time button cannot be hit by accident. */
+.pineapple-discard__timebank {
+  margin-top: 12px;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #cfd6ea;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+
+.pineapple-discard__timebank:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

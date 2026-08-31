@@ -591,6 +591,8 @@ interface TableState {
   postBBDeferredUserIds?: string[];
   // Phase 8: Action timer state
   actionTimerDeadline?: number;
+  /** Hero's own pineapple discard deadline, absolute epoch ms, from the engine. */
+  discardDeadline?: number | null;
   /** Wall-clock turn start (server-authoritative). Drives the CSS ring
    * animation via SeatSlot turnStartTimeMs/turnDeadlineMs props. */
   actionTimerStartTime?: number;
@@ -2289,6 +2291,7 @@ export default function TablePage({
             .filter((n): n is string => typeof n === 'string'),
         })) as SidePot[],
         actionTimerDeadline: mapped.actionTimerDeadline,
+        discardDeadline: mapped.discardDeadline ?? null,
         actionTimerStartTime: mapped.actionTimerStartTime,
         actionTimerPlayerId: mapped.actionTimerPlayerId,
         isTimeBankActive: mapped.isTimeBankActive,
@@ -2348,20 +2351,38 @@ export default function TablePage({
     return cards.length === 3 ? (cards as NonNullable<(typeof cards)[number]>[]) : null;
   }, [tableState.engineStage, tableState.players, tableState.heroSeat]);
 
-  // The engine starts its auto-discard timer the moment the stage opens, so the
-  // countdown is anchored to when we first see the stage rather than to a
-  // separate broadcast.
-  // `actionTimeSeconds` is declared further down this component, so naming it in
-  // the dep array would be a temporal-dead-zone error rather than a lint gripe.
-  // Same ref pattern the all-in hotkey uses.
+  /* ═══ THE DISCARD CLOCK IS THE SERVER'S (2026-08-31) ═══════════════════
+     This used to be `Date.now() + actionTimeSecondsRef.current * 1000`,
+     anchored with `prev ?? ...` to the first frame the client saw the stage in.
+     Three ways that lied to the player, and all three end the same way - folded
+     on a clock that still read time:
+
+       - the client's 15 was its OWN default, so a table configured with a
+         different action_time_seconds showed a number the engine did not use;
+       - `prev ??` anchors to FIRST SIGHT, so a reconnect mid-round started a
+         fresh 15 seconds over a server deadline that was half spent;
+       - switching to the table from another tab re-anchored it again.
+
+     The engine now publishes `discard_deadlines` (per seat, absolute epoch ms)
+     and the mapper hands the hero its own entry. serverNow() subtracts the
+     device's clock skew from the same sample the turn ring already uses, so
+     what the panel counts down is what folds you.
+
+     The local guess survives ONLY as a fallback for an engine build that does
+     not publish the field yet, and it is deliberately the last resort. */
   const actionTimeSecondsRef = useRef(15);
   useEffect(() => {
-    if (heroPineappleCards) {
-      setPineappleDeadline((prev) => prev ?? Date.now() + actionTimeSecondsRef.current * 1000);
-    } else {
+    if (!heroPineappleCards) {
       setPineappleDeadline(null);
+      return;
     }
-  }, [heroPineappleCards]);
+    const authoritative = tableState.discardDeadline;
+    if (typeof authoritative === 'number' && authoritative > 0) {
+      setPineappleDeadline((prev) => (prev === authoritative ? prev : authoritative));
+      return;
+    }
+    setPineappleDeadline((prev) => prev ?? Date.now() + actionTimeSecondsRef.current * 1000);
+  }, [heroPineappleCards, tableState.discardDeadline]);
 
   // Mirror the discard clock into the shared decision channel so the tab strip
   // can show and alarm it on a table the player is not looking at.
@@ -21280,6 +21301,11 @@ export default function TablePage({
            alarms through the tab strip instead of painting a dead, unclickable
            panel across the table you are actually playing. */
         isOpen={isActive && !!heroPineappleCards}
+        /* The discard is a decision, so it can buy time like any other. The
+           same endpoint and the same bank; the engine routes a press made
+           during the round to this seat's own deadline. */
+        timeBanksRemaining={timeBanksRemaining ?? 0}
+        onTimeBank={handleActivateTimeBank}
         cards={heroPineappleCards ?? []}
         onDiscard={handlePineappleDiscard}
         deadline={pineappleDeadline}

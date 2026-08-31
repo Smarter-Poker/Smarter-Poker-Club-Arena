@@ -24,6 +24,7 @@ import { useState, useEffect, useCallback } from 'react';
 // renders and what mapEngineSnapshot normalises hero's hole cards into.
 import CardImage, { type Card, type DeckStyle } from './CardImage';
 import { haptic } from '../../services/SoundService';
+import { serverNow } from '../../utils/serverClock';
 import './PineappleDiscard.css';
 
 export interface PineappleDiscardProps {
@@ -36,9 +37,18 @@ export interface PineappleDiscardProps {
    * The index is into `cards`, which must be the engine's own ordering.
    */
   onDiscard: (cardIndex: number) => Promise<boolean>;
-  /** Epoch ms when the engine auto-discards for you. Drives the countdown. */
+  /**
+   * Epoch ms when the engine FOLDS you for missing the round. Absolute and
+   * server-authored - see the discard-clock block in TablePage. Read against
+   * serverNow() so a skewed device clock cannot make this panel disagree with
+   * the deadline actually being enforced.
+   */
   deadline?: number | null;
   deckStyle?: DeckStyle;
+  /** Time bank uses the player has left. 0 hides the button entirely. */
+  timeBanksRemaining?: number;
+  /** Spend one. The engine extends THIS seat's deadline and nobody else's. */
+  onTimeBank?: () => void | Promise<void>;
 }
 
 export function PineappleDiscard({
@@ -47,6 +57,8 @@ export function PineappleDiscard({
   onDiscard,
   deadline,
   deckStyle,
+  timeBanksRemaining = 0,
+  onTimeBank,
 }: PineappleDiscardProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -67,7 +79,12 @@ export function PineappleDiscard({
       setSecondsLeft(null);
       return;
     }
-    const tick = () => setSecondsLeft(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+    /* serverNow(), not Date.now(). The engine stamps its own clock on every
+       snapshot and the shared helper tracks the offset, so a device running a
+       few seconds fast cannot drain this ring early - which, on a round where
+       running out FOLDS you, is the difference between a decision and a
+       confiscation. */
+    const tick = () => setSecondsLeft(Math.max(0, Math.ceil((deadline - serverNow()) / 1000)));
     tick();
     const id = setInterval(tick, 250);
     return () => clearInterval(id);
@@ -145,6 +162,20 @@ export function PineappleDiscard({
           <div className="pineapple-discard__error" role="alert">
             {error}
           </div>
+        )}
+
+        {onTimeBank && timeBanksRemaining > 0 && (
+          <button
+            type="button"
+            className="pineapple-discard__timebank"
+            disabled={busy}
+            onClick={() => {
+              haptic.light();
+              void onTimeBank();
+            }}
+          >
+            Use Time Bank ({timeBanksRemaining})
+          </button>
         )}
 
         <button

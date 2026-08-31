@@ -139,3 +139,46 @@ describe('the picker does not cover the flop', () => {
     expect(shell).not.toMatch(/background:\s*rgba\(0, 0, 0/);
   });
 });
+
+/**
+ * PHASE 1 — the discard clock the player watches is the one that folds them.
+ */
+describe('the discard countdown is server-authored', () => {
+  const map = read('src/utils/mapEngineSnapshot.ts');
+  const src = read('src/pages/TablePage.tsx');
+  const panel = read('src/components/table/PineappleDiscard.tsx');
+
+  it("prefers the hero's OWN deadline over the round default", () => {
+    // A time bank extends one seat without touching the rest, so the per-user
+    // entry has to win.
+    const i = map.indexOf('const ownDiscard = s.discard_deadlines?.[heroUserId]');
+    const j = map.indexOf('} else if (typeof s.discard_deadline_ms');
+    expect(i).toBeGreaterThan(-1);
+    expect(j).toBeGreaterThan(i);
+  });
+
+  it('TablePage takes the engine deadline, not its own guess', () => {
+    const block = src.slice(
+      src.indexOf('const actionTimeSecondsRef'),
+      src.indexOf('// Mirror the discard clock into the shared decision channel')
+    );
+    expect(block).toContain('const authoritative = tableState.discardDeadline;');
+    // The old guess survives only as a fallback for an engine that does not
+    // publish the field yet — it must not be the first thing tried.
+    const guess = block.indexOf('actionTimeSecondsRef.current * 1000');
+    expect(guess).toBeGreaterThan(block.indexOf('const authoritative'));
+  });
+
+  it('the panel counts down against the server clock, not the device clock', () => {
+    expect(panel).toContain("import { serverNow } from '../../utils/serverClock'");
+    expect(panel).toContain('deadline - serverNow()');
+    expect(panel).not.toContain('deadline - Date.now()');
+  });
+
+  it('offers a time bank on the round that folds you for running out', () => {
+    expect(panel).toContain('pineapple-discard__timebank');
+    expect(panel).toContain('timeBanksRemaining > 0');
+    const i = src.indexOf('<PineappleDiscard');
+    expect(src.slice(i, i + 900)).toContain('onTimeBank={handleActivateTimeBank}');
+  });
+});

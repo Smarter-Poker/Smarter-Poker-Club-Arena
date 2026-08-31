@@ -117,7 +117,9 @@ describe('44 of 50 Spins and Heads-Ups could never be joined', () => {
 
   it('will not count a game with no table as covering its price point', () => {
     // One dead REGISTERING row wedged one price point permanently.
-    expect(recurring).toMatch(/withTable\.has\(r\.id\)/);
+    // The guard was strengthened to reject closed/deleted tables too, so keep
+    // this incident contract aligned with the joinability-aware set name.
+    expect(recurring).toMatch(/withJoinableTable\.has\(r\.id\)/);
   });
 
   it('keeps a floor of horses for the cash room', () => {

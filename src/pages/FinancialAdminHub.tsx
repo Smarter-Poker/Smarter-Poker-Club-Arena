@@ -21,6 +21,7 @@ import UnionOpsPanel from '../components/union/UnionOpsPanel';
 
 interface HubStats {
   totalAlerts: number;
+  openIncidents: number;
   openDisputes: number;
   rateChanges: number;
   healthChecks: number;
@@ -36,6 +37,15 @@ const NAV_ITEMS = [
     color: '#ef4444',
     bg: 'rgba(239,68,68,0.1)',
     border: 'rgba(239,68,68,0.3)',
+  },
+  {
+    icon: '◈',
+    label: 'Drift Incidents',
+    description: 'Ledger Drift Detection And 20-Minute Reconciliation Queue',
+    path: '/financial-incidents',
+    color: '#f43f5e',
+    bg: 'rgba(244,63,94,0.1)',
+    border: 'rgba(244,63,94,0.3)',
   },
   {
     icon: '◇',
@@ -137,6 +147,7 @@ export default function FinancialAdminHub() {
 
   const [stats, setStats] = useState<HubStats>({
     totalAlerts: 0,
+    openIncidents: 0,
     openDisputes: 0,
     rateChanges: 0,
     healthChecks: 0,
@@ -162,6 +173,7 @@ export default function FinancialAdminHub() {
         rakeResult,
         healthCountResult,
         alertResult,
+        incidentResult,
         lastCheckResult,
         rakeDataResult,
       ] = await Promise.all([
@@ -224,6 +236,25 @@ export default function FinancialAdminHub() {
         })(),
         (async () => {
           try {
+            // BIND THE ERROR. A discarded error here reads as "0 open
+            // incidents" - an all-clear on the one tile whose whole job is to
+            // say drift was detected. Fail loud, not quiet.
+            const { data, error } = await supabase.rpc('fn_ca_incident_dashboard', {
+              p_status: null,
+              p_limit: 500,
+            });
+            if (error) {
+              reportError(error, 'FinancialAdminHub.incidentDashboard');
+              return 0;
+            }
+            return ((data as any[]) || []).filter((i: any) => i?.status !== 'resolved').length;
+          } catch (e) {
+            reportError(e, 'FinancialAdminHub.incidentDashboard');
+            return 0;
+          }
+        })(),
+        (async () => {
+          try {
             const r = await supabase
               .from('financial_health_checks')
               .select('passed')
@@ -256,6 +287,7 @@ export default function FinancialAdminHub() {
 
       setStats({
         totalAlerts: alertResult as number,
+        openIncidents: incidentResult as number,
         openDisputes: disputeResult as number,
         rateChanges: (commResult as number) + (rakeResult as number),
         healthChecks: healthCountResult as number,
@@ -330,7 +362,7 @@ export default function FinancialAdminHub() {
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
     setVisibleCards(new Set());
-    [0, 1, 2, 3].forEach((i) => {
+    [0, 1, 2, 3, 4].forEach((i) => {
       timers.push(setTimeout(() => setVisibleCards((prev) => new Set(prev).add(i)), i * 80));
     });
     setVisibleNavs(new Set());
@@ -341,6 +373,13 @@ export default function FinancialAdminHub() {
   }, []);
 
   const kpiCards = [
+    {
+      label: 'Drift Incidents',
+      value: stats.openIncidents,
+      icon: '◈',
+      color: stats.openIncidents > 0 ? '#f43f5e' : '#10b981',
+      glow: stats.openIncidents > 0 ? 'rgba(244,63,94,0.2)' : 'rgba(16,185,129,0.2)',
+    },
     {
       label: 'Open Disputes',
       value: stats.openDisputes,

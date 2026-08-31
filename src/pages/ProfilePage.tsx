@@ -993,12 +993,12 @@ export default function ProfilePage() {
           their data loaders and mutation guards. */}
       <nav className={styles.destinationGrid} aria-label="Player Workspaces">
         {[
-          { label: 'Player Analytics', meta: 'Deep stats and leak analysis', path: '/stats' },
-          { label: 'Bonus Center', meta: 'Daily and special claims', path: '/bonuses' },
-          { label: 'Challenges', meta: 'Missions and progress', path: '/challenges' },
-          { label: 'Leaderboards', meta: 'Circuit rankings', path: '/leaderboard' },
-          { label: 'Promotions', meta: 'Live offers and eligibility', path: '/promotions' },
-          { label: 'VIP Status', meta: 'Tier progress and benefits', path: '/vip' },
+          { label: 'Player Analytics', meta: 'Deep Stats And Leak Analysis', path: '/stats' },
+          { label: 'Bonus Center', meta: 'Daily And Special Claims', path: '/bonuses' },
+          { label: 'Challenges', meta: 'Missions And Progress', path: '/challenges' },
+          { label: 'Leaderboards', meta: 'Circuit Rankings', path: '/leaderboard' },
+          { label: 'Promotions', meta: 'Live Offers And Eligibility', path: '/promotions' },
+          { label: 'VIP Status', meta: 'Tier Progress And Benefits', path: '/vip' },
         ].map((destination) => (
           <button
             type="button"

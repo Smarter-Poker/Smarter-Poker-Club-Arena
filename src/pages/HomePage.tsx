@@ -1165,9 +1165,9 @@ function HomePageInner() {
             <div className={styles.shortcutGrid}>
               {[
                 ['1-5', 'Navigate Bottom Tiles'],
-                ['J', 'Join a Club'],
-                ['C', 'Create a Club'],
-                ['F', 'Find a Player'],
+                ['J', 'Join A Club'],
+                ['C', 'Create A Club'],
+                ['F', 'Find A Player'],
 
                 ['?', 'Toggle This Help'],
                 ['Esc', 'Close Modals'],

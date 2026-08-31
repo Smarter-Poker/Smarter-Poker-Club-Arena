@@ -6,7 +6,8 @@
  */
 
 import { useState, useEffect, useRef, Component, type ReactNode, type ErrorInfo } from 'react';
-import { isClubStaff, type ClubRole } from '../types/clubRoles';
+import { isClubStaff, roleLabel, type ClubRole } from '../types/clubRoles';
+import { roleColor } from '../components/club/RoleBadge';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import styles from './ClubDetailPage.module.css';
 import { formatGameTitle } from '../utils/formatGameTitle';
@@ -264,19 +265,14 @@ const StatCard = ({
   </div>
 );
 
-const RoleBadge = ({ role }: { role: string }) => {
-  const colors: Record<string, string> = {
-    owner: '#f59e0b',
-    admin: '#3b82f6',
-    agent: '#8b5cf6',
-    member: '#6b7280',
-  };
-  return (
-    <span className={styles.roleBadge} style={{ backgroundColor: colors[role] || colors.member }}>
-      {(role || 'member').toUpperCase()}
-    </span>
-  );
-};
+// Four names, one of which ('member') is not a role, so a co-owner, super
+// agent or sub agent fell through to the grey default and rendered as MEMBER.
+// The canonical colour and label for all seven live in clubRoles/RoleBadge.
+const RoleBadge = ({ role }: { role: string }) => (
+  <span className={styles.roleBadge} style={{ backgroundColor: roleColor(role) }}>
+    {roleLabel(role).toUpperCase()}
+  </span>
+);
 
 const StatusBadge = ({ status }: { status: string }) => {
   const colors: Record<string, string> = {
@@ -989,16 +985,20 @@ export default function ClubDetailPage() {
           toast.success(action === 'approve' ? 'Member approved' : 'Request denied');
           break;
         }
+        // 'admin' and 'player' are the real club_members.role values. This used
+        // to promote to 'admin' as any and demote to 'member' as any, and
+        // 'member' is not a role this database has, so every demotion from this
+        // menu failed club_members_role_check and toasted "Failed to demote
+        // member" with no further explanation. updateRole now throws the
+        // server's own reason, which the catch below surfaces.
         case 'promote': {
-          const ok = await MembershipService.updateRole(clubId, memberUserId, 'admin' as any);
-          if (!ok) throw new Error('Failed to promote member');
-          toast.success('Member promoted to admin');
+          await MembershipService.updateRole(clubId, memberUserId, 'admin');
+          toast.success('Member Promoted To Admin');
           break;
         }
         case 'demote': {
-          const ok = await MembershipService.updateRole(clubId, memberUserId, 'member' as any);
-          if (!ok) throw new Error('Failed to demote member');
-          toast.success('Member demoted');
+          await MembershipService.updateRole(clubId, memberUserId, 'player');
+          toast.success('Member Demoted To Player');
           break;
         }
         case 'suspend': {

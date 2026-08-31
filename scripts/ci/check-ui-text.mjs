@@ -28,7 +28,14 @@ import { join, extname } from 'node:path';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
 const SRC = join(ROOT, 'src');
-const EXTS = new Set(['.ts', '.tsx', '.css']);
+const EXTS = new Set(['.ts', '.tsx', '.css', '.html']);
+/**
+ * index.html sits at the repo ROOT, outside src/, so walking src/ never saw it -
+ * and it carried an em dash in the <meta> title, description, og:title and
+ * twitter:title. Those are not decoration: they are the browser tab, the Google
+ * result and every shared link. Scanned explicitly now.
+ */
+const EXTRA_FILES = ['index.html'];
 const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 'test-results']);
 /**
  * The one file that is ALLOWED to contain these characters is the one whose job
@@ -43,8 +50,13 @@ const EM_DASHES = /[—–―‒]/;
 const fix = process.argv.includes('--fix');
 
 /** Strip comments so the scan only sees code and copy. */
-function stripComments(source, isCss) {
-  let out = source.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+function stripComments(source, isCss, isHtml) {
+  let out = source;
+  if (isHtml) {
+    // <!-- ... --> first, so a JS comment inside a script block still strips after.
+    out = out.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
+  }
+  out = out.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
   if (!isCss) {
     // Line comments, but not the // inside a URL like https://
     out = out.replace(/(^|[^:])\/\/[^\n]*/g, (m, p1) => p1 + ' '.repeat(m.length - p1.length));
@@ -66,14 +78,15 @@ function walk(dir, acc = []) {
 const offenders = [];
 let fixedCount = 0;
 
-for (const file of walk(SRC)) {
+for (const file of [...walk(SRC), ...EXTRA_FILES.map((f) => join(ROOT, f))]) {
   const rel = file.replace(ROOT, '');
   if (SKIP_FILES.has(rel)) continue;
   const original = readFileSync(file, 'utf8');
   if (!EM_DASHES.test(original)) continue;
 
   const isCss = extname(file) === '.css';
-  const scannable = stripComments(original, isCss);
+  const isHtml = extname(file) === '.html';
+  const scannable = stripComments(original, isCss, isHtml);
   if (!EM_DASHES.test(scannable)) continue; // only in comments -> allowed
 
   if (fix) {

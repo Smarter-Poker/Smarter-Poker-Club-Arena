@@ -415,6 +415,20 @@ export default function PublicProfilePage() {
             >
               Block
             </button>
+            {/*
+              PHASE 7 — the review queue could never receive anything.
+              ReportPlayerPage has always written to user_reports, and
+              clubs/:clubId/reports has always read it, but nothing anywhere
+              linked to the form: user_reports held ZERO rows. This is the
+              missing half - staff could review reports no player could file.
+            */}
+            <button
+              className="action-btn report-btn"
+              onClick={() => navigate(`/report/${userId}`)}
+              aria-label={`Report ${profile.username}`}
+            >
+              Report
+            </button>
             <button
               className="action-btn share-btn"
               onClick={() => {

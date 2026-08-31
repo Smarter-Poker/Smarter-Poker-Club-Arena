@@ -5,7 +5,9 @@
  * Dan 2026-08-21: "First letter of every word is capitalized, that's a hard
  * rule for all forward facing pages."
  * Dan 2026-08-31: the rule covers every page and subpage, including accessible
- * names, placeholders, tooltips and conditional copy.
+ * names, placeholders, tooltips and conditional copy - and, from the same day,
+ * native confirm()/alert()/prompt() dialogs, which are popups the Toast layer
+ * never sees and therefore never Title Cases.
  *
  * The TypeScript parser keeps this safe. It identifies actual render nodes and
  * known copy-bearing fields instead of treating every quoted value as prose.
@@ -448,6 +450,37 @@ function staticCopyChanges(source, sf, file) {
     ) {
       for (const change of copyValueChanges(node.expression, source, sf, 'render expression')) {
         add(change);
+      }
+    }
+
+    /**
+     * NATIVE BROWSER DIALOGS - the one popup surface the Toast layer cannot reach.
+     *
+     * CLAUDE.md says popups go through the Toast layer, and popupStyle.ts
+     * Title Cases every message that layer renders, which is why hundreds of
+     * lowercase toast strings in source are correct on screen. `confirm()`,
+     * `alert()` and `prompt()` bypass all of it and paint the browser's own
+     * dialog with the raw string.
+     *
+     * Three were live when this was added on 2026-08-31, including a `prompt()`
+     * in AgentFinancialPortal that a doc comment elsewhere already claims was
+     * replaced by a modal. Nothing checked them, because a call argument is
+     * neither JSX text nor a UI attribute nor a property assignment.
+     */
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      const name = ts.isPropertyAccessExpression(callee)
+        ? callee.name.getText(sf)
+        : ts.isIdentifier(callee)
+          ? callee.text
+          : '';
+      if (
+        (name === 'confirm' || name === 'alert' || name === 'prompt') &&
+        node.arguments.length > 0
+      ) {
+        for (const change of copyValueChanges(node.arguments[0], source, sf, `${name}() dialog`)) {
+          add(change);
+        }
       }
     }
 

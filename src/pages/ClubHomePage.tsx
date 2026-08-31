@@ -121,7 +121,6 @@ const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
 // bypass Vite's configured base path in production and silently 404, leaving
 // the live lobby DOM visible without its premium chassis or campaign artwork.
 const CLUB_LOBBY_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/lobby`;
-const CLUB_LOBBY_CHASSIS = `${CLUB_LOBBY_ASSET_ROOT}/lobby-approved-desktop-reference-v3.png`;
 const CLUB_LOBBY_CAMPAIGN = `${CLUB_LOBBY_ASSET_ROOT}/shark-club-championship-ad-v2.png`;
 
 /**
@@ -664,6 +663,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [isEditingNotice, setIsEditingNotice] = useState(false);
   const [noticeDraft, setNoticeDraft] = useState('');
+  const [walletsExpanded, setWalletsExpanded] = useState(false);
+  const [visibleWalletCount, setVisibleWalletCount] = useState(0);
   // Status defaults are 'all' on BOTH axes now. They used to be 'live' and
   // 'running', which was invisible: picking a game type silently hid every
   // empty table and every tournament still taking registrations, so a club
@@ -1145,6 +1146,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(() =>
     clubId ? resolveClubUUIDSync(clubId) : null
   );
+
+  useEffect(() => {
+    setWalletsExpanded(false);
+    setVisibleWalletCount(0);
+  }, [resolvedClubId]);
   useEffect(() => {
     resolvedClubIdRef.current = resolvedClubId;
   }, [resolvedClubId]);
@@ -3805,6 +3811,25 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      path and the visibility test cannot drift apart. */
   const noticeEditable = isOwner || isClubStaff(userRole);
 
+  const saveClubNotice = () => {
+    const newDesc = noticeDraft.replace(/\s+/g, ' ').trim().slice(0, CLUB_DESCRIPTION_MAX_LENGTH);
+    const targetId = club.id;
+    setClub((prev) => (prev ? { ...prev, description: newDesc } : prev));
+    setIsEditingNotice(false);
+    void (async () => {
+      const { error } = await supabase
+        .from('clubs')
+        .update({ description: newDesc })
+        .eq('id', targetId);
+      if (error) {
+        reportError(error, 'ClubHomePage.Notice_save_failed');
+        toast.error('Could Not Save The Welcome Message');
+      } else {
+        toast.success('Welcome Message Updated');
+      }
+    })();
+  };
+
   return (
     <div className="club-home">
       <GlobalUXIndicators wsConnected={wsConnected} />
@@ -3821,6 +3846,62 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           on every device and broke the house no-emoji-in-source rule. All of
           them are inline SVG on currentColor now — see LobbyIcons.tsx.
       ═══════════════════════════════════════════════════════════════════ */}
+      <section className="club-mobile-welcome" aria-labelledby="club-mobile-welcome-title">
+        <span>Welcome To The</span>
+        <h1 id="club-mobile-welcome-title" title={club.name}>
+          {club.name}
+        </h1>
+      </section>
+
+      {(club.description?.trim() || noticeEditable) && (
+        <section
+          className={`club-mobile-owner-message ${noticeEditable && !isEditingNotice ? 'club-mobile-owner-message--editable' : ''}`}
+          aria-label="Club Owner Message"
+        >
+          {isEditingNotice ? (
+            <div className="club-mobile-owner-message__editor">
+              <input
+                value={noticeDraft}
+                maxLength={CLUB_DESCRIPTION_MAX_LENGTH}
+                onChange={(event) => setNoticeDraft(event.target.value.replace(/[\r\n]+/g, ' '))}
+                placeholder="Add A One-Line Club Message"
+                autoFocus
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setIsEditingNotice(false);
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    saveClubNotice();
+                  }
+                }}
+              />
+              <span>
+                {noticeDraft.length}/{CLUB_DESCRIPTION_MAX_LENGTH}
+              </span>
+              <button type="button" onClick={() => setIsEditingNotice(false)}>
+                Cancel
+              </button>
+              <button type="button" onClick={saveClubNotice}>
+                Save
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="club-mobile-owner-message__copy"
+              disabled={!noticeEditable}
+              onClick={() => {
+                if (!noticeEditable) return;
+                setNoticeDraft(club.description || '');
+                setIsEditingNotice(true);
+              }}
+              title={club.description || 'Add A One-Line Club Message'}
+            >
+              {club.description?.trim() || 'Add A One-Line Club Message'}
+            </button>
+          )}
+        </section>
+      )}
+
       <header className="lobby-top">
         {/* ── Club identity + wallet ── */}
         <div className="lobby-top__main">
@@ -3946,63 +4027,101 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               wallet remains available through its existing cashier flow. */}
           {currentUserId && resolvedClubId && (
             <div className="lobby-top__wallet">
-              {/* The lobby renders its own compact Bad Beat Jackpot tile next
+              <button
+                type="button"
+                className="lobby-wallets-trigger"
+                aria-expanded={walletsExpanded}
+                aria-controls="club-wallet-list"
+                onClick={() => {
+                  haptic.selection();
+                  setWalletsExpanded((expanded) => !expanded);
+                }}
+              >
+                <span className="lobby-wallets-trigger__icon" aria-hidden="true" />
+                <span className="lobby-wallets-trigger__copy">
+                  <strong>My Wallets</strong>
+                  <small>
+                    {visibleWalletCount > 0
+                      ? `${visibleWalletCount} ${visibleWalletCount === 1 ? 'Balance' : 'Balances'}`
+                      : 'Loading Balances'}
+                  </small>
+                </span>
+                <span
+                  className={`lobby-wallets-trigger__chevron ${walletsExpanded ? 'is-expanded' : ''}`}
+                  aria-hidden="true"
+                />
+              </button>
+              <div
+                id="club-wallet-list"
+                className="lobby-wallets-content"
+                data-expanded={walletsExpanded}
+              >
+                <div className="lobby-wallets-content__inner">
+                  {/* The lobby renders its own compact Bad Beat Jackpot tile next
                   to the club identity. DynamicWallet therefore suppresses its
                   duplicate jackpot banner and supplies only the role-safe
                   balance tiles below it. */}
-              <DynamicWallet
-                userId={currentUserId}
-                clubId={clubId || ''}
-                // WHOSE books. A union's own lobby shows union books; every
-                // club lobby shows club books, whoever is standing in it.
-                variant={club?.is_union ? 'union' : 'club'}
-                // WHO is looking. Decides which rows exist - see walletRows.ts.
-                // The club's owner_id outranks a stale club_members row, which
-                // is how a brand new owner sees their own Club Bank.
-                role={isOwner ? 'owner' : userRole}
-                compactLobby
-                showBBJ={false}
-                onBuyDiamonds={() => {
-                  haptic.medium();
-                  navigate(`/clubs/${clubId}/detail`);
-                }}
-                // Dan 2026-08-23: "if they click on Club Bank, that should
-                // open the Club Bank Cashier." The row only renders for owner,
-                // co-owner, admin and super agent, and fn_can_use_club_bank
-                // refuses everyone else server-side. The Chip Mint moved
-                // INSIDE that cashier - there is no mint button out here any
-                // more, and no mint at all once the club is in a union.
-                onOpenPlayerWallet={() => setShowPlayerWallet(true)}
-                onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
-                onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
-                onOpenClubBank={() => setActiveCashier('club_bank')}
-                onOpenBBJ={() => {
-                  haptic.medium();
-                  setShowBBJInfo(true);
-                }}
-                onOpenUnionBank={(balance) => {
-                  setUnionWalletModal({ key: 'chips', label: 'Union Bank', balance });
-                }}
-                onOpenUnionRake={() => setUnionTreasuryModal('rake')}
-                onOpenUnionBackupBBJ={() => setUnionTreasuryModal('backup')}
-                onOpenUnionPromo={(balance) => {
-                  setUnionWalletModal({ key: 'promo', label: 'Promo Wallet', balance });
-                }}
-                onOpenUnionSpins={(balance) => {
-                  setUnionWalletModal({ key: 'spin_reserve', label: 'Spins Treasury', balance });
-                }}
-                onOpenClubRake={() => setUnionTreasuryModal('rake')}
-                onOpenClubSpins={(balance) =>
-                  setUnionWalletModal({
-                    key: 'spin_reserve',
-                    label: 'Spins Treasury',
-                    balance,
-                  })
-                }
-              />
-              <p className="lobby-top__house-welcome">
-                Welcome To The {club.name}, All Fish Of All Shapes And Sizes Are Welcome!
-              </p>
+                  <DynamicWallet
+                    userId={currentUserId}
+                    clubId={clubId || ''}
+                    // WHOSE books. A union's own lobby shows union books; every
+                    // club lobby shows club books, whoever is standing in it.
+                    variant={club?.is_union ? 'union' : 'club'}
+                    // WHO is looking. Decides which rows exist - see walletRows.ts.
+                    // The club's owner_id outranks a stale club_members row, which
+                    // is how a brand new owner sees their own Club Bank.
+                    role={isOwner ? 'owner' : userRole}
+                    compactLobby
+                    showAllLobbyWallets
+                    showBBJ={false}
+                    onVisibleWalletCountChange={setVisibleWalletCount}
+                    onBuyDiamonds={() => {
+                      haptic.medium();
+                      navigate(`/clubs/${clubId}/detail`);
+                    }}
+                    // Dan 2026-08-23: "if they click on Club Bank, that should
+                    // open the Club Bank Cashier." The row only renders for owner,
+                    // co-owner, admin and super agent, and fn_can_use_club_bank
+                    // refuses everyone else server-side. The Chip Mint moved
+                    // INSIDE that cashier - there is no mint button out here any
+                    // more, and no mint at all once the club is in a union.
+                    onOpenPlayerWallet={() => setShowPlayerWallet(true)}
+                    onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
+                    onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
+                    onOpenClubBank={() => setActiveCashier('club_bank')}
+                    onOpenBBJ={() => {
+                      haptic.medium();
+                      setShowBBJInfo(true);
+                    }}
+                    onOpenUnionBank={(balance) => {
+                      setUnionWalletModal({ key: 'chips', label: 'Union Bank', balance });
+                    }}
+                    onOpenUnionRake={() => setUnionTreasuryModal('rake')}
+                    onOpenUnionBackupBBJ={() => setUnionTreasuryModal('backup')}
+                    onOpenUnionPromo={(balance) => {
+                      setUnionWalletModal({ key: 'promo', label: 'Promo Wallet', balance });
+                    }}
+                    onOpenUnionSpins={(balance) => {
+                      setUnionWalletModal({
+                        key: 'spin_reserve',
+                        label: 'Spins Treasury',
+                        balance,
+                      });
+                    }}
+                    onOpenClubRake={() => setUnionTreasuryModal('rake')}
+                    onOpenClubSpins={(balance) =>
+                      setUnionWalletModal({
+                        key: 'spin_reserve',
+                        label: 'Spins Treasury',
+                        balance,
+                      })
+                    }
+                  />
+                  <p className="lobby-top__house-welcome">
+                    Welcome To The {club.name}, All Fish Of All Shapes And Sizes Are Welcome!
+                  </p>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -4108,12 +4227,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           GAME ACTION BAR — every game type, flat, plus explicit sorting
       ═══════════════════════════════════════════════════════════════════ */}
       <section className="club-lobby-machine" aria-label={`${club.name} Game Lobby`}>
-        <img
-          className="club-lobby-machine__chassis"
-          src={CLUB_LOBBY_CHASSIS}
-          alt=""
-          aria-hidden="true"
-        />
         <ClubLobbyCommandTop
           welcome={
             <div
@@ -4147,35 +4260,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     autoFocus
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') setIsEditingNotice(false);
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        saveClubNotice();
+                      }
                     }}
                   />
                   <div className="lobby-top__notice-actions">
                     <button onClick={() => setIsEditingNotice(false)}>Cancel</button>
-                    <button
-                      onClick={() => {
-                        const newDesc = noticeDraft
-                          .replace(/\s+/g, ' ')
-                          .trim()
-                          .slice(0, CLUB_DESCRIPTION_MAX_LENGTH);
-                        const targetId = club.id;
-                        setClub((prev) => (prev ? { ...prev, description: newDesc } : prev));
-                        setIsEditingNotice(false);
-                        void (async () => {
-                          const { error } = await supabase
-                            .from('clubs')
-                            .update({ description: newDesc })
-                            .eq('id', targetId);
-                          if (error) {
-                            reportError(error, 'ClubHomePage.Notice_save_failed');
-                            toast.error('Could Not Save The Club Description');
-                          } else {
-                            toast.success('Club Description Updated');
-                          }
-                        })();
-                      }}
-                    >
-                      Save
-                    </button>
+                    <button onClick={saveClubNotice}>Save</button>
                   </div>
                 </div>
               ) : (

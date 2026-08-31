@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  cleanupStaleTemporaryCustomizationAccounts,
   cleanupTemporaryCustomizationAccount,
   type CustomizationCertificationEnvironment,
   type TemporaryCustomizationAccount,
@@ -24,6 +25,44 @@ function account(email = 'ca-customization-cert-buyer-test@example.invalid') {
 }
 
 describe('temporary customization account cleanup', () => {
+  it('cleans only aged reserved fixtures before a new commerce certification', async () => {
+    const reservedId = '00000000-0000-4000-8000-000000000002';
+    const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/profiles?')) {
+        return Response.json([
+          {
+            id: reservedId,
+            email: 'ca-customization-cert-orphan@example.invalid',
+            created_at: '2026-01-01T00:00:00.000Z',
+          },
+        ]);
+      }
+      if (url.includes(`/auth/v1/admin/users/${reservedId}`)) {
+        return new Response(null, { status: 404 });
+      }
+      if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account')) {
+        return Response.json({ success: true });
+      }
+      return new Response(null, { status: 500 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(cleanupStaleTemporaryCustomizationAccounts(environment, 0)).resolves.toBe(1);
+
+    const cleanupCalls = fetchMock.mock.calls.filter(
+      ([input, init]) =>
+        String(input).includes('/rest/v1/rpc/cleanup_reserved_certification_account') &&
+        init?.method === 'POST'
+    );
+    expect(cleanupCalls).toHaveLength(1);
+    expect(String(cleanupCalls[0]?.[1]?.body)).toContain(reservedId);
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/auth/v1/admin/users?page='),
+      expect.anything()
+    );
+  });
+
   afterEach(() => vi.unstubAllGlobals());
 
   it('retries a transient PostgREST schema-cache outage and still proves hard deletion', async () => {

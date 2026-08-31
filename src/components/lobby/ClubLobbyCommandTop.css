@@ -1460,5 +1460,9 @@
   .club-lobby-machine {
     width: calc(100% - 32px);
     margin-left: 16px;
+    /* The campaign is the last interactive well. Reserve one footer-height of
+       scroll runway so its 106px button can be brought fully above the fixed
+       Club Arena navigation instead of leaving only a 24px hit strip. */
+    margin-bottom: calc(22px + 88px + env(safe-area-inset-bottom, 0px));
   }
 }

@@ -84,10 +84,26 @@ and it is also the path that quietly hands the agent a **stale base**. The fresh
 path checks out from `origin/main`; this one deliberately does not.
 
 PR #2058 was built in exactly that state: 20 commits behind, four modified files
-belonging to a previous session. Another PR had since changed an assertion in
-`TournamentRecurringService.test.ts`, so CI failed on a test the agent never
-touched and could not see — and the agent then guessed at the cause, which was
-the expensive part.
+belonging to a previous session. Its required checks failed, and the agent then
+guessed at the cause, which was the expensive part.
+
+**What a stale base can actually break here, verified against the workflows
+rather than assumed.** Five of the six required checks use `actions/checkout`'s
+default, which on `pull_request` is `refs/pull/N/merge` — the merge with main —
+so those five already see main's current tests and sources no matter how old the
+branch is. The sixth, **Silent Revert Guard**, deliberately checks out
+`github.event.pull_request.head.sha` (see the comment at
+`.github/workflows/silent-revert-guard.yml:42-47`: the merge commit collapses
+`merge-base origin/main HEAD` to main and the range stops describing the PR). It
+is the one required check that sees the branch as it really is — and its own
+header names the cause it exists to catch: "an agent commits a working tree
+checked out before someone else's change landed."
+
+So staleness is a real and mechanical hazard on this repo, and this note is
+aimed at it. Which specific check failed on #2058 is not recorded here, because
+the local token lacks `checks:read` and I could not read the run. Saying so is
+the point: the previous session's mistake was asserting a cause it could not
+see.
 
 The block now also prints the uncommitted file count with a warning that some
 may not be yours, and the behind-count with the rebase command. It is a NOTE,

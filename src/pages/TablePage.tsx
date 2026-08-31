@@ -137,6 +137,7 @@ import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeat
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
 import { isPreActionHonorable, PRE_ACTION_EXEC_GRACE_MS } from '../lib/preActionPanelGate';
 import { seatTapTarget } from '../lib/heroSeatTap';
+import { reconcileHeroSeatFromEngine, MAX_SUPPORTED_SEATS } from '../lib/heroSeatReconcile';
 
 import { gameCode } from '../utils/gameCode';
 import { masterBus } from '../core/MasterBus';
@@ -1976,6 +1977,23 @@ export default function TablePage({
     const applySeats = (seats: any[]) => {
       setTableState((prev) => {
         const p = [...prev.players];
+        /* THE SAME DROP, IN THE PATH THAT PAINTS FIRST (Dan 2026-08-31).
+           This forEach used to skip any seat whose index fell outside the
+           CURRENT array (`idx < p.length`) — and this prefetch exists
+           precisely to render the table in the 3-5 seconds before the
+           websocket is up, which is exactly the window in which `maxPlayers`
+           is still the default 6. So a player in seat 7, 8 or 9 was missing
+           from the first paint of every table, hero included, until an engine
+           snapshot happened to arrive and overwrite this. Same defect as the
+           mapper's dropped seats, one layer earlier and easy to miss because
+           the engine usually papers over it a moment later.
+           Grow to fit what the server actually returned. */
+        let maxSeatSeen = p.length;
+        seats.forEach((seat: any) => {
+          const n = Number(seat?.seat_number);
+          if (Number.isInteger(n) && n > maxSeatSeen && n <= MAX_SUPPORTED_SEATS) maxSeatSeen = n;
+        });
+        while (p.length < maxSeatSeen) p.push(null);
         seats.forEach((seat: any) => {
           const idx = seat.seat_number - 1;
           if (idx >= 0 && idx < p.length) {
@@ -1991,7 +2009,9 @@ export default function TablePage({
             };
           }
         });
-        return { ...prev, players: p };
+        // The ring must be able to draw the seats we just added, or the rows
+        // exist in state and render nowhere — which is the original bug.
+        return { ...prev, players: p, maxPlayers: Math.max(prev.maxPlayers, p.length) };
       });
     };
 
@@ -7787,6 +7807,36 @@ export default function TablePage({
   const handleForceLeaveTable = async () => {
     if (!tableId || !userId) return;
     try {
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  THE TAB X IS STILL LEAVING A CASH GAME (Dan 2026-08-31, binding)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * Dan: "ANY TIME YOU LEAVE A CASH GAME, YOU SHOULD GET A RESULTS CARD
+       * JUST LIKE YOU DO WITH TOURNAMENTS, TELLING YOU HOW YOU DID ON THE
+       * TABLE."
+       *
+       * ANY TIME means this door too. `handleLeaveTable` (the menu's Leave
+       * Table and the felt's leave button) has published a summary since
+       * 2026-08-18, but this handler — the tab strip's X, which is how a
+       * multi-tabling player actually exits — deliberately published nothing.
+       * That was correct while the summary was a modal rendered ON the table:
+       * it would have blocked the very tab close being requested. It has not
+       * been true since the card moved to the app-root host, which renders
+       * over whatever the player lands on and survives this unmount. All the
+       * old behaviour still did was silently swallow the result of a session
+       * that had just ended.
+       *
+       * Captured BEFORE the leave for the same reason the sibling handler
+       * captures them: `leaveTable` zeroes the seat, so reading the stack
+       * afterwards reads nothing and books the entire buy-in as a loss.
+       */
+      const forceHeroSeat = tableState.heroSeat;
+      const forceStackAtLeave = tableState.players[forceHeroSeat - 1]?.stack || 0;
+      /* A SPECTATOR GETS NO CARD. Closing a tab with heroSeat 0 never sat
+         down, so there is no session to report — and a card reading "0 hands,
+         0 profit" is a claim, not a blank (house rule 5). */
+      const forceHadSession = forceHeroSeat > 0;
       // (The old "already viewing summary" early-return is gone with the dead
       // in-table SessionSummary modal — the summary now renders in the lobby,
       // after this table is already torn down.)
@@ -7817,7 +7867,56 @@ export default function TablePage({
       // The old guard showed "your chips are still in your seat" to people
       // with no seat and made the table impossible to close while watching.
       heroSeatRef.current = 0; // FIX 132: Clear on force leave
-      masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
+
+      /* The results card. Same payload, same host and the same deferred-cashout
+         reconciliation as `handleLeaveTable` — one card, two doors, so the tab
+         X can never report a session differently from the menu. Published
+         BEFORE the TABLE_LEFT emit below, because that emit is what tears this
+         tab down. */
+      if (forceHadSession) {
+        /* The P/L rule from the sibling handler, restated because it is the
+           one number nobody may guess: a mid-hand leave defers the cash-out
+           and reports chipsReturned 0, which would render the whole buy-in as
+           a loss. When the service says deferred, estimate with the live stack
+           captured above — that is what settlement will return, give or take
+           the hand in flight — and mark it pending so the estimate is never
+           read as settled. */
+        const forceDeferred = !!forced?.deferred;
+        const forcePL =
+          (forceDeferred ? forceStackAtLeave : forced?.chipsReturned || 0) - totalBuyInRef.current;
+        sessionPLRef.current = forcePL;
+
+        /* Tournaments are never denominated in chips (Dan 2026-08-20): fetch
+           the finish and the prize so the host renders the ranking card rather
+           than a grid of meaningless zeroes. Cash tables pass undefined and
+           get the cash card. */
+        const forceTournamentResult = tableState.tournamentId
+          ? await fetchTournamentResult(tableState.tournamentId, userId)
+          : undefined;
+
+        publishSessionSummary({
+          duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
+          handsPlayed: handsPlayedRef.current,
+          handsWon: handsWonRef.current,
+          totalRebuys: totalRebuysRef.current,
+          profitLoss: forcePL,
+          biggestPot: biggestPotRef.current,
+          peakStack: peakStackRef.current,
+          tableName: tableState.tableName,
+          tournament: forceTournamentResult,
+          vpipPercent:
+            handsPlayedRef.current > 0
+              ? Math.round((vpipCountRef.current / handsPlayedRef.current) * 100)
+              : 0,
+          totalBuyIn: totalBuyInRef.current,
+          sessionStart: sessionStartRef.current,
+          sessionEnd: Date.now(),
+          plPending: forceDeferred,
+          pendingCashout: forceDeferred ? { tableId, userId, sinceMs: Date.now() } : undefined,
+        });
+      }
+
+      masterBus.emit('TABLE_LEFT', { tableId, seat: forceHeroSeat });
       masterBus.emit('SESSION_ENDED', { tableId, userId });
       playerStatusService.clearPlayingAt(userId);
     } catch (e) {
@@ -12011,18 +12110,32 @@ export default function TablePage({
       );
     }
 
-    /* Heal, on the server's word. Growing the array is safe in a way that
-       trimming never is: a null row renders an empty seat, whereas dropping a
-       row erases a player. */
+    /* Heal, on the server's word — through a PURE function that returns null
+       when there is nothing to do (src/lib/heroSeatReconcile.ts).
+
+       That indirection is not ceremony, it is the fix for this block's own
+       first draft. The heal grows the array with NULL rows and cannot place
+       the hero row, so an inline `if (players[seat-1]?.id === userId) return
+       prev` guard NEVER became true: every pass produced a fresh array
+       identity, this effect's dependencies changed, and it ran again — an
+       infinite render loop, armed on precisely the path that fires when a
+       player is stranded. Returning `prev` UNCHANGED is what stops the cycle,
+       and `reconcileHeroSeatFromEngine` guarantees that by construction rather
+       than by a guard somebody has to get right. It also bounds the growth, so
+       a corrupt `seat: 1e9` cannot hang the tab. Pinned by
+       tests/unit/heroSeatReconcile.test.ts. */
     setTableState((prev) => {
-      if (prev.players[mine.seat! - 1]?.id === userId) return prev;
-      const players = [...prev.players];
-      while (players.length < mine.seat!) players.push(null);
+      const patch = reconcileHeroSeatFromEngine(
+        { players: prev.players, maxPlayers: prev.maxPlayers, heroSeat: prev.heroSeat },
+        mine.seat as number,
+        userId
+      );
+      if (!patch) return prev; // already agrees — no new identity, no loop
       return {
         ...prev,
-        players,
-        maxPlayers: Math.max(prev.maxPlayers, mine.seat!),
-        heroSeat: prev.heroSeat > 0 ? prev.heroSeat : mine.seat!,
+        ...(patch.players ? { players: patch.players as (SeatPlayer | null)[] } : {}),
+        ...(patch.maxPlayers !== undefined ? { maxPlayers: patch.maxPlayers } : {}),
+        ...(patch.heroSeat !== undefined ? { heroSeat: patch.heroSeat } : {}),
       };
     });
   }, [

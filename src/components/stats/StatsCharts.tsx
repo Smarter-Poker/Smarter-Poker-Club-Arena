@@ -56,8 +56,10 @@ export interface StatsChartsProps {
    * was written; these three never did.
    */
   still?: boolean;
+  exporting: boolean;
   onExportSessions: () => void;
   onExportOverview: () => void;
+  onSendToAssistant: () => void;
 }
 
 export default function StatsCharts({
@@ -69,8 +71,10 @@ export default function StatsCharts({
   rangeLabel,
   sessionRows,
   still = false,
+  exporting,
   onExportSessions,
   onExportOverview,
+  onSendToAssistant,
 }: StatsChartsProps) {
   return (
     <div className="charts-section">
@@ -86,6 +90,9 @@ export default function StatsCharts({
         )}
         <button className="export-btn" onClick={onExportOverview}>
           Export Stats CSV
+        </button>
+        <button className="assistant-export-btn" onClick={onSendToAssistant} disabled={exporting}>
+          {exporting ? 'Exporting...' : 'Send to Personal Assistant'}
         </button>
       </div>
 

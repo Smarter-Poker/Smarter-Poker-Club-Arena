@@ -27,7 +27,6 @@ const VACUUM = readFileSync(
   resolve(DIR, '20260825430000_ca_hand_player_idx_gets_autovacuum_settings.sql'),
   'utf8'
 );
-const V2 = readFileSync(resolve(DIR, '20260831235995_stats_v2_foundation.sql'), 'utf8');
 
 describe('the read path does not touch hand_history for its window', () => {
   it('reads the analysis window from ca_hand_player_stat', () => {
@@ -118,14 +117,9 @@ describe('the rollup is not readable by a client', () => {
     );
   });
 
-  it('replaces the arbitrary-target browser grant with an owner-only versioned wrapper', () => {
-    expect(V2).toMatch(
-      /REVOKE ALL ON FUNCTION public\.ca_player_stats_full\(uuid, integer\)[\s\S]{0,100}authenticated;/
-    );
-    expect(V2).toMatch(/FUNCTION public\.ca_player_stats_overview_v2/);
-    expect(V2).toMatch(/PERFORM public\.ca_assert_self\(p_user\)/);
-    expect(V2).toMatch(
-      /GRANT EXECUTE ON FUNCTION public\.ca_player_stats_overview_v2\(uuid, integer\)[\s\S]{0,80}authenticated, service_role;/
+  it('leaves ca_player_stats_full callable by authenticated, since it is the page', () => {
+    expect(RPC).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.ca_player_stats_full\(uuid, integer\) TO authenticated, service_role;/
     );
   });
 

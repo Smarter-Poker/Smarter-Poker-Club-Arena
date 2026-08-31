@@ -55,4 +55,20 @@ describe('prize disbursement audit', () => {
     const gs = read('../GameServer.ts');
     expect(gs).toMatch(/await auditSatelliteConservation\(\s*\d+\s*\)/);
   });
+  it('the restart-orphaned fee sweep exists, files claims only, and runs each cycle', () => {
+    const src = read('./FeeReconciler.ts');
+    expect(src).toContain('export async function requeueUnbankedCashRake');
+
+    const body = sliceMethod(src, 'export async function requeueUnbankedCashRake');
+    // It asks the SQL sweep, which inserts into the durable queue.
+    expect(body).toContain('fn_requeue_unbanked_cash_rake');
+    // It must never bank directly: banking stays on the hand-gated,
+    // idempotent atomic_distribute_rake path the reconciler already drives.
+    expect(body).not.toContain('atomic_distribute_rake');
+    expect(body).not.toMatch(/\.from\(['"]rake_records['"]\)\s*\.\s*(insert|upsert)/);
+
+    const gs = read('../GameServer.ts');
+    expect(gs).toContain('requeueUnbankedCashRake,');
+    expect(gs).toMatch(/await requeueUnbankedCashRake\(/);
+  });
 });

@@ -47,6 +47,6 @@ describe('cashier navigation and ledger controls stay operational', () => {
   it('provides local search and direction filters without widening the money path', () => {
     expect(PAGE).toContain("useState<'all' | 'in' | 'out'>('all')");
     expect(PAGE).toContain('row.counterparty.toLowerCase().includes(q)');
-    expect(PAGE).toContain("supabase.rpc('fn_agent_wallet_send'");
+    expect(PAGE).toContain("supabase.rpc('fn_cashier_batch_transfer'");
   });
 });

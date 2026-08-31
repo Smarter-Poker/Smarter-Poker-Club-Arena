@@ -1126,9 +1126,6 @@
       "user_id",
       "request_id"
     ],
-    "daily_challenge_dashboard_revisions": [
-      "user_id"
-    ],
     "daily_challenge_milestones": [
       "days",
       "reward_chips",
@@ -1656,18 +1653,6 @@
       "rank",
       "payout_amount",
       "payout_currency"
-    ],
-    "leaderboard_reward_program_versions": [
-      "club_id",
-      "version",
-      "operation_id",
-      "rewards_enabled",
-      "payout_metric",
-      "suggestion_key",
-      "funding_owner_type",
-      "weekly_effective_from",
-      "monthly_effective_from",
-      "program_hash"
     ],
     "leak_drill_answers": [
       "batch_id",
@@ -2295,17 +2280,6 @@
       "old_rate",
       "new_rate",
       "rate_type"
-    ],
-    "rakeback_daily_state": [
-      "club_id",
-      "day",
-      "rows_seen"
-    ],
-    "rakeback_daily_user": [
-      "club_id",
-      "day",
-      "user_id",
-      "cents"
     ],
     "rakeback_distributions": [
       "club_id",

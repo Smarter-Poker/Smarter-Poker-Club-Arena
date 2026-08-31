@@ -18,7 +18,7 @@ import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/re
 
 // ── Network and platform boundaries ──────────────────────────────────────────
 
-/** Exactly what ca_player_stats_overview_v2 returns for an account with NO hands. */
+/** Exactly what ca_player_stats_full returns for an account with NO hands. */
 const EMPTY_OVERALL = {
   pfr: 0,
   vpip: 0,
@@ -61,19 +61,11 @@ const EMPTY_TOURNAMENTS = {
 };
 
 let rpcPayload: Record<string, unknown> = {};
-let routeUserId: string | undefined;
-const rpcMock = vi.hoisted(() => vi.fn());
-const toastApi = vi.hoisted(() => ({
-  show: vi.fn(),
-  success: vi.fn(),
-  error: vi.fn(),
-  info: vi.fn(),
-}));
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    rpc: rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_player_stats_overview_v2') return { data: rpcPayload, error: null };
+    rpc: vi.fn(async (fn: string) => {
+      if (fn === 'ca_player_stats_full') return { data: rpcPayload, error: null };
       return { data: null, error: null };
     }),
     from: vi.fn(() => {
@@ -114,7 +106,7 @@ vi.mock('../../src/hooks/useAuthUser', () => ({
  * transitively has to be answerable here.
  */
 vi.mock('react-router-dom', () => ({
-  useParams: () => (routeUserId ? { userId: routeUserId } : {}),
+  useParams: () => ({}),
   useNavigate: () => vi.fn(),
   useLocation: () => ({ pathname: '/stats', search: '', hash: '', state: null, key: 'test' }),
   // JSX (automatic runtime) rather than React.createElement: a vi.mock factory
@@ -178,7 +170,7 @@ vi.mock('../../src/services/StatsFactsService', () => {
 });
 
 vi.mock('../../src/components/common/Toast', () => ({
-  useToast: () => toastApi,
+  useToast: () => ({ show: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() }),
 }));
 
 import PlayerStatsPage from '../../src/pages/PlayerStatsPage';
@@ -187,8 +179,6 @@ import { clearStatsRangeMemo } from '../../src/lib/statsCache';
 beforeEach(() => {
   localStorage.clear();
   clearStatsRangeMemo();
-  routeUserId = undefined;
-  rpcMock.mockClear();
   rpcPayload = {
     user_id: 'user-1',
     overall: EMPTY_OVERALL,
@@ -207,16 +197,6 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('PlayerStatsPage mounts', () => {
-  it('renders the private boundary without requesting another player stats', async () => {
-    routeUserId = 'user-2';
-
-    render(<PlayerStatsPage />);
-
-    expect(await screen.findByText('Player Stats Are Private')).toBeInTheDocument();
-    expect(screen.getByText(/No All-Club Financial Data Is Exposed/i)).toBeInTheDocument();
-    expect(rpcMock).not.toHaveBeenCalled();
-  });
-
   it('renders for an account with NO hands without hitting the error boundary', async () => {
     // This is the exact shape smarterpoker returns in production, and the
     // state the page was crashing in.

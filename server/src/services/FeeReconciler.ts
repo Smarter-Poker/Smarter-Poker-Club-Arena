@@ -728,6 +728,66 @@ export async function auditSatelliteConservation(
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
+ *  A HAND'S RAKE THAT MISSED THE QUEUE HEALS ITSELF
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `pendingHands` is an IN-MEMORY queue drained on shutdown. When the process
+ * dies between the inline fee write failing and that drain, nothing on disk
+ * remembers the hand owed a fee — and no existing healer looks for it:
+ * fn_bbj_repair_unbanked heals BBJ *from* rake_records, so a hand with no
+ * rake_records row at all is invisible to it.
+ *
+ * MEASURED 2026-08-31 over 24 hours: 17,911 raked cash hands, 20 of them
+ * (72.30 chips) with no rake_records row and nothing queued, clustered
+ * exactly at engine restarts. The 08:07 cluster shows the split cleanly —
+ * four hands had a bbj_contributions row and no rake_records, three the
+ * reverse. Two halves of one write with a restart between them. 0.11%,
+ * permanent, and growing by about a chip an hour with nothing to stop it.
+ * Phase 2 had re-queued 21 of these BY HAND after the outage; this is that
+ * repair turned into a mechanism.
+ *
+ * The SQL only FILES THE CLAIM — it inserts into pending_fee_distributions
+ * and this reconciler banks it through atomic_distribute_rake, which is
+ * hand-gated and idempotent, so a double sweep cannot double-bank.
+ *
+ * Attribution is honest about what it lost: hand_history.players carries the
+ * dealt-in user ids and their ENDING STACK, never per-street contribution, so
+ * the weighted split is unreconstructable after the fact. The sweep stamps
+ * rake_method='DEALT_EQUAL' — the legacy method the allocator still
+ * implements exactly — rather than inventing weights from stack sizes and
+ * labelling the guess as weighted truth.
+ */
+export async function requeueUnbankedCashRake(
+  sinceHours = 48,
+  minAgeMinutes = 10,
+  limit = 200
+): Promise<{ requeued: number; chips: number } | null> {
+  try {
+    const { data, error } = await supabase.rpc('fn_requeue_unbanked_cash_rake', {
+      p_since_hours: sinceHours,
+      p_min_age_minutes: minAgeMinutes,
+      p_limit: limit,
+    });
+    if (error) {
+      reportError(error, 'FeeReconciler.requeue_unbanked_query_failed');
+      return null;
+    }
+    const rows = (data ?? []) as Array<{ hand_id: string; rake: number; bbj: number }>;
+    if (rows.length === 0) return { requeued: 0, chips: 0 };
+    const chips = rows.reduce((s, r) => s + (Number(r.rake) || 0), 0);
+    console.log(
+      `[FeeReconciler] re-queued ${rows.length} unbanked cash hand(s), ${chips.toFixed(2)} chips ` +
+        `— no rake_records row and nothing queued (restart-orphaned fees)`
+    );
+    return { requeued: rows.length, chips };
+  } catch (err) {
+    reportError(err, 'FeeReconciler.requeue_unbanked_threw');
+    return null;
+  }
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
  *  PRIZE DISBURSEMENT watchdog — read the LEDGER, not the snapshot
  * ═══════════════════════════════════════════════════════════════════════════
  *

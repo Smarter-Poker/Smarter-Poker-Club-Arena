@@ -44,6 +44,7 @@ import { handleAdminPause, handleAdminResume, handleAdminKick } from './handlers
 import { handlePostBB } from './handlers/postbb.js';
 import { handleInjectFault } from './handlers/faultInjection.js';
 import { handleGetActions, handleGetState } from './handlers/state.js';
+import { handleAssistantLeaksDetect } from './handlers/assistant.js';
 import { handleVoiceIce } from './handlers/voice.js';
 import type { ChannelHub } from './hub/ChannelHub.js';
 
@@ -216,6 +217,8 @@ export function createRouter(
     if (method === 'POST' && url === '/admin/kick')
       return handleAdminKick(req, res, { gameServer });
     if (method === 'POST' && url === '/post-bb') return handlePostBB(req, res, { gameServer });
+    if (method === 'POST' && url === '/assistant/leaks/detect')
+      return handleAssistantLeaksDetect(req, res);
 
     // The table voice mesh asks for its ICE servers here, once per join. It
     // MINTS a short-lived TURN credential, so it is authenticated like any other

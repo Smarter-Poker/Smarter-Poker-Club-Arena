@@ -154,6 +154,24 @@ describe('the anchor still does the job it was written for', () => {
     expect(BASE_CODE).toContain('this.spinRevealAt = anchor + SPIN_REVEAL.LEAD_IN_MS;');
   });
 
+  it('counts the lead-in ONCE - the hold is measured from the anchor', () => {
+    /* 2026-08-31 audit. The hold was `this.spinRevealAt + spinRevealToDealMs()`,
+       and spinRevealToDealMs() already contains LEAD_IN_MS (via
+       spinRevealTotalMs, whose own doc calls itself "total wall time from the
+       last buy-in"). Adding it to a revealAt that is ITSELF anchor+LEAD_IN
+       counted the lead-in twice and held the deal a full second longer than
+       the sequence it waits for - a second of dead air on every single spin.
+
+       The sequence starts at the ANCHOR (the third payment) and the lead-in is
+       its first beat, so the deadline is anchor + the whole sequence. Pinned
+       because the wrong version reads perfectly natural. */
+    expect(BASE_CODE).toContain('this.spinHoldUntil = anchor + spinRevealToDealMs();');
+    expect(
+      BASE_CODE,
+      'the hold must not be measured from revealAt - that double-counts the lead-in'
+    ).not.toContain('this.spinHoldUntil = this.spinRevealAt + spinRevealToDealMs();');
+  });
+
   it('a freeroll with no anchor still gets a full wheel from now', () => {
     const block = blockAfter(BASE_CODE, 'if (this.spinRevealAt <= 0)');
     expect(block).toContain('this.spinHoldUntil = now + spinRevealToDealMs();');

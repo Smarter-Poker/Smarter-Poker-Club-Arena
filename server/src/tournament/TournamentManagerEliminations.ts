@@ -56,6 +56,56 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   /** userId -> epoch-ms deadline for an open rebuy decision. Self-clearing. */
   protected rebuyDecisionGraceUntil = new Map<string, number>();
 
+  /** Epoch-ms of the last chip-cap input refresh; 0 = never. */
+  protected lastChipCapRefreshAt = 0;
+
+  /**
+   * Refresh the inputs `capLevelToTournamentChips` measures a blind against:
+   * how many players ever entered, and how many rebuys and add-ons have been
+   * granted. Both raise the chip supply and therefore RELAX the cap.
+   *
+   * Every value is a high-water mark. An unreadable count leaves the previous
+   * one in place rather than lowering it — a cap computed from a chip supply
+   * that shrank would throttle the blinds mid-event, which is a worse failure
+   * than not capping at all.
+   */
+  protected async refreshChipCapInputs(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastChipCapRefreshAt < 60_000) return;
+    this.lastChipCapRefreshAt = now;
+
+    try {
+      const { count: entrants, error: entrantsErr } = await supabase
+        .from('tournament_players')
+        .select('*', { count: 'exact', head: true })
+        .eq('tournament_id', this.tournamentId);
+      if (!entrantsErr && typeof entrants === 'number' && entrants > this.entrantCountForChipCap) {
+        this.entrantCountForChipCap = entrants;
+      }
+
+      const { count: rebuys, error: rebuysErr } = await supabase
+        .from('wallet_transactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('related_entity_id', this.tournamentId)
+        .eq('category', 'rebuy');
+      if (!rebuysErr && typeof rebuys === 'number' && rebuys > this.rebuysGrantedForChipCap) {
+        this.rebuysGrantedForChipCap = rebuys;
+      }
+
+      const { count: addons, error: addonsErr } = await supabase
+        .from('wallet_transactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('related_entity_id', this.tournamentId)
+        .eq('category', 'addon');
+      if (!addonsErr && typeof addons === 'number' && addons > this.addonsGrantedForChipCap) {
+        this.addonsGrantedForChipCap = addons;
+      }
+    } catch (err) {
+      // Never let the cap's bookkeeping break the sweep that pays people.
+      reportError(err, 'Tournament.refresh_chip_cap_inputs');
+    }
+  }
+
   /** SEATLESS-PHANTOM GUARD (2026-08-30): userId -> consecutive sweeps seen
    *  'playing' with chips > 0 while holding NO open seat anywhere in the
    *  tournament. See the block in the sweep for the full story. */
@@ -417,6 +467,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           });
           if (syncErr) reportError(syncErr, 'GameServer.syncTournamentChips');
         }
+
+        // CHIP-CAP INPUTS (2026-08-31): entrants + rebuys/add-ons granted, so
+        // capLevelToTournamentChips knows how many chips the event has issued.
+        // Throttled to once a minute — the cap only needs to be roughly right,
+        // and it is a high-water mark so a slow refresh can never tighten it.
+        await this.refreshChipCapInputs();
 
         // Find ALL busted players (0 chips) in a single query
         // eslint-disable-next-line prefer-const

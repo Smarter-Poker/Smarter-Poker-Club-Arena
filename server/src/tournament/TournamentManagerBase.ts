@@ -30,7 +30,18 @@ import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
 import { isShortFormat, mayTakeSynchronizedBreak } from './breakEligibility.js';
-import { escalatedBlindLevel, lastPlayableIndex } from './blindEscalation.js';
+import {
+  capLevelToChipsInPlay,
+  escalatedBlindLevel,
+  lastPlayableIndex,
+} from './blindEscalation.js';
+import { observedStepRatio } from './blindLadder.js';
+import {
+  isSpinTournament,
+  paidPlacesForField,
+  parsePayoutStructure,
+  payoutStructureForField,
+} from './payoutStructure.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
 import {
   DEFAULT_TOP_BOUNTY_PERCENT,
@@ -2752,7 +2763,21 @@ export abstract class TournamentManagerBase {
     const earliest = now - spinRevealToDealMs();
     const anchor = Math.min(Math.max(lastPaidAt, earliest), now);
     this.spinRevealAt = anchor + SPIN_REVEAL.LEAD_IN_MS;
-    this.spinHoldUntil = this.spinRevealAt + spinRevealToDealMs();
+    /* THE LEAD-IN IS COUNTED ONCE (2026-08-31 audit).
+       This read `this.spinRevealAt + spinRevealToDealMs()`, and
+       spinRevealToDealMs() ALREADY contains LEAD_IN_MS by way of
+       spinRevealTotalMs - whose own doc calls itself "total wall time from
+       the last buy-in". So the lead-in was added twice and the deal was held
+       one full LEAD_IN_MS (1s) longer than the sequence it is waiting for.
+       Harmless in direction - it never dealt early - but it is a second of
+       dead air on every spin, and the drift meant the spec and the engine
+       disagreed about what the hold means.
+       The whole sequence is measured from the ANCHOR, because the lead-in is
+       its first beat: anchor -> lead-in -> countdown -> spin -> flash -> hold
+       -> post-reveal beats -> deal. The other two sites below are already
+       correct: they set revealAt = now, so `now + spinRevealToDealMs()` is
+       the same measurement taken from their own anchor. */
+    this.spinHoldUntil = anchor + spinRevealToDealMs();
   }
 
   /**
@@ -3597,7 +3622,7 @@ export abstract class TournamentManagerBase {
     }
 
     const lastLevel = blindStructure[lastPlayableIndex(blindStructure)];
-    return escalatedBlindLevel(
+    const escalated = escalatedBlindLevel(
       lastLevel,
       i,
       // The PERSISTED length. Nothing mutates this array any more; that is what
@@ -3605,9 +3630,166 @@ export abstract class TournamentManagerBase {
       blindStructure.length,
       // Format-normalized, and halved for an accelerated MTT past late reg —
       // engine state, which is why the pure module takes it as an argument.
-      this.levelDurationMs(lastLevel) / 60000
+      this.levelDurationMs(lastLevel) / 60000,
+      /**
+       * THE LADDER'S OWN CADENCE, NOT A DOUBLING (2026-08-31).
+       *
+       * This used to double per level, which on production meant 95.7% of MTTs
+       * spent their late game on a curve faster than HYPER_TURBO. The ratio is
+       * now measured from the structure the tournament was actually advertised
+       * with, clamped to [1.15, 1.6] inside observedStepRatio. Derived from the
+       * PERSISTED array, so it is the same number after a restart — the
+       * anchoring contract in the note above is preserved exactly.
+       */
+      observedStepRatio(blindStructure.map((l: any) => Number(l?.bigBlind)))
     );
+
+    return this.capLevelToTournamentChips(escalated);
   }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  NO BLIND MAY EXCEED THE CHIPS THAT EXIST (2026-08-31)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Deep ladders make the overflow path rare; this makes its failure mode
+   * impossible. Chips are conserved, so the supply is `starting_chips ×
+   * entrants` plus whatever rebuys and add-ons added — and a big blind larger
+   * than that supply is not a blind, it is a coin flip on the button.
+   *
+   * `chipsInPlayEstimate` is deliberately an ESTIMATE that errs HIGH: the entry
+   * count includes everyone who ever entered and each rebuy/add-on is counted
+   * at a full starting stack. Erring high caps less aggressively, which is the
+   * safe direction — this guard exists to stop the absurd case (a blind larger
+   * than the tournament), not to fine-tune a healthy ladder. An unknown total
+   * caps nothing at all.
+   */
+  protected capLevelToTournamentChips<T extends Record<string, unknown>>(level: T): T {
+    const total = this.chipsInPlayEstimate();
+    if (total === null) return level;
+
+    const capped = capLevelToChipsInPlay(level as any, total);
+    if (!capped.capped) return level;
+
+    if (!this.blindCapReported) {
+      this.blindCapReported = true;
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Blind cap engaged — level would have been ` +
+          `${Number((level as any).smallBlind)}/${Number((level as any).bigBlind)} against ~${Math.round(total)} chips in play; ` +
+          `capped to ${capped.smallBlind}/${capped.bigBlind} so the event keeps at least 20 big blinds on the felt`
+      );
+    }
+
+    return {
+      ...level,
+      smallBlind: capped.smallBlind,
+      bigBlind: capped.bigBlind,
+      ante: capped.ante,
+      blindCapped: true,
+    } as unknown as T;
+  }
+
+  /** Logged once per manager so a long event does not spam the cap message. */
+  protected blindCapReported = false;
+
+  /**
+   * Replace the stored payout structure with one whose DEPTH matches the field
+   * that actually turned up. Called exactly once, at prize-pool finalisation.
+   *
+   * FAIL-CLOSED IN EVERY DIRECTION. It returns without writing when:
+   *   - the entrant count cannot be read (never guess a field size — too small
+   *     a guess promotes an earlier place to residual holder and overpays it);
+   *   - the event is a Spin (its structure is derived from the multiplier and
+   *     is not a ladder at all);
+   *   - the existing structure is already at least as deep as the field
+   *     warrants, so a hand-authored deep ladder is never narrowed;
+   *   - the write fails, in which case the old structure stands and the reprice
+   *     below simply runs against it, exactly as it did before this existed.
+   */
+  protected async widenPayoutStructureToField(): Promise<void> {
+    try {
+      const t = this.tournamentCache as Record<string, unknown> | null;
+      if (isSpinTournament(t as never)) return;
+
+      const { count: field, error: fieldErr } = await supabase
+        .from('tournament_players')
+        .select('*', { count: 'exact', head: true })
+        .eq('tournament_id', this.tournamentId);
+      if (fieldErr || typeof field !== 'number' || field < 1) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] payout widen skipped — entrant count unreadable (${fieldErr?.message ?? 'null count'}); the advertised structure stands`
+          ),
+          'Tournament.payout_widen_field_unreadable'
+        );
+        return;
+      }
+
+      const current = parsePayoutStructure(t?.payout_structure) ?? [];
+      const wanted = paidPlacesForField(field);
+      if (current.length >= wanted) return;
+
+      const widened = payoutStructureForField(field);
+      const { error: writeErr } = await supabase
+        .from('tournaments')
+        .update({ payout_structure: JSON.stringify(widened) })
+        .eq('id', this.tournamentId);
+
+      if (writeErr) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] payout widen write failed (${writeErr.message}) — the advertised ${current.length}-place structure stands`
+          ),
+          'Tournament.payout_widen_write_failed'
+        );
+        return;
+      }
+
+      if (this.tournamentCache) {
+        (this.tournamentCache as Record<string, unknown>).payout_structure =
+          JSON.stringify(widened);
+      }
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Payout structure widened ${current.length} -> ${widened.length} places for a field of ${field}`
+      );
+    } catch (err) {
+      reportError(err, 'Tournament.payout_widen_threw');
+    }
+  }
+
+  /**
+   * Total chips the tournament has ever issued, or null when it cannot be
+   * known. Never guessed: a null caps nothing.
+   */
+  protected chipsInPlayEstimate(): number | null {
+    const start = Number(this.tournamentCache?.starting_chips);
+    if (!Number.isFinite(start) || start <= 0) return null;
+
+    const entrants = Number(this.entrantCountForChipCap);
+    if (!Number.isFinite(entrants) || entrants < 1) return null;
+
+    const rebuyChips = Number(this.tournamentCache?.rebuy_chips) || start;
+    const addonChips = Number(this.tournamentCache?.addon_chips) || start;
+    const rebuys = Number(this.rebuysGrantedForChipCap) || 0;
+    const addons = Number(this.addonsGrantedForChipCap) || 0;
+
+    return start * entrants + rebuyChips * rebuys + addonChips * addons;
+  }
+
+  /**
+   * Entrant count for the chip cap, refreshed by the elimination sweep at most
+   * once a minute (`refreshChipCapInputs`).
+   *
+   * A HIGH-WATER MARK, never a live count. `tournaments.current_players` drains
+   * as players bust — it read 2 on a 115-entrant event at the finish — and a
+   * draining entrant count would shrink the chip supply the cap is measured
+   * against, tightening the cap as the tournament progresses and throttling the
+   * blinds exactly when they should be climbing. Same defect shape the payout
+   * structure documents for its own field size: never a live seat count.
+   */
+  protected entrantCountForChipCap = 0;
+  protected rebuysGrantedForChipCap = 0;
+  protected addonsGrantedForChipCap = 0;
 
   protected startBlindTimer(blindStructure: any[], remainingOverrideMs?: number): void {
     if (blindStructure.length === 0) return;
@@ -3985,6 +4167,23 @@ export abstract class TournamentManagerBase {
              * the broadcast above sends, and never an invented one.
              */
             const poolToPriceBy = finalPool ?? (Number(this.tournamentCache?.prize_pool) || 0);
+            /**
+             * WIDEN THE LADDER TO THE FIELD, BEFORE THE REPRICE (2026-08-31).
+             *
+             * This is the one moment where it is safe: entry is closed, so the
+             * entrant count can no longer grow, and the reprice immediately
+             * below re-values everyone who already busted against whatever
+             * structure is stored. Doing it here means both halves of the field
+             * — those already out and those still playing — are priced by the
+             * same ladder, which is exactly the invariant the reprice exists to
+             * hold.
+             *
+             * Ordering is load-bearing: widen, THEN reprice. Reversed, the
+             * players who busted during late registration would keep prices
+             * from the nine-place structure while everyone after them was paid
+             * from the wide one.
+             */
+            await this.widenPayoutStructureToField();
             if (poolToPriceBy > 0) {
               await this.recalculateEliminatedPrizes(poolToPriceBy);
             } else {

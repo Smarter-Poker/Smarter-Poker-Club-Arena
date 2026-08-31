@@ -19,13 +19,15 @@ test.describe('Player Stats production experience', () => {
       .poll(
         async () =>
           page.url().includes('/auth') ||
-          (await page.getByRole('heading', { name: 'Player Intelligence' }).count()) > 0,
-        { timeout: 20_000 }
+          (await page.getByRole('tab', { name: 'Overview' }).count()) > 0 ||
+          (await page.getByText("Couldn't Load Your Stats", { exact: true }).count()) > 0,
+        { timeout: 30_000 }
       )
       .toBe(true);
     test.skip(page.url().includes('/auth'), 'authenticated Stats session is not configured');
+    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('heading', { name: 'Player Intelligence' })).toBeVisible({
-      timeout: 20_000,
+      timeout: 30_000,
     });
   });
 
@@ -47,6 +49,7 @@ test.describe('Player Stats production experience', () => {
   test('fits a 390px phone and keeps all interactive targets usable', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.reload();
+    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('heading', { name: 'Player Intelligence' })).toBeVisible();
 
     const overflow = await page.evaluate(

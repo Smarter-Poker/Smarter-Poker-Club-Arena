@@ -157,9 +157,25 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
         user_id: currentUserId,
       });
 
-      if (error) throw error;
+      /* ALREADY IN THIS QUEUE IS NOT A FAILURE (2026-08-31).
+         The partial unique index covers both active states - 'waiting' AND,
+         since the sixty-second seat hold landed, 'notified'. So a player who
+         is already in line, or who is holding a live offer for this very
+         table, gets 23505 here. This path had no recovery at all and reported
+         the generic "Failed to join waitlist", which is the one reading that
+         is definitely wrong: they did not fail to join, they are already in.
+         WaitlistService's own join has handled this for months; this second
+         entry point never did. */
+      if (error) {
+        if ((error as { code?: string }).code === '23505') {
+          showToast('You Are Already On This Waiting List', 'info');
+          return;
+        }
+        throw error;
+      }
       showToast('Added to waitlist', 'success');
     } catch (error) {
+      reportError(error, 'WaitlistManager.handleJoin', { tableId });
       showToast('Failed to join waitlist', 'error');
     } finally {
       setJoining(false);

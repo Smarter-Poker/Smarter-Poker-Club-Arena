@@ -85,6 +85,10 @@ const defaultSnapshotFastPath = readFileSync(
   ),
   'utf8'
 );
+const exportStatementBudget = readFileSync(
+  resolve(__dirname, '../supabase/migrations/20260831181000_club_data_export_statement_budget.sql'),
+  'utf8'
+);
 
 describe('Club Data reporting stays inside the authenticated query budget', () => {
   it('covers both high-volume tournament fact reads with partial indexes', () => {
@@ -152,6 +156,8 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
     expect(page).toMatch(/coldRead\([\s\S]*'Club data request timed out'/);
     expect(page).toMatch(/coldRead\([\s\S]*'Player data request timed out'/);
     expect(page).toContain("p_limit: gameSort === 'recent' ? GAME_PAGE_SIZE : 1");
+    expect(page).toContain('p_limit: GAME_PAGE_SIZE * 2');
+    expect(page).toContain('prefetchedGamePageRef.current');
     expect(page).toMatch(/gameSort === 'recent'[\s\S]{0,80}\? recentCursor\(rows\)/);
     expect(page).toMatch(/setPlayersLoading\(true\);\s*setPlayersError\(null\);/);
   });
@@ -182,6 +188,16 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
     expect(players).toContain('public.ca_club_player_daily');
     expect(players).not.toContain('public.wallet_transactions');
     expect(players).toContain("'is_horse',COALESCE(pr.is_horse,false)");
+  });
+
+  it('gives exact immutable exports enough time without weakening the browser role globally', () => {
+    expect(exportStatementBudget).toMatch(
+      /ALTER FUNCTION public\.ca_club_game_export_start[\s\S]*SET statement_timeout TO '120s'/
+    );
+    expect(exportStatementBudget).toMatch(
+      /ALTER FUNCTION public\.ca_club_player_export_start[\s\S]*SET statement_timeout TO '120s'/
+    );
+    expect(exportStatementBudget).not.toMatch(/ALTER ROLE/);
   });
 
   it('preserves tournament home-club attribution without leaking cross-club hands', () => {

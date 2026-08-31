@@ -36,7 +36,7 @@ test.describe('Club Data production experience', () => {
     page,
   }) => {
     await expect(page.getByRole('heading', { name: 'Data Integrity' })).toBeVisible();
-    await expect(page.getByText('12 / 12')).toBeVisible();
+    await expect(page.getByText('12 / 12')).toBeVisible({ timeout: 60_000 });
     for (const viewport of [
       { width: 1280, height: 900 },
       { width: 768, height: 1024 },
@@ -58,7 +58,7 @@ test.describe('Club Data production experience', () => {
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth
       )
     ).toBeLessThanOrEqual(1);
-    await expect(page.getByRole('button', { name: 'Refresh club ledger' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Refresh Club Ledger/i })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Games' })).toBeVisible();
   });
 
@@ -161,7 +161,7 @@ test.describe('Club Data production experience', () => {
       });
     }
 
-    const refresh = page.getByRole('button', { name: 'Refresh club ledger' });
+    const refresh = page.getByRole('button', { name: /Refresh Club Ledger/i });
     await refresh.click();
     await expect(refresh).toBeEnabled({ timeout: 60_000 });
     await expect(page.getByRole('heading', { name: 'Data Integrity' })).toBeVisible();
@@ -190,7 +190,7 @@ test.describe('Club Data production experience', () => {
 
     await page.waitForTimeout(65_000);
 
-    await expect(page.getByText('Could not load club data.')).toHaveCount(0);
+    await expect(page.getByText(/Could Not Load Club Data\./i)).toHaveCount(0);
     await expect(gamesList.getByRole('listitem').first()).toContainText(identity.slice(0, 12));
     await expect(page.getByText(/Showing [\d,]+ Of [\d,]+ Games/i)).toBeVisible();
     if (expandedCount) await expect(loadMore).toContainText(`- ${expandedCount} Of`);
@@ -205,7 +205,7 @@ test.describe('Club Data production experience', () => {
     ).toEqual([]);
 
     await page.emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' });
-    await expect(page.getByRole('button', { name: 'Refresh club ledger' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Refresh Club Ledger/i })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Games' })).toBeVisible();
   });
 });

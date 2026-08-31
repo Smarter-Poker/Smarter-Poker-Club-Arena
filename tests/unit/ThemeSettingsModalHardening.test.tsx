@@ -11,6 +11,10 @@ const mocks = vi.hoisted(() => ({
     data: unknown[];
     error: unknown;
   }>,
+  unlockResult: Promise.resolve({ data: [], error: null }) as Promise<{
+    data: unknown[];
+    error: unknown;
+  }>,
   pricingResult: Promise.resolve({ data: [], error: null }) as Promise<{
     data: unknown[];
     error: unknown;
@@ -22,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   themeListeners: new Set<(event: { payload: unknown }) => void>(),
   entitlementInsert: null as null | ((payload: { new: Record<string, unknown> }) => void),
   entitlementStatus: null as null | ((status: string) => void),
+  autoEntitlementSubscribe: true,
   removeChannel: vi.fn(),
   loadDiamonds: vi.fn(),
   themeSelect: '',
@@ -83,9 +88,20 @@ vi.mock('../../src/hooks/useTableStudioCollections', () => ({
 }));
 
 vi.mock('../../src/components/table/TableStudioGameplayPreview', () => ({
-  default: ({ selection }: { selection: { button_id: string; cards_id: string } }) => (
+  default: ({
+    selection,
+  }: {
+    selection: {
+      table_id: string;
+      background_id: string;
+      button_id: string;
+      cards_id: string;
+    };
+  }) => (
     <div
       data-testid="gameplay-preview"
+      data-table-theme={selection.table_id}
+      data-background-theme={selection.background_id}
       data-button-theme={selection.button_id}
       data-card-back={selection.cards_id}
     />
@@ -125,7 +141,9 @@ vi.mock('../../src/lib/supabase', () => ({
           ? mocks.themeResult
           : table === 'feature_pricing'
             ? mocks.pricingResult
-            : mocks.purchaseResult;
+            : table === 'theme_asset_unlocks'
+              ? mocks.unlockResult
+              : mocks.purchaseResult;
       const builder: Record<string, unknown> = {};
       const chain = () => builder;
       builder.select = vi.fn((columns: string) => {
@@ -138,7 +156,8 @@ vi.mock('../../src/lib/supabase', () => ({
       return builder;
     }),
     rpc: mocks.rpc,
-    channel: vi.fn(() => {
+    channel: vi.fn((name: string) => {
+      const isEntitlementChannel = name.startsWith('table-studio-entitlements:');
       const channel = {
         on: vi.fn(
           (
@@ -146,13 +165,13 @@ vi.mock('../../src/lib/supabase', () => ({
             _filter: Record<string, unknown>,
             handler: (payload: { new: Record<string, unknown> }) => void
           ) => {
-            mocks.entitlementInsert = handler;
+            if (isEntitlementChannel) mocks.entitlementInsert = handler;
             return channel;
           }
         ),
         subscribe: vi.fn((listener: (status: string) => void) => {
-          mocks.entitlementStatus = listener;
-          listener('SUBSCRIBED');
+          if (isEntitlementChannel) mocks.entitlementStatus = listener;
+          if (!isEntitlementChannel || mocks.autoEntitlementSubscribe) listener('SUBSCRIBED');
           return channel;
         }),
       };
@@ -204,6 +223,7 @@ describe('ThemeSettingsModal hardening', () => {
   beforeEach(() => {
     mocks.themeResult = Promise.resolve({ data: [savedTheme], error: null });
     mocks.purchaseResult = Promise.resolve({ data: [], error: null });
+    mocks.unlockResult = Promise.resolve({ data: [], error: null });
     mocks.pricingResult = Promise.resolve({
       data: [
         { feature: 'studio:table_id:neon_city', diamond_cost: 350 },
@@ -220,6 +240,7 @@ describe('ThemeSettingsModal hardening', () => {
     mocks.navigate.mockReset();
     mocks.entitlementInsert = null;
     mocks.entitlementStatus = null;
+    mocks.autoEntitlementSubscribe = true;
     mocks.removeChannel.mockReset();
     mocks.loadDiamonds.mockReset();
     mocks.loadDiamonds.mockResolvedValue(undefined);
@@ -574,6 +595,114 @@ describe('ThemeSettingsModal hardening', () => {
     expect(await screen.findByRole('button', { name: 'Neon City' })).toBeEnabled();
   });
 
+  it('repairs a missed entitlement in the authoritative snapshot after realtime activity', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    expect(
+      screen.getByRole('button', { name: 'Neon Ice, purchase or VIP required' })
+    ).toBeEnabled();
+
+    // Simulate a burst where Postgres Changes delivers one component row but
+    // the composite theme row itself is dropped. The event is only the wakeup;
+    // the subsequent server snapshot is the durable ownership truth.
+    mocks.unlockResult = Promise.resolve({
+      data: [
+        { category: 'table_id', asset_id: 'neon_city' },
+        { category: 'theme_id', asset_id: 'neon-blue' },
+      ],
+      error: null,
+    });
+    act(() => {
+      mocks.entitlementInsert?.({
+        new: { user_id: 'user-1', category: 'table_id', asset_id: 'neon_city' },
+      });
+    });
+
+    expect(
+      await screen.findByRole('button', { name: 'Neon Ice' }, { timeout: 2_000 })
+    ).toBeEnabled();
+    expect(screen.getByText('Table Art Live')).toBeVisible();
+  });
+
+  it('repairs ownership when a sleeping tab missed the entire realtime burst', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    expect(
+      screen.getByRole('button', { name: 'Neon Ice, purchase or VIP required' })
+    ).toBeEnabled();
+
+    mocks.unlockResult = Promise.resolve({
+      data: [{ category: 'theme_id', asset_id: 'neon-blue' }],
+      error: null,
+    });
+
+    expect(
+      await screen.findByRole('button', { name: 'Neon Ice' }, { timeout: 3_000 })
+    ).toBeEnabled();
+    expect(screen.getByText('Table Art Live')).toBeVisible();
+  });
+
+  it('never re-locks verified designs while a background reconciliation is in flight', async () => {
+    mocks.unlockResult = Promise.resolve({
+      data: [{ category: 'theme_id', asset_id: 'neon-blue' }],
+      error: null,
+    });
+    renderStudio();
+    expect(await screen.findByRole('button', { name: 'Neon Ice' })).toBeEnabled();
+
+    const refresh = deferred<{ data: unknown[]; error: unknown }>();
+    mocks.unlockResult = refresh.promise;
+    act(() => {
+      mocks.entitlementInsert?.({
+        new: { user_id: 'user-1', category: 'table_id', asset_id: 'neon_city' },
+      });
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+
+    expect(screen.getByRole('button', { name: 'Neon Ice' })).toBeEnabled();
+    expect(screen.getByText('Table Art Live')).toBeVisible();
+    await act(async () => {
+      refresh.resolve({
+        data: [
+          { category: 'theme_id', asset_id: 'neon-blue' },
+          { category: 'table_id', asset_id: 'neon_city' },
+        ],
+        error: null,
+      });
+      await refresh.promise;
+    });
+  });
+
+  it('reconciles ownership after subscription before declaring Table Art live', async () => {
+    mocks.autoEntitlementSubscribe = false;
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+
+    expect(screen.getByText('Linking...')).toBeVisible();
+    expect(screen.queryByText('Table Art Live')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
+    expect(
+      screen.getByRole('button', { name: 'Neon City, purchase or VIP required' })
+    ).toBeEnabled();
+
+    mocks.unlockResult = Promise.resolve({
+      data: [{ category: 'table_id', asset_id: 'neon_city' }],
+      error: null,
+    });
+    act(() => mocks.entitlementStatus?.('SUBSCRIBED'));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Neon City' })).toBeEnabled());
+    expect(await screen.findByText('Table Art Live')).toBeVisible();
+  });
+
   it('does not claim a completed purchase was applied when the appearance save fails', async () => {
     mocks.applyAppearance.mockResolvedValue({ ok: false, error: new Error('save failed') });
     renderStudio();
@@ -655,6 +784,86 @@ describe('ThemeSettingsModal hardening', () => {
     expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
       'data-button-theme',
       'blue-crystal'
+    );
+  });
+
+  it('repairs an open studio when the appearance realtime event was entirely missed', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+      'data-table-theme',
+      'classic_green'
+    );
+
+    mocks.themeResult = Promise.resolve({
+      data: [
+        {
+          ...savedTheme,
+          theme_id: 'ocean-suite',
+          table_id: 'ocean_blue',
+          background_id: 'royal_indigo',
+          button_id: 'classic-white',
+          cards_id: 'classic_blue',
+          updated_at: '2026-08-31T13:30:00.000Z',
+        },
+      ],
+      error: null,
+    });
+
+    await waitFor(
+      () =>
+        expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+          'data-table-theme',
+          'ocean_blue'
+        ),
+      { timeout: 3_500 }
+    );
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+      'data-background-theme',
+      'royal_indigo'
+    );
+    expect(screen.getByText('Table Art Live')).toBeVisible();
+  });
+
+  it('does not let an in-flight appearance snapshot roll back a newer realtime change', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+
+    const staleRefresh = deferred<{ data: unknown[]; error: null }>();
+    mocks.themeResult = staleRefresh.promise;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 2_100));
+    });
+
+    act(() => {
+      masterBus.emit('UI_THEME_CHANGED', {
+        key: 'ALL',
+        value: {
+          theme_id: 'ocean-suite',
+          table_id: 'ocean_blue',
+          background_id: 'royal_indigo',
+          cards_id: 'classic_blue',
+        },
+        userId: 'user-1',
+        updatedAt: '2026-08-31T13:31:00.000Z',
+      });
+    });
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+      'data-table-theme',
+      'ocean_blue'
+    );
+
+    await act(async () => {
+      staleRefresh.resolve({ data: [savedTheme], error: null });
+      await staleRefresh.promise;
+    });
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+      'data-table-theme',
+      'ocean_blue'
     );
   });
 });

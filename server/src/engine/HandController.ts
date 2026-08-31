@@ -26,6 +26,7 @@ import {
   fixedLimitBetSize,
   isFixedLimitCapped,
 } from './BettingStructure.js';
+import { bestPineappleDiscard } from './pineappleDiscardChoice.js';
 import {
   deckSizeFor,
   holeCardCount,
@@ -1677,18 +1678,23 @@ export class HandController {
     const flop = this.state.communityCards.slice(0, 3);
     for (const player of this.state.players) {
       if (player.is_folded || player.cards.length !== 3) continue;
-      let bestIdx = 2;
-      let bestScore = -1;
-      for (let discard = 0; discard < 3; discard++) {
-        const keep = player.cards.filter((_, i) => i !== discard);
-        const evaluated = evaluateHand(keep, flop);
-        const score =
-          evaluated.ranking * 1e6 + (evaluated.kickers[0] || 0) * 1e3 + (evaluated.kickers[1] || 0);
-        if (score > bestScore) {
-          bestScore = score;
-          bestIdx = discard;
-        }
-      }
+      /* ── KEEP THE BEST HAND, NOT THE BEST FLOP (2026-08-31) ──────────────
+         This scored the flop-MADE hand and kept the highest of those. That is
+         backwards in the only situation it runs: an ALL-IN, where two more
+         cards are coming and there is no more betting, which is exactly when a
+         draw is worth the most it will ever be worth. On A(h)K(h)+2(h) against
+         7(h)8(h)3(c) it kept the pair of nothing and threw the nut flush draw
+         away, because a pair outranks a draw on the flop and the flop was all
+         it looked at.
+
+         It now uses the same equity-priced chooser a HORSE uses, which is the
+         point: CLAUDE.md 10.5 requires a horse and a human to be treated
+         identically, and a decision made by two different rules cannot be. */
+      const bestIdx = bestPineappleDiscard(
+        player.cards,
+        flop,
+        this.config.gameVariant ?? 'pineapple'
+      );
       player.cards.splice(bestIdx, 1);
       this.pineappleDiscardsRemaining.delete(player.seat);
       this.emit({ type: 'CARDS_DEALT', seat: player.seat, cards: [...player.cards] });

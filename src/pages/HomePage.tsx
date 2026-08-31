@@ -35,7 +35,7 @@ import GlobalHeader from '../components/navigation/GlobalHeader';
 import FloatingOrbs from '../components/home/FloatingOrbs';
 import haptic from '../services/HapticService';
 
-import PremiumSFX from '../services/PremiumSFX';
+import { playPremiumSfx } from '../utils/playPremiumSfx';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import ClubContextMenu from '../components/home/ClubContextMenu';
 import ClubQuickLinkTile from '../components/home/ClubQuickLinkTile';
@@ -256,6 +256,10 @@ function HomePageInner() {
 
   // JOIN A CLUB modal state
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [joinIntent, setJoinIntent] = useState<{
+    code: string;
+    watchTableId: string | null;
+  } | null>(null);
   const [showCreateClubModal, setShowCreateClubModal] = useState(false);
   const [entryFlags, setEntryFlags] = useState<ClubEntryFlags>({
     create_club: true,
@@ -266,10 +270,7 @@ function HomePageInner() {
     ClubEntryTrustService.getFlags().then(setEntryFlags);
   }, []);
 
-  // Deep link: /?create=club (the /clubs/create redirect in App.tsx, used by
-  // the hamburger menu and CreateUnionPage since CreateClubPage was deleted)
-  // opens the create modal on arrival. Strip the param so refresh and back
-  // do not re-open it.
+  // The legacy /?create=club deep link opens the create modal once.
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
     if (searchParams.get('create') === 'club') {
@@ -645,7 +646,7 @@ function HomePageInner() {
           break;
         case '4': {
           haptic.light();
-          PremiumSFX.navigate();
+          playPremiumSfx('navigate');
           const target = resolveCashierWallet(eligibleCashierWallets(userClubs), quickLinkClubId);
           if (target) {
             rememberLastClub(target.id);
@@ -659,7 +660,7 @@ function HomePageInner() {
         }
         case '5': {
           haptic.light();
-          PremiumSFX.navigate();
+          playPremiumSfx('navigate');
           const target = resolveTargetClub(userClubs);
           navigate(target ? `/marketplace?club=${target.id}` : '/marketplace');
           break;
@@ -1090,7 +1091,7 @@ function HomePageInner() {
       rememberLastClub(club.id);
       setQuickLinkClubId(club.id);
       haptic.light();
-      PremiumSFX.navigate();
+      playPremiumSfx('navigate');
       navigate(
         isUnionEntity(club)
           ? `/unions/${String(club.union_id || club.id)}/operations?tab=wallet`
@@ -1105,7 +1106,7 @@ function HomePageInner() {
       rememberLastClub(club.id);
       setQuickLinkClubId(club.id);
       haptic.light();
-      PremiumSFX.navigate();
+      playPremiumSfx('navigate');
       navigate(`/marketplace?club=${club.id}`);
     },
     [navigate]
@@ -1119,7 +1120,7 @@ function HomePageInner() {
 
   const marketplaceEmpty = useCallback(() => {
     haptic.light();
-    PremiumSFX.navigate();
+    playPremiumSfx('navigate');
     navigate('/marketplace');
   }, [navigate]);
 
@@ -1409,7 +1410,20 @@ function HomePageInner() {
 
       {/* JOIN A CLUB MODAL */}
       <Suspense fallback={null}>
-        <JoinClubModal isOpen={showJoinModal} onClose={() => setShowJoinModal(false)} />
+        <JoinClubModal
+          isOpen={showJoinModal}
+          initialCode={joinIntent?.code}
+          onClose={() => {
+            setShowJoinModal(false);
+            setJoinIntent(null);
+          }}
+          onSuccess={(clubId) => {
+            const watchTableId = joinIntent?.watchTableId;
+            setShowJoinModal(false);
+            setJoinIntent(null);
+            navigate(watchTableId ? `/table/${watchTableId}?observer=1` : `/clubs/${clubId}`);
+          }}
+        />
       </Suspense>
 
       {/* CREATE A CLUB MODAL */}
@@ -1429,6 +1443,11 @@ function HomePageInner() {
         <FindPlayerModal
           isOpen={showFindPlayerModal}
           onClose={() => setShowFindPlayerModal(false)}
+          onMembershipRequired={({ code, watchTableId }) => {
+            setShowFindPlayerModal(false);
+            setJoinIntent({ code, watchTableId });
+            setShowJoinModal(true);
+          }}
         />
       </Suspense>
 

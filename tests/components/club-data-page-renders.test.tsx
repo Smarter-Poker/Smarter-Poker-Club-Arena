@@ -159,6 +159,11 @@ describe('ClubDataPage', () => {
     await waitFor(() => expect(screen.getByText('2,450.00')).toBeInTheDocument());
     expect(screen.getByText('Shark Table One')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Export as CSV' })).toBeEnabled();
+    expect(rpcMock).toHaveBeenCalledWith(
+      'ca_club_data_snapshot',
+      expect.objectContaining({ p_limit: 100 })
+    );
+    expect(rpcMock.mock.calls.some(([fn]) => fn === 'ca_club_game_page')).toBe(false);
   });
 
   it('keeps internal player automation metadata out of the operator UI', async () => {
@@ -313,6 +318,29 @@ describe('ClubDataPage', () => {
     expect(screen.queryByText('Could not load club data.')).not.toBeInTheDocument();
   });
 
+  it('keeps healing through a contended cold start before exposing an error state', async () => {
+    let snapshotRequest = 0;
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') {
+        snapshotRequest += 1;
+        return snapshotRequest < 4
+          ? {
+              data: null,
+              error: { code: '57014', message: 'canceling statement due to statement timeout' },
+            }
+          : { data: snapshot, error: null };
+      }
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+
+    render(<ClubDataPage />);
+
+    await screen.findByText('Shark Table One', {}, { timeout: 5_000 });
+    expect(snapshotRequest).toBe(4);
+    expect(screen.queryByText('Could not load club data.')).not.toBeInTheDocument();
+  });
+
   it('aborts a protected request when its response deadline expires', async () => {
     vi.useFakeTimers();
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -335,7 +363,7 @@ describe('ClubDataPage', () => {
     try {
       render(<ClubDataPage />);
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(25_000);
+        await vi.advanceTimersByTimeAsync(55_000);
       });
 
       expect(snapshotSignal?.aborted).toBe(true);
@@ -370,32 +398,21 @@ describe('ClubDataPage', () => {
       name: 'Shark Table Two',
       started_at: '2026-08-30T11:00:00Z',
     };
-    const cursor = { value: 1788091200, time: 1788091200, kind: 'CASH', id: 'game-1' };
-    let pageRequest = 0;
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_data_snapshot') {
+        return { data: { ...snapshot, row_count: 2 }, error: null };
+      }
       if (fn === 'ca_club_game_page') {
-        pageRequest += 1;
-        return pageRequest === 1
-          ? {
-              data: {
-                ...gamePage,
-                next_cursor: cursor,
-                has_more: true,
-                filtered_count: 2,
-              },
-              error: null,
-            }
-          : {
-              data: {
-                ...gamePage,
-                rows: [snapshot.rows[0], secondRow],
-                next_cursor: null,
-                has_more: false,
-                filtered_count: 2,
-              },
-              error: null,
-            };
+        return {
+          data: {
+            ...gamePage,
+            rows: [snapshot.rows[0], secondRow],
+            next_cursor: null,
+            has_more: false,
+            filtered_count: 2,
+          },
+          error: null,
+        };
       }
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
       if (fn === 'ca_club_player_breakdown') return { data: playerBreakdown, error: null };
@@ -409,7 +426,9 @@ describe('ClubDataPage', () => {
     expect(screen.getAllByText('Shark Table One')).toHaveLength(1);
     expect(rpcMock).toHaveBeenCalledWith(
       'ca_club_game_page',
-      expect.objectContaining({ p_cursor: cursor })
+      expect.objectContaining({
+        p_cursor: expect.objectContaining({ kind: 'CASH', id: 'game-1' }),
+      })
     );
   });
 });

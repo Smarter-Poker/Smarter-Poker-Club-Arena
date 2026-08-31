@@ -232,6 +232,14 @@ export abstract class ServerTableEngineBase {
   // index) so roster changes (bust/leave/join) can't move it backward, skip a
   // seat, or double-post a blind. 0 = no hand dealt yet.
   protected lastButtonSeat: number = 0;
+  /**
+   * The seat that posted the big blind on the last hand dealt here. Heads-up,
+   * the button is derived from THIS rather than from the previous button, so
+   * that no player posts the big blind twice running when a 3-handed table
+   * drops to two (TDA Rule 33 -- see the dealing loop). Restored from
+   * hand_history on restart alongside the button, for the same reason.
+   */
+  protected lastBigBlindSeat: number = 0;
   protected consecutiveErrors: number = 0;
 
   // Bankroll Management: Track how many times a horse has re-bought at this table.
@@ -623,6 +631,17 @@ export abstract class ServerTableEngineBase {
     }
 
     const before = this.timeBankEngine.getRemainingSeconds(this.tableId, userId);
+    /* The expiry callback is EMPTY ON PURPOSE, and this comment is why: do not
+       "fix" it later by folding here. On a turn, TimeBankEngine's countdown is
+       the enforcement deadline, so its onExpire has to act. In the discard
+       round the enforcement deadline is the per-seat map below, swept by
+       armPineappleDiscardSweep - and that sweep is re-armed to the very
+       deadline this grant produces. Folding from both would be two deadlines
+       under different keys racing on one decision, which is precisely the bug
+       TimeBankEngine's own history records ("two deadlines under different
+       keys on the same PreciseActionTimer, both live, and the shorter one
+       folded the player while the clock on screen was still counting down").
+       One enforcer: the sweep. */
     const result = this.timeBankEngine.tryActivate(this.tableId, userId, () => {}, remaining);
     if (result !== 'activated') {
       return {
@@ -3789,7 +3808,7 @@ export abstract class ServerTableEngineBase {
       // Same (table_id, hand_number DESC) index seedHandCountFromHistory uses.
       const { data, error } = await supabase
         .from('hand_history')
-        .select('button_seat')
+        .select('button_seat, players')
         .eq('table_id', this.tableId)
         .order('hand_number', { ascending: false })
         .limit(1)
@@ -3803,7 +3822,27 @@ export abstract class ServerTableEngineBase {
         return;
       }
 
-      const seat = Number((data as { button_seat?: number } | null)?.button_seat ?? 0);
+      const row = data as { button_seat?: number; players?: Array<{ seat?: number }> } | null;
+      const seat = Number(row?.button_seat ?? 0);
+      /**
+       * The big blind seat comes back with the button, derived from the same
+       * row rather than stored separately: `players` carries the seats that
+       * were dealt in and `button_seat` says where the button was, which is
+       * all the blind walk needs. Without it a restart between two heads-up
+       * hands leaves lastBigBlindSeat at 0, the dead-button rule stands down,
+       * and the very bug it fixes reappears for one hand on every deploy.
+       */
+      const seats = Array.isArray(row?.players)
+        ? row.players
+            .map((p) => Number(p?.seat))
+            .filter((s) => Number.isFinite(s) && s > 0)
+            .sort((a, b) => a - b)
+        : [];
+      if (seats.length >= 2 && Number.isFinite(seat) && seat > 0) {
+        const nextOf = (from: number) => seats.find((s) => s > from) ?? seats[0];
+        const sb = seats.length === 2 ? seat : nextOf(seat);
+        this.lastBigBlindSeat = nextOf(sb);
+      }
       if (Number.isFinite(seat) && seat > 0) {
         this.lastButtonSeat = seat;
         console.log(

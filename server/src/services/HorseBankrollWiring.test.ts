@@ -59,20 +59,12 @@ describe('both decision points consult it', () => {
       SRC.indexOf('const success = await this.seatHorse')
     );
     expect(sizing).toContain('bankrollBuyIn(');
-    /* The refusal now records WHY before it skips (HorseBankrollTelemetry),
-       so this pins the two things that matter — a zero cap is tested, and it
-       skips the seat — rather than the exact one-line shape it used to have. */
-    expect(sizing).toMatch(/if \(capped <= 0\) \{[\s\S]{0,200}?continue;/);
+    expect(sizing).toMatch(/if \(capped <= 0\) continue;/);
   });
 
   it('the bankroll gate sits alongside the stake band, not instead of it', () => {
-    /* A band says what a horse has EARNED; the bankroll says what it AFFORDS.
-       PIN MOVED 2026-08-31: the band check was `stakeBandAllows`, an exact
-       match, which also forbade playing BELOW the earned band — so a horse
-       whose roll no longer carried its own stake stopped playing instead of
-       moving down. `resolveStakeBand` replaces it and keeps the band as a
-       CEILING. Both halves are still required, which is what this asserts. */
-    expect(SRC).toContain('resolveStakeBand({');
+    // A band says what a horse has EARNED; the bankroll says what it AFFORDS.
+    expect(SRC).toContain('stakeBandAllows(h.id, table.big_blind)');
     expect(SRC).toContain('canSit(roll, ref, bankrollPolicyFor(h.id))');
   });
 });

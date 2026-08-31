@@ -1164,6 +1164,10 @@
       "reward_chips",
       "label"
     ],
+    "daily_mission_operations": [
+      "user_id",
+      "event"
+    ],
     "daily_spins": [
       "user_id",
       "reward_type"
@@ -1809,6 +1813,9 @@
       "reward_type",
       "amount",
       "weight"
+    ],
+    "member_fee_lifetime": [
+      "user_id"
     ],
     "member_fee_rollup": [
       "user_id",

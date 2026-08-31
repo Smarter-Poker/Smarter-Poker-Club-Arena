@@ -225,6 +225,34 @@ describe('Player Command resilience wiring', () => {
     expect(PAGE).toContain("dataFreshness === 'failed'");
   });
 
+  it('recovers a cold first-page timeout without making the player retry manually', () => {
+    expect(PAGE).toContain('const recoveryScheduled = scheduleConnectionRecovery(2)');
+    expect(PAGE).toContain('setLoadError(!recoveryScheduled && !hasSavedRows)');
+    expect(PAGE).toContain("recoveryScheduled ? 'loading' : 'failed'");
+    expect(PAGE).toMatch(/recoveryAttemptRef\.current >= maxAttempts/);
+  });
+
+  it('gives every new query and explicit retry a fresh bounded recovery budget', () => {
+    expect(PAGE).toContain("const recoveryRequestKeyRef = useRef('')");
+    expect(PAGE).toContain('recoveryRequestKeyRef.current !== recoveryRequestKey');
+    expect(PAGE).toMatch(
+      /options\.resetRecovery === true[\s\S]*recoveryAttemptRef\.current = 0[\s\S]*recoveryRequestKeyRef\.current = recoveryRequestKey/
+    );
+    expect(PAGE).toContain('{ forceSummary: true, resetRecovery: true }');
+  });
+
+  it('does not export a previous query while the visible search is still settling', () => {
+    expect(PAGE).toContain('searchQuery.trim() !== debouncedSearch.trim()');
+    expect(PAGE).toContain('isExporting || searchIsSettling');
+  });
+
+  it('exposes virtualized roster positions as one accessible list', () => {
+    expect(PAGE).toContain('role="list"');
+    expect(PAGE).toContain('role="listitem"');
+    expect(PAGE).toContain('aria-posinset={position}');
+    expect(PAGE).toContain('aria-setsize={total}');
+  });
+
   it('settles summary and directory reads independently', () => {
     expect(PAGE).toContain('settleRosterReadsIndependently');
     expect(POLICY).toContain('Promise.allSettled');

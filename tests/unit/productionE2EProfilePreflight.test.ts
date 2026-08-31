@@ -127,6 +127,9 @@ describe('authenticated production account preflight', () => {
     expect(helper).toContain("getByRole('button', { name: 'Join Club', exact: true })");
     expect(helper).toContain("locator('.club-home')");
     expect(helper).toContain("locator('.invite-pending')");
+    expect(helper).toContain("getByRole('button', { name: 'Try Again' })");
+    expect(helper).toContain('CLUB_ROUTE_ATTEMPTS');
+    expect(helper).toContain('Visible copy:');
   });
 
   it('keeps production lobby and mobile audits aligned with the shipped surfaces', () => {

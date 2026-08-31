@@ -1067,6 +1067,20 @@ export class DisconnectEngine {
 
       // Auto sit-out after too many consecutive timeouts
       if (state.consecutiveTimeouts >= config.maxConsecutiveTimeouts) {
+        /* THE SECOND DOOR (phase 2 audit, 2026-08-31). The canary was wired
+           into `recordConnectedTimeout` and stopped there — but a player can
+           also be condemned HERE, from the disconnect countdown. Usually that
+           is a genuinely disconnected player and the canary declines to
+           accuse anybody, because it checks `isConnected` for itself.
+
+           The case that makes wiring it worthwhile is narrower and real: a
+           player whose countdown was armed while the socket was down and who
+           has since RECONNECTED, so the timer fires against somebody now back
+           at the table. Leaving one of the two sentencing paths unwatched is
+           how a diagnostic quietly ends up covering half of what it claims
+           to. The function decides suspicion itself, so calling it here can
+           only add evidence, never a false accusation. */
+        this.reportSuspectedSilentClient(tableId, playerId, state);
         this.sitOut(tableId, playerId, 'forced');
       }
     }

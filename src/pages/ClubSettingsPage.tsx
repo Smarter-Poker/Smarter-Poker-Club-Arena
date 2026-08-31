@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo, type ChangeEvent } from 'react';
-import type { ClubRole } from '../types/clubRoles';
+import { isClubStaff, type ClubRole } from '../types/clubRoles';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { retryFetch } from '../utils/retryFetch';
@@ -183,8 +183,9 @@ export default function ClubSettingsPage() {
   const [confirmText, setConfirmText] = useState('');
   const [userRole, setUserRole] = useState<ClubRole>('player');
   // Mirrors the audit_trail SELECT policies: owner, or is_club_admin() which
-  // accepts role IN ('owner','admin','manager','agent').
-  const canSeeAuditLog = isOwner || userRole === 'admin' || userRole === 'agent';
+  // accepts role IN ('owner','co_owner','admin','manager','agent').
+  const canSeeAuditLog =
+    isOwner || isClubStaff(userRole) || userRole === 'agent' || userRole === 'super_agent';
   const deleteBlockedReason = deleteImpact ? blockingDeletionReason(deleteImpact) : null;
 
   // What the Rake Cap setting actually means in money, at two reference

@@ -2,9 +2,12 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   tournamentService,
   BLIND_STRUCTURES,
+  SPIN_BLIND_STRUCTURE,
   PAYOUT_STRUCTURES,
   SPIN_MULTIPLIERS,
 } from '../../services/TournamentService';
+import { maxSeatsTheDeckAllows } from '../../config/tableSeating';
+import { capPaidPlaces, fieldCapFor, minPlayersFor } from '../../lib/tournamentFieldRules';
 import styles from './CreateTournamentModal.module.css';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
@@ -21,6 +24,7 @@ import { BlindStructureBuilder } from '../tournament/BlindStructureBuilder';
 import PayoutStructureEditor from '../tournament/PayoutStructureEditor';
 import type { BlindLevel } from '../../config/blindStructures';
 import type { PayoutEntry, PayoutTemplate } from '../../services/PayoutEngine';
+import { canRunAsSpin, type TournamentGameVariant } from '../../config/tournamentVariants';
 
 interface Props {
   clubId: string;
@@ -30,6 +34,50 @@ interface Props {
   onClose: () => void;
   onSuccess: () => void;
 }
+
+/**
+ * Every game a tournament can be created as, in board order.
+ *
+ * 2026-08-31. This list used to be five hard-coded <option> elements and it had
+ * drifted from what the platform actually runs in two directions at once:
+ *
+ *   • PLO6 was MISSING while 6,028 PLO6 tournaments were live — every one of
+ *     them made by the recurring service or the create-table form, which this
+ *     modal could not match.
+ *   • PLO8 and SHORT_DECK were offered for the SPIN format, which the spin
+ *     catalogue (SPIN_GAME_TYPES) does not sell and the Spins board has no
+ *     filter chip for — a Spin created that way vanished from the lobby the
+ *     moment a player ticked any Games chip.
+ *
+ * Both are now impossible: the values come from the same map that decides what
+ * `canRunAsTournament` allows, and the spin catalogue filters the list when the
+ * format is a Spin.
+ *
+ * FLH and FLO8 are here because limit tournaments became creatable on the same
+ * day (Dan: "LIMIT POKER NEEDS TO BE ADDED TO THE GAME VARIATIONS FILTER") —
+ * see the header of tournamentFromTableConfig for why the old exclusion was
+ * wrong about this engine.
+ */
+/**
+ * The field cap an MTT-shaped format starts at.
+ *
+ * Not "unlimited": `fn_create_tournament` refuses `maxPlayers <= 0`, and
+ * registration is refused once `current_players >= max_players`, so a zero cap
+ * is a locked door rather than an open one. Live MTT caps in production run
+ * 30-500; 500 is the top of that range and the operator can lower it.
+ */
+const DEFAULT_MTT_FIELD = '500';
+
+const VARIANT_OPTIONS: { value: TournamentGameVariant; label: string }[] = [
+  { value: 'NLH', label: "No-Limit Hold'em" },
+  { value: 'PLO4', label: 'Pot-Limit Omaha (4-Card)' },
+  { value: 'PLO5', label: 'Pot-Limit Omaha (5-Card)' },
+  { value: 'PLO6', label: 'Pot-Limit Omaha (6-Card)' },
+  { value: 'PLO8', label: 'PLO Hi-Lo (8 Or Better)' },
+  { value: 'SHORT_DECK', label: "Short Deck Hold'em" },
+  { value: 'FLH', label: "Fixed-Limit Hold'em" },
+  { value: 'FLO8', label: 'Fixed-Limit Omaha Hi-Lo' },
+];
 
 type TournamentFormat =
   | 'mtt_freezeout'
@@ -66,8 +114,13 @@ export default function CreateTournamentModal({
   // ── Core Config ──
   const [name, setName] = useState('');
   const [format, setFormat] = useState<TournamentFormat>(initialFormat || 'mtt_freezeout');
-  const [gameVariant, setGameVariant] = useState<'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'SHORT_DECK'>(
-    'NLH'
+  const [gameVariant, setGameVariant] = useState<TournamentGameVariant>('NLH');
+  /* Spins sell four games; every other format sells all eight. See
+     VARIANT_OPTIONS above for why this is a filter and not a second list. */
+  const variantOptions = useMemo(
+    () =>
+      format === 'spin' ? VARIANT_OPTIONS.filter((v) => canRunAsSpin(v.value)) : VARIANT_OPTIONS,
+    [format]
   );
   // WHOLE-DOLLAR BUY-INS (Dan 2026-08-20): `buyIn` is the TOTAL the player
   // pays, always a positive whole number. The 10% house fee is a cut OUT of
@@ -77,6 +130,12 @@ export default function CreateTournamentModal({
   const [buyIn, setBuyIn] = useState('10');
   const [startingChips, setStartingChips] = useState('1500');
   const [maxPlayers, setMaxPlayers] = useState('50');
+  /* THE TWO NUMBERS THE DATABASE REFUSES ON live in src/lib/tournamentFieldRules
+     so they can be tested without rendering this form. See that file's header:
+     `maxPlayers: 0` ("unlimited") made every MTT-shaped format uncreatable, and
+     the sng6 preset paired with "Heads Up (2)" paid two places into a two-seat
+     field, which the RPC refuses as `more_paid_places_than_players`. */
+  const fieldCap = fieldCapFor(maxPlayers);
   const [blindSpeed, setBlindSpeed] = useState<'turbo' | 'regular' | 'deepStack' | 'custom'>(
     'turbo'
   );
@@ -209,11 +268,16 @@ export default function CreateTournamentModal({
     () =>
       rakeRateFor({
         variant: format,
-        // Only an SNG or a Spin has a fixed field size; an MTT sends 0, which
-        // rakeRateFor reads as "unknown seats" and prices at the default rate.
-        maxPlayers: format === 'sng' || format === 'spin' ? parseInt(maxPlayers) || 0 : 0,
+        /* EVERY format has a real field size now, so every format is priced on
+           it. The old comment said "an MTT sends 0, which rakeRateFor reads as
+           unknown seats" — that 0 was the same 0 the database refuses, so no
+           MTT priced this way was ever created. rakeRateFor's law is keyed on
+           SEATS ("a two-handed game is a duel whatever its label says"), and
+           `fn_create_tournament` is being brought onto the same rule in this
+           change; passing the cap is what makes the quote match the charge. */
+        maxPlayers: fieldCap,
       }),
-    [format, maxPlayers]
+    [format, fieldCap]
   );
   const split = useMemo(
     () => splitBuyIn(Number(buyIn) || 0, quotedRakeRate),
@@ -236,16 +300,29 @@ export default function CreateTournamentModal({
   /* What actually gets sent. A custom ladder or a custom payout table is only
      consulted when its own control is on, so turning the control off restores
      the preset rather than leaving a half-edited structure behind. */
-  const effectiveBlinds = useMemo(
-    () => (blindSpeed === 'custom' ? customBlinds : BLIND_STRUCTURES[blindSpeed]),
-    [blindSpeed, customBlinds]
-  );
+  const effectiveBlinds = useMemo(() => {
+    if (blindSpeed === 'custom') return customBlinds;
+    /* A SPIN GETS THE SPIN LADDER (2026-08-31). This read `BLIND_STRUCTURES[
+       blindSpeed]` for every format, and `blindSpeed` defaults to 'turbo' and
+       is never touched when the format becomes a Spin — so a Spin created here
+       ran the thirty-level MTT turbo ramp instead of `SPIN_BLIND_STRUCTURE`.
+       A Spin & Go is a hyper-turbo by definition; on the MTT ramp its three
+       players sat deep for levels the format is not built to reach.
+       `tournamentFromTableConfig` has always picked the spin ladder for spins;
+       this screen was the one that did not. */
+    if (format === 'spin') return SPIN_BLIND_STRUCTURE;
+    return BLIND_STRUCTURES[blindSpeed];
+  }, [blindSpeed, customBlinds, format]);
   const effectivePayouts = useMemo(
     () =>
-      customPayoutsOn
-        ? customPayouts.map((pp) => ({ place: pp.place, percentage: pp.percentage }))
-        : payoutStructure,
-    [customPayoutsOn, customPayouts, payoutStructure]
+      capPaidPlaces(
+        customPayoutsOn
+          ? customPayouts.map((pp) => ({ place: pp.place, percentage: pp.percentage }))
+          : payoutStructure,
+        fieldCap
+      ),
+
+    [customPayoutsOn, customPayouts, payoutStructure, fieldCap]
   );
 
   /* TournamentService rejects a payout table that does not total 100%, and a
@@ -263,9 +340,11 @@ export default function CreateTournamentModal({
 
   /* The payout editor prices places against a pool that does not exist yet.
      For an SNG or a Spin the field size is exact - the game starts when the
-     last seat sells - so the amounts are real. An MTT has no cap, so the
-     projection is stated at an assumed field rather than implied as fact. */
-  const projectedField = isSngOrSpin ? parseInt(maxPlayers) || 0 : 50;
+     last seat sells - so the amounts are real. An MTT states its projection at
+     its own CAP rather than at a hard-coded 50: the cap is what registration
+     actually stops at, and it is a number the operator chose. It is still a
+     ceiling, not a promise, which is why the helper text below says so. */
+  const projectedField = fieldCap;
   const projectedPrizePool = split.prize * projectedField;
 
   /* Open the editor on the SAME shape the preset would have used. Without
@@ -302,9 +381,20 @@ export default function CreateTournamentModal({
     };
   }, [isSatellite, clubId]);
 
-  // ── Auto-set defaults when format changes ──
+  /**
+   * ── Auto-set defaults when format changes ──
+   *
+   * MULTI-DAY IS RESET FOR EVERY FORMAT, NOT JUST TWO OF THEM (2026-08-31).
+   * The checkbox only renders for the three `mtt_*` formats, so a value set on
+   * a freezeout and then carried into Bounty or Satellite was invisible AND
+   * fatal: `trg_tournaments_refuse_unbuilt_multi_day` RAISEs 0A000 on insert,
+   * so the operator got an unexplained failure with no control on screen to
+   * undo it. Resetting before the switch means the flag can only ever be true
+   * on a format that shows it.
+   */
   const handleFormatChange = (f: TournamentFormat) => {
     setFormat(f);
+    setIsMultiDay(false);
     switch (f) {
       case 'sng':
         setMaxPlayers('6');
@@ -319,34 +409,59 @@ export default function CreateTournamentModal({
         setStartTimeMode('now');
         setIsMultiDay(false);
         setAddOnAvailable(false);
+        /* The catalogue narrows on the way IN as well as in the list. Picking
+           Short Deck and then switching the format to Spin would otherwise
+           leave a value the shortened <select> no longer contains, which a
+           controlled select renders as a blank row while still submitting the
+           stale value. */
+        setGameVariant((v) => (canRunAsSpin(v) ? v : 'NLH'));
         break;
+      /* THERE IS NO SUCH THING AS AN UNLIMITED FIELD HERE (2026-08-31).
+         Every one of these branches used to set '0' with the comment
+         "0 = unlimited", and `fn_create_tournament` opens with
+
+           v_max_players := COALESCE((p_config->>'maxPlayers')::int, 0);
+           IF v_max_players <= 0 THEN RETURN 'max_players_must_be_positive';
+
+         so EVERY MTT, bounty, satellite and XMTT this modal offered was
+         refused by the database before a row was written. Registration is
+         also refused once current_players >= max_players, so 0 would lock
+         everyone out even if the insert succeeded. `tournamentFromTableConfig`
+         has said exactly this in a comment since 2026-08-19 and clamps to
+         `Math.max(2, ...)`; this screen never got the same fix.
+
+         DEFAULT_MTT_FIELD is a real cap the operator can change, sized against
+         what production actually runs (live MTT caps range 30-500). */
       case 'mtt_rebuy':
       case 'mtt_reentry':
-        setMaxPlayers('0');
+        setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('8');
         setAddOnAvailable(true);
         break;
       case 'bounty':
       case 'progressive_bounty':
       case 'mystery_bounty':
-        setMaxPlayers('0'); // Unlimited
+        setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('10');
         setAddOnAvailable(false);
         break;
       case 'satellite':
-        setMaxPlayers('0'); // Unlimited
+        setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('8');
         setAddOnAvailable(false);
         break;
       case 'xmtt':
-        setMaxPlayers('0'); // Unlimited (union-level)
+        setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('8');
         setAddOnAvailable(false);
-        setIsMultiDay(true); // XMTTs are typically multi-day
+        /* `setIsMultiDay(true)` lived here — "XMTTs are typically multi-day".
+           Multi-day is NOT BUILT (no day end, no Day 2 resume, no flight
+           merge) and the database refuses the flag outright, so this line
+           made the XMTT format uncreatable. The reset above covers it. */
         break;
       case 'mtt_freezeout':
       default:
-        setMaxPlayers('0'); // Unlimited
+        setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('8');
         setAddOnAvailable(false);
     }
@@ -516,8 +631,16 @@ export default function CreateTournamentModal({
         buyIn: parsedBuyIn,
         rake: parsedRake,
         startingStack: parseInt(startingChips),
-        maxPlayers: isSngOrSpin ? parseInt(maxPlayers) : 0, // 0 = unlimited for MTT/Bounty/PKO/Mystery/Satellite
-        minPlayers: 3,
+        /* A REAL CAP FOR EVERY FORMAT. See handleFormatChange: the database
+           refuses a non-positive field, so "0 = unlimited" created nothing. */
+        maxPlayers: fieldCap,
+        /* MIN FOLLOWS THE FORMAT, and was hardcoded 3 for all of them.
+           An SNG starts only when it is FULL (GameServer: `isSngOrSpin ?
+           maxReached : ...`), so a 9-max SNG stored with min 3 advertises a
+           threshold that means nothing — and the RPC only masked it for the
+           2-max case, where it clamps min down to max. An MTT keeps a real
+           minimum, never above the cap. */
+        minPlayers: minPlayersFor(isSngOrSpin, fieldCap),
         blindStructure: effectiveBlinds,
         payoutStructure: effectivePayouts,
         lateRegistrationLevels: parseInt(lateRegLevels) || 0,
@@ -586,7 +709,19 @@ export default function CreateTournamentModal({
         authorizedToRegister,
         synchronizedBreaks,
         actionTimeSeconds: clampInt(actionTimeSeconds, 5, 60, 15),
-        tableSize: clampInt(tableSize, 2, 10, 9),
+        /* CLAMPED BY THE DECK, not only by the slider's 2-10 (2026-08-31).
+           PLO5 deals five cards a seat and PLO6 six, so a ten-handed table
+           wants 50 or 60 hole cards plus a board out of one 52-card deck and
+           `PokerEngine.deal()` THROWS rather than dealing short — the
+           tournament starts and then sits there. `tournamentFromTableConfig`
+           has applied `maxSeatsTheDeckAllows` since 2026-08-24; this screen
+           did not, so the same 10-seat PLO5 was creatable from one form and
+           refused by the other. Also never above the field itself. */
+        tableSize: Math.min(
+          clampInt(tableSize, 2, 10, 9),
+          maxSeatsTheDeckAllows(gameVariant.toLowerCase()),
+          fieldCap
+        ),
         addonBreakMinutes: addOnAvailable ? clampInt(addonBreakMinutes, 1, 10, 1) : undefined,
         earlyBirdEnabled,
         earlyBirdChips: earlyBirdEnabled
@@ -739,8 +874,9 @@ export default function CreateTournamentModal({
     // Whole numbers only — no decimal buy-ins on any tournament or SNG.
     if (!isWholeBuyIn(buyIn)) return false;
     if (isNaN(parseInt(startingChips)) || parseInt(startingChips) <= 0) return false;
-    // Max players only required for SNG and Spin (they need a fixed table size)
-    if (isSngOrSpin && parseInt(maxPlayers) < 2) return false;
+    /* EVERY format needs a real field now, not only SNG and Spin: the database
+       refuses a non-positive cap, so "unlimited" was uncreatable. */
+    if (!Number.isFinite(parseInt(maxPlayers)) || parseInt(maxPlayers) < 2) return false;
     // Scheduled tournament must have date+time
     if (startTimeMode === 'scheduled' && (!scheduledDate || !scheduledTime)) return false;
     // Late reg levels must be valid if set
@@ -830,15 +966,13 @@ export default function CreateTournamentModal({
             <select
               className={styles.select}
               value={gameVariant}
-              onChange={(e) =>
-                setGameVariant(e.target.value as 'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'SHORT_DECK')
-              }
+              onChange={(e) => setGameVariant(e.target.value as TournamentGameVariant)}
             >
-              <option value="NLH">No-Limit Hold'em</option>
-              <option value="PLO4">Pot-Limit Omaha (4-Card)</option>
-              <option value="PLO5">Pot-Limit Omaha (5-Card)</option>
-              <option value="PLO8">PLO Hi-Lo (8 Or Better)</option>
-              <option value="SHORT_DECK">Short Deck Hold'em</option>
+              {variantOptions.map((v) => (
+                <option key={v.value} value={v.value}>
+                  {v.label}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -893,6 +1027,30 @@ export default function CreateTournamentModal({
                     <option value="6">6-Max</option>
                     <option value="9">Full Ring (9)</option>
                   </select>
+                </div>
+              </div>
+            )}
+            {/* THE MTT FAMILY HAD NO FIELD CONTROL AT ALL (2026-08-31), and
+                sent 0 for "unlimited" — which the database refuses outright, so
+                every MTT, bounty, satellite and XMTT built here failed before a
+                row was written. There is no unlimited field: registration stops
+                at the cap, so the cap has to be a number the operator chooses. */}
+            {!isSngOrSpin && (
+              <div className={styles.col}>
+                <div className={styles.formGroup}>
+                  <label>
+                    Max Players <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    className={styles.input}
+                    value={maxPlayers}
+                    onChange={(e) => setMaxPlayers(digitsOnly(e.target.value))}
+                  />
+                  <span className={styles.helperText}>
+                    The Field Cap. Registration Closes When It Is Reached.
+                  </span>
                 </div>
               </div>
             )}

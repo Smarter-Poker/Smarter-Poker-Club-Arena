@@ -18,6 +18,7 @@ import { masterBus } from '../core/MasterBus';
 import type {
   LeaderboardSettings,
   LeaderboardPayout,
+  LeaderboardRewardContext,
   LeaderboardRewardPlan,
 } from '../services/LeaderboardService';
 import { LeaderboardService } from '../services/LeaderboardService';
@@ -234,11 +235,15 @@ export default function LeaderboardPage() {
   const [settings, setSettings] = useState<LeaderboardSettings | null>(null);
   const [editingSettings, setEditingSettings] = useState<LeaderboardSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsReloadKey, setSettingsReloadKey] = useState(0);
+  const [ownerToolsError, setOwnerToolsError] = useState<string | null>(null);
   const [payouts, setPayouts] = useState<LeaderboardPayout[]>([]);
   const [rewardPlan, setRewardPlan] = useState<LeaderboardRewardPlan | null>(null);
   const [rewardPlanError, setRewardPlanError] = useState<string | null>(null);
   const settingsRequestRef = useRef(0);
   const openedSetupLinkRef = useRef<string | null>(null);
+  const previousUserIdRef = useRef<string | null>(null);
 
   const [userClubs, setUserClubs] = useState<UserClub[]>([]);
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
@@ -283,13 +288,18 @@ export default function LeaderboardPage() {
   // Load user's clubs on mount or when user auth changes
   useEffect(() => {
     let isMounted = true;
+    const previousUserId = previousUserIdRef.current;
+    if (user === null || (previousUserId && user?.id && previousUserId !== user.id)) {
+      setShowSettings(false);
+      setEditingSettings(null);
+    }
+    if (user?.id) previousUserIdRef.current = user.id;
+    else if (user === null) previousUserIdRef.current = null;
     setUserClubs([]);
     setSelectedClubId(null);
     setUserRank(null);
     setPayouts([]);
     setSettings(null);
-    setEditingSettings(null);
-    setShowSettings(false);
     if (user?.id) {
       loadUserClubs(() => isMounted);
     } else if (user === null) {
@@ -381,7 +391,8 @@ export default function LeaderboardPage() {
 
   useEffect(() => {
     const requestId = ++settingsRequestRef.current;
-    setSettings(null);
+    setSettings((current) => (current?.club_id === selectedClubId ? current : null));
+    setSettingsError(null);
     if (!selectedClubId) {
       setSettingsLoading(false);
       return;
@@ -394,17 +405,22 @@ export default function LeaderboardPage() {
         setSettings(data);
       })
       .catch(() => {
-        if (requestId === settingsRequestRef.current) setSettings(null);
+        if (requestId === settingsRequestRef.current) {
+          setSettingsError('Prize Setup Could Not Be Loaded.');
+        }
       })
       .finally(() => {
         if (requestId === settingsRequestRef.current) setSettingsLoading(false);
       });
-  }, [selectedClubId, userClubs]);
+  }, [selectedClubId, userClubs, settingsReloadKey]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const requestedClubId = params.get('club');
-    if (params.get('setup') !== 'prizes' || !requestedClubId) return;
+    if (params.get('setup') !== 'prizes' || !requestedClubId) {
+      openedSetupLinkRef.current = null;
+      return;
+    }
 
     if (
       userClubs.some((club) => club.id === requestedClubId) &&
@@ -423,9 +439,12 @@ export default function LeaderboardPage() {
       openedSetupLinkRef.current !== requestKey
     ) {
       openedSetupLinkRef.current = requestKey;
+      setEditingSettings(settings);
       setShowSettings(true);
+      params.delete('setup');
+      navigate({ search: params.toString() }, { replace: true });
     }
-  }, [location.search, selectedClubId, settings, userClubs]);
+  }, [location.search, navigate, selectedClubId, settings, userClubs]);
 
   // 2026-08-24: a useMasterBusChannel({ table: 'tournament_players',
   // filter: null }) used to sit here. It NEVER SUBSCRIBED - the hook
@@ -497,10 +516,14 @@ export default function LeaderboardPage() {
   const loadUserClubs = async (getIsMounted?: () => boolean) => {
     setClubsLoading(true);
     try {
-      const [memberships, rewardContexts] = await Promise.all([
-        getUserMemberships(user),
-        LeaderboardService.getManageableRewardContexts(),
-      ]);
+      const memberships = await getUserMemberships(user);
+      let rewardContexts: LeaderboardRewardContext[] = [];
+      try {
+        rewardContexts = await LeaderboardService.getManageableRewardContexts(true);
+        setOwnerToolsError(null);
+      } catch {
+        setOwnerToolsError('Owner Prize Tools Could Not Be Loaded.');
+      }
       const memberClubs = memberships
         .map((m) => ({
           id: (m.club?.id || m.club_id) as string,
@@ -1063,6 +1086,24 @@ export default function LeaderboardPage() {
             )}
           </div>
           <div className="lb-control-actions">
+            {ownerToolsError && (
+              <button
+                className="lb-action-btn"
+                onClick={() => void loadUserClubs(() => isMountedRef.current)}
+                title={ownerToolsError}
+              >
+                Retry Owner Tools
+              </button>
+            )}
+            {settingsError && scope !== 'global' && activeTab === 'rankings' && (
+              <button
+                className="lb-action-btn lb-action-prize"
+                onClick={() => setSettingsReloadKey((value) => value + 1)}
+                title={settingsError}
+              >
+                Retry Prize Setup
+              </button>
+            )}
             {canManagePrizes && scope !== 'global' && activeTab === 'rankings' && (
               <button
                 className="lb-action-btn lb-action-prize"
@@ -1242,7 +1283,13 @@ export default function LeaderboardPage() {
             </div>
           </dl>
           {canManagePrizes && (
-            <button type="button" onClick={() => setShowSettings(true)}>
+            <button
+              type="button"
+              onClick={() => {
+                setEditingSettings(settings);
+                setShowSettings(true);
+              }}
+            >
               Review Setup
             </button>
           )}

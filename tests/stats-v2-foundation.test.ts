@@ -7,6 +7,10 @@ const MIGRATION = readFileSync(
   resolve(ROOT, 'supabase/migrations/20260831235995_stats_v2_foundation.sql'),
   'utf8'
 );
+const BOUNDED_MIGRATION = readFileSync(
+  resolve(ROOT, 'supabase/migrations/20260831235998_stats_v2_reads_bounded_rollup.sql'),
+  'utf8'
+);
 const PAGE = readFileSync(resolve(ROOT, 'src/pages/PlayerStatsPage.tsx'), 'utf8');
 const ROUTER = readFileSync(resolve(ROOT, 'server/src/router.ts'), 'utf8');
 const PUBLIC_PROFILE = readFileSync(resolve(ROOT, 'src/pages/PublicProfilePage.tsx'), 'utf8');
@@ -15,6 +19,7 @@ const ADVANCED_SUMMARY = readFileSync(
   resolve(ROOT, 'src/components/stats/AdvancedStatsSummary.tsx'),
   'utf8'
 );
+const PRODUCTION_SPEC = readFileSync(resolve(ROOT, 'tests/e2e/stats-deep.spec.ts'), 'utf8');
 
 describe('Stats contract v2 security boundary', () => {
   it('makes the browser use only owner-asserting versioned RPCs', () => {
@@ -67,6 +72,12 @@ describe('Stats contract v2 security boundary', () => {
     expect(existsSync(resolve(ROOT, 'src/components/stats/PlayerStatsDashboard.tsx'))).toBe(false);
     expect(existsSync(resolve(ROOT, 'src/components/stats/PlayerStatsDashboard.css'))).toBe(false);
   });
+
+  it('certifies the expensive production rollup without a parallel cold-start stampede', () => {
+    expect(PRODUCTION_SPEC).toContain("mode: 'serial'");
+    expect(PRODUCTION_SPEC).toContain('timeout: 90_000');
+    expect(PRODUCTION_SPEC).toContain("name: 'Overview'");
+  });
 });
 
 describe('Stats truth and reproducibility boundary', () => {
@@ -83,6 +94,10 @@ describe('Stats truth and reproducibility boundary', () => {
     expect(MIGRATION).toContain("'cash_money_exact', false");
     expect(MIGRATION).toContain("'historical_club_breakdown_available', false");
     expect(PAGE).toContain('Cash Result And BB/100 Use Reconstructed Hand Actions');
+    expect(BOUNDED_MIGRATION).toContain("'advanced_facts_source', 'ca_hand_player_stat'");
+    expect(BOUNDED_MIGRATION).toContain("'live_tail_included', false");
+    expect(BOUNDED_MIGRATION).toContain("'rollup_covered_through', to_jsonb(v_rollup_ceil)");
+    expect(PAGE).toContain('Newer Hands Appear After The Next Stats Rollup');
   });
 
   it('never substitutes legacy player_stats rows under a scoped range label', () => {

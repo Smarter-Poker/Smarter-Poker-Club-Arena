@@ -131,7 +131,7 @@ interface GamePage {
   rows: SnapshotRow[];
   next_cursor: PageCursor | null;
   has_more: boolean;
-  filtered_count: number;
+  filtered_count?: number | null;
   generated_at: string;
 }
 
@@ -190,7 +190,6 @@ const PLAYER_SORTS: Array<{ id: PlayerSort; label: string }> = [
 
 const REFRESH_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 15_000;
-const SNAPSHOT_REQUEST_TIMEOUT_MS = 25_000;
 const PLAYER_REQUEST_TIMEOUT_MS = 25_000;
 const EXPORT_REQUEST_TIMEOUT_MS = 30_000;
 const PLAYER_PAGE_SIZE = 100;
@@ -237,14 +236,19 @@ function withTimeout<T>(
 
 /**
  * A newly scaled-to-zero database connection can cancel the first reporting
- * statement while its identical retry completes in under five seconds. These
- * RPCs are read-only, so retrying one transient PostgREST/transport failure is
- * safe. Each attempt owns its AbortSignal and the pair still fits inside the
- * page's existing 25-second loading budget.
+ * statement while a later attempt succeeds. Production contention can outlive
+ * two attempts (the health probe and even a one-row club-name read have timed
+ * out together), so first paint gets four bounded attempts. These RPCs are
+ * read-only and each attempt owns its AbortSignal. Continuation reads may use
+ * fewer attempts because already-rendered rows remain usable.
  */
-function coldRead<T>(request: () => AbortableRequest<T>, message: string): Promise<T> {
+function coldRead<T>(
+  request: () => AbortableRequest<T>,
+  message: string,
+  maxRetries = 3
+): Promise<T> {
   return retryFetch(() => withTimeout(request(), message, COLD_READ_ATTEMPT_TIMEOUT_MS), {
-    maxRetries: 1,
+    maxRetries,
     baseDelayMs: COLD_READ_RETRY_DELAY_MS,
   });
 }
@@ -259,6 +263,14 @@ function utcTime(iso: string): string {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return 'unknown';
   return `${d.toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' })} UTC`;
+}
+
+function recentCursor(rows: SnapshotRow[]): PageCursor | null {
+  const last = rows[rows.length - 1];
+  if (!last?.started_at) return null;
+  const epoch = Date.parse(last.started_at) / 1000;
+  if (!Number.isFinite(epoch)) return null;
+  return { value: epoch, time: epoch, kind: last.kind, id: last.id };
 }
 
 /** settlement_invoices.status reached the owner raw: "awaiting_payment". */
@@ -525,42 +537,47 @@ export default function ClubDataPage() {
       if (showSpinner) setLoading(true);
       setGamesPageError(null);
       try {
-        const [snapshotResult, pageResult] = await Promise.all([
-          coldRead(
-            () =>
-              supabase.rpc('ca_club_data_snapshot', {
-                p_club_id: clubUuid,
-                p_start: startDate,
-                p_end: endDate,
-                p_game: game,
-                p_stakes: stakes,
-                p_search: search || null,
-                // Summary and rows are separate contracts now. Keep the legacy
-                // row field minimally populated for backward compatibility.
-                p_limit: 1,
-              }),
-            'Club data request timed out'
-          ),
-          coldRead(
-            () =>
-              supabase.rpc('ca_club_game_page', {
-                p_club_id: clubUuid,
-                p_start: startDate,
-                p_end: endDate,
-                p_game: game,
-                p_stakes: stakes,
-                p_search: search || null,
-                p_sort: gameSort,
-                p_cursor: null,
-                p_limit: GAME_PAGE_SIZE,
-              }),
-            'Club games request timed out'
-          ),
-        ]);
+        // The snapshot already owns the optimized recent-row query. Running a
+        // second 42k-row page sort beside it doubled cold database pressure and
+        // could cancel both statements before the first paint. Recent is the
+        // default view, so let one bounded RPC return its summary, count, and
+        // first 100 rows. Non-recent sorts still use the page RPC in parallel.
+        const snapshotRequest = coldRead(
+          () =>
+            supabase.rpc('ca_club_data_snapshot', {
+              p_club_id: clubUuid,
+              p_start: startDate,
+              p_end: endDate,
+              p_game: game,
+              p_stakes: stakes,
+              p_search: search || null,
+              p_limit: gameSort === 'recent' ? GAME_PAGE_SIZE : 1,
+            }),
+          'Club data request timed out'
+        );
+        const pageRequest =
+          gameSort === 'recent'
+            ? Promise.resolve(null)
+            : coldRead(
+                () =>
+                  supabase.rpc('ca_club_game_page', {
+                    p_club_id: clubUuid,
+                    p_start: startDate,
+                    p_end: endDate,
+                    p_game: game,
+                    p_stakes: stakes,
+                    p_search: search || null,
+                    p_sort: gameSort,
+                    p_cursor: null,
+                    p_limit: GAME_PAGE_SIZE,
+                  }),
+                'Club games request timed out'
+              );
+        const [snapshotResult, pageResult] = await Promise.all([snapshotRequest, pageRequest]);
         if (stale()) return false;
-        const rpcError = snapshotResult.error || pageResult.error;
+        const rpcError = snapshotResult.error || pageResult?.error;
         const data = snapshotResult.data;
-        const page = pageResult.data as GamePage | null;
+        const page = pageResult?.data as GamePage | null | undefined;
         if (rpcError) {
           if (isAuthzError(rpcError)) {
             setError('You need to be an owner or admin of this club to see its data.');
@@ -573,8 +590,7 @@ export default function ClubDataPage() {
         } else if (
           !data ||
           !Array.isArray((data as Snapshot).rows) ||
-          !page ||
-          !Array.isArray(page.rows)
+          (gameSort !== 'recent' && (!page || !Array.isArray(page.rows)))
         ) {
           // A null or shapeless payload used to be stored as success, leaving a
           // page with no data, no skeleton and no message.
@@ -583,14 +599,18 @@ export default function ClubDataPage() {
           if (!preserveOnError) setSnapshot(null);
           return false;
         } else {
+          const snapshot = data as Snapshot;
+          const rows = gameSort === 'recent' ? snapshot.rows : page!.rows;
           setError(null);
           setSnapshot({
-            ...(data as Snapshot),
-            rows: page.rows,
-            row_count: Number(page.filtered_count ?? (data as Snapshot).row_count),
+            ...snapshot,
+            rows,
+            row_count: Number(page?.filtered_count ?? snapshot.row_count),
           });
-          setGameCursor(page.next_cursor || null);
-          setGamesHasMore(Boolean(page.has_more));
+          setGameCursor(gameSort === 'recent' ? recentCursor(rows) : page!.next_cursor || null);
+          setGamesHasMore(
+            gameSort === 'recent' ? snapshot.row_count > rows.length : Boolean(page!.has_more)
+          );
           return true;
         }
       } catch (err) {
@@ -710,20 +730,25 @@ export default function ClubDataPage() {
     const myVersion = loadVersion.current;
     const stale = () => cancelledRef.current || loadVersion.current !== myVersion;
     try {
-      const { data, error: pageError } = await withTimeout(
-        supabase.rpc('ca_club_game_page', {
-          p_club_id: clubUuid,
-          p_start: startDate,
-          p_end: endDate,
-          p_game: game,
-          p_stakes: stakes,
-          p_search: search || null,
-          p_sort: gameSort,
-          p_cursor: gameCursor,
-          p_limit: GAME_PAGE_SIZE,
-        }),
+      // Recent ordering is the one PostgreSQL is most likely to cancel on a
+      // cold cache. The first screen is already visible, so two safe read-only
+      // retries are preferable to turning a transient cancellation into a
+      // dead Load More control.
+      const { data, error: pageError } = await coldRead(
+        () =>
+          supabase.rpc('ca_club_game_page', {
+            p_club_id: clubUuid,
+            p_start: startDate,
+            p_end: endDate,
+            p_game: game,
+            p_stakes: stakes,
+            p_search: search || null,
+            p_sort: gameSort,
+            p_cursor: gameCursor,
+            p_limit: GAME_PAGE_SIZE,
+          }),
         'More games request timed out',
-        SNAPSHOT_REQUEST_TIMEOUT_MS
+        2
       );
       if (stale()) return;
       const page = data as GamePage | null;

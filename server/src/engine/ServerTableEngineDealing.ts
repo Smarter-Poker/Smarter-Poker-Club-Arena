@@ -24,7 +24,6 @@ import {
   readClubChipBalances,
 } from '../services/supabase.js';
 import { cashMinBuyIn } from '../config/cashBuyIn.js';
-import { horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
@@ -42,6 +41,8 @@ import {
 
 import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
+import { secureRandomInt } from './CryptoRandom.js';
+import { drawFirstButtonSeat, headsUpButtonSeat } from './headsUpButton.js';
 import { handCompletionHoldMs, boardClearMs } from '../config/handCompletionSpec.js';
 
 /**
@@ -1311,11 +1312,65 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const drawnButton = this.forcedFirstButtonSeat;
     this.forcedFirstButtonSeat = null;
     const drawnIsSeated = drawnButton !== null && sortedSeats.includes(drawnButton);
+    /**
+     * THE FIRST BUTTON AT A TWO-HANDED TABLE IS DRAWN (2026-08-31, Phase 2.1).
+     *
+     * A Spin draws its first button in TournamentManagerBase.scheduleSpinPostReveal
+     * and hands it here through `forcedFirstButtonSeat`. A 2-max SNG -- the
+     * Heads-Up duel, ~11k games a week -- never reaches that path, so it fell
+     * through to `buttonSeats[0]`: the LOWEST occupied seat. Seating is
+     * seat-first, so the low seat is whoever arrived first, and heads-up the
+     * button IS the small blind: acts first preflop and last postflop, the
+     * largest positional edge in poker, in a format frequently decided in a
+     * handful of hands. Horse-vs-horse play cancels it out in aggregate
+     * (measured 49.94 / 50.06 by seat), which is why the money it moves has
+     * never shown up in a win-rate query.
+     *
+     * Same generator as the deck and as the Spin draw: crypto, never
+     * Math.random, because this is a money game.
+     */
+    const drawsFirstButton = !drawnIsSeated && prevButtonSeat <= 0 && sortedSeats.length === 2;
+    const headsUpFirstButton = drawsFirstButton
+      ? drawFirstButtonSeat(sortedSeats, secureRandomInt)
+      : null;
     let dealerSeat = drawnIsSeated
       ? (drawnButton as number)
-      : prevButtonSeat > 0
-        ? this.getNextSeat(prevButtonSeat, buttonRoster)
-        : buttonSeats[0];
+      : headsUpFirstButton !== null
+        ? headsUpFirstButton
+        : prevButtonSeat > 0
+          ? this.getNextSeat(prevButtonSeat, buttonRoster)
+          : buttonSeats[0];
+    if (headsUpFirstButton !== null) {
+      /**
+       * PERSISTED, OR A RESTART RE-DRAWS IT. `lastButtonSeat` is memory only
+       * and there is no settled hand for restoreButtonFromHistory to read, so
+       * a restart between this draw and the first settled hand would come back
+       * with prevButtonSeat = 0 and draw a SECOND time -- a fresh coin flip on
+       * a game that already flipped. tables.first_button_seat is the column the
+       * Spin draw already uses for exactly this, and TournamentManagerBase
+       * .restoreDrawnFirstButtons re-applies it on resume for any tournament
+       * table that has not yet settled a hand. Fire-and-forget with a warning:
+       * losing the persist costs a re-draw, refusing to deal costs the game.
+       */
+      void Promise.resolve(
+        supabase
+          .from('tables')
+          .update({ first_button_seat: headsUpFirstButton })
+          .eq('id', this.tableId)
+      )
+        .then(({ error }: { error: { message?: string } | null }) => {
+          if (error) {
+            console.warn(
+              `[ServerTableEngine:${this.tableId}] Drawn heads-up first button (seat ${headsUpFirstButton}) not persisted (${error.message}) -- a restart before the first settled hand would re-draw it`
+            );
+          }
+        })
+        .catch((err: unknown) => {
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] Heads-up first button persist threw: ${(err as Error)?.message ?? err}`
+          );
+        });
+    }
     // THE BUTTON MUST ALWAYS MOVE. getNextSeat over a ONE-seat roster returns
     // that same seat from both of its branches, so when exactly one player is
     // button-eligible and already holds the button, the button stands still and
@@ -1334,6 +1389,47 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       players.length > 2
     ) {
       dealerSeat = this.getNextSeat(prevButtonSeat, players);
+    }
+    /**
+     * THE DEAD BUTTON, AND THE BIG BLIND THAT WAS PAID TWICE
+     * (2026-08-31, Phase 2.2. TDA Rule 33.)
+     *
+     * Rotating the BUTTON forward is right at 3+ handed and wrong the moment a
+     * table drops to two. Worked example, the common one: seats 1/2/3, button
+     * on 1, small blind 2, big blind 3. Seat 1 busts. The rotation above walks
+     * the button from 1 to the next occupied seat, 2 -- and heads-up the button
+     * IS the small blind, so seat 2 posts the small and seat 3 posts the big
+     * AGAIN. A full big blind of EV, taken from one player and handed to the
+     * other, on roughly one in three Spins that reach heads-up.
+     *
+     * The rule the rest of poker uses is that the BLINDS advance and the button
+     * follows them: the big blind moves one live player forward every hand and
+     * the other seat takes the button. A player may post the small blind twice
+     * running (that is what makes the button "dead"); nobody ever posts the big
+     * blind twice. Re-running the example: the last big blind was seat 3, the
+     * next live seat after 3 wraps to 2, so seat 2 posts the big blind and seat
+     * 3 takes the button. Seat 3 paid the big blind and now pays the small.
+     * Correct for the other two bust cases too -- see the table-driven spec.
+     *
+     * GATED ON BOTH PLAYERS HAVING BEEN DEALT IN ALREADY, which keeps this away
+     * from the case the "button must always move" comment above protects: a
+     * newcomer sitting down opposite an incumbent must be given the big blind,
+     * not the button, or the wait-for-BB hold-out refuses and the table never
+     * deals again.
+     */
+    if (!drawnIsSeated && headsUpFirstButton === null && players.length === 2) {
+      // Dan 2026-08-25, BINDING: a player sitting down never receives the
+      // button. Both survivors of a 3-handed hand are veterans by definition,
+      // so the rule below applies to every case it is meant for; a newcomer
+      // opposite an incumbent keeps the existing rotation, which hands them
+      // the big blind and gets them dealt in.
+      const bothWereDealtIn = players.every((p) => this.dealtInUserIds.has(p.user_id));
+      const headsUpSeat = bothWereDealtIn
+        ? headsUpButtonSeat(sortedSeats, this.lastBigBlindSeat)
+        : null;
+      if (headsUpSeat !== null && headsUpSeat > 0) {
+        dealerSeat = headsUpSeat;
+      }
     }
     this.currentHandDealerSeat = dealerSeat;
     this.lastButtonSeat = dealerSeat;
@@ -1411,6 +1507,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // roster is built with `is_sitting_out: false`, so the two walks agree.
     const sbSeat = players.length === 2 ? dealerSeat : this.getNextSeat(dealerSeat, players);
     const bbSeat = this.getNextSeat(sbSeat, players);
+    // The anchor the heads-up dead-button rule above reads on the NEXT hand.
+    // Written here, off the one shared computation, so it can never disagree
+    // with the seat that actually posted.
+    this.lastBigBlindSeat = bbSeat;
 
     // Bible V8 §4.4: Process straddles before hand starts
     let straddleResults: { seat: number; amount: number }[] = [];
@@ -2571,25 +2671,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         continue;
       }
 
-      // Same decision as the settlement path, for the same reasons — see
-      // HorseRebuyPolicy. Two sites reloading on two different rules is how a
-      // horse ends up disciplined on one code path and not the other.
-      const rebuyAmount = await horseRebuyAmount({
-        clubId: this.tableInfo?.club_id || '',
-        userId: horse.user_id,
-        bigBlind: Number(this.tableInfo?.big_blind) || 0,
-        minBuyIn: this.tableInfo?.min_buy_in as number | null | undefined,
-        maxBuyIn: this.tableInfo?.max_buy_in as number | null | undefined,
-        rebuysTaken: currentRebuys,
-      });
-      const success =
-        rebuyAmount > 0 &&
-        (await autoRebuyHorse(
-          this.tableId,
-          horse.user_id,
-          rebuyAmount,
-          this.tableInfo?.club_id || ''
-        ));
+      const rebuyAmount = this.tableInfo?.big_blind ? this.tableInfo.big_blind * 100 : 200;
+      const success = await autoRebuyHorse(
+        this.tableId,
+        horse.user_id,
+        rebuyAmount,
+        this.tableInfo?.club_id || ''
+      );
       if (success) {
         horse.stack = rebuyAmount;
         this.horseRebuys.set(horse.user_id, currentRebuys + 1);

@@ -12,7 +12,7 @@
  * - Save & Start buttons
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -24,16 +24,28 @@ import { formatCurrency } from '../lib/utils';
 import { RAKE_INHERIT } from '../config/RakeConfig';
 import { stakesLabel, isFixedLimitVariant } from '../lib/bettingStructure';
 import {
+  DEFAULT_BLINDS_INDEX,
+  presetsFor,
+  blindsIndexFor,
+  nearestBlindsIndex,
+} from '../config/blindsPresets';
+import {
+  restoreTemplateConfig,
+  defaultTableName,
+  templateFitsGame,
+} from '../lib/tableTemplateRestore';
+import {
   clampSeatsForVariant,
   maxSeatsForVariant,
   maxSeatsTheDeckAllows,
 } from '../config/tableSeating';
 
 import { tournamentService } from '../services/TournamentService';
+import { buildTournamentConfig } from '../lib/tournamentFromTableConfig';
 import {
-  buildTournamentConfig,
   canRunAsTournament as gameTypeCanRunAsTournament,
-} from '../lib/tournamentFromTableConfig';
+  canRunAsSpin as gameTypeCanRunAsSpin,
+} from '../config/tournamentVariants';
 import { gameCreationDeniedMessage, type GameCreationAccess } from '../lib/gameCreationAccess';
 import { fetchGameCreationAccess } from '../services/GameAccessService';
 import { tournamentScheduleService } from '../services/TournamentScheduleService';
@@ -54,7 +66,64 @@ type GameMode = 'regular' | 'sng' | 'mtt';
  * The engine rule is right; offering the switch on a table that can never
  * honour it is what was wrong.
  */
-const SEVEN_DEUCE_VARIANTS = new Set(['nlh', 'nlhe', 'flh', 'limit_holdem', 'pineapple']);
+/**
+ * The variants the 7-2 bounty can actually pay out on.
+ *
+ * EXACTLY WHAT THE ENGINE PAYS, AND NOTHING ELSE (2026-08-31 audit). The gate
+ * in ServerTableEngineSettlement is a string equality:
+ *
+ *     const sevenDeuceIsNlh = (this.tableInfo?.game_variant || 'nlh') === 'nlh';
+ *
+ * so `nlhe`, `flh`, `limit_holdem` and `pineapple` all failed it. The toggle
+ * rendered on a Fixed Limit Hold'em and a Pineapple table, wrote
+ * `seven_deuce_enabled: true`, and the bounty was never paid — the owner
+ * advertised a prize the table could not award. This is the same shape as the
+ * PLO and short-deck removal recorded two comments down; those were taken out
+ * of the set and these four were left in.
+ *
+ * FLH is a legitimate candidate — it is Hold'em and it has deuces — but making
+ * it pay is an ENGINE change to a settlement path, with its own tests, not a
+ * set entry. Until then the honest UI is the one that only offers what pays.
+ */
+const SEVEN_DEUCE_VARIANTS = new Set(['nlh']);
+
+/**
+ * Fixed-limit tables (FLH, FLO8) cannot honour three of this form's controls,
+ * and the engine is the reason for each (2026-08-31 audit):
+ *
+ *  • STRADDLE. `HandController` posts a straddle by assigning
+ *    `state.currentBet = straddleAmount` with no structure branch, while a
+ *    legal fixed-limit wager for the same street is exactly
+ *    `fixedLimitBetSize(bigBlind, stage)`. A straddle is also none of
+ *    bet/raise/full-raise all-in, so `fixedLimitWagerCount` does not count it
+ *    against the four-wager cap — the street silently gains a betting round.
+ *  • CAP. `ServerTableEngineTurns` assigns the mandatory fixed size and THEN
+ *    clamps it with `Math.min(amount, capRemaining)`, so a capped limit table
+ *    can emit a bet that is not the legal size, which the validator refuses.
+ *  • BOMB-POT VARIANT OVERRIDE. The bomb hand's variant is what
+ *    `bettingStructureFor` reads, so a `plo4` bomb on an FLH table plays a
+ *    POT-LIMIT hand at a table the player sat down at for fixed limit.
+ *    (`resolveBombPotVariant` refuses this server-side as well, for the writers
+ *    that are not this form.)
+ *
+ * Hidden rather than disabled, and forced false on the write, so a template
+ * saved on a no-limit table cannot carry a stale `true` onto a limit one.
+ */
+const isFixedLimitGame = (gameType: string | undefined): boolean =>
+  isFixedLimitVariant(String(gameType || 'nlh').toLowerCase());
+
+/**
+ * The variants a Pineapple Hold'em table can be dealt as.
+ *
+ * ServerTableEngineBase.dealtGameVariant deals a table carrying
+ * `pineapple_holdem` as pineapple only when its variant is 'nlh' or 'nlhe',
+ * "because 'Pineapple PLO' is not a game and a stray flag must not silently
+ * turn a PLO table into one". This mirrors that gate exactly, so the switch
+ * is offered where and only where the engine will honour it.
+ */
+const PINEAPPLE_VARIANTS = new Set(['nlh', 'nlhe']);
+const canDealPineapple = (gameType: string | undefined): boolean =>
+  PINEAPPLE_VARIANTS.has(String(gameType || 'nlh').toLowerCase());
 
 type RunItMode = 'none' | 'player_choice' | 'mandatory_twice' | 'mandatory_three';
 type BlindStructure = 'slow' | 'standard' | 'turbo' | 'hyper_turbo';
@@ -157,6 +226,12 @@ interface TableConfig {
 
   // Time & Auto Settings (toggles)
   autoExtension: boolean;
+  // NOT DEAD, despite looking it from a TypeScript grep (2026-08-31). Both
+  // are read by fn_table_lifecycle_pass — SQL, verified against the live
+  // function, not a migration file. auto_restart reopens a host's closed
+  // table the way the fleet reopens its own; auto_create_table is the
+  // overflow spawn extended to a host's table. See
+  // tests/unit/tableLifecycleSwitches.test.ts, which pins exactly this.
   autoRestart: boolean;
   autoCreateTable: boolean;
   autoUtgStraddle: boolean;
@@ -260,21 +335,6 @@ const GAME_TYPE_LABELS: Record<string, { name: string; color: string }> = {
   flh: { name: 'FLH', color: '#059669' },
   flo8: { name: 'FLO8', color: '#0d9488' },
 };
-
-const BLINDS_PRESETS = [
-  { label: '0.01/0.02', sb: 0.01, bb: 0.02 },
-  { label: '0.02/0.05', sb: 0.02, bb: 0.05 },
-  { label: '0.05/0.10', sb: 0.05, bb: 0.1 },
-  { label: '0.10/0.25', sb: 0.1, bb: 0.25 },
-  { label: '0.25/0.50', sb: 0.25, bb: 0.5 },
-  { label: '0.50/1', sb: 0.5, bb: 1 },
-  { label: '1/2', sb: 1, bb: 2 },
-  { label: '2/5', sb: 2, bb: 5 },
-  { label: '5/10', sb: 5, bb: 10 },
-  { label: '10/25', sb: 10, bb: 25 },
-  { label: '25/50', sb: 25, bb: 50 },
-  { label: '50/100', sb: 50, bb: 100 },
-];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DEFAULT CONFIG
@@ -565,7 +625,10 @@ export default function TableConfigPage() {
   const toast = useToast();
 
   const [config, setConfig] = useState<TableConfig>({ ...DEFAULT_CONFIG });
-  const [blindsIndex, setBlindsIndex] = useState(2); // Default 0.05/0.10
+  const [blindsIndex, setBlindsIndex] = useState(DEFAULT_BLINDS_INDEX); // 0.05/0.10
+  /* What WE last auto-generated for the name. Anything else in the field was
+     typed by the owner and is never overwritten. */
+  const autoNameRef = useRef<string>('');
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [templates, setTemplates] = useState<TableTemplate[]>([]);
@@ -650,6 +713,38 @@ export default function TableConfigPage() {
   // Tournaments are exempt from the cash law (see the tableSeating header)
   // but NOT from the deck: a 10-seat PLO6 SNG cannot physically be dealt.
   const sngSeatCap = Math.min(10, maxSeatsTheDeckAllows(gameType || 'nlh'));
+
+  // Declared beside the seat caps because loadTemplate needs all three.
+  const canRunAsTournament = gameTypeCanRunAsTournament(gameType);
+
+  /* Three controls the engine cannot honour under fixed-limit betting; see
+     isFixedLimitGame for what each one does wrong. */
+  const limitGame = isFixedLimitGame(gameType);
+
+  /* The blind ladder THIS variant may be built on. A limit game's bet sizes
+     are derived from the big blind alone, so a preset where bb is not twice
+     sb produces a table whose posted small blind appears in no label anywhere
+     (see config/blindsPresets). Declared here because loadTemplate needs it. */
+  const offeredPresets = useMemo(() => presetsFor(limitGame), [limitGame]);
+
+  /* Keep the slider ON the ladder this variant offers. Navigating an already
+     mounted form from an nlh route to an flh one narrows the ladder, and the
+     blinds in state may no longer be on it; this also derives the initial
+     index from the config rather than trusting two pieces of state to have
+     been initialised in agreement. */
+  useEffect(() => {
+    const exact = blindsIndexFor(config.smallBlind, config.bigBlind, offeredPresets);
+    if (exact !== null) {
+      setBlindsIndex(exact);
+      return;
+    }
+    const snapped = nearestBlindsIndex(config.bigBlind, offeredPresets);
+    const preset = offeredPresets[snapped];
+    if (!preset) return;
+    setBlindsIndex(snapped);
+    setConfig((prev) => ({ ...prev, smallBlind: preset.sb, bigBlind: preset.bb }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offeredPresets]);
 
   // If the route's variant changes under the mounted form (or a template
   // loaded an over-cap value), snap the seat counts down to the new caps.
@@ -793,39 +888,77 @@ export default function TableConfigPage() {
     }
   }, [clubId]);
 
-  // Generate default table name
+  // Generate the default table name, and KEEP IT TRACKING THE BLINDS.
+  //
+  // 2026-08-23: limit games are named by BET size, not blind size — blinds
+  // 1/2 is a "2/4" limit game. defaultTableName() defers to stakesLabel(),
+  // the one place that decides, so the table name, the stakes column and the
+  // lobby row all agree.
+  //
+  // 2026-08-31 audit: the dependency array was [gameInfo.name] and the write
+  // was guarded by `prev.name ||`, so the name was decided once at mount and
+  // never again. Accept the default, then drag the blinds to 10/25, and you
+  // created a table NAMED "NLH 0.05/0.1" PLAYING 10/25 — tables.name flatly
+  // disagreeing with tables.stakes. A name the OWNER typed is still never
+  // touched: autoNameRef records what we last generated, and only that exact
+  // string is replaced.
   useEffect(() => {
-    // 2026-08-23: limit games are named by BET size, not blind size — blinds
-    // 1/2 is a "2/4" limit game. stakesLabel() is the one place that decides,
-    // so the table name, the stakes column and the lobby row all agree.
-    const blindsLabel = stakesLabel(config.smallBlind, config.bigBlind, gameType);
-
-    setConfig((prev) => ({
-      ...prev,
-      name: prev.name || `${gameInfo.name} ${blindsLabel}`,
-    }));
-  }, [gameInfo.name]);
+    const generated = defaultTableName(gameInfo.name, config.smallBlind, config.bigBlind, gameType);
+    if (config.name && config.name !== autoNameRef.current) return;
+    autoNameRef.current = generated;
+    if (config.name === generated) return;
+    setConfig((prev) => ({ ...prev, name: generated }));
+  }, [gameInfo.name, gameType, config.smallBlind, config.bigBlind, config.name]);
 
   const updateConfig = <K extends keyof TableConfig>(key: K, value: TableConfig[K]) => {
     setConfig((prev) => ({ ...prev, [key]: value }));
   };
 
-  // Load a template's config into the form
+  /**
+   * Load a template's config into the form.
+   *
+   * 2026-08-31 audit. This used to be one line —
+   * `setConfig({ ...DEFAULT_CONFIG, ...template.config, name: '' })` — and it
+   * left the form describing a table the owner was NOT about to create: no
+   * name (so Save and Start both bailed straight after the success toast), a
+   * game mode the variant may not support, a blinds slider still pointing at
+   * whatever it pointed at before, and a seat count the write would silently
+   * clamp. restoreTemplateConfig() is that whole decision as a pure function,
+   * pinned by tests/unit/templateLoadRestoresAConsistentForm.test.ts.
+   */
   const loadTemplate = (templateId: string) => {
     if (!templateId) {
       setSelectedTemplateId('');
       return;
     }
     const template = templates.find((t) => t.id === templateId);
-    if (template) {
-      setConfig({
-        ...DEFAULT_CONFIG,
-        ...template.config,
-        name: '', // Clear name so user enters new name
-      });
-      setSelectedTemplateId(templateId);
-      toast.success(`Loaded template: ${template.name}`);
+    if (!template) return;
+
+    const restored = restoreTemplateConfig<TableConfig>({
+      defaults: DEFAULT_CONFIG,
+      templateConfig: template.config,
+      templateGameType: template.game_type,
+      routeGameType: gameType,
+      gameLabel: gameInfo.name,
+      seatCap,
+      sngSeatCap,
+      canRunAsTournament,
+    });
+
+    if (!restored.ok) {
+      toast.error(restored.reason);
+      setSelectedTemplateId('');
+      return;
     }
+
+    setConfig(restored.config);
+    setBlindsIndex(restored.blindsIndex);
+    // The restored name is OURS, so the blinds keep renaming the table until
+    // the owner types over it.
+    autoNameRef.current = restored.config.name;
+    setSelectedTemplateId(templateId);
+    toast.success(`Loaded Template: ${template.name}`);
+    restored.notices.forEach((notice) => toast.info(notice));
   };
 
   // Save current config as a template
@@ -871,28 +1004,58 @@ export default function TableConfigPage() {
     }
   };
 
+  /**
+   * The Players dropdown, narrowed to what this game can actually be.
+   *
+   * "3 Players (Spins)" is the only entry that changes the PRODUCT rather than
+   * the field size, and Spin & Go sells four games (SPIN_GAME_TYPES). Offering
+   * it on a Short Deck or PLO8 page created a Spin the Spins board has no
+   * filter chip for — it vanished from the lobby the moment a player ticked any
+   * Games chip, with nothing to bring it back. Removing the OPTION is the fix;
+   * `buildTournamentConfig` refuses the same combination independently, for a
+   * draft or template that carries it in past this screen.
+   */
+  /**
+   * Templates are fetched for the whole CLUB, not for this variant, so a PLO6
+   * template used to sit in the dropdown of an FLH page. Loading it carried
+   * PLO6's toggles, stakes and seat count onto a fixed-limit table — the same
+   * "promised what it cannot pay" shape the fixed-limit sweep just closed.
+   * Templates saved before game_type existed carry no variant and stay
+   * offered; refusing those would strand every template an owner already has.
+   */
+  const templatesForThisGame = useMemo(
+    () => templates.filter((t) => templateFitsGame(t.game_type, gameType)),
+    [templates, gameType]
+  );
+
+  const sngPlayerOptions = useMemo(
+    () => SNG_PLAYER_OPTIONS.filter((o) => !o.isSpins || gameTypeCanRunAsSpin(gameType)),
+    [gameType]
+  );
+
   // Handle SNG player count change (auto-set spins mode for 3 players)
   const handleSngPlayerChange = (playerCount: number) => {
     const option = SNG_PLAYER_OPTIONS.find((o) => o.value === playerCount);
     setConfig((prev) => ({
       ...prev,
       sngPlayerCount: playerCount,
-      isSpins: option?.isSpins || false,
+      /* `isSpins` follows the CATALOGUE, not just the row: a stale draft that
+         still says 3 on a game Spins does not sell becomes a three-handed Sit &
+         Go rather than an unfilterable Spin. */
+      isSpins: Boolean(option?.isSpins) && gameTypeCanRunAsSpin(gameType),
     }));
   };
 
   const handleBlindsChange = (index: number) => {
     setBlindsIndex(index);
-    const preset = BLINDS_PRESETS[index];
+    const preset = offeredPresets[index];
+    if (!preset) return;
     setConfig((prev) => ({
       ...prev,
       smallBlind: preset.sb,
       bigBlind: preset.bb,
     }));
   };
-
-  // FIX: Accept resolved UUID — raw clubId from URL params may not be a UUID
-  const canRunAsTournament = gameTypeCanRunAsTournament(gameType);
 
   const buildTableData = (resolvedClubId?: string) => ({
     club_id: resolvedClubId || clubId,
@@ -958,7 +1121,11 @@ export default function TableConfigPage() {
       config.bombPotEnabled && config.bombPotAnteFixed > 0 ? config.bombPotAnteFixed : null,
     // VARIANT OVERRIDE (spec §10.1): NULL = bomb hands play the table's own
     // game. The engine whitelists; the DB CHECK mirrors it.
-    bomb_pot_variant: config.bombPotEnabled && config.bombPotVariant ? config.bombPotVariant : null,
+    /* A bomb hand's variant IS the hand's betting structure, so an override
+       on a fixed-limit table would deal one pot-limit or no-limit hand at a
+       table the player sat down at for fixed limit. */
+    bomb_pot_variant:
+      !limitGame && config.bombPotEnabled && config.bombPotVariant ? config.bombPotVariant : null,
     // ANNOUNCE WINDOW (spec §3): 0 = always show the timed clock.
     bomb_pot_announce_seconds:
       config.bombPotEnabled &&
@@ -993,7 +1160,11 @@ export default function TableConfigPage() {
      * this flag as pineapple, and refuses to apply it to anything else,
      * because "Pineapple PLO" is not a game.
      */
-    pineapple_holdem: config.pineappleHoldem,
+    /* Gated on the write as well as in the UI (2026-08-31): the engine
+       ignores this flag off Hold'em, so a stale true from a template or a
+       variant change would sit on a PLO row claiming a game it will never be
+       dealt. lobbyEntries reads the column directly and would badge it. */
+    pineapple_holdem: canDealPineapple(gameType) ? config.pineappleHoldem : false,
     /**
      * NLH ONLY, and that is the engine's rule, not an oversight.
      * ServerTableEngineSettlement: "meaningless in PLO; short-deck has no
@@ -1009,9 +1180,18 @@ export default function TableConfigPage() {
     seven_deuce_enabled: SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase())
       ? config.sevenDeuceEnabled
       : false,
-    // 7-2 bounty size in big blinds each other dealt-in player pays a post-flop
-    // 7-2 winner. Only meaningful when the toggle is on; default 2 BB.
-    seven_deuce_amount: config.sevenDeuceEnabled ? config.sevenDeuceAmountBB : 2,
+    /* 7-2 bounty size in big blinds each other dealt-in player pays a
+       post-flop 7-2 winner.
+       2026-08-31: this read `config.sevenDeuceEnabled ? ... : 2` — the SAME
+       stale-true class the line above was written to prevent, one gate short.
+       A PLO6 table created after loading an NLH template wrote
+       enabled:false alongside amount:8. The amount now follows the switch
+       through the identical variant gate, so the two columns can never
+       describe different tables. */
+    seven_deuce_amount:
+      SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase()) && config.sevenDeuceEnabled
+        ? config.sevenDeuceAmountBB
+        : 2,
     nit_game: config.nitGame,
     /**
      * CAP NEEDS AN AMOUNT (2026-08-27). `cap_enabled` alone is not a cap:
@@ -1022,8 +1202,11 @@ export default function TableConfigPage() {
      * toggle is off, so a stale amount cannot cap a table whose owner turned
      * the switch off.
      */
-    cap_enabled: config.capEnabled && config.capBB > 0,
-    cap_bb: config.capEnabled ? config.capBB : 0,
+    /* Forced off on a fixed-limit table: the cap clamp runs AFTER the
+       mandatory fixed size is assigned, so a capped limit table can emit a
+       wager the validator refuses. See isFixedLimitGame. */
+    cap_enabled: !limitGame && config.capEnabled && config.capBB > 0,
+    cap_bb: !limitGame && config.capEnabled ? config.capBB : 0,
     no_rathole: config.noRathole,
 
     // Table parameters
@@ -1032,10 +1215,25 @@ export default function TableConfigPage() {
     // over-cap row is not a preference, it is a mid-hand engine crash.
     max_players: clampSeatsForVariant(String(gameType || 'nlh').toLowerCase(), config.maxPlayers),
     action_time_seconds: config.actionTimeSeconds,
+    /**
+     * THE BUY-IN BAND IS ONE PAIR OF COLUMNS, IN CHIPS.
+     *
+     * This page used to stamp `min_buy_in_bb` / `max_buy_in_bb` here as well,
+     * in big blinds, beside a sibling written in chips. Nothing ever read
+     * them: `atomic_table_buyin` — the only hard enforcement of a buy-in in
+     * the product — reads `min_buy_in` / `max_buy_in`, and so do the engine
+     * and src/lib/cashBuyIn.ts. What the extra pair did was give a future
+     * reader a column that looks authoritative and is not; on a 1/2 table the
+     * database still carried the 2/25 default, so anyone who picked it up
+     * would have capped a player at 50 chips on a table advertising 400.
+     *
+     * They are now GENERATED columns derived from these two
+     * (supabase/migrations/20260831133000_one_buy_in_band_and_the_rest_are
+     * _derived.sql), so writing them raises 428C9 and the schema itself keeps
+     * the families from disagreeing. Write the chips; the big blinds follow.
+     */
     min_buy_in: config.minBuyInBB * config.bigBlind,
     max_buy_in: config.maxBuyInBB * config.bigBlind,
-    min_buy_in_bb: config.minBuyInBB,
-    max_buy_in_bb: config.maxBuyInBB,
     ante_bb: config.anteBB,
     /**
      * THE ANTE SLIDER WAS DEAD ON EVERY TABLE THIS PAGE CREATED.
@@ -1074,14 +1272,16 @@ export default function TableConfigPage() {
     auto_extension: config.autoExtension,
     auto_restart: config.autoRestart,
     auto_create_table: config.autoCreateTable,
-    auto_utg_straddle: config.autoUtgStraddle,
-    voluntary_straddle: config.voluntaryStraddle,
+    /* Forced off on a fixed-limit table: a straddle sets currentBet with no
+       structure branch and is not counted against the four-wager cap. */
+    auto_utg_straddle: !limitGame && config.autoUtgStraddle,
+    voluntary_straddle: !limitGame && config.voluntaryStraddle,
     insurance_enabled: config.insuranceEnabled,
     // FIX-D2 2026-07-19: the engine reads the canonical top-level columns
     // straddle_enabled / run_it_twice_enabled, NOT auto_utg_straddle /
     // voluntary_straddle / run_it_mode. Without these mirrors, straddle and
     // run-it-twice configured on this page never took effect.
-    straddle_enabled: config.autoUtgStraddle || config.voluntaryStraddle,
+    straddle_enabled: !limitGame && (config.autoUtgStraddle || config.voluntaryStraddle),
     /* "NONE" DID NOT TURN RUN IT TWICE OFF (2026-08-31 audit).
        The engine's gate is
          ((run_it_twice ?? true) && (allow_run_it_twice ?? true)) || run_it_twice_enabled
@@ -1105,40 +1305,48 @@ export default function TableConfigPage() {
     rake_percent: config.rakePercent,
     rake_cap_bb: config.rakeCapBB,
 
+    /**
+     * THE TOURNAMENT BLOCK STOPPED BEING WRITTEN ONTO CASH ROWS (2026-08-31).
+     *
+     * buildTableData runs ONLY when gameMode === 'regular' — handleSave and
+     * handleStart both branch to the tournament path first — so every SNG/MTT
+     * column below was landing on a CASH row. Twenty of them had zero readers
+     * anywhere: not the engine, not the lobby, not any SQL beyond the ALTER
+     * TABLE that created them. Removed by name:
+     *   sng_buy_in, sng_custom_buy_in, blinds_up_minutes, next_step_satellite,
+     *   custom_rebuy_reentry_cost, number_of_rebuys_reentries,
+     *   add_on_multiplier, custom_add_on, add_on_break_length_minutes,
+     *   ko_bounty, gtd_prize_pool, late_registration_level,
+     *   early_bird_registration, featured_tournament, min_players_mtt,
+     *   max_players_mtt, multi_day_mtt, save_start_time,
+     *   restart_tournament_every, tournament_schedule.
+     * Only `name` is NOT NULL without a default on this table
+     * (scripts/ci/supabase-required-columns-manifest.json), so omitting them
+     * cannot refuse the insert.
+     *
+     * THREE THAT LOOK DEAD AND ARE NOT — verified, do not "finish the job":
+     *   game_mode    five live club-data RPCs read it
+     *                (COALESCE(t.game_mode,'') ILIKE '%mixed%').
+     *   min_buy_in_bb / max_buy_in_bb
+     *                20260828_cash_buyins_are_40bb_to_200bb.sql resyncs them
+     *                deliberately "so the two column families cannot
+     *                disagree".
+     * The rest that remain below have real readers on `tables` rows.
+     */
     // SNG/MTT specific
-    sng_buy_in: config.buyIn,
-    sng_custom_buy_in: config.customBuyIn,
     blind_structure: config.blindStructure,
     payout_structure: config.payoutStructure,
     starting_chips: config.startingChips,
-    blinds_up_minutes: config.blindsUpMinutes,
-    next_step_satellite: config.nextStepSatellite,
 
     // MTT specific
     short_description: config.shortDescription,
     accelerated_mtt: config.acceleratedMtt,
     all_in_or_fold: config.allInOrFold,
-    custom_rebuy_reentry_cost: config.customRebuyReentryCost,
-    number_of_rebuys_reentries: config.numberOfRebuysReentries,
-    add_on_multiplier: config.addOnMultiplier,
-    custom_add_on: config.customAddOn,
-    add_on_break_length_minutes: config.addOnBreakLengthMinutes,
-    ko_bounty: config.koBounty,
-    gtd_prize_pool: config.gtdPrizePool,
     final_table_deal: config.finalTableDeal,
     big_blind_ante: config.bigBlindAnte,
     authorized_to_register: config.authorizedToRegister,
-    late_registration_level: config.lateRegistrationLevel,
-    early_bird_registration: config.earlyBirdRegistration,
     bubble_protection: config.bubbleProtection,
-    featured_tournament: config.featuredTournament,
-    min_players_mtt: config.minPlayers,
-    max_players_mtt: config.maxPlayersRange,
-    multi_day_mtt: config.multiDayMtt,
-    save_start_time: config.saveStartTime,
     start_time: config.startTime || null,
-    restart_tournament_every: config.restartTournamentEvery,
-    tournament_schedule: config.tournamentSchedule,
     synchronized_breaks: config.synchronizedBreaks,
 
     // Security. Only the switch that is actually enforced is written; the
@@ -1221,9 +1429,7 @@ export default function TableConfigPage() {
          rendered as the same five words, which is how an unsaveable
          configuration became an unexplainable one. handleStartTournament
          already surfaces error.message; this now matches it. */
-      toast.error(
-        error instanceof Error && error.message ? error.message : 'Failed to save table'
-      );
+      toast.error(error instanceof Error && error.message ? error.message : 'Failed to save table');
     } finally {
       setSaving(false);
     }
@@ -1452,7 +1658,7 @@ export default function TableConfigPage() {
       </div>
 
       {/* Template Selector - At TOP for easy duplication */}
-      {templates.length > 0 && (
+      {templatesForThisGame.length > 0 && (
         <div className="template-selector">
           <label className="template-label">Load Template:</label>
           <select
@@ -1461,7 +1667,7 @@ export default function TableConfigPage() {
             onChange={(e) => loadTemplate(e.target.value)}
           >
             <option value="">-- Start Fresh --</option>
-            {templates.map((t) => (
+            {templatesForThisGame.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>
@@ -1744,7 +1950,15 @@ export default function TableConfigPage() {
                     table whose bombs are PLO4 double boards. The engine
                     whitelists the value and skips the override if the deck
                     cannot cover the seats (9-handed PLO6). */}
-                <div className="config-radio-group">
+                {/* Hidden on a fixed-limit table: the bomb hand's variant IS
+                    the hand's betting structure, so an override would deal one
+                    pot-limit or no-limit hand at a table the player sat down at
+                    for fixed limit. resolveBombPotVariant refuses it
+                    server-side too, for the writers that are not this form. */}
+                <div
+                  className="config-radio-group"
+                  style={limitGame ? { display: 'none' } : undefined}
+                >
                   <span className="radio-group-label">Bomb Pot Game</span>
                   <div className="radio-options">
                     {(
@@ -1839,6 +2053,20 @@ export default function TableConfigPage() {
                   suffix=" Big Blind"
                 />
               )}
+            {/* 2026-08-31 audit: `pineappleHoldem` had exactly three
+                occurrences in this 2,800-line form — the interface field, the
+                default false, and the write. THERE WAS NO CONTROL. The engine
+                deals it, BettingStructure has the discard street, the lobby
+                badges it, and the only live cash-creation path could not
+                reach it. This is the switch. */}
+            {canDealPineapple(gameType) && (
+              <Toggle
+                label="Pineapple Hold'em"
+                value={config.pineappleHoldem}
+                onChange={(v) => updateConfig('pineappleHoldem', v)}
+                tooltip="Three hole cards, discard one after the flop"
+              />
+            )}
             <Toggle
               label="NIT Game"
               value={config.nitGame}
@@ -1850,13 +2078,18 @@ export default function TableConfigPage() {
               value={config.isAnonymous}
               onChange={(v) => updateConfig('isAnonymous', v)}
             />
-            <Toggle
-              label="Cap"
-              value={config.capEnabled}
-              onChange={(v) => updateConfig('capEnabled', v)}
-              tooltip="Limit the total chips a player can commit in one hand"
-            />
-            {config.capEnabled && (
+            {/* Hidden on a fixed-limit table: the cap clamp runs after the
+                mandatory fixed size is assigned, so a capped limit table can
+                emit a wager the validator refuses. See isFixedLimitGame. */}
+            {!limitGame && (
+              <Toggle
+                label="Cap"
+                value={config.capEnabled}
+                onChange={(v) => updateConfig('capEnabled', v)}
+                tooltip="Limit the total chips a player can commit in one hand"
+              />
+            )}
+            {!limitGame && config.capEnabled && (
               <Slider
                 label="Cap Amount"
                 value={config.capBB}
@@ -1940,7 +2173,7 @@ export default function TableConfigPage() {
                 <input
                   type="range"
                   min={0}
-                  max={BLINDS_PRESETS.length - 1}
+                  max={offeredPresets.length - 1}
                   value={blindsIndex}
                   onChange={(e) => handleBlindsChange(Number(e.target.value))}
                   className="slider-input"
@@ -2040,6 +2273,10 @@ export default function TableConfigPage() {
               onChange={(v) => updateConfig('autoExtension', v)}
               tooltip="Keep this table open when it empties"
             />
+            {/* Auto Restart and Auto Create Table look dead from a
+                TypeScript grep and are NOT: fn_table_lifecycle_pass reads
+                both columns in SQL. Checked against the live function on
+                2026-08-31 before nearly deleting them. */}
             <Toggle
               label="Auto Restart"
               value={config.autoRestart}
@@ -2052,18 +2289,25 @@ export default function TableConfigPage() {
               onChange={(v) => updateConfig('autoCreateTable', v)}
               tooltip="Create new table when full"
             />
-            <Toggle
-              label="Auto UTG Straddle"
-              value={config.autoUtgStraddle}
-              onChange={(v) => updateConfig('autoUtgStraddle', v)}
-              tooltip="Automatic UTG straddle"
-            />
-            <Toggle
-              label="Voluntary Straddle"
-              value={config.voluntaryStraddle}
-              onChange={(v) => updateConfig('voluntaryStraddle', v)}
-              tooltip="Allow voluntary straddle"
-            />
+            {/* Hidden on a fixed-limit table: HandController posts a straddle
+                by assigning currentBet with no structure branch, and the
+                straddle is not counted against the four-wager cap. */}
+            {!limitGame && (
+              <>
+                <Toggle
+                  label="Auto UTG Straddle"
+                  value={config.autoUtgStraddle}
+                  onChange={(v) => updateConfig('autoUtgStraddle', v)}
+                  tooltip="Automatic UTG straddle"
+                />
+                <Toggle
+                  label="Voluntary Straddle"
+                  value={config.voluntaryStraddle}
+                  onChange={(v) => updateConfig('voluntaryStraddle', v)}
+                  tooltip="Allow voluntary straddle"
+                />
+              </>
+            )}
             <Toggle
               label="Insurance"
               value={config.insuranceEnabled}
@@ -2133,7 +2377,7 @@ export default function TableConfigPage() {
                   value={config.sngPlayerCount}
                   onChange={(e) => handleSngPlayerChange(Number(e.target.value))}
                 >
-                  {SNG_PLAYER_OPTIONS.map((opt) => (
+                  {sngPlayerOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
                     </option>

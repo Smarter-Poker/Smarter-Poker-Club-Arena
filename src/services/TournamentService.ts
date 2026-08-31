@@ -22,6 +22,7 @@ import { parseBlindStructure, parsePayoutStructure } from '../utils/parseBlindSt
    despite living under components/lobby. */
 import { blindLevelMinutes } from '../components/lobby/tournamentFigures';
 import type { Tournament, TournamentPlayer } from '../types/database.types';
+import type { TournamentGameVariant } from '../config/tournamentVariants';
 import { reportError } from '../utils/errorReporter';
 import { computePlacePrize } from '../lib/payoutMath';
 
@@ -206,8 +207,18 @@ export interface TournamentConfig {
   spinConfig?: SpinConfig;
   spinType?: 'standard' | 'hyper';
 
-  // Game Variant (poker game type)
-  gameVariant?: 'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'SHORT_DECK';
+  /**
+   * Game Variant (poker game type).
+   *
+   * ONE LIST, SHARED WITH THE MAP THAT PRODUCES IT (2026-08-31). This union was
+   * hand-written and had drifted: it omitted PLO6 while 6,028 PLO6 tournaments
+   * were live in production and `tournamentFromTableConfig` was already
+   * emitting 'PLO6' — it compiled only because that file ends in
+   * `as TournamentConfig`, which is exactly the cast that hides this class of
+   * mistake. It now names the same type the variant map is keyed to, so a
+   * variant cannot be creatable and untypeable at the same time.
+   */
+  gameVariant?: TournamentGameVariant;
 
   // Satellite Target
   satelliteTarget?: {
@@ -896,6 +907,28 @@ class TournamentService {
         '0A000': 'Could not create the tournament. That option is not available yet.',
         '42501': 'You do not have permission to create games for this club.',
       };
+      /**
+       * 55000 IS THE GUARANTEE REFUSAL, AND ITS MESSAGE IS ALREADY WRITTEN
+       * FOR THE OWNER (2026-08-31 audit).
+       *
+       * trg_tournaments_guarantee_affordable raises, verbatim: "Club X cannot
+       * guarantee N chips: <bank> holds A, floor B, already promised C on live
+       * events — short by D. Add chips to the bank to cover the guarantee."
+       * That sentence names the shortfall and the remedy.
+       *
+       * It was not in this map, so it fell to the default — "Please try again"
+       * — which describes a transient blip. The condition is neither
+       * transient nor mysterious: the owner is short by a stated number of
+       * chips and nothing they retry will change that. The migration that
+       * added the trigger even records the assumption this broke: "The UI
+       * already shows the raise verbatim as a toast."
+       *
+       * Passed through as written. The Toast layer applies the house style
+       * (Title Case, no em dashes) at render, so the raise text needs no
+       * massaging here.
+       */
+      const raised = String((rpcError as { message?: string }).message ?? '').trim();
+      if (code === '55000' && raised) throw new Error(raised);
       throw new Error(friendly[code] ?? 'Could not create the tournament. Please try again.');
     }
     const result = rpcResult as {

@@ -10,6 +10,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getAuthUser } from '../lib/supabase';
+import { isAgentRole, isClubPrincipal, isClubStaff, roleLabel } from '../types/clubRoles';
 import { masterBus } from '../core/MasterBus';
 import { ClubsService } from '../services/ClubsService';
 import { ClubJoinService } from '../services/ClubJoinService';
@@ -449,20 +450,19 @@ export default function ClubsPage() {
                               <span className={styles.statLabel}>Members</span>
                             </div>
                             <div className={styles.clubStat}>
+                              {/* Three names for seven roles: a co-owner, a
+                                  super agent, an agent and a sub agent all read
+                                  as "Player" on their own club card. */}
                               <span className={styles.statValue}>
-                                {membership.role === 'owner'
+                                {isClubPrincipal(membership.role)
                                   ? '♛'
-                                  : membership.role === 'admin'
+                                  : isClubStaff(membership.role)
                                     ? '⚙'
-                                    : '▦'}
+                                    : isAgentRole(membership.role)
+                                      ? '◈'
+                                      : '▦'}
                               </span>
-                              <span className={styles.statLabel}>
-                                {membership.role === 'owner'
-                                  ? 'Owner'
-                                  : membership.role === 'admin'
-                                    ? 'Admin'
-                                    : 'Player'}
-                              </span>
+                              <span className={styles.statLabel}>{roleLabel(membership.role)}</span>
                             </div>
                             <div className={styles.clubStat}>
                               <span className={styles.statValue} style={{ color: levelInfo.color }}>

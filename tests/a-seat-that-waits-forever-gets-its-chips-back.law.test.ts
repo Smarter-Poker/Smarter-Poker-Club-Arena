@@ -86,3 +86,48 @@ describe('the unfilled-spin sweep refunds rather than strands', () => {
     expect(body()).toMatch(/EXCEPTION WHEN OTHERS THEN/);
   });
 });
+
+describe('the alarm that reports it can still be believed', () => {
+  /**
+   * Comments are stripped FIRST, and it matters. This migration quotes the
+   * old, broken subquery in its own header to explain the bug, so a naive
+   * indexOf('AS shortfall_events') finds the DOCUMENTATION and asserts
+   * against the very code being removed. The window is then bounded by the
+   * subquery's own parentheses rather than a byte count, per
+   * tests/unit/noFixedSizeSourceWindows.
+   */
+  const migration = (): string => {
+    const dir = resolve(__dirname, '..', 'supabase/migrations');
+    const f = readdirSync(dir).find((x) => x.includes('a_repair_is_not_a_shortfall'));
+    expect(f, 'the shortfall-alarm migration is missing').toBeTruthy();
+    return readFileSync(resolve(dir, f as string), 'utf8')
+      .split('\n')
+      .filter((l) => !l.trimStart().startsWith('--'))
+      .join('\n');
+  };
+
+  /** The shortfall_events subquery, bounded by the parens that open it. */
+  const shortfallSubquery = (): string => {
+    const sql = migration();
+    const at = sql.indexOf('AS shortfall_events');
+    expect(at, 'shortfall_events has gone from the view').toBeGreaterThan(-1);
+    const open = sql.lastIndexOf('( SELECT count(*)', at);
+    expect(open, 'the subquery opening paren is not where expected').toBeGreaterThan(-1);
+    return sql.slice(open, at);
+  };
+
+  it('counts only rows whose note actually says SHORTFALL', () => {
+    /* 2026-08-31: this counted every kind='adjustment' row, all-time, with no
+       note filter — and the only one on the platform is a 2026-08-23
+       duplicate-settlement REPAIR. So the spin-sweep cron returned 500 on
+       every run and cron_health_log read 'error' continuously, over a
+       condition long since fixed. That is the same channel this phase's
+       expired-unfilled counts report on: an alarm that is always red cannot
+       carry a new signal. */
+    expect(shortfallSubquery()).toMatch(/note ILIKE '%SHORTFALL%'/);
+  });
+
+  it('is time-bounded like its three sibling counters', () => {
+    expect(shortfallSubquery()).toMatch(/created_at > \(now\(\) - '24:00:00'::interval\)/);
+  });
+});

@@ -416,12 +416,19 @@ describe('game variant', () => {
    * caller cannot catch that. These are now keyed to what the screen emits.
    */
   it('only offers tournaments for variants the engine can deal', () => {
-    for (const v of ['nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'short_deck']) {
+    /* LIMIT JOINED THE LIST ON 2026-08-31, and this assertion moved with it in
+       the same commit rather than being left asserting the old rule.
+       `flh` / `flo8` used to be pinned false here on the reasoning that "limit
+       escalates on a bet-size ladder and every blind structure here is a blind
+       ladder". That is not how this engine works: `fixedLimitBetSize` derives
+       the bet ladder FROM the big blind, and the tournament engine rewrites the
+       table's blinds on every level, so a blind ladder IS the limit ladder. See
+       src/config/tournamentVariants for the full argument. */
+    for (const v of ['nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'short_deck', 'flh', 'flo8']) {
       expect(canRunAsTournament(v)).toBe(true);
     }
-    // Pineapple has no tournament path for its discard street; limit escalates
-    // on a bet-size ladder and every blind structure here is a blind ladder.
-    for (const v of ['flh', 'flo8', 'pineapple', 'mixed', 'ofc']) {
+    // Pineapple still has no tournament path for its discard street.
+    for (const v of ['pineapple', 'mixed', 'ofc']) {
       expect(canRunAsTournament(v)).toBe(false);
     }
     // And the dead keys must not answer true, or the bug returns quietly.
@@ -434,6 +441,39 @@ describe('game variant', () => {
     expect(buildTournamentConfig(base, 'plo6').gameVariant).toBe('PLO6');
     expect(buildTournamentConfig(base, 'plo8').gameVariant).toBe('PLO8');
     expect(buildTournamentConfig(base, 'short_deck').gameVariant).toBe('SHORT_DECK');
+    expect(buildTournamentConfig(base, 'flh').gameVariant).toBe('FLH');
+    expect(buildTournamentConfig(base, 'flo8').gameVariant).toBe('FLO8');
     expect(buildTournamentConfig(base, undefined).gameVariant).toBe('NLH');
+  });
+});
+
+/**
+ * THE SPIN CATALOGUE (2026-08-31).
+ *
+ * Spin & Go sells four games. Before this, the create-table form would happily
+ * build a Short Deck or PLO8 Spin, and the Spins tab of the lobby filter had no
+ * chip for either — so ticking any Games chip deleted that Spin from the board
+ * with nothing to bring it back. The option is gone from the form; this pins
+ * the INDEPENDENT refusal, which is what a restored draft or a saved template
+ * carrying `isSpins: true` actually hits.
+ */
+describe('spin catalogue', () => {
+  const spinBase = { ...base, gameMode: 'sng' as const, isSpins: true, sngPlayerCount: 3 };
+
+  it('builds a Spin for the four games Spin & Go sells', () => {
+    for (const v of ['nlh', 'plo4', 'plo5', 'plo6']) {
+      expect(buildTournamentConfig(spinBase, v).type).toBe('spin');
+      expect(buildTournamentConfig(spinBase, v).spinType).toBe('standard');
+    }
+  });
+
+  it('downgrades a Spin the catalogue does not sell to a plain Sit & Go', () => {
+    for (const v of ['plo8', 'short_deck', 'flh', 'flo8']) {
+      const cfg = buildTournamentConfig(spinBase, v);
+      expect(cfg.type).toBe('sng');
+      // ...and it must not keep the Spin's fingerprints, or it would be a Spin
+      // wearing a Sit & Go label.
+      expect(cfg.spinType).toBeUndefined();
+    }
   });
 });

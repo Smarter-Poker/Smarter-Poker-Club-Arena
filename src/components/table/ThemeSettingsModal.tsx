@@ -643,6 +643,12 @@ export function ThemeSettingsModal({
   gameTypeRef.current = gameType;
   const userIdRef = useRef(userId);
   userIdRef.current = userId;
+  const ownershipScopeRef = useRef<string | null>(null);
+  const ownershipRequestRef = useRef(0);
+  const themeLoadScopeRef = useRef<string | null>(null);
+  const themeLoadRequestRef = useRef(0);
+  const themeLoadReadyScopeRef = useRef<string | null>(null);
+  const selectionMutationRevisionRef = useRef(0);
   const pendingSavesRef = useRef(0);
   useEffect(() => {
     selectionRef.current = selection;
@@ -657,6 +663,7 @@ export function ThemeSettingsModal({
   useEffect(() => stopCheckoutBalancePolling, [stopCheckoutBalancePolling]);
 
   const replaceSelection = useCallback((next: ThemeSelection) => {
+    selectionMutationRevisionRef.current += 1;
     selectionRef.current = next;
     setSelection(next);
   }, []);
@@ -699,6 +706,7 @@ export function ThemeSettingsModal({
 
       setSelection((current) => {
         const next = { ...current, ...patch };
+        selectionMutationRevisionRef.current += 1;
         selectionRef.current = next;
         return next;
       });
@@ -780,15 +788,31 @@ export function ThemeSettingsModal({
   // rows for the complete preset bundle. Reading only feature_purchases made
   // those legitimately purchased felts/buttons/backgrounds look VIP-locked.
   useEffect(() => {
-    if (!isOpen) return undefined;
-    setOwnedCardBacks([]);
-    setOwnedThemeAssets([]);
+    const nextScope = isOpen ? userId || 'anonymous' : null;
+    const scopeChanged = ownershipScopeRef.current !== nextScope;
+    ownershipScopeRef.current = nextScope;
+    if (scopeChanged) {
+      setOwnedCardBacks([]);
+      setOwnedThemeAssets([]);
+    }
+    if (!isOpen) {
+      ownershipRequestRef.current += 1;
+      setOwnershipState('idle');
+      return undefined;
+    }
     if (!userId) {
+      ownershipRequestRef.current += 1;
       setOwnershipState('ready');
       return undefined;
     }
-    let mounted = true;
-    setOwnershipState('loading');
+    const requestedScope = nextScope;
+    const requestId = ++ownershipRequestRef.current;
+    // Revisions are background reconciliations. Clearing verified ownership or
+    // dropping the Studio back into a loading state on every entitlement burst
+    // makes paid designs visibly re-lock and can let a later stale read erase
+    // inserts that were already delivered. Only a new open/user scope owns the
+    // initial loading transition; every subsequent snapshot is merged in place.
+    if (scopeChanged) setOwnershipState('loading');
     Promise.all([
       supabase
         .from('feature_purchases')
@@ -797,7 +821,11 @@ export function ThemeSettingsModal({
         .like('feature', 'card_back_%'),
       supabase.from('theme_asset_unlocks').select('category, asset_id').eq('user_id', userId),
     ]).then(([cardBacks, assets]) => {
-      if (!mounted) return;
+      // Ownership is permanent and snapshots are merged, so an older read is
+      // still safe to apply after a newer reconciliation starts. Its status is
+      // not authoritative, though, and a response for a closed/different user
+      // must never touch the current Studio.
+      if (ownershipScopeRef.current !== requestedScope) return;
       if (cardBacks.error || assets.error) {
         // Not fatal, and not silently swallowed either: a failure here means
         // paid designs read as locked, so it has to be visible somewhere.
@@ -805,22 +833,25 @@ export function ThemeSettingsModal({
           cardBacks.error || assets.error,
           'ThemeSettingsModal.Cosmetic_ownership_load_failed'
         );
-        setOwnershipState('error');
+        if (requestId === ownershipRequestRef.current) setOwnershipState('error');
         return;
       }
-      setOwnedCardBacks(
-        (cardBacks.data || []).map((r: { feature: string }) => r.feature.replace('card_back_', ''))
+      // Merge the authoritative snapshot into any INSERT events that arrived
+      // while this read was in flight. Replacing either array here opens a
+      // second race: an entitlement can be delivered after the SELECT snapshot
+      // was taken but before React applies its result, and the stale snapshot
+      // would put the lock back on that just-purchased design.
+      const purchasedCardBacks = (cardBacks.data || []).map((r: { feature: string }) =>
+        r.feature.replace('card_back_', '')
       );
-      setOwnedThemeAssets(
-        (assets.data || []).map(
-          (row: { category: string; asset_id: string }) => `${row.category}:${row.asset_id}`
-        )
+      const unlockedAssets = (assets.data || []).map(
+        (row: { category: string; asset_id: string }) => `${row.category}:${row.asset_id}`
       );
-      setOwnershipState('ready');
+      setOwnedCardBacks((current) => [...new Set([...current, ...purchasedCardBacks])]);
+      setOwnedThemeAssets((current) => [...new Set([...current, ...unlockedAssets])]);
+      if (requestId === ownershipRequestRef.current) setOwnershipState('ready');
     });
-    return () => {
-      mounted = false;
-    };
+    return undefined;
   }, [isOpen, userId, ownershipRevision]);
 
   // Prices are server truth. Every premium category has a permanent SKU; if
@@ -902,6 +933,14 @@ export function ThemeSettingsModal({
     }
 
     setEntitlementRealtimeState('connecting');
+    let reconciliationTimer: ReturnType<typeof setTimeout> | null = null;
+    const reconcileAfterBurst = () => {
+      if (reconciliationTimer) clearTimeout(reconciliationTimer);
+      reconciliationTimer = setTimeout(() => {
+        reconciliationTimer = null;
+        setOwnershipRevision((revision) => revision + 1);
+      }, 250);
+    };
     const channel = supabase
       .channel(`table-studio-entitlements:${userId}`)
       .on(
@@ -935,10 +974,22 @@ export function ThemeSettingsModal({
             assetId,
             source: 'realtime-entitlement',
           });
+          // Postgres Changes is the fast path, not the source of truth. A
+          // preset can commit six entitlement rows at once and a larger
+          // checkout burst can exceed what a tab processes one event at a
+          // time. Coalesce the burst, then reconcile the complete ledger so a
+          // missed websocket frame cannot leave one paid tile locked.
+          reconcileAfterBurst();
         }
       )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
+          // Close the SELECT -> SUBSCRIBE gap before declaring the Studio live.
+          // Purchases may commit after the initial ownership read but before
+          // the websocket acknowledgement. A fresh snapshot, merged with any
+          // events received meanwhile, makes that handoff lossless.
+          setOwnershipState('loading');
+          setOwnershipRevision((revision) => revision + 1);
           setEntitlementRealtimeState('live');
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           setEntitlementRealtimeState('error');
@@ -950,9 +1001,32 @@ export function ThemeSettingsModal({
       });
 
     return () => {
+      if (reconciliationTimer) clearTimeout(reconciliationTimer);
       void supabase.removeChannel(channel);
     };
   }, [entitlementRealtimeRevision, isOpen, userId]);
+
+  // Realtime transports are intentionally low-latency, not durable queues.
+  // While the small Studio surface is open, a lightweight authoritative read
+  // repairs the rare case where every notification in a burst was missed
+  // (mobile sleep/wake, radio handoff, websocket backpressure). Immediate
+  // events still update the tile in the same render; this two-second cadence is
+  // only the bounded safety net and pauses when the page is hidden.
+  useEffect(() => {
+    if (!isOpen || !userId || entitlementRealtimeState !== 'live') return undefined;
+    const reconcile = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      setOwnershipRevision((revision) => revision + 1);
+    };
+    const interval = window.setInterval(reconcile, 2_000);
+    window.addEventListener('focus', reconcile);
+    window.addEventListener('online', reconcile);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', reconcile);
+      window.removeEventListener('online', reconcile);
+    };
+  }, [entitlementRealtimeState, isOpen, userId]);
 
   // Stripe Checkout is a full-page redirect. Restore the exact design that
   // sent this player to the Diamond Store, but rebuild its price and feature
@@ -1053,15 +1127,28 @@ export function ThemeSettingsModal({
 
   // Load existing theme for selected game type
   useEffect(() => {
-    if (!isOpen) return undefined;
+    const nextScope = isOpen ? `${userId || 'anonymous'}:${canonicalGameType(gameType)}` : null;
+    const scopeChanged = themeLoadScopeRef.current !== nextScope;
+    themeLoadScopeRef.current = nextScope;
+    if (scopeChanged) themeLoadReadyScopeRef.current = null;
+    if (!isOpen) {
+      themeLoadRequestRef.current += 1;
+      setThemeLoadState('idle');
+      return undefined;
+    }
     if (!userId) {
+      themeLoadRequestRef.current += 1;
       replaceSelection({ ...DEFAULT_SELECTION });
+      themeLoadReadyScopeRef.current = nextScope;
       setThemeLoadState('ready');
       return undefined;
     }
 
     let mounted = true;
-    setThemeLoadState('loading');
+    const requestedScope = nextScope;
+    const requestId = ++themeLoadRequestRef.current;
+    const mutationRevision = selectionMutationRevisionRef.current;
+    if (scopeChanged) setThemeLoadState('loading');
     const load = async () => {
       try {
         const { data, error } = await supabase
@@ -1077,14 +1164,35 @@ export function ThemeSettingsModal({
           // touched would overwrite the theme they could not see.
           console.warn('[ThemeSettings] Load failed:', error.message);
           reportError(error, 'ThemeSettingsModal.Load_failed');
-          if (mounted) {
+          if (
+            mounted &&
+            themeLoadScopeRef.current === requestedScope &&
+            requestId === themeLoadRequestRef.current &&
+            themeLoadReadyScopeRef.current !== requestedScope
+          ) {
             setThemeLoadState('error');
             toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
           }
           return;
         }
 
-        if (mounted) {
+        if (
+          mounted &&
+          themeLoadScopeRef.current === requestedScope &&
+          requestId === themeLoadRequestRef.current
+        ) {
+          // A reconciliation SELECT may have started immediately before a local
+          // tap or a Realtime row arrived. Never let that older snapshot paint
+          // over a newer visible choice; the next bounded cadence will read the
+          // now-durable row. This is the appearance equivalent of the permanent
+          // ownership ledger's monotonic merge.
+          if (
+            pendingSavesRef.current > 0 ||
+            selectionMutationRevisionRef.current !== mutationRevision
+          ) {
+            if (themeLoadReadyScopeRef.current === requestedScope) setThemeLoadState('ready');
+            return;
+          }
           /* The reader and this editor now use the same precedence: exact
              bucket, then a legacy raw variant that canonicalises to it, then
              ALL. A stored `plo4` row can no longer paint the table while this
@@ -1106,12 +1214,18 @@ export function ThemeSettingsModal({
             // tile at all and the tab looks like it forgot the user's choice.
             cards_id: normalizeCardBack(row?.cards_id || DEFAULT_SELECTION.cards_id),
           });
+          themeLoadReadyScopeRef.current = requestedScope;
           setThemeLoadState('ready');
         }
       } catch (err) {
         console.warn('[ThemeSettings] Unexpected error:', err);
         reportError(err, 'ThemeSettingsModal.Load_failed');
-        if (mounted) {
+        if (
+          mounted &&
+          themeLoadScopeRef.current === requestedScope &&
+          requestId === themeLoadRequestRef.current &&
+          themeLoadReadyScopeRef.current !== requestedScope
+        ) {
           setThemeLoadState('error');
           toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
         }
@@ -1133,6 +1247,28 @@ export function ThemeSettingsModal({
     themeLoadRevision,
     appearanceRealtime.reconciliationRevision,
   ]);
+
+  // Postgres Changes is a low-latency signal, not a durable queue. Keep the
+  // open Studio's preview honest if a mobile radio handoff or a busy Realtime
+  // connection drops the appearance event: one authoritative, visible-only
+  // snapshot every two seconds repairs the editor without reloading the page.
+  // The request guard above prevents an older snapshot from rolling back a tap
+  // or a newer event while the read is in flight.
+  useEffect(() => {
+    if (!isOpen || !userId || appearanceRealtime.state !== 'live') return undefined;
+    const reconcile = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      setThemeLoadRevision((revision) => revision + 1);
+    };
+    const interval = window.setInterval(reconcile, 2_000);
+    window.addEventListener('focus', reconcile);
+    window.addEventListener('online', reconcile);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', reconcile);
+      window.removeEventListener('online', reconcile);
+    };
+  }, [appearanceRealtime.state, isOpen, userId]);
 
   const handleUiModeChange = useCallback(
     async (mode: InterfaceTheme) => {
@@ -1601,12 +1737,15 @@ export function ThemeSettingsModal({
   const studioNeedsAttention =
     collectionNeedsAttention ||
     entitlementRealtimeState === 'error' ||
+    ownershipState === 'error' ||
     pricingState === 'error' ||
     themeLoadState === 'error' ||
     appearanceRealtime.state === 'error';
   const studioSyncing =
     collectionSyncing ||
-    entitlementRealtimeState === 'connecting' ||
+    ownershipState === 'idle' ||
+    ownershipState === 'loading' ||
+    (Boolean(userId) && entitlementRealtimeState !== 'live') ||
     pricingState === 'loading' ||
     checkoutBalanceSyncing ||
     themeLoadState === 'loading' ||
@@ -1951,7 +2090,12 @@ export function ThemeSettingsModal({
               {/* Asset Grid */}
               <div
                 className={`theme-modal__grid${themeLoadState !== 'ready' ? ' theme-modal__grid--loading' : ''}`}
-                aria-busy={themeLoadState === 'loading'}
+                aria-busy={
+                  themeLoadState === 'loading' ||
+                  ownershipState === 'idle' ||
+                  ownershipState === 'loading' ||
+                  pricingState === 'loading'
+                }
               >
                 {currentAssets.length === 0 && (
                   <div className="theme-modal__empty">

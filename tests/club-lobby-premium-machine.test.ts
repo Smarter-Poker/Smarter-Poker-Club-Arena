@@ -203,6 +203,24 @@ describe('responsive premium Club Arena', () => {
     expect(campaignImage).not.toContain('scaleY(');
   });
 
+  it('contains the complete mobile campaign control inside its framed hit area', () => {
+    const tablet = TOP_CSS.slice(
+      TOP_CSS.indexOf('@media (max-width: 900px)'),
+      TOP_CSS.indexOf('@media (max-width: 430px)')
+    );
+    expect(tablet).toMatch(/\.club-lobby-command-top__campaign\s*\{[^}]*min-height:\s*122px/s);
+    expect(tablet).toMatch(
+      /\.club-lobby-command-top__campaign-button\s*\{[^}]*min-height:\s*84px/s
+    );
+
+    const phone = TOP_CSS.slice(
+      TOP_CSS.indexOf('@media (max-width: 430px)'),
+      TOP_CSS.indexOf('@media (max-width: 900px)', TOP_CSS.indexOf('@media (max-width: 430px)'))
+    );
+    expect(phone).toMatch(/\.club-lobby-command-top__campaign\s*\{[^}]*min-height:\s*116px/s);
+    expect(phone).toMatch(/\.club-lobby-command-top__campaign-button\s*\{[^}]*min-height:\s*78px/s);
+  });
+
   it('keeps the desktop ledger readable and the production premium card renderer on mobile', () => {
     expect(TOP_CSS).toMatch(
       /@media \(min-width: 901px\)[\s\S]*?\.club-lobby-machine\s*\{[^}]*max-width:\s*100%[^}]*box-sizing:\s*border-box/s

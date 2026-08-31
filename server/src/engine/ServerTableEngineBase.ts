@@ -623,6 +623,17 @@ export abstract class ServerTableEngineBase {
     }
 
     const before = this.timeBankEngine.getRemainingSeconds(this.tableId, userId);
+    /* The expiry callback is EMPTY ON PURPOSE, and this comment is why: do not
+       "fix" it later by folding here. On a turn, TimeBankEngine's countdown is
+       the enforcement deadline, so its onExpire has to act. In the discard
+       round the enforcement deadline is the per-seat map below, swept by
+       armPineappleDiscardSweep - and that sweep is re-armed to the very
+       deadline this grant produces. Folding from both would be two deadlines
+       under different keys racing on one decision, which is precisely the bug
+       TimeBankEngine's own history records ("two deadlines under different
+       keys on the same PreciseActionTimer, both live, and the shorter one
+       folded the player while the clock on screen was still counting down").
+       One enforcer: the sweep. */
     const result = this.timeBankEngine.tryActivate(this.tableId, userId, () => {}, remaining);
     if (result !== 'activated') {
       return {

@@ -161,29 +161,30 @@ describe('GlobalHeader Component', () => {
     );
   });
 
-  it('shows one brief VIP shimmer only after the randomized pause', () => {
+  it('shimmers across the complete right icon bank every randomized 15-20 seconds', () => {
     vi.useFakeTimers();
     const random = vi.spyOn(Math, 'random').mockReturnValue(0);
     headerData.isVipActive = true;
 
     try {
-      render(
+      const { container } = render(
         <MemoryRouter>
           <GlobalHeader />
         </MemoryRouter>
       );
 
-      const vip = screen.getByRole('button', { name: 'VIP Membership Active' });
-      expect(vip.className).not.toContain('vipShimmer');
+      const shimmer = container.querySelector('[data-header-icons-shimmer]');
+      expect(shimmer).not.toBeNull();
+      expect(shimmer).toHaveAttribute('data-header-icons-shimmer', 'idle');
 
-      act(() => vi.advanceTimersByTime(4_999));
-      expect(vip.className).not.toContain('vipShimmer');
+      act(() => vi.advanceTimersByTime(14_999));
+      expect(shimmer).toHaveAttribute('data-header-icons-shimmer', 'idle');
 
       act(() => vi.advanceTimersByTime(1));
-      expect(vip.className).toContain('vipShimmer');
+      expect(shimmer).toHaveAttribute('data-header-icons-shimmer', 'active');
 
-      act(() => vi.advanceTimersByTime(1_250));
-      expect(vip.className).not.toContain('vipShimmer');
+      act(() => vi.advanceTimersByTime(1_500));
+      expect(shimmer).toHaveAttribute('data-header-icons-shimmer', 'idle');
     } finally {
       random.mockRestore();
       vi.useRealTimers();

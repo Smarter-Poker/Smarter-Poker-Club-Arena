@@ -873,6 +873,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
     setClubLevel(null);
     setJackpotAmount(0);
+    /* A playing count belongs to exactly one club scope. Leaving this state
+       intact during a route-param switch painted the previous club's live
+       number over a brand-new empty club until the next RPC completed. */
+    setPlayersPlaying(null);
     /* THE LISTS TOO. This reset cleared the viewer's role, level and jackpot
        but left `club`, `tables` and `tournaments` - the three things actually
        on screen - holding the previous club. Entering a club with no cached
@@ -960,6 +964,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   useEffect(() => {
     if (!clubId) return;
     let isMounted = true;
+    let playingRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
     const setupRealtime = async () => {
       const resolvedId = await resolveClubUUID(clubId);
@@ -1067,6 +1072,29 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         return inClubScope(row, rtScope);
       };
 
+      /* `tables.current_players` changes on every live seat transition. Use
+         that scoped realtime event as the trigger, but re-read the count from
+         get_club_home instead of adding deltas in the browser: distinct users,
+         union visibility and tournament seats are database rules and must not
+         be approximated by whichever card happened to update. Bursts (a table
+         opening or balancing several seats) collapse to one authoritative
+         recount. */
+      const refreshScopedPlaying = () => {
+        if (playingRefreshTimer) clearTimeout(playingRefreshTimer);
+        playingRefreshTimer = setTimeout(async () => {
+          const { data, error } = await supabase.rpc('get_club_home', {
+            p_club_key: resolvedId,
+          });
+          if (!isMounted) return;
+          if (error) {
+            reportError(error, 'ClubHomePage.players_playing_realtime_refresh_failed');
+            return;
+          }
+          const next = Number((data as { players_playing?: unknown } | null)?.players_playing);
+          if (Number.isFinite(next)) setPlayersPlaying(next);
+        }, 250);
+      };
+
       const handleTableChange = (payload: any) => {
         if (!isMounted) return;
         if (payload.eventType === 'UPDATE' && payload.new) {
@@ -1099,6 +1127,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         } else if (payload.eventType === 'DELETE' && payload.old) {
           setTables((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
         }
+        refreshScopedPlaying();
       };
 
       const handleTournamentChange = (payload: any) => {
@@ -1229,6 +1258,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
     return () => {
       isMounted = false;
+      if (playingRefreshTimer) clearTimeout(playingRefreshTimer);
       // Drop the factory FIRST. Removing the channel while its factory is
       // still registered is an invitation for the health monitor to rebuild
       // the one we are deliberately tearing down.
@@ -1759,15 +1789,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           if (stale() || (getIsMounted && !getIsMounted())) return;
 
           /**
-           * PLAYERS CURRENTLY PLAYING (Dan, 2026-08-23): "the 0 players
-           * currently playing is a bug... every horse needs to be considered a
-           * current player, this an accumulation of all active players in all
-           * clubs total."
+           * PLAYERS CURRENTLY PLAYING.
            *
-           * clubs.online_count is a denormalised column nothing keeps current
-           * - it read 12 for JAQK and 0 for Shark and Midway while 579 seats
-           * were occupied. get_club_home counts the live seats themselves,
-           * horses included, across the whole platform.
+           * clubs.online_count is a denormalised column nothing keeps current,
+           * so get_club_home counts occupied live seats directly. The RPC now
+           * applies the same club/union visibility scope as the two game lists:
+           * a standalone club sees only its own players, and a union-attached
+           * club sees the players in the games available from that lobby.
+           * No club may inherit the platform-wide total from another room.
            *
            * SET BEFORE THE lobbyPainted GUARD, deliberately. That guard exists
            * to stop a stale SNAPSHOT OF THE LISTS painting over fresher rows;

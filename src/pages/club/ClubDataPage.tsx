@@ -243,6 +243,13 @@ interface CachedGameLedger {
   hasMore: boolean;
 }
 
+interface PrefetchedGamePage {
+  key: string;
+  rows: SnapshotRow[];
+  nextCursor: PageCursor | null;
+  hasMore: boolean;
+}
+
 interface CachedPlayerLedger {
   players: PlayerBreakdown;
   cursor: PageCursor | null;
@@ -470,6 +477,7 @@ export default function ClubDataPage() {
   const gamesMoreRef = useRef(false);
   const snapshotRef = useRef<Snapshot | null>(null);
   const gameCursorRef = useRef<PageCursor | null>(null);
+  const prefetchedGamePageRef = useRef<PrefetchedGamePage | null>(null);
   const playersRef = useRef<PlayerBreakdown | null>(null);
   const playerCursorRef = useRef<PageCursor | null>(null);
   const playersMoreRef = useRef(false);
@@ -552,6 +560,7 @@ export default function ClubDataPage() {
     snapshotRef.current = null;
     setGameCursor(null);
     gameCursorRef.current = null;
+    prefetchedGamePageRef.current = null;
     setGamesHasMore(false);
     setGamesLoadingMore(false);
     setGamesPageError(null);
@@ -686,7 +695,11 @@ export default function ClubDataPage() {
                     p_search: search || null,
                     p_sort: gameSort,
                     p_cursor: null,
-                    p_limit: GAME_PAGE_SIZE,
+                    // Metric ordering must aggregate Shark Club's 43k+ game
+                    // window before it can rank anything. Fetch the next
+                    // visible slice in the same pass so the first Load More
+                    // does not repeat that expensive sort in every open tab.
+                    p_limit: GAME_PAGE_SIZE * 2,
                   }),
                 'Club games request timed out'
               );
@@ -728,18 +741,34 @@ export default function ClubDataPage() {
           return false;
         } else {
           const snapshot = data as Snapshot;
-          const refreshedRows = gameSort === 'recent' ? snapshot.rows : page!.rows;
-          const rows = preserveExpandedClubDataRows(
-            snapshotRef.current?.rows || [],
-            refreshedRows,
-            preserveOnError
-          );
+          const currentRows = snapshotRef.current?.rows || [];
+          const keepExpandedMetricRows =
+            gameSort !== 'recent' && preserveOnError && currentRows.length > GAME_PAGE_SIZE;
+          const refreshedRows =
+            gameSort === 'recent'
+              ? snapshot.rows
+              : keepExpandedMetricRows
+                ? page!.rows
+                : page!.rows.slice(0, GAME_PAGE_SIZE);
+          const rows = preserveExpandedClubDataRows(currentRows, refreshedRows, preserveOnError);
           const nextSnapshot = {
             ...snapshot,
             rows,
             row_count: Number(page?.filtered_count ?? snapshot.row_count),
           };
           const keptExpandedRows = rows.length > refreshedRows.length;
+          const prefetchedRows =
+            gameSort !== 'recent' && !keepExpandedMetricRows
+              ? page!.rows.slice(GAME_PAGE_SIZE)
+              : [];
+          prefetchedGamePageRef.current = prefetchedRows.length
+            ? {
+                key: gameCacheKey,
+                rows: prefetchedRows,
+                nextCursor: page!.next_cursor || null,
+                hasMore: Boolean(page!.has_more),
+              }
+            : null;
           const nextCursor = keptExpandedRows
             ? gameCursorRef.current
             : gameSort === 'recent'
@@ -754,10 +783,13 @@ export default function ClubDataPage() {
           setGamesHasMore(nextHasMore);
           setLedgerSource('live');
           setLastVerifiedAt(Date.now());
+          const cachedSnapshot = prefetchedRows.length
+            ? { ...nextSnapshot, rows: [...rows, ...prefetchedRows] }
+            : nextSnapshot;
           writeClubDataCache<CachedGameLedger>(user.id, clubUuid, gameCacheKey, {
-            snapshot: nextSnapshot,
-            cursor: nextCursor,
-            hasMore: nextHasMore,
+            snapshot: cachedSnapshot,
+            cursor: prefetchedRows.length ? page!.next_cursor || null : nextCursor,
+            hasMore: prefetchedRows.length ? Boolean(page!.has_more) : nextHasMore,
           });
           return true;
         }
@@ -956,8 +988,32 @@ export default function ClubDataPage() {
   }, [tab, loadPlayers, clubUuid, isHydrating, user, playerCacheKey]);
 
   const loadMoreGames = useCallback(async () => {
-    if (!clubUuid || !gameCursor || !gamesHasMore || gamesMoreRef.current || isHydrating || !user)
+    if (!clubUuid || gamesMoreRef.current || isHydrating || !user) return;
+    const prefetched = prefetchedGamePageRef.current;
+    const current = snapshotRef.current;
+    if (prefetched?.key === gameCacheKey && prefetched.rows.length && current) {
+      const known = new Set(current.rows.map((row) => `${row.kind}:${row.id}`));
+      const nextSnapshot = {
+        ...current,
+        rows: [
+          ...current.rows,
+          ...prefetched.rows.filter((row) => !known.has(`${row.kind}:${row.id}`)),
+        ],
+      };
+      prefetchedGamePageRef.current = null;
+      setSnapshot(nextSnapshot);
+      snapshotRef.current = nextSnapshot;
+      setGameCursor(prefetched.nextCursor);
+      gameCursorRef.current = prefetched.nextCursor;
+      setGamesHasMore(prefetched.hasMore);
+      writeClubDataCache<CachedGameLedger>(user.id, clubUuid, gameCacheKey, {
+        snapshot: nextSnapshot,
+        cursor: prefetched.nextCursor,
+        hasMore: prefetched.hasMore,
+      });
       return;
+    }
+    if (!gameCursor || !gamesHasMore) return;
     gamesMoreRef.current = true;
     setGamesLoadingMore(true);
     setGamesPageError(null);
@@ -1037,6 +1093,7 @@ export default function ClubDataPage() {
     stakes,
     search,
     gameSort,
+    gameCacheKey,
   ]);
 
   const loadMorePlayers = useCallback(async () => {

@@ -41,6 +41,13 @@ function nullableNum(value: unknown): number | null {
   return value === null || value === undefined ? null : num(value);
 }
 
+const MAX_ROSTER_SEARCH_LENGTH = 120;
+
+/** Keep hostile or accidentally pasted search payloads bounded at the client edge. */
+export function normalizeRosterSearch(value: string | undefined): string {
+  return (value ?? '').trim().slice(0, MAX_ROSTER_SEARCH_LENGTH);
+}
+
 export interface RosterCapabilities {
   can_view_financials: boolean;
   can_export: boolean;
@@ -313,7 +320,7 @@ export const ClubRosterService = {
       async (attemptSignal) => {
         let request = supabase.rpc('ca_club_members_page', {
           p_club_id: clubId,
-          p_search: query.search?.trim() ?? '',
+          p_search: normalizeRosterSearch(query.search),
           p_filter: query.filter ?? 'all',
           p_sort: query.sort ?? 'hierarchy',
           p_cursor: query.cursor ?? null,
@@ -510,7 +517,7 @@ export const ClubRosterService = {
   ): Promise<{ rows: Record<string, unknown>[]; row_count: number; audit_id: string }> {
     const { data, error } = await supabase.rpc('ca_club_members_export', {
       p_club_id: clubId,
-      p_search: query.search?.trim() ?? '',
+      p_search: normalizeRosterSearch(query.search),
       p_filter: query.filter ?? 'all',
       p_sort: query.sort ?? 'hierarchy',
       p_user_ids: userIds,

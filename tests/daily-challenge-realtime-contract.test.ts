@@ -34,9 +34,12 @@ describe('Daily Missions realtime and render-isolation contract', () => {
     expect(page).not.toContain("table: 'user_daily_challenges'");
   });
 
-  it('coalesces event bursts and never turns them into visible UX polling', () => {
+  it('coalesces event bursts and repairs dropped events with only a tiny cursor read', () => {
     expect(page).toContain('scheduleRealtimeRefresh');
     expect(page).toContain("loadChallenges(userId, 'silent')");
+    expect(page).toContain('dailyChallengeService.getDashboardRevision(userId)');
+    expect(page).toContain('revision > dashboardRevisionRef.current');
+    expect(page).toContain('setTimeout(reconcileRevision, 15_000)');
     expect(page).not.toContain("'CHALLENGE_PROGRESS_UPDATED'");
     expect(page).not.toMatch(/setInterval\s*\(/);
   });

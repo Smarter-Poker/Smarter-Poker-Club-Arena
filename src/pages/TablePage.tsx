@@ -2302,6 +2302,25 @@ export default function TablePage({
    *  one, never into what the felt shows. Written in handleHoleCardPayload. */
   const heroEngineCardOrderRef = useRef<string[] | null>(null);
   const heroPineappleCards = useMemo(() => {
+    /* ═══ A BACKGROUND TABLE MAY NOT PUT A PICKER ON YOUR SCREEN ═══════════
+       MultiTablePage mounts up to four TablePages at once and only the active
+       slot is `--active`; the others stay rendered (they keep their engine
+       sockets alive) with `pointer-events: none`. This panel is
+       `position: fixed`, so it escapes its slot and paints over the middle of
+       whatever table you ARE playing — and it arrives INERT, because
+       pointer-events is inherited, so it is a picker you can see and cannot
+       click. The old full-screen version of this blacked out your live table
+       outright.
+
+       Dan 2026-08-28, binding: "YOU CAN NEVER EVER AUTO CHANGE TABLES FOR A
+       USER, THEY MUST CHANGE IT BY THEM SELF." So a background table asks for
+       attention rather than taking it: setDecisionDeadline below already feeds
+       the tab strip's countdown and alarm on a `discard` decision, exactly like
+       a turn. Switch to that table and the picker is there.
+
+       Gated at the RENDER, not here: this value also drives pineappleDeadline,
+       which is what feeds that alarm. Blanking it on a background table would
+       have silenced the very notice that replaces the picker. */
     if (tableState.engineStage !== 'pineapple_discard') return null;
     const hero = tableState.players[tableState.heroSeat - 1];
     if (!hero || hero.status === 'folded') return null;
@@ -8028,6 +8047,16 @@ export default function TablePage({
               rank: c.rank,
               suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as any),
             }));
+            /* The same record the realtime path keeps, for the same reason: a
+               Crazy Pineapple discard is an INDEX into the engine's order, and
+               cards_pre_sort is about to reorder this array. Without it, a hero
+               who recovered their cards by polling — a mid-hand reload, a
+               missed INSERT — fell back to the DISPLAY index and discarded the
+               wrong card, which is exactly the bug the realtime path was fixed
+               for on 2026-08-31. Two ways in, one rule. */
+            heroEngineCardOrderRef.current = parsedCards.map(
+              (c: { rank: string; suit: string }) => `${c.rank}${c.suit}`
+            );
             if (cardsPreSortRef.current) parsedCards = sortCardsByRank(parsedCards);
             updatedPlayers[heroIdx] = {
               ...updatedPlayers[heroIdx]!,
@@ -21213,7 +21242,10 @@ export default function TablePage({
           Leaderboard, Session Summary, Tournament Screens — all modals/overlays.
           Extracted to TableModalsLayer to keep TablePage under control. */}
       <PineappleDiscard
-        isOpen={!!heroPineappleCards}
+        /* `isActive` is the gate: see heroPineappleCards. A background table
+           alarms through the tab strip instead of painting a dead, unclickable
+           panel across the table you are actually playing. */
+        isOpen={isActive && !!heroPineappleCards}
         cards={heroPineappleCards ?? []}
         onDiscard={handlePineappleDiscard}
         deadline={pineappleDeadline}

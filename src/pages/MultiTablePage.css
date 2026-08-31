@@ -440,21 +440,21 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   transition: transform 300ms var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-/* Table name overlay in tile view */
-.multi-table-grid__cell::after {
-  content: attr(data-table-name);
-  position: absolute;
-  bottom: 8px;
-  left: 8px;
-  font-size: 0.65rem;
-  color: rgba(255, 255, 255, 0.6);
-  background: rgba(0, 0, 0, 0.6);
-  padding: 2px 8px;
-  border-radius: 4px;
-  z-index: 5;
-  pointer-events: none;
-  backdrop-filter: blur(4px);
-}
+/* DELETED 2026-08-31 — the tile-view "table name overlay".
+   `data-table-name` was never set on the cell by any code in this repo, so
+   `attr(data-table-name)` always resolved to the EMPTY STRING. That does not
+   suppress the pseudo-element: content:"" still generates a box, and this one
+   carried padding, a 60%-black background, a radius and a blur — a small dark
+   smudge pinned to the cell's bottom-left, showing a name it could never hold.
+
+   Harmless while the cell's bottom-left was felt. NOT harmless now: the cell is
+   a flex column and its bottom-left is the action band, so this painted over
+   the FOLD BUTTON's corner. Measured on a 300x400 tile before removal — the
+   ::after box (top 385.6, bottom 400, left 16) against Fold (top 365, bottom
+   400, left 16): overlapping.
+
+   Removed rather than repositioned: a rule that can only render an empty smudge
+   has no correct position. The tab bar already names every table. */
 
 /* ═══════════════════ Supplemental mobile touch targets ═══════════════════ */
 
@@ -884,6 +884,13 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   padding: 6px 8px 8px;
   background: #101319;
   border-top: 1px solid rgba(255, 255, 255, 0.14);
+  /* `position: relative` so the z-index below is REAL. It was declared on a
+     static box on 2026-08-30, where z-index does not apply at all — the band
+     looked protected and was not. Relative keeps it fully in flow (it still
+     RESERVES its height, which is the whole point of Variant A); it only gives
+     the paint order teeth, so nothing absolutely positioned inside a tile can
+     land on the action keys the way the dead ::after smudge did. */
+  position: relative;
   z-index: 20;
 }
 

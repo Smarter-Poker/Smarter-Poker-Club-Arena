@@ -13,6 +13,7 @@ import { computePlacePrize } from './payoutMath.js';
 import { resolvePayoutStructure } from './payoutStructure.js';
 import { fieldIsStillLive } from './recoveryFieldGuard.js';
 import { reportError } from '../services/errorReporter.js';
+import { raiseFinancialAlert } from '../services/financialAlerts.js';
 
 /**
  * TOURNEY-AUDIT 2026-07-24: Recover tournaments stuck in COMPLETING by PAYING
@@ -366,9 +367,112 @@ export async function recoverStuckCompletingTournaments(
             );
             continue;
           }
+          /**
+           * A DECIDED SATELLITE MUST ALSO GO SOMEWHERE (2026-08-31, phase 5).
+           *
+           * The 2026-08-30 rule above resolved the UNDECIDED case and left
+           * this one exactly as it found it: reported, then `continue`, on
+           * every recovery cycle, forever. The comment two blocks up already
+           * admits why that is terminal - "a COMPLETING tournament is not
+           * RUNNING, so discovery never resumes a manager for it, and
+           * processSatelliteAwards only runs inside a manager's finish path."
+           * Nothing else drives it. Grepped: no pg_cron job, no edge
+           * function, no workflow, no other caller anywhere transitions a
+           * COMPLETING satellite. The pool was collected and the seats are
+           * never awarded.
+           *
+           * Worse, leaving the row COMPLETING is not merely inert, it is
+           * ACTIVELY BLOCKING: finishTournament claims the event with
+           * `.eq('status', 'RUNNING')`, so even if a manager did resume, the
+           * claim would return no row and the awards pass would be skipped.
+           *
+           * Three outcomes, and every stuck satellite now takes one:
+           *
+           *   ALREADY AWARDED  -> COMPLETED. Phase 3's payout record is what
+           *     makes "did this satellite already pay?" answerable at all;
+           *     before it there was nothing to ask. A seat carrying this
+           *     satellite's id in the target counts too, for events that ran
+           *     before the record existed.
+           *
+           *   ONE SURVIVOR     -> RUNNING. The manager resumes, the
+           *     elimination sweep sees remainingCount <= 1 on its first tick
+           *     and runs the finish path, awards included. It cannot deal a
+           *     card on the way: minPlayersToDeal() is 2 for a tournament
+           *     table, so the loop parks in `idle_not_enough_players`. That
+           *     answers the "flipping that one would deal cards at a settled
+           *     event" worry in the block above - measured, not assumed.
+           *     The survivor holds no position yet, so stamping them first
+           *     cannot collide with an existing place.
+           *
+           *   NOBODY ALIVE, NOTHING AWARDED -> a CRITICAL alert, and it stays
+           *     COMPLETING. Here the engine would fall back to treating the
+           *     LAST ELIMINATED player as the winner, which in a normal
+           *     finish is second place. Guessing a winner and then moving
+           *     money on the guess is not a repair. A human decides this one.
+           *
+           * Idempotent if it re-drives: every cash leg is keyed
+           * `tourney:{id}:prize:place:{n}` (or `:satremainder:{user}:{n}`)
+           * and the seat leg dedupes on the target's unique registration, so
+           * a satellite that already paid pays nobody twice.
+           */
+          const [{ count: recordCount }, { count: seatCount }] = await Promise.all([
+            supabase
+              .from('tournament_payouts')
+              .select('id', { count: 'exact', head: true })
+              .eq('tournament_id', t.id),
+            supabase
+              .from('tournament_players')
+              .select('id', { count: 'exact', head: true })
+              .eq('source_satellite_id', t.id),
+          ]);
+          const alreadyAwarded = (recordCount ?? 0) > 0 || (seatCount ?? 0) > 0;
+
+          if (alreadyAwarded) {
+            const { error: closeErr } = await supabase
+              .from('tournaments')
+              .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
+              .eq('id', t.id)
+              .eq('status', 'COMPLETING');
+            reportError(
+              new Error(
+                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a DECIDED satellite that ALREADY AWARDED (${recordCount ?? 0} payout record(s), ${seatCount ?? 0} seat(s)) - ${closeErr ? `close failed: ${closeErr.message}` : 'closed COMPLETING -> COMPLETED'}`
+              ),
+              'GameServer.recoverStuckCompleting_satellite_closed'
+            );
+            continue;
+          }
+
+          if (typeof aliveCount === 'number' && aliveCount === 1) {
+            const { error: reviveErr } = await supabase
+              .from('tournaments')
+              .update({ status: 'RUNNING' })
+              .eq('id', t.id)
+              .eq('status', 'COMPLETING');
+            reportError(
+              new Error(
+                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a DECIDED satellite with ONE SURVIVOR and no awards - ${reviveErr ? `revive failed: ${reviveErr.message}` : 'flipped back to RUNNING so its manager can run processSatelliteAwards'}`
+              ),
+              'GameServer.recoverStuckCompleting_satellite_revived_decided'
+            );
+            continue;
+          }
+
+          await raiseFinancialAlert(
+            'critical',
+            'Satellite.stuck_completing_unawarded',
+            'A satellite is stuck COMPLETING with no survivor and no seats or payouts awarded. Its pool was collected and nobody has been paid. Deciding the winner is a human call: the engine would fall back to the LAST ELIMINATED player, which in a normal finish is second place.',
+            {
+              tournament_id: t.id,
+              tournament_name: (t as { name?: string }).name ?? null,
+              reason,
+              alive_count: aliveCount ?? null,
+              prize_pool: (t as { prize_pool?: number }).prize_pool ?? null,
+              satellite_target_id: (t as { satellite_target_id?: string }).satellite_target_id ?? null,
+            }
+          );
           reportError(
             new Error(
-              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a SATELLITE - it awards seats, not structure cash. Left COMPLETING for processSatelliteAwards.`
+              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a SATELLITE - it awards seats, not structure cash. Decided, nothing awarded, no survivor to re-drive: left COMPLETING and raised a critical alert.`
             ),
             'GameServer.recoverStuckCompleting_satellite_skipped'
           );

@@ -159,7 +159,9 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
     expect(page).toContain('p_limit: GAME_PAGE_SIZE * 2');
     expect(page).toContain('prefetchedGamePageRef.current');
     expect(page).toMatch(/gameSort === 'recent'[\s\S]{0,80}\? recentCursor\(rows\)/);
-    expect(page).toMatch(/setPlayersLoading\(true\);\s*setPlayersError\(null\);/);
+    expect(page).toContain('setPlayersLoading(!preserveOnError || !playersRef.current);');
+    expect(page).toContain('if (manualRefreshingRef.current) return;');
+    expect(page).toContain('disabled={manualRefreshing || !clubUuid || isHydrating}');
   });
 
   it('serves both reports from incrementally maintained daily facts', () => {

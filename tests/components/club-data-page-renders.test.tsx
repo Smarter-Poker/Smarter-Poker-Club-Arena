@@ -428,6 +428,44 @@ describe('ClubDataPage', () => {
     await screen.findByText('Club Ledger Refreshed.');
   });
 
+  it('keeps manual recovery available during a silent player reconciliation', async () => {
+    render(<ClubDataPage />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+    await screen.findByText('Table Regular');
+
+    const pendingPlayers: Array<() => void> = [];
+    rpcMock.mockImplementation((fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
+      if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
+      if (fn === 'ca_club_player_breakdown') {
+        return new Promise((resolve) =>
+          pendingPlayers.push(() => resolve({ data: playerBreakdown, error: null }))
+        );
+      }
+      if (fn === 'ca_club_player_page') {
+        return new Promise((resolve) =>
+          pendingPlayers.push(() => resolve({ data: playerPage, error: null }))
+        );
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    const before = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_player_breakdown').length;
+    act(() => realtimeState.busHandler?.({ clubId: CLUB_ID }));
+    await waitFor(
+      () =>
+        expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_player_breakdown').length).toBe(
+          before + 1
+        ),
+      { timeout: 2_000 }
+    );
+
+    expect(screen.getByRole('button', { name: 'Refresh Club Ledger' })).toBeEnabled();
+    expect(screen.getByText('Table Regular')).toBeInTheDocument();
+
+    act(() => pendingPlayers.splice(0).forEach((resolve) => resolve()));
+  });
+
   it('keeps verified game rows visible when a background refresh is transiently refused', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     let snapshotRequest = 0;

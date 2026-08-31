@@ -124,6 +124,18 @@ const LEASE_REAP_STALE_SECONDS = 3600;
 const LEASE_REAP_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
+ * How often the bomb-pot award ledger is repaired, and how many hands one pass
+ * will rebuild. Hourly because the gap it closes is a WRITE LOSS, not a design
+ * gap: `bomb_pot_award_units` is written fire-and-forget from settlement, so a
+ * Supabase blip that outlasts three retries loses rows that nothing was ever
+ * going to come back for. 500 hands is far above the observed loss rate
+ * (~17/day) and the repair is idempotent, so an over-large budget costs a
+ * no-op rather than a duplicate.
+ */
+const BOMB_LEDGER_REPAIR_INTERVAL_MS = 60 * 60 * 1000;
+const BOMB_LEDGER_REPAIR_BATCH = 500;
+
+/**
  * ── PRE-SEAT LEAD (Dan 2026-08-30, binding) ──
  *
  * Dan, verbatim: "when a player is registered, they should be 'sat down' one
@@ -307,6 +319,7 @@ export class GameServer {
    */
   private feeReconcileTimer: NodeJS.Timeout | null = null;
   private leaseReapTimer: NodeJS.Timeout | null = null;
+  private bombLedgerRepairTimer: NodeJS.Timeout | null = null;
   private breakResumeTimer: NodeJS.Timeout | null = null;
   /**
    * When the platform-wide break is expected to end, as epoch ms; 0 when no
@@ -542,6 +555,7 @@ export class GameServer {
       // for a week).
       this.startFeeReconciler();
       this.startLeaseReaper();
+      this.startBombLedgerRepairSweep();
 
       // Step 8b (2026-08-20): drain the hand_history retry queue. hand_history
       // writes go to zero platform-wide for 30-120s at a time under load (see
@@ -623,6 +637,10 @@ export class GameServer {
     if (this.leaseReapTimer) {
       clearInterval(this.leaseReapTimer);
       this.leaseReapTimer = null;
+    }
+    if (this.bombLedgerRepairTimer) {
+      clearInterval(this.bombLedgerRepairTimer);
+      this.bombLedgerRepairTimer = null;
     }
 
     if (this.breakResumeTimer) {
@@ -1395,6 +1413,67 @@ export class GameServer {
     console.log('[GameServer] Lease reaper started (hourly)');
   }
 
+  /**
+   * Rebuild `bomb_pot_award_units` rows that settlement lost.
+   *
+   * WHY THIS EXISTS. The award-unit write in ServerTableEngineSettlement is
+   * fire-and-forget by design — the ledger narrates money `logHandHistory` has
+   * already recorded, so it must never be able to fail a hand. It retries three
+   * times and then reports. What it never had was anything that came back for
+   * the row afterwards, so a blip that outlasted the third attempt left a
+   * PERMANENT hole: `fn_bomb_pot_ledger_gaps` filed it as critical, roughly 17
+   * a day, and the only way to close one was a human running a backfill.
+   *
+   * A retry that gives up is not durability; the sweep is the other half of it.
+   *
+   * `fn_backfill_bomb_pot_award_units` does the arithmetic — the engine's own
+   * pot/board/rake decomposition reproduced from columns already stored on the
+   * hand, never card evaluation — and deliberately rebuilds SINGLE-WINNER
+   * hands only. Multi-winner bomb hands stay missing and stay visible in the
+   * gap report, because `hand_history.winners` is merged per user and does not
+   * record which board each winner took. An incomplete ledger that says so
+   * beats a complete-looking one that is partly fiction.
+   *
+   * Best-effort by construction, like every other sweep here: `running` is
+   * re-checked inside the tick, and every failure path reports and returns so
+   * housekeeping can never be the reason the platform stops dealing.
+   */
+  private startBombLedgerRepairSweep(): void {
+    if (this.bombLedgerRepairTimer) return;
+
+    const tick = async (): Promise<void> => {
+      if (!this.running) return;
+      try {
+        const { data, error } = await supabase.rpc('fn_backfill_bomb_pot_award_units', {
+          p_limit: BOMB_LEDGER_REPAIR_BATCH,
+          p_dry_run: false,
+        });
+        if (error) {
+          reportError(error, 'GameServer.bomb_ledger_repair_failed');
+          return;
+        }
+        const row = (Array.isArray(data) ? data[0] : data) as
+          | { hands_written?: number; units_written?: number; hands_skipped?: number }
+          | undefined;
+        const hands = Number(row?.hands_written ?? 0);
+        if (hands > 0) {
+          console.log(
+            `[BombLedgerRepair] rebuilt ${Number(row?.units_written ?? 0)} award unit(s) ` +
+              `across ${hands} hand(s); ${Number(row?.hands_skipped ?? 0)} left for the gap report`
+          );
+        }
+      } catch (err) {
+        reportError(err, 'GameServer.bomb_ledger_repair_threw');
+      }
+    };
+
+    void tick();
+    this.bombLedgerRepairTimer = setInterval(() => {
+      void tick();
+    }, BOMB_LEDGER_REPAIR_INTERVAL_MS);
+    console.log('[GameServer] Bomb-pot award ledger repair sweep started (hourly)');
+  }
+
   private async triggerSynchronizedBreak(): Promise<void> {
     if (!this.running) return;
 
@@ -1704,73 +1783,89 @@ export class GameServer {
         }
 
         if (activeSeats && activeSeats.length > 0) {
-          // Aggregate total stack per user
-          const userTotals = new Map<string, number>();
-          // A3 FIX (2026-07-28): carry the seat ids alongside the totals so the
-          // credit below can be made idempotent. The aggregate is per-user, so the
-          // only stable identity for "this exact cash-out" is the set of seat rows
-          // that produced it.
-          const userSeatIds = new Map<string, string[]>();
-          for (const seat of activeSeats) {
-            const prev = userTotals.get(seat.user_id) ?? 0;
-            userTotals.set(seat.user_id, prev + (seat.stack ?? 0));
-            const ids = userSeatIds.get(seat.user_id) ?? [];
-            ids.push(seat.id);
-            userSeatIds.set(seat.user_id, ids);
-          }
-
-          // Credit each user's wallet in parallel (batch of 10)
-          // FIX-232: Use atomic RPC increment — eliminates read-then-write race condition
-          // SWEEP #4 P1-1 FIX (2026-07-23): failed credits were only logged and
-          // cashedOut++ ran anyway, then EVERY seat was deleted below — so on a
-          // restart during a Supabase blip (exactly when restarts happen) the
-          // uncredited players' stacks were permanently destroyed. Track the users
-          // whose credit failed and spare their seats from the delete so their
-          // stacks survive for the next startup pass.
+          // ── 2026-08-31: ONE LOCKED CASH-OUT PER SEAT, AND NO DELETE ───────
+          //
+          // This block used to credit ONE AGGREGATE per user through
+          // `atomic_credit_wallet_and_log`, keyed
+          // `startup-cashout:{userId}:{sorted seat ids}`, and then bulk-DELETE
+          // the seat rows. Two things were wrong with that, and the second is
+          // the expensive one.
+          //
+          // 1. It is the shape CLAUDE.md 11.5 forbids outright: a seat that
+          //    ends by DELETE ends outside the refund path. Credit and delete
+          //    were two separate round trips, so a boot that died between them
+          //    left the chips paid and the seat still occupied.
+          //
+          // 2. And that is exactly what the retry then made invisible. The
+          //    next boot re-read the identical seat-id set, rebuilt the
+          //    IDENTICAL idempotency key, and `atomic_credit_wallet_and_log`
+          //    correctly deduped it — writing NO fresh ledger row. The seats
+          //    were then deleted anyway, so every one of those exits landed in
+          //    `ca_seat_stack_exits` with no wallet credit inside the matching
+          //    window. 1,033 exits a day, ~432K chips, arriving in
+          //    `ledger_reconcile_log` as CRITICAL and indistinguishable from
+          //    chips actually being destroyed. A reconciliation alarm that
+          //    cries wolf a thousand times a day is not a reconciliation
+          //    alarm.
+          //
+          // `atomic_seat_cashout_locked` is the platform's one cash-out: it
+          // reads the stack under FOR UPDATE, credits, and stamps `left_at` in
+          // the SAME transaction, deriving its idempotency key from the row it
+          // locked. So there is no window to die in, every seat produces its
+          // own ledger row that `fn_unaccounted_seat_exits` can match, and a
+          // failure rolls credit and vacate back together — the seat keeps its
+          // stack for the next pass, which is the `failedUserIds` behaviour
+          // this block always wanted, now structural rather than tracked.
+          //
+          // THE DELETE IS GONE. A vacated seat (`left_at` set) is not a stale
+          // seat: it is the audit trail, and `atomic_table_buyin` clears the
+          // rathole rows it needs to reuse a seat number. Nothing here has to
+          // remove a row, and nothing here may.
+          //
+          // HORSES ARE PLAYERS (CLAUDE.md 10.5): this sweep only ever looks at
+          // horse seats because a human's seat must never be reaped by a boot
+          // sweep, but the chips now travel the IDENTICAL path a human's do —
+          // same RPC, same lock, same ledger row, same club wallet.
+          //
+          // The RPC is called here rather than through `seats.atomicCashout`
+          // because this sweep needs the per-seat error to report how many
+          // seats it left behind; `atomicCashout` folds a failure into a 0
+          // return that a genuinely empty seat also produces. No credit and no
+          // `left_at` write happens in this file — that stays in the database,
+          // where the lock is.
           let cashedOut = 0;
+          let seatsFailed = 0;
+          let chipsReturned = 0;
           const failedUserIds = new Set<string>();
-          const entries = Array.from(userTotals.entries()).filter(([_, total]) => total > 0);
-          for (let i = 0; i < entries.length; i += 10) {
-            const batch = entries.slice(i, i + 10);
+          for (let i = 0; i < activeSeats.length; i += 10) {
+            const batch = activeSeats.slice(i, i + 10);
             await Promise.all(
-              batch.map(async ([userId, totalStack]) => {
+              batch.map(async (seat) => {
                 try {
-                  // 2026-08-22: was `credit_player_wallet`, which moved the
-                  // chips and wrote NOTHING to any ledger — a boot-time
-                  // cash-out appeared in a player's balance out of thin air,
-                  // with no wallet_transactions row and no chip_transactions
-                  // row to account for it. Every other cash-out path on the
-                  // platform goes through this RPC; this one now does too, so
-                  // the row exists and the club resolution matches. Same
-                  // idempotency key, so nothing about the dedupe changes.
-                  const { error: walletErr } = await supabase.rpc('atomic_credit_wallet_and_log', {
-                    p_user_id: userId,
-                    p_amount: totalStack,
-                    p_category: 'cashout',
-                    p_description: 'Cash-out from table (server startup cleanup)',
-                    p_table_id: null,
-                    p_hand_id: null,
-                    p_related_entity_id: null,
-                    // A3 FIX (2026-07-28): `cleanupStaleData` runs on EVERY boot and
-                    // deliberately spares the seats of users whose credit failed
-                    // (see failedUserIds below) so their stacks survive - which means
-                    // the next boot re-credits the identical aggregate. A credit that
-                    // committed but timed out therefore minted the whole stack again.
-                    // Keyed on the sorted seat-id set that produced this aggregate.
-                    p_idempotency_key: `startup-cashout:${userId}:${(userSeatIds.get(userId) ?? []).slice().sort().join('|')}`,
+                  const { data, error } = await supabase.rpc('atomic_seat_cashout_locked', {
+                    p_user_id: seat.user_id,
+                    p_table_id: seat.table_id,
+                    p_seat_number: seat.seat_number,
                   });
-                  if (walletErr) {
+                  if (error) {
                     console.warn(
-                      `[GameServer] Cashout wallet credit failed for ${userId}: ${walletErr.message}`
+                      `[GameServer] Startup cash-out failed for ${seat.user_id} at ` +
+                        `${seat.table_id} seat ${seat.seat_number} — seat preserved: ${error.message}`
                     );
-                    failedUserIds.add(userId);
+                    failedUserIds.add(seat.user_id);
+                    seatsFailed++;
                     return;
                   }
-
+                  const row = (data ?? {}) as { stack?: number };
+                  chipsReturned += Number(row.stack ?? 0);
                   cashedOut++;
                 } catch (err: any) {
-                  console.warn(`[GameServer] Cashout failed for ${userId}: ${err.message}`);
-                  failedUserIds.add(userId);
+                  console.warn(
+                    `[GameServer] Startup cash-out threw for ${seat.user_id} at ` +
+                      `${seat.table_id} seat ${seat.seat_number} — seat preserved: ${err?.message}`
+                  );
+                  failedUserIds.add(seat.user_id);
+                  seatsFailed++;
                 }
               })
             );
@@ -1778,30 +1873,16 @@ export class GameServer {
 
           if (cashedOut > 0) {
             console.log(
-              `[GameServer] Safely cashed out ${cashedOut} seated players before cleanup`
+              `[GameServer] Cashed out and vacated ${cashedOut} seat(s) before cleanup ` +
+                `(${chipsReturned.toFixed(2)} chips returned to club wallets)`
             );
           }
-          if (failedUserIds.size > 0) {
+          if (seatsFailed > 0) {
             console.warn(
-              `[GameServer] ${failedUserIds.size} player(s) had failed cashout credits — sparing their seats from deletion to preserve stacks`
+              `[GameServer] ${seatsFailed} seat(s) across ${failedUserIds.size} player(s) could ` +
+                'not be cashed out — their stacks are still on the felt and the next boot retries them'
             );
           }
-
-          // TOURNEY-AUDIT 2026-07-24: delete EXACTLY the cash seats we just
-          // processed (minus failed credits, whose stacks are still owed) —
-          // never a blanket wipe. Tournament seats are untouched so a resumed
-          // tournament finds its players; historical (left_at set) rows are
-          // preserved as the seat audit trail.
-          const seatIdsToDelete = activeSeats
-            .filter((s) => !failedUserIds.has(s.user_id))
-            .map((s) => s.id);
-          for (let i = 0; i < seatIdsToDelete.length; i += 100) {
-            const chunk = seatIdsToDelete.slice(i, i + 100);
-            await supabase.from('table_seats').delete().in('id', chunk);
-          }
-          console.log(
-            `[GameServer] Deleted ${seatIdsToDelete.length} cash-table seats (after safe cashout; tournament seats preserved)`
-          );
         } else {
           // TOURNEY-AUDIT 2026-07-24: nothing to cash out — do NOT blanket-delete.
           // The old path here deleted EVERY table_seats row (including tournament

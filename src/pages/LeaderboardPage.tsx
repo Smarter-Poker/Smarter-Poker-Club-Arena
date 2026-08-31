@@ -15,7 +15,11 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
 
-import type { LeaderboardSettings, LeaderboardPayout } from '../services/LeaderboardService';
+import type {
+  LeaderboardSettings,
+  LeaderboardPayout,
+  LeaderboardRewardPlan,
+} from '../services/LeaderboardService';
 import { LeaderboardService } from '../services/LeaderboardService';
 import type {
   LeaderboardEntry,
@@ -230,6 +234,8 @@ export default function LeaderboardPage() {
   const [settings, setSettings] = useState<LeaderboardSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [payouts, setPayouts] = useState<LeaderboardPayout[]>([]);
+  const [rewardPlan, setRewardPlan] = useState<LeaderboardRewardPlan | null>(null);
+  const [rewardPlanError, setRewardPlanError] = useState<string | null>(null);
   const settingsRequestRef = useRef(0);
   const openedSetupLinkRef = useRef<string | null>(null);
 
@@ -559,6 +565,8 @@ export default function LeaderboardPage() {
     if (!silent) {
       setLoadError(null);
       setPayouts([]);
+      setRewardPlan(null);
+      setRewardPlanError(null);
       setUserRank(null);
       const cached = getCachedEntries(cacheKey);
       if (cached && cached.entries.length > 0) {
@@ -614,22 +622,34 @@ export default function LeaderboardPage() {
 
       // Secondary metadata is independent and can arrive in parallel. This
       // removes two serial round-trips from the visible page-load path.
-      const payoutPromise =
+      const periodMetadataPromise =
         !isGlobal && selectedClubId
-          ? (() => {
-              return LeaderboardService.getPeriodWindow(period, periodOffset).then((window) =>
+          ? LeaderboardService.getPeriodWindow(period, periodOffset).then(async (window) => {
+              const [payoutResult, planResult] = await Promise.allSettled([
                 LeaderboardService.getPayoutsForPeriod(
                   selectedClubId,
                   period,
                   metric,
                   window.start_date
-                ).then((periodPayouts) => {
-                  if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
-                    setPayouts(periodPayouts);
-                  }
-                })
-              );
-            })()
+                ),
+                period === 'weekly' || period === 'monthly'
+                  ? LeaderboardService.getLeaderboardRewardPlan(
+                      selectedClubId,
+                      period,
+                      window.start_date
+                    )
+                  : Promise.resolve(null),
+              ]);
+              if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
+                if (payoutResult.status === 'fulfilled') setPayouts(payoutResult.value);
+                if (planResult.status === 'fulfilled') {
+                  setRewardPlan(planResult.value);
+                  setRewardPlanError(null);
+                } else {
+                  setRewardPlanError('Period Prize Rules Could Not Be Verified.');
+                }
+              }
+            })
           : Promise.resolve();
 
       const rankPromise = user?.id
@@ -649,7 +669,7 @@ export default function LeaderboardPage() {
           })
         : Promise.resolve();
 
-      await Promise.allSettled([payoutPromise, rankPromise]);
+      await Promise.allSettled([periodMetadataPromise, rankPromise]);
     } catch (error) {
       reportError(error, 'LeaderboardPage.Failed_to_load_leaderboard');
       if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
@@ -778,17 +798,15 @@ export default function LeaderboardPage() {
     [payouts]
   );
   const plannedPrizesByRank = useMemo(() => {
-    if (scope !== 'my-clubs' || !settings?.rewards_enabled || settings.payout_metric !== metric) {
+    if (
+      scope !== 'my-clubs' ||
+      !rewardPlan?.rewards_enabled ||
+      rewardPlan.payout_metric !== metric
+    ) {
       return new Map<number, number>();
     }
-    const plan =
-      period === 'weekly'
-        ? settings.weekly_prizes
-        : period === 'monthly'
-          ? settings.monthly_prizes
-          : [];
-    return new Map(plan.map((prize) => [prize.rank, prize.amount]));
-  }, [metric, period, scope, settings]);
+    return new Map(rewardPlan.prizes.map((prize) => [prize.rank, prize.amount]));
+  }, [metric, rewardPlan, scope]);
 
   const top3 = entries.slice(0, 3);
   const rest = entries.slice(3);
@@ -1190,24 +1208,32 @@ export default function LeaderboardPage() {
           <div className="lb-prize-program-copy">
             <span className="lb-prize-program-kicker">Owner Prize Circuit</span>
             <h2>
-              {settings.rewards_enabled
-                ? 'Leaderboard Prizes Are On'
-                : 'Leaderboard Prizes Are Off'}
+              {settings.rewards_enabled ? 'Prize Program Published' : 'Prize Program Disabled'}
             </h2>
             <p>
               {settings.rewards_enabled
-                ? `${settings.funding_label} Backs A ${prizePlanLabel(settings.suggestion_key)} Plan Ranked By ${METRIC_OPTIONS.find((option) => option.value === settings.payout_metric)?.label || 'Profit'}.`
+                ? `${settings.program_funding_label || settings.funding_label} Published A ${prizePlanLabel(settings.suggestion_key)} Plan Ranked By ${METRIC_OPTIONS.find((option) => option.value === settings.payout_metric)?.label || 'Profit'}.`
                 : `A Prize Plan Is Saved For ${settings.club_name}, But Rewards Are Not Published.`}
             </p>
           </div>
           <dl className="lb-prize-program-totals">
             <div>
+              <dt>Program Version</dt>
+              <dd>V{settings.program_version}</dd>
+            </div>
+            <div>
               <dt>Weekly</dt>
               <dd>{totalPrizePlan(settings.weekly_prizes).toLocaleString('en-US')} Chips</dd>
+              {settings.weekly_effective_from && (
+                <small>From {settings.weekly_effective_from}</small>
+              )}
             </div>
             <div>
               <dt>Monthly</dt>
               <dd>{totalPrizePlan(settings.monthly_prizes).toLocaleString('en-US')} Chips</dd>
+              {settings.monthly_effective_from && (
+                <small>From {settings.monthly_effective_from}</small>
+              )}
             </div>
           </dl>
           {canManagePrizes && (
@@ -1215,7 +1241,10 @@ export default function LeaderboardPage() {
               Review Setup
             </button>
           )}
-          <span className="lb-prize-program-safety">Prize Planning Does Not Move Promo Chips.</span>
+          <span className="lb-prize-program-safety" role={rewardPlanError ? 'status' : undefined}>
+            {rewardPlanError ||
+              'Published Rules Activate At The Dates Shown. Publication Does Not Move Chips.'}
+          </span>
         </section>
       )}
 
@@ -1536,7 +1565,7 @@ export default function LeaderboardPage() {
           onSaved={(savedSetup) => {
             setSettings(savedSetup);
             setShowSettings(false);
-            toast.success('Prize Setup Saved.');
+            toast.success(`Prize Program V${savedSetup.program_version} Published.`);
           }}
         />
       )}

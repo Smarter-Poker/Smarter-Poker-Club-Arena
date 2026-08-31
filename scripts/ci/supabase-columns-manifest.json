@@ -5801,6 +5801,27 @@
       "payout_currency",
       "awarded_at"
     ],
+    "leaderboard_reward_program_versions": [
+      "id",
+      "club_id",
+      "version",
+      "operation_id",
+      "status",
+      "rewards_enabled",
+      "payout_currency",
+      "payout_metric",
+      "weekly_prizes",
+      "monthly_prizes",
+      "suggestion_key",
+      "funding_owner_type",
+      "funding_union_id",
+      "weekly_effective_from",
+      "monthly_effective_from",
+      "published_at",
+      "published_by",
+      "supersedes_program_id",
+      "program_hash"
+    ],
     "leak_drill_answers": [
       "id",
       "batch_id",
@@ -12644,17 +12665,5 @@
       "open_seats",
       "captured_at"
     ]
-  },
-  "rakeback_daily_state": [
-    "club_id",
-    "computed_at",
-    "day",
-    "rows_seen"
-  ],
-  "rakeback_daily_user": [
-    "cents",
-    "club_id",
-    "day",
-    "user_id"
-  ]
+  }
 }

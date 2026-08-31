@@ -54,7 +54,9 @@ describe('leaderboard phase two operational hardening', () => {
     expect(page).not.toContain('payoutLeaderboardPeriod');
     expect(service).not.toContain("supabase.rpc('fn_payout_leaderboard'");
     expect(page).toContain('const payout = payoutsByUser.get(entry.userId)');
-    expect(page).toContain('Prize Planning Does Not Move Promo Chips.');
+    expect(page).toContain(
+      'Published Rules Activate At The Dates Shown. Publication Does Not Move Chips.'
+    );
     expect(migration).toContain('Automated Leaderboard Payouts Are Paused');
     expect(migration).toContain('FROM PUBLIC, anon, authenticated');
   });
@@ -66,6 +68,6 @@ describe('leaderboard phase two operational hardening', () => {
     expect(wizard).toContain('const dialogRef = useFocusTrap(isOpen)');
     expect(wizard).toContain("event.key === 'Escape' && !saving");
     expect(wizard).toContain('if (saving || (enabled && !hasPrizes)) return');
-    expect(wizard).toContain("saving ? 'Saving Prize Setup' : 'Save Prize Setup'");
+    expect(wizard).toContain("saving ? 'Publishing Prize Program' : 'Publish Prize Program'");
   });
 });

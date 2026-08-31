@@ -21,6 +21,7 @@ import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
+import { uuid } from '../utils/uuid';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -103,6 +104,15 @@ export interface LeaderboardSettings {
   weekly_prizes: LeaderboardPrize[];
   monthly_prizes: LeaderboardPrize[];
   suggestion_key: LeaderboardPrizePlanKey;
+  program_version: number;
+  program_hash: string | null;
+  program_status: 'not_published' | 'published';
+  weekly_effective_from: string | null;
+  monthly_effective_from: string | null;
+  published_at: string | null;
+  program_funding_owner_type: 'union' | 'club' | null;
+  program_funding_union_id: string | null;
+  program_funding_label: string | null;
   setup_completed_at: string | null;
   updated_at: string | null;
 }
@@ -116,6 +126,21 @@ export interface LeaderboardRewardContext {
   funding_source: 'union_promo_wallet' | 'club_promo_balance';
   setup_complete: boolean;
   rewards_enabled: boolean;
+}
+
+export interface LeaderboardRewardPlan {
+  program_id: string;
+  program_version: number;
+  program_hash: string;
+  status: 'published';
+  rewards_enabled: boolean;
+  period: 'weekly' | 'monthly';
+  period_start: string;
+  payout_metric: Extract<LeaderboardMetric, 'profit' | 'hands_played' | 'tournaments_won' | 'roi'>;
+  prizes: LeaderboardPrize[];
+  funding_owner_type: 'union' | 'club';
+  funding_union_id: string | null;
+  published_at: string;
 }
 
 export interface LeaderboardPayout {
@@ -928,25 +953,66 @@ export const LeaderboardService = {
     return data as LeaderboardSettings;
   },
 
+  async getLeaderboardRewardPlan(
+    clubId: string,
+    period: 'weekly' | 'monthly',
+    periodStart: string
+  ): Promise<LeaderboardRewardPlan | null> {
+    const { data, error } = await supabase.rpc('fn_get_leaderboard_reward_plan', {
+      p_club_id: clubId,
+      p_period: period,
+      p_period_start: periodStart,
+    });
+    if (error) {
+      reportError(error, 'LeaderboardService.getLeaderboardRewardPlan');
+      throw error;
+    }
+    if (data == null) return null;
+    if (
+      typeof data !== 'object' ||
+      !('program_version' in data) ||
+      !('program_hash' in data) ||
+      !('prizes' in data) ||
+      !Array.isArray(data.prizes)
+    ) {
+      throw new Error('Leaderboard Reward Program Returned Invalid Data');
+    }
+    return data as unknown as LeaderboardRewardPlan;
+  },
+
   async saveLeaderboardRewardSetup(
     clubId: string,
     setup: Pick<
       LeaderboardSettings,
-      'rewards_enabled' | 'payout_metric' | 'weekly_prizes' | 'monthly_prizes' | 'suggestion_key'
+      | 'rewards_enabled'
+      | 'payout_metric'
+      | 'weekly_prizes'
+      | 'monthly_prizes'
+      | 'suggestion_key'
+      | 'program_version'
     >
   ): Promise<LeaderboardSettings> {
-    const { data, error } = await supabase.rpc('fn_save_leaderboard_reward_setup', {
-      p_club_id: clubId,
-      p_rewards_enabled: setup.rewards_enabled,
-      p_metric: setup.payout_metric,
-      p_weekly_prizes: setup.weekly_prizes,
-      p_monthly_prizes: setup.monthly_prizes,
-      p_suggestion_key: setup.suggestion_key,
+    // One immutable intent key lives outside the retry closure. If PostgREST
+    // commits and its response is lost, the retry replays the same publication
+    // instead of creating another version or reporting a false stale conflict.
+    const operationId = uuid();
+    const { data } = await retryAsync(async () => {
+      const response = await supabase.rpc('fn_save_leaderboard_reward_setup', {
+        p_club_id: clubId,
+        p_rewards_enabled: setup.rewards_enabled,
+        p_metric: setup.payout_metric,
+        p_weekly_prizes: setup.weekly_prizes,
+        p_monthly_prizes: setup.monthly_prizes,
+        p_suggestion_key: setup.suggestion_key,
+        p_expected_version: setup.program_version,
+        p_operation_id: operationId,
+      });
+      if (response.error) {
+        reportError(response.error, 'LeaderboardService.saveLeaderboardRewardSetup');
+        throw new Error(response.error.message || 'Prize Program Could Not Be Published');
+      }
+      return response;
     });
-    if (error) {
-      reportError(error, 'LeaderboardService.saveLeaderboardRewardSetup');
-      throw error;
-    }
     if (!data || typeof data !== 'object') throw new Error('Prize Setup Could Not Be Saved');
     return data as LeaderboardSettings;
   },

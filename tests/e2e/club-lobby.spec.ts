@@ -153,16 +153,26 @@ test.describe('Club lobby', () => {
     const i = await firstRow(page, 'panel');
     test.skip(i < 0, 'every game in this lobby is a tournament, which routes instead');
 
-    const before = page.url();
-    await page.locator('.club-home__games .lt-row:not(.lt-row--skeleton)').nth(i).click();
+    const row = page.locator('.club-home__games .lt-row:not(.lt-row--skeleton)').nth(i);
+    const kind = await row.getAttribute('data-kind');
+    expect(kind, 'a lobby row rendered without a data-kind').toBeTruthy();
 
-    // The panel opens with the Casino Plaque; the URL must not move — a row
-    // click reviews the game, it never joins, registers, or spends.
+    const before = page.url();
+    await row.click();
+
+    // The panel opens with the approved presentation for that game; the URL
+    // must not move — a row click reviews the game, it never joins, registers,
+    // or spends. Cash tables deliberately use the live Arena machine while
+    // tournament-derived games use the Casino Plaque.
     const panel = page.locator('.glp');
     await expect(panel, 'selecting a row did not open the game lobby panel').toBeVisible({
       timeout: 8000,
     });
-    await expect(panel.locator('.cplaque')).toBeVisible();
+    if (kind === 'cash') {
+      await expect(panel.locator('.arena-game-card')).toBeVisible();
+    } else {
+      await expect(panel.locator('.cplaque')).toBeVisible();
+    }
 
     /* The panel deep-links itself: ClubHomePage writes `?game=<id>` while it
        is open so the selection survives a refresh and can be shared. That is
@@ -218,10 +228,10 @@ test.describe('Club lobby', () => {
 
     // Find a full CASH row by its status badge.
     const fullRow = page
-      .locator('.club-home__games .lt-row')
+      .locator('.club-home__games .lt-row[data-kind="cash"]')
       .filter({ has: page.locator('.lt-status--full') })
       .first();
-    test.skip((await fullRow.count()) === 0, 'no full tables in this lobby right now');
+    test.skip((await fullRow.count()) === 0, 'no full cash tables in this lobby right now');
 
     await fullRow.scrollIntoViewIfNeeded();
     await fullRow.click();
@@ -231,7 +241,7 @@ test.describe('Club lobby', () => {
 
     /* Re-resolve the CTA before every interaction: toggling the queue
        re-renders the panel and a stale handle detaches. */
-    const cta = () => panel.locator('.cplaque__cta');
+    const cta = () => panel.locator('.agc-action--primary');
     await expect(cta(), 'a full table offers no waitlist control').toBeVisible({ timeout: 10000 });
 
     const label = (await cta().innerText()).trim().toLowerCase();

@@ -66,8 +66,13 @@ describe('both decision points consult it', () => {
   });
 
   it('the bankroll gate sits alongside the stake band, not instead of it', () => {
-    // A band says what a horse has EARNED; the bankroll says what it AFFORDS.
-    expect(SRC).toContain('stakeBandAllows(h.id, table.big_blind)');
+    /* A band says what a horse has EARNED; the bankroll says what it AFFORDS.
+       PIN MOVED 2026-08-31: the band check was `stakeBandAllows`, an exact
+       match, which also forbade playing BELOW the earned band — so a horse
+       whose roll no longer carried its own stake stopped playing instead of
+       moving down. `resolveStakeBand` replaces it and keeps the band as a
+       CEILING. Both halves are still required, which is what this asserts. */
+    expect(SRC).toContain('resolveStakeBand({');
     expect(SRC).toContain('canSit(roll, ref, bankrollPolicyFor(h.id))');
   });
 });

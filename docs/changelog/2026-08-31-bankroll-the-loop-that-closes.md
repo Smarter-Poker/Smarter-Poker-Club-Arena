@@ -143,3 +143,127 @@ says whether the relaunch gave the fleet somewhere to go.
   missing. Each pin was tightened until the mutation went red.
 - The repo's own `noFixedSizeSourceWindows` gate caught a `+ 700` byte window
   in the first draft of these tests. Replaced with an adjacency assertion.
+
+---
+
+# Addendum — the ladder had no way DOWN (same day)
+
+The audit above ended with a sweep for unwired code, which found four
+functions written and tested this morning with **zero callers**:
+`canMoveUp`, `shouldMoveDown`, `bestAffordableGame`, `isBroke`. That is the
+`sessionVerdict` failure again, and this time the reason they could not be
+called is the interesting part.
+
+## `stakeBandAllows` was an exact match
+
+A band is EARNED (Dan 2026-08-29) on bb/100, and `stakeBandAllows` answered
+`stakeBandFor(horse) === stakeBandForBigBlind(table)`. Exact. So a horse whose
+roll could no longer carry its own band did not move down — **it stopped
+playing.** Measured live, before any reset:
+
+| band  | horses | cheapest open table                 | who can sit at 10,000 |
+| ----- | ------ | ----------------------------------- | --------------------- |
+| micro | 127    | **none — every micro table closed** | —                     |
+| low   | 336    | 1/2 (ref 200)                       | all                   |
+| mid   | 73     | 2/4 (ref 400)                       | nits cannot           |
+| high  | 48     | **none — nothing above 2/5 exists** | —                     |
+
+**175 of 584 horses — 30% of the fleet — were banded into a stake with no
+table in it and had nowhere legal to go.** That is a live bug today, not a
+consequence of the reset.
+
+## Merit is a ceiling; the bankroll picks beneath it
+
+Nothing here ever lets a horse play ABOVE its band — that half of the rule is
+untouched and now pinned explicitly. What changes is that the band stops being
+the only game it may play.
+
+This is not the escape hatch `stakeBandAllows` deliberately refuses. That
+hatch was about seating a nosebleed regular in a micro game _for convenience,
+while it could perfectly well afford its own stake_ — "a nosebleed regular in
+a micro game is the tell". A descent only happens when the horse genuinely
+cannot afford its band any more, and a broke high-stakes player grinding back
+up from a small game is the most recognisable story in poker.
+
+## Hysteresis is why there are three thresholds
+
+One threshold makes a horse flap: at exactly the sit bar it drops a rung, the
+smaller game re-qualifies it, and it climbs straight back — every cycle,
+forever. The policy already carried the three figures, and this is the first
+time any of them are used:
+
+- `canSit` (25 buy-ins) to ENTER a game;
+- `shouldMoveDown` (17) the LOWER bar at which you leave it;
+- `canMoveUp` (35) the HIGHER bar to climb back.
+
+Between 17 and 25 a horse stays put; it must clear 35 to return.
+
+## Two bugs the tests found in my own code
+
+**The empty ladder.** With nothing priceable the descent loop fell through
+every band and landed on the cheapest, so a cycle where the table read came
+back empty would have re-banded the ENTIRE FLEET to `micro` — and the latch
+would have persisted it until each horse individually clawed back. An empty
+ladder is an unknown, not a verdict.
+
+**The merit demotion.** A horse that had descended `high` to `mid` carries
+`mid` in the latch. If merit then demotes it to `low`, the latch must lose —
+otherwise the horse plays above its earned band, the one thing this must never
+allow. Both are pinned; both mutations go red.
+
+## Verification
+
+tsc clean both roots. Server **3,066 / 268**, client **9,959 / 702**.
+17 mutations caught in total across the day's work. Two existing pins were
+MOVED rather than deleted — `HorseStakeBands` and `HorseBankrollWiring` both
+pinned `stakeBandAllows` in the candidate filter; each now pins
+`resolveStakeBand` and keeps the property it was really guarding (the band
+decision happens before the weighted pick, and the bankroll sits alongside the
+band rather than instead of it).
+
+## What the micro relaunch still has to fix
+
+Descent rescues the 48 `high` and the mid-band nits. It cannot rescue the
+**127 `micro`-banded horses**: micro is the bottom of the ladder, so there is
+nothing below to drop to, and merit forbids going up. Those 127 need micro
+tables to exist. `ladder_exhausted` counts exactly them.
+
+---
+
+# Addendum 2 — the last two unwired functions, and a seated horse that could not afford its seat
+
+## A seated horse now stands up when it can no longer afford the game
+
+The seating gate only ever ran BEFORE a horse sat. After buy-ins and reloads a
+wallet can fall under the level that justifies the stake, and nothing stood it
+up for that — so the ladder could demote a horse in principle while it went on
+playing a game it could not afford in practice.
+
+The rotator now checks `shouldMoveDown` per seat. At the **looser** bar
+deliberately (17 buy-ins, not `canSit`'s 25): a horse that merely dips under
+the entry bar mid-session finishes what it is doing. Using the entry bar here
+would stand a horse up the moment it fell below 25 and re-seat it at 25 — the
+flap the three thresholds exist to prevent.
+
+## `isBroke` and `bestAffordableGame` deleted
+
+Both were correct, tested, and had zero callers — the same failure this audit
+was written to find, so leaving two more behind would have been the wrong
+lesson. Each was superseded the moment something real needed the job:
+
+- `bestAffordableGame` picked from a synthetic ladder; `resolveStakeBand` does
+  it against the bands and tables that actually exist, with hysteresis it
+  never had.
+- `isBroke` compared a roll to a hard-coded cheapest buy-in; the freeroll
+  router asks the better question — can this horse afford the cheapest **paid
+  event on the board** — which cannot go stale when the schedule moves.
+
+Deleted rather than kept "just in case". Dead code with passing tests reads as
+working machinery, which is exactly how the first four went unnoticed.
+
+**Every exported bankroll function now has a production caller.**
+
+## Verification
+
+tsc clean both roots. Server **3,072 / 268**, client **10,013 / 702**.
+19 mutations caught across the day.

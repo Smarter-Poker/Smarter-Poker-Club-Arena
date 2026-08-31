@@ -69,12 +69,17 @@ const ALIVE_DESPITE_APPEARANCES = [
   'auto_create_table',
   // Five club-data RPCs: COALESCE(t.game_mode,'') ILIKE '%mixed%'.
   'game_mode',
-  // 20260828_cash_buyins_are_40bb_to_200bb.sql resyncs both deliberately.
-  'min_buy_in_bb',
-  'max_buy_in_bb',
   // Real readers in lobbyEntries, TablePage and HorseOrchestrator.
   'ante_bb',
 ];
+
+/**
+ * These aliases still have legacy readers, but they are generated, read-only
+ * columns now. Keeping them out of the writer is the contract: the database
+ * derives both from min_buy_in / max_buy_in so a second buy-in band cannot
+ * drift. buyInBandIsOneColumnPair.test.ts pins the corresponding no-write law.
+ */
+const GENERATED_READ_ONLY_ALIASES = ['min_buy_in_bb', 'max_buy_in_bb'];
 
 describe('5a — the three lifecycle switches are read in SQL and stay', () => {
   it.each(['Auto Restart', 'Auto Extension', 'Auto Create Table'])(
@@ -99,6 +104,10 @@ describe('5b — the tournament block is not written onto a cash row', () => {
 
   it.each(ALIVE_DESPITE_APPEARANCES)('still writes %s, which has live readers', (column) => {
     expect(code).toMatch(new RegExp(`^\\s*${column}:`, 'm'));
+  });
+
+  it.each(GENERATED_READ_ONLY_ALIASES)('does not write generated alias %s', (column) => {
+    expect(code).not.toMatch(new RegExp(`^\\s*${column}:`, 'm'));
   });
 });
 

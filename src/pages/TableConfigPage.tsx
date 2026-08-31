@@ -1324,14 +1324,16 @@ export default function TableConfigPage() {
      * (scripts/ci/supabase-required-columns-manifest.json), so omitting them
      * cannot refuse the insert.
      *
-     * THREE THAT LOOK DEAD AND ARE NOT — verified, do not "finish the job":
+     * COLUMNS THAT LOOK DEAD AND ARE NOT — verified, do not "finish the job":
      *   game_mode    five live club-data RPCs read it
      *                (COALESCE(t.game_mode,'') ILIKE '%mixed%').
-     *   min_buy_in_bb / max_buy_in_bb
-     *                20260828_cash_buyins_are_40bb_to_200bb.sql resyncs them
-     *                deliberately "so the two column families cannot
-     *                disagree".
      * The rest that remain below have real readers on `tables` rows.
+     *
+     * `min_buy_in_bb` / `max_buy_in_bb` are deliberately NOT in this writer:
+     * 20260831133000_one_buy_in_band_and_the_rest_are_derived.sql replaced
+     * them with generated, read-only aliases of min_buy_in / max_buy_in. The
+     * database now keeps legacy SELECTs compatible without permitting a
+     * second, contradictory buy-in band.
      */
     // SNG/MTT specific
     blind_structure: config.blindStructure,

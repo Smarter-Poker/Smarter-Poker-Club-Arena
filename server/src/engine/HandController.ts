@@ -55,6 +55,7 @@ import type {
 } from '../types.js';
 
 import { reportError } from '../services/errorReporter.js';
+import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { createHandStateMachine, type HandFSMState } from './StateMachine.js';
 import { bigBlindAnteTotal } from './AnteMath.js';
 import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
@@ -2976,6 +2977,42 @@ export class HandController {
             `The rake and BBJ drop were refused; the flag is what needs fixing.`
         ),
         'HandController.saw_flop_without_board'
+      );
+      /* And durably, where it can be READ. Sentry is where the first version
+         of this sent the finding, and Sentry is not queryable from the place
+         the rake-law alarm lives, so the two halves of the same incident sat
+         in two systems and only one of them could be joined to a hand id.
+         financial_alerts is the server's durable money-alarm table and takes
+         a structured context; this is a money path refusing to pay, which is
+         exactly what it is for. Fire-and-forget on the settlement hot path —
+         raiseFinancialAlert never throws and never rejects (and re-escalates
+         a throttled critical to Sentry by itself). */
+      void raiseFinancialAlert(
+        'critical',
+        'HandController.saw_flop_without_board',
+        `Hand ${this.config.handNumber} asked for rake on a board that does not exist - refused`,
+        {
+          tableId: this.config.tableId,
+          handNumber: this.config.handNumber,
+          stage: this.state.stage,
+          pot,
+          seats: this.state.players.length,
+          boardLength: this.state.communityCards.length,
+          board: this.state.communityCards.map((c) => `${c.rank}${c.suit}`),
+          board2Length: this.state.communityCards2.length,
+          gameVariant: this.config.gameVariant,
+          bombPot: Boolean(this.config.bombPot),
+          // The last few actions say what the hand was actually doing when the
+          // flag went wrong. The live evidence is that these hands record a
+          // stage of 'showdown' on ordinary preflop folds, so the stage each
+          // action was taken at is the thread to pull.
+          recentActions: this.state.actionHistory.slice(-6).map((a) => ({
+            seat: a.seat,
+            action: a.action,
+            amount: a.amount,
+            stage: a.stage,
+          })),
+        }
       );
     }
 

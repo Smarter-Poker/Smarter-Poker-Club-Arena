@@ -155,6 +155,8 @@ export interface CreateClubData {
   city?: string;
   country?: string;
   logoPreview?: string | null;
+  /** Stable published asset URL for a curated placeholder crest. */
+  logoUrl?: string | null;
 }
 
 export async function createClub(clubData: CreateClubData): Promise<Club> {
@@ -181,7 +183,7 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
   const requestId = clubData.request_id || crypto.randomUUID();
 
   // ── Step 1: Upload raw logo to storage ──────────────────────────────
-  let logoUrl: string | null = null;
+  let logoUrl: string | null = clubData.logoUrl || null;
   let uploadedLogoPath: string | null = null;
   if (clubData.logoPreview) {
     try {
@@ -206,14 +208,19 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
           upsert: true,
         });
       if (logoUploadError || !logoUploadData) {
-        throw new Error(logoUploadError?.message || 'Logo upload failed.');
+        if (logoUploadError) reportError(logoUploadError, 'ClubsService.createClub.LogoUpload');
+        throw new Error('Custom Logo Could Not Be Uploaded. Please Try Again.');
       }
       uploadedLogoPath = logoFileName;
       const { data: urlData } = supabase.storage.from('club-assets').getPublicUrl(logoFileName);
       logoUrl = urlData?.publicUrl || null;
     } catch (e) {
       reportError(e, 'ClubsService.createClub.LogoUpload');
-      throw new Error(e instanceof Error ? e.message : 'Failed to upload the club logo.');
+      throw new Error(
+        e instanceof Error && e.message === 'Custom Logo Could Not Be Uploaded. Please Try Again.'
+          ? e.message
+          : 'The Selected Logo Could Not Be Prepared. Please Choose Another Image.'
+      );
     }
   }
 
@@ -246,7 +253,13 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
     if (/already exists|duplicate|unique/i.test(message)) {
       throw new Error('A club with this name already exists. Please choose a different name.');
     }
-    throw new Error(message);
+    if (/only be a member of up to 4 clubs|four-club allowance/i.test(message)) {
+      throw new Error('Your Four-Club Allowance Is Full. Leave A Club Before Creating Another.');
+    }
+    if (/temporarily unavailable/i.test(message)) {
+      throw new Error('Club Creation Is Temporarily Unavailable. Please Try Again Soon.');
+    }
+    throw new Error('Club Could Not Be Created. Your Details Are Still Here. Please Try Again.');
   }
   const data = rpcData as Club & { card_image_url?: string };
 

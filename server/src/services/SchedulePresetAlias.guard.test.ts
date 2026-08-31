@@ -11,7 +11,9 @@ import { describe, expect, it } from 'vitest';
 import {
   SCHEDULE_BLIND_PRESETS,
   SCHEDULE_PAYOUT_PRESETS,
-} from './ScheduledTournamentService';
+  // .js extension is mandatory: TournamentFixes.guard.test.ts pins it because
+  // Node resolves the specifier literally at runtime.
+} from './ScheduledTournamentService.js';
 
 describe('schedule preset names resolve', () => {
   it('every blind preset name used by production schedules exists', () => {

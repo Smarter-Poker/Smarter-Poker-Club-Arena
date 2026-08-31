@@ -46,8 +46,8 @@ export function TableStudioGameplayPreview({ selection, avatarUrls, finalTable }
       data-card-back={normalizeCardBack(selection.cards_id)}
       aria-label={
         finalTable
-          ? 'Final Table gameplay preview using avatars from your avatar library'
-          : 'Gameplay preview using avatars from your avatar library'
+          ? 'Final Table Gameplay Preview Using Avatars From Your Avatar Library'
+          : 'Gameplay Preview Using Avatars From Your Avatar Library'
       }
     >
       <img

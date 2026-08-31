@@ -540,7 +540,7 @@ export default function MarketplacePage() {
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Marketplace"
         title="Club Marketplace"
-        description="Acquire table upgrades, player perks, club exclusives, diamond packages, and VIP access through the existing server-priced storefront."
+        description="Acquire Table Upgrades, Player Perks, Club Exclusives, Diamond Packages, And VIP Access Through The Existing Server-Priced Storefront."
         art="market"
         status="PLAYER EXCHANGE // LIVE"
         metrics={[
@@ -572,7 +572,7 @@ export default function MarketplacePage() {
         }
       />
 
-      <div className={styles.marketStatusBar} aria-label="Marketplace wallet status">
+      <div className={styles.marketStatusBar} aria-label="Marketplace Wallet Status">
         <div className={styles.walletBar}>
           {/* One wallet, one currency: diamonds. The shop API and the VIP
                 status API both report the same profiles.diamonds balance. */}

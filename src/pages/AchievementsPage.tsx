@@ -590,7 +590,7 @@ export default function AchievementsPage() {
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Achievements"
         title="Achievement Archive"
-        description="A live record of milestones earned across play, competition, community, loyalty, and special events, with every badge still driven by the existing achievement services."
+        description="A Live Record Of Milestones Earned Across Play, Competition, Community, Loyalty, And Special Events, With Every Badge Still Driven By The Existing Achievement Services."
         art="diamonds"
         status="MILESTONE INDEX // LIVE"
         metrics={[
@@ -856,8 +856,8 @@ export default function AchievementsPage() {
             </p>
             <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
               {category === 'all'
-                ? 'Start playing to unlock your first badge!'
-                : `Play more to unlock ${category} achievements.`}
+                ? 'Start Playing To Unlock Your First Badge!'
+                : `Play More To Unlock ${category} Achievements.`}
             </p>
           </div>
         ) : (

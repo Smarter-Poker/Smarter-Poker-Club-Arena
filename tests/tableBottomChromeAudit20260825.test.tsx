@@ -78,10 +78,10 @@ describe('the three action buttons keep their DOM contract while the overlay is 
    */
   it('keeps Fold and Call mounted once the sizing overlay is open', () => {
     render(<ActionPanel {...panelBase} onAction={vi.fn()} />);
-    fireEvent.click(screen.getByLabelText('Open raise panel'));
+    fireEvent.click(screen.getByLabelText('Open Raise Panel'));
 
     // The overlay is up …
-    expect(screen.getByLabelText('Raise amount')).toBeTruthy();
+    expect(screen.getByLabelText('Raise Amount')).toBeTruthy();
     // … and the row is still in the DOM under it, which is what
     // `aria-expanded`, `action-btn--on` and `--sp-bottom-row-h` all rely on.
     expect(screen.getByLabelText('Fold')).toBeTruthy();
@@ -102,14 +102,14 @@ describe('the three action buttons keep their DOM contract while the overlay is 
 
   it('makes the raise button a toggle that closes the overlay again', () => {
     render(<ActionPanel {...panelBase} onAction={vi.fn()} />);
-    fireEvent.click(screen.getByLabelText('Open raise panel'));
+    fireEvent.click(screen.getByLabelText('Open Raise Panel'));
 
-    const closer = screen.getByLabelText('Close raise panel');
+    const closer = screen.getByLabelText('Close Raise Panel');
     expect(closer.getAttribute('aria-expanded')).toBe('true');
 
     fireEvent.click(closer);
-    expect(screen.queryByLabelText('Raise amount')).toBeNull();
-    expect(screen.getByLabelText('Open raise panel').getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByLabelText('Raise Amount')).toBeNull();
+    expect(screen.getByLabelText('Open Raise Panel').getAttribute('aria-expanded')).toBe('false');
   });
 
   it('lets a player fold the moment they step back out of the overlay', () => {
@@ -119,7 +119,7 @@ describe('the three action buttons keep their DOM contract while the overlay is 
     // of it or the player is trapped in the sizing panel on a shot clock.
     const onAction = vi.fn();
     render(<ActionPanel {...panelBase} onAction={onAction} />);
-    fireEvent.click(screen.getByLabelText('Open raise panel'));
+    fireEvent.click(screen.getByLabelText('Open Raise Panel'));
     fireEvent.click(screen.getByLabelText('Back'));
     fireEvent.click(screen.getByLabelText('Fold'));
     expect(onAction).toHaveBeenCalledWith('fold');

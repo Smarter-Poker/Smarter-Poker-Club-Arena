@@ -406,10 +406,15 @@ test.describe('production Daily Missions certification', () => {
           }
           await route.continue();
         });
-        await page.goto(new URL('challenges', baseURL).toString(), {
-          waitUntil: 'domcontentloaded',
-          timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
-        });
+        // Remount through the already-loaded SPA. page.route() deliberately
+        // disables Chromium's HTTP cache, so a second full document navigation
+        // here used to turn this RPC recovery assertion into an unrelated
+        // 60-second asset-waterfall timeout on a busy production edge.
+        await missions.navigateWithinArena('notifications');
+        await expect(page.getByRole('heading', { name: 'Daily Missions', level: 1 })).toHaveCount(
+          0
+        );
+        await missions.navigateWithinArena('challenges');
         await expect(page.getByRole('alert')).toContainText('Mission Network Unavailable', {
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });

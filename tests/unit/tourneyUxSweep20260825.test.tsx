@@ -97,7 +97,7 @@ describe('Item 1 - a running tournament can be watched', () => {
 
     const page = code(read('src/pages/TournamentPage.tsx'));
     expect(page).not.toMatch(/disabled=\{!isRegistered\}[\s\S]{0,160}handleJoinTable/);
-    expect(page).toMatch(/isRegistered \? 'Go to Table' : 'Watch'/);
+    expect(page).toMatch(/isRegistered \? 'Go To Table' : 'Watch'/);
     expect(page).toMatch(/openTableAsObserver\(navigate, \{ tableId: live\[0\]\.id \}\)/);
   });
 

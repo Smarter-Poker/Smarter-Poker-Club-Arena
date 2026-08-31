@@ -190,7 +190,7 @@ function ShellContent() {
               onClick={() => navigate('/notifications')}
               title="Notifications"
               aria-label={
-                unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'
+                unreadCount > 0 ? `Notifications (${unreadCount} Unread)` : 'Notifications'
               }
             >
               {unreadCount > 0 && (
@@ -201,7 +201,7 @@ function ShellContent() {
               className="shell-diamonds"
               role="button"
               tabIndex={0}
-              aria-label="View diamond balance"
+              aria-label="View Diamond Balance"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') e.currentTarget.click();
               }}
@@ -232,7 +232,7 @@ function ShellContent() {
             <button
               className="shell-avatar"
               onClick={() => navigate('/profile')}
-              aria-label="Open profile"
+              aria-label="Open Profile"
             >
               {user?.avatar_url || ''}
             </button>
@@ -242,7 +242,7 @@ function ShellContent() {
           <button
             className="shell-mobile-toggle"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-label={mobileMenuOpen ? 'Close Menu' : 'Open Menu'}
             aria-expanded={mobileMenuOpen}
           >
             {mobileMenuOpen ? (

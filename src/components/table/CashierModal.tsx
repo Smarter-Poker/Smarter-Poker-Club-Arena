@@ -357,7 +357,7 @@ export function CashierModal({
             className="cashier-modal__close"
             onClick={onClose}
             disabled={busy}
-            aria-label="Close cashier"
+            aria-label="Close Cashier"
           >
             ×
           </button>
@@ -383,7 +383,7 @@ export function CashierModal({
         <div
           className="cashier-modal__tabs"
           role="tablist"
-          aria-label="Cashier actions"
+          aria-label="Cashier Actions"
           onKeyDown={handleTabKeyDown}
         >
           <button
@@ -433,7 +433,7 @@ export function CashierModal({
               step={0.01}
               max={activeMax}
               disabled={busy}
-              aria-label={activeTab === 'add' ? 'Amount to add' : 'Amount to withdraw'}
+              aria-label={activeTab === 'add' ? 'Amount To Add' : 'Amount To Withdraw'}
               aria-invalid={amount > 0 && !isValidAmount}
             />
           </div>

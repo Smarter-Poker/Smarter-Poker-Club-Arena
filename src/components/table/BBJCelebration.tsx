@@ -414,7 +414,7 @@ export function BBJCelebration({
       style={{ opacity, transition: 'opacity 0.5s ease' }}
       role="dialog"
       aria-live="assertive"
-      aria-label={`Bad Beat Jackpot hit. Total payout ${Math.trunc(totalPayout).toLocaleString('en-US')}.`}
+      aria-label={`Bad Beat Jackpot Hit. Total Payout ${Math.trunc(totalPayout).toLocaleString('en-US')}.`}
     >
       {/* Canvas layer for particles */}
       <canvas ref={canvasRef} className="bbj-canvas" />
@@ -526,7 +526,7 @@ export function BBJCelebration({
           type="button"
           className="bbj-dismiss"
           onClick={dismiss}
-          aria-label="Dismiss the jackpot celebration"
+          aria-label="Dismiss The Jackpot Celebration"
         >
           Continue
         </button>

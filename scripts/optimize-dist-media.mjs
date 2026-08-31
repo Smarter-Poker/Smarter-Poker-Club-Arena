@@ -167,51 +167,6 @@ async function optimizeMedia(sharp) {
   );
 }
 
-/**
- * Modulepreload the lobby's own chunk.
- *
- * PERF 2026-08-24. The boot order was: fetch index.html, fetch the entry
- * chunk, evaluate it, mount React, resolve the route, and only THEN discover
- * that `/` needs HomePage and go and fetch it. That last fetch is a whole
- * extra round trip which the browser could not see coming, sitting between a
- * fully-parsed app and the first thing the player is here to look at.
- *
- * `modulepreload` in the shell makes it discoverable in the first HTML parse,
- * so it downloads alongside the entry instead of after it. The chunk is
- * content-hashed, so the tag has to be written by the build rather than kept
- * in index.html by hand.
- *
- * This runs BEFORE injectServiceWorker on purpose: the precache scanner reads
- * index.html for its list, so writing the tag first also gets HomePage into
- * the service worker's precache, alongside the shell it belongs to.
- */
-function injectLobbyPreload() {
-  const htmlPath = path.join(DIST, 'index.html');
-  const assetsDir = path.join(DIST, 'assets');
-  if (!existsSync(htmlPath) || !existsSync(assetsDir)) return;
-
-  const html = readFileSync(htmlPath, 'utf8');
-  const chunk = readdirSync(assetsDir).find((f) => /^HomePage-.*\.js$/.test(f));
-  if (!chunk) {
-    console.warn('[dist-media] no HomePage chunk found — skipping lobby preload');
-    return;
-  }
-
-  const href = `/hub/club-arena/assets/${chunk}`;
-  if (html.includes(href)) return; // already present, nothing to do
-
-  // Sit alongside the vendor preloads Vite emits, so the whole boot set is
-  // declared in one place.
-  const tag = `  <link rel="modulepreload" crossorigin href="${href}">\n`;
-  const marker = '</head>';
-  if (!html.includes(marker)) {
-    console.warn('[dist-media] index.html has no </head> — skipping lobby preload');
-    return;
-  }
-  writeFileSync(htmlPath, html.replace(marker, tag + marker));
-  console.log(`[dist-media] index.html modulepreloads ${chunk}`);
-}
-
 function injectServiceWorker() {
   const swPath = path.join(DIST, 'sw-bus.js');
   const htmlPath = path.join(DIST, 'index.html');
@@ -254,14 +209,10 @@ async function main() {
     console.warn('[dist-media] no dist/ directory — nothing to do');
     return;
   }
-  // Shell rewrites first: they need no external deps and must happen even if
-  // sharp is unavailable. Order matters — the preload tag has to be in
-  // index.html before the precache scanner reads it.
-  try {
-    injectLobbyPreload();
-  } catch (err) {
-    console.warn('[dist-media] lobby preload failed (non-fatal):', err?.message || err);
-  }
+  // Shell rewriting needs no external dependencies and must happen even if
+  // sharp is unavailable. HomePage remains a route-level dynamic import: a
+  // manual modulepreload made every deep link pay for the lobby and pushed the
+  // Linux initial-load artifact over its hard budget.
   try {
     injectServiceWorker();
   } catch (err) {

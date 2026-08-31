@@ -180,7 +180,7 @@ describe('cashier Phase 4 operational resilience', () => {
     expect(page).toContain('Immutable Ledger Entry');
     expect(page).toContain('Copy Receipt');
     expect(page).toContain('cashierReceiptText(receipt');
-    expect(page).toContain('aria-label={`Open receipt for');
+    expect(page).toContain('aria-label={`Open Receipt For');
     expect(styles).toContain('.receiptRow');
     expect(styles).toContain('.receiptFacts');
     expect(styles).toMatch(/@media \(max-width: 560px\)[\s\S]+\.recoveryGrid/);

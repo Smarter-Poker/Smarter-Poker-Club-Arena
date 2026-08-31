@@ -253,7 +253,7 @@ export default function VIPPage() {
         <RewardsSurfaceHeader
           eyebrow="Rewards Circuit / VIP"
           title="VIP Command Deck"
-          description="Track live tier progress, review earned privileges, and redeem VIP rewards through the existing protected reward services."
+          description="Track Live Tier Progress, Review Earned Privileges, And Redeem VIP Rewards Through The Existing Protected Reward Services."
           art="vip"
           status="VIP TELEMETRY // SYNCING"
           metrics={[
@@ -274,7 +274,7 @@ export default function VIPPage() {
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / VIP"
         title="VIP Command Deck"
-        description="Track live tier progress, review earned privileges, and redeem VIP rewards through the existing protected reward services."
+        description="Track Live Tier Progress, Review Earned Privileges, And Redeem VIP Rewards Through The Existing Protected Reward Services."
         art="vip"
         status="VIP TELEMETRY // LIVE"
         metrics={[

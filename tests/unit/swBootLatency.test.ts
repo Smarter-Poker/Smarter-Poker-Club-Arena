@@ -36,6 +36,7 @@ import path from 'node:path';
 const root = (p: string) => path.resolve(__dirname, '../..', p);
 const sw = readFileSync(root('public/sw-bus.js'), 'utf8');
 const app = readFileSync(root('src/App.tsx'), 'utf8');
+const vite = readFileSync(root('vite.config.ts'), 'utf8');
 
 /**
  * The browser's own rule, reproduced: a client is controlled when the
@@ -63,6 +64,10 @@ describe('service worker scope covers the URL the World Hub links to', () => {
     // fallback a missing header means NO service worker at all, which is
     // strictly worse than the bug being fixed.
     expect(app.match(/\.register\(swPath/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+
+  it('allows the slashless scope on the local server used by browser tests', () => {
+    expect(vite).toContain("'Service-Worker-Allowed': '/hub/club-arena'");
   });
 
   it('the default scope really does miss the bare URL (this is why)', () => {
@@ -100,7 +105,10 @@ describe('the app shell is served from cache with a bounded freshness race', () 
 
   it('gives the in-flight revalidation a short budget so a post-deploy entry boots CURRENT', () => {
     const budget = Number(sw.match(/const SHELL_FRESH_RACE_MS = (\d+)/)?.[1]);
-    expect(budget, 'the freshness race is gone — the post-deploy boot-then-reload glitch is back').toBeGreaterThan(0);
+    expect(
+      budget,
+      'the freshness race is gone — the post-deploy boot-then-reload glitch is back'
+    ).toBeGreaterThan(0);
     // The budget must stay a blink, not a deadline. 500ms is where "part of
     // loading" starts turning back into "300-800ms of nothing" (2026-08-24).
     expect(budget).toBeLessThanOrEqual(500);

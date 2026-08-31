@@ -197,9 +197,7 @@ export default function StatsShareCard({ displayName, stats, styleLabel, styleCo
     setBusy(true);
     setNote(null);
     try {
-      const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, 'image/png')
-      );
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
       if (!blob) {
         setNote('Could not build the image. Try again.');
         return;
@@ -240,7 +238,7 @@ export default function StatsShareCard({ displayName, stats, styleLabel, styleCo
           ref={canvasRef}
           className="sharecard-canvas"
           role="img"
-          aria-label="A shareable image of your headline poker stats"
+          aria-label="A Shareable Image Of Your Headline Poker Stats"
         />
       </div>
       <button type="button" className="sharecard-btn" onClick={handleShare} disabled={busy}>

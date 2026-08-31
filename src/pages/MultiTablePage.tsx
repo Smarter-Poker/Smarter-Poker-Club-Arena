@@ -2670,7 +2670,7 @@ export default function MultiTablePage() {
       >
         <div className="multi-table-page__take-seat-info">
           <span className="multi-table-page__take-seat-label">
-            {isUrgent ? 'Your turn' : liveCount > 1 ? `${liveCount} games running` : 'Game running'}
+            {isUrgent ? 'Your Turn' : liveCount > 1 ? `${liveCount} Games Running` : 'Game Running'}
           </span>
           <span className="multi-table-page__take-seat-name">{target.name}</span>
         </div>
@@ -3416,8 +3416,8 @@ export default function MultiTablePage() {
                     pnlPressTimerRef.current = null;
                   }
                 }}
-                title="Session across cash tables (right-click or hold to turn off)"
-                aria-label="Session across cash tables"
+                title="Session Across Cash Tables (Right-Click Or Hold To Turn Off)"
+                aria-label="Session Across Cash Tables"
               >
                 {sessionAgg.net > 0 ? '+' : ''}
                 {sessionAgg.net.toLocaleString('en-US')}
@@ -3439,11 +3439,11 @@ export default function MultiTablePage() {
               title={
                 tables.length > 1
                   ? isTileView
-                    ? 'Single view'
-                    : 'Tile view'
-                  : 'Open a second table to use tile view'
+                    ? 'Single View'
+                    : 'Tile View'
+                  : 'Open A Second Table To Use Tile View'
               }
-              aria-label={isTileView ? 'Single view' : 'Tile view'}
+              aria-label={isTileView ? 'Single View' : 'Tile View'}
             >
               <img className="tile-toggle-btn__img" src={fourScreenIcon} alt="" draggable={false} />
             </button>
@@ -3463,7 +3463,7 @@ export default function MultiTablePage() {
                 <div key={r.id} className="multi-table-page__session-row">
                   <span className="multi-table-page__session-name">{r.name}</span>
                   <span className="multi-table-page__session-hands">
-                    {r.tracked ? `${r.hands} hands` : 'observing'}
+                    {r.tracked ? `${r.hands} Hands` : 'Observing'}
                   </span>
                   <span
                     className={`multi-table-page__session-net${
@@ -3480,11 +3480,11 @@ export default function MultiTablePage() {
               ))}
               <div className="multi-table-page__session-row multi-table-page__session-row--total">
                 <span className="multi-table-page__session-name">
-                  {sessionAgg.rows.length} {sessionAgg.rows.length === 1 ? 'table' : 'tables'}
+                  {sessionAgg.rows.length} {sessionAgg.rows.length === 1 ? 'Table' : 'Tables'}
                 </span>
                 <span className="multi-table-page__session-hands">
                   {sessionAgg.hands} Hands
-                  {sessionAgg.handsPerHour > 0 ? ` - ${sessionAgg.handsPerHour}/hr` : ''}
+                  {sessionAgg.handsPerHour > 0 ? ` - ${sessionAgg.handsPerHour}/Hr` : ''}
                 </span>
                 <span
                   className={`multi-table-page__session-net${
@@ -3507,7 +3507,7 @@ export default function MultiTablePage() {
         {quickJoin.open && (
           <>
             <div className="multi-table-page__quickjoin-backdrop" onClick={closeQuickJoin} />
-            <div className="multi-table-page__quickjoin" role="dialog" aria-label="Quick join">
+            <div className="multi-table-page__quickjoin" role="dialog" aria-label="Quick Join">
               <div className="multi-table-page__quickjoin-title">Quick Join</div>
               {quickJoin.loading ? (
                 <div className="multi-table-page__quickjoin-empty">Finding Games…</div>
@@ -3636,7 +3636,7 @@ export default function MultiTablePage() {
                               max={maxTo}
                               step={step}
                               value={draft}
-                              aria-label="Raise amount"
+                              aria-label="Raise Amount"
                               onChange={(e) =>
                                 setTileRaiseDraft((p) => ({
                                   ...p,

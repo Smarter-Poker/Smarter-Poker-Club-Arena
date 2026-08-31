@@ -367,7 +367,7 @@ function FriendListPanelInner({
           <div className={styles.loading}>Loading...</div>
         ) : filteredFriends.length === 0 ? (
           <div className={styles.empty}>
-            {searchQuery ? 'No friends match your search' : 'No friends yet'}
+            {searchQuery ? 'No Friends Match Your Search' : 'No Friends Yet'}
           </div>
         ) : (
           filteredFriends.map((friend, idx) => (
@@ -421,8 +421,8 @@ function FriendListPanelInner({
                       haptic.light();
                       onInviteClick(friend.friendId);
                     }}
-                    title="Invite to table"
-                    aria-label="Invite to table"
+                    title="Invite To Table"
+                    aria-label="Invite To Table"
                   ></button>
                 )}
               </div>

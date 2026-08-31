@@ -76,8 +76,20 @@ describe('the LIVE hand variant is the one seam (spec §10.1)', () => {
   });
 
   it('hand history records the variant the hand was DEALT as', () => {
+    // REPOINTED 2026-08-31. Settlement now takes a SNAPSHOT of every
+    // `this.currentHand*` field synchronously, before its first await, and
+    // reads only the snapshot from there down - because dealHand blanks those
+    // fields and reallocates the hand number, so any path that let the dealing
+    // loop advance during settlement wrote hand N's row from hand N+1's empty
+    // capture. That refactor is a FIX, and it moved this anchor.
+    //
+    // The invariant is unchanged and is now pinned END TO END: the snapshot
+    // must be filled from the dealt variant, and the row must be written from
+    // the snapshot. Pinning only the second half would pass on a snapshot that
+    // had quietly started copying the table label instead.
+    expect(SETTLEMENT).toMatch(/variant: this\.currentHandVariant,/);
     expect(SETTLEMENT).toMatch(
-      /gameVariant: this\.currentHandVariant \|\| this\.tableInfo\.game_variant \|\| 'nlh'/
+      /gameVariant: snap\.variant \|\| this\.tableInfo\.game_variant \|\| 'nlh'/
     );
   });
 
@@ -160,13 +172,13 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
     // written to guard — the exact failure mode sourceWindow.ts exists to
     // stop. An anchor on the condition cannot drift no matter what is nested
     // inside it.
-    const window = sliceBlockAfter(SETTLEMENT, 'if (v_handHistoryId && this.currentHandBombPot');
+    const window = sliceBlockAfter(SETTLEMENT, 'if (v_handHistoryId && snap.bombPot');
     // Gated on the hand being a BOMB, and on there being awards to record —
     // never on the board count (2026-08-28: a single-board bomb with side
     // pots is exactly as hard to rebuild, and a partial ledger cannot tell a
     // single-board bomb from a hand that never happened).
-    expect(window).toMatch(/this\.currentHandBombPot/);
-    expect(window).toMatch(/currentHandPerPotAwards\.length > 0/);
+    expect(window).toMatch(/snap\.bombPot/);
+    expect(window).toMatch(/perPotAwards\.length > 0/);
     expect(window).not.toMatch(/board_count \?\? 1\) >= 2/);
     expect(window).toMatch(/onConflict: 'hand_history_id,pot_index,board,side,user_id'/);
     expect(window).toMatch(/ignoreDuplicates: true/);
@@ -181,7 +193,7 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
     // silently. Hand 3364829 (2026-08-29 02:35:08Z) is the proof: a clean
     // two-board showdown paid out correctly to the cent, bracketed by hands at
     // 02:31 and 02:37 that both wrote their rows, and zero rows of its own.
-    const window = sliceBlockAfter(SETTLEMENT, 'if (v_handHistoryId && this.currentHandBombPot');
+    const window = sliceBlockAfter(SETTLEMENT, 'if (v_handHistoryId && snap.bombPot');
     expect(window).toMatch(/attempt <= BOMB_LEDGER_WRITE_ATTEMPTS/);
     // 2026-08-29: the backoff is EXPONENTIAL and capped. It was linear
     // (250/500), which fitted all three attempts inside the first second and

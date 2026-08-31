@@ -37,6 +37,37 @@ export const BLINDS_PRESETS: readonly BlindsPreset[] = [
 /** 0.05/0.10 — the preset the form starts on. */
 export const DEFAULT_BLINDS_INDEX = 2;
 
+/**
+ * THE LADDER A FIXED-LIMIT TABLE MAY BE BUILT ON.
+ *
+ * A limit game's whole bet ladder is derived from the big blind —
+ * fixedLimitBetSize() makes the small bet one BB preflop and on the flop, and
+ * the big bet 2x BB on the turn and river — and stakesLabel() names the table
+ * by those BET sizes: blinds 1/2 is a "2/4" limit game. The small blind is not
+ * a term in either.
+ *
+ * So on a preset where the big blind is NOT twice the small blind, the label
+ * and the table disagree: an FLO8 table stored as small_blind 0.1,
+ * big_blind 0.25 is labelled "0.25/0.50" in tables.stakes, on its lobby row
+ * and in its header, and the 0.10 a player actually posts appears NOWHERE.
+ * The database guard accepts it — it only requires bb > sb > 0 — so nothing
+ * downstream would ever have caught it.
+ *
+ * A limit game with a small blind that is not half the big blind is also not
+ * a structure anyone plays. Restricting the ladder is therefore the honest
+ * fix, rather than teaching the label to carry a blind the format does not
+ * have. Verified 2026-08-31: zero fixed-limit cash tables exist, so nothing
+ * live is relabelled by this.
+ */
+export const LIMIT_BLINDS_PRESETS: readonly BlindsPreset[] = BLINDS_PRESETS.filter(
+  (p) => Math.abs(p.bb - p.sb * 2) < 1e-9
+);
+
+/** The presets this variant may be built on. */
+export function presetsFor(isFixedLimit: boolean): readonly BlindsPreset[] {
+  return isFixedLimit ? LIMIT_BLINDS_PRESETS : BLINDS_PRESETS;
+}
+
 /** Money compares badly in binary; 1e-9 is far below a chip. */
 const same = (a: number, b: number): boolean => Math.abs(a - b) < 1e-9;
 
@@ -46,8 +77,12 @@ const same = (a: number, b: number): boolean => Math.abs(a - b) < 1e-9;
  * preset changed carries blinds no slider position can represent, and
  * pretending otherwise is what produced the desynced thumb.
  */
-export function blindsIndexFor(smallBlind: number, bigBlind: number): number | null {
-  const i = BLINDS_PRESETS.findIndex((p) => same(p.sb, smallBlind) && same(p.bb, bigBlind));
+export function blindsIndexFor(
+  smallBlind: number,
+  bigBlind: number,
+  presets: readonly BlindsPreset[] = BLINDS_PRESETS
+): number | null {
+  const i = presets.findIndex((p) => same(p.sb, smallBlind) && same(p.bb, bigBlind));
   return i === -1 ? null : i;
 }
 
@@ -56,11 +91,16 @@ export function blindsIndexFor(smallBlind: number, bigBlind: number): number | n
  * same distance as 50 -> 100. Ties resolve to the lower (cheaper) preset:
  * snapping a player's stakes UP costs them money, snapping down does not.
  */
-export function nearestBlindsIndex(bigBlind: number): number {
-  if (!Number.isFinite(bigBlind) || bigBlind <= 0) return DEFAULT_BLINDS_INDEX;
+export function nearestBlindsIndex(
+  bigBlind: number,
+  presets: readonly BlindsPreset[] = BLINDS_PRESETS
+): number {
+  if (!Number.isFinite(bigBlind) || bigBlind <= 0) {
+    return Math.min(DEFAULT_BLINDS_INDEX, presets.length - 1);
+  }
   let best = 0;
   let bestDistance = Infinity;
-  BLINDS_PRESETS.forEach((preset, i) => {
+  presets.forEach((preset, i) => {
     const distance = Math.abs(Math.log(preset.bb) - Math.log(bigBlind));
     if (distance < bestDistance - 1e-12) {
       best = i;

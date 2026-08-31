@@ -30,6 +30,7 @@ import {
   DEFAULT_BLINDS_INDEX,
   blindsIndexFor,
   nearestBlindsIndex,
+  type BlindsPreset,
 } from '../config/blindsPresets';
 
 /** The fields the restore actually reasons about. */
@@ -57,6 +58,12 @@ export interface RestoreArgs<T extends RestorableTableConfig> {
   sngSeatCap: number;
   /** canRunAsTournament(routeGameType). */
   canRunAsTournament: boolean;
+  /**
+   * The ladder THIS variant may be built on — presetsFor(limitGame). A
+   * fixed-limit table is offered only the presets where bb === sb * 2; see
+   * config/blindsPresets. Defaults to the full ladder.
+   */
+  presets?: readonly BlindsPreset[];
 }
 
 export type RestoreResult<T extends RestorableTableConfig> =
@@ -101,6 +108,7 @@ export function restoreTemplateConfig<T extends RestorableTableConfig>(
     seatCap,
     sngSeatCap,
     canRunAsTournament,
+    presets = BLINDS_PRESETS,
   } = args;
 
   if (!templateFitsGame(templateGameType, routeGameType)) {
@@ -122,12 +130,12 @@ export function restoreTemplateConfig<T extends RestorableTableConfig>(
   }
 
   // ── 3. Blinds and the slider, reconciled ──────────────────────────────
-  let blindsIndex = blindsIndexFor(merged.smallBlind, merged.bigBlind);
+  let blindsIndex = blindsIndexFor(merged.smallBlind, merged.bigBlind, presets);
   if (blindsIndex === null) {
     blindsIndex = Number.isFinite(merged.bigBlind)
-      ? nearestBlindsIndex(merged.bigBlind)
-      : DEFAULT_BLINDS_INDEX;
-    const preset = BLINDS_PRESETS[blindsIndex];
+      ? nearestBlindsIndex(merged.bigBlind, presets)
+      : Math.min(DEFAULT_BLINDS_INDEX, presets.length - 1);
+    const preset = presets[blindsIndex];
     notices.push(
       `Blinds ${merged.smallBlind}/${merged.bigBlind} Are No Longer Offered. Snapped To ${preset.label}.`
     );

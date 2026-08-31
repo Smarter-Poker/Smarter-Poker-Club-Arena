@@ -23,7 +23,12 @@ import { reportError } from '../utils/errorReporter';
 import { formatCurrency } from '../lib/utils';
 import { RAKE_INHERIT } from '../config/RakeConfig';
 import { stakesLabel, isFixedLimitVariant } from '../lib/bettingStructure';
-import { BLINDS_PRESETS, DEFAULT_BLINDS_INDEX } from '../config/blindsPresets';
+import {
+  DEFAULT_BLINDS_INDEX,
+  presetsFor,
+  blindsIndexFor,
+  nearestBlindsIndex,
+} from '../config/blindsPresets';
 import {
   restoreTemplateConfig,
   defaultTableName,
@@ -712,6 +717,35 @@ export default function TableConfigPage() {
   // Declared beside the seat caps because loadTemplate needs all three.
   const canRunAsTournament = gameTypeCanRunAsTournament(gameType);
 
+  /* Three controls the engine cannot honour under fixed-limit betting; see
+     isFixedLimitGame for what each one does wrong. */
+  const limitGame = isFixedLimitGame(gameType);
+
+  /* The blind ladder THIS variant may be built on. A limit game's bet sizes
+     are derived from the big blind alone, so a preset where bb is not twice
+     sb produces a table whose posted small blind appears in no label anywhere
+     (see config/blindsPresets). Declared here because loadTemplate needs it. */
+  const offeredPresets = useMemo(() => presetsFor(limitGame), [limitGame]);
+
+  /* Keep the slider ON the ladder this variant offers. Navigating an already
+     mounted form from an nlh route to an flh one narrows the ladder, and the
+     blinds in state may no longer be on it; this also derives the initial
+     index from the config rather than trusting two pieces of state to have
+     been initialised in agreement. */
+  useEffect(() => {
+    const exact = blindsIndexFor(config.smallBlind, config.bigBlind, offeredPresets);
+    if (exact !== null) {
+      setBlindsIndex(exact);
+      return;
+    }
+    const snapped = nearestBlindsIndex(config.bigBlind, offeredPresets);
+    const preset = offeredPresets[snapped];
+    if (!preset) return;
+    setBlindsIndex(snapped);
+    setConfig((prev) => ({ ...prev, smallBlind: preset.sb, bigBlind: preset.bb }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offeredPresets]);
+
   // If the route's variant changes under the mounted form (or a template
   // loaded an over-cap value), snap the seat counts down to the new caps.
   // Never up: the caps are ceilings, not targets.
@@ -1014,17 +1048,14 @@ export default function TableConfigPage() {
 
   const handleBlindsChange = (index: number) => {
     setBlindsIndex(index);
-    const preset = BLINDS_PRESETS[index];
+    const preset = offeredPresets[index];
+    if (!preset) return;
     setConfig((prev) => ({
       ...prev,
       smallBlind: preset.sb,
       bigBlind: preset.bb,
     }));
   };
-
-  /* Three controls the engine cannot honour under fixed-limit betting; see
-     isFixedLimitGame for what each one does wrong. */
-  const limitGame = isFixedLimitGame(gameType);
 
   const buildTableData = (resolvedClubId?: string) => ({
     club_id: resolvedClubId || clubId,
@@ -2127,7 +2158,7 @@ export default function TableConfigPage() {
                 <input
                   type="range"
                   min={0}
-                  max={BLINDS_PRESETS.length - 1}
+                  max={offeredPresets.length - 1}
                   value={blindsIndex}
                   onChange={(e) => handleBlindsChange(Number(e.target.value))}
                   className="slider-input"

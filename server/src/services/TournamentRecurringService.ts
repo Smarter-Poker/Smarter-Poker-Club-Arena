@@ -300,6 +300,90 @@ const PAYOUT_STRUCTURES = {
 import { SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
 
+/**
+ * THE ONE MAP FROM A CONFIG'S VARIANT KEY TO THE `tournaments.game_type` VALUE.
+ *
+ * 2026-08-31 audit. There were FOUR hand-kept copies of this map in this file
+ * and three of them were incomplete. The Spin copy had already been fixed, and
+ * its comment stated the rule that the other three then went on to break:
+ *
+ *   "`plo6` was missing from it — so a PLO6 Spin config would have been
+ *    silently created as NLH, giving players a different game from the one on
+ *    the tile. Every member of SPIN_GAME_TYPES must have an entry here."
+ *
+ * The XMTT and MTT copies omitted `plo6`; the SNG copy omitted `plo6` AND
+ * `short_deck`; none of the four knew `flh` or `flo8`, which became creatable
+ * tournament variants on 2026-08-31. Because the fallback is a silent
+ * `|| 'NLH'`, every gap produces the same failure: the tile advertises one
+ * game and the players are dealt another.
+ *
+ * One map, so a variant added to the catalogue cannot be half-adopted. The
+ * fallback stays NLH so an unrecognised config still produces a game rather
+ * than a gap in the schedule, but it is REPORTED now instead of silent.
+ */
+const DB_GAME_TYPE: Record<string, string> = {
+  nlh: 'NLH',
+  plo4: 'PLO4',
+  plo5: 'PLO5',
+  plo6: 'PLO6',
+  plo8: 'PLO8',
+  short_deck: 'SHORT_DECK',
+  flh: 'FLH',
+  flo8: 'FLO8',
+};
+
+/**
+ * A GUARANTEE REFUSAL IS PERMANENT, AND SOMEBODY HAS TO BE TOLD.
+ *
+ * trg_tournaments_guarantee_affordable refuses an event whose guaranteed
+ * prize the funding bank cannot cover, raising "Club X cannot guarantee N
+ * chips ... Add chips to the bank to cover the guarantee." Every hourly config
+ * in this file carries a guarantee, so a short bank means the event silently
+ * never happens: this service retried three times, five seconds apart, logged
+ * to the error reporter and moved on. Nobody who could fix it was told, and
+ * the 2026-08-29 migration records what that looks like at scale — "Midway
+ * Union ... was refused ~570 spawns/hour".
+ *
+ * ScheduledTournamentService already does this half correctly. This is the
+ * same call from the same signature. fn_notify_guarantee_bank_short dedupes
+ * on unread per recipient per bank, so an hourly schedule that keeps failing
+ * produces ONE standing bell notification rather than a storm.
+ *
+ * Retrying is also pointless — the bank does not refill in ten seconds — so
+ * the caller breaks out of its retry loop on a true return.
+ */
+function isGuaranteeRefusal(error: { message?: string } | null | undefined): boolean {
+  return /cannot guarantee/i.test(String(error?.message ?? ''));
+}
+
+async function notifyGuaranteeShort(clubId: string | null | undefined, where: string) {
+  if (!clubId) return;
+  const { error } = await supabase.rpc('fn_notify_guarantee_bank_short', { p_club_id: clubId });
+  if (error) {
+    reportError(
+      new Error(
+        `[RecurringService] ${where}: guarantee refusal could not notify: ${error.message}`
+      ),
+      'TournamentRecurringService.guarantee_notify_failed'
+    );
+  }
+}
+
+/** The `game_type` a config's variant becomes, loudly if we do not know it. */
+function dbGameTypeFor(gameVariant: string | null | undefined, where: string): string {
+  const key = String(gameVariant ?? '').toLowerCase();
+  const mapped = DB_GAME_TYPE[key];
+  if (mapped) return mapped;
+  reportError(
+    new Error(
+      `[RecurringService] ${where}: unmapped game variant "${gameVariant}" - created as NLH. ` +
+        `Add it to DB_GAME_TYPE.`
+    ),
+    'TournamentRecurringService.unmapped_game_variant'
+  );
+  return 'NLH';
+}
+
 // The local SPIN_MULTIPLIERS table that lived here — one of THREE that
 // disagreed (EV 3.00 designed, 2.75 here, 2.24 in the engine fallback), and
 // the one that actually ran — is GONE, not merely derived. The draw happens
@@ -2313,15 +2397,8 @@ export class TournamentRecurringService {
     hostClubId: string
   ): Promise<{ tournamentId: string | null; registered: number }> {
     try {
-      const startTime = new Date(Date.now() + 5 * 60 * 1000); // 5 min delay for XMTTs (more registration time)
-      const gameTypeMap: Record<string, string> = {
-        nlh: 'NLH',
-        plo4: 'PLO4',
-        plo5: 'PLO5',
-        plo8: 'PLO8',
-        short_deck: 'SHORT_DECK',
-      };
-      const dbGameType = gameTypeMap[config.gameVariant] || 'NLH';
+      const startTime = new Date(Date.now() + 5 * 60 * 1000);
+      const dbGameType = dbGameTypeFor(config.gameVariant, 'createXMTT');
 
       const isBountyType =
         config.type === 'bounty' ||
@@ -2427,6 +2504,8 @@ export class TournamentRecurringService {
           ),
           'RecurringService.XMTT_creation_attempt_attempt3'
         );
+        // A short funding bank will not refill in five seconds.
+        if (isGuaranteeRefusal(error)) break;
         if (attempt < 3) await new Promise((r) => setTimeout(r, 5000));
       }
       if (!tournament) {
@@ -2436,6 +2515,7 @@ export class TournamentRecurringService {
           ),
           'RecurringService.XMTT_creation_FAILED_after_3_r'
         );
+        if (isGuaranteeRefusal(lastError)) await notifyGuaranteeShort(hostClubId, 'createXMTT');
         return { tournamentId: null, registered: 0 };
       }
 
@@ -2526,14 +2606,7 @@ export class TournamentRecurringService {
       // MTTs keep their own 60s lead-in. OPEN_TABLE_WAIT_MS is the seat-held
       // wait for spins and SNGs only - an MTT is a scheduled event by nature.
       const startTime = new Date(Date.now() + 60 * 1000);
-      const gameTypeMap: Record<string, string> = {
-        nlh: 'NLH',
-        plo4: 'PLO4',
-        plo5: 'PLO5',
-        plo8: 'PLO8',
-        short_deck: 'SHORT_DECK',
-      };
-      const dbGameType = gameTypeMap[config.gameVariant] || 'NLH';
+      const dbGameType = dbGameTypeFor(config.gameVariant, 'createMTT');
 
       const isBountyType =
         config.type === 'bounty' ||
@@ -2641,6 +2714,8 @@ export class TournamentRecurringService {
           ),
           'RecurringService.Tournament_creation_attempt_at'
         );
+        // A short funding bank will not refill in five seconds.
+        if (isGuaranteeRefusal(error)) break;
         if (attempt < 3) await new Promise((r) => setTimeout(r, 5000));
       }
       if (!tournament) {
@@ -2650,6 +2725,9 @@ export class TournamentRecurringService {
           ),
           'RecurringService.Tournament_creation_FAILED_aft'
         );
+        if (isGuaranteeRefusal(lastError)) {
+          await notifyGuaranteeShort(this.ownerClubId, 'createTournament');
+        }
         return { tournamentId: null, registered: 0 };
       }
 
@@ -2706,13 +2784,7 @@ export class TournamentRecurringService {
             ? seatFirstHumanWindowMs()
             : OPEN_TABLE_WAIT_MS)
       );
-      const gameTypeMap: Record<string, string> = {
-        nlh: 'NLH',
-        plo4: 'PLO4',
-        plo5: 'PLO5',
-        plo8: 'PLO8',
-      };
-      const dbGameType = gameTypeMap[config.gameVariant] || 'NLH';
+      const dbGameType = dbGameTypeFor(config.gameVariant, 'createSNG');
 
       const { data: sng, error } = await supabase
         .from('tournaments')
@@ -3471,18 +3543,7 @@ export class TournamentRecurringService {
       });
       const spinPayouts = [{ place: 1, percentage: 100 }];
 
-      // SPIN_GAME_TYPES advertises NLH, PLO4, PLO5 and PLO6. This map decides
-      // what actually reaches the database, and `plo6` was missing from it —
-      // so a PLO6 Spin config would have been silently created as NLH, giving
-      // players a different game from the one on the tile. Every member of
-      // SPIN_GAME_TYPES must have an entry here.
-      const gameTypeMap: Record<string, string> = {
-        nlh: 'NLH',
-        plo4: 'PLO4',
-        plo5: 'PLO5',
-        plo6: 'PLO6',
-      };
-      const dbGameType = gameTypeMap[config.gameVariant] || 'NLH';
+      const dbGameType = dbGameTypeFor(config.gameVariant, 'createSpin');
 
       const { data: spin, error } = await supabase
         .from('tournaments')

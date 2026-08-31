@@ -402,6 +402,41 @@ describe('ClubDataPage', () => {
     await screen.findByText('Club Ledger Refreshed.');
   });
 
+  it('keeps verified game rows visible when a background refresh is transiently refused', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let snapshotRequest = 0;
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_club_data_snapshot') {
+        snapshotRequest += 1;
+        return snapshotRequest === 1
+          ? { data: snapshot, error: null }
+          : { data: null, error: { code: '57014', message: 'statement timeout' } };
+      }
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+
+    try {
+      render(<ClubDataPage />);
+      await screen.findByText('Shark Table One');
+      const refresh = screen.getByRole('button', { name: 'Refresh club ledger' });
+      await waitFor(() => expect(refresh).toBeEnabled());
+
+      fireEvent.click(refresh);
+
+      await screen.findByText(
+        /Live Refresh Is Delayed\. Showing The Last Verified Snapshot/i,
+        {},
+        { timeout: 12_000 }
+      );
+      expect(screen.getByText('Shark Table One')).toBeInTheDocument();
+      expect(screen.queryByText('Could not load club data.')).not.toBeInTheDocument();
+      expect(screen.getByText(/Showing The Last Verified Snapshot/i)).toBeInTheDocument();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  }, 15_000);
+
   it('keeps the last verified statement visible through a transient refresh failure', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     let invoiceRequest = 0;

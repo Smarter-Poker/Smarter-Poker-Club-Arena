@@ -660,8 +660,12 @@ export default function ClubDataPage() {
             setLedgerSource('cold');
           } else {
             reportError(rpcError, 'ClubDataPage.snapshot_rpc');
-            setError('Could not load club data.');
-            if (preserveOnError) setLedgerSource('degraded');
+            if (preserveOnError) {
+              setError(null);
+              setLedgerSource('degraded');
+            } else {
+              setError('Could not load club data.');
+            }
           }
           if (isAuthzError(rpcError) || !preserveOnError) setSnapshot(null);
           return false;
@@ -673,9 +677,13 @@ export default function ClubDataPage() {
           // A null or shapeless payload used to be stored as success, leaving a
           // page with no data, no skeleton and no message.
           reportError(new Error('snapshot payload was empty'), 'ClubDataPage.snapshot_shape');
-          setError('Could not load club data.');
-          if (!preserveOnError) setSnapshot(null);
-          else setLedgerSource('degraded');
+          if (preserveOnError) {
+            setError(null);
+            setLedgerSource('degraded');
+          } else {
+            setError('Could not load club data.');
+            setSnapshot(null);
+          }
           return false;
         } else {
           const snapshot = data as Snapshot;
@@ -703,9 +711,13 @@ export default function ClubDataPage() {
       } catch (err) {
         if (stale()) return false;
         reportError(err, 'ClubDataPage.snapshot_request');
-        setError('Club data took too long to respond. Try again.');
-        if (!preserveOnError) setSnapshot(null);
-        else setLedgerSource('degraded');
+        if (preserveOnError) {
+          setError(null);
+          setLedgerSource('degraded');
+        } else {
+          setError('Club data took too long to respond. Try again.');
+          setSnapshot(null);
+        }
         return false;
       } finally {
         // Only the newest request may clear the skeleton. A background poll that
@@ -736,7 +748,8 @@ export default function ClubDataPage() {
 
   useEffect(() => {
     if (!clubUuid || isHydrating || !user) return;
-    void load(!restoredGameCacheHitRef.current, true);
+    const restored = restoredGameCacheHitRef.current;
+    void load(!restored, restored);
   }, [load, clubUuid, gameCacheKey, isHydrating, user]);
 
   // Players are fetched only when that tab is open. It is a second scan over

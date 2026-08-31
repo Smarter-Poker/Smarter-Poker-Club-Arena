@@ -11,6 +11,9 @@ const auditMigration = read(
 );
 const service = read('src/services/ClubsService.ts');
 const modal = read('src/components/modals/CreateClubModal.tsx');
+const deadJoinRequestRepair = read(
+  'supabase/migrations/20260831163500_remove_dead_club_join_requests_dependency.sql'
+);
 
 describe('Phase 2 atomic club creation', () => {
   it('commits the club, owner membership, and idempotency record in one RPC', () => {
@@ -40,6 +43,19 @@ describe('Phase 2 atomic club creation', () => {
     expect(service).toContain('definitiveRejection');
     expect(service).toContain('OrphanLogoCleanup');
     expect(service).not.toMatch(/\.from\('clubs'\)\s*\.insert/);
+  });
+
+  it('does not let the retired join-request shadow table roll back club creation', () => {
+    expect(deadJoinRequestRepair).toContain(
+      'DROP TRIGGER IF EXISTS trg_sync_club_join_request ON public.club_members'
+    );
+    expect(deadJoinRequestRepair).toContain(
+      'DROP FUNCTION IF EXISTS public.fn_sync_club_join_request()'
+    );
+    expect(deadJoinRequestRepair).not.toMatch(
+      /(?:INSERT INTO|UPDATE|DELETE FROM) public\.club_join_requests/
+    );
+    expect(deadJoinRequestRepair).toContain("status = 'pending'");
   });
 });
 

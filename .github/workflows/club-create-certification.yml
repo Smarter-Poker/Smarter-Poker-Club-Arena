@@ -20,6 +20,14 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Apply Club Creation Repair
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: >-
+          psql
+          "host=aws-0-us-west-2.pooler.supabase.com port=6543 dbname=postgres user=postgres.kuklfnapbkmacvwxktbh sslmode=require connect_timeout=8"
+          -X -v ON_ERROR_STOP=1
+          -f supabase/migrations/20260831163500_remove_dead_club_join_requests_dependency.sql
       - name: Certify Authenticated Club Creation And Cleanup
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

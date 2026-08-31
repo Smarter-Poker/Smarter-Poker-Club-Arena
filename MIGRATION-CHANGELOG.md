@@ -2,11 +2,11 @@
 
 ## Every Change, Documented. No Exceptions.
 
-## Cowork session 2026-08-31 — NOTHING SCHEDULED FAILS SILENTLY (hardening phase 2 of 6)
+## Cowork session 2026-08-31 - NOTHING SCHEDULED FAILS SILENTLY (hardening phase 2 of 6)
 
 `sp_upcoming_tournament_pushes` runs every minute. It failed **4,017
-consecutive times** between 2026-08-28 19:49 and 2026-08-31 19:29 — nearly
-three days, zero successes — because it joins `public.user_presence`, a table
+consecutive times** between 2026-08-28 19:49 and 2026-08-31 19:29 - nearly
+three days, zero successes - because it joins `public.user_presence`, a table
 that does not exist. It sends the "your tournament starts in 15 minutes"
 reminders, so for three days no player was reminded of anything.
 
@@ -15,16 +15,16 @@ Every one of those 4,017 failures was already sitting in
 
 **There was a watcher, and it was looking at three jobs.**
 `v_system_health_cron` already existed and already read `cron.job_run_details`.
-Its filter was `WHERE jobname LIKE 'home%' OR 'pnm%' OR 'flag-garbage%'` —
+Its filter was `WHERE jobname LIKE 'home%' OR 'pnm%' OR 'flag-garbage%'` -
 three name prefixes out of **75 active jobs**. Every scheduled thing the
 platform has learned to do since that view was written lived outside it: the
 reconcilers, the sweeps, the pushes, the rake repair. This is the same shape as
-a definer-view sweep that a newly created view walks straight past — a sweep
+a definer-view sweep that a newly created view walks straight past - a sweep
 where a guard belongs.
 
 Three migrations, all applied and verified in production:
 
-1. **`20260831193507_the_pgrst_watchdog_learns_to_bark`** — At 19:21 UTC
+1. **`20260831193507_the_pgrst_watchdog_learns_to_bark`** - At 19:21 UTC
    PostgREST began answering every request with PGRST002 and hands served
    dropped from 246/min to 0. Root cause: 181 reload-triggering DDL events in
    one hour (against a warn threshold of 20) forcing re-introspection of 974
@@ -32,47 +32,47 @@ Three migrations, all applied and verified in production:
 schema'`. This adds `ca_pgrst_reload_log` and
    `fn_ca_pgrst_reload_if_stale(p_ddl_window, p_cooldown)`, scheduled every five
    minutes, which sends the reload **only** when reload-triggering DDL happened
-   recently _and_ nothing was sent inside the cooldown — so a busy migration
+   recently _and_ nothing was sent inside the cooldown - so a busy migration
    afternoon self-heals and a quiet one costs nothing. Verified firing on its
    own schedule three times (19:35, 19:45, 19:50) with the cooldown respected.
 
-2. **`20260831193608_nothing_was_watching_the_scheduled_work`** — widens
+2. **`20260831193608_nothing_was_watching_the_scheduled_work`** - widens
    `v_system_health_cron` from three prefixes to every job (same columns, so
-   the World Hub admin surface that selects from it is untouched — asserted
+   the World Hub admin surface that selects from it is untouched - asserted
    column-by-column in the post-apply block), and adds
    `fn_ca_cron_health(p_window)`: one row per active job with a verdict of
    `critical` / `warn` / `ok` / `idle`, run counts, and the last error text.
    `service_role` only; `anon` and `authenticated` are revoked and the
    post-apply block proves it.
 
-3. **`20260831193846_a_job_that_is_still_running_has_not_failed`** — the alarm
+3. **`20260831193846_a_job_that_is_still_running_has_not_failed`** - the alarm
    found its own false positive within minutes of shipping:
    `rake-bbj-invariant-audit-hourly` was called CRITICAL with **zero failures**.
    `pg_cron` writes its row when a job _starts_, so a run in flight has status
-   `running` — neither succeeded nor failed — and "ran, no success yet" was
+   `running` - neither succeeded nor failed - and "ran, no success yet" was
    being read as "broken". The verdict now counts only FINISHED runs; no
    finished runs in the window is `idle`, the same honest answer given for a
    weekly job inside a 24-hour window. An alarm that calls a healthy job
    critical is worse than no alarm, because it is why people stop reading
    alarms. Fixed before it was ever read.
 
-**`scripts/ci/check-cron-health.mjs` + `.github/workflows/cron-health.yml`** —
+**`scripts/ci/check-cron-health.mjs` + `.github/workflows/cron-health.yml`** -
 the half that makes somebody look. Scheduled every six hours (not a PR gate: a
 broken cron job is not a reason to block an unrelated branch), red when any
 active job ran in the window and never once succeeded, with the job's last
 error in the run summary. Flaky jobs are `warn` and do not fail the run.
 
-Live output over 24 hours at the time of writing: **77 active jobs — 61 ok · 6
+Live output over 24 hours at the time of writing: **77 active jobs - 61 ok · 6
 warn · 2 critical · 8 idle**, exit 1. The two criticals are
 `tourney_payout_sweep_detect_daily` and `union-weekly-rakeback-recompute`, both
 `canceling statement due to statement timeout`, both already addressed by
-phase 1's corrected planner statistics — the next scheduled runs will say so.
-Over a 10-minute window: 29 ok · 0 warn · **0 critical** · 48 idle, exit 0 —
+phase 1's corrected planner statistics - the next scheduled runs will say so.
+Over a 10-minute window: 29 ok · 0 warn · **0 critical** · 48 idle, exit 0 -
 the false positive is gone.
 
 `sp_upcoming_tournament_pushes` itself was fixed at 19:30 by another agent
 (the `public.user_presence` join replaced with `table_seats` where
-`left_at IS NULL`) and now reads `warn` — 1,413 failures against 1,435 runs,
+`left_at IS NULL`) and now reads `warn` - 1,413 failures against 1,435 runs,
 all of them historical. Credited, not duplicated. The point of this phase is
 that the next one does not get three days.
 

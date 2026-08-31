@@ -38,7 +38,7 @@ echo '── Type safety ──────────────────�
 step 'tsc --noEmit' npx tsc --noEmit
 
 echo '── House rules ─────────────────────────────────────────────'
-for g in check-css-modules check-title-case check-ui-text check-no-emoji check-esm-require \
+for g in check-css-modules check-title-case check-nav-title-case check-ui-text check-no-emoji check-esm-require \
          check-allin-pointer-events check-monitoring-drift check-horses-are-players \
          check-rake-schedule-parity check-seat-law-parity check-discarded-read-then-write \
          check-rake-bbj-collection-law; do

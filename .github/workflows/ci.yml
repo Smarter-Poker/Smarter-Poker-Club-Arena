@@ -242,6 +242,15 @@ jobs:
       - name: UI copy — page copy is Title Cased
         run: node scripts/ci/check-title-case.mjs
 
+      # The other half of the same rule (Dan 2026-08-30: "AS WELL AS EVERY
+      # CLICKABLE PAGE AND SUBPAGE"). The gate above inspects JsxText only and
+      # documents that expression values are "cased at their source" — nothing
+      # enforced that. Navigation surfaces all render {item.label} from a config
+      # registry, so 55 menu strings across six surfaces were never checked by
+      # anything. Autofix: node scripts/ci/check-nav-title-case.mjs --fix
+      - name: UI copy — navigation labels are Title Cased at source
+        run: node scripts/ci/check-nav-title-case.mjs
+
       # design-guidelines.md rule 1: "NO EMOJIS - EVER". The third copy rule,
       # and until 2026-08-27 the only one nothing enforced. Added after the
       # audit found emoji rendering in gameplay.

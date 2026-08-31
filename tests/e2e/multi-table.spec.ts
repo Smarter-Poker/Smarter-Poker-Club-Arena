@@ -306,6 +306,7 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
         stagePosition: stage.position,
         stageFlexGrow: stage.flexGrow,
         bandPosition: band.position,
+        bandZIndex: band.zIndex,
         amountColor: amount.color,
       };
     });
@@ -313,8 +314,56 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
     expect(read.cellDirection, 'the cell must stack stage over band').toBe('column');
     expect(read.stagePosition, 'the stage anchors the scaled felt').toBe('relative');
     expect(read.stageFlexGrow, 'the stage must take the remaining height').toBe('1');
-    expect(read.bandPosition, 'the band must be in-flow, never an overlay').toBe('static');
+    /* The band must RESERVE its height, which is what Variant A is. `static`
+       and `relative` both do; `absolute`/`fixed`/`sticky` take it out of flow
+       and put the chrome back over the hero's cards. Pinned as "not taken out
+       of flow" rather than the literal `static` it shipped as on 2026-08-30 —
+       that spelling forbade `relative`, which the band now needs so its
+       z-index is not inert. */
+    expect(
+      ['absolute', 'fixed', 'sticky'].includes(read.bandPosition),
+      'the band must stay in flow and reserve its height, never overlay the felt'
+    ).toBe(false);
+    /* A declared z-index on a static box is silently ignored, so the band
+       would only LOOK protected. If it carries a z-index, it must be
+       positioned for that z-index to mean anything. */
+    if (read.bandZIndex !== 'auto') {
+      expect(read.bandPosition, 'a band with a z-index must be positioned').not.toBe('static');
+    }
     expect(read.amountColor, 'the raise amount must read gold').toBe('rgb(250, 204, 21)');
+  });
+
+  test('no dead pseudo-element smudges the tile action keys', async ({ page }) => {
+    /* 2026-08-31: `.multi-table-grid__cell::after` was `content:
+       attr(data-table-name)` for an attribute nothing ever set. content:""
+       still GENERATES a box, and that one had padding, a black background and
+       a blur — an empty smudge pinned bottom-left of the cell, which after
+       Variant A is the Fold button. Deleted. This pin fails if any cell-level
+       pseudo-element comes back with a paintable box. */
+    const read = await page.evaluate(() => {
+      const cell = document.createElement('div');
+      cell.className = 'multi-table-grid__cell';
+      cell.style.cssText = 'height:400px;width:300px';
+      cell.innerHTML =
+        '<div class="multi-table-grid__stage"></div>' +
+        '<div class="multi-table-grid__band"><div class="multi-table-grid__actions">' +
+        '<button class="multi-table-grid__action multi-table-grid__action--fold">Fold</button>' +
+        '</div></div>';
+      document.body.appendChild(cell);
+      const out: Record<string, string> = {};
+      for (const pseudo of ['::before', '::after']) {
+        const cs = getComputedStyle(cell, pseudo);
+        out[pseudo] = `${cs.content}|${cs.backgroundColor}`;
+      }
+      return out;
+    });
+    for (const pseudo of ['::before', '::after']) {
+      const [content] = read[pseudo].split('|');
+      expect(
+        content === 'none' || content === 'normal',
+        `cell ${pseudo} must not generate a box over the action band (got ${read[pseudo]})`
+      ).toBe(true);
+    }
   });
 
   test('CARD ART: nothing crops the indices and nothing stair-steps the pips', async ({ page }) => {

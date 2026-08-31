@@ -168,13 +168,22 @@ test.describe('Watching a running tournament', () => {
     const watch = page.locator('.details-footer .btn-watch');
     await expect(felt.or(watch).first()).toBeVisible({ timeout: 25_000 });
 
-    if (!(await felt.isVisible().catch(() => false))) {
-      if ((await watch.count()) === 0) {
+    if (!onTable(page)) {
+      if (!(await watch.isVisible().catch(() => false))) {
         test.skip(true, 'this event has no live table to feature');
       }
-      await watch.click();
+      try {
+        // Auto-watch may finish between the visibility decision and this
+        // click, removing the details footer. Bound that race instead of
+        // letting a stale locator inherit the entire 90-second test timeout.
+        await watch.click({ timeout: 10_000 });
+      } catch (error) {
+        if (!onTable(page)) throw error;
+      }
     }
-    await page.waitForURL(/\/table\/[0-9a-f-]{8,}/i, { timeout: 25_000 });
+    if (!onTable(page)) {
+      await page.waitForURL(/\/table\/[0-9a-f-]{8,}/i, { timeout: 25_000 });
+    }
 
     const corner = page.locator('.table-hud__corner--ur');
     await expect(corner, 'the upper-right HUD corner must exist on a tournament felt').toBeVisible({
@@ -208,17 +217,12 @@ test.describe('Watching a running tournament', () => {
     /* Clicking off closes it — Dan's standing rule for every 3/4 popup: "when
        it's 3/4 page you should be able to click off to close as well."
 
-       The backdrop is the remaining quarter, and WHICH quarter depends on the
-       layout: on desktop the panel is 75vw down the LEFT so the bare strip is
-       on the right; on a phone it is a 75dvh sheet at the BOTTOM so the strip
-       is on top. The top-right corner is backdrop in both, which is why the
-       click is aimed there rather than at a fixed offset — (5,5) would land on
-       the panel itself on desktop and the test would pass for the wrong reason
-       only until someone ran it on a phone profile. */
-    const vp = page.viewportSize();
-    await page
-      .locator('.tlm-overlay')
-      .click({ position: { x: Math.max((vp?.width ?? 1280) - 6, 6), y: 6 } });
+       The panel enters from the RIGHT on desktop, so the exposed quarter is on
+       the left. On a phone it is a 75dvh sheet at the BOTTOM, leaving the top
+       quarter exposed. The top-left corner is therefore backdrop in both
+       layouts; top-right is inside the desktop panel and correctly does not
+       bubble to the overlay. */
+    await page.locator('.tlm-overlay').click({ position: { x: 6, y: 6 } });
     await expect(lobby).toBeHidden({ timeout: 10_000 });
   });
 });

@@ -27,6 +27,7 @@
 import { chromium, type FullConfig } from '@playwright/test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { ensureClubMembership } from './support/ensureClubMembership';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 
 export const STORAGE_STATE = 'tests/e2e/.auth/state.json';
@@ -47,6 +48,7 @@ const EMPTY_STATE = { cookies: [], origins: [] };
  * consent is recorded anywhere server-side by either route.
  */
 const WELCOME_ACCEPTED_KEY = 'club_arena_welcome_accepted';
+const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 
 /**
  * The key above is duplicated from src/lib/storage.ts because global-setup runs
@@ -188,6 +190,13 @@ export default async function globalSetup(config: FullConfig) {
       timeout: 60_000,
     });
     await ensurePlayableProfile(page);
+
+    // The lobby suite exercises a real club route. A valid authenticated
+    // session is still shown InvitePage until this dedicated account joins the
+    // fixture club, which made all eight lobby assertions time out without
+    // ever reaching the UI they claim to test. Use the public Join Club flow
+    // once and prove the lobby is reachable before sharing this storageState.
+    await ensureClubMembership(page, baseURL, process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID);
 
     await ctx.storageState({ path: STORAGE_STATE });
     console.log('[global-setup] authenticated session saved — auth-gated specs will run.');

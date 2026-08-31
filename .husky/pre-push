@@ -380,6 +380,18 @@ if [ -f scripts/ci/check-title-case.mjs ]; then
   fi
 fi
 
+# The other half of the same rule. check-title-case.mjs inspects JsxText only
+# and states in its own header that expression values "are cased at their
+# source" - a promise nothing enforced. Every navigation surface renders its
+# copy from a config registry through {item.label}, so 55 menu strings sat
+# uncased for months in the gap between the two. Autofix:
+#   node scripts/ci/check-nav-title-case.mjs --fix
+if [ -f scripts/ci/check-nav-title-case.mjs ]; then
+  if ! node scripts/ci/check-nav-title-case.mjs; then
+    FAIL=1
+  fi
+fi
+
 # Protected work must not be orphaned from main.
 # Two of the 2026-08-21 throwables regressions were stale bundles (now covered
 # by the World Hub provenance gate). The third was a commit that stopped being

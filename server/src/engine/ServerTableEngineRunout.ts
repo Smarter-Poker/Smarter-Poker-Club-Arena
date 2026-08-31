@@ -506,6 +506,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
 
   protected handleAllInRunout(event: HandEvent, players: SeatedPlayer[]): void {
     if (event.type !== 'ALL_IN_RUNOUT' || !this.handController) return;
+    // ═══ THE HAND THIS RUNOUT BELONGS TO (2026-08-31) ═════════════════════
+    // Every continuation, catch handler and safety timer spawned below must
+    // name this controller and be dropped if the live hand has moved on. See
+    // safeContinueRunout for what happened when they did not.
+    const controllerAtPark = this.handController;
 
     /**
      * ── RE-READ THE RIT CONFIGURATION BEFORE DECIDING (2026-08-27) ────────
@@ -592,9 +597,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       // left the hand parked forever with no clock of any kind, because
       // HandController.advanceStage returns without setting currentPlayerSeat
       // while it waits for this callback to come back.
-      this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot, board).catch((err) => {
+      this.runInsurancePerStreetFlow(
+        offerPlayers,
+        allInPlayers,
+        pot,
+        board,
+        controllerAtPark
+      ).catch((err) => {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.insurance_flow_rejected');
-        this.safeContinueRunout('insurance_flow_rejected');
+        this.safeContinueRunout('insurance_flow_rejected', controllerAtPark);
       });
     };
 
@@ -920,13 +931,35 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // continueRunout's loop body does not execute - it goes straight to
     // showdown and completeHand, which is exactly what we want.
     if (this.handController === controller) {
-      this.safeContinueRunout('paced_runout_complete');
+      this.safeContinueRunout('paced_runout_complete', controller);
     }
   }
 
-  protected safeContinueRunout(reason: string): void {
+  /**
+   * ═══ EVERY RUNOUT CONTINUATION NAMES ITS HAND (2026-08-31) ══════════════
+   *
+   * `controller` is the hand this continuation belongs to. This method used
+   * to read this.handController bare, and it is called from catch handlers
+   * and safety timers at the END of async flows full of sleeps and 20-second
+   * offer windows - so a rejection surfacing after its hand had died called
+   * continueRunout() on the NEXT hand's controller. Landing in dealHand's
+   * window between assigning the new controller and subscribing/starting it
+   * (there is an await on fetchTimeBankExtras in between), that ran the next
+   * hand's board out into the void: sawFlop true, stage parked at showdown,
+   * every event emitted to nobody. The hand then STARTED inside the corpse
+   * and played to a raked walk - the rake-law alarm's no_flop_no_drop
+   * criticals, 32 live hands. A stale continuation is dropped, loudly.
+   */
+  protected safeContinueRunout(reason: string, controller: HandController | null): void {
+    if (!controller || this.handController !== controller) {
+      reportError(
+        new Error('stale runout continuation dropped (' + reason + ')'),
+        'ServerTableEngine.' + this.tableId + '.stale_runout_dropped'
+      );
+      return;
+    }
     try {
-      this.handController?.continueRunout();
+      controller.continueRunout();
     } catch (err) {
       reportError(err, 'ServerTableEngine.' + this.tableId + '.forced_runout_failed', { reason });
     }
@@ -1000,7 +1033,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         onComplete();
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.rit_oncomplete_threw');
-        this.safeContinueRunout('rit_oncomplete_threw');
+        this.safeContinueRunout('rit_oncomplete_threw', controllerAtOffer);
       }
     };
 
@@ -1910,9 +1943,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // flop -> RIT declined -> turn dealt -> offer with the river to come),
     // which this order now reproduces exactly: offer on the current board,
     // wait for the decision, then deal.
-    board: import('../types.js').Card[]
+    board: import('../types.js').Card[],
+    // ═══ 2026-08-31: the hand this flow serves. The flow sleeps and waits on
+    // 20-second offer windows; the live hand can die and be replaced while it
+    // does. Every resumption checks identity against this - a bare null-check
+    // on this.handController happily walks into the NEXT hand.
+    controller: HandController
   ): Promise<void> {
-    if (!this.handController) return;
+    if (this.handController !== controller) return;
 
     const offerTimeout = 25; // Matches InsuranceEngine DEFAULT_CONFIG.offerTimeoutSeconds
     const result = { board, complete: board.length >= 5 };
@@ -1925,7 +1963,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         console.log(
           `[ServerTableEngine:${this.tableId}] All players declined insurance for hand - switching to paced runout`
         );
-        if (this.handController) {
+        if (this.handController === controller) {
           void this.pacedAllInRunout(allInPlayers, pot);
         }
         return;
@@ -1936,16 +1974,18 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
          finalizeRunout() — and an unhandled rejection here leaves the hand
          with currentPlayerSeat -1, no clock and no continuation, recoverable
          only by the 45s watchdog. Same guard the sibling call sites use. */
-      void this.dealNextInsuranceStreet(offerPlayers, allInPlayers, pot).catch((err) => {
-        reportError(err, 'ServerTableEngine.' + this.tableId + '.insurance_deal_street_rejected');
-        this.safeContinueRunout('insurance_deal_street_rejected');
-      });
+      void this.dealNextInsuranceStreet(offerPlayers, allInPlayers, pot, controller).catch(
+        (err) => {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.insurance_deal_street_rejected');
+          this.safeContinueRunout('insurance_deal_street_rejected', controller);
+        }
+      );
     };
 
     if (result.complete) {
       // Board already full — nothing left to insure; finish the hand.
       this.waitForInsuranceResponses(() => {
-        if (this.handController) this.handController.finalizeRunout();
+        if (this.handController === controller) controller.finalizeRunout();
       });
       return;
     }
@@ -2169,14 +2209,18 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   protected async dealNextInsuranceStreet(
     offerPlayers: Array<{ playerId: string; holeCards: import('../types.js').Card[] }>,
     allInPlayers: import('../types.js').SeatPlayer[],
-    pot: number
+    pot: number,
+    // 2026-08-31: the hand being run out. Identity, not null-ness, gates every
+    // resumption - this method sleeps three times and used to deal a street
+    // onto WHATEVER controller the table held when it woke up.
+    controller: HandController
   ): Promise<void> {
     // ANIMATION AUDIT 2026-08-19: give the CURRENT board + percentages a
     // readable beat before the next card lands.
     await this.sleep(this.allInStreetPauseMs);
-    if (!this.handController) return;
+    if (this.handController !== controller) return;
 
-    const result = this.handController.dealNextStreet();
+    const result = controller.dealNextStreet();
     this.broadcastCurrentState();
 
     // RE-BROADCAST EQUITY: all players and observers see updated percentages
@@ -2185,7 +2229,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // client is still animating it, and moving the percentages now spoils the
     // card that is still turning over (Dan 2026-08-28).
     await this.sleep(this.allInStreetRevealMs);
-    if (!this.handController) return;
+    if (this.handController !== controller) return;
     // liveExtraBoards 2026-08-29: same reason as the paced runout — the street
     // result carries board 1 only. Harmless on this path today (insurance is
     // suppressed on multi-board hands) but it is the same call in the same
@@ -2195,7 +2239,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
 
     if (result.complete) {
       // River is down — settle (insurance included) via the normal finalize.
-      this.handController.finalizeRunout();
+      controller.finalizeRunout();
       return;
     }
 
@@ -2209,10 +2253,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // More cards to come — re-enter the flow on the new board (fresh leader
     // evaluation, fresh offer). The catch mirrors handleAllInRunout's: an
     // unhandled rejection must never leave the hand parked without a clock.
-    this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot, result.board).catch((err) => {
-      reportError(err, 'ServerTableEngine.' + this.tableId + '.insurance_flow_rejected');
-      this.safeContinueRunout('insurance_flow_rejected');
-    });
+    this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot, result.board, controller).catch(
+      (err) => {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.insurance_flow_rejected');
+        this.safeContinueRunout('insurance_flow_rejected', controller);
+      }
+    );
   }
 
   /**
@@ -2416,7 +2462,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         onComplete();
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.insurance_oncomplete_threw');
-        this.safeContinueRunout('insurance_oncomplete_threw');
+        this.safeContinueRunout('insurance_oncomplete_threw', controllerAtOffer);
       }
     };
 

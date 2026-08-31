@@ -2258,7 +2258,7 @@
     padding: 2px;
   }
 
-  .lobby-top__identity,
+  .lobby-top .club-identity.lobby-top__identity,
   .lobby-bbj {
     flex: 0 0 auto;
     width: 100%;
@@ -2325,9 +2325,10 @@
   .lobby-top__wallet .dw--lobby-board .dw__row[data-wallet-key='agent_wallet'],
   .lobby-top__wallet .dw--lobby-board .dw__row[data-wallet-key='player_wallet'] {
     display: block;
+    flex: 0 0 auto;
     width: 100%;
     max-width: 100%;
-    aspect-ratio: 1800 / 273;
+    aspect-ratio: 1800 / 334;
   }
 
   .lobby-top__wallet .dw--lobby-board .dw__row[data-wallet-key='player_wallet'] {
@@ -2342,7 +2343,7 @@
   }
 
   .lobby-top__wallet .dw--lobby-board .dw__row--wallet-art .dw__row-shell {
-    object-fit: contain;
+    object-fit: fill;
   }
 
   .club-lobby-machine {

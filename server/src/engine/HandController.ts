@@ -275,6 +275,39 @@ export class HandController {
   // ─────────────────────────────────────────────────────────────────────────
 
   start(): void {
+    /* ═══ A HAND THAT IS STARTING MUST BE A BLANK HAND (2026-08-31) ════════
+       The rake-law alarm's no_flop_no_drop criticals were hands played inside
+       a controller that a STALE runout continuation from the PREVIOUS hand
+       had already driven to showdown - sawFlop true, phantom board dealt into
+       the void - before start() ever ran. start() never reset the stage, so
+       live betting proceeded inside the corpse: no street could ever deal
+       (advanceStage has no 'showdown' case), big blinds were walked through
+       folds on uncontested pots, and the fold-out settlement priced rake on
+       sawFlop=true. The runout entry points now refuse an unstarted hand
+       (refuseUnlessRunout below), so this cannot recur by that path - but if
+       ANY path ever corrupts a pre-start controller again, say so loudly and
+       deal a clean hand instead of a broken one. */
+    if (
+      this.state.stage !== 'preflop' ||
+      this.state.sawFlop ||
+      this.state.communityCards.length > 0
+    ) {
+      reportError(
+        new Error(
+          `[HandController] hand ${this.config.handNumber} is starting DIRTY: ` +
+            `stage=${this.state.stage} sawFlop=${this.state.sawFlop} ` +
+            `board=${this.state.communityCards.length} - reset to a blank preflop hand`
+        ),
+        'HandController.dirty_start'
+      );
+      this.state.stage = 'preflop';
+      this.state.sawFlop = false;
+      this.state.communityCards = [];
+      this.state.communityCards2 = [];
+      this.state.communityCards3 = [];
+      this.boardDealtOutsideState = false;
+    }
+    this.handStarted = true;
     // FIX-225: FSM transitions for hand start sequence
     this.handFSM.transition('posting_blinds');
 
@@ -1422,6 +1455,7 @@ export class HandController {
    * Used by non-insurance tables for instant runout.
    */
   public continueRunout(): void {
+    if (this.refuseUnlessRunout('continueRunout')) return;
     this.runOutCommunityCards();
   }
 
@@ -1436,6 +1470,11 @@ export class HandController {
    *   - complete: true if all 5 cards are now dealt (caller should complete the hand)
    */
   public dealNextStreet(): { board: Card[]; stage: string; complete: boolean } {
+    if (this.refuseUnlessRunout('dealNextStreet')) {
+      // complete:false and an unchanged board: the paced loop sees no growth
+      // and stops; nothing about this hand moves.
+      return { board: [...this.state.communityCards], stage: this.state.stage, complete: false };
+    }
     const deck = this.state.deck as unknown as Deck;
     const currentLength = this.state.communityCards.length;
 
@@ -1515,6 +1554,7 @@ export class HandController {
    * @param skipDistribution - true when caller (e.g. RIT) already distributed pots
    */
   public finalizeRunout(skipDistribution: boolean = false): void {
+    if (this.refuseUnlessRunout('finalizeRunout')) return;
     this.transitionStage('showdown');
     if (skipDistribution) {
       // RIT or other caller already distributed pots — just emit completion
@@ -1560,8 +1600,50 @@ export class HandController {
    * dealt. The engine calls this before computing rake for a RIT hand.
    */
   public markFlopSeen(): void {
+    if (this.refuseUnlessRunout('markFlopSeen')) return;
     this.state.sawFlop = true;
     this.boardDealtOutsideState = true;
+  }
+
+  /** True once start() has run. A controller that has not started has no
+   *  blinds, no hole cards and no hand - nothing about it may be run out. */
+  private handStarted = false;
+
+  /**
+   * ═══ RUNOUT CALLS ARE ONLY LEGAL DURING A RUNOUT (2026-08-31) ═══════════
+   *
+   * continueRunout, dealNextStreet, finalizeRunout, markFlopSeen and
+   * settleUncalledBet exist for exactly one situation: betting is over
+   * because everyone live is all-in (at most one player can still bet), and
+   * the board is being run out. They are called by the engine's insurance /
+   * run-it-twice / paced-runout cascade - async flows full of sleeps and
+   * 20-second offer windows whose catch handlers and safety timers can fire
+   * AFTER their hand has died. One of those firing into the NEXT hand's
+   * controller is what the rake-law alarm caught: a fresh preflop hand run
+   * out into the void before start(), then played to a raked walk inside the
+   * wreckage (32 live hands, docs/changelog/2026-08-31-a-stale-runout-
+   * cannot-reach-the-next-hand.md).
+   *
+   * The engine's continuations are now anchored to their controller, but this
+   * is the authoritative backstop: whatever the caller, a hand that is not in
+   * an all-in runout refuses the call and reports it. Returns true when the
+   * call must be refused.
+   */
+  private refuseUnlessRunout(op: string): boolean {
+    const live = this.state.players.filter((p) => !p.is_folded && !p.is_sitting_out);
+    const canStillBet = live.filter((p) => !p.is_all_in);
+    const inRunout = this.handStarted && (live.length <= 1 || canStillBet.length <= 1);
+    if (inRunout) return false;
+    reportError(
+      new Error(
+        `[HandController] ${op} refused on hand ${this.config.handNumber}: not an all-in ` +
+          `runout (started=${this.handStarted}, stage=${this.state.stage}, ` +
+          `${canStillBet.length} of ${live.length} live players can still bet). A stale ` +
+          `continuation from a previous hand is the only known way to get here.`
+      ),
+      'HandController.stale_runout_refused'
+    );
+    return true;
   }
 
   /**
@@ -2898,6 +2980,7 @@ export class HandController {
 
   /** Return the uncalled bet to its bettor (idempotent-ish; call once). */
   public settleUncalledBet(): number {
+    if (this.refuseUnlessRunout('settleUncalledBet')) return 0;
     return this.returnUncalledBet();
   }
 

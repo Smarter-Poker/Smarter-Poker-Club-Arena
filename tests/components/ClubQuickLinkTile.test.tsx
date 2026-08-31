@@ -138,6 +138,32 @@ describe('ClubQuickLinkTile', () => {
     await act(async () => {});
   });
 
+  it('does not request club balances or show a false failure for a union-only directory', async () => {
+    renderTile({ clubs: [UNION], targetClub: UNION });
+    fireEvent.contextMenu(screen.getByRole('button', { name: /hold to choose a wallet/ }));
+    expect(screen.getByRole('menuitem', { name: /Midway Union Union Wallet/ })).toBeInTheDocument();
+    await act(async () => {});
+    expect(inMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('distinguishes a failed balance read and retries it successfully', async () => {
+    const user = userEvent.setup();
+    inMock
+      .mockResolvedValueOnce({ data: null, error: new Error('balance read refused') })
+      .mockResolvedValueOnce({ data: [{ club_id: A.id, chip_balance: 77 }], error: null });
+    renderTile({ clubs: [A], targetClub: A });
+    fireEvent.contextMenu(screen.getByRole('button', { name: /hold to choose a wallet/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Wallet Balances Unavailable/i);
+    expect(screen.getByRole('menuitem', { name: /Balance Unavailable/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Retry/i }));
+
+    expect(await screen.findByRole('menuitem', { name: /77 Chips/i })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(inMock).toHaveBeenCalledTimes(2);
+  });
+
   it('closes the popover on Escape and returns focus to the tile trigger', async () => {
     const user = userEvent.setup();
     renderTile();
@@ -253,6 +279,10 @@ describe('ClubQuickLinkTile', () => {
     expect(screen.getByRole('button', { name: /Cashier for Alpha Club/ })).toHaveAttribute(
       'aria-haspopup',
       'menu'
+    );
+    expect(screen.getByRole('button', { name: /Cashier for Alpha Club/ })).toHaveAttribute(
+      'aria-keyshortcuts',
+      'ArrowDown Shift+F10'
     );
   });
 });

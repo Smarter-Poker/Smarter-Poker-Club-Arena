@@ -147,6 +147,10 @@ const ROUTE_CHUNKS: Record<string, () => Promise<any>> = {
   '/hand-history': () => import('../pages/HandHistoryPage'),
   '/history': () => import('../pages/HandHistoryPage'),
   '/cashier': () => import('../pages/CashierPage'),
+  // The lobby Cashier tile opens the Trade room, not the legacy/classic
+  // cashier. It uses this intent-only key so a hover/hold warms the exact
+  // chunk navigation will render without pretending it is a public route.
+  '/cashier/trade': () => import('../pages/CashierTradePage'),
   '/marketplace': () => import('../pages/MarketplacePage'),
   '/notifications': () => import('../pages/NotificationsPage'),
   '/messages': () => import('../pages/NavigateToMessenger'),

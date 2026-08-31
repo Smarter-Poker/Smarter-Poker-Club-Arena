@@ -6,6 +6,12 @@ const root = resolve(import.meta.dirname, '..');
 const page = readFileSync(resolve(root, 'src/pages/CashierTradePage.tsx'), 'utf8');
 const home = readFileSync(resolve(root, 'src/pages/HomePage.tsx'), 'utf8');
 const union = readFileSync(resolve(root, 'src/pages/UnionDashboardPage.tsx'), 'utf8');
+const preloader = readFileSync(resolve(root, 'src/utils/ChunkPreloader.ts'), 'utf8');
+const quickLinkTile = readFileSync(
+  resolve(root, 'src/components/home/ClubQuickLinkTile.tsx'),
+  'utf8'
+);
+const cashierStyles = readFileSync(resolve(root, 'src/pages/CashierTradePage.module.css'), 'utf8');
 const modal = readFileSync(resolve(root, 'src/components/wallet/WalletCashierModal.tsx'), 'utf8');
 const sql = readFileSync(
   resolve(root, 'supabase/migrations/20260830010000_cashier_integrity_and_wallet_launcher.sql'),
@@ -32,6 +38,29 @@ describe('cashier integrity and wallet launcher', () => {
     expect(home).toMatch(
       /case '4':[\s\S]+resolveCashierWallet\(eligibleCashierWallets\(userClubs\)/
     );
+  });
+
+  it('preloads the exact Trade cashier chunk used by the lobby destination', () => {
+    expect(home).toContain(
+      "preloadPath={tile.alt === 'Cashier' ? '/cashier/trade' : '/marketplace'}"
+    );
+    expect(preloader).toContain("'/cashier/trade': () => import('../pages/CashierTradePage')");
+  });
+
+  it('versions union dashboard loads so an old route cannot paint under a new URL', () => {
+    expect(union).toContain('const dashLoadVersion = useRef(0)');
+    expect(union).toContain('const requestVersion = ++dashLoadVersion.current');
+    expect(union).toContain('dashLoadVersion.current === requestVersion');
+    expect(union).toContain('loadUnionData(id, requestVersion)');
+  });
+
+  it('exposes recoverable balance reads and safe mobile cashier sheets', () => {
+    expect(quickLinkTile).toContain('Wallet Balances Unavailable.');
+    expect(quickLinkTile).toContain('clearClubChipBalanceCache();');
+    expect(quickLinkTile).toContain("aria-keyshortcuts={hasSwitch ? 'ArrowDown Shift+F10'");
+    expect(cashierStyles).toContain('100dvh');
+    expect(cashierStyles).toContain('env(safe-area-inset-bottom, 0px)');
+    expect(cashierStyles).toMatch(/\.modalActions\s*\{[\s\S]*position:\s*sticky/);
   });
 
   it('keeps retry ids for claim and reverse operations', () => {

@@ -334,25 +334,39 @@ export default function UnionDashboardPage() {
     setAppsLoaded(false);
   }, [appsFilter]);
 
-  const dashLoadingRef = useRef(false);
+  // Route changes are allowed to supersede an in-flight union load. A boolean
+  // lock dropped the new request entirely, then let the old union paint under
+  // the new URL. A monotonically increasing request version makes every state
+  // write and loading/error finalizer belong to one route intent.
+  const dashLoadVersion = useRef(0);
 
   // The contextual route is authoritative. A user who moves between two union
   // workspaces in the same session must never keep the first union's cached ID.
   useEffect(() => {
     if (!routeUnionId) return;
+    ++dashLoadVersion.current;
     setUnionId(routeUnionId);
     setUnion(null);
     setAdminRole(null);
+    setClubs([]);
+    setAgents([]);
+    setAdmins([]);
+    setWallets(null);
+    setBbjPool(null);
+    setRecentPeriods([]);
+    setPnlSettlements([]);
   }, [routeUnionId]);
 
   // ── Load Dashboard ─────────────────────────────────────────
   const loadDashboard = useCallback(
     async (uid?: string | null) => {
-      if (dashLoadingRef.current) return;
-      dashLoadingRef.current = true;
+      const requestVersion = ++dashLoadVersion.current;
+      const isCurrent = () => mountedRef.current && dashLoadVersion.current === requestVersion;
       try {
-        setLoading(true);
-        setError(null);
+        if (isCurrent()) {
+          setLoading(true);
+          setError(null);
+        }
         const id = uid || unionId;
 
         if (!id && user?.id) {
@@ -378,48 +392,57 @@ export default function UnionDashboardPage() {
           }
 
           if (!discoveredId) {
-            setError('You are not a union admin or owner.');
-            setLoading(false);
+            if (isCurrent()) {
+              setError('You are not a union admin or owner.');
+              setLoading(false);
+            }
             return;
           }
-          setUnionId(discoveredId);
-          setAdminRole(role);
-          await loadUnionData(discoveredId);
+          if (isCurrent()) {
+            setUnionId(discoveredId);
+            setAdminRole(role);
+          }
+          await loadUnionData(discoveredId, requestVersion);
         } else if (id) {
-          await loadUnionData(id);
+          await loadUnionData(id, requestVersion);
         }
       } catch (err: any) {
-        if (mountedRef.current) setError(safeErrorMessage(err));
+        if (isCurrent()) setError(safeErrorMessage(err));
         // Clear stale SWR cache on error to prevent ghost data
-        try {
-          sessionStorage.removeItem(`union_dashboard_swr_${user?.id}`);
-        } catch {
-          /* ignore */
+        if (isCurrent()) {
+          try {
+            sessionStorage.removeItem(`union_dashboard_swr_${user?.id}`);
+          } catch {
+            /* ignore */
+          }
         }
       } finally {
-        dashLoadingRef.current = false;
-        if (mountedRef.current) setLoading(false);
+        if (isCurrent()) setLoading(false);
       }
     },
     [unionId, user?.id]
   );
 
-  const loadUnionData = async (uid: string) => {
+  const loadUnionData = async (uid: string, requestVersion: number) => {
+    const isCurrent = () => mountedRef.current && dashLoadVersion.current === requestVersion;
     // Load union info
-    const { data: unionRow } = await supabase
+    const { data: unionRow, error: unionError } = await supabase
       .from('unions')
       .select(
         'id, name, description, owner_id, created_at, member_count, settings, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
       )
       .eq('id', uid)
       .maybeSingle();
-    if (mountedRef.current) setUnion(unionRow);
+    if (unionError) throw unionError;
+    if (!unionRow) throw new Error('Union Not Found');
+    if (isCurrent()) setUnion(unionRow);
 
     // Load clubs in union
-    const { data: unionClubs } = await supabase
+    const { data: unionClubs, error: unionClubsError } = await supabase
       .from('union_clubs')
       .select('*, clubs:club_id(*)')
       .eq('union_id', uid);
+    if (unionClubsError) throw unionClubsError;
     const enrichedClubs = (unionClubs || []).map((uc: UnionClubRow) => ({
       id: uc.club_id,
       ...uc.clubs,
@@ -427,7 +450,7 @@ export default function UnionDashboardPage() {
       // (commission_rate never existed on union_clubs — reads were undefined).
       club_commission_rate: uc.club_commission_rate || 0.9,
     }));
-    if (mountedRef.current) setClubs(enrichedClubs);
+    if (isCurrent()) setClubs(enrichedClubs);
 
     // Load agents across clubs
     let loadedAgents: UnionAgent[] = []; // Hoisted for SWR cache write
@@ -456,10 +479,8 @@ export default function UnionDashboardPage() {
         }
       }
 
-      if (mountedRef.current) {
-        loadedAgents = agentRows || [];
-        setAgents(loadedAgents);
-      }
+      loadedAgents = agentRows || [];
+      if (isCurrent()) setAgents(loadedAgents);
     }
 
     // Load admins
@@ -467,10 +488,10 @@ export default function UnionDashboardPage() {
       .from('union_admins')
       .select('*, profile:user_id(display_name, username, avatar_url:arena_avatar_url)')
       .eq('union_id', uid);
-    if (mountedRef.current) setAdmins(adminRows || []);
+    if (isCurrent()) setAdmins(adminRows || []);
 
     // Load wallets
-    const { data: walletRow } = await supabase
+    const { data: walletRow, error: walletError } = await supabase
       .from('union_wallets')
       // union_wallets schema: chip_balance, rake_wallet, bbj_wallet, promo_wallet,
       // insurance_wallet, spin_reserve_wallet, total_rake_collected, total_settlements.
@@ -482,7 +503,8 @@ export default function UnionDashboardPage() {
       )
       .eq('union_id', uid)
       .maybeSingle();
-    if (mountedRef.current) setWallets(walletRow);
+    if (walletError) throw walletError;
+    if (isCurrent()) setWallets(walletRow);
 
     // BBJ UNIFICATION 2026-07-21: the shared jackpot lives in the union's
     // bbj_pools row (engine-fed contributions + manual funding + payouts) —
@@ -495,7 +517,7 @@ export default function UnionDashboardPage() {
       .eq('union_id', uid)
       .eq('status', 'active')
       .maybeSingle();
-    if (mountedRef.current) setBbjPool(poolRow);
+    if (isCurrent()) setBbjPool(poolRow);
 
     // 2026-08-19: the comment here claimed "settlement_periods is a global
     // table (no club_id column)". That is wrong — it has club_id, and both
@@ -514,7 +536,7 @@ export default function UnionDashboardPage() {
       ? periodQuery.in('club_id', unionClubIds)
       : periodQuery.eq('union_id', uid);
     const { data: periods } = await periodQuery;
-    if (mountedRef.current) setRecentPeriods(periods || []);
+    if (isCurrent()) setRecentPeriods(periods || []);
 
     // ── Weekly union<->club player P&L settlements (added 2026-08-19) ──
     // Until now the weekly square-up had NO readable surface anywhere in the
@@ -529,10 +551,10 @@ export default function UnionDashboardPage() {
       .eq('union_id', uid)
       .order('period_start', { ascending: false })
       .limit(12);
-    if (mountedRef.current) setPnlSettlements(pnlRows || []);
+    if (isCurrent()) setPnlSettlements(pnlRows || []);
 
     // SWR: cache successful load for instant display on revisit
-    if (mountedRef.current) {
+    if (isCurrent()) {
       try {
         sessionStorage.setItem(
           `union_dashboard_swr_${user?.id}`,
@@ -779,7 +801,10 @@ export default function UnionDashboardPage() {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'bbj_pools', filter: `union_id=eq.${unionId}` },
         (payload: { new?: Record<string, unknown> }) => {
-          if (mountedRef.current && payload.new) {
+          // A final queued event from the previous route can arrive while
+          // React is cleaning up that channel. Never merge Union A's pool into
+          // Union B just because both dashboard instances share this state.
+          if (mountedRef.current && payload.new && (!routeUnionId || routeUnionId === unionId)) {
             setBbjPool((prev) => ({ ...(prev || {}), ...(payload.new as any) }));
           }
         }
@@ -795,7 +820,7 @@ export default function UnionDashboardPage() {
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [unionId, loadDashboard]);
+  }, [unionId, loadDashboard, routeUnionId]);
 
   // ── Visibility Refresh — refresh on tab focus after 30s ──
   useVisibilityRefresh(() => loadDashboard(unionId));

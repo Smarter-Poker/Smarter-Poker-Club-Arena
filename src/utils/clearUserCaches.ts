@@ -39,8 +39,8 @@
  */
 
 import { STORAGE_KEYS } from '../lib/storage';
+import { clearMembershipsWarmCache } from '../lib/membershipWarmState';
 import { SWR_CACHE_PREFIXES } from './staleCacheReaper';
-import { clearMembershipsWarmCache } from '../services/ClubsService';
 import { WALLET_CACHE_PREFIX, clearWalletMemoryCache } from '../lib/walletCache';
 import { CLUB_UUID_MAP_KEY, clearClubUUIDCache } from './clubIdResolver';
 import { STATS_CACHE_PREFIX, clearStatsRangeMemo } from '../lib/statsCache';

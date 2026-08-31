@@ -33,14 +33,12 @@ vi.mock('../../src/lib/supabase', () => {
   };
 });
 
+import { clearClubUUIDCache, isUUID, resolveClubIdFilter } from '../../src/utils/clubIdResolver';
 import {
-  clearClubUUIDCache,
   ClubNotFoundError,
   ClubResolutionError,
-  isUUID,
-  resolveClubIdFilter,
   resolveClubUUIDStrict,
-} from '../../src/utils/clubIdResolver';
+} from '../../src/utils/strictClubIdResolver';
 
 beforeEach(() => {
   resolverMock.result = { data: null, error: null };

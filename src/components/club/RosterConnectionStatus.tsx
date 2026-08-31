@@ -67,7 +67,11 @@ export default function RosterConnectionStatus({
         {lastSync ? ` Last Live Sync ${lastSync}.` : ''}
       </span>
       {retryable && (
-        <button type="button" className="members-connection-status__retry" onClick={onRetry}>
+        <button
+          type="button"
+          className="members-refresh members-connection-status__retry"
+          onClick={onRetry}
+        >
           Retry Live Sync
         </button>
       )}

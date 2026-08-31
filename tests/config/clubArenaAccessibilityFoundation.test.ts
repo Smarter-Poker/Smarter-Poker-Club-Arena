@@ -50,6 +50,50 @@ describe('Club Arena accessibility foundation', () => {
     expect(engineStyles).toContain('.skip-link:focus-visible');
   });
 
+  it('announces the spin draw and its result to a player who cannot see the disc', () => {
+    /* 2026-08-31 audit. SpinWheel is `role="dialog" aria-modal="true"` and
+       every moving part inside it is correctly `aria-hidden` decoration — so
+       a screen reader announced "Spin Multiplier Draw, dialog" and then said
+       NOTHING for the 16.6 seconds the engine holds the deal, after which the
+       player was dealt into a tournament without being told what they were
+       playing for. `aria-modal` made it total: assistive tech is instructed
+       to ignore everything outside the dialog.
+
+       CLAUDE.md 10.6 says a reduced-motion player loses the motion and keeps
+       the MEANING. This is that law on another channel, and the wheel was
+       failing it outright while BBJHitNotification — the house precedent
+       asserted below — was already announcing a Bad Beat Jackpot. */
+    const source = read('src/components/tournament/SpinWheel.tsx');
+
+    expect(source).toContain('role="status"');
+    expect(source).toContain('aria-live="polite"');
+    expect(source).toContain('className="sr-only"');
+
+    // The result must carry the three facts the visuals carry: what was
+    // drawn, what it is worth, and who actually cashes.
+    expect(source).toContain('Times. Prize Pool');
+    expect(source).toContain('Paying ${splits}');
+    expect(source).toContain("['First', 'Second', 'Third']");
+
+    // And the dialog must not be silent while the draw is running.
+    expect(source).toContain("'Drawing Your Multiplier.'");
+
+    // The region has to exist before its text does, or several screen
+    // readers miss the update entirely.
+    const dialogOpen = source.indexOf('aria-modal="true"');
+    const region = source.indexOf('aria-live="polite"');
+    const firstPhaseBranch = source.indexOf("{phase === 'countdown' &&");
+    expect(dialogOpen).toBeGreaterThan(-1);
+    expect(region).toBeGreaterThan(dialogOpen);
+    expect(region).toBeLessThan(firstPhaseBranch);
+  });
+
+  it('keeps the Bad Beat Jackpot announcement it was modelled on', () => {
+    const source = read('src/components/bbj/BBJHitNotification.tsx');
+    expect(source).toContain('role="status"');
+    expect(source).toContain('aria-live="polite"');
+  });
+
   it('uses live-region semantics for loading and recovery states', () => {
     const source = read('src/components/common/EmptyState.tsx');
 

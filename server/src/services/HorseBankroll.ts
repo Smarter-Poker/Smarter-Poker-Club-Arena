@@ -72,6 +72,17 @@ export interface BankrollPolicy {
   stopWinBuyIns: number;
   /** Down this many buy-ins for the session: done for now. */
   stopLossBuyIns: number;
+  /**
+   * Buy-ins of an EVENT required before entering it.
+   *
+   * Much higher than the cash bar, and not out of caution - out of variance.
+   * A cash session is a shallow, continuous distribution: a bad night costs a
+   * couple of buy-ins. A tournament pays nothing to most of the field most of
+   * the time, so a roll that survives 25 cash buy-ins is busted by a routine
+   * run of 25 min-cashes. The textbook figures are 20-40 buy-ins for cash and
+   * 100+ for MTTs; these keep that ratio while staying inside the temperament.
+   */
+  tournamentBuyInsToEnter: number;
 }
 
 const POLICIES: Record<BankrollTemperament, Omit<BankrollPolicy, 'temperament'>> = {
@@ -83,6 +94,7 @@ const POLICIES: Record<BankrollTemperament, Omit<BankrollPolicy, 'temperament'>>
     maxBankrollFraction: 0.03,
     stopWinBuyIns: 2,
     stopLossBuyIns: 2,
+    tournamentBuyInsToEnter: 100,
   },
   // The middle of the road, and most of the fleet.
   standard: {
@@ -92,6 +104,7 @@ const POLICIES: Record<BankrollTemperament, Omit<BankrollPolicy, 'temperament'>>
     maxBankrollFraction: 0.05,
     stopWinBuyIns: 3,
     stopLossBuyIns: 3,
+    tournamentBuyInsToEnter: 60,
   },
   // Rolls thinner and takes shots. Still books wins and still moves down —
   // a gambler is not a player with no rules, it is a player with looser ones.
@@ -102,6 +115,7 @@ const POLICIES: Record<BankrollTemperament, Omit<BankrollPolicy, 'temperament'>>
     maxBankrollFraction: 0.1,
     stopWinBuyIns: 5,
     stopLossBuyIns: 4,
+    tournamentBuyInsToEnter: 30,
   },
 };
 
@@ -326,4 +340,79 @@ export function canOpenAnotherTable(args: {
   if (!(bankroll > 0) || !(nextBuyIn > 0)) return false;
   const ceiling = bankroll * policy.maxBankrollFraction * AGGREGATE_EXPOSURE_MULTIPLE;
   return liveExposure + nextBuyIn <= ceiling;
+}
+
+/**
+ * Rule 8: may this bankroll enter this EVENT?
+ *
+ * A FREEROLL IS ALWAYS YES. Free money is not a bankroll decision - it is the
+ * recovery path a broke horse is supposed to take, and gating it behind a roll
+ * the horse does not have is precisely the loop that never closes. This mirrors
+ * the `allLanes` freeroll override the tournament service already applies to
+ * game lanes (Dan 2026-08-27: "free money is not a lane decision").
+ *
+ * `cost` is the full entry - buy-in PLUS fee - because that is what leaves the
+ * wallet. Pricing the rule off the prize contribution alone understates a
+ * turbo's real cost by its whole rake.
+ */
+export function canEnterTournament(
+  bankroll: number,
+  cost: number,
+  policy: BankrollPolicy
+): boolean {
+  if (!(cost > 0)) return true; // freeroll
+  if (!(bankroll > 0)) return false;
+  return bankroll >= cost * policy.tournamentBuyInsToEnter;
+}
+
+/**
+ * Rule 9: the REBUY decision, for a horse that just busted a cash seat.
+ *
+ * Two separate questions, and the old code only asked the second one:
+ *
+ *  1. SHOULD it rebuy - is it still inside its stop-loss, and can its own roll
+ *     still support this stake at all? A horse that keeps reloading a game it
+ *     can no longer afford is the exact opposite of the discipline Dan asked
+ *     for; the correct move is to leave, drop down a rung, and come back.
+ *  2. FOR HOW MUCH - the old sites used `bigBlind * 100` flat, ignoring the
+ *     table's own limits and the share-of-roll ceiling both.
+ *
+ * `rebuysTaken` counts reloads already made, so the buy-ins COMMITTED to this
+ * session is `rebuysTaken + 1` - the initial buy-in plus each reload. The
+ * comparison is therefore against `rebuysTaken + 1`, not `rebuysTaken`.
+ *
+ * That off-by-one is not academic. `rebuysTaken >= stopLossBuyIns` would let
+ * the standard temperament - six in ten of the fleet - take THREE reloads for
+ * four buy-ins committed, where the hard-coded `>= 2` it replaces allowed two
+ * reloads for three. The first draft of this module carried that comparison
+ * while its own comment claimed parity, so 60% of the fleet would have
+ * quietly gained a buy-in of rope in a change described as a refactor.
+ *
+ * With `rebuysTaken + 1`: standard stops at exactly the old place, the nit
+ * gives up a buy-in earlier, and the gambler takes one more.
+ *
+ * Returns the amount to rebuy for, or 0 for "do not rebuy - stand up".
+ *
+ * WHERE THE CHIPS COME FROM IS UNCHANGED. A horse is still funded from the
+ * club treasury (`fn_horse_fund_from_treasury`); this is a DECISION, not a
+ * money path. And it makes a horse MORE like a human, not less (CLAUDE.md
+ * 10.5): a human's reload is limited by their own wallet, and until now a
+ * horse's was limited by nothing at all.
+ */
+export function rebuyDecision(args: {
+  bankroll: number;
+  refBuyIn: number;
+  minBuyIn: number;
+  maxBuyIn: number;
+  desired: number;
+  rebuysTaken: number;
+  policy: BankrollPolicy;
+}): number {
+  const { bankroll, refBuyIn, minBuyIn, maxBuyIn, desired, rebuysTaken, policy } = args;
+  if (rebuysTaken + 1 >= policy.stopLossBuyIns) return 0;
+  // Can the roll still carry this stake? If not, this is a move-down, not a
+  // reload. Unknown or zero reference falls through to the old flat sizing
+  // rather than standing a horse up on a number we could not read.
+  if (refBuyIn > 0 && bankroll > 0 && !canSit(bankroll, refBuyIn, policy)) return 0;
+  return bankrollBuyIn({ bankroll, desired, minBuyIn, maxBuyIn, policy });
 }

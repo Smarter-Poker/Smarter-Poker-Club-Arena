@@ -229,7 +229,7 @@ jobs:
           PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/cashier.json
         run: >-
           npx playwright test tests/e2e/production-cashier.spec.ts
-          --project=chromium --reporter=line,json --retries=1
+          --project=chromium --reporter=line,json --workers=1 --retries=0
 
       # `always()` is the point. Without it, a failed Cashier step skips this one
       # entirely - so a single money-surface red hid the whole production sweep,
@@ -254,6 +254,10 @@ jobs:
           # above. It creates, funds and hard-deletes reserved temporary Auth
           # users so every live SKU can traverse checkout safely.
           CUSTOMIZATION_COMMERCE_CERTIFICATION: '1'
+          # Daily Missions uses the same reserved hard-delete harness for one
+          # production player, then proves the complete economy/realtime/error
+          # journey and verifies that no account or ledger residue remains.
+          DAILY_MISSIONS_CERTIFICATION: '1'
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
@@ -328,8 +332,25 @@ jobs:
 
           # Certify Stats first among the broader route checks. Cashier has its
           # own preceding release gate so this suite cannot hide its verdict.
-          run_suite stats.json tests/e2e/stats-deep.spec.ts --project=chromium --reporter=line,json --retries=1
+          run_suite stats.json tests/e2e/stats-deep.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
           stats_rc=$?; [ $stats_rc -ne 0 ] && rc=$stats_rc
+
+          # These contracts either mutate the standing authenticated player or
+          # create and destroy isolated production fixtures. Each gets its own
+          # single-worker process so a waitlist/realtime update cannot
+          # invalidate another browser's snapshot. Playwright retries stay off:
+          # a release must not hide a broken first attempt behind a warm retry.
+          run_suite lobby.json tests/e2e/club-lobby.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          lobby_rc=$?; [ $lobby_rc -ne 0 ] && rc=$lobby_rc
+
+          run_suite customization-realtime.json tests/e2e/production-customization-realtime.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          customization_realtime_rc=$?; [ $customization_realtime_rc -ne 0 ] && rc=$customization_realtime_rc
+
+          run_suite customization-commerce.json tests/e2e/production-customization-commerce.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          customization_commerce_rc=$?; [ $customization_commerce_rc -ne 0 ] && rc=$customization_commerce_rc
+
+          run_suite daily-missions.json tests/e2e/production-daily-missions.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          daily_missions_rc=$?; [ $daily_missions_rc -ne 0 ] && rc=$daily_missions_rc
 
           # tests/e2e/routes/ (nine files) is named as a DIRECTORY on purpose.
           # The first sweep that wired the orphans missed it entirely by globbing
@@ -343,17 +364,14 @@ jobs:
             tests/e2e/mobile-input-zoom.spec.ts \
             tests/e2e/mobile-chrome-occlusion.spec.ts \
             tests/e2e/showdown-beats.spec.ts \
-            tests/e2e/club-lobby.spec.ts \
             tests/e2e/tournament-buy-in-dialog.spec.ts \
             tests/e2e/tournament-watch.spec.ts \
-            tests/e2e/production-customization-realtime.spec.ts \
-            tests/e2e/production-customization-commerce.spec.ts \
             tests/e2e/footer-route.spec.ts \
             tests/e2e/routes \
-            --reporter=line,json --retries=1
+            --reporter=line,json --workers=2 --retries=0
           sweep_rc=$?; [ $sweep_rc -ne 0 ] && rc=$sweep_rc
 
-          echo "stats exit=$stats_rc  sweep exit=$sweep_rc"
+          echo "stats exit=$stats_rc  lobby exit=$lobby_rc  customization realtime exit=$customization_realtime_rc  customization commerce exit=$customization_commerce_rc  daily missions exit=$daily_missions_rc  sweep exit=$sweep_rc"
           exit $rc
 
       # THE RUN MUST NOT PASS BY NOT RUNNING.
@@ -369,6 +387,10 @@ jobs:
           node scripts/ci/assert-e2e-actually-ran.mjs
           e2e-report/cashier.json
           e2e-report/stats.json
+          e2e-report/lobby.json
+          e2e-report/customization-realtime.json
+          e2e-report/customization-commerce.json
+          e2e-report/daily-missions.json
           e2e-report/sweep.json
 
       - name: Upload the report when something is wrong on production

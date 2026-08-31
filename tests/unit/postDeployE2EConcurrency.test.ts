@@ -22,4 +22,21 @@ describe('post-deploy E2E concurrency', () => {
     expect(concurrency).toContain('cancel-in-progress: false');
     expect(concurrency).not.toContain('manual-');
   });
+
+  it('runs stateful production contracts alone and never hides a first-attempt failure', () => {
+    expect(workflow).not.toContain('--retries=1');
+    expect(workflow.match(/--retries=0/g)?.length).toBeGreaterThanOrEqual(5);
+
+    for (const spec of [
+      'club-lobby.spec.ts',
+      'production-customization-realtime.spec.ts',
+      'production-customization-commerce.spec.ts',
+      'production-daily-missions.spec.ts',
+    ]) {
+      expect(workflow).toMatch(
+        new RegExp(`${spec.replaceAll('.', '\\.')}[\\s\\S]{0,120}--workers=1 --retries=0`)
+      );
+    }
+    expect(workflow).toContain('--reporter=line,json --workers=2 --retries=0');
+  });
 });

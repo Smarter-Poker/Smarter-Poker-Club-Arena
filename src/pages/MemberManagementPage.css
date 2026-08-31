@@ -859,6 +859,37 @@
   line-height: 1.5;
 }
 
+.mm-empty__retry {
+  min-height: 2.75rem;
+  margin-top: 1rem;
+  padding: 0.65rem 1.1rem;
+  border: 1px solid color-mix(in srgb, var(--ca-gold) 72%, transparent);
+  border-radius: 0.7rem;
+  background: linear-gradient(180deg, #ffe29b 0%, var(--ca-gold) 52%, #9b5f06 100%);
+  box-shadow:
+    0 0.35rem 0 #6e4308,
+    0 0.65rem 1.5rem color-mix(in srgb, var(--ca-gold) 18%, transparent);
+  color: #211504;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mm-empty__retry:active {
+  transform: translateY(0.2rem);
+  box-shadow:
+    0 0.15rem 0 #6e4308,
+    0 0.35rem 0.9rem color-mix(in srgb, var(--ca-gold) 14%, transparent);
+}
+
+.mm-empty__retry:focus-visible {
+  outline: 3px solid var(--ca-cyan);
+  outline-offset: 3px;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    NARROW SCREENS — 375px is the design width
    ───────────────────────────────────────────────────────────────────────────── */

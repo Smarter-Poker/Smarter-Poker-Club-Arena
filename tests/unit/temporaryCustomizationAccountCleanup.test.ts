@@ -27,11 +27,11 @@ describe('temporary customization account cleanup', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('retries a transient PostgREST schema-cache outage and still proves hard deletion', async () => {
-    let firstDelete = true;
+    let firstCleanup = true;
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
-      if (url.includes('/rest/v1/customization_operations') && firstDelete) {
-        firstDelete = false;
+      if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account') && firstCleanup) {
+        firstCleanup = false;
         return new Response(
           JSON.stringify({ code: 'PGRST002', message: 'Could not query the database. Retrying.' }),
           { status: 503 }
@@ -40,16 +40,21 @@ describe('temporary customization account cleanup', () => {
       if (url.includes('/auth/v1/admin/users/') && (!init?.method || init.method === 'GET')) {
         return new Response(null, { status: 404 });
       }
+      if (url.includes('/rest/v1/') && (!init?.method || init.method === 'GET')) {
+        return Response.json([]);
+      }
       return new Response(null, { status: 204 });
     });
     vi.stubGlobal('fetch', fetchMock);
 
     await cleanupTemporaryCustomizationAccount(environment, account());
 
-    const customizationDeletes = fetchMock.mock.calls.filter(([input]) =>
-      String(input).includes('/rest/v1/customization_operations')
+    const cleanupCalls = fetchMock.mock.calls.filter(
+      ([input, init]) =>
+        String(input).includes('/rest/v1/rpc/cleanup_reserved_certification_account') &&
+        init?.method === 'POST'
     );
-    expect(customizationDeletes).toHaveLength(2);
+    expect(cleanupCalls).toHaveLength(2);
     expect(
       fetchMock.mock.calls.some(([input]) => String(input).includes('/auth/v1/admin/users/'))
     ).toBe(true);

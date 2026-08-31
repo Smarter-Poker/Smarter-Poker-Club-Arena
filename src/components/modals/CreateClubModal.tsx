@@ -24,6 +24,7 @@ import { safeErrorMessage } from '../../utils/safeErrorMessage';
 import { optimizeClubLogo } from '../../utils/clubLogoImage';
 import { useDialogEscape } from '../../hooks/useDialogEscape';
 import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
+import { titleCase } from '../../utils/titleCase';
 
 const CREATE_DRAFT_KEY = 'club-arena:create-draft:v1';
 
@@ -316,176 +317,180 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
             aria-label="Close"
           />
 
-          <span className={styles.eyebrow}>Club Arena / New Organization</span>
-          <h2 id="create-club-title" className={styles.title}>
-            Create A Club
-          </h2>
-          <p className={styles.subtitle}>
-            Name Your Room, Establish Its Identity, And Open The Doors.
-          </p>
+          <div className={styles.scrollBody}>
+            <span className={styles.eyebrow}>Club Arena / New Organization</span>
+            <h2 id="create-club-title" className={styles.title}>
+              Create A Club
+            </h2>
+            <p className={styles.subtitle}>
+              Name Your Room, Establish Its Identity, And Open The Doors.
+            </p>
 
-          <div className={styles.creationMeta} aria-live="polite">
-            {allowance ? (
-              <span>{`${allowance.remaining ?? 'Unlimited'} club slots remaining`}</span>
-            ) : allowanceError ? (
-              <button
-                type="button"
-                className={styles.metaRetryButton}
-                onClick={() => setAllowanceRetry((attempt) => attempt + 1)}
-              >
-                Allowance Check Failed · Retry
-              </button>
-            ) : (
-              <span>Verifying Club Allowance…</span>
-            )}
-            {draftRestored && <span>Draft Restored</span>}
-          </div>
-
-          <label className={styles.fieldLabel} htmlFor="new-club-name">
-            Club Name
-          </label>
-          <input
-            id="new-club-name"
-            type="text"
-            className={styles.clubNameInput}
-            placeholder="e.g. River Room"
-            value={clubName}
-            onChange={(e) => setClubName(e.target.value)}
-            maxLength={30}
-            autoComplete="off"
-            style={{
-              opacity: visibleFormElements[0] ? 1 : 0,
-              transition: 'opacity 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            }}
-          />
-          <div className={`${styles.nameStatus} ${styles[nameStatus]}`} aria-live="polite">
-            {nameStatus === 'checking' && 'Checking availability…'}
-            {nameStatus === 'available' && 'Name available'}
-            {nameStatus === 'taken' && 'Name already in use'}
-            {nameStatus === 'error' && 'Availability check unavailable'}
-          </div>
-
-          <label className={styles.fieldLabel} htmlFor="new-club-description">
-            Description <span>Optional</span>
-          </label>
-          <textarea
-            id="new-club-description"
-            className={styles.descriptionInput}
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            maxLength={180}
-            placeholder="What kind of room are you building?"
-          />
-
-          <span className={styles.fieldLabel}>Club Identity</span>
-          <div className={styles.logoWorkspace}>
-            <div className={styles.logoPreview}>
-              {logoPreview ? (
-                <img src={logoPreview} alt="Selected club logo" className={styles.logoThumb} />
+            <div className={styles.creationMeta} aria-live="polite">
+              {allowance ? (
+                <span>{`${allowance.remaining ?? 'Unlimited'} Club Slots Remaining`}</span>
+              ) : allowanceError ? (
+                <button
+                  type="button"
+                  className={styles.metaRetryButton}
+                  onClick={() => setAllowanceRetry((attempt) => attempt + 1)}
+                >
+                  Allowance Check Failed · Retry
+                </button>
               ) : (
-                <span aria-hidden="true">♣</span>
+                <span>Verifying Club Allowance…</span>
               )}
+              {draftRestored && <span>Draft Restored</span>}
             </div>
-            <div className={styles.logoActions}>
-              <button
-                className={styles.uploadLogoBtn}
-                onClick={() => {
-                  haptic.medium();
-                  fileInputRef.current?.click();
-                }}
-              >
-                <span>{isOptimizingLogo ? 'Optimizing…' : 'Upload Image'}</span>
-                <small>PNG, JPG Or WEBP · 5MB Max</small>
-              </button>
-              <button
-                className={styles.createLogoBtn}
-                onClick={() => {
-                  haptic.medium();
-                  setShowLogoGenerator(true);
-                }}
-              >
-                <span>Generate With AI</span>
-                <small>Describe A Custom Club Mark</small>
-              </button>
+
+            <label className={styles.fieldLabel} htmlFor="new-club-name">
+              Club Name
+            </label>
+            <input
+              id="new-club-name"
+              type="text"
+              className={styles.clubNameInput}
+              placeholder="E.G. River Room"
+              value={clubName}
+              onChange={(e) => setClubName(e.target.value)}
+              maxLength={30}
+              autoComplete="off"
+              style={{
+                opacity: visibleFormElements[0] ? 1 : 0,
+                transition: 'opacity 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+              }}
+            />
+            <div className={`${styles.nameStatus} ${styles[nameStatus]}`} aria-live="polite">
+              {nameStatus === 'checking' && 'Checking Availability…'}
+              {nameStatus === 'available' && 'Name Available'}
+              {nameStatus === 'taken' && 'Name Already In Use'}
+              {nameStatus === 'error' && 'Availability Check Unavailable'}
             </div>
+
+            <label className={styles.fieldLabel} htmlFor="new-club-description">
+              Description <span>Optional</span>
+            </label>
+            <textarea
+              id="new-club-description"
+              className={styles.descriptionInput}
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              maxLength={180}
+              placeholder="What Kind Of Room Are You Building?"
+            />
+
+            <span className={styles.fieldLabel}>Club Identity</span>
+            <div className={styles.logoWorkspace}>
+              <div className={styles.logoPreview}>
+                {logoPreview ? (
+                  <img src={logoPreview} alt="Selected Club Logo" className={styles.logoThumb} />
+                ) : (
+                  <span aria-hidden="true">♣</span>
+                )}
+              </div>
+              <div className={styles.logoActions}>
+                <button
+                  className={styles.uploadLogoBtn}
+                  onClick={() => {
+                    haptic.medium();
+                    fileInputRef.current?.click();
+                  }}
+                >
+                  <span>{isOptimizingLogo ? 'Optimizing…' : 'Upload Image'}</span>
+                  <small>PNG, JPG Or WEBP · 5MB Max</small>
+                </button>
+                <button
+                  className={styles.createLogoBtn}
+                  onClick={() => {
+                    haptic.medium();
+                    setShowLogoGenerator(true);
+                  }}
+                >
+                  <span>Generate With AI</span>
+                  <small>Describe A Custom Club Mark</small>
+                </button>
+              </div>
+            </div>
+
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className={styles.hiddenInput}
+              onChange={handleFileSelect}
+            />
+
+            <fieldset className={styles.accessSettings}>
+              <legend>Launch Settings</legend>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={isPublic}
+                  onChange={(event) => setIsPublic(event.target.checked)}
+                />{' '}
+                Discoverable In Club Arena
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={requiresApproval}
+                  onChange={(event) => setRequiresApproval(event.target.checked)}
+                />{' '}
+                Review Join Requests
+              </label>
+            </fieldset>
+
+            <label
+              className={styles.termsLabel}
+              style={{
+                opacity: visibleFormElements[3] ? 1 : 0,
+                transform: visibleFormElements[3] ? 'scale(1)' : 'scale(0.9)',
+                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={hasAgreed}
+                onChange={(e) => {
+                  haptic.selection();
+                  setHasAgreed(e.target.checked);
+                }}
+                className={styles.termsCheckbox}
+              />
+              <span className={styles.checkboxVisual} aria-hidden="true" />
+              <span>I Confirm I Can Manage This Club And Accept The Club Arena Terms.</span>
+            </label>
           </div>
 
-          {/* Hidden file input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            className={styles.hiddenInput}
-            onChange={handleFileSelect}
-          />
-
-          <fieldset className={styles.accessSettings}>
-            <legend>Launch Settings</legend>
-            <label>
-              <input
-                type="checkbox"
-                checked={isPublic}
-                onChange={(event) => setIsPublic(event.target.checked)}
-              />{' '}
-              Discoverable In Club Arena
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={requiresApproval}
-                onChange={(event) => setRequiresApproval(event.target.checked)}
-              />{' '}
-              Review Join Requests
-            </label>
-          </fieldset>
-
-          <label
-            className={styles.termsLabel}
-            style={{
-              opacity: visibleFormElements[3] ? 1 : 0,
-              transform: visibleFormElements[3] ? 'scale(1)' : 'scale(0.9)',
-              transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={hasAgreed}
-              onChange={(e) => {
-                haptic.selection();
-                setHasAgreed(e.target.checked);
+          <footer className={styles.pageFooter}>
+            {/* CREATE button zone */}
+            <button
+              className={styles.createButton}
+              onClick={() => {
+                haptic.medium();
+                handleCreate();
               }}
-              className={styles.termsCheckbox}
-            />
-            <span className={styles.checkboxVisual} aria-hidden="true" />
-            <span>I Confirm I Can Manage This Club And Accept The Club Arena Terms.</span>
-          </label>
-
-          {/* CREATE button zone */}
-          <button
-            className={styles.createButton}
-            onClick={() => {
-              haptic.medium();
-              handleCreate();
-            }}
-            disabled={
-              isCreating ||
-              isOptimizingLogo ||
-              !hasAgreed ||
-              !clubName.trim() ||
-              !logoPreview ||
-              nameStatus !== 'available' ||
-              allowance?.canCreate !== true
-            }
-            aria-label="Create Club"
-            style={{
-              opacity: visibleFormElements[4] ? 1 : 0,
-              transform: visibleFormElements[4] ? 'scale(1)' : 'scale(0.9)',
-              transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            }}
-          >
-            {isCreating && <span className={styles.spinner}>⟳</span>}
-            {isCreating ? 'Creating Club…' : 'Create Club'}
-          </button>
+              disabled={
+                isCreating ||
+                isOptimizingLogo ||
+                !hasAgreed ||
+                !clubName.trim() ||
+                !logoPreview ||
+                nameStatus !== 'available' ||
+                allowance?.canCreate !== true
+              }
+              aria-label="Create Club"
+              style={{
+                opacity: visibleFormElements[4] ? 1 : 0,
+                transform: visibleFormElements[4] ? 'scale(1)' : 'scale(0.9)',
+                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+              }}
+            >
+              {isCreating && <span className={styles.spinner} aria-hidden="true" />}
+              {isCreating ? 'Creating Club…' : 'Create Club'}
+            </button>
+          </footer>
         </div>
 
         {/* Logo Generator Modal */}
@@ -619,7 +624,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
                 textShadow: '0 0 20px rgba(0, 212, 255, 0.8)',
               }}
             >
-              <div style={{ fontSize: '48px', marginBottom: '20px' }}>◷</div>
+              <div className={styles.generatorSpinner} aria-hidden="true" />
               <div>GENERATING LOGO...</div>
               <div style={{ fontSize: '14px', marginTop: '10px', opacity: 0.7 }}>
                 Powered By Club Arena
@@ -640,7 +645,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
 
             <div className={styles.logoGeneratorActions}>
               <button className={styles.generateBtn} onClick={handleUsePreview}>
-                ✓ Use This Logo
+                Use This Logo
               </button>
               <button
                 className={styles.cancelBtn}
@@ -676,7 +681,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
               style={{ display: isGenerating || previewUrl ? 'none' : 'flex' }}
             />
 
-            {error && <div className={styles.errorMessage}>{error}</div>}
+            {error && <div className={styles.errorMessage}>{titleCase(error)}</div>}
           </>
         )}
       </div>

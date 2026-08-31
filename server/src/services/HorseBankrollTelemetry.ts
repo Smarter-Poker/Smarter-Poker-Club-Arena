@@ -22,6 +22,8 @@ export type BankrollEvent =
   | 'seat_refused_underrolled'
   /** Refused a cash seat: the policy share cannot reach the table minimum. */
   | 'seat_refused_share_below_min'
+  /** Refused an ADDITIONAL table: the aggregate exposure ceiling. */
+  | 'seat_refused_aggregate_exposure'
   /**
    * Seated WITHOUT a bankroll opinion, because no membership row for that
    * club could be read. Not a refusal - the gate fails open by design, and
@@ -40,21 +42,16 @@ export type BankrollEvent =
   | 'session_book_win'
   /** Left the table down its stop-loss. */
   | 'session_stop_loss'
+  /** Refused a tournament entry: the roll does not cover the event. */
+  | 'tournament_refused_underrolled'
+  /** Entered a freeroll while unable to afford any paid game. */
+  | 'freeroll_entered_broke'
+  /** Declined to rebuy after busting: the roll no longer carries this stake. */
+  | 'rebuy_refused_underrolled'
+  /** Declined to rebuy after busting: at the temperament's stop-loss. */
+  | 'rebuy_refused_stop_loss'
   /** Could not afford ANY open cash game - the move-down ladder ran out. */
   | 'ladder_exhausted';
-
-/**
- * WHAT IS DELIBERATELY NOT HERE YET.
- *
- * The reverted work also emitted `seat_refused_aggregate_exposure`,
- * `rebuy_refused_underrolled`, `rebuy_refused_stop_loss`,
- * `tournament_refused_underrolled` and `freeroll_entered_broke`. Those
- * decisions do not exist in `main` right now, so naming them here would put
- * five reasons in the vocabulary that can never be counted - and a reason
- * that is always zero reads as a decision that never fires, which is exactly
- * the confusion this module exists to end. Each name lands in the PR that
- * lands the decision behind it.
- */
 
 /**
  * COUNTERS ACCUMULATE; GAUGES DO NOT.
@@ -62,7 +59,7 @@ export type BankrollEvent =
  * `ladder_exhausted` answers "how many horses are stranded RIGHT NOW", and a
  * running total of a standing condition is a number that only goes up: 40
  * stranded horses re-counted every 30 seconds reads as 115,200 a day and means
- * nothing. It is recorded as a gauge — last value wins — while every genuine
+ * nothing. It is recorded as a gauge - last value wins - while every genuine
  * event beside it keeps counting.
  */
 const GAUGES: ReadonlySet<BankrollEvent> = new Set<BankrollEvent>(['ladder_exhausted']);

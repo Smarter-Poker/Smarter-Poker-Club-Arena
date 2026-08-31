@@ -59,6 +59,8 @@ describe('global locator and observer experience', () => {
 
   it('routes members to the actual cash or tournament table as observers', () => {
     expect(modal).toContain('`/table/${table.table_id}?observer=1`');
+    expect(service).toContain("supabase.rpc('fn_get_table_watch_access'");
+    expect(modal).toContain('PlayerSearchService.getTableWatchAccess(table.table_id)');
     expect(migration).toContain("'table_id', live.table_id");
     expect(migration).toContain("'tournament_id', live.tournament_id");
     expect(migration).toContain('coalesce(t.is_anonymous, false) = false');
@@ -73,6 +75,7 @@ describe('global locator and observer experience', () => {
   it('enforces membership on HTTP and both websocket table-state paths', () => {
     expect(stateHandler).toContain('authorizeTableViewer(tableId, auth.userId)');
     expect(stateHandler).toContain('CLUB_MEMBERSHIP_REQUIRED');
+    expect(stateHandler).toContain('OBSERVERS_RESTRICTED');
     expect(socketServer.match(/this\.authorizeViewer\(tableId,/g)).toHaveLength(2);
   });
 });

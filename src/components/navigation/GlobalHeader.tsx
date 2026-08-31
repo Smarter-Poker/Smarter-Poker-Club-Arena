@@ -53,37 +53,6 @@ export default function GlobalHeader() {
   } = useHeaderDataStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isNavigatingAway, setIsNavigatingAway] = useState(false);
-  const [iconShimmerVisible, setIconShimmerVisible] = useState(false);
-
-  /*
-   * The complete right-side icon bank gets one short sheen after a genuinely
-   * random fifteen-to-twenty-second pause, then a new pause is selected.
-   */
-  useEffect(() => {
-    let pauseTimer: number | undefined;
-    let shimmerTimer: number | undefined;
-    let cancelled = false;
-
-    const scheduleNextShimmer = () => {
-      const randomDelayMs = 15_000 + Math.floor(Math.random() * 5_001);
-      pauseTimer = window.setTimeout(() => {
-        if (cancelled) return;
-        setIconShimmerVisible(true);
-        shimmerTimer = window.setTimeout(() => {
-          if (cancelled) return;
-          setIconShimmerVisible(false);
-          scheduleNextShimmer();
-        }, 1_500);
-      }, randomDelayMs);
-    };
-
-    scheduleNextShimmer();
-    return () => {
-      cancelled = true;
-      if (pauseTimer !== undefined) window.clearTimeout(pauseTimer);
-      if (shimmerTimer !== undefined) window.clearTimeout(shimmerTimer);
-    };
-  }, []);
 
   /*
    * The off-route table action bar is fixed, so CSS cannot discover the
@@ -301,10 +270,7 @@ export default function GlobalHeader() {
           decoding="sync"
         />
 
-        <div
-          className={`${styles.headerControls} ${iconShimmerVisible ? styles.headerControlsShimmer : ''}`}
-          data-header-icons-shimmer={iconShimmerVisible ? 'active' : 'idle'}
-        >
+        <div className={styles.headerControls}>
           <div className={styles.headerLeft}>
             <button
               onClick={handleMenuToggle}

@@ -51,6 +51,9 @@ describe('responsive premium Club Arena', () => {
     );
     expect(desktop).toMatch(/\.lobby-top\s*\{[^}]*grid-column:\s*1/s);
     expect(desktop).toMatch(/\.club-lobby-machine\s*\{[^}]*grid-column:\s*2/s);
+    expect(desktop).toContain('var(--ca-global-header-height, 0px)');
+    expect(desktop).toContain('var(--bottom-nav-clearance, 86px)');
+    expect(desktop).not.toContain('calc(100dvh - 274px)');
     expect(PAGE_CSS).toMatch(/\.club-mobile-welcome,[\s\S]*?display:\s*none/s);
     expect(TOP_CSS).toMatch(
       /@media \(min-width: 901px\)[\s\S]*?\.club-lobby-command-top__welcome\s*\{[^}]*display:\s*none/s
@@ -99,6 +102,27 @@ describe('responsive premium Club Arena', () => {
     expect(PAGE_CSS).toMatch(
       /@media \(min-width: 901px\)[\s\S]*?\.lobby-wallets-content__inner\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column/s
     );
+    expect(PAGE_CSS).toMatch(
+      /@media \(min-width: 901px\)[\s\S]*?\.lobby-top__wallet\s*\{[^}]*align-self:\s*stretch[^}]*width:\s*100%[^}]*max-width:\s*100%/s
+    );
+    expect(PAGE_CSS).toContain(
+      ".lobby-top__wallet .dw--lobby-board .dw__row[data-wallet-key='diamonds']"
+    );
+    expect(PAGE_CSS).toContain('aspect-ratio: 1800 / 273');
+    expect(PAGE_CSS).toMatch(
+      /\.lobby-top__wallet \.dw--lobby-board \.dw__row--wallet-art \.dw__row-shell\s*\{[^}]*object-fit:\s*contain/s
+    );
+  });
+
+  it('keeps the desktop club card and jackpot on one premium frame footprint', () => {
+    const desktop = PAGE_CSS.slice(PAGE_CSS.indexOf('@media (min-width: 901px)'));
+
+    expect(desktop).toMatch(
+      /\.lobby-top__identity,\s*\.lobby-bbj\s*\{[^}]*width:\s*100%[^}]*aspect-ratio:\s*2\.4 \/ 1/s
+    );
+    expect(desktop).toMatch(
+      /\.lobby-top__identity \.club-identity__shell img,\s*\.lobby-bbj__shell\s*\{[^}]*object-fit:\s*fill/s
+    );
   });
 
   it('uses live club identity for every club without a Shark-only branch', () => {
@@ -129,6 +153,15 @@ describe('responsive premium Club Arena', () => {
   });
 
   it('keeps the desktop ledger readable and the production premium card renderer on mobile', () => {
+    expect(TOP_CSS).toMatch(
+      /@media \(min-width: 901px\)[\s\S]*?\.club-lobby-machine\s*\{[^}]*max-width:\s*100%[^}]*box-sizing:\s*border-box/s
+    );
+    expect(TOP_CSS).toMatch(
+      /@media \(min-width: 901px\)[\s\S]*?\.club-lobby-command-top__controls\s*\{[^}]*overflow:\s*hidden/s
+    );
+    expect(TOP_CSS).toMatch(
+      /@media \(min-width: 901px\)[\s\S]*?\.club-lobby-machine > \.club-home__games--v2\s*\{[^}]*max-width:\s*calc\(100% - 16px\)/s
+    );
     expect(TOP_CSS).toContain('.club-lobby-machine .lobby-table .lt-status');
     expect(TOP_CSS).toContain('.club-lobby-machine .lobby-table td.lt-col-name::before');
     expect(TOP_CSS).toMatch(

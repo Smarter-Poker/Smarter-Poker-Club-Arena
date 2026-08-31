@@ -842,10 +842,14 @@ export class EngineWebSocketServer {
           tableId,
           viewerAccess.reason === 'check_failed'
             ? 'ACCESS_CHECK_FAILED'
-            : 'CLUB_MEMBERSHIP_REQUIRED',
+            : viewerAccess.reason === 'observers_restricted'
+              ? 'OBSERVERS_RESTRICTED'
+              : 'CLUB_MEMBERSHIP_REQUIRED',
           viewerAccess.reason === 'check_failed'
             ? 'Unable to verify table access'
-            : 'Join this club before watching its live games'
+            : viewerAccess.reason === 'observers_restricted'
+              ? 'This Table Is Open To Seated Players Only'
+              : 'Join this club before watching its live games'
         );
         return;
       }

@@ -861,6 +861,52 @@ describe('ThemeSettingsModal hardening', () => {
     expect(screen.getByText('Table Art Live')).toBeVisible();
   });
 
+  it('keeps the authoritative repair active for an open studio on a hidden second device', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    try {
+      renderStudio();
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+      );
+      expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+        'data-table-theme',
+        'classic_green'
+      );
+
+      // Model a Postgres Changes frame that the backgrounded device never
+      // received. The durable snapshot must still repair its open preview.
+      mocks.themeResult = Promise.resolve({
+        data: [
+          {
+            ...savedTheme,
+            theme_id: 'ocean-suite',
+            table_id: 'ocean_blue',
+            background_id: 'royal_indigo',
+            button_id: 'classic-white',
+            cards_id: 'classic_blue',
+            updated_at: '2026-08-31T13:30:00.000Z',
+          },
+        ],
+        error: null,
+      });
+
+      await waitFor(
+        () =>
+          expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+            'data-table-theme',
+            'ocean_blue'
+          ),
+        { timeout: 3_500 }
+      );
+      expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+        'data-background-theme',
+        'royal_indigo'
+      );
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+
   it('does not let an in-flight appearance snapshot roll back a newer realtime change', async () => {
     renderStudio();
     await waitFor(() =>

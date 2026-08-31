@@ -97,8 +97,6 @@ const store = new Map<
   { matrix: Record<string, Record<string, number>>; size: Record<string, number> }
 >();
 
-const DEPTH_BUCKETS = [10, 20, 40, 80, 150];
-
 /**
  * Suit index, matching the solver's `card = rank*4 + suit` encoding and the
  * database's `fn_gto_board_flush_suit`: c, d, h, s = 0, 1, 2, 3. Confirmed

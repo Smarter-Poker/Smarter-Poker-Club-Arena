@@ -192,7 +192,7 @@
 }
 
 .heroMeters small {
-  color: #68747e;
+  color: #82909a;
   font-family: Inter, system-ui, sans-serif;
   font-size: 0.65rem;
 }
@@ -261,7 +261,7 @@
 }
 
 .heroSeal small {
-  color: #79858e;
+  color: #8997a1;
   font-size: 0.62rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -392,7 +392,7 @@
 }
 
 .retryButton {
-  min-height: 40px;
+  min-height: 44px;
   flex: none;
   padding: 0 16px;
   border: 1px solid #71818c;
@@ -438,7 +438,7 @@
 }
 
 .streakDesc {
-  color: #77838c;
+  color: #8a98a2;
   font-family: Inter, system-ui, sans-serif;
   font-size: 0.68rem;
   line-height: 1.4;
@@ -502,7 +502,7 @@
 }
 
 .freezeInfo small {
-  color: #717d86;
+  color: #83919b;
   font-family: Inter, system-ui, sans-serif;
   font-size: 0.66rem;
 }
@@ -515,6 +515,22 @@
   padding: 0 18px;
 }
 
+.freezeAction {
+  display: grid;
+  flex: none;
+  gap: 6px;
+  justify-items: stretch;
+}
+
+.actionHint {
+  max-width: 250px;
+  color: #8b99a3;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.64rem;
+  line-height: 1.35;
+  text-align: right;
+}
+
 .buyFreezeBtn span,
 .diamond {
   color: var(--mission-blue);
@@ -524,6 +540,7 @@
 .claimButton:disabled,
 .claimAllButton:disabled,
 .rerollButton:disabled,
+.missionActionButton:disabled,
 .cancelButton:disabled,
 .confirmButton:disabled {
   cursor: not-allowed;
@@ -563,7 +580,7 @@
 }
 
 .summaryTile small {
-  color: #66737d;
+  color: #7d8a94;
   font-family: Inter, system-ui, sans-serif;
   font-size: 0.66rem;
 }
@@ -661,7 +678,7 @@
 }
 
 .resetReadout small {
-  color: #77848d;
+  color: #8997a1;
   font-family: Inter, system-ui, sans-serif;
   font-size: 0.64rem;
 }
@@ -744,7 +761,7 @@
 }
 
 .tabCount {
-  color: #69757e;
+  color: #7d8992;
   font-family: Inter, system-ui, sans-serif;
   font-size: 0.65rem;
 }
@@ -917,7 +934,7 @@
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 8px;
-  color: #69757e;
+  color: #7d8992;
   font-size: 0.65rem;
   font-weight: 700;
   letter-spacing: 0.11em;
@@ -961,6 +978,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .claimButton {
@@ -983,17 +1001,25 @@
   text-transform: uppercase;
 }
 
+.missionActionButton,
 .rerollButton,
 .cancelButton {
-  min-height: 38px;
+  min-height: 44px;
   padding: 0 14px;
-  border: 1px solid #414b53;
+  border: 1px solid #64737e;
   background: #070a0c;
   color: #a6b0b7;
   font: 700 0.68rem/1 inherit;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   cursor: pointer;
+}
+
+.missionActionButton {
+  border-color: color-mix(in srgb, var(--card-tier-color) 72%, #72808a);
+  background: linear-gradient(180deg, #142027, #080d10);
+  color: #f3f8fa;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--card-tier-color) 12%, transparent);
 }
 
 .rerollButton span {
@@ -1022,7 +1048,7 @@
 .cancelButton,
 .confirmButton {
   min-width: 76px;
-  min-height: 38px;
+  min-height: 44px;
 }
 
 .confirmButton {
@@ -1237,6 +1263,7 @@
 .claimButton:focus-visible,
 .claimAllButton:focus-visible,
 .buyFreezeBtn:focus-visible,
+.missionActionButton:focus-visible,
 .confirmButton:focus-visible,
 .rerollButton:focus-visible,
 .cancelButton:focus-visible,
@@ -1244,6 +1271,11 @@
 .tab:focus-visible,
 .celebrateButton:focus-visible {
   outline: 2px solid var(--mission-blue);
+  outline-offset: 3px;
+}
+
+.challengeCard:focus-visible {
+  outline: 2px solid var(--card-tier-color);
   outline-offset: 3px;
 }
 
@@ -1271,6 +1303,7 @@
 @media (max-width: 680px) {
   .container {
     padding: 0 0 max(84px, calc(70px + env(safe-area-inset-bottom)));
+    background-attachment: scroll;
   }
 
   .container > div > div {
@@ -1368,6 +1401,15 @@
     flex-direction: column;
   }
 
+  .freezeAction {
+    width: 100%;
+  }
+
+  .actionHint {
+    max-width: none;
+    text-align: left;
+  }
+
   .buyFreezeBtn,
   .claimAllButton,
   .playButton {
@@ -1463,11 +1505,22 @@
     width: 100%;
   }
 
+  .cardActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .claimButton,
+  .missionActionButton,
   .rerollButton,
   .claimedBadge {
     width: 100%;
     justify-content: center;
+  }
+
+  .claimButton,
+  .claimedBadge {
+    grid-column: 1 / -1;
   }
 
   .rerollConfirm {
@@ -1493,6 +1546,30 @@
   }
 }
 
+@media (max-width: 420px) {
+  .heroMeters {
+    grid-template-columns: 1fr;
+  }
+
+  .heroMeters > div {
+    padding: 12px 0;
+  }
+
+  .heroMeters > div + div {
+    padding-left: 0;
+    border-top: 1px solid rgba(180, 194, 204, 0.18);
+    border-left: 0;
+  }
+
+  .hero {
+    min-height: 730px;
+  }
+
+  .heroCopy {
+    min-height: 730px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cardCelebrating,
   .celebrateOverlay,
@@ -1501,6 +1578,25 @@
   .loadingBoardHeader,
   .loadingCard {
     animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .challengeCard,
+  .missionBoard,
+  .streakConsole,
+  .summaryGrid,
+  .unclaimedBar,
+  .footer,
+  .tabs,
+  .celebrateCard {
+    border: 1px solid CanvasText;
+  }
+
+  .progressFill,
+  .milestoneFill,
+  .tabActive::after {
+    background: Highlight;
   }
 }
 

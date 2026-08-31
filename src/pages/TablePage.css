@@ -4578,16 +4578,13 @@ button.post-bb-overlay-button {
   }
 }
 
-/* Runs 2+ re-deal only the streets past the shared base board. The RUN IT 3X
-   recording shows only the RE-DEALT cards for those runs (the shared prefix
-   is never drawn twice) — hide the prefix slots but keep their layout width,
-   so each extra run's cards sit exactly under their street positions like
-   the reference's parked river cards. base-count can only be 0 (preflop),
-   3 (flop) or 4 (turn). */
-.community-area__run--extra[data-base-count='3'] .community-cards__card:nth-child(-n + 3),
-.community-area__run--extra[data-base-count='4'] .community-cards__card:nth-child(-n + 4) {
-  visibility: hidden;
-}
+/* RIT BOARD FIX (Dan 2026-08-30): runs 2+ show the FULL board — the shared
+   flop/turn cards render on every run exactly as they appeared, plus that
+   run's re-dealt streets. A rule here used to `visibility: hidden` the
+   shared prefix on extra runs, so a turn all-in run 3 times showed runs 2/3
+   as a lone river card. Do not reintroduce that hiding — every board row
+   must be a complete, readable board. (data-base-count stays on the DOM as
+   data only.) */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Dan 2026-08-26: Remove all baked CSS backgrounds/borders on image buttons 

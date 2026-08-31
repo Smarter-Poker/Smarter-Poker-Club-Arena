@@ -323,7 +323,7 @@ export async function createTemporaryCustomizationAccount(
 async function assertRowsRemoved(
   environment: CustomizationCertificationEnvironment,
   table: string,
-  column: 'user_id' | 'recipient_user_id' | 'from_user_id' | 'to_user_id',
+  column: 'user_id' | 'recipient_user_id' | 'from_user_id' | 'to_user_id' | 'actor_id',
   userId: string
 ): Promise<void> {
   const rows = await readServiceRows<{ id?: string }>(
@@ -402,6 +402,7 @@ export async function cleanupTemporaryCustomizationAccount(
     { table: 'push_outbox', column: 'recipient_user_id' as const },
     { table: 'chip_transactions', column: 'from_user_id' as const },
     { table: 'chip_transactions', column: 'to_user_id' as const },
+    { table: 'audit_trail', column: 'actor_id' as const },
   ];
 
   await callServiceRpc<JsonObject>(environment, 'cleanup_reserved_certification_account', {

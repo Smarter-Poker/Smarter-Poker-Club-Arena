@@ -2317,7 +2317,12 @@
     flex-direction: column;
     width: 100%;
     max-width: none;
-    padding-bottom: calc(var(--bottom-nav-height, 74px) + 18px);
+    /* Use the page-clearance contract, not the artwork height. The latter
+       omits the home-indicator inset and left a populated lobby's last image
+       25px beneath the fixed nav in the authenticated production audit. A
+       full coarse-pointer target of breathing room also absorbs late image
+       layout without making the final row unreachable. */
+    padding-bottom: calc(var(--bottom-nav-clearance, 74px) + 44px);
     background: #000;
   }
 

@@ -105,6 +105,14 @@ describe('responsive premium Club Arena', () => {
     );
   });
 
+  it('keeps the populated mobile lobby above fixed navigation and phone safe areas', () => {
+    const mobile = PAGE_CSS.slice(PAGE_CSS.lastIndexOf('@media (max-width: 900px)'));
+    expect(mobile).toMatch(
+      /\.club-home\s*\{[^}]*padding-bottom:\s*calc\(var\(--bottom-nav-clearance, 74px\) \+ 44px\)/s
+    );
+    expect(mobile).not.toContain('padding-bottom: calc(var(--bottom-nav-height, 74px)');
+  });
+
   it('shows every authorized wallet on mobile while limiting the desktop command column', () => {
     expect(PAGE).toContain('showAllLobbyWallets');
     expect(PAGE).toContain('onVisibleWalletCountChange={setVisibleWalletCount}');
